@@ -1,0 +1,140 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+This project contains the training plans, logs for a marathon runner.
+It also contains tools like coros-sync to sync the training data from COROS to the local for further analysis.
+
+## Folder Structure
+
+```
+logs/
+    3-30_4-5/       # folder name: <start date>_<end date> contains all training log for that week.
+        plan.md     # which contains the training plan for this week
+        inbody.png  # In-body body composition test report
+        feedback.md # Training feedback for this week
+    4-6_4-12/
+        plan.md
+        inbody.png
+        feedback.md
+src/                 # contains the source code for the tools
+tests/               # contains testing files for the tools
+TRAINING_PLAN.md     # The overall training plan of current training season.
+```
+
+## The feedback.md
+
+This file contains the feedback for the trainings in this week, ususally contains perceived exertion.
+
+I will use RPE (Rate of Perceived Exertion) as the metrics to measure how hard I'm during a run. The RPE effort rates from 1 to 10.
+RPE 1 Very Easy
+No effort. Walking or complete rest.
+RPE 2 Easy
+Very light effort. Comfortable jog, full sentences are easy.
+RPE 3 Easy / Conversational
+Easy running. Breathing is relaxed; you can talk comfortably for a long time.
+RPE 4 Comfortable but Working
+Slight effort. Breathing is deeper but controlled; conversation is still easy.
+RPE 5 Moderate
+Noticeable effort. Breathing is steady but stronger; talking takes more focus.
+(Sustainable for a long time 45 often marathon effort.)
+RPE 6 Moderately Hard
+Challenging but controlled. Breathing is heavier; you can speak only short sentences.
+RPE 7 Hard
+Hard effort. Deep, fast breathing; only a few words at a time.
+(Sustainable for a limited time 45 threshold effort.)
+RPE 8 Very Hard
+Very demanding. Breathing is labored; speaking is difficult.
+(Common for intervals or 5K effort.)
+RPE 9 Extremely Hard
+Near maximal effort. Barely sustainable; focus is on holding pace.
+RPE 10 Maximal
+All-out effort. Sprinting; cannot be sustained for more than a short burst.
+
+## How to use the InBody report
+
+The InBody report contains core metrics like
+- Weight
+- Body Fat Percentage
+- Body Fat Mass
+- Skeletal Muscle Mass
+
+We need to use it to track fat loss vs muscle gain
+monitoring fitness and training progress
+long-term trend analysis, trend comparison over time.
+
+
+## Tools 
+
+**coros-sync** — A CLI tool that syncs running data from COROS watches (via unofficial Training Hub API) into a local SQLite database for analysis, export, and workout scheduling.
+
+### Commands
+
+```bash
+# Install (editable, with all extras)
+pip install -e ".[dev,analysis]"
+
+# Run CLI
+coros-sync login
+coros-sync sync [--full] [-j 4]
+coros-sync status
+coros-sync export [--from YYYYMMDD] [--to YYYYMMDD] [-o file.csv]
+coros-sync analyze weekly|monthly|zones|load|hrv|predictions
+coros-sync workout push easy|tempo|interval|long --date YYYYMMDD [options]
+coros-sync workout week --start YYYYMMDD
+coros-sync workout delete YYYYMMDD
+
+# Tests
+pytest                    # run all tests
+pytest tests/test_db.py   # single file
+pytest -k test_pace_str   # single test by name
+```
+
+### Architecture
+
+#### API Layer (`client.py`)
+- `CorosClient` wraps the unofficial COROS Training Hub REST API via `httpx`
+- Three regional API bases: global, cn, eu — auto-detected at login
+- Token auto-refresh with thread-safe re-login (`_relogin_lock`) for parallel fetches
+- Two request patterns: `_request()` for GET/POST with query params, `_request_json()` for JSON body endpoints that need the `yfheader` (workout/training endpoints)
+- Rate-limited with configurable `request_delay` between calls
+
+#### Data Models (`models.py`)
+- Dataclasses with `from_api()` classmethods as the **sole unit-conversion boundary** — all API-to-internal unit mapping happens here
+- Key COROS API quirks: distance in cm*1000 (divide by 100,000 for meters), time in centiseconds (divide by 100), calories in cal*1000
+- `Activity` (list summary) vs `ActivityDetail` (full detail with laps, zones, timeseries) are separate models from different endpoints
+
+#### Database (`db.py`)
+- SQLite with WAL mode, stored at `platformdirs.user_data_dir("coros-sync")/coros.db`
+- Schema: `activities`, `laps`, `zones`, `timeseries`, `daily_health`, `dashboard`, `race_predictions`, `sync_meta`
+- All writes use `INSERT OR REPLACE` for idempotent upserts
+- `Database(db_path)` accepts optional path for testing; tests use `tmp_path` fixture
+
+#### Sync Engine (`sync.py`)
+- Incremental by default: paginate activity list until hitting an already-synced `label_id`
+- Parallel detail fetching via `ThreadPoolExecutor` (configurable `jobs`), sequential DB writes
+- Two phases: `sync_activities()` then `sync_health()` (analyse + dashboard endpoints)
+
+#### Workout Builder (`workout.py`)
+- Reverse-engineered COROS workout protocol: `exerciseType` (1=warmup, 2=training, 3=cooldown), pace in ms/km, distance in mm
+- `RunWorkout` builder pattern: `.add_warmup()` → `.add_training()` → `.add_cooldown()`
+- `push_workout()` flow: query schedule for next `idInPlan` → build payload → calculate via API → push update
+
+#### Auth (`auth.py`)
+- Credentials stored as JSON at `platformdirs.user_config_dir("coros-sync")/config.json`
+- Password stored as MD5 hash (matching COROS API expectation)
+
+### Testing
+
+- Tests use `pytest` with `pytest-httpx` available for HTTP mocking
+- `conftest.py` provides a `db` fixture with a temp SQLite database
+- `test_models.py` covers unit conversions; `test_db.py` covers database operations
+- No tests currently exist for `client.py`, `sync.py`, or `workout.py` (these hit external APIs)
+
+### Key Conventions
+
+- Dates are `YYYYMMDD` strings throughout (matching COROS API format)
+- Pace values are seconds-per-km internally; displayed as `M:SS/km` via `pace_str()`
+- CLI uses Click groups: `cli` (top-level), `analyze` (subgroup), `workout` (subgroup)
+- Analysis commands lazy-import pandas/matplotlib to keep core deps light
+- `rich` is used for all terminal output (tables, progress bars, colored text)
