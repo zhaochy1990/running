@@ -22,6 +22,25 @@ tests/               # contains testing files for the tools
 TRAINING_PLAN.md     # The overall training plan of current training season.
 ```
 
+## Training Plan (plan.md)
+
+Each weekly plan.md must comprehensively cover three major components:
+
+1. **Running**: daily run schedule, pace targets, heart rate zones, weekly mileage goal
+2. **Strength & Conditioning**: strength training, core work, flexibility/mobility exercises with specific movements and sets/reps
+3. **Nutrition**: calorie targets based on InBody data, macronutrient breakdown (protein/carbs/fat), meal suggestions
+
+When creating a plan, consider how these three components interact — for example: differentiated carb intake on run days vs rest days, protein timing around strength sessions, and calorie deficit management during recovery weeks.
+
+Before drafting a new weekly plan, always review the following inputs:
+
+- **Current training phase**: where this week sits in the overall periodization (from TRAINING_PLAN.md)
+- **Previous week's feedback**: RPE data, perceived fatigue, and any issues noted in the prior week's feedback.md
+- **Recent body metrics**: resting heart rate, HRV trends, sleep quality/duration — sourced via `coros-sync status` or `coros-sync analyze hrv`
+- **Latest InBody data**: body weight, body fat %, skeletal muscle mass trends
+
+Adjust training load, nutrition, and recovery based on these signals. For example: if HRV is trending down or sleep quality is poor, reduce intensity and increase recovery; if body fat is stalling, revisit the calorie deficit.
+
 ## The feedback.md
 
 This file contains the feedback for the trainings in this week, ususally contains perceived exertion.
