@@ -11,7 +11,7 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 logs/
     3-30_4-5/       # folder name: <start date>_<end date> contains all training log for that week.
         plan.md     # which contains the training plan for this week
-        inbody.png  # In-body body composition test report
+        inbody.jpg  # In-body body composition test report
         feedback.md # Training feedback for this week
     4-6_4-12/
         plan.md
