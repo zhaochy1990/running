@@ -41,6 +41,42 @@ Before drafting a new weekly plan, always review the following inputs:
 
 Adjust training load, nutrition, and recovery based on these signals. For example: if HRV is trending down or sleep quality is poor, reduce intensity and increase recovery; if body fat is stalling, revisit the calorie deficit.
 
+### Fatigue / Training Load Data
+
+The `daily_health` table stores daily fatigue and training load metrics synced from COROS. Key fields:
+
+| Field | Description |
+|-------|-------------|
+| `fatigue` | Fatigue score (from COROS `tiredRate`). <40 recovered, 40-50 normal, 50-60 fatigued, >60 high fatigue |
+| `ati` | Acute Training Index — 7-day weighted training load (short-term stress) |
+| `cti` | Chronic Training Index — 28-day weighted training load (fitness baseline) |
+| `training_load_ratio` | ATI/CTI ratio. 0.8-1.0 optimal, >1.2 Very High, <0.7 detraining |
+| `training_load_state` | COROS label: Low / Optimal / High / Very High |
+| `rhr` | Resting heart rate |
+
+To query fatigue trends:
+
+```bash
+# Sync latest health data first
+PYTHONIOENCODING=utf-8 python -m coros_sync sync
+
+# Query recent fatigue (last 14 days)
+python -c "
+from coros_sync.db import Database
+db = Database()
+rows = db._conn.execute('''
+    SELECT date, fatigue, training_load_ratio, training_load_state, rhr, ati, cti
+    FROM daily_health ORDER BY date DESC LIMIT 14
+''').fetchall()
+for r in rows: print(dict(r))
+"
+```
+
+When creating weekly plans, include the fatigue trend table for context. Key thresholds for race readiness:
+- **Race-ready**: fatigue <35, load ratio 0.7-0.9, RHR at baseline
+- **Normal training**: fatigue 40-50, load ratio 0.8-1.1
+- **Needs recovery**: fatigue >50, load ratio >1.2, RHR elevated
+
 ## The feedback.md
 
 This file contains the feedback for the trainings in this week, ususally contains perceived exertion.
@@ -89,19 +125,30 @@ long-term trend analysis, trend comparison over time.
 
 ### Commands
 
+The CLI entry point `coros-sync` may not be on PATH. Use `python -m coros_sync` instead.
+On Windows, set `PYTHONIOENCODING=utf-8` to avoid Rich/Unicode rendering errors with cp1252.
+
 ```bash
 # Install (editable, with all extras)
 pip install -e ".[dev,analysis]"
 
-# Run CLI
-coros-sync login
-coros-sync sync [--full] [-j 4]
-coros-sync status
-coros-sync export [--from YYYYMMDD] [--to YYYYMMDD] [-o file.csv]
-coros-sync analyze weekly|monthly|zones|load|hrv|predictions
-coros-sync workout push easy|tempo|interval|long --date YYYYMMDD [options]
-coros-sync workout week --start YYYYMMDD
-coros-sync workout delete YYYYMMDD
+# Run CLI (use python -m coros_sync instead of coros-sync)
+PYTHONIOENCODING=utf-8 python -m coros_sync login
+PYTHONIOENCODING=utf-8 python -m coros_sync sync [--full] [-j 4]
+PYTHONIOENCODING=utf-8 python -m coros_sync status
+PYTHONIOENCODING=utf-8 python -m coros_sync export [--from YYYYMMDD] [--to YYYYMMDD] [-o file.csv]
+PYTHONIOENCODING=utf-8 python -m coros_sync analyze weekly|monthly|zones|load|hrv|predictions
+PYTHONIOENCODING=utf-8 python -m coros_sync workout push easy|tempo|interval|long --date YYYYMMDD [options]
+PYTHONIOENCODING=utf-8 python -m coros_sync workout week --start YYYYMMDD
+PYTHONIOENCODING=utf-8 python -m coros_sync workout delete YYYYMMDD
+
+# Direct DB query (when CLI export doesn't work)
+python -c "
+from coros_sync.db import Database
+db = Database()
+rows = db._conn.execute('SELECT * FROM activities WHERE date >= ? ORDER BY date', ('2026-03-30',)).fetchall()
+for r in rows: print(dict(r))
+"
 
 # Tests
 pytest                    # run all tests

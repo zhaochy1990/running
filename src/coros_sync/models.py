@@ -289,7 +289,7 @@ class DailyHealth:
     def from_api(cls, data: dict) -> DailyHealth:
         state_id = data.get("trainingLoadRatioState", 0)
         return cls(
-            date=str(data.get("date", "")),
+            date=str(data.get("happenDay", data.get("date", ""))),
             ati=data.get("ati"),
             cti=data.get("cti"),
             rhr=data.get("rhr"),
@@ -297,7 +297,7 @@ class DailyHealth:
             duration_s=data.get("duration"),
             training_load_ratio=data.get("trainingLoadRatio"),
             training_load_state=TRAINING_LOAD_STATES.get(state_id, f"Unknown ({state_id})"),
-            fatigue=data.get("fatigue"),
+            fatigue=data.get("tiredRate", data.get("fatigue")),
         )
 
 
