@@ -43,6 +43,10 @@ Before drafting a new weekly plan, always review the following inputs:
 
 Adjust training load, nutrition, and recovery based on these signals. For example: if HRV is trending down or sleep quality is poor, reduce intensity and increase recovery; if body fat is stalling, revisit the calorie deficit.
 
+当创建或更新训练计划时，不要“已推送到 COROS 手表的训练”这个章节。
+
+当创建或更新训练计划后，检查计划中的内容，剔除或合并相同内容。
+
 ### Fatigue / Training Load Data
 
 The `daily_health` table stores daily fatigue and training load metrics synced from COROS. Key fields:
