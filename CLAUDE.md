@@ -32,6 +32,8 @@ Each weekly plan.md must comprehensively cover three major components:
 
 When creating a plan, consider how these three components interact — for example: differentiated carb intake on run days vs rest days, protein timing around strength sessions, and calorie deficit management during recovery weeks.
 
+**Important**: When answering any question about current status, load, fatigue, or training metrics, ALWAYS run `PYTHONIOENCODING=utf-8 python -m coros_sync sync` first to ensure the local database has the latest data before querying.
+
 Before drafting a new weekly plan, always review the following inputs:
 
 - **Current training phase**: where this week sits in the overall periodization (from TRAINING_PLAN.md)

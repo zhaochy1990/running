@@ -292,7 +292,7 @@ class DailyHealth:
             date=str(data.get("happenDay", data.get("date", ""))),
             ati=data.get("ati"),
             cti=data.get("cti"),
-            rhr=data.get("rhr"),
+            rhr=data.get("testRhr", data.get("rhr")),
             distance_m=data.get("distance"),
             duration_s=data.get("duration"),
             training_load_ratio=data.get("trainingLoadRatio"),

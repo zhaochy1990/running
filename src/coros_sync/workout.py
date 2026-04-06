@@ -28,6 +28,8 @@ TRAINING = {"name": "T3001", "originId": "426109589008859136", "overview": "sid_
             "createTimestamp": 1587381919, "defaultOrder": 2}
 COOLDOWN_TIME = {"name": "T1122", "originId": "425895456971866112", "overview": "sid_run_cool_down_dist",
                  "createTimestamp": 1586584214, "defaultOrder": 3}
+RECOVERY = {"name": "T1123", "originId": "425895398452936705", "overview": "sid_run_cool_down_dist",
+            "createTimestamp": 1586584214, "defaultOrder": 3}
 
 # Source images for running workout types
 SOURCE_URLS = {
@@ -112,12 +114,16 @@ def _make_exercise(
 @dataclass
 class RunSegment:
     """A segment of a running workout."""
-    segment_type: str  # "warmup", "training", "cooldown"
+    segment_type: str  # "warmup", "training", "cooldown", "recovery", "interval"
     distance_km: float | None = None  # distance in km
     duration_min: float | None = None  # duration in minutes
     pace_low: str | None = None  # slower pace "5:40"
     pace_high: str | None = None  # faster pace "5:20"
     sets: int = 1
+    rest_type: int = 0  # 0=none, 2=time(seconds), 5=distance(mm)
+    rest_value: int = 0  # rest duration in seconds or distance in mm
+    # Interval group: recovery between reps
+    recovery_duration_s: int = 0  # recovery time in seconds between reps
 
 
 @dataclass
@@ -128,8 +134,19 @@ class RunWorkout:
     segments: list[RunSegment] = field(default_factory=list)
     workout_type: str = "easy"  # easy, tempo, interval, long
 
-    def add_warmup(self, duration_min: float = 5) -> RunWorkout:
-        self.segments.append(RunSegment("warmup", duration_min=duration_min))
+    def add_warmup(
+        self,
+        duration_min: float | None = None,
+        distance_km: float | None = None,
+        pace_low: str | None = None,
+        pace_high: str | None = None,
+    ) -> RunWorkout:
+        if duration_min is None and distance_km is None:
+            duration_min = 5
+        self.segments.append(RunSegment(
+            "warmup", duration_min=duration_min, distance_km=distance_km,
+            pace_low=pace_low, pace_high=pace_high,
+        ))
         return self
 
     def add_training(
@@ -139,46 +156,166 @@ class RunWorkout:
         pace_low: str | None = None,
         pace_high: str | None = None,
         sets: int = 1,
+        rest_type: int = 0,
+        rest_value: int = 0,
     ) -> RunWorkout:
         self.segments.append(RunSegment(
             "training", distance_km=distance_km, duration_min=duration_min,
             pace_low=pace_low, pace_high=pace_high, sets=sets,
+            rest_type=rest_type, rest_value=rest_value,
         ))
         return self
 
-    def add_cooldown(self, duration_min: float = 5) -> RunWorkout:
-        self.segments.append(RunSegment("cooldown", duration_min=duration_min))
+    def add_recovery(
+        self,
+        duration_min: float | None = None,
+        distance_km: float | None = None,
+        pace_low: str | None = None,
+        pace_high: str | None = None,
+    ) -> RunWorkout:
+        """Add a recovery jog segment (exerciseType=3)."""
+        if duration_min is None and distance_km is None:
+            duration_min = 3
+        self.segments.append(RunSegment(
+            "recovery", duration_min=duration_min, distance_km=distance_km,
+            pace_low=pace_low, pace_high=pace_high,
+        ))
+        return self
+
+    def add_interval(
+        self,
+        sets: int,
+        distance_km: float | None = None,
+        duration_min: float | None = None,
+        pace_low: str | None = None,
+        pace_high: str | None = None,
+        recovery_duration_s: int = 60,
+    ) -> RunWorkout:
+        """Add an interval group: N reps of work + recovery in COROS format.
+
+        Creates a group container (exerciseType=0) with training (exerciseType=2)
+        and recovery (exerciseType=4) children.
+        """
+        self.segments.append(RunSegment(
+            "interval", distance_km=distance_km, duration_min=duration_min,
+            pace_low=pace_low, pace_high=pace_high, sets=sets,
+            recovery_duration_s=recovery_duration_s,
+        ))
+        return self
+
+    def add_cooldown(
+        self,
+        duration_min: float | None = None,
+        distance_km: float | None = None,
+        pace_low: str | None = None,
+        pace_high: str | None = None,
+    ) -> RunWorkout:
+        if duration_min is None and distance_km is None:
+            duration_min = 5
+        self.segments.append(RunSegment(
+            "cooldown", duration_min=duration_min, distance_km=distance_km,
+            pace_low=pace_low, pace_high=pace_high,
+        ))
         return self
 
     def _build_exercises(self) -> list[dict]:
         exercises = []
         sort_no = 0
+        next_id = 0  # unique id counter across all exercises
         for seg in self.segments:
             sort_no += 1
-            if seg.segment_type == "warmup":
-                target_type = 2  # time
-                target_value = int((seg.duration_min or 5) * 60)
-                template = WARMUP_TIME
-                ex_type = 1
-            elif seg.segment_type == "cooldown":
-                target_type = 2
-                target_value = int((seg.duration_min or 5) * 60)
-                template = COOLDOWN_TIME
-                ex_type = 3
-            else:  # training
+            next_id += 1
+
+            if seg.segment_type == "interval":
+                # COROS interval group format:
+                # 1. Group container (exerciseType=0, isGroup=true, sets=N)
+                # 2. Training exercise (exerciseType=2, groupId=group_id)
+                # 3. Recovery exercise (exerciseType=4, groupId=group_id)
+                group_id = next_id
+                group = {
+                    "access": 0, "defaultOrder": 0, "exerciseType": 0,
+                    "id": group_id, "intensityCustom": 0, "intensityMultiplier": 0,
+                    "intensityType": 0, "intensityValue": 0, "intensityValueExtend": 0,
+                    "isDefaultAdd": 0, "isGroup": True, "name": "", "originId": "",
+                    "overview": "", "programId": "", "restType": 0,
+                    "restValue": seg.recovery_duration_s, "sets": seg.sets,
+                    "sortNo": sort_no, "sourceId": "0", "sourceUrl": "",
+                    "sportType": 0, "subType": 0, "targetType": "", "targetValue": 0,
+                    "videoUrl": "",
+                }
+                exercises.append(group)
+
+                # Training interval (sortNo same as group, unique id)
+                next_id += 1
                 if seg.distance_km:
-                    target_type = 5  # distance in COROS units (100,000 per km)
+                    target_type = 5
                     target_value = int(seg.distance_km * 100_000)
                 else:
-                    target_type = 2  # time
+                    target_type = 2
+                    target_value = int((seg.duration_min or 5) * 60)
+                training_ex = _make_exercise(
+                    2, sort_no, target_type, target_value, TRAINING,
+                    pace_low=seg.pace_low, pace_high=seg.pace_high,
+                )
+                training_ex["id"] = next_id
+                training_ex["groupId"] = group_id
+                exercises.append(training_ex)
+
+                # Recovery between reps (next sortNo, unique id)
+                sort_no += 1
+                next_id += 1
+                recovery_ex = _make_exercise(
+                    4, sort_no, 2, seg.recovery_duration_s, RECOVERY,
+                )
+                recovery_ex["id"] = next_id
+                recovery_ex["groupId"] = group_id
+                exercises.append(recovery_ex)
+                continue
+
+            if seg.segment_type == "warmup":
+                ex_type = 1
+                if seg.distance_km:
+                    target_type = 5
+                    target_value = int(seg.distance_km * 100_000)
+                    template = WARMUP_DIST
+                else:
+                    target_type = 2
+                    target_value = int((seg.duration_min or 5) * 60)
+                    template = WARMUP_TIME
+            elif seg.segment_type == "recovery":
+                ex_type = 4
+                if seg.distance_km:
+                    target_type = 5
+                    target_value = int(seg.distance_km * 100_000)
+                else:
+                    target_type = 2
+                    target_value = int((seg.duration_min or 3) * 60)
+                template = RECOVERY
+            elif seg.segment_type == "cooldown":
+                ex_type = 3
+                if seg.distance_km:
+                    target_type = 5
+                    target_value = int(seg.distance_km * 100_000)
+                else:
+                    target_type = 2
+                    target_value = int((seg.duration_min or 5) * 60)
+                template = COOLDOWN_TIME
+            else:  # training
+                if seg.distance_km:
+                    target_type = 5
+                    target_value = int(seg.distance_km * 100_000)
+                else:
+                    target_type = 2
                     target_value = int((seg.duration_min or 30) * 60)
                 template = TRAINING
                 ex_type = 2
 
-            exercises.append(_make_exercise(
+            ex = _make_exercise(
                 ex_type, sort_no, target_type, target_value, template,
                 pace_low=seg.pace_low, pace_high=seg.pace_high, sets=seg.sets,
-            ))
+            )
+            ex["id"] = next_id
+            exercises.append(ex)
         return exercises
 
     def _build_bar_chart(self, exercises: list[dict]) -> list[dict]:
@@ -351,26 +488,46 @@ def easy_run(date: str, distance_km: float, pace_low: str = "5:40", pace_high: s
             .add_cooldown(5))
 
 
-def tempo_run(date: str, warmup_min: float, tempo_km: float, pace_low: str, pace_high: str) -> RunWorkout:
+def tempo_run(
+    date: str, warmup_min: float, tempo_km: float, pace_low: str, pace_high: str,
+    warmup_km: float | None = None, warmup_pace_low: str | None = None, warmup_pace_high: str | None = None,
+    cooldown_km: float | None = None, cooldown_pace_low: str | None = None, cooldown_pace_high: str | None = None,
+) -> RunWorkout:
     """Tempo/threshold run."""
-    return (RunWorkout(f"Tempo {tempo_km}km @ {pace_high}", date, workout_type="tempo")
-            .add_warmup(warmup_min)
-            .add_training(distance_km=tempo_km, pace_low=pace_low, pace_high=pace_high)
-            .add_cooldown(5))
+    w = RunWorkout(f"Tempo {tempo_km}km @ {pace_high}", date, workout_type="tempo")
+    if warmup_km:
+        w.add_warmup(distance_km=warmup_km, pace_low=warmup_pace_low, pace_high=warmup_pace_high)
+    else:
+        w.add_warmup(duration_min=warmup_min)
+    w.add_training(distance_km=tempo_km, pace_low=pace_low, pace_high=pace_high)
+    if cooldown_km:
+        w.add_cooldown(distance_km=cooldown_km, pace_low=cooldown_pace_low, pace_high=cooldown_pace_high)
+    else:
+        w.add_cooldown()
+    return w
 
 
 def interval_run(
     date: str, warmup_min: float, reps: int, interval_m: int,
     pace_low: str, pace_high: str, recovery_min: float = 3,
+    warmup_km: float | None = None, warmup_pace_low: str | None = None, warmup_pace_high: str | None = None,
+    cooldown_km: float | None = None, cooldown_pace_low: str | None = None, cooldown_pace_high: str | None = None,
 ) -> RunWorkout:
-    """Interval workout with repeats."""
+    """Interval workout with repeats using COROS group format."""
     w = RunWorkout(f"{reps}x{interval_m}m Intervals", date, workout_type="interval")
-    w.add_warmup(warmup_min)
-    for i in range(reps):
-        w.add_training(distance_km=interval_m / 1000, pace_low=pace_low, pace_high=pace_high)
-        if i < reps - 1:  # No recovery after last rep
-            w.add_training(duration_min=recovery_min)  # Recovery jog (no pace target)
-    w.add_cooldown(5)
+    if warmup_km:
+        w.add_warmup(distance_km=warmup_km, pace_low=warmup_pace_low, pace_high=warmup_pace_high)
+    else:
+        w.add_warmup(duration_min=warmup_min)
+    w.add_interval(
+        sets=reps, distance_km=interval_m / 1000,
+        pace_low=pace_low, pace_high=pace_high,
+        recovery_duration_s=int(recovery_min * 60),
+    )
+    if cooldown_km:
+        w.add_cooldown(distance_km=cooldown_km, pace_low=cooldown_pace_low, pace_high=cooldown_pace_high)
+    else:
+        w.add_cooldown()
     return w
 
 
