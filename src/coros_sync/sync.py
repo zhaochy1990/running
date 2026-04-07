@@ -101,6 +101,71 @@ def sync_activities(
     return synced
 
 
+def resync_date_range(
+    client: CorosClient,
+    db: Database,
+    date_from: str,
+    date_to: str,
+    jobs: int = 1,
+) -> int:
+    """Re-sync activities within a date range. Dates are YYYY-MM-DD or YYYYMMDD format."""
+    # Normalize dates for comparison with DB
+    df = date_from.replace("-", "")
+    dt = date_to.replace("-", "")
+
+    # Find all activities in range from existing DB
+    rows = db.query(
+        "SELECT label_id, sport_type, date, name, sport_name FROM activities WHERE date >= ? AND date < ?",
+        (date_from if "-" in date_from else f"{df[:4]}-{df[4:6]}-{df[6:]}",
+         date_to + "T99" if "-" in date_to else f"{dt[:4]}-{dt[4:6]}-{dt[6:]}T99"),
+    )
+    activities = [dict(r) for r in rows]
+
+    if not activities:
+        return 0
+
+    synced = 0
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+    ) as progress:
+        task = progress.add_task(f"Re-syncing {len(activities)} activities...", total=len(activities))
+
+        def fetch_detail(act: dict) -> tuple[dict, ActivityDetail | None]:
+            try:
+                detail_data = client.get_activity_detail(act["label_id"], act["sport_type"])
+                detail = ActivityDetail.from_api(detail_data, act["label_id"])
+                if not detail.date:
+                    detail.date = act["date"]
+                return act, detail
+            except Exception as e:
+                logger.warning("Failed to re-sync %s: %s", act["label_id"], e)
+                return act, None
+
+        results: dict[str, ActivityDetail | None] = {}
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(fetch_detail, a): a for a in activities}
+            for future in as_completed(futures):
+                act = futures[future]
+                _, detail = future.result()
+                results[act["label_id"]] = detail
+                progress.update(
+                    task,
+                    description=f"Re-syncing: {act.get('name') or act.get('sport_name', '')}",
+                    completed=len(results),
+                )
+
+        for act in activities:
+            detail = results[act["label_id"]]
+            if detail:
+                db.upsert_activity(detail)
+                synced += 1
+
+    return synced
+
+
 def sync_health(client: CorosClient, db: Database) -> int:
     """Sync health/body metrics from COROS. Returns count of daily records synced."""
     synced = 0

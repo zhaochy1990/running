@@ -1,0 +1,118 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #06060b;
+  --color-bg-secondary: #0e0e16;
+  --color-bg-card: #12121c;
+  --color-bg-card-hover: #1a1a28;
+  --color-bg-elevated: #1e1e2e;
+  --color-border: #2a2a3e;
+  --color-border-subtle: #1e1e30;
+
+  --color-text-primary: #e8e8f0;
+  --color-text-secondary: #8888a0;
+  --color-text-muted: #555570;
+
+  --color-accent-green: #00e676;
+  --color-accent-green-dim: #00c853;
+  --color-accent-cyan: #00e5ff;
+  --color-accent-amber: #ffab00;
+  --color-accent-red: #ff5252;
+  --color-accent-purple: #b388ff;
+
+  --color-zone-1: #00c853;
+  --color-zone-2: #64dd17;
+  --color-zone-3: #ffab00;
+  --color-zone-4: #ff6d00;
+  --color-zone-5: #ff1744;
+
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a3e #0e0e16;
+}
+
+body {
+  font-family: var(--font-display);
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Subtle grain overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  opacity: 0.015;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Markdown prose styling */
+.prose {
+  line-height: 1.75;
+}
+.prose h1 { font-size: 1.5rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.75rem; color: var(--color-text-primary); }
+.prose h2 { font-size: 1.25rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.5rem; color: var(--color-accent-green); }
+.prose h3 { font-size: 1.1rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: var(--color-text-primary); }
+.prose p { margin-bottom: 0.75rem; color: var(--color-text-secondary); }
+.prose ul, .prose ol { margin-bottom: 0.75rem; padding-left: 1.5rem; color: var(--color-text-secondary); }
+.prose li { margin-bottom: 0.25rem; }
+.prose strong { color: var(--color-text-primary); font-weight: 600; }
+.prose blockquote {
+  border-left: 3px solid var(--color-accent-green);
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+.prose table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+.prose th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 2px solid var(--color-border); color: var(--color-text-primary); font-weight: 600; }
+.prose td { padding: 0.4rem 0.75rem; border-bottom: 1px solid var(--color-border-subtle); color: var(--color-text-secondary); }
+.prose tr:hover td { background: var(--color-bg-card-hover); }
+.prose code { background: var(--color-bg-elevated); padding: 0.15rem 0.4rem; border-radius: 4px; font-family: var(--font-mono); font-size: 0.85em; }
+.prose pre { background: var(--color-bg-elevated); padding: 1rem; border-radius: 8px; overflow-x: auto; margin: 1rem 0; }
+.prose pre code { background: none; padding: 0; }
+.prose hr { border-color: var(--color-border); margin: 1.5rem 0; }
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(0, 230, 118, 0.15); }
+  50% { box-shadow: 0 0 20px rgba(0, 230, 118, 0.3); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.35s ease-out forwards;
+}
+
+.stagger-1 { animation-delay: 0.05s; }
+.stagger-2 { animation-delay: 0.1s; }
+.stagger-3 { animation-delay: 0.15s; }
+.stagger-4 { animation-delay: 0.2s; }
+.stagger-5 { animation-delay: 0.25s; }

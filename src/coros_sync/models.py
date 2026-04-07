@@ -87,6 +87,14 @@ class Activity:
         )
 
 
+EXERCISE_TYPES: dict[int, str] = {
+    1: "热身",
+    2: "训练",
+    3: "放松",
+    4: "恢复",
+}
+
+
 @dataclass
 class Lap:
     lap_index: int
@@ -101,6 +109,7 @@ class Lap:
     avg_power: int | None
     ascent_m: float | None
     descent_m: float | None
+    exercise_type: int | None = None
 
     @classmethod
     def from_api(cls, data: dict, index: int, lap_type: str) -> Lap:
@@ -117,6 +126,7 @@ class Lap:
             avg_power=data.get("avgPower"),
             ascent_m=data.get("elevGain"),
             descent_m=data.get("totalDescent"),
+            exercise_type=data.get("exerciseType"),
         )
 
 
