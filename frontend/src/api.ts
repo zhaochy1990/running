@@ -1,0 +1,225 @@
+const BASE = '/api'
+
+async function fetchJSON<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE}${path}`)
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export interface Activity {
+  label_id: string
+  name: string | null
+  sport_type: number
+  sport_name: string
+  date: string
+  distance_m: number
+  distance_km: number
+  duration_s: number
+  duration_fmt: string
+  avg_pace_s_km: number | null
+  pace_fmt: string
+  avg_hr: number | null
+  max_hr: number | null
+  avg_cadence: number | null
+  calories_kcal: number | null
+  training_load: number | null
+  vo2max: number | null
+  train_type: string | null
+  ascent_m: number | null
+  aerobic_effect: number | null
+  anaerobic_effect: number | null
+}
+
+export interface Lap {
+  lap_index: number
+  lap_type: string
+  distance_m: number
+  distance_km: number
+  duration_s: number
+  duration_fmt: string
+  avg_pace: number | null
+  pace_fmt: string
+  adjusted_pace: number | null
+  avg_hr: number | null
+  max_hr: number | null
+  avg_cadence: number | null
+  avg_power: number | null
+  ascent_m: number | null
+  descent_m: number | null
+}
+
+export interface Zone {
+  zone_type: string
+  zone_index: number
+  range_min: number | null
+  range_max: number | null
+  range_unit: string
+  duration_s: number
+  percent: number
+}
+
+export interface TimeseriesPoint {
+  timestamp: number | null
+  distance: number | null
+  heart_rate: number | null
+  speed: number | null
+  adjusted_pace: number | null
+  cadence: number | null
+  altitude: number | null
+  power: number | null
+}
+
+export interface WeekSummary {
+  folder: string
+  date_from: string
+  date_to: string
+  has_plan: boolean
+  has_feedback: boolean
+  has_inbody: boolean
+  plan_title?: string
+  activity_count: number
+  total_km: number
+  total_duration_s: number
+  total_duration_fmt: string
+}
+
+export interface WeekDetail {
+  folder: string
+  date_from: string
+  date_to: string
+  plan?: string
+  feedback?: string
+  activities: Activity[]
+  total_km: number
+  total_duration_s: number
+  total_duration_fmt: string
+  activity_count: number
+}
+
+export function triggerSync() {
+  return fetch(`${BASE}/sync`, { method: 'POST' }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
+}
+
+export function getWeeks() {
+  return fetchJSON<{ weeks: WeekSummary[] }>('/weeks')
+}
+
+export function getWeek(folder: string) {
+  return fetchJSON<WeekDetail>(`/weeks/${folder}`)
+}
+
+export interface Segment extends Lap {
+  seg_name: string
+}
+
+export function getActivity(id: string) {
+  return fetchJSON<{ activity: Activity; laps: Lap[]; segments: Segment[]; zones: Zone[]; timeseries: TimeseriesPoint[] }>(
+    `/activities/${id}`
+  )
+}
+
+export function parseDate(dateStr: string): Date | null {
+  if (!dateStr) return null
+  // Handle ISO format: 2026-04-04T11:53:48.710000+00:00
+  if (dateStr.includes('T')) return new Date(dateStr)
+  // Handle YYYYMMDD format
+  if (dateStr.length === 8) {
+    return new Date(+dateStr.slice(0, 4), +dateStr.slice(4, 6) - 1, +dateStr.slice(6, 8))
+  }
+  // Handle YYYY-MM-DD
+  return new Date(dateStr)
+}
+
+export function formatDate(dateStr: string): string {
+  const d = parseDate(dateStr)
+  if (!d || isNaN(d.getTime())) return dateStr
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export function formatDateShort(dateStr: string): string {
+  const d = parseDate(dateStr)
+  if (!d || isNaN(d.getTime())) return dateStr
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
+export function formatWeekRange(dateFrom: string, dateTo: string): string {
+  const df = parseDate(dateFrom)
+  const dt = parseDate(dateTo)
+  if (!df || !dt) return `${dateFrom} — ${dateTo}`
+  return `${df.getMonth() + 1}/${df.getDate()} — ${dt.getMonth() + 1}/${dt.getDate()}`
+}
+
+const SPORT_CN: Record<string, string> = {
+  'Run': '跑步',
+  'Indoor Run': '室内跑',
+  'Trail Run': '越野跑',
+  'Track Run': '田径场跑',
+  'Treadmill': '跑步机',
+  'Strength Training': '力量训练',
+  'Strength': '力量训练',
+  'Walk': '步行',
+  'Hike': '徒步',
+  'Bike': '骑行',
+  'Swim (Pool)': '泳池游泳',
+  'Swim (Open Water)': '开放水域',
+}
+
+const TRAIN_TYPE_CN: Record<string, string> = {
+  'Base': '基础',
+  'Aerobic Endurance': '有氧耐力',
+  'Threshold': '乳酸阈',
+  'Interval': '间歇',
+  'VO2 Max': '最大摄氧',
+  'Anaerobic': '无氧',
+  'Sprint': '冲刺',
+  'Recovery': '恢复',
+}
+
+export function sportNameCN(name: string): string {
+  return SPORT_CN[name] || name
+}
+
+export function trainTypeCN(type: string | null): string {
+  if (!type) return ''
+  return TRAIN_TYPE_CN[type] || type
+}
+
+export function sportColor(sportName: string): string {
+  const colors: Record<string, string> = {
+    'Run': '#00e676',
+    'Indoor Run': '#00e5ff',
+    'Trail Run': '#ffab00',
+    'Track Run': '#b388ff',
+    'Strength Training': '#ff6d00',
+    'Strength': '#ff6d00',
+    'Walk': '#64dd17',
+    'Hike': '#64dd17',
+  }
+  return colors[sportName] || '#8888a0'
+}
+
+export function trainTypeColor(trainType: string | null): string {
+  if (!trainType) return '#555570'
+  const colors: Record<string, string> = {
+    'Base': '#64dd17',
+    'Aerobic Endurance': '#00e676',
+    'Threshold': '#ffab00',
+    'Interval': '#ff6d00',
+    'VO2 Max': '#ff1744',
+    'Anaerobic': '#ff5252',
+    'Sprint': '#ff1744',
+    'Recovery': '#00e5ff',
+  }
+  return colors[trainType] || '#8888a0'
+}
+
+const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+export function weekdayCN(dateStr: string): string {
+  const d = parseDate(dateStr)
+  if (!d || isNaN(d.getTime())) return ''
+  return WEEKDAY_CN[d.getDay()]
+}

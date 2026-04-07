@@ -52,6 +52,24 @@ def sync(full: bool, jobs: int) -> None:
 
 
 @cli.command()
+@click.option("--from", "date_from", required=True, help="Start date (YYYY-MM-DD or YYYYMMDD)")
+@click.option("--to", "date_to", required=True, help="End date (YYYY-MM-DD or YYYYMMDD)")
+@click.option("-j", "--jobs", default=4, show_default=True, help="Number of parallel fetch threads")
+def resync(date_from: str, date_to: str, jobs: int) -> None:
+    """Re-sync activities within a date range (re-fetches details from COROS)."""
+    from .sync import resync_date_range
+
+    creds = Credentials.load()
+    if not creds.is_logged_in:
+        console.print("[red]Not logged in. Run: coros-sync login[/red]")
+        raise SystemExit(1)
+
+    with CorosClient(creds) as client, Database() as db:
+        count = resync_date_range(client, db, date_from, date_to, jobs=jobs)
+        console.print(f"\n[green]Re-synced {count} activities ({date_from} to {date_to})[/green]")
+
+
+@cli.command()
 def status() -> None:
     """Show sync status and database summary."""
     with Database() as db:

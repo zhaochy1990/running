@@ -19,6 +19,10 @@ analysis = [
     "pandas>=2.0",
     "matplotlib>=3.8",
 ]
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+]
 dev = [
     "pytest>=8.0",
     "pytest-httpx>=0.30",
