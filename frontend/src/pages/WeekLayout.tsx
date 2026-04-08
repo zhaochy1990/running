@@ -132,6 +132,12 @@ export default function WeekLayout() {
 
         <div className="px-3 py-3 border-t border-border-subtle space-y-2">
           <button
+            onClick={() => navigate('/health')}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/10 transition-all"
+          >
+            身体指标
+          </button>
+          <button
             onClick={handleSync}
             disabled={syncing}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-accent-green/30 text-accent-green hover:bg-accent-green/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all"

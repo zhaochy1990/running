@@ -100,6 +100,22 @@ export function triggerSync() {
   return fetch(`${BASE}/sync`, { method: 'POST' }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
 }
 
+export interface HealthRecord {
+  date: string
+  ati: number | null
+  cti: number | null
+  rhr: number | null
+  distance_m: number | null
+  duration_s: number | null
+  training_load_ratio: number | null
+  training_load_state: string | null
+  fatigue: number | null
+}
+
+export function getHealth(days = 30) {
+  return fetchJSON<{ health: HealthRecord[] }>(`/health?days=${days}`)
+}
+
 export function getWeeks() {
   return fetchJSON<{ weeks: WeekSummary[] }>('/weeks')
 }
