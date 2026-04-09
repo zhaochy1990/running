@@ -28,6 +28,10 @@ export interface Activity {
   ascent_m: number | null
   aerobic_effect: number | null
   anaerobic_effect: number | null
+  temperature: number | null
+  humidity: number | null
+  feels_like: number | null
+  wind_speed: number | null
 }
 
 export interface Lap {

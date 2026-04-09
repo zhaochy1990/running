@@ -1,4 +1,4 @@
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import type { TimeseriesPoint } from '../api'
 
 function formatTime(seconds: number): string {
@@ -20,6 +20,7 @@ export default function HRChart({ data }: { data: TimeseriesPoint[] }) {
     elapsed: Math.round((p.timestamp! - startTs) / 100),
     hr: p.heart_rate,
   }))
+  const avgHR = Math.round(withTs.reduce((sum, p) => sum + p.heart_rate!, 0) / withTs.length)
 
   return (
     <ResponsiveContainer width="100%" height={200}>
@@ -56,6 +57,7 @@ export default function HRChart({ data }: { data: TimeseriesPoint[] }) {
           formatter={(value) => [`${value} bpm`, '心率']}
           labelFormatter={(label) => formatTime(label as number)}
         />
+        <ReferenceLine y={avgHR} stroke="#ff5252" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${avgHR}`, position: 'right', fill: '#ff5252', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
         <Area
           type="monotone"
           dataKey="hr"

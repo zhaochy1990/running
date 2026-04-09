@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS activities (
     vo2max          REAL,
     performance     REAL,
     train_type      TEXT,
+    temperature     REAL,
+    humidity        REAL,
+    feels_like      REAL,
+    wind_speed      REAL,
     device          TEXT,
     synced_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -156,6 +160,15 @@ class Database:
         cols = {r[1] for r in self._conn.execute("PRAGMA table_info(laps)").fetchall()}
         if "exercise_type" not in cols:
             self._conn.execute("ALTER TABLE laps ADD COLUMN exercise_type INTEGER")
+        act_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(activities)").fetchall()}
+        if "temperature" not in act_cols:
+            self._conn.execute("ALTER TABLE activities ADD COLUMN temperature REAL")
+        if "humidity" not in act_cols:
+            self._conn.execute("ALTER TABLE activities ADD COLUMN humidity REAL")
+        if "feels_like" not in act_cols:
+            self._conn.execute("ALTER TABLE activities ADD COLUMN feels_like REAL")
+        if "wind_speed" not in act_cols:
+            self._conn.execute("ALTER TABLE activities ADD COLUMN wind_speed REAL")
 
     def close(self) -> None:
         self._conn.close()
@@ -175,15 +188,17 @@ class Database:
              avg_pace_s_km, adjusted_pace, best_km_pace, max_pace,
              avg_hr, max_hr, avg_cadence, max_cadence, avg_power, max_power,
              avg_step_len_cm, ascent_m, descent_m, calories_kcal,
-             aerobic_effect, anaerobic_effect, training_load, vo2max, performance, train_type)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             aerobic_effect, anaerobic_effect, training_load, vo2max, performance, train_type,
+             temperature, humidity, feels_like, wind_speed)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
              a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
              a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
              a.avg_cadence, a.max_cadence, a.avg_power, a.max_power,
              a.avg_step_len_cm, a.ascent_m, a.descent_m, a.calories_kcal,
              a.aerobic_effect, a.anaerobic_effect, a.training_load,
-             a.vo2max, a.performance, a.train_type),
+             a.vo2max, a.performance, a.train_type,
+             a.temperature, a.humidity, a.feels_like, a.wind_speed),
         )
         # Upsert child records
         for lap in a.laps:

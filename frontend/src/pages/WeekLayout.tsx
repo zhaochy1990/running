@@ -317,6 +317,9 @@ function ActivityList({ activities }: { activities: Activity[] }) {
                       <Metric label="配速" value={a.pace_fmt} accent />
                       <Metric label="心率" value={a.avg_hr ? `${a.avg_hr}` : '—'} />
                       <Metric label="步频" value={a.avg_cadence ? `${a.avg_cadence}` : '—'} />
+                      {a.temperature != null && (
+                        <Metric label="气温" value={`${a.temperature}°`} />
+                      )}
                     </div>
 
                     <div className="text-text-muted group-hover:text-accent-green transition-colors text-sm">

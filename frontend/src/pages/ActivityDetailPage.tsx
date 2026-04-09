@@ -106,6 +106,33 @@ export default function ActivityDetailPage() {
           <SmallMetric label="有氧效果" value={activity.aerobic_effect ? `${activity.aerobic_effect.toFixed(1)}` : '—'} />
           <SmallMetric label="无氧效果" value={activity.anaerobic_effect ? `${activity.anaerobic_effect.toFixed(1)}` : '—'} />
         </div>
+
+        {/* Weather */}
+        {activity.temperature != null && (
+          <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border-subtle">
+            <div className="flex items-center gap-1.5 text-sm font-mono text-text-secondary">
+              <span className="text-[10px] text-text-muted uppercase tracking-wider mr-1">天气</span>
+              <span style={{ color: activity.temperature >= 25 ? '#ff5252' : activity.temperature >= 15 ? '#ffab00' : '#00e5ff' }}>
+                {activity.temperature}°C
+              </span>
+              {activity.feels_like != null && activity.feels_like !== activity.temperature && (
+                <span className="text-text-muted text-xs">(体感 {activity.feels_like}°C)</span>
+              )}
+            </div>
+            {activity.humidity != null && (
+              <div className="flex items-center gap-1 text-sm font-mono text-text-secondary">
+                <span className="text-[10px] text-text-muted uppercase tracking-wider mr-1">湿度</span>
+                {activity.humidity}%
+              </div>
+            )}
+            {activity.wind_speed != null && activity.wind_speed > 0 && (
+              <div className="flex items-center gap-1 text-sm font-mono text-text-secondary">
+                <span className="text-[10px] text-text-muted uppercase tracking-wider mr-1">风速</span>
+                {activity.wind_speed} km/h
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Charts Row */}

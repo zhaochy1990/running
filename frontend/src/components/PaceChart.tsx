@@ -1,4 +1,4 @@
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import type { TimeseriesPoint } from '../api'
 
 function formatPace(sPerKm: number): string {
@@ -17,7 +17,10 @@ function formatTime(seconds: number): string {
 }
 
 export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
-  const withTs = data.filter((p) => p.adjusted_pace && p.adjusted_pace > 0 && p.adjusted_pace < 1200 && p.timestamp != null)
+  const withTs = data.filter((p) => {
+    const pace = p.adjusted_pace ?? p.speed
+    return pace && pace > 0 && pace < 1200 && p.timestamp != null
+  })
   if (withTs.length === 0) {
     return <div className="text-text-muted text-sm text-center py-8">无配速数据</div>
   }
@@ -25,18 +28,13 @@ export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
   const startTs = withTs[0].timestamp!
   const chartData = withTs.map((p) => ({
     elapsed: Math.round((p.timestamp! - startTs) / 100),
-    pace: p.adjusted_pace,
+    pace: p.adjusted_pace ?? p.speed,
   }))
+  const avgPace = Math.round(withTs.reduce((sum, p) => sum + (p.adjusted_pace ?? p.speed)!, 0) / withTs.length)
 
   return (
     <ResponsiveContainer width="100%" height={200}>
       <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-        <defs>
-          <linearGradient id="paceGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#00e676" stopOpacity={0.4} />
-            <stop offset="100%" stopColor="#00e676" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
         <XAxis
           dataKey="elapsed"
           tick={{ fontSize: 10, fill: '#555570', fontFamily: 'JetBrains Mono' }}
@@ -65,12 +63,13 @@ export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
           formatter={(value) => [formatPace(value as number) + '/km', '配速']}
           labelFormatter={(label) => formatTime(label as number)}
         />
+        <ReferenceLine y={avgPace} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${formatPace(avgPace)}`, position: 'right', fill: '#00e676', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
         <Area
           type="monotone"
           dataKey="pace"
           stroke="#00e676"
           strokeWidth={1.5}
-          fill="url(#paceGradient)"
+          fill="none"
           dot={false}
           activeDot={{ r: 3, fill: '#00e676', stroke: '#1e1e2e', strokeWidth: 2 }}
         />

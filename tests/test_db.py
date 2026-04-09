@@ -13,6 +13,7 @@ def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=100
         ascent_m=100, descent_m=90, calories_kcal=500,
         aerobic_effect=3.5, anaerobic_effect=1.2,
         training_load=85, vo2max=52.0, performance=None, train_type="Aerobic Endurance",
+        temperature=18.0, humidity=45.0, feels_like=16.0, wind_speed=12.0,
         laps=[
             Lap(1, "autoKm", 1000, 300, 300, None, 145, 155, 180, None, 10, 8),
         ],

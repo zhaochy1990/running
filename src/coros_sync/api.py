@@ -72,7 +72,8 @@ def list_activities(
         f"""SELECT label_id, name, sport_type, sport_name, date,
             distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
             avg_cadence, calories_kcal, training_load, vo2max, train_type,
-            ascent_m, aerobic_effect, anaerobic_effect
+            ascent_m, aerobic_effect, anaerobic_effect,
+            temperature, humidity, feels_like, wind_speed
         FROM activities {where}
         ORDER BY date DESC, label_id DESC
         LIMIT ? OFFSET ?""",
@@ -264,7 +265,8 @@ def get_week(folder: str):
         """SELECT label_id, name, sport_type, sport_name, date,
             distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
             avg_cadence, calories_kcal, training_load, vo2max, train_type,
-            ascent_m, aerobic_effect, anaerobic_effect
+            ascent_m, aerobic_effect, anaerobic_effect,
+            temperature, humidity, feels_like, wind_speed
         FROM activities WHERE date >= ? AND date < ?
         ORDER BY date ASC, label_id ASC""",
         (date_from, date_to + "T99"),
@@ -295,22 +297,21 @@ def get_week(folder: str):
 @app.post("/api/sync")
 def trigger_sync():
     """Trigger a data sync from COROS."""
-    import subprocess
-    import sys
+    from .auth import Credentials
+    from .client import CorosClient
+    from .sync import run_sync
 
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "coros_sync", "sync"],
-            capture_output=True, timeout=120,
-            env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"},
-        )
+        creds = Credentials.load()
+        if not creds.is_logged_in:
+            return {"success": False, "error": "未登录，请先运行: coros-sync login"}
+
+        with CorosClient(creds) as client, Database() as db:
+            activities, health = run_sync(client, db, full=False, jobs=4)
         return {
-            "success": result.returncode == 0,
-            "output": result.stdout.decode("utf-8", errors="replace"),
-            "error": result.stderr.decode("utf-8", errors="replace"),
+            "success": True,
+            "output": f"同步完成: {activities} 条活动, {health} 条健康记录",
         }
-    except subprocess.TimeoutExpired:
-        return {"success": False, "error": "同步超时（120秒）"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

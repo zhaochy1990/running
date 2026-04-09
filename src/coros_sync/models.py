@@ -210,6 +210,10 @@ class ActivityDetail:
     vo2max: float | None
     performance: float | None
     train_type: str | None
+    temperature: float | None
+    humidity: float | None
+    feels_like: float | None
+    wind_speed: float | None
     laps: list[Lap] = field(default_factory=list)
     zones: list[Zone] = field(default_factory=list)
     timeseries: list[TimeseriesPoint] = field(default_factory=list)
@@ -218,6 +222,7 @@ class ActivityDetail:
     def from_api(cls, data: dict, label_id: str) -> ActivityDetail:
         detail = data.get("data", {})
         s = detail.get("summary", {})
+        w = detail.get("weather", {})
         st = s.get("sportType", 0)
 
         # Parse laps
@@ -277,6 +282,10 @@ class ActivityDetail:
             vo2max=s.get("currentVo2Max"),
             performance=s.get("performance"),
             train_type=train_type_name(s["trainType"]) if s.get("trainType") else None,
+            temperature=round(w["temperature"] / 10, 1) if w.get("temperature") else None,
+            humidity=round(w["humidity"] / 10, 1) if w.get("humidity") else None,
+            feels_like=round(w["bodyFeelTemp"] / 10, 1) if w.get("bodyFeelTemp") else None,
+            wind_speed=round(w["windSpeed"] / 10, 1) if w.get("windSpeed") else None,
             laps=laps,
             zones=zones,
             timeseries=timeseries,
