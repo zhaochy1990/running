@@ -138,15 +138,21 @@ One easy run per week may be replaced with 45-60 min elliptical, cycling, or swi
 
 | Day | Training |
 |-----|----------|
-| Mon | Rest |
+| Mon | Rest + 力量短板评估（见 `logs/4-20_4-26/strength-assessment.md`） |
 | Tue | Easy 6 km @ HR < 135 |
 | Wed | Strength B (core + mobility) |
 | Thu | Easy 8 km @ HR < 140 |
 | Fri | Strength A (lower body, bodyweight only) |
-| Sat | Easy 15 km @ HR < 145 |
+| Sat | **10 km 基线测试**（warmup 2 km + 10 km TT 全力 + cooldown 2 km） |
 | Sun | Easy 5 km or rest |
 
-**Exit criteria**: Achilles pain ≤ 1/10 morning after Saturday run. If > 1/10, repeat Week 0.
+### Week 0 基线测试：10 km TT（4/25 周六）
+
+作为 Phase 1 结束时 10 km TT 的前测对照。不追求最好成绩，测的是当前起点。
+
+记录：完赛时间、平均配速、平均心率、最高心率、VO2max。
+
+**Exit criteria**: Achilles pain ≤ 1/10 morning after Saturday TT. If > 1/10, repeat Week 0 as easy week.
 
 ---
 
@@ -156,14 +162,18 @@ One easy run per week may be replaced with 45-60 min elliptical, cycling, or swi
 
 | Week | Dates | Volume | Long Run | Quality Session | Type |
 |------|-------|--------|----------|-----------------|------|
-| 1 | Apr 27 — May 3 | 60 km | 20 km easy | 20 min tempo @ 4:05/km | Build |
-| 2 | May 4-10 | 65 km | 22 km easy | 20 min tempo @ 4:05/km | Build |
-| 3 | May 11-17 | 70 km | 25 km easy | 25 min tempo @ 4:00/km | Build |
-| **4** | **May 18-24** | **60 km** | **18 km easy** | **15 min tempo @ 4:05/km** | **Deload** |
-| 5 | May 25-31 | 75 km | 28 km easy | 25 min tempo @ 3:58/km | Build |
-| 6 | Jun 1-7 | 78 km | 28 km easy | 28 min tempo @ 3:55/km | Build |
-| 7 | Jun 8-14 | 82 km | 30 km easy | 30 min tempo @ 3:55/km | Build |
+| 1 | Apr 27 — May 3 | 60 km | 20 km easy | 8 km tempo @ 4:05 | Build |
+| 2 | May 4-10 | 65 km | 22 km easy | 8 km tempo @ 4:05 | Build |
+| 3 | May 11-17 | 70 km | 25 km easy | 10 km tempo @ 4:00 | Build |
+| **4** | **May 18-24** | **60 km** | **18 km easy** | **6 km tempo @ 4:05** | **Deload** |
+| 5 | May 25-31 | 75 km | 28 km easy | 6 km tempo @ 3:55 + 3x1000m @ 3:52 (r: 2 min jog) | Build |
+| 6 | Jun 1-7 | 78 km | 28 km easy | 6 km tempo @ 3:55 + 4x1000m @ 3:50 (r: 2 min jog) | Build |
+| 7 | Jun 8-14 | 82 km | 30 km easy | 5x1000m @ 3:48-3:52 (r: 2 min jog) | Build |
 | **8** | **Jun 15-21** | **72 km** | **20 km easy** | **10 km time trial** | **Checkpoint** |
+
+**强度递进逻辑**：Week 1-4 纯tempo建立速度耐力基础 → Week 5-6 混合课引入测试目标配速(3:50-3:52) → Week 7 纯间歇模拟测试强度(3:48-3:52) → Week 8 测试。
+
+**Strides（大步跑）**：每周2次轻松跑后加 4-6x100m @ 3:30-3:40/km 配速，组间走回恢复。全Phase 1执行，维持神经肌肉速度感，不增加疲劳。
 
 **Typical week structure**:
 - Mon: Rest
@@ -186,7 +196,9 @@ One easy run per week may be replaced with 45-60 min elliptical, cycling, or swi
 
 ### Phase 1 Checkpoint: 10 km Time Trial (Week 8)
 
-After 2-3 easy days. Early morning, flat course.
+与 Week 0 基线测试对比，量化8周基础期的进步（配速提升、同配速心率下降、VO2max变化）。
+
+After 2-3 easy days. Early morning, flat course. 尽量选择与基线测试相同的路线和时间段。
 
 | Result | Interpretation | Action |
 |--------|---------------|--------|
