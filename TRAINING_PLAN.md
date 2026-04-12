@@ -131,20 +131,19 @@ One easy run per week may be replaced with 45-60 min elliptical, cycling, or swi
 
 **Goal**: Ease back into running after 3 marathons in 3 months. Test Achilles response.
 
-- **Volume**: ~39 km, 100% Z1-Z2
-- **Longest run**: 15 km
+- **Volume**: ~50 km, TT以外全部 Z1-Z2
 - **Strength**: 2x (bodyweight, light)
 - **Pace display**: OFF. Run by HR only.
 
 | Day | Training |
 |-----|----------|
 | Mon | Rest + 力量短板评估（见 `logs/4-20_4-26/strength-assessment.md`） |
-| Tue | Easy 6 km @ HR < 135 |
-| Wed | Strength B (core + mobility) |
-| Thu | Easy 8 km @ HR < 140 |
+| Tue | Easy 12 km @ HR < 140 |
+| Wed | (Optional) Easy 8 km @ HR < 140 + Strength B (core + mobility) |
+| Thu | Easy 12 km @ HR < 145 |
 | Fri | Strength A (lower body, bodyweight only) |
 | Sat | **10 km 基线测试**（warmup 2 km + 10 km TT 全力 + cooldown 2 km） |
-| Sun | Easy 5 km or rest |
+| Sun | Easy 8 km @ HR < 140 |
 
 ### Week 0 基线测试：10 km TT（4/25 周六）
 
