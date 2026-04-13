@@ -4,7 +4,8 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
-.claude/
+.claude/*
+!.claude/commands/
 .omc/
 *.un~
 *~
