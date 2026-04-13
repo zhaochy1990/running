@@ -2,6 +2,11 @@
 
 Generate a detailed running activity report by querying the coros-sync SQLite database.
 
+## User Profile
+
+Use the profile specified by the user argument: `$ARGUMENTS` (e.g., `zhaochaoyi`, `dehua`).
+If no argument is given, default to `zhaochaoyi`.
+
 ## Input
 
 The user will specify one of:
@@ -16,7 +21,7 @@ Use `python -c` with `PYTHONIOENCODING=utf-8` to query. Always use the internal 
 
 ```python
 from coros_sync.db import Database
-db = Database()
+db = Database(user='{profile}')
 db._conn.execute(SQL).fetchall()
 ```
 

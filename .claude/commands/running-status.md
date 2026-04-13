@@ -2,6 +2,11 @@
 
 Sync the latest data from COROS, then analyze training load, recovery, and fitness trends to determine if the athlete is on track with their training plan.
 
+## User Profile
+
+Use the profile specified by the user argument: `$ARGUMENTS` (e.g., `zhaochaoyi`, `dehua`).
+If no argument is given, default to `zhaochaoyi`.
+
 **Important: The entire report MUST be written in Chinese (中文). All section headers, analysis text, recommendations, and verdicts should be in Chinese.**
 
 ## Step 1: Sync Latest Data
@@ -9,7 +14,7 @@ Sync the latest data from COROS, then analyze training load, recovery, and fitne
 Run sync first to ensure we have the most recent data:
 
 ```bash
-PYTHONIOENCODING=utf-8 python -m coros_sync sync
+PYTHONIOENCODING=utf-8 python -m coros_sync -P {profile} sync
 ```
 
 If sync fails (e.g., auth expired), note it and proceed with whatever data is already in the database — mention the last sync time so the user knows how stale the data is.
@@ -20,7 +25,7 @@ Use `python -c` with `PYTHONIOENCODING=utf-8` to query. Always use the internal 
 
 ```python
 from coros_sync.db import Database
-db = Database()
+db = Database(user='{profile}')
 db._conn.execute(SQL).fetchall()
 ```
 
