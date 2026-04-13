@@ -32,7 +32,7 @@ SELECT label_id, name, sport_name, date, distance_m, duration_s,
        avg_pace_s_km, avg_hr, max_hr, avg_cadence, calories_kcal,
        training_load, vo2max, ascent_m, descent_m
 FROM activities
-WHERE sport_name = 'Run'
+WHERE sport_name IN ('Run', 'Track Run', 'Indoor Run')
 ORDER BY date DESC LIMIT 5
 ```
 

@@ -79,7 +79,7 @@ SELECT
     ROUND(AVG(avg_pace_s_km), 0) AS avg_pace,
     ROUND(AVG(avg_hr), 0) AS avg_hr
 FROM activities
-WHERE date >= date('now', '-42 days') AND sport_name = 'Run'
+WHERE date >= date('now', '-42 days') AND sport_name IN ('Run', 'Track Run', 'Indoor Run')
 GROUP BY strftime('%Y-W%W', datetime(date, '+8 hours'))
 ORDER BY week DESC
 ```
