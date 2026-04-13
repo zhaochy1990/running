@@ -1,404 +1,404 @@
-# Marathon Training Plan — Fall 2026 (Revised Apr 12)
+# 马拉松训练计划 — 2026年秋季（4月12日修订）
 
-## Athlete Profile
+## 运动员档案
 
-- **Runner**: Zhao Chaoyi
-- **Born**: 1990-07-22 (Age 35)
-- **Height**: 182 cm | **Weight**: 72 kg (target: 68 kg by race day)
-- **Watch**: COROS PACE 4
-- **Current Fitness (Apr 2026)**: VO2max 58, LT Pace 3:52/km, LT HR 167 bpm
-- **RHR**: 47 bpm (baseline)
-- **Running Level**: 92.6/100
-- **Body Composition (Mar 31)**: 72 kg, 23.7% BF, SMM 30.9 kg
-- **Occupation**: Software engineer (sedentary) — prioritize mobility work and standing breaks
-- **Training schedule**: Weekday runs evening, weekend long runs early morning. Summer: all quality sessions must be early morning (5:00-6:30 AM).
+- **跑者**：赵超逸
+- **出生**：1990-07-22（35岁）
+- **身高**：182 cm | **体重**：72 kg（目标：赛前达到68 kg）
+- **手表**：COROS PACE 4
+- **当前体能（2026年4月）**：VO2max 58，乳酸阈配速 3:52/km，乳酸阈心率 167 bpm
+- **静息心率**：47 bpm（基线）
+- **跑力等级**：92.6/100
+- **体成分（3月31日）**：72 kg，体脂率 23.7%，骨骼肌质量 30.9 kg
+- **职业**：软件工程师（久坐）— 需重视灵活性训练和站立休息
+- **训练时间安排**：工作日晚间跑步，周末长距离早晨进行。夏季：所有高质量训练必须安排在清晨（5:00-6:30）。
 
-### Injury History
+### 伤病史
 
-- **Right Achilles insertional tendinopathy** (ongoing, managed)
-  - Pain-free at low-moderate intensity; flares after 30+ km at marathon pace
-  - Post-3-marathon status: extra monitoring required during Phase 1 volume ramp
-- **Right knee IT band friction syndrome** (resolved)
-  - Maintain hip/glute strengthening and foam rolling as prevention
+- **右跟腱止点肌腱病**（持续中，可控）
+  - 低中强度时无痛；马拉松配速跑超过30 km后可能发作
+  - 连续完成3场马拉松后状态：Phase 1 增量阶段需额外监控
+- **右膝髂胫束摩擦综合征**（已恢复）
+  - 保持髋部/臀部力量训练和泡沫轴放松作为预防
 
-## Personal Records
+## 个人最佳成绩
 
-| Distance | Time | Pace | Date |
-|----------|------|------|------|
-| Half Marathon | 1:27:42 | 4:08/km | 2024-11-02 |
-| Marathon | 2:59:22 | 4:12/km | 2025-03-29 |
+| 距离 | 成绩 | 配速 | 日期 |
+|------|------|------|------|
+| 半程马拉松 | 1:27:42 | 4:08/km | 2024-11-02 |
+| 全程马拉松 | 2:59:22 | 4:12/km | 2025-03-29 |
 
-## Season Goals
+## 赛季目标
 
-| Goal | Target Time | Target Pace | Condition |
-|------|-------------|-------------|-----------|
-| A Goal | 2:50:00 | 4:02/km | HM TT ≤ 1:22, VO2max ≥ 61 |
-| **B Goal** | **2:53:00** | **4:06/km** | **HM TT 1:22-1:24, VO2max ≥ 60** |
-| C Goal | 2:55-2:58 | 4:08-4:12/km | HM TT 1:24-1:26 |
-| Floor | Sub-3:00 | 4:15/km | HM TT > 1:26 |
+| 目标 | 目标成绩 | 目标配速 | 达成条件 |
+|------|----------|----------|----------|
+| A 目标 | 2:50:00 | 4:02/km | 半马测试 ≤ 1:22，VO2max ≥ 61 |
+| **B 目标** | **2:53:00** | **4:06/km** | **半马测试 1:22-1:24，VO2max ≥ 60** |
+| C 目标 | 2:55-2:58 | 4:08-4:12/km | 半马测试 1:24-1:26 |
+| 保底 | 破3:00 | 4:15/km | 半马测试 > 1:26 |
 
-Final marathon target is determined by the Phase 2 half marathon time trial. See Decision Gates.
-
----
-
-## Winter 2025-26 Lessons
-
-Three consecutive marathon blow-ups (Jan 19 重庆, Mar 29 盐城, Apr 12 淮安) revealed systematic problems that this plan specifically addresses:
-
-| Problem | Evidence | This Plan's Fix |
-|---------|----------|-----------------|
-| VO2max plateau at 57-58 | Stuck 4 months; PB was set at VO2max 60 | Phase 2 dedicated VO2max intervals, explicit milestones |
-| Easy runs too fast | 4/4: recovery run became 4:10 HR168 | Pace display OFF in Phase 1; HR alarm at 145 |
-| Racing too often | 3 marathons in 3 months, no adaptation time | **No races until target marathon** |
-| Quad endurance deficit | All 3 blow-ups: legs failed, not lungs | 2x/week strength, eccentric quad focus |
-| No proper deload weeks | Load ratio chronically >1.0 (Very High) | 3:1 loading cycle throughout |
+最终马拉松目标由 Phase 2 半马计时测试结果决定。详见决策关卡。
 
 ---
 
-## Training Principles
+## 2025-26冬季经验教训
 
-### No-Race Policy
+三场连续马拉松崩盘（1/19 重庆、3/29 盐城、4/12 淮安）暴露了系统性问题，本计划针对性解决：
 
-**No marathon or half marathon races before the target race.** All checkpoints are self-administered time trials. Allowed: parkrun (5 km, easy effort), training group sessions at prescribed effort.
-
-### Pace Discipline Protocol
-
-Easy runs must stay under HR 145:
-- **Phase 1 Weeks 0-4**: Watch displays HR and time only. **Pace display OFF.**
-- **HR alert**: Set COROS alarm at HR 145. Beep = slow down immediately.
-- **Weekly audit**: If 2+ easy runs in a week have avg HR > 148, replace one run next week with cross-training.
-
-### Heat Management Protocol (Jun — Sep)
-
-Eastern China summer: 30-38°C, humidity 70-85%. Quality sessions and long runs安排在早晚凉爽时段。
-
-**Pace adjustments**:
-
-| Temperature | Adjustment |
-|-------------|------------|
-| < 25°C | Target pace as written |
-| 25-30°C | +10-15 s/km, or switch to HR targets |
-| 30-35°C | **Run by HR only**, ignore pace |
-| > 35°C | Cancel quality session — easy run or cross-train indoors |
-
-**HR targets for quality sessions in heat**:
-
-| Session Type | HR Target | Typical pace at 30°C+ |
-|-------------|-----------|----------------------|
-| VO2max intervals | 170-178 | ~3:45-3:55/km |
-| Tempo | 158-165 | ~4:00-4:15/km |
-| MP long run segments | 150-158 | ~4:15-4:25/km |
-
-The aerobic stimulus depends on HR, not pace. Running 4:10/km at HR 165 in 33°C provides the same benefit as 3:52/km at HR 165 in 15°C.
-
-### Cross-Training
-
-One easy run per week may be replaced with 45-60 min elliptical, cycling, or swimming:
-- On days > 35°C when outdoor running is impractical
-- When Achilles shows any morning-after tenderness (> 1/10)
-- During deload weeks to reduce impact while maintaining aerobic volume
+| 问题 | 证据 | 本计划的对策 |
+|------|------|-------------|
+| VO2max 停滞在 57-58 | 卡了4个月；PB 是在 VO2max 60 时创造的 | Phase 2 专项 VO2max 间歇训练，明确里程碑 |
+| 轻松跑跑太快 | 4/4：恢复跑变成 4:10 心率168 | Phase 1 关闭配速显示；心率报警设在145 |
+| 比赛太频繁 | 3个月内跑了3场马拉松，没有适应时间 | **目标赛事前不参加比赛** |
+| 股四头肌耐力不足 | 3场崩盘都是腿先垮，不是心肺 | 每周2次力量训练，偏心离心股四头肌重点 |
+| 没有适当减量周 | 训练负荷比长期 >1.0（非常高） | 全程采用 3:1 负荷周期 |
 
 ---
 
-## Training Zones
+## 训练原则
 
-| Zone | Purpose | HR Range | Pace Range (cool weather) |
-|------|---------|----------|--------------------------|
-| Z1 | Recovery | < 130 | > 6:00/km |
-| Z2 | Easy / Aerobic | 130-145 | 5:20-5:40/km |
-| Z3 | Moderate | 145-158 | 4:40-5:10/km |
-| Z4 | Threshold | 158-167 | 3:50-4:20/km |
+### 禁赛政策
+
+**目标赛事前不参加马拉松或半马比赛。** 所有检查点均为自主计时测试。允许：parkrun（5公里，轻松配速）、训练团队按规定强度训练。
+
+### 配速纪律协议
+
+轻松跑必须保持心率低于145：
+- **Phase 1 第0-4周**：手表仅显示心率和时间。**关闭配速显示。**
+- **心率报警**：COROS 设置 145 心率报警。响铃 = 立即减速。
+- **每周审查**：如果一周内有2次以上轻松跑平均心率 > 148，下周替换一次跑步为交叉训练。
+
+### 高温应对方案（6月 — 9月）
+
+华东地区夏季：30-38°C，湿度 70-85%。高质量训练和长距离安排在早晚凉爽时段。
+
+**配速调整**：
+
+| 温度 | 调整方案 |
+|------|----------|
+| < 25°C | 按计划配速执行 |
+| 25-30°C | +10-15 s/km，或改为心率目标 |
+| 30-35°C | **纯心率跑**，忽略配速 |
+| > 35°C | 取消高质量训练 — 轻松跑或室内交叉训练 |
+
+**高温下高质量训练的心率目标**：
+
+| 训练类型 | 心率目标 | 30°C以上典型配速 |
+|----------|----------|-----------------|
+| VO2max 间歇 | 170-178 | ~3:45-3:55/km |
+| 节奏跑 | 158-165 | ~4:00-4:15/km |
+| 马拉松配速长距离段 | 150-158 | ~4:15-4:25/km |
+
+有氧刺激取决于心率，而非配速。33°C 下以心率165跑 4:10/km，与15°C 下以心率165跑 3:52/km 提供相同的训练效益。
+
+### 交叉训练
+
+每周可用45-60分钟椭圆机、骑车或游泳替代一次轻松跑：
+- 气温超过35°C、户外跑步不现实时
+- 跟腱晨起有任何压痛感（> 1/10）时
+- 减量周期间，减少冲击同时保持有氧量
+
+---
+
+## 训练区间
+
+| 区间 | 用途 | 心率范围 | 配速范围（凉爽天气） |
+|------|------|----------|---------------------|
+| Z1 | 恢复 | < 130 | > 6:00/km |
+| Z2 | 轻松/有氧 | 130-145 | 5:20-5:40/km |
+| Z3 | 中等 | 145-158 | 4:40-5:10/km |
+| Z4 | 阈值 | 158-167 | 3:50-4:20/km |
 | Z5 | VO2max | 167-180 | 3:30-3:45/km |
 
-**Target distribution**: 80% Z1-Z2 / 20% Z4-Z5. Minimize Z3 "junk miles."
+**目标分布**：80% Z1-Z2 / 20% Z4-Z5。尽量减少 Z3 "垃圾跑量"。
 
 ---
 
-## Timeline Overview
+## 时间线总览
 
-| Phase | Dates | Weeks | Peak Volume | Key Checkpoint |
-|-------|-------|-------|-------------|----------------|
-| Week 0 | Apr 20-26 | 1 | 39 km | Achilles clear? |
-| Phase 1: Base | Apr 27 — Jun 21 | 8 | 82 km | 10 km TT |
-| Phase 2: Specific | Jun 22 — Aug 16 | 8 | 90 km | HM TT → set marathon target |
-| Phase 3: Marathon | Aug 17 — Oct 25 | 10 | 95 km | 30 km @ MP |
-| Phase 4: Taper | Oct 26 — Nov 15 | 3 | 65 km | — |
-| **Race Window** | **Nov 15-16** | — | — | **Target marathon** |
+| 阶段 | 日期 | 周数 | 峰值跑量 | 关键检查点 |
+|------|------|------|----------|-----------|
+| 第0周 | 4/20-26 | 1 | 39 km | 跟腱状况是否正常？ |
+| Phase 1：基础期 | 4/27 — 6/21 | 8 | 82 km | 10 km 计时测试 |
+| Phase 2：专项期 | 6/22 — 8/16 | 8 | 90 km | 半马计时测试 → 确定马拉松目标 |
+| Phase 3：马拉松期 | 8/17 — 10/25 | 10 | 95 km | 30 km @ 马拉松配速 |
+| Phase 4：减量期 | 10/26 — 11/15 | 3 | 65 km | — |
+| **比赛窗口** | **11/15-16** | — | — | **目标马拉松** |
 
 ---
 
-## Week 0: Recovery Transition (Apr 20 — Apr 26)
+## 第0周：恢复过渡（4/20 — 4/26）
 
-**Goal**: Ease back into running after 3 marathons in 3 months. Test Achilles response.
+**目标**：连续3个月跑了3场马拉松后，逐步恢复跑步。测试跟腱反应。
 
-- **Volume**: ~50 km, TT以外全部 Z1-Z2
-- **Strength**: 2x (bodyweight, light)
-- **Pace display**: OFF. Run by HR only.
+- **跑量**：~50 km，计时测试以外全部 Z1-Z2
+- **力量**：2次（自重，轻量）
+- **配速显示**：关闭。纯心率跑。
 
-| Day | Training |
-|-----|----------|
-| Mon | Rest + 力量短板评估（见 `logs/4-20_4-26/strength-assessment.md`） |
-| Tue | Easy 12 km @ HR < 140 |
-| Wed | (Optional) Easy 8 km @ HR < 140 + Strength B (core + mobility) |
-| Thu | Easy 12 km @ HR < 145 |
-| Fri | Strength A (lower body, bodyweight only) |
-| Sat | **10 km 基线测试**（warmup 2 km + 10 km TT 全力 + cooldown 2 km） |
-| Sun | Easy 8 km @ HR < 140 |
+| 日期 | 训练 |
+|------|------|
+| 周一 | 休息 + 力量短板评估（见 `logs/4-20_4-26/strength-assessment.md`） |
+| 周二 | 轻松跑 12 km @ 心率 < 140 |
+| 周三 | （可选）轻松跑 8 km @ 心率 < 140 + 力量 B（核心 + 灵活性） |
+| 周四 | 轻松跑 12 km @ 心率 < 145 |
+| 周五 | 力量 A（下肢，纯自重） |
+| 周六 | **10 km 基线测试**（热身 2 km + 10 km 全力计时 + 放松 2 km） |
+| 周日 | 轻松跑 8 km @ 心率 < 140 |
 
-### Week 0 基线测试：10 km TT（4/25 周六）
+### 第0周基线测试：10 km 计时测试（4/25 周六）
 
-作为 Phase 1 结束时 10 km TT 的前测对照。不追求最好成绩，测的是当前起点。
+作为 Phase 1 结束时 10 km 计时测试的前测对照。不追求最好成绩，测的是当前起点。
 
 记录：完赛时间、平均配速、平均心率、最高心率、VO2max。
 
-**Exit criteria**: Achilles pain ≤ 1/10 morning after Saturday TT. If > 1/10, repeat Week 0 as easy week.
+**退出标准**：周六计时测试后晨起跟腱疼痛 ≤ 1/10。如果 > 1/10，重复第0周作为轻松周。
 
 ---
 
-## Phase 1: Base Building (Apr 27 — Jun 21, 8 weeks)
+## Phase 1：基础建设期（4/27 — 6/21，8周）
 
-**Goal**: Build aerobic volume to 82 km, fix 80/20 polarization, establish easy pace discipline.
+**目标**：有氧跑量递增至82 km，建立80/20极化训练，养成轻松跑配速纪律。
 
-| Week | Dates | Volume | Long Run | Quality Session | Type |
-|------|-------|--------|----------|-----------------|------|
-| 1 | Apr 27 — May 3 | 60 km | 20 km easy | 8 km tempo @ 4:05 | Build |
-| 2 | May 4-10 | 65 km | 22 km easy | 8 km tempo @ 4:05 | Build |
-| 3 | May 11-17 | 70 km | 25 km easy | 10 km tempo @ 4:00 | Build |
-| **4** | **May 18-24** | **60 km** | **18 km easy** | **6 km tempo @ 4:05** | **Deload** |
-| 5 | May 25-31 | 75 km | 28 km easy | 6 km tempo @ 3:55 + 3x1000m @ 3:52 (r: 2 min jog) | Build |
-| 6 | Jun 1-7 | 78 km | 28 km easy | 6 km tempo @ 3:55 + 4x1000m @ 3:50 (r: 2 min jog) | Build |
-| 7 | Jun 8-14 | 82 km | 30 km easy | 5x1000m @ 3:48-3:52 (r: 2 min jog) | Build |
-| **8** | **Jun 15-21** | **72 km** | **20 km easy** | **10 km time trial** | **Checkpoint** |
+| 周 | 日期 | 跑量 | 长距离 | 高质量训练 | 类型 |
+|----|------|------|--------|-----------|------|
+| 1 | 4/27 — 5/3 | 60 km | 20 km 轻松 | 8 km 节奏跑 @ 4:05 | 递增 |
+| 2 | 5/4-10 | 65 km | 22 km 轻松 | 8 km 节奏跑 @ 4:05 | 递增 |
+| 3 | 5/11-17 | 70 km | 25 km 轻松 | 10 km 节奏跑 @ 4:00 | 递增 |
+| **4** | **5/18-24** | **60 km** | **18 km 轻松** | **6 km 节奏跑 @ 4:05** | **减量** |
+| 5 | 5/25-31 | 75 km | 28 km 轻松 | 6 km 节奏跑 @ 3:55 + 3x1000m @ 3:52（休息：2分钟慢跑） | 递增 |
+| 6 | 6/1-7 | 78 km | 28 km 轻松 | 6 km 节奏跑 @ 3:55 + 4x1000m @ 3:50（休息：2分钟慢跑） | 递增 |
+| 7 | 6/8-14 | 82 km | 30 km 轻松 | 5x1000m @ 3:48-3:52（休息：2分钟慢跑） | 递增 |
+| **8** | **6/15-21** | **72 km** | **20 km 轻松** | **10 km 计时测试** | **检查点** |
 
-**强度递进逻辑**：Week 1-4 纯tempo建立速度耐力基础 → Week 5-6 混合课引入测试目标配速(3:50-3:52) → Week 7 纯间歇模拟测试强度(3:48-3:52) → Week 8 测试。
+**强度递进逻辑**：第1-4周纯节奏跑建立速度耐力基础 → 第5-6周混合课引入测试目标配速(3:50-3:52) → 第7周纯间歇模拟测试强度(3:48-3:52) → 第8周测试。
 
-**Strides（大步跑）**：每周2次轻松跑后加 4-6x100m @ 3:30-3:40/km 配速，组间走回恢复。全Phase 1执行，维持神经肌肉速度感，不增加疲劳。
+**大步跑（Strides）**：每周2次轻松跑后加 4-6x100m @ 3:30-3:40/km 配速，组间走回恢复。全 Phase 1 执行，维持神经肌肉速度感，不增加疲劳。
 
-**Typical week structure**:
-- Mon: Rest
-- Tue: Easy 10 km
-- Wed: Tempo session (warmup 2 km + tempo + cooldown 2 km)
-- Thu: Easy 8-10 km
-- Fri: Rest or cross-train
-- Sat: Long run
-- Sun: Easy 8-10 km
+**典型周训练结构**：
+- 周一：休息
+- 周二：轻松跑 10 km
+- 周三：节奏跑训练（热身 2 km + 节奏跑 + 放松 2 km）
+- 周四：轻松跑 8-10 km
+- 周五：休息或交叉训练
+- 周六：长距离
+- 周日：轻松跑 8-10 km
 
-**Strength**: 2x/week — Session A (Tuesday or Thursday) + Session B (Wednesday or Friday). See Strength Program.
+**力量训练**：每周2次 — 训练 A（周二或周四）+ 训练 B（周三或周五）。详见力量训练方案。
 
-**Key rules**:
-- Easy runs HR < 145, no exceptions. Phase 1 Weeks 1-4: pace display OFF.
-- Long runs at conversational pace (5:20-5:40/km)
-- Tempo starts conservative (4:05/km) and progresses to 3:55/km — **not at LT from day 1**
-- 1 complete rest day per week minimum
-- Prehab daily: eccentric heel drops 3x15, hip/glute activation (clamshells, banded walks, single-leg bridges), ankle mobility + calf stretching post-run
-- Sedentary work offset: stand/walk break every 45-60 min; hip flexor stretch 2x daily
+**关键规则**：
+- 轻松跑心率 < 145，无例外。Phase 1 第1-4周：关闭配速显示。
+- 长距离按交谈配速跑（5:20-5:40/km）
+- 节奏跑从保守配速（4:05/km）开始，逐步提升至 3:55/km — **不从第一天就按乳酸阈跑**
+- 每周至少1个完全休息日
+- 每日康复训练：离心跟腱下蹲 3x15，髋部/臀部激活（蚌式开合、弹力带侧向行走、单腿桥），跑后踝关节灵活性 + 小腿拉伸
+- 久坐补偿：每45-60分钟起身站立/走动；每天2次髋屈肌拉伸
 
-### Phase 1 Checkpoint: 10 km Time Trial (Week 8)
+### Phase 1 检查点：10 km 计时测试（第8周）
 
-与 Week 0 基线测试对比，量化8周基础期的进步（配速提升、同配速心率下降、VO2max变化）。
+与第0周基线测试对比，量化8周基础期的进步（配速提升、同配速心率下降、VO2max变化）。
 
-After 2-3 easy days. Early morning, flat course. 尽量选择与基线测试相同的路线和时间段。
+经过2-3天轻松恢复后进行。清晨，平坦路线。尽量选择与基线测试相同的路线和时间段。
 
-| Result | Interpretation | Action |
-|--------|---------------|--------|
-| ≤ 38:30 (≤ 3:51/km) | Ahead of schedule | Phase 2 as planned, 2:50 in play |
-| 38:30-39:30 | On track | Phase 2 as planned |
-| 39:30-41:00 | Behind | Phase 2 with lower intensity ceiling |
-| > 41:00 | Significant gap | Extend Phase 1 by 2 weeks, target 2:55-2:58 |
+| 结果 | 解读 | 后续行动 |
+|------|------|----------|
+| ≤ 38:30（≤ 3:51/km） | 进度超前 | Phase 2 按计划执行，2:50 仍有机会 |
+| 38:30-39:30 | 进度正常 | Phase 2 按计划执行 |
+| 39:30-41:00 | 进度落后 | Phase 2 降低强度上限 |
+| > 41:00 | 差距明显 | 延长 Phase 1 两周，目标调整为 2:55-2:58 |
 
-**VO2max target at end of Phase 1: ≥ 59.** If still ≤ 58, extend Phase 1 by 2 weeks before starting Phase 2.
-
----
-
-## Phase 2: Specific Preparation (Jun 22 — Aug 16, 8 weeks)
-
-**Goal**: Rebuild VO2max to 60+, sharpen lactate threshold, introduce marathon pace work.
-
-**Heat protocol fully active.** Quality sessions by HR in temperatures > 25°C. Early morning starts mandatory.
-
-| Week | Dates | Volume | Long Run | Session 1 (VO2max) | Session 2 (Tempo) | Type |
-|------|-------|--------|----------|--------------------|--------------------|------|
-| 1 | Jun 22-28 | 85 km | 28 km (last 5 km @ HR 150-155) | 5x1000m @ HR 170-175 (3 min jog) | 8 km @ HR 158-163 | Build |
-| 2 | Jun 29 — Jul 5 | 85 km | 30 km (last 5 km @ HR 150-155) | 5x1000m @ HR 170-175 | 8 km @ HR 158-163 | Build |
-| **3** | **Jul 6-12** | **68 km** | **HM time trial (5 AM)** | — | — | **Deload + Checkpoint** |
-| 4 | Jul 13-19 | 88 km | 30 km (last 8 km @ HR 150-158) | 6x1000m @ HR 170-175 | 10 km @ HR 158-163 | Build |
-| 5 | Jul 20-26 | 90 km | 32 km (last 8 km @ HR 150-158) | 6x1000m @ HR 170-175 | 10 km @ HR 158-163 | Build |
-| **6** | **Jul 27 — Aug 2** | **75 km** | **22 km easy** | **4x1000m (maint.)** | — | **Deload** |
-| 7 | Aug 3-9 | 88 km | 30 km (last 10 km @ HR 150-158) | 5x1200m @ HR 170-175 | 10 km @ HR 158-163 | Build |
-| 8 | Aug 10-16 | 80 km | 25 km easy | 4x1000m | 8 km tempo | Transition |
-
-**Long run MP segments in heat**: Run by HR (150-158), not by pace. In 30°C+ this might be 4:20/km instead of 4:02 — that's fine. The goal is to train the effort pattern, not hit a pace number.
-
-### Phase 2 Checkpoint: Half Marathon Time Trial (Week 3)
-
-**Protocol**: 5:00 AM start, flat route, carry water. Full race effort.
-
-If temperature at start > 28°C, subtract ~2 min from result for decision purposes.
-
-**Decision Gate — Marathon Target Selection**:
-
-| HM Time Trial | Marathon Target | Phase 3 MP | Goal Tier |
-|---------------|----------------|------------|-----------|
-| ≤ 1:22:00 | 2:50 (4:02/km) | 4:02/km | A |
-| 1:22-1:24 | 2:52-2:53 (4:05-4:06/km) | 4:05/km | B |
-| 1:24-1:26 | 2:55-2:57 (4:08-4:12/km) | 4:10/km | C |
-| > 1:26 | Sub-3:00 (4:15/km) | 4:15/km | Floor |
-
-**VO2max target at end of Phase 2: ≥ 60.** If still ≤ 59, lower marathon target by one tier.
+**Phase 1 结束时 VO2max 目标：≥ 59。** 如果仍然 ≤ 58，延长 Phase 1 两周后再开始 Phase 2。
 
 ---
 
-## Phase 3: Marathon Specific (Aug 17 — Oct 25, 10 weeks)
+## Phase 2：专项准备期（6/22 — 8/16，8周）
 
-**Goal**: Build marathon-specific endurance, practice race pace, peak fitness.
+**目标**：将 VO2max 提升至 60+，强化乳酸阈，引入马拉松配速训练。
 
-**MP** = Marathon Pace, as determined by the Phase 2 checkpoint. All paces below assume A goal (4:02/km); adjust proportionally for B/C/Floor.
+**高温方案全面启动。** 气温 > 25°C 时高质量训练以心率为准。必须清晨出发。
 
-Late August is still hot — Weeks 1-2 are "Moderate" with shorter MP blocks. September onward should be cooler.
+| 周 | 日期 | 跑量 | 长距离 | 训练1（VO2max） | 训练2（节奏跑） | 类型 |
+|----|------|------|--------|----------------|----------------|------|
+| 1 | 6/22-28 | 85 km | 28 km（最后5 km @ 心率150-155） | 5x1000m @ 心率170-175（3分钟慢跑） | 8 km @ 心率158-163 | 递增 |
+| 2 | 6/29 — 7/5 | 85 km | 30 km（最后5 km @ 心率150-155） | 5x1000m @ 心率170-175 | 8 km @ 心率158-163 | 递增 |
+| **3** | **7/6-12** | **68 km** | **半马计时测试（早5点）** | — | — | **减量 + 检查点** |
+| 4 | 7/13-19 | 88 km | 30 km（最后8 km @ 心率150-158） | 6x1000m @ 心率170-175 | 10 km @ 心率158-163 | 递增 |
+| 5 | 7/20-26 | 90 km | 32 km（最后8 km @ 心率150-158） | 6x1000m @ 心率170-175 | 10 km @ 心率158-163 | 递增 |
+| **6** | **7/27 — 8/2** | **75 km** | **22 km 轻松** | **4x1000m（维持）** | — | **减量** |
+| 7 | 8/3-9 | 88 km | 30 km（最后10 km @ 心率150-158） | 5x1200m @ 心率170-175 | 10 km @ 心率158-163 | 递增 |
+| 8 | 8/10-16 | 80 km | 25 km 轻松 | 4x1000m | 8 km 节奏跑 | 过渡 |
 
-| Week | Type | Dates | Volume | Long Run | Session 1 | Session 2 |
-|------|------|-------|--------|----------|-----------|-----------|
-| 1 | Moderate | Aug 17-23 | 85 km | 30 km with 10 km @ MP | 5x1000m @ 3:38 | 8 km @ 3:52 |
-| 2 | High | Aug 24-30 | 90 km | 30 km with 12 km @ MP | 5x1000m @ 3:36 | 10 km @ 3:52 |
-| **3** | **Deload** | **Aug 31 — Sep 6** | **72 km** | **22 km easy** | **4x1000m @ 3:40** | **6 km easy** |
-| 4 | High | Sep 7-13 | 92 km | 32 km with 15 km @ MP | 3x2000m @ 3:40 | 12 km @ 3:50 |
-| 5 | High | Sep 14-20 | 95 km | 35 km progressive (5:00→MP) | 5x1000m @ 3:35 | 12 km @ 3:52 |
-| **6** | **Deload** | **Sep 21-27** | **75 km** | **22 km easy** | **4x1000m @ 3:38** | **8 km easy** |
-| 7 | High | Sep 28 — Oct 4 | 92 km | 32 km with 15 km @ MP | 4x1000m @ 3:36 | 10 km @ 3:50 |
-| 8 | High | Oct 5-11 | 90 km | **30 km @ MP checkpoint** | 3x1000m @ 3:38 | 8 km @ 3:50 |
-| **9** | **Deload** | **Oct 12-18** | **72 km** | **22 km easy** | **3x1000m @ 3:40** | **easy** |
-| 10 | Transition | Oct 19-25 | 80 km | 25 km with 10 km @ MP | 3x1000m @ 3:40 | 8 km easy tempo |
+**高温下长距离马拉松配速段**：按心率跑（150-158），不按配速。30°C 以上可能是 4:20/km 而非 4:02 — 这没问题。目的是训练强度模式，而非追求配速数字。
 
-**Key rules**:
-- MP blocks in long runs capped at **15 km max** — protect Achilles via frequency, not single-session overload
-- **Day after 30+ km long run: complete rest or cross-train only**
-- Practice race nutrition (gels at 8 km intervals) during every long run > 28 km
-- If Weeks 1-2 still > 30°C: use HR targets for MP segments (same as Phase 2)
+### Phase 2 检查点：半马计时测试（第3周）
 
-**Achilles protocol**:
-- Morning-after dorsiflexion pain scale (0-10) after every long run
-- Pain > 3/10 or persists > 1 day → skip next quality session, easy run instead
-- Pain recurs 2+ consecutive weeks → reduce MP block by 3-5 km and reassess
+**方案**：早5:00出发，平坦路线，自带补水。全力跑。
 
-### Phase 3 Checkpoint: 30 km @ MP (Week 8)
+如果出发时温度 > 28°C，决策时从结果中减去约2分钟。
 
-| Result | Interpretation | Action |
-|--------|---------------|--------|
-| 30 km completed, HR stable (drift < 5 bpm in MP section) | Race-ready at target pace | Continue to taper |
-| Completed but HR drifting > 5 bpm | Fitness marginal for target | Lower race pace by 5 s/km |
-| Could not hold MP for full 30 km | Not ready | Lower race target by one tier |
+**决策关卡 — 马拉松目标选定**：
+
+| 半马计时测试成绩 | 马拉松目标 | Phase 3 马拉松配速 | 目标等级 |
+|-----------------|-----------|-------------------|----------|
+| ≤ 1:22:00 | 2:50（4:02/km） | 4:02/km | A |
+| 1:22-1:24 | 2:52-2:53（4:05-4:06/km） | 4:05/km | B |
+| 1:24-1:26 | 2:55-2:57（4:08-4:12/km） | 4:10/km | C |
+| > 1:26 | 破3:00（4:15/km） | 4:15/km | 保底 |
+
+**Phase 2 结束时 VO2max 目标：≥ 60。** 如果仍然 ≤ 59，将马拉松目标下调一个等级。
 
 ---
 
-## Phase 4: Taper (Oct 26 — Nov 15, 3 weeks)
+## Phase 3：马拉松专项期（8/17 — 10/25，10周）
 
-| Week | Dates | Volume | Key Session |
-|------|-------|--------|-------------|
-| 3 weeks out | Oct 26 — Nov 1 | 65 km | 20 km with 10 km @ MP |
-| 2 weeks out | Nov 2-8 | 50 km | 10 km @ MP |
-| Race week | Nov 9-15 | 30 km | 2x 3 km easy + strides. Rest 2 days before race. |
+**目标**：建立马拉松专项耐力，练习比赛配速，体能达到巅峰。
 
-**Taper rules**:
-- Reduce volume, maintain 1-2 short MP touches for neuromuscular activation
-- Strength training: 1x/week bodyweight only, stop 5 days before race
-- Carb-load last 3 days: 6-8 g/kg/day carbs, reduce fiber
-- Sleep 8+ hours every night
+**MP** = 马拉松配速，由 Phase 2 检查点确定。以下配速假设 A 目标（4:02/km）；B/C/保底目标按比例调整。
+
+8月底仍然较热 — 第1-2周为"适度"周，马拉松配速段较短。9月起天气应转凉。
+
+| 周 | 类型 | 日期 | 跑量 | 长距离 | 训练1 | 训练2 |
+|----|------|------|------|--------|-------|-------|
+| 1 | 适度 | 8/17-23 | 85 km | 30 km 含 10 km @ MP | 5x1000m @ 3:38 | 8 km @ 3:52 |
+| 2 | 高负荷 | 8/24-30 | 90 km | 30 km 含 12 km @ MP | 5x1000m @ 3:36 | 10 km @ 3:52 |
+| **3** | **减量** | **8/31 — 9/6** | **72 km** | **22 km 轻松** | **4x1000m @ 3:40** | **6 km 轻松** |
+| 4 | 高负荷 | 9/7-13 | 92 km | 32 km 含 15 km @ MP | 3x2000m @ 3:40 | 12 km @ 3:50 |
+| 5 | 高负荷 | 9/14-20 | 95 km | 35 km 渐进（5:00→MP） | 5x1000m @ 3:35 | 12 km @ 3:52 |
+| **6** | **减量** | **9/21-27** | **75 km** | **22 km 轻松** | **4x1000m @ 3:38** | **8 km 轻松** |
+| 7 | 高负荷 | 9/28 — 10/4 | 92 km | 32 km 含 15 km @ MP | 4x1000m @ 3:36 | 10 km @ 3:50 |
+| 8 | 高负荷 | 10/5-11 | 90 km | **30 km @ MP 检查点** | 3x1000m @ 3:38 | 8 km @ 3:50 |
+| **9** | **减量** | **10/12-18** | **72 km** | **22 km 轻松** | **3x1000m @ 3:40** | **轻松** |
+| 10 | 过渡 | 10/19-25 | 80 km | 25 km 含 10 km @ MP | 3x1000m @ 3:40 | 8 km 轻松节奏 |
+
+**关键规则**：
+- 长距离中马拉松配速段最长不超过 **15 km** — 通过频率而非单次超量来保护跟腱
+- **30+ km 长距离后一天：完全休息或仅交叉训练**
+- 每次超过28 km的长距离都要练习比赛补给（每8 km一个能量胶）
+- 如果第1-2周仍然 > 30°C：马拉松配速段使用心率目标（与 Phase 2 相同）
+
+**跟腱监控方案**：
+- 每次长距离后晨起背屈疼痛评分（0-10）
+- 疼痛 > 3/10 或持续超过1天 → 跳过下一次高质量训练，改为轻松跑
+- 连续2周以上出现疼痛 → 减少马拉松配速段 3-5 km 并重新评估
+
+### Phase 3 检查点：30 km @ 马拉松配速（第8周）
+
+| 结果 | 解读 | 后续行动 |
+|------|------|----------|
+| 完成30 km，心率稳定（MP段心率漂移 < 5 bpm） | 目标配速已具备比赛能力 | 继续进入减量期 |
+| 完成但心率漂移 > 5 bpm | 体能对目标配速来说较勉强 | 比赛配速降低 5 s/km |
+| 无法全程保持马拉松配速 | 尚未准备好 | 将比赛目标下调一个等级 |
 
 ---
 
-## Race Day Strategy
+## Phase 4：减量期（10/26 — 11/15，3周）
 
-**Target**: As determined by checkpoints. The table below assumes A goal (2:50, 4:02/km). Scale proportionally for B/C.
+| 周 | 日期 | 跑量 | 关键训练 |
+|----|------|------|----------|
+| 赛前3周 | 10/26 — 11/1 | 65 km | 20 km 含 10 km @ MP |
+| 赛前2周 | 11/2-8 | 50 km | 10 km @ MP |
+| 比赛周 | 11/9-15 | 30 km | 2x 3 km 轻松 + 大步跑。赛前休息2天。 |
 
-| Segment | Pace | Cumulative | Notes |
-|---------|------|------------|-------|
-| 0-5 km | **HR only (< 168)** | ~20:30 | Do NOT look at pace. Settle in. |
-| 5-10 km | 4:04/km | ~40:50 | HR should be approaching plateau |
-| 10-21 km | 4:02/km | ~1:25:12 | Half split ~1:25 |
-| 21-30 km | 4:00/km | ~2:01:12 | Slight negative split if feeling good |
-| 30-42.2 km | 4:00/km | ~2:49:56 | Hold form, empty the tank |
-
-**Nutrition**: Gel at 8, 16, 24, 32, 38 km. Water at every station. Use the same brand/protocol practiced in Phase 3 long runs.
-
-### Half Marathon Decision Point (21 km)
-
-| State at 21 km | Action |
-|----------------|--------|
-| HR stable (not rising) + pace comfortable | Continue target pace |
-| HR rising slowly (1-2 bpm per 5 km) + pace OK | Hold pace, reassess at 30 km |
-| **HR rising + pace already feels hard** | **Drop to backup pace NOW. Don't wait.** |
-| HR > 172 at any point in first half | Drop to floor pace (4:15) |
-
-**Lesson from Apr 12**: Warning signs appeared at 10 km ("有点累, 不兴奋") but no adjustment was made. Next time: respond to early signals immediately.
+**减量规则**：
+- 减少跑量，保持1-2次短距离马拉松配速训练以维持神经肌肉激活
+- 力量训练：每周1次，纯自重，赛前5天停止
+- 赛前3天碳水加载：6-8 g/kg/天碳水化合物，减少膳食纤维
+- 每晚睡眠 8 小时以上
 
 ---
 
-## Strength Training Program
+## 比赛日策略
 
-Two sessions per week (Phase 1-2). Reduce to 1.5x/week in Phase 3, 1x/week in Phase 4 (stop 5 days pre-race).
+**目标**：由检查点决定。下表假设 A 目标（2:50，4:02/km）。B/C 目标按比例调整。
+
+| 赛段 | 配速 | 累计时间 | 备注 |
+|------|------|----------|------|
+| 0-5 km | **纯心率跑（< 168）** | ~20:30 | 不看配速。稳住节奏。 |
+| 5-10 km | 4:04/km | ~40:50 | 心率应接近稳定平台 |
+| 10-21 km | 4:02/km | ~1:25:12 | 半程分段 ~1:25 |
+| 21-30 km | 4:00/km | ~2:01:12 | 如果感觉好可以微负分段 |
+| 30-42.2 km | 4:00/km | ~2:49:56 | 保持动作，全力以赴 |
+
+**补给**：在 8、16、24、32、38 km 处摄入能量胶。每个补给站喝水。使用 Phase 3 长距离中练习过的同品牌/同方案。
+
+### 半马决策点（21 km）
+
+| 21 km 时的状态 | 行动 |
+|----------------|------|
+| 心率稳定（未上升）+ 配速轻松 | 继续目标配速 |
+| 心率缓慢上升（每5 km 上升1-2 bpm）+ 配速正常 | 保持配速，30 km 处再评估 |
+| **心率上升 + 配速已经感觉吃力** | **立即降至备用配速。不要等。** |
+| 前半程任何时候心率 > 172 | 降至保底配速（4:15） |
+
+**4月12日的教训**：10 km 处就出现了预警信号（"有点累, 不兴奋"），但没有做出调整。下次：对早期信号立即做出反应。
+
+---
+
+## 力量训练方案
+
+每周两次（Phase 1-2）。Phase 3 减至每周1.5次，Phase 4 每周1次（赛前5天停止）。
 
 **待 4/20 力量短板评估后，根据测试结果设计针对性训练方案。** 评估方案见 `logs/4-20_4-26/strength-assessment.md`。
 
-**Phase 节奏**:
-- Phase 1-2: 2x/week (Session A 下肢 + Session B 核心)
-- Phase 3: 1.5x/week (A/B 交替), 不加重量，纯维持
-- Phase 4: 1x/week, 纯自重, 赛前5天停止
+**阶段节奏**：
+- Phase 1-2：每周2次（训练 A 下肢 + 训练 B 核心）
+- Phase 3：每周1.5次（A/B 交替），不加重量，纯维持
+- Phase 4：每周1次，纯自重，赛前5天停止
 
 ---
 
-## Body Weight Management
+## 体重管理
 
-**Current**: 72 kg, 23.7% BF, SMM 30.9 kg
-**Race day target**: 68 kg, ~17-18% BF, SMM ≥ 30.5 kg
+**当前**：72 kg，体脂率 23.7%，骨骼肌质量 30.9 kg
+**比赛日目标**：68 kg，体脂率 ~17-18%，骨骼肌质量 ≥ 30.5 kg
 
-| Phase | Target | Strategy | Daily Deficit |
-|-------|--------|----------|---------------|
-| Phase 1 (Apr-Jun) | 72 → 70 kg | Moderate deficit, high protein | -300 kcal |
-| Phase 2 (Jun-Aug) | 70 → 68.5 kg | Smaller deficit (heat + high intensity) | -200 kcal |
-| Phase 3 first half (Aug-Sep) | 68.5 → 68 kg | Near maintenance | -100 kcal |
-| Phase 3 second half + Phase 4 | Maintain 68 kg | Maintenance; carb-load race week | 0 |
+| 阶段 | 目标 | 策略 | 每日热量缺口 |
+|------|------|------|-------------|
+| Phase 1（4-6月） | 72 → 70 kg | 适度缺口，高蛋白 | -300 kcal |
+| Phase 2（6-8月） | 70 → 68.5 kg | 较小缺口（高温 + 高强度） | -200 kcal |
+| Phase 3 前半段（8-9月） | 68.5 → 68 kg | 接近维持 | -100 kcal |
+| Phase 3 后半段 + Phase 4 | 维持 68 kg | 维持热量；比赛周碳水加载 | 0 |
 
-**Nutrition rules**:
-- Protein: 1.8 g/kg/day (~130 g at 72 kg, adjust down as weight drops)
-- Quality session / long run days: no calorie deficit. Full carb (5-6 g/kg).
-- Easy / rest days: lower carb (3-4 g/kg), emphasize protein and vegetables
-- Post-run: 30 g protein + carbs within 30 min
-- Monthly InBody test: if SMM drops > 0.5 kg, increase calories immediately
-
----
-
-## VO2max Milestones & Decision Gates
-
-| Checkpoint | Target Date | VO2max Target | If Not Met |
-|------------|-------------|---------------|------------|
-| Phase 1 End | Jun 21 | **≥ 59** | Extend Phase 1 by 2 weeks |
-| Phase 2 HM TT | Jul 12 | **≥ 60** | Lower marathon target per HM result |
-| Phase 3 Peak | Sep-Oct | **≥ 61** | Best case for 2:50 |
-| Pre-Race | Nov | **≥ 60** | If < 59 → target Sub-3 only |
+**营养规则**：
+- 蛋白质：1.8 g/kg/天（72 kg 时约130 g，随体重下降调整）
+- 高质量训练/长距离日：不制造热量缺口。充足碳水（5-6 g/kg）
+- 轻松/休息日：降低碳水（3-4 g/kg），侧重蛋白质和蔬菜
+- 跑后：30分钟内摄入 30 g 蛋白质 + 碳水
+- 每月 InBody 检测：如果骨骼肌质量下降 > 0.5 kg，立即增加热量摄入
 
 ---
 
-## Monitoring & Adjustment Triggers
+## VO2max 里程碑与决策关卡
 
-Track weekly via `python -m coros_sync sync && python -m coros_sync analyze`:
+| 检查点 | 目标日期 | VO2max 目标 | 未达标时的行动 |
+|--------|----------|-------------|---------------|
+| Phase 1 结束 | 6月21日 | **≥ 59** | 延长 Phase 1 两周 |
+| Phase 2 半马计时测试 | 7月12日 | **≥ 60** | 根据半马成绩下调马拉松目标 |
+| Phase 3 巅峰 | 9-10月 | **≥ 61** | 2:50 的最佳条件 |
+| 赛前 | 11月 | **≥ 60** | 如果 < 59 → 仅目标破3 |
 
-| Metric | Green | Yellow | Red |
-|--------|-------|--------|-----|
-| Weekly volume | Phase target ± 10% | 80-90% of target | < 80% |
-| Easy run avg HR | < 145 | 145-148 | > 148 |
-| RHR | < 50 | 50-55 | > 55 (3+ days) |
-| HRV | Stable / rising | -10% drop | -20% drop |
-| Z1-Z2 time % | > 75% | 65-75% | < 65% |
-| VO2max trend | Rising | Stable | Dropping |
-| Fatigue score | < 45 | 45-55 | > 55 |
-| Training load ratio | 0.8-1.1 | 1.1-1.3 | > 1.3 or < 0.7 |
-| Achilles pain (AM after long run) | 0/10 | 1-3/10, resolves in hours | > 3/10 or persists > 1 day |
+---
 
-**Adjustment rules**:
-- 2+ red metrics in same week → cut volume 30% for 1 week
-- HRV drops 20%+ → skip quality session, replace with easy run
-- RHR elevated 5+ bpm for 3+ days → extra rest day
-- Easy run HR consistently > 148 → mandatory pace reduction; close pace display on watch
-- Achilles pain > 3/10 after long run → skip next quality session
-- Achilles pain 2+ consecutive weeks → reduce MP block length, reassess
-- Illness / injury → skip time in phase, don't compress. Health first.
+## 监控与调整触发条件
+
+通过 `python -m coros_sync sync && python -m coros_sync analyze` 每周追踪：
+
+| 指标 | 绿灯 | 黄灯 | 红灯 |
+|------|------|------|------|
+| 周跑量 | 阶段目标 ± 10% | 目标的 80-90% | < 80% |
+| 轻松跑平均心率 | < 145 | 145-148 | > 148 |
+| 静息心率 | < 50 | 50-55 | > 55（连续3天以上） |
+| 心率变异性 | 稳定/上升 | 下降10% | 下降20% |
+| Z1-Z2 时间占比 | > 75% | 65-75% | < 65% |
+| VO2max 趋势 | 上升 | 稳定 | 下降 |
+| 疲劳指数 | < 45 | 45-55 | > 55 |
+| 训练负荷比 | 0.8-1.1 | 1.1-1.3 | > 1.3 或 < 0.7 |
+| 跟腱疼痛（长距离后晨起） | 0/10 | 1-3/10，数小时内消退 | > 3/10 或持续超过1天 |
+
+**调整规则**：
+- 同一周出现2个以上红灯指标 → 下一周跑量减30%
+- 心率变异性下降20%以上 → 跳过高质量训练，改为轻松跑
+- 静息心率连续3天以上升高5+ bpm → 增加一个休息日
+- 轻松跑心率持续 > 148 → 强制降速；关闭手表配速显示
+- 长距离后跟腱疼痛 > 3/10 → 跳过下一次高质量训练
+- 跟腱连续2周以上出现疼痛 → 减少马拉松配速段长度，重新评估
+- 生病/受伤 → 跳过该阶段时间，不压缩。健康优先。
