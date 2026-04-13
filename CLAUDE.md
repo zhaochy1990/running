@@ -9,17 +9,17 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 
 ```
 logs/
-    3-30_4-5/       # folder name: <start date>_<end date> contains all training log for that week.
+    4-13_4-19/      # folder name: <start date>_<end date> contains all training log for that week.
         plan.md     # which contains the training plan for this week
-        inbody.jpg  # In-body body composition test report
         feedback.md # Training feedback for this week
-    4-6_4-12/
+    4-20_4-26/
         plan.md
-        inbody.png
+        strength-assessment.md  # Strength weakness assessment protocol & results
         feedback.md
+    (older weeks: 3-30_4-5/, 4-6_4-12/, etc.)
 src/                 # contains the source code for the tools
 tests/               # contains testing files for the tools
-TRAINING_PLAN.md     # The overall training plan of current training season.
+TRAINING_PLAN.md     # The overall training plan — Fall 2026 season (revised Apr 12)
 ```
 
 ## Training Plan (plan.md)
@@ -148,6 +148,35 @@ PYTHONIOENCODING=utf-8 python -m coros_sync workout push easy|tempo|interval|lon
 PYTHONIOENCODING=utf-8 python -m coros_sync workout week --start YYYYMMDD
 PYTHONIOENCODING=utf-8 python -m coros_sync workout delete YYYYMMDD
 
+# Push strength training (programmatic, no CLI command yet)
+python -c "
+from coros_sync.client import CorosClient
+from coros_sync.workout import StrengthWorkout, push_strength_workout
+
+client = CorosClient()
+exercises = client.query_exercises(sport_type=4)  # 419 built-in + custom
+
+# Find exercise by overview keyword
+def find_ex(keyword):
+    return next(e for e in exercises if keyword in e.get('overview',''))
+
+workout = StrengthWorkout(name='力量训练', date='20260417')
+workout.add_exercise(find_ex('planks'), sets=3, target_type=2, target_value=45, rest_value=60)
+workout.add_exercise(find_ex('bird_dog'), sets=3, target_type=3, target_value=10, rest_value=30)
+push_strength_workout(client, workout)
+
+# Create custom exercise if no built-in match
+custom = client.add_exercise({
+    'sportType': 4, 'exerciseType': 2,
+    'name': '动作名', 'overview': '动作名',
+    'part': ['4'], 'muscle': ['6'], 'muscleRelevance': [],
+    'equipment': ['1'], 'access': 1,
+    'intensityCustom': 0, 'intensityMultiplier': 0,
+    'intensityType': 1, 'intensityValue': 0, 'intensityValueExtend': 0,
+    'restType': 1, 'restValue': 30, 'targetType': 3, 'targetValue': 15
+})
+"
+
 # Direct DB query (when CLI export doesn't work)
 python -c "
 from coros_sync.db import Database
@@ -168,8 +197,9 @@ pytest -k test_pace_str   # single test by name
 - `CorosClient` wraps the unofficial COROS Training Hub REST API via `httpx`
 - Three regional API bases: global, cn, eu — auto-detected at login
 - Token auto-refresh with thread-safe re-login (`_relogin_lock`) for parallel fetches
-- Two request patterns: `_request()` for GET/POST with query params, `_request_json()` for JSON body endpoints that need the `yfheader` (workout/training endpoints)
+- Two request patterns: `_request()` for GET/POST with query params (optional `yfheader`), `_request_json()` for JSON body endpoints that need the `yfheader` (workout/training endpoints)
 - Rate-limited with configurable `request_delay` between calls
+- **Exercise library**: `query_exercises(sport_type)` queries built-in + custom exercises; `add_exercise()` creates custom exercises
 
 #### Data Models (`models.py`)
 - Dataclasses with `from_api()` classmethods as the **sole unit-conversion boundary** — all API-to-internal unit mapping happens here
@@ -188,9 +218,15 @@ pytest -k test_pace_str   # single test by name
 - Two phases: `sync_activities()` then `sync_health()` (analyse + dashboard endpoints)
 
 #### Workout Builder (`workout.py`)
-- Reverse-engineered COROS workout protocol: `exerciseType` (1=warmup, 2=training, 3=cooldown), pace in ms/km, distance in mm
-- `RunWorkout` builder pattern: `.add_warmup()` → `.add_training()` → `.add_cooldown()`
-- `push_workout()` flow: query schedule for next `idInPlan` → build payload → calculate via API → push update
+- Reverse-engineered COROS workout protocol for both running and strength training
+- **Running**: `RunWorkout` builder with `exerciseType` (1=warmup, 2=training, 3=cooldown), pace in ms/km, distance in mm
+  - `push_workout()` flow: query schedule for next `idInPlan` → build payload → calculate via API → push update
+- **Strength** (sportType=4): `StrengthWorkout` builder with exercises from COROS library
+  - `push_strength_workout()` — same calculate → push flow as running
+  - Exercises come from `client.query_exercises(sport_type=4)` (419 built-in + custom)
+  - Custom exercises created via `client.add_exercise()` when no built-in match exists
+  - Key fields: `targetType` (2=time in seconds, 3=reps), `sets`, `restValue` (seconds)
+  - **Exercise name matching**: COROS built-in names may differ from common names (e.g. "侧卧平板撑" = "侧平板"). Always search the library first before creating custom exercises.
 
 #### Auth (`auth.py`)
 - Credentials stored as JSON at `platformdirs.user_config_dir("coros-sync")/config.json`

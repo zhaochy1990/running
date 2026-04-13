@@ -1,11 +1,17 @@
-"""Build and push running workouts to COROS Training Hub.
+"""Build and push running and strength training workouts to COROS Training Hub.
 
-Workout structure (reverse-engineered from COROS Training Hub):
+Running workout structure (reverse-engineered from COROS Training Hub):
 - exerciseType: 1=warm-up, 2=training, 3=cool-down
 - targetType: 2=time(seconds), 5=distance(mm)
 - intensityType: 0=no pace target, 3=pace target
 - intensityValue/intensityValueExtend: pace range in ms/km (e.g. 300000=5:00/km)
 - sportType: 1=running
+
+Strength workout structure:
+- sportType: 4=strength
+- exercises are full objects from the COROS exercise library (via client.query_exercises())
+- targetType: 2=time(seconds), 3=reps
+- Each exercise carries originId (library id) plus a sequential id counter
 
 Schedule is pushed via POST /training/schedule/update with:
 - entities[]: date + bar chart visualization
@@ -543,6 +549,151 @@ def long_run(date: str, total_km: float, easy_km: float, mp_km: float,
     w.add_cooldown(5)
     return w
 
+
+# --- Strength training support ---
+
+# Source image constants for strength workouts
+STRENGTH_SOURCE_URL = "https://oss.coros.com/source/source_default/0/8f65f771b129460abce14d3376a39d83.jpg"
+STRENGTH_SOURCE_ID = "425846071290413056"
+
+
+@dataclass
+class StrengthExercise:
+    """A single exercise in a strength workout."""
+
+    exercise_data: dict  # Full exercise object from query_exercises()
+    sets: int = 3
+    target_type: int = 3  # 2=time(seconds), 3=reps
+    target_value: int = 12  # reps or seconds depending on target_type
+    rest_type: int = 1  # 1=time-based rest
+    rest_value: int = 60  # seconds of rest between sets
+
+
+@dataclass
+class StrengthWorkout:
+    """A strength training workout to push to COROS."""
+
+    name: str
+    date: str  # YYYYMMDD
+    exercises: list[StrengthExercise] = field(default_factory=list)
+
+    def add_exercise(
+        self,
+        exercise_data: dict,
+        sets: int = 3,
+        target_type: int | None = None,
+        target_value: int | None = None,
+        rest_value: int = 60,
+    ) -> StrengthWorkout:
+        """Add an exercise from the COROS library.
+
+        Args:
+            exercise_data: Full exercise dict from client.query_exercises()
+            sets: Number of sets
+            target_type: 2=time(seconds), 3=reps. Defaults to exercise's default.
+            target_value: Target reps or seconds. Defaults to exercise's default.
+            rest_value: Rest between sets in seconds.
+        """
+        self.exercises.append(StrengthExercise(
+            exercise_data=exercise_data,
+            sets=sets,
+            target_type=target_type if target_type is not None else exercise_data.get("targetType", 3),
+            target_value=target_value if target_value is not None else exercise_data.get("targetValue", 12),
+            rest_value=rest_value,
+        ))
+        return self
+
+    def _build_exercises(self) -> list[dict]:
+        exercises = []
+        for i, ex in enumerate(self.exercises):
+            exercise = dict(ex.exercise_data)  # Copy full exercise data from library
+            exercise["originId"] = str(exercise["id"])  # Library ID becomes originId
+            exercise["id"] = i + 1  # Sequential counter
+            exercise["sortNo"] = i
+            exercise["sets"] = ex.sets
+            exercise["targetType"] = ex.target_type
+            exercise["targetValue"] = ex.target_value
+            exercise["restType"] = ex.rest_type
+            exercise["restValue"] = ex.rest_value
+            exercise["groupId"] = ""
+            # Ensure these fields exist
+            exercise.setdefault("hrType", 0)
+            exercise.setdefault("intensityValueExtend", 0)
+            exercise.setdefault("intensityMultiplier", 0)
+            exercise.setdefault("intensityPercent", 0)
+            exercise.setdefault("intensityPercentExtend", 0)
+            exercise.setdefault("intensityDisplayUnit", "6")
+            exercise.setdefault("targetDisplayUnit", 0)
+            exercises.append(exercise)
+        return exercises
+
+    def build_payload(self, id_in_plan: int = 0) -> dict:
+        """Build the full /training/schedule/update payload for a strength workout."""
+        exercises_list = self._build_exercises()
+        total_sets = sum(ex.sets for ex in self.exercises)
+
+        program = {
+            "access": 1, "authorId": "0", "createTimestamp": 0,
+            "distance": 0, "duration": 0, "essence": 0,
+            "estimatedType": 0, "estimatedValue": 0, "exerciseNum": 0,
+            "exercises": exercises_list,
+            "headPic": "", "id": "0", "idInPlan": id_in_plan,
+            "name": self.name, "nickname": "",
+            "originEssence": 0, "overview": "", "pbVersion": 2,
+            "planIdIndex": 0, "poolLength": 2500, "profile": "",
+            "referExercise": {"intensityType": 1, "hrType": 0, "valueType": 1},
+            "sex": 0, "shareUrl": "", "simple": False,
+            "sourceUrl": STRENGTH_SOURCE_URL,
+            "sportType": 4, "star": 0, "subType": 65535,
+            "targetType": 0, "targetValue": 0, "thirdPartyId": 0,
+            "totalSets": total_sets, "trainingLoad": 0,
+            "type": 0, "unit": 0, "userId": "0", "version": 0,
+            "videoCoverUrl": "", "videoUrl": "",
+            "fastIntensityTypeName": "weight",
+            "poolLengthId": 1, "poolLengthUnit": 2,
+            "sourceId": STRENGTH_SOURCE_ID,
+        }
+
+        entity = {
+            "happenDay": self.date,
+            "idInPlan": id_in_plan,
+            "sortNo": 0, "dayNo": 0,
+            "sortNoInPlan": 0, "sortNoInSchedule": 0,
+        }
+
+        return {
+            "entities": [entity],
+            "programs": [program],
+            "versionObjects": [{"id": id_in_plan, "status": 1}],
+            "pbVersion": 2,
+        }
+
+
+def push_strength_workout(client: CorosClient, workout: StrengthWorkout) -> dict:
+    """Calculate and push a strength workout to the COROS training schedule."""
+    next_id, pb_version = _get_next_id_in_plan(client, workout.date)
+    payload = workout.build_payload(id_in_plan=next_id)
+    program = payload["programs"][0]
+    entity = payload["entities"][0]
+
+    calc = client.calculate_workout(program, entity)
+    calc_data = calc.get("data", {})
+
+    program["duration"] = calc_data.get("planDuration", 0)
+    program["totalSets"] = calc_data.get("planSets", program["totalSets"])
+    program["sets"] = program["totalSets"]
+    if "distanceDisplayUnit" in calc_data:
+        program["distanceDisplayUnit"] = calc_data["distanceDisplayUnit"]
+
+    return client.update_schedule(
+        entities=[entity],
+        programs=[program],
+        version_objects=payload["versionObjects"],
+        pb_version=pb_version,
+    )
+
+
+# --- Convenience builders for common workout types ---
 
 def build_recovery_week(start_date: str) -> list[RunWorkout]:
     """Build this week's recovery plan (Mar 30 - Apr 5)."""

@@ -115,7 +115,7 @@ class CorosClient:
     def _base(self) -> str:
         return API_BASES.get(self._creds.region, API_BASES["global"])
 
-    def _request(self, method: str, path: str, params: dict | None = None) -> dict:
+    def _request(self, method: str, path: str, params: dict | None = None, yfheader: bool = False) -> dict:
         if not self._creds.access_token:
             raise CorosAuthError("Not logged in. Run: coros-sync login")
 
@@ -123,7 +123,9 @@ class CorosClient:
         old_token = self._creds.access_token
 
         def do_request(token: str) -> dict:
-            h = {"accesstoken": token}
+            h: dict[str, str] = {"accesstoken": token}
+            if yfheader:
+                h["yfheader"] = f'{{"userId":"{self._creds.user_id}"}}'
             resp = self._client.request(method, url, params=params, headers=h)
             resp.raise_for_status()
             return resp.json()
@@ -233,3 +235,33 @@ class CorosClient:
             "endDate": end_date,
             "supportRestExercise": 1,
         })
+
+    # --- Exercise library endpoints ---
+
+    def query_exercises(self, sport_type: int = 4) -> list[dict]:
+        """Query the COROS exercise library.
+
+        Args:
+            sport_type: 4=strength (default), 1=running
+        Returns list of exercise dicts. Built-in exercises have userId=0;
+        custom exercises have a non-zero userId.
+        """
+        data = self._request(
+            "GET",
+            "/training/exercise/query",
+            params={"userId": self._creds.user_id, "sportType": sport_type},
+            yfheader=True,
+        )
+        return data.get("data", [])
+
+    def add_exercise(self, exercise: dict) -> dict:
+        """Add a custom exercise to the COROS exercise library.
+
+        Args:
+            exercise: Exercise definition dict. Required fields include
+                sportType, exerciseType, name, overview, part, muscle,
+                equipment, access, intensityType, restType, targetType, targetValue.
+        Returns the created exercise dict containing the new ``id``.
+        """
+        data = self._request_json("/training/exercise/add", exercise)
+        return data.get("data", {})
