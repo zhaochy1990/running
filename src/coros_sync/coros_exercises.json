@@ -1,0 +1,7782 @@
+[
+  {
+    "name": "T1001",
+    "id": "425827615547506688",
+    "overview": "sid_strength_kwando_kickboxing",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 1,
+    "part": [
+      0
+    ],
+    "muscle": [
+      14,
+      7,
+      8,
+      1,
+      2,
+      4,
+      6,
+      13
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1002",
+    "id": "425827615547506689",
+    "overview": "sid_strength_pull_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      6
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1004",
+    "id": "425827704936513536",
+    "overview": "sid_strength_push_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1005",
+    "id": "425827704936513537",
+    "overview": "sid_strength_skipping_rope",
+    "nameText": "",
+    "targetType": 1,
+    "targetValue": 0,
+    "sets": 4,
+    "part": [
+      0,
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1006",
+    "id": "425827765602926592",
+    "overview": "sid_strength_sit_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1007",
+    "id": "425827765602926593",
+    "overview": "sid_strength_burpees",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1009",
+    "id": "425827856334110720",
+    "overview": "sid_strength_jumping_jacks",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1010",
+    "id": "425827856334110721",
+    "overview": "sid_strength_planks",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1011",
+    "id": "425827936327876608",
+    "overview": "sid_strength_dumbbell_side_bends",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      2,
+      4,
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1013",
+    "id": "425828363677122561",
+    "overview": "sid_strength_high_knees",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1014",
+    "id": "425828538697039872",
+    "overview": "sid_strength_box_jumps",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1015",
+    "id": "425828538697039873",
+    "overview": "sid_strength_seated_front_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      6
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1016",
+    "id": "425828813574946816",
+    "overview": "坐姿肩上哑铃推举",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      6
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1017",
+    "id": "425828813574946817",
+    "overview": "sid_strength_lateral_dumbbell_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1018",
+    "id": "425829076910129152",
+    "overview": "sid_strength_front_arm_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 3,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1019",
+    "id": "425829076910129153",
+    "overview": "sid_strength_upright_row",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      6
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1020",
+    "id": "425829167909748736",
+    "overview": "sid_strength_bent_over_lateral_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1021",
+    "id": "425829167909748737",
+    "overview": "sid_strength_dumbbell_biceps_curls",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1022",
+    "id": "425829238239838208",
+    "overview": "sid_strength_low_pulley_biceps_curls",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1023",
+    "id": "425829238239838209",
+    "overview": "sid_strength_seated_dumbbell_concentration_curls",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1024",
+    "id": "425829279310462976",
+    "overview": "sid_strength_preacher_curls",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      3,
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1025",
+    "id": "425829279310462977",
+    "overview": "sid_strength_triceps_pushdowns",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      4
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1026",
+    "id": "425829341587488768",
+    "overview": "sid_strength_reverse_grip_tricep_pushdown",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      4
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1027",
+    "id": "425829341587488769",
+    "overview": "sid_strength_barbell_lying_tricep_extensions",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      4
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1028",
+    "id": "425829687600791552",
+    "overview": "sid_strength_tricep_kickbacks",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      4
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1029",
+    "id": "425829687600791553",
+    "overview": "sid_strength_seated_dumbbell_triceps_extensions",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      4
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1030",
+    "id": "425830291043696641",
+    "overview": "sid_strength_wrist_curls",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      2,
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1031",
+    "id": "425830760537309184",
+    "overview": "sid_strength_reverse_wrist_curls",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      2,
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1032",
+    "id": "425830760537309185",
+    "overview": "sid_strength_hanging_leg_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1033",
+    "id": "425830845094477824",
+    "overview": "sid_strength_bridge",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1034",
+    "id": "425830845094477825",
+    "overview": "sid_strength_incline_leg_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1035",
+    "id": "425830946563080192",
+    "overview": "sid_strength_upright_leg_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1036",
+    "id": "425830946563080193",
+    "overview": "sid_strength_machine_crunches",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1037",
+    "id": "425831107355918336",
+    "overview": "sid_strength_high_pulley_crunches",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1038",
+    "id": "425831107355918337",
+    "overview": "sid_strength_seated_leg_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1039",
+    "id": "425831153795252224",
+    "overview": "sid_strength_trunk_rotations",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      2,
+      4,
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1040",
+    "id": "425831153795252225",
+    "overview": "sid_strength_oblique_v_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1041",
+    "id": "425831217146019840",
+    "overview": "sid_strength_bench_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1042",
+    "id": "425831217146019841",
+    "overview": "sid_strength_incline_bench_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1043",
+    "id": "425831253653241856",
+    "overview": "sid_strength_decline_bench_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1044",
+    "id": "425831319419928576",
+    "overview": "sid_strength_incline_dumbbell_flys",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1045",
+    "id": "425831319419928577",
+    "overview": "sid_strength_dumbbell_flys",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1046",
+    "id": "425831365053956096",
+    "overview": "sid_strength_low_cable_flys",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1047",
+    "id": "425831365053956097",
+    "overview": "sid_strength_pec_deck_flys",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1048",
+    "id": "425831619262332928",
+    "overview": "sid_strength_standing_cable_crossover",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1049",
+    "id": "425831619262332929",
+    "overview": "sid_strength_dumbbell_pullover",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1050",
+    "id": "425831711335694336",
+    "overview": "sid_strength_barbell_pullover",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1051",
+    "id": "425831711335694337",
+    "overview": "sid_strength_parallel_bar_dips",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1052",
+    "id": "425831789450412032",
+    "overview": "sid_strength_seated_lat_pulldowns",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      6
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1053",
+    "id": "425831789450412033",
+    "overview": "sid_strength_seated_cable_row",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      6
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1054",
+    "id": "425831875618193408",
+    "overview": "sid_strength_barbell_row",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      6
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1055",
+    "id": "425831875618193409",
+    "overview": "sid_strength_dumbbell_row",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      6
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1056",
+    "id": "425831933868687360",
+    "overview": "sid_strength_machine_hyperextention",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      5
+    ],
+    "muscle": [
+      13
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1057",
+    "id": "425831933868687361",
+    "overview": "sid_strength_back_extensions",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      5
+    ],
+    "muscle": [
+      13
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1058",
+    "id": "425831979771150336",
+    "overview": "sid_strength_dumbbell_shrugs",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1059",
+    "id": "425831979771150337",
+    "overview": "sid_strength_barbell_shrugs",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1060",
+    "id": "425832054396207104",
+    "overview": "sid_strength_step_up_jumps",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1061",
+    "id": "425832054396207105",
+    "overview": "sid_strength_squats",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1063",
+    "id": "425832124457861120",
+    "overview": "sid_strength_cable_glute_kickbacks",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1064",
+    "id": "425832124457861121",
+    "overview": "sid_strength_dumbbell_lunges",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1065",
+    "id": "425832210088771584",
+    "overview": "sid_strength_incline_leg_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1066",
+    "id": "425832210088771585",
+    "overview": "sid_strength_leg_extensions",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1067",
+    "id": "425832295182811136",
+    "overview": "sid_strength_deadlifts",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      5
+    ],
+    "muscle": [
+      8,
+      14
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1068",
+    "id": "425832295182811137",
+    "overview": "sid_strength_t_bar_rows",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      6
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1069",
+    "id": "425832417320943616",
+    "overview": "sid_strength_lying_leg_curls",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1070",
+    "id": "425832417320943617",
+    "overview": "sid_strength_standing_calf_raises",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1071",
+    "id": "425832708036542464",
+    "overview": "sid_strength_press_the_neck_forward",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1072",
+    "id": "425832708036542465",
+    "overview": "sid_strength_lying_face_down_plate_neck_resistance",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      4
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1073",
+    "id": "425832782930034688",
+    "overview": "sid_strength_lying_face_up_plate_neck_resistance",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      4
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1074",
+    "id": "425832782930034689",
+    "overview": "sid_strength_seated_head_harness_neck_resistance",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1075",
+    "id": "425832906678779904",
+    "overview": "sid_strength_neck_bridge_prone",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1076",
+    "id": "425832906678779905",
+    "overview": "sid_strength_bicycle_crunches",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1077",
+    "id": "425844691263733760",
+    "overview": "sid_strength_face_down_jumping_jacks",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1078",
+    "id": "425844691263733761",
+    "overview": "sid_strength_squat_jumps",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1079",
+    "id": "425844786826756096",
+    "overview": "sid_strength_mountain_climbers",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1080",
+    "id": "425844786826756097",
+    "overview": "sid_strength_battle_ropes",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1081",
+    "id": "425844868968005632",
+    "overview": "sid_strength_trx_suspended_crunches",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1082",
+    "id": "425844868968005633",
+    "overview": "sid_strength_trx_suspended_chest_flys",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1083",
+    "id": "425844957820141568",
+    "overview": "sid_strength_trx_suspended_back_flys",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1084",
+    "id": "425844957820141569",
+    "overview": "sid_strength_trx_suspended_leg_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1085",
+    "id": "425845051235680256",
+    "overview": "sid_strength_trx_suspended_biceps_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1086",
+    "id": "425845051235680257",
+    "overview": "sid_strength_trx_suspended_split_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1087",
+    "id": "425845193238036480",
+    "overview": "sid_strength_trx_suspended_abdominal_fallout",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1088",
+    "id": "425845193238036481",
+    "overview": "sid_strength_exercise_ball_crunches",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1089",
+    "id": "425845295243509760",
+    "overview": "sid_strength_exercise_ball_pull_in",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1090",
+    "id": "425845295243509761",
+    "overview": "sid_strength_exercise_ball_bridges",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1091",
+    "id": "425845414965723136",
+    "overview": "sid_strength_exercise_ball_hyperextensions",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3
+    ],
+    "muscle": [
+      13
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1092",
+    "id": "425845414965723137",
+    "overview": "sid_strength_crunch_legs_on_exercise_ball",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1093",
+    "id": "425845544351612928",
+    "overview": "sid_strength_supine_overhead_ball_throw",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      1,
+      2,
+      3
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1094",
+    "id": "425845544351612929",
+    "overview": "sid_strength_supine_chest_ball_throw",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      6
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1095",
+    "id": "425845691454242816",
+    "overview": "sid_strength_backward_ball_throw",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      3,
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1096",
+    "id": "425845691454242817",
+    "overview": "sid_strength_standing_overhead_ball_throw",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1097",
+    "id": "425845766884605952",
+    "overview": "sid_strength_overhead_ball_slam",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      3,
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1098",
+    "id": "425845766884605953",
+    "overview": "sid_strength_medicine_ball_push_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1099",
+    "id": "425845853857693696",
+    "overview": "sid_strength_bosu_ball_squats",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      8
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1100",
+    "id": "425845853857693697",
+    "overview": "sid_strength_bosu_ball_push_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      8
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1101",
+    "id": "425845955863166976",
+    "overview": "sid_strength_bosu_ball_crunches",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      8
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1103",
+    "id": "425845955863166977",
+    "overview": "sid_strength_lateral_band_walks",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      10
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1104",
+    "id": "425846071290413057",
+    "overview": "sid_strength_chest_flys_with_bands",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1105",
+    "id": "425846214098075648",
+    "overview": "sid_strength_bench_press_with_bands",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1107",
+    "id": "425846214098075649",
+    "overview": "sid_strength_lateral_raises_with_bands",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1108",
+    "id": "425846351000158208",
+    "overview": "sid_strength_front_raises_with_bands",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1109",
+    "id": "425846351000158209",
+    "overview": "sid_strength_biceps_curls_with_bands",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1110",
+    "id": "425846497029046272",
+    "overview": "sid_strength_deadlifts_with_bands",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1112",
+    "id": "425846578901860352",
+    "overview": "sid_strength_thigh_abductor",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      10
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1113",
+    "id": "425846578901860353",
+    "overview": "sid_strength_prone_hip_circles",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      9
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1114",
+    "id": "425846666680254464",
+    "overview": "sid_strength_hip_adductions_with_bands",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      9
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1115",
+    "id": "425846666680254465",
+    "overview": "sid_strength_thigh_adductor",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      9
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1116",
+    "id": "425846739694698496",
+    "overview": "sid_strength_standing_side_leg_raises",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      10
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1117",
+    "id": "425846739694698497",
+    "overview": "sid_strength_power_squats",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1106",
+    "id": "425867974013009920",
+    "overview": "sid_strength_reverse_flys_with_bands",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      6
+    ],
+    "muscle": [
+      11
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1120",
+    "id": "425898928110747648",
+    "overview": "sid_strength_warm_up",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 300,
+    "sets": 1,
+    "part": [
+      0
+    ],
+    "muscle": [],
+    "equipment": [],
+    "restType": 3,
+    "restValue": 0
+  },
+  {
+    "name": "T1121",
+    "id": "425898928110747649",
+    "overview": "sid_strength_training",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 1,
+    "part": [
+      0
+    ],
+    "muscle": [],
+    "equipment": [],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1122",
+    "id": "425898949585584128",
+    "overview": "sid_strength_cool_down",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 300,
+    "sets": 1,
+    "part": [
+      0
+    ],
+    "muscle": [],
+    "equipment": [],
+    "restType": 3,
+    "restValue": 0
+  },
+  {
+    "name": "T1143",
+    "id": "426611709340467200",
+    "overview": "sid_strength_side_bridge_wing_arm_and_swing_leg",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1141",
+    "id": "426611709340467201",
+    "overview": "sid_strength_lie_on_one_leg_supine_hip_and_knee",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1144",
+    "id": "426612348485287936",
+    "overview": "sid_strength_one_leg_deadlifts_and_knee_lifting",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1138",
+    "id": "426612348485287937",
+    "overview": "sid_strength_lunge_leg_lifts",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1139",
+    "id": "426612419889119232",
+    "overview": "sid_strength_lunge_and_jump_forward",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1126",
+    "id": "426612419889119233",
+    "overview": "sid_strength_swing_your_arms_quickly_in_place",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      1,
+      6
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1127",
+    "id": "426612482166145025",
+    "overview": "sid_strength_trot_quickly_in_place",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1128",
+    "id": "426617375744507904",
+    "overview": "sid_strength_hands_on_the_wall_and_high_knees",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1129",
+    "id": "426617375744507905",
+    "overview": "sid_strength_fast_small_amplitude_wheel_run",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1130",
+    "id": "426617582708244480",
+    "overview": "sid_strength_back_leg_kick_run",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1131",
+    "id": "426617582708244481",
+    "overview": "sid_strength_run_fast_frequency_at_a_fast_pace",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1132",
+    "id": "426617687129636864",
+    "overview": "sid_strength_lie_on_your_back_a_hip",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1133",
+    "id": "426617687129636865",
+    "overview": "sid_strength_unilateral_supine_buttocks_lift_hip_lif",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1134",
+    "id": "426617763902177280",
+    "overview": "sid_strength_push_to_run_after",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1135",
+    "id": "426617763902177281",
+    "overview": "sid_strength_the_wheels_run",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1136",
+    "id": "426617884429697024",
+    "overview": "sid_strength_jumping_lunges",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1137",
+    "id": "426617884429697025",
+    "overview": "sid_strength_lunge_with_your_knees_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1142",
+    "id": "426618096225271808",
+    "overview": "sid_strength_lie_on_and_high_knees",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1145",
+    "id": "426618096225271809",
+    "overview": "sid_strength_trunk_rotations",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1146",
+    "id": "426618280103559168",
+    "overview": "sid_strength_lie_on_your_back_alternately_touching_y",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1147",
+    "id": "426618280103559169",
+    "overview": "sid_strength_sitting_scissors_kick",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1148",
+    "id": "426618346407116800",
+    "overview": "sid_strength_plank_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1149",
+    "id": "426618346407116801",
+    "overview": "sid_strength_crunch",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1150",
+    "id": "426618429085237248",
+    "overview": "sid_strength_bird_dog_type",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1151",
+    "id": "426618429085237249",
+    "overview": "sid_strength_kneeling_position_and_do_the_top_hip",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      1,
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      4
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1152",
+    "id": "426619172651450368",
+    "overview": "sid_strength_lunge_down",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      4
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1153",
+    "id": "426619172651450369",
+    "overview": "sid_strength_lunge_sideways_from_hip_to_hip",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      4
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1154",
+    "id": "426619291299921920",
+    "overview": "sid_strength_lunge_up_with_a_heavy_bow",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      1,
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      4
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1155",
+    "id": "426619291299921921",
+    "overview": "sid_strength_standing_leg_lifts",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1156",
+    "id": "426799976279097345",
+    "overview": "sid_strength_windshield_wiper",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1157",
+    "id": "426801107466108929",
+    "overview": "sid_strength_power_point",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      3,
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1158",
+    "id": "426801304229298176",
+    "overview": "sid_strength_super_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      3,
+      5
+    ],
+    "muscle": [
+      13
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1159",
+    "id": "426801355232034817",
+    "overview": "sid_strength_leg_raise_toe_to_bar",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1160",
+    "id": "426801473612070912",
+    "overview": "sid_strength_single_leg_bridge",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1162",
+    "id": "426801473612070913",
+    "overview": "sid_strength_side_plank_rotation",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      1,
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1163",
+    "id": "426801647558246400",
+    "overview": "sid_strength_turkish_get_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      11,
+      2
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1164",
+    "id": "426801647558246401",
+    "overview": "sid_strength_split_bench_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1165",
+    "id": "426801716814594048",
+    "overview": "sid_strength_dips",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      1,
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1166",
+    "id": "426801716814594049",
+    "overview": "sid_strength_box_step_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1167",
+    "id": "426801851300757504",
+    "overview": "sid_strength_single_leg_squats",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1168",
+    "id": "426801851300757505",
+    "overview": "sid_strength_handstands",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1169",
+    "id": "426801973975760896",
+    "overview": "sid_strength_incline_walking",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 120,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      7,
+      14,
+      8
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1170",
+    "id": "426801973975760897",
+    "overview": "sid_strength_incline_walking",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 120,
+    "sets": 1,
+    "part": [
+      0
+    ],
+    "muscle": [
+      14,
+      7,
+      8,
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1161",
+    "id": "426805109570322432",
+    "overview": "sid_other_the_L_sit",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 5,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1123",
+    "id": "426842174601216000",
+    "overview": "sid_strength_rest",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 240,
+    "sets": 1,
+    "part": [
+      0
+    ],
+    "muscle": [],
+    "equipment": [],
+    "restType": 3,
+    "restValue": 0
+  },
+  {
+    "name": "T1171",
+    "id": "426939549294444544",
+    "overview": "sid_strength_hanging_windshield_wiper",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1173",
+    "id": "426939549294444545",
+    "overview": "sid_strength_lower_oblique_load_roll",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      4
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1174",
+    "id": "426939619892969472",
+    "overview": "sid_strength_ski_step",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1175",
+    "id": "426939619892969473",
+    "overview": "sid_strength_back_and_forth_step",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1176",
+    "id": "427312905701212160",
+    "overview": "sid_strength_snatches",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5,
+      1
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1177",
+    "id": "427312956167077888",
+    "overview": "sid_strength_one_arm_kettlebell_swings",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1178",
+    "id": "427312999116750848",
+    "overview": "sid_strength_two_arm_kettlebell_swings",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1179",
+    "id": "427312999116750849",
+    "overview": "sid_strength_one_arm_kettlebell_military_press_to_the_side",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1180",
+    "id": "427313124207673344",
+    "overview": "sid_strength_kettlebell_windmill",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1181",
+    "id": "427313124207673345",
+    "overview": "sid_strength_j_lo_s",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      10
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1182",
+    "id": "428453191601012736",
+    "overview": "sid_strength_crawl_on_the_ground",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1,
+      6
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1183",
+    "id": "428453257099264000",
+    "overview": "sid_strength_lean_over_and_touch_your_shoulders_alte",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1184",
+    "id": "428453257099264001",
+    "overview": "sid_strength_kneeling_push_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1185",
+    "id": "428453358030995457",
+    "overview": "sid_strength_side_plank",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1186",
+    "id": "428453454399324160",
+    "overview": "sid_strength_archer",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1187",
+    "id": "428453501107093504",
+    "overview": "sid_strength_single_leg_deadlift",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1188",
+    "id": "428453501107093505",
+    "overview": "sid_strength_curtsey_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1189",
+    "id": "428453781890580480",
+    "overview": "sid_strength_stretch_strap_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1190",
+    "id": "428453781890580481",
+    "overview": "sid_strength_lunge_with_elastic_band",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1191",
+    "id": "428453875574554624",
+    "overview": "sid_strength_stretch_tape_squats_sideways",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1192",
+    "id": "428453875574554625",
+    "overview": "sid_strength_elastic_band_plate_pull_down",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      3,
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1193",
+    "id": "428453943488724992",
+    "overview": "sid_strength_stretch_strap_bicycle_on_your_back",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1194",
+    "id": "428454004155138048",
+    "overview": "sid_strength_elastic_band_bends_hip_and_pulls_back",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5,
+      6
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1195",
+    "id": "428454004155138049",
+    "overview": "sid_strength_stretch_tape_squat_pull_back",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5,
+      6
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1196",
+    "id": "428454108039659520",
+    "overview": "sid_strength_stretch_with_lunge_to_lift_knees",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5,
+      6
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1197",
+    "id": "428454108039659521",
+    "overview": "sid_strength_elastic_belt_swallow_balance",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      6,
+      5,
+      4
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1198",
+    "id": "428454169779814400",
+    "overview": "sid_strength_the_elastic_band_bends_the_hip_and_pres",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      12,
+      1,
+      7,
+      8
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1200",
+    "id": "428454169779814401",
+    "overview": "sid_strength_bounce_a_boat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5,
+      6
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1201",
+    "id": "428454245747048448",
+    "overview": "sid_strength_bounce_a_boat_with_a_lunge",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      4,
+      5,
+      6
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1199",
+    "id": "428472496405266432",
+    "overview": "sid_strength_spring_with_lunge_quick_punch",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 15,
+    "sets": 4,
+    "part": [
+      4,
+      1
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1202",
+    "id": "428907799930650624",
+    "overview": "sid_strength_open_hand_grip",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      12
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1203",
+    "id": "428907799930650625",
+    "overview": "sid_strength_half_crimp",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      12
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1204",
+    "id": "428907861402370048",
+    "overview": "sid_strength_slope_hang",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      12
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1205",
+    "id": "428907861402370049",
+    "overview": "sid_strength_hang_with_90_degree_elbow",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      12
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1206",
+    "id": "428907893077753856",
+    "overview": "sid_strength_hang_with_135_degree_elbow",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      12
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1207",
+    "id": "430536120548376576",
+    "overview": "sid_strength_indoor_rower",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      3,
+      5,
+      6
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      13
+    ],
+    "restType": 1,
+    "restValue": 30
+  },
+  {
+    "name": "T1215",
+    "id": "469611019719852032",
+    "overview": "sid_strength_back_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1211",
+    "id": "469646463400591360",
+    "overview": "sid_strength_v_sit_hold",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1212",
+    "id": "469646500713119744",
+    "overview": "sid_strength_a_skips",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      15,
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1213",
+    "id": "469646538830954496",
+    "overview": "sid_strength_b_skips",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      8,
+      15,
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1214",
+    "id": "469646562721710080",
+    "overview": "sid_strength_c_skips",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14,
+      15,
+      10
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1216",
+    "id": "469646593323352064",
+    "overview": "sid_strength_side_plank_with_leg_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1217",
+    "id": "469646614529753088",
+    "overview": "sid_strength_lateral_squats_or_side_squats",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1218",
+    "id": "469646637078331392",
+    "overview": "sid_strength_single_leg_high_knee_jump",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 10,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1219",
+    "id": "469646654258200576",
+    "overview": "sid_strength_single_leg_hip_bridge",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1220",
+    "id": "469646673317117952",
+    "overview": "sid_strength_handstand_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1,
+      6
+    ],
+    "muscle": [
+      1,
+      4
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1221",
+    "id": "469646689423245312",
+    "overview": "sid_strength_inverse_nordic_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1222",
+    "id": "469646704455630848",
+    "overview": "sid_strength_leg_swing_front_and_back",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1223",
+    "id": "469646741768159232",
+    "overview": "sid_strength_prone_cobra",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      13,
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1224",
+    "id": "469646755995238400",
+    "overview": "sid_strength_lunge_pulls",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15,
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1225",
+    "id": "469646772906672129",
+    "overview": "sid_strength_walking_lunges",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1226",
+    "id": "469646786060009472",
+    "overview": "sid_strength_reverse_lunge",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1227",
+    "id": "469646802703007744",
+    "overview": "sid_strength_clapping_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6,
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1228",
+    "id": "469646818809135104",
+    "overview": "sid_strength_shoulder_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1229",
+    "id": "469646833841520640",
+    "overview": "sid_strength_glute_bridge_hold",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1230",
+    "id": "469646852095131648",
+    "overview": "sid_strength_saw_plank",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1231",
+    "id": "469646870080307200",
+    "overview": "sid_strength_wall_sit",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1232",
+    "id": "469646894239498240",
+    "overview": "sid_strength_wide_grip_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6,
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1233",
+    "id": "469646908198141952",
+    "overview": "sid_strength_donkey_kicks",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1234",
+    "id": "469646932625768448",
+    "overview": "sid_strength_cat_cow_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      3,
+      4
+    ],
+    "muscle": [
+      13,
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1235",
+    "id": "469646951147814912",
+    "overview": "sid_strength_pike_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1,
+      6,
+      2
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1236",
+    "id": "469654210179416064",
+    "overview": "sid_strength_straight_leg_run_or_bounding",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1237",
+    "id": "469654238902009856",
+    "overview": "sid_strength_offset_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2,
+      4,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1238",
+    "id": "469654253934395392",
+    "overview": "sid_strength_plank_with_lateral_movement",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1239",
+    "id": "469654275140796416",
+    "overview": "sid_strength_plank_with_rotation",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1240",
+    "id": "469654288294133760",
+    "overview": "sid_strength_frog_pose",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      9
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1241",
+    "id": "469654301715906560",
+    "overview": "sid_strength_incline_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1242",
+    "id": "469654315137679360",
+    "overview": "sid_strength_fingertip_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6,
+      2
+    ],
+    "muscle": [
+      2,
+      5
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1243",
+    "id": "469654335807209472",
+    "overview": "sid_strength_dead_bug",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1244",
+    "id": "469654349765853184",
+    "overview": "sid_strength_glute_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1245",
+    "id": "469654366408851456",
+    "overview": "sid_strength_decline_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1246",
+    "id": "469654375535656960",
+    "overview": "sid_strength_calf_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1247",
+    "id": "469654402916073472",
+    "overview": "sid_strength_chest_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1248",
+    "id": "469654431907102720",
+    "overview": "sid_strength_thoracic_spine_rotation",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1249",
+    "id": "469654452845068288",
+    "overview": "sid_strength_bird_dog_balance",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      13,
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1250",
+    "id": "469654468145889280",
+    "overview": "sid_strength_supine_oblique_wood_chop",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1251",
+    "id": "469654482641403904",
+    "overview": "sid_strength_supine_cobra",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1252",
+    "id": "469654494720999424",
+    "overview": "sid_strength_supine_knee_tucks",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1253",
+    "id": "469654507874336768",
+    "overview": "sid_strength_close_grip_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2,
+      4
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1254",
+    "id": "469654526664818688",
+    "overview": "sid_strength_standing_forward_bend",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5,
+      4
+    ],
+    "muscle": [
+      8,
+      13,
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1255",
+    "id": "469654538475978752",
+    "overview": "sid_strength_standing_hamstring_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1256",
+    "id": "469654549750267904",
+    "overview": "sid_strength_quadriceps_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1257",
+    "id": "469654586257489920",
+    "overview": "sid_strength_standing_knee_to_elbow",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1258",
+    "id": "469654622496276480",
+    "overview": "sid_strength_lucky_cat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1259",
+    "id": "469654638870839296",
+    "overview": "sid_strength_plank_jacks_2",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      7,
+      6
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1260",
+    "id": "469654652561047552",
+    "overview": "sid_strength_straight_leg_hops",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1261",
+    "id": "469654665714384896",
+    "overview": "sid_strength_diamond_push_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6,
+      2
+    ],
+    "muscle": [
+      4
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1262",
+    "id": "469654754566520832",
+    "overview": "sid_strength_greatest_stretch",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      2,
+      12,
+      13,
+      9,
+      7,
+      8
+    ],
+    "equipment": [],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1263",
+    "id": "469654771477954560",
+    "overview": "sid_strength_lateral_leg_swings",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      9,
+      10,
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1264",
+    "id": "469654782215372800",
+    "overview": "sid_strength_bicep_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1265",
+    "id": "469654791879049216",
+    "overview": "sid_strength_tricep_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      4
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1266",
+    "id": "469654801542725632",
+    "overview": "sid_strength_hamstring_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1267",
+    "id": "469654812548579328",
+    "overview": "sid_strength_inner_thigh_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      9
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1268",
+    "id": "469654825701916672",
+    "overview": "sid_strength_outer_thigh_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      10
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1269",
+    "id": "469654842881785856",
+    "overview": "sid_strength_knee_hug",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      8
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1270",
+    "id": "469654860598525952",
+    "overview": "sid_strength_dynamic_stretch_crossbody_calf_hug",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1271",
+    "id": "469654879389007872",
+    "overview": "sid_strength_dynamic_stretch_quad_stretch_with_reach",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1272",
+    "id": "469654912138133504",
+    "overview": "sid_strength_dynamic_stretch_toe_touch_sweep",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      14,
+      8,
+      13
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1273",
+    "id": "469654926633648128",
+    "overview": "sid_strength_single_leg_hops",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15,
+      7,
+      14
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1274",
+    "id": "469654938176372736",
+    "overview": "sid_strength_lunge_stretch",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1275",
+    "id": "469654960724951040",
+    "overview": "sid_strength_single_leg_calf_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      1,
+      4,
+      11,
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1276",
+    "id": "469654977636384768",
+    "overview": "sid_strength_prone_as",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      3,
+      1
+    ],
+    "muscle": [
+      12,
+      11
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1277",
+    "id": "469654989984415744",
+    "overview": "sid_strength_prone_is",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1,
+      11
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1278",
+    "id": "469655003674624000",
+    "overview": "sid_strength_prone_ys",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1,
+      11
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1279",
+    "id": "469655016022654976",
+    "overview": "sid_strength_prone_ts",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1,
+      11
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1280",
+    "id": "469655035081572352",
+    "overview": "sid_strength_prone_ws",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1,
+      11
+    ],
+    "equipment": [
+      1
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1281",
+    "id": "469655109169758208",
+    "overview": "sid_strength_ez_bar_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1282",
+    "id": "469655124202143744",
+    "overview": "sid_strength_front_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1283",
+    "id": "469655139771400192",
+    "overview": "sid_strength_barbell_front_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1284",
+    "id": "469655157756575744",
+    "overview": "sid_strength_barbell_good_morning",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      8
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1285",
+    "id": "469655178157670400",
+    "overview": "sid_strength_power_clean",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      7,
+      15
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1286",
+    "id": "469655194532233216",
+    "overview": "sid_strength_behind_the_neck_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1287",
+    "id": "469655210101489664",
+    "overview": "sid_strength_romanian_deadlift",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8,
+      14
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1288",
+    "id": "469655226744487936",
+    "overview": "sid_strength_military_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1289",
+    "id": "469655241508438016",
+    "overview": "sid_strength_hip_thrust",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1290",
+    "id": "469655258956742656",
+    "overview": "sid_strength_sumo_deadlift",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14,
+      8
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1291",
+    "id": "469655274794434560",
+    "overview": "sid_strength_box_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1292",
+    "id": "469655288484642816",
+    "overview": "sid_strength_zercher_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      7
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1293",
+    "id": "469655300564238336",
+    "overview": "sid_strength_close_grip_bench_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6,
+      2
+    ],
+    "muscle": [
+      4,
+      2
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1294",
+    "id": "469655322039074823",
+    "overview": "sid_strength_barbell_stiff_leg_deadlift",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5,
+      4
+    ],
+    "muscle": [
+      13,
+      8
+    ],
+    "equipment": [
+      3
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1295",
+    "id": "469655339487379456",
+    "overview": "sid_strength_sumo_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      7
+    ],
+    "equipment": [
+      3,
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1296",
+    "id": "469655368209973248",
+    "overview": "sid_strength_step_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14
+    ],
+    "equipment": [
+      3,
+      2,
+      11,
+      4
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1316",
+    "id": "469655398274744320",
+    "overview": "sid_strength_floor_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      3,
+      2,
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1297",
+    "id": "469656005475745792",
+    "overview": "sid_strength_arnold_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1298",
+    "id": "469656026145275904",
+    "overview": "sid_strength_reverse_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1299",
+    "id": "469656038224871424",
+    "overview": "sid_strength_plank_row",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      3,
+      4
+    ],
+    "muscle": [
+      13,
+      12,
+      6
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1300",
+    "id": "469656056210046976",
+    "overview": "sid_strength_weighted_jump_squats",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14,
+      15
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1301",
+    "id": "469656067215900672",
+    "overview": "sid_strength_goblet_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      7
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1302",
+    "id": "469656087885430784",
+    "overview": "sid_strength_dumbbell_bench_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1303",
+    "id": "469656102649380864",
+    "overview": "sid_strength_incline_dumbbell_bench_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1304",
+    "id": "469656122513604608",
+    "overview": "sid_strength_decline_dumbbell_bench_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1305",
+    "id": "469656136203812864",
+    "overview": "sid_strength_dumbbell_romanian_deadlift",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8,
+      14,
+      13
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1306",
+    "id": "469656148551843840",
+    "overview": "sid_strength_close_grip_dumbbell_bench_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2,
+      6
+    ],
+    "muscle": [
+      2,
+      4
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1307",
+    "id": "469656172442599424",
+    "overview": "sid_strength_dumbbell_snatch",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      7,
+      14,
+      11,
+      4,
+      1
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1315",
+    "id": "469656205728595968",
+    "overview": "sid_strength_single_leg_shoulder_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4,
+      1
+    ],
+    "muscle": [
+      6,
+      13,
+      1
+    ],
+    "equipment": [
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1308",
+    "id": "469656221029416960",
+    "overview": "sid_strength_hammer_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1309",
+    "id": "469656247604527104",
+    "overview": "sid_strength_one_arm_dumbbell_row",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1392",
+    "id": "469656277400862720",
+    "overview": "sid_strength_single_arm_overhead_farmers_walk",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0,
+      4,
+      1
+    ],
+    "muscle": [
+      6,
+      1
+    ],
+    "equipment": [
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1310",
+    "id": "469656430677508096",
+    "overview": "sid_strength_farmers_walk",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      5,
+      13,
+      6
+    ],
+    "equipment": [
+      11,
+      2
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1311",
+    "id": "469656446783635458",
+    "overview": "sid_strength_weighted_hanging_leg_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1312",
+    "id": "469656481680244736",
+    "overview": "sid_strength_dumbbell_good_morning",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      8
+    ],
+    "equipment": [
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1313",
+    "id": "469656494028275712",
+    "overview": "sid_strength_seated_calf_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      2,
+      11
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1314",
+    "id": "469656537514819584",
+    "overview": "sid_strength_dumbbell_thruster",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14
+    ],
+    "equipment": [
+      11,
+      2,
+      10
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1317",
+    "id": "469656606502731776",
+    "overview": "sid_strength_clamshell",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1318",
+    "id": "469656618045456384",
+    "overview": "sid_strength_seated_resistance_band_tibialis_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1319",
+    "id": "469656683275272192",
+    "overview": "sid_strength_banded_kneeling_hip_extensions",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1320",
+    "id": "469656698039222272",
+    "overview": "sid_strength_banded_shoulder_external_rotation",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1321",
+    "id": "469656710118817792",
+    "overview": "sid_strength_banded_hip_abduction",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      10
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1322",
+    "id": "469656729714606080",
+    "overview": "sid_strength_banded_hip_flexion",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1323",
+    "id": "469656748505088001",
+    "overview": "sid_strength_banded_hip_extension",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1324",
+    "id": "469656771322101760",
+    "overview": "sid_strength_banded_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1325",
+    "id": "469656796286599168",
+    "overview": "sid_strength_lying_leg_curls_with_resistance_band",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1326",
+    "id": "469656863395463168",
+    "overview": "sid_strength_banded_ankle_inversion",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1327",
+    "id": "469656876280365065",
+    "overview": "sid_strength_banded_ankle_eversion",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      9
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1328",
+    "id": "469656911445409792",
+    "overview": "sid_strength_barbell_plate_halo",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1,
+      11
+    ],
+    "equipment": [
+      4
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1329",
+    "id": "469657672728363008",
+    "overview": "sid_strength_single_arm_scap_pulls",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1,
+      6
+    ],
+    "muscle": [
+      12,
+      5
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1330",
+    "id": "469657704135311360",
+    "overview": "sid_strength_archer_pull_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1,
+      6
+    ],
+    "muscle": [
+      12,
+      11
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1331",
+    "id": "469657718899261440",
+    "overview": "sid_strength_reverse_hack_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1332",
+    "id": "469657753795870720",
+    "overview": "sid_strength_hack_squat_good_morning",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      8
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1333",
+    "id": "469657777149755392",
+    "overview": "sid_strength_scapular_pull_up",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1,
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1334",
+    "id": "469657795671801856",
+    "overview": "sid_strength_lateral_raise_machine",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1335",
+    "id": "469657805872349184",
+    "overview": "sid_strength_bicep_curl_machine",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1336",
+    "id": "469657821173170176",
+    "overview": "sid_strength_machine_reverse_fly",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1337",
+    "id": "469657833521201152",
+    "overview": "sid_strength_shoulder_press_machine",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1338",
+    "id": "469657854727602176",
+    "overview": "sid_strength_chest_press_machine",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1339",
+    "id": "469657870028423169",
+    "overview": "sid_strength_smith_machine_squat",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1340",
+    "id": "469657888818905088",
+    "overview": "sid_strength_supine_pull_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1,
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1341",
+    "id": "469657908683128832",
+    "overview": "sid_strength_triceps_pushdown_machine",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      4
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1342",
+    "id": "469657957806817280",
+    "overview": "sid_strength_lat_pulldowns",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1381",
+    "id": "469658057933242369",
+    "overview": "sid_strength_smith_machine_reverse_kickbacks",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1382",
+    "id": "469658242885271552",
+    "overview": "sid_strength_smith_machine_shoulder_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      6
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1343",
+    "id": "469658318047199232",
+    "overview": "sid_strength_bosu_ball_high_knee_lunge",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      7,
+      13,
+      6,
+      14
+    ],
+    "equipment": [
+      8
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1344",
+    "id": "469658337642987520",
+    "overview": "sid_strength_bosu_ball_single_leg_deadlift",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4,
+      5
+    ],
+    "muscle": [
+      6,
+      13,
+      14,
+      8
+    ],
+    "equipment": [
+      8
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1345",
+    "id": "469658358849388544",
+    "overview": "sid_strength_bosu_ball_single_leg_hold",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5,
+      4
+    ],
+    "muscle": [
+      15,
+      14,
+      7,
+      8
+    ],
+    "equipment": [
+      8
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1346",
+    "id": "469658434816622592",
+    "overview": "sid_strength_single_leg_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1347",
+    "id": "469658451728056320",
+    "overview": "sid_strength_exercise_ball_circles",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      13,
+      6
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1348",
+    "id": "469658468907925504",
+    "overview": "sid_strength_exercise_ball_buzzsaw_plank",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      13,
+      6
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1349",
+    "id": "469658479913779200",
+    "overview": "sid_strength_exercise_ball_plank",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6,
+      13
+    ],
+    "equipment": [
+      7
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1350",
+    "id": "469664362139926528",
+    "overview": "sid_strength_single_arm_lat_pulldown",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1351",
+    "id": "469664376635441152",
+    "overview": "sid_strength_behind_the_neck_pulldowns",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1352",
+    "id": "469664388983472128",
+    "overview": "sid_strength_face_pull",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1353",
+    "id": "469664401331503104",
+    "overview": "sid_strength_cable_lateral_raise",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1354",
+    "id": "469664414753275904",
+    "overview": "sid_strength_cable_rotation",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6,
+      13
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1355",
+    "id": "469664432470016000",
+    "overview": "sid_strength_kneeling_cable_woodchop",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6,
+      13
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1356",
+    "id": "469664447233966080",
+    "overview": "sid_strength_cable_reverse_fly",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1357",
+    "id": "469664464145399808",
+    "overview": "sid_strength_cable_pull_through",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14,
+      8
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1358",
+    "id": "469664481325268993",
+    "overview": "sid_strength_straight_arm_pulldown",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1359",
+    "id": "469664493136429057",
+    "overview": "sid_strength_kneeling_anti_rotational_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6,
+      13
+    ],
+    "equipment": [
+      5
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1360",
+    "id": "469664517295620096",
+    "overview": "sid_strength_hangboard_pull_ups",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      3,
+      6
+    ],
+    "muscle": [
+      5,
+      12
+    ],
+    "equipment": [
+      12
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1361",
+    "id": "469664532328005632",
+    "overview": "sid_strength_rainbow_slam",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      0
+    ],
+    "muscle": [
+      6,
+      13
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1362",
+    "id": "469664544676036608",
+    "overview": "sid_strength_med_ball_push_press",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1363",
+    "id": "469664556218761216",
+    "overview": "sid_strength_twist_throw",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1364",
+    "id": "469664572324888576",
+    "overview": "sid_strength_russian_twist_med_ball_slam",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      10
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1365",
+    "id": "469664598899998720",
+    "overview": "sid_strength_nordic_hamstring_curl",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1366",
+    "id": "469664609905852416",
+    "overview": "sid_strength_box_step_up_knee_drive",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1367",
+    "id": "469664622790754304",
+    "overview": "sid_strength_reverse_step_down",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7,
+      14
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1369",
+    "id": "469664640507494400",
+    "overview": "sid_strength_kneeling_ab_wheel_rollout",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      4
+    ],
+    "muscle": [
+      6,
+      13
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1370",
+    "id": "469664689094311936",
+    "overview": "sid_strength_wrist_roller",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1371",
+    "id": "469664704932003841",
+    "overview": "sid_strength_hex_bar_deadlift",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 6,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8,
+      14
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1372",
+    "id": "469664716206292992",
+    "overview": "sid_strength_battle_rope_double_waves",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      3,
+      4
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1373",
+    "id": "469664747344805888",
+    "overview": "sid_strength_battle_rope_in_and_out_waves",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6,
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1374",
+    "id": "469664761035014144",
+    "overview": "sid_strength_battle_rope_slams",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      1,
+      3
+    ],
+    "muscle": [
+      1,
+      12
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1375",
+    "id": "469664775262093312",
+    "overview": "sid_strength_battle_rope_alternating_waves",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6,
+      2,
+      3
+    ],
+    "muscle": [
+      3,
+      12,
+      2
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1376",
+    "id": "469664793784139776",
+    "overview": "sid_strength_foot_rolling",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1377",
+    "id": "469664813111492608",
+    "overview": "sid_strength_one_arm_bar_hangs",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      6
+    ],
+    "muscle": [
+      5
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1378",
+    "id": "469664827875442688",
+    "overview": "sid_strength_stick_warmup_1",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1,
+      11
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1379",
+    "id": "469664842102521856",
+    "overview": "sid_strength_stick_warmup_2",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1,
+      11
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1380",
+    "id": "469664854987423744",
+    "overview": "sid_strength_stick_warmup_3",
+    "nameText": "",
+    "targetType": 3,
+    "targetValue": 12,
+    "sets": 4,
+    "part": [
+      1
+    ],
+    "muscle": [
+      1
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1368",
+    "id": "469664891494645760",
+    "overview": "sid_strength_copenhagen_plank",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5,
+      4
+    ],
+    "muscle": [
+      6
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1383",
+    "id": "469664907869208576",
+    "overview": "sid_strength_foam_rolling_tibialis_anteriors",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1384",
+    "id": "469664919948804096",
+    "overview": "sid_strength_foam_rolling_hips",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      14
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1385",
+    "id": "469664933639012352",
+    "overview": "sid_strength_foam_rolling_hamstrings",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      8
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1386",
+    "id": "469664947060785152",
+    "overview": "sid_strength_foam_rolling_it_bands",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      10
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1387",
+    "id": "469664961287864320",
+    "overview": "sid_strength_foam_rolling_quads",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      7
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1388",
+    "id": "469664974709637120",
+    "overview": "sid_strength_foam_rolling_adductors",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      9
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1389",
+    "id": "469664987057668096",
+    "overview": "sid_strength_foam_rolling_calves",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      5
+    ],
+    "muscle": [
+      15
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1390",
+    "id": "469664998331957248",
+    "overview": "sid_strength_foam_rolling_chest",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      2
+    ],
+    "muscle": [
+      2
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  },
+  {
+    "name": "T1391",
+    "id": "469665012022165504",
+    "overview": "sid_strength_foam_rolling_upper_back",
+    "nameText": "",
+    "targetType": 2,
+    "targetValue": 30,
+    "sets": 4,
+    "part": [
+      3
+    ],
+    "muscle": [
+      12
+    ],
+    "equipment": [
+      16
+    ],
+    "restType": 1,
+    "restValue": 60
+  }
+]

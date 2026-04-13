@@ -34,6 +34,8 @@ When creating a plan, consider how these three components interact — for examp
 
 **Important**: When answering any question about current status, load, fatigue, or training metrics, ALWAYS run `PYTHONIOENCODING=utf-8 python -m coros_sync sync` first to ensure the local database has the latest data before querying.
 
+**力量训练动作选择原则**: 优先使用COROS内置动作（377个），这样推送到手表后有动画指导和标准化记录。内置动作库见 `src/coros_sync/exercise_catalog.md`。只有当内置库中确实没有匹配的动作时，才通过 `client.add_exercise()` 创建自定义动作。注意COROS动作名称可能与常用名称不同（如"侧卧平板撑"="侧平板"，"哥本哈根平板"="哥本哈根侧平板"），搜索时用关键词模糊匹配。
+
 Before drafting a new weekly plan, always review the following inputs:
 
 - **Current training phase**: where this week sits in the overall periodization (from TRAINING_PLAN.md)
