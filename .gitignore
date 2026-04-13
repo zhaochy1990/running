@@ -4,10 +4,10 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
-*.db
 .claude/
 .omc/
 *.un~
 *~
 profile
+*.db
 data/*/config.json
