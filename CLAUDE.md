@@ -2,23 +2,35 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-This project contains the training plans, logs for a marathon runner.
+This project contains the training plans, logs for multiple marathon runners.
 It also contains tools like coros-sync to sync the training data from COROS to the local for further analysis.
 
 ## Folder Structure
 
 ```
-logs/
-    2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注), 括号后缀可选
-        plan.md                  # weekly training plan
-        feedback.md              # training feedback with RPE
-    2026-04-20_04-26(W0)/
-        plan.md
-        strength-assessment.md   # strength weakness assessment protocol & results
+data/
+    zhaochaoyi/                  # per-user data directory
+        coros.db                 # user's SQLite database
+        config.json              # user's COROS credentials (git-ignored)
+        logs/
+            2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注)
+                plan.md                  # weekly training plan
+                feedback.md              # training feedback with RPE
+            2026-04-20_04-26(W0)/
+                plan.md
+    dehua/                       # another user
+        coros.db
+        config.json
+        logs/
 src/                 # contains the source code for the tools
 tests/               # contains testing files for the tools
+frontend/            # React + Vite frontend (STRIDE dashboard)
 TRAINING_PLAN.md     # The overall training plan — Fall 2026 season (revised Apr 12)
 ```
+
+### Multi-user Architecture
+
+Each user has an isolated directory under `data/{username}/` containing their own SQLite database, COROS credentials, and training logs. The CLI uses `--profile` / `-P` to select a user, and the API uses `/{user}/` path prefix.
 
 ## Training Plan (plan.md)
 
@@ -30,7 +42,7 @@ Each weekly plan.md must comprehensively cover three major components:
 
 When creating a plan, consider how these three components interact — for example: differentiated carb intake on run days vs rest days, protein timing around strength sessions, and calorie deficit management during recovery weeks.
 
-**Important**: When answering any question about current status, load, fatigue, or training metrics, ALWAYS run `PYTHONIOENCODING=utf-8 python -m coros_sync sync` first to ensure the local database has the latest data before querying.
+**Important**: When answering any question about current status, load, fatigue, or training metrics, ALWAYS run `PYTHONIOENCODING=utf-8 python -m coros_sync -P {username} sync` first to ensure the local database has the latest data before querying. Default user is `zhaochaoyi`.
 
 **力量训练动作选择原则**: 优先使用COROS内置动作（377个），这样推送到手表后有动画指导和标准化记录。内置动作库见 `src/coros_sync/exercise_catalog.md`。只有当内置库中确实没有匹配的动作时，才通过 `client.add_exercise()` 创建自定义动作。注意COROS动作名称可能与常用名称不同（如"侧卧平板撑"="侧平板"，"哥本哈根平板"="哥本哈根侧平板"），搜索时用关键词模糊匹配。
 
@@ -64,12 +76,12 @@ To query fatigue trends:
 
 ```bash
 # Sync latest health data first
-PYTHONIOENCODING=utf-8 python -m coros_sync sync
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync
 
 # Query recent fatigue (last 14 days)
 python -c "
 from coros_sync.db import Database
-db = Database()
+db = Database(user='zhaochaoyi')
 rows = db._conn.execute('''
     SELECT date, fatigue, training_load_ratio, training_load_state, rhr, ati, cti
     FROM daily_health ORDER BY date DESC LIMIT 14
@@ -138,22 +150,27 @@ On Windows, set `PYTHONIOENCODING=utf-8` to avoid Rich/Unicode rendering errors 
 # Install (editable, with all extras)
 pip install -e ".[dev,analysis]"
 
-# Run CLI (use python -m coros_sync instead of coros-sync)
-PYTHONIOENCODING=utf-8 python -m coros_sync login
-PYTHONIOENCODING=utf-8 python -m coros_sync sync [--full] [-j 4]
-PYTHONIOENCODING=utf-8 python -m coros_sync status
-PYTHONIOENCODING=utf-8 python -m coros_sync export [--from YYYYMMDD] [--to YYYYMMDD] [-o file.csv]
-PYTHONIOENCODING=utf-8 python -m coros_sync analyze weekly|monthly|zones|load|hrv|predictions
-PYTHONIOENCODING=utf-8 python -m coros_sync workout push easy|tempo|interval|long --date YYYYMMDD [options]
-PYTHONIOENCODING=utf-8 python -m coros_sync workout week --start YYYYMMDD
-PYTHONIOENCODING=utf-8 python -m coros_sync workout delete YYYYMMDD
+# Run CLI — use -P/--profile to select user (data stored in data/{profile}/)
+# Without -P, falls back to legacy platformdirs paths
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi login
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync [--full] [-j 4]
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi status
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi export [--from YYYYMMDD] [--to YYYYMMDD] [-o file.csv]
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi analyze weekly|monthly|zones|load|hrv|predictions
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi workout push easy|tempo|interval|long --date YYYYMMDD [options]
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi workout week --start YYYYMMDD
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi workout delete YYYYMMDD
+
+# For dehua:
+PYTHONIOENCODING=utf-8 python -m coros_sync -P dehua login
+PYTHONIOENCODING=utf-8 python -m coros_sync -P dehua sync
 
 # Push strength training (programmatic, no CLI command yet)
 python -c "
 from coros_sync.client import CorosClient
 from coros_sync.workout import StrengthWorkout, push_strength_workout
 
-client = CorosClient()
+client = CorosClient(user='zhaochaoyi')  # or 'dehua'
 exercises = client.query_exercises(sport_type=4)  # 419 built-in + custom
 
 # Find exercise by overview keyword
@@ -180,7 +197,7 @@ custom = client.add_exercise({
 # Direct DB query (when CLI export doesn't work)
 python -c "
 from coros_sync.db import Database
-db = Database()
+db = Database(user='zhaochaoyi')
 rows = db._conn.execute('SELECT * FROM activities WHERE date >= ? ORDER BY date', ('2026-03-30',)).fetchall()
 for r in rows: print(dict(r))
 "

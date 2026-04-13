@@ -12,6 +12,9 @@ from .models import ActivityDetail, DailyHealth, Dashboard, Lap, RacePrediction,
 DATA_DIR = Path(user_data_dir("coros-sync"))
 DB_PATH = DATA_DIR / "coros.db"
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+USER_DATA_DIR = PROJECT_ROOT / "data"
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 
@@ -144,8 +147,13 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 
 
 class Database:
-    def __init__(self, db_path: Path | str | None = None):
-        self._path = Path(db_path) if db_path else DB_PATH
+    def __init__(self, db_path: Path | str | None = None, user: str | None = None):
+        if db_path:
+            self._path = Path(db_path)
+        elif user:
+            self._path = USER_DATA_DIR / user / "coros.db"
+        else:
+            self._path = DB_PATH
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(self._path))
         self._conn.row_factory = sqlite3.Row

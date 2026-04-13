@@ -31,8 +31,9 @@ class CorosAuthError(CorosAPIError):
 
 
 class CorosClient:
-    def __init__(self, credentials: Credentials | None = None, request_delay: float = 0.5):
-        self._creds = credentials or Credentials.load()
+    def __init__(self, credentials: Credentials | None = None, request_delay: float = 0.5, user: str | None = None):
+        self._creds = credentials or Credentials.load(user=user)
+        self._user = user
         self._delay = request_delay
         self._client = httpx.Client(timeout=30.0)
         self._relogin_lock = threading.Lock()
@@ -69,7 +70,7 @@ class CorosClient:
             region=region,
             user_id=user_id,
         )
-        self._creds.save()
+        self._creds.save(user=self._user)
         return self._creds
 
     def _detect_region(self, token: str) -> str:
@@ -101,7 +102,7 @@ class CorosClient:
         region = self._detect_region(token)
         self._creds.access_token = token
         self._creds.region = region
-        self._creds.save()
+        self._creds.save(user=self._user)
         return token
 
     # --- Low-level request helpers ---

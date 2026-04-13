@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { getActivity, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
+import { useUser } from '../UserContext'
 import SegmentView from '../components/SegmentView'
 import ZoneChart from '../components/ZoneChart'
 import HRChart from '../components/HRChart'
@@ -8,6 +9,7 @@ import PaceChart from '../components/PaceChart'
 
 export default function ActivityDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { user } = useUser()
   const [activity, setActivity] = useState<Activity | null>(null)
   const [laps, setLaps] = useState<Lap[]>([])
   const [segments, setSegments] = useState<Segment[]>([])
@@ -16,9 +18,9 @@ export default function ActivityDetailPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!id) return
+    if (!id || !user) return
     setLoading(true)
-    getActivity(id)
+    getActivity(user, id)
       .then((data) => {
         setActivity(data.activity)
         setLaps(data.laps)

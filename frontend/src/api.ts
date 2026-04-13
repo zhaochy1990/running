@@ -6,6 +6,10 @@ async function fetchJSON<T>(path: string): Promise<T> {
   return res.json()
 }
 
+export function getUsers() {
+  return fetchJSON<{ users: string[] }>('/users')
+}
+
 export interface Activity {
   label_id: string
   name: string | null
@@ -100,8 +104,8 @@ export interface WeekDetail {
   activity_count: number
 }
 
-export function triggerSync() {
-  return fetch(`${BASE}/sync`, { method: 'POST' }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
+export function triggerSync(user: string) {
+  return fetch(`${BASE}/${user}/sync`, { method: 'POST' }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
 }
 
 export interface HealthRecord {
@@ -116,25 +120,25 @@ export interface HealthRecord {
   fatigue: number | null
 }
 
-export function getHealth(days = 30) {
-  return fetchJSON<{ health: HealthRecord[] }>(`/health?days=${days}`)
+export function getHealth(user: string, days = 30) {
+  return fetchJSON<{ health: HealthRecord[] }>(`/${user}/health?days=${days}`)
 }
 
-export function getWeeks() {
-  return fetchJSON<{ weeks: WeekSummary[] }>('/weeks')
+export function getWeeks(user: string) {
+  return fetchJSON<{ weeks: WeekSummary[] }>(`/${user}/weeks`)
 }
 
-export function getWeek(folder: string) {
-  return fetchJSON<WeekDetail>(`/weeks/${folder}`)
+export function getWeek(user: string, folder: string) {
+  return fetchJSON<WeekDetail>(`/${user}/weeks/${folder}`)
 }
 
 export interface Segment extends Lap {
   seg_name: string
 }
 
-export function getActivity(id: string) {
+export function getActivity(user: string, id: string) {
   return fetchJSON<{ activity: Activity; laps: Lap[]; segments: Segment[]; zones: Zone[]; timeseries: TimeseriesPoint[] }>(
-    `/activities/${id}`
+    `/${user}/activities/${id}`
   )
 }
 

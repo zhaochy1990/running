@@ -1,4 +1,4 @@
-"""FastAPI backend serving training data from the local SQLite database."""
+"""FastAPI backend serving training data from per-user SQLite databases."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from .db import Database
+from .db import Database, USER_DATA_DIR
 from .models import pace_str
 
 app = FastAPI(title="STRIDE - Running Dashboard API")
@@ -21,12 +21,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-LOGS_DIR = PROJECT_ROOT / "logs"
+
+def _get_db(user: str) -> Database:
+    return Database(user=user)
 
 
-def _get_db() -> Database:
-    return Database()
+def _get_logs_dir(user: str) -> Path:
+    return USER_DATA_DIR / user / "logs"
 
 
 def _format_duration(seconds: float | None, **_) -> str:
@@ -38,18 +39,31 @@ def _format_duration(seconds: float | None, **_) -> str:
     return f"{hrs:02d}:{mins:02d}:{secs:02d}"
 
 
+# --- Users ---
+
+
+@app.get("/api/users")
+def list_users():
+    """List all available user profiles."""
+    if not USER_DATA_DIR.exists():
+        return {"users": []}
+    users = sorted(d.name for d in USER_DATA_DIR.iterdir() if d.is_dir())
+    return {"users": users}
+
+
 # --- Activities ---
 
 
-@app.get("/api/activities")
+@app.get("/api/{user}/activities")
 def list_activities(
+    user: str,
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     sport: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
 ):
-    db = _get_db()
+    db = _get_db(user)
     conditions = []
     params: list = []
 
@@ -92,9 +106,9 @@ def list_activities(
     return {"total": total_count, "offset": offset, "limit": limit, "activities": activities}
 
 
-@app.get("/api/activities/{label_id}")
-def get_activity(label_id: str):
-    db = _get_db()
+@app.get("/api/{user}/activities/{label_id}")
+def get_activity(user: str, label_id: str):
+    db = _get_db(user)
 
     rows = db.query("SELECT * FROM activities WHERE label_id = ?", (label_id,))
     if not rows:
@@ -190,13 +204,14 @@ def _parse_week_dates(folder_name: str) -> tuple[str, str] | None:
     return date_from, date_to
 
 
-@app.get("/api/weeks")
-def list_weeks():
+@app.get("/api/{user}/weeks")
+def list_weeks(user: str):
     """List all training weeks with plan info and activity summary."""
-    db = _get_db()
+    db = _get_db(user)
+    logs_dir = _get_logs_dir(user)
     weeks = []
-    if LOGS_DIR.exists():
-        for folder in sorted(LOGS_DIR.iterdir(), reverse=True):
+    if logs_dir.exists():
+        for folder in sorted(logs_dir.iterdir(), reverse=True):
             if not folder.is_dir():
                 continue
             dates = _parse_week_dates(folder.name)
@@ -237,8 +252,8 @@ def list_weeks():
     return {"weeks": weeks}
 
 
-@app.get("/api/weeks/{folder}")
-def get_week(folder: str):
+@app.get("/api/{user}/weeks/{folder}")
+def get_week(user: str, folder: str):
     """Get full week data: plan content + activities list."""
     dates = _parse_week_dates(folder)
     if not dates:
@@ -247,20 +262,22 @@ def get_week(folder: str):
     date_from, date_to = dates
     result: dict = {"folder": folder, "date_from": date_from, "date_to": date_to}
 
+    logs_dir = _get_logs_dir(user)
+
     # Plan content
-    plan_path = LOGS_DIR / folder / "plan.md"
+    plan_path = logs_dir / folder / "plan.md"
     if plan_path.exists():
         with open(plan_path, "r", encoding="utf-8") as f:
             result["plan"] = f.read()
 
     # Feedback
-    feedback_path = LOGS_DIR / folder / "feedback.md"
+    feedback_path = logs_dir / folder / "feedback.md"
     if feedback_path.exists():
         with open(feedback_path, "r", encoding="utf-8") as f:
             result["feedback"] = f.read()
 
     # Activities for this week
-    db = _get_db()
+    db = _get_db(user)
     rows = db.query(
         """SELECT label_id, name, sport_type, sport_name, date,
             distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
@@ -294,19 +311,19 @@ def get_week(folder: str):
 # --- Sync ---
 
 
-@app.post("/api/sync")
-def trigger_sync():
-    """Trigger a data sync from COROS."""
+@app.post("/api/{user}/sync")
+def trigger_sync(user: str):
+    """Trigger a data sync from COROS for the given user."""
     from .auth import Credentials
     from .client import CorosClient
     from .sync import run_sync
 
     try:
-        creds = Credentials.load()
+        creds = Credentials.load(user=user)
         if not creds.is_logged_in:
-            return {"success": False, "error": "未登录，请先运行: coros-sync login"}
+            return {"success": False, "error": f"用户 {user} 未登录，请先运行: coros-sync --profile {user} login"}
 
-        with CorosClient(creds) as client, Database() as db:
+        with CorosClient(creds, user=user) as client, Database(user=user) as db:
             activities, health = run_sync(client, db, full=False, jobs=4)
         return {
             "success": True,
@@ -319,9 +336,9 @@ def trigger_sync():
 # --- Dashboard / Health ---
 
 
-@app.get("/api/dashboard")
-def get_dashboard():
-    db = _get_db()
+@app.get("/api/{user}/dashboard")
+def get_dashboard(user: str):
+    db = _get_db(user)
     rows = db.query("SELECT * FROM dashboard WHERE id = 1")
     dashboard = dict(rows[0]) if rows else {}
     if dashboard.get("threshold_pace_s_km"):
@@ -339,9 +356,9 @@ def get_dashboard():
     return dashboard
 
 
-@app.get("/api/health")
-def get_health(days: int = Query(30, ge=1, le=365)):
-    db = _get_db()
+@app.get("/api/{user}/health")
+def get_health(user: str, days: int = Query(30, ge=1, le=365)):
+    db = _get_db(user)
     rows = db.query(
         "SELECT * FROM daily_health ORDER BY date DESC LIMIT ?", (days,)
     )
@@ -349,9 +366,9 @@ def get_health(days: int = Query(30, ge=1, le=365)):
     return {"health": [dict(r) for r in rows]}
 
 
-@app.get("/api/stats")
-def get_stats():
-    db = _get_db()
+@app.get("/api/{user}/stats")
+def get_stats(user: str):
+    db = _get_db(user)
     total_activities = db.get_activity_count()
     total_km = db.get_total_distance_km()
     latest_date = db.get_latest_activity_date()

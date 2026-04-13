@@ -15,19 +15,26 @@ console = Console()
 
 
 @click.group()
-def cli() -> None:
+@click.option("-P", "--profile", default=None, envvar="COROS_PROFILE",
+              help="User profile name (corresponds to data/{profile}/ directory)")
+@click.pass_context
+def cli(ctx: click.Context, profile: str | None) -> None:
     """Sync COROS watch running data to local SQLite for analysis."""
+    ctx.ensure_object(dict)
+    ctx.obj["profile"] = profile
 
 
 @cli.command()
 @click.option("-u", "--user", default=None, help="COROS account email")
 @click.option("-p", "--password", "pwd", default=None, help="COROS account password")
-def login(user: str | None, pwd: str | None) -> None:
+@click.pass_context
+def login(ctx: click.Context, user: str | None, pwd: str | None) -> None:
     """Login to COROS Training Hub."""
+    profile = ctx.obj["profile"]
     email = user or click.prompt("Email")
     password = pwd or click.prompt("Password", hide_input=True)
 
-    with CorosClient() as client:
+    with CorosClient(user=profile) as client:
         try:
             creds = client.login(email, password)
             console.print(f"[green]Logged in as {creds.email} (region: {creds.region})[/green]")
@@ -39,14 +46,16 @@ def login(user: str | None, pwd: str | None) -> None:
 @cli.command()
 @click.option("--full", is_flag=True, help="Re-sync all activities, not just new ones")
 @click.option("-j", "--jobs", default=4, show_default=True, help="Number of parallel fetch threads")
-def sync(full: bool, jobs: int) -> None:
+@click.pass_context
+def sync(ctx: click.Context, full: bool, jobs: int) -> None:
     """Sync activities and health data from COROS."""
-    creds = Credentials.load()
+    profile = ctx.obj["profile"]
+    creds = Credentials.load(user=profile)
     if not creds.is_logged_in:
         console.print("[red]Not logged in. Run: coros-sync login[/red]")
         raise SystemExit(1)
 
-    with CorosClient(creds) as client, Database() as db:
+    with CorosClient(creds, user=profile) as client, Database(user=profile) as db:
         activities, health = run_sync(client, db, full=full, jobs=jobs)
         console.print(f"\n[green]Synced {activities} activities, {health} daily health records[/green]")
 
@@ -55,34 +64,39 @@ def sync(full: bool, jobs: int) -> None:
 @click.option("--from", "date_from", required=True, help="Start date (YYYY-MM-DD or YYYYMMDD)")
 @click.option("--to", "date_to", required=True, help="End date (YYYY-MM-DD or YYYYMMDD)")
 @click.option("-j", "--jobs", default=4, show_default=True, help="Number of parallel fetch threads")
-def resync(date_from: str, date_to: str, jobs: int) -> None:
+@click.pass_context
+def resync(ctx: click.Context, date_from: str, date_to: str, jobs: int) -> None:
     """Re-sync activities within a date range (re-fetches details from COROS)."""
     from .sync import resync_date_range
 
-    creds = Credentials.load()
+    profile = ctx.obj["profile"]
+    creds = Credentials.load(user=profile)
     if not creds.is_logged_in:
         console.print("[red]Not logged in. Run: coros-sync login[/red]")
         raise SystemExit(1)
 
-    with CorosClient(creds) as client, Database() as db:
+    with CorosClient(creds, user=profile) as client, Database(user=profile) as db:
         count = resync_date_range(client, db, date_from, date_to, jobs=jobs)
         console.print(f"\n[green]Re-synced {count} activities ({date_from} to {date_to})[/green]")
 
 
 @cli.command()
-def status() -> None:
+@click.pass_context
+def status(ctx: click.Context) -> None:
     """Show sync status and database summary."""
-    with Database() as db:
+    profile = ctx.obj["profile"]
+    with Database(user=profile) as db:
         count = db.get_activity_count()
         distance = db.get_total_distance_km()
         latest = db.get_latest_activity_date()
         last_sync = db.get_meta("last_sync_time")
 
-    creds = Credentials.load()
+    creds = Credentials.load(user=profile)
 
-    table = Table(title="coros-sync status")
+    table = Table(title=f"coros-sync status{f' [{profile}]' if profile else ''}")
     table.add_column("Field", style="cyan")
     table.add_column("Value")
+    table.add_row("Profile", profile or "[dim]default[/dim]")
     table.add_row("Account", creds.email or "[dim]not logged in[/dim]")
     table.add_row("Region", creds.region)
     table.add_row("Activities", str(count))
@@ -96,10 +110,12 @@ def status() -> None:
 @click.option("--from", "from_date", default=None, help="Start date (YYYYMMDD)")
 @click.option("--to", "to_date", default=None, help="End date (YYYYMMDD)")
 @click.option("--output", "-o", default=None, help="Output file (default: stdout)")
-def export(from_date: str | None, to_date: str | None, output: str | None) -> None:
+@click.pass_context
+def export(ctx: click.Context, from_date: str | None, to_date: str | None, output: str | None) -> None:
     """Export activities to CSV."""
     from .export import export_activities
-    with Database() as db:
+    profile = ctx.obj["profile"]
+    with Database(user=profile) as db:
         export_activities(db, from_date=from_date, to_date=to_date, output_path=output)
 
 
@@ -109,50 +125,56 @@ def analyze() -> None:
 
 
 @analyze.command()
-def weekly() -> None:
+@click.pass_context
+def weekly(ctx: click.Context) -> None:
     """Weekly mileage and average pace."""
     from .analyze import weekly_summary
-    with Database() as db:
+    with Database(user=ctx.obj["profile"]) as db:
         weekly_summary(db)
 
 
 @analyze.command()
-def monthly() -> None:
+@click.pass_context
+def monthly(ctx: click.Context) -> None:
     """Monthly summary."""
     from .analyze import monthly_summary
-    with Database() as db:
+    with Database(user=ctx.obj["profile"]) as db:
         monthly_summary(db)
 
 
 @analyze.command()
-def zones() -> None:
+@click.pass_context
+def zones(ctx: click.Context) -> None:
     """Heart rate zone distribution across all activities."""
     from .analyze import zone_distribution
-    with Database() as db:
+    with Database(user=ctx.obj["profile"]) as db:
         zone_distribution(db)
 
 
 @analyze.command()
-def load() -> None:
+@click.pass_context
+def load(ctx: click.Context) -> None:
     """Training load (ATI/CTI) trends."""
     from .analyze import training_load_trend
-    with Database() as db:
+    with Database(user=ctx.obj["profile"]) as db:
         training_load_trend(db)
 
 
 @analyze.command()
-def hrv() -> None:
+@click.pass_context
+def hrv(ctx: click.Context) -> None:
     """HRV trends over time."""
     from .analyze import hrv_trend
-    with Database() as db:
+    with Database(user=ctx.obj["profile"]) as db:
         hrv_trend(db)
 
 
 @analyze.command()
-def predictions() -> None:
+@click.pass_context
+def predictions(ctx: click.Context) -> None:
     """Race time predictions."""
     from .analyze import race_predictions
-    with Database() as db:
+    with Database(user=ctx.obj["profile"]) as db:
         race_predictions(db)
 
 
@@ -183,7 +205,9 @@ def workout() -> None:
 @click.option("--mp-km", type=float, default=0, help="Marathon pace km at end (long run)")
 @click.option("--mp-pace-low", default="4:10", help="Marathon pace low (long run)")
 @click.option("--mp-pace-high", default="4:00", help="Marathon pace high (long run)")
+@click.pass_context
 def push_workout_cmd(
+    ctx: click.Context,
     workout_type: str, date: str, distance: float | None, duration: float | None,
     pace_low: str | None, pace_high: str | None,
     reps: int | None, interval_m: int | None, recovery_min: float, warmup_min: float,
@@ -205,7 +229,8 @@ def push_workout_cmd(
     """
     from .workout import easy_run, tempo_run, interval_run, long_run, push_workout
 
-    creds = Credentials.load()
+    profile = ctx.obj["profile"]
+    creds = Credentials.load(user=profile)
     if not creds.is_logged_in:
         console.print("[red]Not logged in. Run: coros-sync login[/red]")
         raise SystemExit(1)
@@ -235,24 +260,26 @@ def push_workout_cmd(
         console.print(f"[red]Unknown workout type: {workout_type}[/red]")
         raise SystemExit(1)
 
-    with CorosClient(creds) as client:
+    with CorosClient(creds, user=profile) as client:
         result = push_workout(client, w)
         console.print(f"[green]Pushed '{w.name}' to {date}[/green]")
 
 
 @workout.command("week")
 @click.option("--start", required=True, help="Week start date YYYYMMDD (Monday)")
-def push_week_cmd(start: str) -> None:
+@click.pass_context
+def push_week_cmd(ctx: click.Context, start: str) -> None:
     """Push this week's recovery plan to COROS."""
     from .workout import build_recovery_week, push_workout
 
-    creds = Credentials.load()
+    profile = ctx.obj["profile"]
+    creds = Credentials.load(user=profile)
     if not creds.is_logged_in:
         console.print("[red]Not logged in. Run: coros-sync login[/red]")
         raise SystemExit(1)
 
     workouts = build_recovery_week(start)
-    with CorosClient(creds) as client:
+    with CorosClient(creds, user=profile) as client:
         for w in workouts:
             result = push_workout(client, w)
             console.print(f"[green]Pushed '{w.name}' to {w.date}[/green]")
@@ -260,17 +287,19 @@ def push_week_cmd(start: str) -> None:
 
 @workout.command("delete")
 @click.argument("date", required=True)
-def delete_workout_cmd(date: str) -> None:
+@click.pass_context
+def delete_workout_cmd(ctx: click.Context, date: str) -> None:
     """Delete a scheduled workout by date (YYYYMMDD).
 
     Example: coros-sync workout delete 20260402
     """
-    creds = Credentials.load()
+    profile = ctx.obj["profile"]
+    creds = Credentials.load(user=profile)
     if not creds.is_logged_in:
         console.print("[red]Not logged in. Run: coros-sync login[/red]")
         raise SystemExit(1)
 
-    with CorosClient(creds) as client:
+    with CorosClient(creds, user=profile) as client:
         # Query schedule to find the workout on that date
         data = client.query_schedule(date, date)
         schedule = data.get("data", {})

@@ -7,12 +7,14 @@ import {
   sportColor, sportNameCN, trainTypeColor, trainTypeCN,
   type WeekSummary, type WeekDetail, type Activity,
 } from '../api'
+import { useUser } from '../UserContext'
 
 type Tab = 'plan' | 'activities' | 'feedback'
 
 export default function WeekLayout() {
   const { folder } = useParams<{ folder: string }>()
   const navigate = useNavigate()
+  const { user, setUser, users } = useUser()
   const [weeks, setWeeks] = useState<WeekSummary[]>([])
   const [weekDetail, setWeekDetail] = useState<WeekDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -24,13 +26,12 @@ export default function WeekLayout() {
   const handleSync = () => {
     setSyncing(true)
     setSyncMsg(null)
-    triggerSync()
+    triggerSync(user)
       .then((res) => {
         setSyncMsg(res.success ? '同步完成' : `同步失败: ${res.error}`)
         if (res.success) {
-          // Refresh data
-          getWeeks().then((data) => setWeeks(data.weeks))
-          if (folder) getWeek(folder).then(setWeekDetail)
+          getWeeks(user).then((data) => setWeeks(data.weeks))
+          if (folder) getWeek(user, folder).then(setWeekDetail)
         }
       })
       .catch(() => setSyncMsg('同步请求失败'))
@@ -41,10 +42,13 @@ export default function WeekLayout() {
   }
 
   useEffect(() => {
-    getWeeks()
+    if (!user) return
+    setLoading(true)
+    setWeekDetail(null)
+    getWeeks(user)
       .then((data) => setWeeks(data.weeks))
       .finally(() => setLoading(false))
-  }, [])
+  }, [user])
 
   useEffect(() => {
     if (!folder && weeks.length > 0) {
@@ -53,14 +57,14 @@ export default function WeekLayout() {
   }, [weeks, folder, navigate])
 
   useEffect(() => {
-    if (folder) {
+    if (folder && user) {
       setLoadingDetail(true)
       setActiveTab('plan')
-      getWeek(folder)
+      getWeek(user, folder)
         .then(setWeekDetail)
         .finally(() => setLoadingDetail(false))
     }
-  }, [folder])
+  }, [folder, user])
 
   return (
     <div className="min-h-screen flex">
@@ -131,6 +135,23 @@ export default function WeekLayout() {
         </div>
 
         <div className="px-3 py-3 border-t border-border-subtle space-y-2">
+          {users.length > 1 && (
+            <div className="flex gap-1 p-0.5 bg-bg-primary rounded-lg">
+              {users.map((u) => (
+                <button
+                  key={u}
+                  onClick={() => { setUser(u); navigate('/') }}
+                  className={`flex-1 px-2 py-1.5 text-[11px] font-medium rounded-md transition-all truncate ${
+                    user === u
+                      ? 'bg-accent-purple/15 text-accent-purple'
+                      : 'text-text-muted hover:text-text-secondary'
+                  }`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             onClick={() => navigate('/health')}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/10 transition-all"
@@ -156,7 +177,6 @@ export default function WeekLayout() {
               {syncMsg}
             </p>
           )}
-          <p className="text-[10px] font-mono text-text-muted text-center">COROS PACE 4</p>
         </div>
       </nav>
 

@@ -5,6 +5,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import { getHealth, type HealthRecord } from '../api'
+import { useUser } from '../UserContext'
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return dateStr
@@ -52,16 +53,18 @@ function loadStateColor(state: string | null): string {
 
 export default function HealthPage() {
   const navigate = useNavigate()
+  const { user } = useUser()
   const [records, setRecords] = useState<HealthRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
 
   useEffect(() => {
+    if (!user) return
     setLoading(true)
-    getHealth(days)
+    getHealth(user, days)
       .then((data) => setRecords(data.health))
       .finally(() => setLoading(false))
-  }, [days])
+  }, [days, user])
 
   // Records come newest first; reverse for charts
   const chartData = [...records].reverse().map((r) => ({
@@ -153,7 +156,7 @@ export default function HealthPage() {
                       <CartesianGrid {...GRID_STYLE} />
                       <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#2a2a3e' }} tickLine={false} />
                       <YAxis domain={['dataMin - 3', 'dataMax + 3']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: number) => [`${v} bpm`, 'RHR']} />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} bpm`, 'RHR']} />
                       <ReferenceLine y={47} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} />
                       <ReferenceLine y={55} stroke="#ff5252" strokeDasharray="4 4" strokeOpacity={0.4} />
@@ -174,7 +177,7 @@ export default function HealthPage() {
                       <CartesianGrid {...GRID_STYLE} />
                       <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#2a2a3e' }} tickLine={false} />
                       <YAxis domain={[20, 70]} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: number) => [`${v}`, '疲劳值']} />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}`, '疲劳值']} />
                       <ReferenceLine y={40} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '恢复', position: 'right', fill: '#00e676', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
                       <ReferenceLine y={50} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '疲劳', position: 'right', fill: '#ffab00', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
                       <ReferenceLine y={60} stroke="#ff5252" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '高疲劳', position: 'right', fill: '#ff5252', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
@@ -202,7 +205,7 @@ export default function HealthPage() {
                       <CartesianGrid {...GRID_STYLE} />
                       <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#2a2a3e' }} tickLine={false} />
                       <YAxis domain={[0, 'dataMax + 0.3']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: number) => [v?.toFixed(2), '负荷比']} />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [typeof v === 'number' ? v.toFixed(2) : `${v}`, '负荷比']} />
                       <ReferenceLine y={0.8} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.4} />
                       <ReferenceLine y={1.0} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} />
                       <ReferenceLine y={1.2} stroke="#ff5252" strokeDasharray="4 4" strokeOpacity={0.4} />
