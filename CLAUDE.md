@@ -9,12 +9,12 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 
 ```
 logs/
-    2026-04-13_04-19/   # folder name: YYYY-MM-DD_MM-DD (year-start_end, zero-padded, auto-sorts)
-        plan.md         # weekly training plan
-        feedback.md     # training feedback with RPE
-    2026-04-20_04-26/
+    2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注), 括号后缀可选
+        plan.md                  # weekly training plan
+        feedback.md              # training feedback with RPE
+    2026-04-20_04-26(W0)/
         plan.md
-        strength-assessment.md  # strength weakness assessment protocol & results
+        strength-assessment.md   # strength weakness assessment protocol & results
 src/                 # contains the source code for the tools
 tests/               # contains testing files for the tools
 TRAINING_PLAN.md     # The overall training plan — Fall 2026 season (revised Apr 12)
