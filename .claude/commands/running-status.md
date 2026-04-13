@@ -69,16 +69,18 @@ SELECT race_type, duration_s, avg_pace FROM race_predictions
 
 ### 2e. Weekly Mileage (last 6 weeks)
 
+Note: `distance_m` is stored in km despite the column name. Dates are UTC — use `+8 hours` for CST grouping.
+
 ```sql
 SELECT
-    strftime('%Y-W%W', date) AS week,
-    ROUND(SUM(distance_m) / 1000.0, 1) AS km,
+    strftime('%Y-W%W', datetime(date, '+8 hours')) AS week,
+    ROUND(SUM(distance_m), 1) AS km,
     COUNT(*) AS runs,
     ROUND(AVG(avg_pace_s_km), 0) AS avg_pace,
     ROUND(AVG(avg_hr), 0) AS avg_hr
 FROM activities
 WHERE date >= date('now', '-42 days') AND sport_name = 'Run'
-GROUP BY strftime('%Y-W%W', date)
+GROUP BY strftime('%Y-W%W', datetime(date, '+8 hours'))
 ORDER BY week DESC
 ```
 
