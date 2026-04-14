@@ -5,8 +5,8 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm install
 COPY frontend/ ./
 
-ARG VITE_AUTH_BASE_URL=https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io
-ARG VITE_AUTH_CLIENT_ID=app_62978bf2803346878a2e4805
+ARG VITE_AUTH_BASE_URL
+ARG VITE_AUTH_CLIENT_ID
 ENV VITE_AUTH_BASE_URL=$VITE_AUTH_BASE_URL
 ENV VITE_AUTH_CLIENT_ID=$VITE_AUTH_CLIENT_ID
 
