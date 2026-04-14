@@ -214,6 +214,8 @@ class ActivityDetail:
     humidity: float | None
     feels_like: float | None
     wind_speed: float | None
+    feel_type: int | None = None
+    sport_note: str | None = None
     laps: list[Lap] = field(default_factory=list)
     zones: list[Zone] = field(default_factory=list)
     timeseries: list[TimeseriesPoint] = field(default_factory=list)
@@ -223,6 +225,7 @@ class ActivityDetail:
         detail = data.get("data", {})
         s = detail.get("summary", {})
         w = detail.get("weather", {})
+        feel = detail.get("sportFeelInfo", {})
         st = s.get("sportType", 0)
 
         # Parse laps
@@ -282,6 +285,8 @@ class ActivityDetail:
             vo2max=s.get("currentVo2Max"),
             performance=s.get("performance"),
             train_type=train_type_name(s["trainType"]) if s.get("trainType") else None,
+            feel_type=feel.get("feelType"),
+            sport_note=feel.get("sportNote") or None,
             temperature=round(w["temperature"] / 10, 1) if w.get("temperature") else None,
             humidity=round(w["humidity"] / 10, 1) if w.get("humidity") else None,
             feels_like=round(w["bodyFeelTemp"] / 10, 1) if w.get("bodyFeelTemp") else None,

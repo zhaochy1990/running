@@ -99,6 +99,21 @@ When creating weekly plans, include the fatigue trend table for context. Key thr
 
 This file contains the feedback for the trainings in this week, ususally contains perceived exertion.
 
+**自动同步训练反馈**: 每次执行 `coros-sync sync` 同步到新的训练记录后，检查本周的活动是否带有训练反馈（`sport_note` 字段不为空）。如果有，将反馈内容追加到对应周目录的 `feedback.md` 中。格式为直接追加原始文本，保持与用户在 COROS App 中写的一致。查询方式：
+
+```python
+from coros_sync.db import Database
+db = Database(user='zhaochaoyi')
+rows = db._conn.execute('''
+    SELECT date, name, sport_name, feel_type, sport_note
+    FROM activities
+    WHERE sport_note IS NOT NULL AND date >= ?
+    ORDER BY date
+''', (week_start_iso,)).fetchall()
+```
+
+`feel_type` 含义（COROS App 训练后表情评分）：1=很好, 2=好, 3=一般, 4=差, 5=很差。若无法确认准确映射，以用户 `sport_note` 文字内容为准。
+
 I will use RPE (Rate of Perceived Exertion) as the metrics to measure how hard I'm during a run. The RPE effort rates from 1 to 10.
 RPE 1 Very Easy
 No effort. Walking or complete rest.

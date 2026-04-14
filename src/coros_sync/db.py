@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS activities (
     feels_like      REAL,
     wind_speed      REAL,
     device          TEXT,
+    feel_type       INTEGER,
+    sport_note      TEXT,
     synced_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -177,6 +179,10 @@ class Database:
             self._conn.execute("ALTER TABLE activities ADD COLUMN feels_like REAL")
         if "wind_speed" not in act_cols:
             self._conn.execute("ALTER TABLE activities ADD COLUMN wind_speed REAL")
+        if "feel_type" not in act_cols:
+            self._conn.execute("ALTER TABLE activities ADD COLUMN feel_type INTEGER")
+        if "sport_note" not in act_cols:
+            self._conn.execute("ALTER TABLE activities ADD COLUMN sport_note TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -197,8 +203,8 @@ class Database:
              avg_hr, max_hr, avg_cadence, max_cadence, avg_power, max_power,
              avg_step_len_cm, ascent_m, descent_m, calories_kcal,
              aerobic_effect, anaerobic_effect, training_load, vo2max, performance, train_type,
-             temperature, humidity, feels_like, wind_speed)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             temperature, humidity, feels_like, wind_speed, feel_type, sport_note)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
              a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
              a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
@@ -206,7 +212,8 @@ class Database:
              a.avg_step_len_cm, a.ascent_m, a.descent_m, a.calories_kcal,
              a.aerobic_effect, a.anaerobic_effect, a.training_load,
              a.vo2max, a.performance, a.train_type,
-             a.temperature, a.humidity, a.feels_like, a.wind_speed),
+             a.temperature, a.humidity, a.feels_like, a.wind_speed,
+             a.feel_type, a.sport_note),
         )
         # Upsert child records
         for lap in a.laps:
