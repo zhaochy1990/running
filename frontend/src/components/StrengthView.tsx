@@ -26,7 +26,8 @@ function groupByExercise(segments: Segment[]): ExerciseGroup[] {
 
   for (const seg of segments) {
     const name = seg.seg_name
-    if (name === '休息') continue // skip rest segments
+    // Skip rest segments: mode 15=set rest, 16=transition, 17=exercise rest, or name "休息"
+    if (name === '休息' || seg.mode === 15 || seg.mode === 16 || seg.mode === 17) continue
     if (current && current.name === name) {
       current.sets.push(seg)
     } else {

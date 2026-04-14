@@ -169,7 +169,7 @@ def get_activity(user: str, label_id: str):
     seg_rows = db.query(
         """SELECT lap_index, lap_type, distance_m, duration_s, avg_pace,
            adjusted_pace, avg_hr, max_hr, avg_cadence, avg_power, ascent_m, descent_m,
-           exercise_type, exercise_name_key
+           exercise_type, exercise_name_key, mode
         FROM laps WHERE label_id = ? AND lap_type = 'type2'
         ORDER BY lap_index""",
         (label_id,),

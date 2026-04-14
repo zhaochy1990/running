@@ -139,38 +139,57 @@ export default function ActivityDetailPage() {
         )}
       </div>
 
-      {/* Charts Row */}
-      {timeseries.length > 0 && (
-        <div className={`grid grid-cols-1 ${isStrength ? '' : 'lg:grid-cols-2'} gap-4 mb-6`}>
-          <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0" style={{ animationFillMode: 'forwards' }}>
-            <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率曲线</h3>
-            <HRChart data={timeseries} />
+      {/* Charts & Zones */}
+      {isStrength ? (
+        /* Strength: HR chart (2/3) + HR zones (1/3) on one row */
+        (timeseries.length > 0 || hrZones.length > 0) && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+            {timeseries.length > 0 && (
+              <div className="lg:col-span-2 bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0" style={{ animationFillMode: 'forwards' }}>
+                <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率曲线</h3>
+                <HRChart data={timeseries} />
+              </div>
+            )}
+            {hrZones.length > 0 && (
+              <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0" style={{ animationFillMode: 'forwards' }}>
+                <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率区间</h3>
+                <ZoneChart zones={hrZones} type="hr" />
+              </div>
+            )}
           </div>
-          {!isStrength && (
-            <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0" style={{ animationFillMode: 'forwards' }}>
-              <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速曲线</h3>
-              <PaceChart data={timeseries} />
+        )
+      ) : (
+        /* Running: separate chart row + zones row */
+        <>
+          {timeseries.length > 0 && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0" style={{ animationFillMode: 'forwards' }}>
+                <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率曲线</h3>
+                <HRChart data={timeseries} />
+              </div>
+              <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0" style={{ animationFillMode: 'forwards' }}>
+                <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速曲线</h3>
+                <PaceChart data={timeseries} />
+              </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Zones */}
-      {(hrZones.length > 0 || paceZones.length > 0) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-          {hrZones.length > 0 && (
-            <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-3 opacity-0" style={{ animationFillMode: 'forwards' }}>
-              <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率区间</h3>
-              <ZoneChart zones={hrZones} type="hr" />
+          {(hrZones.length > 0 || paceZones.length > 0) && (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              {hrZones.length > 0 && (
+                <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-3 opacity-0" style={{ animationFillMode: 'forwards' }}>
+                  <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率区间</h3>
+                  <ZoneChart zones={hrZones} type="hr" />
+                </div>
+              )}
+              {paceZones.length > 0 && (
+                <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-4 opacity-0" style={{ animationFillMode: 'forwards' }}>
+                  <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速区间</h3>
+                  <ZoneChart zones={paceZones} type="pace" />
+                </div>
+              )}
             </div>
           )}
-          {!isStrength && paceZones.length > 0 && (
-            <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-4 opacity-0" style={{ animationFillMode: 'forwards' }}>
-              <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速区间</h3>
-              <ZoneChart zones={paceZones} type="pace" />
-            </div>
-          )}
-        </div>
+        </>
       )}
 
       {/* Segments & Laps */}

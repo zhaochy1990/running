@@ -154,6 +154,7 @@ export function getWeek(user: string, folder: string) {
 
 export interface Segment extends Lap {
   seg_name: string
+  mode: number | null
 }
 
 export function getActivity(user: string, id: string) {
