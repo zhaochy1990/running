@@ -110,6 +110,7 @@ class Lap:
     ascent_m: float | None
     descent_m: float | None
     exercise_type: int | None = None
+    exercise_name_key: str | None = None
 
     @classmethod
     def from_api(cls, data: dict, index: int, lap_type: str) -> Lap:
@@ -127,6 +128,7 @@ class Lap:
             ascent_m=data.get("elevGain"),
             descent_m=data.get("totalDescent"),
             exercise_type=data.get("exerciseType"),
+            exercise_name_key=data.get("exerciseNameKey"),
         )
 
 

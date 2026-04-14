@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS laps (
     ascent_m    REAL,
     descent_m   REAL,
     exercise_type INTEGER,
+    exercise_name_key TEXT,
     UNIQUE(label_id, lap_index, lap_type)
 );
 
@@ -170,6 +171,8 @@ class Database:
         cols = {r[1] for r in self._conn.execute("PRAGMA table_info(laps)").fetchall()}
         if "exercise_type" not in cols:
             self._conn.execute("ALTER TABLE laps ADD COLUMN exercise_type INTEGER")
+        if "exercise_name_key" not in cols:
+            self._conn.execute("ALTER TABLE laps ADD COLUMN exercise_name_key TEXT")
         act_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(activities)").fetchall()}
         if "temperature" not in act_cols:
             self._conn.execute("ALTER TABLE activities ADD COLUMN temperature REAL")
@@ -227,11 +230,12 @@ class Database:
         self._conn.execute(
             """INSERT OR REPLACE INTO laps
             (label_id, lap_index, lap_type, distance_m, duration_s, avg_pace, adjusted_pace,
-             avg_hr, max_hr, avg_cadence, avg_power, ascent_m, descent_m, exercise_type)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             avg_hr, max_hr, avg_cadence, avg_power, ascent_m, descent_m, exercise_type, exercise_name_key)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (label_id, lap.lap_index, lap.lap_type, lap.distance_m, lap.duration_s,
              lap.avg_pace, lap.adjusted_pace, lap.avg_hr, lap.max_hr,
-             lap.avg_cadence, lap.avg_power, lap.ascent_m, lap.descent_m, lap.exercise_type),
+             lap.avg_cadence, lap.avg_power, lap.ascent_m, lap.descent_m, lap.exercise_type,
+             lap.exercise_name_key),
         )
 
     def _upsert_zone(self, label_id: str, zone: Zone) -> None:

@@ -17,6 +17,29 @@ from .models import pace_str
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend" / "dist"
 
+# COROS exercise T-code -> Chinese name mapping
+_EXERCISE_NAMES: dict[str, str] = {
+    "T1001": "搏击操", "T1002": "引体向上", "T1004": "俯卧撑", "T1005": "跳绳",
+    "T1006": "仰卧起坐", "T1007": "波比跳", "T1009": "开合跳", "T1010": "平板支撑",
+    "T1011": "哑铃体侧屈", "T1013": "高抬腿", "T1014": "跳箱", "T1035": "仰卧举腿",
+    "T1076": "自行车卷腹", "T1079": "登山跑", "T1106": "弹力带反向飞鸟",
+    "T1120": "热身", "T1121": "训练", "T1122": "放松", "T1123": "休息",
+    "T1145": "俄罗斯转体", "T1150": "鸟狗式", "T1185": "侧平板",
+    "T1243": "死虫式", "T1320": "弹力带肩外旋", "T1324": "弹力带肩推",
+    "T1364": "药球俄罗斯转体", "T1368": "哥本哈根侧平板",
+    "T1384": "泡沫轴-髋部", "T1385": "泡沫轴-腘绳肌",
+    "T1386": "泡沫轴-髂胫束", "T1387": "泡沫轴-股四头肌", "T1389": "泡沫轴-小腿",
+    "S3618": "休息",
+}
+
+
+def _exercise_name(key: str) -> str:
+    """Resolve exercise T-code to Chinese name, fallback to cleaned key."""
+    if key in _EXERCISE_NAMES:
+        return _EXERCISE_NAMES[key]
+    # Fallback: strip sid_strength_ prefix and humanize
+    return key.replace("sid_strength_", "").replace("_", " ").title()
+
 app = FastAPI(title="STRIDE - Running Dashboard API")
 
 app.add_middleware(
@@ -146,7 +169,7 @@ def get_activity(user: str, label_id: str):
     seg_rows = db.query(
         """SELECT lap_index, lap_type, distance_m, duration_s, avg_pace,
            adjusted_pace, avg_hr, max_hr, avg_cadence, avg_power, ascent_m, descent_m,
-           exercise_type
+           exercise_type, exercise_name_key
         FROM laps WHERE label_id = ? AND lap_type = 'type2'
         ORDER BY lap_index""",
         (label_id,),
@@ -157,7 +180,11 @@ def get_activity(user: str, label_id: str):
         sd["distance_km"] = round(sd["distance_m"], 2) if sd["distance_m"] else 0
         sd["duration_fmt"] = _format_duration(sd["duration_s"], decimals=2)
         sd["pace_fmt"] = pace_str(sd["avg_pace"]) or "—"
-        sd["seg_name"] = EXERCISE_TYPES.get(sd.get("exercise_type") or 0, "训练")
+        name_key = sd.get("exercise_name_key")
+        if name_key:
+            sd["seg_name"] = _exercise_name(name_key)
+        else:
+            sd["seg_name"] = EXERCISE_TYPES.get(sd.get("exercise_type") or 0, "训练")
         segments.append(sd)
 
     # Zones
