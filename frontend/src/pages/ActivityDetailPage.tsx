@@ -43,6 +43,7 @@ export default function ActivityDetailPage() {
     return <div className="text-text-muted text-center py-20">未找到该训练记录</div>
   }
 
+  const isStrength = [402, 800].includes(activity.sport_type)
   const hrZones = zones.filter((z) => z.zone_type === 'heartRate')
   const paceZones = zones.filter((z) => z.zone_type === 'pace')
 
@@ -139,15 +140,17 @@ export default function ActivityDetailPage() {
 
       {/* Charts Row */}
       {timeseries.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <div className={`grid grid-cols-1 ${isStrength ? '' : 'lg:grid-cols-2'} gap-4 mb-6`}>
           <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0" style={{ animationFillMode: 'forwards' }}>
             <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率曲线</h3>
             <HRChart data={timeseries} />
           </div>
-          <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0" style={{ animationFillMode: 'forwards' }}>
-            <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速曲线</h3>
-            <PaceChart data={timeseries} />
-          </div>
+          {!isStrength && (
+            <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0" style={{ animationFillMode: 'forwards' }}>
+              <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速曲线</h3>
+              <PaceChart data={timeseries} />
+            </div>
+          )}
         </div>
       )}
 
@@ -160,7 +163,7 @@ export default function ActivityDetailPage() {
               <ZoneChart zones={hrZones} type="hr" />
             </div>
           )}
-          {paceZones.length > 0 && (
+          {!isStrength && paceZones.length > 0 && (
             <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-4 opacity-0" style={{ animationFillMode: 'forwards' }}>
               <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速区间</h3>
               <ZoneChart zones={paceZones} type="pace" />

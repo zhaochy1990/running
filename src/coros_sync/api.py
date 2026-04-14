@@ -47,7 +47,7 @@ def list_users():
     """List all available user profiles."""
     if not USER_DATA_DIR.exists():
         return {"users": []}
-    users = sorted(d.name for d in USER_DATA_DIR.iterdir() if d.is_dir())
+    users = sorted(d.name for d in USER_DATA_DIR.iterdir() if d.is_dir() and not d.name.startswith("."))
     return {"users": users}
 
 
@@ -191,14 +191,14 @@ def get_activity(user: str, label_id: str):
 
 
 def _parse_week_dates(folder_name: str) -> tuple[str, str] | None:
-    """Parse folder name like '4-6_4-12' into (YYYY-MM-DD, YYYY-MM-DD) date range."""
+    """Parse folder name like '2026-04-13_04-19(赛后恢复)' into (YYYY-MM-DD, YYYY-MM-DD) date range."""
     import re
-    m = re.match(r"(\d{1,2})-(\d{1,2})_(\d{1,2})-(\d{1,2})", folder_name)
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})", folder_name)
     if not m:
         return None
-    sm, sd, em, ed = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
-    year = 2026  # current training year
-    # Use ISO format prefix for date comparison (matches ISO timestamps like 2026-04-04T...)
+    year = int(m.group(1))
+    sm, sd = int(m.group(2)), int(m.group(3))
+    em, ed = int(m.group(4)), int(m.group(5))
     date_from = f"{year}-{sm:02d}-{sd:02d}"
     date_to = f"{year}-{em:02d}-{ed:02d}"
     return date_from, date_to
