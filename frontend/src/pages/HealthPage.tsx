@@ -107,9 +107,6 @@ export default function HealthPage() {
           </button>
         </div>
 
-        <div className="px-3 py-3 border-t border-border-subtle">
-          <p className="text-[10px] font-mono text-text-muted text-center">COROS PACE 4</p>
-        </div>
       </nav>
 
       {/* Main content */}
