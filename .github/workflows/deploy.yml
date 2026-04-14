@@ -8,6 +8,7 @@ on:
       - 'frontend/**'
       - 'Dockerfile'
       - '.github/workflows/deploy.yml'
+      - 'pyproject.toml'
     tags: ['v*']
   workflow_dispatch:
 
