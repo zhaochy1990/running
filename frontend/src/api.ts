@@ -1,7 +1,27 @@
+import { refreshAccessToken } from './store/authStore'
+
 const BASE = '/api'
 
+function authHeaders(): HeadersInit {
+  const token = sessionStorage.getItem('access_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 async function fetchJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`)
+  let res = await fetch(`${BASE}${path}`, { headers: authHeaders() })
+
+  // Auto-refresh on 401
+  if (res.status === 401) {
+    try {
+      await refreshAccessToken()
+      res = await fetch(`${BASE}${path}`, { headers: authHeaders() })
+    } catch {
+      sessionStorage.clear()
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
+  }
+
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json()
 }
@@ -105,7 +125,7 @@ export interface WeekDetail {
 }
 
 export function triggerSync(user: string) {
-  return fetch(`${BASE}/${user}/sync`, { method: 'POST' }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
+  return fetch(`${BASE}/${user}/sync`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
 }
 
 export interface HealthRecord {

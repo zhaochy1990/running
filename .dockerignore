@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.omc
+.pytest_cache
+__pycache__
+*.pyc
+node_modules
+frontend/node_modules
+data/
+tests/
+*.db
+*.db-wal
+*.db-shm
+profile

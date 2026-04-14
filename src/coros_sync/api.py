@@ -8,9 +8,14 @@ from pathlib import Path
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .db import Database, USER_DATA_DIR
 from .models import pace_str
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+FRONTEND_DIR = PROJECT_ROOT / "frontend" / "dist"
 
 app = FastAPI(title="STRIDE - Running Dashboard API")
 
@@ -400,3 +405,25 @@ def get_stats(user: str):
         "latest_date": latest_date,
         "weekly": weekly,
     }
+
+
+# --- Health check ---
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# --- Static file serving (production) ---
+
+if FRONTEND_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
+
+    @app.get("/{filename:path}")
+    async def serve_spa(filename: str):
+        """Serve SPA: return the file if it exists, otherwise index.html for client-side routing."""
+        file_path = FRONTEND_DIR / filename
+        if filename and file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(FRONTEND_DIR / "index.html")
