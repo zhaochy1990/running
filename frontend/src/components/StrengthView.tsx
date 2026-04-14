@@ -15,23 +15,38 @@ function formatTime(s: number | null): string {
   return `${mins}:${String(secs).padStart(2, '0')}`
 }
 
+interface SetWithRest {
+  set: Segment
+  rest_s: number | null
+}
+
 interface ExerciseGroup {
   name: string
-  sets: Segment[]
+  sets: SetWithRest[]
+}
+
+function isRest(seg: Segment): boolean {
+  return seg.seg_name === '休息' || seg.mode === 15 || seg.mode === 16 || seg.mode === 17
 }
 
 function groupByExercise(segments: Segment[]): ExerciseGroup[] {
   const groups: ExerciseGroup[] = []
   let current: ExerciseGroup | null = null
 
-  for (const seg of segments) {
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]
+    if (isRest(seg)) continue
+
     const name = seg.seg_name
-    // Skip rest segments: mode 15=set rest, 16=transition, 17=exercise rest, or name "休息"
-    if (name === '休息' || seg.mode === 15 || seg.mode === 16 || seg.mode === 17) continue
+    // Look ahead for a rest segment
+    const next = i + 1 < segments.length ? segments[i + 1] : null
+    const rest_s = next && isRest(next) ? next.duration_s : null
+
+    const entry: SetWithRest = { set: seg, rest_s }
     if (current && current.name === name) {
-      current.sets.push(seg)
+      current.sets.push(entry)
     } else {
-      current = { name, sets: [seg] }
+      current = { name, sets: [entry] }
       groups.push(current)
     }
   }
@@ -54,10 +69,11 @@ export default function StrengthView({ segments }: { segments: Segment[] }) {
 
 function ExerciseRow({ index, group }: { index: number; group: ExerciseGroup }) {
   const [expanded, setExpanded] = useState(false)
-  const totalTime = group.sets.reduce((sum, s) => sum + (s.duration_s || 0), 0)
-  const avgHR = Math.round(
-    group.sets.reduce((sum, s) => sum + (s.avg_hr || 0), 0) / group.sets.filter(s => s.avg_hr).length || 0
-  )
+  const totalTime = group.sets.reduce((sum, s) => sum + (s.set.duration_s || 0), 0)
+  const setsWithHR = group.sets.filter(s => s.set.avg_hr)
+  const avgHR = setsWithHR.length > 0
+    ? Math.round(setsWithHR.reduce((sum, s) => sum + (s.set.avg_hr || 0), 0) / setsWithHR.length)
+    : 0
 
   return (
     <div className="rounded-lg border border-border-subtle overflow-hidden">
@@ -96,20 +112,22 @@ function ExerciseRow({ index, group }: { index: number; group: ExerciseGroup }) 
               <tr className="border-b border-border-subtle">
                 <th className="text-left py-1.5 px-4 font-mono text-text-muted font-normal">组</th>
                 <th className="text-right py-1.5 px-3 font-mono text-text-muted font-normal">时长</th>
+                <th className="text-right py-1.5 px-3 font-mono text-text-muted font-normal">休息</th>
                 <th className="text-right py-1.5 px-3 font-mono text-text-muted font-normal">心率</th>
                 <th className="text-right py-1.5 px-3 font-mono text-text-muted font-normal">最高心率</th>
               </tr>
             </thead>
             <tbody>
-              {group.sets.map((set, i) => (
+              {group.sets.map((entry, i) => (
                 <tr key={i} className="border-b border-border-subtle/50 hover:bg-bg-card-hover/50 transition-colors">
                   <td className="py-1.5 px-4 font-mono text-text-muted">{i + 1}</td>
-                  <td className="py-1.5 px-3 text-right font-mono text-text-secondary">{formatTime(set.duration_s)}</td>
-                  <td className="py-1.5 px-3 text-right font-mono" style={{ color: getHRColor(set.avg_hr) }}>
-                    {set.avg_hr || '—'}
+                  <td className="py-1.5 px-3 text-right font-mono text-text-secondary">{formatTime(entry.set.duration_s)}</td>
+                  <td className="py-1.5 px-3 text-right font-mono text-text-muted">{formatTime(entry.rest_s)}</td>
+                  <td className="py-1.5 px-3 text-right font-mono" style={{ color: getHRColor(entry.set.avg_hr) }}>
+                    {entry.set.avg_hr || '—'}
                   </td>
-                  <td className="py-1.5 px-3 text-right font-mono" style={{ color: getHRColor(set.max_hr) }}>
-                    {set.max_hr || '—'}
+                  <td className="py-1.5 px-3 text-right font-mono" style={{ color: getHRColor(entry.set.max_hr) }}>
+                    {entry.set.max_hr || '—'}
                   </td>
                 </tr>
               ))}

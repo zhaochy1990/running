@@ -49,7 +49,7 @@ export default function ActivityDetailPage() {
   const paceZones = zones.filter((z) => z.zone_type === 'pace')
 
   return (
-    <div className="animate-fade-in">
+    <div className="max-w-5xl mx-auto px-8 py-8 animate-fade-in">
       {/* Back link */}
       <button
         onClick={() => window.history.back()}
@@ -93,9 +93,9 @@ export default function ActivityDetailPage() {
 
         {/* Key Metrics Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mt-6 pt-6 border-t border-border-subtle">
-          <BigMetric label="距离" value={`${activity.distance_km}`} unit="km" color="#00e676" />
+          {!isStrength && <BigMetric label="距离" value={`${activity.distance_km}`} unit="km" color="#00e676" />}
           <BigMetric label="时长" value={activity.duration_fmt} color="#00e5ff" />
-          <BigMetric label="平均配速" value={activity.pace_fmt} color="#00e676" />
+          {!isStrength && <BigMetric label="平均配速" value={activity.pace_fmt} color="#00e676" />}
           <BigMetric label="平均心率" value={activity.avg_hr ? `${activity.avg_hr}` : '—'} unit="bpm" color="#ff5252" />
           <BigMetric label="最大心率" value={activity.max_hr ? `${activity.max_hr}` : '—'} unit="bpm" color="#ff1744" />
           <BigMetric label="卡路里" value={activity.calories_kcal ? `${activity.calories_kcal}` : '—'} unit="kcal" color="#ffab00" />
@@ -103,10 +103,10 @@ export default function ActivityDetailPage() {
 
         {/* Secondary Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mt-4 pt-4 border-t border-border-subtle">
-          <SmallMetric label="步频" value={activity.avg_cadence ? `${activity.avg_cadence} spm` : '—'} />
-          <SmallMetric label="累计爬升" value={activity.ascent_m ? `${activity.ascent_m} m` : '—'} />
+          {!isStrength && <SmallMetric label="步频" value={activity.avg_cadence ? `${activity.avg_cadence} spm` : '—'} />}
+          {!isStrength && <SmallMetric label="累计爬升" value={activity.ascent_m ? `${activity.ascent_m} m` : '—'} />}
           <SmallMetric label="训练负荷" value={activity.training_load ? `${activity.training_load.toFixed(0)}` : '—'} />
-          <SmallMetric label="最大摄氧量" value={activity.vo2max ? `${activity.vo2max.toFixed(1)}` : '—'} />
+          {!isStrength && <SmallMetric label="最大摄氧量" value={activity.vo2max ? `${activity.vo2max.toFixed(1)}` : '—'} />}
           <SmallMetric label="有氧效果" value={activity.aerobic_effect ? `${activity.aerobic_effect.toFixed(1)}` : '—'} />
           <SmallMetric label="无氧效果" value={activity.anaerobic_effect ? `${activity.anaerobic_effect.toFixed(1)}` : '—'} />
         </div>
