@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { getActivity, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
 import { useUser } from '../UserContext'
 import SegmentView from '../components/SegmentView'
+import StrengthView from '../components/StrengthView'
 import ZoneChart from '../components/ZoneChart'
 import HRChart from '../components/HRChart'
 import PaceChart from '../components/PaceChart'
@@ -178,7 +179,7 @@ export default function ActivityDetailPage() {
           <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">
             分段数据
           </h3>
-          <SegmentView segments={segments} laps={laps} />
+          {isStrength ? <StrengthView segments={segments} /> : <SegmentView segments={segments} laps={laps} />}
         </div>
       )}
     </div>
