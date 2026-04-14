@@ -114,11 +114,10 @@ rows = db._conn.execute('''
 
 `feel_type` 含义（COROS App 训练后表情评分）：1=很好, 2=好, 3=一般, 4=差, 5=很差。若无法确认准确映射，以用户 `sport_note` 文字内容为准。
 
-**Feedback 自动生成，不要使用模板**: feedback.md 不需要提前创建模板。内容来源：
-1. **COROS 训练反馈**（`sport_note`）— 同步时自动追加
-2. **客观数据**（10km 测试成绩、周跑量、总时长、平均心率等）— 从 DB 查询后直接写入，不用占位符
-3. **主观反馈**（RPE、体感等）— 用户口头告诉后直接写入
-每次更新 feedback.md 时追加内容，不覆盖已有内容。
+**Feedback 自动生成，不要使用模板**: feedback.md 不需要提前创建模板。内容全部从数据自动获取：
+1. **主观反馈**（`sport_note` + `feel_type`）— 从 COROS App 训练反馈同步，是用户在训练后写的体感和备注
+2. **客观数据**（10km 测试成绩、周跑量、总时长、平均心率等）— 从 DB 活动记录和健康数据查询
+每次更新 feedback.md 时追加内容，不覆盖已有内容。不要用 `____` 占位符。
 
 I will use RPE (Rate of Perceived Exertion) as the metrics to measure how hard I'm during a run. The RPE effort rates from 1 to 10.
 RPE 1 Very Easy
