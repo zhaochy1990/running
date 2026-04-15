@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar, Cell,
+  ResponsiveContainer, AreaChart, Area, Line, BarChart, Bar, Cell,
   ComposedChart,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts'
@@ -143,129 +143,6 @@ export default function HealthPage() {
                 </div>
               </div>
 
-              {/* PMC Section */}
-              {pmcSummary && (
-                <div className="mb-6">
-                  {/* PMC Summary Cards */}
-                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
-                    <MetricCard
-                      label="体能" sublabel="CTI (Fitness)"
-                      value={pmcSummary.current_cti != null ? `${pmcSummary.current_cti}` : '—'} unit=""
-                      color="#00a85a" detail="42天慢性负荷"
-                    />
-                    <MetricCard
-                      label="疲劳" sublabel="ATI (Fatigue)"
-                      value={pmcSummary.current_ati != null ? `${pmcSummary.current_ati}` : '—'} unit=""
-                      color="#0097a7" detail="7天急性负荷"
-                    />
-                    <MetricCard
-                      label="竞技状态" sublabel="TSB (Form)"
-                      value={pmcSummary.current_tsb != null ? `${pmcSummary.current_tsb > 0 ? '+' : ''}${pmcSummary.current_tsb}` : '—'} unit=""
-                      color={tsbColor(pmcSummary.current_tsb)}
-                      detail={tsbZoneLabel(pmcSummary.current_tsb_zone)}
-                    />
-                    <MetricCard
-                      label="状态区间" sublabel="TSB Zone"
-                      value={pmcSummary.current_tsb_zone_label || '—'} unit=""
-                      color={tsbZoneColor(pmcSummary.current_tsb_zone)}
-                      detail={`疲劳 ${pmcSummary.current_fatigue ?? '—'}`}
-                    />
-                    <MetricCard
-                      label="CTL周增量" sublabel="Ramp Rate"
-                      value={pmcSummary.ctl_ramp != null ? `${pmcSummary.ctl_ramp > 0 ? '+' : ''}${pmcSummary.ctl_ramp}` : '—'} unit="/周"
-                      color={pmcSummary.ctl_ramp != null && Math.abs(pmcSummary.ctl_ramp) > 8 ? '#d32f2f' : '#00a85a'}
-                      detail={pmcSummary.ctl_ramp != null && Math.abs(pmcSummary.ctl_ramp) > 8 ? '增量过快' : '安全范围 (±8)'}
-                    />
-                  </div>
-
-                  {/* PMC Chart */}
-                  <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="text-sm font-semibold text-text-primary">PMC 表现管理图</h3>
-                        <p className="text-[10px] font-mono text-text-muted">Performance Management Chart — CTI / ATI / TSB</p>
-                      </div>
-                      <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg">
-                        {[30, 60, 90].map((d) => (
-                          <button
-                            key={d}
-                            onClick={() => setPmcDays(d)}
-                            className={`px-3 py-1.5 text-xs font-mono font-medium rounded-md transition-all ${
-                              pmcDays === d ? 'bg-accent-cyan/15 text-accent-cyan' : 'text-text-muted hover:text-text-secondary'
-                            }`}
-                          >
-                            {d}天
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* CTI / ATI chart */}
-                    <ResponsiveContainer width="100%" height={220}>
-                      <ComposedChart data={pmcChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-                        <defs>
-                          <linearGradient id="gradCTI" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#00a85a" stopOpacity={0.2} />
-                            <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid {...GRID_STYLE} />
-                        <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                        <YAxis domain={['dataMin - 15', 'dataMax + 15']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                        <Tooltip {...TOOLTIP_STYLE} />
-                        <Area type="monotone" dataKey="cti" name="CTI (体能)" stroke="#00a85a" strokeWidth={2} fill="url(#gradCTI)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
-                        <Line type="monotone" dataKey="ati" name="ATI (疲劳)" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-
-                    {/* TSB (Form) chart */}
-                    <div className="mt-2">
-                      <p className="text-[10px] font-mono text-text-muted mb-2 ml-1">TSB 竞技状态 (CTI − ATI)</p>
-                      <ResponsiveContainer width="100%" height={160}>
-                        <ComposedChart data={pmcChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-                          <defs>
-                            <linearGradient id="gradTSBPos" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#00a85a" stopOpacity={0.3} />
-                              <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
-                            </linearGradient>
-                            <linearGradient id="gradTSBNeg" x1="0" y1="1" x2="0" y2="0">
-                              <stop offset="5%" stopColor="#d32f2f" stopOpacity={0.2} />
-                              <stop offset="95%" stopColor="#d32f2f" stopOpacity={0.02} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid {...GRID_STYLE} />
-                          <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                          <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                          <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [typeof v === 'number' ? (v > 0 ? `+${v}` : `${v}`) : `${v}`, 'TSB']} />
-                          <ReferenceLine y={0} stroke="#555570" strokeWidth={1} />
-                          <ReferenceLine y={10} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.4} />
-                          <ReferenceLine y={25} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} />
-                          <ReferenceLine y={-10} stroke="#0097a7" strokeDasharray="4 4" strokeOpacity={0.3} />
-                          <ReferenceLine y={-30} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.3} />
-                          <Area type="monotone" dataKey="tsb" stroke="#5c6bc0" strokeWidth={2} fill="url(#gradTSBPos)" dot={false} activeDot={{ r: 3, fill: '#5c6bc0', stroke: '#fff', strokeWidth: 2 }} />
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
-
-                    {/* Zone legend */}
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 ml-1">
-                      {[
-                        { label: '比赛就绪 (10~25)', color: '#00a85a' },
-                        { label: '过渡区 (-10~10)', color: '#8888a0' },
-                        { label: '正常训练 (-30~-10)', color: '#0097a7' },
-                        { label: '过度负荷 (<-30)', color: '#d32f2f' },
-                        { label: '减量过多 (>25)', color: '#ffab00' },
-                      ].map(({ label, color }) => (
-                        <span key={label} className="flex items-center gap-1 text-[10px] font-mono text-text-muted">
-                          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: color }} />
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Metric Cards */}
               {latest && <MetricCards latest={latest} />}
 
@@ -331,19 +208,6 @@ export default function HealthPage() {
                   </ResponsiveContainer>
                 </ChartCard>
 
-                <ChartCard title="ATI vs CTI" subtitle="Acute / Chronic Training Index">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-                      <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 10', 'dataMax + 10']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                      <Tooltip {...TOOLTIP_STYLE} />
-                      <Line type="monotone" dataKey="ati" name="ATI (急性)" stroke="#0097a7" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#1e1e2e', strokeWidth: 2 }} />
-                      <Line type="monotone" dataKey="cti" name="CTI (慢性)" stroke="#00a85a" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#1e1e2e', strokeWidth: 2 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-
                 <ChartCard title="训练负荷比" subtitle="Training Load Ratio (ATI/CTI)">
                   <ResponsiveContainer width="100%" height={200}>
                     <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
@@ -363,6 +227,124 @@ export default function HealthPage() {
                   </ResponsiveContainer>
                 </ChartCard>
               </div>
+
+              {/* PMC Section */}
+              {pmcSummary && (
+                <div className="mb-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-4">
+                    <MetricCard
+                      label="体能" sublabel="CTI (Fitness)"
+                      value={pmcSummary.current_cti != null ? `${pmcSummary.current_cti}` : '—'} unit=""
+                      color="#00a85a" detail="42天慢性负荷"
+                    />
+                    <MetricCard
+                      label="疲劳" sublabel="ATI (Fatigue)"
+                      value={pmcSummary.current_ati != null ? `${pmcSummary.current_ati}` : '—'} unit=""
+                      color="#0097a7" detail="7天急性负荷"
+                    />
+                    <MetricCard
+                      label="竞技状态" sublabel="TSB (Form)"
+                      value={pmcSummary.current_tsb != null ? `${pmcSummary.current_tsb > 0 ? '+' : ''}${pmcSummary.current_tsb}` : '—'} unit=""
+                      color={tsbColor(pmcSummary.current_tsb)}
+                      detail={tsbZoneLabel(pmcSummary.current_tsb_zone)}
+                    />
+                    <MetricCard
+                      label="状态区间" sublabel="TSB Zone"
+                      value={pmcSummary.current_tsb_zone_label || '—'} unit=""
+                      color={tsbZoneColor(pmcSummary.current_tsb_zone)}
+                      detail={`疲劳 ${pmcSummary.current_fatigue ?? '—'}`}
+                    />
+                    <MetricCard
+                      label="CTL周增量" sublabel="Ramp Rate"
+                      value={pmcSummary.ctl_ramp != null ? `${pmcSummary.ctl_ramp > 0 ? '+' : ''}${pmcSummary.ctl_ramp}` : '—'} unit="/周"
+                      color={pmcSummary.ctl_ramp != null && Math.abs(pmcSummary.ctl_ramp) > 8 ? '#d32f2f' : '#00a85a'}
+                      detail={pmcSummary.ctl_ramp != null && Math.abs(pmcSummary.ctl_ramp) > 8 ? '增量过快' : '安全范围 (±8)'}
+                    />
+                  </div>
+
+                  <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-sm font-semibold text-text-primary">PMC 表现管理图</h3>
+                        <p className="text-[10px] font-mono text-text-muted">Performance Management Chart — CTI / ATI / TSB</p>
+                      </div>
+                      <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg">
+                        {[30, 60, 90].map((d) => (
+                          <button
+                            key={d}
+                            onClick={() => setPmcDays(d)}
+                            className={`px-3 py-1.5 text-xs font-mono font-medium rounded-md transition-all ${
+                              pmcDays === d ? 'bg-accent-cyan/15 text-accent-cyan' : 'text-text-muted hover:text-text-secondary'
+                            }`}
+                          >
+                            {d}天
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <ResponsiveContainer width="100%" height={220}>
+                      <ComposedChart data={pmcChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+                        <defs>
+                          <linearGradient id="gradCTI" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#00a85a" stopOpacity={0.2} />
+                            <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid {...GRID_STYLE} />
+                        <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
+                        <YAxis domain={['dataMin - 15', 'dataMax + 15']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <Tooltip {...TOOLTIP_STYLE} />
+                        <Area type="monotone" dataKey="cti" name="CTI (体能)" stroke="#00a85a" strokeWidth={2} fill="url(#gradCTI)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
+                        <Line type="monotone" dataKey="ati" name="ATI (疲劳)" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+
+                    <div className="mt-2">
+                      <p className="text-[10px] font-mono text-text-muted mb-2 ml-1">TSB 竞技状态 (CTI − ATI)</p>
+                      <ResponsiveContainer width="100%" height={160}>
+                        <ComposedChart data={pmcChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+                          <defs>
+                            <linearGradient id="gradTSBPos" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#00a85a" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
+                            </linearGradient>
+                            <linearGradient id="gradTSBNeg" x1="0" y1="1" x2="0" y2="0">
+                              <stop offset="5%" stopColor="#d32f2f" stopOpacity={0.2} />
+                              <stop offset="95%" stopColor="#d32f2f" stopOpacity={0.02} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid {...GRID_STYLE} />
+                          <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
+                          <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                          <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [typeof v === 'number' ? (v > 0 ? `+${v}` : `${v}`) : `${v}`, 'TSB']} />
+                          <ReferenceLine y={0} stroke="#555570" strokeWidth={1} />
+                          <ReferenceLine y={10} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.4} />
+                          <ReferenceLine y={25} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} />
+                          <ReferenceLine y={-10} stroke="#0097a7" strokeDasharray="4 4" strokeOpacity={0.3} />
+                          <ReferenceLine y={-30} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.3} />
+                          <Area type="monotone" dataKey="tsb" stroke="#5c6bc0" strokeWidth={2} fill="url(#gradTSBPos)" dot={false} activeDot={{ r: 3, fill: '#5c6bc0', stroke: '#fff', strokeWidth: 2 }} />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 ml-1">
+                      {[
+                        { label: '比赛就绪 (10~25)', color: '#00a85a' },
+                        { label: '过渡区 (-10~10)', color: '#8888a0' },
+                        { label: '正常训练 (-30~-10)', color: '#0097a7' },
+                        { label: '过度负荷 (<-30)', color: '#d32f2f' },
+                        { label: '减量过多 (>25)', color: '#ffab00' },
+                      ].map(({ label, color }) => (
+                        <span key={label} className="flex items-center gap-1 text-[10px] font-mono text-text-muted">
+                          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: color }} />
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Data Table */}
               <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in">
