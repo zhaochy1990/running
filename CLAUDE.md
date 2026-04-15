@@ -27,7 +27,6 @@ data/
 src/                 # contains the source code for the tools
 tests/               # contains testing files for the tools
 frontend/            # React + Vite frontend (STRIDE dashboard)
-TRAINING_PLAN.md     # zhaochaoyi's training plan (legacy location, also at data/zhaochaoyi/)
 ```
 
 ### Multi-user Architecture
