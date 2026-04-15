@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getTrainingPlan, type TrainingPlan } from '../api'
@@ -35,7 +34,6 @@ function formatShort(dateStr: string): string {
 }
 
 export default function TrainingPlanPage() {
-  const navigate = useNavigate()
   const { user } = useUser()
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
   const [loading, setLoading] = useState(true)
@@ -68,14 +66,6 @@ export default function TrainingPlanPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-8 py-8 animate-fade-in">
-      {/* Back link */}
-      <button
-        onClick={() => navigate('/')}
-        className="inline-flex items-center gap-2 text-sm text-text-muted hover:text-accent-green transition-colors mb-6 cursor-pointer"
-      >
-        <span>&lsaquo;</span> 返回
-      </button>
-
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-text-primary tracking-tight">训练总计划</h1>

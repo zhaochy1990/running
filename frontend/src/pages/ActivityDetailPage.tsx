@@ -75,14 +75,6 @@ export default function ActivityDetailPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-8 py-8 animate-fade-in">
-      {/* Back link */}
-      <button
-        onClick={() => window.history.back()}
-        className="inline-flex items-center gap-2 text-sm text-text-muted hover:text-accent-green transition-colors mb-6 cursor-pointer"
-      >
-        <span>&lsaquo;</span> 返回
-      </button>
-
       {/* Header Card */}
       <div className="bg-bg-card border border-border-subtle rounded-2xl p-6 mb-6">
         <div className="flex items-start justify-between">

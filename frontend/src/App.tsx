@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
 import { UserProvider } from './UserContext'
+import AppLayout from './components/AppLayout'
 import WeekLayout from './pages/WeekLayout'
 import ActivityDetailPage from './pages/ActivityDetailPage'
 import HealthPage from './pages/HealthPage'
@@ -29,11 +30,13 @@ function App() {
           <ProtectedRoute>
             <UserProvider>
               <Routes>
-                <Route path="/" element={<WeekLayout />} />
-                <Route path="/week/:folder" element={<WeekLayout />} />
-                <Route path="/activity/:id" element={<ActivityDetailPage />} />
-                <Route path="/health" element={<HealthPage />} />
-                <Route path="/plan" element={<TrainingPlanPage />} />
+                <Route element={<AppLayout />}>
+                  <Route path="/" element={<WeekLayout />} />
+                  <Route path="/week/:folder" element={<WeekLayout />} />
+                  <Route path="/activity/:id" element={<ActivityDetailPage />} />
+                  <Route path="/health" element={<HealthPage />} />
+                  <Route path="/plan" element={<TrainingPlanPage />} />
+                </Route>
               </Routes>
             </UserProvider>
           </ProtectedRoute>
