@@ -162,6 +162,15 @@ def load(ctx: click.Context) -> None:
 
 @analyze.command()
 @click.pass_context
+def pmc(ctx: click.Context) -> None:
+    """Performance Management Chart (CTI/ATI/TSB)."""
+    from .analyze import pmc_chart
+    with Database(user=ctx.obj["profile"]) as db:
+        pmc_chart(db)
+
+
+@analyze.command()
+@click.pass_context
 def hrv(ctx: click.Context) -> None:
     """HRV trends over time."""
     from .analyze import hrv_trend

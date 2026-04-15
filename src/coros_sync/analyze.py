@@ -199,6 +199,82 @@ def hrv_trend(db: Database) -> None:
     console.print(table)
 
 
+def pmc_chart(db: Database) -> None:
+    """Performance Management Chart: CTI (fitness), ATI (fatigue), TSB (form)."""
+    pd = _require_pandas()
+    rows = db.query(
+        "SELECT date, ati, cti, fatigue, rhr FROM daily_health ORDER BY date"
+    )
+    if not rows:
+        console.print("[dim]No health data found. Run: coros-sync sync[/dim]")
+        return
+
+    df = pd.DataFrame([dict(r) for r in rows])
+    df["tsb"] = df["cti"].fillna(0) - df["ati"].fillna(0)
+    df["ctl_ramp"] = df["cti"].diff(7).round(1)
+
+    # Show last 30 days in table
+    tail = df.tail(30)
+
+    table = Table(title="Performance Management Chart (last 30 days)")
+    table.add_column("Date", style="dim")
+    table.add_column("CTI", justify="right", style="green")
+    table.add_column("ATI", justify="right", style="cyan")
+    table.add_column("TSB", justify="right")
+    table.add_column("Ramp", justify="right")
+    table.add_column("Fatigue", justify="right")
+    table.add_column("RHR", justify="right")
+    table.add_column("Zone", justify="right")
+
+    for _, row in tail.iterrows():
+        tsb = row["tsb"]
+        if tsb >= 25:
+            zone, zone_style = "减量过多", "yellow"
+        elif tsb >= 10:
+            zone, zone_style = "比赛就绪", "bold green"
+        elif tsb >= -10:
+            zone, zone_style = "过渡区", "dim"
+        elif tsb >= -30:
+            zone, zone_style = "正常训练", "cyan"
+        else:
+            zone, zone_style = "过度负荷", "bold red"
+
+        tsb_color = "green" if tsb >= 0 else ("red" if tsb < -30 else "yellow")
+        ramp = row["ctl_ramp"]
+        ramp_str = f"{ramp:+.0f}" if pd.notna(ramp) else "—"
+        ramp_color = "red" if pd.notna(ramp) and abs(ramp) > 8 else ""
+
+        table.add_row(
+            str(row["date"]),
+            f"{row['cti']:.0f}" if pd.notna(row["cti"]) else "—",
+            f"{row['ati']:.0f}" if pd.notna(row["ati"]) else "—",
+            f"[{tsb_color}]{tsb:+.0f}[/{tsb_color}]",
+            f"[{ramp_color}]{ramp_str}[/{ramp_color}]" if ramp_color else ramp_str,
+            f"{row['fatigue']:.0f}" if pd.notna(row["fatigue"]) else "—",
+            f"{row['rhr']:.0f}" if pd.notna(row["rhr"]) else "—",
+            f"[{zone_style}]{zone}[/{zone_style}]",
+        )
+
+    console.print(table)
+
+    # Current status summary
+    latest = df.iloc[-1]
+    tsb_val = latest["tsb"]
+    console.print(f"\n[bold]当前状态[/bold]  CTI={latest['cti']:.0f}  ATI={latest['ati']:.0f}  "
+                  f"TSB=[{'green' if tsb_val >= 0 else 'yellow'}]{tsb_val:+.0f}[/]  "
+                  f"疲劳={latest['fatigue']:.0f}")
+    if pd.notna(latest["ctl_ramp"]):
+        ramp = latest["ctl_ramp"]
+        ramp_warn = " [red]⚠ 增量过快[/red]" if abs(ramp) > 8 else ""
+        console.print(f"  CTL周增量: {ramp:+.0f}{ramp_warn}")
+
+    try:
+        from .charts import plot_pmc
+        plot_pmc(df)
+    except ImportError:
+        pass
+
+
 def race_predictions(db: Database) -> None:
     rows = db.query("SELECT race_type, duration_s, avg_pace FROM race_predictions ORDER BY duration_s")
     if not rows:

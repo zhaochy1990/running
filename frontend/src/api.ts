@@ -166,6 +166,36 @@ export function getHealth(user: string, days = 30) {
   return fetchJSON<{ health: HealthRecord[] }>(`/${user}/health?days=${days}`)
 }
 
+export interface PMCRecord {
+  date: string
+  ati: number | null
+  cti: number | null
+  rhr: number | null
+  fatigue: number | null
+  training_load_ratio: number | null
+  training_load_state: string | null
+  tsb: number
+  tsb_zone: string
+  tsb_zone_label: string
+  ctl_ramp: number | null
+}
+
+export interface PMCSummary {
+  current_cti: number | null
+  current_ati: number | null
+  current_tsb: number | null
+  current_tsb_zone: string | null
+  current_tsb_zone_label: string | null
+  current_fatigue: number | null
+  current_rhr: number | null
+  ctl_ramp: number | null
+  date: string | null
+}
+
+export function getPMC(user: string, days = 90) {
+  return fetchJSON<{ pmc: PMCRecord[]; summary: PMCSummary }>(`/${user}/pmc?days=${days}`)
+}
+
 export function getWeeks(user: string) {
   return fetchJSON<{ weeks: WeekSummary[] }>(`/${user}/weeks`)
 }

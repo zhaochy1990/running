@@ -512,6 +512,68 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
     return {"health": [dict(r) for r in rows]}
 
 
+@app.get("/api/{user}/pmc")
+def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
+    """Performance Management Chart data: CTI (fitness), ATI (fatigue), TSB (form)."""
+    db = _get_db(user)
+    rows = db.query(
+        "SELECT date, ati, cti, training_load_ratio, training_load_state, fatigue, rhr "
+        "FROM daily_health ORDER BY date DESC LIMIT ?", (days,)
+    )
+    db.close()
+
+    # Compute TSB, zones, CTL ramp rate
+    records = [dict(r) for r in rows]
+    # Reverse to chronological order for computation
+    records.reverse()
+
+    for i, rec in enumerate(records):
+        ati = rec.get("ati") or 0
+        cti = rec.get("cti") or 0
+        rec["tsb"] = round(cti - ati, 1)
+
+        # TSB zone classification
+        tsb = rec["tsb"]
+        if tsb >= 25:
+            rec["tsb_zone"] = "overtaper"
+            rec["tsb_zone_label"] = "减量过多"
+        elif tsb >= 10:
+            rec["tsb_zone"] = "race_ready"
+            rec["tsb_zone_label"] = "比赛就绪"
+        elif tsb >= -10:
+            rec["tsb_zone"] = "neutral"
+            rec["tsb_zone_label"] = "过渡区"
+        elif tsb >= -30:
+            rec["tsb_zone"] = "training"
+            rec["tsb_zone_label"] = "正常训练"
+        else:
+            rec["tsb_zone"] = "overreaching"
+            rec["tsb_zone_label"] = "过度负荷"
+
+        # CTL (CTI) weekly ramp rate: difference from 7 days ago
+        if i >= 7:
+            prev_cti = records[i - 7].get("cti") or 0
+            rec["ctl_ramp"] = round(cti - prev_cti, 1)
+        else:
+            rec["ctl_ramp"] = None
+
+    # Summary of current state
+    latest = records[-1] if records else {}
+    summary = {
+        "current_cti": latest.get("cti"),
+        "current_ati": latest.get("ati"),
+        "current_tsb": latest.get("tsb"),
+        "current_tsb_zone": latest.get("tsb_zone"),
+        "current_tsb_zone_label": latest.get("tsb_zone_label"),
+        "current_fatigue": latest.get("fatigue"),
+        "current_rhr": latest.get("rhr"),
+        "ctl_ramp": latest.get("ctl_ramp"),
+        "date": latest.get("date"),
+    }
+
+    return {"pmc": records, "summary": summary}
+
+
 @app.get("/api/{user}/stats")
 def get_stats(user: str):
     db = _get_db(user)
