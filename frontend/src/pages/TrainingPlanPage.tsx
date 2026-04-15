@@ -102,7 +102,7 @@ export default function TrainingPlanPage() {
 
           {/* Timeline bar */}
           <div className="relative">
-            <div className="flex rounded-lg overflow-hidden h-10">
+            <div className="flex rounded-lg overflow-hidden h-14">
               {phases.map((phase, i) => {
                 const start = new Date(phase.start).getTime()
                 const end = new Date(phase.end).getTime()
@@ -125,7 +125,7 @@ export default function TrainingPlanPage() {
                     title={`${phase.name}: ${formatShort(phase.start)} — ${formatShort(phase.end)}`}
                   >
                     <span
-                      className="text-[10px] font-mono font-semibold truncate px-1"
+                      className="text-sm font-mono font-semibold truncate px-2"
                       style={{ color }}
                     >
                       {shortName(phase.name)}
@@ -143,7 +143,7 @@ export default function TrainingPlanPage() {
                 const width = ((end - start) / totalSpan) * 100
                 return (
                   <div key={i} className="text-center" style={{ width: `${Math.max(width, 3)}%` }}>
-                    <span className="text-[9px] font-mono text-text-muted">
+                    <span className="text-xs font-mono text-text-muted">
                       {formatShort(phase.start)}
                     </span>
                   </div>
