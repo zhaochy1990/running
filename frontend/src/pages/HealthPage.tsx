@@ -4,7 +4,7 @@ import {
   ComposedChart,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts'
-import { getHealth, getPMC, type HealthRecord, type PMCRecord, type PMCSummary } from '../api'
+import { getHealth, getPMC, type HealthRecord, type PMCRecord, type PMCSummary, type HRVSnapshot } from '../api'
 import { useUser } from '../UserContext'
 
 function formatDate(dateStr: string): string {
@@ -79,6 +79,7 @@ function tsbZoneColor(zone: string | null): string {
 export default function HealthPage() {
   const { user } = useUser()
   const [records, setRecords] = useState<HealthRecord[]>([])
+  const [hrv, setHrv] = useState<HRVSnapshot | null>(null)
   const [pmcData, setPmcData] = useState<PMCRecord[]>([])
   const [pmcSummary, setPmcSummary] = useState<PMCSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -94,6 +95,7 @@ export default function HealthPage() {
     ])
       .then(([healthData, pmcResult]) => {
         setRecords(healthData.health)
+        setHrv(healthData.hrv || null)
         setPmcData(pmcResult.pmc)
         setPmcSummary(pmcResult.summary)
       })
@@ -144,7 +146,7 @@ export default function HealthPage() {
               </div>
 
               {/* Metric Cards */}
-              {latest && <MetricCards latest={latest} />}
+              {latest && <MetricCards latest={latest} hrv={hrv} />}
 
               {/* Charts 2x2 */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -407,9 +409,16 @@ export default function HealthPage() {
   )
 }
 
-function MetricCards({ latest }: { latest: HealthRecord }) {
+function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot | null }) {
+  const hrvValue = hrv?.avg_sleep_hrv
+  const hrvLow = hrv?.hrv_normal_low
+  const hrvHigh = hrv?.hrv_normal_high
+  const hrvColor = hrvValue != null && hrvLow != null && hrvHigh != null
+    ? (hrvValue >= hrvLow && hrvValue <= hrvHigh ? '#00a85a' : hrvValue > hrvHigh ? '#0097a7' : '#e68a00')
+    : '#8888a0'
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
       <MetricCard
         label="静息心率"
         sublabel="RHR"
@@ -417,6 +426,14 @@ function MetricCards({ latest }: { latest: HealthRecord }) {
         unit="bpm"
         color={latest.rhr != null && latest.rhr > 55 ? '#d32f2f' : latest.rhr != null && latest.rhr > 50 ? '#ffab00' : '#00a85a'}
         detail="基线 47 bpm"
+      />
+      <MetricCard
+        label="睡眠HRV"
+        sublabel="Heart Rate Variability"
+        value={hrvValue != null ? `${hrvValue}` : '—'}
+        unit="ms"
+        color={hrvColor}
+        detail={hrvLow != null && hrvHigh != null ? `正常范围 ${hrvLow}-${hrvHigh}` : ''}
       />
       <MetricCard
         label="疲劳指数"

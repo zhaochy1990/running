@@ -508,8 +508,11 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
     rows = db.query(
         "SELECT * FROM daily_health ORDER BY date DESC LIMIT ?", (days,)
     )
+    # Include HRV snapshot from dashboard
+    dash = db.query("SELECT avg_sleep_hrv, hrv_normal_low, hrv_normal_high, recovery_pct FROM dashboard WHERE id = 1")
+    hrv = dict(dash[0]) if dash else {}
     db.close()
-    return {"health": [dict(r) for r in rows]}
+    return {"health": [dict(r) for r in rows], "hrv": hrv}
 
 
 @app.get("/api/{user}/pmc")

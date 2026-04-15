@@ -92,9 +92,27 @@ for r in rows: print(dict(r))
 ```
 
 When creating weekly plans, include the fatigue trend table for context. Key thresholds for race readiness:
-- **Race-ready**: fatigue <35, load ratio 0.7-0.9, RHR at baseline
-- **Normal training**: fatigue 40-50, load ratio 0.8-1.1
-- **Needs recovery**: fatigue >50, load ratio >1.2, RHR elevated
+- **Race-ready**: fatigue <35, load ratio 0.7-0.9, RHR at baseline, TSB 10-25
+- **Normal training**: fatigue 40-50, load ratio 0.8-1.1, TSB -30 to -10
+- **Needs recovery**: fatigue >50, load ratio >1.2, RHR elevated, TSB < -30
+
+### TSB (Training Stress Balance) — PMC
+
+TSB = CTI − ATI. Indicates readiness to perform:
+
+| TSB Zone | Range | Meaning |
+|----------|-------|---------|
+| 比赛就绪 | 10 ~ 25 | Well-rested, peak performance |
+| 过渡区 | -10 ~ 10 | Recovering or maintaining |
+| 正常训练 | -30 ~ -10 | Productive training stress |
+| 过度负荷 | < -30 | Too much stress, injury/overtraining risk |
+| 减量过多 | > 25 | Losing fitness, too much rest |
+
+### HRV (Heart Rate Variability)
+
+HRV data is currently a snapshot from the COROS dashboard (`avg_sleep_hrv`, `hrv_normal_low`, `hrv_normal_high`). Daily HRV trends require the COROS sleep detail API (not yet implemented — tracked as a future feature).
+
+When analyzing status, combine all signals: RHR + HRV + fatigue + TSB + training_load_ratio for a holistic picture. A single metric can be misleading; convergence of multiple signals is more reliable.
 
 ## The feedback.md
 
@@ -287,7 +305,7 @@ pytest -k test_pace_str   # single test by name
 
 ## Frontend (STRIDE Dashboard)
 
-React + Vite + TypeScript SPA at `frontend/`. Dark theme, monospace-heavy design.
+React + Vite + TypeScript SPA at `frontend/`. Light theme, monospace-heavy design. Shared sidebar navigation via `AppLayout` component.
 
 ### Pages
 

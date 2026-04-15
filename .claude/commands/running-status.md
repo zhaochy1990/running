@@ -45,8 +45,24 @@ ORDER BY date DESC
 ### 2b. Fatigue & Training Load Trend (last 21 days)
 
 ```sql
-SELECT date, fatigue, ati, cti, training_load_ratio, training_load_state, rhr
+SELECT date, fatigue, ati, cti, training_load_ratio, training_load_state, rhr, hrv
 FROM daily_health
+ORDER BY date DESC LIMIT 21
+```
+
+### 2b2. TSB (Training Stress Balance) — PMC Data
+
+Compute TSB = CTI - ATI for each day. TSB zones:
+- **比赛就绪** (10 ~ 25): well-rested, peak performance
+- **过渡区** (-10 ~ 10): recovering or maintaining
+- **正常训练** (-30 ~ -10): productive training stress
+- **过度负荷** (< -30): too much stress, injury risk
+- **减量过多** (> 25): losing fitness from too little training
+
+```sql
+SELECT date, cti, ati, (cti - ati) AS tsb, rhr, fatigue
+FROM daily_health
+WHERE cti IS NOT NULL AND ati IS NOT NULL
 ORDER BY date DESC LIMIT 21
 ```
 
@@ -160,6 +176,8 @@ Structure the report as follows:
 - **训练负荷状态**：来自COROS（Low/Optimal/High/Very High）
 - **静息心率**：最新值 vs 基线（运动员档案中47 bpm）。RHR升高 = 疲劳信号。
 - **恢复百分比**：来自dashboard
+- **HRV**：睡眠HRV均值 vs 正常范围（来自dashboard）。HRV下降 = 恢复不良/过度训练信号
+- **TSB竞技状态**：CTI - ATI。TSB > 10 = 比赛就绪，-10~10 = 过渡区，-30~-10 = 正常训练，< -30 = 过度负荷
 
 使用 TRAINING_PLAN.md 中的阈值：
 

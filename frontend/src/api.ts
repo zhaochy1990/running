@@ -162,8 +162,15 @@ export interface HealthRecord {
   fatigue: number | null
 }
 
+export interface HRVSnapshot {
+  avg_sleep_hrv: number | null
+  hrv_normal_low: number | null
+  hrv_normal_high: number | null
+  recovery_pct: number | null
+}
+
 export function getHealth(user: string, days = 30) {
-  return fetchJSON<{ health: HealthRecord[] }>(`/${user}/health?days=${days}`)
+  return fetchJSON<{ health: HealthRecord[]; hrv: HRVSnapshot }>(`/${user}/health?days=${days}`)
 }
 
 export interface PMCRecord {
