@@ -12,6 +12,7 @@ data/
     zhaochaoyi/                  # per-user data directory
         coros.db                 # user's SQLite database
         config.json              # user's COROS credentials (git-ignored)
+        TRAINING_PLAN.md         # user's overall training plan
         logs/
             2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注)
                 plan.md                  # weekly training plan
@@ -21,11 +22,12 @@ data/
     dehua/                       # another user
         coros.db
         config.json
+        TRAINING_PLAN.md
         logs/
 src/                 # contains the source code for the tools
 tests/               # contains testing files for the tools
 frontend/            # React + Vite frontend (STRIDE dashboard)
-TRAINING_PLAN.md     # The overall training plan — Fall 2026 season (revised Apr 12)
+TRAINING_PLAN.md     # zhaochaoyi's training plan (legacy location, also at data/zhaochaoyi/)
 ```
 
 ### Multi-user Architecture
@@ -283,3 +285,84 @@ pytest -k test_pace_str   # single test by name
 - CLI uses Click groups: `cli` (top-level), `analyze` (subgroup), `workout` (subgroup)
 - Analysis commands lazy-import pandas/matplotlib to keep core deps light
 - `rich` is used for all terminal output (tables, progress bars, colored text)
+
+## Frontend (STRIDE Dashboard)
+
+React + Vite + TypeScript SPA at `frontend/`. Dark theme, monospace-heavy design.
+
+### Pages
+
+| Route | Component | Description |
+|-------|-----------|-------------|
+| `/` | `WeekLayout` | Main view — sidebar with week list, main area with plan/activities/feedback tabs |
+| `/week/:folder` | `WeekLayout` | Specific week view |
+| `/activity/:id` | `ActivityDetailPage` | Activity detail — metrics, HR/pace charts, zones, segment data, sport_note feedback |
+| `/health` | `HealthPage` | Fatigue, HRV, RHR, training load trends (recharts) |
+| `/plan` | `TrainingPlanPage` | Overall training plan with phase timeline visualization |
+| `/login` | `LoginPage` | Auth (Entra ID / MSAL) |
+
+### API Layer (`src/coros_sync/api.py`)
+
+FastAPI backend serving both the REST API and the built frontend (SPA static files).
+
+Key endpoints:
+- `GET /api/users` — list user profiles
+- `GET /api/{user}/activities` — paginated activity list with filters
+- `GET /api/{user}/activities/{id}` — activity detail (laps, segments, zones, timeseries)
+- `POST /api/{user}/activities/{id}/resync` — re-fetch single activity from COROS (for updated feedback)
+- `GET /api/{user}/weeks` — training week list with plan/feedback status
+- `GET /api/{user}/weeks/{folder}` — week detail (plan.md + feedback.md + activities + DB sport_notes)
+- `GET /api/{user}/training-plan` — TRAINING_PLAN.md content + parsed phase timeline
+- `GET /api/{user}/dashboard` — fitness metrics, race predictions
+- `GET /api/{user}/health` — daily health records (fatigue, ATI/CTI, RHR, HRV)
+- `POST /api/{user}/sync` — trigger full COROS data sync
+
+### Segment Display
+
+Activity segments use `exercise_type` mapping for display names (热身/训练/放松/恢复). For known COROS exercise codes (T-codes for strength, S-codes for rest), names come from `_EXERCISE_NAMES` dict. Unknown S-codes (e.g. running workout plan references like S4208) fall back to `exercise_type` mapping.
+
+### Weekly Feedback
+
+The "本周反馈" tab combines two sources:
+1. `feedback.md` file from the week's logs directory
+2. `sport_note` fields from DB activities for that week (deduplicated by checking first 20 chars against existing feedback)
+
+## Deployment
+
+### Docker
+
+Multi-stage build (`Dockerfile`):
+1. **Stage 1** (node:24-alpine): Build frontend with Vite
+2. **Stage 2** (python:3.13-slim): Python runtime with FastAPI/uvicorn, copies built frontend
+
+`.dockerignore` excludes `data/` but allows `data/*/TRAINING_PLAN.md` so training plans are baked into the image as defaults.
+
+### CI/CD (GitHub Actions)
+
+`.github/workflows/deploy.yml` triggers on push to `master` when `src/`, `frontend/`, `Dockerfile`, or `pyproject.toml` change.
+
+Pipeline: Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy to Azure Container Apps → Health check
+
+**Important**: Changes to `data/` alone do NOT trigger deployment. If you need to redeploy after data-only changes, touch a file in `src/` or `Dockerfile`.
+
+### Infrastructure
+
+- **Container**: Azure Container Apps (`stride-app` in `rg-running-prod`)
+- **Registry**: GitHub Container Registry (`ghcr.io`)
+- **Storage**: Azure Files mounted at `/app/data` — contains per-user SQLite databases, credentials, logs, and training plans
+- **Auth**: Entra ID (OIDC for deployment, MSAL for frontend login)
+
+### Build Commands
+
+```bash
+# Frontend dev
+cd frontend && npm run dev      # Vite dev server with HMR
+cd frontend && npm run build    # tsc -b && vite build (used in Docker)
+
+# Backend dev
+PYTHONIOENCODING=utf-8 uvicorn coros_sync.api:app --reload --port 8000
+
+# Full Docker build
+docker build -t stride .
+docker run -p 8080:8080 -v ./data:/app/data stride
+```
