@@ -339,15 +339,22 @@ def get_week(user: str, folder: str):
     # Append sport_notes from DB activities that aren't already in feedback.md
     FEEL_LABELS = {1: "很好", 2: "好", 3: "一般", 4: "差", 5: "很差"}
     existing_feedback = feedback_parts[0] if feedback_parts else ""
+    # Normalize for dedup: strip bullets, extra whitespace
+    existing_normalized = existing_feedback.replace("- ", "").replace("* ", "")
     for a in activities:
         note = a.get("sport_note")
-        if note and note not in existing_feedback:
-            date_str = a["date"][:10] if a.get("date") else ""
-            feel = FEEL_LABELS.get(a.get("feel_type") or 0, "")
-            header = f"{date_str} {a.get('name', '')}"
-            if feel:
-                header += f"（体感：{feel}）"
-            feedback_parts.append(f"{header}\n\n{note}")
+        if not note:
+            continue
+        # Check if first meaningful line already appears in feedback.md
+        first_line = note.strip().split("\n")[0].strip()[:20]
+        if first_line and first_line in existing_normalized:
+            continue
+        date_str = a["date"][:10] if a.get("date") else ""
+        feel = FEEL_LABELS.get(a.get("feel_type") or 0, "")
+        header = f"{date_str} {a.get('name', '')}"
+        if feel:
+            header += f"（体感：{feel}）"
+        feedback_parts.append(f"{header}\n\n{note}")
 
     if feedback_parts:
         result["feedback"] = "\n\n---\n\n".join(feedback_parts)

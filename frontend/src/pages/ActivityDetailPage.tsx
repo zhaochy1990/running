@@ -180,7 +180,7 @@ export default function ActivityDetailPage() {
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] text-text-muted uppercase tracking-wider">训练反馈</span>
               {activity.feel_type != null && (
-                <span className="text-xs font-mono text-text-secondary">
+                <span className="text-lg leading-none">
                   {[,'😄','🙂','😐','😞','😫'][activity.feel_type] || ''}
                 </span>
               )}
