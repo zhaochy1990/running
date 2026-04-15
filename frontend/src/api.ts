@@ -56,6 +56,8 @@ export interface Activity {
   humidity: number | null
   feels_like: number | null
   wind_speed: number | null
+  feel_type: number | null
+  sport_note: string | null
 }
 
 export interface Lap {

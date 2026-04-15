@@ -173,6 +173,21 @@ export default function ActivityDetailPage() {
             )}
           </div>
         )}
+
+        {/* Sport Note / Feedback */}
+        {activity.sport_note && (
+          <div className="mt-4 pt-4 border-t border-border-subtle">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] text-text-muted uppercase tracking-wider">训练反馈</span>
+              {activity.feel_type != null && (
+                <span className="text-xs font-mono text-text-secondary">
+                  {[,'😄','🙂','😐','😞','😫'][activity.feel_type] || ''}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">{activity.sport_note}</p>
+          </div>
+        )}
       </div>
 
       {/* Charts & Zones */}

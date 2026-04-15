@@ -306,11 +306,12 @@ def get_week(user: str, folder: str):
         with open(plan_path, "r", encoding="utf-8") as f:
             result["plan"] = f.read()
 
-    # Feedback
+    # Feedback — combine feedback.md + sport_notes from DB
     feedback_path = logs_dir / folder / "feedback.md"
+    feedback_parts: list[str] = []
     if feedback_path.exists():
         with open(feedback_path, "r", encoding="utf-8") as f:
-            result["feedback"] = f.read()
+            feedback_parts.append(f.read())
 
     # Activities for this week
     db = _get_db(user)
@@ -319,7 +320,8 @@ def get_week(user: str, folder: str):
             distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
             avg_cadence, calories_kcal, training_load, vo2max, train_type,
             ascent_m, aerobic_effect, anaerobic_effect,
-            temperature, humidity, feels_like, wind_speed
+            temperature, humidity, feels_like, wind_speed,
+            feel_type, sport_note
         FROM activities WHERE date >= ? AND date < ?
         ORDER BY date ASC, label_id ASC""",
         (date_from, date_to + "T99"),
@@ -333,6 +335,22 @@ def get_week(user: str, folder: str):
         activities.append(d)
 
     result["activities"] = activities
+
+    # Append sport_notes from DB activities that aren't already in feedback.md
+    FEEL_LABELS = {1: "很好", 2: "好", 3: "一般", 4: "差", 5: "很差"}
+    existing_feedback = feedback_parts[0] if feedback_parts else ""
+    for a in activities:
+        note = a.get("sport_note")
+        if note and note not in existing_feedback:
+            date_str = a["date"][:10] if a.get("date") else ""
+            feel = FEEL_LABELS.get(a.get("feel_type") or 0, "")
+            header = f"{date_str} {a.get('name', '')}"
+            if feel:
+                header += f"（体感：{feel}）"
+            feedback_parts.append(f"{header}\n\n{note}")
+
+    if feedback_parts:
+        result["feedback"] = "\n\n---\n\n".join(feedback_parts)
 
     # Weekly totals
     result["total_km"] = round(sum(a["distance_km"] for a in activities), 1)
