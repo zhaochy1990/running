@@ -33,6 +33,9 @@ RUN pip install --no-cache-dir \
 # Copy built frontend from stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 
+# Copy training plans as defaults (Azure Files mount may overlay at runtime)
+COPY data/ ./data/
+
 # Source code stays at /app/src, PYTHONPATH makes it importable
 ENV PYTHONPATH=/app/src
 

@@ -8,6 +8,7 @@ __pycache__
 node_modules
 frontend/node_modules
 data/
+!data/*/TRAINING_PLAN.md
 tests/
 *.db
 *.db-wal
