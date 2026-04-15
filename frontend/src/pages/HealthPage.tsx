@@ -296,19 +296,37 @@ export default function HealthPage() {
                   <ResponsiveContainer width="100%" height={200}>
                     <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
                       <defs>
+                        {/* Y-axis color gradient: green(<40) → cyan(40-50) → amber(50-60) → red(>60) */}
+                        {/* Domain [20,70]: 70=top(0%), 20=bottom(100%) */}
+                        <linearGradient id="fatigueStroke" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#d32f2f" />
+                          <stop offset="20%" stopColor="#d32f2f" />
+                          <stop offset="20%" stopColor="#e68a00" />
+                          <stop offset="40%" stopColor="#e68a00" />
+                          <stop offset="40%" stopColor="#0097a7" />
+                          <stop offset="60%" stopColor="#0097a7" />
+                          <stop offset="60%" stopColor="#00a85a" />
+                          <stop offset="100%" stopColor="#00a85a" />
+                        </linearGradient>
                         <linearGradient id="gradFatigue" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#ffab00" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#ffab00" stopOpacity={0.02} />
+                          <stop offset="0%" stopColor="#d32f2f" stopOpacity={0.15} />
+                          <stop offset="40%" stopColor="#e68a00" stopOpacity={0.1} />
+                          <stop offset="60%" stopColor="#0097a7" stopOpacity={0.08} />
+                          <stop offset="100%" stopColor="#00a85a" stopOpacity={0.02} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
                       <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
                       <YAxis domain={[20, 70]} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}`, '疲劳值']} />
-                      <ReferenceLine y={40} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '恢复', position: 'right', fill: '#00a85a', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
-                      <ReferenceLine y={50} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '疲劳', position: 'right', fill: '#ffab00', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
-                      <ReferenceLine y={60} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '高疲劳', position: 'right', fill: '#d32f2f', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
-                      <Area type="monotone" dataKey="fatigue" stroke="#ffab00" strokeWidth={1.5} fill="url(#gradFatigue)" dot={false} activeDot={{ r: 3, fill: '#ffab00', stroke: '#1e1e2e', strokeWidth: 2 }} />
+                      <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => {
+                        const n = Number(v)
+                        const label = n < 40 ? '已恢复' : n < 50 ? '正常' : n < 60 ? '疲劳' : '高疲劳'
+                        return [`${v} (${label})`, '疲劳值']
+                      }} />
+                      <ReferenceLine y={40} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '恢复', position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+                      <ReferenceLine y={50} stroke="#e68a00" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '疲劳', position: 'right', fill: '#e68a00', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+                      <ReferenceLine y={60} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '高疲劳', position: 'right', fill: '#d32f2f', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+                      <Area type="monotone" dataKey="fatigue" stroke="url(#fatigueStroke)" strokeWidth={2} fill="url(#gradFatigue)" dot={false} activeDot={{ r: 4, fill: '#e68a00', stroke: '#ffffff', strokeWidth: 2 }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
