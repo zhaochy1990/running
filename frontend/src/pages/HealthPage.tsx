@@ -18,27 +18,27 @@ function formatDate(dateStr: string): string {
   return dateStr
 }
 
-const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#555570' }
+const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
-  contentStyle: { background: '#1e1e2e', border: '1px solid #2a2a3e', borderRadius: 8, fontFamily: 'JetBrains Mono', fontSize: 12, color: '#e8e8f0' },
+  contentStyle: { background: '#ffffff', border: '1px solid #d8dae5', borderRadius: 8, fontFamily: 'JetBrains Mono', fontSize: 12, color: '#1a1c2e' },
   labelStyle: { color: '#8888a0' },
 }
-const GRID_STYLE = { stroke: '#1e1e30', strokeDasharray: '3 3' }
+const GRID_STYLE = { stroke: '#e8eaf0', strokeDasharray: '3 3' }
 
 function fatigueColor(v: number | null): string {
-  if (v == null) return '#555570'
-  if (v < 40) return '#00e676'
-  if (v < 50) return '#00e5ff'
+  if (v == null) return '#8888a0'
+  if (v < 40) return '#00a85a'
+  if (v < 50) return '#0097a7'
   if (v < 60) return '#ffab00'
-  return '#ff5252'
+  return '#d32f2f'
 }
 
 function ratioColor(v: number | null): string {
-  if (v == null) return '#555570'
-  if (v < 0.7) return '#00e5ff'
-  if (v <= 1.0) return '#00e676'
+  if (v == null) return '#8888a0'
+  if (v < 0.7) return '#0097a7'
+  if (v <= 1.0) return '#00a85a'
   if (v <= 1.2) return '#ffab00'
-  return '#ff5252'
+  return '#d32f2f'
 }
 
 function loadStateLabel(state: string | null): string {
@@ -47,8 +47,8 @@ function loadStateLabel(state: string | null): string {
 }
 
 function loadStateColor(state: string | null): string {
-  const map: Record<string, string> = { Low: '#00e5ff', Optimal: '#00e676', High: '#ffab00', 'Very High': '#ff5252' }
-  return state ? (map[state] || '#555570') : '#555570'
+  const map: Record<string, string> = { Low: '#0097a7', Optimal: '#00a85a', High: '#ffab00', 'Very High': '#d32f2f' }
+  return state ? (map[state] || '#8888a0') : '#8888a0'
 }
 
 export default function HealthPage() {
@@ -149,18 +149,18 @@ export default function HealthPage() {
                     <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
                       <defs>
                         <linearGradient id="gradRHR" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#00e676" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#00e676" stopOpacity={0.02} />
+                          <stop offset="5%" stopColor="#00a85a" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
                         </linearGradient>
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#2a2a3e' }} tickLine={false} />
+                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
                       <YAxis domain={['dataMin - 3', 'dataMax + 3']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} bpm`, 'RHR']} />
-                      <ReferenceLine y={47} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.5} />
+                      <ReferenceLine y={47} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.5} />
                       <ReferenceLine y={50} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} />
-                      <ReferenceLine y={55} stroke="#ff5252" strokeDasharray="4 4" strokeOpacity={0.4} />
-                      <Area type="monotone" dataKey="rhr" stroke="#00e676" strokeWidth={1.5} fill="url(#gradRHR)" dot={false} activeDot={{ r: 3, fill: '#00e676', stroke: '#1e1e2e', strokeWidth: 2 }} />
+                      <ReferenceLine y={55} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.4} />
+                      <Area type="monotone" dataKey="rhr" stroke="#00a85a" strokeWidth={1.5} fill="url(#gradRHR)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#1e1e2e', strokeWidth: 2 }} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -175,12 +175,12 @@ export default function HealthPage() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#2a2a3e' }} tickLine={false} />
+                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
                       <YAxis domain={[20, 70]} tick={AXIS_TICK} axisLine={false} tickLine={false} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}`, '疲劳值']} />
-                      <ReferenceLine y={40} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '恢复', position: 'right', fill: '#00e676', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
+                      <ReferenceLine y={40} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '恢复', position: 'right', fill: '#00a85a', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
                       <ReferenceLine y={50} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '疲劳', position: 'right', fill: '#ffab00', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
-                      <ReferenceLine y={60} stroke="#ff5252" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '高疲劳', position: 'right', fill: '#ff5252', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
+                      <ReferenceLine y={60} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.4} label={{ value: '高疲劳', position: 'right', fill: '#d32f2f', fontSize: 9, fontFamily: 'JetBrains Mono' }} />
                       <Area type="monotone" dataKey="fatigue" stroke="#ffab00" strokeWidth={1.5} fill="url(#gradFatigue)" dot={false} activeDot={{ r: 3, fill: '#ffab00', stroke: '#1e1e2e', strokeWidth: 2 }} />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -190,11 +190,11 @@ export default function HealthPage() {
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
                       <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#2a2a3e' }} tickLine={false} />
+                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
                       <YAxis domain={['dataMin - 10', 'dataMax + 10']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
                       <Tooltip {...TOOLTIP_STYLE} />
-                      <Line type="monotone" dataKey="ati" name="ATI (急性)" stroke="#00e5ff" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#00e5ff', stroke: '#1e1e2e', strokeWidth: 2 }} />
-                      <Line type="monotone" dataKey="cti" name="CTI (慢性)" stroke="#00e676" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#00e676', stroke: '#1e1e2e', strokeWidth: 2 }} />
+                      <Line type="monotone" dataKey="ati" name="ATI (急性)" stroke="#0097a7" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#1e1e2e', strokeWidth: 2 }} />
+                      <Line type="monotone" dataKey="cti" name="CTI (慢性)" stroke="#00a85a" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#1e1e2e', strokeWidth: 2 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartCard>
@@ -203,12 +203,12 @@ export default function HealthPage() {
                   <ResponsiveContainer width="100%" height={200}>
                     <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
                       <CartesianGrid {...GRID_STYLE} />
-                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#2a2a3e' }} tickLine={false} />
+                      <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
                       <YAxis domain={[0, 'dataMax + 0.3']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [typeof v === 'number' ? v.toFixed(2) : `${v}`, '负荷比']} />
-                      <ReferenceLine y={0.8} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.4} />
+                      <ReferenceLine y={0.8} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.4} />
                       <ReferenceLine y={1.0} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} />
-                      <ReferenceLine y={1.2} stroke="#ff5252" strokeDasharray="4 4" strokeOpacity={0.4} />
+                      <ReferenceLine y={1.2} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.4} />
                       <Bar dataKey="training_load_ratio" radius={[2, 2, 0, 0]} maxBarSize={12}>
                         {chartData.map((entry, i) => (
                           <Cell key={i} fill={ratioColor(entry.training_load_ratio)} />
@@ -247,7 +247,7 @@ export default function HealthPage() {
                         >
                           <td className="py-2 px-3 text-text-secondary">{formatDate(r.date)}</td>
                           <td className="py-2 px-3 text-right">
-                            <span style={{ color: r.rhr != null && r.rhr > 55 ? '#ff5252' : r.rhr != null && r.rhr > 50 ? '#ffab00' : '#e8e8f0' }}>
+                            <span style={{ color: r.rhr != null && r.rhr > 55 ? '#d32f2f' : r.rhr != null && r.rhr > 50 ? '#ffab00' : '#e8e8f0' }}>
                               {r.rhr ?? '—'}
                             </span>
                           </td>
@@ -294,7 +294,7 @@ function MetricCards({ latest }: { latest: HealthRecord }) {
         sublabel="RHR"
         value={latest.rhr != null ? `${latest.rhr}` : '—'}
         unit="bpm"
-        color={latest.rhr != null && latest.rhr > 55 ? '#ff5252' : latest.rhr != null && latest.rhr > 50 ? '#ffab00' : '#00e676'}
+        color={latest.rhr != null && latest.rhr > 55 ? '#d32f2f' : latest.rhr != null && latest.rhr > 50 ? '#ffab00' : '#00a85a'}
         detail="基线 47 bpm"
       />
       <MetricCard

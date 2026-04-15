@@ -27,45 +27,45 @@ export default function HRChart({ data }: { data: TimeseriesPoint[] }) {
       <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
         <defs>
           <linearGradient id="hrGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#ff5252" stopOpacity={0.4} />
-            <stop offset="100%" stopColor="#ff5252" stopOpacity={0.02} />
+            <stop offset="0%" stopColor="#d32f2f" stopOpacity={0.4} />
+            <stop offset="100%" stopColor="#d32f2f" stopOpacity={0.02} />
           </linearGradient>
         </defs>
         <XAxis
           dataKey="elapsed"
-          tick={{ fontSize: 10, fill: '#555570', fontFamily: 'JetBrains Mono' }}
-          axisLine={{ stroke: '#2a2a3e' }}
+          tick={{ fontSize: 10, fill: '#8888a0', fontFamily: 'JetBrains Mono' }}
+          axisLine={{ stroke: '#d8dae5' }}
           tickLine={false}
           tickFormatter={(v) => formatTime(v)}
           interval={Math.floor(chartData.length / 6)}
         />
         <YAxis
           domain={['dataMin - 10', 'dataMax + 5']}
-          tick={{ fontSize: 10, fill: '#555570', fontFamily: 'JetBrains Mono' }}
+          tick={{ fontSize: 10, fill: '#8888a0', fontFamily: 'JetBrains Mono' }}
           axisLine={false}
           tickLine={false}
         />
         <Tooltip
           contentStyle={{
-            background: '#1e1e2e',
-            border: '1px solid #2a2a3e',
+            background: '#ffffff',
+            border: '1px solid #d8dae5',
             borderRadius: '8px',
             fontSize: '12px',
             fontFamily: 'JetBrains Mono',
-            color: '#e8e8f0',
+            color: '#1a1c2e',
           }}
           formatter={(value) => [`${value} bpm`, '心率']}
           labelFormatter={(label) => formatTime(label as number)}
         />
-        <ReferenceLine y={avgHR} stroke="#ff5252" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${avgHR}`, position: 'right', fill: '#ff5252', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+        <ReferenceLine y={avgHR} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${avgHR}`, position: 'right', fill: '#d32f2f', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
         <Area
           type="monotone"
           dataKey="hr"
-          stroke="#ff5252"
+          stroke="#d32f2f"
           strokeWidth={1.5}
           fill="url(#hrGradient)"
           dot={false}
-          activeDot={{ r: 3, fill: '#ff5252', stroke: '#1e1e2e', strokeWidth: 2 }}
+          activeDot={{ r: 3, fill: '#d32f2f', stroke: '#ffffff', strokeWidth: 2 }}
         />
       </AreaChart>
     </ResponsiveContainer>

@@ -3,30 +3,30 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #06060b;
-  --color-bg-secondary: #0e0e16;
-  --color-bg-card: #12121c;
-  --color-bg-card-hover: #1a1a28;
-  --color-bg-elevated: #1e1e2e;
-  --color-border: #2a2a3e;
-  --color-border-subtle: #1e1e30;
+  --color-bg-primary: #f8f9fb;
+  --color-bg-secondary: #f0f1f5;
+  --color-bg-card: #ffffff;
+  --color-bg-card-hover: #f5f6fa;
+  --color-bg-elevated: #eef0f5;
+  --color-border: #d8dae5;
+  --color-border-subtle: #e8eaf0;
 
-  --color-text-primary: #e8e8f0;
-  --color-text-secondary: #8888a0;
-  --color-text-muted: #555570;
+  --color-text-primary: #1a1c2e;
+  --color-text-secondary: #555570;
+  --color-text-muted: #8888a0;
 
-  --color-accent-green: #00e676;
-  --color-accent-green-dim: #00c853;
-  --color-accent-cyan: #00e5ff;
-  --color-accent-amber: #ffab00;
-  --color-accent-red: #ff5252;
-  --color-accent-purple: #b388ff;
+  --color-accent-green: #00a85a;
+  --color-accent-green-dim: #009950;
+  --color-accent-cyan: #0097a7;
+  --color-accent-amber: #e68a00;
+  --color-accent-red: #d32f2f;
+  --color-accent-purple: #7c4dff;
 
-  --color-zone-1: #00c853;
-  --color-zone-2: #64dd17;
-  --color-zone-3: #ffab00;
-  --color-zone-4: #ff6d00;
-  --color-zone-5: #ff1744;
+  --color-zone-1: #00a85a;
+  --color-zone-2: #4caf50;
+  --color-zone-3: #e68a00;
+  --color-zone-4: #e65100;
+  --color-zone-5: #c62828;
 
   --font-display: 'Outfit', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
@@ -34,7 +34,7 @@
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a2a3e #0e0e16;
+  scrollbar-color: #c8cad5 #f0f1f5;
 }
 
 body {
@@ -49,16 +49,6 @@ body {
   min-height: 100vh;
 }
 
-/* Subtle grain overlay */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  opacity: 0.015;
-  pointer-events: none;
-  z-index: 9999;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
 
 /* Markdown prose styling */
 .prose {

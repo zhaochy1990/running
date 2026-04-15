@@ -129,12 +129,12 @@ export default function ActivityDetailPage() {
 
         {/* Key Metrics Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mt-6 pt-6 border-t border-border-subtle">
-          {!isStrength && <BigMetric label="距离" value={`${activity.distance_km}`} unit="km" color="#00e676" />}
-          <BigMetric label="时长" value={activity.duration_fmt} color="#00e5ff" />
-          {!isStrength && <BigMetric label="平均配速" value={activity.pace_fmt} color="#00e676" />}
-          <BigMetric label="平均心率" value={activity.avg_hr ? `${activity.avg_hr}` : '—'} unit="bpm" color="#ff5252" />
-          <BigMetric label="最大心率" value={activity.max_hr ? `${activity.max_hr}` : '—'} unit="bpm" color="#ff1744" />
-          <BigMetric label="卡路里" value={activity.calories_kcal ? `${activity.calories_kcal}` : '—'} unit="kcal" color="#ffab00" />
+          {!isStrength && <BigMetric label="距离" value={`${activity.distance_km}`} unit="km" color="#00a85a" />}
+          <BigMetric label="时长" value={activity.duration_fmt} color="#0097a7" />
+          {!isStrength && <BigMetric label="平均配速" value={activity.pace_fmt} color="#00a85a" />}
+          <BigMetric label="平均心率" value={activity.avg_hr ? `${activity.avg_hr}` : '—'} unit="bpm" color="#d32f2f" />
+          <BigMetric label="最大心率" value={activity.max_hr ? `${activity.max_hr}` : '—'} unit="bpm" color="#c62828" />
+          <BigMetric label="卡路里" value={activity.calories_kcal ? `${activity.calories_kcal}` : '—'} unit="kcal" color="#e68a00" />
         </div>
 
         {/* Secondary Metrics */}
@@ -152,7 +152,7 @@ export default function ActivityDetailPage() {
           <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border-subtle">
             <div className="flex items-center gap-1.5 text-sm font-mono text-text-secondary">
               <span className="text-[10px] text-text-muted uppercase tracking-wider mr-1">天气</span>
-              <span style={{ color: activity.temperature >= 25 ? '#ff5252' : activity.temperature >= 15 ? '#ffab00' : '#00e5ff' }}>
+              <span style={{ color: activity.temperature >= 25 ? '#d32f2f' : activity.temperature >= 15 ? '#e68a00' : '#0097a7' }}>
                 {activity.temperature}°C
               </span>
               {activity.feels_like != null && activity.feels_like !== activity.temperature && (

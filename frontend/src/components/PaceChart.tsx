@@ -37,8 +37,8 @@ export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
       <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
         <XAxis
           dataKey="elapsed"
-          tick={{ fontSize: 10, fill: '#555570', fontFamily: 'JetBrains Mono' }}
-          axisLine={{ stroke: '#2a2a3e' }}
+          tick={{ fontSize: 10, fill: '#8888a0', fontFamily: 'JetBrains Mono' }}
+          axisLine={{ stroke: '#d8dae5' }}
           tickLine={false}
           tickFormatter={(v) => formatTime(v)}
           interval={Math.floor(chartData.length / 6)}
@@ -46,32 +46,32 @@ export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
         <YAxis
           reversed
           domain={['dataMin - 10', 'dataMax + 10']}
-          tick={{ fontSize: 10, fill: '#555570', fontFamily: 'JetBrains Mono' }}
+          tick={{ fontSize: 10, fill: '#8888a0', fontFamily: 'JetBrains Mono' }}
           axisLine={false}
           tickLine={false}
           tickFormatter={(v) => formatPace(v)}
         />
         <Tooltip
           contentStyle={{
-            background: '#1e1e2e',
-            border: '1px solid #2a2a3e',
+            background: '#ffffff',
+            border: '1px solid #d8dae5',
             borderRadius: '8px',
             fontSize: '12px',
             fontFamily: 'JetBrains Mono',
-            color: '#e8e8f0',
+            color: '#1a1c2e',
           }}
           formatter={(value) => [formatPace(value as number) + '/km', '配速']}
           labelFormatter={(label) => formatTime(label as number)}
         />
-        <ReferenceLine y={avgPace} stroke="#00e676" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${formatPace(avgPace)}`, position: 'right', fill: '#00e676', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+        <ReferenceLine y={avgPace} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${formatPace(avgPace)}`, position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
         <Area
           type="monotone"
           dataKey="pace"
-          stroke="#00e676"
+          stroke="#00a85a"
           strokeWidth={1.5}
           fill="none"
           dot={false}
-          activeDot={{ r: 3, fill: '#00e676', stroke: '#1e1e2e', strokeWidth: 2 }}
+          activeDot={{ r: 3, fill: '#00a85a', stroke: '#ffffff', strokeWidth: 2 }}
         />
       </AreaChart>
     </ResponsiveContainer>
