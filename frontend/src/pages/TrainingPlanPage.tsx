@@ -114,13 +114,13 @@ export default function TrainingPlanPage() {
                   <div
                     key={i}
                     className={`relative flex items-center justify-center transition-all ${
-                      isCurrent ? 'ring-2 ring-offset-1 ring-offset-bg-card z-10' : 'opacity-60 hover:opacity-90'
+                      isCurrent ? 'z-10' : 'opacity-60 hover:opacity-90'
                     }`}
                     style={{
                       width: `${Math.max(width, 3)}%`,
                       backgroundColor: color + (isCurrent ? '30' : '18'),
                       borderRight: i < phases.length - 1 ? '1px solid var(--color-bg-card)' : 'none',
-                      ringColor: isCurrent ? color : undefined,
+                      boxShadow: isCurrent ? `inset 0 0 0 2px ${color}` : undefined,
                     }}
                     title={`${phase.name}: ${formatShort(phase.start)} — ${formatShort(phase.end)}`}
                   >
