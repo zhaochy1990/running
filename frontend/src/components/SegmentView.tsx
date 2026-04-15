@@ -134,7 +134,7 @@ function SegmentRow({ index, segment, childLaps }: { index: number; segment: Seg
             {segment.seg_name}
           </span>
           {hasChildren && (
-            <span className="text-[9px] font-mono text-text-muted ml-1">
+            <span className="text-[11px] font-mono text-text-muted ml-1">
               {childLaps.length} 圈
             </span>
           )}
@@ -194,7 +194,7 @@ function SegmentRow({ index, segment, childLaps }: { index: number; segment: Seg
 function SegMetric({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <div className="min-w-[60px]">
-      <p className="text-[9px] font-mono text-text-muted">{label}</p>
+      <p className="text-[11px] font-mono text-text-muted">{label}</p>
       <p className="text-xs font-mono font-medium mt-0.5" style={color ? { color } : undefined}>
         {value}
       </p>
@@ -208,12 +208,12 @@ function FlatLapTable({ laps }: { laps: Lap[] }) {
     <table className="w-full text-sm">
       <thead>
         <tr className="border-b-2 border-border">
-          <th className="text-left py-2 px-3 text-[10px] font-mono text-text-muted">段</th>
-          <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted">距离</th>
-          <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted">时长</th>
-          <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted">配速</th>
-          <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted">心率</th>
-          <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted">步频</th>
+          <th className="text-left py-2 px-3 text-xs font-mono text-text-muted">段</th>
+          <th className="text-right py-2 px-3 text-xs font-mono text-text-muted">距离</th>
+          <th className="text-right py-2 px-3 text-xs font-mono text-text-muted">时长</th>
+          <th className="text-right py-2 px-3 text-xs font-mono text-text-muted">配速</th>
+          <th className="text-right py-2 px-3 text-xs font-mono text-text-muted">心率</th>
+          <th className="text-right py-2 px-3 text-xs font-mono text-text-muted">步频</th>
         </tr>
       </thead>
       <tbody>
@@ -221,7 +221,7 @@ function FlatLapTable({ laps }: { laps: Lap[] }) {
           <tr key={lap.lap_index} className={`border-b border-border-subtle hover:bg-bg-card-hover transition-colors ${lap.avg_pace === fastestPace ? 'bg-accent-green/5' : ''}`}>
             <td className="py-2 px-3 font-mono text-text-muted text-xs">
               {lap.lap_index}
-              {lap.avg_pace === fastestPace && <span className="ml-1.5 text-accent-green text-[9px]">最快</span>}
+              {lap.avg_pace === fastestPace && <span className="ml-1.5 text-accent-green text-[11px]">最快</span>}
             </td>
             <td className="py-2 px-3 text-right font-mono text-text-secondary">{lap.distance_km} km</td>
             <td className="py-2 px-3 text-right font-mono text-text-secondary">{lap.duration_fmt}</td>

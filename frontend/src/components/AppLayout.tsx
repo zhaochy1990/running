@@ -55,7 +55,7 @@ export default function AppLayout() {
               </div>
               <div>
                 <h1 className="text-base font-bold tracking-tight text-text-primary leading-none">STRIDE</h1>
-                <p className="text-[10px] font-mono text-text-muted tracking-widest mt-0.5">训练中心</p>
+                <p className="text-xs font-mono text-text-muted tracking-widest mt-0.5">训练中心</p>
               </div>
             </button>
             {users.length > 1 && <UserDropdown user={user} users={users} onSelect={(u) => { setUser(u); navigate('/') }} />}
@@ -63,7 +63,7 @@ export default function AppLayout() {
         </div>
 
         <div className="px-5 pb-2">
-          <p className="text-[10px] font-mono text-text-muted tracking-wider">训练周</p>
+          <p className="text-xs font-mono text-text-muted tracking-wider">训练周</p>
         </div>
 
         <div className="flex-1 px-3 pb-4">
@@ -95,14 +95,14 @@ export default function AppLayout() {
                       </p>
                     )}
                     <div className="flex items-center gap-3 mt-2">
-                      <span className="text-[10px] font-mono text-text-muted">
+                      <span className="text-xs font-mono text-text-muted">
                         {week.activity_count} 次训练
                       </span>
-                      <span className="text-[10px] font-mono text-accent-green">
+                      <span className="text-xs font-mono text-accent-green">
                         {week.total_km} km
                       </span>
                       {week.has_feedback && (
-                        <span className="text-[9px] font-mono text-accent-cyan bg-accent-cyan/10 px-1 py-0.5 rounded">
+                        <span className="text-[11px] font-mono text-accent-cyan bg-accent-cyan/10 px-1 py-0.5 rounded">
                           反馈
                         </span>
                       )}
@@ -150,7 +150,7 @@ export default function AppLayout() {
             )}
           </button>
           {syncMsg && (
-            <p className={`text-[10px] font-mono text-center ${syncMsg.includes('失败') ? 'text-accent-red' : 'text-accent-green'}`}>
+            <p className={`text-xs font-mono text-center ${syncMsg.includes('失败') ? 'text-accent-red' : 'text-accent-green'}`}>
               {syncMsg}
             </p>
           )}

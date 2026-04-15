@@ -268,7 +268,7 @@ export default function HealthPage() {
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h3 className="text-sm font-semibold text-text-primary">PMC 表现管理图</h3>
-                        <p className="text-[10px] font-mono text-text-muted">Performance Management Chart — CTI / ATI / TSB</p>
+                        <p className="text-xs font-mono text-text-muted">Performance Management Chart — CTI / ATI / TSB</p>
                       </div>
                       <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg">
                         {[30, 60, 90].map((d) => (
@@ -475,7 +475,7 @@ function MetricCard({ label, sublabel, value, unit, color, detail }: {
       <div className="flex items-center justify-between mb-3">
         <div>
           <p className="text-xs font-medium text-text-secondary">{label}</p>
-          <p className="text-[10px] font-mono text-text-muted">{sublabel}</p>
+          <p className="text-xs font-mono text-text-muted">{sublabel}</p>
         </div>
         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}40` }} />
       </div>
@@ -483,7 +483,7 @@ function MetricCard({ label, sublabel, value, unit, color, detail }: {
         {value}
         {unit && <span className="text-xs font-normal text-text-muted ml-1">{unit}</span>}
       </p>
-      {detail && <p className="text-[10px] font-mono text-text-muted mt-1">{detail}</p>}
+      {detail && <p className="text-xs font-mono text-text-muted mt-1">{detail}</p>}
     </div>
   )
 }
@@ -493,7 +493,7 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle: str
     <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
       <div className="mb-4">
         <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
-        <p className="text-[10px] font-mono text-text-muted">{subtitle}</p>
+        <p className="text-xs font-mono text-text-muted">{subtitle}</p>
       </div>
       {children}
     </div>

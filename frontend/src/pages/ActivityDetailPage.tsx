@@ -143,7 +143,7 @@ export default function ActivityDetailPage() {
         {activity.temperature != null && (
           <div className="flex items-center gap-6 mt-4 pt-4 border-t border-border-subtle">
             <div className="flex items-center gap-1.5 text-sm font-mono text-text-secondary">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider mr-1">天气</span>
+              <span className="text-xs text-text-muted uppercase tracking-wider mr-1">天气</span>
               <span style={{ color: activity.temperature >= 25 ? '#d32f2f' : activity.temperature >= 15 ? '#e68a00' : '#0097a7' }}>
                 {activity.temperature}°C
               </span>
@@ -153,13 +153,13 @@ export default function ActivityDetailPage() {
             </div>
             {activity.humidity != null && (
               <div className="flex items-center gap-1 text-sm font-mono text-text-secondary">
-                <span className="text-[10px] text-text-muted uppercase tracking-wider mr-1">湿度</span>
+                <span className="text-xs text-text-muted uppercase tracking-wider mr-1">湿度</span>
                 {activity.humidity}%
               </div>
             )}
             {activity.wind_speed != null && activity.wind_speed > 0 && (
               <div className="flex items-center gap-1 text-sm font-mono text-text-secondary">
-                <span className="text-[10px] text-text-muted uppercase tracking-wider mr-1">风速</span>
+                <span className="text-xs text-text-muted uppercase tracking-wider mr-1">风速</span>
                 {activity.wind_speed} km/h
               </div>
             )}
@@ -170,7 +170,7 @@ export default function ActivityDetailPage() {
         {activity.sport_note && (
           <div className="mt-4 pt-4 border-t border-border-subtle">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] text-text-muted uppercase tracking-wider">训练反馈</span>
+              <span className="text-xs text-text-muted uppercase tracking-wider">训练反馈</span>
               {activity.feel_type != null && (
                 <span className="text-lg leading-none">
                   {[,'😄','🙂','😐','😞','😫'][activity.feel_type] || ''}
@@ -251,7 +251,7 @@ export default function ActivityDetailPage() {
 function BigMetric({ label, value, unit, color }: { label: string; value: string; unit?: string; color: string }) {
   return (
     <div>
-      <p className="text-[10px] font-mono text-text-muted uppercase tracking-wider mb-1">{label}</p>
+      <p className="text-xs font-mono text-text-muted uppercase tracking-wider mb-1">{label}</p>
       <div className="flex items-baseline gap-1">
         <span className="text-lg font-bold font-mono" style={{ color }}>{value}</span>
         {unit && <span className="text-xs text-text-muted font-mono">{unit}</span>}
@@ -263,7 +263,7 @@ function BigMetric({ label, value, unit, color }: { label: string; value: string
 function SmallMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[10px] font-mono text-text-muted uppercase tracking-wider">{label}</p>
+      <p className="text-xs font-mono text-text-muted uppercase tracking-wider">{label}</p>
       <p className="text-sm font-mono text-text-secondary mt-0.5">{value}</p>
     </div>
   )

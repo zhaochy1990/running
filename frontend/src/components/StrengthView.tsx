@@ -89,15 +89,15 @@ function ExerciseRow({ index, group }: { index: number; group: ExerciseGroup }) 
         <span className="text-xs font-mono text-text-muted w-5">{index}</span>
         <div className="w-1.5 h-5 rounded-full bg-[#ff6d00]" />
         <span className="text-sm font-medium text-[#ff6d00]">{group.name}</span>
-        <span className="text-[9px] font-mono text-text-muted ml-1">{group.sets.length} 组</span>
+        <span className="text-[11px] font-mono text-text-muted ml-1">{group.sets.length} 组</span>
 
         <div className="flex-1 flex items-center gap-6 ml-4">
           <div className="min-w-[60px]">
-            <p className="text-[9px] font-mono text-text-muted">总时长</p>
+            <p className="text-[11px] font-mono text-text-muted">总时长</p>
             <p className="text-xs font-mono font-medium text-text-secondary mt-0.5">{formatTime(totalTime)}</p>
           </div>
           <div className="min-w-[60px]">
-            <p className="text-[9px] font-mono text-text-muted">平均心率</p>
+            <p className="text-[11px] font-mono text-text-muted">平均心率</p>
             <p className="text-xs font-mono font-medium mt-0.5" style={{ color: getHRColor(avgHR) }}>
               {avgHR || '—'}
             </p>

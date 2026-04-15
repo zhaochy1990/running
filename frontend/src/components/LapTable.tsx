@@ -29,13 +29,13 @@ export default function LapTable({ laps }: { laps: Lap[] }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b-2 border-border">
-            <th className="text-left py-2 px-3 text-[10px] font-mono text-text-muted tracking-wider">段</th>
-            <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted tracking-wider">距离</th>
-            <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted tracking-wider">时长</th>
-            <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted tracking-wider">配速</th>
-            <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted tracking-wider">平均心率</th>
-            <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted tracking-wider">最大心率</th>
-            <th className="text-right py-2 px-3 text-[10px] font-mono text-text-muted tracking-wider">步频</th>
+            <th className="text-left py-2 px-3 text-xs font-mono text-text-muted tracking-wider">段</th>
+            <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">距离</th>
+            <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">时长</th>
+            <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">配速</th>
+            <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">平均心率</th>
+            <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">最大心率</th>
+            <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">步频</th>
           </tr>
         </thead>
         <tbody>
@@ -50,7 +50,7 @@ export default function LapTable({ laps }: { laps: Lap[] }) {
               >
                 <td className="py-2.5 px-3 font-mono text-text-muted text-xs">
                   {lap.lap_index}
-                  {isFastest && <span className="ml-1.5 text-accent-green text-[9px]">最快</span>}
+                  {isFastest && <span className="ml-1.5 text-accent-green text-[11px]">最快</span>}
                 </td>
                 <td className="py-2.5 px-3 text-right font-mono text-text-secondary">{lap.distance_km} km</td>
                 <td className="py-2.5 px-3 text-right font-mono text-text-secondary">{lap.duration_fmt}</td>

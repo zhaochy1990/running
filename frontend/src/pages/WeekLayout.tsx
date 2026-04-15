@@ -173,14 +173,14 @@ function ActivityList({ activities }: { activities: Activity[] }) {
                       </p>
                       <div className="flex items-center gap-2 mt-1">
                         <span
-                          className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                          className="text-xs font-mono px-1.5 py-0.5 rounded"
                           style={{ color: sportColor(a.sport_name), backgroundColor: sportColor(a.sport_name) + '15' }}
                         >
                           {sportNameCN(a.sport_name)}
                         </span>
                         {a.train_type && (
                           <span
-                            className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                            className="text-xs font-mono px-1.5 py-0.5 rounded"
                             style={{ color: trainTypeColor(a.train_type), backgroundColor: trainTypeColor(a.train_type) + '15' }}
                           >
                             {trainTypeCN(a.train_type)}
@@ -217,7 +217,7 @@ function ActivityList({ activities }: { activities: Activity[] }) {
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="min-w-[60px]">
-      <p className="text-[10px] font-mono text-text-muted tracking-wider">{label}</p>
+      <p className="text-xs font-mono text-text-muted tracking-wider">{label}</p>
       <p className={`text-sm font-mono font-medium mt-0.5 ${accent ? 'text-text-primary' : 'text-text-secondary'}`}>
         {value}
       </p>
