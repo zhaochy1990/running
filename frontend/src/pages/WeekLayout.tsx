@@ -139,6 +139,12 @@ export default function WeekLayout() {
 
         <div className="px-3 py-3 border-t border-border-subtle space-y-2">
           <button
+            onClick={() => navigate('/plan')}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-accent-purple/30 text-accent-purple hover:bg-accent-purple/10 transition-all"
+          >
+            训练总计划
+          </button>
+          <button
             onClick={() => navigate('/health')}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/10 transition-all"
           >

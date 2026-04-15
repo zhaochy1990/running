@@ -5,6 +5,7 @@ import { UserProvider } from './UserContext'
 import WeekLayout from './pages/WeekLayout'
 import ActivityDetailPage from './pages/ActivityDetailPage'
 import HealthPage from './pages/HealthPage'
+import TrainingPlanPage from './pages/TrainingPlanPage'
 import LoginPage from './pages/LoginPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -32,6 +33,7 @@ function App() {
                 <Route path="/week/:folder" element={<WeekLayout />} />
                 <Route path="/activity/:id" element={<ActivityDetailPage />} />
                 <Route path="/health" element={<HealthPage />} />
+                <Route path="/plan" element={<TrainingPlanPage />} />
               </Routes>
             </UserProvider>
           </ProtectedRoute>

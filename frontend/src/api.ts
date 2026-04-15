@@ -134,6 +134,22 @@ export function resyncActivity(user: string, labelId: string) {
   return fetch(`${BASE}/${user}/activities/${labelId}/resync`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; error?: string }>
 }
 
+export interface TrainingPlanPhase {
+  name: string
+  start: string
+  end: string
+}
+
+export interface TrainingPlan {
+  content: string | null
+  phases: TrainingPlanPhase[]
+  current_phase: string | null
+}
+
+export function getTrainingPlan(user: string) {
+  return fetchJSON<TrainingPlan>(`/${user}/training-plan`)
+}
+
 export interface HealthRecord {
   date: string
   ati: number | null
