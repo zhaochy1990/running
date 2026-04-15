@@ -80,7 +80,7 @@ jobs:
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "App URL: https://$FQDN"
           for i in $(seq 1 30); do
-            if curl -sf "https://$FQDN/health" | grep -q '"status":"ok"'; then
+            if curl -sf "https://$FQDN/api/health" | grep -q '"status":"ok"'; then
               echo "Health check passed"
               exit 0
             fi

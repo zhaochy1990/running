@@ -613,7 +613,7 @@ def get_stats(user: str):
 # --- Health check ---
 
 
-@app.get("/health")
+@app.get("/api/health")
 def health():
     return {"status": "ok"}
 
