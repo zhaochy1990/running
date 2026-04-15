@@ -181,9 +181,13 @@ def get_activity(user: str, label_id: str):
         sd["duration_fmt"] = _format_duration(sd["duration_s"], decimals=2)
         sd["pace_fmt"] = pace_str(sd["avg_pace"]) or "—"
         name_key = sd.get("exercise_name_key")
-        if name_key:
-            sd["seg_name"] = _exercise_name(name_key)
+        if name_key and name_key in _EXERCISE_NAMES:
+            sd["seg_name"] = _EXERCISE_NAMES[name_key]
+        elif name_key and name_key.startswith("sid_strength_"):
+            # Custom strength exercise with descriptive key
+            sd["seg_name"] = name_key.replace("sid_strength_", "").replace("_", " ").title()
         else:
+            # Running S-codes or unknown keys: use exercise_type mapping
             sd["seg_name"] = EXERCISE_TYPES.get(sd.get("exercise_type") or 0, "训练")
         segments.append(sd)
 
@@ -361,6 +365,39 @@ def trigger_sync(user: str):
             "success": True,
             "output": f"同步完成: {activities} 条活动, {health} 条健康记录",
         }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@app.post("/api/{user}/activities/{label_id}/resync")
+def resync_activity(user: str, label_id: str):
+    """Re-sync a single activity from COROS (to pick up updated feedback/sport_note)."""
+    from .auth import Credentials
+    from .client import CorosClient
+    from .models import ActivityDetail
+
+    try:
+        creds = Credentials.load(user=user)
+        if not creds.is_logged_in:
+            return {"success": False, "error": f"用户 {user} 未登录"}
+
+        db = _get_db(user)
+        rows = db.query("SELECT sport_type, date FROM activities WHERE label_id = ?", (label_id,))
+        if not rows:
+            db.close()
+            return {"success": False, "error": "活动不存在"}
+        sport_type = rows[0]["sport_type"]
+        activity_date = rows[0]["date"]
+
+        with CorosClient(creds, user=user) as client:
+            detail_data = client.get_activity_detail(label_id, sport_type)
+            detail = ActivityDetail.from_api(detail_data, label_id)
+            if not detail.date:
+                detail.date = activity_date
+            db.upsert_activity(detail)
+
+        db.close()
+        return {"success": True}
     except Exception as e:
         return {"success": False, "error": str(e)}
 

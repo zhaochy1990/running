@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { getActivity, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
+import { getActivity, resyncActivity, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
 import { useUser } from '../UserContext'
 import SegmentView from '../components/SegmentView'
 import StrengthView from '../components/StrengthView'
@@ -17,6 +17,18 @@ export default function ActivityDetailPage() {
   const [zones, setZones] = useState<Zone[]>([])
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([])
   const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+
+  const loadActivity = () => {
+    if (!id || !user) return
+    getActivity(user, id).then((data) => {
+      setActivity(data.activity)
+      setLaps(data.laps)
+      setSegments(data.segments || [])
+      setZones(data.zones)
+      setTimeseries(data.timeseries)
+    })
+  }
 
   useEffect(() => {
     if (!id || !user) return
@@ -31,6 +43,19 @@ export default function ActivityDetailPage() {
       })
       .finally(() => setLoading(false))
   }, [id])
+
+  const handleResync = async () => {
+    if (!id || !user || syncing) return
+    setSyncing(true)
+    try {
+      const res = await resyncActivity(user, id)
+      if (res.success) {
+        loadActivity()
+      }
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -89,6 +114,17 @@ export default function ActivityDetailPage() {
             </h1>
             <p className="text-sm font-mono text-text-muted mt-1">{formatDate(activity.date)}</p>
           </div>
+          <button
+            onClick={handleResync}
+            disabled={syncing}
+            className="inline-flex items-center gap-1.5 text-xs font-mono text-text-muted hover:text-accent-green transition-colors px-3 py-1.5 rounded-lg border border-border-subtle hover:border-accent-green/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            title="从 COROS 重新同步此活动"
+          >
+            <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {syncing ? '同步中...' : '重新同步'}
+          </button>
         </div>
 
         {/* Key Metrics Grid */}

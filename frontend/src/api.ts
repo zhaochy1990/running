@@ -128,6 +128,10 @@ export function triggerSync(user: string) {
   return fetch(`${BASE}/${user}/sync`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
 }
 
+export function resyncActivity(user: string, labelId: string) {
+  return fetch(`${BASE}/${user}/activities/${labelId}/resync`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; error?: string }>
+}
+
 export interface HealthRecord {
   date: string
   ati: number | null
