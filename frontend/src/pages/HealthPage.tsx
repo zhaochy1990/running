@@ -300,44 +300,40 @@ export default function HealthPage() {
                       </ComposedChart>
                     </ResponsiveContainer>
 
-                    <div className="mt-2">
-                      <p className="text-[10px] font-mono text-text-muted mb-2 ml-1">TSB 竞技状态 (CTI − ATI)</p>
-                      <ResponsiveContainer width="100%" height={160}>
-                        <ComposedChart data={pmcChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-                          <defs>
-                            <linearGradient id="gradTSBPos" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="5%" stopColor="#00a85a" stopOpacity={0.3} />
-                              <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
-                            </linearGradient>
-                            <linearGradient id="gradTSBNeg" x1="0" y1="1" x2="0" y2="0">
-                              <stop offset="5%" stopColor="#d32f2f" stopOpacity={0.2} />
-                              <stop offset="95%" stopColor="#d32f2f" stopOpacity={0.02} />
-                            </linearGradient>
-                          </defs>
+                    <div className="mt-4">
+                      <p className="text-xs font-mono text-text-muted mb-2 ml-1">TSB 竞技状态 (CTI − ATI)</p>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <BarChart data={pmcChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
                           <CartesianGrid {...GRID_STYLE} />
                           <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
                           <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                          <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [typeof v === 'number' ? (v > 0 ? `+${v}` : `${v}`) : `${v}`, 'TSB']} />
-                          <ReferenceLine y={0} stroke="#555570" strokeWidth={1} />
-                          <ReferenceLine y={10} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.4} />
-                          <ReferenceLine y={25} stroke="#ffab00" strokeDasharray="4 4" strokeOpacity={0.4} />
-                          <ReferenceLine y={-10} stroke="#0097a7" strokeDasharray="4 4" strokeOpacity={0.3} />
-                          <ReferenceLine y={-30} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.3} />
-                          <Area type="monotone" dataKey="tsb" stroke="#5c6bc0" strokeWidth={2} fill="url(#gradTSBPos)" dot={false} activeDot={{ r: 3, fill: '#5c6bc0', stroke: '#fff', strokeWidth: 2 }} />
-                        </ComposedChart>
+                          <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => {
+                            const n = Number(v)
+                            const zone = n > 25 ? '减量过多' : n >= 10 ? '比赛就绪' : n >= -10 ? '过渡区' : n >= -30 ? '正常训练' : '过度负荷'
+                            return [`${n > 0 ? '+' : ''}${n} (${zone})`, 'TSB']
+                          }} />
+                          <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
+                          <Bar dataKey="tsb" name="TSB">
+                            {pmcChartData.map((entry, idx) => {
+                              const v = entry.tsb ?? 0
+                              const color = v > 25 ? '#e68a00' : v >= 10 ? '#00a85a' : v >= -10 ? '#8888a0' : v >= -30 ? '#0097a7' : '#d32f2f'
+                              return <Cell key={idx} fill={color} fillOpacity={0.8} />
+                            })}
+                          </Bar>
+                        </BarChart>
                       </ResponsiveContainer>
                     </div>
 
-                    <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 ml-1">
+                    <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 ml-1">
                       {[
                         { label: '比赛就绪 (10~25)', color: '#00a85a' },
                         { label: '过渡区 (-10~10)', color: '#8888a0' },
                         { label: '正常训练 (-30~-10)', color: '#0097a7' },
                         { label: '过度负荷 (<-30)', color: '#d32f2f' },
-                        { label: '减量过多 (>25)', color: '#ffab00' },
+                        { label: '减量过多 (>25)', color: '#e68a00' },
                       ].map(({ label, color }) => (
-                        <span key={label} className="flex items-center gap-1 text-[10px] font-mono text-text-muted">
-                          <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: color }} />
+                        <span key={label} className="flex items-center gap-1.5 text-xs font-mono text-text-secondary">
+                          <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: color }} />
                           {label}
                         </span>
                       ))}
@@ -374,7 +370,7 @@ export default function HealthPage() {
                         >
                           <td className="py-2 px-3 text-text-secondary">{formatDate(r.date)}</td>
                           <td className="py-2 px-3 text-right">
-                            <span style={{ color: r.rhr != null && r.rhr > 55 ? '#d32f2f' : r.rhr != null && r.rhr > 50 ? '#ffab00' : '#e8e8f0' }}>
+                            <span style={{ color: r.rhr != null && r.rhr > 55 ? '#d32f2f' : r.rhr != null && r.rhr > 50 ? '#e68a00' : '#00a85a' }}>
                               {r.rhr ?? '—'}
                             </span>
                           </td>
