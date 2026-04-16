@@ -204,25 +204,18 @@ def workout() -> None:
 @click.option("--reps", type=int, help="Number of intervals (interval type)")
 @click.option("--interval-m", type=int, help="Interval distance in meters (interval type)")
 @click.option("--recovery-min", type=float, default=3, help="Recovery jog between intervals (min)")
-@click.option("--warmup-min", type=float, default=5, help="Warmup duration (min)")
-@click.option("--warmup-km", type=float, help="Warmup distance in km (overrides warmup-min)")
-@click.option("--warmup-pace-low", help="Warmup slower pace (e.g. 5:40)")
-@click.option("--warmup-pace-high", help="Warmup faster pace (e.g. 5:30)")
-@click.option("--cooldown-km", type=float, help="Cooldown distance in km")
-@click.option("--cooldown-pace-low", help="Cooldown slower pace (e.g. 6:00)")
-@click.option("--cooldown-pace-high", help="Cooldown faster pace (e.g. 5:40)")
 @click.option("--mp-km", type=float, default=0, help="Marathon pace km at end (long run)")
 @click.option("--mp-pace-low", default="4:10", help="Marathon pace low (long run)")
 @click.option("--mp-pace-high", default="4:00", help="Marathon pace high (long run)")
+@click.option("--name-prefix", "-p", default="", help="Prefix for workout name (e.g. '[STRIDE]')")
 @click.pass_context
 def push_workout_cmd(
     ctx: click.Context,
     workout_type: str, date: str, distance: float | None, duration: float | None,
     pace_low: str | None, pace_high: str | None,
-    reps: int | None, interval_m: int | None, recovery_min: float, warmup_min: float,
-    warmup_km: float | None, warmup_pace_low: str | None, warmup_pace_high: str | None,
-    cooldown_km: float | None, cooldown_pace_low: str | None, cooldown_pace_high: str | None,
+    reps: int | None, interval_m: int | None, recovery_min: float,
     mp_km: float, mp_pace_low: str, mp_pace_high: str,
+    name_prefix: str,
 ) -> None:
     """Push a running workout to COROS training schedule.
 
@@ -247,20 +240,12 @@ def push_workout_cmd(
     if workout_type == "easy":
         w = easy_run(date, distance or 10, pace_low or "5:40", pace_high or "5:20")
     elif workout_type == "tempo":
-        w = tempo_run(
-            date, warmup_min, distance or 8, pace_low or "3:55", pace_high or "3:50",
-            warmup_km=warmup_km, warmup_pace_low=warmup_pace_low, warmup_pace_high=warmup_pace_high,
-            cooldown_km=cooldown_km, cooldown_pace_low=cooldown_pace_low, cooldown_pace_high=cooldown_pace_high,
-        )
+        w = tempo_run(date, distance or 8, pace_low or "3:55", pace_high or "3:50")
     elif workout_type == "interval":
         if not reps or not interval_m:
             console.print("[red]--reps and --interval-m are required for interval workouts[/red]")
             raise SystemExit(1)
-        w = interval_run(
-            date, warmup_min, reps, interval_m, pace_low or "3:40", pace_high or "3:35", recovery_min,
-            warmup_km=warmup_km, warmup_pace_low=warmup_pace_low, warmup_pace_high=warmup_pace_high,
-            cooldown_km=cooldown_km, cooldown_pace_low=cooldown_pace_low, cooldown_pace_high=cooldown_pace_high,
-        )
+        w = interval_run(date, reps, interval_m, pace_low or "3:40", pace_high or "3:35", recovery_min)
     elif workout_type == "long":
         easy_km = (distance or 30) - mp_km
         w = long_run(date, distance or 30, easy_km, mp_km,
@@ -268,6 +253,9 @@ def push_workout_cmd(
     else:
         console.print(f"[red]Unknown workout type: {workout_type}[/red]")
         raise SystemExit(1)
+
+    if name_prefix:
+        w.name = f"{name_prefix} {w.name}"
 
     with CorosClient(creds, user=profile) as client:
         result = push_workout(client, w)

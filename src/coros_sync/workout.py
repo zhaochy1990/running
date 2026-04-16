@@ -140,6 +140,11 @@ class RunWorkout:
     segments: list[RunSegment] = field(default_factory=list)
     workout_type: str = "easy"  # easy, tempo, interval, long
 
+    def strip_warmup_cooldown(self) -> RunWorkout:
+        """Remove warmup and cooldown segments, keeping only training/interval."""
+        self.segments = [s for s in self.segments if s.segment_type not in ("warmup", "cooldown")]
+        return self
+
     def add_warmup(
         self,
         duration_min: float | None = None,
@@ -488,52 +493,28 @@ def push_workout(client: CorosClient, workout: RunWorkout) -> dict:
 
 def easy_run(date: str, distance_km: float, pace_low: str = "5:40", pace_high: str = "5:20") -> RunWorkout:
     """Easy aerobic run."""
-    return (RunWorkout(f"Easy Run {distance_km}km", date, workout_type="easy")
-            .add_warmup(5)
-            .add_training(distance_km=distance_km, pace_low=pace_low, pace_high=pace_high)
-            .add_cooldown(5))
+    return (RunWorkout(f"Easy Run {distance_km:g}km", date, workout_type="easy")
+            .add_training(distance_km=distance_km, pace_low=pace_low, pace_high=pace_high))
 
 
-def tempo_run(
-    date: str, warmup_min: float, tempo_km: float, pace_low: str, pace_high: str,
-    warmup_km: float | None = None, warmup_pace_low: str | None = None, warmup_pace_high: str | None = None,
-    cooldown_km: float | None = None, cooldown_pace_low: str | None = None, cooldown_pace_high: str | None = None,
-) -> RunWorkout:
+def tempo_run(date: str, tempo_km: float, pace_low: str, pace_high: str) -> RunWorkout:
     """Tempo/threshold run."""
-    w = RunWorkout(f"Tempo {tempo_km}km @ {pace_high}", date, workout_type="tempo")
-    if warmup_km:
-        w.add_warmup(distance_km=warmup_km, pace_low=warmup_pace_low, pace_high=warmup_pace_high)
-    else:
-        w.add_warmup(duration_min=warmup_min)
+    w = RunWorkout(f"Tempo {tempo_km:g}km @ {pace_high}", date, workout_type="tempo")
     w.add_training(distance_km=tempo_km, pace_low=pace_low, pace_high=pace_high)
-    if cooldown_km:
-        w.add_cooldown(distance_km=cooldown_km, pace_low=cooldown_pace_low, pace_high=cooldown_pace_high)
-    else:
-        w.add_cooldown()
     return w
 
 
 def interval_run(
-    date: str, warmup_min: float, reps: int, interval_m: int,
+    date: str, reps: int, interval_m: int,
     pace_low: str, pace_high: str, recovery_min: float = 3,
-    warmup_km: float | None = None, warmup_pace_low: str | None = None, warmup_pace_high: str | None = None,
-    cooldown_km: float | None = None, cooldown_pace_low: str | None = None, cooldown_pace_high: str | None = None,
 ) -> RunWorkout:
     """Interval workout with repeats using COROS group format."""
     w = RunWorkout(f"{reps}x{interval_m}m Intervals", date, workout_type="interval")
-    if warmup_km:
-        w.add_warmup(distance_km=warmup_km, pace_low=warmup_pace_low, pace_high=warmup_pace_high)
-    else:
-        w.add_warmup(duration_min=warmup_min)
     w.add_interval(
         sets=reps, distance_km=interval_m / 1000,
         pace_low=pace_low, pace_high=pace_high,
         recovery_duration_s=int(recovery_min * 60),
     )
-    if cooldown_km:
-        w.add_cooldown(distance_km=cooldown_km, pace_low=cooldown_pace_low, pace_high=cooldown_pace_high)
-    else:
-        w.add_cooldown()
     return w
 
 
@@ -541,12 +522,10 @@ def long_run(date: str, total_km: float, easy_km: float, mp_km: float,
              easy_pace_low: str = "5:20", easy_pace_high: str = "5:00",
              mp_pace_low: str = "4:10", mp_pace_high: str = "4:00") -> RunWorkout:
     """Long run with marathon pace finish."""
-    w = RunWorkout(f"Long Run {total_km}km", date, workout_type="long")
-    w.add_warmup(5)
+    w = RunWorkout(f"Long Run {total_km:g}km", date, workout_type="long")
     w.add_training(distance_km=easy_km, pace_low=easy_pace_low, pace_high=easy_pace_high)
     if mp_km > 0:
         w.add_training(distance_km=mp_km, pace_low=mp_pace_low, pace_high=mp_pace_high)
-    w.add_cooldown(5)
     return w
 
 
