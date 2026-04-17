@@ -25,7 +25,7 @@ TRAIN_TYPES: dict[int, str] = {
 }
 
 RACE_TYPES: dict[int, str] = {
-    1: "5K", 2: "10K", 3: "Half Marathon", 4: "Marathon",
+    1: "Marathon", 2: "Half Marathon", 4: "10K", 5: "5K",
 }
 
 RUN_SPORT_IDS = {100, 101, 102, 103, 104, 600, 601}
