@@ -1,8 +1,44 @@
 import type { Zone } from '../api'
 
 const ZONE_COLORS = ['#00c853', '#64dd17', '#ffab00', '#ff6d00', '#ff1744', '#c2185b']
-const ZONE_LABELS_HR = ['Z1 恢复', 'Z2 轻松', 'Z3 有氧', 'Z4 乳酸阈', 'Z5 最大摄氧', 'Z6 无氧']
-const ZONE_LABELS_PACE = ['Z1 轻松', 'Z2 中等', 'Z3 节奏', 'Z4 乳酸阈', 'Z5 速度', 'Z6 冲刺']
+const ZONE_LABELS = [
+  'Z1 积极恢复区',
+  'Z2 有氧耐力区',
+  'Z3 有氧动力区',
+  'Z4 乳酸阈区',
+  'Z5 速度耐力区',
+  'Z6 无氧动力区',
+]
+
+// COROS pace API returns 7 zones (extra split at 100% of threshold pace),
+// but the COROS app displays 6. Merge API Z4 (94-100%) and Z5 (100-102%)
+// into one "乳酸阈区" (94-102%), then relabel Z6→Z5 and Z7→Z6.
+function normalizePaceZones(zones: Zone[]): Zone[] {
+  if (zones.length < 7) return zones
+  const byIdx = new Map(zones.map((z) => [z.zone_index, z]))
+  const z4 = byIdx.get(4)
+  const z5 = byIdx.get(5)
+  const z6 = byIdx.get(6)
+  const z7 = byIdx.get(7)
+  if (!z4 || !z5 || !z6 || !z7) return zones
+  const merged: Zone = {
+    zone_type: 'pace',
+    zone_index: 4,
+    range_min: z5.range_min, // faster end (smaller ms/km)
+    range_max: z4.range_max, // slower end
+    range_unit: 'pace',
+    duration_s: z4.duration_s + z5.duration_s,
+    percent: z4.percent + z5.percent,
+  }
+  return [
+    byIdx.get(1)!,
+    byIdx.get(2)!,
+    byIdx.get(3)!,
+    merged,
+    { ...z6, zone_index: 5 },
+    { ...z7, zone_index: 6 },
+  ]
+}
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60)
@@ -50,8 +86,9 @@ function formatPaceRange(zone: Zone, zones: Zone[]): string {
 }
 
 export default function ZoneChart({ zones, type }: { zones: Zone[]; type: 'hr' | 'pace' }) {
-  const labels = type === 'hr' ? ZONE_LABELS_HR : ZONE_LABELS_PACE
-  const displayZones = zones.filter((z) => z.zone_index >= 1 && z.zone_index <= labels.length)
+  const labels = ZONE_LABELS
+  const sourceZones = type === 'pace' ? normalizePaceZones(zones) : zones
+  const displayZones = sourceZones.filter((z) => z.zone_index >= 1 && z.zone_index <= labels.length)
   const maxPercent = Math.max(...displayZones.map((z) => z.percent), 1)
 
   return (
