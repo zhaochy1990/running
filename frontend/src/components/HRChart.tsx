@@ -9,13 +9,20 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export default function HRChart({ data }: { data: TimeseriesPoint[] }) {
+type Props = {
+  data: TimeseriesPoint[]
+  startTs?: number
+  hoverElapsed?: number | null
+  onHover?: (elapsed: number | null) => void
+}
+
+export default function HRChart({ data, startTs: startTsProp, hoverElapsed, onHover }: Props) {
   const withTs = data.filter((p) => p.heart_rate && p.heart_rate > 0 && p.timestamp != null)
   if (withTs.length === 0) {
     return <div className="text-text-muted text-sm text-center py-8">无心率数据</div>
   }
 
-  const startTs = withTs[0].timestamp!
+  const startTs = startTsProp ?? withTs[0].timestamp!
   const chartData = withTs.map((p) => ({
     elapsed: Math.round((p.timestamp! - startTs) / 100),
     hr: p.heart_rate,
@@ -24,7 +31,14 @@ export default function HRChart({ data }: { data: TimeseriesPoint[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+      <AreaChart
+        data={chartData}
+        margin={{ top: 5, right: 5, bottom: 0, left: -5 }}
+        onMouseMove={(state) => {
+          if (state?.activeLabel != null) onHover?.(Number(state.activeLabel))
+        }}
+        onMouseLeave={() => onHover?.(null)}
+      >
         <defs>
           <linearGradient id="hrGradient" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#d32f2f" stopOpacity={0.4} />
@@ -58,6 +72,9 @@ export default function HRChart({ data }: { data: TimeseriesPoint[] }) {
           labelFormatter={(label) => formatTime(label as number)}
         />
         <ReferenceLine y={avgHR} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${avgHR}`, position: 'right', fill: '#d32f2f', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+        {hoverElapsed != null && (
+          <ReferenceLine x={hoverElapsed} stroke="#1a1c2e" strokeOpacity={0.35} strokeWidth={1} ifOverflow="extendDomain" />
+        )}
         <Area
           type="monotone"
           dataKey="hr"

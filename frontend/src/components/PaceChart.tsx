@@ -16,7 +16,14 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
-export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
+type Props = {
+  data: TimeseriesPoint[]
+  startTs?: number
+  hoverElapsed?: number | null
+  onHover?: (elapsed: number | null) => void
+}
+
+export default function PaceChart({ data, startTs: startTsProp, hoverElapsed, onHover }: Props) {
   const withTs = data.filter((p) => {
     const pace = p.adjusted_pace ?? p.speed
     return pace && pace > 0 && pace < 1200 && p.timestamp != null
@@ -25,7 +32,7 @@ export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
     return <div className="text-text-muted text-sm text-center py-8">无配速数据</div>
   }
 
-  const startTs = withTs[0].timestamp!
+  const startTs = startTsProp ?? withTs[0].timestamp!
   const chartData = withTs.map((p) => ({
     elapsed: Math.round((p.timestamp! - startTs) / 100),
     pace: p.adjusted_pace ?? p.speed,
@@ -34,7 +41,14 @@ export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
 
   return (
     <ResponsiveContainer width="100%" height={200}>
-      <AreaChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+      <AreaChart
+        data={chartData}
+        margin={{ top: 5, right: 5, bottom: 0, left: -5 }}
+        onMouseMove={(state) => {
+          if (state?.activeLabel != null) onHover?.(Number(state.activeLabel))
+        }}
+        onMouseLeave={() => onHover?.(null)}
+      >
         <XAxis
           dataKey="elapsed"
           tick={{ fontSize: 10, fill: '#8888a0', fontFamily: 'JetBrains Mono' }}
@@ -64,6 +78,9 @@ export default function PaceChart({ data }: { data: TimeseriesPoint[] }) {
           labelFormatter={(label) => formatTime(label as number)}
         />
         <ReferenceLine y={avgPace} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${formatPace(avgPace)}`, position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+        {hoverElapsed != null && (
+          <ReferenceLine x={hoverElapsed} stroke="#1a1c2e" strokeOpacity={0.35} strokeWidth={1} ifOverflow="extendDomain" />
+        )}
         <Area
           type="monotone"
           dataKey="pace"

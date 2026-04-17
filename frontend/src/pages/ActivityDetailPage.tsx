@@ -18,6 +18,7 @@ export default function ActivityDetailPage() {
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [hoverElapsed, setHoverElapsed] = useState<number | null>(null)
 
   const loadActivity = () => {
     if (!id || !user) return
@@ -72,6 +73,7 @@ export default function ActivityDetailPage() {
   const isStrength = [402, 800].includes(activity.sport_type)
   const hrZones = zones.filter((z) => z.zone_type === 'heartRate')
   const paceZones = zones.filter((z) => z.zone_type === 'pace')
+  const sharedStartTs = timeseries.find((p) => p.timestamp != null)?.timestamp ?? undefined
 
   return (
     <div className="max-w-5xl mx-auto px-8 py-8 animate-fade-in">
@@ -208,11 +210,11 @@ export default function ActivityDetailPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
               <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-1 opacity-0" style={{ animationFillMode: 'forwards' }}>
                 <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">心率曲线</h3>
-                <HRChart data={timeseries} />
+                <HRChart data={timeseries} startTs={sharedStartTs} hoverElapsed={hoverElapsed} onHover={setHoverElapsed} />
               </div>
               <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in stagger-2 opacity-0" style={{ animationFillMode: 'forwards' }}>
                 <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">配速曲线</h3>
-                <PaceChart data={timeseries} />
+                <PaceChart data={timeseries} startTs={sharedStartTs} hoverElapsed={hoverElapsed} onHover={setHoverElapsed} />
               </div>
             </div>
           )}
