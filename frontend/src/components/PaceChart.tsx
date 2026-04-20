@@ -1,4 +1,4 @@
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine, Label } from 'recharts'
 import type { TimeseriesPoint } from '../api'
 
 function formatPace(sPerKm: number): string {
@@ -14,6 +14,58 @@ function formatTime(seconds: number): string {
   const s = Math.floor(seconds % 60)
   if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   return `${m}:${s.toString().padStart(2, '0')}`
+}
+
+function findNearest<T extends { elapsed: number }>(data: T[], target: number): T | undefined {
+  if (!data.length) return undefined
+  let lo = 0, hi = data.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1
+    if (data[mid].elapsed < target) lo = mid + 1
+    else hi = mid
+  }
+  if (lo > 0 && Math.abs(data[lo - 1].elapsed - target) < Math.abs(data[lo].elapsed - target)) return data[lo - 1]
+  return data[lo]
+}
+
+function HoverLabel({ viewBox, text, color }: { viewBox?: { x?: number; y?: number; width?: number }; text: string; color: string }) {
+  if (!viewBox) return null
+  const lineX = viewBox.x ?? 0
+  const chartTop = viewBox.y ?? 0
+  const chartWidth = viewBox.width ?? 0
+  const boxHeight = 20
+  const charWidth = 6.5
+  const padding = 8
+  const boxWidth = text.length * charWidth + padding * 2
+  let boxX = lineX - boxWidth / 2
+  const rightEdge = chartWidth
+  if (boxX < -40) boxX = lineX + 4
+  if (boxX + boxWidth > rightEdge + 40) boxX = lineX - boxWidth - 4
+  const boxY = chartTop + 6
+  return (
+    <g pointerEvents="none">
+      <rect
+        x={boxX}
+        y={boxY}
+        width={boxWidth}
+        height={boxHeight}
+        fill="#ffffff"
+        stroke="#d8dae5"
+        strokeWidth={1}
+        rx={4}
+      />
+      <text
+        x={boxX + boxWidth / 2}
+        y={boxY + 14}
+        fontSize={11}
+        fontFamily="JetBrains Mono"
+        fill={color}
+        textAnchor="middle"
+      >
+        {text}
+      </text>
+    </g>
+  )
 }
 
 type Props = {
@@ -39,11 +91,16 @@ export default function PaceChart({ data, startTs: startTsProp, hoverElapsed, on
   }))
   const avgPace = Math.round(withTs.reduce((sum, p) => sum + (p.adjusted_pace ?? p.speed)!, 0) / withTs.length)
 
+  const hoverPoint = hoverElapsed != null ? findNearest(chartData, hoverElapsed) : undefined
+  const hoverText = hoverElapsed != null
+    ? `${formatTime(hoverElapsed)}  ${hoverPoint?.pace ? formatPace(hoverPoint.pace) + '/km' : '—'}`
+    : ''
+
   return (
     <ResponsiveContainer width="100%" height={200}>
       <AreaChart
         data={chartData}
-        margin={{ top: 5, right: 5, bottom: 0, left: -5 }}
+        margin={{ top: 30, right: 5, bottom: 0, left: -5 }}
         onMouseMove={(state) => {
           if (state?.activeLabel != null) onHover?.(Number(state.activeLabel))
         }}
@@ -65,21 +122,11 @@ export default function PaceChart({ data, startTs: startTsProp, hoverElapsed, on
           tickLine={false}
           tickFormatter={(v) => formatPace(v)}
         />
-        <Tooltip
-          contentStyle={{
-            background: '#ffffff',
-            border: '1px solid #d8dae5',
-            borderRadius: '8px',
-            fontSize: '12px',
-            fontFamily: 'JetBrains Mono',
-            color: '#1a1c2e',
-          }}
-          formatter={(value) => [formatPace(value as number) + '/km', '配速']}
-          labelFormatter={(label) => formatTime(label as number)}
-        />
         <ReferenceLine y={avgPace} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${formatPace(avgPace)}`, position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
         {hoverElapsed != null && (
-          <ReferenceLine x={hoverElapsed} stroke="#1a1c2e" strokeOpacity={0.35} strokeWidth={1} ifOverflow="extendDomain" />
+          <ReferenceLine x={hoverElapsed} stroke="#1a1c2e" strokeOpacity={0.35} strokeWidth={1} ifOverflow="extendDomain">
+            <Label content={(props: any) => <HoverLabel {...props} text={hoverText} color="#00a85a" />} />
+          </ReferenceLine>
         )}
         <Area
           type="monotone"
