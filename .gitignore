@@ -12,3 +12,7 @@ build/
 profile
 *.db
 data/*/config.json
+.credentials.local
+.playwright-mcp/
+frontend/.env.local
+frontend/.env.*.local
