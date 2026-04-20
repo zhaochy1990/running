@@ -238,29 +238,34 @@ export default function HealthPage() {
                       label="体能" sublabel="CTI (Fitness)"
                       value={pmcSummary.current_cti != null ? `${pmcSummary.current_cti}` : '—'} unit=""
                       color="#00a85a" detail="42天慢性负荷"
+                      help={<><strong>慢性训练负荷</strong>（42天加权平均），代表长期累积的体能基线。{'\n\n'}使用方法：{'\n'}• 缓慢上升（每4周 +8~+12）= 健康进步{'\n'}• 水平不动 = 维持期{'\n'}• 下降 = 体能流失，需加量{'\n'}• 上升过快（+10+/周）= 过度积累，易受伤</>}
                     />
                     <MetricCard
                       label="急性负荷" sublabel="ATI (Acute Load)"
                       value={pmcSummary.current_ati != null ? `${pmcSummary.current_ati}` : '—'} unit=""
                       color="#0097a7" detail="7天急性负荷"
+                      help={<><strong>急性训练负荷</strong>（7天加权平均），代表近期训练应激。{'\n\n'}使用方法：{'\n'}• ATI 高于 CTI → 负荷累积期{'\n'}• ATI 低于 CTI → 恢复/减量期{'\n'}• 健康训练应呈波浪穿越 CTI{'\n'}• 单日突增 = 比赛或高质量课</>}
                     />
                     <MetricCard
                       label="竞技状态" sublabel="TSB (Form)"
                       value={pmcSummary.current_tsb != null ? `${pmcSummary.current_tsb > 0 ? '+' : ''}${pmcSummary.current_tsb}` : '—'} unit=""
                       color={tsbColor(pmcSummary.current_tsb)}
                       detail={tsbZoneLabel(pmcSummary.current_tsb_zone)}
+                      help={<><strong>训练应激平衡 = CTI − ATI</strong>。衡量已从近期训练中恢复多少、是否适合比赛。{'\n\n'}使用方法：{'\n'}• +10~+25 比赛就绪甜区{'\n'}• -10~+10 过渡区{'\n'}• -30~-10 正常训练刺激{'\n'}• 低于 -30 过度负荷，必减量{'\n'}• 高于 +25 减量过多，流失体能</>}
                     />
                     <MetricCard
                       label="状态区间" sublabel="TSB Zone"
                       value={pmcSummary.current_tsb_zone_label || '—'} unit=""
                       color={tsbZoneColor(pmcSummary.current_tsb_zone)}
                       detail={`疲劳 ${pmcSummary.current_fatigue ?? '—'}`}
+                      help={<><strong>TSB 的分类标签</strong>，综合给出今日训练决策参考。{'\n\n'}使用方法：{'\n'}• 比赛就绪 → 可上高质量或比赛{'\n'}• 过渡区 → 维持或轻松日{'\n'}• 正常训练 → 有效刺激期{'\n'}• 过度负荷 → 红灯，必须减量{'\n'}• 减量过多 → 该加量了</>}
                     />
                     <MetricCard
                       label="CTL周增量" sublabel="Ramp Rate"
                       value={pmcSummary.ctl_ramp != null ? `${pmcSummary.ctl_ramp > 0 ? '+' : ''}${pmcSummary.ctl_ramp}` : '—'} unit="/周"
                       color={pmcSummary.ctl_ramp != null && Math.abs(pmcSummary.ctl_ramp) > 8 ? '#d32f2f' : '#00a85a'}
                       detail={pmcSummary.ctl_ramp != null && Math.abs(pmcSummary.ctl_ramp) > 8 ? '增量过快' : '安全范围 (±8)'}
+                      help={<><strong>CTI 过去7天的变化率</strong>，反映体能增长或衰减速度。{'\n\n'}使用方法：{'\n'}• +3~+7/周 健康递进{'\n'}• 高于 +8/周 增长过快，易受伤{'\n'}• 0 附近 维持期{'\n'}• 低于 -8/周 流失过快，需加量{'\n'}• 赛后 -10~-15 属正常</>}
                     />
                   </div>
 
@@ -426,6 +431,7 @@ function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot |
         unit="bpm"
         color={latest.rhr != null && latest.rhr > 55 ? '#d32f2f' : latest.rhr != null && latest.rhr > 50 ? '#ffab00' : '#00a85a'}
         detail="基线 47 bpm"
+        help={<><strong>清晨静息心率</strong>。反映心血管恢复与自主神经平衡。{'\n\n'}使用方法：{'\n'}• 接近基线（47）= 恢复良好{'\n'}• 高出基线 5+ bpm 持续 3 天 = 疲劳累积{'\n'}• 高出 10+ = 生病/过劳，立即休息{'\n'}• 训练越久通常越低</>}
       />
       <MetricCard
         label="睡眠HRV"
@@ -434,6 +440,7 @@ function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot |
         unit="ms"
         color={hrvColor}
         detail={hrvLow != null && hrvHigh != null ? `正常范围 ${hrvLow}-${hrvHigh}` : ''}
+        help={<><strong>睡眠心率变异性</strong>。反映副交感神经恢复程度。{'\n\n'}使用方法：{'\n'}• 在正常范围内稳定 = 恢复充分{'\n'}• 下降 10% = 黄灯，注意{'\n'}• 下降 20%+ = 红灯，跳过高质量{'\n'}• 高于上限 = 深度恢复/副交感活跃</>}
       />
       <MetricCard
         label="疲劳指数"
@@ -442,6 +449,7 @@ function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot |
         unit=""
         color={fatigueColor(latest.fatigue)}
         detail={latest.fatigue != null ? (latest.fatigue < 40 ? '已恢复' : latest.fatigue < 50 ? '正常' : latest.fatigue < 60 ? '疲劳' : '高疲劳') : ''}
+        help={<><strong>COROS 疲劳评分</strong>（0-100），综合训练与恢复数据。{'\n\n'}使用方法：{'\n'}• 低于 40 已恢复，可上质量课{'\n'}• 40-50 正常训练{'\n'}• 50-60 疲劳中，减强度{'\n'}• 高于 60 高疲劳，跳过训练或休息</>}
       />
       <MetricCard
         label="训练负荷比"
@@ -454,6 +462,7 @@ function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot |
           latest.training_load_ratio <= 1.0 ? '最佳' :
           latest.training_load_ratio <= 1.2 ? '偏高' : '过高'
         ) : ''}
+        help={<><strong>急性 / 慢性负荷比</strong>。反映近期应激相对于基线。{'\n\n'}使用方法：{'\n'}• 0.8-1.1 健康训练区{'\n'}• 高于 1.2 过度应激，减量{'\n'}• 高于 1.5 极高风险，强制休息{'\n'}• 低于 0.7 流失体能，需加量{'\n'}• 4周块均值 ≈ 1.0 为理想周期化</>}
       />
       <MetricCard
         label="负荷状态"
@@ -462,22 +471,33 @@ function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot |
         unit=""
         color={loadStateColor(latest.training_load_state)}
         detail={formatDate(latest.date)}
+        help={<><strong>COROS 负荷分类标签</strong>（Low / Optimal / High / Very High）。{'\n\n'}使用方法：{'\n'}• Optimal 持续期 = 最佳建构区{'\n'}• High 是递增周常态{'\n'}• Very High 持续超 2 周 = 过度训练{'\n'}• Low = 减量、赛后或伤停</>}
       />
     </div>
   )
 }
 
-function MetricCard({ label, sublabel, value, unit, color, detail }: {
-  label: string; sublabel: string; value: string; unit: string; color: string; detail: string
+function MetricCard({ label, sublabel, value, unit, color, detail, help }: {
+  label: string; sublabel: string; value: string; unit: string; color: string; detail: string; help?: React.ReactNode
 }) {
   return (
-    <div className="bg-bg-card border border-border-subtle rounded-xl p-4 hover:bg-bg-card-hover transition-all duration-200">
-      <div className="flex items-center justify-between mb-3">
+    <div className="bg-bg-card border border-border-subtle rounded-xl p-4 hover:bg-bg-card-hover transition-all duration-200 overflow-visible">
+      <div className="flex items-start justify-between mb-3">
         <div>
           <p className="text-xs font-medium text-text-secondary">{label}</p>
           <p className="text-xs font-mono text-text-muted">{sublabel}</p>
         </div>
-        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}40` }} />
+        <div className="flex items-center gap-2">
+          {help && (
+            <div className="group relative">
+              <div className="w-4 h-4 rounded-full border border-border-subtle text-[10px] font-mono text-text-muted cursor-help flex items-center justify-center hover:border-text-secondary hover:text-text-secondary transition-colors">?</div>
+              <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute right-0 top-6 z-50 w-64 bg-bg-card border border-border-subtle rounded-lg p-3 shadow-lg text-xs text-text-primary font-normal leading-relaxed whitespace-pre-line pointer-events-none">
+                {help}
+              </div>
+            </div>
+          )}
+          <div className="w-2 h-2 rounded-full shrink-0 mt-1" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}40` }} />
+        </div>
       </div>
       <p className="text-2xl font-bold font-mono tracking-tight" style={{ color }}>
         {value}
