@@ -240,7 +240,7 @@ export default function HealthPage() {
                       color="#00a85a" detail="42天慢性负荷"
                     />
                     <MetricCard
-                      label="疲劳" sublabel="ATI (Fatigue)"
+                      label="急性负荷" sublabel="ATI (Acute Load)"
                       value={pmcSummary.current_ati != null ? `${pmcSummary.current_ati}` : '—'} unit=""
                       color="#0097a7" detail="7天急性负荷"
                     />
@@ -298,7 +298,7 @@ export default function HealthPage() {
                         <YAxis domain={['dataMin - 15', 'dataMax + 15']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
                         <Tooltip {...TOOLTIP_STYLE} />
                         <Area type="monotone" dataKey="cti" name="CTI (体能)" stroke="#00a85a" strokeWidth={2} fill="url(#gradCTI)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
-                        <Line type="monotone" dataKey="ati" name="ATI (疲劳)" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+                        <Line type="monotone" dataKey="ati" name="ATI (急性负荷)" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
                       </ComposedChart>
                     </ResponsiveContainer>
 
