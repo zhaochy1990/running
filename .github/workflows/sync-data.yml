@@ -4,7 +4,8 @@ on:
   push:
     branches: [master]
     paths:
-      - 'data/*/logs/**'
+      - 'data/*/logs/**/*.md'
+      - 'data/*/logs/**/inbody.*'
       - 'data/*/TRAINING_PLAN.md'
       - 'data/*/status.md'
   workflow_dispatch:
@@ -40,6 +41,7 @@ jobs:
 
             echo "==> Syncing $user logs..."
             if [ -d "$user_dir/logs" ]; then
+              # Weekly markdown (plan.md, feedback.md)
               az storage file upload-batch \
                 --account-name authstorage2026 \
                 --account-key "$ACCOUNT_KEY" \
@@ -47,6 +49,16 @@ jobs:
                 --destination-path "$user/logs" \
                 --source "$user_dir/logs" \
                 --pattern "*.md" \
+                --output none
+
+              # InBody photos (inbody.jpg / .jpeg / .png per week folder)
+              az storage file upload-batch \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --destination stride-data \
+                --destination-path "$user/logs" \
+                --source "$user_dir/logs" \
+                --pattern "*/inbody.*" \
                 --output none
             fi
 
