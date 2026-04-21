@@ -25,6 +25,7 @@ COPY src/ ./src/
 RUN pip install --no-cache-dir \
     "fastapi>=0.115" \
     "uvicorn[standard]>=0.30" \
+    "pyjwt[crypto]>=2.8" \
     "click>=8.1" \
     "httpx>=0.27" \
     "platformdirs>=4.0" \

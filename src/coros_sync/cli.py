@@ -300,6 +300,9 @@ def commentary() -> None:
 def push_commentary_cmd(ctx: click.Context, label_id: str, url: str | None) -> None:
     """Push the local commentary for LABEL_ID to the remote server.
 
+    Attaches the stored auth token if one exists (see `coros-sync auth login`).
+    Falls back to an unauthenticated call for servers that do not enforce auth.
+
     Example:
 
       coros-sync -P zhaochaoyi commentary push 476939007924666668 \\
@@ -315,6 +318,7 @@ def push_commentary_cmd(ctx: click.Context, label_id: str, url: str | None) -> N
         raise SystemExit(1)
 
     import httpx
+    from .stride_auth import bearer_header
 
     with Database(user=profile) as db:
         text = db.get_activity_commentary(label_id)
@@ -323,11 +327,116 @@ def push_commentary_cmd(ctx: click.Context, label_id: str, url: str | None) -> N
         raise SystemExit(1)
 
     endpoint = f"{url.rstrip('/')}/api/{profile}/activities/{label_id}/commentary"
-    resp = httpx.post(endpoint, json={"commentary": text}, timeout=30)
+    headers = bearer_header(profile)
+    resp = httpx.post(endpoint, json={"commentary": text}, headers=headers, timeout=30)
+    if resp.status_code == 401:
+        console.print(
+            "[red]Server rejected the request (401). "
+            "Run `coros-sync -P {p} auth login` first.[/red]".format(p=profile)
+        )
+        raise SystemExit(1)
     if resp.status_code >= 400:
         console.print(f"[red]POST failed: {resp.status_code} {resp.text}[/red]")
         raise SystemExit(1)
-    console.print(f"[green]Pushed {len(text)} chars to {endpoint}[/green]")
+    auth_label = "authenticated" if headers else "anonymous"
+    console.print(f"[green]Pushed {len(text)} chars to {endpoint} ({auth_label})[/green]")
+
+
+@cli.group()
+def auth() -> None:
+    """Manage STRIDE auth-service tokens used by the CLI."""
+
+
+@auth.command("login")
+@click.option("--email", required=True, help="Account email.")
+@click.option("--password", default=None, help="Account password (prompted if omitted).")
+@click.option(
+    "--auth-url",
+    envvar="STRIDE_AUTH_URL",
+    required=True,
+    help="Auth-service base URL (or $STRIDE_AUTH_URL).",
+)
+@click.option(
+    "--client-id",
+    envvar="STRIDE_CLIENT_ID",
+    required=True,
+    help="OAuth client_id registered in the auth-service (or $STRIDE_CLIENT_ID).",
+)
+@click.pass_context
+def auth_login_cmd(
+    ctx: click.Context,
+    email: str,
+    password: str | None,
+    auth_url: str,
+    client_id: str,
+) -> None:
+    """Obtain tokens from the auth-service and save them for this profile."""
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+
+    if password is None:
+        password = click.prompt("Password", hide_input=True)
+
+    import httpx
+    from .stride_auth import login, save_token, auth_path
+
+    try:
+        token = login(auth_url, client_id, email, password)
+    except httpx.HTTPStatusError as e:
+        console.print(f"[red]Login failed: {e.response.status_code} {e.response.text}[/red]")
+        raise SystemExit(1)
+
+    save_token(profile, token)
+    console.print(f"[green]Logged in as {email}. Token saved to {auth_path(profile)}.[/green]")
+
+
+@auth.command("logout")
+@click.pass_context
+def auth_logout_cmd(ctx: click.Context) -> None:
+    """Remove the stored token for this profile."""
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+
+    from .stride_auth import auth_path, clear_token
+
+    if clear_token(profile):
+        console.print(f"[green]Removed {auth_path(profile)}.[/green]")
+    else:
+        console.print("[yellow]No stored token found.[/yellow]")
+
+
+@auth.command("status")
+@click.pass_context
+def auth_status_cmd(ctx: click.Context) -> None:
+    """Show the stored token's metadata (no secrets printed)."""
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+
+    from datetime import datetime
+
+    from .stride_auth import load_token
+
+    token = load_token(profile)
+    if token is None:
+        console.print("[yellow]No token stored. Run `auth login` first.[/yellow]")
+        return
+
+    exp = token.get("expires_at")
+    exp_str = datetime.fromtimestamp(exp).isoformat() if exp else "?"
+    table = Table(title=f"auth status [{profile}]")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value")
+    table.add_row("Email", token.get("email") or "?")
+    table.add_row("Auth URL", token.get("auth_url") or "?")
+    table.add_row("Client ID", token.get("client_id") or "?")
+    table.add_row("Access token expires", exp_str)
+    console.print(table)
 
 
 @workout.command("delete")

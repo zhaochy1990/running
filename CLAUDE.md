@@ -358,18 +358,57 @@ Multi-stage build (`Dockerfile`):
 
 ### CI/CD (GitHub Actions)
 
-`.github/workflows/deploy.yml` triggers on push to `master` when `src/`, `frontend/`, `Dockerfile`, or `pyproject.toml` change.
+Two workflows drive production:
 
-Pipeline: Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy to Azure Container Apps → Health check
+**`.github/workflows/deploy.yml`** — rebuild + redeploy the container. Triggers on push to `master` when `src/coros_sync/**`, `src/stride_core/**`, `src/stride_server/**`, `frontend/**`, `Dockerfile`, `.github/workflows/deploy.yml`, or `pyproject.toml` change.
+Pipeline: Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy to Azure Container Apps → Health check.
 
-**Important**: Changes to `data/` alone do NOT trigger deployment. If you need to redeploy after data-only changes, touch a file in `src/` or `Dockerfile`.
+**`.github/workflows/sync-data.yml`** — sync training-log markdown to the prod Azure Files share. Triggers on push to `master` when `data/*/logs/**`, `data/*/TRAINING_PLAN.md`, or `data/*/status.md` change. Uploads via `az storage file upload-batch` to share `stride-data` on storage account `authstorage2026` (resource group `rg-common-prod`). This is why `plan.md` / `feedback.md` appear in prod without a container rebuild — they land on Azure Files at runtime, not in the image. `.dockerignore` excludes `data/` entirely except `data/*/TRAINING_PLAN.md`; so markdown under `logs/` reaches prod ONLY via `sync-data.yml`, not via the image.
+
+**DB-row content** (e.g. `activity_commentary`) is NOT covered by `sync-data.yml` since it lives inside SQLite, not markdown. Use `coros-sync -P <user> commentary push <label_id> --url $STRIDE_PROD_URL` to sync a row, which POSTs to `/api/{user}/activities/{label_id}/commentary` on the server.
 
 ### Infrastructure
 
 - **Container**: Azure Container Apps (`stride-app` in `rg-running-prod`)
 - **Registry**: GitHub Container Registry (`ghcr.io`)
-- **Storage**: Azure Files mounted at `/app/data` — contains per-user SQLite databases, credentials, logs, and training plans
-- **Auth**: Entra ID (OIDC for deployment, MSAL for frontend login)
+- **Storage**: Azure Files share `stride-data` on `authstorage2026` (RG `rg-common-prod`), mounted at `/app/data` — contains per-user SQLite databases, credentials, logs, and training plans
+- **Auth**: Entra ID OIDC for deployment; separate auth-service (see below) for API-level authn/authz
+
+### Authentication (auth-service)
+
+STRIDE does **not** run its own auth. It integrates with a separate in-house auth service:
+
+- **Repo**: `C:\Users\zhaochaoyi\workspace\auth` (monorepo). Backend code: `sources/dev/authentication/` (Rust/Axum, Azure Table Storage, JWT RS256).
+- **Deployment**: Azure Container Apps (image `ghcr.io/<owner>/auth-backend`). JWT keys on Azure File Share. Release model is CalVer (`YYYY.M.MICRO`) via auto-tagged releases.
+- **Auth model**: OAuth2 + JWT (RS256) with PKCE. Public key is served by the auth service and used to verify access tokens.
+
+**Relevant endpoints** (base URL is the auth-service FQDN):
+
+| Prefix | Header | Purpose |
+|--------|--------|---------|
+| `POST /api/auth/register`, `/login`, `/refresh`, `/logout` | `X-Client-Id: <app>` | User auth flows — returns access + refresh tokens |
+| `GET /api/users/me`, `/accounts` | `Authorization: Bearer <jwt>` | Current-user info |
+| `POST /oauth/token`, `/revoke`, `/introspect` | `Authorization: Basic <client_id:secret>` | Machine-to-machine + token lifecycle |
+| `GET /health` | none | health |
+
+**How STRIDE integrates** (current wiring):
+
+1. **Server** (`src/stride_server/bearer.py`): `require_bearer` FastAPI dependency reads the auth-service public key from `STRIDE_AUTH_PUBLIC_KEY_PEM` (inline) or `STRIDE_AUTH_PUBLIC_KEY_PATH` (file), then verifies RS256 tokens locally (no network call). Issuer is validated (default `auth-service`, override with `STRIDE_AUTH_ISSUER`). If `STRIDE_AUTH_AUDIENCE` is set, `aud` is validated too. **When no public key env var is set, verification is bypassed with a one-time warning log** — the endpoint stays open. This keeps dev + current prod working until the env var is configured.
+
+2. **Protected endpoints** — applied so far:
+   - `POST /api/{user}/activities/{label_id}/commentary` — bearer required when key is configured.
+   - Still unauthenticated (TODO): `POST /sync`, `POST /resync`. These are invoked from the frontend UI buttons; adding bearer here requires a matching token flow in the frontend, which is not wired yet.
+
+3. **CLI**: `coros-sync -P {user} auth login --email X --auth-url Y --client-id Z` exchanges credentials for tokens via `/api/auth/login` and persists them to `data/{user}/auth.json`. `auth logout` and `auth status` manage the local token. `commentary push` auto-attaches the stored token (refreshing via `/api/auth/refresh` if it is about to expire) — if no token is stored, the call is anonymous, which still works against servers that have not enabled verification.
+
+4. **Configuration variables**:
+   - Azure Container App env for server: `STRIDE_AUTH_PUBLIC_KEY_PEM` (the full PEM body), `STRIDE_AUTH_ISSUER` (optional), `STRIDE_AUTH_AUDIENCE` (optional — set to the STRIDE client_id if you want `aud` enforced).
+   - Local env for CLI: `STRIDE_AUTH_URL`, `STRIDE_CLIENT_ID`, `STRIDE_PROD_URL`.
+
+5. **Still open (follow-ups)**:
+   - Frontend bearer flow — right now the React app has MSAL/Entra login (legacy) but no integration with the auth-service. Deciding whether to replace or layer them is a separate call.
+   - Protecting `POST /sync` and `POST /resync` — blocked by #5.
+   - JWKS endpoint on the auth-service so public key rotation becomes network-discoverable.
 
 ### Build Commands
 

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Body, Depends, Query
 from stride_core.models import EXERCISE_TYPES, pace_str
 from stride_core.source import DataSource
 
+from ..bearer import require_bearer
 from ..deps import EXERCISE_NAMES, format_duration, get_db, get_source
 
 router = APIRouter()
@@ -158,8 +159,12 @@ def upsert_commentary(
     user: str,
     label_id: str,
     commentary: str = Body(..., embed=True),
+    _claims: dict = Depends(require_bearer),
 ):
-    """Upsert coach commentary (markdown) for a single activity."""
+    """Upsert coach commentary (markdown) for a single activity.
+
+    Protected by Bearer auth when STRIDE_AUTH_PUBLIC_KEY_PEM/PATH is set.
+    """
     db = get_db(user)
     try:
         db.upsert_activity_commentary(label_id, commentary)
