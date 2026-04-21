@@ -282,6 +282,54 @@ def push_week_cmd(ctx: click.Context, start: str) -> None:
             console.print(f"[green]Pushed '{w.name}' to {w.date}[/green]")
 
 
+@cli.group()
+def commentary() -> None:
+    """Push locally-stored activity commentary to a remote STRIDE server."""
+
+
+@commentary.command("push")
+@click.argument("label_id")
+@click.option(
+    "--url",
+    default=None,
+    envvar="STRIDE_PROD_URL",
+    help="STRIDE server base URL (e.g. https://stride-app.xxx.azurecontainerapps.io). "
+         "Defaults to $STRIDE_PROD_URL.",
+)
+@click.pass_context
+def push_commentary_cmd(ctx: click.Context, label_id: str, url: str | None) -> None:
+    """Push the local commentary for LABEL_ID to the remote server.
+
+    Example:
+
+      coros-sync -P zhaochaoyi commentary push 476939007924666668 \\
+        --url https://stride-app.xxx.azurecontainerapps.io
+    """
+    if not url:
+        console.print("[red]Missing --url (or set $STRIDE_PROD_URL)[/red]")
+        raise SystemExit(1)
+
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+
+    import httpx
+
+    with Database(user=profile) as db:
+        text = db.get_activity_commentary(label_id)
+    if not text:
+        console.print(f"[yellow]No local commentary found for {label_id}[/yellow]")
+        raise SystemExit(1)
+
+    endpoint = f"{url.rstrip('/')}/api/{profile}/activities/{label_id}/commentary"
+    resp = httpx.post(endpoint, json={"commentary": text}, timeout=30)
+    if resp.status_code >= 400:
+        console.print(f"[red]POST failed: {resp.status_code} {resp.text}[/red]")
+        raise SystemExit(1)
+    console.print(f"[green]Pushed {len(text)} chars to {endpoint}[/green]")
+
+
 @workout.command("delete")
 @click.argument("date", required=True)
 @click.pass_context

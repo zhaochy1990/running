@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 
 from stride_core.models import EXERCISE_TYPES, pace_str
 from stride_core.source import DataSource
@@ -151,6 +151,21 @@ def get_activity(user: str, label_id: str):
         "zones": zones,
         "timeseries": timeseries,
     }
+
+
+@router.post("/api/{user}/activities/{label_id}/commentary")
+def upsert_commentary(
+    user: str,
+    label_id: str,
+    commentary: str = Body(..., embed=True),
+):
+    """Upsert coach commentary (markdown) for a single activity."""
+    db = get_db(user)
+    try:
+        db.upsert_activity_commentary(label_id, commentary)
+    finally:
+        db.close()
+    return {"success": True}
 
 
 @router.post("/api/{user}/activities/{label_id}/resync")
