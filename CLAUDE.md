@@ -430,9 +430,10 @@ STRIDE does **not** run its own auth. It integrates with a separate in-house aut
    - `STRIDE_AUTH_PUBLIC_KEY_PEM` → secretref `auth-public-pem` (downloaded from `authstorage2026/jwt-keys/public.pem`)
    - `STRIDE_AUTH_AUDIENCE=app_62978bf2803346878a2e4805` (the STRIDE frontend client_id, reused here)
 
-2. **Protected endpoints**:
-   - `POST /api/{user}/activities/{label_id}/commentary` — bearer required. Verified: no token → 401, valid user token → 200.
-   - `POST /api/{user}/sync` and `POST /api/{user}/activities/{label_id}/resync` — still unauthenticated because the frontend UI buttons invoking them don't send tokens yet. Will tighten once the frontend migrates from legacy MSAL to the auth-service.
+2. **Protected endpoints** — all three write endpoints require Bearer when the key env var is set:
+   - `POST /api/{user}/activities/{label_id}/commentary` — verified: no token → 401, valid user token → 200.
+   - `POST /api/{user}/sync` — frontend's "sync" button (`api.ts::triggerSync`) already sends the token from `authStore`, so the button keeps working after protection.
+   - `POST /api/{user}/activities/{label_id}/resync` — same story for `api.ts::resyncActivity`.
 
 3. **CLI** (`coros-sync auth` group):
    - `auth login --email X --auth-url Y --client-id Z` exchanges email/password for tokens via `/api/auth/login` and persists them to `data/{user}/auth.json`.
@@ -461,8 +462,9 @@ STRIDE does **not** run its own auth. It integrates with a separate in-house aut
    coros-sync -P zhaochaoyi commentary push <label_id>
    ```
 
-5. **Still open (follow-ups, non-blocking)**:
-   - Migrate the React frontend from legacy MSAL to the auth-service flow so `POST /sync`/`/resync` can also be protected.
+5. **Frontend**: already on the auth-service flow (no legacy MSAL). `frontend/src/store/authStore.ts` handles login/refresh with `sessionStorage`; `frontend/src/api.ts` attaches `Authorization: Bearer` on every request (including `triggerSync` and `resyncActivity`) and auto-retries once on 401. A 401 after refresh redirects to `/login`.
+
+6. **Still open (follow-ups, non-blocking)**:
    - Add a JWKS endpoint to the auth-service so public-key rotation becomes network-discoverable instead of requiring env var updates on both sides.
 
 ### Build Commands

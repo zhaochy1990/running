@@ -178,8 +178,12 @@ def resync_activity(
     user: str,
     label_id: str,
     source: DataSource = Depends(get_source),
+    _claims: dict = Depends(require_bearer),
 ):
-    """Re-sync a single activity (to pick up updated feedback/sport_note)."""
+    """Re-sync a single activity (to pick up updated feedback/sport_note).
+
+    Protected by Bearer auth when STRIDE_AUTH_PUBLIC_KEY_PEM/PATH is set.
+    """
     try:
         if not source.is_logged_in(user):
             return {"success": False, "error": f"用户 {user} 未登录"}

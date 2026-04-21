@@ -6,14 +6,22 @@ from fastapi import APIRouter, Depends
 
 from stride_core.source import DataSource
 
+from ..bearer import require_bearer
 from ..deps import get_source
 
 router = APIRouter()
 
 
 @router.post("/api/{user}/sync")
-def trigger_sync(user: str, source: DataSource = Depends(get_source)):
-    """Trigger a data sync for the given user (via the configured adapter)."""
+def trigger_sync(
+    user: str,
+    source: DataSource = Depends(get_source),
+    _claims: dict = Depends(require_bearer),
+):
+    """Trigger a data sync for the given user (via the configured adapter).
+
+    Protected by Bearer auth when STRIDE_AUTH_PUBLIC_KEY_PEM/PATH is set.
+    """
     try:
         if not source.is_logged_in(user):
             return {
