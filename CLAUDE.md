@@ -5,6 +5,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This project contains the training plans, logs for multiple marathon runners.
 It also contains tools like coros-sync to sync the training data from COROS to the local for further analysis.
 
+## Working Model — Local Authoring, Cloud Display
+
+Going forward, keep this split in mind:
+
+- **Local machine** is the **author** environment. Large-language-model tooling (Claude Code) runs here, reads local state (SQLite + markdown under `data/`), and produces new content: weekly `plan.md`, `feedback.md`, `activity_commentary` DB rows, plus ad-hoc analyses.
+- **Azure Container App (`stride-app`)** is the **reader** environment. It serves the dashboard UI and read API; its data comes from:
+  - Markdown files synced via the `sync-data.yml` GitHub Action (push to master → `az storage file upload-batch` to `authstorage2026/stride-data`).
+  - SQLite data (activities, health) synced independently on both sides from COROS.
+  - DB rows that are *not* COROS-sourced and only live locally (e.g. `activity_commentary`) must be pushed via the dedicated CLI over the authenticated API — they are not in the markdown sync path.
+
+No LLM inference runs in the cloud. The cloud stays "dumb reader".
+
+### Canonical daily loop
+
+```bash
+# 1. Sync COROS data to local DB (also triggers feedback.md rebuild for the active week)
+PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync
+
+# 2. [Claude does its thing] — write commentary / plan / feedback using local data
+
+# 3a. Commentary → STRIDE prod via authenticated POST (see Authentication section)
+coros-sync -P zhaochaoyi commentary push <label_id>
+
+# 3b. plan.md / feedback.md / TRAINING_PLAN.md / status.md → STRIDE prod via git
+git add data/zhaochaoyi/logs/<week>/plan.md
+git commit -m "docs: update week plan"
+git push origin master   # sync-data.yml uploads the markdown to Azure Files
+```
+
+### When something only works locally but not in prod
+
+Most likely: the content is a DB row that never propagated. Check `activity_commentary` first. `plan.md` / `feedback.md` should always propagate via git push + `sync-data.yml`; if they don't, inspect the workflow run.
+
 ## Folder Structure
 
 ```
@@ -391,24 +424,46 @@ STRIDE does **not** run its own auth. It integrates with a separate in-house aut
 | `POST /oauth/token`, `/revoke`, `/introspect` | `Authorization: Basic <client_id:secret>` | Machine-to-machine + token lifecycle |
 | `GET /health` | none | health |
 
-**How STRIDE integrates** (current wiring):
+**Current wiring** (enabled in prod):
 
-1. **Server** (`src/stride_server/bearer.py`): `require_bearer` FastAPI dependency reads the auth-service public key from `STRIDE_AUTH_PUBLIC_KEY_PEM` (inline) or `STRIDE_AUTH_PUBLIC_KEY_PATH` (file), then verifies RS256 tokens locally (no network call). Issuer is validated (default `auth-service`, override with `STRIDE_AUTH_ISSUER`). If `STRIDE_AUTH_AUDIENCE` is set, `aud` is validated too. **When no public key env var is set, verification is bypassed with a one-time warning log** — the endpoint stays open. This keeps dev + current prod working until the env var is configured.
+1. **Server** (`src/stride_server/bearer.py`): `require_bearer` FastAPI dependency reads the auth-service public key from `STRIDE_AUTH_PUBLIC_KEY_PEM` (inline PEM) or `STRIDE_AUTH_PUBLIC_KEY_PATH` (file), verifies RS256 tokens locally (no network call). Validates `iss` (default `auth-service`) and, when `STRIDE_AUTH_AUDIENCE` is set, `aud`. If no public key env var is set, verification is bypassed with a one-time warning log (fail-open for dev). This is **enabled** on the Azure Container App as of revision `stride-app--0000037`:
+   - `STRIDE_AUTH_PUBLIC_KEY_PEM` → secretref `auth-public-pem` (downloaded from `authstorage2026/jwt-keys/public.pem`)
+   - `STRIDE_AUTH_AUDIENCE=app_62978bf2803346878a2e4805` (the STRIDE frontend client_id, reused here)
 
-2. **Protected endpoints** — applied so far:
-   - `POST /api/{user}/activities/{label_id}/commentary` — bearer required when key is configured.
-   - Still unauthenticated (TODO): `POST /sync`, `POST /resync`. These are invoked from the frontend UI buttons; adding bearer here requires a matching token flow in the frontend, which is not wired yet.
+2. **Protected endpoints**:
+   - `POST /api/{user}/activities/{label_id}/commentary` — bearer required. Verified: no token → 401, valid user token → 200.
+   - `POST /api/{user}/sync` and `POST /api/{user}/activities/{label_id}/resync` — still unauthenticated because the frontend UI buttons invoking them don't send tokens yet. Will tighten once the frontend migrates from legacy MSAL to the auth-service.
 
-3. **CLI**: `coros-sync -P {user} auth login --email X --auth-url Y --client-id Z` exchanges credentials for tokens via `/api/auth/login` and persists them to `data/{user}/auth.json`. `auth logout` and `auth status` manage the local token. `commentary push` auto-attaches the stored token (refreshing via `/api/auth/refresh` if it is about to expire) — if no token is stored, the call is anonymous, which still works against servers that have not enabled verification.
+3. **CLI** (`coros-sync auth` group):
+   - `auth login --email X --auth-url Y --client-id Z` exchanges email/password for tokens via `/api/auth/login` and persists them to `data/{user}/auth.json`.
+   - `auth logout` removes the stored token; `auth status` prints metadata.
+   - `commentary push` auto-attaches `Authorization: Bearer <access_token>`, auto-refreshes via `/api/auth/refresh` if the token expires within 60s. Falls back to anonymous if no token is stored.
 
-4. **Configuration variables**:
-   - Azure Container App env for server: `STRIDE_AUTH_PUBLIC_KEY_PEM` (the full PEM body), `STRIDE_AUTH_ISSUER` (optional), `STRIDE_AUTH_AUDIENCE` (optional — set to the STRIDE client_id if you want `aud` enforced).
-   - Local env for CLI: `STRIDE_AUTH_URL`, `STRIDE_CLIENT_ID`, `STRIDE_PROD_URL`.
+4. **Canonical env for local CLI**:
 
-5. **Still open (follow-ups)**:
-   - Frontend bearer flow — right now the React app has MSAL/Entra login (legacy) but no integration with the auth-service. Deciding whether to replace or layer them is a separate call.
-   - Protecting `POST /sync` and `POST /resync` — blocked by #5.
-   - JWKS endpoint on the auth-service so public key rotation becomes network-discoverable.
+   ```bash
+   export STRIDE_AUTH_URL="https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
+   export STRIDE_CLIENT_ID="app_62978bf2803346878a2e4805"
+   export STRIDE_PROD_URL="https://stride-app.victoriousdesert-bd552447.southeastasia.azurecontainerapps.io"
+   ```
+
+   First-time login (credentials from `.credentials.local`, git-ignored):
+
+   ```bash
+   coros-sync -P zhaochaoyi auth login \
+     --email "$(awk -F= '/^email/{print $2}' .credentials.local | tr -d ' ')" \
+     --password "$(awk -F= '/^password/{print $2}' .credentials.local | tr -d ' ')"
+   ```
+
+   Subsequent writes (e.g. after Claude generates a commentary):
+
+   ```bash
+   coros-sync -P zhaochaoyi commentary push <label_id>
+   ```
+
+5. **Still open (follow-ups, non-blocking)**:
+   - Migrate the React frontend from legacy MSAL to the auth-service flow so `POST /sync`/`/resync` can also be protected.
+   - Add a JWKS endpoint to the auth-service so public-key rotation becomes network-discoverable instead of requiring env var updates on both sides.
 
 ### Build Commands
 
