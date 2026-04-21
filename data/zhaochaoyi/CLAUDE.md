@@ -24,6 +24,33 @@ Loaded on demand when Claude touches any file under `data/zhaochaoyi/`.
 
 These three + existing injuries form a connected动力链 risk chain. Fixing mobility/stability is prerequisite for 2:50.
 
+### Baseline assessment 2026-04-20 (11-item test)
+
+| # | 项目 | 左 | 右 | 标准 | 评级 |
+|---|------|-----|-----|------|------|
+| 1 | 单腿靠墙静蹲 | 46 s | 30 s | 60s+ | 🔴 右腿弱35% |
+| 2 | 单腿提踵 (2s tempo) | 19 | 18 | 20-25+ | 🟡 偏弱 |
+| 3 | 单腿枪式深蹲 | 0 | 0 | — | ⚫ 预期内 |
+| 4 | 单腿臀桥保持 | 20 s | 20 s | 45-60s+ | 🔴 严重弱 |
+| 5 | 平板支撑 | 1:36 | — | 2:00+ | 🟡 偏弱 |
+| 6 | 侧平板 | 59 s | 63 s | 60s+ | 🟢 合格 |
+| 7 | Dead Bug | 8 (L手R脚) | 10 (R手L脚) | 15-20 | 🟡 偏弱 |
+| 8 | 哥本哈根侧平板 | 15 s | 19 s | 30-45s+ | 🔴 严重弱 |
+| 9 | 单腿闭眼站 | 34 s 不稳 | 43.5 s | 30s+ | 🟡 左侧差 |
+| 10 | 踝背屈 | 11.8 cm | 12.3 cm | 10cm+ | 🟢 活动度正常 |
+| 11 | Thomas 测试 | 大腿不能低于水平，膝盖可自然弯曲（两侧） | | | 🟡 髋屈肌紧、股直肌不紧 |
+
+**关键结论**：
+- **踝活动度正常**（>10cm）→ 跟腱/脚踝康复重心是 **stability**，不是 mobility
+- **三大短板**（按优先级）：
+  1. 臀肌耐力（20s 臀桥）— 30km+ 跑崩最直接的力学源头
+  2. 内收肌（15-19s 哥本哈根）— 单腿支撑稳定的缺失环节
+  3. 右腿稳定力量（单腿靠墙静蹲 30s vs 46s，L/R 差 35%）
+- **髋屈肌紧**（Thomas 阳性）但 股直肌不紧（膝可弯）→ 重点拉 髂腰肌，不用强调股四头肌
+- 左脚踝稳定性差 + 左腿闭眼站不稳，建议确认是否与跟腱止点肌腱病同侧
+
+**Phase 1 力量训练重点**：臀桥等长递增 + 哥本哈根递增 + 右腿单侧补差 + 左踝稳定性 + 髂腰肌拉伸
+
 ### Preferred COROS built-in exercises (sportType=4)
 
 | Target | Code | Exercise | Usage |
