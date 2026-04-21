@@ -145,6 +145,3 @@ def get_stats(user: str):
     }
 
 
-@router.get("/api/health")
-def health():
-    return {"status": "ok"}

@@ -7,12 +7,13 @@ adapter (see .deps.get_source).
 
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from stride_core.source import DataSource
 
-from .routes import activities, health, sync, training_plan, users, weeks
+from .bearer import require_bearer
+from .routes import activities, health, public, sync, training_plan, users, weeks
 from .static import mount_frontend
 
 
@@ -20,6 +21,8 @@ def create_app(source: DataSource) -> FastAPI:
     app = FastAPI(title="STRIDE - Running Dashboard API")
     app.state.source = source
 
+    # CORS is intentionally permissive (`*`) — the real authz boundary lives
+    # at the Bearer layer applied per-router below.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -27,14 +30,20 @@ def create_app(source: DataSource) -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Register API routers first — SPA fallback (mount_frontend) must be last
-    # so it doesn't swallow /api/* paths.
-    app.include_router(users.router)
-    app.include_router(activities.router)
-    app.include_router(weeks.router)
-    app.include_router(sync.router)
-    app.include_router(training_plan.router)
-    app.include_router(health.router)
+    # Public routes (no auth) — liveness probe, must stay open for Azure.
+    app.include_router(public.router)
 
+    # Every other router sits behind require_bearer. Writes that previously
+    # had per-endpoint Depends(require_bearer) still work (dependency runs
+    # once per request regardless of where it's declared).
+    protected = [Depends(require_bearer)]
+    app.include_router(users.router, dependencies=protected)
+    app.include_router(activities.router, dependencies=protected)
+    app.include_router(weeks.router, dependencies=protected)
+    app.include_router(sync.router, dependencies=protected)
+    app.include_router(training_plan.router, dependencies=protected)
+    app.include_router(health.router, dependencies=protected)
+
+    # SPA fallback must be last so it doesn't swallow /api/* paths.
     mount_frontend(app)
     return app

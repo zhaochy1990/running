@@ -430,10 +430,7 @@ STRIDE does **not** run its own auth. It integrates with a separate in-house aut
    - `STRIDE_AUTH_PUBLIC_KEY_PEM` → secretref `auth-public-pem` (downloaded from `authstorage2026/jwt-keys/public.pem`)
    - `STRIDE_AUTH_AUDIENCE=app_62978bf2803346878a2e4805` (the STRIDE frontend client_id, reused here)
 
-2. **Protected endpoints** — all three write endpoints require Bearer when the key env var is set:
-   - `POST /api/{user}/activities/{label_id}/commentary` — verified: no token → 401, valid user token → 200.
-   - `POST /api/{user}/sync` — frontend's "sync" button (`api.ts::triggerSync`) already sends the token from `authStore`, so the button keeps working after protection.
-   - `POST /api/{user}/activities/{label_id}/resync` — same story for `api.ts::resyncActivity`.
+2. **Protected endpoints** — every `/api/*` route except `/api/health` requires Bearer when the key env var is set. The factory in `stride_server/app.py` applies router-level `Depends(require_bearer)` to all routers except `public` (which hosts only `/api/health` for the Azure liveness probe). CORS is intentionally kept wide open (`allow_origins=["*"]`) — the real authz boundary is the Bearer layer, not Origin. Verified: no token on any `/api/*` (except `/api/health`) → 401, with valid user token → 200. This covers both reads (`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`, `/training-plan`) and writes (`/sync`, `/resync`, `/commentary`).
 
 3. **CLI** (`coros-sync auth` group):
    - `auth login --email X --auth-url Y --client-id Z` exchanges email/password for tokens via `/api/auth/login` and persists them to `data/{user}/auth.json`.

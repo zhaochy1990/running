@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { getUsers } from './api'
 
 interface UserContextType {
   user: string
@@ -18,9 +19,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    fetch('/api/users')
-      .then((r) => r.json())
-      .then((data: { users: string[] }) => {
+    getUsers()
+      .then((data) => {
         setUsers(data.users)
         // If no user selected or current user not in list, pick first
         if (!user || !data.users.includes(user)) {
