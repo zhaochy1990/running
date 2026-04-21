@@ -147,6 +147,13 @@ CREATE TABLE IF NOT EXISTS sync_meta (
     key     TEXT PRIMARY KEY,
     value   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS activity_commentary (
+    label_id    TEXT PRIMARY KEY REFERENCES activities(label_id),
+    commentary  TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -323,6 +330,26 @@ class Database:
     def set_meta(self, key: str, value: str) -> None:
         self._conn.execute(
             "INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)", (key, value)
+        )
+        self._conn.commit()
+
+    # --- Activity commentary (AI coach notes) ---
+
+    def get_activity_commentary(self, label_id: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT commentary FROM activity_commentary WHERE label_id = ?",
+            (label_id,),
+        ).fetchone()
+        return row["commentary"] if row else None
+
+    def upsert_activity_commentary(self, label_id: str, commentary: str) -> None:
+        self._conn.execute(
+            """INSERT INTO activity_commentary (label_id, commentary, updated_at)
+               VALUES (?, ?, datetime('now'))
+               ON CONFLICT(label_id) DO UPDATE SET
+                   commentary = excluded.commentary,
+                   updated_at = excluded.updated_at""",
+            (label_id, commentary),
         )
         self._conn.commit()
 

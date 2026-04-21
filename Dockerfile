@@ -43,4 +43,4 @@ ENV PYTHONPATH=/app/src
 RUN mkdir -p /app/data
 
 EXPOSE 8080
-CMD ["uvicorn", "coros_sync.api:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "stride_server.main:app", "--host", "0.0.0.0", "--port", "8080"]

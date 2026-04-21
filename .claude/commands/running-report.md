@@ -20,7 +20,7 @@ If no input is given, default to the most recent running activity.
 Use `python -c` with `PYTHONIOENCODING=utf-8` to query. Always use the internal `_conn` attribute:
 
 ```python
-from coros_sync.db import Database
+from stride_core.db import Database
 db = Database(user='{profile}')
 db._conn.execute(SQL).fetchall()
 ```

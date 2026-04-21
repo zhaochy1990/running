@@ -32,7 +32,7 @@ dev = [
 coros-sync = "coros_sync.cli:cli"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/coros_sync"]
+packages = ["src/coros_sync", "src/stride_core", "src/stride_server"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

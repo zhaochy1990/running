@@ -1,6 +1,6 @@
 """Tests for SQLite database layer."""
 
-from coros_sync.models import ActivityDetail, DailyHealth, Dashboard, Lap, Zone
+from stride_core.models import ActivityDetail, DailyHealth, Dashboard, Lap, Zone
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):

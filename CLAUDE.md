@@ -81,7 +81,7 @@ PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync
 
 # Query recent fatigue (last 14 days)
 python -c "
-from coros_sync.db import Database
+from stride_core.db import Database
 db = Database(user='zhaochaoyi')
 rows = db._conn.execute('''
     SELECT date, fatigue, training_load_ratio, training_load_state, rhr, ati, cti
@@ -121,7 +121,7 @@ This file contains the feedback for the trainings in this week, ususally contain
 **自动同步训练反馈**: 每次执行 `coros-sync sync` 同步到新的训练记录后，检查本周的活动是否带有训练反馈（`sport_note` 字段不为空）。如果有，将反馈内容追加到对应周目录的 `feedback.md` 中。格式为直接追加原始文本，保持与用户在 COROS App 中写的一致。查询方式：
 
 ```python
-from coros_sync.db import Database
+from stride_core.db import Database
 db = Database(user='zhaochaoyi')
 rows = db._conn.execute('''
     SELECT date, name, sport_name, feel_type, sport_note
@@ -235,7 +235,7 @@ custom = client.add_exercise({
 
 # Direct DB query (when CLI export doesn't work)
 python -c "
-from coros_sync.db import Database
+from stride_core.db import Database
 db = Database(user='zhaochaoyi')
 rows = db._conn.execute('SELECT * FROM activities WHERE date >= ? ORDER BY date', ('2026-03-30',)).fetchall()
 for r in rows: print(dict(r))
@@ -318,21 +318,23 @@ React + Vite + TypeScript SPA at `frontend/`. Light theme, monospace-heavy desig
 | `/plan` | `TrainingPlanPage` | Overall training plan with phase timeline visualization |
 | `/login` | `LoginPage` | Auth (Entra ID / MSAL) |
 
-### API Layer (`src/coros_sync/api.py`)
+### API Layer (`src/stride_server/`)
 
-FastAPI backend serving both the REST API and the built frontend (SPA static files).
+FastAPI backend serving both the REST API and the built frontend (SPA static files). Entry module is `stride_server.main:app` (run via `uvicorn stride_server.main:app`). The app is a composition of three packages:
+
+- **`stride_core/`** — shared data layer: DB schema, models, analyze/export helpers, and the `DataSource` protocol (`stride_core/source.py`). Source-agnostic — does not import `coros_sync`.
+- **`coros_sync/`** — COROS-specific adapter + CLI. `coros_sync/adapter.py::CorosDataSource` implements `DataSource`.
+- **`stride_server/`** — FastAPI routes split under `routes/{users,activities,weeks,sync,training_plan,health}.py`. Routes access the sync adapter via `Depends(get_source)` — never by importing `coros_sync` directly. Composition happens once in `stride_server/main.py` (`create_app(CorosDataSource())`).
 
 Key endpoints:
-- `GET /api/users` — list user profiles
-- `GET /api/{user}/activities` — paginated activity list with filters
+- `GET /api/users` — list user profiles (`routes/users.py`)
+- `GET /api/{user}/activities` — paginated activity list with filters (`routes/activities.py`)
 - `GET /api/{user}/activities/{id}` — activity detail (laps, segments, zones, timeseries)
 - `POST /api/{user}/activities/{id}/resync` — re-fetch single activity from COROS (for updated feedback)
-- `GET /api/{user}/weeks` — training week list with plan/feedback status
-- `GET /api/{user}/weeks/{folder}` — week detail (plan.md + feedback.md + activities + DB sport_notes)
-- `GET /api/{user}/training-plan` — TRAINING_PLAN.md content + parsed phase timeline
-- `GET /api/{user}/dashboard` — fitness metrics, race predictions
-- `GET /api/{user}/health` — daily health records (fatigue, ATI/CTI, RHR, HRV)
-- `POST /api/{user}/sync` — trigger full COROS data sync
+- `GET /api/{user}/weeks` / `GET /api/{user}/weeks/{folder}` (`routes/weeks.py`) — training-week plan/feedback/activities
+- `GET /api/{user}/training-plan` — TRAINING_PLAN.md content + parsed phase timeline (`routes/training_plan.py`)
+- `GET /api/{user}/dashboard` / `/health` / `/pmc` / `/stats` — fitness & health (`routes/health.py`)
+- `POST /api/{user}/sync` — trigger a full data sync via the configured `DataSource` (`routes/sync.py`)
 
 ### Segment Display
 
@@ -377,7 +379,7 @@ cd frontend && npm run dev      # Vite dev server with HMR
 cd frontend && npm run build    # tsc -b && vite build (used in Docker)
 
 # Backend dev
-PYTHONIOENCODING=utf-8 uvicorn coros_sync.api:app --reload --port 8000
+PYTHONIOENCODING=utf-8 uvicorn stride_server.main:app --reload --port 8000
 
 # Full Docker build
 docker build -t stride .

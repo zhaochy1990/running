@@ -2,7 +2,7 @@
 
 import pytest
 
-from coros_sync.db import Database
+from stride_core.db import Database
 
 
 @pytest.fixture

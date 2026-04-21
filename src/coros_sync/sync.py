@@ -9,8 +9,8 @@ from datetime import datetime
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 from .client import CorosClient, CorosAPIError
-from .db import Database
-from .models import Activity, ActivityDetail, DailyHealth, Dashboard
+from stride_core.db import Database
+from stride_core.models import Activity, ActivityDetail, DailyHealth, Dashboard
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from rich.table import Table
 
 from .auth import Credentials
 from .client import CorosClient, CorosAuthError
-from .db import Database
+from stride_core.db import Database
 from .sync import run_sync
 
 console = Console()
@@ -113,7 +113,7 @@ def status(ctx: click.Context) -> None:
 @click.pass_context
 def export(ctx: click.Context, from_date: str | None, to_date: str | None, output: str | None) -> None:
     """Export activities to CSV."""
-    from .export import export_activities
+    from stride_core.export import export_activities
     profile = ctx.obj["profile"]
     with Database(user=profile) as db:
         export_activities(db, from_date=from_date, to_date=to_date, output_path=output)
@@ -128,7 +128,7 @@ def analyze() -> None:
 @click.pass_context
 def weekly(ctx: click.Context) -> None:
     """Weekly mileage and average pace."""
-    from .analyze import weekly_summary
+    from stride_core.analyze import weekly_summary
     with Database(user=ctx.obj["profile"]) as db:
         weekly_summary(db)
 
@@ -137,7 +137,7 @@ def weekly(ctx: click.Context) -> None:
 @click.pass_context
 def monthly(ctx: click.Context) -> None:
     """Monthly summary."""
-    from .analyze import monthly_summary
+    from stride_core.analyze import monthly_summary
     with Database(user=ctx.obj["profile"]) as db:
         monthly_summary(db)
 
@@ -146,7 +146,7 @@ def monthly(ctx: click.Context) -> None:
 @click.pass_context
 def zones(ctx: click.Context) -> None:
     """Heart rate zone distribution across all activities."""
-    from .analyze import zone_distribution
+    from stride_core.analyze import zone_distribution
     with Database(user=ctx.obj["profile"]) as db:
         zone_distribution(db)
 
@@ -155,7 +155,7 @@ def zones(ctx: click.Context) -> None:
 @click.pass_context
 def load(ctx: click.Context) -> None:
     """Training load (ATI/CTI) trends."""
-    from .analyze import training_load_trend
+    from stride_core.analyze import training_load_trend
     with Database(user=ctx.obj["profile"]) as db:
         training_load_trend(db)
 
@@ -164,7 +164,7 @@ def load(ctx: click.Context) -> None:
 @click.pass_context
 def pmc(ctx: click.Context) -> None:
     """Performance Management Chart (CTI/ATI/TSB)."""
-    from .analyze import pmc_chart
+    from stride_core.analyze import pmc_chart
     with Database(user=ctx.obj["profile"]) as db:
         pmc_chart(db)
 
@@ -173,7 +173,7 @@ def pmc(ctx: click.Context) -> None:
 @click.pass_context
 def hrv(ctx: click.Context) -> None:
     """HRV trends over time."""
-    from .analyze import hrv_trend
+    from stride_core.analyze import hrv_trend
     with Database(user=ctx.obj["profile"]) as db:
         hrv_trend(db)
 
@@ -182,7 +182,7 @@ def hrv(ctx: click.Context) -> None:
 @click.pass_context
 def predictions(ctx: click.Context) -> None:
     """Race time predictions."""
-    from .analyze import race_predictions
+    from stride_core.analyze import race_predictions
     with Database(user=ctx.obj["profile"]) as db:
         race_predictions(db)
 

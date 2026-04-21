@@ -24,7 +24,7 @@ If sync fails (e.g., auth expired), note it and proceed with whatever data is al
 Use `python -c` with `PYTHONIOENCODING=utf-8` to query. Always use the internal `_conn` attribute:
 
 ```python
-from coros_sync.db import Database
+from stride_core.db import Database
 db = Database(user='{profile}')
 db._conn.execute(SQL).fetchall()
 ```

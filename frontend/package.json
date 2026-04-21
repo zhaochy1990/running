@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "api": "cd .. && cross-env PYTHONIOENCODING=utf-8 python -m uvicorn coros_sync.api:app --reload --port 8080",
+    "api": "cd .. && cross-env PYTHONIOENCODING=utf-8 python -m uvicorn stride_server.main:app --reload --port 8080",
     "start": "concurrently \"npm run api\" \"npm run dev\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",

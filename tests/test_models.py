@@ -1,6 +1,6 @@
 """Tests for unit conversions in models.py."""
 
-from coros_sync.models import (
+from stride_core.models import (
     Activity, ActivityDetail, DailyHealth, Dashboard, Lap, RacePrediction, Zone,
     TimeseriesPoint, pace_str, sport_name, train_type_name,
 )

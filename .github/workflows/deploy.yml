@@ -4,7 +4,9 @@ on:
   push:
     branches: [master]
     paths:
-      - 'src/**'
+      - 'src/coros_sync/**'
+      - 'src/stride_core/**'
+      - 'src/stride_server/**'
       - 'frontend/**'
       - 'Dockerfile'
       - '.github/workflows/deploy.yml'
