@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { getActivity, resyncActivity, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
 import { useUser } from '../UserContext'
 import SegmentView from '../components/SegmentView'
@@ -235,6 +237,18 @@ export default function ActivityDetailPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Coach commentary */}
+      {activity.commentary && (
+        <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-6 animate-fade-in stagger-5 opacity-0" style={{ animationFillMode: 'forwards' }}>
+          <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">
+            教练简评
+          </h3>
+          <div className="prose max-w-none">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{activity.commentary}</ReactMarkdown>
+          </div>
+        </div>
       )}
 
       {/* Segments & Laps */}

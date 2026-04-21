@@ -123,7 +123,7 @@ export default function AppLayout() {
                 : 'border-accent-purple/30 text-accent-purple hover:bg-accent-purple/10'
             }`}
           >
-            训练总计划
+            2026夏训总纲
           </button>
           <button
             onClick={() => navigate('/health')}

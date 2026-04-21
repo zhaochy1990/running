@@ -68,7 +68,7 @@ export default function TrainingPlanPage() {
     <div className="max-w-5xl mx-auto px-8 py-8 animate-fade-in">
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary tracking-tight">训练总计划</h1>
+        <h1 className="text-2xl font-bold text-text-primary tracking-tight">2026夏训总纲</h1>
         {plan.current_phase && (
           <div className="flex items-center gap-2 mt-2">
             <span className="text-sm text-text-muted">当前阶段</span>

@@ -58,6 +58,7 @@ export interface Activity {
   wind_speed: number | null
   feel_type: number | null
   sport_note: string | null
+  commentary?: string
 }
 
 export interface Lap {
