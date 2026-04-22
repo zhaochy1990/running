@@ -449,7 +449,7 @@ function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot |
         unit=""
         color={fatigueColor(latest.fatigue)}
         detail={latest.fatigue != null ? (latest.fatigue < 40 ? '已恢复' : latest.fatigue < 50 ? '正常' : latest.fatigue < 60 ? '疲劳' : '高疲劳') : ''}
-        help={<><strong>COROS 疲劳评分</strong>（0-100），综合训练与恢复数据。{'\n\n'}使用方法：{'\n'}• 低于 40 已恢复，可上质量课{'\n'}• 40-50 正常训练{'\n'}• 50-60 疲劳中，减强度{'\n'}• 高于 60 高疲劳，跳过训练或休息</>}
+        help={<><strong>疲劳评分</strong>（0-100），综合训练与恢复数据。{'\n\n'}使用方法：{'\n'}• 低于 40 已恢复，可上质量课{'\n'}• 40-50 正常训练{'\n'}• 50-60 疲劳中，减强度{'\n'}• 高于 60 高疲劳，跳过训练或休息</>}
       />
       <MetricCard
         label="训练负荷比"
@@ -471,7 +471,7 @@ function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot |
         unit=""
         color={loadStateColor(latest.training_load_state)}
         detail={formatDate(latest.date)}
-        help={<><strong>COROS 负荷分类标签</strong>（Low / Optimal / High / Very High）。{'\n\n'}使用方法：{'\n'}• Optimal 持续期 = 最佳建构区{'\n'}• High 是递增周常态{'\n'}• Very High 持续超 2 周 = 过度训练{'\n'}• Low = 减量、赛后或伤停</>}
+        help={<><strong>负荷分类标签</strong>（Low / Optimal / High / Very High），由手表按近期训练应激综合打分。{'\n\n'}使用方法：{'\n'}• Optimal 持续期 = 最佳建构区{'\n'}• High 是递增周常态{'\n'}• Very High 持续超 2 周 = 过度训练{'\n'}• Low = 减量、赛后或伤停</>}
       />
     </div>
   )
