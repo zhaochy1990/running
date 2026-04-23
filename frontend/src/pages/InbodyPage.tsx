@@ -334,8 +334,9 @@ function pctStdColor(pct: number | null | undefined): string {
   return '#d32f2f'
 }
 
-const UPPER_SEGS = SEGMENTS.filter(s => s.key === 'left_arm' || s.key === 'right_arm')
-const LOWER_SEGS = SEGMENTS.filter(s => s.key === 'left_leg' || s.key === 'right_leg' || s.key === 'trunk')
+const ARM_SEGS = SEGMENTS.filter(s => s.key === 'left_arm' || s.key === 'right_arm')
+const TRUNK_SEGS = SEGMENTS.filter(s => s.key === 'trunk')
+const LEG_SEGS = SEGMENTS.filter(s => s.key === 'left_leg' || s.key === 'right_leg')
 
 function formatTick(v: number | string): string {
   return Number(v).toFixed(1)
@@ -443,14 +444,18 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
         </div>
 
         {split ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div>
-              <p className="text-xs font-mono text-text-muted mb-2">上肢 (Arms)</p>
-              <SegmentTrendChart chartData={chartData} segs={UPPER_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.1} />
+              <p className="text-xs font-mono text-text-muted mb-2">下肢 (Legs)</p>
+              <SegmentTrendChart chartData={chartData} segs={LEG_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.3} />
             </div>
             <div>
-              <p className="text-xs font-mono text-text-muted mb-2">躯干 + 下肢 (Trunk & Legs)</p>
-              <SegmentTrendChart chartData={chartData} segs={LOWER_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.5} />
+              <p className="text-xs font-mono text-text-muted mb-2">躯干 (Trunk)</p>
+              <SegmentTrendChart chartData={chartData} segs={TRUNK_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.5} />
+            </div>
+            <div>
+              <p className="text-xs font-mono text-text-muted mb-2">上肢 (Arms)</p>
+              <SegmentTrendChart chartData={chartData} segs={ARM_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.1} />
             </div>
           </div>
         ) : (
