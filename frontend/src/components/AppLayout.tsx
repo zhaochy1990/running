@@ -143,7 +143,7 @@ export default function AppLayout() {
                 : 'border-accent-amber/30 text-accent-amber hover:bg-accent-amber/10'
             }`}
           >
-            体成分
+            体测指标
           </button>
           <button
             onClick={handleSync}
