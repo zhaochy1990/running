@@ -344,6 +344,106 @@ class RacePrediction:
         )
 
 
+INBODY_SEGMENTS = {"left_arm", "right_arm", "trunk", "left_leg", "right_leg"}
+
+
+@dataclass
+class BodySegment:
+    segment: str
+    lean_mass_kg: float
+    fat_mass_kg: float
+    lean_pct_of_standard: float | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict) -> BodySegment:
+        segment = data.get("segment")
+        if segment not in INBODY_SEGMENTS:
+            raise ValueError(f"segment must be one of {INBODY_SEGMENTS}, got {segment!r}")
+        lean = data.get("lean_mass_kg")
+        fat = data.get("fat_mass_kg")
+        if not isinstance(lean, (int, float)) or not 0 <= lean <= 40:
+            raise ValueError(f"{segment}: lean_mass_kg out of range: {lean!r}")
+        if not isinstance(fat, (int, float)) or not 0 <= fat <= 30:
+            raise ValueError(f"{segment}: fat_mass_kg out of range: {fat!r}")
+        pct = data.get("lean_pct_of_standard")
+        if pct is not None and not isinstance(pct, (int, float)):
+            raise ValueError(f"{segment}: lean_pct_of_standard must be numeric or null")
+        return cls(
+            segment=segment,
+            lean_mass_kg=float(lean),
+            fat_mass_kg=float(fat),
+            lean_pct_of_standard=float(pct) if pct is not None else None,
+        )
+
+
+@dataclass
+class BodyCompositionScan:
+    """InBody scan snapshot. Validated at the `from_dict()` boundary."""
+    scan_date: str  # ISO8601 date, e.g. "2026-04-23"
+    weight_kg: float
+    body_fat_pct: float
+    smm_kg: float
+    fat_mass_kg: float
+    visceral_fat_level: int
+    jpg_path: str | None = None
+    bmr_kcal: int | None = None
+    protein_kg: float | None = None
+    water_l: float | None = None
+    smi: float | None = None
+    inbody_score: int | None = None
+    segments: list[BodySegment] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> BodyCompositionScan:
+        scan_date = data.get("scan_date")
+        if not isinstance(scan_date, str) or len(scan_date) != 10 or scan_date[4] != "-":
+            raise ValueError(f"scan_date must be ISO date YYYY-MM-DD, got {scan_date!r}")
+
+        weight = data.get("weight_kg")
+        if not isinstance(weight, (int, float)) or not 30 <= weight <= 150:
+            raise ValueError(f"weight_kg out of range [30,150]: {weight!r}")
+
+        bf_pct = data.get("body_fat_pct")
+        if not isinstance(bf_pct, (int, float)) or not 3 <= bf_pct <= 50:
+            raise ValueError(f"body_fat_pct out of range [3,50]: {bf_pct!r}")
+
+        smm = data.get("smm_kg")
+        if not isinstance(smm, (int, float)) or not 10 <= smm <= 60:
+            raise ValueError(f"smm_kg out of range [10,60]: {smm!r}")
+
+        fat = data.get("fat_mass_kg")
+        if not isinstance(fat, (int, float)) or not 0 <= fat <= 80:
+            raise ValueError(f"fat_mass_kg out of range [0,80]: {fat!r}")
+
+        vf = data.get("visceral_fat_level")
+        if not isinstance(vf, int) or not 1 <= vf <= 20:
+            raise ValueError(f"visceral_fat_level must be int in [1,20]: {vf!r}")
+
+        segments_raw = data.get("segments", [])
+        if not isinstance(segments_raw, list) or len(segments_raw) != 5:
+            raise ValueError(f"segments must be a list of 5 entries, got {len(segments_raw) if isinstance(segments_raw, list) else type(segments_raw)}")
+        segments = [BodySegment.from_dict(s) for s in segments_raw]
+        names = {s.segment for s in segments}
+        if names != INBODY_SEGMENTS:
+            raise ValueError(f"segments must cover {INBODY_SEGMENTS}, got {names}")
+
+        return cls(
+            scan_date=scan_date,
+            weight_kg=float(weight),
+            body_fat_pct=float(bf_pct),
+            smm_kg=float(smm),
+            fat_mass_kg=float(fat),
+            visceral_fat_level=int(vf),
+            jpg_path=data.get("jpg_path"),
+            bmr_kcal=int(data["bmr_kcal"]) if data.get("bmr_kcal") is not None else None,
+            protein_kg=float(data["protein_kg"]) if data.get("protein_kg") is not None else None,
+            water_l=float(data["water_l"]) if data.get("water_l") is not None else None,
+            smi=float(data["smi"]) if data.get("smi") is not None else None,
+            inbody_score=int(data["inbody_score"]) if data.get("inbody_score") is not None else None,
+            segments=segments,
+        )
+
+
 @dataclass
 class Dashboard:
     running_level: float | None

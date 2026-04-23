@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import click
 from rich.console import Console
 from rich.table import Table
@@ -437,6 +439,181 @@ def auth_status_cmd(ctx: click.Context) -> None:
     table.add_row("Client ID", token.get("client_id") or "?")
     table.add_row("Access token expires", exp_str)
     console.print(table)
+
+
+@cli.group()
+def inbody() -> None:
+    """Manage InBody body-composition scans (local DB + push to prod)."""
+
+
+def _scan_row_to_display(row) -> dict:
+    return dict(row)
+
+
+def _render_inbody_table(scans: list[dict], title: str) -> Table:
+    table = Table(title=title)
+    table.add_column("Date", style="cyan")
+    table.add_column("Weight kg", justify="right")
+    table.add_column("SMM kg", justify="right")
+    table.add_column("BF %", justify="right")
+    table.add_column("Fat kg", justify="right")
+    table.add_column("VF", justify="right")
+    table.add_column("Score", justify="right")
+    table.add_column("Δ Weight", justify="right", style="dim")
+    # scans come newest-first; compute delta vs next-older entry
+    reversed_scans = list(reversed(scans))
+    deltas: dict[str, float | None] = {}
+    for i, s in enumerate(reversed_scans):
+        if i == 0:
+            deltas[s["scan_date"]] = None
+        else:
+            deltas[s["scan_date"]] = round(s["weight_kg"] - reversed_scans[i - 1]["weight_kg"], 2)
+    for s in scans:
+        d = deltas.get(s["scan_date"])
+        delta_str = "" if d is None else (f"+{d}" if d > 0 else f"{d}")
+        table.add_row(
+            s["scan_date"],
+            f"{s['weight_kg']:.1f}",
+            f"{s['smm_kg']:.1f}",
+            f"{s['body_fat_pct']:.1f}",
+            f"{s['fat_mass_kg']:.1f}",
+            str(s["visceral_fat_level"]),
+            str(s["inbody_score"] if s.get("inbody_score") is not None else "—"),
+            delta_str,
+        )
+    return table
+
+
+@inbody.command("add")
+@click.option("--from-json", "json_path", required=True,
+              type=click.Path(exists=True, dir_okay=False),
+              help="Path to a JSON file matching the InBody scan schema.")
+@click.pass_context
+def inbody_add_cmd(ctx: click.Context, json_path: str) -> None:
+    """Validate and upsert a scan into the local DB."""
+    import json as _json
+
+    from stride_core.models import BodyCompositionScan
+
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+
+    data = _json.loads(Path(json_path).read_text(encoding="utf-8"))
+    try:
+        scan = BodyCompositionScan.from_dict(data)
+    except (ValueError, TypeError) as e:
+        console.print(f"[red]Invalid scan: {e}[/red]")
+        raise SystemExit(1)
+
+    with Database(user=profile) as db:
+        db.upsert_inbody_scan(scan)
+    console.print(
+        f"[green]Upserted scan {scan.scan_date} "
+        f"(weight={scan.weight_kg} smm={scan.smm_kg} bf={scan.body_fat_pct}%) "
+        f"+ {len(scan.segments)} segments into local DB[/green]"
+    )
+
+
+@inbody.command("push")
+@click.argument("scan_date")
+@click.option("--url", default=None, envvar="STRIDE_PROD_URL",
+              help="STRIDE server base URL. Defaults to $STRIDE_PROD_URL.")
+@click.pass_context
+def inbody_push_cmd(ctx: click.Context, scan_date: str, url: str | None) -> None:
+    """Push the local scan for SCAN_DATE (YYYY-MM-DD) to the remote server."""
+    if not url:
+        console.print("[red]Missing --url (or set $STRIDE_PROD_URL)[/red]")
+        raise SystemExit(1)
+
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+
+    import httpx
+    from .stride_auth import bearer_header
+
+    with Database(user=profile) as db:
+        row = db.get_inbody_scan(scan_date)
+        if not row:
+            console.print(f"[yellow]No local scan found for {scan_date}[/yellow]")
+            raise SystemExit(1)
+        segs = db.get_inbody_segments(scan_date)
+
+    payload = dict(row)
+    payload.pop("ingested_at", None)
+    payload["segments"] = [
+        {k: dict(s)[k] for k in ("segment", "lean_mass_kg", "fat_mass_kg", "lean_pct_of_standard")}
+        for s in segs
+    ]
+
+    endpoint = f"{url.rstrip('/')}/api/{profile}/inbody"
+    headers = bearer_header(profile)
+    resp = httpx.post(endpoint, json=payload, headers=headers, timeout=30)
+    if resp.status_code == 401:
+        console.print(
+            f"[red]Server rejected the request (401). "
+            f"Run `coros-sync -P {profile} auth login` first.[/red]"
+        )
+        raise SystemExit(1)
+    if resp.status_code >= 400:
+        console.print(f"[red]POST failed: {resp.status_code} {resp.text}[/red]")
+        raise SystemExit(1)
+    auth_label = "authenticated" if headers else "anonymous"
+    console.print(f"[green]Pushed scan {scan_date} to {endpoint} ({auth_label})[/green]")
+
+
+@inbody.command("list")
+@click.option("--days", default=None, type=int, help="Limit to the last N days")
+@click.pass_context
+def inbody_list_cmd(ctx: click.Context, days: int | None) -> None:
+    """Print a table of local scans, newest first."""
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+
+    with Database(user=profile) as db:
+        scans = [_scan_row_to_display(r) for r in db.list_inbody_scans(days=days)]
+
+    if not scans:
+        console.print("[yellow]No local InBody scans.[/yellow]")
+        return
+    console.print(_render_inbody_table(scans, f"InBody scans [{profile}] (local)"))
+
+
+@inbody.command("fetch")
+@click.option("--url", default=None, envvar="STRIDE_PROD_URL",
+              help="STRIDE server base URL. Defaults to $STRIDE_PROD_URL.")
+@click.option("--days", default=None, type=int, help="Limit to the last N days")
+@click.pass_context
+def inbody_fetch_cmd(ctx: click.Context, url: str | None, days: int | None) -> None:
+    """GET prod's scans and print the same table (reconcile vs `inbody list`)."""
+    if not url:
+        console.print("[red]Missing --url (or set $STRIDE_PROD_URL)[/red]")
+        raise SystemExit(1)
+
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+
+    import httpx
+    from .stride_auth import bearer_header
+
+    params = {"days": days} if days else {}
+    endpoint = f"{url.rstrip('/')}/api/{profile}/inbody"
+    resp = httpx.get(endpoint, params=params, headers=bearer_header(profile), timeout=30)
+    if resp.status_code >= 400:
+        console.print(f"[red]GET failed: {resp.status_code} {resp.text}[/red]")
+        raise SystemExit(1)
+    scans = resp.json().get("scans", [])
+    if not scans:
+        console.print("[yellow]No remote InBody scans.[/yellow]")
+        return
+    console.print(_render_inbody_table(scans, f"InBody scans [{profile}] (prod)"))
 
 
 @workout.command("delete")

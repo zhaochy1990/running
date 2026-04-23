@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from stride_core.source import DataSource
 
 from .bearer import require_bearer
-from .routes import activities, health, public, sync, training_plan, users, weeks
+from .routes import activities, health, inbody, public, sync, training_plan, users, weeks
 from .static import mount_frontend
 
 
@@ -43,6 +43,7 @@ def create_app(source: DataSource) -> FastAPI:
     app.include_router(sync.router, dependencies=protected)
     app.include_router(training_plan.router, dependencies=protected)
     app.include_router(health.router, dependencies=protected)
+    app.include_router(inbody.router, dependencies=protected)
 
     # SPA fallback must be last so it doesn't swallow /api/* paths.
     mount_frontend(app)

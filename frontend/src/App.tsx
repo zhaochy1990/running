@@ -6,6 +6,7 @@ import AppLayout from './components/AppLayout'
 import WeekLayout from './pages/WeekLayout'
 import ActivityDetailPage from './pages/ActivityDetailPage'
 import HealthPage from './pages/HealthPage'
+import InbodyPage from './pages/InbodyPage'
 import TrainingPlanPage from './pages/TrainingPlanPage'
 import LoginPage from './pages/LoginPage'
 
@@ -35,6 +36,7 @@ function App() {
                   <Route path="/week/:folder" element={<WeekLayout />} />
                   <Route path="/activity/:id" element={<ActivityDetailPage />} />
                   <Route path="/health" element={<HealthPage />} />
+                  <Route path="/inbody" element={<InbodyPage />} />
                   <Route path="/plan" element={<TrainingPlanPage />} />
                 </Route>
               </Routes>

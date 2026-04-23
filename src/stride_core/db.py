@@ -7,7 +7,10 @@ from pathlib import Path
 
 from platformdirs import user_data_dir
 
-from .models import ActivityDetail, DailyHealth, Dashboard, Lap, RacePrediction, TimeseriesPoint, Zone
+from .models import (
+    ActivityDetail, BodyCompositionScan, BodySegment, DailyHealth, Dashboard,
+    Lap, RacePrediction, TimeseriesPoint, Zone,
+)
 
 DATA_DIR = Path(user_data_dir("coros-sync"))
 DB_PATH = DATA_DIR / "coros.db"
@@ -153,6 +156,31 @@ CREATE TABLE IF NOT EXISTS activity_commentary (
     commentary  TEXT NOT NULL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS inbody_scan (
+    scan_date           TEXT PRIMARY KEY,
+    jpg_path            TEXT,
+    weight_kg           REAL NOT NULL,
+    body_fat_pct        REAL NOT NULL,
+    smm_kg              REAL NOT NULL,
+    fat_mass_kg         REAL NOT NULL,
+    visceral_fat_level  INTEGER NOT NULL,
+    bmr_kcal            INTEGER,
+    protein_kg          REAL,
+    water_l             REAL,
+    smi                 REAL,
+    inbody_score        INTEGER,
+    ingested_at         TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS inbody_segment (
+    scan_date               TEXT NOT NULL REFERENCES inbody_scan(scan_date) ON DELETE CASCADE,
+    segment                 TEXT NOT NULL,
+    lean_mass_kg            REAL NOT NULL,
+    fat_mass_kg             REAL NOT NULL,
+    lean_pct_of_standard    REAL,
+    PRIMARY KEY (scan_date, segment)
 );
 """
 
@@ -352,6 +380,58 @@ class Database:
             (label_id, commentary),
         )
         self._conn.commit()
+
+    # --- InBody body-composition scans ---
+
+    def upsert_inbody_scan(self, scan: BodyCompositionScan) -> None:
+        self._conn.execute(
+            """INSERT OR REPLACE INTO inbody_scan
+            (scan_date, jpg_path, weight_kg, body_fat_pct, smm_kg, fat_mass_kg,
+             visceral_fat_level, bmr_kcal, protein_kg, water_l, smi, inbody_score,
+             ingested_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))""",
+            (scan.scan_date, scan.jpg_path, scan.weight_kg, scan.body_fat_pct,
+             scan.smm_kg, scan.fat_mass_kg, scan.visceral_fat_level,
+             scan.bmr_kcal, scan.protein_kg, scan.water_l, scan.smi, scan.inbody_score),
+        )
+        # Replace all segments for this scan
+        self._conn.execute("DELETE FROM inbody_segment WHERE scan_date = ?", (scan.scan_date,))
+        for seg in scan.segments:
+            self._conn.execute(
+                """INSERT INTO inbody_segment
+                (scan_date, segment, lean_mass_kg, fat_mass_kg, lean_pct_of_standard)
+                VALUES (?,?,?,?,?)""",
+                (scan.scan_date, seg.segment, seg.lean_mass_kg, seg.fat_mass_kg,
+                 seg.lean_pct_of_standard),
+            )
+        self._conn.commit()
+
+    def list_inbody_scans(self, days: int | None = None) -> list[sqlite3.Row]:
+        if days is not None:
+            return self._conn.execute(
+                "SELECT * FROM inbody_scan WHERE scan_date >= date('now', ?) "
+                "ORDER BY scan_date DESC",
+                (f"-{days} days",),
+            ).fetchall()
+        return self._conn.execute(
+            "SELECT * FROM inbody_scan ORDER BY scan_date DESC"
+        ).fetchall()
+
+    def get_inbody_scan(self, scan_date: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM inbody_scan WHERE scan_date = ?", (scan_date,)
+        ).fetchone()
+
+    def get_inbody_segments(self, scan_date: str) -> list[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT * FROM inbody_segment WHERE scan_date = ? ORDER BY segment",
+            (scan_date,),
+        ).fetchall()
+
+    def latest_inbody_scan(self) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM inbody_scan ORDER BY scan_date DESC LIMIT 1"
+        ).fetchone()
 
     # --- Query helpers for analysis ---
 

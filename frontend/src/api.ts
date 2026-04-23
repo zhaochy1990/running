@@ -204,6 +204,76 @@ export function getPMC(user: string, days = 90) {
   return fetchJSON<{ pmc: PMCRecord[]; summary: PMCSummary }>(`/${user}/pmc?days=${days}`)
 }
 
+export interface InBodySegment {
+  segment: 'left_arm' | 'right_arm' | 'trunk' | 'left_leg' | 'right_leg'
+  lean_mass_kg: number
+  fat_mass_kg: number
+  lean_pct_of_standard: number | null
+}
+
+export interface InBodyScan {
+  scan_date: string
+  jpg_path: string | null
+  weight_kg: number
+  body_fat_pct: number
+  smm_kg: number
+  fat_mass_kg: number
+  visceral_fat_level: number
+  bmr_kcal: number | null
+  protein_kg: number | null
+  water_l: number | null
+  smi: number | null
+  inbody_score: number | null
+  ingested_at: string
+  // Derived
+  leg_smm_delta: number | null
+  leg_fat_delta: number | null
+  arm_smm_delta: number | null
+  upper_lower_smm_ratio: number | null
+  left_leg_smm_kg: number | null
+  right_leg_smm_kg: number | null
+  left_arm_smm_kg: number | null
+  right_arm_smm_kg: number | null
+  trunk_smm_kg: number | null
+  segments?: InBodySegment[]
+}
+
+export interface InBodyCheckpoint {
+  phase: string
+  date: string
+  weight_kg: number
+  body_fat_pct: number
+  smm_kg_min: number
+}
+
+export interface InBodyDeltas {
+  prev_date: string
+  weight_kg: number
+  body_fat_pct: number
+  smm_kg: number
+  fat_mass_kg: number
+  visceral_fat_level: number
+}
+
+export interface InBodySummary {
+  latest: InBodyScan | null
+  deltas: InBodyDeltas | null
+  checkpoints: InBodyCheckpoint[]
+}
+
+export function getInbody(user: string, days?: number) {
+  const qs = days ? `?days=${days}` : ''
+  return fetchJSON<{ scans: InBodyScan[] }>(`/${user}/inbody${qs}`)
+}
+
+export function getInbodySummary(user: string) {
+  return fetchJSON<InBodySummary>(`/${user}/inbody/summary`)
+}
+
+export function getInbodyScan(user: string, scanDate: string) {
+  return fetchJSON<InBodyScan>(`/${user}/inbody/${scanDate}`)
+}
+
 export function getWeeks(user: string) {
   return fetchJSON<{ weeks: WeekSummary[] }>(`/${user}/weeks`)
 }

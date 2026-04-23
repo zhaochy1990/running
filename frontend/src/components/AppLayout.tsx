@@ -136,6 +136,16 @@ export default function AppLayout() {
             身体指标
           </button>
           <button
+            onClick={() => navigate('/inbody')}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
+              isActive('/inbody')
+                ? 'border-accent-amber/50 text-accent-amber bg-accent-amber/10'
+                : 'border-accent-amber/30 text-accent-amber hover:bg-accent-amber/10'
+            }`}
+          >
+            体成分
+          </button>
+          <button
             onClick={handleSync}
             disabled={syncing}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-accent-green/30 text-accent-green hover:bg-accent-green/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
