@@ -545,7 +545,10 @@ def inbody_push_cmd(ctx: click.Context, scan_date: str, url: str | None) -> None
     payload = dict(row)
     payload.pop("ingested_at", None)
     payload["segments"] = [
-        {k: dict(s)[k] for k in ("segment", "lean_mass_kg", "fat_mass_kg", "lean_pct_of_standard")}
+        {k: dict(s)[k] for k in (
+            "segment", "lean_mass_kg", "fat_mass_kg",
+            "lean_pct_of_standard", "fat_pct_of_standard",
+        )}
         for s in segs
     ]
 
