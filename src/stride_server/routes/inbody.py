@@ -54,7 +54,8 @@ def _derive(scan: dict, segs: dict[str, dict]) -> dict:
         s = segs.get(name, {})
         scan[f"{name}_smm_kg"] = s.get("lean_mass_kg")
         scan[f"{name}_fat_kg"] = s.get("fat_mass_kg")
-        scan[f"{name}_pct_std"] = s.get("lean_pct_of_standard")
+        scan[f"{name}_lean_pct_std"] = s.get("lean_pct_of_standard")
+        scan[f"{name}_fat_pct_std"] = s.get("fat_pct_of_standard")
     return scan
 
 

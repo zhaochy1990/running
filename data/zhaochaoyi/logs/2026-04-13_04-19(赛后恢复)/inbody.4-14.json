@@ -12,10 +12,10 @@
   "smi": 7.6,
   "inbody_score": 67,
   "segments": [
-    {"segment": "left_arm",  "lean_mass_kg": 2.52, "fat_mass_kg": 1.0, "lean_pct_of_standard": 74.3},
-    {"segment": "right_arm", "lean_mass_kg": 2.61, "fat_mass_kg": 1.0, "lean_pct_of_standard": 76.3},
-    {"segment": "trunk",     "lean_mass_kg": 22.9, "fat_mass_kg": 7.9, "lean_pct_of_standard": 84.5},
-    {"segment": "left_leg",  "lean_mass_kg": 9.91, "fat_mass_kg": 2.9, "lean_pct_of_standard": 104.9},
-    {"segment": "right_leg", "lean_mass_kg": 10.02, "fat_mass_kg": 2.9, "lean_pct_of_standard": 106.1}
+    {"segment": "left_arm",  "lean_mass_kg": 2.52, "fat_mass_kg": 1.0, "lean_pct_of_standard": 74.3, "fat_pct_of_standard": 158.3},
+    {"segment": "right_arm", "lean_mass_kg": 2.61, "fat_mass_kg": 1.0, "lean_pct_of_standard": 76.3, "fat_pct_of_standard": 152.1},
+    {"segment": "trunk",     "lean_mass_kg": 22.9, "fat_mass_kg": 7.9, "lean_pct_of_standard": 84.5, "fat_pct_of_standard": 171.1},
+    {"segment": "left_leg",  "lean_mass_kg": 9.91, "fat_mass_kg": 2.9, "lean_pct_of_standard": 104.9, "fat_pct_of_standard": 155.3},
+    {"segment": "right_leg", "lean_mass_kg": 10.02, "fat_mass_kg": 2.9, "lean_pct_of_standard": 106.1, "fat_pct_of_standard": 156.2}
   ]
 }

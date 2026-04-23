@@ -209,6 +209,7 @@ export interface InBodySegment {
   lean_mass_kg: number
   fat_mass_kg: number
   lean_pct_of_standard: number | null
+  fat_pct_of_standard: number | null
 }
 
 export interface InBodyScan {
@@ -240,11 +241,16 @@ export interface InBodyScan {
   trunk_fat_kg: number | null
   left_leg_fat_kg: number | null
   right_leg_fat_kg: number | null
-  left_arm_pct_std: number | null
-  right_arm_pct_std: number | null
-  trunk_pct_std: number | null
-  left_leg_pct_std: number | null
-  right_leg_pct_std: number | null
+  left_arm_lean_pct_std: number | null
+  right_arm_lean_pct_std: number | null
+  trunk_lean_pct_std: number | null
+  left_leg_lean_pct_std: number | null
+  right_leg_lean_pct_std: number | null
+  left_arm_fat_pct_std: number | null
+  right_arm_fat_pct_std: number | null
+  trunk_fat_pct_std: number | null
+  left_leg_fat_pct_std: number | null
+  right_leg_fat_pct_std: number | null
   segments?: InBodySegment[]
 }
 

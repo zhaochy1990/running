@@ -353,6 +353,7 @@ class BodySegment:
     lean_mass_kg: float
     fat_mass_kg: float
     lean_pct_of_standard: float | None = None
+    fat_pct_of_standard: float | None = None
 
     @classmethod
     def from_dict(cls, data: dict) -> BodySegment:
@@ -365,14 +366,18 @@ class BodySegment:
             raise ValueError(f"{segment}: lean_mass_kg out of range: {lean!r}")
         if not isinstance(fat, (int, float)) or not 0 <= fat <= 30:
             raise ValueError(f"{segment}: fat_mass_kg out of range: {fat!r}")
-        pct = data.get("lean_pct_of_standard")
-        if pct is not None and not isinstance(pct, (int, float)):
+        lean_pct = data.get("lean_pct_of_standard")
+        if lean_pct is not None and not isinstance(lean_pct, (int, float)):
             raise ValueError(f"{segment}: lean_pct_of_standard must be numeric or null")
+        fat_pct = data.get("fat_pct_of_standard")
+        if fat_pct is not None and not isinstance(fat_pct, (int, float)):
+            raise ValueError(f"{segment}: fat_pct_of_standard must be numeric or null")
         return cls(
             segment=segment,
             lean_mass_kg=float(lean),
             fat_mass_kg=float(fat),
-            lean_pct_of_standard=float(pct) if pct is not None else None,
+            lean_pct_of_standard=float(lean_pct) if lean_pct is not None else None,
+            fat_pct_of_standard=float(fat_pct) if fat_pct is not None else None,
         )
 
 

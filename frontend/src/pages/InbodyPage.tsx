@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar, Cell,
+  ResponsiveContainer, AreaChart, Area, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend,
 } from 'recharts'
 import { getInbody, getInbodySummary, type InBodyScan, type InBodySummary } from '../api'
@@ -316,7 +316,7 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle: str
   )
 }
 
-type Mode = 'lean' | 'fat' | 'pct'
+type Mode = 'lean' | 'fat'
 type ChartRow = InBodyScan & { dateLabel: string }
 
 const SEGMENTS: { key: string; label: string; color: string }[] = [
@@ -348,11 +348,7 @@ function SegmentTrendChart({
   chartData: ChartRow[]; segs: typeof SEGMENTS; mode: Mode
   modeUnit: string; yDomainPad: number
 }) {
-  const fieldByMode = (seg: string) => {
-    if (mode === 'lean') return `${seg}_smm_kg`
-    if (mode === 'fat') return `${seg}_fat_kg`
-    return `${seg}_pct_std`
-  }
+  const fieldByMode = (seg: string) => mode === 'lean' ? `${seg}_smm_kg` : `${seg}_fat_kg`
 
   // Compute numeric Y domain ourselves so we don't hit dataMin/dataMax string arithmetic
   const values: number[] = []
@@ -365,24 +361,36 @@ function SegmentTrendChart({
   const yMin = values.length ? Math.min(...values) - yDomainPad : 0
   const yMax = values.length ? Math.max(...values) + yDomainPad : 1
 
+  // Build a dataKey → segment key map so we can look up pct_std for the hovered row
+  const segKeyByDataKey: Record<string, string> = {}
+  for (const s of segs) segKeyByDataKey[fieldByMode(s.key)] = s.key
+
   return (
     <ResponsiveContainer width="100%" height={220}>
       <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 0, left: 5 }}>
         <CartesianGrid {...GRID_STYLE} />
         <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
         <YAxis
-          domain={mode === 'pct' ? [60, 120] : [yMin, yMax]}
+          domain={[yMin, yMax]}
           tick={AXIS_TICK}
           tickFormatter={formatTick}
           axisLine={false}
           tickLine={false}
           width={40}
         />
-        <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown, name: unknown) => [`${v} ${modeUnit}`, name as string]} />
+        <Tooltip
+          {...TOOLTIP_STYLE}
+          formatter={(v, name, item) => {
+            const dataKey = (item as { dataKey?: string }).dataKey
+            const segKey = dataKey ? segKeyByDataKey[dataKey] : undefined
+            const payload = (item as { payload?: Record<string, number | null> }).payload
+            const pctField = mode === 'lean' ? 'lean_pct_std' : 'fat_pct_std'
+            const pct = segKey && payload ? payload[`${segKey}_${pctField}`] : null
+            const suffix = typeof pct === 'number' ? ` (${pct.toFixed(1)}%)` : ''
+            return [`${v} ${modeUnit}${suffix}`, name as string]
+          }}
+        />
         <Legend wrapperStyle={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
-        {mode === 'pct' && (
-          <ReferenceLine y={100} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: '标准', position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-        )}
         {segs.map((s) => (
           <Line
             key={s.key}
@@ -403,16 +411,16 @@ function SegmentTrendChart({
 function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: InBodyScan }) {
   const [mode, setMode] = useState<Mode>('lean')
 
-  const modeLabel = mode === 'lean' ? '肌肉量 (kg)' : mode === 'fat' ? '脂肪量 (kg)' : '% 标准'
-  const modeUnit = mode === 'pct' ? '%' : 'kg'
-  const split = mode !== 'pct'  // pct is already 0-120%, one chart is fine
+  const modeLabel = mode === 'lean' ? '肌肉量 (kg)' : '脂肪量 (kg)'
+  const modeUnit = 'kg'
 
-  const latestBars = SEGMENTS.map((s) => ({
+  const latestRows = SEGMENTS.map((s) => ({
     seg: s.label,
     key: s.key,
     lean: (latest as unknown as Record<string, number | null>)[`${s.key}_smm_kg`] ?? null,
     fat: (latest as unknown as Record<string, number | null>)[`${s.key}_fat_kg`] ?? null,
-    pct: (latest as unknown as Record<string, number | null>)[`${s.key}_pct_std`] ?? null,
+    leanPct: (latest as unknown as Record<string, number | null>)[`${s.key}_lean_pct_std`] ?? null,
+    fatPct: (latest as unknown as Record<string, number | null>)[`${s.key}_fat_pct_std`] ?? null,
     color: s.color,
   }))
 
@@ -428,7 +436,6 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
             {([
               ['lean', '肌肉量'],
               ['fat', '脂肪量'],
-              ['pct', '% 标准'],
             ] as const).map(([k, label]) => (
               <button
                 key={k}
@@ -443,24 +450,20 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
           </div>
         </div>
 
-        {split ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div>
-              <p className="text-xs font-mono text-text-muted mb-2">下肢 (Legs)</p>
-              <SegmentTrendChart chartData={chartData} segs={LEG_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.3} />
-            </div>
-            <div>
-              <p className="text-xs font-mono text-text-muted mb-2">躯干 (Trunk)</p>
-              <SegmentTrendChart chartData={chartData} segs={TRUNK_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.5} />
-            </div>
-            <div>
-              <p className="text-xs font-mono text-text-muted mb-2">上肢 (Arms)</p>
-              <SegmentTrendChart chartData={chartData} segs={ARM_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.1} />
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div>
+            <p className="text-xs font-mono text-text-muted mb-2">下肢 (Legs)</p>
+            <SegmentTrendChart chartData={chartData} segs={LEG_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.3} />
           </div>
-        ) : (
-          <SegmentTrendChart chartData={chartData} segs={SEGMENTS} mode={mode} modeUnit={modeUnit} yDomainPad={2} />
-        )}
+          <div>
+            <p className="text-xs font-mono text-text-muted mb-2">躯干 (Trunk)</p>
+            <SegmentTrendChart chartData={chartData} segs={TRUNK_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.5} />
+          </div>
+          <div>
+            <p className="text-xs font-mono text-text-muted mb-2">上肢 (Arms)</p>
+            <SegmentTrendChart chartData={chartData} segs={ARM_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.1} />
+          </div>
+        </div>
 
         {latest.leg_smm_delta != null && Math.abs(latest.leg_smm_delta) > 0.2 && (
           <div className="mt-3 px-3 py-2 bg-accent-amber/10 border border-accent-amber/30 rounded-lg">
@@ -474,61 +477,35 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
 
       <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
         <div className="mb-4">
-          <h3 className="text-sm font-semibold text-text-primary">最新节段对标</h3>
-          <p className="text-xs font-mono text-text-muted">Latest Scan vs Standard — {latest.scan_date}</p>
+          <h3 className="text-sm font-semibold text-text-primary">最新节段明细</h3>
+          <p className="text-xs font-mono text-text-muted">Latest Scan Segments — {latest.scan_date}</p>
         </div>
 
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={latestBars} margin={{ top: 5, right: 10, bottom: 0, left: 5 }}>
-            <CartesianGrid {...GRID_STYLE} />
-            <XAxis dataKey="seg" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-            <YAxis
-              domain={[0, Math.max(120, Math.ceil(Math.max(...latestBars.map(b => b.pct ?? 0)) / 10) * 10 + 10)]}
-              tick={AXIS_TICK}
-              tickFormatter={formatTick}
-              axisLine={false}
-              tickLine={false}
-              width={40}
-            />
-            <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}%`, '% 标准']} />
-            <ReferenceLine y={100} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.5} />
-            <ReferenceLine y={85} stroke="#e68a00" strokeDasharray="4 4" strokeOpacity={0.4} />
-            <Bar dataKey="pct" radius={[4, 4, 0, 0]} maxBarSize={40}>
-              {latestBars.map((b, i) => (
-                <Cell key={i} fill={pctStdColor(b.pct)} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-
-        <div className="overflow-x-auto mt-4">
+        <div className="overflow-x-auto">
           <table className="w-full text-xs font-mono">
             <thead>
               <tr className="border-b-2 border-border">
                 <th className="text-left py-2 px-3 text-text-primary font-semibold">节段</th>
                 <th className="text-right py-2 px-3 text-text-primary font-semibold">肌肉 kg</th>
+                <th className="text-right py-2 px-3 text-text-primary font-semibold">肌肉 % 标准</th>
                 <th className="text-right py-2 px-3 text-text-primary font-semibold">脂肪 kg</th>
-                <th className="text-right py-2 px-3 text-text-primary font-semibold">% 标准</th>
-                <th className="text-left py-2 px-3 text-text-primary font-semibold">评级</th>
+                <th className="text-right py-2 px-3 text-text-primary font-semibold">脂肪 % 标准</th>
               </tr>
             </thead>
             <tbody>
-              {latestBars.map((b, i) => (
-                <tr key={b.key} className="border-b border-border-subtle animate-fade-in opacity-0" style={{ animationDelay: `${i * 30}ms`, animationFillMode: 'forwards' }}>
+              {latestRows.map((r, i) => (
+                <tr key={r.key} className="border-b border-border-subtle animate-fade-in opacity-0" style={{ animationDelay: `${i * 30}ms`, animationFillMode: 'forwards' }}>
                   <td className="py-2 px-3">
-                    <span className="inline-block w-2 h-2 rounded-full mr-2 align-middle" style={{ backgroundColor: b.color }} />
-                    {b.seg}
+                    <span className="inline-block w-2 h-2 rounded-full mr-2 align-middle" style={{ backgroundColor: r.color }} />
+                    {r.seg}
                   </td>
-                  <td className="py-2 px-3 text-right">{b.lean != null ? b.lean.toFixed(2) : '—'}</td>
-                  <td className="py-2 px-3 text-right">{b.fat != null ? b.fat.toFixed(1) : '—'}</td>
-                  <td className="py-2 px-3 text-right" style={{ color: pctStdColor(b.pct) }}>
-                    {b.pct != null ? b.pct.toFixed(1) : '—'}
+                  <td className="py-2 px-3 text-right">{r.lean != null ? r.lean.toFixed(2) : '—'}</td>
+                  <td className="py-2 px-3 text-right" style={{ color: pctStdColor(r.leanPct) }}>
+                    {r.leanPct != null ? `${r.leanPct.toFixed(1)}%` : '—'}
                   </td>
-                  <td className="py-2 px-3">
-                    {b.pct == null ? '—' :
-                     b.pct >= 100 ? <span className="text-accent-green">达标</span> :
-                     b.pct >= 85  ? <span className="text-accent-amber">偏弱</span> :
-                                    <span className="text-accent-red">短板</span>}
+                  <td className="py-2 px-3 text-right">{r.fat != null ? r.fat.toFixed(1) : '—'}</td>
+                  <td className="py-2 px-3 text-right" style={{ color: fatPctStdColor(r.fatPct) }}>
+                    {r.fatPct != null ? `${r.fatPct.toFixed(1)}%` : '—'}
                   </td>
                 </tr>
               ))}
@@ -538,4 +515,12 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
       </div>
     </div>
   )
+}
+
+// For FAT % standard, higher = more fat (bad); inverse rubric vs lean
+function fatPctStdColor(pct: number | null | undefined): string {
+  if (pct == null) return '#8888a0'
+  if (pct <= 120) return '#00a85a'
+  if (pct <= 150) return '#e68a00'
+  return '#d32f2f'
 }

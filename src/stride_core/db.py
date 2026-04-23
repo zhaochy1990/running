@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS inbody_segment (
     lean_mass_kg            REAL NOT NULL,
     fat_mass_kg             REAL NOT NULL,
     lean_pct_of_standard    REAL,
+    fat_pct_of_standard     REAL,
     PRIMARY KEY (scan_date, segment)
 );
 """
@@ -224,6 +225,9 @@ class Database:
             self._conn.execute("ALTER TABLE activities ADD COLUMN feel_type INTEGER")
         if "sport_note" not in act_cols:
             self._conn.execute("ALTER TABLE activities ADD COLUMN sport_note TEXT")
+        seg_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(inbody_segment)").fetchall()}
+        if seg_cols and "fat_pct_of_standard" not in seg_cols:
+            self._conn.execute("ALTER TABLE inbody_segment ADD COLUMN fat_pct_of_standard REAL")
 
     def close(self) -> None:
         self._conn.close()
@@ -399,10 +403,10 @@ class Database:
         for seg in scan.segments:
             self._conn.execute(
                 """INSERT INTO inbody_segment
-                (scan_date, segment, lean_mass_kg, fat_mass_kg, lean_pct_of_standard)
-                VALUES (?,?,?,?,?)""",
+                (scan_date, segment, lean_mass_kg, fat_mass_kg, lean_pct_of_standard, fat_pct_of_standard)
+                VALUES (?,?,?,?,?,?)""",
                 (scan.scan_date, seg.segment, seg.lean_mass_kg, seg.fat_mass_kg,
-                 seg.lean_pct_of_standard),
+                 seg.lean_pct_of_standard, seg.fat_pct_of_standard),
             )
         self._conn.commit()
 
