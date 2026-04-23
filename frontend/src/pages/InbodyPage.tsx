@@ -142,7 +142,7 @@ export default function InbodyPage() {
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
                       <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 1', 'dataMax + 1']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <YAxis domain={['dataMin - 1', 'dataMax + 1']} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, '体重']} />
                       {checkpoints.map((c, i) => (
                         <ReferenceLine
@@ -170,7 +170,7 @@ export default function InbodyPage() {
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
                       <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 0.3', 'dataMax + 0.3']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <YAxis domain={['dataMin - 0.3', 'dataMax + 0.3']} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, 'SMM']} />
                       <ReferenceLine y={30.5} stroke="#d32f2f" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: '下限 30.5', position: 'right', fill: '#d32f2f', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
                       <Area type="monotone" dataKey="smm_kg" stroke="#00a85a" strokeWidth={2} fill="url(#gradSMM)" dot={{ r: 3, fill: '#00a85a' }} activeDot={{ r: 5 }} />
@@ -189,7 +189,7 @@ export default function InbodyPage() {
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
                       <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}%`, '体脂率']} />
                       {checkpoints.map((c, i) => (
                         <ReferenceLine
@@ -216,7 +216,7 @@ export default function InbodyPage() {
                       </defs>
                       <CartesianGrid {...GRID_STYLE} />
                       <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                      <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                      <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} tick={AXIS_TICK} tickFormatter={formatTick} axisLine={false} tickLine={false} width={40} />
                       <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} kg`, '脂肪量']} />
                       <Area type="monotone" dataKey="fat_mass_kg" stroke="#d32f2f" strokeWidth={2} fill="url(#gradFat)" dot={{ r: 3, fill: '#d32f2f' }} activeDot={{ r: 5 }} />
                     </AreaChart>
@@ -334,17 +334,77 @@ function pctStdColor(pct: number | null | undefined): string {
   return '#d32f2f'
 }
 
-function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: InBodyScan }) {
-  const [mode, setMode] = useState<Mode>('lean')
+const UPPER_SEGS = SEGMENTS.filter(s => s.key === 'left_arm' || s.key === 'right_arm')
+const LOWER_SEGS = SEGMENTS.filter(s => s.key === 'left_leg' || s.key === 'right_leg' || s.key === 'trunk')
 
+function formatTick(v: number | string): string {
+  return Number(v).toFixed(1)
+}
+
+function SegmentTrendChart({
+  chartData, segs, mode, modeUnit, yDomainPad,
+}: {
+  chartData: ChartRow[]; segs: typeof SEGMENTS; mode: Mode
+  modeUnit: string; yDomainPad: number
+}) {
   const fieldByMode = (seg: string) => {
     if (mode === 'lean') return `${seg}_smm_kg`
     if (mode === 'fat') return `${seg}_fat_kg`
     return `${seg}_pct_std`
   }
 
+  // Compute numeric Y domain ourselves so we don't hit dataMin/dataMax string arithmetic
+  const values: number[] = []
+  for (const row of chartData) {
+    for (const s of segs) {
+      const v = (row as unknown as Record<string, number | null>)[fieldByMode(s.key)]
+      if (typeof v === 'number') values.push(v)
+    }
+  }
+  const yMin = values.length ? Math.min(...values) - yDomainPad : 0
+  const yMax = values.length ? Math.max(...values) + yDomainPad : 1
+
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <LineChart data={chartData} margin={{ top: 5, right: 10, bottom: 0, left: 5 }}>
+        <CartesianGrid {...GRID_STYLE} />
+        <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
+        <YAxis
+          domain={mode === 'pct' ? [60, 120] : [yMin, yMax]}
+          tick={AXIS_TICK}
+          tickFormatter={formatTick}
+          axisLine={false}
+          tickLine={false}
+          width={40}
+        />
+        <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown, name: unknown) => [`${v} ${modeUnit}`, name as string]} />
+        <Legend wrapperStyle={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
+        {mode === 'pct' && (
+          <ReferenceLine y={100} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: '标准', position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+        )}
+        {segs.map((s) => (
+          <Line
+            key={s.key}
+            type="monotone"
+            dataKey={fieldByMode(s.key)}
+            name={s.label}
+            stroke={s.color}
+            strokeWidth={1.8}
+            dot={{ r: 3, fill: s.color }}
+            activeDot={{ r: 5 }}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: InBodyScan }) {
+  const [mode, setMode] = useState<Mode>('lean')
+
   const modeLabel = mode === 'lean' ? '肌肉量 (kg)' : mode === 'fat' ? '脂肪量 (kg)' : '% 标准'
   const modeUnit = mode === 'pct' ? '%' : 'kg'
+  const split = mode !== 'pct'  // pct is already 0-120%, one chart is fine
 
   const latestBars = SEGMENTS.map((s) => ({
     seg: s.label,
@@ -382,30 +442,20 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
           </div>
         </div>
 
-        <ResponsiveContainer width="100%" height={260}>
-          <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-            <CartesianGrid {...GRID_STYLE} />
-            <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-            <YAxis domain={mode === 'pct' ? [60, 120] : ['dataMin - 0.3', 'dataMax + 0.3']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-            <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} ${modeUnit}`, '']} />
-            <Legend wrapperStyle={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
-            {mode === 'pct' && (
-              <ReferenceLine y={100} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: '标准', position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-            )}
-            {SEGMENTS.map((s) => (
-              <Line
-                key={s.key}
-                type="monotone"
-                dataKey={fieldByMode(s.key)}
-                name={s.label}
-                stroke={s.color}
-                strokeWidth={1.8}
-                dot={{ r: 3, fill: s.color }}
-                activeDot={{ r: 5 }}
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
+        {split ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-mono text-text-muted mb-2">上肢 (Arms)</p>
+              <SegmentTrendChart chartData={chartData} segs={UPPER_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.1} />
+            </div>
+            <div>
+              <p className="text-xs font-mono text-text-muted mb-2">躯干 + 下肢 (Trunk & Legs)</p>
+              <SegmentTrendChart chartData={chartData} segs={LOWER_SEGS} mode={mode} modeUnit={modeUnit} yDomainPad={0.5} />
+            </div>
+          </div>
+        ) : (
+          <SegmentTrendChart chartData={chartData} segs={SEGMENTS} mode={mode} modeUnit={modeUnit} yDomainPad={2} />
+        )}
 
         {latest.leg_smm_delta != null && Math.abs(latest.leg_smm_delta) > 0.2 && (
           <div className="mt-3 px-3 py-2 bg-accent-amber/10 border border-accent-amber/30 rounded-lg">
@@ -424,10 +474,17 @@ function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest:
         </div>
 
         <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={latestBars} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+          <BarChart data={latestBars} margin={{ top: 5, right: 10, bottom: 0, left: 5 }}>
             <CartesianGrid {...GRID_STYLE} />
             <XAxis dataKey="seg" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-            <YAxis domain={[0, 'dataMax + 10']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+            <YAxis
+              domain={[0, Math.max(120, Math.ceil(Math.max(...latestBars.map(b => b.pct ?? 0)) / 10) * 10 + 10)]}
+              tick={AXIS_TICK}
+              tickFormatter={formatTick}
+              axisLine={false}
+              tickLine={false}
+              width={40}
+            />
             <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}%`, '% 标准']} />
             <ReferenceLine y={100} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.5} />
             <ReferenceLine y={85} stroke="#e68a00" strokeDasharray="4 4" strokeOpacity={0.4} />
