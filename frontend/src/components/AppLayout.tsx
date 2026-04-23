@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
-import { getWeeks, triggerSync, formatWeekRange, type WeekSummary } from '../api'
+import { getWeeks, getInbody, triggerSync, formatWeekRange, type WeekSummary } from '../api'
 import { useUser } from '../UserContext'
 
 export default function AppLayout() {
@@ -11,6 +11,7 @@ export default function AppLayout() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [hasInbody, setHasInbody] = useState(false)
 
   // Extract current folder from URL
   const folderMatch = location.pathname.match(/\/week\/(.+)/)
@@ -39,6 +40,10 @@ export default function AppLayout() {
     getWeeks(user)
       .then((data) => setWeeks(data.weeks))
       .finally(() => setLoading(false))
+    // Probe InBody scans so we can hide the tab for users without any
+    getInbody(user)
+      .then((data) => setHasInbody(data.scans.length > 0))
+      .catch(() => setHasInbody(false))
   }, [user])
 
   const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/')
@@ -135,16 +140,18 @@ export default function AppLayout() {
           >
             身体指标
           </button>
-          <button
-            onClick={() => navigate('/inbody')}
-            className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
-              isActive('/inbody')
-                ? 'border-accent-amber/50 text-accent-amber bg-accent-amber/10'
-                : 'border-accent-amber/30 text-accent-amber hover:bg-accent-amber/10'
-            }`}
-          >
-            体测指标
-          </button>
+          {hasInbody && (
+            <button
+              onClick={() => navigate('/inbody')}
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
+                isActive('/inbody')
+                  ? 'border-accent-amber/50 text-accent-amber bg-accent-amber/10'
+                  : 'border-accent-amber/30 text-accent-amber hover:bg-accent-amber/10'
+              }`}
+            >
+              体测记录
+            </button>
+          )}
           <button
             onClick={handleSync}
             disabled={syncing}

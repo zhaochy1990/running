@@ -69,7 +69,7 @@ export default function InbodyPage() {
         <div className="animate-fade-in">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-text-primary tracking-tight">体测指标</h1>
+              <h1 className="text-2xl font-bold text-text-primary tracking-tight">体测记录</h1>
               <p className="text-xs text-text-muted mt-1">InBody Body Composition — {scans.length} 次扫描</p>
             </div>
           </div>
