@@ -48,23 +48,26 @@ def _derive(scan: dict, segs: dict[str, dict]) -> dict:
     upper = (la or 0) + (ra or 0) + (trunk or 0)
     lower = (ll or 0) + (rl or 0)
     scan["upper_lower_smm_ratio"] = round(upper / lower, 3) if lower else None
-    scan["left_leg_smm_kg"] = ll
-    scan["right_leg_smm_kg"] = rl
-    scan["left_arm_smm_kg"] = la
-    scan["right_arm_smm_kg"] = ra
-    scan["trunk_smm_kg"] = trunk
+
+    # Flatten per-segment lean/fat for easy chart access
+    for name in ("left_arm", "right_arm", "trunk", "left_leg", "right_leg"):
+        s = segs.get(name, {})
+        scan[f"{name}_smm_kg"] = s.get("lean_mass_kg")
+        scan[f"{name}_fat_kg"] = s.get("fat_mass_kg")
+        scan[f"{name}_pct_std"] = s.get("lean_pct_of_standard")
     return scan
 
 
 @router.get("/api/{user}/inbody")
 def list_inbody(user: str, days: int | None = Query(None, ge=1, le=3650)):
-    """List scans (newest-first) with derived per-scan fields."""
+    """List scans (newest-first) with derived per-scan fields + segments."""
     db = get_db(user)
     try:
         scans = [_scan_row_to_dict(r) for r in db.list_inbody_scans(days=days)]
         for s in scans:
             segs = _segments_by_name(db.get_inbody_segments(s["scan_date"]))
             _derive(s, segs)
+            s["segments"] = list(segs.values())
         return {"scans": scans}
     finally:
         db.close()

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  ResponsiveContainer, AreaChart, Area, LineChart, Line,
+  ResponsiveContainer, AreaChart, Area, LineChart, Line, BarChart, Bar, Cell,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend,
 } from 'recharts'
 import { getInbody, getInbodySummary, type InBodyScan, type InBodySummary } from '../api'
@@ -224,28 +224,8 @@ export default function InbodyPage() {
                 </ChartCard>
               </div>
 
-              {/* L/R asymmetry */}
-              <ChartCard title="左右腿骨骼肌对称性" subtitle="L/R Leg SMM Asymmetry (InBody 测肌肉量，并非测耐力)">
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-                    <CartesianGrid {...GRID_STYLE} />
-                    <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                    <YAxis domain={['dataMin - 0.3', 'dataMax + 0.3']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                    <Tooltip {...TOOLTIP_STYLE} />
-                    <Legend wrapperStyle={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
-                    <Line type="monotone" dataKey="left_leg_smm_kg" name="左腿" stroke="#7c4dff" strokeWidth={2} dot={{ r: 3, fill: '#7c4dff' }} />
-                    <Line type="monotone" dataKey="right_leg_smm_kg" name="右腿" stroke="#00a85a" strokeWidth={2} dot={{ r: 3, fill: '#00a85a' }} />
-                  </LineChart>
-                </ResponsiveContainer>
-                {latest.leg_smm_delta != null && Math.abs(latest.leg_smm_delta) > 0.2 && (
-                  <div className="mt-3 px-3 py-2 bg-accent-amber/10 border border-accent-amber/30 rounded-lg">
-                    <p className="text-xs font-mono text-accent-amber">
-                      ⚠ 最新扫描左右腿肌肉量差 {formatDelta(latest.leg_smm_delta, ' kg')}（右 − 左）。
-                      仅是肌肉量差异；功能性耐力以单腿测试为准。
-                    </p>
-                  </div>
-                )}
-              </ChartCard>
+              {/* Segment analysis */}
+              <SegmentAnalysis chartData={chartData} latest={latest} />
 
               {/* Data table */}
               <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mt-6 animate-fade-in">
@@ -332,6 +312,168 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle: str
         <p className="text-xs font-mono text-text-muted">{subtitle}</p>
       </div>
       {children}
+    </div>
+  )
+}
+
+type Mode = 'lean' | 'fat' | 'pct'
+type ChartRow = InBodyScan & { dateLabel: string }
+
+const SEGMENTS: { key: string; label: string; color: string }[] = [
+  { key: 'left_arm',  label: '左臂',  color: '#7c4dff' },
+  { key: 'right_arm', label: '右臂',  color: '#0097a7' },
+  { key: 'trunk',     label: '躯干',  color: '#e68a00' },
+  { key: 'left_leg',  label: '左腿',  color: '#d32f2f' },
+  { key: 'right_leg', label: '右腿',  color: '#00a85a' },
+]
+
+function pctStdColor(pct: number | null | undefined): string {
+  if (pct == null) return '#8888a0'
+  if (pct >= 100) return '#00a85a'
+  if (pct >= 85) return '#e68a00'
+  return '#d32f2f'
+}
+
+function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: InBodyScan }) {
+  const [mode, setMode] = useState<Mode>('lean')
+
+  const fieldByMode = (seg: string) => {
+    if (mode === 'lean') return `${seg}_smm_kg`
+    if (mode === 'fat') return `${seg}_fat_kg`
+    return `${seg}_pct_std`
+  }
+
+  const modeLabel = mode === 'lean' ? '肌肉量 (kg)' : mode === 'fat' ? '脂肪量 (kg)' : '% 标准'
+  const modeUnit = mode === 'pct' ? '%' : 'kg'
+
+  const latestBars = SEGMENTS.map((s) => ({
+    seg: s.label,
+    key: s.key,
+    lean: (latest as unknown as Record<string, number | null>)[`${s.key}_smm_kg`] ?? null,
+    fat: (latest as unknown as Record<string, number | null>)[`${s.key}_fat_kg`] ?? null,
+    pct: (latest as unknown as Record<string, number | null>)[`${s.key}_pct_std`] ?? null,
+    color: s.color,
+  }))
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">节段趋势</h3>
+            <p className="text-xs font-mono text-text-muted">Segmental Trends — {modeLabel}</p>
+          </div>
+          <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg">
+            {([
+              ['lean', '肌肉量'],
+              ['fat', '脂肪量'],
+              ['pct', '% 标准'],
+            ] as const).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setMode(k)}
+                className={`px-3 py-1.5 text-xs font-mono font-medium rounded-md transition-all ${
+                  mode === k ? 'bg-accent-amber/15 text-accent-amber' : 'text-text-muted hover:text-text-secondary'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+            <CartesianGrid {...GRID_STYLE} />
+            <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
+            <YAxis domain={mode === 'pct' ? [60, 120] : ['dataMin - 0.3', 'dataMax + 0.3']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+            <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v} ${modeUnit}`, '']} />
+            <Legend wrapperStyle={{ fontSize: 11, fontFamily: 'JetBrains Mono' }} />
+            {mode === 'pct' && (
+              <ReferenceLine y={100} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: '标准', position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+            )}
+            {SEGMENTS.map((s) => (
+              <Line
+                key={s.key}
+                type="monotone"
+                dataKey={fieldByMode(s.key)}
+                name={s.label}
+                stroke={s.color}
+                strokeWidth={1.8}
+                dot={{ r: 3, fill: s.color }}
+                activeDot={{ r: 5 }}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+
+        {latest.leg_smm_delta != null && Math.abs(latest.leg_smm_delta) > 0.2 && (
+          <div className="mt-3 px-3 py-2 bg-accent-amber/10 border border-accent-amber/30 rounded-lg">
+            <p className="text-xs font-mono text-accent-amber">
+              ⚠ 最新扫描左右腿肌肉量差 {formatDelta(latest.leg_smm_delta, ' kg')}（右 − 左）。
+              仅是肌肉量差异；功能性耐力以单腿测试为准。
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
+        <div className="mb-4">
+          <h3 className="text-sm font-semibold text-text-primary">最新节段对标</h3>
+          <p className="text-xs font-mono text-text-muted">Latest Scan vs Standard — {latest.scan_date}</p>
+        </div>
+
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={latestBars} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+            <CartesianGrid {...GRID_STYLE} />
+            <XAxis dataKey="seg" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
+            <YAxis domain={[0, 'dataMax + 10']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+            <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [`${v}%`, '% 标准']} />
+            <ReferenceLine y={100} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.5} />
+            <ReferenceLine y={85} stroke="#e68a00" strokeDasharray="4 4" strokeOpacity={0.4} />
+            <Bar dataKey="pct" radius={[4, 4, 0, 0]} maxBarSize={40}>
+              {latestBars.map((b, i) => (
+                <Cell key={i} fill={pctStdColor(b.pct)} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+
+        <div className="overflow-x-auto mt-4">
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="border-b-2 border-border">
+                <th className="text-left py-2 px-3 text-text-primary font-semibold">节段</th>
+                <th className="text-right py-2 px-3 text-text-primary font-semibold">肌肉 kg</th>
+                <th className="text-right py-2 px-3 text-text-primary font-semibold">脂肪 kg</th>
+                <th className="text-right py-2 px-3 text-text-primary font-semibold">% 标准</th>
+                <th className="text-left py-2 px-3 text-text-primary font-semibold">评级</th>
+              </tr>
+            </thead>
+            <tbody>
+              {latestBars.map((b, i) => (
+                <tr key={b.key} className="border-b border-border-subtle animate-fade-in opacity-0" style={{ animationDelay: `${i * 30}ms`, animationFillMode: 'forwards' }}>
+                  <td className="py-2 px-3">
+                    <span className="inline-block w-2 h-2 rounded-full mr-2 align-middle" style={{ backgroundColor: b.color }} />
+                    {b.seg}
+                  </td>
+                  <td className="py-2 px-3 text-right">{b.lean != null ? b.lean.toFixed(2) : '—'}</td>
+                  <td className="py-2 px-3 text-right">{b.fat != null ? b.fat.toFixed(1) : '—'}</td>
+                  <td className="py-2 px-3 text-right" style={{ color: pctStdColor(b.pct) }}>
+                    {b.pct != null ? b.pct.toFixed(1) : '—'}
+                  </td>
+                  <td className="py-2 px-3">
+                    {b.pct == null ? '—' :
+                     b.pct >= 100 ? <span className="text-accent-green">达标</span> :
+                     b.pct >= 85  ? <span className="text-accent-amber">偏弱</span> :
+                                    <span className="text-accent-red">短板</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   )
 }

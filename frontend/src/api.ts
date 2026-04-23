@@ -230,11 +230,21 @@ export interface InBodyScan {
   leg_fat_delta: number | null
   arm_smm_delta: number | null
   upper_lower_smm_ratio: number | null
-  left_leg_smm_kg: number | null
-  right_leg_smm_kg: number | null
   left_arm_smm_kg: number | null
   right_arm_smm_kg: number | null
   trunk_smm_kg: number | null
+  left_leg_smm_kg: number | null
+  right_leg_smm_kg: number | null
+  left_arm_fat_kg: number | null
+  right_arm_fat_kg: number | null
+  trunk_fat_kg: number | null
+  left_leg_fat_kg: number | null
+  right_leg_fat_kg: number | null
+  left_arm_pct_std: number | null
+  right_arm_pct_std: number | null
+  trunk_pct_std: number | null
+  left_leg_pct_std: number | null
+  right_leg_pct_std: number | null
   segments?: InBodySegment[]
 }
 
