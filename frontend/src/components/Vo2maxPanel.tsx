@@ -40,7 +40,6 @@ export default function Vo2maxPanel({
   const used = pickNum(vo2max.vo2max_used)
   const usedVdot = pickNum(vo2max.vo2max_used_vdot)
   const source = pickStr(vo2max.vo2max_source) || 'none'
-  const score = vo2max.score ?? null
 
   const hasBreakdown = primary != null || secondary != null || floor != null
   const hint = !hasBreakdown
@@ -58,9 +57,10 @@ export default function Vo2maxPanel({
           </p>
         </div>
         <div className="text-right">
-          <p className="text-xs font-mono text-text-muted">L3 分数</p>
+          <p className="text-xs font-mono text-text-muted">VO2max</p>
           <p className="text-2xl font-bold font-mono text-accent-green tracking-tight">
-            {fmtScore(score, 2)}
+            {used != null ? fmtScore(used, 1) : '—'}
+            <span className="text-xs font-normal text-text-muted ml-1">ml/kg/min</span>
           </p>
         </div>
       </div>
