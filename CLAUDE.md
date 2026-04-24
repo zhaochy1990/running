@@ -27,13 +27,25 @@ Going forward, keep this split in mind:
 ### Canonical daily loop
 
 ```bash
-# 1. Sync COROS data to local DB (also triggers feedback.md rebuild for the active week)
+# 1. Sync COROS data to local DB. Prod-side AOAI auto-writes a gpt-4.1
+#    draft commentary for every newly-synced activity (server does this
+#    on its own sync path; locally we only see the activity rows).
 PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync
 
-# 2. [Claude does its thing] — write commentary / plan / feedback using local data
+# 2. [Claude does its thing] — refine AOAI drafts, write plan/feedback,
+#    produce deeper commentaries using local data. Local DB row should
+#    stamp generated_by with the model producing it:
+python -c "
+from stride_core.db import Database
+db = Database(user='zhaochaoyi')
+db.upsert_activity_commentary('<label_id>', '<text>', generated_by='claude-opus-4-7')
+"
 
-# 3a. Commentary → STRIDE prod via authenticated POST (see Authentication section)
-coros-sync -P zhaochaoyi commentary push <label_id>
+# 3a. Commentary → STRIDE prod via authenticated POST. MUST pass
+#     --generated-by so the row on prod keeps the correct author stamp
+#     (otherwise generated_by stays NULL on prod and the UI badge is
+#     blank / future AOAI auto-gen on re-sync might overwrite).
+coros-sync -P zhaochaoyi commentary push <label_id> --generated-by claude-opus-4-7
 
 # 3b. plan.md / feedback.md / TRAINING_PLAN.md / status.md → STRIDE prod via git
 git add data/zhaochaoyi/logs/<week>/plan.md
