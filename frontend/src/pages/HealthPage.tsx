@@ -148,7 +148,7 @@ export default function HealthPage() {
               </div>
 
               {/* Metric Cards */}
-              {latest && <MetricCards latest={latest} hrv={hrv} />}
+              {latest && <MetricCards latest={latest} hrv={hrv} rhrBaseline={rhrBaseline} />}
 
               {/* Charts 2x2 */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -416,7 +416,7 @@ export default function HealthPage() {
   )
 }
 
-function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot | null }) {
+function MetricCards({ latest, hrv, rhrBaseline }: { latest: HealthRecord; hrv: HRVSnapshot | null; rhrBaseline: number | null }) {
   const hrvValue = hrv?.avg_sleep_hrv
   const hrvLow = hrv?.hrv_normal_low
   const hrvHigh = hrv?.hrv_normal_high
