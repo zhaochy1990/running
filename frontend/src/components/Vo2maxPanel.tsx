@@ -50,7 +50,7 @@ export default function Vo2maxPanel({ vo2max }: { vo2max: L3Dimension }) {
         <div className="text-right">
           <p className="text-xs font-mono text-text-muted">L3 分数</p>
           <p className="text-2xl font-bold font-mono text-accent-green tracking-tight">
-            {fmtScore(score, 1)}
+            {fmtScore(score, 2)}
           </p>
         </div>
       </div>

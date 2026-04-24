@@ -35,7 +35,7 @@ VO2MAX_POINTS_PER_VDOT = 2.0
 
 # Aerobic anchor: pace at HR 145 bpm (steady Z2).
 AEROBIC_ANCHOR_PACE_S_KM = 300.0  # 5:00/km → score 80
-AEROBIC_POINTS_PER_SEC = 0.4       # 1 s/km faster → +0.4 points
+AEROBIC_POINTS_PER_SEC = 0.3       # 1 s/km faster → +0.3 points (softer scale, avoids easy cap-out)
 
 # Lactate threshold anchor: best sustained 30-min pace.
 LT_ANCHOR_PACE_S_KM = 250.0       # 4:10/km → score 80
@@ -61,6 +61,9 @@ AEROBIC_TARGET_HR = 145
 AEROBIC_HR_TOLERANCE = 7  # [138, 152] — covers Karvonen Z2 for typical marathon runners
 AEROBIC_MIN_DISTANCE_KM = 5.0
 AEROBIC_MAX_HR_DRIFT = 0.08
+# Reject "mixed-intensity" runs where avg happens to land in Z2 but peaks push into Z4+.
+# A pure aerobic-economy effort shouldn't spike beyond low-Z4 territory.
+AEROBIC_MAX_PEAK_HR_ABOVE_TARGET = 25  # reject if max_hr > target_hr + 25 (e.g. >170 at target 145)
 
 # Ability is a slow-moving "what have you demonstrated you can do in a training cycle" metric.
 # Window covers 1 full periodized training year so peak-block efforts stay counted even during
@@ -68,14 +71,26 @@ AEROBIC_MAX_HR_DRIFT = 0.08
 ABILITY_LOOKBACK_DAYS = 365
 
 # Race-day performance is systematically better than training observations — taper reduces
-# fatigue, race-day arousal adds 1-2%, and consistent pacing adds 1-2%. Published literature
-# on the training→race gap ranges from 2-5%. We expose three points so UI can show a range
-# without forcing a single point estimate:
-#   - training_s: pure training extrapolation, no boost
-#   - race_s:    typical well-executed race day (−3%, default headline number)
-#   - best_case_s: optimally tapered + perfect execution (−5%, stretch ceiling)
-RACE_DAY_BOOST_PCT = 0.03
-BEST_CASE_BOOST_PCT = 0.05
+# fatigue, race-day arousal adds 1-2%, and consistent pacing adds 1-2%. But the gain is NOT
+# a flat percentage: the closer you are to your physiological ceiling, the harder it is to
+# squeeze out additional improvement. An amateur with 4:30 training fitness can pop a 5%
+# race day; an elite at 2:25 cannot — they already train near their limit and 1% is months
+# of work. We model this with a linear decay: boost = MAX × clamp((training_s − MIN_S)/RANGE_S, 0, 1)
+#
+# Anchors:
+#   THEORETICAL_MIN_S = 7200  → VDOT 100+ territory, well past WR; 0% boost
+#   BOOST_NORMALIZE_RANGE_S = 7200  → 4:00 marathon (14400s) reaches the max boost
+RACE_DAY_BOOST_MAX = 0.02            # typical well-executed race day at amateur level
+BEST_CASE_BOOST_MAX = 0.03            # optimally tapered + perfect execution at amateur level
+THEORETICAL_MIN_MARATHON_S = 7200     # ~2:00:00 — theoretical lower bound, boost → 0
+BOOST_NORMALIZE_RANGE_S = 7200        # range over which boost ramps from 0 → MAX
+
+def _scaled_boost(training_s: float, max_boost: float) -> float:
+    """Linear-decay race-day boost: smaller as training_s approaches the theoretical limit."""
+    if training_s is None or training_s <= THEORETICAL_MIN_MARATHON_S:
+        return 0.0
+    progress = min(1.0, (training_s - THEORETICAL_MIN_MARATHON_S) / BOOST_NORMALIZE_RANGE_S)
+    return max_boost * progress
 
 # L4 composite weights (sub-2:50 emphasis on LT + endurance).
 L4_WEIGHTS: dict[str, float] = {
@@ -623,6 +638,7 @@ def compute_l3_aerobic(
         if not _is_running(a):
             continue
         hr = _get(a, "avg_hr")
+        max_hr = _get(a, "max_hr")
         pace = _get(a, "avg_pace_s_km")
         dist = _get(a, "distance_m") or 0
         if pace is None or hr is None:
@@ -632,6 +648,10 @@ def compute_l3_aerobic(
         if dist_km < AEROBIC_MIN_DISTANCE_KM:
             continue
         if abs(hr - target_hr) > AEROBIC_HR_TOLERANCE:
+            continue
+        # Reject mixed-intensity efforts: avg_hr in Z2 but max_hr way above —
+        # that's a tempo/progression, not a pure aerobic run.
+        if max_hr is not None and max_hr > target_hr + AEROBIC_MAX_PEAK_HR_ABOVE_TARGET:
             continue
         n_qualifying += 1
         pace_f = float(pace)
@@ -1198,11 +1218,15 @@ def compute_ability_snapshot(
         {k: l3[k] for k in L4_WEIGHTS.keys()}
     )
     marathon_training_s = estimate_marathon_time_s(l3)
-    # Race-day scenarios: training observation is a lower bound on race performance.
+    # Race-day boost decays as you approach the theoretical limit — see _scaled_boost.
     if marathon_training_s:
-        marathon_race_s = int(round(marathon_training_s * (1.0 - RACE_DAY_BOOST_PCT)))
-        marathon_best_case_s = int(round(marathon_training_s * (1.0 - BEST_CASE_BOOST_PCT)))
+        race_boost = _scaled_boost(float(marathon_training_s), RACE_DAY_BOOST_MAX)
+        best_boost = _scaled_boost(float(marathon_training_s), BEST_CASE_BOOST_MAX)
+        marathon_race_s = int(round(marathon_training_s * (1.0 - race_boost)))
+        marathon_best_case_s = int(round(marathon_training_s * (1.0 - best_boost)))
     else:
+        race_boost = 0.0
+        best_boost = 0.0
         marathon_race_s = None
         marathon_best_case_s = None
     # Default headline = typical race-day estimate.
@@ -1237,10 +1261,12 @@ def compute_ability_snapshot(
         "distance_to_sub_2_50_s": (marathon_s - 10200) if marathon_s else None,
         "marathon_estimates": {
             "training_s": marathon_training_s,      # no race-day boost
-            "race_s": marathon_race_s,              # −3%, default headline
-            "best_case_s": marathon_best_case_s,    # −5%, stretch ceiling
-            "race_day_boost_pct": RACE_DAY_BOOST_PCT,
-            "best_case_boost_pct": BEST_CASE_BOOST_PCT,
+            "race_s": marathon_race_s,              # decayed boost, default headline
+            "best_case_s": marathon_best_case_s,    # decayed boost, stretch ceiling
+            "race_day_boost_max": RACE_DAY_BOOST_MAX,        # ceiling at amateur level (5%)
+            "best_case_boost_max": BEST_CASE_BOOST_MAX,      # ceiling at amateur level (8%)
+            "race_day_boost_applied": round(race_boost, 4),  # actual boost applied to this prediction
+            "best_case_boost_applied": round(best_boost, 4),
         },
         "evidence_activity_ids": evidence_activity_ids,
         "baseline_rhr": baseline_rhr,
@@ -1263,8 +1289,10 @@ def _empty_snapshot(date: str) -> dict:
             "training_s": None,
             "race_s": None,
             "best_case_s": None,
-            "race_day_boost_pct": RACE_DAY_BOOST_PCT,
-            "best_case_boost_pct": BEST_CASE_BOOST_PCT,
+            "race_day_boost_max": RACE_DAY_BOOST_MAX,
+            "best_case_boost_max": BEST_CASE_BOOST_MAX,
+            "race_day_boost_applied": 0.0,
+            "best_case_boost_applied": 0.0,
         },
         "evidence_activity_ids": [],
         "baseline_rhr": None,

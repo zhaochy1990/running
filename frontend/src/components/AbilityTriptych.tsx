@@ -11,7 +11,7 @@ export default function AbilityTriptych({ estimates }: { estimates: MarathonEsti
         label="训练估算"
         sublabel="Training Estimate"
         value={fmtHMS(estimates.training_s)}
-        detail="原始能力 · 未加比赛日增益"
+        detail="训练实力 · 未加比赛日增益"
         highlighted={false}
       />
       <Card

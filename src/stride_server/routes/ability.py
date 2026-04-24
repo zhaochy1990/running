@@ -19,9 +19,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from stride_core.ability import (
-    BEST_CASE_BOOST_PCT,
+    BEST_CASE_BOOST_MAX,
     L4_WEIGHTS,
-    RACE_DAY_BOOST_PCT,
+    RACE_DAY_BOOST_MAX,
+    _scaled_boost,
     compute_ability_snapshot,
 )
 
@@ -107,8 +108,16 @@ def _pivot_snapshot_rows(rows: list[Any], date: str) -> dict | None:
         "distance_to_sub_2_50_s": (race_s - 10200) if race_s is not None else None,
         "marathon_estimates": {
             **marathon_s,
-            "race_day_boost_pct": RACE_DAY_BOOST_PCT,
-            "best_case_boost_pct": BEST_CASE_BOOST_PCT,
+            "race_day_boost_max": RACE_DAY_BOOST_MAX,
+            "best_case_boost_max": BEST_CASE_BOOST_MAX,
+            "race_day_boost_applied": (
+                round(_scaled_boost(float(marathon_s["training_s"]), RACE_DAY_BOOST_MAX), 4)
+                if marathon_s["training_s"] else 0.0
+            ),
+            "best_case_boost_applied": (
+                round(_scaled_boost(float(marathon_s["training_s"]), BEST_CASE_BOOST_MAX), 4)
+                if marathon_s["training_s"] else 0.0
+            ),
         },
         "evidence_activity_ids": list(dict.fromkeys(all_evidence)),
     }

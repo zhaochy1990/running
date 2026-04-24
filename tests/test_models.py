@@ -166,8 +166,9 @@ class TestDashboardFromApi:
                 "sleepHrvAllIntervalList": [10, 20, 40, 70],
             },
             "runScoreList": [
-                {"type": 1, "duration": 1200, "avgPace": 240},
-                {"type": 4, "duration": 12600, "avgPace": 300},
+                # COROS race type codes: 1=Marathon, 2=HM, 4=10K, 5=5K
+                {"type": 1, "duration": 10800, "avgPace": 257},   # 3:00 Marathon
+                {"type": 4, "duration": 2400, "avgPace": 240},     # 40:00 10K
             ],
         }
         week = {"distanceRecord": 50000, "durationRecord": 18000}
@@ -179,5 +180,5 @@ class TestDashboardFromApi:
         assert d.hrv_normal_high == 70
         assert d.weekly_distance_m == 50000
         assert len(d.race_predictions) == 2
-        assert d.race_predictions[0].race_type == "5K"
-        assert d.race_predictions[1].race_type == "Marathon"
+        assert d.race_predictions[0].race_type == "Marathon"
+        assert d.race_predictions[1].race_type == "10K"

@@ -51,9 +51,9 @@ export default function AbilityPage() {
         <div className="animate-fade-in">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-text-primary tracking-tight">能力评估</h1>
+              <h1 className="text-2xl font-bold text-text-primary tracking-tight">成绩预测</h1>
               <p className="text-xs text-text-muted mt-1">
-                Running Ability · 4-layer custom score
+                Performance Prediction · 4-layer custom score
                 <span className="ml-2 font-mono text-[10px]">
                   [{current.source === 'snapshot' ? '快照' : '实时计算'}]
                 </span>

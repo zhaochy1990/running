@@ -148,7 +148,7 @@ export default function AppLayout() {
                 : 'border-accent-green/30 text-accent-green hover:bg-accent-green/10'
             }`}
           >
-            能力
+            成绩预测
           </button>
           {hasInbody && (
             <button

@@ -63,7 +63,7 @@ export default function AbilityHistoryChart({
     <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-text-primary">能力趋势</h3>
+          <h3 className="text-sm font-semibold text-text-primary">成绩趋势</h3>
           <p className="text-xs font-mono text-text-muted">
             Ability History · L4 composite {enabled.size > 0 && `+ ${enabled.size} L3`}
           </p>
@@ -109,7 +109,7 @@ export default function AbilityHistoryChart({
             formatter={(v, name) => {
               const n = String(name ?? '')
               if (n === 'marathon_s') return [fmtHMS(Number(v)), '马拉松估算']
-              return [fmtScore(Number(v), 1), n]
+              return [fmtScore(Number(v), 2), n]
             }}
           />
           <Legend

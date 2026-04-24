@@ -89,7 +89,7 @@ export default function ActivityContributionCard({
       <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-6">
         <h3 className="text-sm font-semibold text-text-secondary mb-2 tracking-wide">本次训练质量</h3>
         <p className="text-xs font-mono text-text-muted leading-relaxed">
-          能力贡献数据待算（运行 <code className="px-1.5 py-0.5 rounded bg-bg-secondary text-text-secondary">coros-sync ability for {activity.label_id}</code> 重新同步）
+          实力贡献数据待算（运行 <code className="px-1.5 py-0.5 rounded bg-bg-secondary text-text-secondary">coros-sync ability for {activity.label_id}</code> 重新同步）
         </p>
       </div>
     )
@@ -115,7 +115,7 @@ export default function ActivityContributionCard({
               style={{ color: '#00a85a', backgroundColor: '#00a85a15' }}
               title={
                 activity.train_type && ['Interval', 'VO2 Max', 'Threshold'].includes(activity.train_type)
-                  ? `${activity.train_type} 训练为能力提供新证据`
+                  ? `${activity.train_type} 训练为实力提供新证据`
                   : `≥25km 长距离为耐力提供新证据`
               }
             >
@@ -171,13 +171,13 @@ export default function ActivityContributionCard({
       {/* L3 contribution deltas */}
       <div className="mt-5 pt-4 border-t border-border-subtle">
         <h4 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">
-          对 L3 能力的贡献
+          对 L3 实力的贡献
         </h4>
         {contributionEntries.length === 0 ? (
           <p className="text-xs font-mono text-text-muted">
             {evidenceRun
-              ? '本次变动较小，但已被记入能力证据池。'
-              : '本次训练未对 L3 能力产生明显影响（|Δ| < 0.05）。'}
+              ? '本次变动较小，但已被记入实力证据池。'
+              : '本次训练未对 L3 实力产生明显影响（|Δ| < 0.05）。'}
           </p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
