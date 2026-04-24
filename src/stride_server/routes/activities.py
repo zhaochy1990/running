@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Body, Depends, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from stride_core.models import EXERCISE_TYPES, pace_str
 from stride_core.source import DataSource
@@ -171,10 +171,10 @@ def upsert_commentary(
     """
     commentary = payload.get("commentary")
     if not isinstance(commentary, str) or not commentary.strip():
-        return {"success": False, "error": "commentary is required"}, 422
+        raise HTTPException(status_code=422, detail="commentary is required")
     generated_by = payload.get("generated_by")
     if generated_by is not None and not isinstance(generated_by, str):
-        return {"success": False, "error": "generated_by must be a string or null"}, 422
+        raise HTTPException(status_code=422, detail="generated_by must be a string or null")
 
     db = get_db(user)
     try:
@@ -202,11 +202,13 @@ def regenerate_commentary(
         try:
             row = regenerate_and_save(user, label_id, db=db)
         except AOAIUnavailable as e:
-            return {"success": False, "error": f"AOAI unavailable: {e}"}, 503
+            raise HTTPException(status_code=503, detail=f"AOAI unavailable: {e}")
         except LookupError as e:
-            return {"success": False, "error": str(e)}, 404
+            raise HTTPException(status_code=404, detail=str(e))
+        except HTTPException:
+            raise
         except Exception as e:
-            return {"success": False, "error": f"AOAI call failed: {e}"}, 502
+            raise HTTPException(status_code=502, detail=f"AOAI call failed: {e}")
     finally:
         db.close()
 

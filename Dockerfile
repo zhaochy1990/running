@@ -29,7 +29,8 @@ RUN pip install --no-cache-dir \
     "click>=8.1" \
     "httpx>=0.27" \
     "platformdirs>=4.0" \
-    "rich>=13.0"
+    "rich>=13.0" \
+    "openai>=1.40"
 
 # Copy built frontend from stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
