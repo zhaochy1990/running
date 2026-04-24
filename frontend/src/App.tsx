@@ -8,6 +8,7 @@ import ActivityDetailPage from './pages/ActivityDetailPage'
 import HealthPage from './pages/HealthPage'
 import InbodyPage from './pages/InbodyPage'
 import TrainingPlanPage from './pages/TrainingPlanPage'
+import AbilityPage from './pages/AbilityPage'
 import LoginPage from './pages/LoginPage'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -38,6 +39,7 @@ function App() {
                   <Route path="/health" element={<HealthPage />} />
                   <Route path="/inbody" element={<InbodyPage />} />
                   <Route path="/plan" element={<TrainingPlanPage />} />
+                  <Route path="/ability" element={<AbilityPage />} />
                 </Route>
               </Routes>
             </UserProvider>

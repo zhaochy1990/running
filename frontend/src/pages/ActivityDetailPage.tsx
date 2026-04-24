@@ -9,6 +9,7 @@ import StrengthView from '../components/StrengthView'
 import ZoneChart from '../components/ZoneChart'
 import HRChart from '../components/HRChart'
 import PaceChart from '../components/PaceChart'
+import ActivityContributionCard from '../components/ActivityContributionCard'
 
 export default function ActivityDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -205,6 +206,11 @@ export default function ActivityDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Ability contribution — only for running activities */}
+      {!isStrength && user && (
+        <ActivityContributionCard user={user} activity={activity} />
+      )}
 
       {/* Charts & Zones */}
       {isStrength ? (

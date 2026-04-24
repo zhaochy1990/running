@@ -307,6 +307,86 @@ export function getWeeks(user: string) {
   return fetchJSON<{ weeks: WeekSummary[] }>(`/${user}/weeks`)
 }
 
+// ---------------------------------------------------------------------------
+// Ability (4-layer custom running score)
+// ---------------------------------------------------------------------------
+
+export interface MarathonEstimates {
+  training_s: number | null
+  race_s: number | null
+  best_case_s: number | null
+  race_day_boost_pct?: number
+  best_case_boost_pct?: number
+}
+
+export interface L3Dimension {
+  score: number | null
+  evidence: string[]
+  // Live-computed snapshots spread extra diagnostic fields (vo2max_primary, etc.)
+  [key: string]: unknown
+}
+
+export interface AbilityCurrent {
+  date: string
+  source: 'snapshot' | 'computed'
+  l2_freshness: { total: number | null } | { total: number; breakdown?: Record<string, number> } | null
+  l3_dimensions: {
+    aerobic: L3Dimension
+    lt: L3Dimension
+    vo2max: L3Dimension
+    endurance: L3Dimension
+    economy: L3Dimension
+    recovery: L3Dimension
+  }
+  l4_composite: number | null
+  l4_marathon_estimate_s: number | null
+  distance_to_sub_2_50_s: number | null
+  marathon_estimates: MarathonEstimates
+  evidence_activity_ids: string[]
+}
+
+export interface AbilityHistoryPoint {
+  date: string
+  l4_composite: number | null
+  l4_marathon_race_s: number | null
+  l3: {
+    aerobic: number | null
+    lt: number | null
+    vo2max: number | null
+    endurance: number | null
+    economy: number | null
+    recovery: number | null
+  }
+}
+
+export interface ActivityAbility {
+  label_id: string
+  l1_quality: number | null
+  l1_breakdown: Record<string, number>
+  contribution: Record<string, number>
+  computed_at: string | null
+}
+
+export interface AbilityWeights {
+  l4_weights: Record<string, number>
+}
+
+export function fetchAbilityCurrent(user: string) {
+  return fetchJSON<AbilityCurrent>(`/${user}/ability/current`)
+}
+
+export function fetchAbilityHistory(user: string, days = 90) {
+  return fetchJSON<AbilityHistoryPoint[]>(`/${user}/ability/history?days=${days}`)
+}
+
+export function fetchAbilityWeights(user: string) {
+  return fetchJSON<AbilityWeights>(`/${user}/ability/weights`)
+}
+
+export function fetchActivityAbility(user: string, labelId: string) {
+  return fetchJSON<ActivityAbility>(`/${user}/activities/${labelId}/ability`)
+}
+
 export function getWeek(user: string, folder: string) {
   return fetchJSON<WeekDetail>(`/${user}/weeks/${folder}`)
 }

@@ -140,6 +140,16 @@ export default function AppLayout() {
           >
             身体指标
           </button>
+          <button
+            onClick={() => navigate('/ability')}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
+              isActive('/ability')
+                ? 'border-accent-green/50 text-accent-green bg-accent-green/10'
+                : 'border-accent-green/30 text-accent-green hover:bg-accent-green/10'
+            }`}
+          >
+            能力
+          </button>
           {hasInbody && (
             <button
               onClick={() => navigate('/inbody')}
