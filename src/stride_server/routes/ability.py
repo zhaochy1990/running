@@ -123,18 +123,17 @@ def _normalize_live_snapshot(snap: dict) -> dict:
 
 @router.get("/api/{user}/ability/current")
 def get_ability_current(user: str) -> dict:
-    """Today's ability snapshot — fast path from `ability_snapshot`, else compute live.
+    """Today's ability snapshot — always live-compute.
 
-    Live compute does NOT persist: the sync hook (worker-1's territory) is the
-    single writer for `ability_snapshot`.
+    The snapshot table intentionally stores only top-level scalars (scores),
+    which loses the VO2max estimator breakdown (primary/secondary/floor VDOT)
+    that the detail UI needs. Computing on-demand is the single source of
+    truth and still cheap enough for a page load (~200ms).
+    The /history endpoint remains snapshot-backed for trend charts.
     """
     db = get_db(user)
     today = _today_iso()
     try:
-        rows = db.fetch_ability_history(days=1)
-        pivoted = _pivot_snapshot_rows(list(rows), today)
-        if pivoted is not None:
-            return pivoted
         snap = compute_ability_snapshot(db, today)
     finally:
         db.close()

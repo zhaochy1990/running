@@ -73,34 +73,6 @@ export default function AbilityPage() {
           <div className="mb-6">
             <AbilityHistoryChart history={history} days={days} onDaysChange={setDays} />
           </div>
-
-          {current.evidence_activity_ids.length > 0 && (
-            <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
-              <h3 className="text-sm font-semibold text-text-primary mb-2">
-                证据活动
-                <span className="text-text-muted font-normal ml-2">Evidence Activities</span>
-              </h3>
-              <p className="text-xs font-mono text-text-muted mb-3">
-                参与当前 L3 计算的活动（共 {current.evidence_activity_ids.length} 条）
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {current.evidence_activity_ids.slice(0, 24).map((id) => (
-                  <a
-                    key={id}
-                    href={`/activity/${id}`}
-                    className="text-[11px] font-mono px-2 py-1 rounded border border-border-subtle text-text-secondary hover:border-accent-green hover:text-accent-green transition-colors"
-                  >
-                    {id}
-                  </a>
-                ))}
-                {current.evidence_activity_ids.length > 24 && (
-                  <span className="text-[11px] font-mono text-text-muted px-2 py-1">
-                    + {current.evidence_activity_ids.length - 24} 条
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
         </div>
       ) : null}
     </div>

@@ -226,35 +226,37 @@ class Database:
         self._migrate()
 
     def _migrate(self) -> None:
-        """Add columns that may be missing from older databases."""
-        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(laps)").fetchall()}
-        if "exercise_type" not in cols:
-            self._conn.execute("ALTER TABLE laps ADD COLUMN exercise_type INTEGER")
-        if "exercise_name_key" not in cols:
-            self._conn.execute("ALTER TABLE laps ADD COLUMN exercise_name_key TEXT")
-        if "mode" not in cols:
-            self._conn.execute("ALTER TABLE laps ADD COLUMN mode INTEGER")
-        act_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(activities)").fetchall()}
-        if "temperature" not in act_cols:
-            self._conn.execute("ALTER TABLE activities ADD COLUMN temperature REAL")
-        if "humidity" not in act_cols:
-            self._conn.execute("ALTER TABLE activities ADD COLUMN humidity REAL")
-        if "feels_like" not in act_cols:
-            self._conn.execute("ALTER TABLE activities ADD COLUMN feels_like REAL")
-        if "wind_speed" not in act_cols:
-            self._conn.execute("ALTER TABLE activities ADD COLUMN wind_speed REAL")
-        if "feel_type" not in act_cols:
-            self._conn.execute("ALTER TABLE activities ADD COLUMN feel_type INTEGER")
-        if "sport_note" not in act_cols:
-            self._conn.execute("ALTER TABLE activities ADD COLUMN sport_note TEXT")
-        seg_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(inbody_segment)").fetchall()}
-        if seg_cols and "fat_pct_of_standard" not in seg_cols:
-            self._conn.execute("ALTER TABLE inbody_segment ADD COLUMN fat_pct_of_standard REAL")
-        com_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(activity_commentary)").fetchall()}
-        if com_cols and "generated_by" not in com_cols:
-            self._conn.execute("ALTER TABLE activity_commentary ADD COLUMN generated_by TEXT")
-        if com_cols and "generated_at" not in com_cols:
-            self._conn.execute("ALTER TABLE activity_commentary ADD COLUMN generated_at TEXT")
+        """Add columns that may be missing from older databases.
+
+        Each ALTER is wrapped to swallow "duplicate column" errors — this makes
+        the migration idempotent under concurrent connections (two requests
+        racing to add the same column would otherwise 500 one of them).
+        """
+        def _add(table: str, column: str, coltype: str) -> None:
+            try:
+                cols = {r[1] for r in self._conn.execute(f"PRAGMA table_info({table})").fetchall()}
+                if not cols:
+                    return  # table doesn't exist yet; SCHEMA script will have the column
+                if column in cols:
+                    return
+                self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+            except sqlite3.OperationalError as e:
+                # Race condition: another connection added it between PRAGMA and ALTER.
+                if "duplicate column" not in str(e).lower():
+                    raise
+
+        _add("laps", "exercise_type", "INTEGER")
+        _add("laps", "exercise_name_key", "TEXT")
+        _add("laps", "mode", "INTEGER")
+        _add("activities", "temperature", "REAL")
+        _add("activities", "humidity", "REAL")
+        _add("activities", "feels_like", "REAL")
+        _add("activities", "wind_speed", "REAL")
+        _add("activities", "feel_type", "INTEGER")
+        _add("activities", "sport_note", "TEXT")
+        _add("inbody_segment", "fat_pct_of_standard", "REAL")
+        _add("activity_commentary", "generated_by", "TEXT")
+        _add("activity_commentary", "generated_at", "TEXT")
 
     def close(self) -> None:
         self._conn.close()

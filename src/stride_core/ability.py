@@ -42,7 +42,7 @@ LT_ANCHOR_PACE_S_KM = 250.0       # 4:10/km → score 80
 LT_POINTS_PER_SEC = 0.5
 
 # Endurance anchor: 4-week longest run.
-ENDURANCE_ANCHOR_KM = 32.0        # 32 km longest run → score 80
+ENDURANCE_ANCHOR_KM = 42  # full marathon = score 80 (base "very good"); ultra ≥52K pushes toward 100.0        # 32 km longest run → score 80
 ENDURANCE_POINTS_PER_KM = 2.0     # ±1 km longest → ±2 points
 ENDURANCE_DRIFT_PENALTY = 10.0    # HR drift >8% across long run: −10 points
 

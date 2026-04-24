@@ -182,49 +182,9 @@ def test_activity_ability_requires_bearer(client_and_db, monkeypatch, rsa_keypai
 # Happy-path tests with a valid Bearer token.
 # ---------------------------------------------------------------------------
 
-def test_current_returns_pivoted_snapshot_when_seeded(
-    client_and_db, monkeypatch, rsa_keypair
-):
-    """Fast path: a row for today's date sits in ability_snapshot.
-
-    Since /current uses `today_iso()` internally, we monkeypatch `_today_iso`
-    to a known date we also seed.
-    """
-    private_pem, public_pem = rsa_keypair
-    _reset_bearer_module(monkeypatch, public_pem=public_pem)
-    client, db_path = client_and_db
-
-    import stride_server.routes.ability as ability_mod
-    monkeypatch.setattr(ability_mod, "_today_iso", lambda: "2026-04-24")
-
-    # Also make fetch_ability_history return our seeded row for `days=1`.
-    # Since the seeding date matches today and the helper filters by
-    # `date('now', '-1 days')`, the row will be included only if computed_at
-    # is today. Seed via upsert which sets computed_at=datetime('now'), and
-    # the `date` column equals "2026-04-24" (string match in pivot filter),
-    # so the pivot logic will find it.
-    _seed_snapshot(db_path, "2026-04-24")
-
-    token = _issue_token(private_pem)
-    resp = client.get(
-        "/api/zhaochaoyi/ability/current",
-        headers={"Authorization": f"Bearer {token}"},
-    )
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["date"] == "2026-04-24"
-    assert body["source"] == "snapshot"
-    assert body["l4_composite"] == 67.5
-    assert body["marathon_estimates"]["training_s"] == 10400
-    assert body["marathon_estimates"]["race_s"] == 10088
-    assert body["marathon_estimates"]["best_case_s"] == 9880
-    assert body["l4_marathon_estimate_s"] == 10088  # mirrors race_s
-    # 2:50 target = 10200s → gap = race_s − 10200 = -112
-    assert body["distance_to_sub_2_50_s"] == 10088 - 10200
-    # All 6 L3 dims present
-    for k in ("aerobic", "lt", "vo2max", "endurance", "economy", "recovery"):
-        assert k in body["l3_dimensions"]
-        assert body["l3_dimensions"][k]["score"] is not None
+# NOTE: /current now always live-computes (dropped snapshot fast-path so the
+# VO2max estimator breakdown — primary/secondary/floor — stays intact).
+# The snapshot-pivot test was deleted along with that path.
 
 
 def test_current_falls_back_to_live_compute_when_no_snapshot(
