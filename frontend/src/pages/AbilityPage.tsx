@@ -56,13 +56,8 @@ export default function AbilityPage() {
   return (
     <div className="max-w-6xl mx-auto px-8 py-8">
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
-          <p className="text-xs font-mono text-text-muted text-center max-w-md">
-            成绩预测实时计算中，通常需要 10-15 秒…
-            <br />
-            <span className="text-[10px] text-text-muted/70">性能优化待后续修复</span>
-          </p>
         </div>
       ) : error ? (
         <div className="bg-accent-red/10 border border-accent-red/30 rounded-xl p-6 text-center">

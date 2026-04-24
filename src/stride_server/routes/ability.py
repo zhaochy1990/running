@@ -131,18 +131,30 @@ def _normalize_live_snapshot(snap: dict) -> dict:
 
 
 @router.get("/api/{user}/ability/current")
-def get_ability_current(user: str) -> dict:
-    """Today's ability snapshot — always live-compute.
+def get_ability_current(user: str, refresh: bool = Query(False)) -> dict:
+    """Today's ability snapshot — snapshot-first with live-compute fallback.
 
-    The snapshot table intentionally stores only top-level scalars (scores),
-    which loses the VO2max estimator breakdown (primary/secondary/floor VDOT)
-    that the detail UI needs. Computing on-demand is the single source of
-    truth and still cheap enough for a page load (~200ms).
-    The /history endpoint remains snapshot-backed for trend charts.
+    Prod DB sits on Azure Files, where `compute_ability_snapshot` takes 10-15s
+    per call. The sync hook already persists a snapshot row for each day, so
+    we read that on the hot path.
+
+    Trade-off: the snapshot table stores top-level scalars only; the VO2max
+    breakdown (primary/secondary/floor VDOT) is lost. `Vo2maxPanel` gracefully
+    handles the missing fields ("今日从快照读取；刷新后将显示三路径对比").
+    Pass `?refresh=1` to force a live-compute when the breakdown is needed.
     """
     db = get_db(user)
     today = _today_iso()
     try:
+        if not refresh:
+            rows = db._conn.execute(
+                """SELECT date, level, dimension, value, evidence_activity_ids, computed_at
+                   FROM ability_snapshot WHERE date = ?""",
+                (today,),
+            ).fetchall()
+            pivoted = _pivot_snapshot_rows(list(rows), today)
+            if pivoted is not None:
+                return pivoted
         snap = compute_ability_snapshot(db, today)
     finally:
         db.close()
