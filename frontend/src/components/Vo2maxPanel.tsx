@@ -23,7 +23,17 @@ const SOURCE_COLORS: Record<string, string> = {
   none: '#8888a0',
 }
 
-export default function Vo2maxPanel({ vo2max }: { vo2max: L3Dimension }) {
+export default function Vo2maxPanel({
+  vo2max,
+  dataSource,
+  onRefresh,
+  refreshing,
+}: {
+  vo2max: L3Dimension
+  dataSource?: 'snapshot' | 'computed'
+  onRefresh?: () => void
+  refreshing?: boolean
+}) {
   const primary = pickNum(vo2max.vo2max_primary)
   const secondary = pickNum(vo2max.vo2max_secondary)
   const floor = pickNum(vo2max.vo2max_floor)
@@ -97,7 +107,19 @@ export default function Vo2maxPanel({ vo2max }: { vo2max: L3Dimension }) {
         </div>
       </div>
 
-      <p className="text-[11px] font-mono text-text-muted mt-3 leading-relaxed">{hint}</p>
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-[11px] font-mono text-text-muted leading-relaxed">{hint}</p>
+        {dataSource === 'snapshot' && onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="text-[11px] font-mono px-2 py-1 rounded border border-accent-green/30 text-accent-green hover:bg-accent-green/10 disabled:opacity-50 disabled:cursor-wait whitespace-nowrap"
+            title="强制实时计算三路径 (10-60s)"
+          >
+            {refreshing ? '计算中…' : '🔄 刷新'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

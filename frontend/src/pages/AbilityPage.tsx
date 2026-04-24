@@ -20,6 +20,20 @@ export default function AbilityPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [backfilling, setBackfilling] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
+  async function handleRefreshVo2max() {
+    if (!user || refreshing) return
+    setRefreshing(true)
+    try {
+      const cur = await fetchAbilityCurrent(user, true)
+      setCurrent(cur)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     if (!user) return
@@ -83,7 +97,12 @@ export default function AbilityPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
             <AbilityRadar current={current} weights={weights} />
-            <Vo2maxPanel vo2max={current.l3_dimensions.vo2max} />
+            <Vo2maxPanel
+              vo2max={current.l3_dimensions.vo2max}
+              dataSource={current.source}
+              onRefresh={handleRefreshVo2max}
+              refreshing={refreshing}
+            />
           </div>
 
           <div className="mb-6">

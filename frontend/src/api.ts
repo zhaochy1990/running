@@ -371,8 +371,9 @@ export interface AbilityWeights {
   l4_weights: Record<string, number>
 }
 
-export function fetchAbilityCurrent(user: string) {
-  return fetchJSON<AbilityCurrent>(`/${user}/ability/current`)
+export function fetchAbilityCurrent(user: string, refresh = false) {
+  const qs = refresh ? '?refresh=1' : ''
+  return fetchJSON<AbilityCurrent>(`/${user}/ability/current${qs}`)
 }
 
 export function fetchAbilityHistory(user: string, days = 90) {
