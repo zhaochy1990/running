@@ -184,7 +184,7 @@ export interface HRVSnapshot {
 }
 
 export function getHealth(user: string, days = 30) {
-  return fetchJSON<{ health: HealthRecord[]; hrv: HRVSnapshot }>(`/${user}/health?days=${days}`)
+  return fetchJSON<{ health: HealthRecord[]; hrv: HRVSnapshot; rhr_baseline: number | null }>(`/${user}/health?days=${days}`)
 }
 
 export interface PMCRecord {

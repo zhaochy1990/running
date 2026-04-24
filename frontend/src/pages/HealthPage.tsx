@@ -80,6 +80,7 @@ export default function HealthPage() {
   const { user } = useUser()
   const [records, setRecords] = useState<HealthRecord[]>([])
   const [hrv, setHrv] = useState<HRVSnapshot | null>(null)
+  const [rhrBaseline, setRhrBaseline] = useState<number | null>(null)
   const [pmcData, setPmcData] = useState<PMCRecord[]>([])
   const [pmcSummary, setPmcSummary] = useState<PMCSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -96,6 +97,7 @@ export default function HealthPage() {
       .then(([healthData, pmcResult]) => {
         setRecords(healthData.health)
         setHrv(healthData.hrv || null)
+        setRhrBaseline(healthData.rhr_baseline ?? null)
         setPmcData(pmcResult.pmc)
         setPmcSummary(pmcResult.summary)
       })
@@ -429,9 +431,14 @@ function MetricCards({ latest, hrv }: { latest: HealthRecord; hrv: HRVSnapshot |
         sublabel="RHR"
         value={latest.rhr != null ? `${latest.rhr}` : '—'}
         unit="bpm"
-        color={latest.rhr != null && latest.rhr > 55 ? '#d32f2f' : latest.rhr != null && latest.rhr > 50 ? '#ffab00' : '#00a85a'}
-        detail="基线 47 bpm"
-        help={<><strong>清晨静息心率</strong>。反映心血管恢复与自主神经平衡。{'\n\n'}使用方法：{'\n'}• 接近基线（47）= 恢复良好{'\n'}• 高出基线 5+ bpm 持续 3 天 = 疲劳累积{'\n'}• 高出 10+ = 生病/过劳，立即休息{'\n'}• 训练越久通常越低</>}
+        color={
+          latest.rhr == null || rhrBaseline == null ? '#8888a0'
+            : latest.rhr > rhrBaseline + 8 ? '#d32f2f'
+            : latest.rhr > rhrBaseline + 3 ? '#ffab00'
+            : '#00a85a'
+        }
+        detail={rhrBaseline != null ? `基线 ${rhrBaseline} bpm` : '基线 —'}
+        help={<><strong>清晨静息心率</strong>。反映心血管恢复与自主神经平衡。{'\n\n'}使用方法：{'\n'}{rhrBaseline != null ? `• 接近基线（${rhrBaseline}）= 恢复良好\n` : '• 基线按过去 90 天的 RHR 低 10 分位动态计算\n'}• 高出基线 3+ bpm 持续 3 天 = 疲劳累积{'\n'}• 高出 8+ = 生病/过劳，立即休息{'\n'}• 训练越久通常越低</>}
       />
       <MetricCard
         label="睡眠HRV"

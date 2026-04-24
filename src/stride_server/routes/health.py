@@ -46,8 +46,25 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
         "FROM dashboard WHERE id = 1"
     )
     hrv = dict(dash[0]) if dash else {}
+
+    # 10th percentile of last 90 days of RHR = "rested baseline"; None if too few samples
+    rhr_rows = db.query(
+        "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL AND rhr > 0 "
+        "ORDER BY date DESC LIMIT 90"
+    )
+    rhr_vals = sorted(int(r["rhr"]) for r in rhr_rows)
+    if len(rhr_vals) >= 14:
+        idx = max(0, int(len(rhr_vals) * 0.1) - 1)
+        rhr_baseline = rhr_vals[idx]
+    else:
+        rhr_baseline = None
+
     db.close()
-    return {"health": [dict(r) for r in rows], "hrv": hrv}
+    return {
+        "health": [dict(r) for r in rows],
+        "hrv": hrv,
+        "rhr_baseline": rhr_baseline,
+    }
 
 
 @router.get("/api/{user}/pmc")
