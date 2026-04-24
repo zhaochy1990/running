@@ -22,7 +22,7 @@ Going forward, keep this split in mind:
 - Auto-generation on `sync` **never overwrites an existing row**. It fills empty slots only.
 - To overwrite an AOAI draft with a Claude Code refinement: locally write the row with `generated_by=<your model>`, then `coros-sync commentary push <id> --generated-by <your model>`.
 - To force a fresh AOAI draft (overwrites whatever's there): `POST /api/{user}/activities/{id}/commentary/regenerate` or use the "重新生成" button on the activity detail page.
-- AOAI is gated by `AOAI_COMMENTARY_ENABLED=true` + `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_DEPLOYMENT` env vars. With these unset, sync skips the AOAI step silently.
+- AOAI is gated by `AOAI_COMMENTARY_ENABLED=true` + `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_DEPLOYMENT` env vars. Auth: set `AZURE_OPENAI_API_KEY` for key-based auth, or leave it unset to use Managed Identity + `Cognitive Services OpenAI User` RBAC on the AOAI account. With any required var unset, sync skips the AOAI step silently.
 
 ### Canonical daily loop
 
