@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -184,6 +185,25 @@ CREATE TABLE IF NOT EXISTS inbody_segment (
     lean_pct_of_standard    REAL,
     fat_pct_of_standard     REAL,
     PRIMARY KEY (scan_date, segment)
+);
+
+CREATE TABLE IF NOT EXISTS ability_snapshot (
+    date                    TEXT NOT NULL,
+    level                   TEXT NOT NULL,
+    dimension               TEXT NOT NULL,
+    value                   REAL,
+    evidence_activity_ids   TEXT,
+    computed_at             TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (date, level, dimension)
+);
+CREATE INDEX IF NOT EXISTS idx_ability_snapshot_date ON ability_snapshot(date);
+
+CREATE TABLE IF NOT EXISTS activity_ability (
+    label_id        TEXT PRIMARY KEY REFERENCES activities(label_id),
+    l1_quality      REAL,
+    l1_breakdown    TEXT,
+    contribution    TEXT,
+    computed_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -460,6 +480,66 @@ class Database:
     def latest_inbody_scan(self) -> sqlite3.Row | None:
         return self._conn.execute(
             "SELECT * FROM inbody_scan ORDER BY scan_date DESC LIMIT 1"
+        ).fetchone()
+
+    # --- Ability score (custom running ability system) ---
+
+    def upsert_ability_snapshot(
+        self,
+        date: str,
+        level: str,
+        dimension: str,
+        value: float | None,
+        evidence_activity_ids: list[str] | None = None,
+    ) -> None:
+        evidence_json = json.dumps(evidence_activity_ids or [])
+        self._conn.execute(
+            """INSERT OR REPLACE INTO ability_snapshot
+               (date, level, dimension, value, evidence_activity_ids, computed_at)
+               VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+            (date, level, dimension, value, evidence_json),
+        )
+        self._conn.commit()
+
+    def upsert_activity_ability(
+        self,
+        label_id: str,
+        l1_quality: float | None,
+        l1_breakdown: dict | None = None,
+        contribution: dict | None = None,
+    ) -> None:
+        self._conn.execute(
+            """INSERT OR REPLACE INTO activity_ability
+               (label_id, l1_quality, l1_breakdown, contribution, computed_at)
+               VALUES (?, ?, ?, ?, datetime('now'))""",
+            (
+                label_id,
+                l1_quality,
+                json.dumps(l1_breakdown or {}),
+                json.dumps(contribution or {}),
+            ),
+        )
+        self._conn.commit()
+
+    def fetch_ability_history(self, days: int = 90) -> list[sqlite3.Row]:
+        """Return ability_snapshot rows within the last `days` days.
+
+        Dates are stored as YYYY-MM-DD (local Shanghai date semantics upstream);
+        filtering uses SQLite's date arithmetic on the `date` column directly.
+        """
+        return self._conn.execute(
+            """SELECT date, level, dimension, value, evidence_activity_ids, computed_at
+               FROM ability_snapshot
+               WHERE date >= date('now', ?)
+               ORDER BY date DESC, level, dimension""",
+            (f"-{days} days",),
+        ).fetchall()
+
+    def fetch_activity_ability(self, label_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            """SELECT label_id, l1_quality, l1_breakdown, contribution, computed_at
+               FROM activity_ability WHERE label_id = ?""",
+            (label_id,),
         ).fetchone()
 
     # --- Query helpers for analysis ---

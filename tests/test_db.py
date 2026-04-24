@@ -1,5 +1,7 @@
 """Tests for SQLite database layer."""
 
+import json
+
 from stride_core.models import ActivityDetail, DailyHealth, Dashboard, Lap, Zone
 
 
@@ -99,3 +101,59 @@ class TestSyncMeta:
         db.set_meta("key", "v1")
         db.set_meta("key", "v2")
         assert db.get_meta("key") == "v2"
+
+
+class TestAbility:
+    def test_ability_snapshot_roundtrip(self, db):
+        db.upsert_ability_snapshot(
+            date="2026-04-23", level="L4", dimension="composite",
+            value=67.5, evidence_activity_ids=["lbl_a", "lbl_b"],
+        )
+        db.upsert_ability_snapshot(
+            date="2026-04-23", level="L3", dimension="vo2max",
+            value=58.2, evidence_activity_ids=["lbl_a"],
+        )
+        # Idempotent upsert — same key updates value
+        db.upsert_ability_snapshot(
+            date="2026-04-23", level="L4", dimension="composite",
+            value=68.0, evidence_activity_ids=["lbl_a", "lbl_b", "lbl_c"],
+        )
+        rows = db.fetch_ability_history(days=30)
+        by_key = {(r["level"], r["dimension"]): r for r in rows}
+        assert len(rows) == 2
+        composite = by_key[("L4", "composite")]
+        assert composite["value"] == 68.0
+        assert json.loads(composite["evidence_activity_ids"]) == ["lbl_a", "lbl_b", "lbl_c"]
+        vo2 = by_key[("L3", "vo2max")]
+        assert vo2["value"] == 58.2
+        assert json.loads(vo2["evidence_activity_ids"]) == ["lbl_a"]
+
+    def test_activity_ability_roundtrip(self, db):
+        # Parent activity row must exist (FK to activities.label_id)
+        db.upsert_activity(_make_detail(label_id="a_quality"))
+        breakdown = {
+            "pace_adherence": 82.0, "hr_zone": 75.5, "pace_stability": 90.0,
+            "hr_decoupling": 88.0, "cadence_stability": 92.0,
+        }
+        contribution = {
+            "aerobic": 0.12, "lt": 0.0, "vo2max": 0.0,
+            "endurance": 0.0, "economy": 0.05, "recovery": 0.0,
+        }
+        db.upsert_activity_ability(
+            label_id="a_quality", l1_quality=84.3,
+            l1_breakdown=breakdown, contribution=contribution,
+        )
+        row = db.fetch_activity_ability("a_quality")
+        assert row is not None
+        assert row["l1_quality"] == 84.3
+        assert json.loads(row["l1_breakdown"]) == breakdown
+        assert json.loads(row["contribution"]) == contribution
+        # Idempotent upsert
+        db.upsert_activity_ability(
+            label_id="a_quality", l1_quality=90.0,
+            l1_breakdown=breakdown, contribution=contribution,
+        )
+        row2 = db.fetch_activity_ability("a_quality")
+        assert row2["l1_quality"] == 90.0
+        # Missing label_id returns None
+        assert db.fetch_activity_ability("nonexistent") is None
