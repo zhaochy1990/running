@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "coros-sync"
-version = "0.1.0"
+version = "0.1.1"
 description = "Sync COROS watch running data to local SQLite for analysis"
 requires-python = ">=3.11"
 dependencies = [
