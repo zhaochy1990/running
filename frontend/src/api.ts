@@ -59,6 +59,8 @@ export interface Activity {
   feel_type: number | null
   sport_note: string | null
   commentary?: string
+  commentary_generated_by?: string | null
+  commentary_generated_at?: string | null
 }
 
 export interface Lap {
@@ -133,6 +135,17 @@ export function triggerSync(user: string) {
 
 export function resyncActivity(user: string, labelId: string) {
   return fetch(`${BASE}/${user}/activities/${labelId}/resync`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; error?: string }>
+}
+
+export function regenerateCommentary(user: string, labelId: string) {
+  return fetch(`${BASE}/${user}/activities/${labelId}/commentary/regenerate`, { method: 'POST', headers: authHeaders() })
+    .then(r => r.json()) as Promise<{
+      success: boolean
+      commentary?: string
+      generated_by?: string | null
+      generated_at?: string | null
+      error?: string
+    }>
 }
 
 export interface TrainingPlanPhase {

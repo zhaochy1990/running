@@ -5,17 +5,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This project contains the training plans, logs for multiple marathon runners.
 It also contains tools like coros-sync to sync the training data from COROS to the local for further analysis.
 
-## Working Model — Local Authoring, Cloud Display
+## Working Model — Local Authoring + Cloud Draft-Writer
 
 Going forward, keep this split in mind:
 
-- **Local machine** is the **author** environment. Large-language-model tooling (Claude Code) runs here, reads local state (SQLite + markdown under `data/`), and produces new content: weekly `plan.md`, `feedback.md`, `activity_commentary` DB rows, plus ad-hoc analyses.
-- **Azure Container App (`stride-app`)** is the **reader** environment. It serves the dashboard UI and read API; its data comes from:
+- **Local machine** is the **author** environment. Large-language-model tooling (Claude Code) runs here, reads local state (SQLite + markdown under `data/`), and produces the authoritative content: weekly `plan.md`, `feedback.md`, refined `activity_commentary` DB rows, plus ad-hoc analyses.
+- **Azure Container App (`stride-app`)** is the **reader** environment *and* a **default draft-writer**. It serves the dashboard UI and read API; its data comes from:
   - Markdown files synced via the `sync-data.yml` GitHub Action (push to master → `az storage file upload-batch` to `authstorage2026/stride-data`).
   - SQLite data (activities, health) synced independently on both sides from COROS.
-  - DB rows that are *not* COROS-sourced and only live locally (e.g. `activity_commentary`) must be pushed via the dedicated CLI over the authenticated API — they are not in the markdown sync path.
+  - DB rows that are *not* COROS-sourced and only live locally (e.g. Claude Code–refined `activity_commentary`) must be pushed via the dedicated CLI over the authenticated API — they are not in the markdown sync path.
+  - **Azure OpenAI (GPT-4.1)** auto-generates a commentary **draft** for every newly-synced activity via MI-authenticated calls from the server. Drafts are stamped with `generated_by='gpt-4.1'`.
 
-No LLM inference runs in the cloud. The cloud stays "dumb reader".
+### Commentary authorship rules
+
+- Every `activity_commentary` row carries `generated_by` (model identifier: `gpt-4.1`, `claude-opus-4-7`, etc.) and `generated_at`.
+- Auto-generation on `sync` **never overwrites an existing row**. It fills empty slots only.
+- To overwrite an AOAI draft with a Claude Code refinement: locally write the row with `generated_by=<your model>`, then `coros-sync commentary push <id> --generated-by <your model>`.
+- To force a fresh AOAI draft (overwrites whatever's there): `POST /api/{user}/activities/{id}/commentary/regenerate` or use the "重新生成" button on the activity detail page.
+- AOAI is gated by `AOAI_COMMENTARY_ENABLED=true` + `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_DEPLOYMENT` env vars. With these unset, sync skips the AOAI step silently.
 
 ### Canonical daily loop
 

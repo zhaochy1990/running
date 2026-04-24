@@ -91,14 +91,55 @@ def sync_activities(
                 progress.update(task, description=f"Syncing: {label}", completed=done)
 
         # Write to DB in original order
+        ai_targets: list[str] = []
         for activity in ordered:
             detail = results[activity.label_id]
             if detail:
                 db.upsert_activity(detail)
                 db.set_meta("last_activity_date", activity.date)
                 synced += 1
+                ai_targets.append(activity.label_id)
+
+    # AOAI auto-commentary for each newly synced activity (fire-and-forget).
+    # Isolated here so any import/network failure cannot break sync.
+    if ai_targets:
+        _try_generate_commentaries(db, ai_targets)
 
     return synced
+
+
+def _try_generate_commentaries(db: Database, label_ids: list[str]) -> None:
+    """Kick off AOAI commentary generation in a bounded thread pool.
+
+    Best-effort: never raises, never blocks the caller for long.
+    """
+    try:
+        # Lazy import — stride_server is not a hard dep of coros_sync
+        from stride_server.commentary_ai import maybe_generate_for_new_activity
+        from stride_server.aoai_client import is_enabled
+    except Exception as e:
+        logger.debug("AOAI commentary module unavailable: %s", e)
+        return
+    if not is_enabled():
+        return
+    # Resolve user from the DB path: data/{user}/coros.db
+    try:
+        user = db._path.parent.name  # type: ignore[attr-defined]
+    except Exception:
+        logger.debug("Cannot resolve user from DB path, skipping AOAI")
+        return
+
+    def worker(lid: str) -> None:
+        try:
+            maybe_generate_for_new_activity(user, lid)
+        except Exception:
+            logger.exception("AOAI worker failed for %s", lid)
+
+    # Small pool, daemon threads — do not wait for them to finish.
+    import threading
+    for lid in label_ids:
+        t = threading.Thread(target=worker, args=(lid,), daemon=True)
+        t.start()
 
 
 def resync_date_range(

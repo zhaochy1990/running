@@ -23,6 +23,8 @@ web = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pyjwt[crypto]>=2.8",
+    "openai>=1.40",
+    "azure-identity>=1.17",
 ]
 dev = [
     "pytest>=8.0",

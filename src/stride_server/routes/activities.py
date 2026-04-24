@@ -79,9 +79,12 @@ def get_activity(user: str, label_id: str):
     activity["duration_fmt"] = format_duration(activity["duration_s"])
     activity["pace_fmt"] = pace_str(activity["avg_pace_s_km"]) or "—"
 
-    commentary = db.get_activity_commentary(label_id)
-    if commentary:
-        activity["commentary"] = commentary
+    commentary_row = db.get_activity_commentary_row(label_id)
+    if commentary_row:
+        cd = dict(commentary_row)
+        activity["commentary"] = cd.get("commentary")
+        activity["commentary_generated_by"] = cd.get("generated_by")
+        activity["commentary_generated_at"] = cd.get("generated_at")
 
     # Laps - autoKm (per-km splits)
     laps_rows = db.query(
@@ -158,19 +161,61 @@ def get_activity(user: str, label_id: str):
 def upsert_commentary(
     user: str,
     label_id: str,
-    commentary: str = Body(..., embed=True),
+    payload: dict = Body(...),
     _claims: dict = Depends(require_bearer),
 ):
     """Upsert coach commentary (markdown) for a single activity.
 
+    Body: `{"commentary": "...", "generated_by": "claude-opus-4-7" | null}`
     Protected by Bearer auth when STRIDE_AUTH_PUBLIC_KEY_PEM/PATH is set.
     """
+    commentary = payload.get("commentary")
+    if not isinstance(commentary, str) or not commentary.strip():
+        return {"success": False, "error": "commentary is required"}, 422
+    generated_by = payload.get("generated_by")
+    if generated_by is not None and not isinstance(generated_by, str):
+        return {"success": False, "error": "generated_by must be a string or null"}, 422
+
     db = get_db(user)
     try:
-        db.upsert_activity_commentary(label_id, commentary)
+        db.upsert_activity_commentary(label_id, commentary, generated_by=generated_by)
     finally:
         db.close()
-    return {"success": True}
+    return {"success": True, "generated_by": generated_by}
+
+
+@router.post("/api/{user}/activities/{label_id}/commentary/regenerate")
+def regenerate_commentary(
+    user: str,
+    label_id: str,
+    _claims: dict = Depends(require_bearer),
+):
+    """Force AOAI to (re)generate commentary for an activity, overwriting any existing row.
+
+    Returns 503 if AOAI is disabled or not configured.
+    """
+    from ..commentary_ai import regenerate_and_save
+    from ..aoai_client import AOAIUnavailable
+
+    db = get_db(user)
+    try:
+        try:
+            row = regenerate_and_save(user, label_id, db=db)
+        except AOAIUnavailable as e:
+            return {"success": False, "error": f"AOAI unavailable: {e}"}, 503
+        except LookupError as e:
+            return {"success": False, "error": str(e)}, 404
+        except Exception as e:
+            return {"success": False, "error": f"AOAI call failed: {e}"}, 502
+    finally:
+        db.close()
+
+    return {
+        "success": True,
+        "commentary": row.get("commentary"),
+        "generated_by": row.get("generated_by"),
+        "generated_at": row.get("generated_at"),
+    }
 
 
 @router.post("/api/{user}/activities/{label_id}/resync")

@@ -152,10 +152,12 @@ CREATE TABLE IF NOT EXISTS sync_meta (
 );
 
 CREATE TABLE IF NOT EXISTS activity_commentary (
-    label_id    TEXT PRIMARY KEY REFERENCES activities(label_id),
-    commentary  TEXT NOT NULL,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    label_id        TEXT PRIMARY KEY REFERENCES activities(label_id),
+    commentary      TEXT NOT NULL,
+    generated_by    TEXT,
+    generated_at    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS inbody_scan (
@@ -228,6 +230,11 @@ class Database:
         seg_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(inbody_segment)").fetchall()}
         if seg_cols and "fat_pct_of_standard" not in seg_cols:
             self._conn.execute("ALTER TABLE inbody_segment ADD COLUMN fat_pct_of_standard REAL")
+        com_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(activity_commentary)").fetchall()}
+        if com_cols and "generated_by" not in com_cols:
+            self._conn.execute("ALTER TABLE activity_commentary ADD COLUMN generated_by TEXT")
+        if com_cols and "generated_at" not in com_cols:
+            self._conn.execute("ALTER TABLE activity_commentary ADD COLUMN generated_at TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -374,14 +381,32 @@ class Database:
         ).fetchone()
         return row["commentary"] if row else None
 
-    def upsert_activity_commentary(self, label_id: str, commentary: str) -> None:
+    def get_activity_commentary_row(self, label_id: str) -> sqlite3.Row | None:
+        """Full row including generated_by / generated_at."""
+        return self._conn.execute(
+            "SELECT label_id, commentary, generated_by, generated_at, created_at, updated_at "
+            "FROM activity_commentary WHERE label_id = ?",
+            (label_id,),
+        ).fetchone()
+
+    def activity_commentary_exists(self, label_id: str) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM activity_commentary WHERE label_id = ?", (label_id,)
+        ).fetchone() is not None
+
+    def upsert_activity_commentary(
+        self, label_id: str, commentary: str, *, generated_by: str | None = None,
+    ) -> None:
         self._conn.execute(
-            """INSERT INTO activity_commentary (label_id, commentary, updated_at)
-               VALUES (?, ?, datetime('now'))
+            """INSERT INTO activity_commentary
+               (label_id, commentary, generated_by, generated_at, updated_at)
+               VALUES (?, ?, ?, datetime('now'), datetime('now'))
                ON CONFLICT(label_id) DO UPDATE SET
-                   commentary = excluded.commentary,
-                   updated_at = excluded.updated_at""",
-            (label_id, commentary),
+                   commentary   = excluded.commentary,
+                   generated_by = excluded.generated_by,
+                   generated_at = excluded.generated_at,
+                   updated_at   = excluded.updated_at""",
+            (label_id, commentary, generated_by),
         )
         self._conn.commit()
 
