@@ -379,6 +379,15 @@ export function fetchAbilityHistory(user: string, days = 90) {
   return fetchJSON<AbilityHistoryPoint[]>(`/${user}/ability/history?days=${days}`)
 }
 
+export async function triggerAbilityBackfill(user: string, days = 180) {
+  const res = await fetch(`${BASE}/${user}/ability/backfill?days=${days}`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  if (!res.ok) throw new Error(`backfill failed: ${res.status}`)
+  return res.json() as Promise<{ days_requested: number; written: number; skipped: number }>
+}
+
 export function fetchAbilityWeights(user: string) {
   return fetchJSON<AbilityWeights>(`/${user}/ability/weights`)
 }

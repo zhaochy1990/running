@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useUser } from '../UserContext'
 import {
   fetchAbilityCurrent, fetchAbilityHistory, fetchAbilityWeights,
+  triggerAbilityBackfill,
   type AbilityCurrent, type AbilityHistoryPoint,
 } from '../api'
 import AbilityHero from '../components/AbilityHero'
@@ -18,6 +19,7 @@ export default function AbilityPage() {
   const [days, setDays] = useState(90)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [backfilling, setBackfilling] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -28,10 +30,24 @@ export default function AbilityPage() {
       fetchAbilityHistory(user, days),
       fetchAbilityWeights(user).catch(() => null),
     ])
-      .then(([cur, hist, w]) => {
+      .then(async ([cur, hist, w]) => {
         setCurrent(cur)
-        setHistory(hist)
         setWeights(w?.l4_weights ?? null)
+        // Auto-trigger 180d backfill if the history table is empty (first visit).
+        if (hist.length === 0) {
+          setBackfilling(true)
+          try {
+            await triggerAbilityBackfill(user, 180)
+            const refreshed = await fetchAbilityHistory(user, days)
+            setHistory(refreshed)
+          } catch {
+            setHistory([])
+          } finally {
+            setBackfilling(false)
+          }
+        } else {
+          setHistory(hist)
+        }
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setLoading(false))
@@ -71,7 +87,16 @@ export default function AbilityPage() {
           </div>
 
           <div className="mb-6">
-            <AbilityHistoryChart history={history} days={days} onDaysChange={setDays} />
+            {backfilling ? (
+              <div className="bg-bg-card border border-border-subtle rounded-2xl p-8 text-center animate-fade-in">
+                <div className="w-5 h-5 mx-auto mb-3 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
+                <p className="text-xs font-mono text-text-muted">
+                  首次访问 — 正在回填 180 天成绩历史…
+                </p>
+              </div>
+            ) : (
+              <AbilityHistoryChart history={history} days={days} onDaysChange={setDays} />
+            )}
           </div>
         </div>
       ) : null}

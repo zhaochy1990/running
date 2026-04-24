@@ -149,6 +149,67 @@ def get_ability_current(user: str) -> dict:
     return _normalize_live_snapshot(snap)
 
 
+@router.post("/api/{user}/ability/backfill")
+def post_ability_backfill(
+    user: str,
+    days: int = Query(180, ge=7, le=365),
+) -> dict:
+    """Populate `ability_snapshot` for the last `days` days on prod.
+
+    Used to seed history from an empty table (first-time setup on a fresh
+    deployment). Idempotent — re-running just re-computes the same values.
+    Expensive (~200ms per day), so default is 180 days and max 365.
+    """
+    end = datetime.now(_SHANGHAI_TZ)
+    start = end - timedelta(days=days)
+    dates = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days + 1)]
+
+    db = get_db(user)
+    wrote = 0
+    skipped = 0
+    try:
+        for d_iso in dates:
+            try:
+                snap = compute_ability_snapshot(db, date=d_iso)
+            except Exception:
+                skipped += 1
+                continue
+            # Persist each dimension row.
+            l2 = snap.get("l2_freshness") or {}
+            if l2.get("total") is not None:
+                db.upsert_ability_snapshot(
+                    date=d_iso, level="L2", dimension="total", value=l2.get("total"),
+                )
+            for dim in L4_WEIGHTS.keys():
+                cell = (snap.get("l3_dimensions") or {}).get(dim) or {}
+                db.upsert_ability_snapshot(
+                    date=d_iso, level="L3", dimension=dim,
+                    value=cell.get("score"),
+                    evidence_activity_ids=cell.get("evidence"),
+                )
+            db.upsert_ability_snapshot(
+                date=d_iso, level="L4", dimension="composite",
+                value=snap.get("l4_composite"),
+                evidence_activity_ids=snap.get("evidence_activity_ids"),
+            )
+            estimates = snap.get("marathon_estimates") or {}
+            for dim_name, key in (
+                ("marathon_training_s", "training_s"),
+                ("marathon_race_s",     "race_s"),
+                ("marathon_best_case_s", "best_case_s"),
+            ):
+                val = estimates.get(key)
+                if val is not None:
+                    db.upsert_ability_snapshot(
+                        date=d_iso, level="L4", dimension=dim_name,
+                        value=float(val),
+                    )
+            wrote += 1
+    finally:
+        db.close()
+    return {"days_requested": days, "written": wrote, "skipped": skipped}
+
+
 @router.get("/api/{user}/ability/history")
 def get_ability_history(
     user: str,
