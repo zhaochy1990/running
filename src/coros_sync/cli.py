@@ -191,6 +191,10 @@ def predictions(ctx: click.Context) -> None:
 
 # --- Workout commands ---
 
+from .ability_cli import ability as _ability_group
+cli.add_command(_ability_group)
+
+
 @cli.group()
 def workout() -> None:
     """Create and push workouts to COROS watch."""
