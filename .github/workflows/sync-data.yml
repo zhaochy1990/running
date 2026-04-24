@@ -8,6 +8,7 @@ on:
       - 'data/*/logs/**/inbody.*'
       - 'data/*/TRAINING_PLAN.md'
       - 'data/*/status.md'
+      - 'data/*/profile.json'
   workflow_dispatch:
 
 permissions:
@@ -81,6 +82,17 @@ jobs:
                 --share-name stride-data \
                 --source "$user_dir/status.md" \
                 --path "$user/status.md" \
+                --output none
+            fi
+
+            # Sync profile.json (athlete profile, fed to AOAI prompt)
+            if [ -f "$user_dir/profile.json" ]; then
+              az storage file upload \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --share-name stride-data \
+                --source "$user_dir/profile.json" \
+                --path "$user/profile.json" \
                 --output none
             fi
           done
