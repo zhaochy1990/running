@@ -108,10 +108,17 @@
 
 预计 30 分钟。周四 PM 与上午跑步间隔 ≥ 6h。
 
-## 每日通用 mobility（8-10 min，无器械）
+## 每日通用拉伸活动度（8-10 min，无器械）
 
-- **跑前**：T1262 greatest_stretch + T1222 leg_swing + T1263 lateral_leg_swing
-- **跑后/睡前**：T1234 cat_cow + T1244 glute_stretch + T1274 hip flexor + T1248 thoracic_rotation
+- **跑前（动态激活）**：
+  - T1262 世界上最伟大的伸展（greatest stretch）— 4 次/侧
+  - T1222 前后腿摆 — 3×30s/侧
+  - T1263 侧向腿摆 — 3×30s/侧
+- **跑后 / 睡前（静态拉伸）**：
+  - T1234 猫牛 — 2×30s
+  - T1244 臀部/梨状肌拉伸 — 30s/侧 × 2 轮
+  - T1274 弓步髂腰肌拉伸 — 30s/侧 × 2 轮
+  - T1248 胸椎旋转 — 10 次/侧
 
 ## 营养
 
