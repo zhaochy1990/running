@@ -26,8 +26,89 @@ async function fetchJSON<T>(path: string): Promise<T> {
   return res.json()
 }
 
+async function postJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: T }> {
+  let res = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+
+  if (res.status === 401) {
+    try {
+      await refreshAccessToken()
+      res = await fetch(`${BASE}${path}`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      })
+    } catch {
+      sessionStorage.clear()
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
+  }
+
+  const data = await res.json().catch(() => ({} as T))
+  return { ok: res.ok, status: res.status, data: data as T }
+}
+
 export function getUsers() {
   return fetchJSON<{ users: string[] }>('/users')
+}
+
+export interface MyProfile {
+  id: string
+  display_name: string
+  profile: Record<string, unknown> | null
+  onboarding: {
+    coros_ready: boolean
+    profile_ready: boolean
+    completed_at: string | null
+  }
+}
+
+export function getMyProfile() {
+  return fetchJSON<MyProfile>('/users/me/profile')
+}
+
+export type TargetDistance = '5K' | '10K' | 'HM' | 'FM'
+
+export interface ProfileIn {
+  display_name: string
+  dob: string
+  sex: string
+  height_cm: number
+  weight_kg: number
+  target_race: string
+  target_distance: TargetDistance
+  target_race_date: string
+  target_time: string
+  pbs?: Record<string, string>
+  weekly_mileage_km?: number
+  constraints?: string
+}
+
+export function postCorosLogin(email: string, password: string) {
+  return postJSON<{ region?: string; user_id?: string; error?: string; detail?: unknown }>(
+    '/users/me/coros/login',
+    { email, password },
+  )
+}
+
+export function postProfile(profile: ProfileIn) {
+  return postJSON<{ error?: string; detail?: unknown }>('/users/me/profile', profile)
+}
+
+export function postOnboardingComplete() {
+  return postJSON<{ state?: string; error?: string }>('/users/me/onboarding/complete')
+}
+
+export function getSyncStatus() {
+  return fetchJSON<{ state: 'running' | 'done' | 'error'; error?: string }>('/users/me/sync-status')
+}
+
+export function getMyStatus(): Promise<{ markdown: string }> {
+  return fetchJSON<{ markdown: string }>('/users/me/status')
 }
 
 export interface Activity {

@@ -45,7 +45,7 @@ def rsa_keypair():
 def _issue_token(private_pem: str, **overrides) -> str:
     now = int(time.time())
     claims = {
-        "sub": "user-123",
+        "sub": "zhaochaoyi",
         "aud": "stride-client",
         "iss": "auth-service",
         "exp": now + 3600,
@@ -98,6 +98,11 @@ def client_and_db(tmp_db, monkeypatch):
         return Database(tmp_db)
 
     monkeypatch.setattr(ability_mod, "get_db", _open_db)
+
+    # create_app() fails closed unless STRIDE_AUTH_PUBLIC_KEY_* is set or we're
+    # in dev mode. Tests issue their own keys via _reset_bearer_module so dev
+    # mode is the right escape hatch here.
+    monkeypatch.setenv("STRIDE_ENV", "dev")
 
     from stride_server.app import create_app
 

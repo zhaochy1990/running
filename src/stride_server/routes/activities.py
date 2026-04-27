@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 
 from stride_core.models import EXERCISE_TYPES, pace_str
@@ -9,6 +11,8 @@ from stride_core.source import DataSource
 
 from ..bearer import require_bearer
 from ..deps import EXERCISE_NAMES, format_duration, get_db, get_source
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -238,5 +242,6 @@ def resync_activity(
         return {"success": True}
     except LookupError:
         return {"success": False, "error": "活动不存在"}
-    except Exception as e:
-        return {"success": False, "error": str(e)}
+    except Exception:
+        logger.exception("resync failed for user=%s label_id=%s", user, label_id)
+        return {"success": False, "error": "resync failed"}

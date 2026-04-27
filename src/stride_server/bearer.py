@@ -25,12 +25,17 @@ from pathlib import Path
 from typing import Any
 
 import jwt
-from fastapi import Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 
 logger = logging.getLogger(__name__)
 
 _cached_public_key: str | None = None
 _warned_open = False
+
+
+def is_dev_mode() -> bool:
+    """Return True when STRIDE_ENV is set to 'dev' (case-insensitive)."""
+    return os.environ.get("STRIDE_ENV", "").lower() == "dev"
 
 
 def _load_public_key() -> str | None:
@@ -99,3 +104,24 @@ def require_bearer(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     return claims
+
+
+def current_user_id(payload: dict[str, Any]) -> str:
+    """Return the JWT subject (user UUID) from a decoded claims dict."""
+    return payload["sub"]
+
+
+def verify_path_user(
+    user: str,
+    payload: dict[str, Any] = Depends(require_bearer),
+) -> None:
+    """FastAPI dependency — raise 403 when the path {user} != JWT sub.
+
+    Use 403 (not 401) because the token itself is valid; the caller is
+    authenticated but is trying to access a different user's resources.
+    """
+    if user != payload["sub"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: path user does not match token subject",
+        )

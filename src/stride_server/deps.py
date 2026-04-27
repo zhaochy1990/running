@@ -10,13 +10,26 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.source import DataSource
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend" / "dist"
+
+_UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+
+
+def _validate_uuid(uuid: str) -> str:
+    if not _UUID4_RE.match(uuid or ""):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user identifier",
+        )
+    return uuid
 
 
 # COROS exercise T-code -> Chinese name mapping.
@@ -38,10 +51,12 @@ EXERCISE_NAMES: dict[str, str] = {
 
 
 def get_db(user: str) -> Database:
+    _validate_uuid(user)
     return Database(user=user)
 
 
 def get_logs_dir(user: str) -> Path:
+    _validate_uuid(user)
     return USER_DATA_DIR / user / "logs"
 
 

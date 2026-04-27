@@ -1,42 +1,36 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { getUsers } from './api'
+import { useAuthStore } from './store/authStore'
+import { getMyProfile } from './api'
 
 interface UserContextType {
   user: string
-  setUser: (user: string) => void
-  users: string[]
+  displayName: string
 }
 
-const UserContext = createContext<UserContextType>({ user: '', setUser: () => {}, users: [] })
+const UserContext = createContext<UserContextType>({ user: '', displayName: '' })
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<string[]>([])
-  const [user, setUserState] = useState(() => localStorage.getItem('stride_user') || '')
-
-  const setUser = (u: string) => {
-    setUserState(u)
-    localStorage.setItem('stride_user', u)
-  }
+  const userId = useAuthStore((s) => s.userId)
+  const [displayName, setDisplayName] = useState<string>('')
 
   useEffect(() => {
-    getUsers()
-      .then((data) => {
-        setUsers(data.users)
-        // If no user selected or current user not in list, pick first
-        if (!user || !data.users.includes(user)) {
-          if (data.users.length > 0) setUser(data.users[0])
-        }
-      })
-      .catch(() => {})
-  }, [])
+    if (!userId) return
+    getMyProfile()
+      .then((profile) => setDisplayName(profile.display_name || userId))
+      .catch(() => setDisplayName(userId || ''))
+  }, [userId])
+
+  if (!userId) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-5 h-5 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
+      </div>
+    )
+  }
 
   return (
-    <UserContext.Provider value={{ user, setUser, users }}>
-      {user ? children : (
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="w-5 h-5 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
-        </div>
-      )}
+    <UserContext.Provider value={{ user: userId, displayName: displayName || userId }}>
+      {children}
     </UserContext.Provider>
   )
 }

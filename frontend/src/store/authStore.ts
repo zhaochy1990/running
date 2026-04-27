@@ -64,8 +64,13 @@ interface AuthState {
   userId: string | null
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
+  registerSuccess: (access_token: string, refresh_token: string) => void
   logout: () => void
   hydrate: () => void
+}
+
+export function useUserId(): string | null {
+  return useAuthStore((s) => s.userId)
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -97,6 +102,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       isAuthenticated: true,
     })
 
+    scheduleTokenRefresh()
+  },
+
+  registerSuccess: (access_token: string, refresh_token: string) => {
+    const payload = decodeJwt(access_token)
+    sessionStorage.setItem('access_token', access_token)
+    sessionStorage.setItem('refresh_token', refresh_token)
+    set({ accessToken: access_token, userId: payload.sub, isAuthenticated: true })
     scheduleTokenRefresh()
   },
 

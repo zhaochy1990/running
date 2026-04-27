@@ -2,18 +2,49 @@
 
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import click
 from rich.console import Console
 from rich.table import Table
 
-from .auth import Credentials
+from .auth import Credentials, USER_DATA_DIR
 from .client import CorosClient, CorosAuthError
 from stride_core.db import Database
 from .sync import run_sync
 
 console = Console()
+
+_UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _resolve_profile(profile: str | None, data_dir: Path | None = None) -> str | None:
+    """Resolve a profile slug to a UUID if an alias mapping exists.
+
+    - If profile is None, return None (uses legacy default path).
+    - If profile already looks like a UUIDv4, return as-is.
+    - Else look up data/.slug_aliases.json; return mapped UUID if found.
+    - Otherwise fall back to the friendly slug (legacy behaviour).
+    """
+    if profile is None:
+        return None
+    if _UUID4_RE.match(profile):
+        return profile
+    root = data_dir or USER_DATA_DIR
+    aliases_file = root / ".slug_aliases.json"
+    if aliases_file.exists():
+        try:
+            aliases = json.loads(aliases_file.read_text(encoding="utf-8"))
+            if profile in aliases:
+                return aliases[profile]
+        except Exception:
+            pass
+    return profile
 
 
 @click.group()
@@ -23,7 +54,7 @@ console = Console()
 def cli(ctx: click.Context, profile: str | None) -> None:
     """Sync COROS watch running data to local SQLite for analysis."""
     ctx.ensure_object(dict)
-    ctx.obj["profile"] = profile
+    ctx.obj["profile"] = _resolve_profile(profile)
 
 
 @cli.command()
