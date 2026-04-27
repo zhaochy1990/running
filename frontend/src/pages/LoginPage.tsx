@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 
 export default function LoginPage() {
@@ -73,6 +73,13 @@ export default function LoginPage() {
               {loading ? '登录中...' : '登录'}
             </button>
           </form>
+
+          <p className="mt-4 text-center text-xs text-text-muted">
+            没有账号？{' '}
+            <Link to="/register" className="text-accent-green hover:underline">
+              创建账号
+            </Link>
+          </p>
         </div>
       </div>
     </div>
