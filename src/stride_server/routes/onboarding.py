@@ -120,14 +120,6 @@ def _run_background_sync(uuid: str, source: DataSource) -> None:
         _write_onboarding(uuid, onboarding)
         return
 
-    try:
-        from stride_core.status_report import generate_starter_status
-        # Pass data_root so tests that monkeypatch USER_DATA_DIR cover this
-        # write too (and prod uses the same module-level constant).
-        generate_starter_status(uuid, data_root=USER_DATA_DIR)
-    except Exception:
-        logger.exception("Status generation failed for %s", uuid)
-
     onboarding = _read_onboarding(uuid)
     onboarding["sync_state"] = "done"
     onboarding["completed_at"] = _utcnow_iso()
@@ -152,12 +144,7 @@ def onboarding_complete(
     uuid = _validate_uuid(payload["sub"])
     onboarding = _read_onboarding(uuid)
 
-    status_md = USER_DATA_DIR / uuid / "status.md"
-    if (
-        onboarding.get("completed_at")
-        and onboarding.get("sync_state") == "done"
-        and status_md.exists()
-    ):
+    if onboarding.get("completed_at") and onboarding.get("sync_state") == "done":
         return {"state": "already-complete"}
 
     if not onboarding.get("coros_ready"):

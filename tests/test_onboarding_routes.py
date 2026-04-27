@@ -224,9 +224,6 @@ def test_complete_already_complete_returns_already_complete(app_env):
         "completed_at": "2026-04-27T10:00:00+00:00",
         "sync_state": "done",
     })
-    # already-complete also requires status.md to exist on disk; otherwise
-    # the legacy-user recovery path kicks in and re-runs the sync.
-    (tmp_path / USER_UUID / "status.md").write_text("# old report\n", encoding="utf-8")
 
     resp = client.post(
         "/api/users/me/onboarding/complete",
@@ -234,29 +231,6 @@ def test_complete_already_complete_returns_already_complete(app_env):
     )
     assert resp.status_code == 200
     assert resp.json()["state"] == "already-complete"
-
-
-def test_complete_with_completed_at_but_missing_status_md_regenerates(app_env):
-    """Legacy users marked completed_at without ever generating status.md
-    must be able to recover via re-POST instead of getting stuck on
-    'already-complete' with a 404 from /api/users/me/status."""
-    client, token, tmp_path, _ = app_env
-    _set_onboarding(tmp_path, {
-        "coros_ready": True,
-        "profile_ready": True,
-        "completed_at": "2026-04-27T10:00:00+00:00",
-        "sync_state": "done",
-        "_legacy_migrated": True,
-    })
-    # Note: NO status.md file exists for this user.
-
-    with patch("stride_server.routes.onboarding._run_background_sync"):
-        resp = client.post(
-            "/api/users/me/onboarding/complete",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-    assert resp.status_code == 200
-    assert resp.json()["state"] == "running"
 
 
 def test_complete_background_sync_updates_state_to_done(app_env):

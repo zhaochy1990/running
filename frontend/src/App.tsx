@@ -12,7 +12,6 @@ import AbilityPage from './pages/AbilityPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import OnboardingWizard from './pages/OnboardingWizard'
-import StatusPage from './pages/StatusPage'
 import { getMyProfile } from './api'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -83,7 +82,6 @@ function App() {
                     <Route path="/inbody" element={<InbodyPage />} />
                     <Route path="/plan" element={<TrainingPlanPage />} />
                     <Route path="/ability" element={<AbilityPage />} />
-                    <Route path="/status" element={<StatusPage />} />
                   </Route>
                 </Routes>
               </UserProvider>

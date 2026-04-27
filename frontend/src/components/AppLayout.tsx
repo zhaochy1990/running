@@ -123,16 +123,6 @@ export default function AppLayout() {
 
         <div className="px-3 py-3 border-t border-border-subtle space-y-2">
           <button
-            onClick={() => navigate('/status')}
-            className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
-              isActive('/status')
-                ? 'border-accent-green/50 text-accent-green bg-accent-green/10'
-                : 'border-accent-green/30 text-accent-green hover:bg-accent-green/10'
-            }`}
-          >
-            状态报告
-          </button>
-          <button
             onClick={() => navigate('/plan')}
             className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
               isActive('/plan')

@@ -107,10 +107,6 @@ export function getSyncStatus() {
   return fetchJSON<{ state: 'running' | 'done' | 'error'; error?: string }>('/users/me/sync-status')
 }
 
-export function getMyStatus(): Promise<{ markdown: string }> {
-  return fetchJSON<{ markdown: string }>('/users/me/status')
-}
-
 export interface Activity {
   label_id: string
   name: string | null

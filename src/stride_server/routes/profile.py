@@ -106,15 +106,3 @@ def post_profile(body: ProfileIn, payload: dict = Depends(require_bearer)):
     _write_json(_onboarding_path(uuid), onboarding)
 
     return {"ok": True}
-
-
-@router.get("/api/users/me/status")
-def get_status(payload: dict = Depends(require_bearer)):
-    uuid = _validate_uuid(payload["sub"])
-    status_path = USER_DATA_DIR / uuid / "status.md"
-    if not status_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Status report not yet generated",
-        )
-    return {"markdown": status_path.read_text(encoding="utf-8")}

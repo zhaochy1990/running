@@ -17,7 +17,7 @@ export default function SubmitStep({ profile }: Props) {
     getSyncStatus()
       .then((status) => {
         if (status.state === 'done') {
-          navigate('/status')
+          navigate('/health')
         } else if (status.state === 'error') {
           setError(status.error || '同步出错，请重试')
           setLoading(false)
@@ -50,7 +50,7 @@ export default function SubmitStep({ profile }: Props) {
         navigate('/')
         return
       }
-      // Poll for sync to finish, then navigate to /status when done.
+      // Poll for sync to finish, then navigate to /health (身体指标) when done.
       pollSyncStatus()
     } catch {
       setError('请求失败，请重试')
