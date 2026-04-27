@@ -152,7 +152,12 @@ def onboarding_complete(
     uuid = _validate_uuid(payload["sub"])
     onboarding = _read_onboarding(uuid)
 
-    if onboarding.get("completed_at") and onboarding.get("sync_state") == "done":
+    status_md = USER_DATA_DIR / uuid / "status.md"
+    if (
+        onboarding.get("completed_at")
+        and onboarding.get("sync_state") == "done"
+        and status_md.exists()
+    ):
         return {"state": "already-complete"}
 
     if not onboarding.get("coros_ready"):

@@ -54,7 +54,9 @@ def _render_activities(db: Database) -> list[str]:
     if not rows:
         return ["- No activities in the last 14 days"]
     count = len(rows)
-    total_km = sum((r["distance_m"] or 0) for r in rows) / 1000
+    # `distance_m` column is misleadingly named — it actually stores km
+    # (per coros_sync.models, distance from API is divided down to km).
+    total_km = sum((r["distance_m"] or 0) for r in rows)
     total_dur = sum((r["duration_s"] or 0) for r in rows)
     paces = [r["avg_pace_s_km"] for r in rows if r["avg_pace_s_km"]]
     hrs = [r["avg_hr"] for r in rows if r["avg_hr"]]

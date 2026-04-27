@@ -73,7 +73,9 @@ def test_activity_section_rendered(tmp_path):
            (label_id, name, sport_type, sport_name, date,
             distance_m, duration_s, avg_pace_s_km, avg_hr, synced_at)
            VALUES (?, ?, ?, ?, date('now', '-3 days'), ?, ?, ?, ?, datetime('now'))""",
-        ("test-001", "Morning Run", 100, "Running", 10500, 3600, 342.86, 148),
+        # distance_m column actually stores km (coros_sync legacy naming);
+        # 10.5 km in 1h matches the avg_pace_s_km=342.86 (5:43/km).
+        ("test-001", "Morning Run", 100, "Running", 10.5, 3600, 342.86, 148),
     )
     db._conn.commit()
     db.close()
