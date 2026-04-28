@@ -69,14 +69,16 @@ def list_activities(
     return {"total": total_count, "offset": offset, "limit": limit, "activities": activities}
 
 
-@router.get("/api/{user}/activities/{label_id}")
-def get_activity(user: str, label_id: str):
-    db = get_db(user)
+def build_activity_detail(db, label_id: str) -> dict | None:
+    """Assemble the activity detail payload from an open Database connection.
 
+    Returns ``None`` when the activity is not present. Caller owns the db
+    handle (do not close it here) — used by both ``/api/{user}/activities/...``
+    and the team-scoped detail endpoint in routes/teams.py.
+    """
     rows = db.query("SELECT * FROM activities WHERE label_id = ?", (label_id,))
     if not rows:
-        db.close()
-        return {"error": "Not found"}, 404
+        return None
 
     activity = dict(rows[0])
     activity["distance_km"] = round(activity["distance_m"], 2) if activity["distance_m"] else 0
@@ -90,7 +92,6 @@ def get_activity(user: str, label_id: str):
         activity["commentary_generated_by"] = cd.get("generated_by")
         activity["commentary_generated_at"] = cd.get("generated_at")
 
-    # Laps - autoKm (per-km splits)
     laps_rows = db.query(
         """SELECT lap_index, lap_type, distance_m, duration_s, avg_pace,
            adjusted_pace, avg_hr, max_hr, avg_cadence, avg_power, ascent_m, descent_m
@@ -106,7 +107,6 @@ def get_activity(user: str, label_id: str):
         ld["pace_fmt"] = pace_str(ld["avg_pace"]) or "—"
         laps.append(ld)
 
-    # Segments - type2 (workout structure from COROS exerciseType)
     seg_rows = db.query(
         """SELECT lap_index, lap_type, distance_m, duration_s, avg_pace,
            adjusted_pace, avg_hr, max_hr, avg_cadence, avg_power, ascent_m, descent_m,
@@ -130,7 +130,6 @@ def get_activity(user: str, label_id: str):
             sd["seg_name"] = EXERCISE_TYPES.get(sd.get("exercise_type") or 0, "训练")
         segments.append(sd)
 
-    # Zones
     zones_rows = db.query(
         """SELECT zone_type, zone_index, range_min, range_max, range_unit, duration_s, percent
         FROM zones WHERE label_id = ?
@@ -139,7 +138,6 @@ def get_activity(user: str, label_id: str):
     )
     zones = [dict(z) for z in zones_rows]
 
-    # Timeseries (sampled for chart - every 10th point)
     ts_rows = db.query(
         """SELECT timestamp, distance, heart_rate, speed, adjusted_pace, cadence, altitude, power
         FROM timeseries WHERE label_id = ?
@@ -150,8 +148,6 @@ def get_activity(user: str, label_id: str):
     step = max(1, len(all_ts) // 500)
     timeseries = all_ts[::step]
 
-    db.close()
-
     return {
         "activity": activity,
         "laps": laps,
@@ -159,6 +155,18 @@ def get_activity(user: str, label_id: str):
         "zones": zones,
         "timeseries": timeseries,
     }
+
+
+@router.get("/api/{user}/activities/{label_id}")
+def get_activity(user: str, label_id: str):
+    db = get_db(user)
+    try:
+        result = build_activity_detail(db, label_id)
+    finally:
+        db.close()
+    if result is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return result
 
 
 @router.post("/api/{user}/activities/{label_id}/commentary")

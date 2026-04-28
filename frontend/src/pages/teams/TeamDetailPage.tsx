@@ -118,7 +118,7 @@ export default function TeamDetailPage() {
               {feed.map((act) => (
                 <button
                   key={`${act.user_id}-${act.label_id}`}
-                  onClick={() => navigate(`/activity/${act.label_id}`)}
+                  onClick={() => navigate(`/teams/${id}/activity/${act.user_id}/${act.label_id}`)}
                   className="w-full text-left p-4 rounded-xl border border-border-subtle bg-bg-card hover:bg-bg-card-hover transition-all"
                 >
                   <div className="flex items-center justify-between mb-1">

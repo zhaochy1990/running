@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { getActivity, resyncActivity, regenerateCommentary, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
+import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
 import { useUser } from '../UserContext'
 import SegmentView from '../components/SegmentView'
 import StrengthView from '../components/StrengthView'
@@ -12,8 +12,16 @@ import PaceChart from '../components/PaceChart'
 import ActivityContributionCard from '../components/ActivityContributionCard'
 
 export default function ActivityDetailPage() {
-  const { id } = useParams<{ id: string }>()
+  // Two route shapes share this page:
+  //   /activity/:id                                    — owner viewing own activity
+  //   /teams/:teamId/activity/:userId/:labelId          — team-mate viewing peer's
+  // In team mode, write actions (resync, regenerate, ability contribution)
+  // are hidden because they target the activity owner's DB, which the
+  // viewer doesn't own.
+  const { id, teamId, userId, labelId } = useParams<{ id?: string; teamId?: string; userId?: string; labelId?: string }>()
   const { user } = useUser()
+  const isTeamView = Boolean(teamId && userId && labelId)
+  const activityId = isTeamView ? labelId : id
   const [activity, setActivity] = useState<Activity | null>(null)
   const [laps, setLaps] = useState<Lap[]>([])
   const [segments, setSegments] = useState<Segment[]>([])
@@ -25,9 +33,18 @@ export default function ActivityDetailPage() {
   const [regenError, setRegenError] = useState<string | null>(null)
   const [hoverElapsed, setHoverElapsed] = useState<number | null>(null)
 
+  const fetchDetail = () => {
+    if (isTeamView) {
+      return getTeamActivity(teamId!, userId!, labelId!)
+    }
+    if (!id || !user) return Promise.reject(new Error('missing id or user'))
+    return getActivity(user, id)
+  }
+
   const loadActivity = () => {
-    if (!id || !user) return
-    getActivity(user, id).then((data) => {
+    if (!activityId) return
+    if (!isTeamView && !user) return
+    fetchDetail().then((data) => {
       setActivity(data.activity)
       setLaps(data.laps)
       setSegments(data.segments || [])
@@ -37,9 +54,10 @@ export default function ActivityDetailPage() {
   }
 
   useEffect(() => {
-    if (!id || !user) return
+    if (!activityId) return
+    if (!isTeamView && !user) return
     setLoading(true)
-    getActivity(user, id)
+    fetchDetail()
       .then((data) => {
         setActivity(data.activity)
         setLaps(data.laps)
@@ -48,10 +66,10 @@ export default function ActivityDetailPage() {
         setTimeseries(data.timeseries)
       })
       .finally(() => setLoading(false))
-  }, [id])
+  }, [activityId, isTeamView, teamId, userId])
 
   const handleResync = async () => {
-    if (!id || !user || syncing) return
+    if (isTeamView || !id || !user || syncing) return
     setSyncing(true)
     try {
       const res = await resyncActivity(user, id)
@@ -64,7 +82,7 @@ export default function ActivityDetailPage() {
   }
 
   const handleRegenerate = async () => {
-    if (!id || !user || regenerating) return
+    if (isTeamView || !id || !user || regenerating) return
     setRegenerating(true)
     setRegenError(null)
     try {
@@ -131,17 +149,19 @@ export default function ActivityDetailPage() {
             </h1>
             <p className="text-sm font-mono text-text-muted mt-1">{formatDate(activity.date)}</p>
           </div>
-          <button
-            onClick={handleResync}
-            disabled={syncing}
-            className="inline-flex items-center gap-1.5 text-xs font-mono text-text-muted hover:text-accent-green transition-colors px-3 py-1.5 rounded-lg border border-border-subtle hover:border-accent-green/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-            title="从 COROS 重新同步此活动"
-          >
-            <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            {syncing ? '同步中...' : '重新同步'}
-          </button>
+          {!isTeamView && (
+            <button
+              onClick={handleResync}
+              disabled={syncing}
+              className="inline-flex items-center gap-1.5 text-xs font-mono text-text-muted hover:text-accent-green transition-colors px-3 py-1.5 rounded-lg border border-border-subtle hover:border-accent-green/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              title="从 COROS 重新同步此活动"
+            >
+              <svg className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {syncing ? '同步中...' : '重新同步'}
+            </button>
+          )}
         </div>
 
         {/* Key Metrics Grid */}
@@ -207,8 +227,9 @@ export default function ActivityDetailPage() {
         )}
       </div>
 
-      {/* Ability contribution — only for running activities */}
-      {!isStrength && user && (
+      {/* Ability contribution — only for running activities, owner-only
+          (team viewers don't have access to the owner's ability data) */}
+      {!isStrength && user && !isTeamView && (
         <ActivityContributionCard user={user} activity={activity} />
       )}
 
@@ -284,17 +305,19 @@ export default function ActivityDetailPage() {
                 </span>
               )}
             </div>
-            <button
-              onClick={handleRegenerate}
-              disabled={regenerating}
-              className="inline-flex items-center gap-1.5 text-xs font-mono text-text-muted hover:text-accent-amber transition-colors px-3 py-1.5 rounded-lg border border-border-subtle hover:border-accent-amber/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-              title="让 AOAI 重新生成评论（覆盖现有）"
-            >
-              <svg className={`w-3.5 h-3.5 ${regenerating ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              {regenerating ? '生成中...' : '重新生成'}
-            </button>
+            {!isTeamView && (
+              <button
+                onClick={handleRegenerate}
+                disabled={regenerating}
+                className="inline-flex items-center gap-1.5 text-xs font-mono text-text-muted hover:text-accent-amber transition-colors px-3 py-1.5 rounded-lg border border-border-subtle hover:border-accent-amber/30 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                title="让 AOAI 重新生成评论（覆盖现有）"
+              >
+                <svg className={`w-3.5 h-3.5 ${regenerating ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {regenerating ? '生成中...' : '重新生成'}
+              </button>
+            )}
           </div>
           {regenError && (
             <p className="text-xs font-mono text-accent-red mb-3">{regenError}</p>

@@ -85,6 +85,7 @@ function App() {
                     <Route path="/" element={<WeekLayout />} />
                     <Route path="/week/:folder" element={<WeekLayout />} />
                     <Route path="/activity/:id" element={<ActivityDetailPage />} />
+                    <Route path="/teams/:teamId/activity/:userId/:labelId" element={<ActivityDetailPage />} />
                     <Route path="/health" element={<HealthPage />} />
                     <Route path="/inbody" element={<InbodyPage />} />
                     <Route path="/plan" element={<TrainingPlanPage />} />

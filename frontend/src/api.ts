@@ -604,6 +604,12 @@ export function getActivity(user: string, id: string) {
   )
 }
 
+export function getTeamActivity(teamId: string, userId: string, labelId: string) {
+  return fetchJSON<{ activity: Activity; laps: Lap[]; segments: Segment[]; zones: Zone[]; timeseries: TimeseriesPoint[] }>(
+    `/teams/${teamId}/activities/${userId}/${labelId}`
+  )
+}
+
 export function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null
   // Handle ISO format: 2026-04-04T11:53:48.710000+00:00

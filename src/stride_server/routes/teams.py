@@ -195,6 +195,52 @@ def _read_member_activities(user_id: str, limit_per_user: int, days: int) -> lis
     return out
 
 
+@router.get("/api/teams/{team_id}/activities/{user_id}/{label_id}")
+async def team_activity_detail(
+    team_id: str,
+    user_id: str,
+    label_id: str,
+    authorization: str | None = Header(default=None),
+    _claims: dict = Depends(require_bearer),
+):
+    """Activity detail in team context — bypasses the per-user path-verify
+    guard by authorizing via team membership instead.
+
+    Both the caller and ``user_id`` must be members of ``team_id`` (membership
+    checked via auth-service). On success returns the same payload shape as
+    ``GET /api/{user}/activities/{label_id}`` so the frontend can reuse the
+    detail page.
+    """
+    from .activities import build_activity_detail
+
+    members = await auth_client.list_members(_bearer(authorization), team_id)
+    member_ids = {m.get("user_id") for m in members if m.get("user_id")}
+    caller_id = _claims.get("sub")
+    if caller_id not in member_ids:
+        raise HTTPException(status_code=403, detail="Caller is not a member of this team")
+    if user_id not in member_ids:
+        raise HTTPException(status_code=404, detail="User is not in this team")
+
+    db_path = USER_DATA_DIR / user_id / "coros.db"
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="No data for this user")
+
+    try:
+        db = Database(db_path)
+    except (sqlite3.Error, OSError) as exc:
+        logger.warning("teams.activity_detail: cannot open db for %s: %s", user_id, exc)
+        raise HTTPException(status_code=503, detail="Cannot open user database")
+
+    try:
+        result = build_activity_detail(db, label_id)
+    finally:
+        db.close()
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Activity not found")
+    return result
+
+
 @router.get("/api/teams/{team_id}/feed")
 async def team_feed(
     team_id: str,
