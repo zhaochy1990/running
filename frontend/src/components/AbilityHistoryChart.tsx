@@ -50,6 +50,21 @@ export default function AbilityHistoryChart({
     recovery: h.l3.recovery,
   }))
 
+  const visibleKeys: Array<keyof typeof DIM_META | 'composite'> = ['composite', ...enabled]
+  const visibleValues = data.flatMap((d) =>
+    visibleKeys.map((k) => (d as Record<string, unknown>)[k]).filter((v): v is number => typeof v === 'number' && Number.isFinite(v)),
+  )
+  let yDomain: [number, number] = [0, 100]
+  if (visibleValues.length > 0) {
+    const min = Math.min(...visibleValues)
+    const max = Math.max(...visibleValues)
+    const span = max - min
+    const pad = Math.max(1, span * 0.25, span < 5 ? 2 : 0)
+    const lo = Math.max(0, Math.floor(min - pad))
+    const hi = Math.min(100, Math.ceil(max + pad))
+    yDomain = lo === hi ? [Math.max(0, lo - 2), Math.min(100, hi + 2)] : [lo, hi]
+  }
+
   const toggle = (k: Dim) => {
     setEnabled((prev) => {
       const next = new Set(prev)
@@ -96,7 +111,8 @@ export default function AbilityHistoryChart({
             minTickGap={24}
           />
           <YAxis
-            domain={[0, 100]}
+            domain={yDomain}
+            allowDecimals={false}
             tick={{ fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }}
             axisLine={false}
             tickLine={false}
