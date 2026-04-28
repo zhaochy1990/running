@@ -49,6 +49,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Run frontend tests
+        run: |
+          cd frontend
+          npm ci
+          npm run test
+
       - name: Build and push Docker image
         run: |
           docker build \

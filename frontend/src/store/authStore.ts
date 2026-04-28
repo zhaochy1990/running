@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { setAuthUser, clearAuthUser } from '../telemetry/appInsights'
 
 const AUTH_BASE = import.meta.env.VITE_AUTH_BASE_URL || ''
 const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || ''
@@ -63,6 +64,7 @@ interface AuthState {
   accessToken: string | null
   userId: string | null
   isAuthenticated: boolean
+  hydrated: boolean
   login: (email: string, password: string) => Promise<void>
   registerSuccess: (access_token: string, refresh_token: string) => void
   logout: () => Promise<void>
@@ -77,6 +79,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
   userId: null,
   isAuthenticated: false,
+  hydrated: false,
 
   login: async (email: string, password: string) => {
     const res = await fetch(`${AUTH_BASE}/api/auth/login`, {
@@ -100,8 +103,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       accessToken: access_token,
       userId: payload.sub,
       isAuthenticated: true,
+      hydrated: true,
     })
 
+    void setAuthUser(payload.sub)
     scheduleTokenRefresh()
   },
 
@@ -109,7 +114,13 @@ export const useAuthStore = create<AuthState>((set) => ({
     const payload = decodeJwt(access_token)
     sessionStorage.setItem('access_token', access_token)
     sessionStorage.setItem('refresh_token', refresh_token)
-    set({ accessToken: access_token, userId: payload.sub, isAuthenticated: true })
+    set({
+      accessToken: access_token,
+      userId: payload.sub,
+      isAuthenticated: true,
+      hydrated: true,
+    })
+    void setAuthUser(payload.sub)
     scheduleTokenRefresh()
   },
 
@@ -128,8 +139,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       } catch { /* best-effort: server-side revocation may fail; local cleanup still runs */ }
     }
 
+    void clearAuthUser()
     sessionStorage.clear()
-    set({ accessToken: null, userId: null, isAuthenticated: false })
+    set({
+      accessToken: null,
+      userId: null,
+      isAuthenticated: false,
+      hydrated: true,
+    })
   },
 
   hydrate: () => {
@@ -140,7 +157,13 @@ export const useAuthStore = create<AuthState>((set) => ({
       try {
         const payload = decodeJwt(accessToken)
         if (payload.exp * 1000 > Date.now()) {
-          set({ accessToken, userId: payload.sub, isAuthenticated: true })
+          set({
+            accessToken,
+            userId: payload.sub,
+            isAuthenticated: true,
+            hydrated: true,
+          })
+          void setAuthUser(payload.sub)
           scheduleTokenRefresh()
           return
         }
@@ -148,7 +171,12 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     sessionStorage.clear()
-    set({ accessToken: null, userId: null, isAuthenticated: false })
+    set({
+      accessToken: null,
+      userId: null,
+      isAuthenticated: false,
+      hydrated: true,
+    })
   },
 }))
 

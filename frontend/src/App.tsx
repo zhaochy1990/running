@@ -16,6 +16,9 @@ import TeamsListPage from './pages/teams/TeamsListPage'
 import TeamDetailPage from './pages/teams/TeamDetailPage'
 import CreateTeamPage from './pages/teams/CreateTeamPage'
 import { getMyProfile } from './api'
+// RouteTracker MUST be a child of <BrowserRouter> at this top level —
+// placing it inside <AppLayout> would miss /login, /register, /onboarding.
+import RouteTracker from './telemetry/RouteTracker'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -64,6 +67,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <RouteTracker />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
