@@ -1,24 +1,37 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useAuthStore } from './store/authStore'
 import { getMyProfile } from './api'
 
 interface UserContextType {
   user: string
   displayName: string
+  refresh: () => Promise<void>
 }
 
-const UserContext = createContext<UserContextType>({ user: '', displayName: '' })
+const UserContext = createContext<UserContextType>({
+  user: '',
+  displayName: '',
+  refresh: async () => {},
+})
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const userId = useAuthStore((s) => s.userId)
   const [displayName, setDisplayName] = useState<string>('')
 
+  const refresh = useCallback(async () => {
+    if (!userId) return
+    try {
+      const profile = await getMyProfile()
+      setDisplayName(profile.display_name || userId)
+    } catch {
+      setDisplayName(userId)
+    }
+  }, [userId])
+
   useEffect(() => {
     if (!userId) return
-    getMyProfile()
-      .then((profile) => setDisplayName(profile.display_name || userId))
-      .catch(() => setDisplayName(userId || ''))
-  }, [userId])
+    refresh()
+  }, [userId, refresh])
 
   if (!userId) {
     return (
@@ -29,7 +42,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <UserContext.Provider value={{ user: userId, displayName: displayName || userId }}>
+    <UserContext.Provider value={{ user: userId, displayName: displayName || userId, refresh }}>
       {children}
     </UserContext.Provider>
   )

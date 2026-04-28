@@ -239,3 +239,115 @@ def test_post_profile_optional_fields_accepted(app_client):
     assert data["profile"]["pbs"] == {"5K": "19:30", "HM": "1:24:00"}
     assert data["profile"]["weekly_mileage_km"] == 60.0
     assert data["profile"]["constraints"] == "left knee tendinitis"
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/users/me/profile — partial profile edits
+# ---------------------------------------------------------------------------
+
+
+def test_patch_profile_partial_change_preserves_other_fields(app_client, tmp_path):
+    """PATCH with only display_name preserves all other onboarding fields."""
+    client, token = app_client
+    # Seed via POST first.
+    client.post(
+        "/api/users/me/profile",
+        json=VALID_PROFILE_BODY,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    resp = client.patch(
+        "/api/users/me/profile",
+        json={"display_name": "新名字"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["display_name"] == "新名字"
+
+    saved = json.loads((tmp_path / USER_UUID / "profile.json").read_text())
+    assert saved["display_name"] == "新名字"
+    # Other fields untouched.
+    assert saved["target_race"] == VALID_PROFILE_BODY["target_race"]
+    assert saved["target_distance"] == VALID_PROFILE_BODY["target_distance"]
+    assert saved["height_cm"] == VALID_PROFILE_BODY["height_cm"]
+
+
+def test_patch_profile_empty_display_name_returns_422(app_client):
+    """display_name with empty string violates min_length=1."""
+    client, token = app_client
+    resp = client.patch(
+        "/api/users/me/profile",
+        json={"display_name": ""},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422
+
+
+def test_patch_profile_creates_when_missing(app_client, tmp_path):
+    """PATCH succeeds even when profile.json doesn't exist yet."""
+    client, token = app_client
+    resp = client.patch(
+        "/api/users/me/profile",
+        json={"display_name": "First"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    saved = json.loads((tmp_path / USER_UUID / "profile.json").read_text())
+    assert saved == {"display_name": "First"}
+
+
+def test_patch_profile_no_auth_returns_401(app_client):
+    client, _ = app_client
+    resp = client.patch("/api/users/me/profile", json={"display_name": "X"})
+    assert resp.status_code == 401
+
+
+def test_patch_profile_empty_body_is_noop(app_client, tmp_path):
+    """Empty PATCH body shouldn't error or wipe existing data."""
+    client, token = app_client
+    client.post(
+        "/api/users/me/profile",
+        json=VALID_PROFILE_BODY,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    resp = client.patch(
+        "/api/users/me/profile",
+        json={},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    saved = json.loads((tmp_path / USER_UUID / "profile.json").read_text())
+    assert saved["display_name"] == VALID_PROFILE_BODY["display_name"]
+    assert saved["target_race"] == VALID_PROFILE_BODY["target_race"]
+
+
+def test_patch_profile_invalid_target_distance_returns_422(app_client):
+    client, token = app_client
+    resp = client.patch(
+        "/api/users/me/profile",
+        json={"target_distance": "ULTRA"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 422
+
+
+def test_patch_profile_partial_pbs_replaces_only_pbs(app_client, tmp_path):
+    client, token = app_client
+    client.post(
+        "/api/users/me/profile",
+        json={**VALID_PROFILE_BODY, "pbs": {"5K": "20:00"}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    resp = client.patch(
+        "/api/users/me/profile",
+        json={"pbs": {"5K": "19:00", "HM": "1:25:00"}},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    saved = json.loads((tmp_path / USER_UUID / "profile.json").read_text())
+    assert saved["pbs"] == {"5K": "19:00", "HM": "1:25:00"}
+    # other fields preserved
+    assert saved["target_race"] == VALID_PROFILE_BODY["target_race"]

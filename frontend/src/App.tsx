@@ -15,6 +15,7 @@ import OnboardingWizard from './pages/OnboardingWizard'
 import TeamsListPage from './pages/teams/TeamsListPage'
 import TeamDetailPage from './pages/teams/TeamDetailPage'
 import CreateTeamPage from './pages/teams/CreateTeamPage'
+import ProfilePage from './pages/ProfilePage'
 import { getMyProfile } from './api'
 // RouteTracker MUST be a child of <BrowserRouter> at this top level —
 // placing it inside <AppLayout> would miss /login, /register, /onboarding.
@@ -93,6 +94,7 @@ function App() {
                     <Route path="/teams" element={<TeamsListPage />} />
                     <Route path="/teams/new" element={<CreateTeamPage />} />
                     <Route path="/teams/:id" element={<TeamDetailPage />} />
+                    <Route path="/profile" element={<ProfilePage />} />
                   </Route>
                 </Routes>
               </UserProvider>

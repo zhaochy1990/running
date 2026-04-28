@@ -80,6 +80,23 @@ class ProfileIn(BaseModel):
     constraints: str | None = None
 
 
+class ProfilePatch(BaseModel):
+    """All fields optional — used by PATCH for post-onboarding edits."""
+
+    display_name: str | None = Field(default=None, min_length=1)
+    dob: date | None = None
+    sex: Literal["male", "female", "other"] | None = None
+    height_cm: float | None = Field(default=None, gt=0)
+    weight_kg: float | None = Field(default=None, gt=0)
+    target_race: str | None = Field(default=None, min_length=1)
+    target_distance: Literal["5K", "10K", "HM", "FM"] | None = None
+    target_race_date: date | None = None
+    target_time: str | None = Field(default=None, pattern=r"^\d{1,2}:\d{2}:\d{2}$")
+    pbs: dict[str, str] | None = None
+    weekly_mileage_km: float | None = Field(default=None, ge=0)
+    constraints: str | None = None
+
+
 @router.get("/api/users/me/profile")
 def get_profile(payload: dict = Depends(require_bearer)):
     uuid = payload["sub"]
@@ -106,3 +123,29 @@ def post_profile(body: ProfileIn, payload: dict = Depends(require_bearer)):
     _write_json(_onboarding_path(uuid), onboarding)
 
     return {"ok": True}
+
+
+@router.patch("/api/users/me/profile")
+def patch_profile(body: ProfilePatch, payload: dict = Depends(require_bearer)):
+    """Partial profile update for post-onboarding edits.
+
+    Reads the existing profile.json, merges any non-None fields from the
+    request, and writes back. Unspecified fields are preserved.
+    """
+    uuid = payload["sub"]
+
+    patch = body.model_dump(exclude_unset=True)
+    if not patch:
+        return {"ok": True, "profile": _read_profile(uuid)}
+
+    existing = _read_profile(uuid)
+    merged = {**existing, **patch}
+
+    _write_json(_profile_path(uuid), merged)
+
+    return {
+        "ok": True,
+        "id": uuid,
+        "display_name": merged.get("display_name"),
+        "profile": merged,
+    }

@@ -304,3 +304,122 @@ def test_feed_skips_member_with_no_db(app_client, monkeypatch, tmp_path):
     assert data["member_count"] == 2
     # Only Alice (no DB) → empty feed, but the call still succeeds.
     assert isinstance(data["activities"], list)
+
+
+# ---------------------------------------------------------------------------
+# STRIDE display_name enrichment
+# ---------------------------------------------------------------------------
+
+
+def _seed_profile(user_data_dir, user_id: str, display_name: str | None) -> None:
+    import json as _json
+
+    user_dir = user_data_dir / user_id
+    user_dir.mkdir(parents=True, exist_ok=True)
+    payload: dict = {}
+    if display_name is not None:
+        payload["display_name"] = display_name
+    (user_dir / "profile.json").write_text(_json.dumps(payload), encoding="utf-8")
+
+
+def test_list_members_uses_stride_display_name(app_client, monkeypatch):
+    """STRIDE profile.json display_name beats auth-service ``name``."""
+    client, token, tmp_path = app_client
+    _seed_profile(tmp_path, USER_A, "ChaoyiPro")
+
+    async def fake_list_members(_bearer, _team_id):
+        return [
+            {"user_id": USER_A, "name": "362339669", "role": "owner"},
+        ]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    resp = client.get("/api/teams/t1/members", headers=_auth(token))
+    assert resp.status_code == 200
+    members = resp.json()["members"]
+    assert len(members) == 1
+    assert members[0]["display_name"] == "ChaoyiPro"
+    # Original auth-service name still passed through (so the UI can display it
+    # as a fallback hint if it wants).
+    assert members[0]["name"] == "362339669"
+
+
+def test_list_members_falls_back_to_auth_name(app_client, monkeypatch):
+    """No profile.json → use auth-service ``name`` as display_name."""
+    client, token, _tmp_path = app_client
+
+    async def fake_list_members(_bearer, _team_id):
+        return [
+            {"user_id": USER_A, "name": "Alice", "role": "owner"},
+        ]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    resp = client.get("/api/teams/t1/members", headers=_auth(token))
+    members = resp.json()["members"]
+    assert members[0]["display_name"] == "Alice"
+
+
+def test_list_members_falls_back_when_profile_missing_display_name(app_client, monkeypatch):
+    """profile.json present but lacks display_name → fall back to auth name."""
+    client, token, tmp_path = app_client
+    _seed_profile(tmp_path, USER_A, None)
+
+    async def fake_list_members(_bearer, _team_id):
+        return [{"user_id": USER_A, "name": "Alice", "role": "owner"}]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    members = client.get("/api/teams/t1/members", headers=_auth(token)).json()["members"]
+    assert members[0]["display_name"] == "Alice"
+
+
+def test_team_feed_uses_stride_display_name(app_client, monkeypatch):
+    """Feed activity entries pick up STRIDE display_name from profile.json."""
+    client, token, tmp_path = app_client
+    _seed_profile(tmp_path, USER_A, "ChaoyiPro")
+    _seed_profile(tmp_path, USER_B, None)  # no display_name
+
+    from datetime import datetime, timedelta, timezone
+    today = datetime.now(timezone.utc)
+    yesterday = today - timedelta(days=1)
+    _seed_user_db(tmp_path, USER_A, [
+        {"label_id": "a1", "date": today.isoformat(), "distance_m": 12.5},
+    ])
+    _seed_user_db(tmp_path, USER_B, [
+        {"label_id": "b1", "date": yesterday.isoformat(), "distance_m": 21.1},
+    ])
+
+    async def fake_list_members(_bearer, _team_id):
+        return [
+            {"user_id": USER_A, "name": "362339669", "role": "owner"},
+            {"user_id": USER_B, "name": "Bob", "role": "member"},
+        ]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    resp = client.get("/api/teams/t1/feed?days=7", headers=_auth(token))
+    assert resp.status_code == 200
+    by_id = {a["label_id"]: a for a in resp.json()["activities"]}
+    assert by_id["a1"]["display_name"] == "ChaoyiPro"   # stride wins
+    assert by_id["b1"]["display_name"] == "Bob"           # falls back to auth name
+
+
+def test_list_members_handles_invalid_user_id_safely(app_client, monkeypatch):
+    """Malformed user_id (non-UUID) shouldn't crash; just no STRIDE lookup."""
+    client, token, _ = app_client
+
+    async def fake_list_members(_bearer, _team_id):
+        return [{"user_id": "../etc/passwd", "name": "Sketchy", "role": "member"}]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    resp = client.get("/api/teams/t1/members", headers=_auth(token))
+    assert resp.status_code == 200
+    members = resp.json()["members"]
+    assert members[0]["display_name"] == "Sketchy"

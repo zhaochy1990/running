@@ -154,7 +154,7 @@ export default function TeamDetailPage() {
               >
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-text-primary truncate">
-                    {m.name || m.display_name || m.user_id.slice(0, 8)}
+                    {m.display_name || m.name || m.user_id.slice(0, 8)}
                   </span>
                   {m.role === 'owner' && (
                     <span className="text-[10px] font-mono text-accent-red bg-accent-red/10 px-1.5 py-0.5 rounded">

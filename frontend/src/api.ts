@@ -78,6 +78,32 @@ async function putJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean; 
   return { ok: res.ok, status: res.status, data: data as T }
 }
 
+async function patchJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: T }> {
+  let res = await fetch(`${BASE}${path}`, {
+    method: 'PATCH',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+
+  if (res.status === 401) {
+    try {
+      await refreshAccessToken()
+      res = await fetch(`${BASE}${path}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      })
+    } catch {
+      sessionStorage.clear()
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
+  }
+
+  const data = await res.json().catch(() => ({} as T))
+  return { ok: res.ok, status: res.status, data: data as T }
+}
+
 export function getUsers() {
   return fetchJSON<{ users: string[] }>('/users')
 }
@@ -114,6 +140,8 @@ export interface ProfileIn {
   constraints?: string
 }
 
+export type ProfilePatchIn = Partial<ProfileIn>
+
 export function postCorosLogin(email: string, password: string) {
   return postJSON<{ region?: string; user_id?: string; error?: string; detail?: unknown }>(
     '/users/me/coros/login',
@@ -123,6 +151,16 @@ export function postCorosLogin(email: string, password: string) {
 
 export function postProfile(profile: ProfileIn) {
   return postJSON<{ error?: string; detail?: unknown }>('/users/me/profile', profile)
+}
+
+export function patchMyProfile(patch: ProfilePatchIn) {
+  return patchJSON<{
+    ok?: boolean
+    id?: string
+    display_name?: string | null
+    profile?: Record<string, unknown>
+    detail?: unknown
+  }>('/users/me/profile', patch)
 }
 
 export function postOnboardingComplete() {

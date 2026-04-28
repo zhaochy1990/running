@@ -75,9 +75,13 @@ export default function AppLayout() {
                 <p className="text-xs font-mono text-text-muted tracking-widest mt-0.5">训练中心</p>
               </div>
             </button>
-            <span className="text-[11px] font-mono text-text-muted px-2 py-1 rounded-lg bg-bg-card border border-border-subtle truncate max-w-[90px]">
+            <button
+              onClick={() => navigate('/profile')}
+              title="编辑个人资料"
+              className="text-[11px] font-mono text-text-muted px-2 py-1 rounded-lg bg-bg-card border border-border-subtle hover:bg-bg-card-hover hover:text-text-secondary truncate max-w-[90px] cursor-pointer transition-colors"
+            >
               {displayName}
-            </span>
+            </button>
           </div>
         </div>
 

@@ -21,7 +21,9 @@ Auth: relies on require_bearer at the router level (wired in app.py).
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 import sqlite3
 from typing import Any
 
@@ -37,6 +39,33 @@ from ..deps import format_duration
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+)
+
+
+def _stride_display_name(user_id: str) -> str | None:
+    """Return ``display_name`` from ``data/{user_id}/profile.json`` if present.
+
+    Returns None when the UUID is malformed, the profile file is missing,
+    JSON parsing fails, or ``display_name`` is empty/whitespace. The UUID
+    check guards against path traversal before we touch the filesystem.
+    """
+    if not _UUID4_RE.match(user_id or ""):
+        return None
+    profile_path = USER_DATA_DIR / user_id / "profile.json"
+    if not profile_path.exists():
+        return None
+    try:
+        data = json.loads(profile_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        logger.warning("teams: cannot read profile for %s: %s", user_id, exc)
+        return None
+    name = data.get("display_name") if isinstance(data, dict) else None
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    return None
 
 
 def _bearer(authorization: str | None) -> str | None:
@@ -146,7 +175,17 @@ async def list_members(
     _claims: dict = Depends(require_bearer),
 ):
     members = await auth_client.list_members(_bearer(authorization), team_id)
-    return {"members": members}
+    enriched = []
+    for m in members:
+        if not isinstance(m, dict):
+            continue
+        user_id = m.get("user_id")
+        stride_name = _stride_display_name(user_id) if isinstance(user_id, str) else None
+        out = dict(m)
+        # STRIDE-controlled displayName wins over auth-service ``name``.
+        out["display_name"] = stride_name or m.get("display_name") or m.get("name")
+        enriched.append(out)
+    return {"members": enriched}
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +303,12 @@ async def team_feed(
         user_id = m.get("user_id")
         if not user_id:
             continue
-        display_name = m.get("name") or m.get("display_name") or user_id
+        display_name = (
+            _stride_display_name(user_id)
+            or m.get("display_name")
+            or m.get("name")
+            or user_id
+        )
         for act in _read_member_activities(user_id, limit_per_user, days):
             act["user_id"] = user_id
             act["display_name"] = display_name
