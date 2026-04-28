@@ -1,0 +1,51 @@
+{
+  "scan_date": "2026-04-14",
+  "jpg_path": "data/f10bc353-01ab-4db1-af9f-d9305ea9a532/logs/2026-04-13_04-19(赛后恢复)/inbody.4-14.jpg",
+  "weight_kg": 71.4,
+  "body_fat_pct": 23.5,
+  "smm_kg": 30.8,
+  "fat_mass_kg": 16.8,
+  "visceral_fat_level": 5,
+  "bmr_kcal": 1549,
+  "protein_kg": 10.9,
+  "water_l": 39.7,
+  "smi": 7.6,
+  "inbody_score": 67,
+  "segments": [
+    {
+      "segment": "left_arm",
+      "lean_mass_kg": 2.52,
+      "fat_mass_kg": 1.0,
+      "lean_pct_of_standard": 74.3,
+      "fat_pct_of_standard": 158.3
+    },
+    {
+      "segment": "right_arm",
+      "lean_mass_kg": 2.61,
+      "fat_mass_kg": 1.0,
+      "lean_pct_of_standard": 76.3,
+      "fat_pct_of_standard": 152.1
+    },
+    {
+      "segment": "trunk",
+      "lean_mass_kg": 22.9,
+      "fat_mass_kg": 7.9,
+      "lean_pct_of_standard": 84.5,
+      "fat_pct_of_standard": 171.1
+    },
+    {
+      "segment": "left_leg",
+      "lean_mass_kg": 9.91,
+      "fat_mass_kg": 2.9,
+      "lean_pct_of_standard": 104.9,
+      "fat_pct_of_standard": 155.3
+    },
+    {
+      "segment": "right_leg",
+      "lean_mass_kg": 10.02,
+      "fat_mass_kg": 2.9,
+      "lean_pct_of_standard": 106.1,
+      "fat_pct_of_standard": 156.2
+    }
+  ]
+}

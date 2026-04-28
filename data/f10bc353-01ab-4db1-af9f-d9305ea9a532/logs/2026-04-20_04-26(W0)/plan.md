@@ -48,7 +48,7 @@
 
 ## 周二力量 A（下肢稳定性）
 
-基于 4/20 11项评估结果定制（详见 `data/zhaochaoyi/CLAUDE.md` Baseline assessment）。三大短板：臀肌耐力、内收肌、右腿稳定力量 + 左踝稳定。
+基于 4/20 11项评估结果定制（详见 `data/f10bc353-01ab-4db1-af9f-d9305ea9a532/CLAUDE.md` Baseline assessment）。三大短板：臀肌耐力、内收肌、右腿稳定力量 + 左踝稳定。
 
 **已推送到手表**（name：`[STRIDE] 力量A 下肢稳定性`，9 动作 25 组，预计 33 min）：
 

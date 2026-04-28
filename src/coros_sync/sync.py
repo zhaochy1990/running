@@ -126,7 +126,7 @@ def _try_generate_commentaries(db: Database, label_ids: list[str]) -> None:
         return
     if not is_enabled():
         return
-    # Resolve user from the DB path: data/{user}/coros.db
+    # Resolve user from the DB path: data/{user_id}/coros.db
     try:
         user = db._path.parent.name  # type: ignore[attr-defined]
     except Exception:

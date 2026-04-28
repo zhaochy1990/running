@@ -48,7 +48,7 @@ db.upsert_activity_commentary('<label_id>', '<text>', generated_by='claude-opus-
 coros-sync -P zhaochaoyi commentary push <label_id> --generated-by claude-opus-4-7
 
 # 3b. plan.md / feedback.md / TRAINING_PLAN.md / status.md → STRIDE prod via git
-git add data/zhaochaoyi/logs/<week>/plan.md
+git add data/<user-uuid>/logs/<week>/plan.md
 git commit -m "docs: update week plan"
 git push origin master   # sync-data.yml uploads the markdown to Azure Files
 ```
@@ -83,7 +83,7 @@ frontend/            # React + Vite frontend (STRIDE dashboard)
 
 ### Multi-user Architecture
 
-Each user has an isolated directory under `data/{username}/` containing their own SQLite database, COROS credentials, and training logs. The CLI uses `--profile` / `-P` to select a user, and the API uses `/{user}/` path prefix.
+Each user has an isolated directory under `data/{user_id}/` (UUID-keyed — `{user_id}` is the JWT `sub` UUID) containing their own SQLite database, COROS credentials, and training logs. The CLI uses `--profile` / `-P` to select a user — pass the UUID directly, or a friendly slug (e.g. `zhaochaoyi`) that's resolved to its UUID via `data/.slug_aliases.json`. The API uses `/{user_id}/` path prefix and rejects requests where the path UUID doesn't match the JWT `sub`.
 
 ## Training Plan (plan.md)
 
@@ -241,7 +241,7 @@ On Windows, set `PYTHONIOENCODING=utf-8` to avoid Rich/Unicode rendering errors 
 # Install (editable, with all extras)
 pip install -e ".[dev,analysis]"
 
-# Run CLI — use -P/--profile to select user (data stored in data/{profile}/)
+# Run CLI — use -P/--profile to select user (UUID or slug; data stored in data/{user_id}/)
 # Without -P, falls back to legacy platformdirs paths
 PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi login
 PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync [--full] [-j 4]
@@ -452,7 +452,7 @@ STRIDE does **not** run its own auth. It integrates with a separate in-house aut
 2. **Protected endpoints** — every `/api/*` route except `/api/health` requires Bearer when the key env var is set. The factory in `stride_server/app.py` applies router-level `Depends(require_bearer)` to all routers except `public` (which hosts only `/api/health` for the Azure liveness probe). CORS is intentionally kept wide open (`allow_origins=["*"]`) — the real authz boundary is the Bearer layer, not Origin. Verified: no token on any `/api/*` (except `/api/health`) → 401, with valid user token → 200. This covers both reads (`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`, `/training-plan`) and writes (`/sync`, `/resync`, `/commentary`).
 
 3. **CLI** (`coros-sync auth` group):
-   - `auth login --email X --auth-url Y --client-id Z` exchanges email/password for tokens via `/api/auth/login` and persists them to `data/{user}/auth.json`.
+   - `auth login --email X --auth-url Y --client-id Z` exchanges email/password for tokens via `/api/auth/login` and persists them to `data/{user_id}/auth.json`.
    - `auth logout` removes the stored token; `auth status` prints metadata.
    - `commentary push` auto-attaches `Authorization: Bearer <access_token>`, auto-refreshes via `/api/auth/refresh` if the token expires within 60s. Falls back to anonymous if no token is stored.
 

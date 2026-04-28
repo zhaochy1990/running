@@ -1,7 +1,7 @@
 """Client-side auth helpers for the STRIDE CLI.
 
 Stores tokens obtained from the in-house auth-service (Rust/Axum) at
-``data/{profile}/auth.json`` and refreshes them transparently when a call
+``data/{user_id}/auth.json`` and refreshes them transparently when a call
 is about to hit an expired access token.
 """
 

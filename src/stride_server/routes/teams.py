@@ -3,7 +3,7 @@ SQLite activity DBs to surface a cross-user feed.
 
 The auth-service owns Teams and TeamMembership. STRIDE owns the per-user
 activity SQLite DBs. The feed endpoint joins the two: it asks auth-service
-who is in the team, then reads each member's data/{user}/coros.db for recent
+who is in the team, then reads each member's data/{user_id}/coros.db for recent
 activities.
 
 Routes:

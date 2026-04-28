@@ -49,7 +49,7 @@ def _resolve_profile(profile: str | None, data_dir: Path | None = None) -> str |
 
 @click.group()
 @click.option("-P", "--profile", default=None, envvar="COROS_PROFILE",
-              help="User profile name (corresponds to data/{profile}/ directory)")
+              help="User identifier — UUID, or a slug resolved via data/.slug_aliases.json. Data lives at data/{user_id}/.")
 @click.pass_context
 def cli(ctx: click.Context, profile: str | None) -> None:
     """Sync COROS watch running data to local SQLite for analysis."""
