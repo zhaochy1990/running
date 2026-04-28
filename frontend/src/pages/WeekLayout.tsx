@@ -3,7 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  getWeeks, getWeek, formatWeekRange, formatDateShort, weekdayCN,
+  getWeeks, getWeek, updateWeeklyFeedback,
+  formatWeekRange, formatDateShort, weekdayCN,
   sportColor, sportNameCN, trainTypeColor, trainTypeCN,
   type WeekSummary, type WeekDetail, type Activity,
 } from '../api'
@@ -71,11 +72,9 @@ export default function WeekLayout() {
             <TabButton active={activeTab === 'activities'} onClick={() => setActiveTab('activities')} color="green">
               训练记录 ({weekDetail.activity_count})
             </TabButton>
-            {weekDetail.feedback && (
-              <TabButton active={activeTab === 'feedback'} onClick={() => setActiveTab('feedback')} color="cyan">
-                本周反馈
-              </TabButton>
-            )}
+            <TabButton active={activeTab === 'feedback'} onClick={() => setActiveTab('feedback')} color="cyan">
+              本周反馈
+            </TabButton>
           </div>
 
           {/* Tab content */}
@@ -89,12 +88,16 @@ export default function WeekLayout() {
           {activeTab === 'activities' && (
             <ActivityList activities={weekDetail.activities} />
           )}
-          {activeTab === 'feedback' && weekDetail.feedback && (
-            <div className="bg-bg-card border border-border-subtle rounded-2xl p-6 animate-fade-in">
-              <div className="prose max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{weekDetail.feedback}</ReactMarkdown>
-              </div>
-            </div>
+          {activeTab === 'feedback' && (
+            <FeedbackPanel
+              user={user}
+              folder={weekDetail.folder}
+              feedback={weekDetail.feedback}
+              source={weekDetail.feedback_source}
+              updatedAt={weekDetail.feedback_updated_at}
+              onSaved={(newDetail) => setWeekDetail(newDetail)}
+              reload={() => folder && user ? getWeek(user, folder).then(setWeekDetail) : undefined}
+            />
           )}
         </div>
       ) : (
@@ -128,6 +131,150 @@ function TabButton({ active, onClick, color, children }: {
     >
       {children}
     </button>
+  )
+}
+
+function FeedbackPanel({
+  user, folder, feedback, source, updatedAt, onSaved, reload,
+}: {
+  user: string
+  folder: string
+  feedback: string | undefined
+  source: 'db' | 'file' | 'none' | undefined
+  updatedAt: string | null | undefined
+  onSaved: (detail: WeekDetail) => void
+  reload: () => Promise<unknown> | undefined
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<string>(feedback || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Re-sync draft when the underlying feedback changes (e.g. switching weeks)
+  useEffect(() => {
+    setDraft(feedback || '')
+    setEditing(false)
+    setError(null)
+  }, [feedback, folder])
+
+  const startEdit = () => {
+    setDraft(feedback || '')
+    setError(null)
+    setEditing(true)
+  }
+
+  const cancelEdit = () => {
+    setDraft(feedback || '')
+    setError(null)
+    setEditing(false)
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await updateWeeklyFeedback(user, folder, draft)
+      if (!res.ok) throw new Error(`保存失败 (${res.status})`)
+      const reloaded = await reload()
+      if (reloaded && typeof reloaded === 'object' && 'folder' in reloaded) {
+        onSaved(reloaded as WeekDetail)
+      }
+      setEditing(false)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const isEmpty = !feedback || !feedback.trim()
+
+  return (
+    <div className="bg-bg-card border border-border-subtle rounded-2xl p-6 animate-fade-in">
+      {/* Header: source badge + edit/save controls */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {source === 'db' && (
+            <span className="text-[11px] font-mono text-accent-cyan bg-accent-cyan/10 px-2 py-0.5 rounded">
+              已编辑
+            </span>
+          )}
+          {source === 'file' && (
+            <span className="text-[11px] font-mono text-text-muted bg-bg-secondary px-2 py-0.5 rounded">
+              来自 feedback.md
+            </span>
+          )}
+          {updatedAt && source === 'db' && (
+            <span className="text-[11px] font-mono text-text-muted">
+              {updatedAt.replace('T', ' ').slice(0, 19)}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {!editing ? (
+            <button
+              onClick={startEdit}
+              className="px-3 py-1.5 text-xs font-medium rounded border border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/10 transition-all"
+            >
+              {isEmpty ? '+ 添加反馈' : '编辑'}
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={cancelEdit}
+                disabled={saving}
+                className="px-3 py-1.5 text-xs font-medium rounded border border-border text-text-muted hover:bg-bg-secondary disabled:opacity-50 transition-all"
+              >
+                取消
+              </button>
+              <button
+                onClick={save}
+                disabled={saving}
+                className="px-3 py-1.5 text-xs font-medium rounded border border-accent-cyan/40 text-accent-cyan hover:bg-accent-cyan/10 disabled:opacity-50 transition-all"
+              >
+                {saving ? '保存中...' : '保存'}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-3 px-3 py-2 rounded border border-accent-red/30 bg-accent-red/5 text-xs text-accent-red font-mono">
+          {error}
+        </div>
+      )}
+
+      {editing ? (
+        <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            spellCheck={false}
+            className="w-full min-h-[400px] px-4 py-3 rounded-lg border border-border bg-bg-secondary text-sm font-mono text-text-primary focus:border-accent-cyan focus:outline-none resize-y"
+            placeholder="支持 Markdown — 写下本周的训练感受、收获、调整..."
+          />
+          <div className="border border-border-subtle rounded-lg p-4 bg-bg-card overflow-auto min-h-[400px]">
+            <p className="text-[11px] font-mono text-text-muted tracking-wider mb-2">预览</p>
+            <div className="prose max-w-none">
+              {draft.trim() ? (
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{draft}</ReactMarkdown>
+              ) : (
+                <p className="text-text-muted text-sm">暂无内容</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : isEmpty ? (
+        <div className="text-text-muted text-center py-12 text-sm">
+          本周还没有反馈 — 点击右上角"添加反馈"开始记录
+        </div>
+      ) : (
+        <div className="prose max-w-none">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{feedback as string}</ReactMarkdown>
+        </div>
+      )}
+    </div>
   )
 }
 

@@ -52,6 +52,32 @@ async function postJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean;
   return { ok: res.ok, status: res.status, data: data as T }
 }
 
+async function putJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: T }> {
+  let res = await fetch(`${BASE}${path}`, {
+    method: 'PUT',
+    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+
+  if (res.status === 401) {
+    try {
+      await refreshAccessToken()
+      res = await fetch(`${BASE}${path}`, {
+        method: 'PUT',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      })
+    } catch {
+      sessionStorage.clear()
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
+  }
+
+  const data = await res.json().catch(() => ({} as T))
+  return { ok: res.ok, status: res.status, data: data as T }
+}
+
 export function getUsers() {
   return fetchJSON<{ users: string[] }>('/users')
 }
@@ -199,6 +225,9 @@ export interface WeekDetail {
   date_to: string
   plan?: string
   feedback?: string
+  feedback_source?: 'db' | 'file' | 'none'
+  feedback_updated_at?: string | null
+  feedback_generated_by?: string | null
   activities: Activity[]
   total_km: number
   total_duration_s: number
@@ -474,8 +503,94 @@ export function fetchActivityAbility(user: string, labelId: string) {
   return fetchJSON<ActivityAbility>(`/${user}/activities/${labelId}/ability`)
 }
 
+// ---------------------------------------------------------------------------
+// Teams (proxied to auth-service for membership; cross-user feed served by STRIDE)
+// ---------------------------------------------------------------------------
+
+export interface Team {
+  id: string
+  name: string
+  description?: string | null
+  owner_user_id: string
+  is_open: boolean
+  member_count?: number
+  created_at?: string
+}
+
+export interface TeamMember {
+  user_id: string
+  name?: string | null
+  display_name?: string | null
+  email?: string | null
+  role: string
+  joined_at?: string
+}
+
+export interface MyTeam {
+  id: string
+  name: string
+  role: string
+  joined_at?: string
+}
+
+export interface TeamFeedActivity extends Activity {
+  user_id: string
+  display_name: string
+}
+
+export interface TeamFeed {
+  team_id: string
+  member_count: number
+  activities: TeamFeedActivity[]
+}
+
+export function listTeams() {
+  return fetchJSON<{ teams: Team[] }>('/teams')
+}
+
+export function getTeam(id: string) {
+  return fetchJSON<Team>(`/teams/${id}`)
+}
+
+export function createTeam(payload: { name: string; description?: string }) {
+  return postJSON<Team>('/teams', payload)
+}
+
+export function joinTeam(id: string) {
+  return postJSON<Record<string, unknown>>(`/teams/${id}/join`)
+}
+
+export function leaveTeam(id: string) {
+  return postJSON<Record<string, unknown>>(`/teams/${id}/leave`)
+}
+
+export function getTeamMembers(id: string) {
+  return fetchJSON<{ members: TeamMember[] }>(`/teams/${id}/members`)
+}
+
+export function getTeamFeed(id: string, days = 30) {
+  return fetchJSON<TeamFeed>(`/teams/${id}/feed?days=${days}`)
+}
+
+export function listMyTeams() {
+  return fetchJSON<{ teams: MyTeam[] }>('/users/me/teams')
+}
+
 export function getWeek(user: string, folder: string) {
   return fetchJSON<WeekDetail>(`/${user}/weeks/${folder}`)
+}
+
+export function updateWeeklyFeedback(user: string, folder: string, content: string, generatedBy?: string) {
+  return putJSON<{
+    success: boolean
+    week: string
+    feedback_source: string
+    feedback_updated_at?: string | null
+    feedback_generated_by?: string | null
+  }>(`/${user}/weeks/${folder}/feedback`, {
+    content,
+    generated_by: generatedBy,
+  })
 }
 
 export interface Segment extends Lap {

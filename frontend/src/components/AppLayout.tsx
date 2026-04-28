@@ -2,11 +2,23 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { getWeeks, getInbody, triggerSync, formatWeekRange, type WeekSummary } from '../api'
 import { useUser } from '../UserContext'
+import { useAuthStore } from '../store/authStore'
 
 export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, displayName } = useUser()
+  const logout = useAuthStore((s) => s.logout)
+  const [signingOut, setSigningOut] = useState(false)
+
+  const handleLogout = async () => {
+    setSigningOut(true)
+    try {
+      await logout()
+    } finally {
+      navigate('/login', { replace: true })
+    }
+  }
   const [weeks, setWeeks] = useState<WeekSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -152,6 +164,16 @@ export default function AppLayout() {
           >
             成绩预测
           </button>
+          <button
+            onClick={() => navigate('/teams')}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
+              isActive('/teams')
+                ? 'border-accent-red/50 text-accent-red bg-accent-red/10'
+                : 'border-accent-red/30 text-accent-red hover:bg-accent-red/10'
+            }`}
+          >
+            团队
+          </button>
           {hasInbody && (
             <button
               onClick={() => navigate('/inbody')}
@@ -183,6 +205,15 @@ export default function AppLayout() {
               {syncMsg}
             </p>
           )}
+          <div className="pt-2 mt-2 border-t border-border-subtle">
+            <button
+              onClick={handleLogout}
+              disabled={signingOut}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-border text-text-muted hover:bg-bg-card hover:text-text-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            >
+              {signingOut ? '登出中...' : '登出'}
+            </button>
+          </div>
         </div>
       </nav>
 

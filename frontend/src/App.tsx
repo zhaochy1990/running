@@ -12,6 +12,9 @@ import AbilityPage from './pages/AbilityPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import OnboardingWizard from './pages/OnboardingWizard'
+import TeamsListPage from './pages/teams/TeamsListPage'
+import TeamDetailPage from './pages/teams/TeamDetailPage'
+import CreateTeamPage from './pages/teams/CreateTeamPage'
 import { getMyProfile } from './api'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -82,6 +85,9 @@ function App() {
                     <Route path="/inbody" element={<InbodyPage />} />
                     <Route path="/plan" element={<TrainingPlanPage />} />
                     <Route path="/ability" element={<AbilityPage />} />
+                    <Route path="/teams" element={<TeamsListPage />} />
+                    <Route path="/teams/new" element={<CreateTeamPage />} />
+                    <Route path="/teams/:id" element={<TeamDetailPage />} />
                   </Route>
                 </Routes>
               </UserProvider>

@@ -65,7 +65,7 @@ interface AuthState {
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<void>
   registerSuccess: (access_token: string, refresh_token: string) => void
-  logout: () => void
+  logout: () => Promise<void>
   hydrate: () => void
 }
 
@@ -113,8 +113,21 @@ export const useAuthStore = create<AuthState>((set) => ({
     scheduleTokenRefresh()
   },
 
-  logout: () => {
+  logout: async () => {
+    const refreshToken = sessionStorage.getItem('refresh_token')
+
     if (refreshTimer) clearTimeout(refreshTimer)
+
+    if (refreshToken && AUTH_BASE) {
+      try {
+        await fetch(`${AUTH_BASE}/api/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        })
+      } catch { /* best-effort: server-side revocation may fail; local cleanup still runs */ }
+    }
+
     sessionStorage.clear()
     set({ accessToken: null, userId: null, isAuthenticated: false })
   },
