@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
+import tempfile
 from pathlib import Path
 
 from platformdirs import user_data_dir
@@ -226,9 +228,56 @@ class Database:
         else:
             self._path = DB_PATH
         self._path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Workaround for Azure Files SMB: the SCHEMA's `PRAGMA
+        # journal_mode=WAL` transition deadlocks on first init when the
+        # DB lives on an SMB-mounted share, leaving a 0-byte file and
+        # subsequent retries failing with "database is locked".
+        # For brand-new DBs, build the schema + WAL state in a local
+        # tmp directory (regular FS), then move the fully-formed file
+        # into place. After that, all writes are row-level INSERT/UPDATE
+        # which work fine over SMB. Existing DBs are opened directly.
+        seeded = self._seed_if_needed()
+
         self._conn = sqlite3.connect(str(self._path))
         self._conn.row_factory = sqlite3.Row
-        self._init_schema()
+        if seeded:
+            # SCHEMA was already applied during the seed; just run the
+            # idempotent column-add migrations on the live connection.
+            self._migrate()
+        else:
+            self._init_schema()
+
+    def _seed_if_needed(self) -> bool:
+        """Create a fresh schema-applied SQLite file in a local tmp dir
+        and move it into place if no usable DB exists at ``self._path``.
+
+        Returns ``True`` if a seed happened (caller skips re-running
+        SCHEMA on the moved file), ``False`` if an existing DB was
+        already present.
+        """
+        if self._path.exists() and self._path.stat().st_size > 0:
+            return False
+
+        with tempfile.TemporaryDirectory() as tmp:
+            seed = Path(tmp) / "coros.db"
+            conn = sqlite3.connect(str(seed))
+            try:
+                conn.executescript(SCHEMA)
+                conn.commit()
+                # Checkpoint so the moved file is self-contained — no
+                # leftover -wal / -shm sidecars to chase.
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                conn.close()
+            if self._path.exists():
+                # Replace any 0-byte placeholder left over from a prior
+                # failed in-place open.
+                self._path.unlink()
+            # shutil.move handles cross-device (tmp on local FS, target
+            # on SMB share) by falling back to copy + delete.
+            shutil.move(str(seed), str(self._path))
+        return True
 
     def _init_schema(self) -> None:
         self._conn.executescript(SCHEMA)
