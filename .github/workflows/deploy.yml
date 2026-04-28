@@ -67,6 +67,7 @@ jobs:
           docker build \
             --build-arg VITE_AUTH_BASE_URL=${{ vars.VITE_AUTH_BASE_URL }} \
             --build-arg VITE_AUTH_CLIENT_ID=${{ vars.VITE_AUTH_CLIENT_ID }} \
+            --build-arg VITE_APPLICATIONINSIGHTS_CONNECTION_STRING="${{ vars.VITE_APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
             -t ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
             -t ${{ env.GHCR_IMAGE }}:latest \
             .
