@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Body, HTTPException
 
 from stride_core.models import pace_str
 
@@ -74,13 +74,26 @@ def get_week(user: str, folder: str):
         with open(plan_path, "r", encoding="utf-8") as f:
             result["plan"] = f.read()
 
+    db = get_db(user)
+
+    # DB-edited feedback wins over the markdown file. The file remains as
+    # a seed/fallback so legacy weeks still display until edited in-app.
+    db_fb_row = db.get_weekly_feedback_row(folder)
+
     feedback_path = logs_dir / folder / "feedback.md"
     feedback_parts: list[str] = []
-    if feedback_path.exists():
+    if db_fb_row is not None:
+        feedback_parts.append(db_fb_row["content_md"])
+        result["feedback_source"] = "db"
+        result["feedback_updated_at"] = db_fb_row["updated_at"]
+        result["feedback_generated_by"] = db_fb_row["generated_by"]
+    elif feedback_path.exists():
         with open(feedback_path, "r", encoding="utf-8") as f:
             feedback_parts.append(f.read())
+        result["feedback_source"] = "file"
+    else:
+        result["feedback_source"] = "none"
 
-    db = get_db(user)
     rows = db.query(
         """SELECT label_id, name, sport_type, sport_name, date,
             distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
@@ -102,23 +115,27 @@ def get_week(user: str, folder: str):
 
     result["activities"] = activities
 
-    # Append sport_notes from DB activities not already in feedback.md
-    FEEL_LABELS = {1: "很好", 2: "好", 3: "一般", 4: "差", 5: "很差"}
-    existing_feedback = feedback_parts[0] if feedback_parts else ""
-    existing_normalized = existing_feedback.replace("- ", "").replace("* ", "")
-    for a in activities:
-        note = a.get("sport_note")
-        if not note:
-            continue
-        first_line = note.strip().split("\n")[0].strip()[:20]
-        if first_line and first_line in existing_normalized:
-            continue
-        date_str = a["date"][:10] if a.get("date") else ""
-        feel = FEEL_LABELS.get(a.get("feel_type") or 0, "")
-        header = f"{date_str} {a.get('name', '')}"
-        if feel:
-            header += f"（体感：{feel}）"
-        feedback_parts.append(f"{header}\n\n{note}")
+    # Append sport_notes from DB activities not already in feedback.md.
+    # Skip this auto-merge when the canonical content is a user-edited DB row —
+    # in that case the saved content is authoritative and adding sport_notes
+    # would silently mutate what the user explicitly saved.
+    if result.get("feedback_source") != "db":
+        FEEL_LABELS = {1: "很好", 2: "好", 3: "一般", 4: "差", 5: "很差"}
+        existing_feedback = feedback_parts[0] if feedback_parts else ""
+        existing_normalized = existing_feedback.replace("- ", "").replace("* ", "")
+        for a in activities:
+            note = a.get("sport_note")
+            if not note:
+                continue
+            first_line = note.strip().split("\n")[0].strip()[:20]
+            if first_line and first_line in existing_normalized:
+                continue
+            date_str = a["date"][:10] if a.get("date") else ""
+            feel = FEEL_LABELS.get(a.get("feel_type") or 0, "")
+            header = f"{date_str} {a.get('name', '')}"
+            if feel:
+                header += f"（体感：{feel}）"
+            feedback_parts.append(f"{header}\n\n{note}")
 
     if feedback_parts:
         result["feedback"] = "\n\n---\n\n".join(feedback_parts)
@@ -130,3 +147,40 @@ def get_week(user: str, folder: str):
 
     db.close()
     return result
+
+
+@router.put("/api/{user}/weeks/{folder}/feedback")
+def update_weekly_feedback(user: str, folder: str, payload: dict = Body(...)):
+    """Save user-edited rich-text (markdown) feedback for a training week.
+
+    The DB row becomes the canonical content for this week; the on-disk
+    feedback.md (synced via git) is no longer used for display once a row
+    exists. ``verify_path_user`` (router-level dep) enforces that the path
+    user matches the JWT subject — i.e. users can only edit their own.
+
+    Body: ``{"content": "<markdown>", "generated_by": "<model-id>"?}``
+    """
+    if not parse_week_dates(folder):
+        raise HTTPException(status_code=400, detail="Invalid folder")
+
+    content = payload.get("content")
+    if not isinstance(content, str):
+        raise HTTPException(status_code=422, detail="content is required (string)")
+    generated_by = payload.get("generated_by")
+    if generated_by is not None and not isinstance(generated_by, str):
+        raise HTTPException(status_code=422, detail="generated_by must be a string or null")
+
+    db = get_db(user)
+    try:
+        db.upsert_weekly_feedback(folder, content, generated_by=generated_by)
+        row = db.get_weekly_feedback_row(folder)
+    finally:
+        db.close()
+
+    return {
+        "success": True,
+        "week": folder,
+        "feedback_source": "db",
+        "feedback_updated_at": row["updated_at"] if row else None,
+        "feedback_generated_by": row["generated_by"] if row else None,
+    }

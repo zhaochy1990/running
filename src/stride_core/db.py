@@ -161,6 +161,15 @@ CREATE TABLE IF NOT EXISTS activity_commentary (
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS weekly_feedback (
+    week            TEXT PRIMARY KEY,
+    content_md      TEXT NOT NULL,
+    generated_by    TEXT,
+    generated_at    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS inbody_scan (
     scan_date           TEXT PRIMARY KEY,
     jpg_path            TEXT,
@@ -429,6 +438,31 @@ class Database:
                    generated_at = excluded.generated_at,
                    updated_at   = excluded.updated_at""",
             (label_id, commentary, generated_by),
+        )
+        self._conn.commit()
+
+    # --- Weekly feedback (rich-text, edited via UI) ---
+
+    def get_weekly_feedback_row(self, week: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT week, content_md, generated_by, generated_at, created_at, updated_at "
+            "FROM weekly_feedback WHERE week = ?",
+            (week,),
+        ).fetchone()
+
+    def upsert_weekly_feedback(
+        self, week: str, content_md: str, *, generated_by: str | None = None,
+    ) -> None:
+        self._conn.execute(
+            """INSERT INTO weekly_feedback
+               (week, content_md, generated_by, generated_at, updated_at)
+               VALUES (?, ?, ?, datetime('now'), datetime('now'))
+               ON CONFLICT(week) DO UPDATE SET
+                   content_md   = excluded.content_md,
+                   generated_by = excluded.generated_by,
+                   generated_at = excluded.generated_at,
+                   updated_at   = excluded.updated_at""",
+            (week, content_md, generated_by),
         )
         self._conn.commit()
 
