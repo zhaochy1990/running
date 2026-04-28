@@ -614,6 +614,34 @@ export function listMyTeams() {
   return fetchJSON<{ teams: MyTeam[] }>('/users/me/teams')
 }
 
+export interface TeamSyncMemberResult {
+  user_id: string
+  display_name: string
+  status: 'synced' | 'skipped_no_auth' | 'error'
+  new_activities: number
+  new_health: number
+  error: string | null
+}
+
+export interface TeamSyncTotals {
+  members: number
+  synced: number
+  skipped: number
+  errors: number
+  new_activities: number
+  new_health: number
+}
+
+export interface TeamSyncSummary {
+  team_id: string
+  results: TeamSyncMemberResult[]
+  totals: TeamSyncTotals
+}
+
+export function syncTeamAll(id: string) {
+  return postJSON<TeamSyncSummary>(`/teams/${id}/sync-all`)
+}
+
 export function getWeek(user: string, folder: string) {
   return fetchJSON<WeekDetail>(`/${user}/weeks/${folder}`)
 }
