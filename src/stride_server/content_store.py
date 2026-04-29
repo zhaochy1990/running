@@ -17,6 +17,7 @@ from typing import Any, Iterable
 from stride_core import db as core_db
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 ACCOUNT_URL_ENV = "STRIDE_CONTENT_BLOB_ACCOUNT_URL"
 CONTAINER_ENV = "STRIDE_CONTENT_BLOB_CONTAINER"
