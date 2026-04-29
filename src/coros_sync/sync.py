@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import os
+from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from datetime import datetime
+from typing import TypeVar
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
@@ -14,12 +17,97 @@ from stride_core.models import Activity, ActivityDetail, DailyHealth, Dashboard
 from stride_core.source import SyncProgressCallback
 
 logger = logging.getLogger(__name__)
+T = TypeVar("T")
+
+
+class ActivityDetailSyncTimeout(RuntimeError):
+    """Raised when COROS detail requests stop making progress."""
 
 
 def _emit_sync_progress(progress: SyncProgressCallback | None, **payload: object) -> None:
     if progress is None:
         return
     progress({k: v for k, v in payload.items() if v is not None})
+
+
+def _detail_stall_timeout_seconds() -> float:
+    value = os.environ.get("COROS_DETAIL_STALL_TIMEOUT_SECONDS", "90")
+    try:
+        timeout = float(value)
+    except ValueError:
+        logger.warning("Invalid COROS_DETAIL_STALL_TIMEOUT_SECONDS=%r; using 90s", value)
+        return 90.0
+    return max(timeout, 0.01)
+
+
+def _run_detail_jobs(
+    items: list[T],
+    *,
+    jobs: int,
+    fetch_detail: Callable[[T], tuple[T, ActivityDetail | None]],
+    label_for: Callable[[T], str],
+    on_commit: Callable[[T, ActivityDetail | None, int, int], None],
+    progress_callback: SyncProgressCallback | None = None,
+    saved_count: Callable[[], int] | None = None,
+) -> None:
+    """Run COROS detail requests with ordered commits and a stall guard.
+
+    A single stuck COROS request used to block ``as_completed`` forever, leaving
+    onboarding in "running" indefinitely. If no detail request finishes within
+    the configured stall timeout, abort the batch so the route can surface an
+    error and allow a retry.
+
+    Fetching may complete out of order, but commits are emitted only for the
+    contiguous oldest-first prefix. This preserves the existing incremental
+    scan invariant: once a retry sees the first existing activity, every older
+    activity in this batch has already been processed.
+    """
+    timeout = _detail_stall_timeout_seconds()
+    executor = ThreadPoolExecutor(max_workers=max(1, jobs))
+    future_indexes: dict[Future[tuple[T, ActivityDetail | None]], int] = {
+        executor.submit(fetch_detail, item): index for index, item in enumerate(items)
+    }
+    pending: set[Future[tuple[T, ActivityDetail | None]]] = set(future_indexes)
+    completed_results: dict[int, tuple[T, ActivityDetail | None]] = {}
+    completed_count = 0
+    committed_count = 0
+
+    try:
+        while pending or completed_results:
+            completed, pending = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
+            if not completed:
+                samples = ", ".join(label_for(items[future_indexes[f]]) for f in list(pending)[:3])
+                saved = saved_count() if saved_count is not None else committed_count
+                message = (
+                    f"COROS 训练详情请求超过 {int(timeout)} 秒没有进展，"
+                    f"已处理 {committed_count}/{len(items)}，已保存 {saved} 条；请稍后重试"
+                )
+                logger.warning("%s. Pending samples: %s", message, samples)
+                _emit_sync_progress(
+                    progress_callback,
+                    phase="activity_details",
+                    message=message,
+                    current=committed_count,
+                    total=len(items),
+                    synced_activities=saved,
+                )
+                raise ActivityDetailSyncTimeout(message)
+
+            for future in completed:
+                index = future_indexes[future]
+                item, detail = future.result()
+                completed_results[index] = (item, detail)
+                completed_count += 1
+
+            while committed_count in completed_results:
+                item, detail = completed_results.pop(committed_count)
+                committed_count += 1
+                on_commit(item, detail, committed_count, completed_count)
+    finally:
+        if pending:
+            for future in pending:
+                future.cancel()
+        executor.shutdown(wait=not pending, cancel_futures=bool(pending))
 
 
 def sync_activities(
@@ -114,54 +202,58 @@ def sync_activities(
                 logger.warning("Unexpected error syncing %s: %s", activity.label_id, e)
                 return activity, None
 
-        results: dict[str, ActivityDetail | None] = {}
-        with ThreadPoolExecutor(max_workers=jobs) as pool:
-            futures = {pool.submit(fetch_detail, a): a for a in ordered}
-            for future in as_completed(futures):
-                activity = futures[future]
-                _, detail = future.result()
-                results[activity.label_id] = detail
-                done = len(results)
-                date_str = activity.date
-                if len(date_str) == 8:
-                    date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
-                label = f"{date_str} {activity.name or activity.sport_name}"
-                progress.update(task, description=f"Syncing: {label}", completed=done)
-                _emit_sync_progress(
-                    progress_callback,
-                    phase="activity_details",
-                    message=f"正在同步训练详情：{label} ({done}/{len(ordered)})",
-                    percent=35 + round(done / len(ordered) * 35),
-                    current=done,
-                    total=len(ordered),
-                )
+        def activity_label(activity: Activity) -> str:
+            date_str = activity.date
+            if len(date_str) == 8:
+                date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+            return f"{date_str} {activity.name or activity.sport_name}"
 
-        # Write to DB in original order
         ai_targets: list[str] = []
-        _emit_sync_progress(
-            progress_callback,
-            phase="activity_save",
-            message=f"正在保存 {len(ordered)} 条训练详情",
-            percent=70,
-            current=0,
-            total=len(ordered),
-        )
-        for index, activity in enumerate(ordered, start=1):
-            detail = results[activity.label_id]
+
+        def on_activity_commit(
+            activity: Activity,
+            detail: ActivityDetail | None,
+            processed: int,
+            fetched: int,
+        ) -> None:
+            nonlocal synced
+            label = activity_label(activity)
             if detail:
                 db.upsert_activity(detail)
                 db.set_meta("last_activity_date", activity.date)
                 synced += 1
                 ai_targets.append(activity.label_id)
+            progress.update(task, description=f"Syncing: {label}", completed=processed)
             _emit_sync_progress(
                 progress_callback,
-                phase="activity_save",
-                message=f"正在写入训练数据库 ({index}/{len(ordered)})",
-                percent=70 + round(index / len(ordered) * 4),
-                current=index,
+                phase="activity_details",
+                message=f"正在同步训练详情：{label}（已处理 {processed}/{len(ordered)}，已保存 {synced}）",
+                percent=35 + round(processed / len(ordered) * 35),
+                current=processed,
                 total=len(ordered),
+                fetched=fetched,
                 synced_activities=synced,
             )
+
+        _run_detail_jobs(
+            ordered,
+            jobs=jobs,
+            fetch_detail=fetch_detail,
+            label_for=activity_label,
+            on_commit=on_activity_commit,
+            progress_callback=progress_callback,
+            saved_count=lambda: synced,
+        )
+
+        _emit_sync_progress(
+            progress_callback,
+            phase="activity_save",
+            message=f"训练详情已保存 {synced}/{len(ordered)} 条",
+            percent=74,
+            current=len(ordered),
+            total=len(ordered),
+            synced_activities=synced,
+        )
 
     # AOAI auto-commentary for each newly synced activity (fire-and-forget).
     # Isolated here so any import/network failure cannot break sync.
@@ -464,24 +556,29 @@ def resync_date_range(
                 logger.warning("Failed to re-sync %s: %s", act["label_id"], e)
                 return act, None
 
-        results: dict[str, ActivityDetail | None] = {}
-        with ThreadPoolExecutor(max_workers=jobs) as pool:
-            futures = {pool.submit(fetch_detail, a): a for a in activities}
-            for future in as_completed(futures):
-                act = futures[future]
-                _, detail = future.result()
-                results[act["label_id"]] = detail
-                progress.update(
-                    task,
-                    description=f"Re-syncing: {act.get('name') or act.get('sport_name', '')}",
-                    completed=len(results),
-                )
-
-        for act in activities:
-            detail = results[act["label_id"]]
+        def on_resync_commit(
+            act: dict,
+            detail: ActivityDetail | None,
+            processed: int,
+            _fetched: int,
+        ) -> None:
+            nonlocal synced
             if detail:
                 db.upsert_activity(detail)
                 synced += 1
+            progress.update(
+                task,
+                description=f"Re-syncing: {act.get('name') or act.get('sport_name', '')}",
+                completed=processed,
+            )
+
+        _run_detail_jobs(
+            activities,
+            jobs=jobs,
+            fetch_detail=fetch_detail,
+            label_for=lambda act: str(act.get("name") or act.get("sport_name") or act["label_id"]),
+            on_commit=on_resync_commit,
+        )
 
     return synced
 
