@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -62,6 +63,68 @@ def _write_onboarding(uuid: str, data: dict[str, Any]) -> None:
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _sync_stale_after_seconds() -> float:
+    value = os.environ.get("STRIDE_SYNC_STALE_AFTER_SECONDS", "300")
+    try:
+        seconds = float(value)
+    except ValueError:
+        logger.warning("Invalid STRIDE_SYNC_STALE_AFTER_SECONDS=%r; using 300s", value)
+        return 300.0
+    return max(seconds, 30.0)
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _mark_stale_running_sync(uuid: str, onboarding: dict[str, Any]) -> dict[str, Any]:
+    if onboarding.get("sync_state") != "running":
+        return onboarding
+
+    progress = dict(onboarding.get("sync_progress") or {})
+    last_update = _parse_iso_datetime(
+        progress.get("updated_at") or progress.get("started_at")
+    )
+    if last_update is None:
+        return onboarding
+
+    now = datetime.now(timezone.utc)
+    if (now - last_update).total_seconds() <= _sync_stale_after_seconds():
+        return onboarding
+
+    failed_at = now.isoformat()
+    failed_phase = progress.get("phase")
+    message = "同步任务已停止，请点击重试"
+    progress.update(
+        {
+            "phase": "error",
+            "failed_phase": failed_phase,
+            "message": message,
+            "updated_at": failed_at,
+        }
+    )
+    onboarding["sync_state"] = "error"
+    onboarding["error"] = message
+    onboarding["completed_at"] = None
+    onboarding["failed_at"] = failed_at
+    onboarding["sync_progress"] = progress
+    _write_onboarding(uuid, onboarding)
+    logger.warning(
+        "Marked stale onboarding sync as error for %s after %.0fs without progress",
+        uuid,
+        (now - last_update).total_seconds(),
+    )
+    return onboarding
 
 
 def _write_sync_progress(
@@ -240,6 +303,7 @@ def sync_status(payload: dict = Depends(require_bearer)):
     """Return the current background sync state."""
     uuid = _validate_uuid(payload["sub"])
     onboarding = _read_onboarding(uuid)
+    onboarding = _mark_stale_running_sync(uuid, onboarding)
     result: dict[str, Any] = {
         "state": onboarding.get("sync_state"),
         "progress": onboarding.get("sync_progress"),

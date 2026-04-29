@@ -392,6 +392,74 @@ def test_sync_status_returns_error_when_present(app_env):
     assert data["error"] == "connection refused"
 
 
+def test_sync_status_marks_stale_running_sync_as_error(app_env, monkeypatch):
+    client, token, tmp_path, _ = app_env
+    monkeypatch.setenv("STRIDE_SYNC_STALE_AFTER_SECONDS", "60")
+    _set_onboarding(tmp_path, {
+        "coros_ready": True,
+        "profile_ready": True,
+        "completed_at": None,
+        "sync_state": "running",
+        "sync_progress": {
+            "phase": "activity_details",
+            "message": "正在同步训练详情：2024-10-10 健身 (474/962)",
+            "percent": 52,
+            "current": 474,
+            "total": 962,
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        },
+    })
+
+    resp = client.get(
+        "/api/users/me/sync-status",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["state"] == "error"
+    assert data["error"] == "同步任务已停止，请点击重试"
+    assert data["progress"]["phase"] == "error"
+    assert data["progress"]["failed_phase"] == "activity_details"
+    assert data["progress"]["current"] == 474
+    assert data["progress"]["total"] == 962
+
+    onboarding = json.loads((tmp_path / USER_UUID / "onboarding.json").read_text())
+    assert onboarding["sync_state"] == "error"
+    assert onboarding["completed_at"] is None
+    assert onboarding["failed_at"] is not None
+
+
+def test_sync_status_keeps_recent_running_sync_running(app_env, monkeypatch):
+    client, token, tmp_path, _ = app_env
+    monkeypatch.setenv("STRIDE_SYNC_STALE_AFTER_SECONDS", "300")
+
+    import stride_server.routes.onboarding as ob_mod
+
+    _set_onboarding(tmp_path, {
+        "coros_ready": True,
+        "profile_ready": True,
+        "completed_at": None,
+        "sync_state": "running",
+        "sync_progress": {
+            "phase": "activity_details",
+            "message": "正在同步训练详情",
+            "percent": 52,
+            "updated_at": ob_mod._utcnow_iso(),
+        },
+    })
+
+    resp = client.get(
+        "/api/users/me/sync-status",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["state"] == "running"
+    assert data["progress"]["phase"] == "activity_details"
+
+
 def test_sync_status_no_files_returns_none_state(app_env):
     client, token, _, _ = app_env
     resp = client.get(
