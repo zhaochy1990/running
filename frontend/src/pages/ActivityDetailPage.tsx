@@ -119,9 +119,9 @@ export default function ActivityDetailPage() {
   const sharedStartTs = timeseries.find((p) => p.timestamp != null)?.timestamp ?? undefined
 
   return (
-    <div className="max-w-5xl mx-auto px-8 py-8 animate-fade-in">
+    <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
       {/* Header Card */}
-      <div className="bg-bg-card border border-border-subtle rounded-2xl p-6 mb-6">
+      <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6 mb-6">
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3 mb-2">

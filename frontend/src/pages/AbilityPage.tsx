@@ -68,7 +68,7 @@ export default function AbilityPage() {
   }, [user, days])
 
   return (
-    <div className="max-w-6xl mx-auto px-8 py-8">
+    <div className="max-w-6xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />

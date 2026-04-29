@@ -68,7 +68,7 @@ export default function InbodyPage() {
   const checkpoints = summary?.checkpoints ?? []
 
   return (
-    <div className="max-w-6xl mx-auto px-8 py-8">
+    <div className="max-w-6xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-accent-amber/30 border-t-accent-amber rounded-full animate-spin" />

@@ -166,7 +166,7 @@ export default function ProfilePage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-8 py-8">
+    <div className="max-w-3xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
       <button
         onClick={() => navigate(-1)}
         className="text-xs font-mono text-text-muted hover:text-text-secondary mb-4"

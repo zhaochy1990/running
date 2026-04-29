@@ -176,7 +176,7 @@ export default function TeamDetailPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-8 py-8">
+    <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
       <button onClick={() => navigate('/teams')} className="text-xs font-mono text-text-muted hover:text-text-secondary mb-4">← 返回</button>
 
       {/* Team header */}

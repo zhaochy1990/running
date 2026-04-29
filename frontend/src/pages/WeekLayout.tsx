@@ -52,7 +52,7 @@ export default function WeekLayout() {
   }, [folder, user])
 
   return (
-    <div className="max-w-5xl mx-auto px-8 py-8">
+    <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
       {loadingDetail ? (
         <div className="flex items-center justify-center py-20">
           <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
@@ -64,7 +64,7 @@ export default function WeekLayout() {
             <h1 className="text-2xl font-bold text-text-primary tracking-tight">
               {formatWeekRange(weekDetail.date_from, weekDetail.date_to)}
             </h1>
-            <div className="flex items-center gap-4 mt-2">
+            <div className="flex items-center flex-wrap gap-4 mt-2">
               <Stat label="训练次数" value={`${weekDetail.activity_count}`} />
               <Stat label="总里程" value={`${weekDetail.total_km} km`} accent />
               <Stat label="总时长" value={weekDetail.total_duration_fmt} />
@@ -88,7 +88,7 @@ export default function WeekLayout() {
 
           {/* Tab content */}
           {activeTab === 'plan' && weekDetail.plan && (
-            <div className="bg-bg-card border border-border-subtle rounded-2xl p-6 animate-fade-in">
+            <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6 animate-fade-in">
               <div className="prose max-w-none">
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{weekDetail.plan}</ReactMarkdown>
               </div>
@@ -199,7 +199,7 @@ function FeedbackPanel({
   const isEmpty = !feedback || !feedback.trim()
 
   return (
-    <div className="bg-bg-card border border-border-subtle rounded-2xl p-6 animate-fade-in">
+    <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6 animate-fade-in">
       {/* Header: source badge + edit/save controls */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -316,48 +316,60 @@ function ActivityList({ activities }: { activities: Activity[] }) {
           <div className="space-y-2">
             {acts.map((a) => (
               <Link key={a.label_id} to={`/activity/${a.label_id}`}>
-                <div className="group bg-bg-card border border-border-subtle rounded-xl px-5 py-4 hover:bg-bg-card-hover hover:border-border transition-all duration-200 cursor-pointer">
-                  <div className="flex items-center gap-4">
+                <div className="group bg-bg-card border border-border-subtle rounded-xl px-4 sm:px-5 py-3.5 sm:py-4 hover:bg-bg-card-hover hover:border-border transition-all duration-200 cursor-pointer">
+                  <div className="flex items-stretch gap-3 sm:gap-4">
                     <div
-                      className="w-1 h-10 rounded-full flex-shrink-0 opacity-70 group-hover:opacity-100 transition-opacity"
+                      className="w-1 self-stretch rounded-full flex-shrink-0 opacity-70 group-hover:opacity-100 transition-opacity"
                       style={{ backgroundColor: sportColor(a.sport_name) }}
                     />
 
-                    <div className="min-w-[150px]">
-                      <p className="text-sm font-medium text-text-primary truncate max-w-[200px]">
-                        {a.name || sportNameCN(a.sport_name)}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span
-                          className="text-xs font-mono px-1.5 py-0.5 rounded"
-                          style={{ color: sportColor(a.sport_name), backgroundColor: sportColor(a.sport_name) + '15' }}
-                        >
-                          {sportNameCN(a.sport_name)}
-                        </span>
-                        {a.train_type && (
-                          <span
-                            className="text-xs font-mono px-1.5 py-0.5 rounded"
-                            style={{ color: trainTypeColor(a.train_type), backgroundColor: trainTypeColor(a.train_type) + '15' }}
-                          >
-                            {trainTypeCN(a.train_type)}
-                          </span>
-                        )}
+                    <div className="flex-1 min-w-0">
+                      {/* Name + tags row — desktop also has metrics inline */}
+                      <div className="flex items-center gap-3 sm:gap-4">
+                        <div className="flex-1 min-w-0 sm:flex-none sm:min-w-[150px]">
+                          <p className="text-sm font-medium text-text-primary truncate">
+                            {a.name || sportNameCN(a.sport_name)}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span
+                              className="text-xs font-mono px-1.5 py-0.5 rounded"
+                              style={{ color: sportColor(a.sport_name), backgroundColor: sportColor(a.sport_name) + '15' }}
+                            >
+                              {sportNameCN(a.sport_name)}
+                            </span>
+                            {a.train_type && (
+                              <span
+                                className="text-xs font-mono px-1.5 py-0.5 rounded"
+                                style={{ color: trainTypeColor(a.train_type), backgroundColor: trainTypeColor(a.train_type) + '15' }}
+                              >
+                                {trainTypeCN(a.train_type)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Desktop-only metrics */}
+                        <div className="hidden sm:flex flex-1 items-center gap-6">
+                          <Metric label="距离" value={`${a.distance_km} km`} accent />
+                          <Metric label="时长" value={a.duration_fmt} />
+                          <Metric label="配速" value={a.pace_fmt} accent />
+                          <Metric label="心率" value={a.avg_hr ? `${a.avg_hr}` : '—'} />
+                          <Metric label="步频" value={a.avg_cadence ? `${a.avg_cadence}` : '—'} />
+                          {a.temperature != null && <Metric label="气温" value={`${a.temperature}°`} />}
+                        </div>
+
+                        <div className="text-text-muted group-hover:text-accent-green transition-colors text-sm flex-shrink-0">
+                          &rsaquo;
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex-1 flex items-center gap-6">
-                      <Metric label="距离" value={`${a.distance_km} km`} accent />
-                      <Metric label="时长" value={a.duration_fmt} />
-                      <Metric label="配速" value={a.pace_fmt} accent />
-                      <Metric label="心率" value={a.avg_hr ? `${a.avg_hr}` : '—'} />
-                      <Metric label="步频" value={a.avg_cadence ? `${a.avg_cadence}` : '—'} />
-                      {a.temperature != null && (
-                        <Metric label="气温" value={`${a.temperature}°`} />
-                      )}
-                    </div>
-
-                    <div className="text-text-muted group-hover:text-accent-green transition-colors text-sm">
-                      &rsaquo;
+                      {/* Mobile-only key metrics */}
+                      <div className="flex sm:hidden items-center gap-4 mt-2">
+                        <Metric label="距离" value={`${a.distance_km} km`} accent />
+                        <Metric label="配速" value={a.pace_fmt} accent />
+                        <Metric label="时长" value={a.duration_fmt} />
+                        {a.avg_hr ? <Metric label="心率" value={`${a.avg_hr}`} /> : null}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -372,7 +384,7 @@ function ActivityList({ activities }: { activities: Activity[] }) {
 
 function Metric({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="min-w-[60px]">
+    <div>
       <p className="text-xs font-mono text-text-muted tracking-wider">{label}</p>
       <p className={`text-sm font-mono font-medium mt-0.5 ${accent ? 'text-text-primary' : 'text-text-secondary'}`}>
         {value}

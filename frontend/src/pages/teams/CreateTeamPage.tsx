@@ -32,7 +32,7 @@ export default function CreateTeamPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-8 py-8">
+    <div className="max-w-2xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
       <button onClick={() => navigate('/teams')} className="text-xs font-mono text-text-muted hover:text-text-secondary mb-4">← 返回</button>
 
       <h1 className="text-2xl font-bold text-text-primary mb-2">创建团队</h1>

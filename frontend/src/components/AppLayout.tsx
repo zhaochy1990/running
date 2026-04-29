@@ -10,6 +10,7 @@ export default function AppLayout() {
   const { user, displayName } = useUser()
   const logout = useAuthStore((s) => s.logout)
   const [signingOut, setSigningOut] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleLogout = async () => {
     setSigningOut(true)
@@ -28,6 +29,11 @@ export default function AppLayout() {
   // Extract current folder from URL
   const folderMatch = location.pathname.match(/\/week\/(.+)/)
   const currentFolder = folderMatch ? folderMatch[1] : null
+
+  // Close mobile sidebar on navigation
+  useEffect(() => {
+    setMobileOpen(false)
+  }, [location.pathname])
 
   const handleSync = () => {
     setSyncing(true)
@@ -62,8 +68,16 @@ export default function AppLayout() {
 
   return (
     <div className="min-h-screen flex">
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-30 sm:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <nav className="w-[260px] min-h-screen bg-bg-secondary border-r border-border flex flex-col fixed left-0 top-0 z-40 overflow-y-auto">
+      <nav className={`w-[260px] min-h-screen bg-bg-secondary border-r border-border flex flex-col fixed left-0 top-0 z-40 overflow-y-auto transition-transform duration-300 ease-in-out ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} sm:translate-x-0`}>
         <div className="px-5 pt-6 pb-5">
           <div className="flex items-center justify-between">
             <button onClick={() => navigate('/')} className="flex items-center gap-2.5 cursor-pointer">
@@ -75,13 +89,25 @@ export default function AppLayout() {
                 <p className="text-xs font-mono text-text-muted tracking-widest mt-0.5">训练中心</p>
               </div>
             </button>
-            <button
-              onClick={() => navigate('/profile')}
-              title="编辑个人资料"
-              className="text-[11px] font-mono text-text-muted px-2 py-1 rounded-lg bg-bg-card border border-border-subtle hover:bg-bg-card-hover hover:text-text-secondary truncate max-w-[90px] cursor-pointer transition-colors"
-            >
-              {displayName}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => navigate('/profile')}
+                title="编辑个人资料"
+                className="text-[11px] font-mono text-text-muted px-2 py-1 rounded-lg bg-bg-card border border-border-subtle hover:bg-bg-card-hover hover:text-text-secondary truncate max-w-[90px] cursor-pointer transition-colors"
+              >
+                {displayName}
+              </button>
+              {/* Close button — mobile only */}
+              <button
+                className="sm:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-card transition-colors"
+                onClick={() => setMobileOpen(false)}
+                aria-label="关闭菜单"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -222,7 +248,20 @@ export default function AppLayout() {
       </nav>
 
       {/* Main content */}
-      <main className="flex-1 ml-[260px]">
+      <main className="flex-1 ml-0 sm:ml-[260px] min-w-0">
+        {/* Mobile top bar */}
+        <div className="sm:hidden sticky top-0 z-20 flex items-center px-4 h-12 bg-bg-secondary border-b border-border">
+          <button
+            onClick={() => setMobileOpen(true)}
+            className="p-1.5 -ml-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-card transition-colors"
+            aria-label="打开菜单"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <span className="ml-3 text-sm font-bold text-text-primary">STRIDE</span>
+        </div>
         <Outlet />
       </main>
     </div>

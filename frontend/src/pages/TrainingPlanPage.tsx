@@ -74,7 +74,7 @@ export default function TrainingPlanPage() {
   const totalSpan = totalEnd - totalStart || 1
 
   return (
-    <div className="max-w-5xl mx-auto px-8 py-8 animate-fade-in">
+    <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-text-primary tracking-tight">2026夏训总纲</h1>
@@ -96,7 +96,7 @@ export default function TrainingPlanPage() {
 
       {/* Phase Timeline */}
       {phases.length > 0 && (
-        <div className="bg-bg-card border border-border-subtle rounded-2xl p-6 mb-6">
+        <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6 mb-6">
           <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">训练周期</h3>
 
           {/* Timeline bar */}
@@ -167,7 +167,7 @@ export default function TrainingPlanPage() {
       )}
 
       {/* Full plan markdown */}
-      <div className="bg-bg-card border border-border-subtle rounded-2xl p-6">
+      <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6">
         <div className="prose max-w-none">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan.content}</ReactMarkdown>
         </div>
