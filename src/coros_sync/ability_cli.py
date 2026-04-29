@@ -9,6 +9,7 @@ Exposes:
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 import click
@@ -29,13 +30,13 @@ from stride_core.ability import (
     compute_ability_snapshot,
     compute_contribution,
     compute_l1_quality,
+    marathon_target_from_profile,
+    marathon_target_label,
 )
-from stride_core.db import Database
+from stride_core.db import Database, USER_DATA_DIR
 
 console = Console()
-
-
-SUB_2_50_S = 2 * 3600 + 50 * 60  # 10200
+logger = logging.getLogger(__name__)
 
 
 def _today_iso() -> str:
@@ -61,6 +62,21 @@ def _fmt_gap(gap_s: int | float | None) -> str:
     return f"{sign}{m}:{sec:02d}"
 
 
+def _load_profile(profile: str) -> dict | None:
+    path = USER_DATA_DIR / profile / "profile.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("cannot read profile for %s: %s", profile, exc)
+        return None
+    if not isinstance(data, dict):
+        logger.warning("profile for %s is not a JSON object", profile)
+        return None
+    return data
+
+
 def _score_color(value: float | None) -> str:
     if value is None:
         return "dim"
@@ -80,17 +96,23 @@ def _score_color(value: float | None) -> str:
 def _render_marathon_panel(snapshot: dict) -> Panel:
     estimates = snapshot.get("marathon_estimates") or {}
     headline = snapshot.get("l4_marathon_estimate_s")
-    gap = snapshot.get("distance_to_sub_2_50_s")
+    target_s = snapshot.get("marathon_target_s")
+    target_label = (
+        snapshot.get("marathon_target_label")
+        or (marathon_target_label(target_s) if target_s is not None else None)
+    )
+    gap = snapshot.get("distance_to_target_s")
 
     training_s = estimates.get("training_s")
     race_s = estimates.get("race_s") or headline
     best_s = estimates.get("best_case_s")
+    if gap is None and race_s is not None and target_s is not None:
+        gap = float(race_s) - float(target_s)
 
     lines = []
     lines.append(f"[bold]典型赛日预测[/bold]   {_fmt_time(race_s)}")
-    lines.append(
-        f"距 2:50 目标        [yellow]{_fmt_gap(gap)}[/yellow]"
-    )
+    if target_label is not None:
+        lines.append(f"距 {target_label} 目标      [yellow]{_fmt_gap(gap)}[/yellow]")
     lines.append("")
     lines.append(f"[dim]未减量训练外推[/dim]   {_fmt_time(training_s)}")
     lines.append(f"[dim]完美赛日上限[/dim]     {_fmt_time(best_s)}")
@@ -172,6 +194,18 @@ def _render_vo2max_panel(snapshot: dict) -> Panel:
 def _ability_current(profile: str) -> None:
     with Database(user=profile) as db:
         snapshot = compute_ability_snapshot(db, date=_today_iso())
+    target_s = marathon_target_from_profile(_load_profile(profile))
+    race_s = snapshot.get("l4_marathon_estimate_s")
+    snapshot = {
+        **snapshot,
+        "marathon_target_s": target_s,
+        "marathon_target_label": marathon_target_label(target_s) if target_s is not None else None,
+        "distance_to_target_s": (
+            race_s - target_s
+            if race_s is not None and target_s is not None
+            else None
+        ),
+    }
 
     top = Columns(
         [_render_l4_panel(snapshot), _render_marathon_panel(snapshot)],

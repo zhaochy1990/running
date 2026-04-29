@@ -30,6 +30,8 @@ from stride_core.ability import (
     daniels_vdot,
     daniels_vo2_required,
     estimate_marathon_time_s,
+    marathon_target_from_profile,
+    marathon_target_label,
     uth_sorensen_vo2max,
     vdot_to_marathon_s,
 )
@@ -480,6 +482,22 @@ class TestContribution:
         delta = compute_contribution({}, prior_l3={}, posterior_l3={})
         for v in delta.values():
             assert v == 0.0
+
+
+class TestMarathonTarget:
+    def test_missing_profile_target_returns_none(self):
+        assert marathon_target_from_profile({"display_name": "runner"}) is None
+
+    def test_structured_profile_target_time(self):
+        profile = {"target_distance": "FM", "target_time": "3:40:00"}
+        assert marathon_target_from_profile(profile) == 3 * 3600 + 40 * 60
+
+    def test_legacy_chinese_goal_skips_pace_token(self):
+        profile = {"目标": "2026-08-30 马拉松破 3:40 (目标配速 5:13/km)"}
+        assert marathon_target_from_profile(profile) == 3 * 3600 + 40 * 60
+
+    def test_label_omits_zero_seconds(self):
+        assert marathon_target_label(3 * 3600 + 40 * 60) == "Sub-3:40"
 
 
 # ---------------------------------------------------------------------------

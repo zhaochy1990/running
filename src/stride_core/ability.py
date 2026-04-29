@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
@@ -24,6 +25,8 @@ from typing import Any, Iterable, Mapping, Sequence
 # Each anchor pins a physical pace / metric to a target 0-100 score point so
 # cross-week numbers remain comparable.  Tuned for sub-2:50 marathon target.
 # ---------------------------------------------------------------------------
+
+DEFAULT_MARATHON_TARGET_S = 2 * 3600 + 50 * 60
 
 # Reference VDOT for VO2max dimension scoring.
 # Anchor: 3:00:00 marathon (≈ VDOT 62 per Daniels) → score 60.
@@ -84,6 +87,84 @@ RACE_DAY_BOOST_MAX = 0.02            # typical well-executed race day at amateur
 BEST_CASE_BOOST_MAX = 0.03            # optimally tapered + perfect execution at amateur level
 THEORETICAL_MIN_MARATHON_S = 7200     # ~2:00:00 — theoretical lower bound, boost → 0
 BOOST_NORMALIZE_RANGE_S = 7200        # range over which boost ramps from 0 → MAX
+
+_TIME_TOKEN_RE = re.compile(r"(?<!\d)(\d{1,2}:\d{2}(?::\d{2})?)(?![:\d])")
+
+
+def _parse_duration_token(value: str) -> int | None:
+    parts = value.strip().split(":")
+    if len(parts) == 2:
+        h, m = parts
+        sec = 0
+    elif len(parts) == 3:
+        h, m, sec = parts
+    else:
+        return None
+    try:
+        hours = int(h)
+        minutes = int(m)
+        seconds = int(sec)
+    except ValueError:
+        return None
+    if hours <= 0 or minutes >= 60 or seconds >= 60:
+        return None
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _looks_like_marathon_time(total_s: int) -> bool:
+    return 2 * 3600 <= total_s <= 7 * 3600
+
+
+def _extract_marathon_time_from_text(text: str) -> int | None:
+    for match in _TIME_TOKEN_RE.finditer(text):
+        token = match.group(1)
+        suffix = text[match.end():match.end() + 4].lower()
+        prefix = text[max(0, match.start() - 8):match.start()]
+        if "/km" in suffix or "配速" in prefix:
+            continue
+        total_s = _parse_duration_token(token)
+        if total_s is not None and _looks_like_marathon_time(total_s):
+            return total_s
+    return None
+
+
+def marathon_target_from_profile(
+    profile: Mapping[str, Any] | None,
+    default: int | None = None,
+) -> int | None:
+    """Return the user's configured marathon target in seconds, if present."""
+    if not profile:
+        return default
+
+    target_distance = str(profile.get("target_distance") or "").strip().lower()
+    target_time = profile.get("target_time")
+    marathon_distances = {"fm", "marathon", "full", "full marathon", "全马", "马拉松"}
+    if isinstance(target_time, str) and (
+        not target_distance or target_distance in marathon_distances
+    ):
+        parsed = _parse_duration_token(target_time)
+        if parsed is not None and _looks_like_marathon_time(parsed):
+            return parsed
+
+    for key in ("目标", "target", "goal", "target_race"):
+        value = profile.get(key)
+        if isinstance(value, str) and (
+            "马拉松" in value or "marathon" in value.lower() or "sub" in value.lower()
+        ):
+            parsed = _extract_marathon_time_from_text(value)
+            if parsed is not None:
+                return parsed
+
+    return default
+
+
+def marathon_target_label(target_s: int) -> str:
+    s = int(round(target_s))
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    if sec:
+        return f"Sub-{h}:{m:02d}:{sec:02d}"
+    return f"Sub-{h}:{m:02d}"
 
 def _scaled_boost(training_s: float, max_boost: float) -> float:
     """Linear-decay race-day boost: smaller as training_s approaches the theoretical limit."""

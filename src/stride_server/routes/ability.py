@@ -13,6 +13,7 @@ for today — this never persists, keeping the write path in a single owner.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
@@ -24,11 +25,15 @@ from stride_core.ability import (
     RACE_DAY_BOOST_MAX,
     _scaled_boost,
     compute_ability_snapshot,
+    marathon_target_from_profile,
+    marathon_target_label,
 )
+from stride_core.db import USER_DATA_DIR
 
 from ..deps import get_db
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # L3 dimension keys in a stable UI-friendly order.
 L3_KEYS: tuple[str, ...] = ("aerobic", "lt", "vo2max", "endurance", "economy", "recovery")
@@ -56,6 +61,41 @@ def _parse_evidence(raw: Any) -> list[str]:
             return []
         return [str(x) for x in v] if isinstance(v, list) else []
     return []
+
+
+def _load_profile(user: str) -> dict[str, Any] | None:
+    path = USER_DATA_DIR / user / "profile.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("ability: cannot read profile for %s: %s", user, exc)
+        return None
+    if not isinstance(data, dict):
+        logger.warning("ability: profile for %s is not a JSON object", user)
+        return None
+    return data
+
+
+def _target_payload(user: str, race_s: int | float | None) -> dict[str, Any]:
+    target_s = marathon_target_from_profile(_load_profile(user))
+    return {
+        "marathon_target_s": target_s,
+        "marathon_target_label": marathon_target_label(target_s) if target_s is not None else None,
+        "distance_to_target_s": (
+            float(race_s) - target_s
+            if race_s is not None and target_s is not None
+            else None
+        ),
+    }
+
+
+def _attach_target(user: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+    race_s = snapshot.get("l4_marathon_estimate_s")
+    if race_s is None:
+        race_s = (snapshot.get("marathon_estimates") or {}).get("race_s")
+    return {**snapshot, **_target_payload(user, race_s)}
 
 
 def _pivot_snapshot_rows(rows: list[Any], date: str) -> dict | None:
@@ -154,11 +194,11 @@ def get_ability_current(user: str, refresh: bool = Query(False)) -> dict:
             ).fetchall()
             pivoted = _pivot_snapshot_rows(list(rows), today)
             if pivoted is not None:
-                return pivoted
+                return _attach_target(user, pivoted)
         snap = compute_ability_snapshot(db, today)
     finally:
         db.close()
-    return _normalize_live_snapshot(snap)
+    return _attach_target(user, _normalize_live_snapshot(snap))
 
 
 @router.post("/api/{user}/ability/backfill")

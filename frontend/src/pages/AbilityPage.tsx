@@ -91,7 +91,12 @@ export default function AbilityPage() {
             </div>
           </div>
 
-          <AbilityHero estimates={current.marathon_estimates} date={current.date} />
+          <AbilityHero
+            estimates={current.marathon_estimates}
+            date={current.date}
+            targetS={current.marathon_target_s}
+            targetLabel={current.marathon_target_label}
+          />
 
           <AbilityTriptych estimates={current.marathon_estimates} />
 

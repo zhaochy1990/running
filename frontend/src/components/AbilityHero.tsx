@@ -1,11 +1,17 @@
 import type { MarathonEstimates } from '../api'
 import { fmtHMS, fmtGap } from '../lib/fmt'
 
-const SUB_2_50_S = 10200 // 2:50:00
-
-export default function AbilityHero({ estimates, date }: { estimates: MarathonEstimates; date: string }) {
+export default function AbilityHero({
+  estimates, date, targetS, targetLabel,
+}: {
+  estimates: MarathonEstimates
+  date: string
+  targetS?: number | null
+  targetLabel?: string | null
+}) {
   const raceS = estimates.race_s
-  const gap = raceS != null ? raceS - SUB_2_50_S : null
+  const hasTarget = targetS != null && Number.isFinite(targetS)
+  const gap = raceS != null && hasTarget ? raceS - targetS : null
   const onPace = gap != null && gap <= 0
 
   return (
@@ -19,20 +25,22 @@ export default function AbilityHero({ estimates, date }: { estimates: MarathonEs
       >
         {fmtHMS(raceS)}
       </p>
-      <div className="mt-5 flex items-center justify-center gap-4 flex-wrap">
-        <span className="text-sm font-mono text-text-secondary">
-          目标 Sub-2:50
-        </span>
-        <span
-          className="text-sm font-mono font-semibold px-2.5 py-1 rounded"
-          style={{
-            color: onPace ? '#00a85a' : '#d32f2f',
-            backgroundColor: (onPace ? '#00a85a' : '#d32f2f') + '15',
-          }}
-        >
-          {gap != null ? `${onPace ? '已达 ' : ''}${fmtGap(gap)}` : '—'}
-        </span>
-      </div>
+      {hasTarget && targetLabel ? (
+        <div className="mt-5 flex items-center justify-center gap-4 flex-wrap">
+          <span className="text-sm font-mono text-text-secondary">
+            目标 {targetLabel}
+          </span>
+          <span
+            className="text-sm font-mono font-semibold px-2.5 py-1 rounded"
+            style={{
+              color: onPace ? '#00a85a' : '#d32f2f',
+              backgroundColor: (onPace ? '#00a85a' : '#d32f2f') + '15',
+            }}
+          >
+            {gap != null ? `${onPace ? '已达 ' : ''}${fmtGap(gap)}` : '—'}
+          </span>
+        </div>
+      ) : null}
       <p className="text-xs font-mono text-text-muted mt-4 leading-relaxed">
         完美赛日 / 未减量 · Race-day execution assuming taper & perfect conditions
       </p>

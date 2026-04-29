@@ -219,6 +219,69 @@ def test_current_falls_back_to_live_compute_when_no_snapshot(
         assert k in body["marathon_estimates"]
 
 
+def test_current_uses_profile_marathon_target(
+    client_and_db, monkeypatch, rsa_keypair, tmp_path
+):
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem=public_pem)
+    client, db_path = client_and_db
+
+    import stride_server.routes.ability as ability_mod
+    monkeypatch.setattr(ability_mod, "_today_iso", lambda: "2026-04-24")
+    monkeypatch.setattr(ability_mod, "USER_DATA_DIR", tmp_path)
+
+    user_dir = tmp_path / "zhaochaoyi"
+    user_dir.mkdir(parents=True)
+    (user_dir / "profile.json").write_text(
+        json.dumps({"目标": "2026-08-30 马拉松破 3:40 (目标配速 5:13/km)"}),
+        encoding="utf-8",
+    )
+    _seed_snapshot(db_path, "2026-04-24", race_s=13400)
+
+    token = _issue_token(private_pem)
+    resp = client.get(
+        "/api/zhaochaoyi/ability/current",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["source"] == "snapshot"
+    assert body["marathon_target_s"] == 13200
+    assert body["marathon_target_label"] == "Sub-3:40"
+    assert body["distance_to_target_s"] == 200
+
+
+def test_current_omits_target_when_profile_has_no_target(
+    client_and_db, monkeypatch, rsa_keypair, tmp_path
+):
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem=public_pem)
+    client, db_path = client_and_db
+
+    import stride_server.routes.ability as ability_mod
+    monkeypatch.setattr(ability_mod, "_today_iso", lambda: "2026-04-24")
+    monkeypatch.setattr(ability_mod, "USER_DATA_DIR", tmp_path)
+
+    user_dir = tmp_path / "zhaochaoyi"
+    user_dir.mkdir(parents=True)
+    (user_dir / "profile.json").write_text(
+        json.dumps({"display_name": "Runner"}),
+        encoding="utf-8",
+    )
+    _seed_snapshot(db_path, "2026-04-24", race_s=13400)
+
+    token = _issue_token(private_pem)
+    resp = client.get(
+        "/api/zhaochaoyi/ability/current",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["marathon_target_s"] is None
+    assert body["marathon_target_label"] is None
+    assert body["distance_to_target_s"] is None
+
+
 def test_history_returns_list_oldest_first(
     client_and_db, monkeypatch, rsa_keypair
 ):

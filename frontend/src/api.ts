@@ -532,6 +532,9 @@ export interface AbilityCurrent {
   l4_composite: number | null
   l4_marathon_estimate_s: number | null
   distance_to_sub_2_50_s: number | null
+  distance_to_target_s?: number | null
+  marathon_target_s?: number | null
+  marathon_target_label?: string | null
   marathon_estimates: MarathonEstimates
   evidence_activity_ids: string[]
 }
