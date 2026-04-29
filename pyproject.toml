@@ -24,6 +24,8 @@ web = [
     "uvicorn[standard]>=0.30",
     "pyjwt[crypto]>=2.8",
     "openai>=1.40",
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
     "azure-identity>=1.17",
     "azure-keyvault-secrets>=4.8",
     "azure-storage-blob>=12.20",
@@ -35,6 +37,7 @@ dev = [
 
 [project.scripts]
 coros-sync = "coros_sync.cli:cli"
+stride-coach = "stride_server.coach_agent.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/coros_sync", "src/stride_core", "src/stride_server"]

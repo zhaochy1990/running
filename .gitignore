@@ -16,6 +16,9 @@ profile
 *.db
 data/*/config.json
 data/*/auth.json
+data/*/coach.json
+data/coach.json
+.stride-coach.json
 .credentials.local
 .playwright-mcp/
 frontend/.env.local
