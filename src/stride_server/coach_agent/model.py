@@ -23,7 +23,7 @@ class CoachModelConfig:
     api_version: str
     api_kind: str
     auth_mode: str
-    temperature: float
+    temperature: float | None
     max_tokens: int | None
     timeout_s: float
 
@@ -94,7 +94,8 @@ def get_model_config() -> CoachModelConfig:
         raise AOAIUnavailable(
             "STRIDE_COACH_AUTH_MODE must be one of: auto, api-key, credential"
         )
-    temperature = float(os.environ.get("STRIDE_COACH_TEMPERATURE", "0.4"))
+    temperature_env = os.environ.get("STRIDE_COACH_TEMPERATURE")
+    temperature = float(temperature_env) if temperature_env else None
     max_tokens_env = os.environ.get("STRIDE_COACH_MAX_TOKENS")
     max_tokens = int(max_tokens_env) if max_tokens_env else None
     timeout_s = float(os.environ.get("STRIDE_COACH_TIMEOUT_SECONDS", "120"))
@@ -123,17 +124,20 @@ def _credential_with_optional_tenant(cls: Any, tenant_id: str | None) -> Any:
 
 
 def build_azure_token_provider() -> Callable[[], str]:
-    """Build an AAD token provider, trying VS Code credentials first.
+    """Build an AAD token provider, trying local IDE credentials first.
 
     This is intended for local evaluation with a corporate account signed in to
-    VS Code. CLI / developer CLI / DefaultAzureCredential remain as fallbacks.
+    VS Code or Visual Studio. CLI / developer CLI / DefaultAzureCredential
+    remain as fallbacks.
     """
     try:
         from azure.identity import (
             AzureCliCredential,
             AzureDeveloperCliCredential,
+            AzurePowerShellCredential,
             ChainedTokenCredential,
             DefaultAzureCredential,
+            SharedTokenCacheCredential,
             VisualStudioCodeCredential,
             get_bearer_token_provider,
         )
@@ -147,8 +151,14 @@ def build_azure_token_provider() -> Callable[[], str]:
         os.environ.get("STRIDE_COACH_AZURE_TENANT_ID")
         or os.environ.get("AZURE_TENANT_ID")
     )
+    username = (
+        os.environ.get("STRIDE_COACH_AZURE_USERNAME")
+        or os.environ.get("AZURE_USERNAME")
+    )
     credential = ChainedTokenCredential(
         _credential_with_optional_tenant(VisualStudioCodeCredential, tenant_id),
+        SharedTokenCacheCredential(username=username, tenant_id=tenant_id),
+        _credential_with_optional_tenant(AzurePowerShellCredential, tenant_id),
         _credential_with_optional_tenant(AzureDeveloperCliCredential, tenant_id),
         _credential_with_optional_tenant(AzureCliCredential, tenant_id),
         DefaultAzureCredential(),
@@ -196,8 +206,9 @@ class AzureResponsesChatModel:
         payload: dict[str, Any] = {
             "model": self.config.deployment,
             "input": input_messages,
-            "temperature": self.config.temperature,
         }
+        if self.config.temperature is not None:
+            payload["temperature"] = self.config.temperature
         if self.config.max_tokens is not None:
             payload["max_output_tokens"] = self.config.max_tokens
         return payload
@@ -252,8 +263,9 @@ def get_chat_model() -> Any:
         "azure_endpoint": config.endpoint,
         "azure_deployment": config.deployment,
         "api_version": config.api_version,
-        "temperature": config.temperature,
     }
+    if config.temperature is not None:
+        common["temperature"] = config.temperature
     if config.max_tokens is not None:
         common["max_tokens"] = config.max_tokens
     if config.auth_mode in {"api-key", "api_key"}:

@@ -7,7 +7,12 @@ import json
 import pytest
 
 from stride_server.aoai_client import AOAIUnavailable
-from stride_server.coach_agent.model import get_generated_by, get_model_config
+from stride_server.coach_agent.model import (
+    COGNITIVE_SERVICES_SCOPE,
+    build_azure_token_provider,
+    get_generated_by,
+    get_model_config,
+)
 
 
 def _clear_model_env(monkeypatch):
@@ -21,6 +26,7 @@ def _clear_model_env(monkeypatch):
         "STRIDE_COACH_AZURE_OPENAI_API_KEY",
         "STRIDE_COACH_AUTH_MODE",
         "STRIDE_COACH_AZURE_TENANT_ID",
+        "STRIDE_COACH_AZURE_USERNAME",
         "STRIDE_COACH_TEMPERATURE",
         "STRIDE_COACH_MAX_TOKENS",
         "STRIDE_COACH_TIMEOUT_SECONDS",
@@ -28,6 +34,7 @@ def _clear_model_env(monkeypatch):
         "AZURE_OPENAI_DEPLOYMENT",
         "AZURE_OPENAI_API_VERSION",
         "AZURE_OPENAI_API_KEY",
+        "AZURE_USERNAME",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -63,7 +70,7 @@ def test_model_config_with_explicit_values(monkeypatch):
     assert config.api_version == "2025-04-01-preview"
     assert config.api_kind == "responses"
     assert config.auth_mode == "auto"
-    assert config.temperature == 0.4
+    assert config.temperature is None
     assert config.max_tokens is None
 
 
@@ -146,3 +153,58 @@ def test_config_file_values_feed_model_config(tmp_path, monkeypatch):
     assert config.temperature == 0.15
     assert config.max_tokens == 1234
     assert config.timeout_s == 99
+
+
+def test_token_provider_prefers_ide_and_shared_cache_credentials(monkeypatch):
+    _clear_model_env(monkeypatch)
+    monkeypatch.setenv("STRIDE_COACH_AZURE_TENANT_ID", "tenant-1")
+    monkeypatch.setenv("STRIDE_COACH_AZURE_USERNAME", "runner@example.com")
+
+    import azure.identity as identity
+
+    constructed: list[tuple[str, dict]] = []
+
+    def credential_cls(name: str):
+        class Credential:
+            def __init__(self, **kwargs):
+                constructed.append((name, kwargs))
+
+        Credential.__name__ = name
+        return Credential
+
+    class ChainedTokenCredential:
+        def __init__(self, *credentials):
+            self.credentials = credentials
+
+    captured = {}
+
+    def get_bearer_token_provider(credential, scope):
+        captured["credential"] = credential
+        captured["scope"] = scope
+        return lambda: "token"
+
+    monkeypatch.setattr(identity, "VisualStudioCodeCredential", credential_cls("VisualStudioCodeCredential"))
+    monkeypatch.setattr(identity, "SharedTokenCacheCredential", credential_cls("SharedTokenCacheCredential"))
+    monkeypatch.setattr(identity, "AzureDeveloperCliCredential", credential_cls("AzureDeveloperCliCredential"))
+    monkeypatch.setattr(identity, "AzureCliCredential", credential_cls("AzureCliCredential"))
+    monkeypatch.setattr(identity, "AzurePowerShellCredential", credential_cls("AzurePowerShellCredential"))
+    monkeypatch.setattr(identity, "DefaultAzureCredential", credential_cls("DefaultAzureCredential"))
+    monkeypatch.setattr(identity, "ChainedTokenCredential", ChainedTokenCredential)
+    monkeypatch.setattr(identity, "get_bearer_token_provider", get_bearer_token_provider)
+
+    provider = build_azure_token_provider()
+
+    assert provider() == "token"
+    assert captured["scope"] == COGNITIVE_SERVICES_SCOPE
+    assert [name for name, _ in constructed] == [
+        "VisualStudioCodeCredential",
+        "SharedTokenCacheCredential",
+        "AzurePowerShellCredential",
+        "AzureDeveloperCliCredential",
+        "AzureCliCredential",
+        "DefaultAzureCredential",
+    ]
+    assert constructed[1] == (
+        "SharedTokenCacheCredential",
+        {"username": "runner@example.com", "tenant_id": "tenant-1"},
+    )

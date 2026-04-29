@@ -250,7 +250,7 @@ def config_cmd() -> None:
     table.add_row("API version", cfg.api_version)
     table.add_row("API kind", cfg.api_kind)
     table.add_row("Auth mode", cfg.auth_mode)
-    table.add_row("Temperature", str(cfg.temperature))
+    table.add_row("Temperature", str(cfg.temperature) if cfg.temperature is not None else "default")
     table.add_row("Max tokens", str(cfg.max_tokens or "default"))
     table.add_row("Timeout", f"{cfg.timeout_s}s")
     config_path = click.get_current_context().obj.get("config_path")
