@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
-from stride_core.db import USER_DATA_DIR
 from stride_core.source import DataSource, SyncProgress
 
 from ..bearer import require_bearer
+from ..content_store import read_json, write_json
 from ..deps import get_source
 
 logger = logging.getLogger(__name__)
@@ -37,15 +35,19 @@ def _validate_uuid(uuid: str) -> str:
     return uuid
 
 
-def _onboarding_path(uuid: str) -> Path:
+def _onboarding_path(uuid: str) -> str:
     _validate_uuid(uuid)
-    return USER_DATA_DIR / uuid / "onboarding.json"
+    return f"{uuid}/onboarding.json"
 
 
 def _read_onboarding(uuid: str) -> dict[str, Any]:
-    p = _onboarding_path(uuid)
-    if p.exists():
-        return json.loads(p.read_text(encoding="utf-8"))
+    item = read_json(_onboarding_path(uuid))
+    if item is not None:
+        data, source = item
+        if isinstance(data, dict):
+            logger.info("onboarding read user=%s source=%s", uuid, source)
+            return data
+        logger.warning("onboarding read ignored non-object JSON for user=%s source=%s", uuid, source)
     return {
         "coros_ready": False,
         "profile_ready": False,
@@ -56,9 +58,8 @@ def _read_onboarding(uuid: str) -> dict[str, Any]:
 
 
 def _write_onboarding(uuid: str, data: dict[str, Any]) -> None:
-    p = _onboarding_path(uuid)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+    source = write_json(_onboarding_path(uuid), data)
+    logger.info("onboarding write user=%s source=%s", uuid, source)
 
 
 def _utcnow_iso() -> str:

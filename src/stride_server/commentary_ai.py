@@ -29,6 +29,7 @@ from stride_core.models import pace_str, sport_name
 
 from .aoai_client import AOAIUnavailable, get_client, get_deployment, is_enabled
 from .content_store import list_week_folders as content_week_folders
+from .content_store import read_json as read_content_json
 from .content_store import read_text as read_content_text
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,16 @@ SYSTEM_PROMPT = """你是一位经验丰富的马拉松教练，正在点评跑�
 # ============================================================================
 
 def get_athlete_profile(user: str) -> dict[str, Any] | None:
-    """Load per-user profile from data/{user_id}/profile.json if present."""
+    """Load per-user profile from Blob or data/{user_id}/profile.json if present."""
+    item = read_content_json(f"{user}/profile.json")
+    if item is not None:
+        data, source = item
+        if isinstance(data, dict):
+            logger.info("commentary profile read for %s source=%s", user, source)
+            return data
+        logger.warning("Profile for %s is not a JSON object (source=%s)", user, source)
+        return None
+
     path = USER_DATA_DIR / user / "profile.json"
     if not path.exists():
         return None

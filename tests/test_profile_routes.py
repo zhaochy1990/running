@@ -68,9 +68,13 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
     # Re-load key after env change
     monkeypatch.setattr(bearer, "_cached_public_key", public_pem)
 
-    # Patch USER_DATA_DIR in profile routes
+    # Patch USER_DATA_DIR used by content_store filesystem fallback.
+    from stride_core import db as core_db_mod
+
     import stride_server.routes.profile as profile_mod
-    monkeypatch.setattr(profile_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.delenv("STRIDE_CONTENT_BLOB_ACCOUNT_URL", raising=False)
+    monkeypatch.delenv("STRIDE_CONTENT_BLOB_CONTAINER", raising=False)
 
     from fastapi import FastAPI, Depends
     from stride_server.bearer import require_bearer

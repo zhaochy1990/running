@@ -31,6 +31,7 @@ from stride_core.ability import (
 )
 from stride_core.db import USER_DATA_DIR
 
+from ..content_store import read_json
 from ..deps import get_db
 
 router = APIRouter()
@@ -65,17 +66,23 @@ def _parse_evidence(raw: Any) -> list[str]:
 
 
 def _load_profile(user: str) -> dict[str, Any] | None:
-    path = USER_DATA_DIR / user / "profile.json"
-    if not path.exists():
-        return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("ability: cannot read profile for %s: %s", user, exc)
-        return None
+    item = read_json(f"{user}/profile.json")
+    if item is not None:
+        data, source = item
+    else:
+        path = USER_DATA_DIR / user / "profile.json"
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("ability: cannot read profile for %s: %s", user, exc)
+            return None
+        source = "file"
     if not isinstance(data, dict):
-        logger.warning("ability: profile for %s is not a JSON object", user)
+        logger.warning("ability: profile for %s is not a JSON object (source=%s)", user, source)
         return None
+    logger.info("ability: profile read for %s source=%s", user, source)
     return data
 
 

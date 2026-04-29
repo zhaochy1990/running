@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import json
+import logging
 import re
 from datetime import date
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
-from stride_core.db import USER_DATA_DIR
-
 from ..bearer import require_bearer
+from ..content_store import read_json, write_json
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -31,27 +30,36 @@ def _validate_uuid(uuid: str) -> str:
     return uuid
 
 
-def _profile_path(uuid: str) -> Path:
+def _profile_path(uuid: str) -> str:
     _validate_uuid(uuid)
-    return USER_DATA_DIR / uuid / "profile.json"
+    return f"{uuid}/profile.json"
 
 
-def _onboarding_path(uuid: str) -> Path:
+def _onboarding_path(uuid: str) -> str:
     _validate_uuid(uuid)
-    return USER_DATA_DIR / uuid / "onboarding.json"
+    return f"{uuid}/onboarding.json"
 
 
 def _read_profile(uuid: str) -> dict[str, Any]:
-    p = _profile_path(uuid)
-    if p.exists():
-        return json.loads(p.read_text(encoding="utf-8"))
+    item = read_json(_profile_path(uuid))
+    if item is None:
+        return {}
+    data, source = item
+    if isinstance(data, dict):
+        logger.info("profile read user=%s source=%s", uuid, source)
+        return data
+    logger.warning("profile read ignored non-object JSON for user=%s source=%s", uuid, source)
     return {}
 
 
 def _read_onboarding(uuid: str) -> dict[str, Any]:
-    p = _onboarding_path(uuid)
-    if p.exists():
-        return json.loads(p.read_text(encoding="utf-8"))
+    item = read_json(_onboarding_path(uuid))
+    if item is not None:
+        data, source = item
+        if isinstance(data, dict):
+            logger.info("onboarding read user=%s source=%s", uuid, source)
+            return data
+        logger.warning("onboarding read ignored non-object JSON for user=%s source=%s", uuid, source)
     return {
         "coros_ready": False,
         "profile_ready": False,
@@ -60,9 +68,9 @@ def _read_onboarding(uuid: str) -> dict[str, Any]:
     }
 
 
-def _write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+def _write_state(relative_path: str, data: dict[str, Any]) -> None:
+    source = write_json(relative_path, data)
+    logger.info("profile state write path=%s source=%s", relative_path, source)
 
 
 class ProfileIn(BaseModel):
@@ -116,11 +124,11 @@ def post_profile(body: ProfileIn, payload: dict = Depends(require_bearer)):
 
     profile_data = body.model_dump()
 
-    _write_json(_profile_path(uuid), profile_data)
+    _write_state(_profile_path(uuid), profile_data)
 
     onboarding = _read_onboarding(uuid)
     onboarding["profile_ready"] = True
-    _write_json(_onboarding_path(uuid), onboarding)
+    _write_state(_onboarding_path(uuid), onboarding)
 
     return {"ok": True}
 
@@ -141,7 +149,7 @@ def patch_profile(body: ProfilePatch, payload: dict = Depends(require_bearer)):
     existing = _read_profile(uuid)
     merged = {**existing, **patch}
 
-    _write_json(_profile_path(uuid), merged)
+    _write_state(_profile_path(uuid), merged)
 
     return {
         "ok": True,

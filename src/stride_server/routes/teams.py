@@ -38,6 +38,7 @@ from stride_core.source import DataSource
 
 from .. import auth_service_client as auth_client
 from ..bearer import require_bearer
+from ..content_store import read_json
 from ..deps import format_duration, get_source
 
 logger = logging.getLogger(__name__)
@@ -50,22 +51,31 @@ _UUID4_RE = re.compile(
 
 
 def _stride_display_name(user_id: str) -> str | None:
-    """Return ``display_name`` from ``data/{user_id}/profile.json`` if present.
+    """Return ``display_name`` from the STRIDE profile JSON if present.
 
     Returns None when the UUID is malformed, the profile file is missing,
-    JSON parsing fails, or ``display_name`` is empty/whitespace. The UUID
-    check guards against path traversal before we touch the filesystem.
+    JSON parsing fails, or ``display_name`` is empty/whitespace.
     """
     if not _UUID4_RE.match(user_id or ""):
         return None
-    profile_path = USER_DATA_DIR / user_id / "profile.json"
-    if not profile_path.exists():
-        return None
     try:
-        data = json.loads(profile_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        item = read_json(f"{user_id}/profile.json")
+    except ValueError as exc:
         logger.warning("teams: cannot read profile for %s: %s", user_id, exc)
         return None
+    if item is None:
+        profile_path = USER_DATA_DIR / user_id / "profile.json"
+        if not profile_path.exists():
+            return None
+        try:
+            data = json.loads(profile_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            logger.warning("teams: cannot read profile for %s: %s", user_id, exc)
+            return None
+        source = "file"
+    else:
+        data, source = item
+    logger.info("teams: profile read for %s source=%s", user_id, source)
     name = data.get("display_name") if isinstance(data, dict) else None
     if isinstance(name, str) and name.strip():
         return name.strip()

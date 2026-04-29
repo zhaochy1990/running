@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from stride_server import content_store
@@ -41,6 +43,11 @@ class FakeContainerClient:
         for name in self.blobs:
             if name.startswith(name_starts_with):
                 yield type("Blob", (), {"name": name})()
+
+    def upload_blob(self, name: str, data: bytes, overwrite: bool = False):
+        if not overwrite and name in self.blobs:
+            raise RuntimeError("blob exists")
+        self.blobs[name] = data
 
 
 @pytest.fixture(autouse=True)
@@ -99,6 +106,37 @@ def test_blob_miss_falls_back_to_filesystem(tmp_path, monkeypatch):
     assert item is not None
     assert item.source == "file"
     assert item.content == "from file"
+
+
+def test_json_read_write_uses_filesystem_by_default(tmp_path, monkeypatch):
+    from stride_core import db as core_db
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+
+    source = content_store.write_json("user-1/profile.json", {"display_name": "Runner"})
+    item = content_store.read_json("user-1/profile.json")
+
+    assert source == "file"
+    assert item == ({"display_name": "Runner"}, "file")
+    assert json.loads((tmp_path / "user-1" / "profile.json").read_text()) == {
+        "display_name": "Runner",
+    }
+
+
+def test_json_write_prefers_blob_when_configured(monkeypatch):
+    fake = FakeContainerClient({})
+    monkeypatch.setenv(content_store.ACCOUNT_URL_ENV, "https://acct.blob.core.windows.net/")
+    monkeypatch.setenv(content_store.CONTAINER_ENV, "stride-data")
+    monkeypatch.setattr(content_store, "_container_client", lambda _account, _container: fake)
+
+    source = content_store.write_json("user-1/onboarding.json", {"profile_ready": True})
+    item = content_store.read_json("user-1/onboarding.json")
+
+    assert source == "blob"
+    assert item == ({"profile_ready": True}, "blob")
+    assert json.loads(fake.blobs["users/user-1/onboarding.json"].decode()) == {
+        "profile_ready": True,
+    }
 
 
 def test_list_week_folders_merges_blob_and_filesystem(tmp_path, monkeypatch):

@@ -9,6 +9,7 @@ on:
       - 'data/*/TRAINING_PLAN.md'
       - 'data/*/status.md'
       - 'data/*/profile.json'
+      - 'data/*/onboarding.json'
   workflow_dispatch:
 
 permissions:
@@ -134,6 +135,33 @@ jobs:
                 --share-name stride-data \
                 --source "$user_dir/profile.json" \
                 --path "$user/profile.json" \
+                --output none
+              az storage blob upload \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --container-name "$BLOB_CONTAINER" \
+                --file "$user_dir/profile.json" \
+                --name "users/$user/profile.json" \
+                --overwrite \
+                --output none
+            fi
+
+            # Sync onboarding.json if exists
+            if [ -f "$user_dir/onboarding.json" ]; then
+              az storage file upload \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --share-name stride-data \
+                --source "$user_dir/onboarding.json" \
+                --path "$user/onboarding.json" \
+                --output none
+              az storage blob upload \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --container-name "$BLOB_CONTAINER" \
+                --file "$user_dir/onboarding.json" \
+                --name "users/$user/onboarding.json" \
+                --overwrite \
                 --output none
             fi
           done

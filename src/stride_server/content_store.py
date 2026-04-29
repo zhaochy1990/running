@@ -1,4 +1,4 @@
-"""Content storage abstraction for markdown and binary training artifacts.
+"""Content storage abstraction for user-owned training artifacts.
 
 Production can read from Azure Blob Storage while local/dev keeps using the
 repository data directory. During migration, Blob misses fall back to files.
@@ -6,12 +6,13 @@ repository data directory. During migration, Blob misses fall back to files.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from stride_core import db as core_db
 
@@ -81,6 +82,7 @@ def read_text(relative_path: str) -> ContentItem | None:
             data = _container_client(account_url, container).download_blob(
                 _blob_name(relative_path)
             ).readall()
+            logger.info("content read source=blob path=%s", relative_path)
             return ContentItem(data.decode("utf-8"), "blob")
         except Exception as exc:
             if not _is_blob_not_found(exc):
@@ -92,8 +94,55 @@ def read_text(relative_path: str) -> ContentItem | None:
 
     path = _file_path(relative_path)
     if not path.exists():
+        logger.info("content read source=missing path=%s", relative_path)
         return None
+    logger.info("content read source=file path=%s", relative_path)
     return ContentItem(path.read_text(encoding="utf-8"), "file")
+
+
+def write_text(
+    relative_path: str,
+    content: str,
+    *,
+    content_type: str = "text/plain; charset=utf-8",
+) -> str:
+    """Write UTF-8 text to Blob if configured, falling back to local files."""
+    config = _blob_config()
+    data = content.encode("utf-8")
+    if config is not None:
+        account_url, container = config
+        try:
+            _container_client(account_url, container).upload_blob(
+                _blob_name(relative_path),
+                data,
+                overwrite=True,
+            )
+            logger.info("content write source=blob path=%s", relative_path)
+            return "blob"
+        except Exception as exc:
+            logger.warning(
+                "Blob content write failed for %s; falling back to filesystem: %s",
+                relative_path,
+                exc,
+            )
+
+    path = _file_path(relative_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    logger.info("content write source=file path=%s", relative_path)
+    return "file"
+
+
+def read_json(relative_path: str) -> tuple[Any, str] | None:
+    item = read_text(relative_path)
+    if item is None:
+        return None
+    return json.loads(item.content), item.source
+
+
+def write_json(relative_path: str, data: Any) -> str:
+    content = json.dumps(data, indent=2, default=str)
+    return write_text(relative_path, content, content_type="application/json; charset=utf-8")
 
 
 def exists(relative_path: str) -> bool:
@@ -128,12 +177,15 @@ def list_week_folders(user: str) -> list[str]:
                 week = rest.split("/", 1)[0]
                 if week:
                     folders.add(week)
+            logger.info("content list_weeks source=blob user=%s count=%d", user, len(folders))
         except Exception as exc:
             logger.warning("Blob week listing failed for %s; falling back to filesystem: %s", user, exc)
 
     logs_dir = core_db.USER_DATA_DIR / user / "logs"
     if logs_dir.exists():
-        folders.update(d.name for d in logs_dir.iterdir() if d.is_dir())
+        file_folders = {d.name for d in logs_dir.iterdir() if d.is_dir()}
+        folders.update(file_folders)
+        logger.info("content list_weeks source=file user=%s count=%d", user, len(file_folders))
 
     return sorted(folders, reverse=True)
 

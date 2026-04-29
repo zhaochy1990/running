@@ -54,7 +54,11 @@ def app_env(tmp_path, monkeypatch, rsa_keypair):
         monkeypatch.delenv(key, raising=False)
 
     import stride_server.routes.onboarding as ob_mod
-    monkeypatch.setattr(ob_mod, "USER_DATA_DIR", tmp_path)
+    from stride_core import db as core_db_mod
+
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.delenv("STRIDE_CONTENT_BLOB_ACCOUNT_URL", raising=False)
+    monkeypatch.delenv("STRIDE_CONTENT_BLOB_CONTAINER", raising=False)
 
     # Minimal DataSource mock
     mock_source = MagicMock()
@@ -249,9 +253,8 @@ def test_complete_background_sync_updates_state_to_done(app_env):
 
     import stride_server.routes.onboarding as ob_mod
 
-    with patch.object(ob_mod, "USER_DATA_DIR", tmp_path):
-        # Run background sync directly (synchronously) to verify state transitions
-        ob_mod._run_background_sync(USER_UUID, mock_source)
+    # Run background sync directly (synchronously) to verify state transitions.
+    ob_mod._run_background_sync(USER_UUID, mock_source)
 
     onboarding = json.loads((tmp_path / USER_UUID / "onboarding.json").read_text())
     assert onboarding["sync_state"] == "done"
@@ -280,8 +283,7 @@ def test_complete_background_sync_sets_error_on_failure(app_env):
 
     import stride_server.routes.onboarding as ob_mod
 
-    with patch.object(ob_mod, "USER_DATA_DIR", tmp_path):
-        ob_mod._run_background_sync(USER_UUID, mock_source)
+    ob_mod._run_background_sync(USER_UUID, mock_source)
 
     onboarding = json.loads((tmp_path / USER_UUID / "onboarding.json").read_text())
     assert onboarding["sync_state"] == "error"
@@ -323,18 +325,11 @@ def test_repost_after_error_returns_running_not_already_complete(app_env):
     assert "failed_at" not in onboarding
 
 
-def test_no_real_data_dir_leaked_on_background_sync(app_env, monkeypatch):
-    """Regression: _run_background_sync must use the monkey-patched USER_DATA_DIR
-    when generating the starter status (i.e., must pass data_root=...)."""
+def test_background_sync_uses_content_store_data_dir(app_env):
+    """Regression: _run_background_sync writes onboarding via content_store fallback."""
     client, token, tmp_path, mock_source = app_env
 
     import stride_server.routes.onboarding as ob_mod
-    from stride_core import db as core_db_mod
-
-    # Sentinel: track whether anything writes under the real (non-tmp) USER_DATA_DIR.
-    real_dir = core_db_mod.USER_DATA_DIR
-    leaked_dir = real_dir / USER_UUID
-    leaked_pre = leaked_dir.exists()
 
     _set_onboarding(tmp_path, {
         "coros_ready": True,
@@ -343,16 +338,9 @@ def test_no_real_data_dir_leaked_on_background_sync(app_env, monkeypatch):
         "sync_state": None,
     })
 
-    with patch.object(ob_mod, "USER_DATA_DIR", tmp_path):
-        ob_mod._run_background_sync(USER_UUID, mock_source)
+    ob_mod._run_background_sync(USER_UUID, mock_source)
 
-    # tmp_path got the write; the real on-disk directory must NOT have been
-    # newly created by the sync path.
     assert (tmp_path / USER_UUID / "onboarding.json").exists()
-    if not leaked_pre:
-        assert not leaked_dir.exists(), (
-            f"_run_background_sync leaked into real data dir: {leaked_dir}"
-        )
 
 
 # --- sync-status ---
