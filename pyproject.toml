@@ -25,6 +25,7 @@ web = [
     "pyjwt[crypto]>=2.8",
     "openai>=1.40",
     "azure-identity>=1.17",
+    "azure-keyvault-secrets>=4.8",
 ]
 dev = [
     "pytest>=8.0",
