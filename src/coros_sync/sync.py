@@ -11,8 +11,15 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from .client import CorosClient, CorosAPIError
 from stride_core.db import Database
 from stride_core.models import Activity, ActivityDetail, DailyHealth, Dashboard
+from stride_core.source import SyncProgressCallback
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_sync_progress(progress: SyncProgressCallback | None, **payload: object) -> None:
+    if progress is None:
+        return
+    progress({k: v for k, v in payload.items() if v is not None})
 
 
 def sync_activities(
@@ -22,6 +29,7 @@ def sync_activities(
     max_pages: int = 50,
     page_size: int = 20,
     jobs: int = 1,
+    progress_callback: SyncProgressCallback | None = None,
 ) -> int:
     """Sync activities from COROS to local DB. Returns count of new activities synced."""
     synced = 0
@@ -35,6 +43,12 @@ def sync_activities(
         # Phase 1: Discover new activities
         task = progress.add_task("Fetching activity list...", total=None)
         new_activities: list[Activity] = []
+        _emit_sync_progress(
+            progress_callback,
+            phase="activities_scan",
+            message="正在扫描 COROS 训练列表",
+            percent=10,
+        )
 
         for page in range(1, max_pages + 1):
             data = client.list_activities(page=page, size=page_size)
@@ -51,16 +65,40 @@ def sync_activities(
             else:
                 # Inner loop didn't break, continue to next page
                 progress.update(task, description=f"Scanning page {page}... ({len(new_activities)} new)")
+                _emit_sync_progress(
+                    progress_callback,
+                    phase="activities_scan",
+                    message=f"正在扫描第 {page} 页训练列表，已发现 {len(new_activities)} 条新活动",
+                    percent=min(30, 10 + page * 2),
+                    current=len(new_activities),
+                )
                 continue
             break  # Inner loop broke, stop pagination
 
         if not new_activities:
             progress.update(task, description="No new activities found", total=1, completed=1)
+            _emit_sync_progress(
+                progress_callback,
+                phase="activities_done",
+                message="未发现新的训练记录",
+                percent=76,
+                current=0,
+                total=0,
+                synced_activities=0,
+            )
             return 0
 
         # Phase 2: Fetch details for each new activity (parallel API calls, sequential DB writes)
         ordered = list(reversed(new_activities))  # Oldest first
         progress.update(task, description="Fetching activity details...", total=len(ordered), completed=0)
+        _emit_sync_progress(
+            progress_callback,
+            phase="activity_details",
+            message=f"发现 {len(ordered)} 条新活动，正在下载训练详情",
+            percent=35,
+            current=0,
+            total=len(ordered),
+        )
 
         def fetch_detail(activity: Activity) -> tuple[Activity, ActivityDetail | None]:
             try:
@@ -89,25 +127,71 @@ def sync_activities(
                     date_str = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
                 label = f"{date_str} {activity.name or activity.sport_name}"
                 progress.update(task, description=f"Syncing: {label}", completed=done)
+                _emit_sync_progress(
+                    progress_callback,
+                    phase="activity_details",
+                    message=f"正在同步训练详情：{label} ({done}/{len(ordered)})",
+                    percent=35 + round(done / len(ordered) * 35),
+                    current=done,
+                    total=len(ordered),
+                )
 
         # Write to DB in original order
         ai_targets: list[str] = []
-        for activity in ordered:
+        _emit_sync_progress(
+            progress_callback,
+            phase="activity_save",
+            message=f"正在保存 {len(ordered)} 条训练详情",
+            percent=70,
+            current=0,
+            total=len(ordered),
+        )
+        for index, activity in enumerate(ordered, start=1):
             detail = results[activity.label_id]
             if detail:
                 db.upsert_activity(detail)
                 db.set_meta("last_activity_date", activity.date)
                 synced += 1
                 ai_targets.append(activity.label_id)
+            _emit_sync_progress(
+                progress_callback,
+                phase="activity_save",
+                message=f"正在写入训练数据库 ({index}/{len(ordered)})",
+                percent=70 + round(index / len(ordered) * 4),
+                current=index,
+                total=len(ordered),
+                synced_activities=synced,
+            )
 
     # AOAI auto-commentary for each newly synced activity (fire-and-forget).
     # Isolated here so any import/network failure cannot break sync.
     if ai_targets:
+        _emit_sync_progress(
+            progress_callback,
+            phase="commentary",
+            message="正在准备活动解读草稿",
+            percent=75,
+            synced_activities=synced,
+        )
         _try_generate_commentaries(db, ai_targets)
 
     # Ability hook — compute L1 per new activity + rebuild today's snapshot.
     # Wrapped so any failure cannot break the sync pipeline.
+    _emit_sync_progress(
+        progress_callback,
+        phase="ability",
+        message="正在更新能力模型和训练状态",
+        percent=76,
+        synced_activities=synced,
+    )
     _try_run_ability_hook(db, ai_targets)
+    _emit_sync_progress(
+        progress_callback,
+        phase="activities_done",
+        message=f"训练数据同步完成，共写入 {synced} 条新活动",
+        percent=78,
+        synced_activities=synced,
+    )
 
     return synced
 
@@ -402,7 +486,11 @@ def resync_date_range(
     return synced
 
 
-def sync_health(client: CorosClient, db: Database) -> int:
+def sync_health(
+    client: CorosClient,
+    db: Database,
+    progress_callback: SyncProgressCallback | None = None,
+) -> int:
     """Sync health/body metrics from COROS. Returns count of daily records synced."""
     synced = 0
 
@@ -411,22 +499,50 @@ def sync_health(client: CorosClient, db: Database) -> int:
         TextColumn("[progress.description]{task.description}"),
     ) as progress:
         task = progress.add_task("Syncing health data...")
+        _emit_sync_progress(
+            progress_callback,
+            phase="health",
+            message="正在同步疲劳、负荷和身体指标",
+            percent=80,
+        )
 
         # Daily health from /analyse/query
         try:
             progress.update(task, description="Fetching training analysis...")
+            _emit_sync_progress(
+                progress_callback,
+                phase="health",
+                message="正在读取训练负荷和疲劳趋势",
+                percent=82,
+            )
             analyse_data = client.get_analyse()
             day_list = analyse_data.get("data", {}).get("dayList", [])
             for day in day_list:
                 health = DailyHealth.from_api(day)
                 db.upsert_daily_health(health)
                 synced += 1
+            _emit_sync_progress(
+                progress_callback,
+                phase="health",
+                message=f"已同步 {synced} 天健康指标",
+                percent=88,
+                current=synced,
+                total=len(day_list),
+                synced_health=synced,
+            )
         except CorosAPIError as e:
             logger.warning("Failed to sync health analysis: %s", e)
 
         # Dashboard from /dashboard/query + /dashboard/detail/query
         try:
             progress.update(task, description="Fetching dashboard...")
+            _emit_sync_progress(
+                progress_callback,
+                phase="dashboard",
+                message="正在读取仪表盘汇总数据",
+                percent=90,
+                synced_health=synced,
+            )
             dashboard_data = client.get_dashboard()
             summary = dashboard_data.get("data", {}).get("summaryInfo", {})
 
@@ -439,6 +555,13 @@ def sync_health(client: CorosClient, db: Database) -> int:
             logger.warning("Failed to sync dashboard: %s", e)
 
         progress.update(task, description="Health sync complete")
+        _emit_sync_progress(
+            progress_callback,
+            phase="health_done",
+            message="健康指标同步完成",
+            percent=95,
+            synced_health=synced,
+        )
 
     db.set_meta("last_health_sync", datetime.now().isoformat())
     return synced
@@ -449,9 +572,30 @@ def run_sync(
     db: Database,
     full: bool = False,
     jobs: int = 1,
+    progress: SyncProgressCallback | None = None,
 ) -> tuple[int, int]:
     """Run full sync: activities + health. Returns (activities_synced, health_days_synced)."""
-    activities = sync_activities(client, db, full=full, jobs=jobs)
-    health = sync_health(client, db)
+    _emit_sync_progress(
+        progress,
+        phase="connecting",
+        message="已连接 COROS，准备开始同步",
+        percent=5,
+    )
+    activities = sync_activities(
+        client,
+        db,
+        full=full,
+        jobs=jobs,
+        progress_callback=progress,
+    )
+    health = sync_health(client, db, progress_callback=progress)
+    _emit_sync_progress(
+        progress,
+        phase="finalizing",
+        message="正在保存初始化结果",
+        percent=98,
+        synced_activities=activities,
+        synced_health=health,
+    )
     db.set_meta("last_sync_time", datetime.now().isoformat())
     return activities, health

@@ -164,11 +164,30 @@ export function patchMyProfile(patch: ProfilePatchIn) {
 }
 
 export function postOnboardingComplete() {
-  return postJSON<{ state?: string; error?: string }>('/users/me/onboarding/complete')
+  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>('/users/me/onboarding/complete')
+}
+
+export interface SyncProgress {
+  phase?: string
+  failed_phase?: string
+  message?: string
+  percent?: number
+  current?: number
+  total?: number
+  synced_activities?: number
+  synced_health?: number
+  started_at?: string
+  updated_at?: string
+}
+
+export interface SyncStatus {
+  state: 'running' | 'done' | 'error' | null
+  error?: string
+  progress?: SyncProgress | null
 }
 
 export function getSyncStatus() {
-  return fetchJSON<{ state: 'running' | 'done' | 'error'; error?: string }>('/users/me/sync-status')
+  return fetchJSON<SyncStatus>('/users/me/sync-status')
 }
 
 export interface Activity {

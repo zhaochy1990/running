@@ -8,8 +8,13 @@ specific adapter.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, TypeAlias, runtime_checkable
+
+
+SyncProgress: TypeAlias = dict[str, Any]
+SyncProgressCallback: TypeAlias = Callable[[SyncProgress], None]
 
 
 @dataclass
@@ -31,7 +36,13 @@ class DataSource(Protocol):
 
     name: str
 
-    def sync_user(self, user: str, *, full: bool = False) -> SyncResult:
+    def sync_user(
+        self,
+        user: str,
+        *,
+        full: bool = False,
+        progress: SyncProgressCallback | None = None,
+    ) -> SyncResult:
         """Run a full or incremental sync for the given user profile."""
         ...
 

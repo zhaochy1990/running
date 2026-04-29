@@ -207,11 +207,15 @@ def test_complete_with_both_flags_returns_running(app_env):
         )
 
     assert resp.status_code == 200
-    assert resp.json()["state"] == "running"
+    data = resp.json()
+    assert data["state"] == "running"
+    assert data["progress"]["phase"] == "queued"
+    assert data["progress"]["percent"] == 0
 
     onboarding_file = tmp_path / USER_UUID / "onboarding.json"
     onboarding = json.loads(onboarding_file.read_text())
     assert onboarding["sync_state"] == "running"
+    assert onboarding["sync_progress"]["phase"] == "queued"
     # completed_at is set ONLY after the background sync finishes successfully.
     assert onboarding["completed_at"] is None
 
@@ -253,7 +257,15 @@ def test_complete_background_sync_updates_state_to_done(app_env):
     assert onboarding["sync_state"] == "done"
     # completed_at is only stamped after a SUCCESSFUL sync.
     assert onboarding["completed_at"] is not None
-    mock_source.sync_user.assert_called_once_with(USER_UUID, full=False)
+    assert onboarding["sync_progress"]["phase"] == "complete"
+    assert onboarding["sync_progress"]["percent"] == 100
+    assert onboarding["sync_progress"]["synced_activities"] == 5
+    assert onboarding["sync_progress"]["synced_health"] == 7
+    mock_source.sync_user.assert_called_once()
+    args, kwargs = mock_source.sync_user.call_args
+    assert args == (USER_UUID,)
+    assert kwargs["full"] is False
+    assert callable(kwargs["progress"])
 
 
 def test_complete_background_sync_sets_error_on_failure(app_env):
@@ -274,6 +286,8 @@ def test_complete_background_sync_sets_error_on_failure(app_env):
     onboarding = json.loads((tmp_path / USER_UUID / "onboarding.json").read_text())
     assert onboarding["sync_state"] == "error"
     assert "connection refused" in onboarding["error"]
+    assert onboarding["sync_progress"]["phase"] == "error"
+    assert onboarding["sync_progress"]["failed_phase"] == "connecting"
     # completed_at MUST stay null on error so re-POST is allowed.
     assert onboarding["completed_at"] is None
     assert onboarding["failed_at"] is not None

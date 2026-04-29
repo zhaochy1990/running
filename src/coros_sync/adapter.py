@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from stride_core.db import Database
 from stride_core.models import ActivityDetail
-from stride_core.source import SyncResult
+from stride_core.source import SyncProgressCallback, SyncResult
 
 from .auth import Credentials
 from .client import CorosClient
@@ -34,15 +34,25 @@ class CorosDataSource:
     def is_logged_in(self, user: str) -> bool:
         return Credentials.load(user=user).is_logged_in
 
-    def sync_user(self, user: str, *, full: bool = False) -> SyncResult:
+    def sync_user(
+        self,
+        user: str,
+        *,
+        full: bool = False,
+        progress: SyncProgressCallback | None = None,
+    ) -> SyncResult:
         creds = Credentials.load(user=user)
         if not creds.is_logged_in:
             raise CorosNotLoggedInError(
                 f"用户 {user} 未登录，请先运行: coros-sync --profile {user} login"
             )
 
+        kwargs = {"full": full, "jobs": self._jobs}
+        if progress is not None:
+            kwargs["progress"] = progress
+
         with CorosClient(creds, user=user) as client, Database(user=user) as db:
-            activities, health = run_sync(client, db, full=full, jobs=self._jobs)
+            activities, health = run_sync(client, db, **kwargs)
         return SyncResult(activities=activities, health=health)
 
     def resync_activity(self, user: str, label_id: str) -> bool:

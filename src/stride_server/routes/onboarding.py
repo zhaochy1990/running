@@ -13,7 +13,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from pydantic import BaseModel
 
 from stride_core.db import USER_DATA_DIR
-from stride_core.source import DataSource
+from stride_core.source import DataSource, SyncProgress
 
 from ..bearer import require_bearer
 from ..deps import get_source
@@ -50,6 +50,7 @@ def _read_onboarding(uuid: str) -> dict[str, Any]:
         "profile_ready": False,
         "completed_at": None,
         "sync_state": None,
+        "sync_progress": None,
     }
 
 
@@ -61,6 +62,26 @@ def _write_onboarding(uuid: str, data: dict[str, Any]) -> None:
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _write_sync_progress(
+    uuid: str,
+    *,
+    state: str | None = None,
+    **payload: Any,
+) -> dict[str, Any]:
+    onboarding = _read_onboarding(uuid)
+    if state is not None:
+        onboarding["sync_state"] = state
+
+    now = _utcnow_iso()
+    progress = dict(onboarding.get("sync_progress") or {})
+    progress.update({k: v for k, v in payload.items() if v is not None})
+    progress.setdefault("started_at", now)
+    progress["updated_at"] = now
+    onboarding["sync_progress"] = progress
+    _write_onboarding(uuid, onboarding)
+    return progress
 
 
 class CorosLoginBody(BaseModel):
@@ -108,8 +129,19 @@ def _run_background_sync(uuid: str, source: DataSource) -> None:
     ``sync_state="error"`` with ``completed_at=null`` so the client can
     re-POST ``/onboarding/complete`` to retry.
     """
+    def report_progress(progress: SyncProgress) -> None:
+        _write_sync_progress(uuid, **progress)
+
+    _write_sync_progress(
+        uuid,
+        state="running",
+        phase="connecting",
+        message="正在连接 COROS，准备首次同步",
+        percent=3,
+    )
+
     try:
-        source.sync_user(uuid, full=False)
+        result = source.sync_user(uuid, full=False, progress=report_progress)
     except Exception as exc:
         logger.exception("Background sync failed for %s", uuid)
         onboarding = _read_onboarding(uuid)
@@ -117,12 +149,38 @@ def _run_background_sync(uuid: str, source: DataSource) -> None:
         onboarding["error"] = str(exc)
         onboarding["completed_at"] = None
         onboarding["failed_at"] = _utcnow_iso()
+        progress = dict(onboarding.get("sync_progress") or {})
+        failed_phase = progress.get("phase")
+        progress.update(
+            {
+                "phase": "error",
+                "failed_phase": failed_phase,
+                "message": "初始化失败，请重试",
+                "percent": progress.get("percent", 0),
+                "updated_at": onboarding["failed_at"],
+            }
+        )
+        onboarding["sync_progress"] = progress
         _write_onboarding(uuid, onboarding)
         return
 
     onboarding = _read_onboarding(uuid)
     onboarding["sync_state"] = "done"
-    onboarding["completed_at"] = _utcnow_iso()
+    completed_at = _utcnow_iso()
+    onboarding["completed_at"] = completed_at
+    progress = dict(onboarding.get("sync_progress") or {})
+    progress.update(
+        {
+            "phase": "complete",
+            "message": f"初始化完成：同步 {result.activities} 条活动、{result.health} 天健康数据",
+            "percent": 100,
+            "synced_activities": result.activities,
+            "synced_health": result.health,
+            "updated_at": completed_at,
+        }
+    )
+    progress.setdefault("started_at", completed_at)
+    onboarding["sync_progress"] = progress
     onboarding.pop("error", None)
     onboarding.pop("failed_at", None)
     _write_onboarding(uuid, onboarding)
@@ -162,11 +220,19 @@ def onboarding_complete(
     onboarding["completed_at"] = None
     onboarding.pop("error", None)
     onboarding.pop("failed_at", None)
+    now = _utcnow_iso()
+    onboarding["sync_progress"] = {
+        "phase": "queued",
+        "message": "已提交初始化任务，等待后台同步启动",
+        "percent": 0,
+        "started_at": now,
+        "updated_at": now,
+    }
     _write_onboarding(uuid, onboarding)
 
     background_tasks.add_task(_run_background_sync, uuid, source)
 
-    return {"state": "running"}
+    return {"state": "running", "progress": onboarding["sync_progress"]}
 
 
 @router.get("/api/users/me/sync-status")
@@ -174,7 +240,10 @@ def sync_status(payload: dict = Depends(require_bearer)):
     """Return the current background sync state."""
     uuid = _validate_uuid(payload["sub"])
     onboarding = _read_onboarding(uuid)
-    result: dict[str, Any] = {"state": onboarding.get("sync_state")}
+    result: dict[str, Any] = {
+        "state": onboarding.get("sync_state"),
+        "progress": onboarding.get("sync_progress"),
+    }
     if onboarding.get("error"):
         result["error"] = onboarding["error"]
     return result
