@@ -150,6 +150,43 @@ def test_get_profile_after_post_returns_saved_data(app_client):
     assert data["onboarding"]["profile_ready"] is True
 
 
+def test_get_profile_normalizes_legacy_fields(app_client, tmp_path):
+    client, token = app_client
+    profile_file = tmp_path / USER_UUID / "profile.json"
+    profile_file.parent.mkdir(parents=True)
+    profile_file.write_text(
+        json.dumps(
+            {
+                "姓名": "赵超毅",
+                "出生": "1990-07-22",
+                "身高_cm": 182,
+                "当前体重_kg": 71.6,
+                "目标": "2026-10 马拉松破 2:50 (目标配速 4:02/km)",
+                "PB 半马": "1:27:42 (2024-11)",
+                "PB 马拉松": "2:59:22 (2025-03)",
+                "已知问题": "右跟腱止点肌腱病（慢性，可控）",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    resp = client.get("/api/users/me/profile", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    profile = resp.json()["profile"]
+    assert profile["display_name"] == "赵超毅"
+    assert profile["dob"] == "1990-07-22"
+    assert profile["height_cm"] == 182
+    assert profile["weight_kg"] == 71.6
+    assert profile["target_race"] == "2026-10 马拉松破 2:50 (目标配速 4:02/km)"
+    assert profile["target_distance"] == "FM"
+    assert profile["target_time"] == "2:50:00"
+    assert profile["pbs"] == {"HM": "1:27:42 (2024-11)", "FM": "2:59:22 (2025-03)"}
+    assert profile["constraints"] == "右跟腱止点肌腱病（慢性，可控）"
+    assert profile["姓名"] == "赵超毅"
+
+
 def test_post_missing_required_field_returns_422(app_client):
     client, token = app_client
     body = {k: v for k, v in VALID_PROFILE_BODY.items() if k != "display_name"}
