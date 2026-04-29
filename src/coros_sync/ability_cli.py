@@ -26,6 +26,7 @@ from rich.progress import (
 from rich.table import Table
 
 from stride_core.ability import (
+    ABILITY_MODEL_VERSION,
     L4_WEIGHTS,
     compute_ability_snapshot,
     compute_contribution,
@@ -243,6 +244,10 @@ def _ability_backfill(profile: str, days: int) -> None:
                 continue
 
             # Persist each row.
+            db.upsert_ability_snapshot(
+                date=d_iso, level="meta", dimension="model_version",
+                value=float(ABILITY_MODEL_VERSION),
+            )
             l2 = snapshot.get("l2_freshness") or {}
             if l2.get("total") is not None:
                 db.upsert_ability_snapshot(

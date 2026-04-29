@@ -68,10 +68,14 @@ AEROBIC_MAX_HR_DRIFT = 0.08
 # A pure aerobic-economy effort shouldn't spike beyond low-Z4 territory.
 AEROBIC_MAX_PEAK_HR_ABOVE_TARGET = 25  # reject if max_hr > target_hr + 25 (e.g. >170 at target 145)
 
-# Ability is a slow-moving "what have you demonstrated you can do in a training cycle" metric.
-# Window covers 1 full periodized training year so peak-block efforts stay counted even during
-# base/taper blocks. Evidence age is exposed separately so UI can flag stale dimensions.
-ABILITY_LOOKBACK_DAYS = 365
+# Bump this when persisted ability_snapshot rows need to be invalidated.
+ABILITY_MODEL_VERSION = 2
+
+# Current race-readiness should be driven by recent evidence, not the best workout
+# from a prior training cycle. A 90-day window keeps one marathon-specific block in
+# scope while preventing stale peak efforts from making the headline prediction too
+# optimistic.
+ABILITY_LOOKBACK_DAYS = 90
 
 # Race-day performance is systematically better than training observations — taper reduces
 # fatigue, race-day arousal adds 1-2%, and consistent pacing adds 1-2%. But the gain is NOT
@@ -925,7 +929,7 @@ def compute_l3_vo2max(
                 best_vdot = vdot
                 lid = _get(a, "label_id")
                 best_evidence = [str(lid)] if lid else []
-        # Also consider the run as a whole if it looks like a 5K/10K race.
+        # Also consider the run as a whole if it looks like a 5K/10K/half race.
         dist_m = _get(a, "distance_m") or 0
         dur_s = _get(a, "duration_s") or 0
         # distance_m on Activity is METERS (see models.py Activity.from_api
@@ -937,7 +941,7 @@ def compute_l3_vo2max(
             dist_m_norm = dist_m
         train_type = _get(a, "train_type")
         is_race_like = (
-            (4800 <= dist_m_norm <= 10500)
+            (4800 <= dist_m_norm <= 21500)
             and dur_s > 0
             and (train_type in (None, "Interval", "VO2 Max", "Threshold") or dur_s < 3600)
         )
@@ -1230,8 +1234,9 @@ def compute_ability_snapshot(
     except AttributeError:
         return _empty_snapshot(date)
 
-    # Fetch activities across the full ability window (default 1 year).
-    # All L3 "ability" dimensions use best-performance semantics over this window.
+    # Fetch activities across the current-readiness window. L3 dimensions still
+    # use best-performance semantics, but only among recent evidence so stale
+    # peaks do not dominate today's marathon estimate.
     try:
         activities = _fetch_recent_activities(conn, date, days=ABILITY_LOOKBACK_DAYS)
     except Exception:
@@ -1247,8 +1252,8 @@ def compute_ability_snapshot(
     except Exception:
         dashboard = None
 
-    # L3 dimensions use the full ability window (best-performance semantics).
-    # L2/recovery use short windows (they're "current state", not "ability").
+    # L3 dimensions use the current-readiness window. L2/recovery use short
+    # windows because they're daily state, not demonstrated ability.
     health_7d = [h for h in health_28d if _within_days(h, date, 7, field="date")]
 
     # Baseline RHR = median over last 28 days.
@@ -1275,7 +1280,7 @@ def compute_ability_snapshot(
         lv = compute_l2_freshness(day_row, dashboard, baseline_rhr)
         l2_7d_totals.append(lv.get("total", 0.0))
 
-    # L3 dimensions (all over the full ability window).
+    # L3 dimensions (all over the current-readiness window).
     aerobic_score, aerobic_ev, aerobic_det = compute_l3_aerobic(activities)
     lt_score, lt_ev, lt_det = compute_l3_lt(activities)
     vo2_score, vo2_ev, vo2_det = compute_l3_vo2max(activities, health_7d, hr_max)
@@ -1326,6 +1331,7 @@ def compute_ability_snapshot(
     )
 
     return {
+        "model_version": ABILITY_MODEL_VERSION,
         "date": date,
         "l1_latest": latest_l1,
         "l2_freshness": l2_today,
@@ -1357,6 +1363,7 @@ def compute_ability_snapshot(
 def _empty_snapshot(date: str) -> dict:
     zeros = {k: 0.0 for k in L4_WEIGHTS}
     return {
+        "model_version": ABILITY_MODEL_VERSION,
         "date": date,
         "l1_latest": None,
         "l2_freshness": {"total": 50.0, "breakdown": {k: 50.0 for k in L2_WEIGHTS}},

@@ -724,6 +724,56 @@ class TestA1_6_MarathonVdotLinearity:
                 assert t < prev, f"non-monotonic at VDOT {v}: {prev} → {t}"
             prev = t
 
+    def test_stale_high_vdot_ignored_by_current_window(self, tmp_path, fx):
+        db = Database(db_path=tmp_path / "stale_vdot.db")
+        _seed_from_fixture(db, fx)
+        try:
+            old_fast = {
+                "label_id": "OLD_FAST_INTERVAL",
+                "name": "Old 6x1K @ 3:30",
+                "sport_type": 100,
+                "date": "2025-10-01T10:00:00+00:00",
+                "distance_m": 8000,
+                "duration_s": 6 * 210 + 5 * 120,
+                "avg_pace_s_km": 232,
+                "avg_hr": 168,
+                "max_hr": 180,
+                "avg_cadence": 185,
+                "train_type": "Interval",
+                "laps": [
+                    {"lap_type": "autoKm", "distance_m": 1.0, "duration_s": 210,
+                     "avg_pace": 210, "avg_hr": 175, "max_hr": 180,
+                     "avg_cadence": 188, "exercise_type": 2}
+                    for _ in range(6)
+                ],
+                "timeseries": [],
+            }
+            recent_5k = {
+                "label_id": "RECENT_5K",
+                "name": "Recent 5K TT",
+                "sport_type": 100,
+                "date": "2026-04-22T10:00:00+00:00",
+                "distance_m": 5000,
+                "duration_s": 1500,
+                "avg_pace_s_km": 300,
+                "avg_hr": 170,
+                "max_hr": 180,
+                "avg_cadence": 182,
+                "train_type": "Threshold",
+                "laps": [],
+                "timeseries": [],
+            }
+            _seed_activities(db, [old_fast, recent_5k])
+
+            snap = compute_ability_snapshot(db, "2026-04-23")
+            vo2 = snap["l3_dimensions"]["vo2max"]
+            expected_recent_vdot = daniels_vdot(5000, 1500)
+
+            assert vo2["evidence"] == ["RECENT_5K"]
+            assert vo2["vo2max_used_vdot"] == pytest.approx(expected_recent_vdot, abs=0.01)
+        finally:
+            db.close()
+
 
 # ---------------------------------------------------------------------------
 # A1.7 — VO2max three-estimator panel, 5K TT calibration.

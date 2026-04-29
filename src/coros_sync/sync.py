@@ -363,6 +363,7 @@ def _try_run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
         from datetime import datetime, timezone, timedelta
 
         from stride_core.ability import (
+            ABILITY_MODEL_VERSION,
             compute_l1_quality,
             compute_ability_snapshot,
             L4_WEIGHTS,
@@ -402,6 +403,10 @@ def _try_run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
 
         # Persist L2/L3/L4/marathon.
         try:
+            db.upsert_ability_snapshot(
+                date=today_iso, level="meta", dimension="model_version",
+                value=float(ABILITY_MODEL_VERSION),
+            )
             l2 = snapshot.get("l2_freshness") or {}
             if l2.get("total") is not None:
                 db.upsert_ability_snapshot(

@@ -20,6 +20,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from stride_core.ability import (
+    ABILITY_MODEL_VERSION,
     BEST_CASE_BOOST_MAX,
     L4_WEIGHTS,
     RACE_DAY_BOOST_MAX,
@@ -107,6 +108,15 @@ def _pivot_snapshot_rows(rows: list[Any], date: str) -> dict | None:
     day_rows = [r for r in rows if str(r["date"]) == date]
     if not day_rows:
         return None
+    version = next(
+        (
+            r["value"] for r in day_rows
+            if r["level"] == "meta" and r["dimension"] == "model_version"
+        ),
+        None,
+    )
+    if version != ABILITY_MODEL_VERSION:
+        return None
 
     l3: dict[str, dict[str, Any]] = {k: {"score": None, "evidence": []} for k in L3_KEYS}
     l4_composite: float | None = None
@@ -139,6 +149,7 @@ def _pivot_snapshot_rows(rows: list[Any], date: str) -> dict | None:
 
     race_s = marathon_s["race_s"]
     return {
+        "model_version": ABILITY_MODEL_VERSION,
         "date": date,
         "source": "snapshot",
         "l2_freshness": {"total": l2_total} if l2_total is not None else None,
@@ -227,6 +238,10 @@ def post_ability_backfill(
                 skipped += 1
                 continue
             # Persist each dimension row.
+            db.upsert_ability_snapshot(
+                date=d_iso, level="meta", dimension="model_version",
+                value=float(ABILITY_MODEL_VERSION),
+            )
             l2 = snap.get("l2_freshness") or {}
             if l2.get("total") is not None:
                 db.upsert_ability_snapshot(
@@ -286,6 +301,15 @@ def get_ability_history(
 
     out: list[dict] = []
     for date in sorted(by_date.keys()):  # oldest first
+        version = next(
+            (
+                r["value"] for r in by_date[date]
+                if r["level"] == "meta" and r["dimension"] == "model_version"
+            ),
+            None,
+        )
+        if version != ABILITY_MODEL_VERSION:
+            continue
         l3_scores: dict[str, float | None] = {k: None for k in L3_KEYS}
         l4_composite: float | None = None
         race_s: int | None = None

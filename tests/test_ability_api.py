@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 from stride_core.db import Database
 from stride_core.source import DataSource
+from stride_core.ability import ABILITY_MODEL_VERSION
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +125,7 @@ def _seed_snapshot(db_path, date: str, *, l4_composite=67.5,
     }
     db = Database(db_path)
     try:
+        db.upsert_ability_snapshot(date, "meta", "model_version", float(ABILITY_MODEL_VERSION))
         for dim, score in l3_values.items():
             db.upsert_ability_snapshot(date, "L3", dim, score,
                                        evidence_activity_ids=[f"evt-{dim}"])
@@ -217,6 +219,32 @@ def test_current_falls_back_to_live_compute_when_no_snapshot(
     assert "marathon_estimates" in body
     for k in ("training_s", "race_s", "best_case_s"):
         assert k in body["marathon_estimates"]
+
+
+def test_current_ignores_unversioned_snapshot(
+    client_and_db, monkeypatch, rsa_keypair
+):
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem=public_pem)
+    client, db_path = client_and_db
+
+    import stride_server.routes.ability as ability_mod
+    monkeypatch.setattr(ability_mod, "_today_iso", lambda: "2026-04-24")
+
+    db = Database(db_path)
+    try:
+        db.upsert_ability_snapshot("2026-04-24", "L4", "composite", 67.5)
+        db.upsert_ability_snapshot("2026-04-24", "L4", "marathon_race_s", 10088)
+    finally:
+        db.close()
+
+    token = _issue_token(private_pem)
+    resp = client.get(
+        "/api/zhaochaoyi/ability/current",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["source"] == "computed"
 
 
 def test_current_uses_profile_marathon_target(
