@@ -4,7 +4,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend,
 } from 'recharts'
 import { getInbody, getInbodySummary, type InBodyScan, type InBodySummary } from '../api'
-import { useUser } from '../UserContext'
+import { useUser } from '../UserContextValue'
 
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
@@ -36,18 +36,26 @@ export default function InbodyPage() {
   const { user } = useUser()
   const [scans, setScans] = useState<InBodyScan[]>([])
   const [summary, setSummary] = useState<InBodySummary | null>(null)
-  const [loading, setLoading] = useState(true)
+  const requestKey = user || ''
+  const [loadedKey, setLoadedKey] = useState('')
+  const loading = Boolean(requestKey && loadedKey !== requestKey)
 
   useEffect(() => {
     if (!user) return
-    setLoading(true)
+    let cancelled = false
     Promise.all([getInbody(user), getInbodySummary(user)])
       .then(([list, sum]) => {
+        if (cancelled) return
         setScans(list.scans)
         setSummary(sum)
       })
-      .finally(() => setLoading(false))
-  }, [user])
+      .finally(() => {
+        if (!cancelled) setLoadedKey(requestKey)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [requestKey, user])
 
   // Charts want oldest-first
   const chartData = [...scans].reverse().map((s) => ({

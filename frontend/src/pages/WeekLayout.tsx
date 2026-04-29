@@ -8,7 +8,7 @@ import {
   sportColor, sportNameCN, trainTypeColor, trainTypeCN,
   type WeekSummary, type WeekDetail, type Activity,
 } from '../api'
-import { useUser } from '../UserContext'
+import { useUser } from '../UserContextValue'
 
 type Tab = 'plan' | 'activities' | 'feedback'
 
@@ -18,8 +18,9 @@ export default function WeekLayout() {
   const { user } = useUser()
   const [weeks, setWeeks] = useState<WeekSummary[]>([])
   const [weekDetail, setWeekDetail] = useState<WeekDetail | null>(null)
-  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [loadedFolder, setLoadedFolder] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('plan')
+  const loadingDetail = Boolean(folder && user && loadedFolder !== folder)
 
   useEffect(() => {
     if (!user) return
@@ -34,11 +35,19 @@ export default function WeekLayout() {
 
   useEffect(() => {
     if (folder && user) {
-      setLoadingDetail(true)
-      setActiveTab('plan')
+      let cancelled = false
       getWeek(user, folder)
-        .then(setWeekDetail)
-        .finally(() => setLoadingDetail(false))
+        .then((data) => {
+          if (cancelled) return
+          setWeekDetail(data)
+          setActiveTab('plan')
+        })
+        .finally(() => {
+          if (!cancelled) setLoadedFolder(folder)
+        })
+      return () => {
+        cancelled = true
+      }
     }
   }, [folder, user])
 

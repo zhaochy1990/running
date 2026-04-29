@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts'
 import { getHealth, getPMC, type HealthRecord, type PMCRecord, type PMCSummary, type HRVSnapshot } from '../api'
-import { useUser } from '../UserContext'
+import { useUser } from '../UserContextValue'
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return dateStr
@@ -83,26 +83,34 @@ export default function HealthPage() {
   const [rhrBaseline, setRhrBaseline] = useState<number | null>(null)
   const [pmcData, setPmcData] = useState<PMCRecord[]>([])
   const [pmcSummary, setPmcSummary] = useState<PMCSummary | null>(null)
-  const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
   const [pmcDays, setPmcDays] = useState(90)
+  const requestKey = user ? `${user}:${days}:${pmcDays}` : ''
+  const [loadedKey, setLoadedKey] = useState('')
+  const loading = Boolean(requestKey && loadedKey !== requestKey)
 
   useEffect(() => {
     if (!user) return
-    setLoading(true)
+    let cancelled = false
     Promise.all([
       getHealth(user, days),
       getPMC(user, pmcDays),
     ])
       .then(([healthData, pmcResult]) => {
+        if (cancelled) return
         setRecords(healthData.health)
         setHrv(healthData.hrv || null)
         setRhrBaseline(healthData.rhr_baseline ?? null)
         setPmcData(pmcResult.pmc)
         setPmcSummary(pmcResult.summary)
       })
-      .finally(() => setLoading(false))
-  }, [days, pmcDays, user])
+      .finally(() => {
+        if (!cancelled) setLoadedKey(requestKey)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [days, pmcDays, requestKey, user])
 
   // Records come newest first; reverse for charts
   const chartData = [...records].reverse().map((r) => ({

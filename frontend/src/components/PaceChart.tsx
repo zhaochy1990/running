@@ -1,5 +1,22 @@
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, ReferenceLine, Label } from 'recharts'
+import type { LabelProps } from 'recharts'
 import type { TimeseriesPoint } from '../api'
+
+interface CartesianLabelViewBox {
+  x?: number
+  y?: number
+  width?: number
+}
+
+function readCartesianViewBox(viewBox: unknown): CartesianLabelViewBox | null {
+  if (!viewBox || typeof viewBox !== 'object') return null
+  const data = viewBox as Record<string, unknown>
+  return {
+    x: typeof data.x === 'number' ? data.x : undefined,
+    y: typeof data.y === 'number' ? data.y : undefined,
+    width: typeof data.width === 'number' ? data.width : undefined,
+  }
+}
 
 function formatPace(sPerKm: number): string {
   if (!sPerKm || sPerKm <= 0 || sPerKm > 1200) return '—'
@@ -28,11 +45,12 @@ function findNearest<T extends { elapsed: number }>(data: T[], target: number): 
   return data[lo]
 }
 
-function HoverLabel({ viewBox, text, color }: { viewBox?: { x?: number; y?: number; width?: number }; text: string; color: string }) {
-  if (!viewBox) return null
-  const lineX = viewBox.x ?? 0
-  const chartTop = viewBox.y ?? 0
-  const chartWidth = viewBox.width ?? 0
+function HoverLabel({ viewBox, text, color }: { viewBox: unknown; text: string; color: string }) {
+  const cartesianViewBox = readCartesianViewBox(viewBox)
+  if (!cartesianViewBox) return null
+  const lineX = cartesianViewBox.x ?? 0
+  const chartTop = cartesianViewBox.y ?? 0
+  const chartWidth = cartesianViewBox.width ?? 0
   const boxHeight = 20
   const charWidth = 6.5
   const padding = 8
@@ -125,7 +143,7 @@ export default function PaceChart({ data, startTs: startTsProp, hoverElapsed, on
         <ReferenceLine y={avgPace} stroke="#00a85a" strokeDasharray="4 4" strokeOpacity={0.6} label={{ value: `avg ${formatPace(avgPace)}`, position: 'right', fill: '#00a85a', fontSize: 10, fontFamily: 'JetBrains Mono' }} />
         {hoverElapsed != null && (
           <ReferenceLine x={hoverElapsed} stroke="#1a1c2e" strokeOpacity={0.35} strokeWidth={1} ifOverflow="extendDomain">
-            <Label content={(props: any) => <HoverLabel {...props} text={hoverText} color="#00a85a" />} />
+            <Label content={(props: LabelProps) => <HoverLabel viewBox={props.viewBox} text={hoverText} color="#00a85a" />} />
           </ReferenceLine>
         )}
         <Area

@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
-import { useUser } from '../UserContext'
+import { useUser } from '../UserContextValue'
 import SegmentView from '../components/SegmentView'
 import StrengthView from '../components/StrengthView'
 import ZoneChart from '../components/ZoneChart'
 import HRChart from '../components/HRChart'
 import PaceChart from '../components/PaceChart'
 import ActivityContributionCard from '../components/ActivityContributionCard'
+
+const FEEL_EMOJIS = ['', '😄', '🙂', '😐', '😞', '😫']
 
 export default function ActivityDetailPage() {
   // Two route shapes share this page:
@@ -33,15 +35,15 @@ export default function ActivityDetailPage() {
   const [regenError, setRegenError] = useState<string | null>(null)
   const [hoverElapsed, setHoverElapsed] = useState<number | null>(null)
 
-  const fetchDetail = () => {
+  const fetchDetail = useCallback(() => {
     if (isTeamView) {
       return getTeamActivity(teamId!, userId!, labelId!)
     }
     if (!id || !user) return Promise.reject(new Error('missing id or user'))
     return getActivity(user, id)
-  }
+  }, [id, isTeamView, labelId, teamId, user, userId])
 
-  const loadActivity = () => {
+  const loadActivity = useCallback(() => {
     if (!activityId) return
     if (!isTeamView && !user) return
     fetchDetail().then((data) => {
@@ -51,7 +53,7 @@ export default function ActivityDetailPage() {
       setZones(data.zones)
       setTimeseries(data.timeseries)
     })
-  }
+  }, [activityId, fetchDetail, isTeamView, user])
 
   useEffect(() => {
     if (!activityId) return
@@ -66,7 +68,7 @@ export default function ActivityDetailPage() {
         setTimeseries(data.timeseries)
       })
       .finally(() => setLoading(false))
-  }, [activityId, isTeamView, teamId, userId])
+  }, [activityId, fetchDetail, isTeamView, user])
 
   const handleResync = async () => {
     if (isTeamView || !id || !user || syncing) return
@@ -218,7 +220,7 @@ export default function ActivityDetailPage() {
               <span className="text-xs text-text-muted uppercase tracking-wider">训练反馈</span>
               {activity.feel_type != null && (
                 <span className="text-lg leading-none">
-                  {[,'😄','🙂','😐','😞','😫'][activity.feel_type] || ''}
+                  {FEEL_EMOJIS[activity.feel_type] || ''}
                 </span>
               )}
             </div>

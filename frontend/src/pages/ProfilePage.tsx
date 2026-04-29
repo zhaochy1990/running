@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getMyProfile, patchMyProfile, type ProfilePatchIn, type TargetDistance } from '../api'
-import { useUser } from '../UserContext'
+import { useUser } from '../UserContextValue'
 
 interface FieldError {
   [field: string]: string

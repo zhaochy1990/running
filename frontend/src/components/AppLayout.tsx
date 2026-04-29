@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { getWeeks, getInbody, triggerSync, formatWeekRange, type WeekSummary } from '../api'
-import { useUser } from '../UserContext'
+import { useUser } from '../UserContextValue'
 import { useAuthStore } from '../store/authStore'
 
 export default function AppLayout() {

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getTrainingPlan, type TrainingPlan } from '../api'
-import { useUser } from '../UserContext'
+import { useUser } from '../UserContextValue'
 
 const PHASE_COLORS: Record<string, string> = {
   '赛后恢复': '#8888a0',
@@ -36,15 +36,24 @@ function formatShort(dateStr: string): string {
 export default function TrainingPlanPage() {
   const { user } = useUser()
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
-  const [loading, setLoading] = useState(true)
+  const requestKey = user || ''
+  const [loadedKey, setLoadedKey] = useState('')
+  const loading = Boolean(requestKey && loadedKey !== requestKey)
 
   useEffect(() => {
     if (!user) return
-    setLoading(true)
+    let cancelled = false
     getTrainingPlan(user)
-      .then(setPlan)
-      .finally(() => setLoading(false))
-  }, [user])
+      .then((data) => {
+        if (!cancelled) setPlan(data)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadedKey(requestKey)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [requestKey, user])
 
   if (loading) {
     return (

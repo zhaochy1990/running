@@ -18,6 +18,12 @@ const L3_LABELS: Record<string, string> = {
   recovery: '恢复能力',
 }
 
+interface AbilityLoadState {
+  key: string
+  data: ActivityAbility | null
+  notComputed: boolean
+}
+
 function subScoreColor(score: number | undefined): string {
   if (score == null) return '#8888a0'
   if (score >= 85) return '#00a85a'
@@ -49,29 +55,32 @@ export default function ActivityContributionCard({
   user: string
   activity: Activity
 }) {
-  const [data, setData] = useState<ActivityAbility | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [notComputed, setNotComputed] = useState(false)
+  const labelId = activity?.label_id
+  const requestKey = user && labelId ? `${user}:${labelId}` : ''
+  const [abilityState, setAbilityState] = useState<AbilityLoadState>({
+    key: '',
+    data: null,
+    notComputed: false,
+  })
 
   useEffect(() => {
-    if (!user || !activity?.label_id) return
+    if (!user || !labelId) return
     let cancelled = false
-    setLoading(true)
-    setNotComputed(false)
-    fetchActivityAbility(user, activity.label_id)
+    fetchActivityAbility(user, labelId)
       .then((d) => {
-        if (!cancelled) setData(d)
+        if (!cancelled) setAbilityState({ key: requestKey, data: d, notComputed: false })
       })
       .catch(() => {
-        if (!cancelled) setNotComputed(true)
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setAbilityState({ key: requestKey, data: null, notComputed: true })
       })
     return () => {
       cancelled = true
     }
-  }, [user, activity?.label_id])
+  }, [user, labelId, requestKey])
+
+  const loading = Boolean(requestKey && abilityState.key !== requestKey)
+  const data = abilityState.key === requestKey ? abilityState.data : null
+  const notComputed = abilityState.key === requestKey && abilityState.notComputed
 
   if (loading) {
     return (

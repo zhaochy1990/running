@@ -1,18 +1,16 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useAuthStore } from './store/authStore'
 import { getMyProfile } from './api'
+import { UserContext } from './UserContextValue'
 
-interface UserContextType {
-  user: string
-  displayName: string
-  refresh: () => Promise<void>
+async function loadDisplayName(userId: string): Promise<string> {
+  try {
+    const profile = await getMyProfile()
+    return profile.display_name || userId
+  } catch {
+    return userId
+  }
 }
-
-const UserContext = createContext<UserContextType>({
-  user: '',
-  displayName: '',
-  refresh: async () => {},
-})
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const userId = useAuthStore((s) => s.userId)
@@ -20,18 +18,19 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     if (!userId) return
-    try {
-      const profile = await getMyProfile()
-      setDisplayName(profile.display_name || userId)
-    } catch {
-      setDisplayName(userId)
-    }
+    setDisplayName(await loadDisplayName(userId))
   }, [userId])
 
   useEffect(() => {
     if (!userId) return
-    refresh()
-  }, [userId, refresh])
+    let cancelled = false
+    void loadDisplayName(userId).then((name) => {
+      if (!cancelled) setDisplayName(name)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
 
   if (!userId) {
     return (
@@ -46,8 +45,4 @@ export function UserProvider({ children }: { children: ReactNode }) {
       {children}
     </UserContext.Provider>
   )
-}
-
-export function useUser() {
-  return useContext(UserContext)
 }
