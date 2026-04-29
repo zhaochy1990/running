@@ -12,6 +12,8 @@ Routes:
   GET    /api/teams/{team_id}             — single team
   POST   /api/teams/{team_id}/join        — caller joins
   POST   /api/teams/{team_id}/leave       — caller leaves
+  POST   /api/teams/{team_id}/transfer-owner — owner transfers ownership
+  DELETE /api/teams/{team_id}             — owner dissolves team
   GET    /api/teams/{team_id}/members     — list members
   GET    /api/teams/{team_id}/feed        — recent activities across members
   GET    /api/users/me/teams              — caller's teams
@@ -137,6 +139,21 @@ async def get_team(
     return team
 
 
+@router.delete("/api/teams/{team_id}")
+async def delete_team(
+    team_id: str,
+    authorization: str | None = Header(default=None),
+    _claims: dict = Depends(require_bearer),
+):
+    try:
+        await auth_client.delete_team(_bearer(authorization), team_id)
+    except auth_client.AuthServiceError as exc:
+        raise _surface_auth_service_error(exc) from exc
+    except auth_client.AuthServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"auth-service unavailable: {exc}") from exc
+    return {"status": "deleted"}
+
+
 # ---------------------------------------------------------------------------
 # Membership: join / leave / members
 # ---------------------------------------------------------------------------
@@ -164,6 +181,29 @@ async def leave_team(
 ):
     try:
         return await auth_client.leave_team(_bearer(authorization), team_id)
+    except auth_client.AuthServiceError as exc:
+        raise _surface_auth_service_error(exc) from exc
+    except auth_client.AuthServiceUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"auth-service unavailable: {exc}") from exc
+
+
+@router.post("/api/teams/{team_id}/transfer-owner")
+async def transfer_team_owner(
+    team_id: str,
+    payload: dict = Body(...),
+    authorization: str | None = Header(default=None),
+    _claims: dict = Depends(require_bearer),
+):
+    new_owner_user_id = payload.get("new_owner_user_id")
+    if not isinstance(new_owner_user_id, str) or not _UUID4_RE.match(new_owner_user_id):
+        raise HTTPException(status_code=422, detail="new_owner_user_id must be a user UUID")
+
+    try:
+        return await auth_client.transfer_team_owner(
+            _bearer(authorization),
+            team_id,
+            new_owner_user_id,
+        )
     except auth_client.AuthServiceError as exc:
         raise _surface_auth_service_error(exc) from exc
     except auth_client.AuthServiceUnavailable as exc:

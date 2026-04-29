@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getMyProfile, patchMyProfile, type ProfilePatchIn, type TargetDistance } from '../api'
+import { deleteMyAccount, getMyProfile, patchMyProfile, type ProfilePatchIn, type TargetDistance } from '../api'
+import { useAuthStore } from '../store/authStore'
 import { useUser } from '../UserContextValue'
 
 interface FieldError {
@@ -10,12 +11,15 @@ interface FieldError {
 export default function ProfilePage() {
   const navigate = useNavigate()
   const { refresh } = useUser()
+  const clearSession = useAuthStore((s) => s.clearSession)
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [fieldErrors, setFieldErrors] = useState<FieldError>({})
+  const [deleteConfirm, setDeleteConfirm] = useState('')
 
   // form fields
   const [displayName, setDisplayName] = useState('')
@@ -119,7 +123,39 @@ export default function ProfilePage() {
       field && fieldErrors[field]
         ? 'border-red-500/60 focus:border-red-500'
         : 'border-border-subtle focus:border-accent-green'
-    }`
+      }`
+
+  const deletionErrorMessage = (status: number, detail: unknown) => {
+    if (status === 409) {
+      return '注销失败：你仍然拥有团队。请先到团队页面转让队长或解散团队，然后再注销账号。'
+    }
+    if (typeof detail === 'string' && detail.trim()) return detail
+    if (detail && typeof detail === 'object' && 'message' in detail) {
+      const message = (detail as { message?: unknown }).message
+      if (typeof message === 'string' && message.trim()) return message
+    }
+    return `注销失败 (${status})`
+  }
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirm.trim() !== '删除账号' || deleting) return
+    setError('')
+    setSuccess('')
+    setDeleting(true)
+    try {
+      const { ok, status, data } = await deleteMyAccount()
+      if (!ok) {
+        setError(deletionErrorMessage(status, data.detail))
+        return
+      }
+      clearSession()
+      navigate('/login', { replace: true })
+    } catch {
+      setError('注销请求失败，请重试')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -385,6 +421,35 @@ export default function ProfilePage() {
           {saving ? '保存中...' : '保存'}
         </button>
       </form>
+
+      <section className="mt-10 rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
+        <h3 className="text-sm font-semibold text-red-400">危险区：注销账号</h3>
+        <p className="mt-2 text-sm leading-6 text-text-secondary">
+          注销会永久删除你的账号、登录信息、刷新令牌、团队成员关系，以及本地训练数据、COROS
+          凭据与配置、个人资料、健康/InBody/能力数据和生成的总结。该操作无法恢复。
+        </p>
+        <p className="mt-2 text-sm text-text-muted">
+          如果你仍然是某个团队的队长，需要先在团队页面转让队长或解散团队。
+        </p>
+        <label className="mt-4 block text-xs font-mono text-text-muted uppercase tracking-wider">
+          输入“删除账号”以确认
+        </label>
+        <input
+          type="text"
+          value={deleteConfirm}
+          onChange={(e) => setDeleteConfirm(e.target.value)}
+          className="mt-2 w-full rounded-lg border border-red-500/30 bg-bg-base px-3 py-2 text-sm text-text-primary focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+          placeholder="删除账号"
+        />
+        <button
+          type="button"
+          onClick={handleDeleteAccount}
+          disabled={deleting || deleteConfirm.trim() !== '删除账号'}
+          className="mt-4 w-full rounded-lg border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+        >
+          {deleting ? '正在注销...' : '永久注销账号'}
+        </button>
+      </section>
     </div>
   )
 }

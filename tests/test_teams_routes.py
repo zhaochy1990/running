@@ -194,6 +194,68 @@ def test_join_team_503_when_auth_service_unavailable(app_client, monkeypatch):
     assert resp.status_code == 503
 
 
+def test_transfer_owner_proxies(app_client, monkeypatch):
+    client, token, _ = app_client
+    seen: dict = {}
+
+    async def fake_transfer(_bearer, team_id, new_owner_user_id):
+        seen["team_id"] = team_id
+        seen["new_owner_user_id"] = new_owner_user_id
+        return {"id": team_id, "owner_user_id": new_owner_user_id}
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "transfer_team_owner", fake_transfer)
+
+    resp = client.post(
+        "/api/teams/t1/transfer-owner",
+        json={"new_owner_user_id": USER_B},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    assert seen == {"team_id": "t1", "new_owner_user_id": USER_B}
+    assert resp.json()["owner_user_id"] == USER_B
+
+
+def test_transfer_owner_validates_target_uuid(app_client):
+    client, token, _ = app_client
+    resp = client.post(
+        "/api/teams/t1/transfer-owner",
+        json={"new_owner_user_id": "not-a-uuid"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 422
+
+
+def test_delete_team_proxies(app_client, monkeypatch):
+    client, token, _ = app_client
+    seen: dict = {}
+
+    async def fake_delete(_bearer, team_id):
+        seen["team_id"] = team_id
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "delete_team", fake_delete)
+
+    resp = client.delete("/api/teams/t1", headers=_auth(token))
+    assert resp.status_code == 200
+    assert seen == {"team_id": "t1"}
+    assert resp.json() == {"status": "deleted"}
+
+
+def test_delete_team_surfaces_auth_service_4xx(app_client, monkeypatch):
+    client, token, _ = app_client
+
+    import stride_server.auth_service_client as ac
+
+    async def fake_delete(_bearer, _team_id):
+        raise ac.AuthServiceError(403, "owner required")
+
+    monkeypatch.setattr(ac, "delete_team", fake_delete)
+
+    resp = client.delete("/api/teams/t1", headers=_auth(token))
+    assert resp.status_code == 403
+
+
 def test_my_teams_returns_empty_when_unconfigured(app_client):
     client, token, _ = app_client
     resp = client.get("/api/users/me/teams", headers=_auth(token))

@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  getTeam, getTeamMembers, getTeamFeed, joinTeam, leaveTeam, listMyTeams, syncTeamAll,
+  deleteTeam, getTeam, getTeamMembers, getTeamFeed, joinTeam, leaveTeam, listMyTeams, syncTeamAll,
+  transferTeamOwner,
   formatDate, weekdayCN, sportNameCN,
   type Team, type TeamMember, type TeamFeedActivity, type TeamSyncSummary,
 } from '../../api'
+import { useUserId } from '../../store/authStore'
 
 export default function TeamDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const currentUserId = useUserId()
   const [team, setTeam] = useState<Team | null>(null)
   const [members, setMembers] = useState<TeamMember[]>([])
   const [feed, setFeed] = useState<TeamFeedActivity[]>([])
@@ -19,6 +22,9 @@ export default function TeamDetailPage() {
   const [syncing, setSyncing] = useState(false)
   const [syncSummary, setSyncSummary] = useState<TeamSyncSummary | null>(null)
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string> | null>(null)
+  const [transferTargetId, setTransferTargetId] = useState('')
+  const [ownerActionBusy, setOwnerActionBusy] = useState(false)
+  const [dissolveConfirm, setDissolveConfirm] = useState('')
 
   const loadAll = () => {
     if (!id) return
@@ -84,6 +90,13 @@ export default function TeamDetailPage() {
   const filteredFeed =
     selectedUserIds === null ? feed : feed.filter((a) => selectedUserIds.has(a.user_id))
 
+  const isOwner = Boolean(
+    currentUserId &&
+    (team?.owner_user_id === currentUserId ||
+      members.some((m) => m.user_id === currentUserId && m.role === 'owner')),
+  )
+  const transferCandidates = members.filter((m) => m.user_id !== currentUserId)
+
   const toggleMembership = async () => {
     if (!id) return
     setBusy(true)
@@ -111,6 +124,37 @@ export default function TeamDetailPage() {
       setError(e instanceof Error ? e.message : '同步失败')
     } finally {
       setSyncing(false)
+    }
+  }
+
+  const handleTransferOwner = async () => {
+    if (!id || !transferTargetId || ownerActionBusy) return
+    setOwnerActionBusy(true)
+    setError(null)
+    try {
+      const res = await transferTeamOwner(id, transferTargetId)
+      if (!res.ok) throw new Error(`转让失败 (${res.status})`)
+      setTransferTargetId('')
+      loadAll()
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '转让失败')
+    } finally {
+      setOwnerActionBusy(false)
+    }
+  }
+
+  const handleDissolveTeam = async () => {
+    if (!id || !team || dissolveConfirm.trim() !== team.name || ownerActionBusy) return
+    setOwnerActionBusy(true)
+    setError(null)
+    try {
+      const res = await deleteTeam(id)
+      if (!res.ok) throw new Error(`解散失败 (${res.status})`)
+      navigate('/teams', { replace: true })
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '解散失败')
+    } finally {
+      setOwnerActionBusy(false)
     }
   }
 
@@ -382,6 +426,70 @@ export default function TeamDetailPage() {
               )
             })}
           </div>
+
+          {isOwner && (
+            <div className="mt-6 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+              <h3 className="text-xs font-mono text-red-400 tracking-wider mb-2">
+                队长操作
+              </h3>
+              <p className="text-xs text-text-muted mb-3">
+                注销账号前，需要先转让或解散你拥有的团队。
+              </p>
+
+              <label className="block text-[11px] font-mono text-text-muted mb-1">
+                转让队长给成员
+              </label>
+              <div className="flex gap-2">
+                <select
+                  value={transferTargetId}
+                  onChange={(e) => setTransferTargetId(e.target.value)}
+                  disabled={ownerActionBusy || transferCandidates.length === 0}
+                  className="min-w-0 flex-1 rounded-lg border border-border-subtle bg-bg-base px-2 py-2 text-xs text-text-primary focus:border-accent-green focus:outline-none disabled:opacity-50"
+                >
+                  <option value="">选择成员</option>
+                  {transferCandidates.map((m) => (
+                    <option key={m.user_id} value={m.user_id}>
+                      {m.display_name || m.name || m.user_id.slice(0, 8)}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleTransferOwner}
+                  disabled={ownerActionBusy || !transferTargetId}
+                  className="rounded-lg border border-accent-green/40 px-3 py-2 text-xs font-medium text-accent-green hover:bg-accent-green/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  转让
+                </button>
+              </div>
+              {transferCandidates.length === 0 && (
+                <p className="mt-2 text-[11px] text-text-muted">
+                  当前没有其他成员可接任队长。
+                </p>
+              )}
+
+              <div className="mt-4 border-t border-red-500/20 pt-4">
+                <label className="block text-[11px] font-mono text-text-muted mb-1">
+                  输入团队名称确认解散
+                </label>
+                <input
+                  type="text"
+                  value={dissolveConfirm}
+                  onChange={(e) => setDissolveConfirm(e.target.value)}
+                  className="w-full rounded-lg border border-red-500/30 bg-bg-base px-2 py-2 text-xs text-text-primary focus:border-red-500 focus:outline-none"
+                  placeholder={team.name}
+                />
+                <button
+                  type="button"
+                  onClick={handleDissolveTeam}
+                  disabled={ownerActionBusy || dissolveConfirm.trim() !== team.name}
+                  className="mt-2 w-full rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {ownerActionBusy ? '处理中...' : '解散团队'}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </div>

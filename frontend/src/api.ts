@@ -104,6 +104,30 @@ async function patchJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean
   return { ok: res.ok, status: res.status, data: data as T }
 }
 
+async function deleteJSON<T>(path: string): Promise<{ ok: boolean; status: number; data: T }> {
+  let res = await fetch(`${BASE}${path}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+
+  if (res.status === 401) {
+    try {
+      await refreshAccessToken()
+      res = await fetch(`${BASE}${path}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      })
+    } catch {
+      sessionStorage.clear()
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
+  }
+
+  const data = await res.json().catch(() => ({} as T))
+  return { ok: res.ok, status: res.status, data: data as T }
+}
+
 export function getUsers() {
   return fetchJSON<{ users: string[] }>('/users')
 }
@@ -161,6 +185,10 @@ export function patchMyProfile(patch: ProfilePatchIn) {
     profile?: Record<string, unknown>
     detail?: unknown
   }>('/users/me/profile', patch)
+}
+
+export function deleteMyAccount() {
+  return deleteJSON<{ detail?: unknown }>('/users/me')
 }
 
 export function postOnboardingComplete() {
@@ -619,6 +647,14 @@ export function joinTeam(id: string) {
 
 export function leaveTeam(id: string) {
   return postJSON<Record<string, unknown>>(`/teams/${id}/leave`)
+}
+
+export function transferTeamOwner(id: string, newOwnerUserId: string) {
+  return postJSON<Team>(`/teams/${id}/transfer-owner`, { new_owner_user_id: newOwnerUserId })
+}
+
+export function deleteTeam(id: string) {
+  return deleteJSON<Record<string, unknown>>(`/teams/${id}`)
 }
 
 export function getTeamMembers(id: string) {

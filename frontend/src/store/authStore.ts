@@ -24,6 +24,15 @@ function decodeJwt(token: string): JwtPayload {
 
 let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
+function clearBrowserSession() {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer)
+    refreshTimer = null
+  }
+  void clearAuthUser()
+  sessionStorage.clear()
+}
+
 async function refreshAccessToken(): Promise<string> {
   const refreshToken = sessionStorage.getItem('refresh_token')
   if (!refreshToken) throw new Error('No refresh token')
@@ -68,6 +77,7 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>
   registerSuccess: (access_token: string, refresh_token: string) => void
   logout: () => Promise<void>
+  clearSession: () => void
   hydrate: () => void
 }
 
@@ -127,8 +137,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   logout: async () => {
     const refreshToken = sessionStorage.getItem('refresh_token')
 
-    if (refreshTimer) clearTimeout(refreshTimer)
-
     if (refreshToken && AUTH_BASE) {
       try {
         await fetch(`${AUTH_BASE}/api/auth/logout`, {
@@ -139,8 +147,17 @@ export const useAuthStore = create<AuthState>((set) => ({
       } catch { /* best-effort: server-side revocation may fail; local cleanup still runs */ }
     }
 
-    void clearAuthUser()
-    sessionStorage.clear()
+    clearBrowserSession()
+    set({
+      accessToken: null,
+      userId: null,
+      isAuthenticated: false,
+      hydrated: true,
+    })
+  },
+
+  clearSession: () => {
+    clearBrowserSession()
     set({
       accessToken: null,
       userId: null,
@@ -170,7 +187,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       } catch { /* invalid token, fall through */ }
     }
 
-    sessionStorage.clear()
+    clearBrowserSession()
     set({
       accessToken: null,
       userId: null,

@@ -137,6 +137,19 @@ async def leave_team(bearer: str | None, team_id: str) -> dict[str, Any]:
     return await _request("POST", f"/api/teams/{team_id}/leave", bearer=bearer)
 
 
+async def transfer_team_owner(bearer: str | None, team_id: str, new_owner_user_id: str) -> dict[str, Any]:
+    return await _request(
+        "POST",
+        f"/api/teams/{team_id}/transfer-owner",
+        bearer=bearer,
+        json_body={"new_owner_user_id": new_owner_user_id},
+    )
+
+
+async def delete_team(bearer: str | None, team_id: str) -> None:
+    await _request("DELETE", f"/api/teams/{team_id}", bearer=bearer)
+
+
 async def list_members(bearer: str | None, team_id: str) -> list[dict[str, Any]]:
     try:
         data = await _request("GET", f"/api/teams/{team_id}/members", bearer=bearer)
@@ -159,3 +172,7 @@ async def list_my_teams(bearer: str | None) -> list[dict[str, Any]]:
     if isinstance(data, list):
         return data
     return []
+
+
+async def delete_my_account(bearer: str | None) -> None:
+    await _request("DELETE", "/api/users/me", bearer=bearer)

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from stride_core.source import DataSource
 
 from .bearer import _load_public_key, is_dev_mode, require_bearer, verify_path_user
-from .routes import ability, activities, health, inbody, onboarding, profile, public, sync, teams, training_plan, users, weeks
+from .routes import account, ability, activities, health, inbody, onboarding, profile, public, sync, teams, training_plan, users, weeks
 from .static import mount_frontend
 
 
@@ -54,6 +54,7 @@ def create_app(source: DataSource) -> FastAPI:
     protected_user = [Depends(verify_path_user)]
 
     app.include_router(users.router, dependencies=protected)
+    app.include_router(account.router, dependencies=protected)
     app.include_router(profile.router, dependencies=protected)
     app.include_router(onboarding.router, dependencies=protected)
     app.include_router(teams.router, dependencies=protected)
