@@ -6,8 +6,7 @@ from datetime import date
 
 from fastapi import APIRouter
 
-from stride_core.db import USER_DATA_DIR
-
+from ..content_store import read_text
 from ..deps import PROJECT_ROOT
 
 router = APIRouter()
@@ -16,14 +15,14 @@ router = APIRouter()
 @router.get("/api/{user}/training-plan")
 def get_training_plan(user: str):
     """Return the overall training plan markdown and parsed phase timeline."""
-    plan_path = USER_DATA_DIR / user / "TRAINING_PLAN.md"
-    if not plan_path.exists():
+    item = read_text(f"{user}/TRAINING_PLAN.md")
+    if item is not None:
+        content = item.content
+    else:
         plan_path = PROJECT_ROOT / "TRAINING_PLAN.md"
-    if not plan_path.exists():
-        return {"content": None, "phases": [], "current_phase": None}
-
-    with open(plan_path, "r", encoding="utf-8") as f:
-        content = f.read()
+        if not plan_path.exists():
+            return {"content": None, "phases": [], "current_phase": None}
+        content = plan_path.read_text(encoding="utf-8")
 
     phases: list[dict] = []
     today = date.today()

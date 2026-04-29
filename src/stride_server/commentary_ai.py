@@ -22,13 +22,14 @@ import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Any
 
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import pace_str, sport_name
 
 from .aoai_client import AOAIUnavailable, get_client, get_deployment, is_enabled
+from .content_store import list_week_folders as content_week_folders
+from .content_store import read_text as read_content_text
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,25 @@ def get_athlete_profile(user: str) -> dict[str, Any] | None:
         return None
 
 
+def _read_user_text(user: str, relative_path: str) -> str | None:
+    item = read_content_text(f"{user}/{relative_path}")
+    if item is not None:
+        return item.content
+
+    path = USER_DATA_DIR / user / relative_path
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def _list_user_week_folders(user: str) -> list[str]:
+    folders = set(content_week_folders(user))
+    logs_dir = USER_DATA_DIR / user / "logs"
+    if logs_dir.exists():
+        folders.update(d.name for d in logs_dir.iterdir() if d.is_dir())
+    return sorted(folders, reverse=True)
+
+
 # Matches either "4/27 — 6/21" (cross-month) or "4/20-26" (same month)
 _PHASE_LINE_RE = re.compile(
     r"^\|\s*\**([^|*]+?)\**\s*\|\s*"
@@ -121,8 +141,8 @@ def get_current_phase(user: str, activity_date: str) -> dict[str, Any] | None:
     Matches the "时间线总览" table. Returns `{phase, start, end}` or None.
     Understands both cross-month (`4/27 — 6/21`) and same-month (`4/20-26`) ranges.
     """
-    plan_path = USER_DATA_DIR / user / "TRAINING_PLAN.md"
-    if not plan_path.exists():
+    text = _read_user_text(user, "TRAINING_PLAN.md")
+    if text is None:
         return None
     try:
         if "T" in activity_date:
@@ -135,7 +155,6 @@ def get_current_phase(user: str, activity_date: str) -> dict[str, Any] | None:
     except Exception:
         return None
     year = activity_d.year
-    text = plan_path.read_text(encoding="utf-8", errors="ignore")
     in_timeline = False
     for line in text.splitlines():
         if "时间线总览" in line:
@@ -163,9 +182,6 @@ def get_week_plan_excerpt(user: str, activity_date: str) -> str | None:
 
     Returns the full plan.md content (it's already a weekly file, manageable size).
     """
-    logs_dir = USER_DATA_DIR / user / "logs"
-    if not logs_dir.exists():
-        return None
     try:
         if "T" in activity_date:
             activity_dt = datetime.fromisoformat(activity_date.replace("Z", "+00:00"))
@@ -179,10 +195,8 @@ def get_week_plan_excerpt(user: str, activity_date: str) -> str | None:
 
     folder_re = re.compile(r"^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})")
     year = activity_d.year
-    for folder in sorted(logs_dir.iterdir()):
-        if not folder.is_dir():
-            continue
-        m = folder_re.match(folder.name)
+    for folder_name in sorted(_list_user_week_folders(user)):
+        m = folder_re.match(folder_name)
         if not m:
             continue
         sy, sm, sd, em, ed = m.groups()
@@ -193,9 +207,9 @@ def get_week_plan_excerpt(user: str, activity_date: str) -> str | None:
             if end < start:
                 end = datetime(int(sy), int(em), int(ed)).date()
             if start <= activity_d <= end:
-                plan_md = folder / "plan.md"
-                if plan_md.exists():
-                    return plan_md.read_text(encoding="utf-8", errors="ignore")
+                text = _read_user_text(user, f"logs/{folder_name}/plan.md")
+                if text is not None:
+                    return text
         except Exception:
             continue
     return None

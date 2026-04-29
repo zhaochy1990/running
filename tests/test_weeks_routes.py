@@ -1,4 +1,4 @@
-"""Tests for /api/{user}/weeks/{folder} feedback DB-precedence + PUT endpoint."""
+"""Tests for /api/{user}/weeks/{folder} plan/feedback DB precedence + PUT endpoints."""
 
 from __future__ import annotations
 
@@ -120,6 +120,58 @@ def test_get_week_feedback_db_overrides_file(app_client):
 
 
 # ---------------------------------------------------------------------------
+# GET — DB precedence over plan.md
+# ---------------------------------------------------------------------------
+
+
+def test_get_week_plan_falls_back_to_file(app_client):
+    client, token, tmp_path = app_client
+    plan_md = tmp_path / USER_UUID / "logs" / WEEK / "plan.md"
+    plan_md.write_text("# Week 0 plan\n\nRun easy.", encoding="utf-8")
+
+    resp = client.get(f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["plan_source"] == "file"
+    assert data["plan"] == "# Week 0 plan\n\nRun easy."
+
+
+def test_get_week_plan_db_overrides_file(app_client):
+    client, token, tmp_path = app_client
+    plan_md = tmp_path / USER_UUID / "logs" / WEEK / "plan.md"
+    plan_md.write_text("FROM PLAN FILE", encoding="utf-8")
+
+    from stride_core.db import Database
+    db = Database(tmp_path / USER_UUID / "coros.db")
+    db.upsert_weekly_plan(WEEK, "FROM DB PLAN", generated_by="gpt-5.5")
+    db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token))
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["plan_source"] == "db"
+    assert data["plan"] == "FROM DB PLAN"
+    assert data["plan_generated_by"] == "gpt-5.5"
+
+
+def test_list_weeks_uses_db_plan_title(app_client):
+    client, token, tmp_path = app_client
+
+    from stride_core.db import Database
+    db = Database(tmp_path / USER_UUID / "coros.db")
+    db.upsert_weekly_plan(WEEK, "# Agent Plan\n\nAdjusted.", generated_by="gpt-5.5")
+    db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/weeks", headers=_auth(token))
+    assert resp.status_code == 200
+    week = resp.json()["weeks"][0]
+    assert week["has_plan"] is True
+    assert week["plan_source"] == "db"
+    assert week["plan_title"] == "Agent Plan"
+    assert week["plan_generated_by"] == "gpt-5.5"
+
+
+# ---------------------------------------------------------------------------
 # PUT — write + own-only
 # ---------------------------------------------------------------------------
 
@@ -189,3 +241,69 @@ def test_put_feedback_overwrites_previous(app_client):
 
     get_resp = client.get(f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token))
     assert get_resp.json()["feedback"] == "draft 2 final"
+
+
+def test_put_plan_writes_db_row(app_client):
+    client, token, _ = app_client
+
+    resp = client.put(
+        f"/api/{USER_UUID}/weeks/{WEEK}/plan",
+        json={"content": "# Adjusted plan", "generated_by": "gpt-5.5"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert body["plan_source"] == "db"
+    assert body["plan_generated_by"] == "gpt-5.5"
+
+    get_resp = client.get(f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token))
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["plan"] == "# Adjusted plan"
+    assert data["plan_source"] == "db"
+
+
+def test_put_plan_validates_content(app_client):
+    client, token, _ = app_client
+    resp = client.put(
+        f"/api/{USER_UUID}/weeks/{WEEK}/plan",
+        json={"content": 123},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 422
+
+
+def test_put_plan_rejects_bad_folder(app_client):
+    client, token, _ = app_client
+    resp = client.put(
+        f"/api/{USER_UUID}/weeks/not-a-week/plan",
+        json={"content": "hi"},
+        headers=_auth(token),
+    )
+    assert resp.status_code == 400
+
+
+def test_put_plan_other_user_forbidden(app_client, rsa_keypair):
+    client, _own_token, _ = app_client
+    private_pem, _public_pem = rsa_keypair
+    other_token = _make_token(private_pem, sub="b1b2c3d4-e5f6-4aaa-89ab-999999999999")
+
+    resp = client.put(
+        f"/api/{USER_UUID}/weeks/{WEEK}/plan",
+        json={"content": "hijack"},
+        headers=_auth(other_token),
+    )
+    assert resp.status_code == 403
+
+
+def test_put_plan_overwrites_previous(app_client):
+    client, token, _ = app_client
+
+    client.put(f"/api/{USER_UUID}/weeks/{WEEK}/plan",
+               json={"content": "draft 1"}, headers=_auth(token))
+    client.put(f"/api/{USER_UUID}/weeks/{WEEK}/plan",
+               json={"content": "draft 2 final"}, headers=_auth(token))
+
+    get_resp = client.get(f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token))
+    assert get_resp.json()["plan"] == "draft 2 final"

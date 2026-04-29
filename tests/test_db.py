@@ -103,6 +103,25 @@ class TestSyncMeta:
         assert db.get_meta("key") == "v2"
 
 
+class TestWeeklyPlan:
+    def test_weekly_plan_roundtrip(self, db):
+        db.upsert_weekly_plan("2026-04-20_04-26(W0)", "# Plan v1", generated_by="gpt-5.5")
+        row = db.get_weekly_plan_row("2026-04-20_04-26(W0)")
+        assert row is not None
+        d = dict(row)
+        assert d["content_md"] == "# Plan v1"
+        assert d["generated_by"] == "gpt-5.5"
+        assert d["generated_at"] is not None
+
+    def test_weekly_plan_upsert_overwrites(self, db):
+        week = "2026-04-20_04-26(W0)"
+        db.upsert_weekly_plan(week, "draft 1", generated_by="gpt-5.5")
+        db.upsert_weekly_plan(week, "draft 2", generated_by="claude-opus-4.6")
+        row = db.get_weekly_plan_row(week)
+        assert dict(row)["content_md"] == "draft 2"
+        assert dict(row)["generated_by"] == "claude-opus-4.6"
+
+
 class TestAbility:
     def test_ability_snapshot_roundtrip(self, db):
         db.upsert_ability_snapshot(

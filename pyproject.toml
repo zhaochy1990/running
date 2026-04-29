@@ -26,6 +26,7 @@ web = [
     "openai>=1.40",
     "azure-identity>=1.17",
     "azure-keyvault-secrets>=4.8",
+    "azure-storage-blob>=12.20",
 ]
 dev = [
     "pytest>=8.0",

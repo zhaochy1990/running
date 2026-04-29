@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   sync:
-    name: Sync data to Azure Files
+    name: Sync data to Azure Files and Blob
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,12 +29,19 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Sync training data to Azure Files
+      - name: Sync training data to Azure Files and Blob
         run: |
           ACCOUNT_KEY=$(az storage account keys list \
             --resource-group rg-common-prod \
             --account-name authstorage2026 \
             --query "[0].value" -o tsv)
+          BLOB_CONTAINER=stride-data
+
+          az storage container create \
+            --account-name authstorage2026 \
+            --account-key "$ACCOUNT_KEY" \
+            --name "$BLOB_CONTAINER" \
+            --output none
 
           for user_dir in data/*/; do
             user=$(basename "$user_dir")
@@ -51,6 +58,15 @@ jobs:
                 --source "$user_dir/logs" \
                 --pattern "*.md" \
                 --output none
+              az storage blob upload-batch \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --destination "$BLOB_CONTAINER" \
+                --destination-path "users/$user/logs" \
+                --source "$user_dir/logs" \
+                --pattern "*.md" \
+                --overwrite \
+                --output none
 
               # InBody photos (inbody.jpg / .jpeg / .png per week folder)
               az storage file upload-batch \
@@ -60,6 +76,15 @@ jobs:
                 --destination-path "$user/logs" \
                 --source "$user_dir/logs" \
                 --pattern "*/inbody.*" \
+                --output none
+              az storage blob upload-batch \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --destination "$BLOB_CONTAINER" \
+                --destination-path "users/$user/logs" \
+                --source "$user_dir/logs" \
+                --pattern "*/inbody.*" \
+                --overwrite \
                 --output none
             fi
 
@@ -72,6 +97,14 @@ jobs:
                 --source "$user_dir/TRAINING_PLAN.md" \
                 --path "$user/TRAINING_PLAN.md" \
                 --output none
+              az storage blob upload \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --container-name "$BLOB_CONTAINER" \
+                --file "$user_dir/TRAINING_PLAN.md" \
+                --name "users/$user/TRAINING_PLAN.md" \
+                --overwrite \
+                --output none
             fi
 
             # Sync status.md if exists
@@ -82,6 +115,14 @@ jobs:
                 --share-name stride-data \
                 --source "$user_dir/status.md" \
                 --path "$user/status.md" \
+                --output none
+              az storage blob upload \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --container-name "$BLOB_CONTAINER" \
+                --file "$user_dir/status.md" \
+                --name "users/$user/status.md" \
+                --overwrite \
                 --output none
             fi
 

@@ -6,38 +6,54 @@ from fastapi import APIRouter, Body, HTTPException
 
 from stride_core.models import pace_str
 
-from ..deps import format_duration, get_db, get_logs_dir, parse_week_dates
+from ..content_store import any_exists, exists as content_exists, list_week_folders, read_text
+from ..deps import format_duration, get_db, parse_week_dates
 
 router = APIRouter()
+
+
+def _markdown_title(content: str) -> str:
+    first_line = content.splitlines()[0].strip() if content.splitlines() else ""
+    return first_line.lstrip("# ").strip()
 
 
 @router.get("/api/{user}/weeks")
 def list_weeks(user: str):
     """List all training weeks with plan info and activity summary."""
     db = get_db(user)
-    logs_dir = get_logs_dir(user)
     weeks = []
-    if logs_dir.exists():
-        for folder in sorted(logs_dir.iterdir(), reverse=True):
-            if not folder.is_dir():
-                continue
-            dates = parse_week_dates(folder.name)
+    try:
+        for folder_name in list_week_folders(user):
+            dates = parse_week_dates(folder_name)
             if not dates:
                 continue
 
             date_from, date_to = dates
+            plan_rel = f"{user}/logs/{folder_name}/plan.md"
+            feedback_rel = f"{user}/logs/{folder_name}/feedback.md"
+            db_plan_row = db.get_weekly_plan_row(folder_name)
+            db_feedback_row = db.get_weekly_feedback_row(folder_name)
+            plan_item = None if db_plan_row is not None else read_text(plan_rel)
+            has_plan = db_plan_row is not None or plan_item is not None
             week: dict = {
-                "folder": folder.name,
+                "folder": folder_name,
                 "date_from": date_from,
                 "date_to": date_to,
-                "has_plan": (folder / "plan.md").exists(),
-                "has_feedback": (folder / "feedback.md").exists(),
-                "has_inbody": any((folder / f"inbody{ext}").exists() for ext in [".jpg", ".png", ".jpeg"]),
+                "has_plan": has_plan,
+                "has_feedback": db_feedback_row is not None or content_exists(feedback_rel),
+                "has_inbody": any_exists(
+                    f"{user}/logs/{folder_name}/inbody{ext}"
+                    for ext in [".jpg", ".png", ".jpeg"]
+                ),
+                "plan_source": "db" if db_plan_row is not None else (plan_item.source if plan_item else "none"),
             }
 
-            if week["has_plan"]:
-                with open(folder / "plan.md", "r", encoding="utf-8") as f:
-                    week["plan_title"] = f.readline().strip().lstrip("# ")
+            if db_plan_row is not None:
+                week["plan_title"] = _markdown_title(db_plan_row["content_md"])
+                week["plan_updated_at"] = db_plan_row["updated_at"]
+                week["plan_generated_by"] = db_plan_row["generated_by"]
+            elif plan_item is not None:
+                week["plan_title"] = _markdown_title(plan_item.content)
 
             rows = db.query(
                 """SELECT count(*) as cnt,
@@ -52,8 +68,8 @@ def list_weeks(user: str):
             week["total_duration_s"] = summary.get("total_duration_s", 0)
             week["total_duration_fmt"] = format_duration(summary.get("total_duration_s", 0))
             weeks.append(week)
-
-    db.close()
+    finally:
+        db.close()
     return {"weeks": weeks}
 
 
@@ -67,32 +83,41 @@ def get_week(user: str, folder: str):
     date_from, date_to = dates
     result: dict = {"folder": folder, "date_from": date_from, "date_to": date_to}
 
-    logs_dir = get_logs_dir(user)
-
-    plan_path = logs_dir / folder / "plan.md"
-    if plan_path.exists():
-        with open(plan_path, "r", encoding="utf-8") as f:
-            result["plan"] = f.read()
-
     db = get_db(user)
+
+    # DB-edited/agent-adjusted plans win over the markdown file. The file
+    # remains the seed/fallback for git-synced canonical weekly plans.
+    db_plan_row = db.get_weekly_plan_row(folder)
+    if db_plan_row is not None:
+        result["plan"] = db_plan_row["content_md"]
+        result["plan_source"] = "db"
+        result["plan_updated_at"] = db_plan_row["updated_at"]
+        result["plan_generated_by"] = db_plan_row["generated_by"]
+    else:
+        plan_item = read_text(f"{user}/logs/{folder}/plan.md")
+        if plan_item is not None:
+            result["plan"] = plan_item.content
+            result["plan_source"] = plan_item.source
+        else:
+            result["plan_source"] = "none"
 
     # DB-edited feedback wins over the markdown file. The file remains as
     # a seed/fallback so legacy weeks still display until edited in-app.
     db_fb_row = db.get_weekly_feedback_row(folder)
 
-    feedback_path = logs_dir / folder / "feedback.md"
     feedback_parts: list[str] = []
     if db_fb_row is not None:
         feedback_parts.append(db_fb_row["content_md"])
         result["feedback_source"] = "db"
         result["feedback_updated_at"] = db_fb_row["updated_at"]
         result["feedback_generated_by"] = db_fb_row["generated_by"]
-    elif feedback_path.exists():
-        with open(feedback_path, "r", encoding="utf-8") as f:
-            feedback_parts.append(f.read())
-        result["feedback_source"] = "file"
     else:
-        result["feedback_source"] = "none"
+        feedback_item = read_text(f"{user}/logs/{folder}/feedback.md")
+        if feedback_item is not None:
+            feedback_parts.append(feedback_item.content)
+            result["feedback_source"] = feedback_item.source
+        else:
+            result["feedback_source"] = "none"
 
     rows = db.query(
         """SELECT label_id, name, sport_type, sport_name, date,
@@ -183,4 +208,40 @@ def update_weekly_feedback(user: str, folder: str, payload: dict = Body(...)):
         "feedback_source": "db",
         "feedback_updated_at": row["updated_at"] if row else None,
         "feedback_generated_by": row["generated_by"] if row else None,
+    }
+
+
+@router.put("/api/{user}/weeks/{folder}/plan")
+def update_weekly_plan(user: str, folder: str, payload: dict = Body(...)):
+    """Save a DB-backed markdown plan override for a training week.
+
+    The DB row becomes the canonical content for this week in the API while the
+    on-disk plan.md remains untouched. This is the persistence target for
+    agent-generated plan adjustments after the user explicitly confirms them.
+
+    Body: ``{"content": "<markdown>", "generated_by": "<model-id>"?}``
+    """
+    if not parse_week_dates(folder):
+        raise HTTPException(status_code=400, detail="Invalid folder")
+
+    content = payload.get("content")
+    if not isinstance(content, str):
+        raise HTTPException(status_code=422, detail="content is required (string)")
+    generated_by = payload.get("generated_by")
+    if generated_by is not None and not isinstance(generated_by, str):
+        raise HTTPException(status_code=422, detail="generated_by must be a string or null")
+
+    db = get_db(user)
+    try:
+        db.upsert_weekly_plan(folder, content, generated_by=generated_by)
+        row = db.get_weekly_plan_row(folder)
+    finally:
+        db.close()
+
+    return {
+        "success": True,
+        "week": folder,
+        "plan_source": "db",
+        "plan_updated_at": row["updated_at"] if row else None,
+        "plan_generated_by": row["generated_by"] if row else None,
     }

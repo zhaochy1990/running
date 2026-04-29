@@ -172,6 +172,15 @@ CREATE TABLE IF NOT EXISTS weekly_feedback (
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS weekly_plan (
+    week            TEXT PRIMARY KEY,
+    content_md      TEXT NOT NULL,
+    generated_by    TEXT,
+    generated_at    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS inbody_scan (
     scan_date           TEXT PRIMARY KEY,
     jpg_path            TEXT,
@@ -315,6 +324,10 @@ class Database:
         _add("inbody_segment", "fat_pct_of_standard", "REAL")
         _add("activity_commentary", "generated_by", "TEXT")
         _add("activity_commentary", "generated_at", "TEXT")
+        _add("weekly_feedback", "generated_by", "TEXT")
+        _add("weekly_feedback", "generated_at", "TEXT")
+        _add("weekly_plan", "generated_by", "TEXT")
+        _add("weekly_plan", "generated_at", "TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -504,6 +517,31 @@ class Database:
     ) -> None:
         self._conn.execute(
             """INSERT INTO weekly_feedback
+               (week, content_md, generated_by, generated_at, updated_at)
+               VALUES (?, ?, ?, datetime('now'), datetime('now'))
+               ON CONFLICT(week) DO UPDATE SET
+                   content_md   = excluded.content_md,
+                   generated_by = excluded.generated_by,
+                   generated_at = excluded.generated_at,
+                   updated_at   = excluded.updated_at""",
+            (week, content_md, generated_by),
+        )
+        self._conn.commit()
+
+    # --- Weekly plan overrides (rich-text, generated/edited via API) ---
+
+    def get_weekly_plan_row(self, week: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT week, content_md, generated_by, generated_at, created_at, updated_at "
+            "FROM weekly_plan WHERE week = ?",
+            (week,),
+        ).fetchone()
+
+    def upsert_weekly_plan(
+        self, week: str, content_md: str, *, generated_by: str | None = None,
+    ) -> None:
+        self._conn.execute(
+            """INSERT INTO weekly_plan
                (week, content_md, generated_by, generated_at, updated_at)
                VALUES (?, ?, ?, datetime('now'), datetime('now'))
                ON CONFLICT(week) DO UPDATE SET

@@ -34,7 +34,8 @@ RUN pip install --no-cache-dir \
     "rich>=13.0" \
     "openai>=1.40" \
     "azure-identity>=1.17" \
-    "azure-keyvault-secrets>=4.8"
+    "azure-keyvault-secrets>=4.8" \
+    "azure-storage-blob>=12.20"
 
 # Copy built frontend from stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
