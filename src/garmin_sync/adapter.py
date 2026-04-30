@@ -152,19 +152,27 @@ class GarminDataSource(BaseDataSource):
         client = GarminClient.from_stored(creds)
         payload = normalized_to_garmin_workout(workout)
 
-        # Garmin's `upload_workout` accepts the workoutSegments structure
-        # built by translate.py and returns the new workoutId.
+        # `upload_workout` calls garth's post() which returns a `requests.Response`;
+        # the parsed body lives in .json(). Some garminconnect versions parse
+        # eagerly, so accept either shape.
         upload_result = client.api.upload_workout(payload)
-        workout_id = (
-            (upload_result or {}).get("workoutId")
-            if isinstance(upload_result, dict) else None
-        )
+        if isinstance(upload_result, dict):
+            upload_dict = upload_result
+        else:
+            try:
+                upload_dict = upload_result.json()
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Garmin upload_workout returned non-JSON response: {upload_result!r}"
+                ) from exc
+
+        workout_id = upload_dict.get("workoutId") if isinstance(upload_dict, dict) else None
         if not workout_id:
             raise RuntimeError(
-                f"Garmin upload_workout returned no workoutId: {upload_result!r}"
+                f"Garmin upload_workout returned no workoutId: {upload_dict!r}"
             )
 
-        # Schedule onto the calendar.
+        # Schedule onto the calendar (also returns a Response on garth path).
         client.api.schedule_workout(workout_id, workout.date)
         return str(workout_id)
 
