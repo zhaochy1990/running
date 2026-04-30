@@ -1,8 +1,10 @@
 """App factory — composes the FastAPI app with a pluggable DataSource.
 
-The factory accepts any DataSource-conforming adapter. Routes retrieve it from
-app.state via the `get_source` dependency, so they never import a specific
-adapter (see .deps.get_source).
+The factory accepts either a single `DataSource` (back-compat: that adapter
+serves all users) or a `ProviderRegistry` (multi-provider: each user is
+dispatched to their configured adapter via `get_source_for_user`).
+Routes retrieve their adapter via the `get_source` / `get_source_for_user`
+dependencies, so they never import a specific adapter.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from stride_core.registry import ProviderRegistry
 from stride_core.source import DataSource
 
 from .bearer import _load_public_key, is_dev_mode, require_bearer, verify_path_user
@@ -17,7 +20,7 @@ from .routes import account, ability, activities, health, inbody, onboarding, pr
 from .static import mount_frontend
 
 
-def create_app(source: DataSource) -> FastAPI:
+def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
     # Fail-closed: in non-dev environments the auth public key must be set so
     # Bearer verification is enforced. Dev mode (STRIDE_ENV=dev) keeps the
     # legacy fail-open behaviour with a one-time warning.
@@ -28,8 +31,24 @@ def create_app(source: DataSource) -> FastAPI:
             "for local development."
         )
 
+    # Normalize to a registry. Single-adapter callers (existing tests + the
+    # current main.py until rolled over) get auto-wrapped in a one-entry
+    # registry. `app.state.source` keeps pointing at the default adapter for
+    # back-compat with `Depends(get_source)`; new code uses `get_source_for_user`.
+    if isinstance(source_or_registry, ProviderRegistry):
+        registry = source_or_registry
+        if len(registry) == 0:
+            raise RuntimeError("ProviderRegistry passed to create_app() is empty")
+        default_name = registry.default_name() or next(iter(registry.names()))
+        default_source: DataSource = registry.get(default_name)
+    else:
+        registry = ProviderRegistry()
+        registry.register(source_or_registry, default=True)
+        default_source = source_or_registry
+
     app = FastAPI(title="STRIDE - Running Dashboard API")
-    app.state.source = source
+    app.state.source = default_source
+    app.state.registry = registry
 
     # CORS is intentionally permissive (`*`) — the real authz boundary lives
     # at the Bearer layer applied per-router below.

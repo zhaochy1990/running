@@ -75,6 +75,13 @@ def _reset_bearer_module(monkeypatch, public_pem: str | None = None):
 
 class _StubSource:
     """Minimal DataSource-ish stand-in — none of the ability endpoints call it."""
+    name = "stub"
+
+    @property
+    def info(self):
+        from stride_core.source import ProviderInfo
+        return ProviderInfo(name="stub", display_name="Stub", regions=(), capabilities=frozenset())
+
     def is_logged_in(self, user: str) -> bool:
         return True
 

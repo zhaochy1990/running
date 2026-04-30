@@ -10,9 +10,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Path as FastAPIPath, Request, status
 
 from stride_core.db import USER_DATA_DIR, Database
+from stride_core.registry import ProviderRegistry, UnknownProvider
 from stride_core.source import DataSource
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -88,6 +89,39 @@ def parse_week_dates(folder_name: str) -> tuple[str, str] | None:
 
 
 def get_source(request: Request) -> DataSource:
-    """FastAPI dependency — retrieve the configured DataSource from app state."""
+    """FastAPI dependency — retrieve the default DataSource from app state.
+
+    Back-compat for routes that don't have a `{user}` path parameter (e.g.
+    /api/users). For per-user routes prefer `get_source_for_user`, which
+    dispatches to the user's configured provider.
+    """
     source: DataSource = request.app.state.source
     return source
+
+
+def get_registry(request: Request) -> ProviderRegistry:
+    """FastAPI dependency — retrieve the ProviderRegistry from app state."""
+    registry: ProviderRegistry = request.app.state.registry
+    return registry
+
+
+def get_source_for_user(
+    request: Request,
+    user: str = FastAPIPath(..., description="User UUID from path"),
+) -> DataSource:
+    """FastAPI dependency — resolve the DataSource for the path-bound user.
+
+    Reads the user's `provider` field from config.json (default `'coros'`)
+    and returns the matching registered adapter. Raises 400 if the user's
+    configured provider isn't registered in this deployment (which would be
+    a misconfiguration, not a user error — should never happen in practice).
+    """
+    _validate_uuid(user)
+    registry: ProviderRegistry = request.app.state.registry
+    try:
+        return registry.for_user(user)
+    except UnknownProvider as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Configured watch provider {exc.name!r} is not available in this deployment",
+        ) from exc

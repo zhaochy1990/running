@@ -1,13 +1,24 @@
-"""Composition root — wires CorosDataSource into the server at boot.
+"""Composition root — wires watch adapters into the server at boot.
 
-This is the only module that imports both stride_server and a specific adapter.
-Swapping adapters (e.g., to add Garmin) means changing this file only.
+This is the only module that imports both stride_server and concrete adapters.
+Adding a new provider (Garmin/Polar/...) means: build the adapter, register
+it here, done — no other file changes required.
 """
 
 from __future__ import annotations
 
 from coros_sync.adapter import CorosDataSource
+from stride_core.registry import ProviderRegistry
 
 from .app import create_app
 
-app = create_app(CorosDataSource())
+
+def _build_registry() -> ProviderRegistry:
+    registry = ProviderRegistry()
+    registry.register(CorosDataSource(), default=True)
+    # Future:
+    #   registry.register(GarminDataSource())
+    return registry
+
+
+app = create_app(_build_registry())

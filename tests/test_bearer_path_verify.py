@@ -154,6 +154,13 @@ def test_integration_no_token_returns_401(monkeypatch, rsa_keypair):
 
 class _StubSource:
     """Minimal DataSource-ish stub for create_app() in tests."""
+    name = "stub"
+
+    @property
+    def info(self):
+        from stride_core.source import ProviderInfo
+        return ProviderInfo(name="stub", display_name="Stub", regions=(), capabilities=frozenset())
+
     def is_logged_in(self, user: str) -> bool:
         return True
 
