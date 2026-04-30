@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from stride_core.db import Database
 from stride_core.models import ActivityDetail
+from stride_core.registry import write_user_provider
 from stride_core.source import (
     BaseDataSource,
     Capability,
@@ -19,7 +20,7 @@ from stride_core.source import (
 )
 
 from .auth import Credentials
-from .client import CorosClient
+from .client import CorosClient, CorosAuthError
 from .sync import run_sync
 
 
@@ -66,12 +67,28 @@ class CorosDataSource(BaseDataSource):
         return _COROS_INFO
 
     def login(self, user: str, creds: LoginCredentials) -> LoginResult:
-        # Login is currently implemented in the onboarding route directly
-        # (uses CorosClient.login). Surfacing it through DataSource is a
-        # follow-up — for now, raise so callers don't silently no-op.
-        raise NotImplementedError(
-            "CorosDataSource.login is not wired yet — use coros_sync.client.CorosClient "
-            "directly until the onboarding route is migrated to DataSource.login."
+        """Authenticate with COROS Training Hub and persist credentials.
+
+        On success, writes both the COROS-specific credentials (email,
+        pwd_hash, access_token, region, user_id) and the provider tag
+        (`provider='coros'`) to `data/{user}/config.json`. The provider tag
+        is what `ProviderRegistry.for_user(user)` reads to dispatch
+        subsequent requests back to this adapter.
+
+        On failure (auth or network), raises the underlying COROS exception
+        unchanged — the caller (route layer) is responsible for collapsing
+        these into a single 400 to avoid email-enumeration.
+        """
+        with CorosClient(user=user) as client:
+            coros_creds = client.login(creds.email, creds.password)
+        # CorosClient.login() already wrote credentials to config.json; this
+        # adds the provider key alongside (Credentials.save preserves it on
+        # subsequent re-logins).
+        write_user_provider(user, "coros")
+        return LoginResult(
+            success=True,
+            user_id=coros_creds.user_id,
+            region=coros_creds.region,
         )
 
     def is_logged_in(self, user: str) -> bool:

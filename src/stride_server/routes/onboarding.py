@@ -11,7 +11,8 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
-from stride_core.source import DataSource, SyncProgress
+from stride_core.registry import ProviderRegistry, UnknownProvider
+from stride_core.source import DataSource, LoginCredentials, SyncProgress
 
 from ..bearer import require_bearer
 from ..content_store import read_json, write_json
@@ -156,34 +157,56 @@ class CorosLoginBody(BaseModel):
 @router.post("/api/users/me/coros/login")
 def coros_login(
     body: CorosLoginBody,
+    request: Request,
     payload: dict = Depends(require_bearer),
 ):
-    """Authenticate with COROS using the user's credentials.
+    """Authenticate with COROS via the registered adapter and persist config.
 
-    On success, persists config.json and marks coros_ready=True.
-    Password is never logged.
+    Dispatches through `ProviderRegistry.get('coros').login(...)` so this
+    route has zero direct dependency on `coros_sync` internals — adding a
+    parallel `/garmin/login` later is a one-line change targeting a
+    different registry key.
+
+    Password is never logged. Auth + network errors are collapsed to a
+    single 400 message to avoid email-enumeration; the underlying cause is
+    captured in the server log.
     """
     uuid = _validate_uuid(payload["sub"])
 
-    from coros_sync.client import CorosClient, CorosAuthError
+    registry: ProviderRegistry = request.app.state.registry
+    try:
+        source = registry.get("coros")
+    except UnknownProvider:
+        # Misconfigured deployment, not user error — bubble as 500.
+        logger.error("COROS adapter not registered; check composition root")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="COROS provider not available in this deployment",
+        )
 
     try:
-        with CorosClient(user=uuid) as client:
-            creds = client.login(body.email, body.password)
-    except (CorosAuthError, Exception):
-        # Collapse auth + network errors to one message to avoid email
-        # enumeration. Server-side log retains the real cause.
+        result = source.login(
+            uuid,
+            LoginCredentials(email=body.email, password=body.password),
+        )
+    except Exception:
         logger.exception("COROS login failed for user %s", uuid)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Could not authenticate with COROS",
         )
 
+    if not result.success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.message or "Could not authenticate with COROS",
+        )
+
     onboarding = _read_onboarding(uuid)
     onboarding["coros_ready"] = True
     _write_onboarding(uuid, onboarding)
 
-    return {"ok": True, "region": creds.region, "user_id": creds.user_id}
+    return {"ok": True, "region": result.region, "user_id": result.user_id}
 
 
 def _run_background_sync(uuid: str, source: DataSource) -> None:

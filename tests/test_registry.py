@@ -280,3 +280,47 @@ class TestForUserDispatch:
         cfg.write_text(json.dumps({"email": "old@user.com"}), encoding="utf-8")
 
         assert reg.for_user("legacy") is coros
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Credentials.save preserves provider field on re-login
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestCredentialsPreservesProvider:
+    """Regression: re-login must not wipe the `provider` tag set by
+    write_user_provider. Without this, every COROS auto-relogin would
+    silently flip the user back to the default provider."""
+
+    def test_save_preserves_provider_field(self, tmp_path: Path, monkeypatch):
+        from coros_sync.auth import Credentials
+        from coros_sync import auth as auth_mod
+        from stride_core import db as db_mod
+
+        # Redirect both modules' USER_DATA_DIR to tmp_path
+        monkeypatch.setattr(auth_mod, "USER_DATA_DIR", tmp_path)
+        monkeypatch.setattr(db_mod, "USER_DATA_DIR", tmp_path)
+        # Disable Key Vault path (would skip the file-merging branch)
+        monkeypatch.delenv("STRIDE_COROS_KEYVAULT_URL", raising=False)
+
+        # Stamp provider via the canonical writer
+        write_user_provider("alice", "coros", base_dir=tmp_path)
+
+        # Now simulate a re-login: save fresh Credentials over the file
+        Credentials(
+            email="a@b.com",
+            pwd_hash="hashed",
+            access_token="t-new",
+            region="cn",
+            user_id="123",
+        ).save(user="alice")
+
+        cfg = tmp_path / "alice" / "config.json"
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        # Both COROS creds AND provider tag should be present
+        assert data["provider"] == "coros"
+        assert data["email"] == "a@b.com"
+        assert data["access_token"] == "t-new"
+        assert data["region"] == "cn"
+        # And read_user_provider still resolves correctly
+        assert read_user_provider("alice", base_dir=tmp_path) == "coros"

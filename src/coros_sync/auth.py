@@ -114,7 +114,23 @@ class Credentials:
 
         path = _config_path(user)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(asdict(self), indent=2))
+
+        # Preserve any non-Credentials fields already in the file (notably
+        # `provider`, written by stride_core.registry.write_user_provider).
+        # Without this, re-login (which calls .save() again) would silently
+        # wipe the provider tag and `for_user()` would lose track of which
+        # adapter this user is bound to.
+        existing: dict[str, Any] = {}
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text())
+                if isinstance(loaded, dict):
+                    existing = loaded
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        merged = {**existing, **asdict(self)}
+        path.write_text(json.dumps(merged, indent=2, ensure_ascii=False))
 
     @classmethod
     def load(cls, user: str | None = None) -> Credentials:

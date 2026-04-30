@@ -60,16 +60,27 @@ def app_env(tmp_path, monkeypatch, rsa_keypair):
     monkeypatch.delenv("STRIDE_CONTENT_BLOB_ACCOUNT_URL", raising=False)
     monkeypatch.delenv("STRIDE_CONTENT_BLOB_CONTAINER", raising=False)
 
-    # Minimal DataSource mock
+    # Minimal DataSource mock used as both `app.state.source` (back-compat
+    # for /onboarding/complete which still goes through Depends(get_source))
+    # and as the 'coros' adapter in the registry (used by /coros/login).
     mock_source = MagicMock()
     mock_source.sync_user.return_value = MagicMock(activities=5, health=7)
+    # The login route uses registry.get('coros') and then calls .login();
+    # tests that patch CorosClient.login at the deeper layer expect a real
+    # CorosDataSource on the registry. Build that.
+    from coros_sync.adapter import CorosDataSource
+    from stride_core.registry import ProviderRegistry
+
+    registry = ProviderRegistry()
+    registry.register(CorosDataSource(), default=True)
 
     from stride_server.bearer import require_bearer
 
     app = FastAPI()
 
-    # Inject mock source via app state (mirrors real app factory)
+    # Inject mock source + real registry via app state (mirrors real app factory)
     app.state.source = mock_source
+    app.state.registry = registry
     app.include_router(ob_mod.router, dependencies=[Depends(require_bearer)])
 
     token = _make_token(private_pem)
