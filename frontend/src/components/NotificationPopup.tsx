@@ -49,14 +49,14 @@ export default function NotificationPopup() {
       aria-labelledby="notification-popup-title"
     >
       <div
-        className={`fixed inset-0 bg-black/30 transition-opacity duration-200 pointer-events-auto ${
-          visible ? 'opacity-100' : 'opacity-0'
+        className={`fixed inset-0 bg-black/30 transition-opacity duration-200 ${
+          visible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         onClick={close}
       />
       <div
-        className={`relative w-full max-w-md rounded-2xl border bg-bg-card p-6 shadow-2xl pointer-events-auto transition-all duration-200 ${accent} ${
-          visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
+        className={`relative w-full max-w-md rounded-2xl border bg-bg-card p-6 shadow-2xl transition-all duration-200 ${accent} ${
+          visible ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-2 pointer-events-none'
         }`}
       >
         <div className="flex items-start gap-3">
