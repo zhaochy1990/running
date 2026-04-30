@@ -35,7 +35,9 @@ RUN pip install --no-cache-dir \
     "openai>=1.40" \
     "azure-identity>=1.17" \
     "azure-keyvault-secrets>=4.8" \
-    "azure-storage-blob>=12.20"
+    "azure-storage-blob>=12.20" \
+    "garth>=0.5" \
+    "garminconnect>=0.2"
 
 # Copy built frontend from stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
