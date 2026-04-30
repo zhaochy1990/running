@@ -376,6 +376,19 @@ export interface HealthRecord {
   training_load_ratio: number | null
   training_load_state: string | null
   fatigue: number | null
+  // Phase 3 Garmin extras (NULL for COROS rows)
+  body_battery_high: number | null
+  body_battery_low: number | null
+  stress_avg: number | null
+  sleep_total_s: number | null
+  sleep_deep_s: number | null
+  sleep_light_s: number | null
+  sleep_rem_s: number | null
+  sleep_awake_s: number | null
+  sleep_score: number | null
+  respiration_avg: number | null
+  spo2_avg: number | null
+  provider: string | null
 }
 
 export interface HRVSnapshot {
@@ -387,6 +400,32 @@ export interface HRVSnapshot {
 
 export function getHealth(user: string, days = 30) {
   return fetchJSON<{ health: HealthRecord[]; hrv: HRVSnapshot; rhr_baseline: number | null }>(`/${user}/health?days=${days}`)
+}
+
+export interface HrvDailyRecord {
+  date: string
+  weekly_avg: number | null
+  last_night_avg: number | null
+  last_night_5min_high: number | null
+  status: string | null
+  baseline_low_upper: number | null
+  baseline_balanced_low: number | null
+  baseline_balanced_upper: number | null
+  feedback_phrase: string | null
+  provider: string | null
+}
+
+export interface HrvSummary {
+  date: string | null
+  last_night_avg: number | null
+  weekly_avg: number | null
+  status: string | null
+  baseline_balanced_low: number | null
+  baseline_balanced_upper: number | null
+}
+
+export function getHrv(user: string, days = 30) {
+  return fetchJSON<{ hrv: HrvDailyRecord[]; summary: HrvSummary }>(`/${user}/hrv?days=${days}`)
 }
 
 export interface PMCRecord {

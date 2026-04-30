@@ -27,6 +27,7 @@ from typing import Any
 from stride_core.models import (
     ActivityDetail,
     DailyHealth,
+    DailyHrv,
     Dashboard,
     Lap,
     RacePrediction,
@@ -174,6 +175,10 @@ def activity_detail_from_garmin(
         wind_speed=weather.get("windSpeed"),
         feel_type=int(a["feel"]) if a.get("feel") not in (None, 0) else None,
         sport_note=a.get("description") or None,
+        # Phase 3 running-form metrics (Garmin gives these natively)
+        vertical_oscillation_mm=a.get("avgVerticalOscillation"),
+        ground_contact_time_ms=a.get("avgGroundContactTime"),
+        vertical_ratio_pct=a.get("avgVerticalRatio"),
         laps=laps,
         zones=zones,
         timeseries=list(timeseries_points or []),
@@ -231,6 +236,7 @@ def daily_health_from_garmin(
     date_iso: str,
     training_status: dict[str, Any] | None = None,
     user_summary: dict[str, Any] | None = None,
+    sleep_data: dict[str, Any] | None = None,
 ) -> DailyHealth:
     """Build a `DailyHealth` row for `date_iso` from Garmin endpoints.
 
@@ -238,6 +244,8 @@ def daily_health_from_garmin(
       - training_status.mostRecentTrainingStatus.acuteTrainingLoadDTO →
         ATI / CTI / training_load_ratio / training_load_state
       - user_summary.restingHeartRate or training_status.* → RHR
+      - user_summary body_battery / stress / respiration / spo2 fields
+      - sleep_data.dailySleepDTO sleep stages + sleep score
     Garmin doesn't expose a direct equivalent of COROS's `fatigue` (tiredRate),
     so that field stays None.
     """
@@ -261,22 +269,71 @@ def daily_health_from_garmin(
         ratio = load.get("dailyAcuteChronicWorkloadRatio")
         state = load.get("acwrStatus")  # 'OPTIMAL' / 'HIGH' / 'LOW' / ...
 
-    if user_summary:
-        rhr = user_summary.get("restingHeartRate") or user_summary.get(
-            "lastSevenDaysAvgRestingHeartRate"
-        )
+    us = user_summary or {}
+    if us:
+        rhr = us.get("restingHeartRate") or us.get("lastSevenDaysAvgRestingHeartRate")
+
+    # Sleep stages live in the get_sleep_data response (top-level, not under
+    # "dailySleepDTO" — the wrapper from garminconnect inlines the DTO).
+    sd = sleep_data or {}
+    sleep_total = sd.get("sleepTimeSeconds")
+    sleep_deep = sd.get("deepSleepSeconds")
+    sleep_light = sd.get("lightSleepSeconds")
+    sleep_rem = sd.get("remSleepSeconds")
+    sleep_awake = sd.get("awakeSleepSeconds")
+    sleep_score_obj = sd.get("sleepScores") or {}
+    overall = sleep_score_obj.get("overall") or {}
+    sleep_score = overall.get("value") if isinstance(overall, dict) else overall
 
     return DailyHealth(
         date=date_iso,
         ati=float(ati) if ati is not None else None,
         cti=float(cti) if cti is not None else None,
         rhr=int(rhr) if rhr is not None else None,
-        distance_m=None,
+        distance_m=us.get("totalDistanceMeters") or None,
         duration_s=None,
         training_load_ratio=float(ratio) if ratio is not None else None,
         training_load_state=state,
         # Garmin has no tiredRate equivalent; defaults to None.
         fatigue=None,
+        # Body Battery (Garmin signature gauge — 0-100, daily high/low)
+        body_battery_high=int(us["bodyBatteryHighestValue"])
+            if us.get("bodyBatteryHighestValue") is not None else None,
+        body_battery_low=int(us["bodyBatteryLowestValue"])
+            if us.get("bodyBatteryLowestValue") is not None else None,
+        stress_avg=int(us["averageStressLevel"])
+            if us.get("averageStressLevel") not in (None, -1) else None,
+        sleep_total_s=int(sleep_total) if sleep_total is not None else None,
+        sleep_deep_s=int(sleep_deep) if sleep_deep is not None else None,
+        sleep_light_s=int(sleep_light) if sleep_light is not None else None,
+        sleep_rem_s=int(sleep_rem) if sleep_rem is not None else None,
+        sleep_awake_s=int(sleep_awake) if sleep_awake is not None else None,
+        sleep_score=int(sleep_score) if isinstance(sleep_score, (int, float)) else None,
+        respiration_avg=us.get("avgWakingRespirationValue"),
+        spo2_avg=us.get("averageSpo2"),
+    )
+
+
+def daily_hrv_from_garmin(date_iso: str, hrv: dict[str, Any] | None) -> DailyHrv:
+    """Build a `DailyHrv` row from `get_hrv_data(date)` response.
+
+    The hrvSummary block on Garmin's response carries the per-night summary
+    stats (lastNightAvg, weeklyAvg, status, baseline.balancedLow/Upper).
+    Per-5-minute readings are intentionally NOT persisted here — too heavy
+    for v1 and the summary fields are what users actually look at.
+    """
+    summary = (hrv or {}).get("hrvSummary", {}) or {}
+    baseline = summary.get("baseline", {}) or {}
+    return DailyHrv(
+        date=date_iso,
+        weekly_avg=summary.get("weeklyAvg"),
+        last_night_avg=summary.get("lastNightAvg"),
+        last_night_5min_high=summary.get("lastNight5MinHigh"),
+        status=summary.get("status"),
+        baseline_low_upper=baseline.get("lowUpper"),
+        baseline_balanced_low=baseline.get("balancedLow"),
+        baseline_balanced_upper=baseline.get("balancedUpper"),
+        feedback_phrase=summary.get("feedbackPhrase"),
     )
 
 

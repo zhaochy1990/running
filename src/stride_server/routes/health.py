@@ -67,6 +67,34 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
     }
 
 
+@router.get("/api/{user}/hrv")
+def get_hrv(user: str, days: int = Query(30, ge=1, le=365)):
+    """Per-day HRV detail (Garmin-rich; COROS users get an empty list).
+
+    Returns the last `days` rows from `daily_hrv` ordered oldest → newest
+    (chart-friendly), plus a small summary block for the latest reading.
+    """
+    db = get_db(user)
+    rows = db.query("SELECT * FROM daily_hrv ORDER BY date DESC LIMIT ?", (days,))
+    db.close()
+
+    records = [dict(r) for r in rows]
+    records.reverse()
+    latest = records[-1] if records else {}
+
+    return {
+        "hrv": records,
+        "summary": {
+            "date": latest.get("date"),
+            "last_night_avg": latest.get("last_night_avg"),
+            "weekly_avg": latest.get("weekly_avg"),
+            "status": latest.get("status"),
+            "baseline_balanced_low": latest.get("baseline_balanced_low"),
+            "baseline_balanced_upper": latest.get("baseline_balanced_upper"),
+        },
+    }
+
+
 @router.get("/api/{user}/pmc")
 def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
     """Performance Management Chart data: CTI (fitness), ATI (fatigue), TSB (form)."""

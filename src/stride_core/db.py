@@ -11,8 +11,8 @@ from pathlib import Path
 from platformdirs import user_data_dir
 
 from .models import (
-    ActivityDetail, BodyCompositionScan, BodySegment, DailyHealth, Dashboard,
-    Lap, RacePrediction, TimeseriesPoint, Zone,
+    ActivityDetail, BodyCompositionScan, BodySegment, DailyHealth, DailyHrv,
+    Dashboard, Lap, RacePrediction, TimeseriesPoint, Zone,
 )
 
 DATA_DIR = Path(user_data_dir("coros-sync"))
@@ -235,6 +235,21 @@ CREATE TABLE IF NOT EXISTS activity_ability (
     computed_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Phase 3: per-day HRV detail (separate table because the row is heavier
+-- than daily_health and not all providers populate it).
+CREATE TABLE IF NOT EXISTS daily_hrv (
+    date                       TEXT PRIMARY KEY,
+    weekly_avg                 INTEGER,
+    last_night_avg             INTEGER,
+    last_night_5min_high       INTEGER,
+    status                     TEXT,    -- 'BALANCED' | 'UNBALANCED' | 'POOR' | 'LOW' | 'NO_STATUS'
+    baseline_low_upper         INTEGER,
+    baseline_balanced_low      INTEGER,
+    baseline_balanced_upper    INTEGER,
+    feedback_phrase            TEXT,
+    provider                   TEXT NOT NULL DEFAULT 'coros'
+);
+
 CREATE TABLE IF NOT EXISTS scheduled_workout (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     date                  TEXT NOT NULL,                          -- ISO YYYY-MM-DD
@@ -369,6 +384,23 @@ class Database:
         _add("activities", "sport", "TEXT")
         _add("activities", "train_kind", "TEXT")
         _add("activities", "feel", "TEXT")
+        # Phase 3: Garmin-rich extras. NULL for COROS rows (no equivalent
+        # source data). Running form metrics on activities.
+        _add("activities", "vertical_oscillation_mm", "REAL")
+        _add("activities", "ground_contact_time_ms", "REAL")
+        _add("activities", "vertical_ratio_pct", "REAL")
+        # Daily wellness extras (Body Battery, stress, sleep stages).
+        _add("daily_health", "body_battery_high", "INTEGER")
+        _add("daily_health", "body_battery_low", "INTEGER")
+        _add("daily_health", "stress_avg", "INTEGER")
+        _add("daily_health", "sleep_total_s", "INTEGER")
+        _add("daily_health", "sleep_deep_s", "INTEGER")
+        _add("daily_health", "sleep_light_s", "INTEGER")
+        _add("daily_health", "sleep_rem_s", "INTEGER")
+        _add("daily_health", "sleep_awake_s", "INTEGER")
+        _add("daily_health", "sleep_score", "INTEGER")
+        _add("daily_health", "respiration_avg", "REAL")
+        _add("daily_health", "spo2_avg", "REAL")
 
     def close(self) -> None:
         self._conn.close()
@@ -390,8 +422,10 @@ class Database:
              avg_step_len_cm, ascent_m, descent_m, calories_kcal,
              aerobic_effect, anaerobic_effect, training_load, vo2max, performance, train_type,
              temperature, humidity, feels_like, wind_speed, feel_type, sport_note,
-             sport, train_kind, feel, provider)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             sport, train_kind, feel,
+             vertical_oscillation_mm, ground_contact_time_ms, vertical_ratio_pct,
+             provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
              a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
              a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
@@ -401,7 +435,9 @@ class Database:
              a.vo2max, a.performance, a.train_type,
              a.temperature, a.humidity, a.feels_like, a.wind_speed,
              a.feel_type, a.sport_note,
-             a.sport, a.train_kind, a.feel, provider),
+             a.sport, a.train_kind, a.feel,
+             a.vertical_oscillation_mm, a.ground_contact_time_ms, a.vertical_ratio_pct,
+             provider),
         )
         # Upsert child records
         for lap in a.laps:
@@ -467,10 +503,33 @@ class Database:
         self._conn.execute(
             """INSERT OR REPLACE INTO daily_health
             (date, ati, cti, rhr, distance_m, duration_s, training_load_ratio,
-             training_load_state, fatigue, provider)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+             training_load_state, fatigue,
+             body_battery_high, body_battery_low, stress_avg,
+             sleep_total_s, sleep_deep_s, sleep_light_s, sleep_rem_s, sleep_awake_s, sleep_score,
+             respiration_avg, spo2_avg,
+             provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (h.date, h.ati, h.cti, h.rhr, h.distance_m, h.duration_s,
-             h.training_load_ratio, h.training_load_state, h.fatigue, provider),
+             h.training_load_ratio, h.training_load_state, h.fatigue,
+             h.body_battery_high, h.body_battery_low, h.stress_avg,
+             h.sleep_total_s, h.sleep_deep_s, h.sleep_light_s, h.sleep_rem_s,
+             h.sleep_awake_s, h.sleep_score,
+             h.respiration_avg, h.spo2_avg,
+             provider),
+        )
+        self._conn.commit()
+
+    def upsert_daily_hrv(self, h: DailyHrv, *, provider: str = "garmin") -> None:
+        """Upsert a per-day HRV detail row (Garmin-rich, COROS-empty for v1)."""
+        self._conn.execute(
+            """INSERT OR REPLACE INTO daily_hrv
+            (date, weekly_avg, last_night_avg, last_night_5min_high, status,
+             baseline_low_upper, baseline_balanced_low, baseline_balanced_upper,
+             feedback_phrase, provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (h.date, h.weekly_avg, h.last_night_avg, h.last_night_5min_high, h.status,
+             h.baseline_low_upper, h.baseline_balanced_low, h.baseline_balanced_upper,
+             h.feedback_phrase, provider),
         )
         self._conn.commit()
 

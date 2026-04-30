@@ -228,6 +228,10 @@ class ActivityDetail:
     sport: str | None = None        # NormalizedSport.value
     train_kind: str | None = None   # TrainKind.value
     feel: str | None = None         # FeelLevel.value
+    # Phase 3 running-form metrics (Garmin-only for now; COROS doesn't expose)
+    vertical_oscillation_mm: float | None = None
+    ground_contact_time_ms: float | None = None
+    vertical_ratio_pct: float | None = None
     laps: list[Lap] = field(default_factory=list)
     zones: list[Zone] = field(default_factory=list)
     timeseries: list[TimeseriesPoint] = field(default_factory=list)
@@ -320,6 +324,18 @@ class DailyHealth:
     training_load_ratio: float | None
     training_load_state: str | None
     fatigue: float | None
+    # Phase 3 extras (Garmin-only for now; COROS leaves them None).
+    body_battery_high: int | None = None
+    body_battery_low: int | None = None
+    stress_avg: int | None = None
+    sleep_total_s: int | None = None
+    sleep_deep_s: int | None = None
+    sleep_light_s: int | None = None
+    sleep_rem_s: int | None = None
+    sleep_awake_s: int | None = None
+    sleep_score: int | None = None
+    respiration_avg: float | None = None
+    spo2_avg: float | None = None
 
     @classmethod
     def from_api(cls, data: dict) -> DailyHealth:
@@ -335,6 +351,20 @@ class DailyHealth:
             training_load_state=TRAINING_LOAD_STATES.get(state_id, f"Unknown ({state_id})"),
             fatigue=data.get("tiredRate", data.get("fatigue")),
         )
+
+
+@dataclass
+class DailyHrv:
+    """Per-day HRV detail (Garmin-rich; COROS doesn't have an equivalent surface yet)."""
+    date: str
+    weekly_avg: int | None = None
+    last_night_avg: int | None = None
+    last_night_5min_high: int | None = None
+    status: str | None = None              # 'BALANCED' | 'UNBALANCED' | 'POOR' | 'LOW' | 'NO_STATUS'
+    baseline_low_upper: int | None = None
+    baseline_balanced_low: int | None = None
+    baseline_balanced_upper: int | None = None
+    feedback_phrase: str | None = None
 
 
 @dataclass

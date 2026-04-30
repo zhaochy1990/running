@@ -19,6 +19,7 @@ from .client import GarminClient
 from .models import (
     activity_detail_from_garmin,
     daily_health_from_garmin,
+    daily_hrv_from_garmin,
     dashboard_from_garmin,
 )
 from .normalize import apply_to_detail
@@ -140,17 +141,28 @@ def _sync_health(
         try:
             ts = client.get_training_status(date_iso)
             us = client.get_user_summary(date_iso)
+            sleep = client.get_sleep_data(date_iso)
+            hrv = client.get_hrv_data(date_iso)
         except Exception as exc:
             logger.warning("Garmin health fetch failed for %s: %s", date_iso, exc)
             continue
         h = daily_health_from_garmin(
-            date_iso=date_iso, training_status=ts, user_summary=us
+            date_iso=date_iso,
+            training_status=ts,
+            user_summary=us,
+            sleep_data=sleep,
         )
         # Only persist rows where we got at least one signal — avoid
         # writing rows full of NULLs that would shadow a real COROS-source
         # row in mixed-provider databases.
-        if (h.ati or h.cti or h.rhr or h.training_load_ratio) is not None:
+        if (h.ati or h.cti or h.rhr or h.training_load_ratio
+                or h.sleep_total_s or h.body_battery_high) is not None:
             db.upsert_daily_health(h, provider="garmin")
+            health_count += 1
+        # Persist HRV detail separately (its own table, lighter check)
+        hrv_row = daily_hrv_from_garmin(date_iso, hrv)
+        if hrv_row.last_night_avg is not None or hrv_row.weekly_avg is not None:
+            db.upsert_daily_hrv(hrv_row, provider="garmin")
             health_count += 1
 
     # Dashboard singleton — pull most-recent metrics

@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { getHealth, getPMC, type HealthRecord, type PMCRecord, type PMCSummary, type HRVSnapshot } from '../api'
 import { useUser } from '../UserContextValue'
+import GarminExtrasSection from './health/GarminExtrasSection'
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return dateStr
@@ -157,6 +158,10 @@ export default function HealthPage() {
 
               {/* Metric Cards */}
               {latest && <MetricCards latest={latest} hrv={hrv} rhrBaseline={rhrBaseline} />}
+
+              {/* Garmin-only extras (Sleep / Body Battery / Stress / HRV trend).
+                  Auto-hides for COROS users via internal data-presence check. */}
+              {user && <GarminExtrasSection user={user} latest={latest ?? null} days={days} />}
 
               {/* Charts 2x2 */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
