@@ -153,7 +153,6 @@ def _sync_health(
             us = client.get_user_summary(date_iso)
             sleep = client.get_sleep_data(date_iso)
             hrv = client.get_hrv_data(date_iso)
-            tr = client.get_training_readiness(date_iso)
         except Exception as exc:
             logger.warning("Garmin health fetch failed for %s: %s", date_iso, exc)
             consecutive_failures += 1
@@ -166,7 +165,6 @@ def _sync_health(
             training_status=ts,
             user_summary=us,
             sleep_data=sleep,
-            training_readiness=tr,
         )
         wrote_anything = False
         if (h.ati or h.cti or h.rhr or h.training_load_ratio

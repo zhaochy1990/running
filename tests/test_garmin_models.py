@@ -237,26 +237,77 @@ class TestDailyHealthBuilder:
         assert h.training_load_state == "OPTIMAL"
         assert h.rhr == 49
 
-    def test_fatigue_from_training_readiness(self):
-        # Garmin's Training Readiness inverts cleanly to COROS-style fatigue.
-        # Score 70 → fatigue 30 (well-recovered side of the scale).
+    def test_fatigue_from_acwr_ratio(self):
+        # Sample fixture has dailyAcuteChronicWorkloadRatio = 0.9 →
+        # 45 + (0.9 - 1.0) * 30 = 42.0 (slightly recovered, normal range).
         h = daily_health_from_garmin(
             date_iso="2026-04-30",
             training_status=_sample_training_status(),
             user_summary={"restingHeartRate": 49},
-            training_readiness=[{"score": 70, "calendarDate": "2026-04-30"}],
         )
-        assert h.fatigue == 30.0
+        assert h.fatigue == 42.0
 
-    def test_fatigue_falls_back_to_tsb_when_no_training_readiness(self):
-        # Without TR, derive fatigue from TSB (CTI - ATI). Sample fixture:
-        # ATI=856, CTI=905 → TSB=49 → 50 - 49*0.5 = 25.5 (well rested).
-        h = daily_health_from_garmin(
-            date_iso="2026-04-30",
-            training_status=_sample_training_status(),
-            user_summary={"restingHeartRate": 49},
-        )
-        assert h.fatigue == 25.5
+    def test_fatigue_clamps_at_high_acwr(self):
+        # Very-high overload (ratio 2.0) should saturate at 75, not blow past it.
+        ts = {
+            "mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {
+                    "1": {
+                        "primaryTrainingDevice": True,
+                        "acuteTrainingLoadDTO": {
+                            "dailyTrainingLoadAcute": 1000,
+                            "dailyTrainingLoadChronic": 500,
+                            "dailyAcuteChronicWorkloadRatio": 2.0,
+                            "acwrStatus": "OVERREACHING",
+                        },
+                    },
+                },
+            },
+        }
+        h = daily_health_from_garmin(date_iso="2026-04-30", training_status=ts)
+        assert h.fatigue == 75.0
+
+    def test_fatigue_clamps_at_low_acwr(self):
+        # Detraining (ratio 0.3) should floor at 25, not dip below.
+        ts = {
+            "mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {
+                    "1": {
+                        "primaryTrainingDevice": True,
+                        "acuteTrainingLoadDTO": {
+                            "dailyTrainingLoadAcute": 30,
+                            "dailyTrainingLoadChronic": 100,
+                            "dailyAcuteChronicWorkloadRatio": 0.3,
+                            "acwrStatus": "LOW",
+                        },
+                    },
+                },
+            },
+        }
+        h = daily_health_from_garmin(date_iso="2026-04-30", training_status=ts)
+        assert h.fatigue == 25.0
+
+    def test_fatigue_derives_ratio_from_ati_cti_when_missing(self):
+        # Some Garmin payloads omit dailyAcuteChronicWorkloadRatio but still
+        # carry ATI + CTI. Builder should compute it implicitly.
+        ts = {
+            "mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {
+                    "1": {
+                        "primaryTrainingDevice": True,
+                        "acuteTrainingLoadDTO": {
+                            "dailyTrainingLoadAcute": 800,
+                            "dailyTrainingLoadChronic": 1000,
+                            # ratio key intentionally missing
+                            "acwrStatus": "OPTIMAL",
+                        },
+                    },
+                },
+            },
+        }
+        h = daily_health_from_garmin(date_iso="2026-04-30", training_status=ts)
+        # eff_ratio = 800/1000 = 0.8 → 45 + (0.8 - 1.0)*30 = 39.0
+        assert h.fatigue == 39.0
 
     def test_fatigue_none_when_no_signals(self):
         h = daily_health_from_garmin(

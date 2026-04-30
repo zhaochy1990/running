@@ -232,41 +232,45 @@ def _build_hr_zones(hr_zones_data: list[dict[str, Any]]) -> list[Zone]:
 
 
 def _fatigue_from_garmin(
-    training_readiness: Any,
+    ratio: float | None,
     ati: float | None,
     cti: float | None,
 ) -> float | None:
-    """Map Garmin signals onto the COROS-style 0-100 fatigue scale.
+    """Map Garmin training-load signals onto the COROS-style fatigue scale.
 
-    Primary: invert Garmin's Training Readiness (0-100, higher=better) →
-    `fatigue = 100 - score`. TR already folds in HRV / sleep / stress /
-    recovery so it's the closest analogue to COROS's `tiredRate`.
+    COROS `tiredRate` measures **chronic training stress vs fitness**; that's
+    semantically the same thing as ACWR (acute / chronic workload ratio).
+    Garmin gives us ACWR directly via `dailyAcuteChronicWorkloadRatio`, so
+    that's the primary input.
 
-    Fallback: TSB-based heuristic when TR isn't available. TSB = CTI - ATI,
-    mapped via `clamp(20, 90, 50 - TSB*0.5)` so a balanced athlete (TSB≈0)
-    lands at ~50 (matches COROS "normal"), TSB=-20 → 60 ("fatigued"),
-    TSB=+20 → 40 ("recovered"). Anchored to the same thresholds the rest
-    of the dashboard uses (<40 recovered / 40-50 normal / 50-60 fatigued
-    / >60 high) so the existing UI doesn't need a Garmin-specific scale.
+    Mapping (linear, clamped 25..75 to avoid boundary banging):
+      - ratio 0.5  → 30  (detraining)
+      - ratio 0.8  → 39  (recovered)
+      - ratio 1.0  → 45  (normal)
+      - ratio 1.3  → 54  (productive load)
+      - ratio 1.5  → 60  (high)
+      - ratio 1.7+ → 66+ (very high, capped at 75)
+
+    The earlier version used Garmin Training Readiness as the primary
+    signal — but TR is "today's readiness to perform" (sleep + recent HRV),
+    not "training fatigue". TR can swing 30+ points overnight on a single
+    bad sleep, which made the chart look schizophrenic. ACWR is smoothed by
+    its own 28-day chronic baseline so day-to-day moves are calmer.
+
+    Fallback: when no ratio is reported but ATI+CTI are present, derive
+    ratio = ATI/CTI manually before applying the same mapping. If even
+    that's missing, return None (chart hides the point — better than a
+    fabricated 50).
     """
-    # Training Readiness is returned by Garmin as a list of per-day samples
-    # ([{"score": int, "calendarDate": ...}, ...]); some firmwares return
-    # a bare dict. Accept both.
-    tr_entry: dict[str, Any] | None = None
-    if isinstance(training_readiness, list) and training_readiness:
-        first = training_readiness[0]
-        tr_entry = first if isinstance(first, dict) else None
-    elif isinstance(training_readiness, dict):
-        tr_entry = training_readiness
-    if tr_entry:
-        score = tr_entry.get("score")
-        if isinstance(score, (int, float)) and 0 <= score <= 100:
-            return round(100.0 - float(score), 1)
-
-    if ati is not None and cti is not None:
-        tsb = float(cti) - float(ati)
-        return round(max(20.0, min(90.0, 50.0 - tsb * 0.5)), 1)
-    return None
+    eff_ratio: float | None = None
+    if ratio is not None:
+        eff_ratio = float(ratio)
+    elif ati is not None and cti is not None and float(cti) > 0:
+        eff_ratio = float(ati) / float(cti)
+    if eff_ratio is None:
+        return None
+    score = 45.0 + (eff_ratio - 1.0) * 30.0
+    return round(max(25.0, min(75.0, score)), 1)
 
 
 def daily_health_from_garmin(
@@ -275,7 +279,6 @@ def daily_health_from_garmin(
     training_status: dict[str, Any] | None = None,
     user_summary: dict[str, Any] | None = None,
     sleep_data: dict[str, Any] | None = None,
-    training_readiness: Any = None,
 ) -> DailyHealth:
     """Build a `DailyHealth` row for `date_iso` from Garmin endpoints.
 
@@ -285,9 +288,8 @@ def daily_health_from_garmin(
       - user_summary.restingHeartRate or training_status.* → RHR
       - user_summary body_battery / stress / respiration / spo2 fields
       - sleep_data.dailySleepDTO sleep stages + sleep score
-      - training_readiness → fatigue (via `100 - score`)
-    `fatigue` is synthesized to give Garmin parity with COROS's tiredRate
-    (Garmin has no direct equivalent — see `_fatigue_from_garmin`).
+    `fatigue` is synthesized from ACWR to give Garmin parity with COROS's
+    tiredRate (Garmin has no direct equivalent — see `_fatigue_from_garmin`).
     """
     ati: float | None = None
     cti: float | None = None
@@ -335,7 +337,7 @@ def daily_health_from_garmin(
         duration_s=None,
         training_load_ratio=float(ratio) if ratio is not None else None,
         training_load_state=state,
-        fatigue=_fatigue_from_garmin(training_readiness, ati, cti),
+        fatigue=_fatigue_from_garmin(ratio, ati, cti),
         # Body Battery (Garmin signature gauge — 0-100, daily high/low)
         body_battery_high=int(us["bodyBatteryHighestValue"])
             if us.get("bodyBatteryHighestValue") is not None else None,
