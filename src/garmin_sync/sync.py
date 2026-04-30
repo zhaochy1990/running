@@ -55,6 +55,12 @@ def run_sync(
     """
     # When since_date drives the cutoff, use a large safety cap so the
     # activity_limit doesn't truncate before we reach the date boundary.
+    # `full=True` without an explicit since_date defaults to a 180-day deep
+    # pull — the L3 endurance dimension wants the longest run in the last
+    # 90 days, and a fresh onboard frequently truncates that out by
+    # activity count alone (heavy ping-pong / strength loggers).
+    if since_date is None and full:
+        since_date = (date.today() - timedelta(days=180)).isoformat()
     effective_limit = 2000 if since_date else activity_limit
     activities_synced, new_label_ids = _sync_activities(
         client, db, full=full, progress=progress, limit=effective_limit,

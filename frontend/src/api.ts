@@ -331,8 +331,9 @@ export interface WeekDetail {
   activity_count: number
 }
 
-export function triggerSync(user: string) {
-  return fetch(`${BASE}/${user}/sync`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
+export function triggerSync(user: string, full: boolean = false) {
+  const qs = full ? '?full=true' : ''
+  return fetch(`${BASE}/${user}/sync${qs}`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
 }
 
 export function resyncActivity(user: string, labelId: string) {
