@@ -22,6 +22,46 @@ from typing import Any, Iterable, Mapping, Sequence
 from stride_core.models import RUN_SPORT_IDS, RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
 
 
+def _is_garmin_sport(sport_type: Any) -> bool:
+    """True if `sport_type` was synthesized by `garmin_sync.models`.
+
+    Garmin uses 8000+ ids (see `garmin_sync.models._GARMIN_TYPEKEY_TO_INT`).
+    COROS uses 100-104 / 600-601 — strictly < 1000.
+    """
+    if sport_type is None:
+        return False
+    try:
+        return int(sport_type) >= 8000
+    except (TypeError, ValueError):
+        return False
+
+
+def _distance_to_meters(dist: float, sport_type: Any) -> float:
+    """Normalize a stored distance value to meters.
+
+    Why this exists: COROS rows historically store some distances in
+    KM-units (`distance_m=14.0` means 14 km — a misnomer the column never
+    got renamed away). Garmin rows always store meters. Without provider
+    context, the legacy heuristic `if dist < 500: assume km` would treat a
+    Garmin 130 m sprint segment as a 130 km lap, which exploded VDOT and
+    endurance scores. With provider context we can do the right thing.
+    """
+    if not dist or dist <= 0:
+        return 0.0
+    if _is_garmin_sport(sport_type):
+        return float(dist)
+    # COROS legacy heuristic preserved verbatim.
+    return float(dist) * 1000.0 if dist < 500 else float(dist)
+
+
+def _distance_to_km(dist: float, sport_type: Any) -> float:
+    if not dist or dist <= 0:
+        return 0.0
+    if _is_garmin_sport(sport_type):
+        return float(dist) / 1000.0
+    return float(dist) / 1000.0 if dist > 500 else float(dist)
+
+
 # ---------------------------------------------------------------------------
 # Calibration constants — central to L3 normalization.
 # Each anchor pins a physical pace / metric to a target 0-100 score point so
@@ -730,8 +770,7 @@ def compute_l3_aerobic(
         dist = _get(a, "distance_m") or 0
         if pace is None or hr is None:
             continue
-        # distance_m column is a misnomer: real COROS data stores KM (14km run → 14.0).
-        dist_km = dist / 1000.0 if dist > 500 else dist
+        dist_km = _distance_to_km(dist, _get(a, "sport_type"))
         if dist_km < AEROBIC_MIN_DISTANCE_KM:
             continue
         if abs(hr - target_hr) > AEROBIC_HR_TOLERANCE:
@@ -786,13 +825,18 @@ def _is_rest_lap(lap: Any) -> bool:
 
 
 def _best_sustained_pace_s_km(
-    laps: Sequence[Any], min_seconds: float
+    laps: Sequence[Any], min_seconds: float, sport_type: Any = None,
 ) -> tuple[float | None, float]:
     """Find the fastest contiguous lap-window of ≥ min_seconds duration.
 
     Rest/recovery laps break the sequence — a threshold effort interrupted by
     3-minute standing rest isn't a sustained 30-min tempo. This prevents
     interval sessions from being misread as continuous LT blocks.
+
+    `sport_type` lets us route distances through `_distance_to_km` so a
+    Garmin track session of 400 m laps doesn't get misread as 400 km laps.
+    Falls back to the legacy magnitude heuristic when None (preserves the
+    behaviour expected by older tests that build laps without sport_type).
 
     Returns (pace_s_km, achieved_duration_s) or (None, 0) if no window qualifies.
     """
@@ -804,9 +848,15 @@ def _best_sustained_pace_s_km(
     durs = [_get(lp, "duration_s") or 0 for lp in laps]
     dists = [_get(lp, "distance_m") or 0 for lp in laps]
     is_rest = [_is_rest_lap(lp) for lp in laps]
-    # laps in models use distance_m in km units (models.py Lap.from_api divides
-    # raw API value by 100_000). Handle fixture meter-scale via magnitude heuristic.
-    km_scale = all(d < 200 for d in dists if d)
+    if sport_type is not None:
+        normalized_km = [_distance_to_km(d, sport_type) for d in dists]
+    else:
+        # Legacy heuristic: laps in COROS models historically store distance
+        # in km units (Lap.from_api divides by 100_000). Inferring scale from
+        # magnitude works for that case but breaks for Garmin meters-scale
+        # short segments — callers should pass sport_type when they have it.
+        km_scale = all(d < 200 for d in dists if d)
+        normalized_km = [d if km_scale else d / 1000.0 for d in dists]
     for i in range(n):
         if is_rest[i]:
             continue
@@ -816,8 +866,7 @@ def _best_sustained_pace_s_km(
             if is_rest[j]:
                 break  # rest lap interrupts the sustained block
             dur += durs[j]
-            d = dists[j]
-            dist_km += d if km_scale else d / 1000.0
+            dist_km += normalized_km[j]
             if dur >= min_seconds and dist_km > 0:
                 pace = dur / dist_km
                 if best_pace is None or pace < best_pace:
@@ -839,7 +888,7 @@ def compute_l3_lt(
         laps = _get(a, "laps") or []
         if not laps:
             continue
-        pace, dur = _best_sustained_pace_s_km(laps, LT_MIN_DURATION_S)
+        pace, dur = _best_sustained_pace_s_km(laps, LT_MIN_DURATION_S, _get(a, "sport_type"))
         if pace is None:
             continue
         if best_overall is None or pace < best_overall:
@@ -888,6 +937,7 @@ def _extract_interval_reps(activity: Any) -> list[tuple[float, float]]:
     """
     reps: list[tuple[float, float]] = []
     laps = _get(activity, "laps") or []
+    sport_type = _get(activity, "sport_type")
     for lp in laps:
         ex = _get(lp, "exercise_type")
         if ex is not None and ex != 2:
@@ -896,8 +946,7 @@ def _extract_interval_reps(activity: Any) -> list[tuple[float, float]]:
         t = _get(lp, "duration_s") or 0
         if t <= 0:
             continue
-        # Distance detection (see _best_sustained_pace_s_km comment).
-        d_m = d * 1000.0 if d < 200 else d
+        d_m = _distance_to_meters(d, sport_type)
         if d_m < VO2MAX_INTERVAL_MIN_DIST_M:
             continue
         reps.append((d_m, t))
@@ -934,13 +983,7 @@ def compute_l3_vo2max(
         # Also consider the run as a whole if it looks like a 5K/10K/half race.
         dist_m = _get(a, "distance_m") or 0
         dur_s = _get(a, "duration_s") or 0
-        # distance_m on Activity is METERS (see models.py Activity.from_api
-        # which stores raw `distance` field — API value may already be m).
-        # Normalize: if value is <500 we assume km-scale, else meters.
-        if 0 < dist_m < 500:
-            dist_m_norm = dist_m * 1000.0
-        else:
-            dist_m_norm = dist_m
+        dist_m_norm = _distance_to_meters(dist_m, _get(a, "sport_type"))
         train_type = _get(a, "train_type")
         is_race_like = (
             (4800 <= dist_m_norm <= 21500)
@@ -961,7 +1004,7 @@ def compute_l3_vo2max(
         if not _is_running(a):
             continue
         dist = _get(a, "distance_m") or 0
-        dist_m = dist * 1000.0 if 0 < dist < 500 else dist
+        dist_m = _distance_to_meters(dist, _get(a, "sport_type"))
         dur_s = _get(a, "duration_s") or 0
         # Full marathon ± 1.3km, duration 2-6h
         if 41000 <= dist_m <= 43500 and 7200 <= dur_s <= 21600:
@@ -1067,8 +1110,7 @@ def compute_l3_endurance(
         if not _is_running(a):
             continue
         dist = _get(a, "distance_m") or 0
-        # Normalize to km.
-        dist_km = dist / 1000.0 if dist > 500 else dist
+        dist_km = _distance_to_km(dist, _get(a, "sport_type"))
         if dist_km < ENDURANCE_MIN_DISTANCE_KM:
             continue
         if dist_km <= best_km:
