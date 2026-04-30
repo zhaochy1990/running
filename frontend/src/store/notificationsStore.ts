@@ -46,8 +46,12 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
   isDismissed: (id: string) => get().dismissed.has(id),
 
   pendingPopup: () => {
+    // Only the single newest notification is shown as a popup. Older undismissed
+    // messages live in the message center to avoid chaining popups on first login.
     const dismissed = get().dismissed
-    return getNotificationsNewestFirst().find((n) => !dismissed.has(n.id))
+    const latest = getNotificationsNewestFirst()[0]
+    if (!latest) return undefined
+    return dismissed.has(latest.id) ? undefined : latest
   },
 
   unreadCount: () => {
