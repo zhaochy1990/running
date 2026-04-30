@@ -19,6 +19,8 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
+from stride_core.models import RUN_SPORT_IDS, RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
+
 
 # ---------------------------------------------------------------------------
 # Calibration constants — central to L3 normalization.
@@ -700,7 +702,7 @@ def _is_running(activity: Any) -> bool:
     sport = _get(activity, "sport_type")
     if sport is None:
         return True
-    return sport in {100, 101, 102, 103, 104}
+    return sport in RUN_SPORT_IDS
 
 
 def compute_l3_aerobic(
@@ -1403,7 +1405,7 @@ def _fetch_recent_activities(conn: Any, date_iso: str, days: int) -> list[dict]:
       SELECT label_id, name, sport_type, date, distance_m, duration_s,
              avg_pace_s_km, avg_hr, max_hr, avg_cadence, vo2max, train_type
       FROM activities
-      WHERE sport_type IN (100,101,102,103,104)
+      WHERE sport_type IN (""" + _RUN_SPORT_SQL + """)
         AND date(datetime(date, '+8 hours')) >= date(?, ?)
         AND date(datetime(date, '+8 hours')) <= date(?)
       ORDER BY date DESC

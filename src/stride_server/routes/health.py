@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from stride_core.models import pace_str
+from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
 
 from ..deps import format_duration, get_db
 
@@ -97,7 +97,16 @@ def get_hrv(user: str, days: int = Query(30, ge=1, le=365)):
 
 @router.get("/api/{user}/pmc")
 def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
-    """Performance Management Chart data: CTI (fitness), ATI (fatigue), TSB (form)."""
+    """Performance Management Chart data: CTI (fitness), ATI (fatigue), TSB (form).
+
+    TSB zone bands are derived from ACWR (`training_load_ratio = ATI/CTI`)
+    rather than absolute TSB. Reason: COROS and Garmin ATI/CTI use different
+    scales (COROS ~TRIMP, Garmin ~EPOC); Garmin's are typically 3-5× larger,
+    so an absolute "TSB ≥ 10 = race ready" rule that works for COROS would
+    flag every Garmin user as permanently overreaching. ACWR is unitless and
+    behaves consistently across providers — exactly the same physiological
+    interpretation of "today's load relative to recent baseline".
+    """
     db = get_db(user)
     rows = db.query(
         "SELECT date, ati, cti, training_load_ratio, training_load_state, fatigue, rhr "
@@ -114,17 +123,25 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         cti = rec.get("cti") or 0
         rec["tsb"] = round(cti - ati, 1)
 
-        tsb = rec["tsb"]
-        if tsb >= 25:
-            rec["tsb_zone"] = "overtaper"
-            rec["tsb_zone_label"] = "减量过多"
-        elif tsb >= 10:
-            rec["tsb_zone"] = "race_ready"
-            rec["tsb_zone_label"] = "比赛就绪"
-        elif tsb >= -10:
+        # Prefer the stored ACWR; derive from ATI/CTI if missing (older rows
+        # may not have the ratio column populated, e.g. legacy COROS imports).
+        ratio = rec.get("training_load_ratio")
+        if ratio is None and cti > 0:
+            ratio = ati / cti
+
+        if ratio is None:
             rec["tsb_zone"] = "neutral"
             rec["tsb_zone_label"] = "过渡区"
-        elif tsb >= -30:
+        elif ratio < 0.6:
+            rec["tsb_zone"] = "overtaper"
+            rec["tsb_zone_label"] = "减量过多"
+        elif ratio < 0.85:
+            rec["tsb_zone"] = "race_ready"
+            rec["tsb_zone_label"] = "比赛就绪"
+        elif ratio < 1.1:
+            rec["tsb_zone"] = "neutral"
+            rec["tsb_zone_label"] = "过渡区"
+        elif ratio < 1.3:
             rec["tsb_zone"] = "training"
             rec["tsb_zone_label"] = "正常训练"
         else:
@@ -170,7 +187,7 @@ def get_stats(user: str):
             round(avg(avg_pace_s_km), 1) as avg_pace,
             round(avg(avg_hr), 0) as avg_hr
         FROM activities
-        WHERE sport_type IN (100, 101, 102, 103, 104)
+        WHERE sport_type IN (""" + _RUN_SPORT_SQL + """)
         GROUP BY week
         ORDER BY week DESC
         LIMIT 12

@@ -28,7 +28,21 @@ RACE_TYPES: dict[int, str] = {
     1: "Marathon", 2: "Half Marathon", 4: "10K", 5: "5K",
 }
 
-RUN_SPORT_IDS = {100, 101, 102, 103, 104, 600, 601}
+# Provider-canonical running sport_type ints. Includes:
+#   100-104 — COROS (outdoor / indoor / track / trail / treadmill)
+#   600-601 — legacy ad-hoc COROS extensions kept for back-compat
+#   8001-8005 — Garmin synthetic codes (see garmin_sync/models.py;
+#               typeKey=running/indoor_running/treadmill_running/
+#               track_running/trail_running)
+# Any new provider that synthesizes running sport_type ints must add them
+# here, otherwise L3 ability dimensions and PMC queries will silently
+# exclude that provider's activities.
+RUN_SPORT_IDS = {100, 101, 102, 103, 104, 600, 601, 8001, 8002, 8003, 8004, 8005}
+
+# Pre-rendered SQL fragment for `sport_type IN (...)` clauses. Built from a
+# trusted constant (no user input), so direct string interpolation is safe
+# and avoids the awkward dance of binding a variadic list of placeholders.
+RUN_SPORT_SQL_LIST = ",".join(str(s) for s in sorted(RUN_SPORT_IDS))
 
 TRAINING_LOAD_STATES: dict[int, str] = {
     0: "Unknown", 1: "Low", 2: "Optimal", 3: "High", 4: "Very High",

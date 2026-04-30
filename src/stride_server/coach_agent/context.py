@@ -8,7 +8,7 @@ from typing import Any
 
 from stride_core import db as core_db
 from stride_core.db import Database
-from stride_core.models import pace_str
+from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
 from stride_core.source import DataSource
 
 from stride_server import content_store
@@ -156,7 +156,7 @@ def load_weekly_volume(db: Database, *, weeks: int = 12) -> list[dict[str, Any]]
             round(avg(avg_hr), 0) as avg_hr,
             round(coalesce(sum(training_load), 0), 1) as training_load
         FROM activities
-        WHERE sport_type IN (100, 101, 102, 103, 104)
+        WHERE sport_type IN (""" + _RUN_SPORT_SQL + """)
         GROUP BY week
         ORDER BY week DESC
         LIMIT ?""",
