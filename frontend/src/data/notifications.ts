@@ -17,6 +17,14 @@ export interface AppNotification {
 // list in published order makes diffs readable.
 export const NOTIFICATIONS: AppNotification[] = [
   {
+    id: '2026-04-30-custom-domain',
+    title: '新域名上线：stride-running.cn',
+    body:
+      'STRIDE 已经启用全新的访问地址：https://stride-running.cn 。这个域名更短、更好记，欢迎大家更新书签并使用新地址访问。原来的 Azure 链接也仍然可用，登录信息无需重新配置。',
+    publishedAt: '2026-04-30T20:00',
+    severity: 'success',
+  },
+  {
     id: '2026-04-30-top-nav-and-message-center',
     title: '新功能：顶部导航 & 消息中心',
     body:
