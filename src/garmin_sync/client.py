@@ -142,6 +142,12 @@ class GarminClient:
         except Exception:
             return {}
 
+    def get_sleep_data(self, date_iso: str) -> dict[str, Any]:
+        try:
+            return self._api.get_sleep_data(date_iso) or {}
+        except Exception:
+            return {}
+
     def get_lactate_threshold(self) -> dict[str, Any]:
         try:
             return self._api.get_lactate_threshold() or {}
