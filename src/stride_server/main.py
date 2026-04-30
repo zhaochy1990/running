@@ -8,6 +8,7 @@ it here, done — no other file changes required.
 from __future__ import annotations
 
 from coros_sync.adapter import CorosDataSource
+from garmin_sync.adapter import GarminDataSource
 from stride_core.registry import ProviderRegistry
 
 from .app import create_app
@@ -16,8 +17,7 @@ from .app import create_app
 def _build_registry() -> ProviderRegistry:
     registry = ProviderRegistry()
     registry.register(CorosDataSource(), default=True)
-    # Future:
-    #   registry.register(GarminDataSource())
+    registry.register(GarminDataSource())
     return registry
 
 

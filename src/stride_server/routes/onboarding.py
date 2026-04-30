@@ -209,6 +209,73 @@ def coros_login(
     return {"ok": True, "region": result.region, "user_id": result.user_id}
 
 
+class GarminLoginBody(BaseModel):
+    email: str
+    password: str
+    region: str | None = "cn"        # 'cn' | 'global'; default CN since
+                                     # the deploy targets China-region users.
+
+
+@router.post("/api/users/me/garmin/login")
+def garmin_login(
+    body: GarminLoginBody,
+    request: Request,
+    payload: dict = Depends(require_bearer),
+):
+    """Authenticate with Garmin Connect via the registered adapter.
+
+    Mirror of /coros/login, dispatched through ProviderRegistry.get('garmin').
+    Same enumeration-resistant behavior: any auth/network error → single
+    400 with a generic message, real cause goes to the server log.
+
+    On success, the registry's GarminDataSource.login persists OAuth tokens
+    to data/{user}/garmin_auth.json and stamps `provider='garmin'` in
+    config.json so subsequent registry.for_user(uuid) routes back here.
+    """
+    uuid = _validate_uuid(payload["sub"])
+
+    registry: ProviderRegistry = request.app.state.registry
+    try:
+        source = registry.get("garmin")
+    except UnknownProvider:
+        logger.error("Garmin adapter not registered; check composition root")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Garmin provider not available in this deployment",
+        )
+
+    try:
+        result = source.login(
+            uuid,
+            LoginCredentials(
+                email=body.email,
+                password=body.password,
+                region=body.region or "cn",
+            ),
+        )
+    except Exception:
+        logger.exception("Garmin login failed for user %s", uuid)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not authenticate with Garmin",
+        )
+
+    if not result.success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result.message or "Could not authenticate with Garmin",
+        )
+
+    # Reuse the existing onboarding flag — the field name is legacy but the
+    # semantic ("watch account is ready, proceed to /onboarding/complete")
+    # is provider-agnostic. Renaming to `watch_ready` is a follow-up.
+    onboarding = _read_onboarding(uuid)
+    onboarding["coros_ready"] = True
+    _write_onboarding(uuid, onboarding)
+
+    return {"ok": True, "region": result.region, "user_id": result.user_id}
+
+
 def _run_background_sync(uuid: str, source: DataSource) -> None:
     """Background task: sync + generate starter status, update onboarding.json.
 
