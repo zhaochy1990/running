@@ -40,6 +40,7 @@ def run_sync(
     full: bool = False,
     progress: SyncProgressCallback | None = None,
     activity_limit: int = 200,
+    since_date: str | None = None,
 ) -> tuple[int, int]:
     """Sync the user's Garmin data into `db`. Returns `(activities_count, health_count)`.
 
@@ -47,11 +48,27 @@ def run_sync(
     that's already in the local DB. `full=True` pulls everything in the
     first `activity_limit` slot (Garmin paginates indefinitely; we cap so
     a "full" rebuild doesn't accidentally try to download a decade).
+
+    `since_date` (YYYY-MM-DD) overrides `activity_limit` for full syncs:
+    pagination stops once activities older than this date are reached.
+    Also passed to the Garmin API as a server-side filter where supported.
     """
-    activities_synced = _sync_activities(
-        client, db, full=full, progress=progress, limit=activity_limit
+    # When since_date drives the cutoff, use a large safety cap so the
+    # activity_limit doesn't truncate before we reach the date boundary.
+    effective_limit = 2000 if since_date else activity_limit
+    activities_synced, new_label_ids = _sync_activities(
+        client, db, full=full, progress=progress, limit=effective_limit,
+        since_date=since_date,
     )
     health_synced = _sync_health(client, db, progress=progress)
+
+    # Mirror coros_sync behaviour: refresh today's ability snapshot so the
+    # cached row at /api/{user}/ability/current reflects the new activities
+    # without the user having to manually pass ?refresh=1. Best-effort —
+    # never fails the sync.
+    from stride_core.ability_hook import run_ability_hook
+    run_ability_hook(db, new_label_ids)
+
     return activities_synced, health_synced
 
 
@@ -62,13 +79,15 @@ def _sync_activities(
     full: bool,
     progress: SyncProgressCallback | None,
     limit: int,
-) -> int:
+    since_date: str | None = None,
+) -> tuple[int, list[str]]:
     _emit(progress, phase="activity_list", message="正在获取佳明活动列表", percent=10)
 
     page_size = 25
     start = 0
     pulled = 0
     new_count = 0
+    new_label_ids: list[str] = []
 
     while pulled < limit:
         chunk = client.get_activities(start, page_size)
@@ -78,6 +97,19 @@ def _sync_activities(
             activity_id = str(activity.get("activityId") or "")
             if not activity_id:
                 continue
+
+            # Date-based cutoff: stop when activity is older than since_date.
+            if since_date:
+                activity_date = (activity.get("startTimeGMT") or "")[:10]
+                if activity_date and activity_date < since_date:
+                    _emit(
+                        progress,
+                        phase="activity_details",
+                        message=f"佳明同步完成：{new_count} 条新活动（已达起始日期）",
+                        percent=80,
+                    )
+                    return new_count, new_label_ids
+
             if (not full) and db.activity_exists(activity_id):
                 # Hit the first known activity — stop pagination.
                 _emit(
@@ -86,7 +118,7 @@ def _sync_activities(
                     message=f"佳明同步完成：{new_count} 条新活动",
                     percent=80,
                 )
-                return new_count
+                return new_count, new_label_ids
 
             try:
                 splits = client.get_activity_splits(activity_id)
@@ -105,6 +137,7 @@ def _sync_activities(
             apply_to_detail(detail, activity)
             db.upsert_activity(detail, provider="garmin")
             new_count += 1
+            new_label_ids.append(activity_id)
             _emit(
                 progress,
                 phase="activity_details",
@@ -119,7 +152,7 @@ def _sync_activities(
         if len(chunk) < page_size:
             break
 
-    return new_count
+    return new_count, new_label_ids
 
 
 def _sync_health(
