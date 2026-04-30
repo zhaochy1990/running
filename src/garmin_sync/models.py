@@ -273,9 +273,10 @@ def daily_health_from_garmin(
     if us:
         rhr = us.get("restingHeartRate") or us.get("lastSevenDaysAvgRestingHeartRate")
 
-    # Sleep stages live in the get_sleep_data response (top-level, not under
-    # "dailySleepDTO" — the wrapper from garminconnect inlines the DTO).
-    sd = sleep_data or {}
+    # Sleep stages live under `dailySleepDTO` in the get_sleep_data response.
+    # Some garminconnect versions inline them at the top level, so accept both.
+    sd_raw = sleep_data or {}
+    sd = sd_raw.get("dailySleepDTO") if isinstance(sd_raw.get("dailySleepDTO"), dict) else sd_raw
     sleep_total = sd.get("sleepTimeSeconds")
     sleep_deep = sd.get("deepSleepSeconds")
     sleep_light = sd.get("lightSleepSeconds")

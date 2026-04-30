@@ -306,6 +306,28 @@ class TestDailyHealthBuilder:
         assert h.sleep_awake_s == 0
         assert h.sleep_score == 86
 
+    def test_phase3_sleep_stages_under_dailySleepDTO_wrapper(self):
+        # garminconnect's get_sleep_data wraps stages under `dailySleepDTO`
+        # (verified against the friend's account); builder must handle both
+        # the wrapped and inlined shapes.
+        h = daily_health_from_garmin(
+            date_iso="2026-04-29",
+            user_summary={},
+            sleep_data={
+                "dailySleepDTO": {
+                    "sleepTimeSeconds": 28560,
+                    "deepSleepSeconds": 7080,
+                    "lightSleepSeconds": 14940,
+                    "remSleepSeconds": 6540,
+                    "awakeSleepSeconds": 0,
+                    "sleepScores": {"overall": {"value": 86}},
+                },
+            },
+        )
+        assert h.sleep_total_s == 28560
+        assert h.sleep_deep_s == 7080
+        assert h.sleep_score == 86
+
     def test_phase3_sleep_score_can_be_bare_int(self):
         # Garmin sometimes returns sleepScores.overall as an int directly
         # rather than {"value": int}; both shapes should produce the same row.
