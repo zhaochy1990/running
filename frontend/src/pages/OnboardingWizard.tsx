@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { getMyProfile, type ProfileIn, type TargetDistance } from '../api'
-import CorosStep from './onboarding/CorosStep'
 import ProfileStep from './onboarding/ProfileStep'
 import SubmitStep from './onboarding/SubmitStep'
+import WatchStep from './onboarding/WatchStep'
 
-type Step = 'loading' | 'coros' | 'profile' | 'submit' | 'done'
+type Step = 'loading' | 'watch' | 'profile' | 'submit' | 'done'
 
 function reconstructProfile(p: Record<string, unknown> | null): ProfileIn | null {
   if (!p) return null
@@ -44,7 +44,9 @@ export default function OnboardingWizard() {
         if (p.onboarding.completed_at) {
           setStep('done')
         } else if (!p.onboarding.coros_ready) {
-          setStep('coros')
+          // Legacy field name `coros_ready` is provider-agnostic in semantics:
+          // both /coros/login and /garmin/login set it on success.
+          setStep('watch')
         } else if (!p.onboarding.profile_ready) {
           setStep('profile')
         } else {
@@ -58,13 +60,13 @@ export default function OnboardingWizard() {
       })
       .catch(() => {
         // Profile not yet created — start from step 1
-        setStep('coros')
+        setStep('watch')
       })
   }, [])
 
   if (step === 'done') return <Navigate to="/" replace />
 
-  const stepIndex = step === 'coros' ? 0 : step === 'profile' ? 1 : step === 'submit' ? 2 : -1
+  const stepIndex = step === 'watch' ? 0 : step === 'profile' ? 1 : step === 'submit' ? 2 : -1
 
   return (
     <div className="flex min-h-screen items-start justify-center bg-bg-base px-4 py-12">
@@ -99,8 +101,8 @@ export default function OnboardingWizard() {
             </div>
           )}
 
-          {step === 'coros' && (
-            <CorosStep onSuccess={() => setStep('profile')} />
+          {step === 'watch' && (
+            <WatchStep onSuccess={() => setStep('profile')} />
           )}
 
           {step === 'profile' && (

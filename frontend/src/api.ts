@@ -173,6 +173,17 @@ export function postCorosLogin(email: string, password: string) {
   )
 }
 
+export function postGarminLogin(
+  email: string,
+  password: string,
+  region: 'cn' | 'global' = 'cn',
+) {
+  return postJSON<{ region?: string; user_id?: string; error?: string; detail?: unknown }>(
+    '/users/me/garmin/login',
+    { email, password, region },
+  )
+}
+
 export function postProfile(profile: ProfileIn) {
   return postJSON<{ error?: string; detail?: unknown }>('/users/me/profile', profile)
 }
