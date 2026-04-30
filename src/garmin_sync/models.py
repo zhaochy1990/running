@@ -302,10 +302,18 @@ def dashboard_from_garmin(
     vo2 = (training_status or {}).get("mostRecentVO2Max", {}) or {}
     vo2_generic = vo2.get("generic", {}) or {}
 
-    # threshold from lactate_threshold endpoint (m/s → s/km for pace)
+    # threshold from lactate_threshold endpoint
     lt_speed_hr = (lactate_threshold or {}).get("speed_and_heart_rate", {}) or {}
     threshold_hr = lt_speed_hr.get("heartRate")
+    # Empirical Garmin quirk: this endpoint reports `speed` at 1/10th of m/s
+    # (e.g. 0.4417 for an actual 4.417 m/s). Verified against the test
+    # account where heartRate=170 + actual recent runs at LT pace cluster
+    # around 3:45-4:00/km — without the *10 scaling we get 37:44/km which
+    # is non-physical. Other Garmin endpoints (activity averageSpeed) report
+    # genuine m/s, so the scaling is local to this endpoint.
     threshold_speed_m_s = lt_speed_hr.get("speed")
+    if threshold_speed_m_s is not None:
+        threshold_speed_m_s = float(threshold_speed_m_s) * 10.0
     threshold_pace_s_km = _ms_to_pace_s_km(threshold_speed_m_s)
 
     # HRV from get_hrv_data

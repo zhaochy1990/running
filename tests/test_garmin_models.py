@@ -266,10 +266,14 @@ class TestDashboardBuilder:
         assert d.hrv_normal_high == 129.0
 
     def test_lt_pace_converted_from_m_s(self):
+        # Garmin's lactate_threshold endpoint reports speed at 1/10th of m/s
+        # (empirical quirk verified against real account). Models layer
+        # multiplies by 10 before the standard m/s -> s/km conversion.
         d = dashboard_from_garmin(
             lactate_threshold={
                 "speed_and_heart_rate": {
-                    "speed": 4.5,         # m/s → ~222 s/km
+                    # 0.45 in the API → 4.5 m/s actual → ~222 s/km pace
+                    "speed": 0.45,
                     "heartRate": 165,
                 },
             },
@@ -278,6 +282,21 @@ class TestDashboardBuilder:
         # 4.5 m/s = 1000/4.5 ≈ 222.22 s/km
         assert d.threshold_pace_s_km is not None
         assert 221 < d.threshold_pace_s_km < 224
+
+    def test_lt_pace_realistic_recon_value(self):
+        # Friend's actual recon value: speed=0.4417, heartRate=170.
+        # After x10 scaling, real speed = 4.417 m/s -> ~226.4 s/km = 3:46/km.
+        d = dashboard_from_garmin(
+            lactate_threshold={
+                "speed_and_heart_rate": {
+                    "speed": 0.44166543,
+                    "heartRate": 170,
+                },
+            },
+        )
+        assert d.threshold_hr == 170
+        assert d.threshold_pace_s_km is not None
+        assert 224 < d.threshold_pace_s_km < 229
 
     def test_race_predictions(self):
         d = dashboard_from_garmin(
