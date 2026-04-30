@@ -16,6 +16,7 @@ profile
 *.db
 data/*/config.json
 data/*/auth.json
+data/*/garmin_auth.json
 data/*/coach.json
 data/coach.json
 .stride-coach.json
