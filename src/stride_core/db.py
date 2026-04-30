@@ -59,6 +59,12 @@ CREATE TABLE IF NOT EXISTS activities (
     device          TEXT,
     feel_type       INTEGER,
     sport_note      TEXT,
+    -- Provider-agnostic normalized enums written by the adapter; legacy
+    -- columns (sport_type/train_type/feel_type) stay populated as the
+    -- COROS-original source-of-truth used by ability.py and existing readers.
+    sport           TEXT,
+    train_kind      TEXT,
+    feel            TEXT,
     provider        TEXT NOT NULL DEFAULT 'coros',
     synced_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -356,6 +362,13 @@ class Database:
         _add("activities", "provider", "TEXT NOT NULL DEFAULT 'coros'")
         _add("daily_health", "provider", "TEXT NOT NULL DEFAULT 'coros'")
         _add("dashboard", "provider", "TEXT NOT NULL DEFAULT 'coros'")
+        # Step D: normalized enum columns. Existing rows get NULL — they're
+        # backfilled organically as users sync (each upsert overwrites).
+        # Frontend should treat these as the preferred source where present
+        # and fall back to sport_type / train_type / feel_type otherwise.
+        _add("activities", "sport", "TEXT")
+        _add("activities", "train_kind", "TEXT")
+        _add("activities", "feel", "TEXT")
 
     def close(self) -> None:
         self._conn.close()
@@ -376,8 +389,9 @@ class Database:
              avg_hr, max_hr, avg_cadence, max_cadence, avg_power, max_power,
              avg_step_len_cm, ascent_m, descent_m, calories_kcal,
              aerobic_effect, anaerobic_effect, training_load, vo2max, performance, train_type,
-             temperature, humidity, feels_like, wind_speed, feel_type, sport_note, provider)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             temperature, humidity, feels_like, wind_speed, feel_type, sport_note,
+             sport, train_kind, feel, provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
              a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
              a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
@@ -386,7 +400,8 @@ class Database:
              a.aerobic_effect, a.anaerobic_effect, a.training_load,
              a.vo2max, a.performance, a.train_type,
              a.temperature, a.humidity, a.feels_like, a.wind_speed,
-             a.feel_type, a.sport_note, provider),
+             a.feel_type, a.sport_note,
+             a.sport, a.train_kind, a.feel, provider),
         )
         # Upsert child records
         for lap in a.laps:

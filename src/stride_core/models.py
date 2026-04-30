@@ -220,6 +220,14 @@ class ActivityDetail:
     wind_speed: float | None
     feel_type: int | None = None
     sport_note: str | None = None
+    # Provider-agnostic normalized enums populated by adapter post-from_api
+    # (e.g. coros_sync.normalize.apply_to_detail). Stored as enum .value
+    # strings so DB persistence is straightforward; original COROS columns
+    # (sport_type int, train_type localized string, feel_type int) stay
+    # alongside as the diagnostic source-of-truth.
+    sport: str | None = None        # NormalizedSport.value
+    train_kind: str | None = None   # TrainKind.value
+    feel: str | None = None         # FeelLevel.value
     laps: list[Lap] = field(default_factory=list)
     zones: list[Zone] = field(default_factory=list)
     timeseries: list[TimeseriesPoint] = field(default_factory=list)

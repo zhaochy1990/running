@@ -21,6 +21,7 @@ from stride_core.source import (
 
 from .auth import Credentials
 from .client import CorosClient, CorosAuthError
+from .normalize import apply_to_detail
 from .sync import run_sync
 
 
@@ -136,6 +137,7 @@ class CorosDataSource(BaseDataSource):
                 detail = ActivityDetail.from_api(detail_data, label_id)
                 if not detail.date:
                     detail.date = activity_date
+                apply_to_detail(detail, detail_data)
                 db.upsert_activity(detail)
         finally:
             db.close()

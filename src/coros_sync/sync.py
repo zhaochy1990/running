@@ -12,6 +12,7 @@ from typing import TypeVar
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 from .client import CorosClient, CorosAPIError
+from .normalize import apply_to_detail
 from stride_core.db import Database
 from stride_core.models import Activity, ActivityDetail, DailyHealth, Dashboard
 from stride_core.source import SyncProgressCallback
@@ -194,6 +195,10 @@ def sync_activities(
                 detail = ActivityDetail.from_api(detail_data, activity.label_id)
                 if not detail.date:
                     detail.date = activity.date
+                # Translate COROS encodings (sport_type / trainType / feelType)
+                # into our normalized enum strings on detail.{sport,train_kind,feel}
+                # before the upsert hands it to db.upsert_activity.
+                apply_to_detail(detail, detail_data)
                 return activity, detail
             except CorosAPIError as e:
                 logger.warning("Failed to sync activity %s: %s", activity.label_id, e)
@@ -556,6 +561,7 @@ def resync_date_range(
                 detail = ActivityDetail.from_api(detail_data, act["label_id"])
                 if not detail.date:
                     detail.date = act["date"]
+                apply_to_detail(detail, detail_data)
                 return act, detail
             except Exception as e:
                 logger.warning("Failed to re-sync %s: %s", act["label_id"], e)
