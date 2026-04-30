@@ -23,12 +23,14 @@ from stride_core.source import (
     SyncProgressCallback,
     SyncResult,
 )
+from stride_core.workout_spec import NormalizedRunWorkout
 
 from .auth import GarminCredentials
 from .client import GarminAuthError, GarminClient
 from .models import activity_detail_from_garmin
 from .normalize import apply_to_detail
 from .sync import run_sync
+from .translate import normalized_to_garmin_workout
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +39,12 @@ _GARMIN_INFO = ProviderInfo(
     name="garmin",
     display_name="佳明",
     regions=("cn", "global"),
-    # v1: read-only. Capabilities expand as we wire HRV detail, sleep,
-    # body battery, push, etc. into DataSource methods.
+    # Phase 3 added HRV detail; Phase 4 wires up run-workout push (still
+    # using garminconnect upload + schedule under the hood). Strength push
+    # + exercise catalog remain a future phase.
     capabilities=frozenset({
         Capability.SYNC_HRV_DETAIL,
+        Capability.PUSH_RUN_WORKOUT,
     }),
 )
 
@@ -130,6 +134,39 @@ class GarminDataSource(BaseDataSource):
         with Database(user=user) as db:
             activities, health = run_sync(client, db, full=full, progress=progress)
         return SyncResult(activities=activities, health=health)
+
+    def push_run_workout(self, user: str, workout: NormalizedRunWorkout) -> str:
+        """Translate `NormalizedRunWorkout` and push to the user's Garmin schedule.
+
+        Two API calls:
+          1. POST upload_workout → returns workoutId (template stored on Garmin)
+          2. POST schedule_workout(workoutId, date) → places it on the calendar
+
+        Returns the Garmin workoutId as a string. The watch picks it up on
+        next sync.
+        """
+        creds = GarminCredentials.load(user)
+        if not creds.is_logged_in:
+            raise GarminNotLoggedInError(f"用户 {user} 未登录佳明")
+
+        client = GarminClient.from_stored(creds)
+        payload = normalized_to_garmin_workout(workout)
+
+        # Garmin's `upload_workout` accepts the workoutSegments structure
+        # built by translate.py and returns the new workoutId.
+        upload_result = client.api.upload_workout(payload)
+        workout_id = (
+            (upload_result or {}).get("workoutId")
+            if isinstance(upload_result, dict) else None
+        )
+        if not workout_id:
+            raise RuntimeError(
+                f"Garmin upload_workout returned no workoutId: {upload_result!r}"
+            )
+
+        # Schedule onto the calendar.
+        client.api.schedule_workout(workout_id, workout.date)
+        return str(workout_id)
 
     def resync_activity(self, user: str, label_id: str) -> bool:
         creds = GarminCredentials.load(user)

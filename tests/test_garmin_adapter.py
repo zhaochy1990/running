@@ -31,13 +31,14 @@ class TestGarminProviderInfo:
         assert "cn" in info.regions
         assert "global" in info.regions
 
-    def test_v1_capabilities_minimal(self):
-        # v1 ships read-only — only HRV detail flagged. Push, exercise
-        # catalog, etc. come in later phases.
+    def test_capabilities(self):
+        # Phase 3 added HRV detail; Phase 4 wires push_run_workout.
+        # Strength push + exercise catalog still deferred.
         src = GarminDataSource()
-        assert Capability.PUSH_RUN_WORKOUT not in src.info.capabilities
-        assert Capability.EXERCISE_CATALOG not in src.info.capabilities
         assert Capability.SYNC_HRV_DETAIL in src.info.capabilities
+        assert Capability.PUSH_RUN_WORKOUT in src.info.capabilities
+        assert Capability.PUSH_STRENGTH_WORKOUT not in src.info.capabilities
+        assert Capability.EXERCISE_CATALOG not in src.info.capabilities
 
 
 class TestIsLoggedIn:

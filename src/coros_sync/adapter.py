@@ -18,11 +18,14 @@ from stride_core.source import (
     SyncProgressCallback,
     SyncResult,
 )
+from stride_core.workout_spec import NormalizedRunWorkout
 
 from .auth import Credentials
 from .client import CorosClient, CorosAuthError
 from .normalize import apply_to_detail
 from .sync import run_sync
+from .translate import normalized_to_coros_run
+from .workout import push_workout
 
 
 class CorosNotLoggedInError(RuntimeError):
@@ -34,16 +37,16 @@ class ActivityNotFoundError(LookupError):
 
 
 # Capabilities declared here describe what is wired through the DataSource
-# interface today. COROS the *device* supports run/strength push and the
-# exercise catalog, but those paths still go through coros_sync.workout
-# directly from the CLI; declaring them here would lie to capability-checking
-# callers. Capabilities will be added as the adapter rewrite (follow-up task)
-# wires each method to NormalizedRunWorkout / NormalizedStrengthWorkout.
+# interface today. Phase 4: PUSH_RUN_WORKOUT now goes through the registered
+# adapter (normalized translation → existing coros_sync.workout pipeline).
+# Strength push + exercise catalog remain CLI-only for now.
 _COROS_INFO = ProviderInfo(
     name="coros",
     display_name="高驰",
     regions=("global", "cn", "eu"),
-    capabilities=frozenset(),
+    capabilities=frozenset({
+        Capability.PUSH_RUN_WORKOUT,
+    }),
 )
 
 
@@ -115,6 +118,28 @@ class CorosDataSource(BaseDataSource):
         with CorosClient(creds, user=user) as client, Database(user=user) as db:
             activities, health = run_sync(client, db, **kwargs)
         return SyncResult(activities=activities, health=health)
+
+    def push_run_workout(self, user: str, workout: NormalizedRunWorkout) -> str:
+        """Push a `NormalizedRunWorkout` to the user's COROS schedule.
+
+        Translates to the existing `coros_sync.workout.RunWorkout` builder
+        and reuses the proven calculate→update push flow. Returns the COROS
+        idInPlan as a string (the watch-side identifier for this workout).
+        """
+        creds = Credentials.load(user=user)
+        if not creds.is_logged_in:
+            raise CorosNotLoggedInError(f"用户 {user} 未登录")
+
+        coros_workout = normalized_to_coros_run(workout)
+        with CorosClient(creds, user=user) as client:
+            response = push_workout(client, coros_workout)
+        # Response shape varies; extract the id_in_plan we know we sent
+        program = (response or {}).get("data", {}).get("programs") or []
+        if program and isinstance(program[0], dict) and program[0].get("idInPlan"):
+            return str(program[0]["idInPlan"])
+        # Fallback: re-derive from the workout we built (push_workout stamped
+        # the id_in_plan onto its payload before calling the API).
+        return str(coros_workout.date)
 
     def resync_activity(self, user: str, label_id: str) -> bool:
         creds = Credentials.load(user=user)
