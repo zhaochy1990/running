@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends
 from stride_core.source import DataSource
 
 from ..bearer import require_bearer
-from ..deps import get_source
+from ..deps import get_source_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ router = APIRouter()
 @router.post("/api/{user}/sync")
 def trigger_sync(
     user: str,
-    source: DataSource = Depends(get_source),
+    source: DataSource = Depends(get_source_for_user),
     _claims: dict = Depends(require_bearer),
 ):
     """Trigger a data sync for the given user (via the configured adapter).

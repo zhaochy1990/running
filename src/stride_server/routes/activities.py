@@ -10,7 +10,7 @@ from stride_core.models import EXERCISE_TYPES, pace_str
 from stride_core.source import DataSource
 
 from ..bearer import require_bearer
-from ..deps import EXERCISE_NAMES, format_duration, get_db, get_source
+from ..deps import EXERCISE_NAMES, format_duration, get_db, get_source, get_source_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +236,7 @@ def regenerate_commentary(
 def resync_activity(
     user: str,
     label_id: str,
-    source: DataSource = Depends(get_source),
+    source: DataSource = Depends(get_source_for_user),
     _claims: dict = Depends(require_bearer),
 ):
     """Re-sync a single activity (to pick up updated feedback/sport_note).

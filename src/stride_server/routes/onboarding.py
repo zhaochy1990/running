@@ -343,8 +343,8 @@ def _run_background_sync(uuid: str, source: DataSource) -> None:
 @router.post("/api/users/me/onboarding/complete")
 def onboarding_complete(
     background_tasks: BackgroundTasks,
+    request: Request,
     payload: dict = Depends(require_bearer),
-    source: DataSource = Depends(get_source),
 ):
     """Kick off background sync + status generation.
 
@@ -355,6 +355,17 @@ def onboarding_complete(
     """
     uuid = _validate_uuid(payload["sub"])
     onboarding = _read_onboarding(uuid)
+    # Resolve the user's bound adapter via the registry (this path has no
+    # `{user}` URL param, so we can't use the get_source_for_user dependency
+    # — fetch from app.state directly using the JWT sub).
+    registry: ProviderRegistry = request.app.state.registry
+    try:
+        source: DataSource = registry.for_user(uuid)
+    except UnknownProvider:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User's configured watch provider is not available",
+        )
 
     if onboarding.get("completed_at") and onboarding.get("sync_state") == "done":
         return {"state": "already-complete"}
