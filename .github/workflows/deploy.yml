@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'src/coros_sync/**'
+      - 'src/garmin_sync/**'
       - 'src/stride_core/**'
       - 'src/stride_server/**'
       - 'frontend/**'
