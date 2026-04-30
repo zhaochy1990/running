@@ -69,7 +69,7 @@ export default function NotificationPopup() {
               {message.title}
             </h2>
             <p className="mt-1 text-[11px] font-mono text-text-muted tracking-wider">
-              {message.publishedAt}
+              {message.publishedAt.slice(0, 10)}
             </p>
             <p className="mt-3 text-sm leading-relaxed text-text-secondary whitespace-pre-line">
               {message.body}

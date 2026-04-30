@@ -108,7 +108,7 @@ export default function MessageCenter() {
                               {m.title}
                             </p>
                             <span className="text-[10px] font-mono text-text-muted flex-shrink-0">
-                              {m.publishedAt}
+                              {m.publishedAt.slice(0, 10)}
                             </span>
                           </div>
                           <p className="mt-1 text-xs leading-relaxed text-text-secondary whitespace-pre-line">
