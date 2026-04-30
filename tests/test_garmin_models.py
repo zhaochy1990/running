@@ -5,6 +5,7 @@ from __future__ import annotations
 from garmin_sync.models import (
     activity_detail_from_garmin,
     daily_health_from_garmin,
+    daily_hrv_from_garmin,
     dashboard_from_garmin,
     synthetic_sport_type,
 )
@@ -126,6 +127,29 @@ class TestActivityDetailBuilder:
         # avgStrideLength → avg_step_len_cm (Garmin's name → ours)
         assert d.avg_step_len_cm == 119.27
 
+    def test_phase3_running_form_columns(self):
+        # Garmin reports vertical osc / GCT / vertical ratio per activity;
+        # Phase 3 surfaces them on ActivityDetail for the new DB columns.
+        sample = _sample_activity()
+        sample["avgVerticalOscillation"] = 8.72
+        sample["avgGroundContactTime"] = 234.4
+        sample["avgVerticalRatio"] = 7.31
+        d = activity_detail_from_garmin(sample)
+        assert d.vertical_oscillation_mm == 8.72
+        assert d.ground_contact_time_ms == 234.4
+        assert d.vertical_ratio_pct == 7.31
+
+    def test_phase3_running_form_columns_default_none(self):
+        # Strength activities or older Garmin watches don't emit these;
+        # the dataclass should default to None so the DB writes NULLs.
+        sample = _sample_activity()
+        for k in ("avgVerticalOscillation", "avgGroundContactTime", "avgVerticalRatio"):
+            sample.pop(k, None)
+        d = activity_detail_from_garmin(sample)
+        assert d.vertical_oscillation_mm is None
+        assert d.ground_contact_time_ms is None
+        assert d.vertical_ratio_pct is None
+
     def test_empty_optional_subresources(self):
         # Builder should be fully usable with just the activity dict.
         d = activity_detail_from_garmin(_sample_activity())
@@ -239,6 +263,120 @@ class TestDailyHealthBuilder:
             user_summary={"lastSevenDaysAvgRestingHeartRate": 45},
         )
         assert h.rhr == 45
+
+    def test_phase3_body_battery_and_stress_from_user_summary(self):
+        # user_summary on Garmin carries Body Battery + stress + respiration + SpO2
+        h = daily_health_from_garmin(
+            date_iso="2026-04-29",
+            training_status=None,
+            user_summary={
+                "restingHeartRate": 49,
+                "bodyBatteryHighestValue": 78,
+                "bodyBatteryLowestValue": 23,
+                "averageStressLevel": 28,
+                "avgWakingRespirationValue": 14.0,
+                "averageSpo2": 96.0,
+            },
+        )
+        assert h.body_battery_high == 78
+        assert h.body_battery_low == 23
+        assert h.stress_avg == 28
+        assert h.respiration_avg == 14.0
+        assert h.spo2_avg == 96.0
+
+    def test_phase3_sleep_stages_from_sleep_data(self):
+        # Sleep response: stages + score live at the top level of the dict.
+        h = daily_health_from_garmin(
+            date_iso="2026-04-29",
+            training_status=None,
+            user_summary={"restingHeartRate": 49},
+            sleep_data={
+                "sleepTimeSeconds": 28560,
+                "deepSleepSeconds": 7080,
+                "lightSleepSeconds": 14940,
+                "remSleepSeconds": 6540,
+                "awakeSleepSeconds": 0,
+                "sleepScores": {"overall": {"value": 86}},
+            },
+        )
+        assert h.sleep_total_s == 28560
+        assert h.sleep_deep_s == 7080
+        assert h.sleep_light_s == 14940
+        assert h.sleep_rem_s == 6540
+        assert h.sleep_awake_s == 0
+        assert h.sleep_score == 86
+
+    def test_phase3_sleep_score_can_be_bare_int(self):
+        # Garmin sometimes returns sleepScores.overall as an int directly
+        # rather than {"value": int}; both shapes should produce the same row.
+        h = daily_health_from_garmin(
+            date_iso="2026-04-29",
+            user_summary={},
+            sleep_data={"sleepTimeSeconds": 25000, "sleepScores": {"overall": 72}},
+        )
+        assert h.sleep_total_s == 25000
+        assert h.sleep_score == 72
+
+    def test_phase3_average_stress_minus_one_means_no_data(self):
+        # Garmin uses -1 as a "no data today" sentinel for stress.
+        h = daily_health_from_garmin(
+            date_iso="2026-04-30",
+            user_summary={"averageStressLevel": -1},
+        )
+        assert h.stress_avg is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# daily_hrv_from_garmin (Phase 3 — new builder)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestDailyHrvBuilder:
+    def test_full_summary_extracted(self):
+        # Mirror of friend's recon shape on 2026-04-29.
+        hrv = {
+            "hrvSummary": {
+                "calendarDate": "2026-04-29",
+                "weeklyAvg": 104,
+                "lastNightAvg": 125,
+                "lastNight5MinHigh": 179,
+                "baseline": {
+                    "lowUpper": 86,
+                    "balancedLow": 93,
+                    "balancedUpper": 129,
+                    "markerValue": 0.4027,
+                },
+                "status": "BALANCED",
+                "feedbackPhrase": "HRV_BALANCED_5",
+            },
+        }
+        h = daily_hrv_from_garmin("2026-04-29", hrv)
+        assert h.date == "2026-04-29"
+        assert h.weekly_avg == 104
+        assert h.last_night_avg == 125
+        assert h.last_night_5min_high == 179
+        assert h.status == "BALANCED"
+        assert h.baseline_low_upper == 86
+        assert h.baseline_balanced_low == 93
+        assert h.baseline_balanced_upper == 129
+        assert h.feedback_phrase == "HRV_BALANCED_5"
+
+    def test_handles_missing_hrv_response(self):
+        # Garmin returns None when the user's watch doesn't support HRV (FR55, etc.).
+        h = daily_hrv_from_garmin("2026-04-30", None)
+        assert h.date == "2026-04-30"
+        assert h.weekly_avg is None
+        assert h.last_night_avg is None
+        assert h.status is None
+
+    def test_handles_partial_summary(self):
+        # Some days return summary without baseline (early use of the watch).
+        hrv = {"hrvSummary": {"lastNightAvg": 100, "weeklyAvg": 95}}
+        h = daily_hrv_from_garmin("2026-04-30", hrv)
+        assert h.last_night_avg == 100
+        assert h.weekly_avg == 95
+        assert h.baseline_balanced_low is None
+        assert h.baseline_balanced_upper is None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
