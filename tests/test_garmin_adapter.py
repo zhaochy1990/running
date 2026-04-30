@@ -160,6 +160,95 @@ class TestLoginSuccessPersists:
         assert config["provider"] == "garmin"
 
 
+class TestPushRunWorkout:
+    """End-to-end adapter contract: push_run_workout translates + uploads + schedules."""
+
+    def test_push_calls_upload_then_schedule(self, tmp_path: Path, monkeypatch):
+        from stride_core import db as db_mod
+        from garmin_sync import adapter as adapter_mod
+        from stride_core.workout_spec import (
+            Duration, NormalizedRunWorkout, StepKind, WorkoutBlock, WorkoutStep,
+        )
+        monkeypatch.setattr(db_mod, "USER_DATA_DIR", tmp_path)
+
+        # Pretend the user is logged in (creds file present).
+        creds_path = tmp_path / "alice" / "garmin_auth.json"
+        creds_path.parent.mkdir(parents=True)
+        creds_path.write_text(
+            json.dumps({"email": "x@y.com", "region": "cn", "tokens_dump": "{}"}),
+            encoding="utf-8",
+        )
+
+        # Capture upload + schedule call args.
+        calls = {}
+
+        class _FakeApi:
+            def upload_workout(self, payload):
+                calls["upload_payload"] = payload
+                return {"workoutId": 99887766}
+
+            def schedule_workout(self, workout_id, date_iso):
+                calls["scheduled_id"] = workout_id
+                calls["scheduled_date"] = date_iso
+                return {"ok": True}
+
+        class _FakeClient:
+            api = _FakeApi()
+
+        monkeypatch.setattr(
+            adapter_mod.GarminClient, "from_stored",
+            classmethod(lambda cls, creds: _FakeClient()),
+        )
+
+        workout = NormalizedRunWorkout(
+            name="6x800m Test",
+            date="2026-05-15",
+            blocks=(
+                WorkoutBlock(steps=(WorkoutStep(StepKind.WARMUP, Duration.of_time_min(10)),)),
+                WorkoutBlock(repeat=6, steps=(
+                    WorkoutStep(StepKind.WORK, Duration.of_distance_m(800)),
+                    WorkoutStep(StepKind.RECOVERY, Duration.of_time_s(60)),
+                )),
+                WorkoutBlock(steps=(WorkoutStep(StepKind.COOLDOWN, Duration.of_time_min(5)),)),
+            ),
+        )
+
+        src = GarminDataSource()
+        result_id = src.push_run_workout("alice", workout)
+
+        assert result_id == "99887766"
+        # Verify the upload received a Garmin-shaped payload
+        payload = calls["upload_payload"]
+        assert payload["workoutName"] == "6x800m Test"
+        assert payload["sportType"]["sportTypeKey"] == "running"
+        # Repeat group should be in there
+        steps = payload["workoutSegments"][0]["workoutSteps"]
+        repeat_groups = [s for s in steps if s["type"] == "RepeatGroupDTO"]
+        assert len(repeat_groups) == 1
+        assert repeat_groups[0]["numberOfIterations"] == 6
+        # And scheduling fired the workoutId + ISO date
+        assert calls["scheduled_id"] == 99887766
+        assert calls["scheduled_date"] == "2026-05-15"
+
+    def test_push_when_not_logged_in_raises(self, tmp_path: Path, monkeypatch):
+        from stride_core import db as db_mod
+        from stride_core.workout_spec import (
+            Duration, NormalizedRunWorkout, StepKind, WorkoutBlock, WorkoutStep,
+        )
+        monkeypatch.setattr(db_mod, "USER_DATA_DIR", tmp_path)
+
+        from garmin_sync.adapter import GarminNotLoggedInError
+        workout = NormalizedRunWorkout(
+            name="x", date="2026-05-15",
+            blocks=(WorkoutBlock(steps=(
+                WorkoutStep(StepKind.WORK, Duration.of_distance_km(5)),
+            )),),
+        )
+        src = GarminDataSource()
+        with pytest.raises(GarminNotLoggedInError):
+            src.push_run_workout("nobody", workout)
+
+
 class TestGarminCredentialsRoundtrip:
     def test_save_then_load(self, tmp_path: Path):
         creds = GarminCredentials(
