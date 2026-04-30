@@ -2,24 +2,15 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useLocation, Outlet } from 'react-router-dom'
 import { getWeeks, getInbody, triggerSync, formatWeekRange, type WeekSummary } from '../api'
 import { useUser } from '../UserContextValue'
-import { useAuthStore } from '../store/authStore'
+import TopNav from './TopNav'
+import NotificationPopup from './NotificationPopup'
 
 export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, displayName } = useUser()
-  const logout = useAuthStore((s) => s.logout)
-  const [signingOut, setSigningOut] = useState(false)
+  const { user } = useUser()
   const [mobileOpen, setMobileOpen] = useState(false)
 
-  const handleLogout = async () => {
-    setSigningOut(true)
-    try {
-      await logout()
-    } finally {
-      navigate('/login', { replace: true })
-    }
-  }
   const [weeks, setWeeks] = useState<WeekSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
@@ -89,25 +80,16 @@ export default function AppLayout() {
                 <p className="text-xs font-mono text-text-muted tracking-widest mt-0.5">训练中心</p>
               </div>
             </button>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => navigate('/profile')}
-                title="编辑个人资料"
-                className="text-[11px] font-mono text-text-muted px-2 py-1 rounded-lg bg-bg-card border border-border-subtle hover:bg-bg-card-hover hover:text-text-secondary truncate max-w-[90px] cursor-pointer transition-colors"
-              >
-                {displayName}
-              </button>
-              {/* Close button — mobile only */}
-              <button
-                className="sm:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-card transition-colors"
-                onClick={() => setMobileOpen(false)}
-                aria-label="关闭菜单"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+            {/* Close button — mobile only */}
+            <button
+              className="sm:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-card transition-colors"
+              onClick={() => setMobileOpen(false)}
+              aria-label="关闭菜单"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -235,35 +217,16 @@ export default function AppLayout() {
               {syncMsg}
             </p>
           )}
-          <div className="pt-2 mt-2 border-t border-border-subtle">
-            <button
-              onClick={handleLogout}
-              disabled={signingOut}
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-border text-text-muted hover:bg-bg-card hover:text-text-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            >
-              {signingOut ? '登出中...' : '登出'}
-            </button>
-          </div>
         </div>
       </nav>
 
       {/* Main content */}
       <main className="flex-1 ml-0 sm:ml-[260px] min-w-0">
-        {/* Mobile top bar */}
-        <div className="sm:hidden sticky top-0 z-20 flex items-center px-4 h-12 bg-bg-secondary border-b border-border">
-          <button
-            onClick={() => setMobileOpen(true)}
-            className="p-1.5 -ml-1 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-card transition-colors"
-            aria-label="打开菜单"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          <span className="ml-3 text-sm font-bold text-text-primary">STRIDE</span>
-        </div>
+        <TopNav onOpenMobileSidebar={() => setMobileOpen(true)} />
         <Outlet />
       </main>
+
+      <NotificationPopup />
     </div>
   )
 }
