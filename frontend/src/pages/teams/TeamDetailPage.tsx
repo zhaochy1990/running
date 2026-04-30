@@ -204,7 +204,7 @@ export default function TeamDetailPage() {
                   同步中...
                 </span>
               ) : (
-                '同步所有人 COROS 数据'
+                '同步所有人手表数据'
               )}
             </button>
           )}

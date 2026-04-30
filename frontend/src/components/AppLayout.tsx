@@ -209,7 +209,7 @@ export default function AppLayout() {
                 同步中...
               </>
             ) : (
-              '同步 COROS 数据'
+              '同步手表数据'
             )}
           </button>
           {syncMsg && (
