@@ -39,7 +39,7 @@ def run_sync(
     *,
     full: bool = False,
     progress: SyncProgressCallback | None = None,
-    activity_limit: int = 50,
+    activity_limit: int = 200,
 ) -> tuple[int, int]:
     """Sync the user's Garmin data into `db`. Returns `(activities_count, health_count)`.
 
@@ -127,49 +127,79 @@ def _sync_health(
     db: Database,
     *,
     progress: SyncProgressCallback | None,
+    days: int = 28,
 ) -> int:
+    """Pull `days` of daily health from Garmin (default 28 — matches the COROS
+    `analyse/query` window so PMC / fatigue charts have comparable history).
+
+    Each day calls four Garmin endpoints (training_status, user_summary,
+    sleep, hrv, training_readiness). Rows with no usable signal are skipped
+    so they don't shadow real COROS rows in mixed-provider DBs.
+    """
     _emit(progress, phase="health", message="正在同步佳明健康指标", percent=85)
 
     today = date.today()
-    yesterday = today - timedelta(days=1)
     health_count = 0
+    consecutive_failures = 0
 
-    # Daily health rows for today + yesterday (Garmin returns null for
-    # mid-day on today; yesterday is the most reliable single-day snapshot).
-    for d in (yesterday, today):
+    # Walk most-recent → oldest. If we hit a week of consecutive empty days
+    # (e.g. friend's account went idle before that), bail early instead of
+    # burning hundreds of API calls on guaranteed-empty days.
+    for offset in range(days):
+        d = today - timedelta(days=offset)
         date_iso = d.isoformat()
         try:
             ts = client.get_training_status(date_iso)
             us = client.get_user_summary(date_iso)
             sleep = client.get_sleep_data(date_iso)
             hrv = client.get_hrv_data(date_iso)
+            tr = client.get_training_readiness(date_iso)
         except Exception as exc:
             logger.warning("Garmin health fetch failed for %s: %s", date_iso, exc)
+            consecutive_failures += 1
+            if consecutive_failures >= 7:
+                break
             continue
+
         h = daily_health_from_garmin(
             date_iso=date_iso,
             training_status=ts,
             user_summary=us,
             sleep_data=sleep,
+            training_readiness=tr,
         )
-        # Only persist rows where we got at least one signal — avoid
-        # writing rows full of NULLs that would shadow a real COROS-source
-        # row in mixed-provider databases.
+        wrote_anything = False
         if (h.ati or h.cti or h.rhr or h.training_load_ratio
-                or h.sleep_total_s or h.body_battery_high) is not None:
+                or h.sleep_total_s or h.body_battery_high
+                or h.fatigue) is not None:
             db.upsert_daily_health(h, provider="garmin")
             health_count += 1
-        # Persist HRV detail separately (its own table, lighter check)
+            wrote_anything = True
         hrv_row = daily_hrv_from_garmin(date_iso, hrv)
         if hrv_row.last_night_avg is not None or hrv_row.weekly_avg is not None:
             db.upsert_daily_hrv(hrv_row, provider="garmin")
             health_count += 1
+            wrote_anything = True
+
+        if wrote_anything:
+            consecutive_failures = 0
+            _emit(
+                progress,
+                phase="health",
+                message=f"佳明健康：已同步 {date_iso}",
+                percent=85 + min(10, health_count // 4),
+                synced_health=health_count,
+            )
+        else:
+            consecutive_failures += 1
+            if consecutive_failures >= 7:
+                break
 
     # Dashboard singleton — pull most-recent metrics
     try:
         ts_today = client.get_training_status(today.isoformat())
         us_today = client.get_user_summary(today.isoformat())
-        hrv = client.get_hrv_data(yesterday.isoformat())
+        hrv = client.get_hrv_data((today - timedelta(days=1)).isoformat())
         lt = client.get_lactate_threshold()
         rp = client.get_race_predictions()
         dashboard = dashboard_from_garmin(

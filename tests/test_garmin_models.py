@@ -237,11 +237,31 @@ class TestDailyHealthBuilder:
         assert h.training_load_state == "OPTIMAL"
         assert h.rhr == 49
 
-    def test_fatigue_is_none(self):
-        # Garmin has no direct equivalent of COROS tiredRate.
+    def test_fatigue_from_training_readiness(self):
+        # Garmin's Training Readiness inverts cleanly to COROS-style fatigue.
+        # Score 70 → fatigue 30 (well-recovered side of the scale).
         h = daily_health_from_garmin(
             date_iso="2026-04-30",
             training_status=_sample_training_status(),
+            user_summary={"restingHeartRate": 49},
+            training_readiness=[{"score": 70, "calendarDate": "2026-04-30"}],
+        )
+        assert h.fatigue == 30.0
+
+    def test_fatigue_falls_back_to_tsb_when_no_training_readiness(self):
+        # Without TR, derive fatigue from TSB (CTI - ATI). Sample fixture:
+        # ATI=856, CTI=905 → TSB=49 → 50 - 49*0.5 = 25.5 (well rested).
+        h = daily_health_from_garmin(
+            date_iso="2026-04-30",
+            training_status=_sample_training_status(),
+            user_summary={"restingHeartRate": 49},
+        )
+        assert h.fatigue == 25.5
+
+    def test_fatigue_none_when_no_signals(self):
+        h = daily_health_from_garmin(
+            date_iso="2026-04-30",
+            training_status=None,
             user_summary={"restingHeartRate": 49},
         )
         assert h.fatigue is None

@@ -142,6 +142,22 @@ class GarminClient:
         except Exception:
             return {}
 
+    def get_training_readiness(self, date_iso: str) -> Any:
+        """Return Garmin Training Readiness for `date_iso` (0-100, higher=better).
+
+        Acts as our COROS-`tiredRate` substitute — Garmin's TR factors in
+        sleep, recent HRV, stress and recovery time, so `100 - score` lines
+        up reasonably with COROS's fatigue scale where higher = more tired.
+
+        Garmin returns a list of entries per day (one per measurement window);
+        callers receive the raw payload and let `daily_health_from_garmin`
+        decide which entry to use.
+        """
+        try:
+            return self._api.get_training_readiness(date_iso) or []
+        except Exception:
+            return []
+
     def get_sleep_data(self, date_iso: str) -> dict[str, Any]:
         try:
             return self._api.get_sleep_data(date_iso) or {}
