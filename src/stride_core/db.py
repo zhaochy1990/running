@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS activities (
     device          TEXT,
     feel_type       INTEGER,
     sport_note      TEXT,
+    provider        TEXT NOT NULL DEFAULT 'coros',
     synced_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -119,7 +120,8 @@ CREATE TABLE IF NOT EXISTS daily_health (
     duration_s      REAL,
     training_load_ratio REAL,
     training_load_state TEXT,
-    fatigue         REAL
+    fatigue         REAL,
+    provider        TEXT NOT NULL DEFAULT 'coros'
 );
 
 CREATE TABLE IF NOT EXISTS dashboard (
@@ -138,6 +140,7 @@ CREATE TABLE IF NOT EXISTS dashboard (
     hrv_normal_high     REAL,
     weekly_distance_m   REAL,
     weekly_duration_s   REAL,
+    provider            TEXT NOT NULL DEFAULT 'coros',
     updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -225,6 +228,24 @@ CREATE TABLE IF NOT EXISTS activity_ability (
     contribution    TEXT,
     computed_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS scheduled_workout (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    date                  TEXT NOT NULL,                          -- ISO YYYY-MM-DD
+    kind                  TEXT NOT NULL,                          -- 'run' | 'strength'
+    name                  TEXT NOT NULL,                          -- '[STRIDE] Easy 10K'
+    spec_json             TEXT NOT NULL,                          -- NormalizedRunWorkout / NormalizedStrengthWorkout JSON
+    status                TEXT NOT NULL DEFAULT 'draft',          -- 'draft' | 'pushed' | 'completed' | 'skipped'
+    provider              TEXT,                                   -- after push: 'coros' | 'garmin'
+    provider_workout_id   TEXT,                                   -- after push: watch-side ID
+    pushed_at             TEXT,
+    completed_label_id    TEXT REFERENCES activities(label_id),
+    note                  TEXT,
+    created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_workout_date ON scheduled_workout(date);
+CREATE INDEX IF NOT EXISTS idx_scheduled_workout_status ON scheduled_workout(status);
 """
 
 
@@ -328,6 +349,13 @@ class Database:
         _add("weekly_feedback", "generated_at", "TEXT")
         _add("weekly_plan", "generated_by", "TEXT")
         _add("weekly_plan", "generated_at", "TEXT")
+        # v1 multi-provider migration: tag every existing row with the
+        # current sole provider so multi-provider routing works without a
+        # backfill pass. Defaults to 'coros' since that's the only existing
+        # data source; a future Garmin user starts with these rows empty.
+        _add("activities", "provider", "TEXT NOT NULL DEFAULT 'coros'")
+        _add("daily_health", "provider", "TEXT NOT NULL DEFAULT 'coros'")
+        _add("dashboard", "provider", "TEXT NOT NULL DEFAULT 'coros'")
 
     def close(self) -> None:
         self._conn.close()
@@ -340,7 +368,7 @@ class Database:
 
     # --- Activities ---
 
-    def upsert_activity(self, a: ActivityDetail) -> None:
+    def upsert_activity(self, a: ActivityDetail, *, provider: str = "coros") -> None:
         self._conn.execute(
             """INSERT OR REPLACE INTO activities
             (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
@@ -348,8 +376,8 @@ class Database:
              avg_hr, max_hr, avg_cadence, max_cadence, avg_power, max_power,
              avg_step_len_cm, ascent_m, descent_m, calories_kcal,
              aerobic_effect, anaerobic_effect, training_load, vo2max, performance, train_type,
-             temperature, humidity, feels_like, wind_speed, feel_type, sport_note)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             temperature, humidity, feels_like, wind_speed, feel_type, sport_note, provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
              a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
              a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
@@ -358,7 +386,7 @@ class Database:
              a.aerobic_effect, a.anaerobic_effect, a.training_load,
              a.vo2max, a.performance, a.train_type,
              a.temperature, a.humidity, a.feels_like, a.wind_speed,
-             a.feel_type, a.sport_note),
+             a.feel_type, a.sport_note, provider),
         )
         # Upsert child records
         for lap in a.laps:
@@ -420,30 +448,31 @@ class Database:
 
     # --- Health ---
 
-    def upsert_daily_health(self, h: DailyHealth) -> None:
+    def upsert_daily_health(self, h: DailyHealth, *, provider: str = "coros") -> None:
         self._conn.execute(
             """INSERT OR REPLACE INTO daily_health
-            (date, ati, cti, rhr, distance_m, duration_s, training_load_ratio, training_load_state, fatigue)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (date, ati, cti, rhr, distance_m, duration_s, training_load_ratio,
+             training_load_state, fatigue, provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (h.date, h.ati, h.cti, h.rhr, h.distance_m, h.duration_s,
-             h.training_load_ratio, h.training_load_state, h.fatigue),
+             h.training_load_ratio, h.training_load_state, h.fatigue, provider),
         )
         self._conn.commit()
 
-    def upsert_dashboard(self, d: Dashboard) -> None:
+    def upsert_dashboard(self, d: Dashboard, *, provider: str = "coros") -> None:
         self._conn.execute(
             """INSERT OR REPLACE INTO dashboard
             (id, running_level, aerobic_score, lactate_threshold_score,
              anaerobic_endurance_score, anaerobic_capacity_score,
              rhr, threshold_hr, threshold_pace_s_km, recovery_pct,
              avg_sleep_hrv, hrv_normal_low, hrv_normal_high,
-             weekly_distance_m, weekly_duration_s)
-            VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             weekly_distance_m, weekly_duration_s, provider)
+            VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (d.running_level, d.aerobic_score, d.lactate_threshold_score,
              d.anaerobic_endurance_score, d.anaerobic_capacity_score,
              d.rhr, d.threshold_hr, d.threshold_pace_s_km, d.recovery_pct,
              d.avg_sleep_hrv, d.hrv_normal_low, d.hrv_normal_high,
-             d.weekly_distance_m, d.weekly_duration_s),
+             d.weekly_distance_m, d.weekly_duration_s, provider),
         )
         for pred in d.race_predictions:
             self._conn.execute(
@@ -664,6 +693,142 @@ class Database:
                FROM activity_ability WHERE label_id = ?""",
             (label_id,),
         ).fetchone()
+
+    # --- Scheduled workouts (provider-agnostic structured calendar) ---
+    #
+    # Authored locally as `NormalizedRunWorkout` / `NormalizedStrengthWorkout`,
+    # serialized as JSON in `spec_json`. The lifecycle is:
+    #   draft  → user is editing
+    #   pushed → adapter has translated + sent to the watch (provider/id stamped)
+    #   completed → matched to a synced activity (label_id stamped)
+    #   skipped → user explicitly cancelled / missed
+    # The DB doesn't enforce transitions; callers move state forward via the
+    # `mark_*` helpers below.
+
+    def create_scheduled_workout(
+        self,
+        *,
+        date: str,
+        kind: str,
+        name: str,
+        spec_json: str,
+        status: str = "draft",
+        note: str | None = None,
+    ) -> int:
+        cur = self._conn.execute(
+            """INSERT INTO scheduled_workout
+               (date, kind, name, spec_json, status, note)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (date, kind, name, spec_json, status, note),
+        )
+        self._conn.commit()
+        return cur.lastrowid
+
+    def get_scheduled_workout(self, workout_id: int) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM scheduled_workout WHERE id = ?", (workout_id,)
+        ).fetchone()
+
+    def list_scheduled_workouts(
+        self,
+        *,
+        start: str | None = None,
+        end: str | None = None,
+        kind: str | None = None,
+        status: str | None = None,
+    ) -> list[sqlite3.Row]:
+        clauses: list[str] = []
+        params: list = []
+        if start is not None:
+            clauses.append("date >= ?")
+            params.append(start)
+        if end is not None:
+            clauses.append("date <= ?")
+            params.append(end)
+        if kind is not None:
+            clauses.append("kind = ?")
+            params.append(kind)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        return self._conn.execute(
+            f"SELECT * FROM scheduled_workout {where} ORDER BY date, id",
+            tuple(params),
+        ).fetchall()
+
+    def update_scheduled_workout_spec(
+        self,
+        workout_id: int,
+        *,
+        spec_json: str | None = None,
+        name: str | None = None,
+        note: str | None = None,
+    ) -> None:
+        sets: list[str] = []
+        params: list = []
+        if spec_json is not None:
+            sets.append("spec_json = ?")
+            params.append(spec_json)
+        if name is not None:
+            sets.append("name = ?")
+            params.append(name)
+        if note is not None:
+            sets.append("note = ?")
+            params.append(note)
+        if not sets:
+            return
+        sets.append("updated_at = datetime('now')")
+        params.append(workout_id)
+        self._conn.execute(
+            f"UPDATE scheduled_workout SET {', '.join(sets)} WHERE id = ?",
+            tuple(params),
+        )
+        self._conn.commit()
+
+    def mark_scheduled_workout_pushed(
+        self, workout_id: int, *, provider: str, provider_workout_id: str
+    ) -> None:
+        self._conn.execute(
+            """UPDATE scheduled_workout
+               SET status = 'pushed',
+                   provider = ?,
+                   provider_workout_id = ?,
+                   pushed_at = datetime('now'),
+                   updated_at = datetime('now')
+               WHERE id = ?""",
+            (provider, provider_workout_id, workout_id),
+        )
+        self._conn.commit()
+
+    def mark_scheduled_workout_completed(
+        self, workout_id: int, *, label_id: str
+    ) -> None:
+        self._conn.execute(
+            """UPDATE scheduled_workout
+               SET status = 'completed',
+                   completed_label_id = ?,
+                   updated_at = datetime('now')
+               WHERE id = ?""",
+            (label_id, workout_id),
+        )
+        self._conn.commit()
+
+    def mark_scheduled_workout_skipped(self, workout_id: int) -> None:
+        self._conn.execute(
+            """UPDATE scheduled_workout
+               SET status = 'skipped', updated_at = datetime('now')
+               WHERE id = ?""",
+            (workout_id,),
+        )
+        self._conn.commit()
+
+    def delete_scheduled_workout(self, workout_id: int) -> bool:
+        cur = self._conn.execute(
+            "DELETE FROM scheduled_workout WHERE id = ?", (workout_id,)
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
 
     # --- Query helpers for analysis ---
 

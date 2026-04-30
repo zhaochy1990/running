@@ -23,3 +23,5 @@ data/coach.json
 .playwright-mcp/
 frontend/.env.local
 frontend/.env.*.local
+evaluation/garmin/
+

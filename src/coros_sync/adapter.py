@@ -8,7 +8,15 @@ from __future__ import annotations
 
 from stride_core.db import Database
 from stride_core.models import ActivityDetail
-from stride_core.source import SyncProgressCallback, SyncResult
+from stride_core.source import (
+    BaseDataSource,
+    Capability,
+    LoginCredentials,
+    LoginResult,
+    ProviderInfo,
+    SyncProgressCallback,
+    SyncResult,
+)
 
 from .auth import Credentials
 from .client import CorosClient
@@ -23,13 +31,48 @@ class ActivityNotFoundError(LookupError):
     """Raised when resync_activity is called for a label_id not in the DB."""
 
 
-class CorosDataSource:
-    """COROS adapter — implements stride_core.source.DataSource."""
+# Capabilities declared here describe what is wired through the DataSource
+# interface today. COROS the *device* supports run/strength push and the
+# exercise catalog, but those paths still go through coros_sync.workout
+# directly from the CLI; declaring them here would lie to capability-checking
+# callers. Capabilities will be added as the adapter rewrite (follow-up task)
+# wires each method to NormalizedRunWorkout / NormalizedStrengthWorkout.
+_COROS_INFO = ProviderInfo(
+    name="coros",
+    display_name="高驰",
+    regions=("global", "cn", "eu"),
+    capabilities=frozenset(),
+)
+
+
+class CorosDataSource(BaseDataSource):
+    """COROS adapter — implements stride_core.source.DataSource.
+
+    Currently inherits default `FeatureNotSupported` raises for the workout-push
+    and exercise-catalog methods even though COROS supports them; the concrete
+    implementations are wired in as part of the abstraction-layer rollout
+    (follow-up task — adapter rewrite to consume `NormalizedRunWorkout` etc.).
+    Until then, push paths continue to go through `coros_sync.workout` directly
+    from the CLI; routes do not call them.
+    """
 
     name: str = "coros"
 
     def __init__(self, *, jobs: int = 4) -> None:
         self._jobs = jobs
+
+    @property
+    def info(self) -> ProviderInfo:
+        return _COROS_INFO
+
+    def login(self, user: str, creds: LoginCredentials) -> LoginResult:
+        # Login is currently implemented in the onboarding route directly
+        # (uses CorosClient.login). Surfacing it through DataSource is a
+        # follow-up — for now, raise so callers don't silently no-op.
+        raise NotImplementedError(
+            "CorosDataSource.login is not wired yet — use coros_sync.client.CorosClient "
+            "directly until the onboarding route is migrated to DataSource.login."
+        )
 
     def is_logged_in(self, user: str) -> bool:
         return Credentials.load(user=user).is_logged_in
