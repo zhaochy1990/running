@@ -342,7 +342,7 @@ export default function TeamDetailPage() {
                         {r.status === 'synced'
                           ? '已同步'
                           : r.status === 'skipped_no_auth'
-                          ? '未登录 COROS'
+                          ? '未登录手表'
                           : '失败'}
                       </span>
                     </div>

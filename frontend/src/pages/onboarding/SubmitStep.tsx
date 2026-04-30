@@ -17,7 +17,7 @@ const PROGRESS_STEPS = [
   },
   {
     title: '扫描训练',
-    description: '查找 COROS 训练记录',
+    description: '查找手表训练记录',
     phases: ['activities_scan'],
   },
   {
@@ -278,7 +278,7 @@ function InitializationProgress({
           <div>
             <p className="text-sm font-medium text-text-primary">{message}</p>
             <p className="text-xs text-text-muted mt-1">
-              {failed ? '请检查 COROS 登录状态或网络后重试。' : '请保持页面打开，同步会在后台继续执行。'}
+              {failed ? '请检查手表账号登录状态或网络后重试。' : '请保持页面打开，同步会在后台继续执行。'}
             </p>
           </div>
           {!failed && (

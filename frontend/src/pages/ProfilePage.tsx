@@ -425,8 +425,7 @@ export default function ProfilePage() {
       <section className="mt-10 rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
         <h3 className="text-sm font-semibold text-red-400">危险区：注销账号</h3>
         <p className="mt-2 text-sm leading-6 text-text-secondary">
-          注销会永久删除你的账号、登录信息、刷新令牌、团队成员关系，以及本地训练数据、COROS
-          凭据与配置、个人资料、健康/InBody/能力数据和生成的总结。该操作无法恢复。
+          注销会永久删除你的账号、登录信息、刷新令牌、团队成员关系，以及本地训练数据、手表凭据与配置、个人资料、健康/InBody/能力数据和生成的总结。该操作无法恢复。
         </p>
         <p className="mt-2 text-sm text-text-muted">
           如果你仍然是某个团队的队长，需要先在团队页面转让队长或解散团队。
