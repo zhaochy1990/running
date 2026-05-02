@@ -267,6 +267,45 @@ CREATE TABLE IF NOT EXISTS scheduled_workout (
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_workout_date ON scheduled_workout(date);
 CREATE INDEX IF NOT EXISTS idx_scheduled_workout_status ON scheduled_workout(status);
+
+-- Structured weekly-plan layer (derived from weekly_plan.content_md via LLM
+-- reverse parsing). Date-keyed; session_index disambiguates double-session
+-- days. spec_json carries either a NormalizedRunWorkout or
+-- NormalizedStrengthWorkout payload (the same one the push pipeline uses) —
+-- or NULL for aspirational sessions / rest / cross / note.
+CREATE TABLE IF NOT EXISTS planned_session (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    week_folder           TEXT NOT NULL,                          -- '2026-04-20_04-26(W0)'
+    date                  TEXT NOT NULL,                          -- ISO YYYY-MM-DD
+    session_index         INTEGER NOT NULL DEFAULT 0,
+    kind                  TEXT NOT NULL,                          -- 'run' | 'strength' | 'rest' | 'cross' | 'note'
+    summary               TEXT NOT NULL,
+    spec_json             TEXT,                                   -- nullable; null = aspirational / non-pushable
+    notes_md              TEXT,
+    total_distance_m      REAL,
+    total_duration_s      REAL,
+    scheduled_workout_id  INTEGER REFERENCES scheduled_workout(id),
+    created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(date, session_index)
+);
+CREATE INDEX IF NOT EXISTS idx_planned_session_week ON planned_session(week_folder);
+CREATE INDEX IF NOT EXISTS idx_planned_session_date ON planned_session(date);
+
+CREATE TABLE IF NOT EXISTS planned_nutrition (
+    date            TEXT PRIMARY KEY,                             -- ISO YYYY-MM-DD
+    week_folder     TEXT NOT NULL,
+    kcal_target     REAL,
+    carbs_g         REAL,
+    protein_g       REAL,
+    fat_g           REAL,
+    water_ml        REAL,
+    meals_json      TEXT,                                         -- JSON list[Meal]
+    notes_md        TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_planned_nutrition_week ON planned_nutrition(week_folder);
 """
 
 
@@ -370,6 +409,12 @@ class Database:
         _add("weekly_feedback", "generated_at", "TEXT")
         _add("weekly_plan", "generated_by", "TEXT")
         _add("weekly_plan", "generated_at", "TEXT")
+        # Structured-plan layer status. Tracks whether the JSON sibling
+        # (planned_session + planned_nutrition) is in sync with content_md.
+        # 'fresh' / 'stale' / 'parse_failed' / 'backfilled' / 'none' / NULL.
+        _add("weekly_plan", "structured_status", "TEXT")
+        _add("weekly_plan", "structured_parsed_at", "TEXT")
+        _add("weekly_plan", "parsed_from_md_hash", "TEXT")
         # v1 multi-provider migration: tag every existing row with the
         # current sole provider so multi-provider routing works without a
         # backfill pass. Defaults to 'coros' since that's the only existing
@@ -635,13 +680,15 @@ class Database:
 
     def get_weekly_plan_row(self, week: str) -> sqlite3.Row | None:
         return self._conn.execute(
-            "SELECT week, content_md, generated_by, generated_at, created_at, updated_at "
+            "SELECT week, content_md, generated_by, generated_at, created_at, updated_at, "
+            "       structured_status, structured_parsed_at, parsed_from_md_hash "
             "FROM weekly_plan WHERE week = ?",
             (week,),
         ).fetchone()
 
     def upsert_weekly_plan(
         self, week: str, content_md: str, *, generated_by: str | None = None,
+        commit: bool = True,
     ) -> None:
         self._conn.execute(
             """INSERT INTO weekly_plan
@@ -654,7 +701,8 @@ class Database:
                    updated_at   = excluded.updated_at""",
             (week, content_md, generated_by),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     # --- InBody body-composition scans ---
 
@@ -903,6 +951,168 @@ class Database:
         )
         self._conn.commit()
         return cur.rowcount > 0
+
+    # --- Structured weekly plan (planned_session / planned_nutrition) ---
+    #
+    # The markdown in weekly_plan.content_md is the canonical source of truth.
+    # This layer is a derived JSON cache produced by the LLM reverse parser.
+    # Helpers here are intentionally idempotent — every upsert wipes the
+    # existing rows for the affected week before reinserting, so a re-parse
+    # never leaves stale rows behind.
+
+    def upsert_planned_sessions(
+        self, week_folder: str, sessions: list, *, commit: bool = True,
+    ) -> list[int]:
+        """Replace all planned_session rows for a week.
+
+        ``sessions`` is a list of ``stride_core.plan_spec.PlannedSession``.
+        Returns the list of newly-assigned row ids in input order so callers
+        can stitch them into other tables (e.g. push pipeline).
+        Pass ``commit=False`` to defer the commit to the caller (used by
+        ``apply_weekly_plan`` so all writes land atomically inside one
+        ``with db._conn:`` block).
+        """
+        import json as _json
+
+        cur = self._conn.execute(
+            "DELETE FROM planned_session WHERE week_folder = ?", (week_folder,)
+        )
+        ids: list[int] = []
+        for s in sessions:
+            spec_json = _json.dumps(s.spec.to_dict()) if s.spec is not None else None
+            row = self._conn.execute(
+                """INSERT INTO planned_session
+                (week_folder, date, session_index, kind, summary, spec_json,
+                 notes_md, total_distance_m, total_duration_s,
+                 scheduled_workout_id, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?, datetime('now'))""",
+                (
+                    week_folder, s.date, s.session_index, s.kind.value, s.summary,
+                    spec_json, s.notes_md, s.total_distance_m, s.total_duration_s,
+                    s.scheduled_workout_id,
+                ),
+            )
+            ids.append(row.lastrowid)
+        if commit:
+            self._conn.commit()
+        _ = cur  # silence unused-var; kept for clarity that DELETE precedes INSERTs
+        return ids
+
+    def upsert_planned_nutrition(
+        self, week_folder: str, nutrition: list, *, commit: bool = True,
+    ) -> None:
+        """Replace all planned_nutrition rows for a week.
+
+        ``nutrition`` is a list of ``stride_core.plan_spec.PlannedNutrition``.
+        Pass ``commit=False`` to defer the commit to the caller.
+        """
+        import json as _json
+
+        self._conn.execute(
+            "DELETE FROM planned_nutrition WHERE week_folder = ?", (week_folder,)
+        )
+        for n in nutrition:
+            meals_json = _json.dumps([m.to_dict() for m in n.meals])
+            self._conn.execute(
+                """INSERT INTO planned_nutrition
+                (date, week_folder, kcal_target, carbs_g, protein_g, fat_g,
+                 water_ml, meals_json, notes_md, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?, datetime('now'))""",
+                (
+                    n.date, week_folder, n.kcal_target, n.carbs_g, n.protein_g,
+                    n.fat_g, n.water_ml, meals_json, n.notes_md,
+                ),
+            )
+        if commit:
+            self._conn.commit()
+
+    def get_planned_sessions(
+        self, *, date_from: str | None = None, date_to: str | None = None,
+        week_folder: str | None = None,
+    ) -> list[sqlite3.Row]:
+        clauses: list[str] = []
+        params: list = []
+        if week_folder is not None:
+            clauses.append("week_folder = ?")
+            params.append(week_folder)
+        if date_from is not None:
+            clauses.append("date >= ?")
+            params.append(date_from)
+        if date_to is not None:
+            clauses.append("date <= ?")
+            params.append(date_to)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        return self._conn.execute(
+            f"SELECT * FROM planned_session {where} ORDER BY date, session_index, id",
+            tuple(params),
+        ).fetchall()
+
+    def get_planned_nutrition(
+        self, *, date_from: str | None = None, date_to: str | None = None,
+        week_folder: str | None = None,
+    ) -> list[sqlite3.Row]:
+        clauses: list[str] = []
+        params: list = []
+        if week_folder is not None:
+            clauses.append("week_folder = ?")
+            params.append(week_folder)
+        if date_from is not None:
+            clauses.append("date >= ?")
+            params.append(date_from)
+        if date_to is not None:
+            clauses.append("date <= ?")
+            params.append(date_to)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        return self._conn.execute(
+            f"SELECT * FROM planned_nutrition {where} ORDER BY date",
+            tuple(params),
+        ).fetchall()
+
+    def set_weekly_plan_structured_status(
+        self, week: str, *, status: str, parsed_from_md_hash: str | None = None,
+        commit: bool = True,
+    ) -> None:
+        """Record the structured-layer state on the parent weekly_plan row.
+        Pass ``commit=False`` to defer the commit to the caller.
+        """
+        self._conn.execute(
+            """UPDATE weekly_plan
+               SET structured_status = ?,
+                   structured_parsed_at = datetime('now'),
+                   parsed_from_md_hash = COALESCE(?, parsed_from_md_hash),
+                   updated_at = datetime('now')
+               WHERE week = ?""",
+            (status, parsed_from_md_hash, week),
+        )
+        if commit:
+            self._conn.commit()
+
+    def mark_plan_parse_failed(self, week: str) -> None:
+        self.set_weekly_plan_structured_status(week, status="parse_failed")
+
+    def set_planned_session_scheduled_workout(
+        self, planned_session_id: int, scheduled_workout_id: int,
+    ) -> None:
+        self._conn.execute(
+            """UPDATE planned_session
+               SET scheduled_workout_id = ?, updated_at = datetime('now')
+               WHERE id = ?""",
+            (scheduled_workout_id, planned_session_id),
+        )
+        self._conn.commit()
+
+    def get_planned_session(self, planned_session_id: int) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM planned_session WHERE id = ?", (planned_session_id,)
+        ).fetchone()
+
+    def get_planned_session_by_date_index(
+        self, date: str, session_index: int,
+    ) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM planned_session WHERE date = ? AND session_index = ?",
+            (date, session_index),
+        ).fetchone()
 
     # --- Query helpers for analysis ---
 
