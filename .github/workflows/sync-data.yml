@@ -1,5 +1,16 @@
 name: Sync Training Data
 
+# Required GitHub Actions secrets (configured in repo settings):
+#   STRIDE_PROD_URL          — base URL of the deployed stride-app, e.g.
+#                              https://stride-app.<region>.azurecontainerapps.io
+#   STRIDE_INTERNAL_TOKEN    — random 32+ char string. Same value must be set on
+#                              the Azure Container App as STRIDE_INTERNAL_TOKEN
+#                              env var (e.g. via `az containerapp update
+#                              --set-env-vars STRIDE_INTERNAL_TOKEN=...`).
+# These two power the structured-plan reparse webhook (Step 4 of the
+# structured-training-plan rollout). They are optional — if either secret is
+# unset the reparse step skips silently and the workflow stays green.
+
 on:
   push:
     branches: [master]
@@ -22,6 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need history to diff HEAD~1 against HEAD for changed plan.md detection.
+          fetch-depth: 2
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -167,3 +181,57 @@ jobs:
           done
 
           echo "==> Data sync complete"
+
+      - name: Trigger structured-plan reparse for changed plan.md files
+        # Best-effort: never fails the workflow. The structured layer is a
+        # derived cache — markdown is canonical and reaches prod via the
+        # storage upload step above regardless of webhook outcome.
+        continue-on-error: true
+        env:
+          STRIDE_PROD_URL: ${{ secrets.STRIDE_PROD_URL }}
+          STRIDE_INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+        run: |
+          if [ -z "$STRIDE_PROD_URL" ] || [ -z "$STRIDE_INTERNAL_TOKEN" ]; then
+            echo "STRIDE_PROD_URL or STRIDE_INTERNAL_TOKEN not configured — skipping reparse webhook"
+            echo "## structured-plan reparse" >> "$GITHUB_STEP_SUMMARY"
+            echo "_skipped: STRIDE_PROD_URL or STRIDE_INTERNAL_TOKEN not configured in repo secrets._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Diff against the previous commit to find which plan.md files
+          # actually changed. workflow_dispatch / first-push fall back to
+          # HEAD only — list will be empty, step is a no-op.
+          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+            CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^data/[^/]+/logs/[^/]+/plan\.md$' || true)
+          else
+            CHANGED=""
+          fi
+
+          if [ -z "$CHANGED" ]; then
+            echo "No plan.md changes — nothing to reparse"
+            echo "## structured-plan reparse" >> "$GITHUB_STEP_SUMMARY"
+            echo "_no plan.md changes in this push._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo "## structured-plan reparse" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| user | folder | http | response |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|------|----------|" >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS= read -r path; do
+            # path is like  data/<user>/logs/<folder>/plan.md
+            user=$(echo "$path" | awk -F/ '{print $2}')
+            folder=$(echo "$path" | awk -F/ '{print $4}')
+            user_enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$user")
+            folder_enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$folder")
+
+            echo "==> POST /internal/plan/reparse user=$user folder=$folder"
+            response=$(curl -sS -o /tmp/reparse.body -w "%{http_code}" \
+              -X POST \
+              -H "X-Internal-Token: $STRIDE_INTERNAL_TOKEN" \
+              "$STRIDE_PROD_URL/internal/plan/reparse?user=$user_enc&folder=$folder_enc" || echo "000")
+            body=$(head -c 500 /tmp/reparse.body | tr '\n' ' ')
+            echo "  status=$response body=$body"
+            echo "| $user | $folder | $response | $body |" >> "$GITHUB_STEP_SUMMARY"
+          done <<< "$CHANGED"

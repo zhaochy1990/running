@@ -419,6 +419,11 @@ Pipeline: Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy 
 
 **DB-row content** (e.g. `activity_commentary`) is NOT covered by `sync-data.yml` since it lives inside SQLite, not markdown. Use `coros-sync -P <user> commentary push <label_id> --url $STRIDE_PROD_URL` to sync a row, which POSTs to `/api/{user}/activities/{label_id}/commentary` on the server.
 
+**Structured-plan reparse webhook**: after every `data/*/logs/*/plan.md` push, `sync-data.yml` calls `POST /internal/plan/reparse?user=&folder=` with header `X-Internal-Token: $STRIDE_INTERNAL_TOKEN` so the server re-runs the LLM reverse parser and refreshes the `planned_session` / `planned_nutrition` cache. Two pieces have to be configured for this to work:
+
+- GitHub Actions secrets: `STRIDE_PROD_URL` (e.g. `https://stride-app.<region>.azurecontainerapps.io`) and `STRIDE_INTERNAL_TOKEN` (random 32+ char string).
+- Azure Container App env var: same `STRIDE_INTERNAL_TOKEN` value, e.g. `az containerapp update --name stride-app --resource-group rg-running-prod --set-env-vars STRIDE_INTERNAL_TOKEN=<value>`. With this unset on the server side the route 401s; with both unset the workflow step skips silently.
+
 ### Infrastructure
 
 - **Container**: Azure Container Apps (`stride-app` in `rg-running-prod`)
