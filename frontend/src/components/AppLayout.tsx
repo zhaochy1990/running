@@ -26,10 +26,10 @@ export default function AppLayout() {
     setMobileOpen(false)
   }, [location.pathname])
 
-  const handleSync = (full: boolean = false) => {
+  const handleSync = () => {
     setSyncing(true)
     setSyncMsg(null)
-    triggerSync(user, full)
+    triggerSync(user)
       .then((res) => {
         setSyncMsg(res.success ? '同步完成' : `同步失败: ${res.error}`)
         if (res.success) {
@@ -199,7 +199,7 @@ export default function AppLayout() {
             </button>
           )}
           <button
-            onClick={() => handleSync(false)}
+            onClick={handleSync}
             disabled={syncing}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border border-accent-green/30 text-accent-green hover:bg-accent-green/10 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
@@ -211,14 +211,6 @@ export default function AppLayout() {
             ) : (
               '同步手表数据'
             )}
-          </button>
-          <button
-            onClick={() => handleSync(true)}
-            disabled={syncing}
-            className="w-full text-[10px] font-mono text-text-muted hover:text-accent-green disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title="拉取最近 180 天的训练记录，用于补全较老的活动（首次绑表后建议执行一次）"
-          >
-            深度同步 (180 天)
           </button>
           {syncMsg && (
             <p className={`text-xs font-mono text-center ${syncMsg.includes('失败') ? 'text-accent-red' : 'text-accent-green'}`}>
