@@ -701,3 +701,146 @@ def delete_workout_cmd(ctx: click.Context, date: str) -> None:
                     name = bar.get("name", "")
                     break
             console.print(f"[green]Deleted workout on {date} (idInPlan={entity.get('idInPlan')})[/green]")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# plan — structured-plan reverse parser (one-shot backfill)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@cli.group()
+def plan() -> None:
+    """Structured weekly-plan utilities (reverse parser, backfill)."""
+
+
+@plan.command("reparse")
+@click.option("--all", "all_weeks", is_flag=True,
+              help="Reparse every week folder under data/{user}/logs/.")
+@click.option("--folder", "folder", default=None,
+              help="Single week folder (e.g. 2026-04-20_04-26(W0)).")
+@click.option("--dry-run", is_flag=True,
+              help="List candidate folders only; do not invoke the LLM or write the DB.")
+@click.pass_context
+def plan_reparse_cmd(
+    ctx: click.Context, all_weeks: bool, folder: str | None, dry_run: bool,
+) -> None:
+    """Re-parse historical plan.md files into the structured layer.
+
+    Backfilled rows land with ``structured_status='backfilled'`` (NOT ``fresh``)
+    so the push guard in ``POST /plan/sessions/.../push`` keeps them disabled
+    until a human reviews them. The 24+ weeks of historical markdown are
+    free-form Chinese text; the LLM has been observed to hallucinate
+    interval structures (e.g. interpreting "6×1km @ 4:00" as 6 separate
+    1-km blocks instead of a RepeatGroup).
+
+    Failure tolerance: if the LLM returns no JSON or invalid JSON for a
+    given week, the row is marked ``parse_failed`` and the markdown remains
+    visible — the calendar tab is unavailable for that week, but nothing
+    else regresses.
+
+    Example:
+
+      coros-sync -P zhaochaoyi plan reparse --all
+      coros-sync -P zhaochaoyi plan reparse --folder 2026-04-20_04-26\\(W0\\)
+    """
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+    if all_weeks == bool(folder):
+        console.print("[red]Pass exactly one of --all or --folder[/red]")
+        raise SystemExit(1)
+
+    user_logs = USER_DATA_DIR / profile / "logs"
+    if not user_logs.exists():
+        console.print(f"[red]No logs directory for user {profile} at {user_logs}[/red]")
+        raise SystemExit(1)
+
+    if all_weeks:
+        candidates = sorted(p.name for p in user_logs.iterdir() if p.is_dir())
+    else:
+        candidates = [folder]
+
+    # Filter to those that actually have a plan.md
+    rows: list[tuple[str, Path]] = []
+    for f in candidates:
+        path = user_logs / f / "plan.md"
+        if path.exists():
+            rows.append((f, path))
+        else:
+            console.print(f"[yellow]skip {f!r}: no plan.md[/yellow]")
+
+    if dry_run:
+        table = Table(title=f"Plan reparse candidates for {profile}")
+        table.add_column("folder")
+        table.add_column("plan.md path")
+        for f, path in rows:
+            table.add_row(f, str(path))
+        console.print(table)
+        console.print(f"[cyan]Dry-run: {len(rows)} candidates[/cyan]")
+        return
+
+    # Local imports — keep the heavy LLM stack lazy so unrelated CLI commands
+    # (login/sync/etc.) start fast.
+    from stride_server.coach_agent.agent import apply_weekly_plan, run_agent
+
+    table = Table(title=f"Plan reparse for {profile}")
+    table.add_column("folder")
+    table.add_column("status")
+    table.add_column("sessions")
+    table.add_column("nutrition")
+    table.add_column("note", overflow="fold")
+
+    succeeded = 0
+    failed: list[tuple[str, str]] = []
+    for f, path in rows:
+        md = path.read_text(encoding="utf-8")
+        # Seed/refresh the markdown row before the structured upsert so
+        # apply_weekly_plan's get_weekly_plan_row check has something to read.
+        with Database(user=profile) as db:
+            db.upsert_weekly_plan(f, md, generated_by="claude-opus-4-7-backfill")
+        try:
+            result = run_agent(
+                profile, task="parse_plan", user_message="backfill",
+                folder=f, md_text=md, sync_before=False,
+            )
+        except Exception as exc:
+            console.print(f"[red]LLM call failed for {f}: {exc}[/red]")
+            failed.append((f, f"llm error: {exc}"))
+            apply_weekly_plan(
+                profile, f, md,
+                generated_by="claude-opus-4-7-backfill",
+                structured=None, structured_source="backfilled",
+            )
+            table.add_row(f, "[red]error[/red]", "—", "—", str(exc)[:80])
+            continue
+
+        apply_weekly_plan(
+            profile, f, md,
+            generated_by="claude-opus-4-7-backfill",
+            structured=result.structured,
+            structured_source="backfilled",
+        )
+        if result.structured is None:
+            failed.append((f, result.parse_error or "unknown parse error"))
+            table.add_row(
+                f, "[red]parse_failed[/red]", "—", "—",
+                (result.parse_error or "")[:80],
+            )
+        else:
+            n_sessions = len(result.structured.sessions)
+            n_nutrition = len(result.structured.nutrition)
+            succeeded += 1
+            table.add_row(
+                f, "[green]backfilled[/green]", str(n_sessions), str(n_nutrition), "",
+            )
+
+    console.print(table)
+    console.print(
+        f"[cyan]{succeeded}/{len(rows)} weeks backfilled "
+        f"({len(failed)} failed)[/cyan]"
+    )
+    if failed:
+        console.print("[yellow]Failed weeks:[/yellow]")
+        for f, reason in failed:
+            console.print(f"  - {f}: {reason[:100]}")
