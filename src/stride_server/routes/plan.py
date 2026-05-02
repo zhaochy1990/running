@@ -35,6 +35,7 @@ from stride_core.source import Capability, DataSource, FeatureNotSupported
 from stride_core.workout_spec import NormalizedRunWorkout
 
 from ..coach_agent.agent import apply_weekly_plan, run_agent
+from ..content_store import read_text as content_read_text
 from ..deps import format_duration, get_db, get_source_for_user, parse_week_dates
 
 logger = logging.getLogger(__name__)
@@ -441,15 +442,25 @@ def reparse_plan(
     db = get_db(user)
     try:
         row = db.get_weekly_plan_row(folder)
-        if row is None or not row["content_md"]:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No stored plan for week {folder!r}; nothing to reparse",
-            )
-        content_md = row["content_md"]
-        existing_generated_by = row["generated_by"]
+        existing_generated_by = row["generated_by"] if row else None
+        content_md = row["content_md"] if row else ""
     finally:
         db.close()
+
+    # Fall back to the on-disk plan.md when the DB row is empty. Historical
+    # weeks were authored by hand + git-pushed via sync-data.yml, never went
+    # through `apply_weekly_plan`, so weekly_plan.content_md is NULL for
+    # them. Reading from disk lets the user trigger reparse on those weeks
+    # without first having to re-import each one through the coach CLI.
+    if not content_md:
+        disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
+        if disk_md:
+            content_md = disk_md
+    if not content_md:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No stored plan for week {folder!r}; nothing to reparse",
+        )
 
     if len(content_md.encode("utf-8")) > _MAX_PLAN_MD_BYTES:
         raise HTTPException(
@@ -509,22 +520,31 @@ def internal_reparse_plan(
     db = get_db(user)
     try:
         row = db.get_weekly_plan_row(folder)
-        if row is None or not row["content_md"]:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No stored plan for week {folder!r}",
-            )
-        content_md = row["content_md"]
-        existing_generated_by = row["generated_by"]
+        existing_generated_by = row["generated_by"] if row else None
+        content_md = row["content_md"] if row else ""
         prior_hash = None
         prior_status = None
-        try:
-            prior_hash = row["parsed_from_md_hash"]
-            prior_status = row["structured_status"]
-        except (IndexError, KeyError):
-            pass
+        if row is not None:
+            try:
+                prior_hash = row["parsed_from_md_hash"]
+                prior_status = row["structured_status"]
+            except (IndexError, KeyError):
+                pass
     finally:
         db.close()
+
+    # Same disk fallback as the public reparse route — sync-data.yml uploads
+    # plan.md to Azure Files but doesn't write the DB row, so the first
+    # webhook for a new week reads from disk.
+    if not content_md:
+        disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
+        if disk_md:
+            content_md = disk_md
+    if not content_md:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No stored plan for week {folder!r}",
+        )
 
     md_hash = hashlib.sha256(content_md.encode("utf-8")).hexdigest()
     if (

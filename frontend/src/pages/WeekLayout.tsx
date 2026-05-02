@@ -154,9 +154,11 @@ export default function WeekLayout() {
                 训练计划
               </TabButton>
             )}
-            <TabButton active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} color="green">
-              日历
-            </TabButton>
+            {structuredStatus !== 'none' && (
+              <TabButton active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} color="green">
+                日历
+              </TabButton>
+            )}
             <TabButton active={activeTab === 'activities'} onClick={() => setActiveTab('activities')} color="green">
               训练记录 ({weekDetail.activity_count})
             </TabButton>
