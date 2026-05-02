@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint } from '../api'
+import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, getPlanDays, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint, type PlannedSessionRow } from '../api'
 import { useUser } from '../UserContextValue'
 import SegmentView from '../components/SegmentView'
 import StrengthView from '../components/StrengthView'
@@ -10,6 +10,7 @@ import ZoneChart from '../components/ZoneChart'
 import HRChart from '../components/HRChart'
 import PaceChart from '../components/PaceChart'
 import ActivityContributionCard from '../components/ActivityContributionCard'
+import PlanVsActualCard from '../components/PlanVsActualCard'
 
 const FEEL_EMOJIS = ['', '😄', '🙂', '😐', '😞', '😫']
 
@@ -34,6 +35,7 @@ export default function ActivityDetailPage() {
   const [regenerating, setRegenerating] = useState(false)
   const [regenError, setRegenError] = useState<string | null>(null)
   const [hoverElapsed, setHoverElapsed] = useState<number | null>(null)
+  const [plannedSession, setPlannedSession] = useState<PlannedSessionRow | null>(null)
 
   const fetchDetail = useCallback(() => {
     if (isTeamView) {
@@ -69,6 +71,35 @@ export default function ActivityDetailPage() {
       })
       .finally(() => setLoading(false))
   }, [activityId, fetchDetail, isTeamView, user])
+
+  // Look up the planned session that lines up with this activity's date.
+  // Owner-only: team viewers don't have access to the owner's plan API.
+  useEffect(() => {
+    if (isTeamView || !user || !activity) return
+    const day = activity.date?.slice(0, 10)
+    if (!day) return
+    let cancelled = false
+    getPlanDays(user, day, day)
+      .then((data) => {
+        if (cancelled) return
+        const dayRow = data.days.find((d) => d.date === day)
+        if (!dayRow) {
+          setPlannedSession(null)
+          return
+        }
+        const isStrengthActivity = [402, 800].includes(activity.sport_type)
+        const wantedKind = isStrengthActivity ? 'strength' : 'run'
+        const match = dayRow.sessions.find((s) => s.kind === wantedKind) ?? null
+        setPlannedSession(match)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setPlannedSession(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activity, isTeamView, user])
 
   const handleResync = async () => {
     if (isTeamView || !id || !user || syncing) return
@@ -228,6 +259,12 @@ export default function ActivityDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Plan-vs-actual comparison — owner-only, when a planned session
+          exists for this activity's date. */}
+      {!isTeamView && plannedSession && (
+        <PlanVsActualCard session={plannedSession} activity={activity} />
+      )}
 
       {/* Ability contribution — only for running activities, owner-only
           (team viewers don't have access to the owner's ability data) */}

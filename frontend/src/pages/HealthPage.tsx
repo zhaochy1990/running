@@ -4,9 +4,14 @@ import {
   ComposedChart,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
 } from 'recharts'
-import { getHealth, getPMC, type HealthRecord, type PMCRecord, type PMCSummary, type HRVSnapshot } from '../api'
+import {
+  getHealth, getPMC, getPlanDays, getWeeks,
+  type HealthRecord, type PMCRecord, type PMCSummary, type HRVSnapshot,
+  type WeekSummary,
+} from '../api'
 import { useUser } from '../UserContextValue'
 import GarminExtrasSection from './health/GarminExtrasSection'
+import WeeklyComplianceChart, { type WeeklyCompliancePoint } from '../components/WeeklyComplianceChart'
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return dateStr
@@ -77,6 +82,37 @@ function tsbZoneColor(zone: string | null): string {
   return zone ? (map[zone] || '#8888a0') : '#8888a0'
 }
 
+function weekLabel(wk: WeekSummary): string {
+  // "5/4–5/10" style — same shape used in the data table.
+  const f = new Date(wk.date_from)
+  const t = new Date(wk.date_to)
+  if (isNaN(f.getTime()) || isNaN(t.getTime())) return wk.folder
+  return `${f.getMonth() + 1}/${f.getDate()}–${t.getMonth() + 1}/${t.getDate()}`
+}
+
+function buildCompliancePoint(
+  wk: WeekSummary,
+  planDays: { date: string; sessions: { kind: string; total_distance_m: number | null }[] }[],
+): WeeklyCompliancePoint {
+  let plannedM = 0
+  let plannedFound = false
+  for (const d of planDays) {
+    if (d.date < wk.date_from || d.date > wk.date_to) continue
+    for (const s of d.sessions) {
+      if (s.kind === 'run' && s.total_distance_m != null) {
+        plannedM += s.total_distance_m
+        plannedFound = true
+      }
+    }
+  }
+  return {
+    label: weekLabel(wk),
+    planned_km: plannedFound ? Math.round((plannedM / 1000) * 10) / 10 : null,
+    actual_km: wk.total_km ?? null,
+    pace_compliance: null, // populated server-side in a follow-up; null hides the metric
+  }
+}
+
 export default function HealthPage() {
   const { user } = useUser()
   const [records, setRecords] = useState<HealthRecord[]>([])
@@ -84,6 +120,7 @@ export default function HealthPage() {
   const [rhrBaseline, setRhrBaseline] = useState<number | null>(null)
   const [pmcData, setPmcData] = useState<PMCRecord[]>([])
   const [pmcSummary, setPmcSummary] = useState<PMCSummary | null>(null)
+  const [compliance, setCompliance] = useState<WeeklyCompliancePoint[]>([])
   const [days, setDays] = useState(30)
   const [pmcDays, setPmcDays] = useState(90)
   const requestKey = user ? `${user}:${days}:${pmcDays}` : ''
@@ -112,6 +149,54 @@ export default function HealthPage() {
       cancelled = true
     }
   }, [days, pmcDays, requestKey, user])
+
+  // Build the planned-vs-actual compliance series for the most recent 8
+  // weekly folders. We sum planned km from the structured calendar (one
+  // /plan/days call covering the whole window) and pair it with actual km
+  // from /weeks (which already aggregates COROS activities by folder).
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    const COMPLIANCE_WEEKS = 8
+    getWeeks(user)
+      .then(({ weeks }) => {
+        if (cancelled) return
+        const recent = weeks.slice(0, COMPLIANCE_WEEKS).slice().reverse()
+        if (recent.length === 0) {
+          setCompliance([])
+          return
+        }
+        const earliest = recent[0].date_from
+        const latest = recent[recent.length - 1].date_to
+        return getPlanDays(user, earliest, latest)
+          .then(({ days: planDays }) => {
+            if (cancelled) return
+            const points = recent.map((wk) =>
+              buildCompliancePoint(wk, planDays),
+            )
+            setCompliance(points)
+          })
+          .catch(() => {
+            if (cancelled) return
+            // Plan API failure — still surface actual-only bars.
+            setCompliance(
+              recent.map((wk) => ({
+                label: weekLabel(wk),
+                planned_km: null,
+                actual_km: wk.total_km ?? null,
+                pace_compliance: null,
+              })),
+            )
+          })
+      })
+      .catch(() => {
+        if (cancelled) return
+        setCompliance([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   // Records come newest first; reverse for charts
   const chartData = [...records].reverse().map((r) => ({
@@ -162,6 +247,15 @@ export default function HealthPage() {
               {/* Garmin-only extras (Sleep / Body Battery / Stress / HRV trend).
                   Auto-hides for COROS users via internal data-presence check. */}
               {user && <GarminExtrasSection user={user} latest={latest ?? null} days={days} />}
+
+              {/* Weekly compliance — planned km vs actual km for the most
+                  recent 8 weeks; gracefully hides when no plan data is
+                  available yet. */}
+              {compliance.length > 0 && (
+                <div className="mb-6">
+                  <WeeklyComplianceChart data={compliance} />
+                </div>
+              )}
 
               {/* Charts 2x2 */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">

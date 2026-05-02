@@ -1,4 +1,9 @@
 import { refreshAccessToken } from './store/authStore'
+import type {
+  PlannedNutrition,
+  PlannedSession,
+  StructuredStatus,
+} from './types/plan'
 
 const BASE = '/api'
 
@@ -753,6 +758,82 @@ export function syncTeamAll(id: string) {
 
 export function getWeek(user: string, folder: string) {
   return fetchJSON<WeekDetail>(`/${user}/weeks/${folder}`)
+}
+
+// ---------------------------------------------------------------------------
+// Plan API — structured weekly-plan calendar / push / reparse
+// ---------------------------------------------------------------------------
+
+/**
+ * Server response is a superset of the local `PlannedSession` schema:
+ *   - `id` is the DB primary key (the `(date, session_index)` pair we use
+ *     in the push URL is path data, while `id` is convenient for React keys).
+ *   - `pushable` is server-derived (kind in {RUN, STRENGTH} && spec != null).
+ */
+export interface PlannedSessionRow extends PlannedSession {
+  id: number
+  pushable: boolean
+}
+
+export interface PlanDay {
+  date: string
+  sessions: PlannedSessionRow[]
+  nutrition: PlannedNutrition | null
+}
+
+export interface PlanDaysResponse {
+  days: PlanDay[]
+}
+
+export interface PlanTodayResponse {
+  date: string
+  sessions: PlannedSessionRow[]
+  nutrition: PlannedNutrition | null
+  planned_vs_actual: Array<{ planned: PlannedSessionRow; actual: Activity | null }>
+}
+
+export interface PushPlannedSessionResponse {
+  ok: boolean
+  planned_session_id?: number
+  scheduled_workout_id?: number
+  provider?: string
+  provider_workout_id?: string
+  // 409 carries the actual structured_status so the UI can show the right hint.
+  detail?: { error?: string; structured_status?: StructuredStatus | null } | string
+}
+
+export interface ReparsePlanResponse {
+  ok: boolean
+  folder: string
+  structured_status: StructuredStatus
+  parse_error: string | null
+}
+
+export interface WeeklyPlanStructuredResponse {
+  structured_status: StructuredStatus
+  structured_parsed_at: string | null
+  sessions: PlannedSessionRow[]
+  nutrition: PlannedNutrition[]
+}
+
+export function getPlanDays(user: string, from: string, to: string) {
+  const qs = new URLSearchParams({ from, to }).toString()
+  return fetchJSON<PlanDaysResponse>(`/${user}/plan/days?${qs}`)
+}
+
+export function getPlanToday(user: string) {
+  return fetchJSON<PlanTodayResponse>(`/${user}/plan/today`)
+}
+
+export function pushPlannedSession(user: string, date: string, sessionIndex: number) {
+  return postJSON<PushPlannedSessionResponse>(
+    `/${user}/plan/sessions/${date}/${sessionIndex}/push`,
+  )
+}
+
+export function reparsePlan(user: string, folder: string) {
+  const qs = new URLSearchParams({ folder }).toString()
+  return postJSON<ReparsePlanResponse>(`/${user}/plan/reparse?${qs}`)
 }
 
 export function updateWeeklyFeedback(user: string, folder: string, content: string, generatedBy?: string) {

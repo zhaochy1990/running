@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
   getWeeks, getWeek, updateWeeklyFeedback,
+  getPlanDays, pushPlannedSession, reparsePlan,
   formatWeekRange, formatDateShort, weekdayCN,
   sportColor, sportNameCN, trainTypeColor, trainTypeCN,
   type WeekSummary, type WeekDetail, type Activity,
+  type PlannedSessionRow, type PlanDay,
 } from '../api'
+import type { PlannedNutrition, StructuredStatus } from '../types/plan'
 import { useUser } from '../UserContextValue'
+import PlannedCalendar from '../components/PlannedCalendar'
 
-type Tab = 'plan' | 'activities' | 'feedback'
+type Tab = 'plan' | 'calendar' | 'activities' | 'feedback'
 
 export default function WeekLayout() {
   const { folder } = useParams<{ folder: string }>()
@@ -20,6 +24,10 @@ export default function WeekLayout() {
   const [weekDetail, setWeekDetail] = useState<WeekDetail | null>(null)
   const [loadedFolder, setLoadedFolder] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<Tab>('plan')
+  const [planDays, setPlanDays] = useState<PlanDay[]>([])
+  const [structuredStatus, setStructuredStatus] = useState<StructuredStatus>('none')
+  const [reparseBusy, setReparseBusy] = useState(false)
+  const [reparseError, setReparseError] = useState<string | null>(null)
   const loadingDetail = Boolean(folder && user && loadedFolder !== folder)
 
   useEffect(() => {
@@ -41,6 +49,11 @@ export default function WeekLayout() {
           if (cancelled) return
           setWeekDetail(data)
           setActiveTab('plan')
+          // Pull structured status from the augmented week response.
+          const structured = (data as WeekDetail & {
+            structured?: { structured_status?: StructuredStatus }
+          }).structured
+          setStructuredStatus(structured?.structured_status ?? 'none')
         })
         .finally(() => {
           if (!cancelled) setLoadedFolder(folder)
@@ -50,6 +63,69 @@ export default function WeekLayout() {
       }
     }
   }, [folder, user])
+
+  // Load the calendar payload for the active week.
+  useEffect(() => {
+    if (!folder || !user || !weekDetail) return
+    let cancelled = false
+    getPlanDays(user, weekDetail.date_from, weekDetail.date_to)
+      .then((data) => {
+        if (cancelled) return
+        setPlanDays(data.days)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setPlanDays([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [folder, user, weekDetail])
+
+  const handlePush = useCallback(
+    async (sessionDate: string, sessionIndex: number) => {
+      if (!user) return
+      const res = await pushPlannedSession(user, sessionDate, sessionIndex)
+      if (!res.ok) {
+        const detail = res.data?.detail
+        const msg = typeof detail === 'string'
+          ? detail
+          : detail && typeof detail === 'object' && 'error' in detail
+            ? String(detail.error ?? '推送失败')
+            : `推送失败 (${res.status})`
+        throw new Error(msg)
+      }
+      // Refresh calendar payload to surface the new scheduled_workout_id.
+      if (weekDetail) {
+        const refreshed = await getPlanDays(user, weekDetail.date_from, weekDetail.date_to)
+        setPlanDays(refreshed.days)
+      }
+    },
+    [user, weekDetail],
+  )
+
+  const handleReparse = useCallback(async () => {
+    if (!folder || !user) return
+    setReparseBusy(true)
+    setReparseError(null)
+    try {
+      const res = await reparsePlan(user, folder)
+      if (!res.ok) {
+        setReparseError(`重新解析失败 (${res.status})`)
+        return
+      }
+      setStructuredStatus(res.data.structured_status)
+      // Pull fresh calendar data after the reparse.
+      if (weekDetail) {
+        const refreshed = await getPlanDays(user, weekDetail.date_from, weekDetail.date_to)
+        setPlanDays(refreshed.days)
+      }
+    } catch (e) {
+      setReparseError(e instanceof Error ? e.message : '重新解析失败')
+    } finally {
+      setReparseBusy(false)
+    }
+  }, [folder, user, weekDetail])
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
@@ -71,13 +147,16 @@ export default function WeekLayout() {
             </div>
           </div>
 
-          {/* Tabs: 计划 → 记录 → 反馈 */}
+          {/* Tabs: 计划 → 日历 → 记录 → 反馈 */}
           <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg w-fit mb-6">
             {weekDetail.plan && (
               <TabButton active={activeTab === 'plan'} onClick={() => setActiveTab('plan')} color="green">
                 训练计划
               </TabButton>
             )}
+            <TabButton active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} color="green">
+              日历
+            </TabButton>
             <TabButton active={activeTab === 'activities'} onClick={() => setActiveTab('activities')} color="green">
               训练记录 ({weekDetail.activity_count})
             </TabButton>
@@ -93,6 +172,17 @@ export default function WeekLayout() {
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{weekDetail.plan}</ReactMarkdown>
               </div>
             </div>
+          )}
+          {activeTab === 'calendar' && (
+            <CalendarTab
+              weekDetail={weekDetail}
+              planDays={planDays}
+              structuredStatus={structuredStatus}
+              onPush={handlePush}
+              onReparse={handleReparse}
+              reparseBusy={reparseBusy}
+              reparseError={reparseError}
+            />
           )}
           {activeTab === 'activities' && (
             <ActivityList activities={weekDetail.activities} />
@@ -123,6 +213,94 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
       <span className={`text-sm font-mono font-semibold ${accent ? 'text-accent-green' : 'text-text-primary'}`}>
         {value}
       </span>
+    </div>
+  )
+}
+
+function buildWeekDates(dateFrom: string, dateTo: string): string[] {
+  const out: string[] = []
+  const start = new Date(dateFrom)
+  const end = new Date(dateTo)
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return out
+  const cur = new Date(start)
+  while (cur <= end && out.length < 31) {
+    const y = cur.getFullYear()
+    const m = String(cur.getMonth() + 1).padStart(2, '0')
+    const d = String(cur.getDate()).padStart(2, '0')
+    out.push(`${y}-${m}-${d}`)
+    cur.setDate(cur.getDate() + 1)
+  }
+  return out
+}
+
+function CalendarTab({
+  weekDetail,
+  planDays,
+  structuredStatus,
+  onPush,
+  onReparse,
+  reparseBusy,
+  reparseError,
+}: {
+  weekDetail: WeekDetail
+  planDays: PlanDay[]
+  structuredStatus: StructuredStatus
+  onPush: (date: string, sessionIndex: number) => Promise<void>
+  onReparse: () => void
+  reparseBusy: boolean
+  reparseError: string | null
+}) {
+  const weekDates = buildWeekDates(weekDetail.date_from, weekDetail.date_to)
+  const sessions: PlannedSessionRow[] = []
+  const nutrition: PlannedNutrition[] = []
+  for (const day of planDays) {
+    sessions.push(...day.sessions)
+    if (day.nutrition) nutrition.push(day.nutrition)
+  }
+
+  const showReparse =
+    structuredStatus === 'parse_failed' ||
+    structuredStatus === 'stale' ||
+    structuredStatus === 'none' ||
+    structuredStatus === 'backfilled'
+
+  return (
+    <div className="space-y-3 animate-fade-in">
+      {showReparse && (
+        <div
+          data-testid="reparse-banner"
+          className="flex items-center justify-between gap-3 rounded-xl border border-accent-cyan/30 bg-accent-cyan/10 px-4 py-2.5"
+        >
+          <p className="text-xs font-mono text-accent-cyan">
+            {structuredStatus === 'parse_failed' && '本周计划暂未结构化，请重新解析'}
+            {structuredStatus === 'stale' && '结构化数据已过期'}
+            {structuredStatus === 'none' && '本周尚无结构化计划'}
+            {structuredStatus === 'backfilled' && '历史回填的计划，重新解析后启用推送'}
+          </p>
+          <div className="flex items-center gap-2">
+            {reparseError && (
+              <span className="text-[11px] font-mono text-accent-red">{reparseError}</span>
+            )}
+            <button
+              type="button"
+              onClick={onReparse}
+              disabled={reparseBusy}
+              className="px-3 py-1 text-xs font-medium rounded border border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/10 transition-all disabled:opacity-50"
+            >
+              {reparseBusy ? '解析中…' : '重新解析'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <PlannedCalendar
+        weekDates={weekDates}
+        sessions={sessions}
+        nutrition={nutrition}
+        structuredStatus={structuredStatus}
+        canPushRun={true}
+        onPush={(s) => onPush(s.date, s.session_index)}
+      />
     </div>
   )
 }
