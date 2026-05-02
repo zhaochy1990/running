@@ -16,7 +16,7 @@ from stride_core.registry import ProviderRegistry
 from stride_core.source import DataSource
 
 from .bearer import _load_public_key, is_dev_mode, require_bearer, verify_path_user
-from .routes import account, ability, activities, health, inbody, onboarding, profile, public, sync, teams, training_plan, users, weeks, workouts
+from .routes import account, ability, activities, health, inbody, onboarding, plan, profile, public, sync, teams, training_plan, users, weeks, workouts
 from .static import mount_frontend
 
 
@@ -85,6 +85,12 @@ def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
     app.include_router(inbody.router, dependencies=protected_user)
     app.include_router(ability.router, dependencies=protected_user)
     app.include_router(workouts.router, dependencies=protected_user)
+    app.include_router(plan.router, dependencies=protected_user)
+
+    # Internal webhook router — gated by X-Internal-Token, NOT bearer JWT.
+    # Path is /internal/... (not /api/internal/...) so future bearer-prefix
+    # middleware on /api/* cannot accidentally catch it.
+    app.include_router(plan.internal_router)
 
     # SPA fallback must be last so it doesn't swallow /api/* paths.
     mount_frontend(app)

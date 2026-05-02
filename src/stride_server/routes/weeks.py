@@ -170,6 +170,59 @@ def get_week(user: str, folder: str):
     result["total_duration_fmt"] = format_duration(result["total_duration_s"])
     result["activity_count"] = len(activities)
 
+    # Additive: structured-plan layer (sessions + nutrition + status). Old
+    # frontends ignore unknown keys; new ones can light up the calendar tab.
+    structured_status = None
+    structured_parsed_at = None
+    if db_plan_row is not None:
+        try:
+            structured_status = db_plan_row["structured_status"]
+            structured_parsed_at = db_plan_row["structured_parsed_at"]
+        except (IndexError, KeyError):
+            pass
+    session_rows = db.get_planned_sessions(week_folder=folder)
+    nutrition_rows = db.get_planned_nutrition(week_folder=folder)
+    sessions_payload = []
+    for r in session_rows:
+        spec_blob = r["spec_json"]
+        spec = None
+        if spec_blob:
+            import json as _json
+            spec = _json.loads(spec_blob)
+        sessions_payload.append({
+            "id": r["id"],
+            "date": r["date"],
+            "session_index": r["session_index"],
+            "kind": r["kind"],
+            "summary": r["summary"],
+            "spec": spec,
+            "notes_md": r["notes_md"],
+            "total_distance_m": r["total_distance_m"],
+            "total_duration_s": r["total_duration_s"],
+            "scheduled_workout_id": r["scheduled_workout_id"],
+            "pushable": r["kind"] in ("run", "strength") and spec is not None,
+        })
+    nutrition_payload = []
+    for r in nutrition_rows:
+        meals_blob = r["meals_json"]
+        import json as _json
+        nutrition_payload.append({
+            "date": r["date"],
+            "kcal_target": r["kcal_target"],
+            "carbs_g": r["carbs_g"],
+            "protein_g": r["protein_g"],
+            "fat_g": r["fat_g"],
+            "water_ml": r["water_ml"],
+            "meals": _json.loads(meals_blob) if meals_blob else [],
+            "notes_md": r["notes_md"],
+        })
+    result["structured"] = {
+        "structured_status": structured_status,
+        "structured_parsed_at": structured_parsed_at,
+        "sessions": sessions_payload,
+        "nutrition": nutrition_payload,
+    }
+
     db.close()
     return result
 
