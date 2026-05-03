@@ -240,6 +240,30 @@ def get_week(user: str, folder: str):
         "model_ids": [r["model_id"] for r in variant_rows],
     }
 
+    # Multi-variant fallback design (Step 4): surface scheduled_workout
+    # rows in this week that were marked `abandoned_by_promote_at` by a
+    # prior variant promote. Frontend renders a red banner over the
+    # canonical view + an activity-detail warning so the user knows to
+    # delete the orphan [STRIDE] entries on COROS App. Only NON-NULL rows
+    # are returned; an empty list means "no orphans for this week".
+    abandoned_rows = db.query(
+        """SELECT id, date, name, abandoned_by_promote_at
+             FROM scheduled_workout
+            WHERE date >= ? AND date <= ?
+              AND abandoned_by_promote_at IS NOT NULL
+            ORDER BY date, id""",
+        (date_from, date_to),
+    )
+    result["abandoned_scheduled_workouts"] = [
+        {
+            "id": r["id"],
+            "date": r["date"],
+            "name": r["name"],
+            "abandoned_by_promote_at": r["abandoned_by_promote_at"],
+        }
+        for r in abandoned_rows
+    ]
+
     db.close()
     return result
 

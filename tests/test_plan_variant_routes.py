@@ -673,3 +673,153 @@ class TestWeeksVariantsSummary:
         )
         body = resp.json()
         assert body["variants_summary"]["selected_variant_id"] == vid
+
+
+# ── weeks.py extension: abandoned_scheduled_workouts (Step 4 #7) ───────
+
+
+class TestAbandonedScheduledWorkouts:
+    """The week endpoint surfaces scheduled_workout rows whose
+    abandoned_by_promote_at IS NOT NULL so the frontend can render the
+    'orphan banner' over the canonical view (Step 4 design)."""
+
+    def test_empty_when_no_orphans(self, app_client):
+        client, token, *_ = app_client
+        resp = client.get(
+            f"/api/{USER_UUID}/weeks/{WEEK}",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["abandoned_scheduled_workouts"] == []
+
+    def test_lists_only_abandoned_in_window(self, app_client):
+        client, token, _other_token, tmp_path = app_client
+        # Seed three scheduled_workouts: 2 inside the week (one
+        # abandoned, one still pushed) + 1 outside the week (abandoned
+        # but should not appear). Tests the date-window filter AND the
+        # IS NOT NULL filter simultaneously.
+        db = _db(tmp_path)
+        try:
+            db._conn.execute(
+                "INSERT INTO weekly_plan (week, content_md, generated_at, updated_at) "
+                "VALUES (?, ?, datetime('now'), datetime('now'))",
+                (WEEK, "stub"),
+            )
+            db._conn.execute(
+                """INSERT INTO scheduled_workout
+                       (date, kind, name, spec_json, status, provider,
+                        provider_workout_id, pushed_at,
+                        abandoned_by_promote_at,
+                        created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,
+                               datetime('now'), datetime('now'),
+                               datetime('now'), datetime('now'))""",
+                ("2026-05-06", "run", "[STRIDE] orphan A",
+                 "{}", "pushed", "coros", "prov-1"),
+            )
+            db._conn.execute(
+                """INSERT INTO scheduled_workout
+                       (date, kind, name, spec_json, status, provider,
+                        provider_workout_id, pushed_at,
+                        abandoned_by_promote_at,
+                        created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,
+                               datetime('now'), NULL,
+                               datetime('now'), datetime('now'))""",
+                ("2026-05-08", "run", "[STRIDE] still active",
+                 "{}", "pushed", "coros", "prov-2"),
+            )
+            db._conn.execute(
+                """INSERT INTO scheduled_workout
+                       (date, kind, name, spec_json, status, provider,
+                        provider_workout_id, pushed_at,
+                        abandoned_by_promote_at,
+                        created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,
+                               datetime('now'), datetime('now'),
+                               datetime('now'), datetime('now'))""",
+                ("2026-04-20", "run", "[STRIDE] outside window",
+                 "{}", "pushed", "coros", "prov-3"),
+            )
+            db._conn.commit()
+        finally:
+            db.close()
+
+        resp = client.get(
+            f"/api/{USER_UUID}/weeks/{WEEK}",
+            headers=_auth(token),
+        )
+        body = resp.json()
+        names = [r["name"] for r in body["abandoned_scheduled_workouts"]]
+        # Only the "orphan A" row matches both filters: in the week AND
+        # abandoned_by_promote_at IS NOT NULL.
+        assert names == ["[STRIDE] orphan A"]
+        # Each row exposes the four expected keys.
+        row = body["abandoned_scheduled_workouts"][0]
+        assert set(row.keys()) == {
+            "id", "date", "name", "abandoned_by_promote_at",
+        }
+        assert row["abandoned_by_promote_at"] is not None
+
+    def test_post_select_force_populates_abandoned_list(self, app_client):
+        """End-to-end: select(force=True) marks prior pushed sessions
+        abandoned → next GET /weeks/{folder} surfaces them in the
+        new field. This is the contract Step 4's UI banner relies on.
+        """
+        client, token, _other_token, tmp_path = app_client
+        plan = _make_plan()
+        v1 = _post_variant(client, token, structured=plan.to_dict(),
+                           model_id="claude").json()["variant_id"]
+        client.post(
+            f"/api/{USER_UUID}/plan/{WEEK}/select",
+            json={"variant_id": v1}, headers=_auth(token),
+        )
+        # Stitch a scheduled_workout to a planned_session for this week.
+        db = _db(tmp_path)
+        try:
+            cur = db._conn.execute(
+                """INSERT INTO scheduled_workout
+                       (date, kind, name, spec_json, status, provider,
+                        provider_workout_id, pushed_at,
+                        created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?, datetime('now'),
+                               datetime('now'), datetime('now'))""",
+                ("2026-05-04", "run", "[STRIDE] watch-pushed",
+                 "{}", "pushed", "coros", "prov-X"),
+            )
+            sw_id = cur.lastrowid
+            db._conn.execute(
+                """UPDATE planned_session
+                       SET scheduled_workout_id = ?
+                     WHERE week_folder = ? AND date = ? AND session_index = 0""",
+                (sw_id, WEEK, "2026-05-04"),
+            )
+            db._conn.commit()
+        finally:
+            db.close()
+
+        # Pre-promote: GET shows no orphans.
+        pre = client.get(
+            f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token),
+        ).json()
+        assert pre["abandoned_scheduled_workouts"] == []
+
+        # Promote a new variant with force=True → marks sw_id abandoned.
+        v2 = _post_variant(client, token, structured=plan.to_dict(),
+                           model_id="codex").json()["variant_id"]
+        sel = client.post(
+            f"/api/{USER_UUID}/plan/{WEEK}/select",
+            json={"variant_id": v2, "force": True},
+            headers=_auth(token),
+        ).json()
+        assert sw_id in sel["dropped_scheduled_workout_ids"]
+
+        # Post-promote: GET surfaces the orphan.
+        post = client.get(
+            f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token),
+        ).json()
+        rows = post["abandoned_scheduled_workouts"]
+        assert len(rows) == 1
+        assert rows[0]["id"] == sw_id
+        assert rows[0]["abandoned_by_promote_at"] is not None
