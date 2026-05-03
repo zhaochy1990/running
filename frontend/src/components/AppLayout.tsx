@@ -68,8 +68,8 @@ export default function AppLayout() {
       )}
 
       {/* Sidebar */}
-      <nav className={`w-[260px] min-h-screen bg-bg-secondary border-r border-border flex flex-col fixed left-0 top-0 z-40 overflow-y-auto transition-transform duration-300 ease-in-out ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} sm:translate-x-0`}>
-        <div className="px-5 pt-6 pb-5">
+      <nav className={`w-[260px] h-screen bg-bg-secondary border-r border-border flex flex-col fixed left-0 top-0 z-40 transition-transform duration-300 ease-in-out ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} sm:translate-x-0`}>
+        <div className="px-5 pt-6 pb-5 flex-shrink-0">
           <div className="flex items-center justify-between">
             <button onClick={() => navigate('/')} className="flex items-center gap-2.5 cursor-pointer">
               <div className="w-8 h-8 rounded-lg bg-accent-green/15 flex items-center justify-center">
@@ -93,11 +93,11 @@ export default function AppLayout() {
           </div>
         </div>
 
-        <div className="px-5 pb-2">
+        <div className="px-5 pb-2 flex-shrink-0">
           <p className="text-xs font-mono text-text-muted tracking-wider">训练周</p>
         </div>
 
-        <div className="flex-1 px-3 pb-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-3 pb-4">
           {loading ? (
             <div className="flex items-center justify-center py-10">
               <div className="w-5 h-5 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
@@ -145,7 +145,7 @@ export default function AppLayout() {
           )}
         </div>
 
-        <div className="px-3 py-3 border-t border-border-subtle space-y-2">
+        <div className="px-3 py-3 border-t border-border-subtle space-y-2 flex-shrink-0">
           <button
             onClick={() => navigate('/plan')}
             className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
