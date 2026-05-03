@@ -306,6 +306,54 @@ CREATE TABLE IF NOT EXISTS planned_nutrition (
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_planned_nutrition_week ON planned_nutrition(week_folder);
+
+-- Multi-variant weekly plans (Step 1, post-spike fallback design):
+-- a parallel storage area for unselected variants. The `weekly_plan` row
+-- remains the canonical source of truth; selection promotes a variant's
+-- content_md + structured_json into `weekly_plan` + `planned_session` +
+-- `planned_nutrition` and stamps `weekly_plan.selected_variant_id`.
+-- Append-only: re-running the same model on the same week supersedes the
+-- prior row (UPDATE superseded_at = now) and INSERTs a new row, so the
+-- ratings attached to old content remain attributable to that exact text.
+CREATE TABLE IF NOT EXISTS weekly_plan_variant (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    week_folder              TEXT NOT NULL,                       -- '2026-05-04_05-10(P1W2)'
+    model_id                 TEXT NOT NULL,                       -- 'claude-opus-4-7' / 'gpt-5-codex' / 'gemini-2.5-pro' / etc.
+    schema_version           INTEGER NOT NULL DEFAULT 1,          -- matches plan_spec.SUPPORTED_SCHEMA_VERSION at write time
+    content_md               TEXT NOT NULL,                       -- the variant's markdown
+    structured_json          TEXT,                                -- WeeklyPlan.to_dict() JSON; NULL when parse_failed
+    variant_parse_status     TEXT NOT NULL DEFAULT 'fresh',       -- 'fresh' | 'parse_failed'
+    parsed_from_md_hash      TEXT,
+    generation_metadata_json TEXT,                                -- optional audit blob (prompt_version, latency, etc.)
+    superseded_at            TEXT,                                -- non-NULL = no longer selectable
+    generated_at             TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at               TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_week ON weekly_plan_variant(week_folder);
+CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_active ON weekly_plan_variant(week_folder, superseded_at);
+-- Active-row uniqueness (only one active variant per model per week).
+-- Partial index on superseded_at IS NULL — superseded rows are unrestricted.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_plan_variant_active_unique
+    ON weekly_plan_variant(week_folder, model_id)
+    WHERE superseded_at IS NULL;
+
+-- Per-variant ratings, normalized so we can aggregate across variants /
+-- models / dimensions later. CASCADE on DELETE is a silent no-op since
+-- this codebase has PRAGMA foreign_keys=OFF; `delete_weekly_plan_variants`
+-- does the cleanup explicitly in two steps.
+CREATE TABLE IF NOT EXISTS weekly_plan_variant_rating (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    weekly_plan_variant_id   INTEGER NOT NULL REFERENCES weekly_plan_variant(id) ON DELETE CASCADE,
+    dimension                TEXT NOT NULL,                       -- 'suitability' | 'structure' | 'nutrition' | 'difficulty' | 'overall'
+    score                    INTEGER NOT NULL,                    -- 1..5
+    comment                  TEXT,
+    rated_by                 TEXT NOT NULL,                       -- user_id (UUID); permits multi-user rating
+    rated_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(weekly_plan_variant_id, dimension, rated_by)
+);
+CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_rating_variant
+    ON weekly_plan_variant_rating(weekly_plan_variant_id);
 """
 
 
@@ -446,6 +494,53 @@ class Database:
         _add("daily_health", "sleep_score", "INTEGER")
         _add("daily_health", "respiration_avg", "REAL")
         _add("daily_health", "spo2_avg", "REAL")
+        # Multi-variant weekly plans (Step 1, post-spike fallback design):
+        # selection pointers on weekly_plan + abandoned-marker on
+        # scheduled_workout for orphans created by promote.
+        _add("weekly_plan", "selected_variant_id", "INTEGER")
+        _add("weekly_plan", "selected_at", "TEXT")
+        _add("scheduled_workout", "abandoned_by_promote_at", "TEXT")
+        # The two new variant tables are created via SCHEMA above (idempotent
+        # CREATE TABLE IF NOT EXISTS). Older DBs that ran SCHEMA before these
+        # tables existed will not have them yet, so re-run the targeted
+        # CREATE statements here as a safety net.
+        for stmt in (
+            "CREATE TABLE IF NOT EXISTS weekly_plan_variant ("
+            "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "    week_folder TEXT NOT NULL,"
+            "    model_id TEXT NOT NULL,"
+            "    schema_version INTEGER NOT NULL DEFAULT 1,"
+            "    content_md TEXT NOT NULL,"
+            "    structured_json TEXT,"
+            "    variant_parse_status TEXT NOT NULL DEFAULT 'fresh',"
+            "    parsed_from_md_hash TEXT,"
+            "    generation_metadata_json TEXT,"
+            "    superseded_at TEXT,"
+            "    generated_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            "    created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            "    updated_at TEXT NOT NULL DEFAULT (datetime('now'))"
+            ")",
+            "CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_week "
+            "ON weekly_plan_variant(week_folder)",
+            "CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_active "
+            "ON weekly_plan_variant(week_folder, superseded_at)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_plan_variant_active_unique "
+            "ON weekly_plan_variant(week_folder, model_id) "
+            "WHERE superseded_at IS NULL",
+            "CREATE TABLE IF NOT EXISTS weekly_plan_variant_rating ("
+            "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "    weekly_plan_variant_id INTEGER NOT NULL REFERENCES weekly_plan_variant(id) ON DELETE CASCADE,"
+            "    dimension TEXT NOT NULL,"
+            "    score INTEGER NOT NULL,"
+            "    comment TEXT,"
+            "    rated_by TEXT NOT NULL,"
+            "    rated_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            "    UNIQUE(weekly_plan_variant_id, dimension, rated_by)"
+            ")",
+            "CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_rating_variant "
+            "ON weekly_plan_variant_rating(weekly_plan_variant_id)",
+        ):
+            self._conn.execute(stmt)
 
     def close(self) -> None:
         self._conn.close()
@@ -1037,6 +1132,7 @@ class Database:
     def get_planned_sessions(
         self, *, date_from: str | None = None, date_to: str | None = None,
         week_folder: str | None = None,
+        conn: sqlite3.Connection | None = None,
     ) -> list[sqlite3.Row]:
         clauses: list[str] = []
         params: list = []
@@ -1050,7 +1146,8 @@ class Database:
             clauses.append("date <= ?")
             params.append(date_to)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        return self._conn.execute(
+        c = conn or self._conn
+        return c.execute(
             f"SELECT * FROM planned_session {where} ORDER BY date, session_index, id",
             tuple(params),
         ).fetchall()
@@ -1145,6 +1242,324 @@ class Database:
             "SELECT * FROM planned_session WHERE date = ? AND session_index = ?",
             (date, session_index),
         ).fetchone()
+
+    # ─────────────────────────────────────────────────────────────────
+    # Multi-variant weekly plans (Step 1, post-spike fallback design)
+    # ─────────────────────────────────────────────────────────────────
+    #
+    # `weekly_plan_variant` is an append-only side table: re-running the
+    # same model on the same week supersedes the prior row (sets
+    # `superseded_at`) and INSERTs a new row, so ratings attached to old
+    # content stay attributable to that exact text.
+    #
+    # `select_weekly_plan_variant` runs the FALLBACK promote design (per
+    # Step 0 spike Phase B exp 2 — hit-rate 73.7% < 90% gate, so re-stitch
+    # is not implemented). All entries in `prior_map` (the previously
+    # pushed scheduled_workout ids for this week) are marked
+    # `abandoned_by_promote_at`; the new planned_session rows have
+    # `scheduled_workout_id = NULL` and the UI must guide the user to
+    # delete the orphans on COROS before pushing again.
+
+    def insert_weekly_plan_variant(
+        self,
+        week_folder: str,
+        model_id: str,
+        content_md: str,
+        structured_json: str | None,
+        *,
+        schema_version: int = 1,
+        variant_parse_status: str = "fresh",
+        parsed_from_md_hash: str | None = None,
+        generation_metadata_json: str | None = None,
+    ) -> int:
+        """Append-only insert. If the active row for ``(week_folder, model_id)``
+        exists, its ``superseded_at`` is set to ``now`` first (in the same
+        transaction), then the new row is INSERTed and its id returned.
+        """
+        with self._conn:
+            self._conn.execute(
+                """UPDATE weekly_plan_variant
+                       SET superseded_at = datetime('now'),
+                           updated_at    = datetime('now')
+                     WHERE week_folder = ?
+                       AND model_id    = ?
+                       AND superseded_at IS NULL""",
+                (week_folder, model_id),
+            )
+            cur = self._conn.execute(
+                """INSERT INTO weekly_plan_variant
+                   (week_folder, model_id, schema_version, content_md,
+                    structured_json, variant_parse_status,
+                    parsed_from_md_hash, generation_metadata_json,
+                    generated_at, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,
+                           datetime('now'), datetime('now'), datetime('now'))""",
+                (
+                    week_folder, model_id, schema_version, content_md,
+                    structured_json, variant_parse_status,
+                    parsed_from_md_hash, generation_metadata_json,
+                ),
+            )
+            return cur.lastrowid
+
+    def get_weekly_plan_variants(
+        self, week_folder: str, *, include_superseded: bool = False,
+    ) -> list[sqlite3.Row]:
+        """List variants for a week (oldest first, by ``generated_at``).
+
+        ``variant_index`` is implicit — the order in the returned list IS
+        the index. Callers/UI can attach it.
+        """
+        if include_superseded:
+            return self._conn.execute(
+                """SELECT * FROM weekly_plan_variant
+                       WHERE week_folder = ?
+                       ORDER BY generated_at, id""",
+                (week_folder,),
+            ).fetchall()
+        return self._conn.execute(
+            """SELECT * FROM weekly_plan_variant
+                   WHERE week_folder = ? AND superseded_at IS NULL
+                   ORDER BY generated_at, id""",
+            (week_folder,),
+        ).fetchall()
+
+    def get_weekly_plan_variant(self, variant_id: int) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM weekly_plan_variant WHERE id = ?", (variant_id,),
+        ).fetchone()
+
+    def delete_weekly_plan_variants(self, week_folder: str) -> int:
+        """Explicit two-step delete (CASCADE is a silent no-op without
+        ``PRAGMA foreign_keys=ON`` which this project doesn't enable
+        globally). Returns the count of deleted ``weekly_plan_variant``
+        rows. Both DELETEs run inside a single transaction so a crash
+        between them can't leave orphan ratings.
+        """
+        with self._conn:
+            self._conn.execute(
+                """DELETE FROM weekly_plan_variant_rating
+                   WHERE weekly_plan_variant_id IN (
+                       SELECT id FROM weekly_plan_variant WHERE week_folder = ?
+                   )""",
+                (week_folder,),
+            )
+            cur = self._conn.execute(
+                "DELETE FROM weekly_plan_variant WHERE week_folder = ?",
+                (week_folder,),
+            )
+            return cur.rowcount
+
+    def upsert_variant_rating(
+        self,
+        variant_id: int,
+        dimension: str,
+        score: int,
+        *,
+        comment: str | None = None,
+        rated_by: str,
+    ) -> None:
+        """UPSERT keyed by (variant_id, dimension, rated_by). Re-rating
+        the same dimension by the same user replaces the prior score.
+        """
+        if not (1 <= score <= 5):
+            raise ValueError(f"score must be 1..5, got {score}")
+        self._conn.execute(
+            """INSERT INTO weekly_plan_variant_rating
+               (weekly_plan_variant_id, dimension, score, comment, rated_by, rated_at)
+               VALUES (?,?,?,?,?, datetime('now'))
+               ON CONFLICT(weekly_plan_variant_id, dimension, rated_by)
+               DO UPDATE SET
+                   score    = excluded.score,
+                   comment  = excluded.comment,
+                   rated_at = excluded.rated_at""",
+            (variant_id, dimension, score, comment, rated_by),
+        )
+        self._conn.commit()
+
+    def get_variant_ratings(self, variant_id: int) -> list[sqlite3.Row]:
+        """Return all ratings for a variant. Caller decides how to
+        aggregate (e.g., per-dimension mean across users vs. just one
+        user's view)."""
+        return self._conn.execute(
+            """SELECT * FROM weekly_plan_variant_rating
+                   WHERE weekly_plan_variant_id = ?
+                   ORDER BY dimension, rated_by""",
+            (variant_id,),
+        ).fetchall()
+
+    def select_weekly_plan_variant(
+        self,
+        user: str,
+        week_folder: str,
+        variant_id: int,
+        *,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Promote a variant to canonical (FALLBACK design).
+
+        Wraps the full select-promote sequence in a single dedicated
+        immediate-txn connection. On any failure, rolls back; on success,
+        commits and returns metadata.
+
+        Returns one of:
+          - ``{"ok": True, "selected_variant_id": int, "no_change": True}`` —
+            already selected, no DB writes done.
+          - ``{"ok": True, "selected_variant_id": int, "no_change": False,
+                "dropped_scheduled_workout_ids": [int, ...]}`` — promoted.
+          - ``{"ok": False, "error": "selection_conflict",
+                "already_pushed_count": int}`` — `force=False` and
+            ``prior_map`` non-empty. (HTTP layer renders this 409.)
+          - ``{"ok": False, "error": "variant_schema_outdated",
+                "variant_version": int, "server_version": int}`` —
+            (HTTP layer renders 426.)
+          - ``{"ok": False, "error": "variant_not_found"}``,
+            ``"variant_wrong_week"``, ``"variant_parse_failed"``,
+            ``"variant_superseded"`` — invalid variant; (400 each).
+
+        Per Step 0 spike Phase B exp 2 (hit-rate 73.7% < 90% gate):
+        re-stitch is NOT attempted. ALL entries in ``prior_map`` are
+        marked ``abandoned_by_promote_at``; the new ``planned_session``
+        rows have ``scheduled_workout_id = NULL``. The UI must guide
+        the user to delete orphan [STRIDE] entries on COROS before the
+        next push.
+        """
+        # Lazy import to avoid circular dep:
+        # stride_server.coach_agent.agent imports stride_core.db.Database.
+        from stride_server.coach_agent.agent import apply_weekly_plan
+        from stride_core.plan_spec import (
+            SUPPORTED_SCHEMA_VERSION, WeeklyPlan,
+        )
+        import json as _json
+
+        # 1. Open dedicated immediate-txn connection.
+        txn = self.open_immediate_txn()
+        try:
+            # 2. Validate variant.
+            variant = txn.execute(
+                "SELECT * FROM weekly_plan_variant WHERE id = ?",
+                (variant_id,),
+            ).fetchone()
+            if variant is None:
+                txn.execute("ROLLBACK")
+                return {"ok": False, "error": "variant_not_found",
+                        "variant_id": variant_id}
+            if variant["week_folder"] != week_folder:
+                txn.execute("ROLLBACK")
+                return {"ok": False, "error": "variant_wrong_week",
+                        "variant_id": variant_id,
+                        "expected_week": week_folder,
+                        "actual_week": variant["week_folder"]}
+            if variant["superseded_at"] is not None:
+                txn.execute("ROLLBACK")
+                return {"ok": False, "error": "variant_superseded",
+                        "variant_id": variant_id}
+            if variant["variant_parse_status"] != "fresh":
+                txn.execute("ROLLBACK")
+                return {"ok": False, "error": "variant_parse_failed",
+                        "variant_id": variant_id,
+                        "variant_parse_status": variant["variant_parse_status"]}
+            if variant["schema_version"] != SUPPORTED_SCHEMA_VERSION:
+                txn.execute("ROLLBACK")
+                return {"ok": False, "error": "variant_schema_outdated",
+                        "variant_version": variant["schema_version"],
+                        "server_version": SUPPORTED_SCHEMA_VERSION}
+
+            # 3. Idempotent check: if this variant is already selected,
+            # do nothing.
+            wp = txn.execute(
+                "SELECT selected_variant_id FROM weekly_plan WHERE week = ?",
+                (week_folder,),
+            ).fetchone()
+            if wp is not None and wp["selected_variant_id"] == variant_id:
+                txn.execute("ROLLBACK")  # nothing to commit
+                return {"ok": True, "selected_variant_id": variant_id,
+                        "no_change": True}
+
+            # 4. Snapshot prior_map = list of scheduled_workout_ids that
+            # currently back planned_session rows for this week. We
+            # collect just the ids (FALLBACK design — no re-stitch, no
+            # need for the (date, idx, kind) tuple).
+            rows = txn.execute(
+                """SELECT scheduled_workout_id FROM planned_session
+                       WHERE week_folder = ?
+                         AND scheduled_workout_id IS NOT NULL""",
+                (week_folder,),
+            ).fetchall()
+            prior_sw_ids = [r["scheduled_workout_id"] for r in rows]
+
+            # 5. Conflict check.
+            if prior_sw_ids and not force:
+                txn.execute("ROLLBACK")
+                return {"ok": False, "error": "selection_conflict",
+                        "already_pushed_count": len(prior_sw_ids),
+                        "hint": ("传 force=true 二次确认 — 已 push session "
+                                 "将被标 abandoned,需手动到 COROS 删除")}
+
+            # 6. Deserialize structured plan.
+            if variant["structured_json"] is None:
+                # parse_failed variants have already been rejected above,
+                # but defend in depth.
+                txn.execute("ROLLBACK")
+                return {"ok": False, "error": "variant_parse_failed",
+                        "variant_id": variant_id}
+            plan = WeeklyPlan.from_dict(_json.loads(variant["structured_json"]))
+
+            # 7. apply_weekly_plan inside the dedicated txn.
+            apply_weekly_plan(
+                user=user,
+                folder=week_folder,
+                content=variant["content_md"],
+                generated_by=variant["model_id"],
+                structured=plan,
+                structured_source="fresh",
+                commit=False,
+                conn=txn,
+            )
+
+            # 8. FALLBACK: mark ALL prior scheduled_workout ids abandoned.
+            # New planned_session rows already have scheduled_workout_id=NULL
+            # (apply_weekly_plan REPLACE; variant blob's sessions never
+            # carry scheduled_workout_id).
+            if prior_sw_ids:
+                placeholders = ",".join("?" * len(prior_sw_ids))
+                txn.execute(
+                    f"UPDATE scheduled_workout "
+                    f"SET abandoned_by_promote_at = datetime('now'), "
+                    f"    updated_at = datetime('now') "
+                    f"WHERE id IN ({placeholders})",
+                    prior_sw_ids,
+                )
+
+            # 9. Stamp the selection on weekly_plan. apply_weekly_plan
+            # already wrote/UPSERTed the weekly_plan row in the same txn,
+            # so a plain UPDATE is sufficient.
+            txn.execute(
+                """UPDATE weekly_plan
+                       SET selected_variant_id = ?,
+                           selected_at = datetime('now'),
+                           updated_at = datetime('now')
+                       WHERE week = ?""",
+                (variant_id, week_folder),
+            )
+
+            # 10. Commit.
+            txn.execute("COMMIT")
+            return {
+                "ok": True,
+                "selected_variant_id": variant_id,
+                "no_change": False,
+                "dropped_scheduled_workout_ids": list(prior_sw_ids),
+            }
+        except Exception:
+            try:
+                txn.execute("ROLLBACK")
+            except sqlite3.Error:
+                # txn already rolled back / closed by some earlier path.
+                pass
+            raise
+        finally:
+            txn.close()
 
     # --- Query helpers for analysis ---
 
