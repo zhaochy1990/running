@@ -463,6 +463,7 @@ class Database:
         _add("weekly_plan", "structured_status", "TEXT")
         _add("weekly_plan", "structured_parsed_at", "TEXT")
         _add("weekly_plan", "parsed_from_md_hash", "TEXT")
+        _add("weekly_plan", "structured_source", "TEXT")
         # v1 multi-provider migration: tag every existing row with the
         # current sole provider so multi-provider routing works without a
         # backfill pass. Defaults to 'coros' since that's the only existing
@@ -1186,11 +1187,12 @@ class Database:
         c.execute(
             """UPDATE weekly_plan
                SET structured_status = ?,
+                   structured_source = ?,
                    structured_parsed_at = datetime('now'),
                    parsed_from_md_hash = COALESCE(?, parsed_from_md_hash),
                    updated_at = datetime('now')
                WHERE week = ?""",
-            (status, parsed_from_md_hash, week),
+            (status, status, parsed_from_md_hash, week),
         )
         if commit:
             c.commit()

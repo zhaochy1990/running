@@ -16,6 +16,7 @@ on:
     branches: [master]
     paths:
       - 'data/*/logs/**/*.md'
+      - 'data/*/logs/**/*.json'
       - 'data/*/logs/**/inbody.*'
       - 'data/*/TRAINING_PLAN.md'
       - 'data/*/status.md'
@@ -202,7 +203,7 @@ jobs:
           # actually changed. workflow_dispatch / first-push fall back to
           # HEAD only — list will be empty, step is a no-op.
           if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^data/[^/]+/logs/[^/]+/plan\.md$' || true)
+            CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^data/[^/]+/logs/[^/]+/plan\.(md|json)$' || true)
           else
             CHANGED=""
           fi
@@ -216,8 +217,8 @@ jobs:
 
           echo "## structured-plan reparse" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| user | folder | http | response |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|--------|------|----------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| user | folder | http | source | response |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|------|--------|----------|" >> "$GITHUB_STEP_SUMMARY"
 
           while IFS= read -r path; do
             # path is like  data/<user>/logs/<folder>/plan.md
@@ -232,6 +233,7 @@ jobs:
               -H "X-Internal-Token: $STRIDE_INTERNAL_TOKEN" \
               "$STRIDE_PROD_URL/internal/plan/reparse?user=$user_enc&folder=$folder_enc" || echo "000")
             body=$(head -c 500 /tmp/reparse.body | tr '\n' ' ')
+            source_field=$(echo "$body" | python3 -c "import sys,json; d=json.loads(sys.stdin.read() or '{}'); print(d.get('source','-'))" 2>/dev/null || echo "-")
             echo "  status=$response body=$body"
-            echo "| $user | $folder | $response | $body |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| $user | $folder | $response | $source_field | $body |" >> "$GITHUB_STEP_SUMMARY"
           done <<< "$CHANGED"

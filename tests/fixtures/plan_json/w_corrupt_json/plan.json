@@ -1,0 +1,14 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-05-04_05-10(W2基础重建)",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "INVALID-DATE-FORMAT",
+      "session_index": -1,
+      "kind": "unknown_kind",
+      "summary": ""
+    }
+  ],
+  "nutrition": []
+}

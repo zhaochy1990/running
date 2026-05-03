@@ -78,8 +78,17 @@ def exercise_name(key: str) -> str:
 
 
 def parse_week_dates(folder_name: str) -> tuple[str, str] | None:
-    """Parse '2026-04-13_04-19(赛后恢复)' → ('2026-04-13', '2026-04-19')."""
-    m = re.match(r"(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})", folder_name)
+    """Parse '2026-04-13_04-19(赛后恢复)' → ('2026-04-13', '2026-04-19').
+
+    Uses ``re.fullmatch`` (both anchors) so that path-traversal-flavored
+    inputs like ``2026-04-13_04-19/../../etc/passwd`` are rejected. Allows an
+    optional trailing ``(...)`` phase tag whose content is anything other
+    than a path separator (so the tag itself can't smuggle a slash through).
+    """
+    m = re.fullmatch(
+        r"(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})(?:\([^/\\]*\))?",
+        folder_name,
+    )
     if not m:
         return None
     year = int(m.group(1))

@@ -29,12 +29,26 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, stat
 # nutrition tables and detailed daily notes (we observe ~6-12 KiB in practice).
 _MAX_PLAN_MD_BYTES = 64 * 1024
 
+# Common falsy spellings for env-var feature flags. Centralized so ops can use
+# any of the conventional spellings (`false`/`0`/`no`/`off`/`disabled`) instead
+# of having to remember the exact string each call site checks for.
+_FALSY_STR = frozenset({"false", "0", "no", "off", "disabled"})
+
+
+def _env_bool(name: str, default: bool = True) -> bool:
+    """Parse env var as bool. Default returned when var unset/empty."""
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw not in _FALSY_STR
+
 from stride_core.db import Database
-from stride_core.plan_spec import SessionKind
+from stride_core.plan_spec import SUPPORTED_SCHEMA_VERSION, SessionKind, WeeklyPlan
 from stride_core.source import Capability, DataSource, FeatureNotSupported
 from stride_core.workout_spec import NormalizedRunWorkout
 
 from ..coach_agent.agent import apply_weekly_plan, run_agent
+from ..content_store import read_json as content_read_json
 from ..content_store import read_text as content_read_text
 from ..deps import format_duration, get_db, get_source_for_user, parse_week_dates
 
@@ -229,7 +243,11 @@ def get_plan_today(user: str):
 
 
 def _push_guard_or_raise(db: Database, week_folder: str) -> None:
-    """409 unless the week's structured layer is ``fresh``.
+    """409 unless the week's structured layer is ``fresh`` or ``authored``.
+
+    ``authored`` is canonical (came directly from a human-authored plan.json
+    that passed schema validation), so it is equivalent to ``fresh`` for push
+    purposes.
 
     ``backfilled`` is intentionally rejected: historical re-parses can hallucinate
     interval structures that should be human-reviewed before going to the watch.
@@ -241,7 +259,7 @@ def _push_guard_or_raise(db: Database, week_folder: str) -> None:
             structured_status = row["structured_status"]
         except (IndexError, KeyError):
             structured_status = None
-    if structured_status != "fresh":
+    if structured_status not in ("fresh", "authored"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -424,6 +442,78 @@ def push_planned_session(
         db.close()
 
 
+def _try_authored_reparse(
+    user: str, folder: str, content_md: str, generated_by: str | None,
+) -> dict[str, Any] | None:
+    """Try plan.json-first reparse path. Returns response dict on success, None to fall through.
+
+    Phase 1 plan.json-priority logic. Gated by env var ``STRIDE_PLAN_JSON_PRIORITY``
+    (default ``true``). When plan.json exists at the canonical content store path
+    and parses against ``SUPPORTED_SCHEMA_VERSION``, we promote it directly to the
+    structured layer with ``structured_source='authored'`` — bypassing the LLM
+    reverse parser entirely. Any failure (missing file, malformed JSON, schema
+    skew, validation error) returns ``None`` so the caller falls through to the
+    existing LLM path.
+    """
+    if not _env_bool("STRIDE_PLAN_JSON_PRIORITY", default=True):
+        return None
+    plan_json_path = f"{user}/logs/{folder}/plan.json"
+    try:
+        json_result = content_read_json(plan_json_path)
+    except Exception as exc:
+        logger.warning("plan.json read failed for %s: %s", plan_json_path, exc)
+        return None
+    if json_result is None:
+        return None
+    json_data, _source = json_result
+    schema_str = json_data.get("schema", "") if isinstance(json_data, dict) else ""
+    try:
+        schema_version = int(schema_str.split("/v")[-1]) if "/v" in schema_str else None
+    except (ValueError, IndexError):
+        schema_version = None
+    if schema_version is None:
+        logger.warning("plan.json missing valid schema field at %s", plan_json_path)
+        return None
+    if schema_version > SUPPORTED_SCHEMA_VERSION:
+        logger.warning(
+            "plan.json schema_version=%s > SUPPORTED=%s at %s, falling through",
+            schema_version, SUPPORTED_SCHEMA_VERSION, plan_json_path,
+        )
+        return None
+    try:
+        weekly_plan = WeeklyPlan.from_dict(json_data)
+    except Exception as exc:
+        # Catch broadly: ``WeeklyPlan.from_dict`` recurses through
+        # ``PlannedSession`` → ``NormalizedRunWorkout`` → ``WorkoutBlock`` →
+        # ``Duration``/``Target`` etc. Any of those can raise ``AttributeError``,
+        # ``IndexError``, or custom dataclass-validation errors that aren't in
+        # the (ValueError, KeyError, TypeError) tuple. We never want a malformed
+        # plan.json to surface as a 500 to the webhook caller — log + fall
+        # through to the LLM path instead.
+        logger.warning(
+            "plan.json schema invalid at %s: %s (%s)",
+            plan_json_path, exc, type(exc).__name__,
+        )
+        return None
+    apply_weekly_plan(
+        user, folder, content_md,
+        generated_by=generated_by,
+        structured=weekly_plan,
+        structured_source="authored",
+    )
+    logger.info(
+        "plan.json authored path: user=%s folder=%s schema=v%d",
+        user, folder, schema_version,
+    )
+    return {
+        "structured_status": "authored",
+        "source": "authored",
+        "llm_calls": 0,
+        "schema_version": schema_version,
+        "parse_error": None,
+    }
+
+
 @router.post("/api/{user}/plan/reparse")
 def reparse_plan(
     user: str,
@@ -462,6 +552,17 @@ def reparse_plan(
             detail=f"No stored plan for week {folder!r}; nothing to reparse",
         )
 
+    # Phase 1 plan.json-priority short-circuit. When plan.json is present and
+    # parses against the supported schema, promote it as ``authored`` and skip
+    # the LLM call entirely.
+    authored = _try_authored_reparse(user, folder, content_md, existing_generated_by)
+    if authored is not None:
+        return {
+            "ok": True,
+            "folder": folder,
+            **authored,
+        }
+
     if len(content_md.encode("utf-8")) > _MAX_PLAN_MD_BYTES:
         raise HTTPException(
             status_code=400,
@@ -481,10 +582,14 @@ def reparse_plan(
         structured=result.structured,
         structured_source="fresh",
     )
+    structured_status = "fresh" if result.structured is not None else "parse_failed"
     return {
         "ok": True,
         "folder": folder,
-        "structured_status": "fresh" if result.structured is not None else "parse_failed",
+        "structured_status": structured_status,
+        "source": structured_status,
+        "llm_calls": 1,
+        "schema_version": None,
         "parse_error": result.parse_error,
     }
 
@@ -546,17 +651,37 @@ def internal_reparse_plan(
             detail=f"No stored plan for week {folder!r}",
         )
 
+    # Phase 1 plan.json-priority short-circuit. plan.json supersedes the hash
+    # idempotency check because the schema-validated JSON is its own source of
+    # truth — even when plan.md is unchanged, plan.json may have been updated.
+    authored = _try_authored_reparse(user, folder, content_md, existing_generated_by)
+    if authored is not None:
+        return {
+            "ok": True,
+            "noop": False,
+            "user": user,
+            "folder": folder,
+            **authored,
+        }
+
     md_hash = hashlib.sha256(content_md.encode("utf-8")).hexdigest()
     if (
         prior_hash == md_hash
-        and prior_status == "fresh"
+        and prior_status in ("fresh", "authored")
     ):
+        # Idempotent re-run: same plan.md + last parse already in a canonical
+        # state (LLM-fresh or plan.json-authored). Skip the LLM call and echo
+        # the prior status. ``source`` mirrors ``structured_status`` directly
+        # because we know it's one of the accepted canonical values here.
         return {
             "ok": True,
             "noop": True,
             "user": user,
             "folder": folder,
             "structured_status": prior_status,
+            "source": prior_status,
+            "llm_calls": 0,
+            "schema_version": None,
             "parse_error": None,
         }
 
@@ -579,12 +704,16 @@ def internal_reparse_plan(
         structured=result.structured,
         structured_source="fresh",
     )
+    structured_status = "fresh" if result.structured is not None else "parse_failed"
     return {
         "ok": True,
         "noop": False,
         "user": user,
         "folder": folder,
-        "structured_status": "fresh" if result.structured is not None else "parse_failed",
+        "structured_status": structured_status,
+        "source": structured_status,
+        "llm_calls": 1,
+        "schema_version": None,
         "parse_error": result.parse_error,
     }
 

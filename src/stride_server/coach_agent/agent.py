@@ -194,6 +194,9 @@ class AgentResult:
     # a human-readable reason in the failure case.
     structured: WeeklyPlan | None = None
     parse_error: str | None = None
+    source: str = "fresh"
+    llm_calls: int = 0
+    schema_version: int | None = None
 
     # Backwards-compat alias used by existing callers/tests.
     @property
@@ -471,7 +474,7 @@ def run_agent(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-_StructuredSource = Literal["fresh", "backfilled"]
+_StructuredSource = Literal["fresh", "backfilled", "parse_failed", "authored"]
 
 
 def apply_weekly_plan(

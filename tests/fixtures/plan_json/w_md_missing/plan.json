@@ -1,0 +1,434 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-05-04_05-10(W2基础重建)",
+  "notes_md": "Phase 1 W2 基础重建。距赛 17 周。整周 Z1-Z2 纯有氧，不做节奏/间歇/Z3 末段进阶（Z3 是 Phase 2 W6+ 元素）。跑量 40 km（W1 actual 29 → +38%，已贴近 +20% 安全线 2 倍上限，吃紧即降量）。HRmax 178，Z1 <148，Z2 148-158，Z3 158-165。",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-04",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "[STRIDE] 力量A 下肢轻负重启动（5kg）",
+      "notes_md": "W1 完全自重→W2 加 5kg 哑铃；不直接跳 8-10kg。渐进路径 W2 5kg → W3 8kg → W5 10kg。时间 18:30-20:00 完成，避免 21:00 后影响睡眠。任何动作腰酸立即停。",
+      "total_duration_s": 1800,
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量A 下肢 (5kg)",
+        "date": "2026-05-04",
+        "note": "W2 进阶：深蹲/RDL 加 5kg 哑铃；反向弓步保持自重；平板 45→60s",
+        "exercises": [
+          {
+            "canonical_id": "goblet_squat_db",
+            "display_name": "哑铃高脚杯深蹲 (5kg)",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 45,
+            "note": "哑铃贴胸，全蹲到底，膝盖不内扣"
+          },
+          {
+            "canonical_id": "reverse_lunge_bw",
+            "display_name": "反向弓步 (自重)",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 45,
+            "note": "每侧 10 次；后腿膝盖轻触地，前腿膝盖不超脚尖"
+          },
+          {
+            "canonical_id": "romanian_deadlift_db",
+            "display_name": "罗马尼亚硬拉 (5kg/手)",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 45,
+            "note": "臀主导，腰不圆"
+          },
+          {
+            "canonical_id": "single_leg_calf_raise",
+            "display_name": "单腿提踵 (扶墙)",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 30,
+            "note": "每侧 15 次；慢上快下"
+          },
+          {
+            "canonical_id": "plank_basic",
+            "display_name": "平板支撑",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 60,
+            "rest_seconds": 30,
+            "note": "W1 45s → W2 60s；臀腰平直"
+          },
+          {
+            "canonical_id": "single_leg_glute_bridge",
+            "display_name": "臀桥 (单腿)",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "每侧 12 次；顶峰挤臀 1s"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-05",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] Easy Run 8km (HR<148)",
+      "notes_md": "W1 周二 7km 完成度好，本周加 1 km 试探节奏。W1 末段 max HR 162 → 本周注意收尾，HR 上 155 立即降速。",
+      "total_distance_m": 8000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy Run 8km",
+        "date": "2026-05-05",
+        "note": "全程 Z1 心率纪律，配速次要",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 8000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 148},
+                "note": "配速参考 6:00-6:30/km；HR>148 立即降速"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-06",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] Easy 5km + 6×100m strides",
+      "notes_md": "Strides 不是质量课，神经激活；如继续室内跑，把 strides 段移到户外/操场或跑步机推到 14-15 km/h × 20s 模拟。",
+      "total_distance_m": 6000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy + Strides",
+        "date": "2026-05-06",
+        "note": "5km 主段 Z1 + 6×100m strides + 300m cooldown",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 148},
+                "note": "主段轻松；配速 6:00-6:30/km"
+              }
+            ]
+          },
+          {
+            "repeat": 6,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 100},
+                "target": {"kind": "pace_s_km", "low": 260, "high": 240},
+                "note": "Stride：轻快加速 4:00-4:20/km，不是全力冲"
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 60},
+                "target": {"kind": "open", "low": null, "high": null},
+                "note": "走回 60s 完全恢复"
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {"kind": "distance_m", "value": 300},
+                "target": {"kind": "hr_bpm", "low": 120, "high": 140},
+                "note": "慢跑 cool down"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-07",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "[STRIDE] 力量B 核心+灵活性",
+      "notes_md": "时间 18:30-20:00 完成（修正 W1 21:39 偏晚）。组数微增（Dead Bug 10→12，侧平板 30→40s）。",
+      "total_duration_s": 1500,
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量B 核心",
+        "date": "2026-05-07",
+        "note": "核心稳定 + 髋/胸椎灵活性；拉伸不追角度",
+        "exercises": [
+          {
+            "canonical_id": "cat_cow",
+            "display_name": "猫牛式",
+            "sets": 2,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 20,
+            "note": "脊柱分节活动"
+          },
+          {
+            "canonical_id": "thoracic_rotation_quadruped",
+            "display_name": "胸椎旋转（四足位）",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 20,
+            "note": "每侧 10 次；旋转看天花板"
+          },
+          {
+            "canonical_id": "hip_flexor_lunge_stretch",
+            "display_name": "弓步髋屈肌拉伸",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 20,
+            "note": "每侧 30s；骨盆后倾"
+          },
+          {
+            "canonical_id": "pigeon_pose_stretch",
+            "display_name": "臀部拉伸（鸽子式）",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 20,
+            "note": "每侧 30s；臀中肌 + 梨状肌"
+          },
+          {
+            "canonical_id": "dead_bug",
+            "display_name": "Dead Bug",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "每侧 12 次（W1 10 → W2 12）；腰不离地"
+          },
+          {
+            "canonical_id": "bird_dog",
+            "display_name": "Bird Dog",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "每侧 12 次；同侧稳定不晃"
+          },
+          {
+            "canonical_id": "side_plank",
+            "display_name": "侧平板",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 40,
+            "rest_seconds": 30,
+            "note": "每侧 40s（W1 30s → W2 40s）；肩-髋-膝一线"
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-08",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] Easy Run 7km (HR<148)",
+      "notes_md": "周末长距离前储备日。",
+      "total_distance_m": 7000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy Run 7km",
+        "date": "2026-05-08",
+        "note": "Z1 全程",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 7000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 148},
+                "note": "6:00-6:30/km"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-09",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] Easy Run 6km (HR<148)",
+      "notes_md": "长距离前一天，纯轻松，不进阶。",
+      "total_distance_m": 6000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy Run 6km",
+        "date": "2026-05-09",
+        "note": "Z1 全程",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 6000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 148},
+                "note": "6:00-6:30/km；早晨或下午凉时"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-10",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] 长距离 13km 全程 Z2",
+      "notes_md": "本周锚点训练。早晨 6:30-9:00 出发（养成清晨训练习惯，为 Phase 3 打底）。带 1 瓶水，无需能量胶。Phase 1 = 纯有氧，本周不加 Z3 末段进阶。",
+      "total_distance_m": 13000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Long Run 13km",
+        "date": "2026-05-10",
+        "note": "全程 Z2；末段不进阶（Z3 留给 Phase 2 W6+）",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 13000},
+                "target": {"kind": "hr_bpm", "low": 145, "high": 155},
+                "note": "配速参考 5:45-6:15/km；HR>158 立即降速"
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {"kind": "distance_m", "value": 300},
+                "target": {"kind": "hr_bpm", "low": 110, "high": 140},
+                "note": "短 cool down"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-04",
+      "kcal_target": 2300,
+      "carbs_g": 300,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "notes_md": "力量日：碳水 4 g/kg；蛋白质 1.8 g/kg 护肌；力量后 30min 内 30g 蛋白 + 50-60g 快碳",
+      "meals": [
+        {"name": "早餐", "time_hint": "7:30", "kcal": 500, "carbs_g": 60, "protein_g": 25, "fat_g": 15, "items_md": "燕麦 60g + 牛奶 250ml + 鸡蛋 2 个"},
+        {"name": "午餐", "time_hint": "12:30", "kcal": 700, "carbs_g": 100, "protein_g": 40, "fat_g": 18, "items_md": "米饭 150g + 鸡胸肉 150g + 西兰花 200g"},
+        {"name": "加餐", "time_hint": "16:00", "kcal": 200, "carbs_g": 25, "protein_g": 15, "fat_g": 5, "items_md": "酸奶 200g + 坚果 15g"},
+        {"name": "晚餐", "time_hint": "19:00", "kcal": 700, "carbs_g": 95, "protein_g": 35, "fat_g": 20, "items_md": "藜麦 100g + 瘦肉/豆腐 150g + 蔬菜 250g"},
+        {"name": "力量后补给", "time_hint": "20:30", "kcal": 200, "carbs_g": 25, "protein_g": 20, "fat_g": 3, "items_md": "蛋白粉 1 勺 + 香蕉 1 根"}
+      ]
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-05",
+      "kcal_target": 2400,
+      "carbs_g": 375,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "notes_md": "跑日：碳水 5 g/kg；8km 空腹可；跑后 30min 内 30g 蛋白 + 50-60g 快碳",
+      "meals": [
+        {"name": "早餐", "time_hint": "7:30", "kcal": 550, "carbs_g": 80, "protein_g": 25, "fat_g": 12, "items_md": "燕麦 80g + 牛奶 250ml + 鸡蛋 2 个"},
+        {"name": "午餐", "time_hint": "12:30", "kcal": 750, "carbs_g": 120, "protein_g": 40, "fat_g": 18, "items_md": "米饭 200g + 鸡胸肉 150g + 西兰花 200g"},
+        {"name": "加餐", "time_hint": "16:00", "kcal": 250, "carbs_g": 35, "protein_g": 15, "fat_g": 6, "items_md": "全麦面包 1 片 + 酸奶 200g"},
+        {"name": "跑后补给", "time_hint": "20:30", "kcal": 300, "carbs_g": 50, "protein_g": 30, "fat_g": 4, "items_md": "蛋白粉 1 勺 + 香蕉 1 根 + 牛奶 250ml"},
+        {"name": "晚餐", "time_hint": "21:00", "kcal": 550, "carbs_g": 90, "protein_g": 25, "fat_g": 15, "items_md": "米饭 120g + 鱼/瘦肉 100g + 蔬菜 250g"}
+      ]
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-06",
+      "kcal_target": 2400,
+      "carbs_g": 375,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "notes_md": "跑日：碳水 5 g/kg",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-07",
+      "kcal_target": 2300,
+      "carbs_g": 300,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "notes_md": "力量日：碳水 4 g/kg",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-08",
+      "kcal_target": 2400,
+      "carbs_g": 375,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "notes_md": "跑日 + 周末长距离前储备：碳水 5 g/kg",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-09",
+      "kcal_target": 2400,
+      "carbs_g": 400,
+      "protein_g": 135,
+      "fat_g": 65,
+      "water_ml": 2700,
+      "notes_md": "周日长距离前夜：碳水适度提到 ~5.3 g/kg；晚餐多一份米饭储备糖原；睡前补充电解质",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-10",
+      "kcal_target": 2500,
+      "carbs_g": 412,
+      "protein_g": 135,
+      "fat_g": 65,
+      "water_ml": 3000,
+      "notes_md": "长距离日：碳水 5.5 g/kg；跑前 1h 香蕉 1 根 + 100ml 黑咖啡；跑后 30min 内 30g 蛋白 + 60g 快碳",
+      "meals": [
+        {"name": "跑前", "time_hint": "5:30", "kcal": 150, "carbs_g": 30, "protein_g": 2, "fat_g": 1, "items_md": "香蕉 1 根 + 黑咖啡 100ml"},
+        {"name": "跑后补给", "time_hint": "8:30", "kcal": 350, "carbs_g": 60, "protein_g": 30, "fat_g": 4, "items_md": "蛋白粉 1 勺 + 燕麦 50g + 牛奶 250ml + 香蕉 1 根"},
+        {"name": "午餐", "time_hint": "12:30", "kcal": 800, "carbs_g": 130, "protein_g": 40, "fat_g": 18, "items_md": "米饭 200g + 鱼 150g + 蔬菜 250g"},
+        {"name": "加餐", "time_hint": "16:00", "kcal": 250, "carbs_g": 40, "protein_g": 15, "fat_g": 6, "items_md": "酸奶 200g + 全麦面包 1 片"},
+        {"name": "晚餐", "time_hint": "19:00", "kcal": 700, "carbs_g": 110, "protein_g": 30, "fat_g": 18, "items_md": "面条 100g + 瘦肉 100g + 蔬菜 250g"}
+      ]
+    }
+  ]
+}
