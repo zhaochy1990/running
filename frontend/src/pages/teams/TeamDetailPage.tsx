@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   deleteTeam, getTeam, getTeamMembers, getTeamFeed, joinTeam, leaveTeam, listMyTeams, syncTeamAll,
   transferTeamOwner,
-  formatDate, weekdayCN, sportNameCN,
+  formatDate, formatTime, weekdayCN, sportNameCN,
   type Team, type TeamMember, type TeamFeedActivity, type TeamSyncSummary,
 } from '../../api'
 import { useUserId } from '../../store/authStore'
@@ -258,7 +258,7 @@ export default function TeamDetailPage() {
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-sm font-semibold text-text-primary">{act.display_name}</span>
                     <span className="text-xs font-mono text-text-muted">
-                      {weekdayCN(act.date)} {formatDate(act.date)}
+                      {weekdayCN(act.date)} {formatDate(act.date)} {formatTime(act.date)}
                     </span>
                   </div>
                   <div className="flex items-center gap-3 text-xs font-mono text-text-secondary">

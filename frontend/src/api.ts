@@ -912,6 +912,23 @@ export function formatDateShort(dateStr: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日`
 }
 
+// HH:MM:SS in Shanghai time. The DB stores UTC; running data is interpreted
+// against Shanghai local time everywhere else in this app, so pin the TZ
+// instead of trusting browser locale.
+const TIME_FMT_SHANGHAI = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Shanghai',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+
+export function formatTime(dateStr: string): string {
+  const d = parseDate(dateStr)
+  if (!d || isNaN(d.getTime())) return ''
+  return TIME_FMT_SHANGHAI.format(d)
+}
+
 export function formatWeekRange(dateFrom: string, dateTo: string): string {
   const df = parseDate(dateFrom)
   const dt = parseDate(dateTo)

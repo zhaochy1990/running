@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, getPlanDays, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint, type PlannedSessionRow, type LinkedScheduledWorkout } from '../api'
+import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, getPlanDays, formatDate, formatTime, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint, type PlannedSessionRow, type LinkedScheduledWorkout } from '../api'
 import { useUser } from '../UserContextValue'
 import SegmentView from '../components/SegmentView'
 import StrengthView from '../components/StrengthView'
@@ -200,7 +200,9 @@ export default function ActivityDetailPage() {
             <h1 className="text-xl font-bold text-text-primary tracking-tight">
               {activity.name || sportNameCN(activity.sport_name)}
             </h1>
-            <p className="text-sm font-mono text-text-muted mt-1">{formatDate(activity.date)}</p>
+            <p className="text-sm font-mono text-text-muted mt-1">
+              {formatDate(activity.date)} {formatTime(activity.date)}
+            </p>
           </div>
           {!isTeamView && (
             <button
