@@ -776,7 +776,8 @@ class Database:
     def get_weekly_plan_row(self, week: str) -> sqlite3.Row | None:
         return self._conn.execute(
             "SELECT week, content_md, generated_by, generated_at, created_at, updated_at, "
-            "       structured_status, structured_parsed_at, parsed_from_md_hash "
+            "       structured_status, structured_parsed_at, parsed_from_md_hash, "
+            "       selected_variant_id, selected_at "
             "FROM weekly_plan WHERE week = ?",
             (week,),
         ).fetchone()
