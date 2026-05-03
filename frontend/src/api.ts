@@ -1,8 +1,10 @@
 import { refreshAccessToken } from './store/authStore'
 import type {
+  AbandonedScheduledWorkout,
   PlannedNutrition,
   PlannedSession,
   StructuredStatus,
+  VariantsSummary,
 } from './types/plan'
 
 const BASE = '/api'
@@ -334,6 +336,9 @@ export interface WeekDetail {
   total_duration_s: number
   total_duration_fmt: string
   activity_count: number
+  // Multi-variant additions (Step 4 backend additive fields).
+  variants_summary?: VariantsSummary
+  abandoned_scheduled_workouts?: AbandonedScheduledWorkout[]
 }
 
 export function triggerSync(user: string, full: boolean = false) {
@@ -854,14 +859,28 @@ export interface Segment extends Lap {
   mode: number | null
 }
 
+export interface LinkedScheduledWorkout {
+  id: number
+  abandoned_by_promote_at: string | null
+}
+
+export interface ActivityDetailResponse {
+  activity: Activity
+  laps: Lap[]
+  segments: Segment[]
+  zones: Zone[]
+  timeseries: TimeseriesPoint[]
+  linked_scheduled_workout?: LinkedScheduledWorkout | null
+}
+
 export function getActivity(user: string, id: string) {
-  return fetchJSON<{ activity: Activity; laps: Lap[]; segments: Segment[]; zones: Zone[]; timeseries: TimeseriesPoint[] }>(
+  return fetchJSON<ActivityDetailResponse>(
     `/${user}/activities/${id}`
   )
 }
 
 export function getTeamActivity(teamId: string, userId: string, labelId: string) {
-  return fetchJSON<{ activity: Activity; laps: Lap[]; segments: Segment[]; zones: Zone[]; timeseries: TimeseriesPoint[] }>(
+  return fetchJSON<ActivityDetailResponse>(
     `/teams/${teamId}/activities/${userId}/${labelId}`
   )
 }
@@ -970,4 +989,157 @@ export function weekdayCN(dateStr: string): string {
   const d = parseDate(dateStr)
   if (!d || isNaN(d.getTime())) return ''
   return WEEKDAY_CN[d.getDay()]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-variant plans (Step 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type {
+  PlanVariant,
+  RatingDimension,
+  RatingScore,
+  VariantsResponse,
+} from './types/plan'
+
+export function getPlanVariants(
+  user: string,
+  folder: string,
+  includeSuperseded: boolean = false,
+): Promise<VariantsResponse> {
+  const qs = includeSuperseded ? '?include_superseded=true' : ''
+  return fetchJSON<VariantsResponse>(
+    `/${user}/plan/${encodeURIComponent(folder)}/variants${qs}`,
+  )
+}
+
+export async function ratePlanVariant(
+  user: string,
+  variantId: number,
+  ratings: Partial<Record<RatingDimension, RatingScore>>,
+  comment?: string | null,
+): Promise<{ ratings: Partial<Record<RatingDimension, RatingScore>>; rating_comment: string | null }> {
+  const body: Record<string, unknown> = { ratings }
+  if (comment !== undefined && comment !== null) body.comment = comment
+  const res = await postJSON<{ ratings: Partial<Record<RatingDimension, RatingScore>>; rating_comment: string | null }>(
+    `/${user}/plan/variants/${variantId}/rate`,
+    body,
+  )
+  if (!res.ok) {
+    throw new Error(`rate failed: HTTP ${res.status}`)
+  }
+  return res.data
+}
+
+export interface SelectVariantSuccess {
+  ok: true
+  no_change?: boolean
+  week_folder: string
+  selected_variant_id: number
+  dropped_scheduled_workout_ids: number[]
+}
+
+export interface SelectVariantConflict {
+  status: 409
+  error: 'selection_conflict' | 'concurrent_select'
+  already_pushed_count?: number
+  hint?: string
+}
+
+export interface SelectVariantSchemaOutdated {
+  status: 426
+  error: 'variant_schema_outdated'
+  variant_version?: number
+  server_version?: number
+}
+
+export type SelectVariantError = SelectVariantConflict | SelectVariantSchemaOutdated
+
+/** Promote a variant to canonical. Auto-retries once on
+ * 409 concurrent_select with `Retry-After: 1`; surfaces
+ * `selection_conflict` (force=false with prior pushes) and 426
+ * `variant_schema_outdated` as typed errors via the rejected promise.
+ */
+export async function selectPlanVariant(
+  user: string,
+  folder: string,
+  variantId: number,
+  force: boolean = false,
+): Promise<SelectVariantSuccess> {
+  const path = `/${user}/plan/${encodeURIComponent(folder)}/select`
+  const body = { variant_id: variantId, force }
+
+  const doPost = async () => postJSON<{ detail?: { error?: string; already_pushed_count?: number; hint?: string; variant_version?: number; server_version?: number }; ok?: boolean; no_change?: boolean; week_folder?: string; selected_variant_id?: number; dropped_scheduled_workout_ids?: number[] }>(path, body)
+
+  let res = await doPost()
+
+  // Auto-retry once on concurrent_select 409.
+  if (res.status === 409 && res.data?.detail?.error === 'concurrent_select') {
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    res = await doPost()
+  }
+
+  if (res.ok) {
+    return {
+      ok: true,
+      no_change: res.data?.no_change ?? false,
+      week_folder: res.data?.week_folder ?? folder,
+      selected_variant_id: res.data?.selected_variant_id ?? variantId,
+      dropped_scheduled_workout_ids: res.data?.dropped_scheduled_workout_ids ?? [],
+    }
+  }
+
+  const detail = res.data?.detail ?? {}
+  if (res.status === 409) {
+    const err: SelectVariantConflict = {
+      status: 409,
+      error: (detail.error === 'concurrent_select' ? 'concurrent_select' : 'selection_conflict'),
+      already_pushed_count: detail.already_pushed_count,
+      hint: detail.hint,
+    }
+    throw err
+  }
+  if (res.status === 426) {
+    const err: SelectVariantSchemaOutdated = {
+      status: 426,
+      error: 'variant_schema_outdated',
+      variant_version: detail.variant_version,
+      server_version: detail.server_version,
+    }
+    throw err
+  }
+  throw new Error(`select failed: HTTP ${res.status}`)
+}
+
+export async function deletePlanVariants(
+  user: string,
+  folder: string,
+): Promise<{ deleted_variants: number }> {
+  const res = await deleteJSON<{ deleted_variants: number }>(
+    `/${user}/plan/${encodeURIComponent(folder)}/variants`,
+  )
+  if (!res.ok) {
+    throw new Error(`delete variants failed: HTTP ${res.status}`)
+  }
+  return res.data
+}
+
+/** Helper used by VariantComparisonView — sums total_distance_m across
+ * run sessions and converts to km (rounded to 1 decimal). */
+export function totalRunKm(variant: PlanVariant): number {
+  const m = variant.sessions
+    .filter(s => s.kind === 'run' && typeof s.total_distance_m === 'number')
+    .reduce((sum, s) => sum + (s.total_distance_m ?? 0), 0)
+  return Math.round(m / 100) / 10
+}
+
+/** Helper — total kcal target across all days in this variant. */
+export function totalKcalTarget(variant: PlanVariant): number {
+  return variant.nutrition.reduce((sum, n) => sum + (n.kcal_target ?? 0), 0)
+}
+
+/** Helper — average overall rating, or null if no overall rating yet. */
+export function overallRating(variant: PlanVariant): RatingScore | null {
+  const v = variant.ratings.overall
+  return typeof v === 'number' ? (v as RatingScore) : null
 }
