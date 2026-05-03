@@ -13,8 +13,9 @@ import {
 import type { PlannedNutrition, StructuredStatus } from '../types/plan'
 import { useUser } from '../UserContextValue'
 import PlannedCalendar from '../components/PlannedCalendar'
+import VariantComparisonView from '../components/VariantComparisonView'
 
-type Tab = 'plan' | 'calendar' | 'activities' | 'feedback'
+type Tab = 'plan' | 'variants' | 'calendar' | 'activities' | 'feedback'
 
 export default function WeekLayout() {
   const { folder } = useParams<{ folder: string }>()
@@ -147,11 +148,16 @@ export default function WeekLayout() {
             </div>
           </div>
 
-          {/* Tabs: 计划 → 日历 → 记录 → 反馈 */}
+          {/* Tabs: 训练计划 → 方案 → 日历 → 记录 → 反馈 */}
           <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg w-fit mb-6">
             {weekDetail.plan && (
               <TabButton active={activeTab === 'plan'} onClick={() => setActiveTab('plan')} color="green">
                 训练计划
+              </TabButton>
+            )}
+            {(weekDetail.variants_summary?.total ?? 0) > 0 && (
+              <TabButton active={activeTab === 'variants'} onClick={() => setActiveTab('variants')} color="cyan">
+                方案 ({weekDetail.variants_summary?.total ?? 0})
               </TabButton>
             )}
             {structuredStatus !== 'none' && (
@@ -169,11 +175,20 @@ export default function WeekLayout() {
 
           {/* Tab content */}
           {activeTab === 'plan' && weekDetail.plan && (
-            <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6 animate-fade-in">
-              <div className="prose max-w-none">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{weekDetail.plan}</ReactMarkdown>
+            <div className="space-y-3 animate-fade-in">
+              <SelectedVariantBar
+                summary={weekDetail.variants_summary}
+              />
+              <AbandonedBanner abandoned={weekDetail.abandoned_scheduled_workouts} />
+              <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6">
+                <div className="prose max-w-none">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{weekDetail.plan}</ReactMarkdown>
+                </div>
               </div>
             </div>
+          )}
+          {activeTab === 'variants' && user && folder && (
+            <VariantComparisonView user={user} folder={folder} />
           )}
           {activeTab === 'calendar' && (
             <CalendarTab
@@ -569,6 +584,48 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
       <p className={`text-sm font-mono font-medium mt-0.5 ${accent ? 'text-text-primary' : 'text-text-secondary'}`}>
         {value}
       </p>
+    </div>
+  )
+}
+
+function SelectedVariantBar({
+  summary,
+}: {
+  summary?: WeekDetail['variants_summary']
+}) {
+  if (!summary || summary.selected_variant_id == null) return null
+  const idx = summary.selected_variant_id != null
+    ? summary.model_ids.length === 1 ? summary.model_ids[0] : ''
+    : ''
+  return (
+    <div
+      data-testid="selected-variant-bar"
+      className="flex items-center gap-2 rounded-xl border border-accent-green/30 bg-accent-green/10 px-3 py-1.5 text-xs font-mono text-accent-green"
+    >
+      <span>已选定 ✓</span>
+      {idx && <span className="text-text-secondary">from {idx}</span>}
+      <span className="text-text-muted">(variant #{summary.selected_variant_id})</span>
+    </div>
+  )
+}
+
+function AbandonedBanner({
+  abandoned,
+}: {
+  abandoned?: WeekDetail['abandoned_scheduled_workouts']
+}) {
+  if (!abandoned || abandoned.length === 0) return null
+  const dates = abandoned.map((a) => a.date).join('、')
+  return (
+    <div
+      data-testid="abandoned-banner"
+      role="alert"
+      className="rounded-xl border border-accent-red/30 bg-accent-red/10 px-4 py-2.5 text-xs font-mono text-accent-red"
+    >
+      <div className="font-semibold mb-1">
+        ⚠️ {abandoned.length} 条已推送训练在新计划中没有对应
+      </div>
+      <div>请到 COROS 删除以避免重复推送: {dates}</div>
     </div>
   )
 }
