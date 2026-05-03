@@ -688,9 +688,10 @@ class Database:
 
     def upsert_weekly_plan(
         self, week: str, content_md: str, *, generated_by: str | None = None,
-        commit: bool = True,
+        commit: bool = True, conn: sqlite3.Connection | None = None,
     ) -> None:
-        self._conn.execute(
+        c = conn or self._conn
+        c.execute(
             """INSERT INTO weekly_plan
                (week, content_md, generated_by, generated_at, updated_at)
                VALUES (?, ?, ?, datetime('now'), datetime('now'))
@@ -702,7 +703,7 @@ class Database:
             (week, content_md, generated_by),
         )
         if commit:
-            self._conn.commit()
+            c.commit()
 
     # --- InBody body-composition scans ---
 
@@ -962,6 +963,7 @@ class Database:
 
     def upsert_planned_sessions(
         self, week_folder: str, sessions: list, *, commit: bool = True,
+        conn: sqlite3.Connection | None = None,
     ) -> list[int]:
         """Replace all planned_session rows for a week.
 
@@ -970,17 +972,19 @@ class Database:
         can stitch them into other tables (e.g. push pipeline).
         Pass ``commit=False`` to defer the commit to the caller (used by
         ``apply_weekly_plan`` so all writes land atomically inside one
-        ``with db._conn:`` block).
+        ``with db._conn:`` block). Pass ``conn=`` to redirect writes onto a
+        dedicated immediate-txn connection (used by promote/select).
         """
         import json as _json
 
-        cur = self._conn.execute(
+        c = conn or self._conn
+        cur = c.execute(
             "DELETE FROM planned_session WHERE week_folder = ?", (week_folder,)
         )
         ids: list[int] = []
         for s in sessions:
             spec_json = _json.dumps(s.spec.to_dict()) if s.spec is not None else None
-            row = self._conn.execute(
+            row = c.execute(
                 """INSERT INTO planned_session
                 (week_folder, date, session_index, kind, summary, spec_json,
                  notes_md, total_distance_m, total_duration_s,
@@ -994,26 +998,30 @@ class Database:
             )
             ids.append(row.lastrowid)
         if commit:
-            self._conn.commit()
+            c.commit()
         _ = cur  # silence unused-var; kept for clarity that DELETE precedes INSERTs
         return ids
 
     def upsert_planned_nutrition(
         self, week_folder: str, nutrition: list, *, commit: bool = True,
+        conn: sqlite3.Connection | None = None,
     ) -> None:
         """Replace all planned_nutrition rows for a week.
 
         ``nutrition`` is a list of ``stride_core.plan_spec.PlannedNutrition``.
-        Pass ``commit=False`` to defer the commit to the caller.
+        Pass ``commit=False`` to defer the commit to the caller. Pass
+        ``conn=`` to redirect writes onto a dedicated immediate-txn
+        connection (used by promote/select).
         """
         import json as _json
 
-        self._conn.execute(
+        c = conn or self._conn
+        c.execute(
             "DELETE FROM planned_nutrition WHERE week_folder = ?", (week_folder,)
         )
         for n in nutrition:
             meals_json = _json.dumps([m.to_dict() for m in n.meals])
-            self._conn.execute(
+            c.execute(
                 """INSERT INTO planned_nutrition
                 (date, week_folder, kcal_target, carbs_g, protein_g, fat_g,
                  water_ml, meals_json, notes_md, updated_at)
@@ -1024,7 +1032,7 @@ class Database:
                 ),
             )
         if commit:
-            self._conn.commit()
+            c.commit()
 
     def get_planned_sessions(
         self, *, date_from: str | None = None, date_to: str | None = None,
@@ -1070,12 +1078,14 @@ class Database:
 
     def set_weekly_plan_structured_status(
         self, week: str, *, status: str, parsed_from_md_hash: str | None = None,
-        commit: bool = True,
+        commit: bool = True, conn: sqlite3.Connection | None = None,
     ) -> None:
         """Record the structured-layer state on the parent weekly_plan row.
-        Pass ``commit=False`` to defer the commit to the caller.
+        Pass ``commit=False`` to defer the commit to the caller. Pass
+        ``conn=`` to redirect onto a dedicated immediate-txn connection.
         """
-        self._conn.execute(
+        c = conn or self._conn
+        c.execute(
             """UPDATE weekly_plan
                SET structured_status = ?,
                    structured_parsed_at = datetime('now'),
@@ -1085,21 +1095,43 @@ class Database:
             (status, parsed_from_md_hash, week),
         )
         if commit:
-            self._conn.commit()
+            c.commit()
 
     def mark_plan_parse_failed(self, week: str) -> None:
         self.set_weekly_plan_structured_status(week, status="parse_failed")
 
     def set_planned_session_scheduled_workout(
         self, planned_session_id: int, scheduled_workout_id: int,
+        *, commit: bool = True, conn: sqlite3.Connection | None = None,
     ) -> None:
-        self._conn.execute(
+        c = conn or self._conn
+        c.execute(
             """UPDATE planned_session
                SET scheduled_workout_id = ?, updated_at = datetime('now')
                WHERE id = ?""",
             (scheduled_workout_id, planned_session_id),
         )
-        self._conn.commit()
+        if commit:
+            c.commit()
+
+    def open_immediate_txn(self) -> sqlite3.Connection:
+        """Open a fresh sqlite3 connection in manual-commit mode and acquire
+        the SQLite write lock immediately via ``BEGIN IMMEDIATE``.
+
+        The returned connection is owned by the caller, who is responsible
+        for ``commit()``/``rollback()`` and ``close()``. Failing to close
+        leaks the write lock.
+
+        Sets ``busy_timeout`` to 100 ms so concurrent select-variant attempts
+        surface a clean ``database is locked`` error (translatable to HTTP
+        409 retry-after) instead of an immediate hard failure on transient
+        races.
+        """
+        conn = sqlite3.connect(str(self._path), isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 100")
+        conn.execute("BEGIN IMMEDIATE")
+        return conn
 
     def get_planned_session(self, planned_session_id: int) -> sqlite3.Row | None:
         return self._conn.execute(
