@@ -223,6 +223,47 @@ def get_week(user: str, folder: str):
         "nutrition": nutrition_payload,
     }
 
+    # Multi-variant summary (Step 2). Additive — old frontends ignore.
+    # Lists ACTIVE variants only (superseded ones aren't relevant for
+    # the summary card). `selected_variant_id` mirrors the field on
+    # weekly_plan; null when nothing's been promoted yet.
+    variant_rows = db.get_weekly_plan_variants(folder)
+    selected_vid = None
+    if db_plan_row is not None:
+        try:
+            selected_vid = db_plan_row["selected_variant_id"]
+        except (IndexError, KeyError):
+            selected_vid = None
+    result["variants_summary"] = {
+        "total": len(variant_rows),
+        "selected_variant_id": selected_vid,
+        "model_ids": [r["model_id"] for r in variant_rows],
+    }
+
+    # Multi-variant fallback design (Step 4): surface scheduled_workout
+    # rows in this week that were marked `abandoned_by_promote_at` by a
+    # prior variant promote. Frontend renders a red banner over the
+    # canonical view + an activity-detail warning so the user knows to
+    # delete the orphan [STRIDE] entries on COROS App. Only NON-NULL rows
+    # are returned; an empty list means "no orphans for this week".
+    abandoned_rows = db.query(
+        """SELECT id, date, name, abandoned_by_promote_at
+             FROM scheduled_workout
+            WHERE date >= ? AND date <= ?
+              AND abandoned_by_promote_at IS NOT NULL
+            ORDER BY date, id""",
+        (date_from, date_to),
+    )
+    result["abandoned_scheduled_workouts"] = [
+        {
+            "id": r["id"],
+            "date": r["date"],
+            "name": r["name"],
+            "abandoned_by_promote_at": r["abandoned_by_promote_at"],
+        }
+        for r in abandoned_rows
+    ]
+
     db.close()
     return result
 

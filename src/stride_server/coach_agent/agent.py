@@ -482,6 +482,8 @@ def apply_weekly_plan(
     generated_by: str | None = None,
     structured: WeeklyPlan | None = None,
     structured_source: _StructuredSource = "fresh",
+    commit: bool = True,
+    conn: sqlite3.Connection | None = None,
 ) -> dict[str, Any]:
     """Persist a weekly plan markdown + (optional) structured layer.
 
@@ -492,38 +494,56 @@ def apply_weekly_plan(
     When ``structured`` is ``None`` we mark the row ``parse_failed`` so the UI
     can show a "重新解析" affordance.
 
-    All writes go through a single SQLite transaction (``with db._conn:``
-    block + ``commit=False`` on each helper). The block commits on clean
-    exit and rolls back on any exception, so a mid-call failure never
-    leaves partial state — either every row landed or none did.
+    Default behavior (``commit=True, conn=None``): all writes go through a
+    single SQLite transaction (``with db._conn:`` block + ``commit=False``
+    on each helper). The block commits on clean exit and rolls back on any
+    exception, so a mid-call failure never leaves partial state — either
+    every row landed or none did.
+
+    Promote/select callers pass ``commit=False, conn=<dedicated immediate-txn>``
+    so this whole apply lives inside the caller's larger transaction; the
+    caller is then responsible for the final ``commit()``/``rollback()``.
     """
     db = Database(user=user)
     try:
         author = generated_by or get_generated_by()
         md_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
-        with db._conn:
-            db.upsert_weekly_plan(folder, content, generated_by=author, commit=False)
+        def _do_writes(_c: sqlite3.Connection | None) -> None:
+            db.upsert_weekly_plan(folder, content, generated_by=author,
+                                  commit=False, conn=_c)
             if structured is not None:
                 db.upsert_planned_sessions(
-                    folder, list(structured.sessions), commit=False,
+                    folder, list(structured.sessions), commit=False, conn=_c,
                 )
                 db.upsert_planned_nutrition(
-                    folder, list(structured.nutrition), commit=False,
+                    folder, list(structured.nutrition), commit=False, conn=_c,
                 )
                 db.set_weekly_plan_structured_status(
                     folder, status=structured_source,
-                    parsed_from_md_hash=md_hash, commit=False,
+                    parsed_from_md_hash=md_hash, commit=False, conn=_c,
                 )
             else:
                 # Wipe any prior structured rows so we don't leave stale
                 # data claiming to belong to this week.
-                db.upsert_planned_sessions(folder, [], commit=False)
-                db.upsert_planned_nutrition(folder, [], commit=False)
+                db.upsert_planned_sessions(folder, [], commit=False, conn=_c)
+                db.upsert_planned_nutrition(folder, [], commit=False, conn=_c)
                 db.set_weekly_plan_structured_status(
                     folder, status="parse_failed",
-                    parsed_from_md_hash=md_hash, commit=False,
+                    parsed_from_md_hash=md_hash, commit=False, conn=_c,
                 )
+
+        if conn is not None:
+            # Caller (e.g. promote/select) owns the txn boundary on the
+            # dedicated immediate-txn connection.
+            _do_writes(conn)
+        elif commit:
+            with db._conn:
+                _do_writes(None)
+        else:
+            # commit=False with no conn = run on db._conn but do not
+            # commit. Caller is responsible for committing db._conn later.
+            _do_writes(None)
 
         row = db.get_weekly_plan_row(folder)
         return dict(row) if row else {"week": folder, "content_md": content, "generated_by": author}

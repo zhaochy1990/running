@@ -139,3 +139,67 @@ export function isPushable(s: PlannedSession): boolean {
 export function isFresh(status: StructuredStatus | null | undefined): boolean {
   return status === 'fresh'
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-variant plans (Step 4 — mirrors routes/plan_variants.py + weeks.py extras)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type VariantParseStatus = 'fresh' | 'parse_failed'
+
+export type UnselectableReason = 'parse_failed' | 'schema_outdated' | 'superseded'
+
+// Mirrors `routes/plan_variants.py:_VALID_RATING_DIMENSIONS`.
+// Note: server uses `difficulty` (not `difficulty_match`); the spec doc
+// uses `difficulty_match` but the wire format is `difficulty`.
+export type RatingDimension =
+  | 'overall'
+  | 'suitability'
+  | 'structure'
+  | 'nutrition'
+  | 'difficulty'
+
+export type RatingScore = 1 | 2 | 3 | 4 | 5
+
+export interface VariantRating {
+  dimension: RatingDimension
+  score: RatingScore
+  comment?: string | null
+}
+
+export interface PlanVariant {
+  variant_id: number
+  variant_index: number | null
+  model_id: string
+  schema_version: number
+  variant_parse_status: VariantParseStatus
+  content_md: string
+  sessions: PlannedSession[]
+  nutrition: PlannedNutrition[]
+  ratings: Partial<Record<RatingDimension, RatingScore>>
+  rating_comment: string | null
+  is_selected: boolean
+  generated_at: string
+  generation_metadata: Record<string, unknown> | null
+  selectable: boolean
+  unselectable_reason?: UnselectableReason
+  superseded_at?: string
+}
+
+export interface VariantsResponse {
+  week_folder: string
+  selected_variant_id: number | null
+  variants: PlanVariant[]
+}
+
+export interface VariantsSummary {
+  total: number
+  selected_variant_id: number | null
+  model_ids: string[]
+}
+
+export interface AbandonedScheduledWorkout {
+  id: number
+  date: string
+  name: string
+  abandoned_by_promote_at: string
+}

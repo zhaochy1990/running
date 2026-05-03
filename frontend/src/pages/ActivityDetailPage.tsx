@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, getPlanDays, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint, type PlannedSessionRow } from '../api'
+import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, getPlanDays, formatDate, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint, type PlannedSessionRow, type LinkedScheduledWorkout } from '../api'
 import { useUser } from '../UserContextValue'
 import SegmentView from '../components/SegmentView'
 import StrengthView from '../components/StrengthView'
@@ -36,6 +36,7 @@ export default function ActivityDetailPage() {
   const [regenError, setRegenError] = useState<string | null>(null)
   const [hoverElapsed, setHoverElapsed] = useState<number | null>(null)
   const [plannedSession, setPlannedSession] = useState<PlannedSessionRow | null>(null)
+  const [linkedSw, setLinkedSw] = useState<LinkedScheduledWorkout | null>(null)
 
   const fetchDetail = useCallback(() => {
     if (isTeamView) {
@@ -54,6 +55,7 @@ export default function ActivityDetailPage() {
       setSegments(data.segments || [])
       setZones(data.zones)
       setTimeseries(data.timeseries)
+      setLinkedSw(data.linked_scheduled_workout ?? null)
     })
   }, [activityId, fetchDetail, isTeamView, user])
 
@@ -68,6 +70,7 @@ export default function ActivityDetailPage() {
         setSegments(data.segments || [])
         setZones(data.zones)
         setTimeseries(data.timeseries)
+        setLinkedSw(data.linked_scheduled_workout ?? null)
       })
       .finally(() => setLoading(false))
   }, [activityId, fetchDetail, isTeamView, user])
@@ -151,6 +154,23 @@ export default function ActivityDetailPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
+      {/* Variant promote warning — appears when this activity is linked
+          to a scheduled_workout that was abandoned by a later variant
+          promote. Tells the user to clean up COROS to avoid duplicate
+          push entries. Owner-only (team viewers don't see). */}
+      {!isTeamView && linkedSw && linkedSw.abandoned_by_promote_at && (
+        <div
+          data-testid="abandoned-warning"
+          role="alert"
+          className="mb-6 rounded-2xl border border-accent-red/30 bg-accent-red/10 px-4 py-3 text-sm font-mono text-accent-red"
+        >
+          <div className="font-semibold mb-1">⚠️ 本训练已被新计划取代</div>
+          <div className="text-xs">
+            请到 COROS 手动删除以避免与新推送训练重复
+          </div>
+        </div>
+      )}
+
       {/* Header Card */}
       <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6 mb-6">
         <div className="flex items-start justify-between">

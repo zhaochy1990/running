@@ -162,6 +162,27 @@ def get_activity(user: str, label_id: str):
     db = get_db(user)
     try:
         result = build_activity_detail(db, label_id)
+        # Multi-variant fallback design (Step 4): if a scheduled_workout
+        # was linked to this activity (via completed_label_id) AND it's
+        # been marked abandoned by a later variant promote, surface
+        # that flag so the activity-detail page can render a warning
+        # card. The link is null when no scheduled_workout completed
+        # via this activity.
+        sw_link = None
+        if result is not None:
+            row = db._conn.execute(
+                """SELECT id, abandoned_by_promote_at
+                     FROM scheduled_workout
+                    WHERE completed_label_id = ?
+                    LIMIT 1""",
+                (label_id,),
+            ).fetchone()
+            if row is not None:
+                sw_link = {
+                    "id": row["id"],
+                    "abandoned_by_promote_at": row["abandoned_by_promote_at"],
+                }
+            result["linked_scheduled_workout"] = sw_link
     finally:
         db.close()
     if result is None:

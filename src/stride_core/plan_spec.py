@@ -245,6 +245,14 @@ class PlannedNutrition:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+# Bumped when the WeeklyPlan / PlannedSession / PlannedNutrition schema
+# changes in a non-back-compatible way. Multi-variant plans (Step 1+) stamp
+# the variant row with the SCHEMA_VERSION at write time and the `select`
+# route refuses to promote variants whose schema doesn't match
+# (returns HTTP 426 with an "upgrade required" hint).
+SUPPORTED_SCHEMA_VERSION: int = 1
+
+
 @dataclass(frozen=True)
 class WeeklyPlan:
     """A full week's structured plan.
