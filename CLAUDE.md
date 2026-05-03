@@ -57,6 +57,51 @@ git push origin master   # sync-data.yml uploads the markdown to Azure Files
 
 Most likely: the content is a DB row that never propagated. Check `activity_commentary` first. `plan.md` / `feedback.md` should always propagate via git push + `sync-data.yml`; if they don't, inspect the workflow run.
 
+### Multi-model variants 流程 (when applicable)
+
+When you want to A/B/C the same week against multiple LLMs (Claude / Codex / Gemini) before committing to one, use the variant flow. Variants are append-only side rows; selecting one promotes its markdown + structured layer into the canonical `weekly_plan` / `planned_session` / `planned_nutrition` tables — same path the existing UI / push / commentary code already reads.
+
+**Canonical happy path**:
+
+```bash
+# 1. Generate 3 model variants for next week (parallel via omc-teams).
+#    Each model gets the same context (TRAINING_PLAN.md + recent
+#    weeks' plan.md + feedback.md), with a sentinel-anchored JSON
+#    output protocol. Failures upload as parse_failed (browsable but
+#    unselectable). Auth required (no anonymous fallback).
+coros-sync plan generate-variants -P zhaochaoyi --week 2026-05-04_05-10 \
+    --models claude,codex,gemini --prod-url $STRIDE_PROD_URL
+
+# 2. UI: open https://stride-app.../week/<folder> → "方案" tab
+#    (only visible when variants_summary.total > 0)
+#    → rate 4 dimensions + overall on each variant (sliders, 800ms
+#       debounced; comment textarea same)
+#    → click "选定" on the preferred variant
+#    Or via CLI:
+coros-sync plan select -P zhaochaoyi --week 2026-05-04_05-10 --variant-id <N>
+```
+
+**Change-of-mind / re-select scenario**:
+
+If you've already pushed a session to the watch from variant A and then change to variant B, the prior pushed `scheduled_workout` rows lose their plan-side back-pointer:
+
+- `coros-sync plan select` (or UI 改选) returns **HTTP 409 selection_conflict** with `already_pushed_count` when force is false.
+- Pass `--force` (UI: confirm dialog) to override. The response lists `dropped_scheduled_workout_ids: [...]` — those rows get `scheduled_workout.abandoned_by_promote_at = now`.
+- **Manual cleanup required**: open COROS App and delete the listed `[STRIDE]` watch entries before pushing the new variant's sessions, or you'll get duplicates on the watch.
+- The "训练计划" tab shows a red banner listing the abandoned dates; the relevant `ActivityDetailPage` shows a warning card on completed activities tied to abandoned scheduled_workouts.
+
+**Why no auto re-stitch**: Step 0 spike measured `(date, session_index, kind)` matching-key hit rate at **73.7%** across 12 directed pairs of 4 evaluation/ variants — below the 90% gate. Bimodal distribution (8/12 at 100% intra-cluster vs 4/12 at ~45% cross-cluster) means we can't rely on the key being stable across model outputs that disagree on the long-run cadence. Step 1 ships the FALLBACK design: every prior `scheduled_workout` becomes an orphan on 改选; user manually cleans up COROS. See `.omc/plans/multi-variant-weekly-plans.md` § Step 0 + `spike/restitch-findings.md` (local-only).
+
+**`coros-sync plan` subcommands**:
+
+- `generate-variants` — fan out to N `omc ask <model>` workers (ThreadPoolExecutor, 180s timeout each), parse each output via 3-tier sentinel/fenced/balanced-braces parser with hard `schema='weekly-plan/v1'` anchor, POST each to `/api/{user}/plan/{folder}/variants`.
+- `list-variants` — GET active variants (or `--include-superseded`), table view with model_id / status / sessions / overall rating / is_selected / selectable.
+- `rate` — UPSERT per-dimension ratings: `--overall N --suitability N --structure N --nutrition N --difficulty N --comment STR` (any subset of dims).
+- `select` — promote variant; auto-retries once on 409 concurrent_select with `Retry-After: 1`.
+- `delete-variants` — clear all variants + ratings for a week (confirmation prompt unless `--yes`).
+
+(CLAUDE.md is in `deploy.yml`'s trigger paths but doc-only edits don't affect runtime — the build skips on no-code-change deltas.)
+
 ## Folder Structure
 
 ```
