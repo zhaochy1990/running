@@ -146,6 +146,18 @@ class TestParser:
 
 
 class TestRunOmcAsk:
+    # Default: shutil.which returns a fake absolute path so tests that
+    # exercise the subprocess path don't fail on machines where omc isn't
+    # installed (CI). Tests that want to exercise the missing-omc path
+    # override this with `_omc_path_returns_none`.
+    @pytest.fixture(autouse=True)
+    def _stub_shutil_which(self, monkeypatch):
+        from coros_sync import cli_plan
+        monkeypatch.setattr(
+            cli_plan.shutil, "which",
+            lambda name: "/fake/omc" if name == "omc" else None,
+        )
+
     def test_happy_path(self, monkeypatch):
         plan = _valid_plan_dict()
         out = (
@@ -186,12 +198,41 @@ class TestRunOmcAsk:
         assert "model error" in (result.error or "")
 
     def test_omc_command_not_found(self, monkeypatch):
-        def raise_fnf(*args, **kwargs):
-            raise FileNotFoundError("omc")
-        monkeypatch.setattr(subprocess, "run", raise_fnf)
+        # shutil.which returns None → run_omc_ask short-circuits BEFORE
+        # invoking subprocess.run; surfaces the "not found" error.
+        from coros_sync import cli_plan
+        monkeypatch.setattr(cli_plan.shutil, "which", lambda name: None)
+        # Sanity: subprocess.run must NOT be called.
+        run_mock = MagicMock()
+        monkeypatch.setattr(subprocess, "run", run_mock)
         result = run_omc_ask("claude", "prompt", timeout_s=180)
         assert result.parse_status == "parse_failed"
         assert "omc command not found" in (result.error or "")
+        assert run_mock.call_count == 0
+
+    def test_resolves_omc_via_shutil_which_for_windows_cmd(self, monkeypatch):
+        """Windows .cmd compat — shutil.which("omc") returns the .cmd
+        wrapper path, and run_omc_ask must invoke subprocess with that
+        absolute path (not the bare "omc" string) so subprocess.run can
+        exec it directly without shell=True.
+        """
+        from coros_sync import cli_plan
+        win_path = "C:\\fake\\.npm-global\\omc.cmd"
+        monkeypatch.setattr(
+            cli_plan.shutil, "which",
+            lambda name: win_path if name == "omc" else None,
+        )
+        completed = MagicMock(returncode=0, stdout="", stderr="")
+        run_mock = MagicMock(return_value=completed)
+        monkeypatch.setattr(subprocess, "run", run_mock)
+
+        run_omc_ask("claude", "prompt", timeout_s=180)
+
+        # subprocess.run was called once with cmd[0] == resolved path.
+        assert run_mock.call_count == 1
+        cmd = run_mock.call_args.args[0]
+        assert cmd[0] == win_path
+        assert cmd[1:] == ["ask", "claude", "--stdin"]
 
     def test_no_schema_anchor_demotes_to_parse_failed(self, monkeypatch):
         # Output has JSON but missing `schema` field.

@@ -22,6 +22,7 @@ import concurrent.futures
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -200,8 +201,21 @@ def run_omc_ask(
     whatever stdout we got as content_md (so the user can still browse it).
     """
     started = time.monotonic()
+    # Resolve the omc absolute path explicitly. shutil.which honors PATHEXT
+    # on Windows so it picks up `omc.cmd` (npm global wrapper); without
+    # this, subprocess.run with a bare "omc" raises FileNotFoundError on
+    # Windows even when `which omc` works in the shell — cmd.exe extension
+    # resolution doesn't happen for direct exec.
+    omc_path = shutil.which("omc")
+    if not omc_path:
+        return VariantResult(
+            model_id=model_id, content_md="",
+            structured=None, parse_status="parse_failed",
+            duration_s=0.0,
+            error="omc command not found on PATH (install oh-my-claudecode)",
+        )
     # Pipe via stdin to avoid temp-file lifecycle issues across platforms.
-    cmd = ["omc", "ask", model_id, "--stdin"]
+    cmd = [omc_path, "ask", model_id, "--stdin"]
     try:
         proc = subprocess.run(
             cmd,
@@ -224,11 +238,14 @@ def run_omc_ask(
             error=f"timeout after {timeout_s}s",
         )
     except FileNotFoundError:
+        # Defense in depth: shouldn't normally reach here because
+        # shutil.which already confirmed the path, but a permissions /
+        # race-condition deletion could still trigger this.
         return VariantResult(
             model_id=model_id, content_md="",
             structured=None, parse_status="parse_failed",
             duration_s=0.0,
-            error="omc command not found on PATH (install oh-my-claudecode)",
+            error=f"omc resolution failed at exec time ({omc_path!r})",
         )
 
     elapsed = time.monotonic() - started
