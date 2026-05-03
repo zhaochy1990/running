@@ -227,6 +227,41 @@ class TestAuthoredReparse:
         assert body["llm_calls"] == 1
         assert sentinel["called"] == 1
 
+    def test_reparse_disk_fallback_when_db_row_missing(
+        self, app_client, monkeypatch,
+    ):
+        """plan.md on disk, no DB row → disk-fallback path must hand a *string*
+        (not a ContentItem) to downstream code. Regression for prod 500 caught
+        when the public reparse route was first hit on a disk-only week.
+
+        Uses ``raise_server_exceptions=True`` so any AttributeError propagates
+        to the test instead of being swallowed as a generic 500.
+        """
+        from fastapi.testclient import TestClient
+        client_default, _, tmp_path, _, _ = app_client
+        # Re-wrap the app to surface server exceptions.
+        client = TestClient(client_default.app, raise_server_exceptions=True)
+
+        _copy_fixture("w1_no_json", _week_dir(tmp_path))
+        # NOTE: deliberately NOT calling _seed_db_md — DB row absent forces
+        # the ``content_md = disk_md.content`` fallback to run.
+        sentinel = _mock_run_agent(monkeypatch, structured=True)
+        # Stub get_generated_by because no DB row → no existing_generated_by →
+        # apply_weekly_plan falls through to live AOAI lookup which is unset
+        # in the test env. Unrelated to the bug under test.
+        import stride_server.coach_agent.agent as agent_mod
+        monkeypatch.setattr(agent_mod, "get_generated_by", lambda: "test-author")
+
+        resp = client.post(
+            f"/internal/plan/reparse?user={USER_UUID}&folder={FIXTURE_WEEK}",
+            headers={"X-Internal-Token": INTERNAL_TOKEN},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["source"] == "fresh"
+        assert body["llm_calls"] == 1
+        assert sentinel["called"] == 1
+
     def test_reparse_with_schema_v2_skew_falls_through(
         self, app_client, monkeypatch,
     ):

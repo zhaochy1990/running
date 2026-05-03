@@ -545,7 +545,7 @@ def reparse_plan(
     if not content_md:
         disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
         if disk_md:
-            content_md = disk_md
+            content_md = disk_md.content
     if not content_md:
         raise HTTPException(
             status_code=404,
@@ -644,7 +644,7 @@ def internal_reparse_plan(
     if not content_md:
         disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
         if disk_md:
-            content_md = disk_md
+            content_md = disk_md.content
     if not content_md:
         raise HTTPException(
             status_code=404,
