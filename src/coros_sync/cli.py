@@ -710,7 +710,14 @@ def delete_workout_cmd(ctx: click.Context, date: str) -> None:
 
 @cli.group()
 def plan() -> None:
-    """Structured weekly-plan utilities (reverse parser, backfill)."""
+    """Structured weekly-plan utilities (reverse parser, multi-variant)."""
+
+
+# Multi-variant subcommands (Step 3 of the multi-variant feature) live in
+# cli_plan.py; attach them to this same `plan` group so users see one
+# unified namespace.
+from .cli_plan import register_subcommands as _register_plan_subcommands
+_register_plan_subcommands(plan)
 
 
 @plan.command("reparse")
