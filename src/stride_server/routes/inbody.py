@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from stride_core.models import BodyCompositionScan
 
-from ..deps import get_db
+from ..deps import get_inbody_store
 
 router = APIRouter()
 
@@ -62,37 +62,33 @@ def _derive(scan: dict, segs: dict[str, dict]) -> dict:
 @router.get("/api/{user}/inbody")
 def list_inbody(user: str, days: int | None = Query(None, ge=1, le=3650)):
     """List scans (newest-first) with derived per-scan fields + segments."""
-    db = get_db(user)
+    store = get_inbody_store(user)
     try:
-        scans = [_scan_row_to_dict(r) for r in db.list_inbody_scans(days=days)]
+        scans = [_scan_row_to_dict(r) for r in store.list_inbody_scans(days=days)]
         for s in scans:
-            segs = _segments_by_name(db.get_inbody_segments(s["scan_date"]))
+            segs = _segments_by_name(store.get_inbody_segments(s["scan_date"]))
             _derive(s, segs)
             s["segments"] = list(segs.values())
         return {"scans": scans}
     finally:
-        db.close()
+        store.close()
 
 
 @router.get("/api/{user}/inbody/summary")
 def inbody_summary(user: str):
     """Latest scan + 30-day deltas + phase-checkpoint comparison."""
-    db = get_db(user)
+    store = get_inbody_store(user)
     try:
-        latest = db.latest_inbody_scan()
+        latest = store.latest_inbody_scan()
         if not latest:
             return {"latest": None, "deltas": None, "checkpoints": PHASE_CHECKPOINTS}
         latest_d = _scan_row_to_dict(latest)
-        segs = _segments_by_name(db.get_inbody_segments(latest_d["scan_date"]))
+        segs = _segments_by_name(store.get_inbody_segments(latest_d["scan_date"]))
         _derive(latest_d, segs)
         latest_d["segments"] = list(segs.values())
 
-        prior_rows = db._conn.execute(
-            "SELECT * FROM inbody_scan WHERE scan_date < ? "
-            "ORDER BY scan_date DESC LIMIT 1",
-            (latest_d["scan_date"],),
-        ).fetchall()
-        prior = dict(prior_rows[0]) if prior_rows else None
+        prior_row = store.inbody_scan_before(latest_d["scan_date"])
+        prior = dict(prior_row) if prior_row else None
 
         deltas = None
         if prior:
@@ -107,24 +103,24 @@ def inbody_summary(user: str):
 
         return {"latest": latest_d, "deltas": deltas, "checkpoints": PHASE_CHECKPOINTS}
     finally:
-        db.close()
+        store.close()
 
 
 @router.get("/api/{user}/inbody/{scan_date}")
 def get_inbody(user: str, scan_date: str):
     """Single scan with all 5 segments."""
-    db = get_db(user)
+    store = get_inbody_store(user)
     try:
-        row = db.get_inbody_scan(scan_date)
+        row = store.get_inbody_scan(scan_date)
         if not row:
             raise HTTPException(status_code=404, detail=f"No scan on {scan_date}")
         scan = _scan_row_to_dict(row)
-        segs = _segments_by_name(db.get_inbody_segments(scan_date))
+        segs = _segments_by_name(store.get_inbody_segments(scan_date))
         _derive(scan, segs)
         scan["segments"] = list(segs.values())
         return scan
     finally:
-        db.close()
+        store.close()
 
 
 @router.post("/api/{user}/inbody")
@@ -135,14 +131,14 @@ def upsert_inbody(user: str, payload: dict):
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    db = get_db(user)
+    store = get_inbody_store(user)
     try:
-        db.upsert_inbody_scan(scan)
-        row = db.get_inbody_scan(scan.scan_date)
+        store.upsert_inbody_scan(scan)
+        row = store.get_inbody_scan(scan.scan_date)
         stored = _scan_row_to_dict(row)
-        segs = _segments_by_name(db.get_inbody_segments(scan.scan_date))
+        segs = _segments_by_name(store.get_inbody_segments(scan.scan_date))
         _derive(stored, segs)
         stored["segments"] = list(segs.values())
         return stored
     finally:
-        db.close()
+        store.close()

@@ -15,6 +15,14 @@ from fastapi import HTTPException, Path as FastAPIPath, Request, status
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.registry import ProviderRegistry, UnknownProvider
 from stride_core.source import DataSource
+from stride_core.state_stores import (
+    CommentaryStore,
+    InBodyStore,
+    PlanStateStore,
+    SqliteCommentaryStore,
+    SqliteInBodyStore,
+    SqlitePlanStateStore,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend" / "dist"
@@ -54,6 +62,27 @@ EXERCISE_NAMES: dict[str, str] = {
 def get_db(user: str) -> Database:
     _validate_uuid(user)
     return Database(user=user)
+
+
+# ── State-store factories (Phase 1 of the SQLite -> Azure Table migration) ──
+#
+# Routes should depend on these abstractions instead of calling Database
+# methods directly when the data isn't watch-synced. The SQLite-backed
+# implementations below wrap a per-call Database handle so behavior is
+# identical to the previous direct-Database path. When the Azure Table
+# implementation lands, the factory here is the only switch we flip.
+
+
+def get_plan_state_store(user: str) -> PlanStateStore:
+    return SqlitePlanStateStore(get_db(user))
+
+
+def get_commentary_store(user: str) -> CommentaryStore:
+    return SqliteCommentaryStore(get_db(user))
+
+
+def get_inbody_store(user: str) -> InBodyStore:
+    return SqliteInBodyStore(get_db(user))
 
 
 def get_logs_dir(user: str) -> Path:
