@@ -26,10 +26,15 @@ export interface PlanIntensity {
 }
 
 // Tunables (sub-3:00 marathoner defaults).
+//
+// HR_HIGH_MIN=160 covers tempo/threshold sessions whose target HR sits in
+// the 160-170 band (Z4 for this user). PACE_HIGH_MAX=250 (4:10/km) so
+// 节奏跑 at 4:05-4:10/km counts as high — the previous 4:00/km cutoff
+// missed real tempo work.
 const HR_LOW_MAX = 155 // avg hr below this → Z1-Z2
-const HR_HIGH_MIN = 168 // avg hr at/above this → Z4-Z5
+const HR_HIGH_MIN = 160 // avg hr at/above this → Z4-Z5
 const PACE_LOW_MIN = 270 // avg pace slower than 4:30/km → low
-const PACE_HIGH_MAX = 240 // avg pace faster than 4:00/km → high
+const PACE_HIGH_MAX = 250 // avg pace faster than 4:10/km → high
 
 const HIGH_KEYWORDS = [
   '间歇',
@@ -103,42 +108,71 @@ interface SessionBreakdown {
   high_km: number
 }
 
+/** Distance contributed by a single work step, or null if the step isn't
+ * `step_kind=work` or its distance can't be determined. Time-based work
+ * steps with a pace target are estimated via `time_s / pace_s_km`. */
+function workStepDistanceKm(step: WorkoutStep): number | null {
+  if (step.step_kind !== 'work') return null
+  const dur = step.duration
+  if (dur.kind === 'distance_m' && dur.value != null) {
+    return dur.value / 1000
+  }
+  if (dur.kind === 'time_s' && dur.value != null) {
+    const t = step.target
+    if (t.kind === 'pace_s_km' && t.low != null && t.high != null) {
+      const paceAvg = (t.low + t.high) / 2
+      if (paceAvg > 0) return dur.value / paceAvg
+    }
+  }
+  return null
+}
+
+/** Compute a session's km-by-tier breakdown.
+ *
+ * Strategy: only `step_kind=work` steps that classify as mid/high are
+ * counted as "quality work". Everything else — warmup, cooldown, recovery,
+ * and easy work — collapses into the low bucket via `low = sessionTotalKm
+ * − quality`. This lets a 4×3K interval session (14.5 km total) report
+ * exactly 12 km high and 2.5 km low, regardless of how the spec encodes
+ * the warmup/recovery/cooldown (distance-based, time-based, or open).
+ */
 function breakdownFromSpec(
   spec: NormalizedRunWorkout,
   sessionTotalKm: number,
-): SessionBreakdown | null {
-  let low = 0
-  let mid = 0
+): SessionBreakdown {
   let high = 0
-  let known = 0
-
+  let mid = 0
   for (const block of spec.blocks) {
     const repeat = Math.max(1, block.repeat || 1)
     for (let r = 0; r < repeat; r++) {
       for (const step of block.steps) {
-        if (step.step_kind === 'rest') continue
-        const dur = step.duration
-        if (dur.kind !== 'distance_m' || dur.value == null) continue
-        const km = dur.value / 1000
-        known += km
+        const km = workStepDistanceKm(step)
+        if (km == null || km <= 0) continue
         const tier = classifyStep(step)
-        if (tier === 'low') low += km
-        else if (tier === 'high') high += km
-        else mid += km
+        if (tier === 'high') high += km
+        else if (tier === 'mid') mid += km
+        // Low-classified work merges into the easy remainder below.
       }
     }
   }
 
-  if (known <= 0) return null
+  const quality = high + mid
+  if (quality >= sessionTotalKm) {
+    // Spec-derived quality exceeds the session total (e.g., conservative
+    // total_distance_m or work step over-estimate). Cap by scaling the
+    // quality buckets down so they fit; low becomes 0.
+    const scale = quality > 0 ? sessionTotalKm / quality : 0
+    return {
+      low_km: 0,
+      mid_km: mid * scale,
+      high_km: high * scale,
+    }
+  }
 
-  // Reconcile to session total — the spec's distance steps may not perfectly
-  // sum to total_distance_m (open steps, time-based steps, etc.). Use
-  // proportional scaling so the buckets sum to sessionTotalKm.
-  const scale = sessionTotalKm / known
   return {
-    low_km: low * scale,
-    mid_km: mid * scale,
-    high_km: high * scale,
+    low_km: sessionTotalKm - quality,
+    mid_km: mid,
+    high_km: high,
   }
 }
 
@@ -161,15 +195,15 @@ export function computeWeekPlanIntensity(
       s.spec && s.spec.schema === 'run-workout/v1'
         ? (s.spec as NormalizedRunWorkout)
         : null
-    const stepBreakdown = spec ? breakdownFromSpec(spec, km) : null
-    if (stepBreakdown) {
-      low += stepBreakdown.low_km
-      mid += stepBreakdown.mid_km
-      high += stepBreakdown.high_km
+    if (spec) {
+      const sb = breakdownFromSpec(spec, km)
+      low += sb.low_km
+      mid += sb.mid_km
+      high += sb.high_km
       continue
     }
 
-    // Fallback: classify whole session by text.
+    // No spec — classify whole session by text.
     const tier = classifySessionByText(s)
     if (tier === 'low') low += km
     else if (tier === 'high') high += km

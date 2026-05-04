@@ -44,12 +44,18 @@ describe('classifyStep', () => {
   })
 
   it('hr_bpm classifies by avg', () => {
+    // Below LOW_MAX 155 → low
     expect(
       classifyStep(step({ target: { kind: 'hr_bpm', low: 130, high: 140 } })),
     ).toBe('low')
+    // Between 155 and 160 → mid (the narrow Z3 band)
+    expect(
+      classifyStep(step({ target: { kind: 'hr_bpm', low: 155, high: 159 } })),
+    ).toBe('mid')
+    // ≥ HIGH_MIN 160 → high (tempo/threshold)
     expect(
       classifyStep(step({ target: { kind: 'hr_bpm', low: 158, high: 162 } })),
-    ).toBe('mid')
+    ).toBe('high')
     expect(
       classifyStep(step({ target: { kind: 'hr_bpm', low: 170, high: 180 } })),
     ).toBe('high')
@@ -60,10 +66,14 @@ describe('classifyStep', () => {
     expect(
       classifyStep(step({ target: { kind: 'pace_s_km', low: 290, high: 310 } })),
     ).toBe('low')
-    // 4:15/km avg → mid
+    // 4:20/km avg → mid (between HIGH_MAX 250 and LOW_MIN 270)
     expect(
-      classifyStep(step({ target: { kind: 'pace_s_km', low: 250, high: 260 } })),
+      classifyStep(step({ target: { kind: 'pace_s_km', low: 255, high: 265 } })),
     ).toBe('mid')
+    // 4:07/km avg → high (tempo, ≤ 250 s/km)
+    expect(
+      classifyStep(step({ target: { kind: 'pace_s_km', low: 245, high: 250 } })),
+    ).toBe('high')
     // 3:45/km avg → high
     expect(
       classifyStep(step({ target: { kind: 'pace_s_km', low: 220, high: 230 } })),
@@ -175,8 +185,11 @@ describe('computeWeekPlanIntensity', () => {
     expect(r.mid_km).toBe(0)
   })
 
-  it('proportionally scales spec breakdown to session total when they differ', () => {
-    // Spec only sums to 5km but session total_distance_m says 6km — scale up.
+  it('high reflects work-step distance exactly; rest goes to low remainder', () => {
+    // Spec: 2km warmup + 3km work @ Z4. Session total = 6km. The remaining
+    // 1km that isn't accounted for by either distance step (e.g.,
+    // recovery/cooldown encoded elsewhere) collapses into the low bucket
+    // via `low = total − quality`.
     const spec: NormalizedRunWorkout = {
       schema: 'run-workout/v1',
       name: 'mix',
@@ -203,9 +216,37 @@ describe('computeWeekPlanIntensity', () => {
       makeRunSession({ spec, total_distance_m: 6000 }),
     ])
     expect(r.total_km).toBe(6)
-    // 2/5 warmup → low = 6 × 2/5 = 2.4; 3/5 high = 6 × 3/5 = 3.6
-    expect(r.low_km).toBe(2.4)
-    expect(r.high_km).toBe(3.6)
+    // High = the 3km work step exactly. Low = remainder = 6 − 3 = 3.
+    expect(r.high_km).toBe(3)
+    expect(r.low_km).toBe(3)
+    expect(r.mid_km).toBe(0)
+  })
+
+  it('time-based work step is estimated via time / pace target', () => {
+    // 10 min @ 4:00/km (240 s/km) → 600/240 = 2.5 km.
+    const spec: NormalizedRunWorkout = {
+      schema: 'run-workout/v1',
+      name: 'tempo',
+      date: '2026-04-22',
+      note: null,
+      blocks: [
+        {
+          repeat: 1,
+          steps: [
+            step({
+              step_kind: 'work',
+              duration: { kind: 'time_s', value: 600 },
+              target: { kind: 'pace_s_km', low: 235, high: 245 },
+            }),
+          ],
+        },
+      ],
+    }
+    const r = computeWeekPlanIntensity([
+      makeRunSession({ spec, total_distance_m: 5000 }),
+    ])
+    expect(r.high_km).toBe(2.5)
+    expect(r.low_km).toBe(2.5)
   })
 
   it('aggregates a realistic mixed week', () => {
