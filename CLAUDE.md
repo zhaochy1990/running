@@ -144,6 +144,20 @@ When creating a plan, consider how these three components interact — for examp
 
 **力量训练动作选择原则**: 优先使用COROS内置动作（377个），这样推送到手表后有动画指导和标准化记录。内置动作库见 `src/coros_sync/exercise_catalog.md`。只有当内置库中确实没有匹配的动作时，才通过 `client.add_exercise()` 创建自定义动作。注意COROS动作名称可能与常用名称不同（如"侧卧平板撑"="侧平板"，"哥本哈根平板"="哥本哈根侧平板"），搜索时用关键词模糊匹配。
 
+### 推送力量训练到手表（COROS / Garmin）的动作匹配策略
+
+适配器接收 plan.json 的 `NormalizedStrengthWorkout`（每个 exercise 含 `canonical_id` 英文 snake_case + `display_name` 中文），按以下顺序匹配 provider 的内置动作库：
+
+1. **中文双向 substring**：取 display_name 剥掉末尾括号注释（如 `(5kg)`、`(自重)`），与 provider 库的 `overview` 字段双向 substring 比对（短包含长 / 长包含短，min-length 2 防 1 字误匹配）
+2. **英文双向 substring**：取 canonical_id 剥掉末尾设备 suffix (`_db` / `_bw` / `_kb` / `_bb` / `_cable` / `_machine`)，与 overview 双向 substring 比对（min-length 4）
+3. **英文 token overlap ≥ 50%**：snake_case 拆词后求集合交集，挑得分最高的（处理词序差异，如 `goblet_squat_db` ↔ `dumbbell_goblet_squat`）
+
+第一个命中即返回；都不命中才走 `add_exercise` 创建自定义动作。语言守卫（`_has_cjk` / `_has_ascii_alpha`）防止跨语言假阳性。
+
+**为什么这个顺序**：COROS 内置 377 动作的 `overview` 字段大部分是英文 snake_case（如 `goblet_squat`、`plank_basic`），少数中文（如 `坐姿肩上哑铃推举`）。Garmin 同理。中文优先是因为我们的 plan.json display_name 写的就是中文，命中后能直接复用 provider 的动画指导；英文 fallback 处理 canonical_id 与 overview 同语种的情况。
+
+**适配器实现**：`src/coros_sync/translate.py:_match_exercise`（COROS）。Garmin adapter 当前还未支持力量推送（参见"Folder Structure"节末尾），将来实现时复用同一 matcher。
+
 Before drafting a new weekly plan, always review the following inputs:
 
 - **Current training phase**: where this week sits in the overall periodization (from TRAINING_PLAN.md)

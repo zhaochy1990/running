@@ -13,10 +13,12 @@ Translation rules:
   The group expects (work, recovery) or (work,) sub-steps; anything
   else falls back to a best-effort flatten (each repeat emitted as
   separate training segments).
-- Pace targets: Target(PACE_S_KM, low=slow_s_km, high=fast_s_km) becomes
+- Pace targets via Target(PACE_S_KM, ...) → primary path, becomes
   COROS's pace_low (slower 'M:SS') / pace_high (faster 'M:SS') strings.
-- Open / HR / power targets: COROS RunWorkout doesn't accept these per
-  segment, so they're dropped (segment runs without a pace target).
+- HR / open / power targets → translator regex-extracts pace from
+  step.note when present (since plan.md often writes both, e.g.
+  "HR<148, 配速 6:00-6:30/km"). Final fallback: segment runs without
+  a pace target on the watch.
 - Duration: DISTANCE_M → distance_km, TIME_S → duration_min,
   OPEN → 5 min default for warmup/cooldown, 30 min for training.
 """
@@ -62,14 +64,75 @@ def _step_duration(step: WorkoutStep, *, default_min: float) -> tuple[float | No
     return (None, default_min)
 
 
+# Match pace ranges like "6:00-6:30/km", "5:00-5:30 /km", "（5:00-5:20/km）",
+# also tolerating CJK/full-width dashes "～" "—" "－" "~".
+_PACE_RANGE_RE = re.compile(r"(\d):(\d{2})\s*[-~～–—－]\s*(\d):(\d{2})\s*/?\s*km")
+# Match a single-pace ceiling like "≤4:30/km" or "<4:30/km".
+_PACE_CEIL_RE = re.compile(r"[≤<]\s*(\d):(\d{2})\s*/?\s*km")
+# Match a single target pace like "@5:13/km" or "5:13/km".
+_PACE_AT_RE = re.compile(r"@?\s*(\d):(\d{2})\s*/\s*km")
+
+
+def _fmt_pace(total_s: int) -> str:
+    return f"{total_s // 60}:{total_s % 60:02d}"
+
+
+def _extract_pace_from_note(note: str | None) -> tuple[str, str] | None:
+    """Extract a pace range ``(slow, fast)`` from a free-text note.
+
+    Returns ``("M:SS", "M:SS")`` (slow, fast) or ``None`` if nothing matches.
+    Tries in order:
+      1. Range ``"6:00-6:30/km"`` (also ``～``/``—``/``－``/``~``).
+      2. Ceiling ``"≤4:30/km"`` → expanded to ±10 s window above the ceiling.
+      3. Single ``"@5:13/km"`` or ``"5:13/km"`` → ±5 s window around target.
+    """
+    if not note:
+        return None
+    m = _PACE_RANGE_RE.search(note)
+    if m:
+        m1, s1, m2, s2 = m.groups()
+        a_s = int(m1) * 60 + int(s1)
+        b_s = int(m2) * 60 + int(s2)
+        # Slow = larger seconds; fast = smaller seconds. Normalize regardless
+        # of which side appears first in the original text.
+        slow_s, fast_s = (a_s, b_s) if a_s >= b_s else (b_s, a_s)
+        return (_fmt_pace(slow_s), _fmt_pace(fast_s))
+    m = _PACE_CEIL_RE.search(note)
+    if m:
+        mm, ss = m.groups()
+        ceil_s = int(mm) * 60 + int(ss)
+        # Treat ceiling as upper-bound only; expand to a ±10 s window so the
+        # watch shows a range and not a single value.
+        return (_fmt_pace(ceil_s + 10), _fmt_pace(ceil_s))
+    m = _PACE_AT_RE.search(note)
+    if m:
+        mm, ss = m.groups()
+        at_s = int(mm) * 60 + int(ss)
+        return (_fmt_pace(at_s + 5), _fmt_pace(at_s - 5))
+    return None
+
+
 def _pace_bounds(step: WorkoutStep) -> tuple[str | None, str | None]:
-    """Return COROS-formatted (`pace_low`, `pace_high`) strings — slow/fast bounds."""
+    """Return COROS-formatted (`pace_low`, `pace_high`) — slow/fast bounds.
+
+    Primary: ``step.target`` with ``PACE_S_KM`` kind.
+    Fallback: regex-extract pace range from ``step.note`` (which often
+    carries pace as a free-text annotation when ``target`` is HR-based —
+    e.g. plan.md writes ``"HR 130-148, 配速参考 6:00-6:30/km"``).
+    Returns ``(None, None)`` if neither yields a pace.
+    """
     t = step.target
-    if t.kind != TargetKind.PACE_S_KM or t.low is None or t.high is None:
-        return (None, None)
-    # NormalizedRunWorkout.Target convention: low = slower (larger s/km),
-    # high = faster (smaller s/km). COROS expects the same labels.
-    return (_seconds_to_pace_str(t.low), _seconds_to_pace_str(t.high))
+    if t.kind == TargetKind.PACE_S_KM:
+        if t.low is None or t.high is None:
+            return (None, None)
+        # NormalizedRunWorkout.Target convention: low = slower (larger s/km),
+        # high = faster (smaller s/km). COROS expects the same labels.
+        return (_seconds_to_pace_str(t.low), _seconds_to_pace_str(t.high))
+    # Fallback: pull pace from the note when target is HR / open / power.
+    extracted = _extract_pace_from_note(step.note)
+    if extracted is not None:
+        return extracted
+    return (None, None)
 
 
 def _emit_single_step(out: RunWorkout, step: WorkoutStep) -> None:
