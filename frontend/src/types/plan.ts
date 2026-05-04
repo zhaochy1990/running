@@ -33,6 +33,10 @@ export interface WorkoutStep {
   duration: Duration
   target: Target
   note: string | null
+  /** Optional HR ceiling layered on top of the primary target — e.g.
+   * "4×3K @ 4:05-4:10/km, HR ≤167" stores pace as `target` and 167 here.
+   * `null` for steps without a cap (most easy runs / open recoveries). */
+  hr_cap_bpm?: number | null
 }
 
 export interface WorkoutBlock {

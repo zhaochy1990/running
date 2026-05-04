@@ -165,12 +165,23 @@ class Target:
 
 @dataclass(frozen=True)
 class WorkoutStep:
-    """A single atomic step in a workout."""
+    """A single atomic step in a workout.
+
+    `target` is the primary intensity target the runner pursues (e.g. pace
+    for a tempo, HR for an easy run). `hr_cap_bpm` is a *constraint* layered
+    on top: an HR ceiling that must not be crossed regardless of how the
+    primary target is going. This shows up in plans like
+    `4×3K @ 4:05-4:10/km, HR ≤167` — pace is the target, HR ≤167 is the
+    guardrail. Encoding this explicitly avoids losing the constraint to a
+    free-text note where downstream consumers (UI, intensity classifier,
+    push translator) can't see it.
+    """
 
     step_kind: StepKind
     duration: Duration
     target: Target = field(default_factory=Target.open)
     note: str | None = None
+    hr_cap_bpm: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -178,15 +189,18 @@ class WorkoutStep:
             "duration": self.duration.to_dict(),
             "target": self.target.to_dict(),
             "note": self.note,
+            "hr_cap_bpm": self.hr_cap_bpm,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WorkoutStep:
+        cap = data.get("hr_cap_bpm")
         return cls(
             step_kind=StepKind(data["step_kind"]),
             duration=Duration.from_dict(data["duration"]),
             target=Target.from_dict(data["target"]),
             note=data.get("note"),
+            hr_cap_bpm=int(cap) if cap is not None else None,
         )
 
 

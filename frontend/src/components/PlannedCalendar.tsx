@@ -57,11 +57,16 @@ function fmtPaceSecKm(s: number | null | undefined): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}/km`
 }
 
+// Surface the headline target for the session by looking at WORK steps only.
+// Warmup/cooldown HR targets (e.g., 120-150 bpm) used to leak through here
+// for interval sessions and made the calendar card display a misleadingly
+// easy HR range. Work-step targets are the right thing to show — that's
+// what the user is actually trying to hit.
 function paceTargetText(s: PlannedSession): string | null {
   if (!s.spec || s.spec.schema !== 'run-workout/v1') return null
-  // Surface the first non-warmup pace target found, plus the first HR target.
   for (const block of s.spec.blocks) {
     for (const step of block.steps) {
+      if (step.step_kind !== 'work') continue
       if (step.target.kind === 'pace_s_km' && step.target.low != null && step.target.high != null) {
         return `${fmtPaceSecKm(step.target.high)} – ${fmtPaceSecKm(step.target.low)}`
       }
@@ -74,8 +79,25 @@ function hrTargetText(s: PlannedSession): string | null {
   if (!s.spec || s.spec.schema !== 'run-workout/v1') return null
   for (const block of s.spec.blocks) {
     for (const step of block.steps) {
+      if (step.step_kind !== 'work') continue
       if (step.target.kind === 'hr_bpm' && step.target.low != null && step.target.high != null) {
         return `${Math.round(step.target.low)}–${Math.round(step.target.high)} bpm`
+      }
+    }
+  }
+  return null
+}
+
+// HR ceiling layered onto a work step (e.g., tempo with pace target plus
+// "HR ≤167"). Surfaces as "HR ≤N" so the user sees the guardrail even when
+// the primary target is pace.
+function hrCapText(s: PlannedSession): string | null {
+  if (!s.spec || s.spec.schema !== 'run-workout/v1') return null
+  for (const block of s.spec.blocks) {
+    for (const step of block.steps) {
+      if (step.step_kind !== 'work') continue
+      if (step.hr_cap_bpm != null) {
+        return `HR ≤${Math.round(step.hr_cap_bpm)}`
       }
     }
   }
@@ -168,6 +190,7 @@ export default function PlannedCalendar({
                 daySessions.map((s) => {
                   const pace = paceTargetText(s)
                   const hr = hrTargetText(s)
+                  const hrCap = hrCapText(s)
                   const rpe = rpeText(s)
                   return (
                     <div
@@ -197,6 +220,7 @@ export default function PlannedCalendar({
                         )}
                         {pace && <span>配速 {pace}</span>}
                         {hr && <span>HR {hr}</span>}
+                        {hrCap && !hr && <span>{hrCap}</span>}
                         {rpe && <span>{rpe}</span>}
                       </div>
                       {(s.kind === 'run' || s.kind === 'strength') && (

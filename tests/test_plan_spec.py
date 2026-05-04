@@ -93,6 +93,46 @@ def _strength(date: str = "2026-04-22") -> NormalizedStrengthWorkout:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# WorkoutStep schema — hr_cap_bpm round-trip
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestWorkoutStepHrCap:
+    def test_default_is_none(self):
+        step = WorkoutStep(
+            step_kind=StepKind.WORK,
+            duration=Duration.of_distance_m(3000),
+            target=Target.pace_range_s_km(250, 245),
+        )
+        assert step.hr_cap_bpm is None
+        # to_dict still emits the key (None) so consumers get a stable shape.
+        assert step.to_dict()["hr_cap_bpm"] is None
+
+    def test_roundtrip_with_cap(self):
+        step = WorkoutStep(
+            step_kind=StepKind.WORK,
+            duration=Duration.of_distance_m(3000),
+            target=Target.pace_range_s_km(250, 245),
+            hr_cap_bpm=167,
+            note="HR ≤167",
+        )
+        round = WorkoutStep.from_dict(step.to_dict())
+        assert round == step
+        assert round.hr_cap_bpm == 167
+
+    def test_legacy_dict_without_field_loads_as_none(self):
+        # Pre-schema-change DB rows — `hr_cap_bpm` key absent entirely.
+        legacy = {
+            "step_kind": "work",
+            "duration": {"kind": "distance_m", "value": 3000},
+            "target": {"kind": "pace_s_km", "low": 250, "high": 245},
+            "note": None,
+        }
+        step = WorkoutStep.from_dict(legacy)
+        assert step.hr_cap_bpm is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # PlannedSession schema
 # ─────────────────────────────────────────────────────────────────────────────
 

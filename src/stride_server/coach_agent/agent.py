@@ -123,6 +123,22 @@ NormalizedRunWorkout 形如:
 }
 ```
 
+如果 work step 同时给了**配速目标 + HR 上限**(例如 "3K×4 @ 4:05-4:10/km, HR ≤167"),
+配速进 `target`,HR 上限单独写到 `hr_cap_bpm` 字段(整数 bpm)。
+**不要**把 HR 上限放在 note 文本里——下游 UI / 强度分类 / 推送翻译都看不到 note 里的数字。
+```jsonc
+{
+  "step_kind": "work",
+  "duration": {"kind": "distance_m", "value": 3000},
+  "target": {"kind": "pace_s_km", "low": 250, "high": 245},
+  "hr_cap_bpm": 167,
+  "note": "硬下限 4:05;HR 超 167 立即退到 4:10"
+}
+```
+仅当计划没显式 HR 上限时,才省略 `hr_cap_bpm`(不写 / 写 null 都行)。
+warmup / cooldown / recovery 步骤通常不写 hr_cap_bpm,即使有 HR 区间——
+那些 HR 区间是热身/放松的*目标*,放进 `target`(kind=hr_bpm)。
+
 变速跑 (warmup → 多段不同配速 work → cooldown) 用单 block + 多 step,repeat=1:
 ```jsonc
 {"blocks": [
