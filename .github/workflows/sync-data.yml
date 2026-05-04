@@ -84,6 +84,28 @@ jobs:
                 --overwrite \
                 --output none
 
+              # Structured weekly plan (plan.json) — Phase 2 of plan-json-canonical:
+              # paired with plan.md so the server can prefer authored JSON over
+              # LLM reparse. Upload order plan.json -> plan.md keeps the webhook
+              # from racing on a stale JSON / fresh MD pair.
+              az storage file upload-batch \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --destination stride-data \
+                --destination-path "$user/logs" \
+                --source "$user_dir/logs" \
+                --pattern "*.json" \
+                --output none
+              az storage blob upload-batch \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --destination "$BLOB_CONTAINER" \
+                --destination-path "users/$user/logs" \
+                --source "$user_dir/logs" \
+                --pattern "*.json" \
+                --overwrite \
+                --output none
+
               # InBody photos (inbody.jpg / .jpeg / .png per week folder)
               az storage file upload-batch \
                 --account-name authstorage2026 \
