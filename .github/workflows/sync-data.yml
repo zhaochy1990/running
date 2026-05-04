@@ -225,7 +225,12 @@ jobs:
           # actually changed. workflow_dispatch / first-push fall back to
           # HEAD only — list will be empty, step is a no-op.
           if git rev-parse HEAD~1 >/dev/null 2>&1; then
-            CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^data/[^/]+/logs/[^/]+/plan\.(md|json)$' || true)
+            # core.quotepath=false: keep non-ASCII paths unquoted so the
+            # grep regex matches Chinese folder names like
+            # "2026-05-04_05-10(W2基础重建)" — without this flag git outputs
+            # them as `"data/.../W2\345\237\272...)/plan.md"` (quoted +
+            # octal-escaped) and the regex's `^data/` anchor fails.
+            CHANGED=$(git -c core.quotepath=false diff --name-only HEAD~1 HEAD | grep -E '^data/[^/]+/logs/[^/]+/plan\.(md|json)$' || true)
           else
             CHANGED=""
           fi
