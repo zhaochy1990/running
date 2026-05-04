@@ -388,6 +388,11 @@ async def team_feed(
         act["you_liked"] = bool(
             caller_id and any(r.liker_user_id == caller_id for r in rows)
         )
+        # First 3 liker display names so the UI can render
+        # "Alice, Bob, Carol 等 N 人赞过" inline without an extra round-trip.
+        act["top_likers"] = [
+            (r.liker_display_name or r.liker_user_id[:8]) for r in rows[:3]
+        ]
 
     return {
         "team_id": team_id,

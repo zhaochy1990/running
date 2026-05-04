@@ -29,14 +29,35 @@ describe('LikeButton', () => {
       <LikeButton
         teamId={TEAM} userId={USER} labelId={LABEL}
         initialCount={3} initialLiked={true}
+        initialTopLikers={['Alice', 'Bob', 'Carol']}
       />,
     )
     expect(screen.getByRole('button', { name: '取消点赞' })).toBeInTheDocument()
-    // Both heart and "X 人赞过" show the same count.
-    expect(screen.getAllByText('3').length).toBeGreaterThan(0)
+    expect(screen.getByText('Alice、Bob、Carol 赞过')).toBeInTheDocument()
   })
 
-  it('optimistically increments on like and calls likeActivity', async () => {
+  it('shows "等 N 人赞过" when count exceeds top liker names', () => {
+    render(
+      <LikeButton
+        teamId={TEAM} userId={USER} labelId={LABEL}
+        initialCount={5} initialLiked={false}
+        initialTopLikers={['Alice', 'Bob', 'Carol']}
+      />,
+    )
+    expect(screen.getByText('Alice、Bob、Carol 等 5 人赞过')).toBeInTheDocument()
+  })
+
+  it('falls back to "N 人赞过" when top likers list is empty', () => {
+    render(
+      <LikeButton
+        teamId={TEAM} userId={USER} labelId={LABEL}
+        initialCount={2} initialLiked={false}
+      />,
+    )
+    expect(screen.getByText('2 人赞过')).toBeInTheDocument()
+  })
+
+  it('optimistically prepends caller name on like and calls likeActivity', async () => {
     const mockLike = vi.mocked(api.likeActivity)
     mockLike.mockResolvedValue({
       ok: true, status: 200,
@@ -47,6 +68,7 @@ describe('LikeButton', () => {
       <LikeButton
         teamId={TEAM} userId={USER} labelId={LABEL}
         initialCount={0} initialLiked={false}
+        currentUserDisplayName="Me"
       />,
     )
     const heart = screen.getByRole('button', { name: '点赞' })
@@ -56,6 +78,7 @@ describe('LikeButton', () => {
     expect(mockLike).toHaveBeenCalledWith(TEAM, USER, LABEL)
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '取消点赞' })).toBeInTheDocument()
+      expect(screen.getByText('Me 赞过')).toBeInTheDocument()
     })
   })
 
@@ -73,13 +96,12 @@ describe('LikeButton', () => {
       fireEvent.click(screen.getByRole('button', { name: '点赞' }))
     })
     await waitFor(() => {
-      // Reverted: still not liked.
       expect(screen.getByRole('button', { name: '点赞' })).toBeInTheDocument()
     })
     expect(screen.getByText(/HTTP 500/)).toBeInTheDocument()
   })
 
-  it('calls unlikeActivity when already liked', async () => {
+  it('calls unlikeActivity when already liked and removes self from inline list', async () => {
     const mockUnlike = vi.mocked(api.unlikeActivity)
     mockUnlike.mockResolvedValue({
       ok: true, status: 200,
@@ -90,15 +112,20 @@ describe('LikeButton', () => {
       <LikeButton
         teamId={TEAM} userId={USER} labelId={LABEL}
         initialCount={1} initialLiked={true}
+        initialTopLikers={['Me']}
+        currentUserDisplayName="Me"
       />,
     )
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '取消点赞' }))
     })
     expect(mockUnlike).toHaveBeenCalledWith(TEAM, USER, LABEL)
+    await waitFor(() => {
+      expect(screen.queryByText(/赞过/)).toBeNull()
+    })
   })
 
-  it('opens popover and lazy-loads likers when "N 人赞过" is clicked', async () => {
+  it('opens popover and lazy-loads likers when inline summary is clicked', async () => {
     const mockGet = vi.mocked(api.getActivityLikes)
     mockGet.mockResolvedValue({
       count: 2,
@@ -113,26 +140,29 @@ describe('LikeButton', () => {
       <LikeButton
         teamId={TEAM} userId={USER} labelId={LABEL}
         initialCount={2} initialLiked={false}
+        initialTopLikers={['Alice', 'Bob']}
       />,
     )
-    const trigger = screen.getByText('2 人赞过')
+    const trigger = screen.getByText('Alice、Bob 赞过')
     await act(async () => {
       fireEvent.click(trigger)
     })
     await waitFor(() => {
-      expect(screen.getByText('Alice')).toBeInTheDocument()
+      // The popover renders a header + <li> entries with each name.
+      expect(screen.getByText('点赞的人 (2)')).toBeInTheDocument()
+      // Bob only appears alone inside the popover <li>.
       expect(screen.getByText('Bob')).toBeInTheDocument()
     })
     expect(mockGet).toHaveBeenCalledTimes(1)
   })
 
-  it('does not show "N 人赞过" when count is 0', () => {
+  it('does not show inline summary when count is 0', () => {
     render(
       <LikeButton
         teamId={TEAM} userId={USER} labelId={LABEL}
         initialCount={0} initialLiked={false}
       />,
     )
-    expect(screen.queryByText(/人赞过/)).toBeNull()
+    expect(screen.queryByText(/赞过/)).toBeNull()
   })
 })

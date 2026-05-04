@@ -250,46 +250,55 @@ export default function TeamDetailPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredFeed.map((act) => (
-                <div
-                  key={`${act.user_id}-${act.label_id}`}
-                  className="relative rounded-xl border border-border-subtle bg-bg-card hover:bg-bg-card-hover transition-all"
-                >
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/teams/${id}/activity/${act.user_id}/${act.label_id}`)}
-                    className="w-full text-left p-4 pr-24"
+              {filteredFeed.map((act) => {
+                const myMember = currentUserId
+                  ? members.find((m) => m.user_id === currentUserId)
+                  : null
+                const myDisplayName =
+                  myMember?.display_name || myMember?.name || '你'
+                return (
+                  <div
+                    key={`${act.user_id}-${act.label_id}`}
+                    className="rounded-xl border border-border-subtle bg-bg-card hover:bg-bg-card-hover transition-all"
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-semibold text-text-primary">{act.display_name}</span>
-                      <span className="text-xs font-mono text-text-muted">
-                        {weekdayCN(act.date)} {formatDate(act.date)} {formatTime(act.date)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-xs font-mono text-text-secondary">
-                      <span className="text-accent-red">{sportNameCN(act.sport_name)}</span>
-                      <span>{act.distance_km} km</span>
-                      <span>{act.duration_fmt}</span>
-                      <span>{act.pace_fmt}</span>
-                      {act.avg_hr && <span>HR {act.avg_hr}</span>}
-                    </div>
-                    {act.name && (
-                      <p className="text-xs text-text-muted mt-2 line-clamp-1">{act.name}</p>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/teams/${id}/activity/${act.user_id}/${act.label_id}`)}
+                      className="w-full text-left p-4 pb-2"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-semibold text-text-primary">{act.display_name}</span>
+                        <span className="text-xs font-mono text-text-muted">
+                          {weekdayCN(act.date)} {formatDate(act.date)} {formatTime(act.date)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs font-mono text-text-secondary">
+                        <span className="text-accent-red">{sportNameCN(act.sport_name)}</span>
+                        <span>{act.distance_km} km</span>
+                        <span>{act.duration_fmt}</span>
+                        <span>{act.pace_fmt}</span>
+                        {act.avg_hr && <span>HR {act.avg_hr}</span>}
+                      </div>
+                      {act.name && (
+                        <p className="text-xs text-text-muted mt-2 line-clamp-1">{act.name}</p>
+                      )}
+                    </button>
+                    {id && act.label_id && (
+                      <div className="px-4 pb-3">
+                        <LikeButton
+                          teamId={id}
+                          userId={act.user_id}
+                          labelId={act.label_id}
+                          initialCount={act.like_count ?? 0}
+                          initialLiked={act.you_liked ?? false}
+                          initialTopLikers={act.top_likers ?? []}
+                          currentUserDisplayName={myDisplayName}
+                        />
+                      </div>
                     )}
-                  </button>
-                  {id && act.label_id && (
-                    <div className="absolute bottom-2 right-2">
-                      <LikeButton
-                        teamId={id}
-                        userId={act.user_id}
-                        labelId={act.label_id}
-                        initialCount={act.like_count ?? 0}
-                        initialLiked={act.you_liked ?? false}
-                      />
-                    </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                )
+              })}
             </div>
           )}
         </section>

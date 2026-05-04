@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   getActivityLikes, likeActivity, unlikeActivity,
   type ActivityLiker,
@@ -10,20 +10,26 @@ interface LikeButtonProps {
   labelId: string
   initialCount: number
   initialLiked: boolean
+  /** Top N liker display names from the bulk feed fetch (chronological order). */
+  initialTopLikers?: string[]
+  /** Display name of the currently signed-in user, used for optimistic updates. */
+  currentUserDisplayName?: string | null
 }
 
 /**
- * Heart toggle + click-to-expand list of likers.
+ * 👍 toggle + inline list of likers.
  *
- * Optimistically updates count on toggle; reverts and shows an inline error
- * pill if the network call fails. The liker list is lazy-fetched the first
- * time the popover opens to avoid an N+1 on the team feed render.
+ * Optimistically updates count + inline name list on toggle; reverts and shows
+ * an inline error pill if the network call fails. The full liker list is
+ * lazy-fetched the first time the popover opens.
  */
 export default function LikeButton({
   teamId, userId, labelId, initialCount, initialLiked,
+  initialTopLikers, currentUserDisplayName,
 }: LikeButtonProps) {
   const [liked, setLiked] = useState(initialLiked)
   const [count, setCount] = useState(initialCount)
+  const [topLikers, setTopLikers] = useState<string[]>(initialTopLikers ?? [])
   const [pending, setPending] = useState(false)
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [likers, setLikers] = useState<ActivityLiker[] | null>(null)
@@ -31,12 +37,7 @@ export default function LikeButton({
   const [err, setErr] = useState<string | null>(null)
   const popoverRef = useRef<HTMLDivElement | null>(null)
 
-  // Reset only when the *target activity* identity changes (e.g. user
-  // navigates between teams or the parent re-keys). Don't sync on every
-  // initialLiked/initialCount change — that would clobber an in-flight
-  // optimistic update if the parent reloaded the feed for an unrelated
-  // reason. The component re-mounts (via React's key) when the parent
-  // wants a hard reset.
+  // Reset only when the *target activity* identity changes.
   const idKey = `${teamId}:${userId}:${labelId}`
   const prevKeyRef = useRef(idKey)
   useEffect(() => {
@@ -44,10 +45,10 @@ export default function LikeButton({
       prevKeyRef.current = idKey
       setLiked(initialLiked)
       setCount(initialCount)
+      setTopLikers(initialTopLikers ?? [])
     }
-  }, [idKey, initialLiked, initialCount])
+  }, [idKey, initialLiked, initialCount, initialTopLikers])
 
-  // Close popover on outside click.
   useEffect(() => {
     if (!popoverOpen) return
     const onClick = (e: MouseEvent) => {
@@ -59,6 +60,16 @@ export default function LikeButton({
     return () => document.removeEventListener('mousedown', onClick)
   }, [popoverOpen])
 
+  const callerName = (currentUserDisplayName || '').trim() || '你'
+
+  const inlineSummary = useMemo(() => {
+    if (count === 0) return null
+    const names = topLikers.slice(0, 3)
+    if (names.length === 0) return `${count} 人赞过`
+    if (count <= names.length) return `${names.join('、')} 赞过`
+    return `${names.join('、')} 等 ${count} 人赞过`
+  }, [count, topLikers])
+
   const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (pending) return
@@ -66,9 +77,15 @@ export default function LikeButton({
     setErr(null)
     const wasLiked = liked
     const wasCount = count
+    const wasTop = topLikers
     // Optimistic
     setLiked(!wasLiked)
     setCount(Math.max(0, wasCount + (wasLiked ? -1 : 1)))
+    if (wasLiked) {
+      setTopLikers(wasTop.filter((n) => n !== callerName))
+    } else if (!wasTop.includes(callerName)) {
+      setTopLikers([...wasTop, callerName].slice(0, 3))
+    }
     try {
       const fn = wasLiked ? unlikeActivity : likeActivity
       const res = await fn(teamId, userId, labelId)
@@ -78,9 +95,9 @@ export default function LikeButton({
       // Invalidate cached liker list so next popover open refetches.
       setLikers(null)
     } catch (e: unknown) {
-      // Revert on failure.
       setLiked(wasLiked)
       setCount(wasCount)
+      setTopLikers(wasTop)
       setErr(e instanceof Error ? e.message : '操作失败')
     } finally {
       setPending(false)
@@ -98,6 +115,7 @@ export default function LikeButton({
       setLikers(data.likers)
       setCount(data.count)
       setLiked(data.you_liked)
+      setTopLikers(data.likers.slice(0, 3).map((l) => l.display_name))
     } catch {
       setLikers([])
     } finally {
@@ -136,13 +154,14 @@ export default function LikeButton({
         <span>{count}</span>
       </button>
 
-      {count > 0 && (
+      {inlineSummary && (
         <button
           type="button"
           onClick={handleOpenPopover}
-          className="text-[11px] font-mono text-text-muted hover:text-text-secondary transition-colors"
+          className="text-[11px] font-mono text-text-muted hover:text-text-secondary transition-colors truncate max-w-[280px] text-left"
+          title={inlineSummary}
         >
-          {liked && count === 1 ? '你赞过' : `${count} 人赞过`}
+          {inlineSummary}
         </button>
       )}
 
@@ -154,7 +173,7 @@ export default function LikeButton({
         <div
           ref={popoverRef}
           onClick={(e) => e.stopPropagation()}
-          className="absolute bottom-full right-0 mb-2 z-20 min-w-[200px] max-w-[280px] rounded-lg border border-border bg-bg-card shadow-lg p-2"
+          className="absolute top-full left-0 mt-2 z-20 min-w-[200px] max-w-[280px] rounded-lg border border-border bg-bg-card shadow-lg p-2"
         >
           <div className="text-[11px] font-mono text-text-muted px-2 pb-1 border-b border-border-subtle mb-1">
             点赞的人 ({count})

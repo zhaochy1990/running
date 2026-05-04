@@ -691,6 +691,7 @@ export interface TeamFeedActivity extends Activity {
   display_name: string
   like_count?: number
   you_liked?: boolean
+  top_likers?: string[]
 }
 
 export interface ActivityLiker {
