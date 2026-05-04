@@ -11,6 +11,9 @@ export interface PlannedCalendarProps {
   canPushRun: boolean
   /** Optional; defaults to `canPushRun` inside `PushPlannedButton`. */
   canPushStrength?: boolean
+  /** Forwarded to each row's `PushPlannedButton` to lock individual pushes
+   * while a batch operation (e.g. "推送全部") is in flight. */
+  pushDisabled?: boolean
   onPush: (s: PlannedSession) => Promise<void> | void
 }
 
@@ -94,6 +97,7 @@ export default function PlannedCalendar({
   structuredStatus,
   canPushRun,
   canPushStrength,
+  pushDisabled,
   onPush,
 }: PlannedCalendarProps) {
   if (structuredStatus === 'parse_failed' || structuredStatus === 'none') {
@@ -201,6 +205,7 @@ export default function PlannedCalendar({
                           structuredStatus={structuredStatus}
                           canPushRun={canPushRun}
                           canPushStrength={canPushStrength}
+                          disabled={pushDisabled}
                           onPush={onPush}
                         />
                       )}

@@ -14,6 +14,7 @@ import {
 import type { PlannedNutrition, StructuredStatus } from '../types/plan'
 import { useUser } from '../UserContextValue'
 import PlannedCalendar from '../components/PlannedCalendar'
+import PushAllPlannedButton from '../components/PushAllPlannedButton'
 import VariantComparisonView from '../components/VariantComparisonView'
 
 type Tab = 'plan' | 'variants' | 'calendar' | 'activities' | 'feedback'
@@ -208,8 +209,10 @@ export default function WeekLayout() {
           )}
           {activeTab === 'calendar' && (
             <CalendarTab
+              user={user}
               weekDetail={weekDetail}
               planDays={planDays}
+              setPlanDays={setPlanDays}
               structuredStatus={structuredStatus}
               onPush={handlePush}
               onReparse={handleReparse}
@@ -269,8 +272,10 @@ function buildWeekDates(dateFrom: string, dateTo: string): string[] {
 }
 
 function CalendarTab({
+  user,
   weekDetail,
   planDays,
+  setPlanDays,
   structuredStatus,
   onPush,
   onReparse,
@@ -279,8 +284,10 @@ function CalendarTab({
   canPushRun,
   canPushStrength,
 }: {
+  user: string | null
   weekDetail: WeekDetail
   planDays: PlanDay[]
+  setPlanDays: (days: PlanDay[]) => void
   structuredStatus: StructuredStatus
   onPush: (date: string, sessionIndex: number) => Promise<void>
   onReparse: () => void
@@ -289,6 +296,7 @@ function CalendarTab({
   canPushRun: boolean
   canPushStrength: boolean
 }) {
+  const [batchBusy, setBatchBusy] = useState(false)
   const weekDates = buildWeekDates(weekDetail.date_from, weekDetail.date_to)
   const sessions: PlannedSessionRow[] = []
   const nutrition: PlannedNutrition[] = []
@@ -302,6 +310,46 @@ function CalendarTab({
     structuredStatus === 'stale' ||
     structuredStatus === 'none' ||
     structuredStatus === 'backfilled'
+
+  // Batch push uses a leaner per-call hook that skips the per-session calendar
+  // refresh; we refresh once at the end so the UI doesn't refetch N times.
+  const handleBatchPush = useCallback(
+    async (sessionDate: string, sessionIndex: number) => {
+      if (!user) return
+      const res = await pushPlannedSession(user, sessionDate, sessionIndex)
+      if (!res.ok) {
+        const detail = res.data?.detail
+        const msg = typeof detail === 'string'
+          ? detail
+          : detail && typeof detail === 'object' && 'error' in detail
+            ? String(detail.error ?? '推送失败')
+            : `推送失败 (${res.status})`
+        throw new Error(msg)
+      }
+    },
+    [user],
+  )
+
+  const handleBatchStateChange = useCallback(
+    async (busy: boolean) => {
+      setBatchBusy(busy)
+      // Refresh the calendar once when the batch finishes so new
+      // scheduled_workout_id values surface in the per-row buttons.
+      if (!busy && user) {
+        try {
+          const refreshed = await getPlanDays(
+            user,
+            weekDetail.date_from,
+            weekDetail.date_to,
+          )
+          setPlanDays(refreshed.days)
+        } catch {
+          /* surface as per-row error in PushAllPlannedButton results */
+        }
+      }
+    },
+    [user, weekDetail.date_from, weekDetail.date_to, setPlanDays],
+  )
 
   return (
     <div className="space-y-3 animate-fade-in">
@@ -332,6 +380,15 @@ function CalendarTab({
         </div>
       )}
 
+      <PushAllPlannedButton
+        sessions={sessions}
+        structuredStatus={structuredStatus}
+        canPushRun={canPushRun}
+        canPushStrength={canPushStrength}
+        onPush={(s) => handleBatchPush(s.date, s.session_index)}
+        onBatchStateChange={handleBatchStateChange}
+      />
+
       <PlannedCalendar
         weekDates={weekDates}
         sessions={sessions}
@@ -339,6 +396,7 @@ function CalendarTab({
         structuredStatus={structuredStatus}
         canPushRun={canPushRun}
         canPushStrength={canPushStrength}
+        pushDisabled={batchBusy}
         onPush={(s) => onPush(s.date, s.session_index)}
       />
     </div>
