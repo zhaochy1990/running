@@ -24,7 +24,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 90,
-            "note": "左右各 1 组，记录最大保持时间至力竭"
+            "note": "左右各 1 组，记录最大保持时间至力竭",
+            "provider_id": "T1231"
           },
           {
             "canonical_id": "single_leg_calf_raise",
@@ -33,7 +34,8 @@
             "target_kind": "reps",
             "target_value": 25,
             "rest_seconds": 90,
-            "note": "2s 上 2s 下 tempo，左右各 1 组，记录最大次数至动作变形"
+            "note": "2s 上 2s 下 tempo，左右各 1 组，记录最大次数至动作变形",
+            "provider_id": "T1275"
           },
           {
             "canonical_id": "single_leg_squat_pistol",
@@ -42,7 +44,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 90,
-            "note": "可扶辅助；左右各 1 组，记录最大次数"
+            "note": "可扶辅助；左右各 1 组，记录最大次数",
+            "provider_id": "T1167"
           },
           {
             "canonical_id": "single_leg_glute_bridge_hold",
@@ -51,7 +54,8 @@
             "target_kind": "time_s",
             "target_value": 45,
             "rest_seconds": 90,
-            "note": "左右各 1 组，记录最大保持时间至塌腰/掉髋"
+            "note": "左右各 1 组，记录最大保持时间至塌腰/掉髋",
+            "provider_id": "T1229"
           },
           {
             "canonical_id": "plank_basic",
@@ -60,7 +64,8 @@
             "target_kind": "time_s",
             "target_value": 90,
             "rest_seconds": 90,
-            "note": "记录最大保持时间至塌腰"
+            "note": "记录最大保持时间至塌腰",
+            "provider_id": "T1010"
           },
           {
             "canonical_id": "side_plank",
@@ -69,7 +74,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 90,
-            "note": "左右各 1 组，记录最大保持时间至掉髋"
+            "note": "左右各 1 组，记录最大保持时间至掉髋",
+            "provider_id": "T1185"
           },
           {
             "canonical_id": "dead_bug",
@@ -78,7 +84,8 @@
             "target_kind": "reps",
             "target_value": 20,
             "rest_seconds": 90,
-            "note": "每侧记录最大次数；腰离地即停"
+            "note": "每侧记录最大次数；腰离地即停",
+            "provider_id": "T1243"
           },
           {
             "canonical_id": "copenhagen_side_plank",
@@ -87,7 +94,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 90,
-            "note": "左右各 1 组，记录最大保持时间"
+            "note": "左右各 1 组，记录最大保持时间",
+            "provider_id": "T1368"
           },
           {
             "canonical_id": "single_leg_balance_eyes_closed",
@@ -96,7 +104,7 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 60,
-            "note": "左右各 1 组，记录至落脚/扶物的最大时间"
+            "note": "左右各 1 组，记录至落脚/扶物的最大时间；无 COROS 内置动作"
           },
           {
             "canonical_id": "ankle_dorsiflexion_lunge_test",
@@ -105,7 +113,7 @@
             "target_kind": "reps",
             "target_value": 1,
             "rest_seconds": 60,
-            "note": "测试动作；记录脚尖距墙最大距离 cm（左/右）"
+            "note": "测试动作；记录脚尖距墙最大距离 cm（左/右）；无 COROS 内置动作"
           },
           {
             "canonical_id": "thomas_test",
@@ -114,7 +122,7 @@
             "target_kind": "reps",
             "target_value": 1,
             "rest_seconds": 0,
-            "note": "测试动作；记录大腿是否能贴床/角度差（左/右）"
+            "note": "测试动作；记录大腿是否能贴床/角度差（左/右）；无 COROS 内置动作"
           }
         ]
       }
@@ -246,7 +254,8 @@
             "target_kind": "reps",
             "target_value": 15,
             "rest_seconds": 30,
-            "note": "热身；每侧 15 次（COROS T1317）"
+            "note": "热身；每侧 15 次（COROS T1317）",
+            "provider_id": "T1317"
           },
           {
             "canonical_id": "worlds_greatest_stretch",
@@ -255,7 +264,8 @@
             "target_kind": "reps",
             "target_value": 6,
             "rest_seconds": 30,
-            "note": "热身；每侧 6 次（COROS T1262）"
+            "note": "热身；每侧 6 次（COROS T1262）",
+            "provider_id": "T1262"
           },
           {
             "canonical_id": "single_leg_glute_bridge_hold",
@@ -264,7 +274,8 @@
             "target_kind": "time_s",
             "target_value": 25,
             "rest_seconds": 45,
-            "note": "起步保守；按 5/4 测试值 80% 落地（占位 25s）；每侧 1 组"
+            "note": "起步保守；按 5/4 测试值 80% 落地（占位 25s）；每侧 1 组",
+            "provider_id": "T1229"
           },
           {
             "canonical_id": "single_leg_romanian_deadlift_bw",
@@ -273,7 +284,8 @@
             "target_kind": "reps",
             "target_value": 8,
             "rest_seconds": 60,
-            "note": "每侧 8 次；后链 + 单腿稳定"
+            "note": "每侧 8 次；后链 + 单腿稳定",
+            "provider_id": "T1187"
           },
           {
             "canonical_id": "bulgarian_split_squat_bw",
@@ -282,7 +294,8 @@
             "target_kind": "reps",
             "target_value": 8,
             "rest_seconds": 60,
-            "note": "每侧 8 次；不加重量"
+            "note": "每侧 8 次；不加重量；映射到 COROS T1164 split_bench_squat",
+            "provider_id": "T1164"
           },
           {
             "canonical_id": "copenhagen_side_plank_bent_knee",
@@ -291,7 +304,8 @@
             "target_kind": "time_s",
             "target_value": 20,
             "rest_seconds": 45,
-            "note": "内收肌起步；按测试值 70% 落地（占位 20s）；每侧 1 组"
+            "note": "内收肌起步；按测试值 70% 落地（占位 20s）；每侧 1 组",
+            "provider_id": "T1368"
           },
           {
             "canonical_id": "single_leg_eccentric_calf_raise",
@@ -300,7 +314,8 @@
             "target_kind": "reps",
             "target_value": 8,
             "rest_seconds": 60,
-            "note": "每侧 8 次；4s 慢下放；跟腱预防（COROS T1275）"
+            "note": "每侧 8 次；4s 慢下放；跟腱预防（COROS T1275）",
+            "provider_id": "T1275"
           },
           {
             "canonical_id": "single_leg_balance_bosu",
@@ -309,7 +324,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 30,
-            "note": "每侧 30s；平衡（COROS T1345）"
+            "note": "每侧 30s；平衡（COROS T1345）",
+            "provider_id": "T1345"
           },
           {
             "canonical_id": "ankle_inversion_band",
@@ -318,7 +334,8 @@
             "target_kind": "reps",
             "target_value": 12,
             "rest_seconds": 20,
-            "note": "每侧 12 次；踝稳定（COROS T1326）"
+            "note": "每侧 12 次；踝稳定（COROS T1326）",
+            "provider_id": "T1326"
           },
           {
             "canonical_id": "ankle_eversion_band",
@@ -327,7 +344,8 @@
             "target_kind": "reps",
             "target_value": 12,
             "rest_seconds": 20,
-            "note": "每侧 12 次；踝稳定（COROS T1327）"
+            "note": "每侧 12 次；踝稳定（COROS T1327）",
+            "provider_id": "T1327"
           },
           {
             "canonical_id": "hip_flexor_lunge_stretch",
@@ -336,7 +354,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 20,
-            "note": "每侧 30s；收尾静态（COROS T1274）"
+            "note": "每侧 30s；收尾静态（COROS T1274）",
+            "provider_id": "T1274"
           }
         ]
       }

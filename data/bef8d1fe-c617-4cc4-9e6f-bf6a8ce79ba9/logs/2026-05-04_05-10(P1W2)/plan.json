@@ -24,7 +24,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 45,
-            "note": "T1231；股四头肌耐力（盐城 K15 后腿崩对策）；🔴 dehua 股四头短板"
+            "note": "T1231；股四头肌耐力（盐城 K15 后腿崩对策）；🔴 dehua 股四头短板",
+            "provider_id": "T1231"
           },
           {
             "canonical_id": "single_leg_glute_bridge_hold",
@@ -33,7 +34,8 @@
             "target_kind": "time_s",
             "target_value": 20,
             "rest_seconds": 30,
-            "note": "T1219；每侧 20s × 3 轮；臀肌（推进效率）；🟡"
+            "note": "T1219；每侧 20s × 3 轮；臀肌（推进效率）；🟡",
+            "provider_id": "T1219"
           },
           {
             "canonical_id": "single_leg_eccentric_calf_raise",
@@ -42,7 +44,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 30,
-            "note": "T1275；每侧 10 次（4s 慢下放）；小腿/跟腱；🟡"
+            "note": "T1275；每侧 10 次（4s 慢下放）；小腿/跟腱；🟡",
+            "provider_id": "T1275"
           },
           {
             "canonical_id": "plank_basic",
@@ -51,7 +54,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 45,
-            "note": "T1010；核心耐力"
+            "note": "T1010；核心耐力",
+            "provider_id": "T1010"
           },
           {
             "canonical_id": "dead_bug",
@@ -60,7 +64,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 30,
-            "note": "每侧 10 次；核心抗旋"
+            "note": "每侧 10 次；核心抗旋",
+            "provider_id": "T1243"
           },
           {
             "canonical_id": "clamshell",
@@ -69,7 +74,8 @@
             "target_kind": "reps",
             "target_value": 15,
             "rest_seconds": 30,
-            "note": "T1317；每侧 15 次；臀中肌 / ITB 预防"
+            "note": "T1317；每侧 15 次；臀中肌 / ITB 预防",
+            "provider_id": "T1317"
           },
           {
             "canonical_id": "ankle_band_inversion_eversion",
@@ -78,7 +84,8 @@
             "target_kind": "reps",
             "target_value": 12,
             "rest_seconds": 30,
-            "note": "T1326 + T1327；每侧 12 次（内翻+外翻各计入）；踝稳定"
+            "note": "T1326 + T1327；每侧 12 次（内翻+外翻各计入）；踝稳定",
+            "provider_id": "T1326"
           }
         ]
       }
@@ -257,7 +264,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 0,
-            "note": "泡沫轴 10 min 总时长内分配，本动作 ~60s/侧"
+            "note": "T1387；泡沫轴 10 min 总时长内分配，本动作 ~60s/侧",
+            "provider_id": "T1387"
           },
           {
             "canonical_id": "foam_roll_it_band",
@@ -266,7 +274,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 0,
-            "note": "60s/侧"
+            "note": "T1386；60s/侧",
+            "provider_id": "T1386"
           },
           {
             "canonical_id": "foam_roll_glutes",
@@ -275,7 +284,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 0,
-            "note": "60s/侧"
+            "note": "T1384；60s/侧（catalog: foam_rolling_hips，覆盖臀大肌）",
+            "provider_id": "T1384"
           },
           {
             "canonical_id": "foam_roll_calves",
@@ -284,7 +294,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 0,
-            "note": "60s/侧"
+            "note": "T1389；60s/侧",
+            "provider_id": "T1389"
           },
           {
             "canonical_id": "thoracic_rotation_quadruped",
@@ -293,7 +304,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 20,
-            "note": "T1248；每侧 10 次；旋转看天花板"
+            "note": "T1248；每侧 10 次；旋转看天花板",
+            "provider_id": "T1248"
           },
           {
             "canonical_id": "pigeon_pose_stretch",
@@ -302,7 +314,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 20,
-            "note": "T1244；每侧 30s × 2 轮"
+            "note": "T1244；每侧 30s × 2 轮",
+            "provider_id": "T1244"
           },
           {
             "canonical_id": "hip_flexor_lunge_stretch",
@@ -311,7 +324,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 20,
-            "note": "T1274；每侧 30s × 2 轮"
+            "note": "T1274；每侧 30s × 2 轮",
+            "provider_id": "T1274"
           },
           {
             "canonical_id": "cat_cow",
@@ -320,7 +334,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 20,
-            "note": "T1234；脊柱分节活动"
+            "note": "T1234；脊柱分节活动",
+            "provider_id": "T1234"
           },
           {
             "canonical_id": "plank_basic",
@@ -329,7 +344,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 30,
-            "note": "T1010；上肢/核心维持"
+            "note": "T1010；上肢/核心维持",
+            "provider_id": "T1010"
           },
           {
             "canonical_id": "shoulder_external_rotation",
@@ -338,7 +354,8 @@
             "target_kind": "reps",
             "target_value": 15,
             "rest_seconds": 30,
-            "note": "T1320；上肢维持"
+            "note": "T1320；上肢维持",
+            "provider_id": "T1320"
           }
         ]
       }

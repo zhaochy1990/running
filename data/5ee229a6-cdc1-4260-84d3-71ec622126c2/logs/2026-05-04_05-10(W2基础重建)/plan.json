@@ -24,7 +24,8 @@
             "target_kind": "reps",
             "target_value": 12,
             "rest_seconds": 45,
-            "note": "哑铃贴胸，全蹲到底，膝盖不内扣"
+            "note": "哑铃贴胸，全蹲到底，膝盖不内扣",
+            "provider_id": "T1301"
           },
           {
             "canonical_id": "reverse_lunge_bw",
@@ -33,7 +34,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 45,
-            "note": "每侧 10 次；后腿膝盖轻触地，前腿膝盖不超脚尖"
+            "note": "每侧 10 次；后腿膝盖轻触地，前腿膝盖不超脚尖",
+            "provider_id": "T1226"
           },
           {
             "canonical_id": "romanian_deadlift_db",
@@ -42,7 +44,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 45,
-            "note": "臀主导，腰不圆"
+            "note": "臀主导，腰不圆",
+            "provider_id": "T1305"
           },
           {
             "canonical_id": "single_leg_calf_raise",
@@ -51,7 +54,8 @@
             "target_kind": "reps",
             "target_value": 15,
             "rest_seconds": 30,
-            "note": "每侧 15 次；慢上快下"
+            "note": "每侧 15 次；慢上快下",
+            "provider_id": "T1275"
           },
           {
             "canonical_id": "plank_basic",
@@ -60,7 +64,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 30,
-            "note": "W1 45s → W2 60s；臀腰平直"
+            "note": "W1 45s → W2 60s；臀腰平直",
+            "provider_id": "T1010"
           },
           {
             "canonical_id": "single_leg_glute_bridge",
@@ -69,7 +74,8 @@
             "target_kind": "reps",
             "target_value": 12,
             "rest_seconds": 30,
-            "note": "每侧 12 次；顶峰挤臀 1s"
+            "note": "每侧 12 次；顶峰挤臀 1s",
+            "provider_id": "T1219"
           }
         ]
       }
@@ -179,7 +185,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 20,
-            "note": "脊柱分节活动"
+            "note": "脊柱分节活动",
+            "provider_id": "T1234"
           },
           {
             "canonical_id": "thoracic_rotation_quadruped",
@@ -188,7 +195,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 20,
-            "note": "每侧 10 次；旋转看天花板"
+            "note": "每侧 10 次；旋转看天花板",
+            "provider_id": "T1248"
           },
           {
             "canonical_id": "hip_flexor_lunge_stretch",
@@ -197,7 +205,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 20,
-            "note": "每侧 30s；骨盆后倾"
+            "note": "每侧 30s；骨盆后倾",
+            "provider_id": "T1274"
           },
           {
             "canonical_id": "pigeon_pose_stretch",
@@ -206,7 +215,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 20,
-            "note": "每侧 30s；臀中肌 + 梨状肌"
+            "note": "每侧 30s；臀中肌 + 梨状肌；COROS 内置近义动作 glute_stretch",
+            "provider_id": "T1244"
           },
           {
             "canonical_id": "dead_bug",
@@ -215,7 +225,8 @@
             "target_kind": "reps",
             "target_value": 12,
             "rest_seconds": 30,
-            "note": "每侧 12 次（W1 10 → W2 12）；腰不离地"
+            "note": "每侧 12 次（W1 10 → W2 12）；腰不离地",
+            "provider_id": "T1243"
           },
           {
             "canonical_id": "bird_dog",
@@ -224,7 +235,8 @@
             "target_kind": "reps",
             "target_value": 12,
             "rest_seconds": 30,
-            "note": "每侧 12 次；同侧稳定不晃"
+            "note": "每侧 12 次；同侧稳定不晃",
+            "provider_id": "T1150"
           },
           {
             "canonical_id": "side_plank",
@@ -233,7 +245,8 @@
             "target_kind": "time_s",
             "target_value": 40,
             "rest_seconds": 30,
-            "note": "每侧 40s（W1 30s → W2 40s）；肩-髋-膝一线"
+            "note": "每侧 40s（W1 30s → W2 40s）；肩-髋-膝一线",
+            "provider_id": "T1185"
           }
         ]
       }
