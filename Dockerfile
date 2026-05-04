@@ -36,6 +36,7 @@ RUN pip install --no-cache-dir \
     "azure-identity>=1.17" \
     "azure-keyvault-secrets>=4.8" \
     "azure-storage-blob>=12.20" \
+    "azure-data-tables>=12.5" \
     "garth>=0.5" \
     "garminconnect>=0.2"
 
