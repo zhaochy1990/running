@@ -29,7 +29,10 @@ from stride_core.source import (
 from stride_core.workout_spec import (
     Duration,
     NormalizedRunWorkout,
+    NormalizedStrengthWorkout,
     StepKind,
+    StrengthExerciseSpec,
+    StrengthTargetKind,
     Target,
     WorkoutBlock,
     WorkoutStep,
@@ -47,18 +50,35 @@ INTERNAL_TOKEN = "test-internal-token-very-secret"
 
 
 class FakeRunSource(BaseDataSource):
-    """Adapter stub with optional PUSH_RUN_WORKOUT + DELETE_WORKOUT."""
+    """Adapter stub with optional PUSH_RUN_WORKOUT + DELETE_WORKOUT.
 
-    def __init__(self, *, push: bool = True, delete: bool = True, fail_push: bool = False):
+    By default also exposes PUSH_STRENGTH_WORKOUT for backwards compat with
+    callers that want a fully-capable provider; tests that need a strength-less
+    provider pass ``strength=False``.
+    """
+
+    def __init__(
+        self,
+        *,
+        push: bool = True,
+        delete: bool = True,
+        fail_push: bool = False,
+        strength: bool = True,
+        fail_strength: bool = False,
+    ):
         caps = set()
         if push:
             caps.add(Capability.PUSH_RUN_WORKOUT)
         if delete:
             caps.add(Capability.DELETE_WORKOUT)
+        if strength:
+            caps.add(Capability.PUSH_STRENGTH_WORKOUT)
         self._caps = frozenset(caps)
         self._fail_push = fail_push
+        self._fail_strength = fail_strength
         self.delete_calls: list[tuple[str, str]] = []
         self.push_calls: list[NormalizedRunWorkout] = []
+        self.strength_calls: list[NormalizedStrengthWorkout] = []
         self.name = "fake"
 
     @property
@@ -76,6 +96,12 @@ class FakeRunSource(BaseDataSource):
         if self._fail_push:
             raise RuntimeError("upstream rejected")
         return f"provider-id-{len(self.push_calls)}"
+
+    def push_strength_workout(self, user, workout):
+        self.strength_calls.append(workout)
+        if self._fail_strength:
+            raise RuntimeError("upstream rejected strength")
+        return f"strength-id-{len(self.strength_calls)}"
 
     def delete_scheduled_workout(self, user, date):
         self.delete_calls.append((user, date))
@@ -124,9 +150,34 @@ def _easy_run(date: str = "2026-04-22") -> NormalizedRunWorkout:
     )
 
 
-def _seed_plan(db: Database, week_folder: str, *, structured_status: str = "fresh", with_run: bool = True) -> int | None:
+def _strength_workout(date: str = "2026-04-23") -> NormalizedStrengthWorkout:
+    return NormalizedStrengthWorkout(
+        name="[STRIDE] Core",
+        date=date,
+        exercises=(
+            StrengthExerciseSpec(
+                canonical_id="planks",
+                display_name="平板支撑",
+                sets=3,
+                target_kind=StrengthTargetKind.TIME_S,
+                target_value=45,
+                rest_seconds=60,
+            ),
+        ),
+    )
+
+
+def _seed_plan(
+    db: Database,
+    week_folder: str,
+    *,
+    structured_status: str = "fresh",
+    with_run: bool = True,
+    with_strength: bool = False,
+) -> int | None:
     """Seed a weekly_plan markdown row + structured layer. Return the id of
-    the run session if one was created, else None."""
+    the run session if one was created (or strength session id when with_run
+    is False but with_strength is True), else None."""
     db.upsert_weekly_plan(week_folder, "# Plan", generated_by="test-model")
     db.set_weekly_plan_structured_status(week_folder, status=structured_status, parsed_from_md_hash="abc")
     sessions: list[PlannedSession] = [
@@ -141,6 +192,14 @@ def _seed_plan(db: Database, week_folder: str, *, structured_status: str = "fres
                 spec=_easy_run("2026-04-22"),
             )
         )
+    if with_strength:
+        sessions.append(
+            PlannedSession(
+                date="2026-04-23", session_index=0,
+                kind=SessionKind.STRENGTH, summary="Core 30min",
+                spec=_strength_workout("2026-04-23"),
+            )
+        )
     nutrition = [
         PlannedNutrition(
             date="2026-04-22", kcal_target=2400,
@@ -149,9 +208,9 @@ def _seed_plan(db: Database, week_folder: str, *, structured_status: str = "fres
     ]
     ids = db.upsert_planned_sessions(week_folder, sessions)
     db.upsert_planned_nutrition(week_folder, nutrition)
-    if not with_run:
+    if not with_run and not with_strength:
         return None
-    # Find the run session id (always the last one in our seed)
+    # Find the last appended (run if with_run, else strength) session id.
     return ids[-1]
 
 
@@ -385,7 +444,7 @@ class TestPushSession:
         )
         assert resp.status_code == 409
 
-    def test_400_when_kind_not_run(self, app_client):
+    def test_400_when_kind_not_run_or_strength(self, app_client):
         client, token, tmp_path, _, _ = app_client
         db = _db(tmp_path)
         try:
@@ -397,7 +456,7 @@ class TestPushSession:
             headers=_auth(token),
         )
         assert resp.status_code == 400
-        assert "kind=run" in resp.json()["detail"]
+        assert "kind=run or kind=strength" in resp.json()["detail"]
 
     def test_400_when_provider_lacks_capability(self, tmp_path, monkeypatch, rsa_keypair):
         # Build an app with a no-push fake source. Mirrors app_client fixture.
@@ -518,6 +577,101 @@ class TestPushSession:
             assert new["status"] == "pushed"
         finally:
             db.close()
+
+    def test_strength_push_happy_path(self, app_client):
+        """kind=strength + spec + provider has PUSH_STRENGTH_WORKOUT → 200."""
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK, with_strength=True)
+        finally:
+            db.close()
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-23/0/push",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["provider"] == "fake"
+        assert body["provider_workout_id"] == "strength-id-1"
+        assert len(fake.strength_calls) == 1
+        # The serialized spec should round-trip into a NormalizedStrengthWorkout
+        assert fake.strength_calls[0].name == "[STRIDE] Core"
+        # No run was pushed for this session
+        assert len(fake.push_calls) == 0
+
+    def test_strength_push_creates_scheduled_workout_with_strength_kind(self, app_client):
+        """The new scheduled_workout row's `kind` field reflects 'strength'."""
+        client, token, tmp_path, _, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK, with_strength=True)
+        finally:
+            db.close()
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-23/0/push",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.text
+        sw_id = resp.json()["scheduled_workout_id"]
+        db = _db(tmp_path)
+        try:
+            sw = db.get_scheduled_workout(sw_id)
+            assert sw["kind"] == "strength"
+            assert sw["status"] == "pushed"
+            assert sw["provider"] == "fake"
+            # Spec JSON deserializes back into NormalizedStrengthWorkout
+            spec = json.loads(sw["spec_json"])
+            assert spec["schema"] == "strength-workout/v1"
+        finally:
+            db.close()
+
+    def test_strength_push_400_when_provider_lacks_strength_capability(
+        self, tmp_path, monkeypatch, rsa_keypair,
+    ):
+        """Provider with PUSH_RUN_WORKOUT but not PUSH_STRENGTH_WORKOUT → 400."""
+        private_pem, public_pem = rsa_keypair
+        import stride_server.bearer as bearer
+        monkeypatch.setattr(bearer, "_cached_public_key", public_pem)
+        monkeypatch.setattr(bearer, "_warned_open", False)
+        for k in ("STRIDE_AUTH_PUBLIC_KEY_PEM", "STRIDE_AUTH_PUBLIC_KEY_PATH",
+                  "STRIDE_AUTH_ISSUER", "STRIDE_AUTH_AUDIENCE"):
+            monkeypatch.delenv(k, raising=False)
+        monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PEM", public_pem)
+        monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+        import stride_core.db as core_db
+        import stride_server.deps as deps_mod
+        monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+        monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+        (tmp_path / USER_UUID / "logs" / WEEK).mkdir(parents=True, exist_ok=True)
+        from stride_server.bearer import require_bearer, verify_path_user
+        from stride_server.routes.plan import internal_router, router as plan_router
+        from stride_core.registry import ProviderRegistry
+
+        # Run-only provider — no strength capability.
+        run_only = FakeRunSource(push=True, strength=False)
+        app = FastAPI()
+        app.include_router(plan_router, dependencies=[Depends(require_bearer), Depends(verify_path_user)])
+        app.include_router(internal_router)
+        reg = ProviderRegistry()
+        reg.register(run_only, default=True)
+        app.state.source = run_only
+        app.state.registry = reg
+        token = _make_token(private_pem)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK, with_strength=True)
+        finally:
+            db.close()
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-23/0/push",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 400
+        assert "strength workouts" in resp.json()["detail"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

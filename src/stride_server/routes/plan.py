@@ -45,7 +45,7 @@ def _env_bool(name: str, default: bool = True) -> bool:
 from stride_core.db import Database
 from stride_core.plan_spec import SUPPORTED_SCHEMA_VERSION, SessionKind, WeeklyPlan
 from stride_core.source import Capability, DataSource, FeatureNotSupported
-from stride_core.workout_spec import NormalizedRunWorkout
+from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWorkout
 
 from ..coach_agent.agent import apply_weekly_plan, run_agent
 from ..content_store import read_json as content_read_json
@@ -290,14 +290,15 @@ def push_planned_session(
     session_index: int,
     source: DataSource = Depends(get_source_for_user),
 ):
-    """Push a single planned RUN session to the user's watch.
+    """Push a single planned RUN or STRENGTH session to the user's watch.
 
     Path:
       - 404 when the planned_session row doesn't exist
       - 409 when the parent week's ``structured_status != 'fresh'`` (e.g.
         ``backfilled`` or ``parse_failed``)
-      - 400 when the session is not RUN, has no spec, or the provider lacks
-        ``PUSH_RUN_WORKOUT``
+      - 400 when the session is not RUN/STRENGTH, has no spec, or the provider
+        lacks the matching ``PUSH_RUN_WORKOUT`` / ``PUSH_STRENGTH_WORKOUT``
+        capability
       - 400 when re-pushing requires deletion but the provider lacks
         ``DELETE_WORKOUT``
       - 502 when the upstream watch service rejects the push
@@ -312,10 +313,11 @@ def push_planned_session(
         if session_row is None:
             raise HTTPException(status_code=404, detail="Planned session not found")
 
-        if session_row["kind"] != SessionKind.RUN.value:
+        session_kind = session_row["kind"]
+        if session_kind not in (SessionKind.RUN.value, SessionKind.STRENGTH.value):
             raise HTTPException(
                 status_code=400,
-                detail=f"Push only supports kind=run; got {session_row['kind']!r}",
+                detail=f"Push only supports kind=run or kind=strength; got {session_kind!r}",
             )
         if not session_row["spec_json"]:
             raise HTTPException(
@@ -326,20 +328,31 @@ def push_planned_session(
         week_folder = session_row["week_folder"]
         _push_guard_or_raise(db, week_folder)
 
-        if Capability.PUSH_RUN_WORKOUT not in source.info.capabilities:
+        if session_kind == SessionKind.RUN.value:
+            required_cap = Capability.PUSH_RUN_WORKOUT
+            workout_label = "run workouts"
+        else:
+            required_cap = Capability.PUSH_STRENGTH_WORKOUT
+            workout_label = "strength workouts"
+        if required_cap not in source.info.capabilities:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Provider {source.info.name!r} does not support pushing run workouts"
+                    f"Provider {source.info.name!r} does not support pushing {workout_label}"
                 ),
             )
 
+        workout: NormalizedRunWorkout | NormalizedStrengthWorkout
         try:
-            workout = NormalizedRunWorkout.from_dict(json.loads(session_row["spec_json"]))
+            spec_data = json.loads(session_row["spec_json"])
+            if session_kind == SessionKind.RUN.value:
+                workout = NormalizedRunWorkout.from_dict(spec_data)
+            else:
+                workout = NormalizedStrengthWorkout.from_dict(spec_data)
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
             raise HTTPException(
                 status_code=400,
-                detail=f"Stored spec is not a valid NormalizedRunWorkout: {exc}",
+                detail=f"Stored spec is not a valid normalized workout: {exc}",
             )
 
         # Re-push: detach prior scheduled_workout. We delete from the watch
@@ -382,15 +395,19 @@ def push_planned_session(
                     )
 
         try:
-            provider_workout_id = source.push_run_workout(user, workout)
+            if session_kind == SessionKind.RUN.value:
+                provider_workout_id = source.push_run_workout(user, workout)
+            else:
+                provider_workout_id = source.push_strength_workout(user, workout)
         except FeatureNotSupported:
             raise HTTPException(
                 status_code=400,
-                detail=f"Provider {source.info.name!r} does not support pushing run workouts",
+                detail=f"Provider {source.info.name!r} does not support pushing {workout_label}",
             )
         except Exception:
             logger.exception(
-                "push_run_workout failed user=%s provider=%s", user, source.info.name,
+                "push_%s_workout failed user=%s provider=%s",
+                session_kind, user, source.info.name,
             )
             # The watch-side delete (if any) already ran, but the local DB
             # state for the prior row is intact — UI will still show it as
@@ -414,7 +431,7 @@ def push_planned_session(
                     provider_workout_id, pushed_at)
                    VALUES (?, ?, ?, ?, 'pushed', ?, ?, datetime('now'))""",
                 (
-                    date, "run", workout.name, session_row["spec_json"],
+                    date, session_kind, workout.name, session_row["spec_json"],
                     source.info.name, provider_workout_id,
                 ),
             )

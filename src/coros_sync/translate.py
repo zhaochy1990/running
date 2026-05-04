@@ -23,16 +23,21 @@ Translation rules:
 
 from __future__ import annotations
 
+import re
+
 from stride_core.workout_spec import (
     DurationKind,
     NormalizedRunWorkout,
+    NormalizedStrengthWorkout,
     StepKind,
+    StrengthExerciseSpec,
+    StrengthTargetKind,
     TargetKind,
     WorkoutBlock,
     WorkoutStep,
 )
 
-from .workout import RunWorkout
+from .workout import RunWorkout, StrengthWorkout
 
 
 def _iso_to_yyyymmdd(iso_date: str) -> str:
@@ -169,3 +174,112 @@ def _infer_coros_workout_type(workout: NormalizedRunWorkout) -> str:
             if t.kind == TargetKind.PACE_S_KM and t.high is not None and t.high <= 270:
                 return "tempo"
     return "easy"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Strength translation
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# Strip trailing equipment / weight hints in parentheses so we can match
+# `俯卧撑(自重)` against `俯卧撑` in the COROS catalog.
+_PAREN_SUFFIX_RE = re.compile(r"[（(][^（()）]*[）)]\s*$")
+
+
+def _core_keyword(display_name: str) -> str:
+    """Strip trailing parenthetical hints (`(5kg)`, `(自重)`, …) from a name."""
+    out = display_name.strip()
+    while True:
+        new = _PAREN_SUFFIX_RE.sub("", out).strip()
+        if new == out:
+            return out
+        out = new
+
+
+def _match_exercise(spec: StrengthExerciseSpec, library: list[dict]) -> dict | None:
+    """Find a COROS library exercise matching ``spec.display_name``.
+
+    Strategy: strip parenthetical suffixes, then substring-match the core
+    keyword against each candidate's ``overview`` (COROS's localized name
+    field) or ``name`` (T-code). First match wins.
+    """
+    keyword = _core_keyword(spec.display_name)
+    if not keyword:
+        return None
+    for ex in library:
+        overview = str(ex.get("overview", ""))
+        name = str(ex.get("name", ""))
+        if keyword in overview or keyword in name:
+            return ex
+    return None
+
+
+def _custom_exercise_payload(spec: StrengthExerciseSpec) -> dict:
+    """Build an `add_exercise` request body for a missing library exercise.
+
+    Mirrors the canonical example in CLAUDE.md: sportType=4, exerciseType=2,
+    name + overview = display_name, generic part/muscle/equipment defaults.
+    """
+    target_type = 2 if spec.target_kind == StrengthTargetKind.TIME_S else 3
+    name = spec.display_name.strip() or spec.canonical_id
+    return {
+        "sportType": 4,
+        "exerciseType": 2,
+        "name": name,
+        "overview": name,
+        "part": ["4"],
+        "muscle": ["6"],
+        "muscleRelevance": [],
+        "equipment": ["1"],
+        "access": 1,
+        "intensityCustom": 0,
+        "intensityMultiplier": 0,
+        "intensityType": 1,
+        "intensityValue": 0,
+        "intensityValueExtend": 0,
+        "restType": 1,
+        "restValue": spec.rest_seconds,
+        "targetType": target_type,
+        "targetValue": spec.target_value,
+    }
+
+
+def normalized_to_coros_strength(
+    workout: NormalizedStrengthWorkout,
+    available_exercises: list[dict],
+) -> tuple[StrengthWorkout, list[dict]]:
+    """Translate NormalizedStrengthWorkout → coros_sync.StrengthWorkout.
+
+    Args:
+        workout: The provider-agnostic strength workout to translate.
+        available_exercises: The COROS exercise library
+            (``client.query_exercises(sport_type=4)`` result). Each entry is
+            a dict containing at minimum ``id`` and ``overview``.
+
+    Returns:
+        ``(coros_workout, missing_specs)`` where ``missing_specs`` is a list
+        of `add_exercise` request bodies that the caller should POST to
+        create custom exercises before the strength workout can be pushed.
+        When ``missing_specs`` is non-empty the returned ``coros_workout``
+        is incomplete (missing exercises are silently dropped) and the
+        caller should re-translate after creating the missing exercises.
+    """
+    out = StrengthWorkout(
+        name=workout.name,
+        date=_iso_to_yyyymmdd(workout.date),
+    )
+    missing: list[dict] = []
+    for spec in workout.exercises:
+        match = _match_exercise(spec, available_exercises)
+        if match is None:
+            missing.append(_custom_exercise_payload(spec))
+            continue
+        target_type = 2 if spec.target_kind == StrengthTargetKind.TIME_S else 3
+        out.add_exercise(
+            exercise_data=match,
+            sets=spec.sets,
+            target_type=target_type,
+            target_value=spec.target_value,
+            rest_value=spec.rest_seconds,
+        )
+    return out, missing

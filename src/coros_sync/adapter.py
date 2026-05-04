@@ -18,13 +18,14 @@ from stride_core.source import (
     SyncProgressCallback,
     SyncResult,
 )
-from stride_core.workout_spec import NormalizedRunWorkout
+from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWorkout
 
 from .auth import Credentials
 from .client import CorosClient, CorosAuthError
 from .normalize import apply_to_detail
 from .sync import run_sync
-from .translate import normalized_to_coros_run
+from .translate import normalized_to_coros_run, normalized_to_coros_strength
+from .workout import push_strength_workout as _push_strength_to_watch
 from .workout import push_workout
 
 
@@ -46,6 +47,7 @@ _COROS_INFO = ProviderInfo(
     regions=("global", "cn", "eu"),
     capabilities=frozenset({
         Capability.PUSH_RUN_WORKOUT,
+        Capability.PUSH_STRENGTH_WORKOUT,
     }),
 )
 
@@ -139,6 +141,36 @@ class CorosDataSource(BaseDataSource):
             return str(program[0]["idInPlan"])
         # Fallback: re-derive from the workout we built (push_workout stamped
         # the id_in_plan onto its payload before calling the API).
+        return str(coros_workout.date)
+
+    def push_strength_workout(self, user: str, workout: NormalizedStrengthWorkout) -> str:
+        """Push a `NormalizedStrengthWorkout` to the user's COROS schedule.
+
+        For each `StrengthExerciseSpec.display_name`, we first try to match a
+        COROS built-in exercise (419 catalog entries) by substring match on
+        the localized `overview` / `name` fields. Misses fall back to creating
+        a custom exercise via `client.add_exercise()` then re-translating.
+        """
+        creds = Credentials.load(user=user)
+        if not creds.is_logged_in:
+            raise CorosNotLoggedInError(f"用户 {user} 未登录")
+
+        with CorosClient(creds, user=user) as client:
+            available = client.query_exercises(sport_type=4)
+            coros_workout, missing = normalized_to_coros_strength(workout, available)
+            if missing:
+                # Fallback: create custom exercises for any unmatched names,
+                # then re-translate against the refreshed library so the new
+                # IDs are picked up.
+                for ex_payload in missing:
+                    client.add_exercise(ex_payload)
+                available = client.query_exercises(sport_type=4)
+                coros_workout, _ = normalized_to_coros_strength(workout, available)
+            response = _push_strength_to_watch(client, coros_workout)
+
+        program = (response or {}).get("data", {}).get("programs") or []
+        if program and isinstance(program[0], dict) and program[0].get("idInPlan"):
+            return str(program[0]["idInPlan"])
         return str(coros_workout.date)
 
     def resync_activity(self, user: str, label_id: str) -> bool:

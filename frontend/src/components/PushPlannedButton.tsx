@@ -8,10 +8,16 @@ export interface PushPlannedButtonProps {
   structuredStatus: StructuredStatus
   /**
    * Whether the connected provider supports `PUSH_RUN_WORKOUT`. When false
-   * (or unknown), the button is hidden entirely instead of disabled, matching
-   * the existing pattern for capability-gated controls.
+   * (or unknown), the run button is hidden entirely instead of disabled,
+   * matching the existing pattern for capability-gated controls.
    */
   canPushRun: boolean
+  /**
+   * Whether the connected provider supports `PUSH_STRENGTH_WORKOUT`. When
+   * omitted, defaults to `canPushRun` (most providers that handle one
+   * workout kind handle both). Strength buttons hide when this is false.
+   */
+  canPushStrength?: boolean
   /**
    * Optional override to force-disable (e.g. while a parent operation is
    * already in flight). The component also disables itself while the push
@@ -35,8 +41,8 @@ export function disabledReasonFor(
   if (!isPushable(session)) {
     return { disabled: true, reason: '该 session 没有完整 spec，无法推送' }
   }
-  if (session.kind !== 'run') {
-    return { disabled: true, reason: '当前仅支持跑步 session 推送' }
+  if (session.kind !== 'run' && session.kind !== 'strength') {
+    return { disabled: true, reason: '当前仅支持跑步和力量 session 推送' }
   }
   if (status === 'backfilled') {
     return { disabled: true, reason: '历史回填，请先在 markdown 视图核对后审核启用' }
@@ -63,13 +69,22 @@ export default function PushPlannedButton({
   session,
   structuredStatus,
   canPushRun,
+  canPushStrength,
   disabled = false,
   onPush,
 }: PushPlannedButtonProps) {
   const [pushing, setPushing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  if (!canPushRun) return null
+  // Capability gating per kind; strength defaults to the run capability when
+  // unspecified (most providers expose both push paths together).
+  const canPush =
+    session.kind === 'run'
+      ? canPushRun
+      : session.kind === 'strength'
+        ? (canPushStrength ?? canPushRun)
+        : false
+  if (!canPush) return null
 
   const { disabled: gateDisabled, reason } = disabledReasonFor(
     session,
@@ -77,7 +92,7 @@ export default function PushPlannedButton({
     disabled || pushing,
   )
   const isPushed = session.scheduled_workout_id != null
-  const label = pushing ? '推送中…' : isPushed ? '重新推送' : '推送到手表'
+  const label = pushing ? '推送中…' : isPushed ? '✓ 已推送' : '推送到手表'
 
   const handle = async () => {
     if (gateDisabled) return
@@ -104,7 +119,9 @@ export default function PushPlannedButton({
           'px-3 py-1.5 text-xs font-medium rounded-lg border transition-all ' +
           (gateDisabled
             ? 'border-border-subtle text-text-muted cursor-not-allowed opacity-60'
-            : 'border-accent-green/30 text-accent-green hover:bg-accent-green/10 cursor-pointer')
+            : isPushed
+              ? 'border-accent-green bg-accent-green/15 text-accent-green hover:bg-accent-green/25 cursor-pointer'
+              : 'border-accent-green/30 text-accent-green hover:bg-accent-green/10 cursor-pointer')
         }
       >
         {label}

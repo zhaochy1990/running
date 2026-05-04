@@ -316,6 +316,7 @@ function CalendarTab({
         nutrition={nutrition}
         structuredStatus={structuredStatus}
         canPushRun={true}
+        canPushStrength={true}
         onPush={(s) => onPush(s.date, s.session_index)}
       />
     </div>

@@ -9,6 +9,8 @@ export interface PlannedCalendarProps {
   nutrition: PlannedNutrition[]
   structuredStatus: StructuredStatus
   canPushRun: boolean
+  /** Optional; defaults to `canPushRun` inside `PushPlannedButton`. */
+  canPushStrength?: boolean
   onPush: (s: PlannedSession) => Promise<void> | void
 }
 
@@ -91,6 +93,7 @@ export default function PlannedCalendar({
   nutrition,
   structuredStatus,
   canPushRun,
+  canPushStrength,
   onPush,
 }: PlannedCalendarProps) {
   if (structuredStatus === 'parse_failed' || structuredStatus === 'none') {
@@ -197,6 +200,7 @@ export default function PlannedCalendar({
                           session={s}
                           structuredStatus={structuredStatus}
                           canPushRun={canPushRun}
+                          canPushStrength={canPushStrength}
                           onPush={onPush}
                         />
                       )}

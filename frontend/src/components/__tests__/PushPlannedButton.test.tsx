@@ -72,14 +72,34 @@ describe('disabledReasonFor', () => {
     expect(r.disabled).toBe(true)
   })
 
-  it('disables strength on fresh — current scope is run-only', () => {
-    // We accept strength sessions can be pushable in plan_spec.py, but the
-    // current push route is run-only. The button should reflect that.
+  it('disables strength when its spec is null even on fresh', () => {
+    // Strength is now pushable in scope, but only if it carries a spec.
     const r = disabledReasonFor(
       makeSession({ kind: 'strength', spec: null }),
       'fresh',
     )
     expect(r.disabled).toBe(true)
+    expect(r.reason).toMatch(/没有完整 spec/)
+  })
+
+  it('enables strength on fresh + spec present', () => {
+    const r = disabledReasonFor(
+      makeSession({ kind: 'strength' }),
+      'fresh',
+    )
+    expect(r.disabled).toBe(false)
+    expect(r.reason).toBeNull()
+  })
+
+  it('disables rest kind regardless of capabilities', () => {
+    // Rest sessions have no spec (isPushable returns false). The first gate
+    // fires on the spec check rather than the kind check.
+    const r = disabledReasonFor(
+      makeSession({ kind: 'rest', spec: null }),
+      'fresh',
+    )
+    expect(r.disabled).toBe(true)
+    expect(r.reason).toMatch(/没有完整 spec/)
   })
 
   it('enables on fresh + run + spec, with no warning', () => {
@@ -139,7 +159,7 @@ describe('PushPlannedButton', () => {
     expect(onPush).toHaveBeenCalledTimes(1)
   })
 
-  it('shows "重新推送" label when already pushed', () => {
+  it('shows "已推送" success label when already pushed', () => {
     render(
       <PushPlannedButton
         session={makeSession({ scheduled_workout_id: 42 })}
@@ -148,6 +168,45 @@ describe('PushPlannedButton', () => {
         onPush={() => {}}
       />,
     )
-    expect(screen.getByRole('button', { name: '重新推送' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '✓ 已推送' })).toBeInTheDocument()
+  })
+
+  it('renders strength push button when canPushStrength=true', () => {
+    render(
+      <PushPlannedButton
+        session={makeSession({ kind: 'strength' })}
+        structuredStatus="fresh"
+        canPushRun={false}
+        canPushStrength={true}
+        onPush={() => {}}
+      />,
+    )
+    const btn = screen.getByRole('button', { name: '推送到手表' })
+    expect(btn).not.toBeDisabled()
+  })
+
+  it('hides strength button when canPushStrength=false', () => {
+    const { container } = render(
+      <PushPlannedButton
+        session={makeSession({ kind: 'strength' })}
+        structuredStatus="fresh"
+        canPushRun={true}
+        canPushStrength={false}
+        onPush={() => {}}
+      />,
+    )
+    expect(container.firstChild).toBeNull()
+  })
+
+  it('strength button defaults to canPushRun when canPushStrength omitted', () => {
+    render(
+      <PushPlannedButton
+        session={makeSession({ kind: 'strength' })}
+        structuredStatus="fresh"
+        canPushRun={true}
+        onPush={() => {}}
+      />,
+    )
+    expect(screen.getByRole('button', { name: '推送到手表' })).toBeInTheDocument()
   })
 })
