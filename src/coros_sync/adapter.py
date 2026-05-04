@@ -48,6 +48,7 @@ _COROS_INFO = ProviderInfo(
     capabilities=frozenset({
         Capability.PUSH_RUN_WORKOUT,
         Capability.PUSH_STRENGTH_WORKOUT,
+        Capability.DELETE_WORKOUT,
     }),
 )
 
@@ -142,6 +143,47 @@ class CorosDataSource(BaseDataSource):
         # Fallback: re-derive from the workout we built (push_workout stamped
         # the id_in_plan onto its payload before calling the API).
         return str(coros_workout.date)
+
+    def delete_scheduled_workout(self, user: str, date: str) -> bool:
+        """Delete previously-pushed [STRIDE] workouts on `date` from the watch.
+
+        Mirrors the CLI ``coros-sync workout delete`` flow but additionally
+        filters by the ``[STRIDE]`` name prefix per the project rule "never
+        delete non-STRIDE workouts" — protects the user's own watch entries
+        from accidental deletion when our re-push flow runs.
+
+        ``date`` arrives as ISO ``YYYY-MM-DD`` (matches ``scheduled_workout.date``
+        and ``planned_session.date``); COROS API expects ``YYYYMMDD`` so we
+        coerce. Returns ``True`` when at least one matching entity was
+        deleted, ``False`` when no STRIDE entries existed on that date
+        (still considered success — re-push can proceed).
+        """
+        creds = Credentials.load(user=user)
+        if not creds.is_logged_in:
+            raise CorosNotLoggedInError(f"用户 {user} 未登录")
+
+        coros_date = date.replace("-", "")  # 2026-05-04 -> 20260504
+        deleted = 0
+        with CorosClient(creds, user=user) as client:
+            data = client.query_schedule(coros_date, coros_date)
+            schedule = data.get("data", {})
+            plan_id = schedule.get("id", "")
+            entities = schedule.get("entities", []) or []
+
+            for entity in entities:
+                if str(entity.get("happenDay")) != coros_date:
+                    continue
+                # Filter to only STRIDE-prefixed names (per project rule).
+                name = ""
+                for bar in entity.get("exerciseBarChart", []) or []:
+                    if bar.get("exerciseType") == 2:
+                        name = str(bar.get("name", ""))
+                        break
+                if not name.startswith("[STRIDE]"):
+                    continue
+                client.delete_scheduled_workout(entity, plan_id)
+                deleted += 1
+        return deleted > 0
 
     def push_strength_workout(self, user: str, workout: NormalizedStrengthWorkout) -> str:
         """Push a `NormalizedStrengthWorkout` to the user's COROS schedule.

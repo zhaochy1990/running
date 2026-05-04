@@ -81,6 +81,119 @@ def test_resync_activity_raises_when_activity_missing(tmp_path, monkeypatch):
     fake_db.close.assert_called_once()
 
 
+def test_delete_scheduled_workout_success(tmp_path, monkeypatch):
+    """STRIDE-prefixed entity on date → client.delete called, returns True."""
+    from coros_sync.auth import Credentials
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    Credentials(email="x@y", pwd_hash="h", access_token="tok", region="cn").save(user="alice")
+
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+    stride_entity = {
+        "happenDay": "20260504",
+        "idInPlan": "ID1",
+        "exerciseBarChart": [{"exerciseType": 2, "name": "[STRIDE] 力量训练"}],
+    }
+    fake_client.query_schedule.return_value = {
+        "data": {"id": "PLAN_ID_1", "entities": [stride_entity]},
+    }
+
+    with patch("coros_sync.adapter.CorosClient", return_value=fake_client):
+        result = CorosDataSource().delete_scheduled_workout("alice", "2026-05-04")
+
+    assert result is True
+    fake_client.query_schedule.assert_called_once_with("20260504", "20260504")
+    fake_client.delete_scheduled_workout.assert_called_once_with(stride_entity, "PLAN_ID_1")
+
+
+def test_delete_scheduled_workout_skips_non_stride(tmp_path, monkeypatch):
+    """Non-STRIDE entity on date → not deleted, returns False."""
+    from coros_sync.auth import Credentials
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    Credentials(email="x@y", pwd_hash="h", access_token="tok", region="cn").save(user="alice")
+
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+    fake_client.query_schedule.return_value = {
+        "data": {
+            "id": "PLAN_ID_2",
+            "entities": [
+                {
+                    "happenDay": "20260504",
+                    "idInPlan": "ID_USER",
+                    "exerciseBarChart": [{"exerciseType": 2, "name": "user-own-workout"}],
+                },
+            ],
+        },
+    }
+
+    with patch("coros_sync.adapter.CorosClient", return_value=fake_client):
+        result = CorosDataSource().delete_scheduled_workout("alice", "2026-05-04")
+
+    assert result is False
+    fake_client.delete_scheduled_workout.assert_not_called()
+
+
+def test_delete_scheduled_workout_no_entities_on_date(tmp_path, monkeypatch):
+    """Empty schedule → no deletes, returns False."""
+    from coros_sync.auth import Credentials
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    Credentials(email="x@y", pwd_hash="h", access_token="tok", region="cn").save(user="alice")
+
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+    fake_client.query_schedule.return_value = {"data": {"id": "PLAN_ID_3", "entities": []}}
+
+    with patch("coros_sync.adapter.CorosClient", return_value=fake_client):
+        result = CorosDataSource().delete_scheduled_workout("alice", "2026-05-04")
+
+    assert result is False
+    fake_client.delete_scheduled_workout.assert_not_called()
+
+
+def test_delete_scheduled_workout_iso_to_coros_date_conversion(tmp_path, monkeypatch):
+    """ISO YYYY-MM-DD must be coerced to COROS YYYYMMDD before query/match."""
+    from coros_sync.auth import Credentials
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    Credentials(email="x@y", pwd_hash="h", access_token="tok", region="cn").save(user="alice")
+
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+    # happenDay is the COROS-format date; mismatch (ISO not coerced) means
+    # the entity would be skipped. We assert the query call carries the
+    # COROS-format string AND the match works (delete called).
+    fake_client.query_schedule.return_value = {
+        "data": {
+            "id": "PLAN_ID_4",
+            "entities": [
+                {
+                    "happenDay": "20260504",
+                    "idInPlan": "ID2",
+                    "exerciseBarChart": [{"exerciseType": 2, "name": "[STRIDE] easy run"}],
+                },
+            ],
+        },
+    }
+
+    with patch("coros_sync.adapter.CorosClient", return_value=fake_client):
+        result = CorosDataSource().delete_scheduled_workout("alice", "2026-05-04")
+
+    assert result is True
+    # Both args must be coerced ("20260504"), not the ISO form.
+    fake_client.query_schedule.assert_called_once_with("20260504", "20260504")
+
+
+def test_delete_scheduled_workout_raises_when_not_logged_in(tmp_path, monkeypatch):
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    src = CorosDataSource()
+    with pytest.raises(CorosNotLoggedInError):
+        src.delete_scheduled_workout("nobody", "2026-05-04")
+
+
 def test_resync_activity_fetches_and_upserts(tmp_path, monkeypatch):
     from coros_sync.auth import Credentials
     monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
