@@ -42,6 +42,7 @@ dev = [
 
 [project.scripts]
 coros-sync = "coros_sync.cli:cli"
+garmin-sync = "garmin_sync.cli:cli"
 stride-coach = "stride_server.coach_agent.cli:cli"
 
 [tool.hatch.build.targets.wheel]

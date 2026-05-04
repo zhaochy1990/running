@@ -16,7 +16,7 @@ with CorosClient(creds, user=user) as client:
     print(f"\nprograms: {len(programs)}")
     import json as _json
     for i, p in enumerate(programs[:5]):
-        print(f"  prog[{i}] id={p.get('id')} idInPlan={p.get('idInPlan')} name={str(p.get('name'))[:80]!r}")
+        print(f"  prog[{i}] id={p.get('id')} idInPlan={p.get('idInPlan')} sportType={p.get('sportType')} name={str(p.get('name'))[:80]!r}")
     entities = schedule.get("entities", []) or []
     print(f"\nentities on {date}: {len(entities)}")
     for i, e in enumerate(entities):

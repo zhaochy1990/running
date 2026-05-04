@@ -85,11 +85,36 @@ export function useUserId(): string | null {
   return useAuthStore((s) => s.userId)
 }
 
+// Read auth state from sessionStorage synchronously so the very first render
+// has the correct isAuthenticated value. If this ran in a useEffect (deferred
+// to after first render) ProtectedRoute would redirect to /login first and
+// the original deep-link URL would be lost on refresh.
+function readPersistedAuth(): Pick<AuthState, 'accessToken' | 'userId' | 'isAuthenticated' | 'hydrated'> {
+  if (typeof window === 'undefined') {
+    return { accessToken: null, userId: null, isAuthenticated: false, hydrated: true }
+  }
+  const accessToken = sessionStorage.getItem('access_token')
+  const refreshToken = sessionStorage.getItem('refresh_token')
+  if (accessToken && refreshToken) {
+    try {
+      const payload = decodeJwt(accessToken)
+      if (payload.exp * 1000 > Date.now()) {
+        return {
+          accessToken,
+          userId: payload.sub,
+          isAuthenticated: true,
+          hydrated: true,
+        }
+      }
+    } catch { /* fall through to unauthenticated */ }
+  }
+  return { accessToken: null, userId: null, isAuthenticated: false, hydrated: true }
+}
+
+const initialAuth = readPersistedAuth()
+
 export const useAuthStore = create<AuthState>((set) => ({
-  accessToken: null,
-  userId: null,
-  isAuthenticated: false,
-  hydrated: false,
+  ...initialAuth,
 
   login: async (email: string, password: string) => {
     const res = await fetch(`${AUTH_BASE}/api/auth/login`, {
