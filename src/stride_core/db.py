@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re as _re
 import shutil
 import sqlite3
 import tempfile
@@ -20,6 +21,28 @@ DB_PATH = DATA_DIR / "coros.db"
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 USER_DATA_DIR = PROJECT_ROOT / "data"
+
+_WEEK_FOLDER_RE = _re.compile(r"^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})")
+
+
+def _parse_week_folder_dates(folder: str) -> tuple[str, str] | None:
+    """Parse week_folder 'YYYY-MM-DD_MM-DD(...)' -> (start_iso, end_iso) or None.
+
+    Used by ``upsert_planned_sessions`` / ``upsert_planned_nutrition`` to
+    delete by date range rather than week_folder string match, which sweeps
+    away orphan rows from earlier reparse runs that used a different
+    week_folder spelling for the same calendar week.
+    """
+    m = _WEEK_FOLDER_RE.match(folder)
+    if not m:
+        return None
+    year, smonth, sday, emonth, eday = m.groups()
+    start = f"{year}-{smonth}-{sday}"
+    # End date: same year, end MM-DD. Handle year wrap (e.g.
+    # 2026-12-29_01-04) by checking if end month < start month.
+    end_year = int(year) + (1 if int(emonth) < int(smonth) else 0)
+    end = f"{end_year:04d}-{emonth}-{eday}"
+    return (start, end)
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -1172,9 +1195,21 @@ class Database:
         import json as _json
 
         c = conn or self._conn
-        cur = c.execute(
-            "DELETE FROM planned_session WHERE week_folder = ?", (week_folder,)
-        )
+        # Cross-week cleanup: delete any rows in this week's date range,
+        # regardless of week_folder. This handles orphans from earlier
+        # reparse runs that used a different week_folder spelling.
+        # Falls back to week_folder match if folder name doesn't parse.
+        date_range = _parse_week_folder_dates(week_folder)
+        if date_range is not None:
+            start, end = date_range
+            cur = c.execute(
+                "DELETE FROM planned_session WHERE date BETWEEN ? AND ?",
+                (start, end),
+            )
+        else:
+            cur = c.execute(
+                "DELETE FROM planned_session WHERE week_folder = ?", (week_folder,)
+            )
         ids: list[int] = []
         for s in sessions:
             spec_json = _json.dumps(s.spec.to_dict()) if s.spec is not None else None
@@ -1210,9 +1245,21 @@ class Database:
         import json as _json
 
         c = conn or self._conn
-        c.execute(
-            "DELETE FROM planned_nutrition WHERE week_folder = ?", (week_folder,)
-        )
+        # Cross-week cleanup: delete any rows in this week's date range,
+        # regardless of week_folder. This handles orphans from earlier
+        # reparse runs that used a different week_folder spelling.
+        # Falls back to week_folder match if folder name doesn't parse.
+        date_range = _parse_week_folder_dates(week_folder)
+        if date_range is not None:
+            start, end = date_range
+            c.execute(
+                "DELETE FROM planned_nutrition WHERE date BETWEEN ? AND ?",
+                (start, end),
+            )
+        else:
+            c.execute(
+                "DELETE FROM planned_nutrition WHERE week_folder = ?", (week_folder,)
+            )
         for n in nutrition:
             meals_json = _json.dumps([m.to_dict() for m in n.meals])
             c.execute(

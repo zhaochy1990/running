@@ -42,6 +42,7 @@ function makeSession(overrides: Partial<PlannedSession> = {}): PlannedSession {
 describe('disabledReasonFor', () => {
   it.each<[StructuredStatus, boolean]>([
     ['fresh', false],
+    ['authored', false],
     ['stale', true],
     ['parse_failed', true],
     ['backfilled', true],
@@ -49,6 +50,12 @@ describe('disabledReasonFor', () => {
   ])('status=%s → disabled=%s', (status, expected) => {
     const r = disabledReasonFor(makeSession(), status)
     expect(r.disabled).toBe(expected)
+  })
+
+  it('enables on authored + run + spec, with no warning', () => {
+    const r = disabledReasonFor(makeSession(), 'authored')
+    expect(r.disabled).toBe(false)
+    expect(r.reason).toBeNull()
   })
 
   it('disables when session has no spec', () => {

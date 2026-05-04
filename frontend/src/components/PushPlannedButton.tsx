@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import type { PlannedSession, StructuredStatus } from '../types/plan'
-import { isPushable } from '../types/plan'
+import { isPushable, isPushableStatus } from '../types/plan'
 
 export interface PushPlannedButtonProps {
   session: PlannedSession
-  /** Whole-week structured status; only `'fresh'` allows pushing. */
+  /** Whole-week structured status; only `'fresh' | 'authored'` allows pushing. */
   structuredStatus: StructuredStatus
   /**
    * Whether the connected provider supports `PUSH_RUN_WORKOUT`. When false
@@ -50,7 +50,7 @@ export function disabledReasonFor(
   if (status === 'none') {
     return { disabled: true, reason: '本周无结构化计划' }
   }
-  if (status !== 'fresh') {
+  if (!isPushableStatus(status)) {
     return { disabled: true, reason: `状态 ${status} 不支持推送` }
   }
   if (session.scheduled_workout_id != null) {

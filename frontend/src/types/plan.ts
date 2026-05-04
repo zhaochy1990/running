@@ -74,6 +74,7 @@ export type SessionKind = 'run' | 'strength' | 'rest' | 'cross' | 'note'
 
 export type StructuredStatus =
   | 'fresh'
+  | 'authored'
   | 'stale'
   | 'parse_failed'
   | 'backfilled'
@@ -135,9 +136,17 @@ export function isPushable(s: PlannedSession): boolean {
   return PUSHABLE_KINDS.has(s.kind) && s.spec != null
 }
 
-/** True iff the surrounding week's structured layer is safe to push from. */
+/** True iff the surrounding week's structured layer is safe to push from
+ * (LLM-fresh or author-direct). Both states represent canonical structure
+ * the push pipeline can consume safely. */
 export function isFresh(status: StructuredStatus | null | undefined): boolean {
-  return status === 'fresh'
+  return status === 'fresh' || status === 'authored'
+}
+
+/** Canonical structured states that allow push to watch. Alias of {@link isFresh}
+ * with a more explicit name for new call sites. */
+export function isPushableStatus(status: StructuredStatus | null | undefined): boolean {
+  return status === 'fresh' || status === 'authored'
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
