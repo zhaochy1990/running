@@ -169,17 +169,26 @@ class CorosDataSource(BaseDataSource):
             schedule = data.get("data", {})
             plan_id = schedule.get("id", "")
             entities = schedule.get("entities", []) or []
+            programs = schedule.get("programs", []) or []
+
+            # Build a name lookup keyed by idInPlan. The schedule API returns
+            # the program name in `programs[]` (parallel array), not on the
+            # entity itself — entities only carry `idInPlan` / `planProgramId`
+            # references. exerciseBarChart is empty for newly-pushed entries
+            # that haven't been completed yet, so the previous code path
+            # never matched anything.
+            programs_by_idinplan: dict[str, str] = {}
+            for prog in programs:
+                idip = str(prog.get("idInPlan") or prog.get("id") or "")
+                if idip:
+                    programs_by_idinplan[idip] = str(prog.get("name") or "")
 
             for entity in entities:
                 if str(entity.get("happenDay")) != coros_date:
                     continue
-                # Filter to only STRIDE-prefixed names (per project rule).
-                name = ""
-                for bar in entity.get("exerciseBarChart", []) or []:
-                    if bar.get("exerciseType") == 2:
-                        name = str(bar.get("name", ""))
-                        break
-                if not name.startswith("[STRIDE]"):
+                idip = str(entity.get("idInPlan") or entity.get("planProgramId") or "")
+                program_name = programs_by_idinplan.get(idip, "")
+                if not program_name.startswith("[STRIDE]"):
                     continue
                 client.delete_scheduled_workout(entity, plan_id)
                 deleted += 1

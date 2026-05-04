@@ -93,10 +93,14 @@ def test_delete_scheduled_workout_success(tmp_path, monkeypatch):
     stride_entity = {
         "happenDay": "20260504",
         "idInPlan": "ID1",
-        "exerciseBarChart": [{"exerciseType": 2, "name": "[STRIDE] 力量训练"}],
+        "planProgramId": "ID1",
     }
     fake_client.query_schedule.return_value = {
-        "data": {"id": "PLAN_ID_1", "entities": [stride_entity]},
+        "data": {
+            "id": "PLAN_ID_1",
+            "entities": [stride_entity],
+            "programs": [{"idInPlan": "ID1", "name": "[STRIDE] 力量训练"}],
+        },
     }
 
     with patch("coros_sync.adapter.CorosClient", return_value=fake_client):
@@ -123,9 +127,10 @@ def test_delete_scheduled_workout_skips_non_stride(tmp_path, monkeypatch):
                 {
                     "happenDay": "20260504",
                     "idInPlan": "ID_USER",
-                    "exerciseBarChart": [{"exerciseType": 2, "name": "user-own-workout"}],
+                    "planProgramId": "ID_USER",
                 },
             ],
+            "programs": [{"idInPlan": "ID_USER", "name": "user-own-workout"}],
         },
     }
 
@@ -173,9 +178,10 @@ def test_delete_scheduled_workout_iso_to_coros_date_conversion(tmp_path, monkeyp
                 {
                     "happenDay": "20260504",
                     "idInPlan": "ID2",
-                    "exerciseBarChart": [{"exerciseType": 2, "name": "[STRIDE] easy run"}],
+                    "planProgramId": "ID2",
                 },
             ],
+            "programs": [{"idInPlan": "ID2", "name": "[STRIDE] easy run"}],
         },
     }
 
