@@ -10,6 +10,10 @@ from stride_core import db as core_db
 from stride_core.db import Database
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
 from stride_core.source import DataSource
+from stride_core.state_stores import (
+    SqliteInBodyStore,
+    SqlitePlanStateStore,
+)
 
 from stride_server import content_store
 from stride_server.deps import PROJECT_ROOT, format_duration, parse_week_dates
@@ -74,9 +78,10 @@ def load_week_context(user: str, folder: str, db: Database) -> dict[str, Any]:
         raise ValueError("Invalid week folder")
     date_from, date_to = dates
 
+    plan_store = SqlitePlanStateStore(db)
     plan_source = "none"
     plan = None
-    plan_row = db.get_weekly_plan_row(folder)
+    plan_row = plan_store.get_weekly_plan_row(folder)
     if plan_row is not None:
         plan = plan_row["content_md"]
         plan_source = "db"
@@ -88,7 +93,7 @@ def load_week_context(user: str, folder: str, db: Database) -> dict[str, Any]:
 
     feedback_source = "none"
     feedback = None
-    feedback_row = db.get_weekly_feedback_row(folder)
+    feedback_row = plan_store.get_weekly_feedback_row(folder)
     if feedback_row is not None:
         feedback = feedback_row["content_md"]
         feedback_source = "db"
@@ -221,12 +226,13 @@ def load_health_context(db: Database, *, days: int = 120) -> dict[str, Any]:
 
 
 def load_inbody_context(db: Database) -> dict[str, Any]:
-    latest = db.latest_inbody_scan()
+    inbody_store = SqliteInBodyStore(db)
+    latest = inbody_store.latest_inbody_scan()
     if latest is None:
         return {"latest": None, "deltas": None, "checkpoints": PHASE_CHECKPOINTS}
 
     latest_d = dict(latest)
-    latest_d["segments"] = [dict(s) for s in db.get_inbody_segments(latest_d["scan_date"])]
+    latest_d["segments"] = [dict(s) for s in inbody_store.get_inbody_segments(latest_d["scan_date"])]
     prior_rows = db.query(
         "SELECT * FROM inbody_scan WHERE scan_date < ? ORDER BY scan_date DESC LIMIT 1",
         (latest_d["scan_date"],),

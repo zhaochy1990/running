@@ -50,7 +50,13 @@ from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWor
 from ..coach_agent.agent import apply_weekly_plan, run_agent
 from ..content_store import read_json as content_read_json
 from ..content_store import read_text as content_read_text
-from ..deps import format_duration, get_db, get_source_for_user, parse_week_dates
+from ..deps import (
+    format_duration,
+    get_db,
+    get_plan_state_store,
+    get_source_for_user,
+    parse_week_dates,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -131,14 +137,14 @@ def _shanghai_today_iso() -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=8)).date().isoformat()
 
 
-def _planned_vs_actual(db: Database, day: str) -> list[dict[str, Any]]:
+def _planned_vs_actual(db: Database, plan_store, day: str) -> list[dict[str, Any]]:
     """Cross-reference planned sessions for ``day`` with synced activities.
 
     Activities are matched by date prefix only. We expose a tiny shape
     (planned summary + per-activity actuals) so the frontend can colour-code
     adherence without the server enforcing a single rubric.
     """
-    sessions = db.get_planned_sessions(date_from=day, date_to=day)
+    sessions = plan_store.get_planned_sessions(date_from=day, date_to=day)
     rows = db.query(
         """SELECT label_id, name, sport_name, sport, date,
             distance_m, duration_s, avg_pace_s_km, avg_hr, train_kind, sport_type
@@ -203,12 +209,12 @@ def get_plan_days(
             detail=f"date range cannot exceed {_MAX_DAYS_RANGE} days",
         )
 
-    db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        session_rows = db.get_planned_sessions(date_from=date_from, date_to=date_to)
-        nutrition_rows = db.get_planned_nutrition(date_from=date_from, date_to=date_to)
+        session_rows = plan_store.get_planned_sessions(date_from=date_from, date_to=date_to)
+        nutrition_rows = plan_store.get_planned_nutrition(date_from=date_from, date_to=date_to)
     finally:
-        db.close()
+        plan_store.close()
 
     by_date: dict[str, dict[str, Any]] = {}
     cur = d_from
@@ -228,11 +234,13 @@ def get_plan_days(
 def get_plan_today(user: str):
     today = _shanghai_today_iso()
     db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        session_rows = db.get_planned_sessions(date_from=today, date_to=today)
-        nutrition_rows = db.get_planned_nutrition(date_from=today, date_to=today)
-        planned_vs_actual = _planned_vs_actual(db, today)
+        session_rows = plan_store.get_planned_sessions(date_from=today, date_to=today)
+        nutrition_rows = plan_store.get_planned_nutrition(date_from=today, date_to=today)
+        planned_vs_actual = _planned_vs_actual(db, plan_store, today)
     finally:
+        plan_store.close()
         db.close()
     return {
         "date": today,
@@ -242,7 +250,7 @@ def get_plan_today(user: str):
     }
 
 
-def _push_guard_or_raise(db: Database, week_folder: str) -> None:
+def _push_guard_or_raise(plan_store, week_folder: str) -> None:
     """409 unless the week's structured layer is ``fresh`` or ``authored``.
 
     ``authored`` is canonical (came directly from a human-authored plan.json
@@ -252,7 +260,7 @@ def _push_guard_or_raise(db: Database, week_folder: str) -> None:
     ``backfilled`` is intentionally rejected: historical re-parses can hallucinate
     interval structures that should be human-reviewed before going to the watch.
     """
-    row = db.get_weekly_plan_row(week_folder)
+    row = plan_store.get_weekly_plan_row(week_folder)
     structured_status = None
     if row is not None:
         try:
@@ -308,8 +316,9 @@ def push_planned_session(
     ``status='superseded'`` after its watch-side template is removed.
     """
     db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        session_row = db.get_planned_session_by_date_index(date, session_index)
+        session_row = plan_store.get_planned_session_by_date_index(date, session_index)
         if session_row is None:
             raise HTTPException(status_code=404, detail="Planned session not found")
 
@@ -326,7 +335,7 @@ def push_planned_session(
             )
 
         week_folder = session_row["week_folder"]
-        _push_guard_or_raise(db, week_folder)
+        _push_guard_or_raise(plan_store, week_folder)
 
         if session_kind == SessionKind.RUN.value:
             required_cap = Capability.PUSH_RUN_WORKOUT
@@ -480,6 +489,7 @@ def push_planned_session(
             "provider_workout_id": provider_workout_id,
         }
     finally:
+        plan_store.close()
         db.close()
 
 
@@ -570,13 +580,13 @@ def reparse_plan(
     if not parse_week_dates(folder):
         raise HTTPException(status_code=400, detail="Invalid folder")
 
-    db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        row = db.get_weekly_plan_row(folder)
+        row = plan_store.get_weekly_plan_row(folder)
         existing_generated_by = row["generated_by"] if row else None
         content_md = row["content_md"] if row else ""
     finally:
-        db.close()
+        plan_store.close()
 
     # Fall back to the on-disk plan.md when the DB row is empty. Historical
     # weeks were authored by hand + git-pushed via sync-data.yml, never went
@@ -663,9 +673,9 @@ def internal_reparse_plan(
     if not parse_week_dates(folder):
         raise HTTPException(status_code=400, detail="Invalid folder")
 
-    db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        row = db.get_weekly_plan_row(folder)
+        row = plan_store.get_weekly_plan_row(folder)
         existing_generated_by = row["generated_by"] if row else None
         content_md = row["content_md"] if row else ""
         prior_hash = None
@@ -677,7 +687,7 @@ def internal_reparse_plan(
             except (IndexError, KeyError):
                 pass
     finally:
-        db.close()
+        plan_store.close()
 
     # Same disk fallback as the public reparse route — sync-data.yml uploads
     # plan.md to Azure Files but doesn't write the DB row, so the first

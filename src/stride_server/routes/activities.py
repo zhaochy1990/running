@@ -10,7 +10,14 @@ from stride_core.models import EXERCISE_TYPES, pace_str
 from stride_core.source import DataSource
 
 from ..bearer import require_bearer
-from ..deps import EXERCISE_NAMES, format_duration, get_db, get_source, get_source_for_user
+from ..deps import (
+    EXERCISE_NAMES,
+    format_duration,
+    get_commentary_store,
+    get_db,
+    get_source,
+    get_source_for_user,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +76,7 @@ def list_activities(
     return {"total": total_count, "offset": offset, "limit": limit, "activities": activities}
 
 
-def build_activity_detail(db, label_id: str) -> dict | None:
+def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | None:
     """Assemble the activity detail payload from an open Database connection.
 
     Returns ``None`` when the activity is not present. Caller owns the db
@@ -85,7 +92,12 @@ def build_activity_detail(db, label_id: str) -> dict | None:
     activity["duration_fmt"] = format_duration(activity["duration_s"])
     activity["pace_fmt"] = pace_str(activity["avg_pace_s_km"]) or "—"
 
-    commentary_row = db.get_activity_commentary_row(label_id)
+    # Commentary lives in a Phase-1 abstracted store; callers may pass one in,
+    # otherwise we wrap the local db so legacy callers keep working unchanged.
+    if commentary_store is None:
+        from stride_core.state_stores import SqliteCommentaryStore
+        commentary_store = SqliteCommentaryStore(db)
+    commentary_row = commentary_store.get_activity_commentary_row(label_id)
     if commentary_row:
         cd = dict(commentary_row)
         activity["commentary"] = cd.get("commentary")
@@ -160,8 +172,9 @@ def build_activity_detail(db, label_id: str) -> dict | None:
 @router.get("/api/{user}/activities/{label_id}")
 def get_activity(user: str, label_id: str):
     db = get_db(user)
+    commentary_store = get_commentary_store(user)
     try:
-        result = build_activity_detail(db, label_id)
+        result = build_activity_detail(db, label_id, commentary_store=commentary_store)
         # Multi-variant fallback design (Step 4): if a scheduled_workout
         # was linked to this activity (via completed_label_id) AND it's
         # been marked abandoned by a later variant promote, surface
@@ -184,6 +197,7 @@ def get_activity(user: str, label_id: str):
                 }
             result["linked_scheduled_workout"] = sw_link
     finally:
+        commentary_store.close()
         db.close()
     if result is None:
         raise HTTPException(status_code=404, detail="Not found")
@@ -209,11 +223,13 @@ def upsert_commentary(
     if generated_by is not None and not isinstance(generated_by, str):
         raise HTTPException(status_code=422, detail="generated_by must be a string or null")
 
-    db = get_db(user)
+    commentary_store = get_commentary_store(user)
     try:
-        db.upsert_activity_commentary(label_id, commentary, generated_by=generated_by)
+        commentary_store.upsert_activity_commentary(
+            label_id, commentary, generated_by=generated_by,
+        )
     finally:
-        db.close()
+        commentary_store.close()
     return {"success": True, "generated_by": generated_by}
 
 

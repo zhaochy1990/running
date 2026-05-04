@@ -7,7 +7,12 @@ from fastapi import APIRouter, Body, HTTPException
 from stride_core.models import pace_str
 
 from ..content_store import any_exists, exists as content_exists, list_week_folders, read_text
-from ..deps import format_duration, get_db, parse_week_dates
+from ..deps import (
+    format_duration,
+    get_db,
+    get_plan_state_store,
+    parse_week_dates,
+)
 
 router = APIRouter()
 
@@ -21,6 +26,7 @@ def _markdown_title(content: str) -> str:
 def list_weeks(user: str):
     """List all training weeks with plan info and activity summary."""
     db = get_db(user)
+    plan_store = get_plan_state_store(user)
     weeks = []
     try:
         for folder_name in list_week_folders(user):
@@ -31,8 +37,8 @@ def list_weeks(user: str):
             date_from, date_to = dates
             plan_rel = f"{user}/logs/{folder_name}/plan.md"
             feedback_rel = f"{user}/logs/{folder_name}/feedback.md"
-            db_plan_row = db.get_weekly_plan_row(folder_name)
-            db_feedback_row = db.get_weekly_feedback_row(folder_name)
+            db_plan_row = plan_store.get_weekly_plan_row(folder_name)
+            db_feedback_row = plan_store.get_weekly_feedback_row(folder_name)
             plan_item = None if db_plan_row is not None else read_text(plan_rel)
             has_plan = db_plan_row is not None or plan_item is not None
             week: dict = {
@@ -69,6 +75,7 @@ def list_weeks(user: str):
             week["total_duration_fmt"] = format_duration(summary.get("total_duration_s", 0))
             weeks.append(week)
     finally:
+        plan_store.close()
         db.close()
     return {"weeks": weeks}
 
@@ -84,10 +91,11 @@ def get_week(user: str, folder: str):
     result: dict = {"folder": folder, "date_from": date_from, "date_to": date_to}
 
     db = get_db(user)
+    plan_store = get_plan_state_store(user)
 
     # DB-edited/agent-adjusted plans win over the markdown file. The file
     # remains the seed/fallback for git-synced canonical weekly plans.
-    db_plan_row = db.get_weekly_plan_row(folder)
+    db_plan_row = plan_store.get_weekly_plan_row(folder)
     if db_plan_row is not None:
         result["plan"] = db_plan_row["content_md"]
         result["plan_source"] = "db"
@@ -103,7 +111,7 @@ def get_week(user: str, folder: str):
 
     # DB-edited feedback wins over the markdown file. The file remains as
     # a seed/fallback so legacy weeks still display until edited in-app.
-    db_fb_row = db.get_weekly_feedback_row(folder)
+    db_fb_row = plan_store.get_weekly_feedback_row(folder)
 
     feedback_parts: list[str] = []
     if db_fb_row is not None:
@@ -180,8 +188,8 @@ def get_week(user: str, folder: str):
             structured_parsed_at = db_plan_row["structured_parsed_at"]
         except (IndexError, KeyError):
             pass
-    session_rows = db.get_planned_sessions(week_folder=folder)
-    nutrition_rows = db.get_planned_nutrition(week_folder=folder)
+    session_rows = plan_store.get_planned_sessions(week_folder=folder)
+    nutrition_rows = plan_store.get_planned_nutrition(week_folder=folder)
     sessions_payload = []
     for r in session_rows:
         spec_blob = r["spec_json"]
@@ -227,7 +235,7 @@ def get_week(user: str, folder: str):
     # Lists ACTIVE variants only (superseded ones aren't relevant for
     # the summary card). `selected_variant_id` mirrors the field on
     # weekly_plan; null when nothing's been promoted yet.
-    variant_rows = db.get_weekly_plan_variants(folder)
+    variant_rows = plan_store.get_weekly_plan_variants(folder)
     selected_vid = None
     if db_plan_row is not None:
         try:
@@ -264,6 +272,7 @@ def get_week(user: str, folder: str):
         for r in abandoned_rows
     ]
 
+    plan_store.close()
     db.close()
     return result
 
@@ -289,12 +298,12 @@ def update_weekly_feedback(user: str, folder: str, payload: dict = Body(...)):
     if generated_by is not None and not isinstance(generated_by, str):
         raise HTTPException(status_code=422, detail="generated_by must be a string or null")
 
-    db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        db.upsert_weekly_feedback(folder, content, generated_by=generated_by)
-        row = db.get_weekly_feedback_row(folder)
+        plan_store.upsert_weekly_feedback(folder, content, generated_by=generated_by)
+        row = plan_store.get_weekly_feedback_row(folder)
     finally:
-        db.close()
+        plan_store.close()
 
     return {
         "success": True,
@@ -325,12 +334,12 @@ def update_weekly_plan(user: str, folder: str, payload: dict = Body(...)):
     if generated_by is not None and not isinstance(generated_by, str):
         raise HTTPException(status_code=422, detail="generated_by must be a string or null")
 
-    db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        db.upsert_weekly_plan(folder, content, generated_by=generated_by)
-        row = db.get_weekly_plan_row(folder)
+        plan_store.upsert_weekly_plan(folder, content, generated_by=generated_by)
+        row = plan_store.get_weekly_plan_row(folder)
     finally:
-        db.close()
+        plan_store.close()
 
     return {
         "success": True,

@@ -128,16 +128,15 @@ class PlanStateStore(Protocol):
 
     def insert_weekly_plan_variant(
         self,
-        *,
         week_folder: str,
         model_id: str,
-        variant_index: int | None,
-        schema_version: int,
-        variant_parse_status: str,
         content_md: str,
-        spec_json: str | None,
-        generated_at: str,
-        generation_metadata: str | None,
+        structured_json: str | None,
+        *,
+        schema_version: int = 1,
+        variant_parse_status: str = "fresh",
+        parsed_from_md_hash: str | None = None,
+        generation_metadata_json: str | None = None,
     ) -> int: ...
 
     def get_weekly_plan_variants(
@@ -151,8 +150,8 @@ class PlanStateStore(Protocol):
     def delete_weekly_plan_variants(self, week_folder: str) -> int: ...
 
     def upsert_variant_rating(
-        self, *, variant_id: int, dimension: str, score: int,
-        comment: str | None = None,
+        self, variant_id: int, dimension: str, score: int,
+        *, comment: str | None = None, rated_by: str,
     ) -> None: ...
 
     def get_variant_ratings(
@@ -351,27 +350,22 @@ class SqlitePlanStateStore:
 
     def insert_weekly_plan_variant(
         self,
-        *,
         week_folder: str,
         model_id: str,
-        variant_index: int | None,
-        schema_version: int,
-        variant_parse_status: str,
         content_md: str,
-        spec_json: str | None,
-        generated_at: str,
-        generation_metadata: str | None,
+        structured_json: str | None,
+        *,
+        schema_version: int = 1,
+        variant_parse_status: str = "fresh",
+        parsed_from_md_hash: str | None = None,
+        generation_metadata_json: str | None = None,
     ) -> int:
         return self._db.insert_weekly_plan_variant(
-            week_folder=week_folder,
-            model_id=model_id,
-            variant_index=variant_index,
+            week_folder, model_id, content_md, structured_json,
             schema_version=schema_version,
             variant_parse_status=variant_parse_status,
-            content_md=content_md,
-            spec_json=spec_json,
-            generated_at=generated_at,
-            generation_metadata=generation_metadata,
+            parsed_from_md_hash=parsed_from_md_hash,
+            generation_metadata_json=generation_metadata_json,
         )
 
     def get_weekly_plan_variants(
@@ -390,12 +384,12 @@ class SqlitePlanStateStore:
         return self._db.delete_weekly_plan_variants(week_folder)
 
     def upsert_variant_rating(
-        self, *, variant_id: int, dimension: str, score: int,
-        comment: str | None = None,
+        self, variant_id: int, dimension: str, score: int,
+        *, comment: str | None = None, rated_by: str,
     ) -> None:
         self._db.upsert_variant_rating(
-            variant_id=variant_id, dimension=dimension, score=score,
-            comment=comment,
+            variant_id, dimension, score,
+            comment=comment, rated_by=rated_by,
         )
 
     def get_variant_ratings(

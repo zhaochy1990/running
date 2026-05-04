@@ -29,7 +29,7 @@ from stride_core.plan_spec import (
     WeeklyPlan,
 )
 
-from ..deps import get_db
+from ..deps import get_db, get_plan_state_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -71,12 +71,12 @@ def _structured_payload(structured_json: str | None) -> tuple[list, list]:
     return data.get("sessions") or [], data.get("nutrition") or []
 
 
-def _ratings_for_user(db, variant_id: int, user: str) -> tuple[dict[str, int], str | None]:
+def _ratings_for_user(plan_store, variant_id: int, user: str) -> tuple[dict[str, int], str | None]:
     """Aggregate this user's ratings for a variant into a dict keyed by
     dimension. Comments are kept in the most recent row's `comment`.
     Returns ({}, None) if the user hasn't rated this variant.
     """
-    rs = db.get_variant_ratings(variant_id)
+    rs = plan_store.get_variant_ratings(variant_id)
     user_rows = [r for r in rs if r["rated_by"] == user]
     if not user_rows:
         return {}, None
@@ -171,11 +171,16 @@ def post_variant(user: str, folder: str, payload: dict = Body(...)):
         variant_parse_status = "fresh"
 
     db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
         # Capture the prior active variant id for this (week, model) BEFORE
         # the helper supersedes it — the response advertises which row got
         # demoted so the UI can show "your previous claude variant was
         # archived".
+        # NOTE: variant-management queries via raw SQL on `db._conn` are
+        # pre-existing tech debt; folding them into the store is a separate
+        # follow-up. They stay route-local for this commit so the
+        # diff focuses on the abstracted call sites only.
         prior = db._conn.execute(
             """SELECT id FROM weekly_plan_variant
                    WHERE week_folder = ? AND model_id = ?
@@ -184,7 +189,7 @@ def post_variant(user: str, folder: str, payload: dict = Body(...)):
         ).fetchone()
         prior_id = prior["id"] if prior else None
 
-        variant_id = db.insert_weekly_plan_variant(
+        variant_id = plan_store.insert_weekly_plan_variant(
             week_folder=folder,
             model_id=model_id,
             content_md=content_md,
@@ -216,6 +221,7 @@ def post_variant(user: str, folder: str, payload: dict = Body(...)):
             resp["superseded_variant_id"] = prior_id
         return resp
     finally:
+        plan_store.close()
         db.close()
 
 
@@ -230,12 +236,12 @@ def list_variants(
     folder: str,
     include_superseded: bool = Query(default=False),
 ):
-    db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        rows = db.get_weekly_plan_variants(
+        rows = plan_store.get_weekly_plan_variants(
             folder, include_superseded=include_superseded,
         )
-        wp = db.get_weekly_plan_row(folder)
+        wp = plan_store.get_weekly_plan_row(folder)
         selected_variant_id = None
         if wp is not None:
             try:
@@ -253,7 +259,7 @@ def list_variants(
         variants_payload: list[dict[str, Any]] = []
         for r in rows:
             sessions, nutrition = _structured_payload(r["structured_json"])
-            ratings, comment = _ratings_for_user(db, r["id"], user)
+            ratings, comment = _ratings_for_user(plan_store, r["id"], user)
             selectable, reason = _selectability(r)
             v: dict[str, Any] = {
                 "variant_id": r["id"],
@@ -284,7 +290,7 @@ def list_variants(
             "variants": variants_payload,
         }
     finally:
-        db.close()
+        plan_store.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -322,25 +328,25 @@ def rate_variant(user: str, variant_id: int, payload: dict = Body(...)):
                 detail=f"score for {dim!r} must be int 1..5, got {score!r}",
             )
 
-    db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
-        if db.get_weekly_plan_variant(variant_id) is None:
+        if plan_store.get_weekly_plan_variant(variant_id) is None:
             raise HTTPException(
                 status_code=404,
                 detail={"error": "variant_not_found", "variant_id": variant_id},
             )
         for dim, score in ratings.items():
-            db.upsert_variant_rating(
+            plan_store.upsert_variant_rating(
                 variant_id, dim, score, comment=comment, rated_by=user,
             )
-        current, current_comment = _ratings_for_user(db, variant_id, user)
+        current, current_comment = _ratings_for_user(plan_store, variant_id, user)
         return {
             "variant_id": variant_id,
             "ratings": current,
             "rating_comment": current_comment,
         }
     finally:
-        db.close()
+        plan_store.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -395,10 +401,10 @@ def select_variant(
     if not isinstance(force, bool):
         raise HTTPException(status_code=422, detail="force must be bool")
 
-    db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
         try:
-            result = db.select_weekly_plan_variant(
+            result = plan_store.select_weekly_plan_variant(
                 user=user, week_folder=folder, variant_id=variant_id, force=force,
             )
         except sqlite3.OperationalError as e:
@@ -428,7 +434,7 @@ def select_variant(
                 result.get("dropped_scheduled_workout_ids", []),
         }
     finally:
-        db.close()
+        plan_store.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -439,11 +445,12 @@ def select_variant(
 @router.delete("/api/{user}/plan/{folder}/variants")
 def delete_variants(user: str, folder: str):
     db = get_db(user)
+    plan_store = get_plan_state_store(user)
     try:
         # If the currently selected variant for this week is one of the
         # variants we're about to delete, null it out first so the
         # `weekly_plan.selected_variant_id` doesn't dangle.
-        wp = db.get_weekly_plan_row(folder)
+        wp = plan_store.get_weekly_plan_row(folder)
         selected_id = None
         if wp is not None:
             try:
@@ -466,7 +473,8 @@ def delete_variants(user: str, folder: str):
                 )
                 db._conn.commit()
 
-        deleted = db.delete_weekly_plan_variants(folder)
+        deleted = plan_store.delete_weekly_plan_variants(folder)
         return {"deleted_variants": deleted}
     finally:
+        plan_store.close()
         db.close()
