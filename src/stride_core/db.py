@@ -287,7 +287,7 @@ CREATE TABLE IF NOT EXISTS planned_session (
     scheduled_workout_id  INTEGER REFERENCES scheduled_workout(id),
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(date, session_index)
+    UNIQUE(week_folder, date, session_index)
 );
 CREATE INDEX IF NOT EXISTS idx_planned_session_week ON planned_session(week_folder);
 CREATE INDEX IF NOT EXISTS idx_planned_session_date ON planned_session(date);
@@ -542,6 +542,55 @@ class Database:
             "ON weekly_plan_variant_rating(weekly_plan_variant_id)",
         ):
             self._conn.execute(stmt)
+
+        # Migrate planned_session UNIQUE constraint from (date, session_index) to
+        # (week_folder, date, session_index). Required because the narrower
+        # constraint blocks legitimate cross-week reparse when stale rows from a
+        # previous failed parse occupy the same (date, session_index).
+        # Idempotent: only rebuilds when the old constraint is detected.
+        sql_row = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='planned_session'"
+        ).fetchone()
+        if sql_row is not None:
+            table_sql = sql_row[0] or ""
+            needs_rebuild = (
+                "UNIQUE(date, session_index)" in table_sql
+                and "UNIQUE(week_folder, date, session_index)" not in table_sql
+            )
+            if needs_rebuild:
+                # SQLite cannot ALTER UNIQUE constraints; rebuild the table.
+                # Dedupe by keeping the latest row (MAX(id)) per
+                # (week_folder, date, session_index) tuple to survive prod's
+                # half-applied state from earlier crashed reparses.
+                self._conn.executescript("""
+                    CREATE TABLE planned_session_new (
+                        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                        week_folder           TEXT NOT NULL,
+                        date                  TEXT NOT NULL,
+                        session_index         INTEGER NOT NULL DEFAULT 0,
+                        kind                  TEXT NOT NULL,
+                        summary               TEXT NOT NULL,
+                        spec_json             TEXT,
+                        notes_md              TEXT,
+                        total_distance_m      REAL,
+                        total_duration_s      REAL,
+                        scheduled_workout_id  INTEGER REFERENCES scheduled_workout(id),
+                        created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                        UNIQUE(week_folder, date, session_index)
+                    );
+                    INSERT INTO planned_session_new
+                    SELECT * FROM planned_session
+                    WHERE id IN (
+                        SELECT MAX(id) FROM planned_session
+                        GROUP BY week_folder, date, session_index
+                    );
+                    DROP TABLE planned_session;
+                    ALTER TABLE planned_session_new RENAME TO planned_session;
+                    CREATE INDEX IF NOT EXISTS idx_planned_session_week ON planned_session(week_folder);
+                    CREATE INDEX IF NOT EXISTS idx_planned_session_date ON planned_session(date);
+                """)
+                self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
