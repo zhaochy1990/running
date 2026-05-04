@@ -153,9 +153,22 @@ Before drafting a new weekly plan, always review the following inputs:
 
 Adjust training load, nutrition, and recovery based on these signals. For example: if HRV is trending down or sleep quality is poor, reduce intensity and increase recovery; if body fat is stalling, revisit the calorie deficit.
 
-当创建或更新训练计划时，不要“已推送到 COROS 手表的训练”这个章节。
+当创建或更新训练计划时，不要”已推送到 COROS 手表的训练”这个章节。
 
 当创建或更新训练计划后，检查计划中的内容，剔除或合并相同内容。
+
+**周计划精简原则**（plan.md 篇幅控制）：
+
+- 目标长度 **80-150 行**。超过 200 行就是过度啰嗦，必须精简。
+- **保留**：”为什么这么跑”的简要理由——但用 inline 括号 / 半句带过，不要多段铺陈。例如 “26K 默认（W1 25K +1K，符合 5-10% 周-周递进）” 而不是 5 行论证。
+- **删除**：
+  - 多个备选方案的对比论证（”为什么选 C 不选 A 或 B”）—— 直接给最终决策即可；备选方案讨论放 commit message 或一次性记录。
+  - 重复 TRAINING_PLAN.md 已有的内容（区间定义、阶段定义、温度规则等）—— 引用即可。
+  - 大块”教练思路”或”决策推演”段落 —— 决定就是决定，不要再论证。
+  - 多版本演进记录（V1→V2→V3）—— 不是周计划职责，git history 已经记录了。
+- **优先用表格而不是文字段**：每日表、距离决策矩阵、监控触发表、营养时机表等。表格信息密度高于段落。
+- **结构模板**（仅供参考，不是硬规则）：本周定位 1 段 → 上周小结 → 本周目标 → 每日表 → 各专项（核心课/辅助课/力量等）→ 营养 → 监控 → 下周衔接。
+- **执行视角**优先于解释视角：plan.md 是给未来某天的”我”看的执行清单，不是给读者讲一遍训练学。简洁直白。
 
 ### Fatigue / Training Load Data
 
