@@ -253,12 +253,12 @@ export default function TeamDetailPage() {
               {filteredFeed.map((act) => (
                 <div
                   key={`${act.user_id}-${act.label_id}`}
-                  className="rounded-xl border border-border-subtle bg-bg-card hover:bg-bg-card-hover transition-all"
+                  className="relative rounded-xl border border-border-subtle bg-bg-card hover:bg-bg-card-hover transition-all"
                 >
                   <button
                     type="button"
                     onClick={() => navigate(`/teams/${id}/activity/${act.user_id}/${act.label_id}`)}
-                    className="w-full text-left p-4 pb-2"
+                    className="w-full text-left p-4 pr-24"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-semibold text-text-primary">{act.display_name}</span>
@@ -278,7 +278,7 @@ export default function TeamDetailPage() {
                     )}
                   </button>
                   {id && act.label_id && (
-                    <div className="px-4 pb-3">
+                    <div className="absolute bottom-2 right-2">
                       <LikeButton
                         teamId={id}
                         userId={act.user_id}

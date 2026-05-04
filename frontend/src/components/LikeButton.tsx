@@ -106,7 +106,7 @@ export default function LikeButton({
   }
 
   return (
-    <div className="flex items-center gap-2 mt-2 relative">
+    <div className="flex items-center gap-2 relative">
       <button
         type="button"
         onClick={handleToggle}
@@ -154,7 +154,7 @@ export default function LikeButton({
         <div
           ref={popoverRef}
           onClick={(e) => e.stopPropagation()}
-          className="absolute top-full left-0 mt-2 z-20 min-w-[200px] max-w-[280px] rounded-lg border border-border bg-bg-card shadow-lg p-2"
+          className="absolute bottom-full right-0 mb-2 z-20 min-w-[200px] max-w-[280px] rounded-lg border border-border bg-bg-card shadow-lg p-2"
         >
           <div className="text-[11px] font-mono text-text-muted px-2 pb-1 border-b border-border-subtle mb-1">
             点赞的人 ({count})
