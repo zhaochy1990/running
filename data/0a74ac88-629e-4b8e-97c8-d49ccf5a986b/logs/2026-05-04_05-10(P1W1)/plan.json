@@ -1,0 +1,524 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-05-04_05-10(P1W1)",
+  "notes_md": "Phase 1 第 1 周（距西马 24 周）。本周修订（教练版）：W0 退出 2 项 🔴（fatigue 48、力量基线测试未完成），但两个 🔴 都不是结构性疲劳信号——5/3 长距离 22 km @ HR 125 已证明心血管耐受。所以**只降强度不降跑量**：跑量 63 km（vs macro 65 km），节奏跑 6 km @ 4:15-4:20（vs macro 8 km @ 4:10），力量基线测试顺延到周二。本周 KPI 硬约束：每次跑步 HR avg ≤ 145（恢复跑 ≤ 138），单次距离不超过当日计划 +20%，节奏跑 HR 158-167，周量 60-65 km。⭐ 本周不是为了'跑出多少 km'，而是验证'驴哥能不能按预设上限跑'。当前快照（5/3 sync）：fatigue 48 🟡, ATI/CTI 123/115, TSB -8, RHR 48, LT 配速 3:55/km @ HR 168-172。手表配速字段全周关闭（节奏跑日 5/8 例外）。",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-04",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "[STRIDE] 完全休息 + 拉伸 15 min",
+      "notes_md": "5/1 透支补给的延伸日。完全休息，配 15 min 拉伸（睡前 T1248 胸椎旋转 3×10/侧 + T1234 猫牛 2×30s）。",
+      "spec": null,
+      "total_distance_m": null,
+      "total_duration_s": 900,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-05",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "[STRIDE] 力量基线测试（11 项，60 min，顺延自 W0）",
+      "notes_md": "🔬 不能再推。本周二必须做。结果直接决定 P1W2 力量 A/B 动作选择。时间 07:00-09:00（晨起 1 h 后），优先做测试，不要先跑步。测试前 10 min 动态热身（leg swing T1222 + clamshell T1317 + cat-cow T1234）。每项之间休 1-2 min；左右都测；力竭/动作变形即停。**不要追求漂亮数据 — 真实数据 > 漂亮数据**。输出：strength-assessment.md，记录每项数值 + 左右差异（差异 > 20% 标 🔴）+ 三大短板 + P1 力量重点。",
+      "total_duration_s": 3600,
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量基线测试 11 项",
+        "date": "2026-05-05",
+        "note": "下肢 4 项 + 核心 3 项 + 髋稳定 4 项；力竭/动作变形即停；左右都测",
+        "exercises": [
+          {
+            "canonical_id": "single_leg_wall_sit",
+            "display_name": "单腿靠墙静蹲（左/右）",
+            "sets": 2,
+            "target_kind": "time_s",
+            "target_value": 60,
+            "rest_seconds": 90,
+            "note": "保持时间到大腿无法承受为止；大腿与地面平行，背贴墙；记录左右各 1 次力竭时间"
+          },
+          {
+            "canonical_id": "single_leg_calf_raise_test",
+            "display_name": "单腿提踵 2s tempo（左/右）",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 20,
+            "rest_seconds": 90,
+            "note": "单腿到力竭为止次数；全幅，2s 上 1s 顶 2s 下；记录左右各 1 次力竭次数"
+          },
+          {
+            "canonical_id": "single_leg_squat_test",
+            "display_name": "单腿深蹲（左/右）",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 90,
+            "note": "力竭为止次数；下蹲到 90°，无侧倾"
+          },
+          {
+            "canonical_id": "single_leg_glute_bridge_hold",
+            "display_name": "单腿臀桥保持（左/右）",
+            "sets": 2,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 90,
+            "note": "保持时间到髋无法上挺为止；膝 90°，髋平"
+          },
+          {
+            "canonical_id": "plank_basic",
+            "display_name": "平板支撑",
+            "sets": 1,
+            "target_kind": "time_s",
+            "target_value": 60,
+            "rest_seconds": 90,
+            "note": "保持时间；标准前臂支撑，髋不掉；力竭即停"
+          },
+          {
+            "canonical_id": "side_plank_test",
+            "display_name": "侧平板（左/右）",
+            "sets": 2,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 90,
+            "note": "保持时间；髋不掉、肩不耸"
+          },
+          {
+            "canonical_id": "dead_bug",
+            "display_name": "Dead Bug",
+            "sets": 1,
+            "target_kind": "reps",
+            "target_value": 20,
+            "rest_seconds": 90,
+            "note": "力竭为止次数（左右算 1 次）；腰平贴地"
+          },
+          {
+            "canonical_id": "copenhagen_side_plank",
+            "display_name": "哥本哈根侧平板（左/右）",
+            "sets": 2,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 90,
+            "note": "保持时间；屈腿版可，进阶直腿"
+          },
+          {
+            "canonical_id": "single_leg_balance_eyes_closed",
+            "display_name": "单腿闭眼站（左/右）",
+            "sets": 2,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 90,
+            "note": "保持时间到失衡；双手叉腰"
+          },
+          {
+            "canonical_id": "side_lying_hip_abduction",
+            "display_name": "臀中肌侧卧抬腿（左/右）",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 20,
+            "rest_seconds": 90,
+            "note": "力竭次数；控制 2s 上 2s 下"
+          },
+          {
+            "canonical_id": "y_balance_test",
+            "display_name": "Y-Balance（左右对称）",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 3,
+            "rest_seconds": 90,
+            "note": "各方向最远距离差异；站立单腿，另腿向 3 方向触地"
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-06",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] 轻松跑 12km + 4×100m strides",
+      "notes_md": "时间清晨 5:30-6:30 出发（夏训预演）。0-9 km 稳态 5:00-5:20/km，HR < 142，关闭配速字段；9-9.5 km 走/慢跑过渡；9.5-10 km 4×100m 大步跑（约 3:30-3:40/km），组间走回 60s；10-12 km 轻松收尾。**前提是周二力量测试后跟腱无任何反应**——任一短板项目（提踵/单腿臀桥）测出剧烈不适 → 取消 strides，做稳态 12 km。距离上限 13 km，HR 上限 145。",
+      "total_distance_m": 12000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy 12km + 4×100m strides",
+        "date": "2026-05-06",
+        "note": "9km 稳态 + 4×100m strides + 2km cooldown；HR 优先于配速；跟腱不适 → 删 strides 改稳态 12km",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 9000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 142},
+                "note": "稳态主段；配速参考 5:00-5:20/km；HR > 142 立即降速；关闭配速字段"
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "distance_m", "value": 500},
+                "target": {"kind": "open", "low": null, "high": null},
+                "note": "走/慢跑过渡 500m，准备 strides"
+              }
+            ]
+          },
+          {
+            "repeat": 4,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 100},
+                "target": {"kind": "pace_s_km", "low": 220, "high": 210},
+                "note": "Stride 大步跑 3:30-3:40/km；轻快不全力"
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 60},
+                "target": {"kind": "open", "low": null, "high": null},
+                "note": "走回 60s 完全恢复"
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {"kind": "distance_m", "value": 2000},
+                "target": {"kind": "hr_bpm", "low": 125, "high": 140},
+                "note": "轻松收尾 5:00-5:30/km"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-07",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "[STRIDE] 力量A 下肢稳定 (45 min)",
+      "notes_md": "力量 A 下肢稳定 + 拉伸，45 min。**测试结果未出前**先按通用版执行，测试后下周再调。优先 COROS 内置动作（推送至手表后有动画指导）。**强度**：所有动作离力竭还有 3 次，目的是激活 + 神经募集，不是力竭。可与同日轻松跑拼成同一训练块（晨力量 + 跑步），或晨力量 + 晚跑拆开。",
+      "total_duration_s": 2700,
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量A 下肢稳定",
+        "date": "2026-05-07",
+        "note": "下肢稳定 + 跟腱预防 + 踝稳定；离力竭 3 次；任何锐痛即停",
+        "exercises": [
+          {
+            "canonical_id": "clamshell",
+            "display_name": "Clamshell 髋激活",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 30,
+            "note": "每侧 15 次；热身；COROS T1317"
+          },
+          {
+            "canonical_id": "greatest_stretch",
+            "display_name": "Greatest Stretch",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 6,
+            "rest_seconds": 30,
+            "note": "每侧 6 次；热身；COROS T1262"
+          },
+          {
+            "canonical_id": "single_leg_glute_bridge_hold",
+            "display_name": "单腿臀桥保持",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 25,
+            "rest_seconds": 45,
+            "note": "每侧 25s；弱链强化"
+          },
+          {
+            "canonical_id": "single_leg_rdl_bw",
+            "display_name": "单腿罗马尼亚硬拉（徒手）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 60,
+            "note": "每侧 10 次；后链稳定；臀主导，腰不圆"
+          },
+          {
+            "canonical_id": "bulgarian_split_squat_bw",
+            "display_name": "保加利亚分腿蹲（徒手）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 60,
+            "note": "每侧 10 次；单腿，不加重量"
+          },
+          {
+            "canonical_id": "copenhagen_side_plank",
+            "display_name": "哥本哈根侧平板",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 20,
+            "rest_seconds": 45,
+            "note": "每侧 20s；内收肌"
+          },
+          {
+            "canonical_id": "single_leg_eccentric_calf_raise",
+            "display_name": "单腿离心提踵 4s 慢下放",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 60,
+            "note": "每侧 10 次；跟腱预防；4s 慢下放；**任何锐痛即停**；COROS T1275"
+          },
+          {
+            "canonical_id": "band_ankle_inversion",
+            "display_name": "弹力带踝内翻",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 20,
+            "note": "每侧 12 次；踝稳定；COROS T1326"
+          },
+          {
+            "canonical_id": "band_ankle_eversion",
+            "display_name": "弹力带踝外翻",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 20,
+            "note": "每侧 12 次；踝稳定；COROS T1327"
+          },
+          {
+            "canonical_id": "hip_flexor_lunge_stretch",
+            "display_name": "髂腰肌弓步拉伸",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 20,
+            "note": "每侧 30s；收尾；COROS T1274"
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-07",
+      "session_index": 1,
+      "kind": "run",
+      "summary": "[STRIDE] 轻松跑 8km (HR<142)",
+      "notes_md": "力量 A 后 30-60 min 内（同次训练块内），或拆成两段（晨力量 + 晚跑）。配速 5:00-5:20/km，HR < 142（Z2）。目的：力量后冲血、固化神经募集 + 周中第二个有氧 session（堆量主力之一）。**如果**力量做完已经累 → 跑步降到 6 km @ HR < 138；力量+跑步同日吃不消 → 拆开。距离上限 9 km，HR 上限 145。",
+      "total_distance_m": 8000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy Run 8km",
+        "date": "2026-05-07",
+        "note": "Z2 全程；HR 优先；力量后冲血",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 8000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 142},
+                "note": "配速参考 5:00-5:20/km；HR > 142 立即降速；累则缩到 6km @ HR<138"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-08",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] 节奏跑 13km (3wu + 6@4:15-4:20 + 4cd)",
+      "notes_md": "⚡ 本周强度课。清晨 5:30 出发；如室外 > 25°C，节奏段配速放宽到 4:25-4:30/km，**HR 优先于配速**。结构：3km 热身 @ 5:10-5:30/km，最后 200m 加速到 4:30；6km 节奏段 @ 4:15-4:20/km，期望 HR 158-163 / 上限 167，HR 是首要约束——配速够但 HR 已经 165 → 立即降到 4:25；4km 放松 @ 5:20-5:40/km，HR < 140。**配速选 4:15-4:20 而非 macro 4:10 的原因**：W0 fatigue 未完全恢复（48 而非 35），4:10/km 对应 HR ≈ 165-170 偏激进，4:15/km 对应 HR ≈ 160-165 更安全。HR 报警：tempo 段开始前临时把心率上限调到 167。**失败止损**：第 2 个 km tempo HR > 170 → 立刻降到 4:30/km，6km 改 5km；第 3 个 km HR 仍 > 170 → 终止 tempo 段，剩余作为轻松跑回家。**绝不'硬撑完成'**。**若周二力量基线测试出红灯**（单腿离心提踵 < 8/侧 或 单腿臀桥 < 15s 任一项）→ 节奏段降到 4 km @ 4:20。距离上限 14 km，tempo 段 HR 上限 167，其他段 145。",
+      "total_distance_m": 13000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Tempo 13km (6km @ 4:15-4:20)",
+        "date": "2026-05-08",
+        "note": "本周强度课；HR 是首要约束；HR > 170 立即终止 tempo",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {"kind": "distance_m", "value": 3000},
+                "target": {"kind": "hr_bpm", "low": 125, "high": 145},
+                "note": "热身 5:10-5:30/km，最后 200m 加速到 4:30"
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 6000},
+                "target": {"kind": "hr_bpm", "low": 158, "high": 167},
+                "note": "节奏段 4:15-4:20/km，期望 HR 158-163 / 上限 167；HR > 165 → 4:25；HR > 170 → 立即降速 4:30 改 5km；红灯日改 4km @ 4:20"
+              },
+              {
+                "step_kind": "cooldown",
+                "duration": {"kind": "distance_m", "value": 4000},
+                "target": {"kind": "hr_bpm", "low": 120, "high": 140},
+                "note": "放松 5:20-5:40/km，HR < 140"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-09",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] 恢复跑 8km (HR<138) 或休息",
+      "notes_md": "**判断标准**：周五节奏跑后晨起跟腱痛 ≤ 1/10、RHR ≤ 50、自评疲劳 ≤ 4 → 跑 8 km 恢复；任一不达标 → 完全休息，做 30 min 骑行 + 拉伸。配速 5:30-6:00/km，HR < 138，全程 Z1。**重点是慢，不是凑距离**——HR > 140 立即降速到走跑结合。距离上限 9 km，HR 上限 140。",
+      "total_distance_m": 8000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Recovery 8km",
+        "date": "2026-05-09",
+        "note": "Z1 恢复跑；HR < 138 是硬约束；任一指标不达标 → 改完全休息 + 30min 骑行",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 8000},
+                "target": {"kind": "hr_bpm", "low": 115, "high": 138},
+                "note": "5:30-6:00/km；重点是慢；HR > 140 立即降到走跑结合"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-10",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] 长距离 22km (HR<145, 5:05-5:25/km)",
+      "notes_md": "⭐ 本周锚点训练。6:00-6:30 出发。路线：世博滨江或徐汇滨江（macro Phase 2 半马测试同路线，建立基线），平坦、有补水点。配速 5:05-5:25/km，HR 优先：气温 < 20°C 取 5:05-5:15；20-25°C 取 5:15-5:25；> 25°C 纯心率跑（< 145），可放到 5:25-5:35。**不允许 4:50- 的快进**。结构：稳态 22 km，无热身/放松分段（前 2 km 自然过渡到目标配速）。补给：10 km + 18 km 处各 1 个能量胶（演练比赛配方），每 5 km 喝一口水。跑前：5:30 起床 → 5:50 早餐（燕麦 60g + 香蕉 1 + 蜂蜜 + 蛋白粉 + 黑咖啡）→ 6:15 出发。跑后 30 min 内：30g 乳清蛋白 + 60g 快碳（白米饭 + 鸡蛋）+ 500-700 mL 含电解质水。**纪律目标**：第 5/10/15/20 km 处主动看心率记入体感记录；末段 2km HR 比首段 2km 高 < 7 bpm 为合格；找到'HR 135 ± 5'的稳态点。距离上限 24 km，HR 上限 148。",
+      "total_distance_m": 22000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Long Run 22km",
+        "date": "2026-05-10",
+        "note": "本周锚点；稳态 22km 无分段；HR 优先于配速；10km/18km 能量胶；末段 HR 漂移 < 7bpm 为合格",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 22000},
+                "target": {"kind": "hr_bpm", "low": 125, "high": 145},
+                "note": "5:05-5:25/km（气温分段：<20℃ 5:05-5:15；20-25℃ 5:15-5:25；>25℃ 5:25-5:35 心率优先）；不允许 4:50- 快进；HR > 148 立即降速"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-04",
+      "kcal_target": 2500,
+      "carbs_g": 355,
+      "protein_g": 140,
+      "fat_g": 78,
+      "water_ml": 2500,
+      "notes_md": "完全休息（恢复期）。碳水 4.5 g/kg，热量 -200 kcal。5/1 透支补给的延伸日。蛋白质 1.8 g/kg = 140 g/天；分配：早 30g + 午 40g + 晚 40g + 加餐 30g（每餐 ≥ 30g 触发肌肉合成阈值）。来源：鸡蛋 4-5 个、鸡胸 150g、鱼 150g、瘦牛 100g、希腊酸奶/低脂牛奶、豆腐。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-05",
+      "kcal_target": 2500,
+      "carbs_g": 355,
+      "protein_g": 140,
+      "fat_g": 78,
+      "water_ml": 2500,
+      "notes_md": "力量基线测试日（轻量）。碳水 4.5 g/kg，热量 -200 kcal。测试后 30 min 内 30g 蛋白 + 30g 碳。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-06",
+      "kcal_target": 2600,
+      "carbs_g": 395,
+      "protein_g": 140,
+      "fat_g": 78,
+      "water_ml": 2500,
+      "notes_md": "轻松跑 12km。碳水 5 g/kg，热量 -100 kcal。跑后黄金窗口 30 min 内：30g 乳清蛋白 + 60g 快碳 + 500-700 mL 水。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-07",
+      "kcal_target": 2500,
+      "carbs_g": 395,
+      "protein_g": 140,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "notes_md": "力量 A + 轻松 8 km。碳水 5 g/kg，热量 -200 kcal。力量后 30 min 内 30g 蛋白 + 30g 碳。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-08",
+      "kcal_target": 2800,
+      "carbs_g": 475,
+      "protein_g": 140,
+      "fat_g": 75,
+      "water_ml": 2700,
+      "notes_md": "节奏跑 13km（本周强度课）。碳水 6 g/kg，热量 +100 kcal。训练前 60 min：30-50 g 易消化碳水（香蕉/胶/吐司）+ 200 mL 水。训练后 30 min：30g 蛋白 + 60g 碳水 + 500-700 mL 水。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-09",
+      "kcal_target": 2300,
+      "carbs_g": 315,
+      "protein_g": 140,
+      "fat_g": 75,
+      "water_ml": 2500,
+      "notes_md": "恢复 8 km / 休息日。碳水 4 g/kg，热量 -400 kcal。**长距离前夜晚餐 +50 g 米饭**（糖原储备）；减少膳食纤维，避免油炸。晚餐：米饭 1.5 碗 + 鸡胸 150 g + 蔬菜。",
+      "meals": [
+        {"name": "晚餐（长距离前夜）", "time_hint": "19:00", "kcal": 750, "carbs_g": 130, "protein_g": 45, "fat_g": 12, "items_md": "米饭 1.5 碗（约 200g）+ 鸡胸 150g + 蔬菜（减少膳食纤维，避免油炸）"}
+      ]
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-10",
+      "kcal_target": 3200,
+      "carbs_g": 555,
+      "protein_g": 140,
+      "fat_g": 80,
+      "water_ml": 3500,
+      "notes_md": "长距离 22 km（本周锚点训练）。碳水 7 g/kg，热量 +500 kcal。22 km 额外消耗 ~1800 kcal，长跑日须保糖原；跑前 + 跑中 + 跑后三段补给。",
+      "meals": [
+        {"name": "跑前 30-45 min", "time_hint": "5:50", "kcal": 500, "carbs_g": 80, "protein_g": 30, "fat_g": 8, "items_md": "燕麦 60g + 香蕉 1 + 蜂蜜 + 30g 蛋白粉 + 黑咖啡 + 300 mL 水"},
+        {"name": "跑中 10km", "time_hint": "7:00", "kcal": 100, "carbs_g": 25, "protein_g": 0, "fat_g": 0, "items_md": "能量胶 1 个 + 100 mL 水（演练比赛品牌 GU 或 SiS）"},
+        {"name": "跑中 18km", "time_hint": "7:45", "kcal": 100, "carbs_g": 25, "protein_g": 0, "fat_g": 0, "items_md": "能量胶 1 个 + 100 mL 水"},
+        {"name": "跑后 30 min 内", "time_hint": "8:30", "kcal": 500, "carbs_g": 70, "protein_g": 35, "fat_g": 8, "items_md": "30g 乳清蛋白 + 米饭 1 碗 + 鸡蛋 2 个 + 500-700 mL 含电解质水"},
+        {"name": "午餐", "time_hint": "12:30", "kcal": 800, "carbs_g": 130, "protein_g": 40, "fat_g": 18, "items_md": "米饭 200g + 鱼 150g + 蔬菜 250g"},
+        {"name": "加餐", "time_hint": "16:00", "kcal": 250, "carbs_g": 40, "protein_g": 15, "fat_g": 6, "items_md": "酸奶 200g + 全麦面包 1 片"},
+        {"name": "晚餐", "time_hint": "19:00", "kcal": 700, "carbs_g": 110, "protein_g": 30, "fat_g": 18, "items_md": "面条 100g + 瘦肉 100g + 蔬菜 250g"}
+      ]
+    }
+  ]
+}
