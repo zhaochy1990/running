@@ -1,50 +1,66 @@
 {
   "schema": "weekly-plan/v1",
   "week_folder": "2026-05-04_05-10(P1W2)",
-  "notes_md": "Phase 1 Week 2 (基础建设期 第 2 周)。个人 P1W2 适应递增周，不是俱乐部恢复集训第 1 周。fatigue 51 / TL ratio 1.18 双黄灯，处置原则：维持本周强度不上量。本周净刺激由长距离主导：核心课周六 26K easy（默认，区间 25-28K，比 W1 25K 微进 1K，长距离曲线连续性优先），辅助课周三可控速度训练 3K×4 @ 4:10-4:05（硬下限 4:05，HR 上限 167）。跑量 63-67 km。W4（5/18-5/24）才是真正的减量恢复周。硬纪律：周六 6:30 前出门、关闭配速显示按 HR 走、周日不补跑、间歇绝不跑进 4:05、长距离 ≥26K 时周日力量集训降一档或替代版。",
+  "notes_md": "Phase 1 Week 2 (基础建设期 第 2 周)。个人 P1W2 适应递增周 + 新典型周结构过渡周。fatigue 51 / TL ratio 1.18 双黄灯 → 维持强度不上量；长距离主导本周净刺激（核心课），间歇降级为辅助课。**W4（5/18-24）才是计划内减量周**。本周净刺激由长距离主导：核心课周六 26K easy（默认；区间 25-28K，比 W1 25K 微进 1K，长距离曲线连续性优先；**不能砍至 W1 25K 以下**），辅助课周三可控速度训练 3K×4 @ 4:10-4:05（硬下限 4:05，HR 上限 167）。跑量 63-67 km。新典型周护栏：周一力量 A 集中所有对跑步有残留的下肢/核心耐力刺激，周三强度课、周六长距离前都拿到干净的 24h+/96h+ 恢复窗口；周四 mobility-only（**禁负重等长+核心耐力**）；周日仅 W2 保留俱乐部集训社交锚点（W3 起完全休息）。家庭日常跟腱康复每日 3 min 只保留 T1275（其他短板归到周一力量 A，不重复）。硬纪律：周六 6:30 前出门、关闭配速显示按 HR 走、周日不补跑、间歇绝不跑进 4:05、长距离 ≥26K 时周日力量集训降一档或替代版。",
   "sessions": [
     {
       "schema": "plan-session/v1",
       "date": "2026-05-04",
       "session_index": 0,
-      "kind": "rest",
-      "summary": "休息日 — 拉伸 + 家庭短板 routine",
-      "notes_md": "周一休息日。晨起刷牙后家庭短板 routine 5 min（T1219 单腿臀桥 2×30s/侧 + T1368 哥本哈根侧平板 2×25s/侧 + T1275 单腿离心提踵 2×10/侧）+ 静态拉伸 8-10 min。**不跑、不力量重训**。",
-      "spec": null,
-      "total_distance_m": null,
-      "total_duration_s": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-05-04",
-      "session_index": 1,
       "kind": "strength",
-      "summary": "[STRIDE] 家庭短板 routine 三动作 (晨)",
-      "notes_md": "每日晨起刷牙后 5 min，绑定时间锚保证执行率。任何锐痛立即停（尤其 T1275 跟腱）。",
-      "total_duration_s": 300,
+      "summary": "[STRIDE] 力量 A — 下肢稳定 + 核心耐力 25-30min",
+      "notes_md": "**周一力量 A**（今晚 25-30 min，21:30 前完成）。新典型周护栏：把所有'对跑步有残留的下肢/核心耐力刺激'集中到周一，让周三强度课和周六长距离前都拿到干净的 24h+/96h+ 恢复窗口。**今晚补做、不跑步**。\n\n热身 5 min：T1262 greatest stretch 4×侧 + T1222 前后腿摆 3×30s + T1263 侧向腿摆 3×30s。\n\n主项 20 min（按短板优先级）：1) 单腿靠墙静蹲 右3×30s + 左3×40s（🔴右腿弱35%）2) T1219 单腿臀桥 3×25s/侧（🔴W0 20s→30s 节点）3) T1368 哥本哈根侧平板 3×25s/侧（🔴W0 15-19s→25-30s 节点）4) 平板支撑 2×60-75s（🟡W0 1:36→2:00）5) Dead Bug 2×10/侧（🟡W0 8-10→15）6) T1275 单腿离心提踵 2×10/侧 4s 慢下放（🟡跟腱，量不加）7) T1317 蚌式 2×15/侧（ITB 预防）8) T1326+T1327 弹力带踝内+外翻 2×12/侧（左踝弱）。\n\n放松 5 min：T1244 臀部拉伸 + T1274 髂腰肌 各 30s × 4 轮。\n\n护栏：锐痛立即停（尤其 T1275 跟腱、单腿臀桥腰）；跟腱晨起痛 ≥1/10 → 取消 T1275。",
+      "total_duration_s": 1800,
       "spec": {
         "schema": "strength-workout/v1",
-        "name": "[STRIDE] 家庭短板 routine",
+        "name": "[STRIDE] 力量 A 下肢稳定+核心耐力",
         "date": "2026-05-04",
-        "note": "三动作版：单腿臀桥 + 哥本哈根 + 单腿离心提踵。每日固定到早晨。",
+        "note": "8 主项 20 min + 热身 5 min + 放松 5 min。今晚补做。锐痛立即停。",
         "exercises": [
+          {
+            "canonical_id": "single_leg_wall_sit",
+            "display_name": "单腿靠墙静蹲（右腿主补差）",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 30,
+            "note": "右 3×30s + 左 3×40s；🔴 右腿弱 35%；目标拉平双侧"
+          },
           {
             "canonical_id": "single_leg_glute_bridge_hold",
             "display_name": "单腿臀桥保持 (T1219)",
-            "sets": 2,
+            "sets": 3,
             "target_kind": "time_s",
-            "target_value": 30,
-            "rest_seconds": 20,
-            "note": "每侧 30s；W0 20s → W2 30s 进阶；顶峰挤臀"
+            "target_value": 25,
+            "rest_seconds": 30,
+            "note": "每侧 25s；🔴 W0 20s → W2 30s 进阶节点；顶峰挤臀；腰痛立即停"
           },
           {
             "canonical_id": "copenhagen_side_plank",
             "display_name": "哥本哈根侧平板 (T1368)",
-            "sets": 2,
+            "sets": 3,
             "target_kind": "time_s",
             "target_value": 25,
-            "rest_seconds": 20,
-            "note": "每侧 25s；W0 15-19s → W2 25-30s 达标节点；内收肌发力"
+            "rest_seconds": 30,
+            "note": "每侧 25s；🔴 W0 15-19s → W2 25-30s 达标节点；内收肌发力"
+          },
+          {
+            "canonical_id": "plank_basic",
+            "display_name": "平板支撑",
+            "sets": 2,
+            "target_kind": "time_s",
+            "target_value": 60,
+            "rest_seconds": 30,
+            "note": "60-75s；🟡 W0 1:36 → 2:00 进阶；臀腰平直"
+          },
+          {
+            "canonical_id": "dead_bug",
+            "display_name": "Dead Bug",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "note": "每侧 10 次；🟡 W0 8-10 → 15 进阶；腰不离地"
           },
           {
             "canonical_id": "single_leg_calf_raise_eccentric",
@@ -53,7 +69,25 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 30,
-            "note": "每侧 10 次；4s 慢下放；跟腱康复必做，量不加"
+            "note": "每侧 10 次；4s 慢下放；🟡 跟腱量不加；跟腱晨起痛 ≥1/10 取消"
+          },
+          {
+            "canonical_id": "clamshell",
+            "display_name": "蚌式 (T1317)",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 30,
+            "note": "每侧 15 次；ITB 预防"
+          },
+          {
+            "canonical_id": "banded_ankle_inversion_eversion",
+            "display_name": "弹力带踝内+外翻 (T1326+T1327)",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "每侧 12 次；左踝稳定性弱"
           }
         ]
       }
@@ -192,55 +226,11 @@
       "date": "2026-05-07",
       "session_index": 0,
       "kind": "rest",
-      "summary": "休息日 — 家庭短板 routine + 静态拉伸",
-      "notes_md": "周四休息日。晨起家庭短板 routine 5 min + 睡前静态拉伸 10 min（T1234 猫牛 + T1244 臀部拉伸 + T1274 髂腰肌 + T1248 胸椎旋转）。**不跑**。",
+      "summary": "Mobility-only — 拉伸+活动度 15-25min（不跑、不负重等长、不核心耐力）",
+      "notes_md": "**周四 mobility-only（新典型周护栏）**。0 km 跑步，仅做拉伸+活动度 15-25 min；**禁负重等长（深蹲/弓步/重量提踵）+ 核心耐力（长平板/Dead Bug 多组）**——这些刺激已集中到周一力量 A，周四到周六长距离前必须留干净恢复窗口。\n\n动作清单（仅这些）：T1248 胸椎旋转 3×10/侧 + T1234 猫牛 3×30s + T1244 臀部拉伸 4×30s/侧 + T1274 髂腰肌拉伸 4×30s/侧 + T1326 弹力带踝内翻 2×12/侧 + T1327 弹力带踝外翻 2×12/侧。\n\n家庭日常跟腱康复（每日 3 min，独立于此）：仅 T1275 单腿离心提踵 2×10/侧（4s 慢下放），早晨刷牙后立即做。其他短板动作已归到周一力量 A，不重复。",
       "spec": null,
       "total_distance_m": null,
       "total_duration_s": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-05-07",
-      "session_index": 1,
-      "kind": "strength",
-      "summary": "[STRIDE] 家庭短板 routine 三动作 (晨)",
-      "notes_md": "每日晨起。",
-      "total_duration_s": 300,
-      "spec": {
-        "schema": "strength-workout/v1",
-        "name": "[STRIDE] 家庭短板 routine",
-        "date": "2026-05-07",
-        "note": "三动作版",
-        "exercises": [
-          {
-            "canonical_id": "single_leg_glute_bridge_hold",
-            "display_name": "单腿臀桥保持 (T1219)",
-            "sets": 2,
-            "target_kind": "time_s",
-            "target_value": 30,
-            "rest_seconds": 20,
-            "note": "每侧 30s"
-          },
-          {
-            "canonical_id": "copenhagen_side_plank",
-            "display_name": "哥本哈根侧平板 (T1368)",
-            "sets": 2,
-            "target_kind": "time_s",
-            "target_value": 25,
-            "rest_seconds": 20,
-            "note": "每侧 25s"
-          },
-          {
-            "canonical_id": "single_leg_calf_raise_eccentric",
-            "display_name": "单腿离心提踵 (T1275)",
-            "sets": 2,
-            "target_kind": "reps",
-            "target_value": 10,
-            "rest_seconds": 30,
-            "note": "每侧 10 次；4s 慢下放"
-          }
-        ]
-      }
     },
     {
       "schema": "plan-session/v1",
@@ -277,7 +267,7 @@
       "session_index": 0,
       "kind": "run",
       "summary": "[STRIDE] 长距离 26km easy (核心课, HR 140-150)",
-      "notes_md": "**本周核心课**。默认 26 km，区间 25-28K（周五晚收盘判定）：全绿→28K / 默认→26K / 黄灯→25K / 红灯→22K / 双红→16-18K。**长距离不能比 W1 25K 少**——P1 长距离曲线连续性。**6:30 前出门（硬纪律）**：T <22°C 6:30 前出，T 22-25°C 6:00 前出，T >25°C 挪周日清晨，T >30°C 取消。**关闭手表配速显示**按 HR 140-150 走。任意 5 km HR 漂移 >5 bpm 立即降速（W1 教训：5/2 25K HR 152 漂 +7）。营养：前夜碳水 5-6 g/kg，5:30 早餐燕麦 80g+香蕉+蜂蜜+蛋白+250ml 水，6:15 出门前 60g 快碳+250ml 水，跑中每 30 min 30g 碳水（26K 路线 13K/20K/24K 各 1 个能量胶 = 3 个），跑后 30 min 30g 乳清蛋白+60g 快碳。起晚兜底：7:00 仍未出 → 砍到 15K 跑步机；8:00 仍未出 → 取消改周日清晨；**绝不在 9:00 后启动 25K+**。",
+      "notes_md": "**本周核心课**。默认 26 km，区间 25-28K（周五晚收盘判定）：全绿→28K / 默认→26K / 黄灯→25K / 红灯→22K / 双红→16-18K。**长距离不能比 W1 25K 少**——P1 长距离曲线连续性。**6:30 前出门（硬纪律）**：T <22°C 6:30 前出，T 22-25°C 6:00 前出，T >25°C 挪周日清晨，T >30°C 取消。**关闭手表配速显示**按 HR 140-150 走。任意 5 km HR 漂移 >5 bpm 立即降速（W1 教训：5/2 25K HR 152 漂 +7）。营养：前夜碳水 5-6 g/kg，5:30 早餐燕麦 80g+香蕉+蜂蜜+蛋白+250ml 水，6:15 出门前 60g 快碳+250ml 水，跑中每 30 min 30g 碳水（26K 路线 30/60/90 min 各 1 个能量胶 = 3 个），跑后 30 min 30g 乳清蛋白+60g 快碳。起晚兜底：7:00 仍未出 → 砍到 15K 跑步机；8:00 仍未出 → 取消改周日清晨；**绝不在 9:00 后启动 25K+**。",
       "total_distance_m": 26000,
       "spec": {
         "schema": "run-workout/v1",
@@ -304,8 +294,8 @@
       "date": "2026-05-10",
       "session_index": 0,
       "kind": "strength",
-      "summary": "[STRIDE] 俱乐部力量集训 — 标准/替代两版",
-      "notes_md": "**俱乐部源深二楼下午 3 点**。触发逻辑：周六长距离 ≥26K → 周日下肢负荷自动降级（24h 内连续高负荷下肢对跟腱风险）。\n\n**标准版**（推荐：参加集训，下肢动作降一档）：周六 ≤25K + 跟腱 0/10 + RHR ≤49 + 主观疲劳 ≤4/10 时启用。深蹲/弓步重量减 50% 或自重或只做离心阶段（4s 下放/2s 站起）；提踵不超 2×8/侧；跳跃/着地冲击类（深蹲跳/跳箱/单腿跳）→ 旁观；上肢/核心正常。到场跟教练沟通：\"昨天跑了 26K，今天下肢减半/旁观深蹲跳\"。\n\n**替代版**（兜底：跳过集训，自练 30 min 慢拉伸+泡沫轴）：周六 28K / 跟腱晨起 ≥1/10 / RHR ≥51 / 主观疲劳 ≥6/10 / 周六长距离改周日清晨执行 → 任一触发。0-10min 泡沫轴（股四/髂胫束/臀大肌/小腿/胸椎 各 2 min），10-20min 静态拉伸（T1244 + T1274 + T1234 + T1248 各 30s×4 轮），20-30min 上肢/核心维持（T1010 平板 1×60s + T1320 弹力带肩外旋 2×15 + T1219 单腿臀桥 1×20s/侧 轻量）。**禁止任何重量深蹲/弓步/提踵、跳跃/单腿冲击、跑步**。\n\n**决策**：周六晚 21:00 + 周日早 7:00 双判定。下方 spec 为标准版减半下肢动作 + 核心组合（俱乐部具体动作以群通知为准）。",
+      "summary": "[STRIDE] 俱乐部力量集训 (W2 过渡例外, 标准/替代两版)",
+      "notes_md": "**W2 过渡例外**：W2 是新典型周过渡周，本次保留俱乐部社交锚点最后一次出席；W3 起周日完全休息（按新典型周）。**俱乐部源深二楼下午 3 点**。触发逻辑：周六长距离 ≥26K → 周日下肢负荷自动降级（24h 内连续高负荷下肢对跟腱风险）。\n\n**标准版**（推荐：参加集训，下肢动作降一档）：周六 ≤25K + 跟腱 0/10 + RHR ≤49 + 主观疲劳 ≤4/10 时启用。深蹲/弓步重量减 50% 或自重或只做离心阶段（4s 下放/2s 站起）；提踵不超 2×8/侧；跳跃/着地冲击类（深蹲跳/跳箱/单腿跳）→ 旁观；上肢/核心正常。到场跟教练沟通：\"昨天跑了 26K，今天下肢减半/旁观深蹲跳\"。\n\n**替代版**（兜底：跳过集训，自练 30 min 慢拉伸+泡沫轴）：周六 28K / 跟腱晨起 ≥1/10 / RHR ≥51 / 主观疲劳 ≥6/10 / 周六长距离改周日清晨执行 → 任一触发。0-10min 泡沫轴（股四/髂胫束/臀大肌/小腿/胸椎 各 2 min），10-20min 静态拉伸（T1244 + T1274 + T1234 + T1248 各 30s×4 轮），20-30min 上肢/核心维持（T1010 平板 1×60s + T1320 弹力带肩外旋 2×15 + T1219 单腿臀桥 1×20s/侧 轻量）。**禁止任何重量深蹲/弓步/提踵、跳跃/单腿冲击、跑步**。\n\n**双判定时点**：周六晚 21:00 + 周日早 7:00 双判定。下方 spec 为标准版减半下肢动作 + 核心组合（俱乐部具体动作以群通知为准）。",
       "total_duration_s": 3600,
       "spec": {
         "schema": "strength-workout/v1",
@@ -369,50 +359,6 @@
           }
         ]
       }
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-05-10",
-      "session_index": 1,
-      "kind": "strength",
-      "summary": "[STRIDE] 家庭短板 routine 三动作 (晨)",
-      "notes_md": "每日晨起。周日集训后下肢酸痛 >4/10 → 周一跳过 T1219、T1368，只做 T1275。",
-      "total_duration_s": 300,
-      "spec": {
-        "schema": "strength-workout/v1",
-        "name": "[STRIDE] 家庭短板 routine",
-        "date": "2026-05-10",
-        "note": "三动作版",
-        "exercises": [
-          {
-            "canonical_id": "single_leg_glute_bridge_hold",
-            "display_name": "单腿臀桥保持 (T1219)",
-            "sets": 2,
-            "target_kind": "time_s",
-            "target_value": 30,
-            "rest_seconds": 20,
-            "note": "每侧 30s"
-          },
-          {
-            "canonical_id": "copenhagen_side_plank",
-            "display_name": "哥本哈根侧平板 (T1368)",
-            "sets": 2,
-            "target_kind": "time_s",
-            "target_value": 25,
-            "rest_seconds": 20,
-            "note": "每侧 25s"
-          },
-          {
-            "canonical_id": "single_leg_calf_raise_eccentric",
-            "display_name": "单腿离心提踵 (T1275)",
-            "sets": 2,
-            "target_kind": "reps",
-            "target_value": 10,
-            "rest_seconds": 30,
-            "note": "每侧 10 次；4s 慢下放"
-          }
-        ]
-      }
     }
   ],
   "nutrition": [
@@ -460,7 +406,7 @@
       "protein_g": 130,
       "fat_g": 80,
       "water_ml": 2500,
-      "notes_md": "🛌 休息日：碳水 4 g/kg ≈ 290g；**小缺口 -100 kcal**；缺口通过减晚餐主食实现",
+      "notes_md": "🛌 休息日（mobility-only）：碳水 4 g/kg ≈ 290g；**小缺口 -100 kcal**；缺口通过减晚餐主食实现",
       "meals": []
     },
     {
@@ -484,11 +430,11 @@
       "protein_g": 130,
       "fat_g": 65,
       "water_ml": 3500,
-      "notes_md": "⭐ 长距离日（26K 核心课）：碳水 6-7 g/kg ≈ 430-500g；**维持热量 + 碳水加载**；早 5:30 燕麦 80g+香蕉+蜂蜜+蛋白+250ml 水；6:15 出门前 60g 快碳+250ml 水；跑中每 30 min 30g 碳水（约 3 个能量胶 @ 13K/20K/24K，28K 路线 4 个）；每 5 km 喝水 100-150 ml（小口频饮）；T >20°C 每 5 km 加 50 ml + 电解质片；跑后 30 min 30g 乳清蛋白+60g 快碳，30-60 min 内正餐补足",
+      "notes_md": "⭐ 长距离日（26K 核心课）：碳水 6-7 g/kg ≈ 430-500g；**维持热量 + 碳水加载**；早 5:30 燕麦 80g+香蕉+蜂蜜+蛋白+250ml 水；6:15 出门前 60g 快碳+250ml 水；跑中每 30 min 30g 碳水（约 3 个能量胶 @ 30/60/90 min，28K 路线 4 个）；每 5 km 喝水 100-150 ml（小口频饮）；T >20°C 每 5 km 加 50 ml + 电解质片；跑后 30 min 30g 乳清蛋白+60g 快碳，30-60 min 内正餐补足",
       "meals": [
         {"name": "早餐", "time_hint": "5:30", "kcal": 500, "carbs_g": 80, "protein_g": 25, "fat_g": 8, "items_md": "燕麦 80g + 香蕉 1 根 + 蜂蜜 + 蛋白 1 份 + 250ml 水"},
         {"name": "出门前快碳", "time_hint": "6:15", "kcal": 250, "carbs_g": 60, "protein_g": 1, "fat_g": 0, "items_md": "60g 快碳（能量胶/葡萄糖）+ 250ml 水"},
-        {"name": "跑中补给", "time_hint": "7:30/8:15/8:45", "kcal": 360, "carbs_g": 90, "protein_g": 0, "fat_g": 0, "items_md": "26K 路线：13K + 20K + 24K 各 1 个能量胶 30g 碳 = 3 个；28K 路线再加 1"},
+        {"name": "跑中补给", "time_hint": "7:00/7:30/8:00", "kcal": 360, "carbs_g": 90, "protein_g": 0, "fat_g": 0, "items_md": "26K 路线：30/60/90 min 各 1 个能量胶 30g 碳 = 3 个；28K 路线再加 1"},
         {"name": "跑后补给 (30 min 内)", "time_hint": "9:30", "kcal": 400, "carbs_g": 60, "protein_g": 30, "fat_g": 4, "items_md": "30g 乳清蛋白 + 60g 快碳（蛋白粉 + 香蕉/葡萄糖）"},
         {"name": "正餐 (30-60 min 内)", "time_hint": "10:30", "kcal": 800, "carbs_g": 130, "protein_g": 40, "fat_g": 18, "items_md": "碳水主食 + 蛋白 + 蔬菜（米饭 200g + 鱼/瘦肉 150g + 蔬菜 250g）"},
         {"name": "晚餐", "time_hint": "19:00", "kcal": 600, "carbs_g": 90, "protein_g": 30, "fat_g": 18, "items_md": "面条 100g + 瘦肉 100g + 蔬菜 200g"}

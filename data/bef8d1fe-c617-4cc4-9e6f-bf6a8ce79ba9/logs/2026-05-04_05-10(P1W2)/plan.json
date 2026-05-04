@@ -7,10 +7,81 @@
       "schema": "plan-session/v1",
       "date": "2026-05-04",
       "session_index": 0,
-      "kind": "rest",
-      "summary": "[STRIDE] 休息日（周一）",
-      "notes_md": "拉伸 + 泡沫轴 + 家庭短板 routine 5 min（晨）。**不跑、不力量重训**。家庭短板每日 routine：T1231 靠墙静蹲 1×60s + T1219 单腿臀桥保持 2×15s/侧 + T1275 单腿离心提踵 2×10/侧（慢下放 4s）。强烈建议补做 W0 strength-assessment.md（30 分钟可完成）。",
-      "spec": null
+      "kind": "strength",
+      "summary": "[STRIDE] 力量 A（25-30 min，今晚补做）",
+      "notes_md": "**力量 A — 今晚 25-30 min 补做**（W1 周一跳过教训；不跑步）。理由：新典型周护栏把跑步残留负荷集中到周一，让周三强度课和周六长距离前都拿到干净 24h+/96h+ 恢复窗口。\n\n**热身 5 min**：T1262 greatest stretch 4×侧 + T1222 前后腿摆 3×30s + T1263 侧向腿摆 3×30s。\n\n**主项 20 min**（dehua 短板：股四头肌耐力 / 核心稳定 / 臀部，按 TRAINING_PLAN 第 345-350 行重点方向）：\n1. 靠墙静蹲 T1231 — 3×60s — 🔴 股四头肌耐力（盐城 K15 后腿崩对策）\n2. 单腿臀桥保持 T1219 — 3×20s/侧 — 🟡 臀肌（推进效率）\n3. 单腿离心提踵 T1275 — 2×10/侧（4s 慢下放）— 🟡 小腿/跟腱（dehua 无跟腱止点肌腱病，量不加但保持）\n4. 平板支撑 T1010 — 2×60s — 核心耐力\n5. Dead Bug — 2×10/侧 — 核心抗旋\n6. 蚌式 T1317 — 2×15/侧 — 臀中肌 / ITB 预防\n7. 弹力带踝（内+外翻）T1326+T1327 — 2×12/侧 — 踝稳定\n\n**放松 5 min**：T1244 臀部 + T1274 髂腰肌 各 30s × 4 轮。\n\n**护栏**：21:30 前完成；锐痛立即停。**不做哥本哈根**（dehua 无跟腱止点肌腱病针对性需求；与 zhaochaoyi 区别在此）。**建议本日补做 W0 力量评估**（空表 30 min 完成）。",
+      "total_duration_s": 1800,
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量 A（核心耐力 + 单侧补差）",
+        "date": "2026-05-04",
+        "note": "热身 5 min（T1262/T1222/T1263）+ 主项 20 min（7 动作）+ 放松 5 min（T1244/T1274）；总计 25-30 min；21:30 前完成",
+        "exercises": [
+          {
+            "canonical_id": "wall_sit",
+            "display_name": "靠墙静蹲",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 60,
+            "rest_seconds": 45,
+            "note": "T1231；股四头肌耐力（盐城 K15 后腿崩对策）；🔴 dehua 股四头短板"
+          },
+          {
+            "canonical_id": "single_leg_glute_bridge_hold",
+            "display_name": "单腿臀桥保持",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 20,
+            "rest_seconds": 30,
+            "note": "T1219；每侧 20s × 3 轮；臀肌（推进效率）；🟡"
+          },
+          {
+            "canonical_id": "single_leg_eccentric_calf_raise",
+            "display_name": "单腿离心提踵",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "note": "T1275；每侧 10 次（4s 慢下放）；小腿/跟腱；🟡"
+          },
+          {
+            "canonical_id": "plank_basic",
+            "display_name": "平板支撑",
+            "sets": 2,
+            "target_kind": "time_s",
+            "target_value": 60,
+            "rest_seconds": 45,
+            "note": "T1010；核心耐力"
+          },
+          {
+            "canonical_id": "dead_bug",
+            "display_name": "Dead Bug",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "note": "每侧 10 次；核心抗旋"
+          },
+          {
+            "canonical_id": "clamshell",
+            "display_name": "蚌式",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 30,
+            "note": "T1317；每侧 15 次；臀中肌 / ITB 预防"
+          },
+          {
+            "canonical_id": "ankle_band_inversion_eversion",
+            "display_name": "弹力带踝（内+外翻）",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "T1326 + T1327；每侧 12 次（内翻+外翻各计入）；踝稳定"
+          }
+        ]
+      }
     },
     {
       "schema": "plan-session/v1",
