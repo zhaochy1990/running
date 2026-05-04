@@ -86,7 +86,10 @@ class FakeRunSource(BaseDataSource):
             raise RuntimeError("upstream rejected")
         return f"provider-id-{len(self.push_calls)}"
 
-    def delete_scheduled_workout(self, user, date):
+    def delete_scheduled_workout(self, user, date, name=None):
+        # Hardening tests don't introspect ``name`` directly — they only
+        # care that the route invokes deletion. Match the new protocol
+        # signature so the route's ``name=workout.name`` keyword passes.
         self.delete_calls.append((user, date))
         return True
 

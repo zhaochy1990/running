@@ -99,7 +99,9 @@ def test_delete_scheduled_workout_success(tmp_path, monkeypatch):
         "data": {
             "id": "PLAN_ID_1",
             "entities": [stride_entity],
-            "programs": [{"idInPlan": "ID1", "name": "[STRIDE] 力量训练"}],
+            "programs": [
+                {"idInPlan": "ID1", "name": "[STRIDE] 力量训练", "sportType": 4},
+            ],
         },
     }
 
@@ -130,7 +132,9 @@ def test_delete_scheduled_workout_skips_non_stride(tmp_path, monkeypatch):
                     "planProgramId": "ID_USER",
                 },
             ],
-            "programs": [{"idInPlan": "ID_USER", "name": "user-own-workout"}],
+            "programs": [
+                {"idInPlan": "ID_USER", "name": "user-own-workout", "sportType": 1},
+            ],
         },
     }
 
@@ -181,7 +185,9 @@ def test_delete_scheduled_workout_iso_to_coros_date_conversion(tmp_path, monkeyp
                     "planProgramId": "ID2",
                 },
             ],
-            "programs": [{"idInPlan": "ID2", "name": "[STRIDE] easy run"}],
+            "programs": [
+                {"idInPlan": "ID2", "name": "[STRIDE] easy run", "sportType": 1},
+            ],
         },
     }
 
@@ -198,6 +204,124 @@ def test_delete_scheduled_workout_raises_when_not_logged_in(tmp_path, monkeypatc
     src = CorosDataSource()
     with pytest.raises(CorosNotLoggedInError):
         src.delete_scheduled_workout("nobody", "2026-05-04")
+
+
+def test_delete_with_name_match_deletes_only_matching(tmp_path, monkeypatch):
+    """Same-day two [STRIDE] entries with different names → ``name=A`` deletes
+    only A, leaving B untouched. Regression guard for the bug where pushing
+    one session was wiping the other off the watch.
+    """
+    from coros_sync.auth import Credentials
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    Credentials(email="x@y", pwd_hash="h", access_token="tok", region="cn").save(user="alice")
+
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+
+    run_entity = {
+        "happenDay": "20260504",
+        "idInPlan": "ID_RUN",
+        "planProgramId": "ID_RUN",
+    }
+    strength_entity = {
+        "happenDay": "20260504",
+        "idInPlan": "ID_STR",
+        "planProgramId": "ID_STR",
+    }
+    fake_client.query_schedule.return_value = {
+        "data": {
+            "id": "PLAN_X",
+            "entities": [run_entity, strength_entity],
+            "programs": [
+                {"idInPlan": "ID_RUN", "name": "[STRIDE] easy run", "sportType": 1},
+                {"idInPlan": "ID_STR", "name": "[STRIDE] 力量 A 下肢", "sportType": 4},
+            ],
+        },
+    }
+
+    with patch("coros_sync.adapter.CorosClient", return_value=fake_client):
+        result = CorosDataSource().delete_scheduled_workout(
+            "alice", "2026-05-04", name="[STRIDE] 力量 A 下肢",
+        )
+
+    assert result is True
+    # Only the strength entity (name match) was deleted; the run is preserved.
+    assert fake_client.delete_scheduled_workout.call_count == 1
+    fake_client.delete_scheduled_workout.assert_called_once_with(strength_entity, "PLAN_X")
+
+
+def test_delete_with_name_no_match_returns_false(tmp_path, monkeypatch):
+    """name doesn't match any [STRIDE] program → no deletes, returns False."""
+    from coros_sync.auth import Credentials
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    Credentials(email="x@y", pwd_hash="h", access_token="tok", region="cn").save(user="alice")
+
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+
+    fake_client.query_schedule.return_value = {
+        "data": {
+            "id": "PLAN_Y",
+            "entities": [
+                {"happenDay": "20260504", "idInPlan": "ID_RUN", "planProgramId": "ID_RUN"},
+            ],
+            "programs": [
+                {"idInPlan": "ID_RUN", "name": "[STRIDE] easy run", "sportType": 1},
+            ],
+        },
+    }
+
+    with patch("coros_sync.adapter.CorosClient", return_value=fake_client):
+        result = CorosDataSource().delete_scheduled_workout(
+            "alice", "2026-05-04", name="[STRIDE] something else",
+        )
+
+    assert result is False
+    fake_client.delete_scheduled_workout.assert_not_called()
+
+
+def test_delete_without_name_deletes_all_stride(tmp_path, monkeypatch):
+    """No ``name`` filter → legacy aggressive sweep behavior. Both same-day
+    [STRIDE] entries are deleted regardless of program name. Preserved for
+    migration tools / CLI that intentionally want a full STRIDE wipe.
+    """
+    from coros_sync.auth import Credentials
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    Credentials(email="x@y", pwd_hash="h", access_token="tok", region="cn").save(user="alice")
+
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+
+    run_entity = {
+        "happenDay": "20260504",
+        "idInPlan": "ID_RUN",
+        "planProgramId": "ID_RUN",
+    }
+    strength_entity = {
+        "happenDay": "20260504",
+        "idInPlan": "ID_STR",
+        "planProgramId": "ID_STR",
+    }
+    fake_client.query_schedule.return_value = {
+        "data": {
+            "id": "PLAN_Z",
+            "entities": [run_entity, strength_entity],
+            "programs": [
+                {"idInPlan": "ID_RUN", "name": "[STRIDE] easy run", "sportType": 1},
+                {"idInPlan": "ID_STR", "name": "[STRIDE] 力量训练", "sportType": 4},
+            ],
+        },
+    }
+
+    with patch("coros_sync.adapter.CorosClient", return_value=fake_client):
+        result = CorosDataSource().delete_scheduled_workout("alice", "2026-05-04")
+
+    assert result is True
+    # Both entities are deleted when no name filter is provided.
+    assert fake_client.delete_scheduled_workout.call_count == 2
 
 
 def test_resync_activity_fetches_and_upserts(tmp_path, monkeypatch):

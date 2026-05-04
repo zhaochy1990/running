@@ -188,7 +188,9 @@ class DataSource(Protocol):
     # ── workout push (optional, capability-gated) ───────────────────────────
     def push_run_workout(self, user: str, workout: NormalizedRunWorkout) -> str: ...
     def push_strength_workout(self, user: str, workout: NormalizedStrengthWorkout) -> str: ...
-    def delete_scheduled_workout(self, user: str, date: str) -> bool: ...
+    def delete_scheduled_workout(
+        self, user: str, date: str, name: str | None = None,
+    ) -> bool: ...
     def query_schedule(
         self, user: str, start: str, end: str
     ) -> list[ScheduledWorkoutSummary]: ...
@@ -262,7 +264,18 @@ class BaseDataSource:
     def push_strength_workout(self, user: str, workout: NormalizedStrengthWorkout) -> str:
         raise FeatureNotSupported(self.name, Capability.PUSH_STRENGTH_WORKOUT)
 
-    def delete_scheduled_workout(self, user: str, date: str) -> bool:
+    def delete_scheduled_workout(
+        self, user: str, date: str, name: str | None = None,
+    ) -> bool:
+        """Delete previously-pushed [STRIDE] workouts on ``date``.
+
+        Args:
+            name: Optional exact-match filter on the program name. When
+                provided, only entries whose program name == ``name`` are
+                deleted (e.g. only the prior push of THIS session). When
+                ``None``, all ``[STRIDE]``-prefixed entries on the date
+                are removed (legacy aggressive sweep — CLI use).
+        """
         raise FeatureNotSupported(self.name, Capability.DELETE_WORKOUT)
 
     def query_schedule(

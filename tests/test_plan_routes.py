@@ -76,7 +76,10 @@ class FakeRunSource(BaseDataSource):
         self._caps = frozenset(caps)
         self._fail_push = fail_push
         self._fail_strength = fail_strength
-        self.delete_calls: list[tuple[str, str]] = []
+        # delete_calls now records (user, date, name) so tests can assert
+        # the route forwards the workout name to the adapter (so we only
+        # clear the prior copy of THIS session and never cross-clobber).
+        self.delete_calls: list[tuple[str, str, str | None]] = []
         self.push_calls: list[NormalizedRunWorkout] = []
         self.strength_calls: list[NormalizedStrengthWorkout] = []
         self.name = "fake"
@@ -103,8 +106,8 @@ class FakeRunSource(BaseDataSource):
             raise RuntimeError("upstream rejected strength")
         return f"strength-id-{len(self.strength_calls)}"
 
-    def delete_scheduled_workout(self, user, date):
-        self.delete_calls.append((user, date))
+    def delete_scheduled_workout(self, user, date, name=None):
+        self.delete_calls.append((user, date, name))
         return True
 
 
@@ -401,7 +404,10 @@ class TestPushSession:
         # adapter filters to [STRIDE]-prefixed entries internally so this
         # is safe even when there's nothing on the watch yet.
         assert len(fake.delete_calls) == 1
-        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22")
+        # Route forwards the workout name so only the prior copy of THIS
+        # session gets cleared; other [STRIDE] entries on the same date
+        # (different name) are preserved.
+        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22", "[STRIDE] Easy 10K")
 
         # FK on planned_session was filled in.
         db = _db(tmp_path)
@@ -579,8 +585,8 @@ class TestPushSession:
         assert second_sw_id != first_sw_id
         # Each push now triggers a sweep, so two pushes = two delete calls.
         assert len(fake.delete_calls) == 2
-        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22")
-        assert fake.delete_calls[1] == (USER_UUID, "2026-04-22")
+        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22", "[STRIDE] Easy 10K")
+        assert fake.delete_calls[1] == (USER_UUID, "2026-04-22", "[STRIDE] Easy 10K")
         # DB state: old row superseded, new row pushed
         db = _db(tmp_path)
         try:
@@ -620,7 +626,7 @@ class TestPushSession:
         assert resp.status_code == 200, resp.text
         # Sweep ran despite no prior_id pointer.
         assert len(fake.delete_calls) >= 1
-        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22")
+        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22", "[STRIDE] Easy 10K")
 
     def test_strength_push_happy_path(self, app_client):
         """kind=strength + spec + provider has PUSH_STRENGTH_WORKOUT → 200."""

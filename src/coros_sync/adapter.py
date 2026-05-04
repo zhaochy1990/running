@@ -144,13 +144,24 @@ class CorosDataSource(BaseDataSource):
         # the id_in_plan onto its payload before calling the API).
         return str(coros_workout.date)
 
-    def delete_scheduled_workout(self, user: str, date: str) -> bool:
+    def delete_scheduled_workout(
+        self, user: str, date: str, name: str | None = None,
+    ) -> bool:
         """Delete previously-pushed [STRIDE] workouts on `date` from the watch.
 
         Mirrors the CLI ``coros-sync workout delete`` flow but additionally
         filters by the ``[STRIDE]`` name prefix per the project rule "never
         delete non-STRIDE workouts" — protects the user's own watch entries
         from accidental deletion when our re-push flow runs.
+
+        When ``name`` is given, only entries whose program ``name`` matches
+        exactly are deleted (e.g. only the prior push of THIS session).
+        Re-pushing a session uses the same name, so this both clears the
+        old copy and avoids touching unrelated [STRIDE] sessions on the
+        same day (run on a force-day, second strength session, etc.).
+        Without ``name``, all ``[STRIDE]``-prefixed entries on the date are
+        removed (legacy aggressive sweep behavior, kept for migration
+        tools / CLI).
 
         ``date`` arrives as ISO ``YYYY-MM-DD`` (matches ``scheduled_workout.date``
         and ``planned_session.date``); COROS API expects ``YYYYMMDD`` so we
@@ -171,24 +182,33 @@ class CorosDataSource(BaseDataSource):
             entities = schedule.get("entities", []) or []
             programs = schedule.get("programs", []) or []
 
-            # Build a name lookup keyed by idInPlan. The schedule API returns
-            # the program name in `programs[]` (parallel array), not on the
-            # entity itself — entities only carry `idInPlan` / `planProgramId`
-            # references. exerciseBarChart is empty for newly-pushed entries
-            # that haven't been completed yet, so the previous code path
-            # never matched anything.
-            programs_by_idinplan: dict[str, str] = {}
+            # Build {idInPlan: program_name}. The schedule API returns
+            # names in `programs[]` (parallel array), not on the entity
+            # itself — entities only carry `idInPlan` / `planProgramId`
+            # references. `exerciseBarChart` is empty for newly-pushed
+            # entries that haven't been completed yet, so the previous
+            # code path (which read names from there) never matched
+            # anything.
+            names_by_idinplan: dict[str, str] = {}
             for prog in programs:
                 idip = str(prog.get("idInPlan") or prog.get("id") or "")
                 if idip:
-                    programs_by_idinplan[idip] = str(prog.get("name") or "")
+                    names_by_idinplan[idip] = str(prog.get("name") or "")
 
             for entity in entities:
                 if str(entity.get("happenDay")) != coros_date:
                     continue
                 idip = str(entity.get("idInPlan") or entity.get("planProgramId") or "")
-                program_name = programs_by_idinplan.get(idip, "")
+                program_name = names_by_idinplan.get(idip, "")
+                # Always require [STRIDE] prefix (project rule: never delete
+                # user-authored watch entries).
                 if not program_name.startswith("[STRIDE]"):
+                    continue
+                # Optional exact name filter — when given, only the matching
+                # session is swept. Other [STRIDE] sessions on the same date
+                # (e.g. a run on a force-day, or a second strength block)
+                # are preserved.
+                if name is not None and program_name != name:
                     continue
                 client.delete_scheduled_workout(entity, plan_id)
                 deleted += 1

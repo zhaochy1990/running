@@ -433,6 +433,8 @@ data: {
 
 **Critical gotcha**: `entity.exerciseBarChart` is **empty for newly-pushed entries that haven't been completed yet**. Don't filter watch entries by `exerciseBarChart[*].name` — only by joining `entities[i].idInPlan == programs[j].idInPlan` then checking `programs[j].name.startswith("[STRIDE]")`. The adapter `delete_scheduled_workout` (`src/coros_sync/adapter.py`) follows this pattern; the diagnostic script `scripts/inspect_schedule.py` dumps both arrays for debugging.
 
+**Sweep must filter by exact program name** when called from a per-session push: when a single date carries multiple `[STRIDE]` entries (run + strength on a force-day, or two run sessions, etc.), pushing one must NOT delete the others. The adapter accepts `name=<program-name> | None`; the route (`POST /api/{user}/plan/sessions/{date}/{idx}/push`) passes the current `workout.name` so the sweep is scoped to that one program. Re-pushing the same session reuses the same name, so the old copy is reliably cleared while unrelated `[STRIDE]` entries are preserved. `name=None` keeps the legacy "delete every `[STRIDE]` on the date" behavior for migration tools / CLI.
+
 #### Auth (`auth.py`)
 - Credentials stored as JSON at `platformdirs.user_config_dir("coros-sync")/config.json`
 - Password stored as MD5 hash (matching COROS API expectation)

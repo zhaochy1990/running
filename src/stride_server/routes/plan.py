@@ -378,7 +378,14 @@ def push_planned_session(
 
         if Capability.DELETE_WORKOUT in source.info.capabilities:
             try:
-                source.delete_scheduled_workout(user, date)
+                # Filter sweep by exact program name so we only clear the
+                # prior push of THIS session — leaving other [STRIDE]
+                # entries on the same date (run + strength on a force-day,
+                # multiple sessions of the same kind) untouched. Re-pushing
+                # the same session reuses ``workout.name`` so the old copy
+                # is reliably cleared. Both NormalizedRunWorkout and
+                # NormalizedStrengthWorkout expose ``name``.
+                source.delete_scheduled_workout(user, date, name=workout.name)
             except FeatureNotSupported:
                 # Capability check passed but adapter changed at runtime —
                 # log + skip rather than fail the push. The new push can
