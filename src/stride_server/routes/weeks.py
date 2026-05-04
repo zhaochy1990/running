@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException
 
-from stride_core.models import pace_str
+from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
 
 from ..content_store import any_exists, exists as content_exists, list_week_folders, read_text
 from ..deps import format_duration, get_db, parse_week_dates
@@ -15,6 +15,75 @@ router = APIRouter()
 def _markdown_title(content: str) -> str:
     first_line = content.splitlines()[0].strip() if content.splitlines() else ""
     return first_line.lstrip("# ").strip()
+
+
+def _compute_intensity_summary(db, date_from: str, date_to: str) -> dict:
+    """Aggregate weekly running mileage by HR zone band.
+
+    Approximates km-per-zone via the time-fraction proxy
+    ``total_run_km × (zone_seconds / total_run_seconds)`` because the COROS
+    `zones` table tracks duration_s per zone but not distance. Bands map to:
+    low = Z1+Z2, mid = Z3, high = Z4+Z5. Returns ``has_zone_data=False`` when
+    no HR zone rows exist for the week's run activities — in that case km
+    values are null and the UI falls back to total-km only.
+    """
+    upper = date_to + "T99"
+
+    run_totals = db.query(
+        f"""SELECT
+                COALESCE(SUM(distance_m), 0) AS run_m,
+                COALESCE(SUM(duration_s), 0) AS run_s
+            FROM activities
+            WHERE date >= ? AND date < ? AND sport_type IN ({_RUN_SPORT_SQL})""",
+        (date_from, upper),
+    )
+    total_row = dict(run_totals[0]) if run_totals else {"run_m": 0, "run_s": 0}
+    total_run_km = round(float(total_row.get("run_m") or 0), 2)
+    total_run_s = int(total_row.get("run_s") or 0)
+
+    summary: dict = {
+        "total_run_km": total_run_km,
+        "low_km": None,
+        "mid_km": None,
+        "high_km": None,
+        "has_zone_data": False,
+    }
+
+    if total_run_s <= 0:
+        return summary
+
+    zone_rows = db.query(
+        f"""SELECT z.zone_index AS zi, SUM(z.duration_s) AS zs
+            FROM zones z
+            JOIN activities a ON a.label_id = z.label_id
+            WHERE a.date >= ? AND a.date < ?
+              AND a.sport_type IN ({_RUN_SPORT_SQL})
+              AND z.zone_type = 'heartRate'
+              AND z.duration_s IS NOT NULL
+            GROUP BY z.zone_index""",
+        (date_from, upper),
+    )
+    zone_seconds: dict[int, int] = {}
+    for r in zone_rows:
+        d = dict(r)
+        idx = d.get("zi")
+        secs = d.get("zs")
+        if idx is None or secs is None:
+            continue
+        zone_seconds[int(idx)] = int(secs)
+
+    if not zone_seconds:
+        return summary
+
+    def _km_in(*zones: int) -> float:
+        secs = sum(zone_seconds.get(z, 0) for z in zones)
+        return round(total_run_km * secs / total_run_s, 2)
+
+    summary["low_km"] = _km_in(1, 2)
+    summary["mid_km"] = _km_in(3)
+    summary["high_km"] = _km_in(4, 5)
+    summary["has_zone_data"] = True
+    return summary
 
 
 @router.get("/api/{user}/weeks")
@@ -169,6 +238,11 @@ def get_week(user: str, folder: str):
     result["total_duration_s"] = sum(a["duration_s"] or 0 for a in activities)
     result["total_duration_fmt"] = format_duration(result["total_duration_s"])
     result["activity_count"] = len(activities)
+
+    # Run-only mileage broken down by HR zone band. Always returned so the UI
+    # can render a stable "本周跑量 / 低强度 / 高强度" stats row even when no
+    # zone data is available yet.
+    result["intensity_summary"] = _compute_intensity_summary(db, date_from, date_to)
 
     # Additive: structured-plan layer (sessions + nutrition + status). Old
     # frontends ignore unknown keys; new ones can light up the calendar tab.
