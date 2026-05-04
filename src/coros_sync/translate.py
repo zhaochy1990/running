@@ -196,22 +196,97 @@ def _core_keyword(display_name: str) -> str:
         out = new
 
 
-def _match_exercise(spec: StrengthExerciseSpec, library: list[dict]) -> dict | None:
-    """Find a COROS library exercise matching ``spec.display_name``.
+# Equipment / weight suffixes commonly appended to canonical_id but absent
+# from the COROS catalog overview — strip before matching so e.g.
+# `goblet_squat_db` matches catalog entry `goblet_squat`.
+_EQUIP_SUFFIXES = ("_db", "_bw", "_kb", "_bb", "_cable", "_machine")
 
-    Strategy: strip parenthetical suffixes, then substring-match the core
-    keyword against each candidate's ``overview`` (COROS's localized name
-    field) or ``name`` (T-code). First match wins.
+
+def _strip_equip(s: str) -> str:
+    """Strip trailing equipment suffix (e.g. ``_db``, ``_bw``) and lowercase."""
+    low = s.lower()
+    for suf in _EQUIP_SUFFIXES:
+        if low.endswith(suf):
+            return low[: -len(suf)]
+    return low
+
+
+def _eng_tokens(s: str) -> set[str]:
+    """Tokenize English snake_case names; drop short noise tokens (<=2 chars)."""
+    return {t for t in _strip_equip(s).replace("-", "_").split("_") if len(t) > 2}
+
+
+def _has_cjk(s: str) -> bool:
+    """True iff ``s`` contains at least one CJK Unified Ideograph."""
+    return any("一" <= c <= "鿿" for c in s)
+
+
+def _has_ascii_alpha(s: str) -> bool:
+    """True iff ``s`` contains at least one ASCII letter (English content)."""
+    return any("a" <= c <= "z" or "A" <= c <= "Z" for c in s)
+
+
+def _match_exercise(spec: StrengthExerciseSpec, library: list[dict]) -> dict | None:
+    """Find a COROS library exercise matching ``spec``.
+
+    The COROS catalog mostly uses English snake_case in ``overview`` (e.g.
+    ``goblet_squat``, ``romanian_deadlift``) with a small number of Chinese
+    entries (e.g. ``坐姿肩上哑铃推举``). Plan specs carry both a Chinese
+    ``display_name`` and an English ``canonical_id``, so we try multiple
+    matching strategies and return the first hit:
+
+      1. Chinese bidirectional substring on ``display_name`` core keyword
+         (handles ``侧卧平板撑`` ↔ ``侧平板``).
+      2. English bidirectional substring on ``canonical_id`` after stripping
+         equipment suffixes (handles ``goblet_squat_db`` → ``goblet_squat``).
+      3. English token-overlap fallback ≥ 50% intersection-over-larger
+         (handles word-order differences like ``goblet_squat_db`` ↔
+         ``dumbbell_goblet_squat``). 50% is the lowest threshold that still
+         requires sharing at least the main movement noun on 3-token names
+         while rejecting accidental single-token overlaps on longer names.
+
+    Returns the best match (highest token-overlap score among #3 candidates)
+    or ``None`` if nothing reaches the threshold.
     """
-    keyword = _core_keyword(spec.display_name)
-    if not keyword:
-        return None
+    cn_keyword = _core_keyword(spec.display_name)
+    cn_active = bool(cn_keyword) and _has_cjk(cn_keyword)
+    eng_keyword = _strip_equip(spec.canonical_id)
+    eng_active = bool(eng_keyword) and _has_ascii_alpha(eng_keyword)
+    eng_tokens = _eng_tokens(spec.canonical_id)
+
+    best_overlap: tuple[float, dict | None] = (0.0, None)
     for ex in library:
-        overview = str(ex.get("overview", ""))
-        name = str(ex.get("name", ""))
-        if keyword in overview or keyword in name:
-            return ex
-    return None
+        overview = str(ex.get("overview", "")).strip()
+        if not overview:
+            continue
+        # 1. Chinese bidirectional substring (only when both sides have CJK)
+        if cn_active and _has_cjk(overview):
+            if cn_keyword in overview:
+                return ex
+            # Reverse: short catalog overview inside long display keyword
+            # (e.g. catalog "侧平板" ⊂ display "哥本哈根侧平板"). Require
+            # overview length ≥ 2 to avoid spurious 1-char hits.
+            if len(overview) >= 2 and overview in cn_keyword:
+                return ex
+        # 2. English bidirectional substring on canonical_id (only when both
+        # sides have ASCII letters — skips Chinese overview entries).
+        if eng_active and _has_ascii_alpha(overview):
+            overview_low = overview.lower()
+            if eng_keyword in overview_low:
+                return ex
+            if len(overview_low) >= 4 and overview_low in eng_keyword:
+                return ex
+        # 3. English token overlap fallback
+        ex_tokens = _eng_tokens(overview)
+        if not eng_tokens or not ex_tokens:
+            continue
+        overlap = eng_tokens & ex_tokens
+        if not overlap:
+            continue
+        score = len(overlap) / max(len(eng_tokens), len(ex_tokens))
+        if score >= 0.5 and score > best_overlap[0]:
+            best_overlap = (score, ex)
+    return best_overlap[1]
 
 
 def _custom_exercise_payload(spec: StrengthExerciseSpec) -> dict:
