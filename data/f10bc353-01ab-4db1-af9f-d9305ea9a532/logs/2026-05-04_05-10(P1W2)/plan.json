@@ -24,7 +24,8 @@
             "target_kind": "time_s",
             "target_value": 30,
             "rest_seconds": 30,
-            "note": "右 3×30s + 左 3×40s；🔴 右腿弱 35%；目标拉平双侧"
+            "note": "右 3×30s + 左 3×40s；🔴 右腿弱 35%；目标拉平双侧",
+            "provider_id": "T1231"
           },
           {
             "canonical_id": "single_leg_glute_bridge_hold",
@@ -33,7 +34,8 @@
             "target_kind": "time_s",
             "target_value": 25,
             "rest_seconds": 30,
-            "note": "每侧 25s；🔴 W0 20s → W2 30s 进阶节点；顶峰挤臀；腰痛立即停"
+            "note": "每侧 25s；🔴 W0 20s → W2 30s 进阶节点；顶峰挤臀；腰痛立即停",
+            "provider_id": "T1219"
           },
           {
             "canonical_id": "copenhagen_side_plank",
@@ -42,7 +44,8 @@
             "target_kind": "time_s",
             "target_value": 25,
             "rest_seconds": 30,
-            "note": "每侧 25s；🔴 W0 15-19s → W2 25-30s 达标节点；内收肌发力"
+            "note": "每侧 25s；🔴 W0 15-19s → W2 25-30s 达标节点；内收肌发力",
+            "provider_id": "T1368"
           },
           {
             "canonical_id": "plank_basic",
@@ -51,7 +54,8 @@
             "target_kind": "time_s",
             "target_value": 60,
             "rest_seconds": 30,
-            "note": "60-75s；🟡 W0 1:36 → 2:00 进阶；臀腰平直"
+            "note": "60-75s；🟡 W0 1:36 → 2:00 进阶；臀腰平直",
+            "provider_id": "T1010"
           },
           {
             "canonical_id": "dead_bug",
@@ -60,7 +64,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 30,
-            "note": "每侧 10 次；🟡 W0 8-10 → 15 进阶；腰不离地"
+            "note": "每侧 10 次；🟡 W0 8-10 → 15 进阶；腰不离地",
+            "provider_id": "T1243"
           },
           {
             "canonical_id": "single_leg_calf_raise_eccentric",
@@ -69,7 +74,8 @@
             "target_kind": "reps",
             "target_value": 10,
             "rest_seconds": 30,
-            "note": "每侧 10 次；4s 慢下放；🟡 跟腱量不加；跟腱晨起痛 ≥1/10 取消"
+            "note": "每侧 10 次；4s 慢下放；🟡 跟腱量不加；跟腱晨起痛 ≥1/10 取消",
+            "provider_id": "T1275"
           },
           {
             "canonical_id": "clamshell",
@@ -78,16 +84,28 @@
             "target_kind": "reps",
             "target_value": 15,
             "rest_seconds": 30,
-            "note": "每侧 15 次；ITB 预防"
+            "note": "每侧 15 次；ITB 预防",
+            "provider_id": "T1317"
           },
           {
-            "canonical_id": "banded_ankle_inversion_eversion",
-            "display_name": "弹力带踝内+外翻 (T1326+T1327)",
+            "canonical_id": "banded_ankle_inversion",
+            "display_name": "弹力带踝内翻",
             "sets": 2,
             "target_kind": "reps",
             "target_value": 12,
             "rest_seconds": 30,
-            "note": "每侧 12 次；左踝稳定性弱"
+            "note": "每侧 12 次；左踝稳定性弱",
+            "provider_id": "T1326"
+          },
+          {
+            "canonical_id": "banded_ankle_eversion",
+            "display_name": "弹力带踝外翻",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "每侧 12 次；左踝稳定性弱",
+            "provider_id": "T1327"
           }
         ]
       }
@@ -112,8 +130,15 @@
             "steps": [
               {
                 "step_kind": "work",
-                "duration": {"kind": "distance_m", "value": 11000},
-                "target": {"kind": "hr_bpm", "low": 130, "high": 135},
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 11000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 130,
+                  "high": 135
+                },
                 "note": "关闭配速显示，按 HR 走；配速参考 5:15-5:30/km"
               }
             ]
@@ -140,8 +165,15 @@
             "steps": [
               {
                 "step_kind": "warmup",
-                "duration": {"kind": "distance_m", "value": 2000},
-                "target": {"kind": "hr_bpm", "low": 130, "high": 150},
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 2000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 130,
+                  "high": 150
+                },
                 "note": "1.5-2 km 慢跑 + 动态热身 8-10 min（T1262 greatest stretch 4×侧 + T1222 前后腿摆 + T1263 侧向腿摆）+ 跨步跳 20m×3 + 50m 冲刺×2 @ 80%"
               }
             ]
@@ -151,14 +183,26 @@
             "steps": [
               {
                 "step_kind": "work",
-                "duration": {"kind": "distance_m", "value": 3000},
-                "target": {"kind": "pace_s_km", "low": 250, "high": 245},
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 3000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 250,
+                  "high": 245
+                },
                 "note": "目标配速 4:05-4:10/km；硬下限 4:05；HR 上限 167（逐组：162/164/165/167）；任意 1km <4:05 红线；超 HR 上限立即退到 4:10"
               },
               {
                 "step_kind": "recovery",
-                "duration": {"kind": "time_s", "value": 150},
-                "target": {"kind": "open"},
+                "duration": {
+                  "kind": "time_s",
+                  "value": 150
+                },
+                "target": {
+                  "kind": "open"
+                },
                 "note": "2-3 min 慢跑恢复"
               }
             ]
@@ -168,8 +212,15 @@
             "steps": [
               {
                 "step_kind": "cooldown",
-                "duration": {"kind": "distance_m", "value": 2000},
-                "target": {"kind": "hr_bpm", "low": 120, "high": 145},
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 2000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 145
+                },
                 "note": "1.5-2 km 慢跑放松"
               }
             ]
@@ -252,8 +303,15 @@
             "steps": [
               {
                 "step_kind": "work",
-                "duration": {"kind": "distance_m", "value": 13000},
-                "target": {"kind": "hr_bpm", "low": 138, "high": 148},
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 13000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 138,
+                  "high": 148
+                },
                 "note": "关闭配速显示按 HR 走；配速参考 4:50-5:05/km"
               }
             ]
@@ -280,8 +338,15 @@
             "steps": [
               {
                 "step_kind": "work",
-                "duration": {"kind": "distance_m", "value": 26000},
-                "target": {"kind": "hr_bpm", "low": 140, "high": 150},
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 26000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 140,
+                  "high": 150
+                },
                 "note": "关闭配速显示，按 HR 走；配速参考 5:00-5:20/km；HR 145 报警，>150 强制降速；任意 5km HR 漂移 >5 bpm 立即降速"
               }
             ]
@@ -394,8 +459,24 @@
       "water_ml": 2700,
       "notes_md": "🔥 间歇日（3K×4 + 力量）：碳水 5.5-6 g/kg ≈ 395-430g；**维持热量（缺口 0）**；跑前 1.5-2h 100g 燕麦+香蕉+蛋白（低纤维）；跑后 30 min 30g 蛋白 + 50-60g 碳",
       "meals": [
-        {"name": "早/午餐 (跑前 1.5-2h)", "time_hint": "16:30", "kcal": 600, "carbs_g": 100, "protein_g": 30, "fat_g": 12, "items_md": "燕麦 100g + 香蕉 1 根 + 蛋白 1 份（低纤维，避免新食物）"},
-        {"name": "跑后补给 (30 min 内)", "time_hint": "20:30", "kcal": 350, "carbs_g": 60, "protein_g": 30, "fat_g": 4, "items_md": "30g 乳清蛋白 + 50-60g 快碳（蛋白粉 + 香蕉/葡萄糖）"}
+        {
+          "name": "早/午餐 (跑前 1.5-2h)",
+          "time_hint": "16:30",
+          "kcal": 600,
+          "carbs_g": 100,
+          "protein_g": 30,
+          "fat_g": 12,
+          "items_md": "燕麦 100g + 香蕉 1 根 + 蛋白 1 份（低纤维，避免新食物）"
+        },
+        {
+          "name": "跑后补给 (30 min 内)",
+          "time_hint": "20:30",
+          "kcal": 350,
+          "carbs_g": 60,
+          "protein_g": 30,
+          "fat_g": 4,
+          "items_md": "30g 乳清蛋白 + 50-60g 快碳（蛋白粉 + 香蕉/葡萄糖）"
+        }
       ]
     },
     {
@@ -419,7 +500,15 @@
       "water_ml": 2700,
       "notes_md": "🟢 轻松跑日（13K）+ **长距离前夜碳水加载**：碳水提到 5-6 g/kg ≈ 360-430g；低纤维（不试新食物）；**21:00 前晚餐完毕**；预判周六 26K 默认；维持热量",
       "meals": [
-        {"name": "晚餐 (21:00 前)", "time_hint": "20:00", "kcal": 800, "carbs_g": 130, "protein_g": 35, "fat_g": 18, "items_md": "米饭 200g + 鱼/瘦肉 150g + 蔬菜 200g（低纤维，碳水加载到 5-6 g/kg）"}
+        {
+          "name": "晚餐 (21:00 前)",
+          "time_hint": "20:00",
+          "kcal": 800,
+          "carbs_g": 130,
+          "protein_g": 35,
+          "fat_g": 18,
+          "items_md": "米饭 200g + 鱼/瘦肉 150g + 蔬菜 200g（低纤维，碳水加载到 5-6 g/kg）"
+        }
       ]
     },
     {
@@ -432,12 +521,60 @@
       "water_ml": 3500,
       "notes_md": "⭐ 长距离日（26K 核心课）：碳水 6-7 g/kg ≈ 430-500g；**维持热量 + 碳水加载**；早 5:30 燕麦 80g+香蕉+蜂蜜+蛋白+250ml 水；6:15 出门前 60g 快碳+250ml 水；跑中每 30 min 30g 碳水（约 3 个能量胶 @ 30/60/90 min，28K 路线 4 个）；每 5 km 喝水 100-150 ml（小口频饮）；T >20°C 每 5 km 加 50 ml + 电解质片；跑后 30 min 30g 乳清蛋白+60g 快碳，30-60 min 内正餐补足",
       "meals": [
-        {"name": "早餐", "time_hint": "5:30", "kcal": 500, "carbs_g": 80, "protein_g": 25, "fat_g": 8, "items_md": "燕麦 80g + 香蕉 1 根 + 蜂蜜 + 蛋白 1 份 + 250ml 水"},
-        {"name": "出门前快碳", "time_hint": "6:15", "kcal": 250, "carbs_g": 60, "protein_g": 1, "fat_g": 0, "items_md": "60g 快碳（能量胶/葡萄糖）+ 250ml 水"},
-        {"name": "跑中补给", "time_hint": "7:00/7:30/8:00", "kcal": 360, "carbs_g": 90, "protein_g": 0, "fat_g": 0, "items_md": "26K 路线：30/60/90 min 各 1 个能量胶 30g 碳 = 3 个；28K 路线再加 1"},
-        {"name": "跑后补给 (30 min 内)", "time_hint": "9:30", "kcal": 400, "carbs_g": 60, "protein_g": 30, "fat_g": 4, "items_md": "30g 乳清蛋白 + 60g 快碳（蛋白粉 + 香蕉/葡萄糖）"},
-        {"name": "正餐 (30-60 min 内)", "time_hint": "10:30", "kcal": 800, "carbs_g": 130, "protein_g": 40, "fat_g": 18, "items_md": "碳水主食 + 蛋白 + 蔬菜（米饭 200g + 鱼/瘦肉 150g + 蔬菜 250g）"},
-        {"name": "晚餐", "time_hint": "19:00", "kcal": 600, "carbs_g": 90, "protein_g": 30, "fat_g": 18, "items_md": "面条 100g + 瘦肉 100g + 蔬菜 200g"}
+        {
+          "name": "早餐",
+          "time_hint": "5:30",
+          "kcal": 500,
+          "carbs_g": 80,
+          "protein_g": 25,
+          "fat_g": 8,
+          "items_md": "燕麦 80g + 香蕉 1 根 + 蜂蜜 + 蛋白 1 份 + 250ml 水"
+        },
+        {
+          "name": "出门前快碳",
+          "time_hint": "6:15",
+          "kcal": 250,
+          "carbs_g": 60,
+          "protein_g": 1,
+          "fat_g": 0,
+          "items_md": "60g 快碳（能量胶/葡萄糖）+ 250ml 水"
+        },
+        {
+          "name": "跑中补给",
+          "time_hint": "7:00/7:30/8:00",
+          "kcal": 360,
+          "carbs_g": 90,
+          "protein_g": 0,
+          "fat_g": 0,
+          "items_md": "26K 路线：30/60/90 min 各 1 个能量胶 30g 碳 = 3 个；28K 路线再加 1"
+        },
+        {
+          "name": "跑后补给 (30 min 内)",
+          "time_hint": "9:30",
+          "kcal": 400,
+          "carbs_g": 60,
+          "protein_g": 30,
+          "fat_g": 4,
+          "items_md": "30g 乳清蛋白 + 60g 快碳（蛋白粉 + 香蕉/葡萄糖）"
+        },
+        {
+          "name": "正餐 (30-60 min 内)",
+          "time_hint": "10:30",
+          "kcal": 800,
+          "carbs_g": 130,
+          "protein_g": 40,
+          "fat_g": 18,
+          "items_md": "碳水主食 + 蛋白 + 蔬菜（米饭 200g + 鱼/瘦肉 150g + 蔬菜 250g）"
+        },
+        {
+          "name": "晚餐",
+          "time_hint": "19:00",
+          "kcal": 600,
+          "carbs_g": 90,
+          "protein_g": 30,
+          "fat_g": 18,
+          "items_md": "面条 100g + 瘦肉 100g + 蔬菜 200g"
+        }
       ]
     },
     {
@@ -450,8 +587,24 @@
       "water_ml": 2500,
       "notes_md": "💪 力量集训日：碳水 5 g/kg ≈ 360g；**维持热量（缺口 0）**；上午 9-10 点正餐，集训前 1h 香蕉 1 根；集训前 2-3h 中等碳水（午餐前 2-3h 八分饱）；集训后 30 min 30g 蛋白 + 50g 碳",
       "meals": [
-        {"name": "集训前 1h", "time_hint": "14:00", "kcal": 100, "carbs_g": 25, "protein_g": 1, "fat_g": 0, "items_md": "香蕉 1 根"},
-        {"name": "集训后补给 (30 min 内)", "time_hint": "16:30", "kcal": 320, "carbs_g": 50, "protein_g": 30, "fat_g": 4, "items_md": "30g 蛋白粉 + 50g 快碳"}
+        {
+          "name": "集训前 1h",
+          "time_hint": "14:00",
+          "kcal": 100,
+          "carbs_g": 25,
+          "protein_g": 1,
+          "fat_g": 0,
+          "items_md": "香蕉 1 根"
+        },
+        {
+          "name": "集训后补给 (30 min 内)",
+          "time_hint": "16:30",
+          "kcal": 320,
+          "carbs_g": 50,
+          "protein_g": 30,
+          "fat_g": 4,
+          "items_md": "30g 蛋白粉 + 50g 快碳"
+        }
       ]
     }
   ]
