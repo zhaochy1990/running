@@ -355,44 +355,61 @@ def push_planned_session(
                 detail=f"Stored spec is not a valid normalized workout: {exc}",
             )
 
-        # Re-push: detach prior scheduled_workout. We delete from the watch
-        # FIRST (the only externally observable side-effect that *must*
-        # happen before the new push), but defer the local
-        # ``status='superseded'`` UPDATE until after the new push succeeds.
-        # Marking the old row superseded earlier would strand it on a 502
-        # with no replacement row pointing at the planned session.
+        # Compute prior pointer first so we know whether to mark superseded
+        # after the new push lands. Note: the *delete sweep* below is no
+        # longer gated on having a tracked prior — it always runs when the
+        # provider supports deletion. This handles two cases the old branch
+        # missed:
+        #   (a) re-push: prior_was_pushed=True → existing superseded behavior
+        #   (b) orphan cleanup: prior planned_session was rebuilt by the
+        #       cross-week upsert (so scheduled_workout_id is now NULL) but
+        #       the watch entry from a *previous* push is still on the
+        #       watch. Without an unconditional sweep the user ends up with
+        #       duplicate [STRIDE]-prefixed entries on the same date.
+        # The adapter's delete_scheduled_workout filters to ``[STRIDE]``-
+        # prefixed entries internally, so we never delete user-authored
+        # workouts.
         prior_id = session_row["scheduled_workout_id"]
         prior_was_pushed = False
         if prior_id is not None:
             prior = db.get_scheduled_workout(prior_id)
             if prior is not None and prior["status"] == "pushed":
                 prior_was_pushed = True
-                if Capability.DELETE_WORKOUT not in source.info.capabilities:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            f"Provider {source.info.name!r} does not support deletion; "
-                            "remove the prior workout from the watch manually before re-pushing"
-                        ),
-                    )
-                try:
-                    source.delete_scheduled_workout(user, prior["date"])
-                except FeatureNotSupported:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            f"Provider {source.info.name!r} does not support deletion; "
-                            "remove the prior workout from the watch manually before re-pushing"
-                        ),
-                    )
-                except Exception:
-                    logger.exception(
-                        "delete prior scheduled_workout id=%s failed", prior_id,
-                    )
-                    raise HTTPException(
-                        status_code=502,
-                        detail="Could not remove prior workout from watch service",
-                    )
+
+        if Capability.DELETE_WORKOUT in source.info.capabilities:
+            try:
+                source.delete_scheduled_workout(user, date)
+            except FeatureNotSupported:
+                # Capability check passed but adapter changed at runtime —
+                # log + skip rather than fail the push. The new push can
+                # still land; user may end up with a duplicate they need to
+                # clean manually.
+                logger.warning(
+                    "delete_scheduled_workout raised FeatureNotSupported "
+                    "despite capability advertised; skipping",
+                )
+            except Exception:
+                # Best-effort: log and continue. We prefer "push succeeds
+                # with possible duplicate watch entry" over "push fails
+                # because the cleanup leg failed". The user can manually
+                # remove the duplicate; failing here would block them
+                # entirely.
+                logger.exception(
+                    "best-effort delete prior STRIDE workouts on %s failed; "
+                    "continuing push", date,
+                )
+        else:
+            if prior_was_pushed:
+                # Provider can't delete and we have a tracked prior →
+                # preserve the existing 400 contract: ask the user to
+                # manually clean before re-pushing.
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Provider {source.info.name!r} does not support deletion; "
+                        "remove the prior workout from the watch manually before re-pushing"
+                    ),
+                )
 
         try:
             if session_kind == SessionKind.RUN.value:
