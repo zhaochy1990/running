@@ -293,8 +293,8 @@ CREATE INDEX IF NOT EXISTS idx_planned_session_week ON planned_session(week_fold
 CREATE INDEX IF NOT EXISTS idx_planned_session_date ON planned_session(date);
 
 CREATE TABLE IF NOT EXISTS planned_nutrition (
-    date            TEXT PRIMARY KEY,                             -- ISO YYYY-MM-DD
     week_folder     TEXT NOT NULL,
+    date            TEXT NOT NULL,                                -- ISO YYYY-MM-DD
     kcal_target     REAL,
     carbs_g         REAL,
     protein_g       REAL,
@@ -303,7 +303,8 @@ CREATE TABLE IF NOT EXISTS planned_nutrition (
     meals_json      TEXT,                                         -- JSON list[Meal]
     notes_md        TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (week_folder, date)
 );
 CREATE INDEX IF NOT EXISTS idx_planned_nutrition_week ON planned_nutrition(week_folder);
 
@@ -589,6 +590,53 @@ class Database:
                     ALTER TABLE planned_session_new RENAME TO planned_session;
                     CREATE INDEX IF NOT EXISTS idx_planned_session_week ON planned_session(week_folder);
                     CREATE INDEX IF NOT EXISTS idx_planned_session_date ON planned_session(date);
+                """)
+                self._conn.commit()
+
+        # Migrate planned_nutrition PRIMARY KEY from (date) to (week_folder, date).
+        # Same root cause + fix as the planned_session migration above: the
+        # narrower constraint blocks legitimate cross-week reparse when stale
+        # rows from a previous failed parse occupy the same date.
+        nutrition_sql_row = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='planned_nutrition'"
+        ).fetchone()
+        if nutrition_sql_row is not None:
+            nutrition_table_sql = nutrition_sql_row[0] or ""
+            needs_nutrition_rebuild = (
+                "date            TEXT PRIMARY KEY" in nutrition_table_sql
+                or ("PRIMARY KEY" in nutrition_table_sql
+                    and "PRIMARY KEY (week_folder, date)" not in nutrition_table_sql)
+            )
+            if needs_nutrition_rebuild:
+                self._conn.executescript("""
+                    CREATE TABLE planned_nutrition_new (
+                        week_folder     TEXT NOT NULL,
+                        date            TEXT NOT NULL,
+                        kcal_target     REAL,
+                        carbs_g         REAL,
+                        protein_g       REAL,
+                        fat_g           REAL,
+                        water_ml        REAL,
+                        meals_json      TEXT,
+                        notes_md        TEXT,
+                        created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                        updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                        PRIMARY KEY (week_folder, date)
+                    );
+                    -- Dedup by keeping the row with the latest updated_at per
+                    -- (week_folder, date) tuple. ``rowid`` tiebreak so the
+                    -- migration is deterministic.
+                    INSERT INTO planned_nutrition_new
+                    SELECT week_folder, date, kcal_target, carbs_g, protein_g, fat_g,
+                           water_ml, meals_json, notes_md, created_at, updated_at
+                    FROM planned_nutrition
+                    WHERE rowid IN (
+                        SELECT MAX(rowid) FROM planned_nutrition
+                        GROUP BY week_folder, date
+                    );
+                    DROP TABLE planned_nutrition;
+                    ALTER TABLE planned_nutrition_new RENAME TO planned_nutrition;
+                    CREATE INDEX IF NOT EXISTS idx_planned_nutrition_week ON planned_nutrition(week_folder);
                 """)
                 self._conn.commit()
 
