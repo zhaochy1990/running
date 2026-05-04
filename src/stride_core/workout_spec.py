@@ -287,6 +287,12 @@ class StrengthExerciseSpec:
     target_value: int
     rest_seconds: int = 60
     note: str | None = None
+    # Provider-native exercise identifier authored alongside the spec.
+    # For COROS this is the T-code (e.g. "T1262"). The push adapter uses
+    # it to look up the catalog entry directly — bypasses name matching.
+    # None means "no built-in match found at authoring time" → adapter
+    # falls back to creating a custom exercise.
+    provider_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.sets < 1:
@@ -305,6 +311,7 @@ class StrengthExerciseSpec:
             "target_value": self.target_value,
             "rest_seconds": self.rest_seconds,
             "note": self.note,
+            "provider_id": self.provider_id,
         }
 
     @classmethod
@@ -317,6 +324,7 @@ class StrengthExerciseSpec:
             target_value=int(data["target_value"]),
             rest_seconds=int(data.get("rest_seconds", 60)),
             note=data.get("note"),
+            provider_id=data.get("provider_id"),
         )
 
 

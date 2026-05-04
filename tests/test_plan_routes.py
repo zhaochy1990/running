@@ -150,7 +150,11 @@ def _easy_run(date: str = "2026-04-22") -> NormalizedRunWorkout:
     )
 
 
-def _strength_workout(date: str = "2026-04-23") -> NormalizedStrengthWorkout:
+def _strength_workout(
+    date: str = "2026-04-23",
+    *,
+    provider_id: str | None = "T1163",
+) -> NormalizedStrengthWorkout:
     return NormalizedStrengthWorkout(
         name="[STRIDE] Core",
         date=date,
@@ -162,6 +166,7 @@ def _strength_workout(date: str = "2026-04-23") -> NormalizedStrengthWorkout:
                 target_kind=StrengthTargetKind.TIME_S,
                 target_value=45,
                 rest_seconds=60,
+                provider_id=provider_id,
             ),
         ),
     )
@@ -390,7 +395,13 @@ class TestPushSession:
         assert body["provider"] == "fake"
         assert body["provider_workout_id"] == "provider-id-1"
         assert len(fake.push_calls) == 1
-        assert len(fake.delete_calls) == 0
+        # New behavior: delete sweep always runs when the provider supports
+        # deletion — protects against orphan [STRIDE] entries on the watch
+        # whose planned_session FK got nulled by cross-week upsert. The
+        # adapter filters to [STRIDE]-prefixed entries internally so this
+        # is safe even when there's nothing on the watch yet.
+        assert len(fake.delete_calls) == 1
+        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22")
 
         # FK on planned_session was filled in.
         db = _db(tmp_path)
@@ -566,8 +577,10 @@ class TestPushSession:
         assert second.status_code == 200
         second_sw_id = second.json()["scheduled_workout_id"]
         assert second_sw_id != first_sw_id
-        assert len(fake.delete_calls) == 1
+        # Each push now triggers a sweep, so two pushes = two delete calls.
+        assert len(fake.delete_calls) == 2
         assert fake.delete_calls[0] == (USER_UUID, "2026-04-22")
+        assert fake.delete_calls[1] == (USER_UUID, "2026-04-22")
         # DB state: old row superseded, new row pushed
         db = _db(tmp_path)
         try:
@@ -577,6 +590,37 @@ class TestPushSession:
             assert new["status"] == "pushed"
         finally:
             db.close()
+
+    def test_push_calls_delete_even_without_prior_id(self, app_client):
+        """Orphan cleanup — a planned_session with NO scheduled_workout_id
+        (e.g. row was rebuilt by the cross-week upsert and lost its FK)
+        should still trigger a delete sweep on the date so any lingering
+        [STRIDE] watch entries from a prior push are wiped before the new
+        push lands.
+        """
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            ps_id = _seed_plan(db, WEEK)
+            # Force scheduled_workout_id back to NULL — simulates a planned
+            # session whose FK was nulled by an upsert that ran *after* a
+            # prior push lingered on the watch.
+            db._conn.execute(
+                "UPDATE planned_session SET scheduled_workout_id = NULL WHERE id = ?",
+                (ps_id,),
+            )
+            db._conn.commit()
+        finally:
+            db.close()
+
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.text
+        # Sweep ran despite no prior_id pointer.
+        assert len(fake.delete_calls) >= 1
+        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22")
 
     def test_strength_push_happy_path(self, app_client):
         """kind=strength + spec + provider has PUSH_STRENGTH_WORKOUT → 200."""
@@ -672,6 +716,43 @@ class TestPushSession:
         )
         assert resp.status_code == 400
         assert "strength workouts" in resp.json()["detail"]
+
+    def test_strength_push_with_missing_provider_id_falls_back_to_custom(self, app_client):
+        """Spec with no ``provider_id`` should still push: the translator
+        returns it as a missing_specs entry; the adapter then creates a
+        custom exercise via ``add_exercise`` and re-translates.
+
+        Here we work at the route+adapter boundary: the ``FakeRunSource.
+        push_strength_workout`` mock accepts the workout regardless of
+        provider_id, so the route returns 200 and the spec round-trips.
+        """
+        client, token, tmp_path, fake, _ = app_client
+        # Override the seeder to plant a strength session whose spec has no
+        # provider_id — simulates a plan.json authored before the migration.
+        db = _db(tmp_path)
+        try:
+            db.upsert_weekly_plan(WEEK, "# Plan", generated_by="test-model")
+            db.set_weekly_plan_structured_status(WEEK, status="fresh", parsed_from_md_hash="abc")
+            sessions = [
+                PlannedSession(
+                    date="2026-04-23", session_index=0,
+                    kind=SessionKind.STRENGTH, summary="Core 30min",
+                    spec=_strength_workout("2026-04-23", provider_id=None),
+                ),
+            ]
+            db.upsert_planned_sessions(WEEK, sessions)
+        finally:
+            db.close()
+
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-23/0/push",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert len(fake.strength_calls) == 1
+        # Spec round-tripped — no provider_id on the captured spec either.
+        captured = fake.strength_calls[0]
+        assert captured.exercises[0].provider_id is None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

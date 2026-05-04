@@ -851,3 +851,104 @@ def plan_reparse_cmd(
         console.print("[yellow]Failed weeks:[/yellow]")
         for f, reason in failed:
             console.print(f"  - {f}: {reason[:100]}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# exercises — COROS exercise library diagnostics (offline match probe)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@cli.group()
+def exercises() -> None:
+    """COROS exercise library diagnostics."""
+
+
+@exercises.command("diagnose")
+@click.option("--folder", required=True, help="Week folder to inspect")
+@click.pass_context
+def exercises_diagnose(ctx: click.Context, folder: str) -> None:
+    """Show match results for each strength exercise in a week's plan.json.
+
+    Loads the plan.json for the given week, queries the live COROS exercise
+    catalog (built-in + custom for this profile), and looks up each spec's
+    ``provider_id`` (T-code) against the catalog by ``name``. Outputs a
+    per-exercise table showing whether the T-code resolves to a built-in
+    catalog entry, a pre-existing custom entry, or would have to be created
+    from scratch (MISS — provider_id absent or not found).
+
+    Usage:
+
+      coros-sync -P zhaochaoyi exercises diagnose --folder '2026-05-04_05-10(P1W2)'
+    """
+    from stride_core.plan_spec import WeeklyPlan
+
+    profile = ctx.obj["profile"]
+    if not profile:
+        console.print("[red]Use -P/--profile to select the user[/red]")
+        raise SystemExit(1)
+    creds = Credentials.load(user=profile)
+    if not creds.is_logged_in:
+        console.print("[red]Not logged in. Run: coros-sync login[/red]")
+        raise SystemExit(1)
+
+    plan_json_path = USER_DATA_DIR / profile / "logs" / folder / "plan.json"
+    if not plan_json_path.exists():
+        console.print(f"[red]plan.json not found at {plan_json_path}[/red]")
+        raise SystemExit(1)
+
+    data = json.loads(plan_json_path.read_text(encoding="utf-8"))
+    plan = WeeklyPlan.from_dict(data)
+
+    with CorosClient(creds, user=profile) as client:
+        library = client.query_exercises(sport_type=4)
+
+    builtin_count = sum(1 for ex in library if str(ex.get("userId", "0")) == "0")
+    custom_count = len(library) - builtin_count
+    console.print(
+        f"[cyan]COROS catalog: {len(library)} entries "
+        f"({builtin_count} built-in + {custom_count} custom)[/cyan]\n"
+    )
+
+    # Index catalog by T-code (the `name` field) — same lookup the adapter does.
+    by_tcode: dict[str, dict] = {}
+    for ex in library:
+        tcode = str(ex.get("name", "")).strip()
+        if tcode:
+            by_tcode[tcode] = ex
+
+    table = Table(title=f"Exercise match diagnostic for {folder}")
+    table.add_column("Date")
+    table.add_column("Display Name")
+    table.add_column("canonical_id")
+    table.add_column("provider_id")
+    table.add_column("Match Result", style="bold")
+    table.add_column("userId (0=builtin)")
+
+    for s in plan.sessions:
+        if s.kind.value != "strength" or s.spec is None:
+            continue
+        for spec in s.spec.exercises:
+            tcode = (spec.provider_id or "").strip()
+            match = by_tcode.get(tcode) if tcode else None
+            if match is None:
+                reason = (
+                    "[red]MISS (provider_id missing)[/red]"
+                    if not tcode
+                    else f"[red]MISS (T-code {tcode} not in catalog)[/red]"
+                )
+                table.add_row(
+                    s.date, spec.display_name, spec.canonical_id,
+                    tcode or "-", reason, "-",
+                )
+                continue
+            user_id = str(match.get("userId", "0"))
+            is_builtin = user_id == "0"
+            ov = str(match.get("overview", ""))
+            status = "[green]builtin[/green]" if is_builtin else "[yellow]custom[/yellow]"
+            table.add_row(
+                s.date, spec.display_name, spec.canonical_id,
+                tcode, f"{ov} (id={match.get('id')})",
+                f"{user_id} {status}",
+            )
+
+    console.print(table)

@@ -244,119 +244,14 @@ def _infer_coros_workout_type(workout: NormalizedRunWorkout) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-# Strip trailing equipment / weight hints in parentheses so we can match
-# `俯卧撑(自重)` against `俯卧撑` in the COROS catalog.
-_PAREN_SUFFIX_RE = re.compile(r"[（(][^（()）]*[）)]\s*$")
-
-
-def _core_keyword(display_name: str) -> str:
-    """Strip trailing parenthetical hints (`(5kg)`, `(自重)`, …) from a name."""
-    out = display_name.strip()
-    while True:
-        new = _PAREN_SUFFIX_RE.sub("", out).strip()
-        if new == out:
-            return out
-        out = new
-
-
-# Equipment / weight suffixes commonly appended to canonical_id but absent
-# from the COROS catalog overview — strip before matching so e.g.
-# `goblet_squat_db` matches catalog entry `goblet_squat`.
-_EQUIP_SUFFIXES = ("_db", "_bw", "_kb", "_bb", "_cable", "_machine")
-
-
-def _strip_equip(s: str) -> str:
-    """Strip trailing equipment suffix (e.g. ``_db``, ``_bw``) and lowercase."""
-    low = s.lower()
-    for suf in _EQUIP_SUFFIXES:
-        if low.endswith(suf):
-            return low[: -len(suf)]
-    return low
-
-
-def _eng_tokens(s: str) -> set[str]:
-    """Tokenize English snake_case names; drop short noise tokens (<=2 chars)."""
-    return {t for t in _strip_equip(s).replace("-", "_").split("_") if len(t) > 2}
-
-
-def _has_cjk(s: str) -> bool:
-    """True iff ``s`` contains at least one CJK Unified Ideograph."""
-    return any("一" <= c <= "鿿" for c in s)
-
-
-def _has_ascii_alpha(s: str) -> bool:
-    """True iff ``s`` contains at least one ASCII letter (English content)."""
-    return any("a" <= c <= "z" or "A" <= c <= "Z" for c in s)
-
-
-def _match_exercise(spec: StrengthExerciseSpec, library: list[dict]) -> dict | None:
-    """Find a COROS library exercise matching ``spec``.
-
-    The COROS catalog mostly uses English snake_case in ``overview`` (e.g.
-    ``goblet_squat``, ``romanian_deadlift``) with a small number of Chinese
-    entries (e.g. ``坐姿肩上哑铃推举``). Plan specs carry both a Chinese
-    ``display_name`` and an English ``canonical_id``, so we try multiple
-    matching strategies and return the first hit:
-
-      1. Chinese bidirectional substring on ``display_name`` core keyword
-         (handles ``侧卧平板撑`` ↔ ``侧平板``).
-      2. English bidirectional substring on ``canonical_id`` after stripping
-         equipment suffixes (handles ``goblet_squat_db`` → ``goblet_squat``).
-      3. English token-overlap fallback ≥ 50% intersection-over-larger
-         (handles word-order differences like ``goblet_squat_db`` ↔
-         ``dumbbell_goblet_squat``). 50% is the lowest threshold that still
-         requires sharing at least the main movement noun on 3-token names
-         while rejecting accidental single-token overlaps on longer names.
-
-    Returns the best match (highest token-overlap score among #3 candidates)
-    or ``None`` if nothing reaches the threshold.
-    """
-    cn_keyword = _core_keyword(spec.display_name)
-    cn_active = bool(cn_keyword) and _has_cjk(cn_keyword)
-    eng_keyword = _strip_equip(spec.canonical_id)
-    eng_active = bool(eng_keyword) and _has_ascii_alpha(eng_keyword)
-    eng_tokens = _eng_tokens(spec.canonical_id)
-
-    best_overlap: tuple[float, dict | None] = (0.0, None)
-    for ex in library:
-        overview = str(ex.get("overview", "")).strip()
-        if not overview:
-            continue
-        # 1. Chinese bidirectional substring (only when both sides have CJK)
-        if cn_active and _has_cjk(overview):
-            if cn_keyword in overview:
-                return ex
-            # Reverse: short catalog overview inside long display keyword
-            # (e.g. catalog "侧平板" ⊂ display "哥本哈根侧平板"). Require
-            # overview length ≥ 2 to avoid spurious 1-char hits.
-            if len(overview) >= 2 and overview in cn_keyword:
-                return ex
-        # 2. English bidirectional substring on canonical_id (only when both
-        # sides have ASCII letters — skips Chinese overview entries).
-        if eng_active and _has_ascii_alpha(overview):
-            overview_low = overview.lower()
-            if eng_keyword in overview_low:
-                return ex
-            if len(overview_low) >= 4 and overview_low in eng_keyword:
-                return ex
-        # 3. English token overlap fallback
-        ex_tokens = _eng_tokens(overview)
-        if not eng_tokens or not ex_tokens:
-            continue
-        overlap = eng_tokens & ex_tokens
-        if not overlap:
-            continue
-        score = len(overlap) / max(len(eng_tokens), len(ex_tokens))
-        if score >= 0.5 and score > best_overlap[0]:
-            best_overlap = (score, ex)
-    return best_overlap[1]
-
-
 def _custom_exercise_payload(spec: StrengthExerciseSpec) -> dict:
-    """Build an `add_exercise` request body for a missing library exercise.
+    """Build an `add_exercise` request body for specs without a working
+    provider_id.
 
-    Mirrors the canonical example in CLAUDE.md: sportType=4, exerciseType=2,
-    name + overview = display_name, generic part/muscle/equipment defaults.
+    Falls back to display_name as both name and overview so the user can find
+    the custom exercise on the watch later. Mirrors the canonical example in
+    CLAUDE.md: sportType=4, exerciseType=2, generic part/muscle/equipment
+    defaults.
     """
     target_type = 2 if spec.target_kind == StrengthTargetKind.TIME_S else 3
     name = spec.display_name.strip() or spec.canonical_id
@@ -388,27 +283,43 @@ def normalized_to_coros_strength(
 ) -> tuple[StrengthWorkout, list[dict]]:
     """Translate NormalizedStrengthWorkout → coros_sync.StrengthWorkout.
 
+    Lookup strategy: each spec carries a ``provider_id`` (COROS T-code)
+    authored at plan-creation time. We map T-code → catalog dict by matching
+    the catalog entry's ``name`` field, then attach the catalog dict to the
+    StrengthWorkout exercise. No name-matching, no fuzzy logic — the
+    authoring layer is responsible for picking the right T-code from
+    ``src/coros_sync/exercise_catalog.md``.
+
+    When ``provider_id`` is None or not found in the catalog, the spec is
+    returned in ``missing_specs`` so the caller can register a custom
+    exercise via ``client.add_exercise()``; afterwards re-translate to pick
+    up the newly-created entry.
+
     Args:
-        workout: The provider-agnostic strength workout to translate.
-        available_exercises: The COROS exercise library
-            (``client.query_exercises(sport_type=4)`` result). Each entry is
-            a dict containing at minimum ``id`` and ``overview``.
+        workout: provider-agnostic strength workout to translate.
+        available_exercises: ``client.query_exercises(sport_type=4)`` result.
 
     Returns:
-        ``(coros_workout, missing_specs)`` where ``missing_specs`` is a list
-        of `add_exercise` request bodies that the caller should POST to
-        create custom exercises before the strength workout can be pushed.
-        When ``missing_specs`` is non-empty the returned ``coros_workout``
-        is incomplete (missing exercises are silently dropped) and the
-        caller should re-translate after creating the missing exercises.
+        ``(coros_workout, missing_specs)`` — ``coros_workout`` has all matched
+        exercises attached; ``missing_specs`` is a list of ``add_exercise``
+        request bodies for unmatched specs. The caller should POST each then
+        re-translate against the refreshed library.
     """
+    # Index catalog by T-code (the `name` field).
+    by_tcode: dict[str, dict] = {}
+    for ex in available_exercises:
+        tcode = str(ex.get("name", "")).strip()
+        if tcode:
+            by_tcode[tcode] = ex
+
     out = StrengthWorkout(
         name=workout.name,
         date=_iso_to_yyyymmdd(workout.date),
     )
     missing: list[dict] = []
     for spec in workout.exercises:
-        match = _match_exercise(spec, available_exercises)
+        tcode = (spec.provider_id or "").strip()
+        match = by_tcode.get(tcode) if tcode else None
         if match is None:
             missing.append(_custom_exercise_payload(spec))
             continue

@@ -142,21 +142,26 @@ When creating a plan, consider how these three components interact — for examp
 
 **Important**: When answering any question about current status, load, fatigue, or training metrics, ALWAYS run `PYTHONIOENCODING=utf-8 python -m coros_sync -P {username} sync` first to ensure the local database has the latest data before querying. Default user is `zhaochaoyi`.
 
-**力量训练动作选择原则**: 优先使用COROS内置动作（377个），这样推送到手表后有动画指导和标准化记录。内置动作库见 `src/coros_sync/exercise_catalog.md`。只有当内置库中确实没有匹配的动作时，才通过 `client.add_exercise()` 创建自定义动作。注意COROS动作名称可能与常用名称不同（如"侧卧平板撑"="侧平板"，"哥本哈根平板"="哥本哈根侧平板"），搜索时用关键词模糊匹配。
+**力量训练动作选择原则**: 优先使用COROS内置动作（377个），这样推送到手表后有动画指导和标准化记录。内置动作库见 `src/coros_sync/exercise_catalog.md`。**生成 plan.md 时必须为每个动作填写 COROS ID 列**（T-code，例 `T1262`），由 adapter 在 push 时按 ID 直接 lookup catalog —— 没有名称匹配，没有模糊容错，错就错在你填的 T-code 上，容易发现和修。catalog 中真没有的动作允许留空，adapter 会自动通过 `client.add_exercise()` 创建自定义（无动画但功能完整）。
 
-### 推送力量训练到手表（COROS / Garmin）的动作匹配策略
+### 推送力量训练到手表（COROS / Garmin）的动作 ID 策略
 
-适配器接收 plan.json 的 `NormalizedStrengthWorkout`（每个 exercise 含 `canonical_id` 英文 snake_case + `display_name` 中文），按以下顺序匹配 provider 的内置动作库：
+**Authoring 时记录 ID**：生成 plan.md 时，力量动作表必须含 "COROS ID" 列。Claude 从 `src/coros_sync/exercise_catalog.md` 查找匹配的 T-code 填入。例：
 
-1. **中文双向 substring**：取 display_name 剥掉末尾括号注释（如 `(5kg)`、`(自重)`），与 provider 库的 `overview` 字段双向 substring 比对（短包含长 / 长包含短，min-length 2 防 1 字误匹配）
-2. **英文双向 substring**：取 canonical_id 剥掉末尾设备 suffix (`_db` / `_bw` / `_kb` / `_bb` / `_cable` / `_machine`)，与 overview 双向 substring 比对（min-length 4）
-3. **英文 token overlap ≥ 50%**：snake_case 拆词后求集合交集，挑得分最高的（处理词序差异，如 `goblet_squat_db` ↔ `dumbbell_goblet_squat`）
+| # | 动作 | COROS ID | 组×次 | 组间 | 要点 |
+|---|------|----------|-------|------|------|
+| 1 | 哑铃高脚杯深蹲（5kg） | T1336 | 3×12 | 45s | 哑铃贴胸，全蹲到底 |
+| 2 | 平板支撑 | T1262 | 3×60s | 30s | 臀腰平直 |
 
-第一个命中即返回；都不命中才走 `add_exercise` 创建自定义动作。语言守卫（`_has_cjk` / `_has_ascii_alpha`）防止跨语言假阳性。
+**plan.json 字段**：每个 `StrengthExerciseSpec` 携带 `provider_id`（COROS T-code）。
 
-**为什么这个顺序**：COROS 内置 377 动作的 `overview` 字段大部分是英文 snake_case（如 `goblet_squat`、`plank_basic`），少数中文（如 `坐姿肩上哑铃推举`）。Garmin 同理。中文优先是因为我们的 plan.json display_name 写的就是中文，命中后能直接复用 provider 的动画指导；英文 fallback 处理 canonical_id 与 overview 同语种的情况。
+**Push 时**：adapter 用 `provider_id` 在 `client.query_exercises` 结果里按 `name` 字段直接 lookup。命中即用 catalog 的 dict（带动画 + 标准化记录）。lookup 失败（provider_id 缺失或 catalog 没有）→ fallback `client.add_exercise` 创建自定义。
 
-**适配器实现**：`src/coros_sync/translate.py:_match_exercise`（COROS）。Garmin adapter 当前还未支持力量推送（参见"Folder Structure"节末尾），将来实现时复用同一 matcher。
+**为什么取消名称匹配**：(1) 名称匹配模糊不可靠（中英混杂、equipment suffix、token overlap 都会误命中错误动作）。(2) 错误命中 ≠ 没匹配 — 看似命中但实际是远房动作，watch 端没动画且数据不对。(3) ID 匹配是 O(1) 确定性 lookup，没有匹配错误的可能 — 错就错在 authoring 层填错 T-code，容易发现和修。
+
+**Authoring 责任**：Claude 生成 plan.md 时必须查 `exercise_catalog.md` 选准 T-code。catalog 没有的动作（罕见）允许留空，adapter 会自动创建自定义动作（无动画但功能完整）。
+
+**适配器实现**：`src/coros_sync/translate.py:normalized_to_coros_strength`（COROS）。Garmin adapter 当前还未支持力量推送（参见"Folder Structure"节末尾），将来实现时复用同一 ID 策略。
 
 Before drafting a new weekly plan, always review the following inputs:
 
