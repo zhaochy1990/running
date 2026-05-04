@@ -37,6 +37,7 @@ from stride_core.models import pace_str
 from stride_core.source import DataSource
 
 from .. import auth_service_client as auth_client
+from .. import likes_store
 from ..bearer import require_bearer
 from ..content_store import read_json
 from ..deps import format_duration, get_source
@@ -367,6 +368,27 @@ async def team_feed(
             feed.append(act)
 
     feed.sort(key=lambda a: a.get("date") or "", reverse=True)
+
+    # Enrich with like counts. One bulk fetch (per-activity partition scan)
+    # before returning so the UI can render counts + caller-liked flag without
+    # N+1 round-trips. Failures degrade gracefully — feed still loads, all
+    # counts default to zero.
+    caller_id = _claims.get("sub") if isinstance(_claims, dict) else None
+    targets = [(a["user_id"], a["label_id"]) for a in feed if a.get("label_id")]
+    try:
+        likes_by_target = likes_store.list_likes_bulk(
+            team_id=team_id, targets=targets,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("teams.feed: like enrichment failed: %s", exc)
+        likes_by_target = {}
+    for act in feed:
+        rows = likes_by_target.get((act["user_id"], act.get("label_id")), [])
+        act["like_count"] = len(rows)
+        act["you_liked"] = bool(
+            caller_id and any(r.liker_user_id == caller_id for r in rows)
+        )
+
     return {
         "team_id": team_id,
         "member_count": len(members),

@@ -689,6 +689,26 @@ export interface MyTeam {
 export interface TeamFeedActivity extends Activity {
   user_id: string
   display_name: string
+  like_count?: number
+  you_liked?: boolean
+}
+
+export interface ActivityLiker {
+  user_id: string
+  display_name: string
+  created_at: string
+}
+
+export interface ActivityLikes {
+  count: number
+  you_liked: boolean
+  likers: ActivityLiker[]
+}
+
+export interface ActivityLikeMutation {
+  liked: boolean
+  count: number
+  you_liked: boolean
 }
 
 export interface TeamFeed {
@@ -731,6 +751,24 @@ export function getTeamMembers(id: string) {
 
 export function getTeamFeed(id: string, days = 30) {
   return fetchJSON<TeamFeed>(`/teams/${id}/feed?days=${days}`)
+}
+
+export function getActivityLikes(teamId: string, userId: string, labelId: string) {
+  return fetchJSON<ActivityLikes>(
+    `/teams/${teamId}/activities/${userId}/${labelId}/likes`,
+  )
+}
+
+export function likeActivity(teamId: string, userId: string, labelId: string) {
+  return postJSON<ActivityLikeMutation>(
+    `/teams/${teamId}/activities/${userId}/${labelId}/likes`,
+  )
+}
+
+export function unlikeActivity(teamId: string, userId: string, labelId: string) {
+  return deleteJSON<ActivityLikeMutation>(
+    `/teams/${teamId}/activities/${userId}/${labelId}/likes`,
+  )
 }
 
 export function listMyTeams() {
