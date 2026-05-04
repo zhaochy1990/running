@@ -409,9 +409,29 @@ pytest -k test_pace_str   # single test by name
 - **Strength** (sportType=4): `StrengthWorkout` builder with exercises from COROS library
   - `push_strength_workout()` — same calculate → push flow as running
   - Exercises come from `client.query_exercises(sport_type=4)` (419 built-in + custom)
-  - Custom exercises created via `client.add_exercise()` when no built-in match exists
+  - Custom exercises created via `client.add_exercise()` only when plan.json carries no `provider_id` or the T-code isn't in the catalog (rare)
   - Key fields: `targetType` (2=time in seconds, 3=reps), `sets`, `restValue` (seconds)
-  - **Exercise name matching**: COROS built-in names may differ from common names (e.g. "侧卧平板撑" = "侧平板"). Always search the library first before creating custom exercises.
+  - **Exercise ID lookup**: plan.json's `StrengthExerciseSpec.provider_id` is the COROS T-code (e.g. `T1262`). The push adapter does O(1) `{T-code: catalog_entry}` lookup against the `query_exercises` result by matching the catalog entry's `name` field. **No name matching, no fuzzy logic** — authoring layer (Claude/marathon-coach) is responsible for picking T-codes from `src/coros_sync/exercise_catalog.md`. See § "推送力量训练" below for the contract.
+
+#### COROS schedule API structure (delete + idempotency)
+
+`client.query_schedule(date, date)` returns:
+
+```
+data: {
+  id: <plan_id>,                        # Plan-level ID (passed to delete_scheduled_workout)
+  entities: [                           # Scheduled instances
+    { idInPlan, planProgramId, happenDay, exerciseBarChart, ... },
+    ...
+  ],
+  programs: [                           # Program *definitions* — names live HERE
+    { id, idInPlan, name: "[STRIDE] 力量 A ...", sportType, ... },
+    ...
+  ],
+}
+```
+
+**Critical gotcha**: `entity.exerciseBarChart` is **empty for newly-pushed entries that haven't been completed yet**. Don't filter watch entries by `exerciseBarChart[*].name` — only by joining `entities[i].idInPlan == programs[j].idInPlan` then checking `programs[j].name.startswith("[STRIDE]")`. The adapter `delete_scheduled_workout` (`src/coros_sync/adapter.py`) follows this pattern; the diagnostic script `scripts/inspect_schedule.py` dumps both arrays for debugging.
 
 #### Auth (`auth.py`)
 - Credentials stored as JSON at `platformdirs.user_config_dir("coros-sync")/config.json`
