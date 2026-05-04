@@ -754,6 +754,27 @@ export function getTeamFeed(id: string, days = 30) {
   return fetchJSON<TeamFeed>(`/teams/${id}/feed?days=${days}`)
 }
 
+export type MileagePeriod = 'month' | 'week'
+
+export interface MileageRankingEntry {
+  user_id: string
+  display_name: string
+  total_km: number
+  activity_count: number
+}
+
+export interface MileageLeaderboardData {
+  team_id: string
+  period: MileagePeriod
+  period_start: string
+  period_end: string
+  rankings: MileageRankingEntry[]
+}
+
+export function getTeamMileage(id: string, period: MileagePeriod = 'month') {
+  return fetchJSON<MileageLeaderboardData>(`/teams/${id}/mileage?period=${period}`)
+}
+
 export function getActivityLikes(teamId: string, userId: string, labelId: string) {
   return fetchJSON<ActivityLikes>(
     `/teams/${teamId}/activities/${userId}/${labelId}/likes`,

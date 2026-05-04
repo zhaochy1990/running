@@ -28,12 +28,13 @@ import json
 import logging
 import re
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 
 from stride_core.db import USER_DATA_DIR, Database
-from stride_core.models import pace_str
+from stride_core.models import RUN_SPORT_SQL_LIST, pace_str
 from stride_core.source import DataSource
 
 from .. import auth_service_client as auth_client
@@ -485,6 +486,133 @@ async def sync_team_all(
 # ---------------------------------------------------------------------------
 # Caller's own teams
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Mileage leaderboard — natural-month + natural-week running totals per member.
+# ---------------------------------------------------------------------------
+
+
+_SHANGHAI = timezone(timedelta(hours=8))
+
+
+def _period_window(period: str, *, now_utc: datetime | None = None) -> tuple[datetime, datetime]:
+    """Return (period_start, period_end) in Shanghai TZ for the current period.
+
+    - month: first day of the current calendar month at 00:00 Shanghai
+    - week:  most recent Monday at 00:00 Shanghai (Monday-start ISO week)
+    """
+    now = (now_utc or datetime.now(timezone.utc)).astimezone(_SHANGHAI)
+    if period == "month":
+        start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif period == "week":
+        days_since_monday = now.weekday()  # Mon=0
+        start = (now - timedelta(days=days_since_monday)).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+    else:
+        raise ValueError(f"invalid period: {period!r}")
+    return start, now
+
+
+def _sum_member_mileage(user_id: str, period_start_shanghai: str) -> tuple[float, int]:
+    """Return (total_km, activity_count) for one member since the period start.
+
+    ``period_start_shanghai`` is a "YYYY-MM-DD HH:MM:SS" string already shifted
+    into Shanghai local time. The DB stores ``date`` as ISO UTC, so we apply
+    ``datetime(date, '+8 hours')`` on the stored value to compare apples to
+    apples.
+
+    Note: the ``activities.distance_m`` column is misnamed — it stores
+    kilometers (see ``stride_core/models.py`` ``Activity.from_api`` which
+    divides the COROS raw value by 100_000). We sum it as-is and treat the
+    result as km, hence the ``total_km`` return value.
+    """
+    db_path = USER_DATA_DIR / user_id / "coros.db"
+    if not db_path.exists():
+        return 0.0, 0
+    try:
+        db = Database(db_path)
+    except (sqlite3.Error, OSError) as exc:
+        logger.warning("teams.mileage: cannot open db for %s: %s", user_id, exc)
+        return 0.0, 0
+    try:
+        rows = db.query(
+            f"""SELECT COALESCE(SUM(distance_m), 0) AS total_km,
+                       COUNT(*) AS cnt
+                FROM activities
+                WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
+                  AND datetime(date, '+8 hours') >= ?""",
+            (period_start_shanghai,),
+        )
+    except sqlite3.Error as exc:
+        logger.warning("teams.mileage: query failed for %s: %s", user_id, exc)
+        return 0.0, 0
+    finally:
+        db.close()
+    if not rows:
+        return 0.0, 0
+    r = rows[0]
+    return float(r["total_km"] or 0), int(r["cnt"] or 0)
+
+
+@router.get("/api/teams/{team_id}/mileage")
+async def team_mileage(
+    team_id: str,
+    period: str = Query("month", pattern="^(month|week)$"),
+    authorization: str | None = Header(default=None),
+    _claims: dict = Depends(require_bearer),
+):
+    """Return a per-member running-mileage leaderboard for the current natural
+    month or week (Shanghai TZ).
+
+    Members without a STRIDE coros.db, or with no qualifying activities,
+    appear with total_km=0 / activity_count=0 at the bottom of the list.
+    Caller must be a member of the team.
+    """
+    members = await auth_client.list_members(_bearer(authorization), team_id)
+    member_ids = {m.get("user_id") for m in members if m.get("user_id")}
+    caller_id = _claims.get("sub") if isinstance(_claims, dict) else None
+    if caller_id not in member_ids:
+        raise HTTPException(status_code=403, detail="Caller is not a member of this team")
+
+    start_dt, end_dt = _period_window(period)
+    period_start_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+    rankings: list[dict[str, Any]] = []
+    for m in members:
+        user_id = m.get("user_id")
+        if not user_id:
+            continue
+        display_name = (
+            _stride_display_name(user_id)
+            or m.get("display_name")
+            or m.get("name")
+            or user_id
+        )
+        total_km, count = _sum_member_mileage(user_id, period_start_str)
+        rankings.append({
+            "user_id": user_id,
+            "display_name": display_name,
+            "total_km": round(total_km, 2),
+            "activity_count": count,
+        })
+
+    # Sort: total desc, count desc, name asc. ``display_name`` is always a
+    # non-empty string by construction, but coerce to "" defensively.
+    rankings.sort(
+        key=lambda r: (
+            -r["total_km"], -r["activity_count"], r.get("display_name") or "",
+        ),
+    )
+
+    return {
+        "team_id": team_id,
+        "period": period,
+        "period_start": start_dt.isoformat(),
+        "period_end": end_dt.isoformat(),
+        "rankings": rankings,
+    }
 
 
 @router.get("/api/users/me/teams")

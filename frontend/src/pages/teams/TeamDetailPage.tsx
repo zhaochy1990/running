@@ -8,6 +8,9 @@ import {
 } from '../../api'
 import { useUserId } from '../../store/authStore'
 import LikeButton from '../../components/LikeButton'
+import MileageLeaderboard from '../../components/MileageLeaderboard'
+
+type TeamTab = 'feed' | 'mileage'
 
 export default function TeamDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -16,6 +19,7 @@ export default function TeamDetailPage() {
   const [team, setTeam] = useState<Team | null>(null)
   const [members, setMembers] = useState<TeamMember[]>([])
   const [feed, setFeed] = useState<TeamFeedActivity[]>([])
+  const [activeTab, setActiveTab] = useState<TeamTab>('feed')
   const [isMember, setIsMember] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -229,6 +233,30 @@ export default function TeamDetailPage() {
         </div>
       )}
 
+      {/* Tab bar */}
+      <div className="flex items-center gap-2 mb-6 border-b border-border-subtle pb-2">
+        {(['feed', 'mileage'] as TeamTab[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveTab(tab)}
+            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              activeTab === tab
+                ? 'text-accent-red bg-accent-red/10'
+                : 'text-text-muted hover:text-text-secondary hover:bg-bg-card'
+            }`}
+            aria-pressed={activeTab === tab}
+          >
+            {tab === 'feed' ? '动态' : '跑量榜'}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'mileage' && id && (
+        <MileageLeaderboard teamId={id} />
+      )}
+
+      {activeTab === 'feed' && (
       <div className="grid gap-8 grid-cols-1 lg:grid-cols-[2fr_1fr]">
         {/* Activity feed */}
         <section>
@@ -518,6 +546,7 @@ export default function TeamDetailPage() {
           )}
         </section>
       </div>
+      )}
     </div>
   )
 }
