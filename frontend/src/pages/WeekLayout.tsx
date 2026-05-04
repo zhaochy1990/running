@@ -16,7 +16,6 @@ import { useUser } from '../UserContextValue'
 import PlannedCalendar from '../components/PlannedCalendar'
 import PushAllPlannedButton from '../components/PushAllPlannedButton'
 import VariantComparisonView from '../components/VariantComparisonView'
-import WeeklyIntensityCard from '../components/WeeklyIntensityCard'
 
 type Tab = 'plan' | 'variants' | 'calendar' | 'activities' | 'feedback'
 
@@ -380,8 +379,6 @@ function CalendarTab({
           </div>
         </div>
       )}
-
-      <WeeklyIntensityCard summary={weekDetail.intensity_summary} />
 
       <PushAllPlannedButton
         sessions={sessions}

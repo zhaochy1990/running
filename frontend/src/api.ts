@@ -326,14 +326,6 @@ export interface WeekSummary {
   total_duration_fmt: string
 }
 
-export interface IntensitySummary {
-  total_run_km: number
-  low_km: number | null
-  mid_km: number | null
-  high_km: number | null
-  has_zone_data: boolean
-}
-
 export interface WeekDetail {
   folder: string
   date_from: string
@@ -348,9 +340,6 @@ export interface WeekDetail {
   total_duration_s: number
   total_duration_fmt: string
   activity_count: number
-  // Run-only mileage broken down by HR zone band. Server adds it
-  // unconditionally; older servers may omit, hence optional here.
-  intensity_summary?: IntensitySummary
   // Multi-variant additions (Step 4 backend additive fields).
   variants_summary?: VariantsSummary
   abandoned_scheduled_workouts?: AbandonedScheduledWorkout[]
