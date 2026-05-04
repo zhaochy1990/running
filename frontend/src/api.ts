@@ -148,6 +148,10 @@ export interface MyProfile {
     profile_ready: boolean
     completed_at: string | null
   }
+  // Connected watch provider — `'coros' | 'garmin'` when the backend exposes
+  // it. Currently the /api/users/me/profile route doesn't return this field,
+  // so callers should treat `undefined` as "fall back to coros default".
+  provider?: string | null
 }
 
 export function getMyProfile() {

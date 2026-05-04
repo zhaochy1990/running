@@ -7,8 +7,9 @@ import {
   getPlanDays, pushPlannedSession, reparsePlan,
   formatWeekRange, formatDateShort, weekdayCN,
   sportColor, sportNameCN, trainTypeColor, trainTypeCN,
+  getMyProfile,
   type WeekSummary, type WeekDetail, type Activity,
-  type PlannedSessionRow, type PlanDay,
+  type PlannedSessionRow, type PlanDay, type MyProfile,
 } from '../api'
 import type { PlannedNutrition, StructuredStatus } from '../types/plan'
 import { useUser } from '../UserContextValue'
@@ -29,7 +30,22 @@ export default function WeekLayout() {
   const [structuredStatus, setStructuredStatus] = useState<StructuredStatus>('none')
   const [reparseBusy, setReparseBusy] = useState(false)
   const [reparseError, setReparseError] = useState<string | null>(null)
+  const [myProfile, setMyProfile] = useState<MyProfile | null>(null)
   const loadingDetail = Boolean(folder && user && loadedFolder !== folder)
+
+  // Pull the connected provider once so we can dispatch push capabilities
+  // (Garmin doesn't support strength push yet → button shows as "in dev").
+  useEffect(() => {
+    let cancelled = false
+    getMyProfile()
+      .then((p) => { if (!cancelled) setMyProfile(p) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  const provider = myProfile?.provider ?? 'coros'
+  const canPushRun = true
+  const canPushStrength = provider === 'coros'
 
   useEffect(() => {
     if (!user) return
@@ -199,6 +215,8 @@ export default function WeekLayout() {
               onReparse={handleReparse}
               reparseBusy={reparseBusy}
               reparseError={reparseError}
+              canPushRun={canPushRun}
+              canPushStrength={canPushStrength}
             />
           )}
           {activeTab === 'activities' && (
@@ -258,6 +276,8 @@ function CalendarTab({
   onReparse,
   reparseBusy,
   reparseError,
+  canPushRun,
+  canPushStrength,
 }: {
   weekDetail: WeekDetail
   planDays: PlanDay[]
@@ -266,6 +286,8 @@ function CalendarTab({
   onReparse: () => void
   reparseBusy: boolean
   reparseError: string | null
+  canPushRun: boolean
+  canPushStrength: boolean
 }) {
   const weekDates = buildWeekDates(weekDetail.date_from, weekDetail.date_to)
   const sessions: PlannedSessionRow[] = []
@@ -315,8 +337,8 @@ function CalendarTab({
         sessions={sessions}
         nutrition={nutrition}
         structuredStatus={structuredStatus}
-        canPushRun={true}
-        canPushStrength={true}
+        canPushRun={canPushRun}
+        canPushStrength={canPushStrength}
         onPush={(s) => onPush(s.date, s.session_index)}
       />
     </div>

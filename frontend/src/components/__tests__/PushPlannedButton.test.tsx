@@ -185,8 +185,8 @@ describe('PushPlannedButton', () => {
     expect(btn).not.toBeDisabled()
   })
 
-  it('hides strength button when canPushStrength=false', () => {
-    const { container } = render(
+  it('shows disabled "in development" button for strength when canPushStrength=false', () => {
+    render(
       <PushPlannedButton
         session={makeSession({ kind: 'strength' })}
         structuredStatus="fresh"
@@ -195,7 +195,9 @@ describe('PushPlannedButton', () => {
         onPush={() => {}}
       />,
     )
-    expect(container.firstChild).toBeNull()
+    const btn = screen.getByRole('button', { name: '推送到手表' })
+    expect(btn).toBeDisabled()
+    expect(btn.getAttribute('title') || '').toMatch(/开发/)
   })
 
   it('strength button defaults to canPushRun when canPushStrength omitted', () => {

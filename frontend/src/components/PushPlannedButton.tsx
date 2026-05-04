@@ -76,23 +76,28 @@ export default function PushPlannedButton({
   const [pushing, setPushing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Capability gating per kind; strength defaults to the run capability when
-  // unspecified (most providers expose both push paths together).
-  const canPush =
-    session.kind === 'run'
-      ? canPushRun
-      : session.kind === 'strength'
-        ? (canPushStrength ?? canPushRun)
-        : false
-  if (!canPush) return null
+  // Capability gating per kind:
+  //   - Run capability missing → hide entirely (provider doesn't push at all).
+  //   - Strength capability missing → render disabled "in development"
+  //     placeholder (Garmin path today).
+  //   - Other kinds (rest/cross/note) → hide.
+  if (session.kind === 'run' && !canPushRun) return null
+  if (session.kind !== 'run' && session.kind !== 'strength') return null
 
-  const { disabled: gateDisabled, reason } = disabledReasonFor(
-    session,
-    structuredStatus,
-    disabled || pushing,
-  )
+  const strengthCap = canPushStrength ?? canPushRun
+  const isStrengthInDev = session.kind === 'strength' && !strengthCap
+
+  const { disabled: gateDisabled, reason } = isStrengthInDev
+    ? { disabled: true, reason: '力量推送正在开发中，敬请期待' }
+    : disabledReasonFor(session, structuredStatus, disabled || pushing)
   const isPushed = session.scheduled_workout_id != null
-  const label = pushing ? '推送中…' : isPushed ? '✓ 已推送' : '推送到手表'
+  const label = pushing
+    ? '推送中…'
+    : isStrengthInDev
+      ? '推送到手表'
+      : isPushed
+        ? '✓ 已推送'
+        : '推送到手表'
 
   const handle = async () => {
     if (gateDisabled) return

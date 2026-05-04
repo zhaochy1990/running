@@ -155,9 +155,15 @@ def get_profile(payload: dict = Depends(require_bearer)):
     uuid = payload["sub"]
     profile = _read_profile(uuid)
     onboarding = _read_onboarding(uuid)
+    # Provider tag drives frontend capability gating (e.g. strength push
+    # is only wired for COROS today). Returns None when the user has
+    # never logged into a provider yet.
+    from stride_core.registry import read_user_provider
+    provider = read_user_provider(uuid)
     return {
         "id": uuid,
         "display_name": profile.get("display_name"),
+        "provider": provider,
         "profile": profile,
         "onboarding": onboarding,
     }
