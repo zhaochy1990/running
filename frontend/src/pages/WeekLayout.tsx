@@ -461,6 +461,14 @@ function StrengthTab({
   }
   return (
     <div className="space-y-6 animate-fade-in">
+      <div className="border border-accent-red/40 bg-accent-red/10 rounded-xl p-3 sm:p-4">
+        <p className="text-xs sm:text-sm text-accent-red leading-relaxed">
+          <strong>⚠️ 注意：</strong>
+          动作清单优先匹配 COROS 内置动作库（推送到手表后有官方动画指导），
+          但本页展示的<strong>动作示意图为 AI 生成</strong>，可能存在解剖错误、姿态偏差或方向反转。
+          请<strong>仔细鉴别</strong>后再依图执行；以动作要点 / 发力部位文字描述为准，必要时参考手表内置动画或专业视频。
+        </p>
+      </div>
       {data.sessions.map((sess) => (
         <div
           key={`${sess.date}-${sess.session_index}`}
