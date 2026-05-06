@@ -1,46 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Root app widget.
-///
-/// S1 baseline: just a placeholder splash screen so `flutter analyze`
-/// passes and the app launches without crashing. The real router,
-/// theme, and feature screens land in S2 (theme + scaffold) and onward.
-class StrideApp extends StatelessWidget {
+import 'core/router/app_router.dart';
+import 'core/theme/app_theme.dart';
+
+class StrideApp extends ConsumerWidget {
   const StrideApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
+  Widget build(BuildContext context, WidgetRef ref) {
+    final router = ref.watch(appRouterProvider);
+    return MaterialApp.router(
       title: 'STRIDE',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF00E676),
-          brightness: Brightness.light,
-        ),
-      ),
-      home: const _BootstrapScreen(),
-    );
-  }
-}
-
-class _BootstrapScreen extends StatelessWidget {
-  const _BootstrapScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: Text(
-          'STRIDE',
-          style: TextStyle(
-            fontSize: 48,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 8,
-          ),
-        ),
-      ),
+      theme: AppTheme.light(),
+      routerConfig: router,
     );
   }
 }

@@ -1,4 +1,4 @@
-package cn.striderunning.stride
+package cn.striderunning.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -18,9 +18,8 @@ dependencies:
   flutter_riverpod: ^2.6.1
   riverpod_annotation: ^2.6.1
 
-  # HTTP client + typed REST services
+  # HTTP client (no retrofit codegen — per plan O3 'hand-write everything')
   dio: ^5.7.0
-  retrofit: ^4.4.1
 
   # Serialization
   json_annotation: ^4.9.0
@@ -62,7 +61,6 @@ dev_dependencies:
   # Codegen
   build_runner: ^2.4.13
   json_serializable: ^6.8.0
-  retrofit_generator: ^9.1.4
   drift_dev: ^2.21.0
   riverpod_generator: ^2.6.3
   custom_lint: ^0.7.0
@@ -77,20 +75,21 @@ flutter:
   assets:
     - assets/branding/
 
-  # Geist Sans + Mono fonts (bundled to avoid runtime fetch).
-  # Files added to assets/fonts/ in S2 (theme + scaffold).
-  # Stub here so the asset declaration exists; weight files added later.
-  # fonts:
-  #   - family: GeistSans
-  #     fonts:
-  #       - asset: assets/fonts/Geist-Regular.ttf
-  #       - asset: assets/fonts/Geist-Bold.ttf
-  #         weight: 700
-  #   - family: GeistMono
-  #     fonts:
-  #       - asset: assets/fonts/GeistMono-Regular.ttf
-  #       - asset: assets/fonts/GeistMono-Bold.ttf
-  #         weight: 700
+  fonts:
+    - family: GeistSans
+      fonts:
+        - asset: assets/fonts/Geist-Regular.ttf
+        - asset: assets/fonts/Geist-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Geist-Bold.ttf
+          weight: 700
+    - family: GeistMono
+      fonts:
+        - asset: assets/fonts/GeistMono-Regular.ttf
+        - asset: assets/fonts/GeistMono-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/GeistMono-Bold.ttf
+          weight: 700
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Launcher icons (Android only for v1; iOS Phase 2)

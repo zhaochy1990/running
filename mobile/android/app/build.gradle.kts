@@ -20,14 +20,18 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "cn.striderunning.app"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 26  // Android 8.0 (Oreo) — Health Connect-eligible, ~98% device coverage. Decided in plan O2.
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // JPush 极光推送 manifest placeholders.
+        // Real production AppKey: ab305c4addc8f9aa2b5efb4c (public; OK to commit).
+        // Master Secret is server-side only (Azure Key Vault).
+        // Per plan O5/F2: dev/prod use the same AppKey for v1.
+        manifestPlaceholders["JPUSH_APPKEY"] = "ab305c4addc8f9aa2b5efb4c"
+        manifestPlaceholders["JPUSH_CHANNEL"] = "default"
     }
 
     buildTypes {
