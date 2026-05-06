@@ -509,38 +509,34 @@ function StrengthExerciseCard({
 
   return (
     <div className="border border-border-subtle rounded-xl p-3 sm:p-4 bg-bg-secondary/40">
-      <div className="flex flex-col sm:flex-row gap-4">
-        {image_url && (
-          <div className="flex-shrink-0 w-full sm:w-48">
-            <img
-              src={image_url}
-              alt={display_name}
-              loading="lazy"
-              className="w-full h-auto rounded-lg bg-white object-contain border border-border-subtle"
-            />
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline justify-between gap-3">
-            <h3 className="text-sm font-semibold text-text-primary">{display_name}</h3>
-            <span className="text-xs font-mono text-accent-green whitespace-nowrap">
-              {setLine}
-            </span>
-          </div>
-          {note && (
-            <p className="mt-1 text-xs font-mono text-text-muted">{note}</p>
-          )}
-          {key_points.length > 0 && (
-            <DetailBlock title="动作要点" items={key_points} />
-          )}
-          {muscle_focus.length > 0 && (
-            <DetailBlock title="发力部位" items={muscle_focus} inline />
-          )}
-          {common_mistakes.length > 0 && (
-            <DetailBlock title="常见错误" items={common_mistakes} accent="red" />
-          )}
-        </div>
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold text-text-primary">{display_name}</h3>
+        <span className="text-xs font-mono text-accent-green whitespace-nowrap">
+          {setLine}
+        </span>
       </div>
+      {image_url && (
+        <div className="mt-3 w-full max-w-md mx-auto">
+          <img
+            src={image_url}
+            alt={display_name}
+            loading="lazy"
+            className="w-full h-auto rounded-lg bg-white object-contain border border-border-subtle"
+          />
+        </div>
+      )}
+      {note && (
+        <p className="mt-3 text-xs font-mono text-text-muted">{note}</p>
+      )}
+      {key_points.length > 0 && (
+        <DetailBlock title="动作要点" items={key_points} />
+      )}
+      {muscle_focus.length > 0 && (
+        <DetailBlock title="发力部位" items={muscle_focus} inline />
+      )}
+      {common_mistakes.length > 0 && (
+        <DetailBlock title="常见错误" items={common_mistakes} accent="red" />
+      )}
     </div>
   )
 }
