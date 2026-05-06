@@ -1,0 +1,8 @@
+# Copy this file to key.properties and fill in real values for release signing.
+# key.properties is gitignored — never commit real signing credentials.
+# Used by android/app/build.gradle.kts to sign release APK/AAB builds.
+
+storePassword=<keystore password>
+keyPassword=<key password>
+keyAlias=upload
+storeFile=<absolute path to keystore .jks file>

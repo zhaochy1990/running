@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    STRIDE — icon-adaptive-foreground.svg
+    S glyph extracted from Geist Mono Bold (Vercel OFL) via fonttools.
+    Transparent background — foreground layer for Android adaptive icon.
+
+    Android adaptive icon safe zone: central 66.7% = 682×682px of 1024×1024
+    Safe zone: x=171..853, y=171..853
+
+    Base transform (icon-dark): translate(271.155,777) scale(0.802817,-0.802817)
+    → S occupies approx x=305..750, y=207..777 (470px wide, 570px tall)
+
+    Adaptive scale: 0.60 of base, applied around canvas center (512,512).
+    Combined transform = translate(512,512) scale(0.60) translate(-512,-512)
+      then compose with base: effectively
+      translate(512 + 0.60*(271.155-512), 512 + 0.60*(777-512))
+        scale(0.60*0.802817, 0.60*-0.802817)
+      = translate(512 - 144.507, 512 + 159)
+        scale(0.481690, -0.481690)
+      = translate(367.493, 671) scale(0.481690,-0.481690)
+
+    Underline base: x=283.20, y=827, w=457.61, h=40
+    Scaled around center(512,512):
+      new_x = 512 + 0.60*(283.20 - 512) = 512 - 137.28 = 374.72
+      new_y = 512 + 0.60*(827 - 512) = 512 + 189 = 701
+      new_w = 457.61 * 0.60 = 274.57
+      new_h = 40 * 0.60 = 24
+      rx = 4 (keep crisp)
+
+    S fill: #ffffff (assumes dark adaptive background #0a0a0a)
+    Underline: #00e676 accent
+  -->
+  <g transform="translate(367.493,671.000) scale(0.481690,-0.481690)">
+    <path fill="#ffffff" d="M306 -16Q185 -16 117.5 52.5Q50 121 42 240L184 247Q203 110 313 110Q361 110 387.5 130.0Q414 150 414 188Q414 215 401.0 235.0Q388 255 355.5 271.5Q323 288 264 304Q193 323 147.0 348.5Q101 374 78.5 413.0Q56 452 56 511Q56 609 119.5 667.5Q183 726 300 726Q414 726 478.0 663.5Q542 601 550 488L406 481Q399 537 370.5 568.5Q342 600 294 600Q251 600 225.5 578.5Q200 557 200 520Q200 494 212.5 476.0Q225 458 256.5 443.5Q288 429 343 414Q424 393 471.0 363.0Q518 333 538.0 291.0Q558 249 558 194Q558 98 491.0 41.0Q424 -16 306 -16Z"/>
+  </g>
+  <rect x="374.72" y="701.00" width="274.57" height="24" rx="4" fill="#00e676"/>
+</svg>

@@ -1,0 +1,106 @@
+name: stride
+description: "STRIDE running training mobile app"
+publish_to: 'none'
+
+# CalVer aligned with auth-service / web app: YEAR.MONTH.MICRO+BUILD
+version: 2026.5.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # HTTP client + typed REST services
+  dio: ^5.7.0
+  retrofit: ^4.4.1
+
+  # Serialization
+  json_annotation: ^4.9.0
+
+  # Local DB / cache
+  drift: ^2.21.0
+  sqlite3_flutter_libs: ^0.5.27
+  path_provider: ^2.1.5
+  path: ^1.9.0
+
+  # Charts (HR / pace / altitude / zones)
+  fl_chart: ^0.69.0
+
+  # Routing
+  go_router: ^14.6.2
+
+  # Secure storage (auth refresh tokens)
+  flutter_secure_storage: ^9.2.2
+
+  # Push notifications (JPush 极光推送)
+  jpush_flutter: ^3.1.4
+
+  # Connectivity awareness for offline banner
+  connectivity_plus: ^6.1.0
+
+  # Logging
+  logger: ^2.5.0
+
+  # Open system app settings (denied-state notification UX deep-link)
+  app_settings: ^5.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Lints — flutter_lints (baseline) + extra strict lints can be added later
+  flutter_lints: ^6.0.0
+
+  # Codegen
+  build_runner: ^2.4.13
+  json_serializable: ^6.8.0
+  retrofit_generator: ^9.1.4
+  drift_dev: ^2.21.0
+  riverpod_generator: ^2.6.3
+  custom_lint: ^0.7.0
+  riverpod_lint: ^2.6.3
+
+  # Launcher icon generator
+  flutter_launcher_icons: ^0.14.1
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/branding/
+
+  # Geist Sans + Mono fonts (bundled to avoid runtime fetch).
+  # Files added to assets/fonts/ in S2 (theme + scaffold).
+  # Stub here so the asset declaration exists; weight files added later.
+  # fonts:
+  #   - family: GeistSans
+  #     fonts:
+  #       - asset: assets/fonts/Geist-Regular.ttf
+  #       - asset: assets/fonts/Geist-Bold.ttf
+  #         weight: 700
+  #   - family: GeistMono
+  #     fonts:
+  #       - asset: assets/fonts/GeistMono-Regular.ttf
+  #       - asset: assets/fonts/GeistMono-Bold.ttf
+  #         weight: 700
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Launcher icons (Android only for v1; iOS Phase 2)
+# Generates mipmap-* PNGs from the source.
+# Run: dart run flutter_launcher_icons
+# ─────────────────────────────────────────────────────────────────────────────
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/branding/icon-1024.png"
+  adaptive_icon_background: "#0a0a0a"
+  adaptive_icon_foreground: "assets/branding/icon-adaptive-foreground.png"
+  min_sdk_android: 26

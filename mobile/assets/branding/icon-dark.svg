@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    STRIDE — icon-dark.svg
+    S glyph extracted from Geist Mono Bold (Vercel OFL) via fonttools.
+    Font metrics: units_per_em=1000, cap_height=710, advance_width=600
+    Glyph bounds: xMin=42 yMin=-16 xMax=558 yMax=726
+    Transform: translate(271.155,777) scale(0.802817,-0.802817)
+      - scale(s,-s) flips Y axis (font: Y-up → SVG: Y-down)
+      - ty=777 places cap-height top at y=207 (optical center nudge -20px)
+      - tx=271.155 centers advance-width cell horizontally
+    Underline: width = advance_width*scale*0.95 = 457.6px, centered on cell,
+      y=827 (50px below baseline at y=777), h=40, rx=4
+  -->
+  <rect width="1024" height="1024" fill="#0a0a0a"/>
+  <g transform="translate(271.155,777.000) scale(0.802817,-0.802817)">
+    <path fill="#ffffff" d="M306 -16Q185 -16 117.5 52.5Q50 121 42 240L184 247Q203 110 313 110Q361 110 387.5 130.0Q414 150 414 188Q414 215 401.0 235.0Q388 255 355.5 271.5Q323 288 264 304Q193 323 147.0 348.5Q101 374 78.5 413.0Q56 452 56 511Q56 609 119.5 667.5Q183 726 300 726Q414 726 478.0 663.5Q542 601 550 488L406 481Q399 537 370.5 568.5Q342 600 294 600Q251 600 225.5 578.5Q200 557 200 520Q200 494 212.5 476.0Q225 458 256.5 443.5Q288 429 343 414Q424 393 471.0 363.0Q518 333 538.0 291.0Q558 249 558 194Q558 98 491.0 41.0Q424 -16 306 -16Z"/>
+  </g>
+  <rect x="283.20" y="827.00" width="457.61" height="40" rx="4" fill="#00e676"/>
+</svg>

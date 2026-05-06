@@ -1,0 +1,12 @@
+# Copy this file to jpush.properties and fill in the real AppKey.
+# jpush.properties is gitignored.
+# Master Secret is NEVER stored client-side — it lives in Azure Key Vault
+# (stride-kv-common/jpush-master-secret) and is read by the backend only.
+
+JPUSH_APPKEY=<极光推送 AppKey from console — public, but kept here for build-time injection>
+
+# OEM channel app IDs (filled in after registering on each OEM platform):
+# XIAOMI_APPID=
+# XIAOMI_APPKEY=
+# HUAWEI_APPID=
+# HONOR_APPID=
