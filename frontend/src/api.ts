@@ -829,6 +829,12 @@ export function getWeek(user: string, folder: string) {
   return fetchJSON<WeekDetail>(`/${user}/weeks/${folder}`)
 }
 
+export function getWeekStrength(user: string, folder: string) {
+  return fetchJSON<import('./types/strength').StrengthTabResponse>(
+    `/${user}/weeks/${folder}/strength`,
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Plan API — structured weekly-plan calendar / push / reparse
 // ---------------------------------------------------------------------------

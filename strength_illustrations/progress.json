@@ -1,0 +1,2635 @@
+{
+  "runs": [
+    {
+      "started_at_utc": "2026-05-02T13:08:23Z",
+      "completed_at_utc": "2026-05-02T13:39:15Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 1851.9,
+      "force": [],
+      "only": null,
+      "results": [
+        {
+          "code": "T1078",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 229.3315713405609,
+          "path": "data\\strength_illustrations\\output\\T1078\\v1.png"
+        },
+        {
+          "code": "T1061",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 231.62806820869446,
+          "path": "data\\strength_illustrations\\output\\T1061\\v1.png"
+        },
+        {
+          "code": "T1167",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 232.52315640449524,
+          "path": "data\\strength_illustrations\\output\\T1167\\v1.png"
+        },
+        {
+          "code": "T1164",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 234.09867644309998,
+          "path": "data\\strength_illustrations\\output\\T1164\\v1.png"
+        },
+        {
+          "code": "T1231",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 226.73163390159607,
+          "path": "data\\strength_illustrations\\output\\T1231\\v1.png"
+        },
+        {
+          "code": "T1188",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 233.32977414131165,
+          "path": "data\\strength_illustrations\\output\\T1188\\v1.png"
+        },
+        {
+          "code": "T1217",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 243.63527059555054,
+          "path": "data\\strength_illustrations\\output\\T1217\\v1.png"
+        },
+        {
+          "code": "T1144",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 245.62540864944458,
+          "path": "data\\strength_illustrations\\output\\T1144\\v1.png"
+        },
+        {
+          "code": "T1225",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 218.03631067276,
+          "path": "data\\strength_illustrations\\output\\T1225\\v1.png"
+        },
+        {
+          "code": "T1136",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 228.30882596969604,
+          "path": "data\\strength_illustrations\\output\\T1136\\v1.png"
+        },
+        {
+          "code": "T1226",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 246.3772041797638,
+          "path": "data\\strength_illustrations\\output\\T1226\\v1.png"
+        },
+        {
+          "code": "T1138",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 249.92856287956238,
+          "path": "data\\strength_illustrations\\output\\T1138\\v1.png"
+        },
+        {
+          "code": "T1132",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 219.62145566940308,
+          "path": "data\\strength_illustrations\\output\\T1132\\v1.png"
+        },
+        {
+          "code": "T1219",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 227.909282207489,
+          "path": "data\\strength_illustrations\\output\\T1219\\v1.png"
+        },
+        {
+          "code": "T1229",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 224.88790488243103,
+          "path": "data\\strength_illustrations\\output\\T1229\\v1.png"
+        },
+        {
+          "code": "T1233",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 242.808575630188,
+          "path": "data\\strength_illustrations\\output\\T1233\\v1.png"
+        },
+        {
+          "code": "T1317",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 222.484365940094,
+          "path": "data\\strength_illustrations\\output\\T1317\\v1.png"
+        },
+        {
+          "code": "T1013",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 240.46962881088257,
+          "path": "data\\strength_illustrations\\output\\T1013\\v1.png"
+        },
+        {
+          "code": "T1128",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 219.39982223510742,
+          "path": "data\\strength_illustrations\\output\\T1128\\v1.png"
+        },
+        {
+          "code": "T1212",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 217.57637429237366,
+          "path": "data\\strength_illustrations\\output\\T1212\\v1.png"
+        },
+        {
+          "code": "T1213",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 234.92596983909607,
+          "path": "data\\strength_illustrations\\output\\T1213\\v1.png"
+        },
+        {
+          "code": "T1236",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 221.30368542671204,
+          "path": "data\\strength_illustrations\\output\\T1236\\v1.png"
+        },
+        {
+          "code": "T1218",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 225.61240577697754,
+          "path": "data\\strength_illustrations\\output\\T1218\\v1.png"
+        },
+        {
+          "code": "T1273",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 241.1570179462433,
+          "path": "data\\strength_illustrations\\output\\T1273\\v1.png"
+        },
+        {
+          "code": "T1166",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 213.57158184051514,
+          "path": "data\\strength_illustrations\\output\\T1166\\v1.png"
+        },
+        {
+          "code": "T1116",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 238.11149406433105,
+          "path": "data\\strength_illustrations\\output\\T1116\\v1.png"
+        },
+        {
+          "code": "T1222",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 241.64711356163025,
+          "path": "data\\strength_illustrations\\output\\T1222\\v1.png"
+        },
+        {
+          "code": "T1070",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 227.48344373703003,
+          "path": "data\\strength_illustrations\\output\\T1070\\v1.png"
+        },
+        {
+          "code": "T1221",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 236.18353819847107,
+          "path": "data\\strength_illustrations\\output\\T1221\\v1.png"
+        },
+        {
+          "code": "T1255",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 236.44456028938293,
+          "path": "data\\strength_illustrations\\output\\T1255\\v1.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-02T13:41:32Z",
+      "completed_at_utc": "2026-05-02T13:56:36Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 904.2,
+      "force": [],
+      "only": null,
+      "results": [
+        {
+          "code": "T1061",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1167",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1078",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1164",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1188",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1231",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1217",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1144",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1226",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1136",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1225",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1219",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1138",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1132",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1229",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1317",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1233",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1013",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1212",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1128",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1213",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1236",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1218",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1273",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1166",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1116",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1070",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1222",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1221",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1255",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1137",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 217.30269527435303,
+          "path": "data\\strength_illustrations\\output\\T1137\\v1.png"
+        },
+        {
+          "code": "T1160",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 218.56873559951782,
+          "path": "data\\strength_illustrations\\output\\T1160\\v1.png"
+        },
+        {
+          "code": "T1133",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 229.04326820373535,
+          "path": "data\\strength_illustrations\\output\\T1133\\v1.png"
+        },
+        {
+          "code": "T1141",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 229.72510027885437,
+          "path": "data\\strength_illustrations\\output\\T1141\\v1.png"
+        },
+        {
+          "code": "T1139",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 237.23273134231567,
+          "path": "data\\strength_illustrations\\output\\T1139\\v1.png"
+        },
+        {
+          "code": "T1214",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 227.41753149032593,
+          "path": "data\\strength_illustrations\\output\\T1214\\v1.png"
+        },
+        {
+          "code": "T1174",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 247.48337388038635,
+          "path": "data\\strength_illustrations\\output\\T1174\\v1.png"
+        },
+        {
+          "code": "T1175",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 244.15023255348206,
+          "path": "data\\strength_illustrations\\output\\T1175\\v1.png"
+        },
+        {
+          "code": "T1260",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 201.72538375854492,
+          "path": "data\\strength_illustrations\\output\\T1260\\v1.png"
+        },
+        {
+          "code": "T1263",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 209.7101171016693,
+          "path": "data\\strength_illustrations\\output\\T1263\\v1.png"
+        },
+        {
+          "code": "T1224",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 232.72157669067383,
+          "path": "data\\strength_illustrations\\output\\T1224\\v1.png"
+        },
+        {
+          "code": "T1275",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 230.47401332855225,
+          "path": "data\\strength_illustrations\\output\\T1275\\v1.png"
+        },
+        {
+          "code": "T1153",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 216.29319739341736,
+          "path": "data\\strength_illustrations\\output\\T1153\\v1.png"
+        },
+        {
+          "code": "T1130",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 221.2686264514923,
+          "path": "data\\strength_illustrations\\output\\T1130\\v1.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-02T13:58:15Z",
+      "completed_at_utc": "2026-05-02T14:17:38Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 1163.9,
+      "force": [],
+      "only": null,
+      "results": [
+        {
+          "code": "T1078",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1061",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1167",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1164",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1217",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1188",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1136",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1231",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1144",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1225",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1226",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1138",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1132",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1219",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1229",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1317",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1233",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1013",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1128",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1212",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1213",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1273",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1236",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1218",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1116",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1222",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1070",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1166",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1133",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1221",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1255",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1141",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1160",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1137",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1139",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1214",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1174",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1175",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1224",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1260",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1263",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1153",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1275",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1130",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1185",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 226.5048463344574,
+          "path": "data\\strength_illustrations\\output\\T1185\\v1.png"
+        },
+        {
+          "code": "T1216",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 229.92990565299988,
+          "path": "data\\strength_illustrations\\output\\T1216\\v1.png"
+        },
+        {
+          "code": "T1243",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 238.48745465278625,
+          "path": "data\\strength_illustrations\\output\\T1243\\v1.png"
+        },
+        {
+          "code": "T1010",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 243.87958097457886,
+          "path": "data\\strength_illustrations\\output\\T1010\\v1.png"
+        },
+        {
+          "code": "T1006",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 209.84924745559692,
+          "path": "data\\strength_illustrations\\output\\T1006\\v1.png"
+        },
+        {
+          "code": "T1249",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 216.70705342292786,
+          "path": "data\\strength_illustrations\\output\\T1249\\v1.png"
+        },
+        {
+          "code": "T1149",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 243.8397650718689,
+          "path": "data\\strength_illustrations\\output\\T1149\\v1.png"
+        },
+        {
+          "code": "T1076",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 239.0617377758026,
+          "path": "data\\strength_illustrations\\output\\T1076\\v1.png"
+        },
+        {
+          "code": "T1183",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 226.00953078269958,
+          "path": "data\\strength_illustrations\\output\\T1183\\v1.png"
+        },
+        {
+          "code": "T1239",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 233.77805733680725,
+          "path": "data\\strength_illustrations\\output\\T1239\\v1.png"
+        },
+        {
+          "code": "T1241",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 202.9516875743866,
+          "path": "data\\strength_illustrations\\output\\T1241\\v1.png"
+        },
+        {
+          "code": "T1004",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 209.5600073337555,
+          "path": "data\\strength_illustrations\\output\\T1004\\v1.png"
+        },
+        {
+          "code": "T1245",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 199.45945143699646,
+          "path": "data\\strength_illustrations\\output\\T1245\\v1.png"
+        },
+        {
+          "code": "T1235",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 200.678209066391,
+          "path": "data\\strength_illustrations\\output\\T1235\\v1.png"
+        },
+        {
+          "code": "T1277",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 236.8049829006195,
+          "path": "data\\strength_illustrations\\output\\T1277\\v1.png"
+        },
+        {
+          "code": "T1278",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 234.54898524284363,
+          "path": "data\\strength_illustrations\\output\\T1278\\v1.png"
+        },
+        {
+          "code": "T1279",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 206.65896105766296,
+          "path": "data\\strength_illustrations\\output\\T1279\\v1.png"
+        },
+        {
+          "code": "T1280",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 202.7456669807434,
+          "path": "data\\strength_illustrations\\output\\T1280\\v1.png"
+        },
+        {
+          "code": "T1248",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 236.59898734092712,
+          "path": "data\\strength_illustrations\\output\\T1248\\v1.png"
+        },
+        {
+          "code": "T1262",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 237.4461019039154,
+          "path": "data\\strength_illustrations\\output\\T1262\\v1.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-02T14:29:58Z",
+      "completed_at_utc": "2026-05-02T14:48:58Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 1139.4,
+      "force": [
+        "T1070",
+        "T1076",
+        "T1141",
+        "T1174",
+        "T1175",
+        "T1213",
+        "T1214",
+        "T1216",
+        "T1219",
+        "T1236",
+        "T1239",
+        "T1243",
+        "T1260",
+        "T1273",
+        "T1275",
+        "T1278",
+        "T1279",
+        "T1280"
+      ],
+      "only": null,
+      "results": [
+        {
+          "code": "T1061",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1078",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1167",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1164",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1217",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1188",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1231",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1144",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1136",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1225",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1226",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1138",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1132",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1233",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1229",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1317",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1128",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1212",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1013",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1218",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1236",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 234.02452564239502,
+          "path": "data\\strength_illustrations\\output\\T1236\\v2.png"
+        },
+        {
+          "code": "T1166",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1116",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1222",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1213",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 236.6852252483368,
+          "path": "data\\strength_illustrations\\output\\T1213\\v2.png"
+        },
+        {
+          "code": "T1221",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1255",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1133",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1219",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 237.5589587688446,
+          "path": "data\\strength_illustrations\\output\\T1219\\v2.png"
+        },
+        {
+          "code": "T1160",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1137",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1139",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1273",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 238.6264727115631,
+          "path": "data\\strength_illustrations\\output\\T1273\\v2.png"
+        },
+        {
+          "code": "T1070",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 202.4665651321411,
+          "path": "data\\strength_illustrations\\output\\T1070\\v2.png"
+        },
+        {
+          "code": "T1175",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 198.69430947303772,
+          "path": "data\\strength_illustrations\\output\\T1175\\v2.png"
+        },
+        {
+          "code": "T1224",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1141",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 211.32367324829102,
+          "path": "data\\strength_illustrations\\output\\T1141\\v2.png"
+        },
+        {
+          "code": "T1174",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 212.48107194900513,
+          "path": "data\\strength_illustrations\\output\\T1174\\v2.png"
+        },
+        {
+          "code": "T1263",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1153",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1130",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1010",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1185",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1275",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 210.06294536590576,
+          "path": "data\\strength_illustrations\\output\\T1275\\v2.png"
+        },
+        {
+          "code": "T1214",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 228.19864988327026,
+          "path": "data\\strength_illustrations\\output\\T1214\\v2.png"
+        },
+        {
+          "code": "T1249",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1006",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1149",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1260",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 230.4410252571106,
+          "path": "data\\strength_illustrations\\output\\T1260\\v2.png"
+        },
+        {
+          "code": "T1183",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1216",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 218.49498343467712,
+          "path": "data\\strength_illustrations\\output\\T1216\\v2.png"
+        },
+        {
+          "code": "T1004",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1241",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1245",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1235",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1277",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1076",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 234.29236316680908,
+          "path": "data\\strength_illustrations\\output\\T1076\\v2.png"
+        },
+        {
+          "code": "T1243",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 244.74540281295776,
+          "path": "data\\strength_illustrations\\output\\T1243\\v2.png"
+        },
+        {
+          "code": "T1278",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 245.3699288368225,
+          "path": "data\\strength_illustrations\\output\\T1278\\v2.png"
+        },
+        {
+          "code": "T1248",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1262",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1239",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 248.16587352752686,
+          "path": "data\\strength_illustrations\\output\\T1239\\v2.png"
+        },
+        {
+          "code": "T1280",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 187.52490139007568,
+          "path": "data\\strength_illustrations\\output\\T1280\\v2.png"
+        },
+        {
+          "code": "T1279",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 240.41664242744446,
+          "path": "data\\strength_illustrations\\output\\T1279\\v2.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-02T14:53:50Z",
+      "completed_at_utc": "2026-05-02T15:00:59Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 428.8,
+      "force": [
+        "T1070",
+        "T1076",
+        "T1219",
+        "T1243",
+        "T1275"
+      ],
+      "only": null,
+      "results": [
+        {
+          "code": "T1061",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1078",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1164",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1167",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1217",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1231",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1188",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1144",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1226",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1136",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1138",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1225",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1132",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1233",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1229",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1317",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1212",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1128",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1013",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1213",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1236",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1218",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1273",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1116",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1166",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1222",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1221",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1255",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1141",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1133",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1160",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1137",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1174",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1139",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1175",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1214",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1224",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1260",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1263",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1153",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1130",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1010",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1185",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1216",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1219",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 212.58358788490295,
+          "path": "data\\strength_illustrations\\output\\T1219\\v3.png"
+        },
+        {
+          "code": "T1249",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1006",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1149",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1070",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 218.53164076805115,
+          "path": "data\\strength_illustrations\\output\\T1070\\v3.png"
+        },
+        {
+          "code": "T1183",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1239",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1004",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1241",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1245",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1235",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1277",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1278",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1279",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1280",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1248",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1262",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1243",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 225.71085381507874,
+          "path": "data\\strength_illustrations\\output\\T1243\\v3.png"
+        },
+        {
+          "code": "T1275",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 228.25057291984558,
+          "path": "data\\strength_illustrations\\output\\T1275\\v3.png"
+        },
+        {
+          "code": "T1076",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 216.22486186027527,
+          "path": "data\\strength_illustrations\\output\\T1076\\v3.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-04T08:09:12Z",
+      "completed_at_utc": "2026-05-04T08:28:29Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 1157.1,
+      "force": [
+        "T1174",
+        "T1175",
+        "T1214",
+        "T1236",
+        "T1260",
+        "T1273"
+      ],
+      "only": null,
+      "results": [
+        {
+          "code": "T1061",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1078",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1167",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1164",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1217",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1188",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1231",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1144",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1225",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1226",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1136",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1138",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1132",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1229",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1219",
+          "status": "skip",
+          "version": 3,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1013",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1128",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1233",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1317",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1212",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1218",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1213",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1166",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1116",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1222",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1070",
+          "status": "skip",
+          "version": 3,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1221",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1255",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1133",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1141",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1160",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1137",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1139",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1273",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 216.90754318237305,
+          "path": "data\\strength_illustrations\\output\\T1273\\v3.png"
+        },
+        {
+          "code": "T1236",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 225.49666500091553,
+          "path": "data\\strength_illustrations\\output\\T1236\\v3.png"
+        },
+        {
+          "code": "T1224",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1175",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 230.003338098526,
+          "path": "data\\strength_illustrations\\output\\T1175\\v3.png"
+        },
+        {
+          "code": "T1275",
+          "status": "skip",
+          "version": 3,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1263",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1153",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1130",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1010",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1185",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1216",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1243",
+          "status": "skip",
+          "version": 3,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1249",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1006",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1149",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1076",
+          "status": "skip",
+          "version": 3,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1183",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1239",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1004",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1241",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1245",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1235",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1277",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1278",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1279",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1280",
+          "status": "skip",
+          "version": 2,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1248",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1262",
+          "status": "skip",
+          "version": 1,
+          "elapsed_s": 0.0
+        },
+        {
+          "code": "T1174",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 247.87302947044373,
+          "path": "data\\strength_illustrations\\output\\T1174\\v3.png"
+        },
+        {
+          "code": "T1214",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 217.67252373695374,
+          "path": "data\\strength_illustrations\\output\\T1214\\v3.png"
+        },
+        {
+          "code": "T1368",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 206.8569884300232,
+          "path": "data\\strength_illustrations\\output\\T1368\\v1.png"
+        },
+        {
+          "code": "T1260",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 241.14117646217346,
+          "path": "data\\strength_illustrations\\output\\T1260\\v3.png"
+        },
+        {
+          "code": "T1244",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 243.05729031562805,
+          "path": "data\\strength_illustrations\\output\\T1244\\v1.png"
+        },
+        {
+          "code": "T1274",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 223.292738199234,
+          "path": "data\\strength_illustrations\\output\\T1274\\v1.png"
+        },
+        {
+          "code": "T1234",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 224.7145380973816,
+          "path": "data\\strength_illustrations\\output\\T1234\\v1.png"
+        },
+        {
+          "code": "T1326",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 235.7864489555359,
+          "path": "data\\strength_illustrations\\output\\T1326\\v1.png"
+        },
+        {
+          "code": "T1327",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 220.3302447795868,
+          "path": "data\\strength_illustrations\\output\\T1327\\v1.png"
+        },
+        {
+          "code": "SL_WALLSIT",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 244.82593488693237,
+          "path": "data\\strength_illustrations\\output\\SL_WALLSIT\\v1.png"
+        },
+        {
+          "code": "T1318",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 248.4985625743866,
+          "path": "data\\strength_illustrations\\output\\T1318\\v1.png"
+        },
+        {
+          "code": "T1345",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 250.96097087860107,
+          "path": "data\\strength_illustrations\\output\\T1345\\v1.png"
+        },
+        {
+          "code": "T1259",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 246.83259057998657,
+          "path": "data\\strength_illustrations\\output\\T1259\\v1.png"
+        },
+        {
+          "code": "T1103",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 243.4960000514984,
+          "path": "data\\strength_illustrations\\output\\T1103\\v1.png"
+        },
+        {
+          "code": "HIP_9090",
+          "status": "ok",
+          "version": 1,
+          "elapsed_s": 247.0062427520752,
+          "path": "data\\strength_illustrations\\output\\HIP_9090\\v1.png"
+        }
+      ]
+    }
+  ],
+  "by_code": {
+    "T1078": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1061": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1167": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1164": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1231": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1188": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1217": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1144": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1225": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1136": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1226": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1138": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1132": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1219": {
+      "latest_version": 3,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1229": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1233": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1317": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1013": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1128": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1212": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1213": {
+      "latest_version": 2,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1236": {
+      "latest_version": 3,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1218": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1273": {
+      "latest_version": 3,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1166": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1116": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1222": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1070": {
+      "latest_version": 3,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1221": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1255": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1137": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1160": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1133": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1141": {
+      "latest_version": 2,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1139": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1214": {
+      "latest_version": 3,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1174": {
+      "latest_version": 3,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1175": {
+      "latest_version": 3,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1260": {
+      "latest_version": 3,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1263": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1224": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1275": {
+      "latest_version": 3,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1153": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1130": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1185": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1216": {
+      "latest_version": 2,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1243": {
+      "latest_version": 3,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1010": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1006": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1249": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1149": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1076": {
+      "latest_version": 3,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1183": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1239": {
+      "latest_version": 2,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1241": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1004": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1245": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1235": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1277": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1278": {
+      "latest_version": 2,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1279": {
+      "latest_version": 2,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1280": {
+      "latest_version": 2,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1248": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1262": {
+      "latest_version": 1,
+      "last_status": "skip",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1368": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1244": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1274": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1234": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1326": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1327": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "SL_WALLSIT": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1318": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1345": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1259": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "T1103": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    },
+    "HIP_9090": {
+      "latest_version": 1,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-04T08:28:29Z"
+    }
+  }
+}

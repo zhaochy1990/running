@@ -9,6 +9,8 @@ node_modules
 frontend/node_modules
 data/
 !data/*/TRAINING_PLAN.md
+# strength_illustrations/ at project root is image library, ships with image
+# (already not excluded; explicit comment for clarity)
 tests/
 *.db
 *.db-wal

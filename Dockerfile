@@ -46,6 +46,10 @@ COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 # Copy training plans as defaults (Azure Files mount may overlay at runtime)
 COPY data/ ./data/
 
+# Strength illustration library — ships baked into the image (image data,
+# not per-user data; not affected by the data/ Azure Files mount).
+COPY strength_illustrations/ ./strength_illustrations/
+
 # Source code stays at /app/src, PYTHONPATH makes it importable
 ENV PYTHONPATH=/app/src
 

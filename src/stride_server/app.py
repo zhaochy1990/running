@@ -11,12 +11,14 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from stride_core.registry import ProviderRegistry
 from stride_core.source import DataSource
 
 from .bearer import _load_public_key, is_dev_mode, require_bearer, verify_path_user
-from .routes import account, ability, activities, health, inbody, likes, onboarding, plan, plan_variants, profile, public, sync, teams, training_plan, users, weeks, workouts
+from .deps import PROJECT_ROOT
+from .routes import account, ability, activities, health, inbody, likes, onboarding, plan, plan_variants, profile, public, strength, sync, teams, training_plan, users, weeks, workouts
 from .static import mount_frontend
 
 
@@ -88,11 +90,23 @@ def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
     app.include_router(workouts.router, dependencies=protected_user)
     app.include_router(plan.router, dependencies=protected_user)
     app.include_router(plan_variants.router, dependencies=protected_user)
+    app.include_router(strength.router, dependencies=protected_user)
 
     # Internal webhook router — gated by X-Internal-Token, NOT bearer JWT.
     # Path is /internal/... (not /api/internal/...) so future bearer-prefix
     # middleware on /api/* cannot accidentally catch it.
     app.include_router(plan.internal_router)
+
+    # Curated strength-illustration library — public static assets baked
+    # into the image. Mount BEFORE the SPA fallback so the catch-all in
+    # static.py doesn't swallow these paths.
+    strength_lib_dir = PROJECT_ROOT / "strength_illustrations" / "output"
+    if strength_lib_dir.exists():
+        app.mount(
+            "/strength_illustrations/output",
+            StaticFiles(directory=strength_lib_dir),
+            name="strength_illustrations",
+        )
 
     # SPA fallback must be last so it doesn't swallow /api/* paths.
     mount_frontend(app)

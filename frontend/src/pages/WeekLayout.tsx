@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  getWeeks, getWeek, updateWeeklyFeedback,
+  getWeeks, getWeek, getWeekStrength, updateWeeklyFeedback,
   getPlanDays, pushPlannedSession, reparsePlan,
   formatWeekRange, formatDateShort, weekdayCN,
   sportColor, sportNameCN, trainTypeColor, trainTypeCN,
@@ -12,12 +12,13 @@ import {
   type PlannedSessionRow, type PlanDay, type MyProfile,
 } from '../api'
 import type { PlannedNutrition, StructuredStatus } from '../types/plan'
+import type { StrengthTabResponse } from '../types/strength'
 import { useUser } from '../UserContextValue'
 import PlannedCalendar from '../components/PlannedCalendar'
 import PushAllPlannedButton from '../components/PushAllPlannedButton'
 import VariantComparisonView from '../components/VariantComparisonView'
 
-type Tab = 'plan' | 'variants' | 'calendar' | 'activities' | 'feedback'
+type Tab = 'plan' | 'variants' | 'strength' | 'calendar' | 'activities' | 'feedback'
 
 export default function WeekLayout() {
   const { folder } = useParams<{ folder: string }>()
@@ -32,6 +33,8 @@ export default function WeekLayout() {
   const [reparseBusy, setReparseBusy] = useState(false)
   const [reparseError, setReparseError] = useState<string | null>(null)
   const [myProfile, setMyProfile] = useState<MyProfile | null>(null)
+  const [strengthData, setStrengthData] = useState<StrengthTabResponse | null>(null)
+  const [strengthLoading, setStrengthLoading] = useState(false)
   const loadingDetail = Boolean(folder && user && loadedFolder !== folder)
 
   // Pull the connected provider once so we can dispatch push capabilities
@@ -99,6 +102,31 @@ export default function WeekLayout() {
       cancelled = true
     }
   }, [folder, user, weekDetail])
+
+  // Load the strength-tab payload for the active week.
+  useEffect(() => {
+    if (!folder || !user) {
+      setStrengthData(null)
+      return
+    }
+    let cancelled = false
+    setStrengthLoading(true)
+    getWeekStrength(user, folder)
+      .then((data) => {
+        if (cancelled) return
+        setStrengthData(data)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setStrengthData({ folder, sessions: [] })
+      })
+      .finally(() => {
+        if (!cancelled) setStrengthLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [folder, user])
 
   const handlePush = useCallback(
     async (sessionDate: string, sessionIndex: number) => {
@@ -177,6 +205,11 @@ export default function WeekLayout() {
                 方案 ({weekDetail.variants_summary?.total ?? 0})
               </TabButton>
             )}
+            {(strengthData?.sessions.length ?? 0) > 0 && (
+              <TabButton active={activeTab === 'strength'} onClick={() => setActiveTab('strength')} color="green">
+                力量训练 ({strengthData?.sessions.length ?? 0})
+              </TabButton>
+            )}
             {structuredStatus !== 'none' && (
               <TabButton active={activeTab === 'calendar'} onClick={() => setActiveTab('calendar')} color="green">
                 日历
@@ -206,6 +239,9 @@ export default function WeekLayout() {
           )}
           {activeTab === 'variants' && user && folder && (
             <VariantComparisonView user={user} folder={folder} />
+          )}
+          {activeTab === 'strength' && (
+            <StrengthTab data={strengthData} loading={strengthLoading} />
           )}
           {activeTab === 'calendar' && (
             <CalendarTab
@@ -399,6 +435,148 @@ function CalendarTab({
         pushDisabled={batchBusy}
         onPush={(s) => onPush(s.date, s.session_index)}
       />
+    </div>
+  )
+}
+
+function StrengthTab({
+  data, loading,
+}: {
+  data: StrengthTabResponse | null
+  loading: boolean
+}) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
+      </div>
+    )
+  }
+  if (!data || data.sessions.length === 0) {
+    return (
+      <div className="text-text-muted text-center py-16 text-sm">
+        本周没有力量训练
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {data.sessions.map((sess) => (
+        <div
+          key={`${sess.date}-${sess.session_index}`}
+          className="bg-bg-card border border-border-subtle rounded-2xl p-4 sm:p-6"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-xs font-mono text-text-muted">
+                {formatDateShort(sess.date)} · {weekdayCN(sess.date)}
+              </p>
+              <h2 className="text-base font-semibold text-text-primary mt-1">
+                {sess.summary}
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-accent-green bg-accent-green/10 px-2 py-1 rounded">
+              {sess.exercises.length} 个动作
+            </span>
+          </div>
+
+          {sess.exercises.length === 0 ? (
+            <div className="text-text-muted text-sm py-2">
+              （仅有总览，无具体动作清单）
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {sess.exercises.map((ex, i) => (
+                <StrengthExerciseCard key={i} exercise={ex} />
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function StrengthExerciseCard({
+  exercise,
+}: {
+  exercise: import('../types/strength').StrengthTabExercise
+}) {
+  const { display_name, sets, target_kind, target_value, rest_seconds,
+          image_url, key_points, muscle_focus, common_mistakes, note } = exercise
+  const targetUnit = target_kind === 'time_s' ? 's' : '次'
+  const setLine = `${sets} × ${target_value}${targetUnit} · 组间 ${rest_seconds}s`
+
+  return (
+    <div className="border border-border-subtle rounded-xl p-3 sm:p-4 bg-bg-secondary/40">
+      <div className="flex flex-col sm:flex-row gap-4">
+        {image_url && (
+          <div className="flex-shrink-0 w-full sm:w-48">
+            <img
+              src={image_url}
+              alt={display_name}
+              loading="lazy"
+              className="w-full h-auto rounded-lg bg-white object-contain border border-border-subtle"
+            />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-sm font-semibold text-text-primary">{display_name}</h3>
+            <span className="text-xs font-mono text-accent-green whitespace-nowrap">
+              {setLine}
+            </span>
+          </div>
+          {note && (
+            <p className="mt-1 text-xs font-mono text-text-muted">{note}</p>
+          )}
+          {key_points.length > 0 && (
+            <DetailBlock title="动作要点" items={key_points} />
+          )}
+          {muscle_focus.length > 0 && (
+            <DetailBlock title="发力部位" items={muscle_focus} inline />
+          )}
+          {common_mistakes.length > 0 && (
+            <DetailBlock title="常见错误" items={common_mistakes} accent="red" />
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DetailBlock({
+  title, items, inline = false, accent,
+}: {
+  title: string
+  items: string[]
+  inline?: boolean
+  accent?: 'red'
+}) {
+  const titleColor = accent === 'red' ? 'text-accent-red' : 'text-text-secondary'
+  return (
+    <div className="mt-3">
+      <p className={`text-[11px] font-mono tracking-wider mb-1 ${titleColor}`}>
+        {title}
+      </p>
+      {inline ? (
+        <div className="flex flex-wrap gap-1.5">
+          {items.map((m, i) => (
+            <span
+              key={i}
+              className="text-xs font-mono bg-accent-cyan/10 text-accent-cyan px-2 py-0.5 rounded"
+            >
+              {m}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <ul className="text-xs text-text-secondary space-y-1 list-disc ml-4">
+          {items.map((p, i) => (
+            <li key={i}>{p}</li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
