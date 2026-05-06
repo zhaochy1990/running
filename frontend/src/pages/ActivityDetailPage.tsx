@@ -282,9 +282,9 @@ export default function ActivityDetailPage() {
         )}
       </div>
 
-      {/* Plan-vs-actual comparison — owner-only, when a planned session
-          exists for this activity's date. */}
-      {!isTeamView && plannedSession && (
+      {/* Plan-vs-actual comparison — owner-only, run sessions only
+          (strength activities have no distance/pace targets). */}
+      {!isTeamView && !isStrength && plannedSession && (
         <PlanVsActualCard session={plannedSession} activity={activity} />
       )}
 
