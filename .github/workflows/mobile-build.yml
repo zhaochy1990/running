@@ -1,0 +1,114 @@
+name: Mobile Build (Android)
+
+# Required secrets (configured in repo settings) — only needed for signed
+# release builds. Debug APKs build without these.
+#   ANDROID_KEYSTORE_BASE64   — base64-encoded upload-key.jks
+#   ANDROID_KEYSTORE_PASSWORD — keystore password
+#   ANDROID_KEY_ALIAS         — key alias inside the keystore
+#   ANDROID_KEY_PASSWORD      — key password (often equal to keystore pw)
+#
+# Triggers:
+#   - push to master touching mobile/** → debug APK uploaded as artifact
+#   - tag push matching `mobile-v*`     → signed release APK attached to a
+#     GitHub Release (creates one if needed)
+#   - workflow_dispatch                 → manual debug build
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-build.yml'
+    tags:
+      - 'mobile-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to attach assets to a Release
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.x'
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Generate JSON / Drift code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Flutter analyze
+        run: flutter analyze
+
+      - name: Flutter test
+        run: flutter test
+
+      # ── Signing setup (release tag only) ────────────────────────────────
+      - name: Decode keystore (release tags only)
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-key.jks
+          ls -l android/app/upload-key.jks
+
+      - name: Write key.properties (release tags only)
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        env:
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          cat > android/key.properties <<EOF
+          storePassword=$STORE_PASSWORD
+          keyPassword=$KEY_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=upload-key.jks
+          EOF
+
+      # ── Builds ──────────────────────────────────────────────────────────
+      - name: Build debug APK
+        if: '!startsWith(github.ref, ''refs/tags/mobile-v'')'
+        run: flutter build apk --debug
+
+      - name: Build signed release APK
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        run: flutter build apk --release
+
+      - name: Upload debug APK as artifact
+        if: '!startsWith(github.ref, ''refs/tags/mobile-v'')'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stride-debug-apk
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+
+      - name: Attach release APK to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/mobile-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mobile/build/app/outputs/flutter-apk/app-release.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true

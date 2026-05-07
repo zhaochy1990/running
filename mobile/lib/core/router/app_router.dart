@@ -6,6 +6,8 @@ import '../../features/activity/activity_detail_screen.dart';
 import '../../features/health/health_screen.dart';
 import '../../features/login/login_screen.dart';
 import '../../features/plan/plan_screen.dart';
+import '../../features/profile/notification_rationale_screen.dart';
+import '../../features/profile/notification_settings_screen.dart';
 import '../../features/profile/profile_screen.dart';
 import '../../features/teams/team_detail_screen.dart';
 import '../../features/teams/teams_screen.dart';
@@ -65,6 +67,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, state) {
           return TeamDetailScreen(teamId: state.pathParameters['teamId']!);
         },
+      ),
+      GoRoute(
+        path: '/notifications/rationale',
+        builder: (_, _) => const NotificationRationaleScreen(),
+      ),
+      GoRoute(
+        path: '/notifications/settings',
+        builder: (_, _) => const NotificationSettingsScreen(),
       ),
       ShellRoute(
         builder: (_, _, child) => MainShell(child: child),

@@ -18,7 +18,7 @@ from stride_core.source import DataSource
 
 from .bearer import _load_public_key, is_dev_mode, require_bearer, verify_path_user
 from .deps import PROJECT_ROOT
-from .routes import account, ability, activities, health, inbody, likes, onboarding, plan, plan_variants, profile, public, strength, sync, teams, training_plan, users, weeks, workouts
+from .routes import account, ability, activities, health, inbody, likes, notifications, onboarding, plan, plan_variants, profile, public, strength, sync, teams, training_plan, users, weeks, workouts
 from .static import mount_frontend
 
 
@@ -80,6 +80,7 @@ def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
     app.include_router(onboarding.router, dependencies=protected)
     app.include_router(teams.router, dependencies=protected)
     app.include_router(likes.router, dependencies=protected)
+    app.include_router(notifications.router, dependencies=protected)
     app.include_router(activities.router, dependencies=protected_user)
     app.include_router(weeks.router, dependencies=protected_user)
     app.include_router(sync.router, dependencies=protected_user)

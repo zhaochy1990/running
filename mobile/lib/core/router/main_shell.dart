@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../shared/widgets/offline_banner.dart';
+
 /// Bottom-nav shell hosting the 5 main tabs.
 ///
 /// Tab → route table:
@@ -35,7 +37,12 @@ class MainShell extends StatelessWidget {
     final selectedIndex = _indexOfLocation(location);
 
     return Scaffold(
-      body: child,
+      body: Column(
+        children: [
+          const OfflineBanner(),
+          Expanded(child: child),
+        ],
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: (i) => context.go(_tabs[i].path),

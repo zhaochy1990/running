@@ -23,6 +23,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from .. import auth_service_client as auth_client
 from .. import likes_store
 from ..bearer import require_bearer
+from ..notifications import jpush_client
+from ..notifications import store as nstore
 from .teams import _bearer, _stride_display_name, _UUID4_RE
 
 logger = logging.getLogger(__name__)
@@ -143,24 +145,68 @@ async def like_activity(
         target_user_id=user_id,
     )
 
+    liker_name = _resolve_caller_display_name(
+        caller_id, claims, members_by_id,
+    )
     likes_store.put_like(
         team_id=team_id,
         owner_user_id=user_id,
         label_id=label_id,
         liker_user_id=caller_id,
-        liker_display_name=_resolve_caller_display_name(
-            caller_id, claims, members_by_id,
-        ),
+        liker_display_name=liker_name,
     )
 
     likes = likes_store.list_likes(
         team_id=team_id, owner_user_id=user_id, label_id=label_id,
     )
+
+    # Best-effort push to the activity owner (skip self-likes).
+    if caller_id != user_id:
+        _maybe_send_like_push(
+            owner_user_id=user_id,
+            liker_name=liker_name,
+            team_id=team_id,
+            label_id=label_id,
+        )
+
     return {
         "liked": True,
         "count": len(likes),
         "you_liked": any(l.liker_user_id == caller_id for l in likes),
     }
+
+
+def _maybe_send_like_push(
+    *,
+    owner_user_id: str,
+    liker_name: str,
+    team_id: str,
+    label_id: str,
+) -> None:
+    """Send a like-event push to the activity owner. Best-effort: any
+    failure is logged and swallowed so it can't break the like response."""
+    try:
+        if not jpush_client.is_enabled():
+            return
+        prefs = nstore.get_prefs(owner_user_id)
+        if not prefs.get("likes_enabled"):
+            return
+        ids = nstore.list_device_ids(owner_user_id)
+        if not ids:
+            return
+        jpush_client.push_to_registration_ids(
+            ids,
+            title="收到新点赞",
+            body=f"{liker_name} 为你的训练点赞",
+            extras={
+                "type": "like",
+                "team_id": team_id,
+                "label_id": label_id,
+                "owner_user_id": owner_user_id,
+            },
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("like push hook failed: %s", e)
 
 
 @router.delete("/api/teams/{team_id}/activities/{user_id}/{label_id}/likes")

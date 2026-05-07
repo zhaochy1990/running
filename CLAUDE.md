@@ -5,6 +5,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This project contains the training plans, logs for multiple marathon runners.
 It also contains tools like coros-sync to sync the training data from COROS to the local for further analysis.
 
+## Storage scope rule (HARD)
+
+**The per-user SQLite databases at `data/{user_id}/coros.db` are reserved for watch-synced运动数据 only** — activities, laps, zones, timeseries, daily_health, dashboard, race predictions, ability snapshots, structured planned sessions/nutrition, weekly plan/feedback markdown layer, scheduled workouts. Anything outside this scope (notifications, devices, social signals, cross-user state, app-level config, etc.) **must NOT** be added as a SQLite table.
+
+Use the right backend instead:
+
+| Data shape | Backend |
+|------------|---------|
+| Cross-user social signals (likes, comments, follows) | **Azure Table Storage** (see `stride_server/likes_store.py` for the canonical pattern) |
+| Per-user app preferences not derived from a watch | **Azure Table Storage** (PartitionKey=user_id, RowKey="prefs" or similar) |
+| Push device tokens / FCM-style registrations | **Azure Table Storage** |
+| Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage** |
+| Authoring artifacts (plan.md, feedback.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**, synced via `sync-data.yml` to Azure Files |
+| Auth tokens / secrets | **Azure Key Vault** |
+
+When adding a new feature, ask: *"Does this row come from a watch sync?"* If no, do not add a SQLite table. The likes_store has a two-backend file (JSON file for dev / Azure Table for prod) with `DefaultAzureCredential` — copy that pattern instead of inventing a new one.
+
 ## Working Model — Local Authoring + Cloud Draft-Writer
 
 Going forward, keep this split in mind:

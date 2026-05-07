@@ -89,6 +89,18 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
 
+      - name: Update plan-reminder cron job image
+        # Pinned to the same image tag as stride-app so the daily cron
+        # always runs the version that wrote the data it queries.
+        # continue-on-error so a missing job (first deploy / temporary
+        # outage) doesn't block the main app deploy.
+        continue-on-error: true
+        run: |
+          az containerapp job update \
+            --name stride-plan-reminder \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
+
       - name: Health check
         run: |
           FQDN=$(az containerapp show \

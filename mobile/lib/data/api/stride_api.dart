@@ -5,6 +5,7 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../models/activity.dart';
 import '../models/health.dart';
+import '../models/notifications.dart';
 import '../models/plan.dart';
 import '../models/profile.dart';
 import '../models/team.dart';
@@ -156,6 +157,50 @@ class StrideApi {
     );
   }
 
+  // ── Notifications ──────────────────────────────────────────────────────
+  Future<void> registerDevice({
+    required String registrationId,
+    required String platform,
+    String? appVersion,
+  }) async {
+    await _post<Map<String, dynamic>>(
+      '/api/users/me/devices',
+      body: {
+        'registration_id': registrationId,
+        'platform': platform,
+        'app_version': ?appVersion,
+      },
+    );
+  }
+
+  Future<void> unregisterDevice(String registrationId) async {
+    await _delete<Map<String, dynamic>>(
+      '/api/users/me/devices/$registrationId',
+    );
+  }
+
+  Future<NotificationPrefs> getNotificationPrefs() async {
+    final json =
+        await _get<Map<String, dynamic>>('/api/users/me/notification-prefs');
+    return NotificationPrefs.fromJson(json);
+  }
+
+  Future<NotificationPrefs> patchNotificationPrefs({
+    bool? likesEnabled,
+    bool? planReminderEnabled,
+    String? planReminderTime,
+  }) async {
+    final json = await _patch<Map<String, dynamic>>(
+      '/api/users/me/notification-prefs',
+      body: {
+        'likes_enabled': ?likesEnabled,
+        'plan_reminder_enabled': ?planReminderEnabled,
+        'plan_reminder_time': ?planReminderTime,
+      },
+    );
+    return NotificationPrefs.fromJson(json);
+  }
+
   // ── Internals ──────────────────────────────────────────────────────────
   Future<T> _get<T>(String path, {Map<String, dynamic>? query}) async {
     final res = await _dio.get<T>(path, queryParameters: query);
@@ -170,6 +215,11 @@ class StrideApi {
 
   Future<T> _delete<T>(String path) async {
     final res = await _dio.delete<T>(path);
+    return _unpack<T>(res);
+  }
+
+  Future<T> _patch<T>(String path, {Object? body}) async {
+    final res = await _dio.patch<T>(path, data: body);
     return _unpack<T>(res);
   }
 

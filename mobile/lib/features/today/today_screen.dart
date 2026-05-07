@@ -16,13 +16,18 @@ class TodayScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final userId = ref.watch(currentUserIdProvider);
+    final user = ref.watch(currentUserProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('今日')),
-      body: userId == null
-          ? const _LoadingState()
-          : _TodayBody(userId: userId, theme: theme),
+      body: user.when(
+        loading: () => const _LoadingState(),
+        error: (e, _) => _ErrorState(message: '加载用户信息失败：$e'),
+        data: (profile) {
+          if (profile == null) return const _LoadingState();
+          return _TodayBody(userId: profile.id, theme: theme);
+        },
+      ),
     );
   }
 }

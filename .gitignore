@@ -12,7 +12,10 @@ htmlcov/
 .omc/
 *.un~
 *~
-profile
+# Anchored: only ignore a top-level `profile` directory (e.g. local
+# scratch). Without the leading `/`, this rule was eating
+# mobile/lib/features/profile/.
+/profile
 *.db
 data/*/config.json
 data/*/auth.json

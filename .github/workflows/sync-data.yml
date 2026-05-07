@@ -22,6 +22,7 @@ on:
       - 'data/*/status.md'
       - 'data/*/profile.json'
       - 'data/*/onboarding.json'
+      - 'data/privacy.md'
   workflow_dispatch:
 
 permissions:
@@ -202,6 +203,28 @@ jobs:
                 --output none
             fi
           done
+
+          # App-wide privacy policy (data/privacy.md). Served as HTML by
+          # the FastAPI app at /privacy and linked from the in-app
+          # rationale screen and 我的 → 隐私政策 row.
+          if [ -f "data/privacy.md" ]; then
+            echo "==> Syncing data/privacy.md"
+            az storage file upload \
+              --account-name authstorage2026 \
+              --account-key "$ACCOUNT_KEY" \
+              --share-name stride-data \
+              --source "data/privacy.md" \
+              --path "privacy.md" \
+              --output none
+            az storage blob upload \
+              --account-name authstorage2026 \
+              --account-key "$ACCOUNT_KEY" \
+              --container-name "$BLOB_CONTAINER" \
+              --file "data/privacy.md" \
+              --name "privacy.md" \
+              --overwrite \
+              --output none
+          fi
 
           echo "==> Data sync complete"
 
