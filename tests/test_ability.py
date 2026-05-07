@@ -228,6 +228,44 @@ class TestDanielsPrimitives:
         assert vdot_to_marathon_s(None) is None
         assert vdot_to_marathon_s(-1) is None
 
+    def test_daniels_table_matches_formula(self):
+        """Lock in table-vs-formula consistency.
+
+        For every VDOT in DANIELS_VDOT_TO_MARATHON_S, solve
+            pct(T) * VDOT == vo2_required(42195, T)
+        via bisection, and assert |table[VDOT] − T_solution| < 60s.
+        Catches future drift of either the table or the underlying
+        Daniels formulas — see spike/verify_daniels_table.py for the
+        derivation script.
+        """
+        MARATHON_M = 42195.0
+
+        def residual(vdot: float, t_s: float) -> float:
+            return daniels_pct_vo2max(t_s) * vdot - daniels_vo2_required(MARATHON_M, t_s)
+
+        def solve(vdot: float) -> float:
+            lo, hi = 60 * 60.0, 600 * 60.0
+            f_lo = residual(vdot, lo)
+            f_hi = residual(vdot, hi)
+            assert f_lo * f_hi < 0, f"VDOT {vdot}: bracket failure"
+            for _ in range(200):
+                mid = 0.5 * (lo + hi)
+                f_mid = residual(vdot, mid)
+                if abs(f_mid) < 1e-9 or (hi - lo) < 1e-3:
+                    return mid
+                if f_lo * f_mid < 0:
+                    hi, f_hi = mid, f_mid
+                else:
+                    lo, f_lo = mid, f_mid
+            return 0.5 * (lo + hi)
+
+        for vdot, table_t in ability.DANIELS_VDOT_TO_MARATHON_S.items():
+            solution = solve(float(vdot))
+            assert abs(table_t - solution) < 60, (
+                f"VDOT {vdot}: table={table_t}s vs formula={solution:.1f}s "
+                f"(delta={table_t - solution:+.1f}s, must be <60s)"
+            )
+
 
 # ---------------------------------------------------------------------------
 # L1 / L2 / L3 unit coverage on dict-shaped activities.
