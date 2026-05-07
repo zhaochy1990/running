@@ -600,6 +600,33 @@ class TestL1Quality:
         assert out["breakdown"]["pace_adherence"] >= 95.0, \
             f"easy-run path must use avg_pace; got {out['breakdown']['pace_adherence']}"
 
+    def test_pace_adherence_clamps_extreme_hr_target(self):
+        """Regression guard: HR-based target pace heuristic must not extrapolate
+        past its calibrated band. At avg_hr/hr_max = 1.05 the linear formula
+        produced a 2:26/km target — fast enough that even a sprint-tempo gets
+        an artificially low adherence score. The clamp keeps target in
+        [3:20/km, 9:00/km] which preserves the score for realistic efforts.
+        """
+        # avg_hr 195, hr_max 185 → frac=1.05 → unclamped target 146s/km.
+        # Without clamp: a 4:00/km (240s) work pace would score
+        #   100 - |240-146|/146 * 300 = 100 - 193 = 0.
+        # With clamp at 200s: 100 - |240-200|/200 * 300 = 40.
+        act = {
+            "label_id": "T_HR_CLAMP",
+            "train_type": "Sprint",
+            "avg_hr": 195,
+            "avg_pace_s_km": 240,
+            "max_hr": 200,
+            "laps": [],
+            "zones": [],
+            "timeseries": [],
+        }
+        out = compute_l1_quality(act)  # no plan_target → HR heuristic
+        # Without clamp: ~0; with clamp at 200s/km lower bound: ~40 (still
+        # low because frac=1.05 implies extreme effort, but bounded).
+        assert out["breakdown"]["pace_adherence"] >= 30.0, \
+            f"clamped target should keep adherence sane; got {out['breakdown']['pace_adherence']}"
+
 
 class TestL2Freshness:
     def test_none_health(self):
@@ -911,6 +938,205 @@ class TestA1_3_EasyRunMinimalImpact:
 # We use 3:45/km, a realistic VO2max-pace for this athlete — the ACCEPTANCE
 # CRITERION (vo2max delta >= 0.3, new evidence, faster marathon) is unchanged.
 # ---------------------------------------------------------------------------
+
+class TestExtractIntervalReps:
+    """Regression coverage for the autoKm + type2 dedupe in
+    `_extract_interval_reps`. COROS interleaves two parallel "lap streams" and
+    the previous implementation summed both, double-counting overlapping work.
+    """
+
+    def test_prefers_type2_over_overlapping_autokm(self):
+        """A 4×3K interval recorded with both autoKm 1km slices and type2
+        plan-step summaries should yield exactly 4 reps totalling 12 km, not
+        16 reps totalling 22 km.
+        """
+        from stride_core.ability import _extract_interval_reps, daniels_vdot
+
+        laps = []
+        # 4 work reps. Each rep = 3 autoKm 1km slices + 1 type2 3km summary.
+        # autoKm and type2 overlap the same physical 3km of running.
+        for rep in range(4):
+            base_pace = 246  # ~4:06/km
+            for slice_i in range(3):
+                laps.append({
+                    "lap_index": rep * 4 + slice_i + 1,
+                    "lap_type": "autoKm",
+                    "distance_m": 1.0, "duration_s": base_pace,
+                    "avg_pace": base_pace, "exercise_type": 2,
+                })
+            laps.append({
+                "lap_index": rep * 4 + 4,
+                "lap_type": "type2",
+                "distance_m": 3.0, "duration_s": 3 * base_pace,
+                "avg_pace": base_pace, "exercise_type": 2,
+            })
+        act = {"label_id": "T_DEDUP", "sport_type": 100, "laps": laps}
+        reps = _extract_interval_reps(act)
+        assert len(reps) == 4, \
+            f"expected 4 type2 reps, got {len(reps)}: {reps}"
+        total_d = sum(d for d, _ in reps)
+        total_t = sum(t for _, t in reps)
+        assert total_d == 12000, f"total distance should be 12 km, got {total_d}"
+        assert total_t == 12 * 246, f"total time should be {12*246}, got {total_t}"
+        # Sanity: VDOT for 12 km @ 4:06/km
+        vdot = daniels_vdot(total_d, total_t)
+        assert 50 <= vdot <= 53, f"vdot out of band: {vdot}"
+
+    def test_falls_back_to_autokm_when_no_type2(self):
+        """Simple unstructured interval logged with only autoKm rows should
+        still produce reps — the type2-preference rule must fall back.
+        """
+        from stride_core.ability import _extract_interval_reps
+
+        laps = [
+            {"lap_index": i, "lap_type": "autoKm",
+             "distance_m": 1.0, "duration_s": 240,
+             "avg_pace": 240, "exercise_type": 2}
+            for i in range(1, 7)
+        ]
+        act = {"label_id": "T_AUTOKM", "sport_type": 100, "laps": laps}
+        reps = _extract_interval_reps(act)
+        assert len(reps) == 6, f"autoKm fallback failed: {reps}"
+
+    def test_drops_fragment_outliers_before_dedupe(self):
+        """A fragment type2 row (e.g. 0.06km / 27.66s ex_type=0) at the same
+        lap_index as a legit autoKm work rep must NOT silently win the dedupe
+        and then disappear, dropping the real rep.
+        """
+        from stride_core.ability import _extract_interval_reps
+
+        laps = [
+            # Real work rep
+            {"lap_index": 5, "lap_type": "autoKm",
+             "distance_m": 1.0, "duration_s": 243.5,
+             "avg_pace": 243.5, "exercise_type": 2},
+            # Fragment artifact at the SAME lap_index — must be dropped first
+            {"lap_index": 5, "lap_type": "type2",
+             "distance_m": 0.06, "duration_s": 27.66,
+             "avg_pace": 494.65, "exercise_type": 0},
+        ]
+        act = {"label_id": "T_FRAG", "sport_type": 100, "laps": laps}
+        reps = _extract_interval_reps(act)
+        assert len(reps) == 1, f"fragment-first drop failed: {reps}"
+        d, t = reps[0]
+        assert d == 1000.0
+        assert abs(t - 243.5) < 0.01
+
+    def test_filters_rest_laps_by_exercise_type(self):
+        """Rest laps (exercise_type=4) must never be counted as work reps."""
+        from stride_core.ability import _extract_interval_reps
+
+        laps = [
+            {"lap_index": 1, "lap_type": "type2",
+             "distance_m": 3.0, "duration_s": 750,
+             "avg_pace": 250, "exercise_type": 2},
+            {"lap_index": 2, "lap_type": "type2",
+             "distance_m": 0.5, "duration_s": 180,
+             "avg_pace": 360, "exercise_type": 4},
+        ]
+        act = {"label_id": "T_REST", "sport_type": 100, "laps": laps}
+        reps = _extract_interval_reps(act)
+        assert len(reps) == 1
+        assert reps[0][0] == 3000.0
+
+
+class TestVo2maxRaceLikeGate:
+    """Regression coverage for the `is_race_like` gate inside `compute_l3_vo2max`.
+    A 15 km mixed warmup+work+cooldown session must NOT be fed wholesale to
+    `daniels_vdot`: doing so dilutes pace badly (VDOT ≈ 41 vs 51 from rep path).
+    """
+
+    def test_mixed_session_with_rest_laps_skipped(self):
+        """Activity with rest laps mid-effort must skip the race-like path."""
+        from stride_core.ability import compute_l3_vo2max
+
+        # 4×3K interval: 12 km work in 48 min, plus warmup/rest/cooldown
+        # totalling 15 km / 75 min activity. Without the gate, race-like fed
+        # 15 km / 4500 s into Daniels → VDOT ≈ 41.
+        laps = []
+        # warmup (continuous, not "rest" by ex_type=1)
+        laps.append({"lap_index": 0, "lap_type": "type2",
+                     "distance_m": 1.0, "duration_s": 360,
+                     "avg_pace": 360, "exercise_type": 1})
+        # 4 work reps + 3 rest jogs in between
+        for i in range(4):
+            laps.append({"lap_index": i * 2 + 1, "lap_type": "type2",
+                         "distance_m": 3.0, "duration_s": 720,
+                         "avg_pace": 240, "exercise_type": 2})
+            if i < 3:
+                laps.append({"lap_index": i * 2 + 2, "lap_type": "type2",
+                             "distance_m": 0.4, "duration_s": 180,
+                             "avg_pace": 450, "exercise_type": 4})
+        # cooldown
+        laps.append({"lap_index": 99, "lap_type": "type2",
+                     "distance_m": 1.6, "duration_s": 480,
+                     "avg_pace": 300, "exercise_type": 3})
+        act = {
+            "label_id": "T_MIXED",
+            "sport_type": 100,
+            "distance_m": 15.0,
+            "duration_s": 4500,
+            "train_type": "Interval",
+            "laps": laps,
+            "timeseries": [],
+        }
+        score, ev, det = compute_l3_vo2max([act], None, hr_max=185)
+        # Rep path computes VDOT from the 4×3K work only: 12 km / 48 min
+        # → VDOT ≈ 52.6. Race-like path (now gated) would have produced
+        # 15 km / 4500 s → VDOT ≈ 41 — much lower.
+        assert det["vo2max_primary"] is not None
+        assert det["vo2max_primary"] >= 50.0, \
+            f"rep path expected, got primary {det['vo2max_primary']}"
+
+    def test_clean_5k_tt_still_admitted_via_race_like(self):
+        """A clean continuous 5K time trial (no rest laps) must STILL go
+        through the race-like path."""
+        from stride_core.ability import compute_l3_vo2max, daniels_vdot
+
+        # 5 km in 19:30, marked Threshold, no rest laps at all.
+        act = {
+            "label_id": "T_5K_TT",
+            "sport_type": 100,
+            "distance_m": 5.0,
+            "duration_s": 19 * 60 + 30,
+            "train_type": "Threshold",
+            "laps": [],  # no laps → no rep path, no rest segments
+            "timeseries": [],
+        }
+        score, ev, det = compute_l3_vo2max([act], None, hr_max=185)
+        # Race-like path: VDOT(5000, 1170) ≈ 51
+        assert det["vo2max_primary"] is not None
+        expected = daniels_vdot(5000, 1170)
+        assert abs(det["vo2max_primary"] - expected) < 0.5
+        assert ev == ["T_5K_TT"]
+
+
+class TestEconomyDedupe:
+    """Regression coverage for L3 economy autoKm/type2 dedupe."""
+
+    def test_economy_does_not_double_count_overlapping_laps(self):
+        """An autoKm + type2 pair sharing a lap_index must contribute one
+        cadence sample, not two. Without dedupe, an unbalanced pair (e.g.
+        autoKm cad=170, type2 cad=185) skews the median.
+        """
+        from stride_core.ability import compute_l3_economy
+
+        # Two activities: in the dedupe-enabled path, only the type2 cadence
+        # of 185 should win. With both counted, median lands at ~177.5.
+        laps = [
+            {"lap_index": 1, "lap_type": "autoKm",
+             "distance_m": 1.0, "duration_s": 290, "avg_pace": 290,
+             "avg_cadence": 170, "exercise_type": 2},
+            {"lap_index": 1, "lap_type": "type2",
+             "distance_m": 3.0, "duration_s": 870, "avg_pace": 290,
+             "avg_cadence": 185, "exercise_type": 2},
+        ]
+        act = {"label_id": "T_ECON", "sport_type": 100, "laps": laps}
+        score, ev, det = compute_l3_economy([act])
+        # With dedupe: only type2 (cad 185) counted → median = 185.
+        assert det["median_cadence"] == 185.0, \
+            f"economy dedupe failed; median={det['median_cadence']}"
+
 
 class TestA1_4_IntervalEvidence:
     def test_interval_bumps_vo2max(self, ability_db):
