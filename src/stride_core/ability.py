@@ -111,7 +111,7 @@ AEROBIC_MAX_HR_DRIFT = 0.08
 AEROBIC_MAX_PEAK_HR_ABOVE_TARGET = 25  # reject if max_hr > target_hr + 25 (e.g. >170 at target 145)
 
 # Bump this when persisted ability_snapshot rows need to be invalidated.
-ABILITY_MODEL_VERSION = 3
+ABILITY_MODEL_VERSION = 4
 
 # Current race-readiness should be driven by recent evidence, not the best workout
 # from a prior training cycle. A 90-day window keeps one marathon-specific block in
@@ -459,6 +459,41 @@ def _laps_excluding_ends(laps: Sequence[Any]) -> list[Any]:
     return out
 
 
+def _dedupe_and_filter_laps(laps: Sequence[Any]) -> list[Any]:
+    """Deduplicate laps by lap_index (prefer type2 over autoKm) and drop
+    outlier fragments (< 0.3km or < 60s) that skew pace stability CV.
+
+    COROS stores both autoKm slices (1km auto-cuts) and type2 plan-step
+    summaries with the same lap_index; using both inflates the count and
+    creates duplicate signal. The plan-step summary is more semantically
+    meaningful for stability assessment.
+    """
+    by_idx: dict[Any, Any] = {}
+    for lp in laps:
+        idx = _get(lp, "lap_index")
+        ltype = _get(lp, "lap_type")
+        existing = by_idx.get(idx)
+        if existing is None:
+            by_idx[idx] = lp
+        else:
+            # Prefer type2 over autoKm
+            existing_ltype = _get(existing, "lap_type")
+            if ltype == "type2" and existing_ltype != "type2":
+                by_idx[idx] = lp
+    deduped = list(by_idx.values())
+    out = []
+    for lp in deduped:
+        dist = _get(lp, "distance_m") or 0
+        dur = _get(lp, "duration_s") or 0
+        if dist < 0.3 or dur < 60:
+            continue
+        out.append(lp)
+    # If filtering left fewer than 2, return deduped without the filter
+    if len(out) < 2 and len(deduped) >= 2:
+        return deduped
+    return out or deduped
+
+
 def _get(obj: Any, key: str, default: Any = None) -> Any:
     """Uniform accessor — supports dicts, sqlite Rows, and dataclasses."""
     if obj is None:
@@ -519,6 +554,9 @@ def compute_l1_quality(
     core_laps = _laps_excluding_ends(laps)
     work_laps = [lp for lp in core_laps if not _is_rest_lap(lp)]
     effective_laps = work_laps if len(work_laps) >= 2 else core_laps
+    # Dedupe lap_index, preferring 'type2' (plan-step) over 'autoKm' (auto-km slice)
+    # and drop outlier fragments (< 0.3km or < 60s) that skew CV.
+    effective_laps = _dedupe_and_filter_laps(effective_laps)
     lap_paces = [_get(lp, "avg_pace") for lp in effective_laps]
     pace_cv = _cv(lap_paces)
     pace_stability = _clamp(100.0 * (1.0 - pace_cv * 2.0), 0.0, 100.0)
