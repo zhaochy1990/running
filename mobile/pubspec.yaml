@@ -3,7 +3,7 @@ description: "STRIDE running training mobile app"
 publish_to: 'none'
 
 # CalVer aligned with auth-service / web app: YEAR.MONTH.MICRO+BUILD
-version: 2026.5.1+2
+version: 2026.5.2+3
 
 environment:
   sdk: ^3.11.5
@@ -56,6 +56,10 @@ dependencies:
 
   # Markdown rendering (privacy / about pages, in-app docs)
   flutter_markdown: ^0.7.4+3
+
+  # In-app self-updater (GitHub Releases sideload, Android only for v1)
+  package_info_plus: ^8.1.0
+  open_filex: ^4.5.0
 
 dev_dependencies:
   flutter_test:

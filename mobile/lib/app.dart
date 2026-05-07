@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +10,8 @@ import 'core/notifications/jpush_service.dart';
 import 'core/notifications/rationale_storage.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'core/updater/update_checker.dart';
+import 'features/updater/update_prompt.dart';
 
 class StrideApp extends ConsumerStatefulWidget {
   const StrideApp({super.key});
@@ -52,19 +56,38 @@ class _StrideAppState extends ConsumerState<StrideApp> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         router.push('/notifications/rationale');
       });
-      return;
+    } else {
+      // Returning user — init JPush silently.
+      try {
+        final jpush = ref.read(jpushServiceProvider);
+        await jpush.init(
+          appKey: 'ab305c4addc8f9aa2b5efb4c',
+          channel: 'default',
+          production: true,
+        );
+        await jpush.registerOnServer(appVersion: '2026.5.1');
+      } catch (_) {
+        // Best-effort.
+      }
     }
-    // Returning user — init JPush silently.
+    // Independent of the rationale flow: check for a newer mobile release.
+    // Runs once per launch, fully best-effort.
+    unawaited(_checkForUpdate(router));
+  }
+
+  Future<void> _checkForUpdate(GoRouter router) async {
     try {
-      final jpush = ref.read(jpushServiceProvider);
-      await jpush.init(
-        appKey: 'ab305c4addc8f9aa2b5efb4c',
-        channel: 'default',
-        production: true,
-      );
-      await jpush.registerOnServer(appVersion: '2026.5.0');
+      final info = await ref.read(updateCheckerProvider).check();
+      if (info == null || !mounted) return;
+      // Wait a frame so the UI has settled before the bottom sheet pops.
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final ctx = router.routerDelegate.navigatorKey.currentContext;
+        if (ctx != null) {
+          await showUpdatePrompt(ctx, ref, info);
+        }
+      });
     } catch (_) {
-      // Best-effort.
+      // Best-effort — never block startup on the updater.
     }
   }
 }
