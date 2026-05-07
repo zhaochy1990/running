@@ -111,7 +111,7 @@ AEROBIC_MAX_HR_DRIFT = 0.08
 AEROBIC_MAX_PEAK_HR_ABOVE_TARGET = 25  # reject if max_hr > target_hr + 25 (e.g. >170 at target 145)
 
 # Bump this when persisted ability_snapshot rows need to be invalidated.
-ABILITY_MODEL_VERSION = 2
+ABILITY_MODEL_VERSION = 3
 
 # Current race-readiness should be driven by recent evidence, not the best workout
 # from a prior training cycle. A 90-day window keeps one marathon-specific block in
@@ -507,20 +507,27 @@ def compute_l1_quality(
         hr_lo, hr_hi = _infer_target_hr_range(train_type, hr_max)
 
     # Sub-score 1: pace_adherence.
-    pace_adherence = _compute_pace_adherence(avg_pace, avg_hr, plan_target, hr_max)
+    pace_adherence = _compute_pace_adherence(
+        avg_pace, avg_hr, plan_target, hr_max, laps=laps, train_type=train_type,
+    )
 
     # Sub-score 2: hr_zone_adherence.
     hr_zone_adherence = _compute_hr_zone_adherence(ts, zones, hr_lo, hr_hi)
 
     # Sub-score 3: pace_stability (across main body of the run).
+    # For interval-style work, rest laps inflate CV; filter them out when present.
     core_laps = _laps_excluding_ends(laps)
-    lap_paces = [_get(lp, "avg_pace") for lp in core_laps]
+    work_laps = [lp for lp in core_laps if not _is_rest_lap(lp)]
+    effective_laps = work_laps if len(work_laps) >= 2 else core_laps
+    lap_paces = [_get(lp, "avg_pace") for lp in effective_laps]
     pace_cv = _cv(lap_paces)
     pace_stability = _clamp(100.0 * (1.0 - pace_cv * 2.0), 0.0, 100.0)
 
     # Sub-score 4: hr_decoupling — second-half (HR/pace) vs first-half.
+    # Only positive drift (cardiac drift) is bad; negative drift (efficiency
+    # improvement) should not be penalised.
     hr_decoupling_raw = _compute_hr_decoupling(ts, laps)
-    hr_decoupling_score = _clamp(100.0 - abs(hr_decoupling_raw) * 500.0, 0.0, 100.0)
+    hr_decoupling_score = _clamp(100.0 - max(0.0, hr_decoupling_raw) * 500.0, 0.0, 100.0)
 
     # Sub-score 5: cadence_stability.
     lap_cadences = [_get(lp, "avg_cadence") for lp in core_laps]
@@ -553,9 +560,27 @@ def _compute_pace_adherence(
     avg_hr: int | None,
     plan_target: dict | None,
     hr_max: int,
+    laps: Sequence[Any] | None = None,
+    train_type: str | None = None,
 ) -> float:
-    """Return 0-100 closeness of avg pace to target."""
-    if avg_pace is None:
+    """Return 0-100 closeness of avg pace to target.
+
+    For interval-style runs, the activity-level avg_pace is contaminated by
+    rest jogs and therefore poorly represents the actual training stimulus.
+    When `train_type` indicates an interval/VO2/threshold session and we have
+    enough work laps, use the median pace of those work laps instead.
+    """
+    # For interval-style runs, average pace is contaminated by rest jogs.
+    # Use the median pace of "work" laps instead.
+    effective_pace = avg_pace
+    if laps and train_type in ("Interval", "VO2 Max", "Threshold"):
+        work_lap_paces = [
+            _get(lp, "avg_pace") for lp in laps
+            if _get(lp, "avg_pace") and not _is_rest_lap(lp)
+        ]
+        if len(work_lap_paces) >= 2:
+            effective_pace = _median(work_lap_paces)
+    if effective_pace is None:
         return 0.0
     target_pace: float | None = None
     if plan_target and plan_target.get("pace_s_km"):
@@ -567,7 +592,7 @@ def _compute_pace_adherence(
         target_pace = 370.0 - (frac - 0.65) / (0.90 - 0.65) * (370.0 - 230.0)
     if not target_pace or target_pace <= 0:
         return 60.0  # neutral when we cannot estimate
-    err_frac = abs(avg_pace - target_pace) / target_pace
+    err_frac = abs(effective_pace - target_pace) / target_pace
     return _clamp(100.0 - err_frac * 300.0, 0.0, 100.0)
 
 
