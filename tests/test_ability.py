@@ -283,6 +283,188 @@ class TestL1Quality:
         # Perfect adherence on pace → adherence 100.
         assert out["breakdown"]["pace_adherence"] == pytest.approx(100.0, abs=0.5)
 
+    def test_hr_decoupling_negative_raw_scores_high(self):
+        """Regression guard: negative drift (efficiency improvement) must not be penalised.
+
+        Build a 2-lap activity where the second half runs at the same pace with a
+        LOWER heart rate — that's a physiologically GOOD sign (efficiency gain),
+        and the new formula should score it ~100, not ~38 like the old `abs(...)`
+        version did.
+        """
+        act = {
+            "label_id": "T_NEG_DRIFT",
+            "train_type": "Aerobic Endurance",
+            "avg_hr": 150,
+            "avg_pace_s_km": 320,
+            "laps": [
+                # First half: HR 160, pace 320s/km
+                {"avg_pace": 320, "avg_hr": 160, "avg_cadence": 180,
+                 "duration_s": 320, "distance_m": 1.0, "exercise_type": 2},
+                {"avg_pace": 320, "avg_hr": 160, "avg_cadence": 180,
+                 "duration_s": 320, "distance_m": 1.0, "exercise_type": 2},
+                # Second half: HR drops to 140 at same pace → raw drift very negative
+                {"avg_pace": 320, "avg_hr": 140, "avg_cadence": 180,
+                 "duration_s": 320, "distance_m": 1.0, "exercise_type": 2},
+                {"avg_pace": 320, "avg_hr": 140, "avg_cadence": 180,
+                 "duration_s": 320, "distance_m": 1.0, "exercise_type": 2},
+            ],
+            "zones": [],
+            "timeseries": [],
+        }
+        out = compute_l1_quality(act)
+        assert out["breakdown"]["hr_decoupling_raw"] < 0, \
+            "fixture must produce negative raw drift"
+        assert out["breakdown"]["hr_decoupling"] >= 95.0, \
+            f"negative drift should score ~100, got {out['breakdown']['hr_decoupling']}"
+
+    def test_hr_decoupling_positive_raw_scores_low(self):
+        """Regression guard: positive drift (cardiac drift) is still penalised.
+
+        Mirror of the negative case but with HR rising in the second half. The
+        new formula must keep the historical penalty for true drift; this test
+        locks down the +0.124 → ~38 calibration.
+        """
+        # Construct timeseries with mean_hr/mean_speed ratio that yields raw≈+0.124.
+        # First half: hr=150, speed=3.0 → ratio 50.
+        # Second half: hr=160, speed=2.84 → ratio ~56.34. Drift = 6.34/50 = 0.1268
+        first = [{"heart_rate": 150, "speed": 3.0} for _ in range(40)]
+        second = [{"heart_rate": 160, "speed": 2.84} for _ in range(40)]
+        act = {
+            "label_id": "T_POS_DRIFT",
+            "train_type": "Aerobic Endurance",
+            "avg_hr": 155,
+            "avg_pace_s_km": 340,
+            "laps": [],
+            "zones": [],
+            "timeseries": first + second,
+        }
+        out = compute_l1_quality(act)
+        raw = out["breakdown"]["hr_decoupling_raw"]
+        score = out["breakdown"]["hr_decoupling"]
+        assert raw > 0.10, f"fixture must produce positive raw drift, got {raw}"
+        # Score = 100 - raw * 500. raw≈0.1268 → score≈36.6. Allow ±5 for fixture jitter.
+        assert 30.0 <= score <= 45.0, \
+            f"positive drift ~+0.124 should score ~38, got {score}"
+
+    def test_pace_stability_filters_rest_laps_for_intervals(self):
+        """Rest laps must not inflate the pace-CV on interval workouts.
+
+        Build a 7-lap activity (warmup + 4 work laps @ 250s/km + 2 rest laps
+        @ 350s/km + cooldown). Mixing rest laps would explode the CV and tank
+        pace_stability; with the fix, CV is computed on the 4 work laps (all
+        identical) so stability should be near 100.
+        """
+        act = {
+            "label_id": "T_INTERVAL_STAB",
+            "train_type": "Interval",
+            "avg_hr": 168,
+            "avg_pace_s_km": 290,
+            "laps": [
+                # warmup
+                {"avg_pace": 360, "avg_hr": 130, "avg_cadence": 175,
+                 "duration_s": 360, "distance_m": 1.0, "exercise_type": 1},
+                # work × 4 @ 250s/km, near-identical → CV ≈ 0
+                {"avg_pace": 250, "avg_hr": 175, "avg_cadence": 188,
+                 "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+                {"avg_pace": 252, "avg_hr": 175, "avg_cadence": 188,
+                 "duration_s": 252, "distance_m": 1.0, "exercise_type": 2},
+                {"avg_pace": 248, "avg_hr": 176, "avg_cadence": 188,
+                 "duration_s": 248, "distance_m": 1.0, "exercise_type": 2},
+                {"avg_pace": 250, "avg_hr": 176, "avg_cadence": 188,
+                 "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+                # rest × 2 @ 350s/km recovery
+                {"avg_pace": 350, "avg_hr": 140, "avg_cadence": 170,
+                 "duration_s": 350, "distance_m": 1.0, "exercise_type": 4},
+                {"avg_pace": 350, "avg_hr": 140, "avg_cadence": 170,
+                 "duration_s": 350, "distance_m": 1.0, "exercise_type": 4},
+                # cooldown
+                {"avg_pace": 380, "avg_hr": 130, "avg_cadence": 172,
+                 "duration_s": 380, "distance_m": 1.0, "exercise_type": 3},
+            ],
+            "zones": [],
+            "timeseries": [],
+        }
+        out = compute_l1_quality(act)
+        # Old formula (CV across work + rest) → pace_stability ~25-40.
+        # New formula (work laps only, CV ≈ 0.006) → pace_stability ≥ 95.
+        assert out["breakdown"]["pace_stability"] >= 90.0, \
+            f"work-lap CV is tiny; expected ≥90, got {out['breakdown']['pace_stability']}"
+
+    def test_pace_adherence_uses_work_lap_median_for_intervals(self):
+        """For interval train_type, adherence should use work-lap median, not avg_pace.
+
+        Activity-level avg_pace=299s/km is contaminated by rest jogs, but the
+        actual training stimulus (work laps median ≈ 247s/km) is right on the
+        HR-derived target. Old formula → ~50 adherence; new formula → ≥85.
+        """
+        # avg_hr 168, hr_max 185 → frac=0.908 → target ≈ 226s/km (HR is high zone)
+        # Use plan_target to pin target at 247s/km so the assertion is deterministic
+        # against the work-lap median (≈247s/km).
+        work_paces = [245, 247, 248, 249]
+        rest_paces = [350, 350, 350]
+        laps = (
+            [{"avg_pace": 360, "avg_hr": 130, "avg_cadence": 175,
+              "duration_s": 360, "distance_m": 1.0, "exercise_type": 1}]  # warmup
+            + [
+                {"avg_pace": p, "avg_hr": 175, "avg_cadence": 188,
+                 "duration_s": p, "distance_m": 1.0, "exercise_type": 2}
+                for p in work_paces
+            ]
+            + [
+                {"avg_pace": p, "avg_hr": 140, "avg_cadence": 170,
+                 "duration_s": p, "distance_m": 1.0, "exercise_type": 4}
+                for p in rest_paces
+            ]
+            + [{"avg_pace": 380, "avg_hr": 130, "avg_cadence": 172,
+                "duration_s": 380, "distance_m": 1.0, "exercise_type": 3}]  # cooldown
+        )
+        act = {
+            "label_id": "T_INTERVAL_ADHER",
+            "train_type": "Interval",
+            "avg_hr": 168,
+            # contaminated activity avg — far slower than the work effort
+            "avg_pace_s_km": 299,
+            "laps": laps,
+            "zones": [],
+            "timeseries": [],
+        }
+        # Pin the target so the test is robust to HR→pace heuristic changes.
+        out = compute_l1_quality(
+            act, plan_target={"pace_s_km": 247, "hr_lo": 165, "hr_hi": 180}
+        )
+        # Sanity: contaminated path (using 299 vs 247) → err_frac=0.21 → score ~37.
+        # Fixed path (work-lap median ≈ 247.5 vs 247) → err_frac<0.01 → score ~99.
+        assert out["breakdown"]["pace_adherence"] >= 85.0, \
+            f"work-lap median should drive adherence high, got {out['breakdown']['pace_adherence']}"
+
+    def test_easy_run_no_train_type_pace_adherence_unchanged(self):
+        """Regression guard: easy/long runs (train_type None or 'Base') must
+        keep using avg_pace — the work-lap-median branch is gated on the
+        Interval/VO2 Max/Threshold train_types only.
+        """
+        # Construct an easy run where avg_pace and lap median DIFFER. If the new
+        # branch were to activate erroneously, the score would change.
+        act_avg = {
+            "label_id": "T_EASY",
+            "train_type": "Aerobic Endurance",  # not in the interval set
+            "avg_hr": 145,
+            "avg_pace_s_km": 320,
+            "laps": [
+                {"avg_pace": 250, "avg_hr": 145, "avg_cadence": 180,
+                 "duration_s": 250, "distance_m": 1.0, "exercise_type": 2}
+                for _ in range(5)
+            ],
+            "zones": [],
+            "timeseries": [],
+        }
+        out = compute_l1_quality(
+            act_avg, plan_target={"pace_s_km": 320, "hr_lo": 138, "hr_hi": 152}
+        )
+        # avg_pace == target → ~100; if branch wrongly used lap median (250) it
+        # would drop to ~34.
+        assert out["breakdown"]["pace_adherence"] >= 95.0, \
+            f"easy-run path must use avg_pace; got {out['breakdown']['pace_adherence']}"
+
 
 class TestL2Freshness:
     def test_none_health(self):
