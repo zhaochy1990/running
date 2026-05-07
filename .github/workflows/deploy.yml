@@ -9,6 +9,7 @@ on:
       - 'src/stride_core/**'
       - 'src/stride_server/**'
       - 'frontend/**'
+      - 'strength_illustrations/**'
       - 'Dockerfile'
       - '.github/workflows/deploy.yml'
       - 'pyproject.toml'

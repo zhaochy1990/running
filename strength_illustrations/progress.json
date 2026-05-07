@@ -2248,6 +2248,178 @@
           "path": "data\\strength_illustrations\\output\\HIP_9090\\v1.png"
         }
       ]
+    },
+    {
+      "started_at_utc": "2026-05-06T06:41:40Z",
+      "completed_at_utc": "2026-05-06T06:49:52Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 492.6,
+      "force": [
+        "T1275",
+        "T1326",
+        "T1327",
+        "T1368"
+      ],
+      "only": [
+        "T1275",
+        "T1326",
+        "T1327",
+        "T1368"
+      ],
+      "results": [
+        {
+          "code": "T1327",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 238.25692462921143,
+          "path": "strength_illustrations\\output\\T1327\\v2.png"
+        },
+        {
+          "code": "T1275",
+          "status": "ok",
+          "version": 4,
+          "elapsed_s": 241.57065081596375,
+          "path": "strength_illustrations\\output\\T1275\\v4.png"
+        },
+        {
+          "code": "T1326",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 261.4934024810791,
+          "path": "strength_illustrations\\output\\T1326\\v2.png"
+        },
+        {
+          "code": "T1368",
+          "status": "ok",
+          "version": 2,
+          "elapsed_s": 492.58400654792786,
+          "path": "strength_illustrations\\output\\T1368\\v2.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-06T07:08:47Z",
+      "completed_at_utc": "2026-05-06T07:12:59Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 252.0,
+      "force": [
+        "T1326",
+        "T1327",
+        "T1368"
+      ],
+      "only": [
+        "T1326",
+        "T1327",
+        "T1368"
+      ],
+      "results": [
+        {
+          "code": "T1327",
+          "status": "error",
+          "error": "Server disconnected without sending a response.",
+          "elapsed_s": 169.3957347869873,
+          "version": 3
+        },
+        {
+          "code": "T1368",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 249.88979315757751,
+          "path": "strength_illustrations\\output\\T1368\\v3.png"
+        },
+        {
+          "code": "T1326",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 251.99377036094666,
+          "path": "strength_illustrations\\output\\T1326\\v3.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-06T07:13:22Z",
+      "completed_at_utc": "2026-05-06T07:17:30Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 248.3,
+      "force": [
+        "T1327"
+      ],
+      "only": [
+        "T1327"
+      ],
+      "results": [
+        {
+          "code": "T1327",
+          "status": "ok",
+          "version": 3,
+          "elapsed_s": 248.31475830078125,
+          "path": "strength_illustrations\\output\\T1327\\v3.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-07T05:44:20Z",
+      "completed_at_utc": "2026-05-07T05:49:02Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 281.5,
+      "force": [
+        "T1327"
+      ],
+      "only": [
+        "T1327"
+      ],
+      "results": [
+        {
+          "code": "T1327",
+          "status": "ok",
+          "version": 4,
+          "elapsed_s": 281.47367215156555,
+          "path": "strength_illustrations\\output\\T1327\\v4.png"
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-07T06:11:12Z",
+      "completed_at_utc": "2026-05-07T06:16:33Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 321.0,
+      "force": [
+        "T1327"
+      ],
+      "only": [
+        "T1327"
+      ],
+      "results": [
+        {
+          "code": "T1327",
+          "status": "fail",
+          "http": 429,
+          "error": "{\"error\":{\"code\":\"EngineOverloaded\",\"message\":\"We are currently servicing too many requests at the moment. Please wait and try again later.\"}}",
+          "elapsed_s": 320.98407793045044,
+          "version": 5
+        }
+      ]
+    },
+    {
+      "started_at_utc": "2026-05-07T06:16:46Z",
+      "completed_at_utc": "2026-05-07T06:21:24Z",
+      "deployment": "gpt-image-2",
+      "wall_clock_s": 278.5,
+      "force": [
+        "T1327"
+      ],
+      "only": [
+        "T1327"
+      ],
+      "results": [
+        {
+          "code": "T1327",
+          "status": "ok",
+          "version": 5,
+          "elapsed_s": 278.4642720222473,
+          "path": "strength_illustrations\\output\\T1327\\v5.png"
+        }
+      ]
     }
   ],
   "by_code": {
@@ -2457,9 +2629,9 @@
       "last_run_utc": "2026-05-04T08:28:29Z"
     },
     "T1275": {
-      "latest_version": 3,
-      "last_status": "skip",
-      "last_run_utc": "2026-05-04T08:28:29Z"
+      "latest_version": 4,
+      "last_status": "ok",
+      "last_run_utc": "2026-05-06T06:49:52Z"
     },
     "T1153": {
       "latest_version": 1,
@@ -2572,9 +2744,9 @@
       "last_run_utc": "2026-05-04T08:28:29Z"
     },
     "T1368": {
-      "latest_version": 1,
+      "latest_version": 3,
       "last_status": "ok",
-      "last_run_utc": "2026-05-04T08:28:29Z"
+      "last_run_utc": "2026-05-06T07:12:59Z"
     },
     "T1244": {
       "latest_version": 1,
@@ -2592,14 +2764,14 @@
       "last_run_utc": "2026-05-04T08:28:29Z"
     },
     "T1326": {
-      "latest_version": 1,
+      "latest_version": 3,
       "last_status": "ok",
-      "last_run_utc": "2026-05-04T08:28:29Z"
+      "last_run_utc": "2026-05-06T07:12:59Z"
     },
     "T1327": {
-      "latest_version": 1,
+      "latest_version": 5,
       "last_status": "ok",
-      "last_run_utc": "2026-05-04T08:28:29Z"
+      "last_run_utc": "2026-05-07T06:21:24Z"
     },
     "SL_WALLSIT": {
       "latest_version": 1,
