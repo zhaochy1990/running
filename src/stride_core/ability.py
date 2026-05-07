@@ -111,7 +111,8 @@ AEROBIC_MAX_HR_DRIFT = 0.08
 AEROBIC_MAX_PEAK_HR_ABOVE_TARGET = 25  # reject if max_hr > target_hr + 25 (e.g. >170 at target 145)
 
 # Bump this when persisted ability_snapshot rows need to be invalidated.
-ABILITY_MODEL_VERSION = 5
+# v6: Daniels VDOT→marathon table re-derived from formulas (was ~22 min slow).
+ABILITY_MODEL_VERSION = 6
 
 # Current race-readiness should be driven by recent evidence, not the best workout
 # from a prior training cycle. A 90-day window keeps one marathon-specific block in
@@ -263,21 +264,27 @@ TRAIN_TYPE_HR_TARGETS: dict[str, tuple[float, float]] = {
 # Daniels VDOT — canonical table & formulas.
 # ---------------------------------------------------------------------------
 
-# VDOT → predicted marathon time (seconds).  Canonical Jack Daniels values,
-# 30-85 in 5-point increments.  Intermediate VDOT uses linear interpolation.
+# VDOT → predicted marathon time (seconds).  Derived directly from the
+# Daniels formulas in this module — `daniels_vo2_required(42195, T)` and
+# `daniels_pct_vo2max(T)` — by numerically solving for T at each VDOT such
+# that `pct(T) * VDOT == vo2_required(42195, T)`. This keeps the table
+# self-consistent with the formulas (a previous hand-typed "canonical" table
+# was systematically ~22 minutes too slow). See `spike/verify_daniels_table.py`
+# and `tests/test_ability.py::test_daniels_table_matches_formula` for the
+# locked-in equivalence. Intermediate VDOT uses linear interpolation.
 DANIELS_VDOT_TO_MARATHON_S: dict[int, int] = {
-    30: 5 * 3600 + 10 * 60 + 40,   # 5:10:40
-    35: 4 * 3600 + 34 * 60 + 59,   # 4:34:59
-    40: 4 * 3600 + 9 * 60 + 28,    # 4:09:28
-    45: 3 * 3600 + 49 * 60 + 45,   # 3:49:45
-    50: 3 * 3600 + 32 * 60 + 26,   # 3:32:26
-    55: 3 * 3600 + 18 * 60 + 1,    # 3:18:01
-    60: 3 * 3600 + 5 * 60 + 54,    # 3:05:54
-    65: 2 * 3600 + 55 * 60 + 29,   # 2:55:29
-    70: 2 * 3600 + 46 * 60 + 29,   # 2:46:29
-    75: 2 * 3600 + 38 * 60 + 28,   # 2:38:28
-    80: 2 * 3600 + 31 * 60 + 14,   # 2:31:14
-    85: 2 * 3600 + 24 * 60 + 52,   # 2:24:52
+    30: 17392,  # 4:49:52
+    35: 15369,  # 4:16:09
+    40: 13780,  # 3:49:40
+    45: 12498,  # 3:28:18
+    50: 11442,  # 3:10:42
+    55: 10557,  # 2:55:57
+    60: 9804,   # 2:43:24
+    65: 9157,   # 2:32:37
+    70: 8594,   # 2:23:14
+    75: 8101,   # 2:15:01
+    80: 7665,   # 2:07:45
+    85: 7276,   # 2:01:16
 }
 
 
