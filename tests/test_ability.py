@@ -437,6 +437,141 @@ class TestL1Quality:
         assert out["breakdown"]["pace_adherence"] >= 85.0, \
             f"work-lap median should drive adherence high, got {out['breakdown']['pace_adherence']}"
 
+    def test_pace_stability_dedupes_autokm_and_type2(self):
+        """COROS stores both autoKm + type2 rows for the same lap_index;
+        pace_stability must keep only the type2 (plan-step summary) row.
+
+        Build 4 work reps where each rep has TWO entries — an autoKm slice with
+        a slightly different pace and a type2 summary with the canonical pace.
+        If both are counted, CV is inflated by the duplicate noise; with the
+        fix, only the 4 type2 paces (all identical) are used → high stability.
+        """
+        # 4 reps, two rows each. type2 paces tightly clustered (250s/km), but
+        # the matching autoKm slice paces are wider (240/260/240/260) — if both
+        # were counted, the CV would jump. Both rows of a rep share lap_index.
+        type2_paces = [250, 250, 250, 250]
+        autokm_paces = [240, 260, 240, 260]
+        laps = []
+        for i, (t2, ak) in enumerate(zip(type2_paces, autokm_paces), start=1):
+            laps.append({
+                "lap_index": i, "lap_type": "autoKm",
+                "avg_pace": ak, "avg_hr": 175, "avg_cadence": 188,
+                "duration_s": ak, "distance_m": 1.0, "exercise_type": 2,
+            })
+            laps.append({
+                "lap_index": i, "lap_type": "type2",
+                "avg_pace": t2, "avg_hr": 175, "avg_cadence": 188,
+                "duration_s": 3 * t2, "distance_m": 3.0, "exercise_type": 2,
+            })
+        act = {
+            "label_id": "T_DEDUPE",
+            "train_type": "Interval",
+            "avg_hr": 175,
+            "avg_pace_s_km": 250,
+            "laps": laps,
+            "zones": [],
+            "timeseries": [],
+        }
+        out = compute_l1_quality(act)
+        # type2-only (CV=0) → pace_stability=100. If both were counted, CV
+        # explodes (~0.04) and stability falls below 95.
+        assert out["breakdown"]["pace_stability"] >= 95.0, \
+            f"dedupe failed; got {out['breakdown']['pace_stability']}"
+
+    def test_pace_stability_drops_outlier_fragments(self):
+        """A short fragment lap (< 0.3km / < 60s) must be excluded from CV.
+
+        3 normal work laps at consistent pace plus 1 fragment with a wildly
+        different pace; without the filter, CV is contaminated and stability
+        drops sharply. With the filter, the fragment is dropped and stability
+        stays high.
+        """
+        laps = [
+            {"lap_index": 1, "lap_type": "type2", "avg_pace": 250,
+             "avg_hr": 175, "avg_cadence": 188,
+             "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+            {"lap_index": 2, "lap_type": "type2", "avg_pace": 250,
+             "avg_hr": 175, "avg_cadence": 188,
+             "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+            {"lap_index": 3, "lap_type": "type2", "avg_pace": 250,
+             "avg_hr": 175, "avg_cadence": 188,
+             "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+            # outlier fragment — exercise_type=0 so neither rest filter catches it
+            {"lap_index": 4, "lap_type": "type2", "avg_pace": 494,
+             "avg_hr": 175, "avg_cadence": 188,
+             "duration_s": 27.66, "distance_m": 0.06, "exercise_type": 0},
+        ]
+        act = {
+            "label_id": "T_FRAGMENT",
+            "train_type": "Interval",
+            "avg_hr": 175,
+            "avg_pace_s_km": 250,
+            "laps": laps,
+            "zones": [],
+            "timeseries": [],
+        }
+        out = compute_l1_quality(act)
+        # Without fragment: 3 paces at 250 → CV=0 → stability=100.
+        # With fragment: paces [250,250,250,494] → CV~0.27 → stability~46.
+        assert out["breakdown"]["pace_stability"] >= 95.0, \
+            f"fragment not filtered; got {out['breakdown']['pace_stability']}"
+
+    def test_pace_stability_real_interval_pattern(self):
+        """Replicate the zhaochaoyi 5/06 4×3K interval pattern.
+
+        Mix of autoKm 1km slices and type2 plan-step summaries (3km work reps),
+        all with ex_type=2, plus one fragment outlier. Verify pace_stability
+        ≥ 75 once dedupe + outlier filter are applied. Pre-fix this scored
+        ~41; post-fix it should be high since the type2 work-rep paces are
+        consistent.
+        """
+        # 4 work reps of 3km each at ~245-250s/km (type2 summaries).
+        # Each rep also has 3 autoKm 1km slices with wider pace variation
+        # (rep splits drift faster→slower across the 3km).
+        type2_rep_paces = [245, 248, 250, 247]
+        laps = []
+        idx = 1
+        for rep_i, t2 in enumerate(type2_rep_paces):
+            # 3 autoKm 1km slices per rep, paces vary
+            for slice_i in range(3):
+                slice_pace = t2 - 6 + slice_i * 6  # e.g. 239, 245, 251
+                laps.append({
+                    "lap_index": idx, "lap_type": "autoKm",
+                    "avg_pace": slice_pace, "avg_hr": 175, "avg_cadence": 188,
+                    "duration_s": slice_pace, "distance_m": 1.0,
+                    "exercise_type": 2,
+                })
+                idx += 1
+            # type2 plan-step summary covering 3km — give it the same lap_index
+            # as one of the autoKm slices to trigger dedupe (use the middle slice)
+            mid_idx = idx - 2
+            laps.append({
+                "lap_index": mid_idx, "lap_type": "type2",
+                "avg_pace": t2, "avg_hr": 175, "avg_cadence": 188,
+                "duration_s": 3 * t2, "distance_m": 3.0, "exercise_type": 2,
+            })
+        # Add a fragment outlier (matches the actual 5/06 artifact)
+        laps.append({
+            "lap_index": idx, "lap_type": "type2",
+            "avg_pace": 494, "avg_hr": 170, "avg_cadence": 180,
+            "duration_s": 27.66, "distance_m": 0.06, "exercise_type": 0,
+        })
+        act = {
+            "label_id": "T_REAL_INTERVAL",
+            "train_type": "Interval",
+            "avg_hr": 175,
+            "avg_pace_s_km": 280,
+            "laps": laps,
+            "zones": [],
+            "timeseries": [],
+        }
+        out = compute_l1_quality(act)
+        # After dedupe + outlier filter, only the 4 type2 paces (245,248,250,247)
+        # remain. CV ≈ 0.008 → stability ≈ 98. Pre-fix, all 13 entries would be
+        # in play including the 494 outlier → stability ≈ 41.
+        assert out["breakdown"]["pace_stability"] >= 75.0, \
+            f"real-interval pattern still noisy; got {out['breakdown']['pace_stability']}"
+
     def test_easy_run_no_train_type_pace_adherence_unchanged(self):
         """Regression guard: easy/long runs (train_type None or 'Base') must
         keep using avg_pace — the work-lap-median branch is gated on the
