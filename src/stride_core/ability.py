@@ -111,7 +111,7 @@ AEROBIC_MAX_HR_DRIFT = 0.08
 AEROBIC_MAX_PEAK_HR_ABOVE_TARGET = 25  # reject if max_hr > target_hr + 25 (e.g. >170 at target 145)
 
 # Bump this when persisted ability_snapshot rows need to be invalidated.
-ABILITY_MODEL_VERSION = 4
+ABILITY_MODEL_VERSION = 5
 
 # Current race-readiness should be driven by recent evidence, not the best workout
 # from a prior training cycle. A 90-day window keeps one marathon-specific block in
@@ -630,6 +630,13 @@ def _compute_pace_adherence(
         target_pace = 370.0 - (frac - 0.65) / (0.90 - 0.65) * (370.0 - 230.0)
     if not target_pace or target_pace <= 0:
         return 60.0  # neutral when we cannot estimate
+    # The linear HR→pace heuristic above was calibrated on the [0.65, 0.90]
+    # HRmax band; extrapolating to anaerobic territory (frac >0.95) yields
+    # absurdly fast targets (e.g. frac=1.05 → 2:26/km). Clamp the implied
+    # target to a physically sensible band so interval/sprint efforts are not
+    # judged against a fantasy reference.
+    if not (plan_target and plan_target.get("pace_s_km")):
+        target_pace = _clamp(target_pace, 200.0, 540.0)  # 3:20/km .. 9:00/km
     err_frac = abs(effective_pace - target_pace) / target_pace
     return _clamp(100.0 - err_frac * 300.0, 0.0, 100.0)
 
@@ -997,11 +1004,52 @@ def _extract_interval_reps(activity: Any) -> list[tuple[float, float]]:
 
     Heuristic: laps tagged as exercise_type == 2 (training) with distance
     ≥ VO2MAX_INTERVAL_MIN_DIST_M (as meters) OR ≥ 0.9 km in km-scale models.
+
+    COROS stores both ``autoKm`` (auto-1km slices) and ``type2`` (plan-step
+    summary) rows for the same logical work segment, sharing ``lap_index``.
+    Including both double-counts the work and inflates VDOT (e.g. a 4×3K
+    interval session shows up as 16 reps totalling 22 km instead of 4 reps
+    totalling 12 km). Prefer ``type2`` summaries when present for a given
+    lap_index because they reflect the planned rep boundary; fall back to the
+    ``autoKm`` slice when only that flavour exists.
     """
-    reps: list[tuple[float, float]] = []
     laps = _get(activity, "laps") or []
     sport_type = _get(activity, "sport_type")
+
+    # Drop fragment outliers (<0.3km / <60s) up front — these are GPS/parsing
+    # artifacts (e.g. a stray 0.06km / 27.66s row at the end of the run) that
+    # neither look like a work rep nor a meaningful rest segment.
+    cleaned: list[Any] = []
     for lp in laps:
+        d_raw = _get(lp, "distance_m") or 0
+        t_raw = _get(lp, "duration_s") or 0
+        if d_raw < 0.3 or t_raw < 60:
+            continue
+        cleaned.append(lp)
+
+    # COROS interleaves two parallel "lap streams" in the same table: the
+    # ``type2`` plan-step rows mark the boundaries of each work/rest segment
+    # the user actually programmed (e.g. one 3km work rep), while the
+    # ``autoKm`` rows are 1km auto-slices that fire independent of the plan
+    # and overlap the type2 segments. Their `lap_index` values do NOT align
+    # 1:1 — autoKm reuses lap_index across the same physical rep — so a
+    # naive lap_index-keyed dedupe leaves overlap. When BOTH flavours are
+    # present, prefer type2-only so we count each programmed rep exactly
+    # once. Fall back to autoKm only when the activity has no type2 rows.
+    type2_work = [
+        lp for lp in cleaned
+        if _get(lp, "lap_type") == "type2"
+        and (_get(lp, "exercise_type") is None or _get(lp, "exercise_type") == 2)
+    ]
+    if type2_work:
+        candidates = type2_work
+    else:
+        # No structured plan-step rows — use whatever's left (typically
+        # autoKm only, e.g. unstructured "just run hard for 5K" sessions).
+        candidates = cleaned
+
+    reps: list[tuple[float, float]] = []
+    for lp in candidates:
         ex = _get(lp, "exercise_type")
         if ex is not None and ex != 2:
             continue
@@ -1044,13 +1092,25 @@ def compute_l3_vo2max(
                 lid = _get(a, "label_id")
                 best_evidence = [str(lid)] if lid else []
         # Also consider the run as a whole if it looks like a 5K/10K/half race.
+        # The race-like path is for *continuous* time trials — feeding a 15km
+        # mixed warmup+work+cooldown session in here dilutes pace badly and
+        # gives a misleadingly low VDOT (e.g. 4×3K interval at 4:00/km work
+        # pace, total 15 km / 75 min, returns VDOT ≈ 41 vs 51 from the rep
+        # path). Reject any activity with rest laps mid-effort; for these,
+        # rely on the interval-rep path above.
         dist_m = _get(a, "distance_m") or 0
         dur_s = _get(a, "duration_s") or 0
         dist_m_norm = _distance_to_meters(dist_m, _get(a, "sport_type"))
         train_type = _get(a, "train_type")
+        laps_for_race = _get(a, "laps") or []
+        has_rest_segment = any(
+            _is_rest_lap(lp) for lp in laps_for_race
+            if _get(lp, "exercise_type") not in (1, 3)  # ignore warmup/cooldown
+        )
         is_race_like = (
             (4800 <= dist_m_norm <= 21500)
             and dur_s > 0
+            and not has_rest_segment
             and (train_type in (None, "Interval", "VO2 Max", "Threshold") or dur_s < 3600)
         )
         if is_race_like:
@@ -1210,7 +1270,9 @@ def compute_l3_economy(
     for a in activities_28d:
         if not _is_running(a):
             continue
-        laps = _get(a, "laps") or []
+        # Dedupe so an autoKm + type2 pair sharing a lap_index does not
+        # double-vote the same cadence sample (and skip <0.3km/<60s fragments).
+        laps = _dedupe_and_filter_laps(_get(a, "laps") or [])
         took = False
         for lp in laps:
             pace = _get(lp, "avg_pace")
