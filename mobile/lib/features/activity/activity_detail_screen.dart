@@ -34,7 +34,7 @@ class ActivityDetailScreen extends ConsumerWidget {
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
         ),
-        title: Text(teamId != null ? '战队活动' : '活动详情'),
+        title: Text(teamId != null ? '跑团活动' : '活动详情'),
       ),
       body: user.when(
         loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2)),
@@ -42,7 +42,11 @@ class ActivityDetailScreen extends ConsumerWidget {
         data: (profile) {
           final ownerId = ownerUserId ?? profile?.id;
           if (ownerId == null) return const _ErrorState(message: '未登录');
-          return _ActivityBody(userId: ownerId, labelId: activityId);
+          return _ActivityBody(
+            userId: ownerId,
+            labelId: activityId,
+            teamId: teamId,
+          );
         },
       ),
     );
@@ -50,10 +54,15 @@ class ActivityDetailScreen extends ConsumerWidget {
 }
 
 class _ActivityBody extends ConsumerWidget {
-  const _ActivityBody({required this.userId, required this.labelId});
+  const _ActivityBody({
+    required this.userId,
+    required this.labelId,
+    this.teamId,
+  });
 
   final String userId;
   final String labelId;
+  final String? teamId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -63,7 +72,7 @@ class _ActivityBody extends ConsumerWidget {
         ref.invalidate(activityRepositoryProvider);
       },
       child: StreamBuilder<ActivityDetailResponse>(
-        stream: repo.watchActivity(userId, labelId),
+        stream: repo.watchActivity(userId, labelId, teamId: teamId),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return _ErrorState(message: '${snapshot.error}');

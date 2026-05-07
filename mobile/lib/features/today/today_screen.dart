@@ -5,10 +5,22 @@ import 'package:go_router/go_router.dart';
 import '../../core/auth/current_user.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../../data/api/stride_api.dart';
 import '../../data/models/activity.dart';
 import '../../data/models/plan.dart';
 import '../../data/repos/plan_repository.dart';
 import '../../shared/utils/format.dart';
+
+final _recentActivitiesProvider =
+    FutureProvider.family<List<Activity>, String>((ref, user) async {
+  try {
+    return await ref
+        .watch(strideApiProvider)
+        .listActivities(user, limit: 7);
+  } catch (_) {
+    return const <Activity>[];
+  }
+});
 
 class TodayScreen extends ConsumerWidget {
   const TodayScreen({super.key});
@@ -41,10 +53,12 @@ class _TodayBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(planRepositoryProvider);
+    final recent = ref.watch(_recentActivitiesProvider(userId));
     return RefreshIndicator(
       onRefresh: () async {
-        // Invalidate the provider so a new stream subscription kicks off.
-        ref.invalidate(planRepositoryProvider);
+        ref
+          ..invalidate(planRepositoryProvider)
+          ..invalidate(_recentActivitiesProvider(userId));
       },
       child: StreamBuilder<PlanTodayResponse>(
         stream: repo.watchToday(userId),
@@ -53,7 +67,10 @@ class _TodayBody extends ConsumerWidget {
             return _ErrorState(message: '${snapshot.error}');
           }
           if (!snapshot.hasData) return const _LoadingState();
-          return _TodayContent(data: snapshot.data!);
+          return _TodayContent(
+            data: snapshot.data!,
+            recent: recent.valueOrNull ?? const <Activity>[],
+          );
         },
       ),
     );
@@ -61,18 +78,23 @@ class _TodayBody extends ConsumerWidget {
 }
 
 class _TodayContent extends StatelessWidget {
-  const _TodayContent({required this.data});
+  const _TodayContent({required this.data, required this.recent});
 
   final PlanTodayResponse data;
+  final List<Activity> recent;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final today = data.sessions.isNotEmpty ? data.sessions.first : null;
-    final actuals = data.plannedVsActual
+    // Recent activities — prefer the dedicated `listActivities` feed since
+    // plannedVsActual only fills slots that have a matching planned session.
+    // Fall back to that mapping when the dedicated feed is unavailable.
+    final fromMapping = data.plannedVsActual
         .map((p) => p.actual)
         .whereType<Activity>()
         .toList();
+    final actuals = recent.isNotEmpty ? recent : fromMapping;
 
     return ListView(
       padding: const EdgeInsets.all(16),

@@ -171,18 +171,20 @@ class _HealthContent extends StatelessWidget {
         Text('疲劳度趋势', style: theme.textTheme.titleLarge),
         const SizedBox(height: 12),
         _SingleLineChartCard(
-          values: health.health
-              .map((r) => (date: r.date, value: r.fatigue?.toDouble()))
-              .toList(),
+          values: [
+            for (final r in health.health)
+              (date: r.date, value: r.fatigue?.toDouble())
+          ],
           color: AppColors.warning,
         ),
         const SizedBox(height: 16),
         Text('静息心率', style: theme.textTheme.titleLarge),
         const SizedBox(height: 12),
         _SingleLineChartCard(
-          values: health.health
-              .map((r) => (date: r.date, value: r.rhr?.toDouble()))
-              .toList(),
+          values: [
+            for (final r in health.health)
+              (date: r.date, value: r.rhr?.toDouble())
+          ],
           color: AppColors.danger,
         ),
         const SizedBox(height: 32),
@@ -236,6 +238,7 @@ class _PmcChartCard extends StatelessWidget {
     final ctlSpots = <FlSpot>[];
     final atlSpots = <FlSpot>[];
     final tsbSpots = <FlSpot>[];
+    final dates = <String>[];
     var minY = 0.0;
     var maxY = 0.0;
     for (var i = 0; i < records.length; i++) {
@@ -246,6 +249,7 @@ class _PmcChartCard extends StatelessWidget {
       ctlSpots.add(FlSpot(i.toDouble(), ctl));
       atlSpots.add(FlSpot(i.toDouble(), atl));
       tsbSpots.add(FlSpot(i.toDouble(), tsb));
+      dates.add(r.date);
       minY = [minY, ctl, atl, tsb].reduce((a, b) => a < b ? a : b);
       maxY = [maxY, ctl, atl, tsb].reduce((a, b) => a > b ? a : b);
     }
@@ -284,7 +288,14 @@ class _PmcChartCard extends StatelessWidget {
                   titlesData: FlTitlesData(
                     topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                     rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 22,
+                        interval: _bottomInterval(dates.length),
+                        getTitlesWidget: (v, _) => _dateLabel(v, dates),
+                      ),
+                    ),
                     leftTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
@@ -332,10 +343,12 @@ class _SingleLineChartCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final spots = <FlSpot>[];
+    final dates = <String>[];
     for (var i = 0; i < values.length; i++) {
       final v = values[i].value;
       if (v == null) continue;
       spots.add(FlSpot(i.toDouble(), v));
+      dates.add(values[i].date);
     }
 
     if (spots.isEmpty) {
@@ -351,12 +364,25 @@ class _SingleLineChartCard extends StatelessWidget {
     final minY = ys.reduce((a, b) => a < b ? a : b);
     final maxY = ys.reduce((a, b) => a > b ? a : b);
     final pad = (maxY - minY).abs() * 0.1;
+    // Build a parallel index→date list keyed off the spot's x value (which
+    // matches the original `i` from the values list).
+    final dateByIndex = <int, String>{};
+    var written = 0;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i].value == null) continue;
+      dateByIndex[i] = values[i].date;
+      written++;
+    }
+    if (written == 0) {
+      // unreachable given the spots.isEmpty check above; safety only
+      return const SizedBox.shrink();
+    }
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: SizedBox(
-          height: 140,
+          height: 160,
           child: LineChart(
             LineChartData(
               minY: minY - pad,
@@ -371,7 +397,18 @@ class _SingleLineChartCard extends StatelessWidget {
               titlesData: FlTitlesData(
                 topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                bottomTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 22,
+                    interval: _bottomInterval(values.length),
+                    getTitlesWidget: (v, _) {
+                      final label = dateByIndex[v.round()];
+                      if (label == null) return const SizedBox.shrink();
+                      return _dateLabelFor(label);
+                    },
+                  ),
+                ),
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
@@ -404,6 +441,36 @@ class _SingleLineChartCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Tries to print ~5 evenly-spaced labels regardless of series length.
+double _bottomInterval(int n) {
+  if (n <= 1) return 1;
+  final step = (n / 5).ceil().toDouble();
+  return step < 1 ? 1 : step;
+}
+
+/// Render a 'YYYY-MM-DD' (or ISO with time) date as 'MM/DD'.
+Widget _dateLabelFor(String iso) {
+  if (iso.length < 10) return const SizedBox.shrink();
+  final mm = iso.substring(5, 7);
+  final dd = iso.substring(8, 10);
+  return Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Text(
+      '$mm/$dd',
+      style: AppTypography.monoCaption.copyWith(fontSize: 9),
+    ),
+  );
+}
+
+/// Index-based version: look up the date at integer index v in the
+/// `dates` list. Falls back to a blank widget on out-of-range to keep
+/// fl_chart from over-rendering at axis edges.
+Widget _dateLabel(double v, List<String> dates) {
+  final i = v.round();
+  if (i < 0 || i >= dates.length) return const SizedBox.shrink();
+  return _dateLabelFor(dates[i]);
 }
 
 class _LegendDot extends StatelessWidget {

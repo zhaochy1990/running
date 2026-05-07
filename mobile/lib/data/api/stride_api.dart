@@ -61,6 +61,20 @@ class StrideApi {
     return ActivityDetailResponse.fromJson(json);
   }
 
+  /// Team-scoped activity detail — used when viewing a teammate's activity.
+  /// Authorizes via team membership instead of path-user match, so the
+  /// caller doesn't get a 403 for someone else's activity.
+  Future<ActivityDetailResponse> getTeamActivity(
+    String teamId,
+    String userId,
+    String labelId,
+  ) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/teams/$teamId/activities/$userId/$labelId',
+    );
+    return ActivityDetailResponse.fromJson(json);
+  }
+
   // ── Plan ───────────────────────────────────────────────────────────────
   Future<PlanTodayResponse> getPlanToday(String user) async {
     final json = await _get<Map<String, dynamic>>('/api/$user/plan/today');
@@ -73,6 +87,22 @@ class StrideApi {
       query: {'from': from, 'to': to},
     );
     return PlanDaysResponse.fromJson(json);
+  }
+
+  /// Lightweight week index — used to find the folder for today's week
+  /// without paying for full plan/feedback bodies.
+  Future<List<WeekIndexEntry>> listWeeks(String user) async {
+    final json = await _get<Map<String, dynamic>>('/api/$user/weeks');
+    final raw = (json['weeks'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    return raw.map(WeekIndexEntry.fromJson).toList(growable: false);
+  }
+
+  /// Full week payload — plan markdown + feedback + activity list. We only
+  /// surface the markdown body in v1; the rest is read by other screens.
+  Future<WeekDetail> getWeek(String user, String folder) async {
+    final json = await _get<Map<String, dynamic>>('/api/$user/weeks/$folder');
+    return WeekDetail.fromJson(json);
   }
 
   // ── Health ─────────────────────────────────────────────────────────────

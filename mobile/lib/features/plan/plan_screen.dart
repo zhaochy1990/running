@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_exception.dart';
@@ -9,6 +10,32 @@ import '../../data/api/stride_api.dart';
 import '../../data/models/plan.dart';
 import '../../data/repos/plan_repository.dart';
 import '../../shared/utils/format.dart';
+
+/// Resolves the current week's folder by listing all weeks and picking the
+/// one whose [date_from..date_to] (inclusive) contains today.
+final _currentWeekProvider =
+    FutureProvider.family<WeekDetail?, String>((ref, user) async {
+  try {
+    final weeks = await ref.read(strideApiProvider).listWeeks(user);
+    final today = DateTime.now();
+    final todayIso =
+        '${today.year.toString().padLeft(4, '0')}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+    WeekIndexEntry? match;
+    for (final w in weeks) {
+      if (w.dateFrom.compareTo(todayIso) <= 0 &&
+          w.dateTo.compareTo(todayIso) >= 0) {
+        match = w;
+        break;
+      }
+    }
+    // Fallback: most recent week (weeks are typically newest-first from the API)
+    match ??= weeks.isNotEmpty ? weeks.first : null;
+    if (match == null) return null;
+    return ref.read(strideApiProvider).getWeek(user, match.folder);
+  } catch (_) {
+    return null;
+  }
+});
 
 class PlanScreen extends ConsumerWidget {
   const PlanScreen({super.key});
@@ -121,10 +148,13 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
     final repo = ref.watch(planRepositoryProvider);
     final range = _weekRange();
 
+    final week = ref.watch(_currentWeekProvider(widget.userId));
     return RefreshIndicator(
       onRefresh: () async {
         setState(_justPushed.clear);
-        ref.invalidate(planRepositoryProvider);
+        ref
+          ..invalidate(planRepositoryProvider)
+          ..invalidate(_currentWeekProvider(widget.userId));
       },
       child: StreamBuilder<PlanDaysResponse>(
         stream: repo.watchDays(widget.userId, range.from, range.to),
@@ -134,30 +164,107 @@ class _PlanBodyState extends ConsumerState<_PlanBody> {
             return const Center(child: CircularProgressIndicator(strokeWidth: 2));
           }
           final days = snap.data!.days;
-          if (days.isEmpty) {
-            return ListView(
-              padding: const EdgeInsets.all(32),
-              children: const [Center(child: Text('本周暂无计划'))],
-            );
-          }
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              if (week.valueOrNull?.plan != null)
+                _WeekPlanMarkdown(week: week.value!),
+              if (week.valueOrNull?.plan != null) const SizedBox(height: 16),
               Text(
                 '${range.from} → ${range.to}',
                 style: theme.textTheme.titleSmall,
               ),
               const SizedBox(height: 12),
-              for (final day in days) _DayCard(
-                day: day,
-                pushing: _pushing,
-                justPushed: _justPushed,
-                onPush: _push,
-                keyBuilder: _key,
-              ),
+              if (days.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: Text('本周暂无结构化计划')),
+                )
+              else
+                for (final day in days) _DayCard(
+                  day: day,
+                  pushing: _pushing,
+                  justPushed: _justPushed,
+                  onPush: _push,
+                  keyBuilder: _key,
+                ),
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _WeekPlanMarkdown extends StatefulWidget {
+  const _WeekPlanMarkdown({required this.week});
+  final WeekDetail week;
+
+  @override
+  State<_WeekPlanMarkdown> createState() => _WeekPlanMarkdownState();
+}
+
+class _WeekPlanMarkdownState extends State<_WeekPlanMarkdown> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text('本周训练计划',
+                        style: theme.textTheme.titleMedium),
+                  ),
+                  Icon(
+                    _expanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: AppColors.foregroundMuted,
+                  ),
+                ],
+              ),
+            ),
+            if (_expanded) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${widget.week.dateFrom} → ${widget.week.dateTo}',
+                style: AppTypography.monoCaption,
+              ),
+              const SizedBox(height: 8),
+              MarkdownBody(
+                data: widget.week.plan!,
+                shrinkWrap: true,
+                styleSheet: MarkdownStyleSheet(
+                  p: theme.textTheme.bodyMedium,
+                  h1: theme.textTheme.titleLarge,
+                  h2: theme.textTheme.titleMedium,
+                  h3: theme.textTheme.titleSmall,
+                  code: AppTypography.monoCaption.copyWith(
+                    backgroundColor: AppColors.surfaceMuted,
+                  ),
+                  tableBody: AppTypography.monoCaption,
+                  tableHead: AppTypography.monoCaption.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                  tableBorder: TableBorder.all(
+                    color: AppColors.border, width: 0.5,
+                  ),
+                  blockquote: theme.textTheme.bodySmall?.copyWith(
+                    color: AppColors.foregroundMuted,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

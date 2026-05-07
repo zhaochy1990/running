@@ -25,7 +25,16 @@ class ActivityRepository {
   final Logger _log;
 
   /// Watch a single activity detail. Emits cache → network result.
-  Stream<ActivityDetailResponse> watchActivity(String user, String labelId) async* {
+  ///
+  /// When [teamId] is set, fetches via the team-scoped endpoint, which
+  /// authorizes by team membership instead of JWT-sub-vs-path-user match.
+  /// Cache key stays `(user, labelId)` since the underlying activity is
+  /// the same regardless of which lens you view it through.
+  Stream<ActivityDetailResponse> watchActivity(
+    String user,
+    String labelId, {
+    String? teamId,
+  }) async* {
     final cacheRow = await (_db.select(_db.cachedActivities)
           ..where((t) => t.user.equals(user) & t.labelId.equals(labelId)))
         .getSingleOrNull();
@@ -43,7 +52,9 @@ class ActivityRepository {
     }
 
     try {
-      final fresh = await _api.getActivity(user, labelId);
+      final fresh = teamId != null
+          ? await _api.getTeamActivity(teamId, user, labelId)
+          : await _api.getActivity(user, labelId);
       await _db.into(_db.cachedActivities).insertOnConflictUpdate(
             CachedActivitiesCompanion.insert(
               user: user,

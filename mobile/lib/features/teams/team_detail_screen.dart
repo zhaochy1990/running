@@ -52,8 +52,8 @@ class _TeamDetailScreenState extends ConsumerState<TeamDetailScreen>
           onPressed: () => context.pop(),
         ),
         title: team.when(
-          loading: () => Text('战队 · ${widget.teamId}'),
-          error: (_, _) => Text('战队 · ${widget.teamId}'),
+          loading: () => Text('跑团 · ${widget.teamId}'),
+          error: (_, _) => Text('跑团 · ${widget.teamId}'),
           data: (t) => Text(t.name),
         ),
         bottom: TabBar(

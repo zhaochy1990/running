@@ -54,7 +54,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('今日'), findsWidgets);
     expect(find.text('体能'), findsOneWidget);
-    expect(find.text('战队'), findsOneWidget);
+    expect(find.text('跑团'), findsOneWidget);
     expect(find.text('计划'), findsOneWidget);
     expect(find.text('我的'), findsOneWidget);
   });

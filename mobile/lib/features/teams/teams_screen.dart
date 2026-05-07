@@ -18,7 +18,7 @@ class TeamsScreen extends ConsumerWidget {
     final teams = ref.watch(_myTeamsProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('战队')),
+      appBar: AppBar(title: const Text('跑团')),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(_myTeamsProvider),
         child: teams.when(
@@ -31,7 +31,7 @@ class TeamsScreen extends ConsumerWidget {
                 children: [
                   Center(
                     child: Text(
-                      '还没有加入任何战队',
+                      '还没有加入任何跑团',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ),
@@ -102,7 +102,7 @@ class _ErrorState extends StatelessWidget {
           children: [
             const Icon(Icons.cloud_off, size: 32, color: AppColors.foregroundMuted),
             const SizedBox(height: 12),
-            Text('无法加载战队', style: theme.textTheme.titleMedium),
+            Text('无法加载跑团', style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
             Text(message,
                 style: theme.textTheme.bodySmall, textAlign: TextAlign.center),

@@ -3,7 +3,7 @@ description: "STRIDE running training mobile app"
 publish_to: 'none'
 
 # CalVer aligned with auth-service / web app: YEAR.MONTH.MICRO+BUILD
-version: 2026.5.0+1
+version: 2026.5.1+2
 
 environment:
   sdk: ^3.11.5

@@ -136,3 +136,59 @@ class PlanDaysResponse {
 
   Map<String, dynamic> toJson() => _$PlanDaysResponseToJson(this);
 }
+
+/// Lightweight week index entry — covers what /api/{user}/weeks returns.
+/// Only the fields we render are typed; the rest stays on the response
+/// for forward compatibility.
+class WeekIndexEntry {
+  const WeekIndexEntry({
+    required this.folder,
+    required this.dateFrom,
+    required this.dateTo,
+    this.hasPlan = false,
+    this.planTitle,
+  });
+
+  factory WeekIndexEntry.fromJson(Map<String, dynamic> json) {
+    return WeekIndexEntry(
+      folder: json['folder'] as String,
+      dateFrom: json['date_from'] as String,
+      dateTo: json['date_to'] as String,
+      hasPlan: json['has_plan'] as bool? ?? false,
+      planTitle: json['plan_title'] as String?,
+    );
+  }
+
+  final String folder;
+  final String dateFrom;
+  final String dateTo;
+  final bool hasPlan;
+  final String? planTitle;
+}
+
+/// Full week — plan markdown + feedback + activity list.
+class WeekDetail {
+  const WeekDetail({
+    required this.folder,
+    required this.dateFrom,
+    required this.dateTo,
+    this.plan,
+    this.feedback,
+  });
+
+  factory WeekDetail.fromJson(Map<String, dynamic> json) {
+    return WeekDetail(
+      folder: json['folder'] as String,
+      dateFrom: json['date_from'] as String,
+      dateTo: json['date_to'] as String,
+      plan: json['plan'] as String?,
+      feedback: json['feedback'] as String?,
+    );
+  }
+
+  final String folder;
+  final String dateFrom;
+  final String dateTo;
+  final String? plan;
+  final String? feedback;
+}

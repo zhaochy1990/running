@@ -19,7 +19,7 @@ class MainShell extends StatelessWidget {
   static const _tabs = [
     _Tab('/today', Icons.today_outlined, Icons.today, '今日'),
     _Tab('/health', Icons.favorite_outline, Icons.favorite, '体能'),
-    _Tab('/teams', Icons.groups_outlined, Icons.groups, '战队'),
+    _Tab('/teams', Icons.groups_outlined, Icons.groups, '跑团'),
     _Tab('/plan', Icons.calendar_month_outlined, Icons.calendar_month, '计划'),
     _Tab('/profile', Icons.person_outline, Icons.person, '我的'),
   ];
