@@ -258,6 +258,23 @@ CREATE TABLE IF NOT EXISTS activity_ability (
     computed_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- v7 PB-memory channel for VO2max. Single row per race-distance class
+-- ('5K' / '10K' / 'half' / 'full'); upserts keep the highest VDOT seen.
+-- Read by stride_core.ability when computing the L3 VO2max dimension —
+-- the decayed PB VDOT (0.5%/month, 18-month max age) acts as a floor on
+-- the rolling-window estimate so a 14-month-old marathon PB no longer
+-- silently disappears from the metric.
+CREATE TABLE IF NOT EXISTS vo2max_pb (
+    race_type       TEXT PRIMARY KEY,             -- '5K' | '10K' | 'half' | 'full'
+    distance_m      REAL NOT NULL,
+    duration_s      REAL NOT NULL,
+    vdot            REAL NOT NULL,
+    pb_date         TEXT NOT NULL,                 -- ISO YYYY-MM-DD
+    label_id        TEXT NOT NULL,
+    even_paced      INTEGER NOT NULL DEFAULT 1,    -- 1 if Step 2 well-paced gate accepted
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Phase 3: per-day HRV detail (separate table because the row is heavier
 -- than daily_health and not all providers populate it).
 CREATE TABLE IF NOT EXISTS daily_hrv (
@@ -1033,6 +1050,57 @@ class Database:
                FROM activity_ability WHERE label_id = ?""",
             (label_id,),
         ).fetchone()
+
+    # --- VO2max PB channel (v7) ---
+
+    def upsert_vo2max_pb(
+        self,
+        *,
+        race_type: str,
+        distance_m: float,
+        duration_s: float,
+        vdot: float,
+        pb_date: str,
+        label_id: str,
+        even_paced: bool = True,
+    ) -> bool:
+        """Conditionally write a PB row.
+
+        Only overwrites the existing row when ``vdot`` strictly exceeds the
+        stored value — PBs are monotonic by construction. Returns True if a
+        write happened, False otherwise. ``pb_date`` should be an ISO
+        YYYY-MM-DD string (Shanghai-local semantics matching ability_hook).
+        """
+        existing = self._conn.execute(
+            "SELECT vdot FROM vo2max_pb WHERE race_type = ?",
+            (race_type,),
+        ).fetchone()
+        if existing is not None and float(existing[0]) >= float(vdot):
+            return False
+        self._conn.execute(
+            """INSERT OR REPLACE INTO vo2max_pb
+               (race_type, distance_m, duration_s, vdot, pb_date, label_id,
+                even_paced, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            (
+                race_type, float(distance_m), float(duration_s), float(vdot),
+                pb_date, label_id, 1 if even_paced else 0,
+            ),
+        )
+        self._conn.commit()
+        return True
+
+    def fetch_vo2max_pbs(self) -> list[sqlite3.Row]:
+        return self._conn.execute(
+            """SELECT race_type, distance_m, duration_s, vdot, pb_date,
+                      label_id, even_paced, updated_at
+               FROM vo2max_pb ORDER BY race_type"""
+        ).fetchall()
+
+    def delete_vo2max_pbs(self) -> None:
+        """Test/backfill helper — wipe the PB table."""
+        self._conn.execute("DELETE FROM vo2max_pb")
+        self._conn.commit()
 
     # --- Scheduled workouts (provider-agnostic structured calendar) ---
     #

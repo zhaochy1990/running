@@ -32,6 +32,7 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
             L4_WEIGHTS,
             compute_ability_snapshot,
             compute_l1_quality,
+            compute_pb_vdot_for_activity,
         )
     except Exception as e:  # pragma: no cover
         logger.debug("ability module unavailable: %s", e)
@@ -55,6 +56,27 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                     l1_breakdown=l1.get("breakdown"),
                     contribution=None,
                 )
+                # v7 Step 3: enroll the activity as a PB if it lands in
+                # one of the canonical race-distance bands AND (for
+                # marathons) passes the Step 2 well-paced gate. PB upsert
+                # only writes when the new VDOT exceeds the existing one,
+                # so re-syncing the same activity is idempotent.
+                try:
+                    pb = compute_pb_vdot_for_activity(activity)
+                    if pb is not None:
+                        race_type, vdot = pb
+                        pb_date = _activity_iso_date(activity, today_iso)
+                        db.upsert_vo2max_pb(
+                            race_type=race_type,
+                            distance_m=float(activity.get("distance_m") or 0),
+                            duration_s=float(activity.get("duration_s") or 0),
+                            vdot=float(vdot),
+                            pb_date=pb_date,
+                            label_id=str(lid),
+                            even_paced=True,
+                        )
+                except Exception as e:
+                    logger.debug("ability PB upsert failed for %s: %s", lid, e)
             except Exception as e:
                 logger.debug("ability L1 compute failed for %s: %s", lid, e)
 
@@ -114,6 +136,30 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
         logger.warning("ability hook failed: %s", e)
 
 
+def _activity_iso_date(activity: dict, fallback_iso: str) -> str:
+    """Extract YYYY-MM-DD from an activity row's `date` column.
+
+    The column stores ISO timestamps with optional timezone (e.g.
+    ``2025-03-15T10:00:00+00:00``); we take the first 10 chars and
+    fall back to ``fallback_iso`` (today) if the value is missing or
+    malformed. Used by the PB writer to stamp the actual race date,
+    not the sync date.
+    """
+    raw = activity.get("date") if isinstance(activity, dict) else None
+    if not raw or not isinstance(raw, str) or len(raw) < 10:
+        return fallback_iso
+    candidate = raw[:10]
+    # Reject obvious garbage (we want YYYY-MM-DD shape).
+    if (
+        len(candidate) == 10
+        and candidate[4] == "-"
+        and candidate[7] == "-"
+        and candidate[:4].isdigit()
+    ):
+        return candidate
+    return fallback_iso
+
+
 def _fetch_latest_l4_and_marathon(db: Database) -> tuple[float | None, int | None]:
     try:
         row_comp = db._conn.execute(
@@ -137,7 +183,7 @@ def _load_activity_for_l1(db: Database, label_id: str) -> dict | None:
         conn = db._conn
         row = conn.execute(
             "SELECT label_id, sport_type, train_type, avg_hr, max_hr, "
-            "avg_pace_s_km, distance_m, duration_s, avg_cadence "
+            "avg_pace_s_km, distance_m, duration_s, avg_cadence, date "
             "FROM activities WHERE label_id = ?",
             (label_id,),
         ).fetchone()

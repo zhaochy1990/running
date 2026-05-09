@@ -1240,6 +1240,177 @@ class TestMarathonDnfGuard:
         assert _is_well_paced_marathon(act) is True
 
 
+class TestPbMemory:
+    """v7 Step 3: PB-memory channel + monthly decay."""
+
+    def test_classify_race_type_canonical_distances(self):
+        from stride_core.ability import classify_race_type
+        assert classify_race_type(5000) == "5K"
+        assert classify_race_type(5300) == "5K"
+        assert classify_race_type(10000) == "10K"
+        assert classify_race_type(21097) == "half"
+        assert classify_race_type(42195) == "full"
+
+    def test_classify_race_type_outside_bands(self):
+        from stride_core.ability import classify_race_type
+        # 8K — between 5K and 10K bands; not classified.
+        assert classify_race_type(8000) is None
+        # 30K — between half and full; rejected (not a canonical race).
+        assert classify_race_type(30000) is None
+        # Way outside any band.
+        assert classify_race_type(100) is None
+        assert classify_race_type(0) is None
+        assert classify_race_type(None) is None
+
+    def test_compute_pb_vdot_for_5k(self):
+        from stride_core.ability import compute_pb_vdot_for_activity, daniels_vdot
+        act = {
+            "label_id": "A1", "sport_type": 100,
+            "distance_m": 5000, "duration_s": 1140,  # 5K @ 19:00
+            "laps": [],
+        }
+        result = compute_pb_vdot_for_activity(act)
+        assert result is not None
+        race_type, vdot = result
+        assert race_type == "5K"
+        # 5K via formula
+        expected = daniels_vdot(5000, 1140)
+        assert abs(vdot - expected) < 0.5
+
+    def test_compute_pb_vdot_for_marathon_uses_table(self):
+        from stride_core.ability import (
+            _marathon_time_to_vdot_table, compute_pb_vdot_for_activity,
+        )
+        # 20 even-paced laps so the well-paced gate admits it.
+        laps = [
+            {"lap_index": i + 1, "distance_m": 2.1, "duration_s": int(240 * 2.1),
+             "avg_pace": 240, "exercise_type": None}
+            for i in range(20)
+        ]
+        act = {
+            "label_id": "A_M", "sport_type": 100,
+            "distance_m": 42000, "duration_s": int(240 * 42),  # 2:48
+            "laps": laps,
+        }
+        result = compute_pb_vdot_for_activity(act)
+        assert result is not None
+        race_type, vdot = result
+        assert race_type == "full"
+        # Must use table reverse, not the formula.
+        expected = _marathon_time_to_vdot_table(act["duration_s"])
+        assert abs(vdot - expected) < 0.01
+
+    def test_compute_pb_vdot_rejects_dnf_marathon(self):
+        from stride_core.ability import compute_pb_vdot_for_activity
+        # Crashed-out 4:00 → 5:30/km — Step 2 gate rejects.
+        laps = []
+        for i in range(20):
+            pace = 240 if i < 10 else 330
+            laps.append({
+                "lap_index": i + 1, "distance_m": 2.1,
+                "duration_s": int(pace * 2.1),
+                "avg_pace": pace, "exercise_type": None,
+            })
+        total_s = sum(int(p * 2.1) for p in [240] * 10 + [330] * 10)
+        act = {
+            "label_id": "A_M_DNF", "sport_type": 100,
+            "distance_m": 42000, "duration_s": total_s,
+            "laps": laps,
+        }
+        assert compute_pb_vdot_for_activity(act) is None
+
+    def test_decayed_pb_vdot_linear(self):
+        from stride_core.ability import (
+            PB_DECAY_PCT_PER_MONTH, _decayed_pb_vdot,
+        )
+        # No decay if pb_date >= today (negative months).
+        assert _decayed_pb_vdot(60.0, "2026-05-01", "2026-04-01") == 60.0
+        # Same day → no decay.
+        assert _decayed_pb_vdot(60.0, "2026-05-01", "2026-05-01") == 60.0
+        # 6 months ago → -3%.
+        v = _decayed_pb_vdot(60.0, "2025-11-01", "2026-05-01")
+        # 6 × 0.005 = 0.03 → 60 * 0.97 = 58.2
+        assert abs(v - 58.2) < 0.1
+
+    def test_decayed_pb_vdot_drops_past_max_age(self):
+        from stride_core.ability import _decayed_pb_vdot
+        # Beyond 18 months → 0.
+        assert _decayed_pb_vdot(60.0, "2024-01-01", "2026-05-01") == 0.0
+
+    def test_db_upsert_vo2max_pb_keeps_higher_vdot(self, tmp_path):
+        db = Database(db_path=tmp_path / "pb.db")
+        try:
+            assert db.upsert_vo2max_pb(
+                race_type="5K", distance_m=5000, duration_s=1140,
+                vdot=55.0, pb_date="2026-04-01", label_id="A1",
+            ) is True
+            # Lower VDOT — should NOT overwrite.
+            assert db.upsert_vo2max_pb(
+                race_type="5K", distance_m=5000, duration_s=1200,
+                vdot=53.0, pb_date="2026-04-15", label_id="A2",
+            ) is False
+            # Higher VDOT — overwrites.
+            assert db.upsert_vo2max_pb(
+                race_type="5K", distance_m=5000, duration_s=1080,
+                vdot=58.0, pb_date="2026-04-20", label_id="A3",
+            ) is True
+            rows = db.fetch_vo2max_pbs()
+            assert len(rows) == 1
+            assert rows[0]["vdot"] == 58.0
+            assert rows[0]["label_id"] == "A3"
+        finally:
+            db.close()
+
+    def test_compute_l3_vo2max_pb_floor_lifts_estimate(self, tmp_path):
+        """End-to-end: PB row gives a higher decayed VDOT than the rolling
+        window's estimator, so source flips to ``pb_decayed`` and the
+        score reflects the lifted VDOT.
+        """
+        from stride_core.ability import compute_l3_vo2max
+        # Empty rolling window → all estimators 0. PB row at VDOT 60,
+        # 6 months old → decayed 58.2.
+        pbs = [
+            {"race_type": "full", "distance_m": 42000, "duration_s": 9800,
+             "vdot": 60.0, "pb_date": "2025-11-01", "label_id": "M_PB",
+             "even_paced": 1},
+        ]
+        score, ev, det = compute_l3_vo2max(
+            [], None, hr_max=185,
+            pbs=pbs, today_iso="2026-05-01",
+        )
+        assert det["vo2max_source"] == "pb_decayed"
+        assert det["vo2max_pb_decayed"] is not None
+        assert abs(det["vo2max_pb_decayed"] - 58.2) < 0.1
+        # Score lifted from PB.
+        assert score > 0
+        assert "M_PB" in ev
+
+    def test_compute_l3_vo2max_pb_does_not_override_higher_current(self, tmp_path):
+        """A weakened decayed PB must not reduce a stronger rolling-window
+        estimate. Decay/expiry should never make the metric pessimistic.
+        """
+        from stride_core.ability import compute_l3_vo2max
+        # PB 24 months ago → past PB_MAX_AGE_MONTHS (18) → 0 contribution.
+        pbs = [
+            {"race_type": "full", "distance_m": 42000, "duration_s": 9800,
+             "vdot": 60.0, "pb_date": "2024-05-01", "label_id": "M_OLD",
+             "even_paced": 1},
+        ]
+        # Current race-like 5K @ 19 min → primary VDOT ~52.
+        act = {
+            "label_id": "RECENT_5K", "sport_type": 100,
+            "distance_m": 5000, "duration_s": 1140,
+            "train_type": "Threshold", "laps": [], "timeseries": [],
+        }
+        score, ev, det = compute_l3_vo2max(
+            [act], None, hr_max=185,
+            pbs=pbs, today_iso="2026-05-01",
+        )
+        # Primary should win — PB is past max age and contributes 0.
+        assert det["vo2max_source"] == "primary"
+        assert det["vo2max_pb_decayed"] is None
+
+
 class TestEconomyDedupe:
     """Regression coverage for L3 economy autoKm/type2 dedupe."""
 

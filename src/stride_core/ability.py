@@ -137,6 +137,36 @@ FLOOR_MIN_RHR_DAYS = 7        # ≥7 distinct daily_health rows with rhr present
 VDOT_CLAMP_MIN = 30.0
 VDOT_CLAMP_MAX = 85.0
 
+# ---------------------------------------------------------------------------
+# PB-memory channel (v7 Step 3).
+# Race-distance bands for classifying an activity as a candidate PB. The
+# bands are intentionally tighter than the race-like / marathon admission
+# windows above — a "5K PB" should be 5 km ± a few hundred meters, not any
+# 4.8–21.5 km effort. Only well-executed (Step 2 even-pacing gate) races
+# enroll as PBs, so the table reflects the athlete's demonstrated ceiling
+# at each canonical distance.
+# ---------------------------------------------------------------------------
+
+# (race_type, lower bound m, upper bound m)
+RACE_TYPE_BANDS: tuple[tuple[str, float, float], ...] = (
+    ("5K", 4800.0, 5500.0),
+    ("10K", 9500.0, 10500.0),
+    ("half", 20500.0, 21500.0),
+    ("full", 41000.0, 43500.0),
+)
+
+# Linear monthly decay of stored PBs. Mujika & Padilla's de-training
+# literature reports VO2max decline of ~0.5–1%/month in moderately-trained
+# runners who keep some maintenance volume; 0.5%/month is the gentle end
+# of that range and matches our users (consistent training, not full
+# de-training).
+PB_DECAY_PCT_PER_MONTH = 0.005
+
+# A PB older than this is no longer informative about current fitness.
+# 18 months × 0.5%/mo = 9% decay, a generous bound; beyond it the entry
+# is dropped from the decayed-VDOT computation entirely.
+PB_MAX_AGE_MONTHS = 18.0
+
 # Current race-readiness should be driven by recent evidence, not the best workout
 # from a prior training cycle. A 90-day window keeps one marathon-specific block in
 # scope while preventing stale peak efforts from making the headline prediction too
@@ -1145,12 +1175,21 @@ def compute_l3_vo2max(
     activities_56d: Sequence[Any],
     daily_health_7d: Sequence[Any] | None = None,
     hr_max: int = 185,
+    *,
+    pbs: Sequence[Any] | None = None,
+    today_iso: str | None = None,
 ) -> tuple[float, list[str], dict]:
     """VO2max estimate from three independent methods; main = Daniels VDOT.
 
     Returns (score, evidence, details) where details includes:
       vo2max_primary, vo2max_secondary, vo2max_floor,
       vo2max_used, vo2max_used_vdot, vo2max_source.
+
+    v7 Step 3: when ``pbs`` (rows from the ``vo2max_pb`` table) and
+    ``today_iso`` are provided, the highest decayed PB VDOT becomes a
+    floor on the rolling-window estimate. A 14-month-old marathon PB
+    no longer silently disappears — it decays at 0.5%/month and stops
+    contributing entirely after 18 months.
     """
     # ---- Primary: Daniels VDOT from best interval-set or best-effort race ----
     best_vdot = 0.0
@@ -1300,6 +1339,20 @@ def compute_l3_vo2max(
     # runaway floor (e.g. RHR=35 + HRmax=185 → 80.86 unclamped).
     used_vdot = _clamp(used_vdot, VDOT_CLAMP_MIN, VDOT_CLAMP_MAX) if used_vdot > 0 else 0.0
 
+    # ---- v7 Step 3: PB-memory floor ----
+    # Decay each stored PB VDOT and take the max. If that exceeds the
+    # rolling-window VDOT, swap it in — historical race performance is a
+    # legitimate floor on the metric (the athlete demonstrably has at
+    # least this aerobic capacity, modulo de-training decay). Source
+    # label flips to "pb_decayed" so the dashboard can attribute.
+    pb_vdot_decayed, pb_label = _best_decayed_pb(pbs, today_iso)
+    if pb_vdot_decayed > used_vdot:
+        used_vdot = _clamp(pb_vdot_decayed, VDOT_CLAMP_MIN, VDOT_CLAMP_MAX)
+        used = pb_vdot_decayed   # PB rows store VDOT; raw "used" tracks it 1:1
+        source = "pb_decayed"
+        if pb_label and pb_label not in best_evidence:
+            best_evidence = [pb_label] + best_evidence
+
     # Normalize to 0-100 via (used_vdot − reference)·points_per_vdot + 80.
     if used_vdot > 0:
         score = _clamp(
@@ -1331,6 +1384,10 @@ def compute_l3_vo2max(
             "r2": round(float(secondary_q["r2"]), 3),
         },
         "vo2max_floor_rhr_days": int(floor_rhr_days),
+        # v7 Step 3: PB-memory contribution. None when no PB rows exist
+        # OR all stored PBs are past max-age.
+        "vo2max_pb_decayed": round(pb_vdot_decayed, 2) if pb_vdot_decayed > 0 else None,
+        "vo2max_pb_label": pb_label,
     }
     return round(score, 2), best_evidence, details
 
@@ -1372,6 +1429,131 @@ def _vo2max_to_vdot_approx(vo2: float) -> float:
     # Empirical rule-of-thumb: VDOT ≈ VO2max − 2 to VO2max, because VDOT is a
     # race-performance derivative (higher than pure lab VO2max by a touch).
     return vo2
+
+
+def classify_race_type(distance_m: float) -> str | None:
+    """Return the canonical race_type label for ``distance_m``, or None.
+
+    Uses the v7 RACE_TYPE_BANDS — tighter than the race-like admission
+    window so an 8 km "long tempo" doesn't accidentally enroll as a 5K /
+    10K PB. Bounds are inclusive of the canonical distance ± realistic
+    GPS / course-error tolerance.
+    """
+    if distance_m is None or distance_m <= 0:
+        return None
+    for race_type, lo, hi in RACE_TYPE_BANDS:
+        if lo <= float(distance_m) <= hi:
+            return race_type
+    return None
+
+
+def compute_pb_vdot_for_activity(
+    activity: Any, *, sport_type: Any = None,
+) -> tuple[str, float] | None:
+    """Score a single activity as a PB candidate.
+
+    Returns ``(race_type, vdot)`` if the activity:
+      - is a running activity
+      - falls inside one of the RACE_TYPE_BANDS
+      - passes the Step 2 even-pacing gate when it's a marathon (other
+        distances skip the gate — Daniels formula doesn't suffer the
+        same long-duration bias for shorter races, so the table-reverse
+        path isn't used)
+
+    For the full marathon class, VDOT comes from
+    ``_marathon_time_to_vdot_table`` (race-equivalence inverse — the
+    only place where Daniels's table is more reliable than the
+    formula). For 5K/10K/half, VDOT comes from ``daniels_vdot``.
+
+    Returns None if the activity isn't a PB candidate.
+    """
+    if not _is_running(activity):
+        return None
+    sport_type = sport_type if sport_type is not None else _get(activity, "sport_type")
+    dist_raw = _get(activity, "distance_m") or 0
+    dur_s = _get(activity, "duration_s") or 0
+    if dist_raw <= 0 or dur_s <= 0:
+        return None
+    dist_m = _distance_to_meters(dist_raw, sport_type)
+    race_type = classify_race_type(dist_m)
+    if race_type is None:
+        return None
+    if race_type == "full":
+        if not _is_well_paced_marathon(activity):
+            return None
+        vdot = _marathon_time_to_vdot_table(float(dur_s))
+        if vdot is None:
+            return None
+        return race_type, float(vdot)
+    # 5K / 10K / half — Daniels formula.
+    vdot = daniels_vdot(dist_m, float(dur_s))
+    if vdot <= 0:
+        return None
+    return race_type, float(vdot)
+
+
+def _months_between(earlier_iso: str, later_iso: str) -> float:
+    """Approximate months elapsed between two ISO YYYY-MM-DD dates.
+
+    Uses a 30.44-day month average (365.25 / 12) — adequate for a decay
+    factor that's already a coarse model of physiological detraining.
+    Negative result means ``later_iso`` is actually earlier; callers
+    treat negative as "no decay yet" by clamping to 0.
+    """
+    try:
+        from datetime import date as _date
+        a = _date.fromisoformat(earlier_iso[:10])
+        b = _date.fromisoformat(later_iso[:10])
+    except Exception:
+        return 0.0
+    return (b - a).days / 30.4375
+
+
+def _decayed_pb_vdot(pb_vdot: float, pb_date_iso: str, today_iso: str) -> float:
+    """Return PB VDOT after monthly linear decay; 0.0 if past max age.
+
+    Linear because the underlying physiology (VO2max decline during
+    de-training) is approximately linear over the months timescale per
+    Mujika & Padilla. Beyond ``PB_MAX_AGE_MONTHS`` the contribution is
+    dropped — at 18 months the runner's training context has likely
+    shifted enough that the old PB is more historical curiosity than a
+    fitness floor.
+    """
+    if pb_vdot is None or pb_vdot <= 0:
+        return 0.0
+    months = _months_between(pb_date_iso, today_iso)
+    if months <= 0:
+        return float(pb_vdot)
+    if months > PB_MAX_AGE_MONTHS:
+        return 0.0
+    return float(pb_vdot) * (1.0 - PB_DECAY_PCT_PER_MONTH * months)
+
+
+def _best_decayed_pb(
+    pbs: Sequence[Any] | None, today_iso: str | None,
+) -> tuple[float, str | None]:
+    """Return the highest decayed PB VDOT in the table + its label_id.
+
+    ``pbs`` is a list of objects exposing ``vdot``, ``pb_date`` and
+    ``label_id`` (sqlite3.Row, dict, or dataclass — the ``_get`` helper
+    handles all three). When the table is empty or no entry survives
+    the age cutoff, returns ``(0.0, None)``.
+    """
+    if not pbs or not today_iso:
+        return 0.0, None
+    best_vdot = 0.0
+    best_label: str | None = None
+    for p in pbs:
+        pb_vdot = _get(p, "vdot")
+        pb_date = _get(p, "pb_date")
+        if pb_vdot is None or not pb_date:
+            continue
+        decayed = _decayed_pb_vdot(float(pb_vdot), str(pb_date), today_iso)
+        if decayed > best_vdot:
+            best_vdot = decayed
+            label = _get(p, "label_id")
+            best_label = str(label) if label else None
+    return best_vdot, best_label
 
 
 def _secondary_hr_pace_quality(activities: Sequence[Any], hr_max: int) -> dict:
@@ -1656,7 +1838,23 @@ def compute_ability_snapshot(
     # L3 dimensions (all over the current-readiness window).
     aerobic_score, aerobic_ev, aerobic_det = compute_l3_aerobic(activities)
     lt_score, lt_ev, lt_det = compute_l3_lt(activities)
-    vo2_score, vo2_ev, vo2_det = compute_l3_vo2max(activities, health_7d, hr_max)
+    # v7 Step 3: thread the PB-memory rows into the VO2max estimator so the
+    # rolling-window value can be lifted by a decayed historical PB. Best-
+    # effort fetch — if the table doesn't exist (legacy DB before the v7
+    # migration ran) or read fails, we fall through to the rolling-window
+    # estimate and the dimension still computes cleanly.
+    pb_rows: list[Any] = []
+    try:
+        pb_rows = list(conn.execute(
+            "SELECT race_type, distance_m, duration_s, vdot, pb_date, "
+            "label_id, even_paced FROM vo2max_pb"
+        ).fetchall())
+    except Exception:
+        pb_rows = []
+    vo2_score, vo2_ev, vo2_det = compute_l3_vo2max(
+        activities, health_7d, hr_max,
+        pbs=pb_rows, today_iso=date,
+    )
     end_score, end_ev, end_det = compute_l3_endurance(activities)
     eco_score, eco_ev, eco_det = compute_l3_economy(activities)
     rec_score, _rec_ev, rec_det = compute_l3_recovery(l2_7d_totals)
