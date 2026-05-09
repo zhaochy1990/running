@@ -124,10 +124,12 @@ class ProfileIn(BaseModel):
     sex: Literal["male", "female", "other"]
     height_cm: float = Field(..., gt=0)
     weight_kg: float = Field(..., gt=0)
-    target_race: str = Field(..., min_length=1)
-    target_distance: Literal["5K", "10K", "HM", "FM"]
-    target_race_date: date
-    target_time: str = Field(..., pattern=r"^\d{1,2}:\d{2}:\d{2}$")
+    # Race goal fields — optional during onboarding, filled later in training
+    # plan setup when the user chooses a target race and triggers full sync.
+    target_race: str | None = Field(default=None, min_length=1)
+    target_distance: Literal["5K", "10K", "HM", "FM"] | None = None
+    target_race_date: date | None = None
+    target_time: str | None = Field(default=None, pattern=r"^\d{1,2}:\d{2}:\d{2}$")
     pbs: dict[str, str] | None = None
     weekly_mileage_km: float | None = None
     constraints: str | None = None

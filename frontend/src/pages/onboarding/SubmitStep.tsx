@@ -6,24 +6,14 @@ interface Props {
   profile: ProfileIn
 }
 
-const MAX_POLL_ATTEMPTS = 200 // 200 * 3s = 10 min
-const POLL_INTERVAL_MS = 3000
+const MAX_POLL_ATTEMPTS = 120 // 120 * 2s = 4 min (health-only sync is fast)
+const POLL_INTERVAL_MS = 2000
 
 const PROGRESS_STEPS = [
   {
     title: '提交任务',
-    description: '保存资料并启动后台同步',
+    description: '连接手表并启动同步',
     phases: ['queued', 'connecting'],
-  },
-  {
-    title: '扫描训练',
-    description: '查找手表训练记录',
-    phases: ['activities_scan'],
-  },
-  {
-    title: '同步详情',
-    description: '下载配速、心率、分段和圈数据',
-    phases: ['activity_details', 'activity_save', 'commentary', 'ability', 'activities_done'],
   },
   {
     title: '健康指标',
@@ -31,8 +21,8 @@ const PROGRESS_STEPS = [
     phases: ['health', 'dashboard', 'health_done'],
   },
   {
-    title: '完成初始化',
-    description: '保存结果并进入训练仪表盘',
+    title: '完成',
+    description: '进入训练仪表盘',
     phases: ['finalizing', 'complete'],
   },
 ]
@@ -51,7 +41,7 @@ export default function SubmitStep({ profile }: Props) {
 
     if (status.state === 'done') {
       setLoading(false)
-      navigate('/health')
+      navigate('/')
       return
     }
 
@@ -142,7 +132,7 @@ export default function SubmitStep({ profile }: Props) {
         state: 'running',
         progress: data.progress ?? {
           phase: 'queued',
-          message: '已提交初始化任务，等待后台同步启动',
+          message: '正在同步健康数据，马上就好',
           percent: 0,
         },
       })
@@ -173,8 +163,8 @@ export default function SubmitStep({ profile }: Props) {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-bold text-text-primary">确认并提交</h2>
-        <p className="text-sm text-text-muted mt-1">确认以下信息后开始初始化你的训练仪表盘</p>
+        <h2 className="text-lg font-bold text-text-primary">确认并开始</h2>
+        <p className="text-sm text-text-muted mt-1">确认信息后，我们会快速同步你的健康数据</p>
       </div>
 
       {error && (
@@ -196,29 +186,15 @@ export default function SubmitStep({ profile }: Props) {
         <Row label="性别" value={profile.sex === 'male' ? '男' : '女'} />
         <Row label="身高" value={`${profile.height_cm} cm`} />
         <Row label="体重" value={`${profile.weight_kg} kg`} />
-        <div className="border-t border-border-subtle pt-3 space-y-3">
-          <Row label="目标比赛" value={profile.target_race} />
-          <Row label="目标距离" value={profile.target_distance} />
-          <Row label="比赛日期" value={profile.target_race_date} />
-          <Row label="目标成绩" value={profile.target_time} />
-        </div>
-        {profile.weekly_mileage_km != null && (
-          <div className="border-t border-border-subtle pt-3">
-            <Row label="周跑量" value={`${profile.weekly_mileage_km} km`} />
-          </div>
-        )}
-        {profile.pbs && Object.keys(profile.pbs).length > 0 && (
-          <div className="border-t border-border-subtle pt-3 space-y-3">
-            {Object.entries(profile.pbs).map(([dist, time]) => (
-              <Row key={dist} label={`${dist.toUpperCase()} PB`} value={time} />
-            ))}
-          </div>
-        )}
-        {profile.constraints && (
-          <div className="border-t border-border-subtle pt-3">
-            <Row label="限制条件" value={profile.constraints} />
-          </div>
-        )}
+      </div>
+
+      <div className="rounded-xl border border-border-subtle bg-accent-green/5 p-4">
+        <p className="text-sm text-text-primary font-medium">接下来会做什么？</p>
+        <ul className="mt-2 space-y-1 text-xs text-text-muted">
+          <li>1. 快速同步近期健康数据（约 10 秒）</li>
+          <li>2. 进入主页浏览你的训练仪表盘</li>
+          <li>3. 稍后在「训练计划」页面设置比赛目标并同步完整历史数据</li>
+        </ul>
       </div>
 
       <button
@@ -229,7 +205,7 @@ export default function SubmitStep({ profile }: Props) {
         {loading ? (
           <>
             <span className="w-4 h-4 border-2 border-bg-base/30 border-t-bg-base rounded-full animate-spin" />
-            正在初始化...
+            正在同步...
           </>
         ) : (
           '开始使用 STRIDE'
@@ -256,20 +232,17 @@ function InitializationProgress({
   const activeStepIndex = getActiveStepIndex(phase)
   const percent = clampPercent(failed ? progress?.percent ?? 0 : progress?.percent ?? 6)
   const message = failed
-    ? error || status?.error || '初始化失败，请重试'
-    : progress?.message ?? '正在启动首次同步，请稍候'
-  const current = progress?.current
-  const total = progress?.total
-  const showCurrentTotal = typeof current === 'number' && typeof total === 'number' && total > 0
+    ? error || status?.error || '同步失败，请重试'
+    : progress?.message ?? '正在同步健康数据'
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-bold text-text-primary">
-          {failed ? '初始化遇到问题' : '正在初始化 STRIDE'}
+          {failed ? '同步遇到问题' : '正在同步健康数据'}
         </h2>
         <p className="text-sm text-text-muted mt-1">
-          首次同步需要下载历史训练和健康指标，耗时较长是正常现象。完成后会自动进入身体指标页。
+          仅同步近期健康指标，很快就好。
         </p>
       </div>
 
@@ -278,7 +251,7 @@ function InitializationProgress({
           <div>
             <p className="text-sm font-medium text-text-primary">{message}</p>
             <p className="text-xs text-text-muted mt-1">
-              {failed ? '请检查手表账号登录状态或网络后重试。' : '请保持页面打开，同步会在后台继续执行。'}
+              {failed ? '请检查手表账号登录状态或网络后重试。' : '请稍候片刻。'}
             </p>
           </div>
           {!failed && (
@@ -288,7 +261,7 @@ function InitializationProgress({
 
         <div>
           <div className="flex justify-between text-xs font-mono text-text-muted mb-2">
-            <span>初始化进度</span>
+            <span>同步进度</span>
             <span>{percent}%</span>
           </div>
           <div className="h-2 rounded-full bg-border-subtle overflow-hidden">
@@ -299,17 +272,9 @@ function InitializationProgress({
           </div>
         </div>
 
-        {(showCurrentTotal || typeof progress?.synced_activities === 'number' || typeof progress?.synced_health === 'number') && (
-          <div className="grid grid-cols-3 gap-3 pt-1">
-            {showCurrentTotal && (
-              <ProgressStat label="当前批次" value={`${current}/${total}`} />
-            )}
-            {typeof progress?.synced_activities === 'number' && (
-              <ProgressStat label="活动写入" value={`${progress.synced_activities}`} />
-            )}
-            {typeof progress?.synced_health === 'number' && (
-              <ProgressStat label="健康天数" value={`${progress.synced_health}`} />
-            )}
+        {typeof progress?.synced_health === 'number' && (
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <ProgressStat label="健康天数" value={`${progress.synced_health}`} />
           </div>
         )}
       </div>
@@ -339,7 +304,7 @@ function InitializationProgress({
           disabled={retrying}
           className="w-full rounded-lg bg-accent-green/90 px-4 py-2 text-sm font-medium text-bg-base hover:bg-accent-green disabled:opacity-50 transition-colors cursor-pointer"
         >
-          {retrying ? '正在重试...' : '重新开始初始化'}
+          {retrying ? '正在重试...' : '重新同步'}
         </button>
       )}
     </div>

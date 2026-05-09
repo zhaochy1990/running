@@ -494,6 +494,34 @@ def sync_health(
     return synced
 
 
+def run_health_only_sync(
+    client: CorosClient,
+    db: Database,
+    progress: SyncProgressCallback | None = None,
+) -> tuple[int, int]:
+    """Run lightweight health-only sync (no activities). Used during onboarding.
+
+    Returns (0, health_days_synced) — activities count is always 0.
+    """
+    _emit_sync_progress(
+        progress,
+        phase="connecting",
+        message="已连接手表，准备同步健康数据",
+        percent=10,
+    )
+    health = sync_health(client, db, progress_callback=progress)
+    _emit_sync_progress(
+        progress,
+        phase="finalizing",
+        message="健康数据同步完成",
+        percent=98,
+        synced_activities=0,
+        synced_health=health,
+    )
+    db.set_meta("last_sync_time", datetime.now().isoformat())
+    return 0, health
+
+
 def run_sync(
     client: CorosClient,
     db: Database,

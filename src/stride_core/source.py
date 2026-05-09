@@ -37,6 +37,11 @@ from .workout_spec import NormalizedRunWorkout, NormalizedStrengthWorkout
 SyncProgress: TypeAlias = dict[str, Any]
 SyncProgressCallback: TypeAlias = Callable[[SyncProgress], None]
 
+# Sync modes control what gets synced.
+# - "full": activities + health (default, used for training plan setup)
+# - "health_only": only health/dashboard data (fast, used for onboarding)
+SyncMode: TypeAlias = str  # Literal["full", "health_only"]
+
 
 @dataclass
 class SyncResult:
@@ -180,6 +185,7 @@ class DataSource(Protocol):
         user: str,
         *,
         full: bool = False,
+        mode: SyncMode = "full",
         progress: SyncProgressCallback | None = None,
     ) -> SyncResult: ...
 
@@ -250,6 +256,7 @@ class BaseDataSource:
         user: str,
         *,
         full: bool = False,
+        mode: SyncMode = "full",
         progress: SyncProgressCallback | None = None,
     ) -> SyncResult:
         raise NotImplementedError

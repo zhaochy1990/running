@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { getTrainingPlan, type TrainingPlan } from '../api'
+import { getTrainingPlan, getMyProfile, type TrainingPlan } from '../api'
 import { useUser } from '../UserContextValue'
+import TrainingPlanSetup from './TrainingPlanSetup'
 
 const PHASE_COLORS: Record<string, string> = {
   '赛后恢复': '#8888a0',
@@ -33,29 +34,58 @@ function formatShort(dateStr: string): string {
   return `${parseInt(parts[1])}/${parseInt(parts[2])}`
 }
 
+type PageState = 'loading' | 'setup' | 'plan'
+
 export default function TrainingPlanPage() {
   const { user } = useUser()
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
+  const [pageState, setPageState] = useState<PageState>('loading')
   const requestKey = user || ''
   const [loadedKey, setLoadedKey] = useState('')
-  const loading = Boolean(requestKey && loadedKey !== requestKey)
 
-  useEffect(() => {
+  const loadPlan = useCallback(() => {
     if (!user) return
     let cancelled = false
-    getTrainingPlan(user)
-      .then((data) => {
-        if (!cancelled) setPlan(data)
-      })
-      .finally(() => {
-        if (!cancelled) setLoadedKey(requestKey)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [requestKey, user])
+    setLoadedKey('')
 
-  if (loading) {
+    // Load plan + profile in parallel to decide what to show
+    Promise.all([
+      getTrainingPlan(user).catch(() => null),
+      getMyProfile().catch(() => null),
+    ]).then(([planData, profile]) => {
+      if (cancelled) return
+      setPlan(planData)
+
+      // If there's plan content, show it directly
+      if (planData?.content) {
+        setPageState('plan')
+      } else {
+        // No plan — check if race goals are set
+        const p = profile?.profile
+        const hasRaceGoal = p && p.target_race && p.target_distance && p.target_race_date && p.target_time
+        if (hasRaceGoal) {
+          // Race goals set but no plan content yet — show plan page
+          // (plan may be generating or not yet created)
+          setPageState('plan')
+        } else {
+          // No race goals — show setup flow
+          setPageState('setup')
+        }
+      }
+    }).finally(() => {
+      if (!cancelled) setLoadedKey(requestKey)
+    })
+
+    return () => { cancelled = true }
+  }, [user, requestKey])
+
+  useEffect(() => {
+    loadPlan()
+  }, [loadPlan])
+
+  const loading = Boolean(requestKey && loadedKey !== requestKey)
+
+  if (loading || pageState === 'loading') {
     return (
       <div className="flex items-center justify-center py-20">
         <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
@@ -63,8 +93,39 @@ export default function TrainingPlanPage() {
     )
   }
 
+  if (pageState === 'setup') {
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-text-primary tracking-tight">训练计划</h1>
+          <p className="text-sm text-text-muted mt-1">
+            设置你的比赛目标，同步历史数据后即可生成训练计划
+          </p>
+        </div>
+        <TrainingPlanSetup
+          onComplete={() => {
+            // Reload plan data after sync completes
+            setPageState('loading')
+            loadPlan()
+          }}
+        />
+      </div>
+    )
+  }
+
+  // Plan view
   if (!plan?.content) {
-    return <div className="text-text-muted text-center py-20">暂无训练计划</div>
+    return (
+      <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-text-primary tracking-tight">训练计划</h1>
+        </div>
+        <div className="text-text-muted text-center py-20">
+          <p>历史数据已同步完成，训练计划正在生成中</p>
+          <p className="text-xs mt-2">请稍后刷新页面查看</p>
+        </div>
+      </div>
+    )
   }
 
   // Calculate timeline proportions

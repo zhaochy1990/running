@@ -89,11 +89,17 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _mark_stale_running_sync(uuid: str, onboarding: dict[str, Any]) -> dict[str, Any]:
-    if onboarding.get("sync_state") != "running":
+def _mark_stale_running_sync(
+    uuid: str,
+    onboarding: dict[str, Any],
+    *,
+    state_key: str = "sync_state",
+    progress_key: str = "sync_progress",
+) -> dict[str, Any]:
+    if onboarding.get(state_key) != "running":
         return onboarding
 
-    progress = dict(onboarding.get("sync_progress") or {})
+    progress = dict(onboarding.get(progress_key) or {})
     last_update = _parse_iso_datetime(
         progress.get("updated_at") or progress.get("started_at")
     )
@@ -115,14 +121,16 @@ def _mark_stale_running_sync(uuid: str, onboarding: dict[str, Any]) -> dict[str,
             "updated_at": failed_at,
         }
     )
-    onboarding["sync_state"] = "error"
+    onboarding[state_key] = "error"
     onboarding["error"] = message
-    onboarding["completed_at"] = None
+    if state_key == "sync_state":
+        onboarding["completed_at"] = None
     onboarding["failed_at"] = failed_at
-    onboarding["sync_progress"] = progress
+    onboarding[progress_key] = progress
     _write_onboarding(uuid, onboarding)
     logger.warning(
-        "Marked stale onboarding sync as error for %s after %.0fs without progress",
+        "Marked stale %s sync as error for %s after %.0fs without progress",
+        state_key,
         uuid,
         (now - last_update).total_seconds(),
     )
@@ -133,18 +141,25 @@ def _write_sync_progress(
     uuid: str,
     *,
     state: str | None = None,
+    state_key: str = "sync_state",
+    progress_key: str = "sync_progress",
     **payload: Any,
 ) -> dict[str, Any]:
     onboarding = _read_onboarding(uuid)
     if state is not None:
-        onboarding["sync_state"] = state
+        onboarding[state_key] = state
 
     now = _utcnow_iso()
-    progress = dict(onboarding.get("sync_progress") or {})
-    progress.update({k: v for k, v in payload.items() if v is not None})
+    # Filter out our internal routing keys from the progress payload
+    filtered = {
+        k: v for k, v in payload.items()
+        if v is not None and k not in ("state_key", "progress_key")
+    }
+    progress = dict(onboarding.get(progress_key) or {})
+    progress.update(filtered)
     progress.setdefault("started_at", now)
     progress["updated_at"] = now
-    onboarding["sync_progress"] = progress
+    onboarding[progress_key] = progress
     _write_onboarding(uuid, onboarding)
     return progress
 
@@ -276,57 +291,91 @@ def garmin_login(
     return {"ok": True, "region": result.region, "user_id": result.user_id}
 
 
-def _run_background_sync(uuid: str, source: DataSource) -> None:
-    """Background task: sync + generate starter status, update onboarding.json.
+def _run_background_sync(
+    uuid: str,
+    source: DataSource,
+    *,
+    mode: str = "health_only",
+    full: bool = False,
+) -> None:
+    """Background task: sync + update onboarding.json.
+
+    ``mode`` controls scope:
+      - ``"health_only"``: lightweight sync for onboarding (dashboard + health
+        metrics only, ~10 seconds).
+      - ``"full"``: activities + health (used when the user sets up a training
+        plan and needs historical data).
 
     Sets ``completed_at`` ONLY after a successful sync. On failure, writes
-    ``sync_state="error"`` with ``completed_at=null`` so the client can
-    re-POST ``/onboarding/complete`` to retry.
+    ``sync_state="error"`` with ``completed_at=null`` so the client can retry.
     """
-    def report_progress(progress: SyncProgress) -> None:
-        _write_sync_progress(uuid, **progress)
+    is_health_only = mode == "health_only"
+    state_key = "sync_state" if is_health_only else "full_sync_state"
+    progress_key = "sync_progress" if is_health_only else "full_sync_progress"
+    error_key = "error" if is_health_only else "full_sync_error"
+    failed_at_key = "failed_at" if is_health_only else "full_sync_failed_at"
 
+    def report_progress(progress: SyncProgress) -> None:
+        _write_sync_progress(uuid, state_key=state_key, progress_key=progress_key, **progress)
+
+    connecting_msg = (
+        "正在连接手表，准备同步健康数据"
+        if is_health_only
+        else "正在连接手表，准备同步历史训练数据（可能需要几分钟）"
+    )
     _write_sync_progress(
         uuid,
         state="running",
         phase="connecting",
-        message="正在连接 COROS，准备首次同步",
+        message=connecting_msg,
         percent=3,
+        state_key=state_key,
+        progress_key=progress_key,
     )
 
     try:
-        result = source.sync_user(uuid, full=False, progress=report_progress)
+        result = source.sync_user(
+            uuid, full=full, mode=mode, progress=report_progress,
+        )
     except Exception as exc:
-        logger.exception("Background sync failed for %s", uuid)
+        logger.exception("Background sync (mode=%s) failed for %s", mode, uuid)
         onboarding = _read_onboarding(uuid)
-        onboarding["sync_state"] = "error"
-        onboarding["error"] = str(exc)
-        onboarding["completed_at"] = None
-        onboarding["failed_at"] = _utcnow_iso()
-        progress = dict(onboarding.get("sync_progress") or {})
+        onboarding[state_key] = "error"
+        onboarding[error_key] = str(exc)
+        if is_health_only:
+            onboarding["completed_at"] = None
+        onboarding[failed_at_key] = _utcnow_iso()
+        progress = dict(onboarding.get(progress_key) or {})
         failed_phase = progress.get("phase")
         progress.update(
             {
                 "phase": "error",
                 "failed_phase": failed_phase,
-                "message": "初始化失败，请重试",
+                "message": "同步失败，请重试",
                 "percent": progress.get("percent", 0),
-                "updated_at": onboarding["failed_at"],
+                "updated_at": onboarding[failed_at_key],
             }
         )
-        onboarding["sync_progress"] = progress
+        onboarding[progress_key] = progress
         _write_onboarding(uuid, onboarding)
         return
 
     onboarding = _read_onboarding(uuid)
-    onboarding["sync_state"] = "done"
+    onboarding[state_key] = "done"
     completed_at = _utcnow_iso()
-    onboarding["completed_at"] = completed_at
-    progress = dict(onboarding.get("sync_progress") or {})
+    if is_health_only:
+        onboarding["completed_at"] = completed_at
+    else:
+        onboarding["full_sync_completed_at"] = completed_at
+    progress = dict(onboarding.get(progress_key) or {})
+    if is_health_only:
+        done_msg = f"初始化完成：同步 {result.health} 天健康数据"
+    else:
+        done_msg = f"数据同步完成：{result.activities} 条训练、{result.health} 天健康数据"
     progress.update(
         {
             "phase": "complete",
-            "message": f"初始化完成：同步 {result.activities} 条活动、{result.health} 天健康数据",
+            "message": done_msg,
             "percent": 100,
             "synced_activities": result.activities,
             "synced_health": result.health,
@@ -334,9 +383,9 @@ def _run_background_sync(uuid: str, source: DataSource) -> None:
         }
     )
     progress.setdefault("started_at", completed_at)
-    onboarding["sync_progress"] = progress
-    onboarding.pop("error", None)
-    onboarding.pop("failed_at", None)
+    onboarding[progress_key] = progress
+    onboarding.pop(error_key, None)
+    onboarding.pop(failed_at_key, None)
     _write_onboarding(uuid, onboarding)
 
 
@@ -346,7 +395,12 @@ def onboarding_complete(
     request: Request,
     payload: dict = Depends(require_bearer),
 ):
-    """Kick off background sync + status generation.
+    """Kick off lightweight health-only background sync for onboarding.
+
+    The new onboarding flow only syncs recent health/dashboard data (~14 days)
+    so the user can enter the main page quickly. Full historical sync
+    (activities + 3 years of data) is deferred to when the user sets up a
+    training plan via ``POST /api/users/me/full-sync``.
 
     Returns ``{state: "running"}`` while the background task runs, or
     ``{state: "already-complete"}`` only when a previous run finished
@@ -355,9 +409,6 @@ def onboarding_complete(
     """
     uuid = _validate_uuid(payload["sub"])
     onboarding = _read_onboarding(uuid)
-    # Resolve the user's bound adapter via the registry (this path has no
-    # `{user}` URL param, so we can't use the get_source_for_user dependency
-    # — fetch from app.state directly using the JWT sub).
     registry: ProviderRegistry = request.app.state.registry
     try:
         source: DataSource = registry.for_user(uuid)
@@ -373,12 +424,7 @@ def onboarding_complete(
     if not onboarding.get("coros_ready"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="coros_ready is not set — complete COROS login first",
-        )
-    if not onboarding.get("profile_ready"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="profile_ready is not set — complete profile step first",
+            detail="coros_ready is not set — complete watch login first",
         )
 
     onboarding["sync_state"] = "running"
@@ -388,21 +434,23 @@ def onboarding_complete(
     now = _utcnow_iso()
     onboarding["sync_progress"] = {
         "phase": "queued",
-        "message": "已提交初始化任务，等待后台同步启动",
+        "message": "正在同步健康数据，马上就好",
         "percent": 0,
         "started_at": now,
         "updated_at": now,
     }
     _write_onboarding(uuid, onboarding)
 
-    background_tasks.add_task(_run_background_sync, uuid, source)
+    background_tasks.add_task(
+        _run_background_sync, uuid, source, mode="health_only",
+    )
 
     return {"state": "running", "progress": onboarding["sync_progress"]}
 
 
 @router.get("/api/users/me/sync-status")
 def sync_status(payload: dict = Depends(require_bearer)):
-    """Return the current background sync state."""
+    """Return the current background sync state (onboarding health-only sync)."""
     uuid = _validate_uuid(payload["sub"])
     onboarding = _read_onboarding(uuid)
     onboarding = _mark_stale_running_sync(uuid, onboarding)
@@ -412,4 +460,87 @@ def sync_status(payload: dict = Depends(require_bearer)):
     }
     if onboarding.get("error"):
         result["error"] = onboarding["error"]
+    return result
+
+
+# ─── Full sync (training plan setup) ────────────────────────────────────────
+
+
+@router.post("/api/users/me/full-sync")
+def full_sync(
+    background_tasks: BackgroundTasks,
+    request: Request,
+    payload: dict = Depends(require_bearer),
+):
+    """Kick off a full historical sync (activities + health).
+
+    Called from the training plan setup page after the user has set their
+    race goals. This syncs 3+ years of activities and health data so the
+    system can generate a training plan based on historical performance.
+
+    Returns ``{state: "running"}`` immediately; the client polls
+    ``GET /api/users/me/full-sync-status`` for progress.
+    """
+    uuid = _validate_uuid(payload["sub"])
+    onboarding = _read_onboarding(uuid)
+    registry: ProviderRegistry = request.app.state.registry
+    try:
+        source: DataSource = registry.for_user(uuid)
+    except UnknownProvider:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User's configured watch provider is not available",
+        )
+
+    if not onboarding.get("coros_ready"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Watch not connected — complete onboarding first",
+        )
+
+    # Allow re-trigger even if a previous full sync completed (user may
+    # want to refresh after connecting a new watch or changing goals).
+    if onboarding.get("full_sync_state") == "running":
+        return {
+            "state": "running",
+            "progress": onboarding.get("full_sync_progress"),
+        }
+
+    onboarding["full_sync_state"] = "running"
+    onboarding.pop("full_sync_error", None)
+    onboarding.pop("full_sync_failed_at", None)
+    now = _utcnow_iso()
+    onboarding["full_sync_progress"] = {
+        "phase": "queued",
+        "message": "正在准备同步历史训练数据，这可能需要几分钟",
+        "percent": 0,
+        "started_at": now,
+        "updated_at": now,
+    }
+    _write_onboarding(uuid, onboarding)
+
+    background_tasks.add_task(
+        _run_background_sync, uuid, source, mode="full", full=True,
+    )
+
+    return {"state": "running", "progress": onboarding["full_sync_progress"]}
+
+
+@router.get("/api/users/me/full-sync-status")
+def full_sync_status(payload: dict = Depends(require_bearer)):
+    """Return the current full sync state (training plan setup sync)."""
+    uuid = _validate_uuid(payload["sub"])
+    onboarding = _read_onboarding(uuid)
+    # Reuse stale detection but for the full_sync keys
+    onboarding = _mark_stale_running_sync(
+        uuid, onboarding,
+        state_key="full_sync_state",
+        progress_key="full_sync_progress",
+    )
+    result: dict[str, Any] = {
+        "state": onboarding.get("full_sync_state"),
+        "progress": onboarding.get("full_sync_progress"),
+    }
+    if onboarding.get("full_sync_error"):
+        result["error"] = onboarding["full_sync_error"]
     return result
