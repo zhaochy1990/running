@@ -190,7 +190,11 @@ def test_complete_without_coros_ready_returns_400(app_env):
     assert "coros_ready" in resp.json()["detail"]
 
 
-def test_complete_without_profile_ready_returns_400(app_env):
+def test_complete_without_profile_ready_still_succeeds(app_env):
+    """profile_ready is no longer required — onboarding only needs coros_ready.
+
+    Race goals are collected later in the training plan setup page.
+    """
     client, token, tmp_path, _ = app_env
     _set_onboarding(tmp_path, {
         "coros_ready": True,
@@ -202,8 +206,8 @@ def test_complete_without_profile_ready_returns_400(app_env):
         "/api/users/me/onboarding/complete",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert resp.status_code == 400
-    assert "profile_ready" in resp.json()["detail"]
+    assert resp.status_code == 200
+    assert resp.json()["state"] == "running"
 
 
 def test_complete_with_both_flags_returns_running(app_env):

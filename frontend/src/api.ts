@@ -166,10 +166,12 @@ export interface ProfileIn {
   sex: string
   height_cm: number
   weight_kg: number
-  target_race: string
-  target_distance: TargetDistance
-  target_race_date: string
-  target_time: string
+  // Race goal fields — optional during onboarding, filled later in training
+  // plan setup when the user chooses a target race.
+  target_race?: string
+  target_distance?: TargetDistance
+  target_race_date?: string
+  target_time?: string
   pbs?: Record<string, string>
   weekly_mileage_km?: number
   constraints?: string
@@ -238,6 +240,18 @@ export interface SyncStatus {
 
 export function getSyncStatus() {
   return fetchJSON<SyncStatus>('/users/me/sync-status')
+}
+
+// ─── Full sync (training plan setup) ──────────────────────────────────────
+
+export function postFullSync() {
+  return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>(
+    '/users/me/full-sync',
+  )
+}
+
+export function getFullSyncStatus() {
+  return fetchJSON<SyncStatus>('/users/me/full-sync-status')
 }
 
 export interface Activity {

@@ -15,6 +15,7 @@ from stride_core.source import (
     LoginCredentials,
     LoginResult,
     ProviderInfo,
+    SyncMode,
     SyncProgressCallback,
     SyncResult,
 )
@@ -23,7 +24,7 @@ from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWor
 from .auth import Credentials
 from .client import CorosClient, CorosAuthError
 from .normalize import apply_to_detail
-from .sync import run_sync
+from .sync import run_health_only_sync, run_sync
 from .translate import normalized_to_coros_run, normalized_to_coros_strength
 from .workout import push_strength_workout as _push_strength_to_watch
 from .workout import push_workout
@@ -106,6 +107,7 @@ class CorosDataSource(BaseDataSource):
         user: str,
         *,
         full: bool = False,
+        mode: SyncMode = "full",
         progress: SyncProgressCallback | None = None,
     ) -> SyncResult:
         creds = Credentials.load(user=user)
@@ -114,12 +116,16 @@ class CorosDataSource(BaseDataSource):
                 f"用户 {user} 未登录，请先运行: coros-sync --profile {user} login"
             )
 
-        kwargs = {"full": full, "jobs": self._jobs}
-        if progress is not None:
-            kwargs["progress"] = progress
-
         with CorosClient(creds, user=user) as client, Database(user=user) as db:
-            activities, health = run_sync(client, db, **kwargs)
+            if mode == "health_only":
+                activities, health = run_health_only_sync(
+                    client, db, progress=progress,
+                )
+            else:
+                kwargs: dict = {"full": full, "jobs": self._jobs}
+                if progress is not None:
+                    kwargs["progress"] = progress
+                activities, health = run_sync(client, db, **kwargs)
         return SyncResult(activities=activities, health=health)
 
     def push_run_workout(self, user: str, workout: NormalizedRunWorkout) -> str:

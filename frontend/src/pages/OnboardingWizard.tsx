@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { getMyProfile, type ProfileIn, type TargetDistance } from '../api'
+import { getMyProfile, type ProfileIn } from '../api'
 import ProfileStep from './onboarding/ProfileStep'
 import SubmitStep from './onboarding/SubmitStep'
 import WatchStep from './onboarding/WatchStep'
@@ -9,10 +9,8 @@ type Step = 'loading' | 'watch' | 'profile' | 'submit' | 'done'
 
 function reconstructProfile(p: Record<string, unknown> | null): ProfileIn | null {
   if (!p) return null
-  const required = [
-    'display_name', 'dob', 'sex', 'height_cm', 'weight_kg',
-    'target_race', 'target_distance', 'target_race_date', 'target_time',
-  ]
+  // Only basic fields are required for onboarding; race goals are set later.
+  const required = ['display_name', 'dob', 'sex', 'height_cm', 'weight_kg']
   for (const k of required) {
     if (p[k] === undefined || p[k] === null) return null
   }
@@ -22,15 +20,6 @@ function reconstructProfile(p: Record<string, unknown> | null): ProfileIn | null
     sex: String(p.sex),
     height_cm: Number(p.height_cm),
     weight_kg: Number(p.weight_kg),
-    target_race: String(p.target_race),
-    target_distance: String(p.target_distance) as TargetDistance,
-    target_race_date: String(p.target_race_date),
-    target_time: String(p.target_time),
-    pbs: (p.pbs as Record<string, string> | undefined) ?? undefined,
-    weekly_mileage_km:
-      typeof p.weekly_mileage_km === 'number' ? (p.weekly_mileage_km as number) : undefined,
-    constraints:
-      typeof p.constraints === 'string' ? (p.constraints as string) : undefined,
   }
 }
 
