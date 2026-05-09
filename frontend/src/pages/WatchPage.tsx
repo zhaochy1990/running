@@ -10,7 +10,11 @@ import {
 
 type ConnectProvider = 'coros' | 'garmin' | null
 
-export default function WatchPage() {
+interface WatchPageProps {
+  embedded?: boolean
+}
+
+export default function WatchPage({ embedded }: WatchPageProps = {}) {
   const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
@@ -95,7 +99,7 @@ export default function WatchPage() {
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto px-8 py-20 flex items-center justify-center">
+      <div className={embedded ? 'py-10 flex items-center justify-center' : 'max-w-3xl mx-auto px-8 py-20 flex items-center justify-center'}>
         <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
       </div>
     )
@@ -104,20 +108,24 @@ export default function WatchPage() {
   const isConnected = watch?.logged_in
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
-      <button
-        onClick={() => navigate(-1)}
-        className="text-xs font-mono text-text-muted hover:text-text-secondary mb-4"
-      >
-        &larr; 返回
-      </button>
+    <div className={embedded ? '' : 'max-w-3xl mx-auto px-4 py-6 sm:px-8 sm:py-8'}>
+      {!embedded && (
+        <>
+          <button
+            onClick={() => navigate(-1)}
+            className="text-xs font-mono text-text-muted hover:text-text-secondary mb-4"
+          >
+            &larr; 返回
+          </button>
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">手表管理</h1>
-        <p className="text-sm font-mono text-text-muted mt-1">
-          管理你的运动手表绑定
-        </p>
-      </div>
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-text-primary">手表管理</h1>
+            <p className="text-sm font-mono text-text-muted mt-1">
+              管理你的运动手表绑定
+            </p>
+          </div>
+        </>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">

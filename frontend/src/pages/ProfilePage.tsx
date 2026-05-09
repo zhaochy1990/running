@@ -8,7 +8,11 @@ interface FieldError {
   [field: string]: string
 }
 
-export default function ProfilePage() {
+interface ProfilePageProps {
+  embedded?: boolean
+}
+
+export default function ProfilePage({ embedded }: ProfilePageProps = {}) {
   const navigate = useNavigate()
   const { refresh } = useUser()
   const clearSession = useAuthStore((s) => s.clearSession)
@@ -159,25 +163,29 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto px-8 py-20 flex items-center justify-center">
+      <div className={embedded ? 'py-10 flex items-center justify-center' : 'max-w-3xl mx-auto px-8 py-20 flex items-center justify-center'}>
         <div className="w-6 h-6 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
-      <button
-        onClick={() => navigate(-1)}
-        className="text-xs font-mono text-text-muted hover:text-text-secondary mb-4"
-      >
-        ← 返回
-      </button>
+    <div className={embedded ? '' : 'max-w-3xl mx-auto px-4 py-6 sm:px-8 sm:py-8'}>
+      {!embedded && (
+        <>
+          <button
+            onClick={() => navigate(-1)}
+            className="text-xs font-mono text-text-muted hover:text-text-secondary mb-4"
+          >
+            ← 返回
+          </button>
 
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary">个人资料</h1>
-        <p className="text-sm font-mono text-text-muted mt-1">更新你的显示名称和训练资料</p>
-      </div>
+          <div className="mb-8">
+            <h1 className="text-2xl font-bold text-text-primary">个人资料</h1>
+            <p className="text-sm font-mono text-text-muted mt-1">更新你的显示名称和训练资料</p>
+          </div>
+        </>
+      )}
 
       {error && (
         <div className="mb-4 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-2 text-sm text-red-400">
