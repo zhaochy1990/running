@@ -136,7 +136,13 @@ CREATE TABLE IF NOT EXISTS timeseries (
     adjusted_pace REAL,
     cadence     INTEGER,
     altitude    REAL,
-    power       INTEGER
+    power       INTEGER,
+    ground_contact_time_ms  REAL,
+    vertical_oscillation_mm REAL,
+    vertical_ratio_pct      REAL,
+    cadence_length_cm       REAL,
+    slope                   INTEGER,
+    heart_level             INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_timeseries_label ON timeseries(label_id);
 
@@ -524,6 +530,18 @@ class Database:
         _add("activities", "vertical_oscillation_mm", "REAL")
         _add("activities", "ground_contact_time_ms", "REAL")
         _add("activities", "vertical_ratio_pct", "REAL")
+        # COROS frequencyList per-second running-form channels (added when
+        # we discovered the API returns these alongside the already-parsed
+        # heart/speed/cadence/altitude/power). Unit-suffixed names mirror
+        # the per-activity summary columns above. NULL for Garmin rows
+        # (Garmin running dynamics live elsewhere) and for older COROS
+        # rows synced before this column existed.
+        _add("timeseries", "ground_contact_time_ms", "REAL")
+        _add("timeseries", "vertical_oscillation_mm", "REAL")
+        _add("timeseries", "vertical_ratio_pct", "REAL")
+        _add("timeseries", "cadence_length_cm", "REAL")
+        _add("timeseries", "slope", "INTEGER")
+        _add("timeseries", "heart_level", "INTEGER")
         # Daily wellness extras (Body Battery, stress, sleep stages).
         _add("daily_health", "body_battery_high", "INTEGER")
         _add("daily_health", "body_battery_low", "INTEGER")
@@ -751,10 +769,14 @@ class Database:
         self._conn.execute("DELETE FROM timeseries WHERE label_id = ?", (label_id,))
         self._conn.executemany(
             """INSERT INTO timeseries
-            (label_id, timestamp, distance, heart_rate, speed, adjusted_pace, cadence, altitude, power)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (label_id, timestamp, distance, heart_rate, speed, adjusted_pace, cadence, altitude, power,
+             ground_contact_time_ms, vertical_oscillation_mm, vertical_ratio_pct,
+             cadence_length_cm, slope, heart_level)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(label_id, p.timestamp, p.distance, p.heart_rate, p.speed,
-              p.adjusted_pace, p.cadence, p.altitude, p.power) for p in points],
+              p.adjusted_pace, p.cadence, p.altitude, p.power,
+              p.ground_contact_time_ms, p.vertical_oscillation_mm, p.vertical_ratio_pct,
+              p.cadence_length_cm, p.slope, p.heart_level) for p in points],
         )
 
     def activity_exists(self, label_id: str) -> bool:

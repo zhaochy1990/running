@@ -183,9 +183,21 @@ class TimeseriesPoint:
     cadence: int | None
     altitude: float | None
     power: int | None
+    # COROS frequencyList running-form channels. Unit-suffixed names match
+    # the per-activity summary columns on `activities` so a future avg
+    # rollup can stay homonymous. `vertical_ratio_pct` is the only field
+    # that needs scaling — COROS encodes it as percent×10 (raw 80 = 8.0%);
+    # all others are raw integers in their natural unit.
+    ground_contact_time_ms: float | None = None
+    vertical_oscillation_mm: float | None = None
+    vertical_ratio_pct: float | None = None
+    cadence_length_cm: float | None = None
+    slope: int | None = None         # raw COROS value; scale unverified (only 0 seen in flat-run sample)
+    heart_level: int | None = None   # COROS-side HR zone label (1-5)
 
     @classmethod
     def from_api(cls, data: dict) -> TimeseriesPoint:
+        vsr = data.get("verticalStrideRatio")
         return cls(
             timestamp=data.get("timestamp"),
             distance=data.get("distance"),
@@ -195,6 +207,12 @@ class TimeseriesPoint:
             cadence=data.get("cadence"),
             altitude=data.get("altitude"),
             power=data.get("power"),
+            ground_contact_time_ms=data.get("groundTime"),
+            vertical_oscillation_mm=data.get("verticalVibration"),
+            vertical_ratio_pct=(vsr / 10.0) if vsr is not None else None,
+            cadence_length_cm=data.get("cadenceLength"),
+            slope=data.get("slope"),
+            heart_level=data.get("heartLevel"),
         )
 
 

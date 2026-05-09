@@ -129,6 +129,63 @@ class TestActivityDetailFromApi:
         assert detail.zones[0].range_unit == "bpm"
 
 
+class TestTimeseriesPointFromApi:
+    """COROS frequencyList per-point parsing — including the running-form
+    channels (groundTime / verticalVibration / verticalStrideRatio /
+    cadenceLength / slope / heartLevel) that we used to drop on the floor."""
+
+    def test_basic_channels(self):
+        # Sample shape mirrors a real COROS frequencyList entry mid-run.
+        p = TimeseriesPoint.from_api({
+            "timestamp": 177823754500,
+            "distance": 321300,
+            "heart": 145,
+            "speed": 319,
+            "adjustedPace": 319.0,
+            "cadence": 178,
+            "altitude": 4.0,
+            "power": 236,
+            "groundTime": 240,
+            "verticalVibration": 85,
+            "verticalStrideRatio": 80,   # COROS encodes pct × 10
+            "cadenceLength": 106,
+            "slope": 0,
+            "heartLevel": 3,
+        })
+        assert p.heart_rate == 145
+        assert p.power == 236
+        assert p.ground_contact_time_ms == 240
+        assert p.vertical_oscillation_mm == 85
+        assert p.vertical_ratio_pct == 8.0   # 80 / 10
+        assert p.cadence_length_cm == 106
+        assert p.slope == 0
+        assert p.heart_level == 3
+
+    def test_sparse_point_keeps_none(self):
+        # First few seconds of a COROS run only carry GPS+timestamp+distance;
+        # all running-form channels are absent. Parser must not throw and
+        # must leave them None (not 0.0, which would skew downstream avgs).
+        p = TimeseriesPoint.from_api({
+            "timestamp": 177823654500,
+            "distance": 0,
+            "gpsLat": 311337430,
+            "gpsLon": 1210831362,
+            "level": 0,
+        })
+        assert p.heart_rate is None
+        assert p.ground_contact_time_ms is None
+        assert p.vertical_oscillation_mm is None
+        assert p.vertical_ratio_pct is None
+        assert p.cadence_length_cm is None
+        assert p.slope is None
+        assert p.heart_level is None
+
+    def test_vertical_ratio_zero_stays_zero(self):
+        # 0 is a legitimate value, not "missing" — must not be dropped to None.
+        p = TimeseriesPoint.from_api({"verticalStrideRatio": 0})
+        assert p.vertical_ratio_pct == 0.0
+
+
 class TestDailyHealthFromApi:
     def test_conversion(self):
         data = {

@@ -2,7 +2,9 @@
 
 import json
 
-from stride_core.models import ActivityDetail, DailyHealth, Dashboard, Lap, Zone
+from stride_core.models import (
+    ActivityDetail, DailyHealth, Dashboard, Lap, TimeseriesPoint, Zone,
+)
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):
@@ -66,6 +68,46 @@ class TestDatabaseActivities:
         db.upsert_activity(_make_detail())
         rows = db.query("SELECT * FROM zones WHERE label_id = 'test1'")
         assert len(rows) == 2
+
+    def test_timeseries_running_form_roundtrip(self, db):
+        # Two points: one fully populated with running-form channels (mid-run),
+        # one sparse (start-of-run, only GPS+timestamp). Both must persist
+        # cleanly with NULLs preserved on the sparse one.
+        full = TimeseriesPoint(
+            timestamp=177823754500, distance=321300, heart_rate=145, speed=319,
+            adjusted_pace=319.0, cadence=178, altitude=4.0, power=236,
+            ground_contact_time_ms=240, vertical_oscillation_mm=85,
+            vertical_ratio_pct=8.0, cadence_length_cm=106,
+            slope=0, heart_level=3,
+        )
+        sparse = TimeseriesPoint(
+            timestamp=177823654500, distance=0, heart_rate=None, speed=None,
+            adjusted_pace=None, cadence=None, altitude=None, power=None,
+        )
+        detail = _make_detail()
+        detail.timeseries = [full, sparse]
+        db.upsert_activity(detail)
+
+        rows = db.query(
+            "SELECT ground_contact_time_ms, vertical_oscillation_mm, "
+            "vertical_ratio_pct, cadence_length_cm, slope, heart_level "
+            "FROM timeseries WHERE label_id = 'test1' ORDER BY id"
+        )
+        assert len(rows) == 2
+        r0 = dict(rows[0])
+        assert r0["ground_contact_time_ms"] == 240
+        assert r0["vertical_oscillation_mm"] == 85
+        assert r0["vertical_ratio_pct"] == 8.0
+        assert r0["cadence_length_cm"] == 106
+        assert r0["slope"] == 0
+        assert r0["heart_level"] == 3
+        r1 = dict(rows[1])
+        assert all(
+            r1[k] is None for k in (
+                "ground_contact_time_ms", "vertical_oscillation_mm",
+                "vertical_ratio_pct", "cadence_length_cm", "slope", "heart_level",
+            )
+        )
 
 
 class TestDatabaseHealth:
