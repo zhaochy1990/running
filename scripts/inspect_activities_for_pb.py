@@ -33,7 +33,7 @@ args = parser.parse_args()
 
 user_id = _resolve_profile(args.profile)
 if user_id != args.profile:
-    print(f"[resolved] {args.profile} → {user_id}")
+    print(f"[resolved] {args.profile} -> {user_id}")
 db = Database(user=user_id)
 conn = db._conn
 sports = ",".join(str(s) for s in RUN_SPORT_IDS)

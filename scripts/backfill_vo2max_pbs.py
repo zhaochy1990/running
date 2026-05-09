@@ -165,7 +165,7 @@ def main() -> int:
 
     user_id = _resolve_profile(args.profile)
     if user_id != args.profile:
-        print(f"[resolved] {args.profile} → {user_id}")
+        print(f"[resolved] {args.profile} -> {user_id}")
     db = Database(user=user_id)
     try:
         stats = backfill(db, dry_run=args.dry_run)
