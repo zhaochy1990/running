@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import type { PlannedNutrition, PlannedSession, StructuredStatus } from '../types/plan'
 import { weekdayCN, formatDateShort } from '../api'
 import PushPlannedButton from './PushPlannedButton'
+import SessionDetailModal from './SessionDetailModal'
 
 export interface PlannedCalendarProps {
   /** ISO YYYY-MM-DD strings, length 7, ascending. */
@@ -122,6 +124,8 @@ export default function PlannedCalendar({
   pushDisabled,
   onPush,
 }: PlannedCalendarProps) {
+  const [selectedSession, setSelectedSession] = useState<PlannedSession | null>(null)
+
   if (structuredStatus === 'parse_failed' || structuredStatus === 'none') {
     return (
       <div
@@ -196,7 +200,16 @@ export default function PlannedCalendar({
                     <div
                       key={`${s.date}-${s.session_index}`}
                       data-testid="session-row"
-                      className="flex flex-col gap-1 rounded-lg border border-border-subtle px-2 py-1.5"
+                      className="flex flex-col gap-1 rounded-lg border border-border-subtle px-2 py-1.5 cursor-pointer hover:border-accent-green/40 hover:bg-accent-green/5 transition-colors"
+                      onClick={() => setSelectedSession(s)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          setSelectedSession(s)
+                        }
+                      }}
                     >
                       <div className="flex items-center gap-1.5">
                         <span aria-hidden="true">{KIND_ICON[s.kind]}</span>
@@ -224,14 +237,16 @@ export default function PlannedCalendar({
                         {rpe && <span>{rpe}</span>}
                       </div>
                       {(s.kind === 'run' || s.kind === 'strength') && (
-                        <PushPlannedButton
-                          session={s}
-                          structuredStatus={structuredStatus}
-                          canPushRun={canPushRun}
-                          canPushStrength={canPushStrength}
-                          disabled={pushDisabled}
-                          onPush={onPush}
-                        />
+                        <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                          <PushPlannedButton
+                            session={s}
+                            structuredStatus={structuredStatus}
+                            canPushRun={canPushRun}
+                            canPushStrength={canPushStrength}
+                            disabled={pushDisabled}
+                            onPush={onPush}
+                          />
+                        </div>
                       )}
                     </div>
                   )
@@ -251,6 +266,13 @@ export default function PlannedCalendar({
           )
         })}
       </div>
+
+      {selectedSession && (
+        <SessionDetailModal
+          session={selectedSession}
+          onClose={() => setSelectedSession(null)}
+        />
+      )}
     </div>
   )
 }
