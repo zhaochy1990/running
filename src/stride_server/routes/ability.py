@@ -22,12 +22,15 @@ from fastapi import APIRouter, HTTPException, Query
 from stride_core.ability import (
     ABILITY_MODEL_VERSION,
     BEST_CASE_BOOST_MAX,
+    BOOST_NORMALIZE_RANGE_HM_S,
     L4_WEIGHTS,
     RACE_DAY_BOOST_MAX,
+    THEORETICAL_MIN_HM_S,
     _scaled_boost,
     compute_ability_snapshot,
     marathon_target_from_profile,
     marathon_target_label,
+    race_target_from_profile,
 )
 from stride_core.db import USER_DATA_DIR
 
@@ -86,24 +89,38 @@ def _load_profile(user: str) -> dict[str, Any] | None:
     return data
 
 
-def _target_payload(user: str, race_s: int | float | None) -> dict[str, Any]:
-    target_s = marathon_target_from_profile(_load_profile(user))
+def _target_payload(user: str, snapshot: dict[str, Any]) -> dict[str, Any]:
+    profile = _load_profile(user)
+    target_s, target_distance = race_target_from_profile(profile)
+
+    # For backward compat, always populate marathon_target_s when target is FM.
+    fm_target_s = marathon_target_from_profile(profile)
+
+    # Pick the estimate that matches the target distance.
+    if target_distance == "HM":
+        estimate_s = (snapshot.get("half_marathon_estimates") or {}).get("race_s")
+    else:
+        estimate_s = snapshot.get("l4_marathon_estimate_s")
+        if estimate_s is None:
+            estimate_s = (snapshot.get("marathon_estimates") or {}).get("race_s")
+
     return {
-        "marathon_target_s": target_s,
-        "marathon_target_label": marathon_target_label(target_s) if target_s is not None else None,
+        "target_distance": target_distance,
+        "target_s": target_s,
+        "target_label": marathon_target_label(target_s) if target_s is not None else None,
         "distance_to_target_s": (
-            float(race_s) - target_s
-            if race_s is not None and target_s is not None
+            float(estimate_s) - target_s
+            if estimate_s is not None and target_s is not None
             else None
         ),
+        # Backward compat fields.
+        "marathon_target_s": fm_target_s,
+        "marathon_target_label": marathon_target_label(fm_target_s) if fm_target_s is not None else None,
     }
 
 
 def _attach_target(user: str, snapshot: dict[str, Any]) -> dict[str, Any]:
-    race_s = snapshot.get("l4_marathon_estimate_s")
-    if race_s is None:
-        race_s = (snapshot.get("marathon_estimates") or {}).get("race_s")
-    return {**snapshot, **_target_payload(user, race_s)}
+    return {**snapshot, **_target_payload(user, snapshot)}
 
 
 def _pivot_snapshot_rows(rows: list[Any], date: str) -> dict | None:
@@ -132,6 +149,11 @@ def _pivot_snapshot_rows(rows: list[Any], date: str) -> dict | None:
         "race_s": None,
         "best_case_s": None,
     }
+    hm_s: dict[str, int | None] = {
+        "training_s": None,
+        "race_s": None,
+        "best_case_s": None,
+    }
     l2_total: float | None = None
     all_evidence: list[str] = []
 
@@ -151,6 +173,12 @@ def _pivot_snapshot_rows(rows: list[Any], date: str) -> dict | None:
             marathon_s["race_s"] = int(val)
         elif level == "L4" and dim == "marathon_best_case_s" and val is not None:
             marathon_s["best_case_s"] = int(val)
+        elif level == "L4" and dim == "hm_training_s" and val is not None:
+            hm_s["training_s"] = int(val)
+        elif level == "L4" and dim == "hm_race_s" and val is not None:
+            hm_s["race_s"] = int(val)
+        elif level == "L4" and dim == "hm_best_case_s" and val is not None:
+            hm_s["best_case_s"] = int(val)
         elif level == "L2" and dim == "total":
             l2_total = val
 
@@ -175,6 +203,23 @@ def _pivot_snapshot_rows(rows: list[Any], date: str) -> dict | None:
             "best_case_boost_applied": (
                 round(_scaled_boost(float(marathon_s["training_s"]), BEST_CASE_BOOST_MAX), 4)
                 if marathon_s["training_s"] else 0.0
+            ),
+        },
+        "half_marathon_estimates": {
+            **hm_s,
+            "race_day_boost_max": RACE_DAY_BOOST_MAX,
+            "best_case_boost_max": BEST_CASE_BOOST_MAX,
+            "race_day_boost_applied": (
+                round(_scaled_boost(
+                    float(hm_s["training_s"]), RACE_DAY_BOOST_MAX,
+                    floor_s=THEORETICAL_MIN_HM_S, range_s=BOOST_NORMALIZE_RANGE_HM_S,
+                ), 4) if hm_s["training_s"] else 0.0
+            ),
+            "best_case_boost_applied": (
+                round(_scaled_boost(
+                    float(hm_s["training_s"]), BEST_CASE_BOOST_MAX,
+                    floor_s=THEORETICAL_MIN_HM_S, range_s=BOOST_NORMALIZE_RANGE_HM_S,
+                ), 4) if hm_s["training_s"] else 0.0
             ),
         },
         "evidence_activity_ids": list(dict.fromkeys(all_evidence)),
@@ -278,6 +323,18 @@ def post_ability_backfill(
                         date=d_iso, level="L4", dimension=dim_name,
                         value=float(val),
                     )
+            hm_estimates = snap.get("half_marathon_estimates") or {}
+            for dim_name, key in (
+                ("hm_training_s", "training_s"),
+                ("hm_race_s",     "race_s"),
+                ("hm_best_case_s", "best_case_s"),
+            ):
+                val = hm_estimates.get(key)
+                if val is not None:
+                    db.upsert_ability_snapshot(
+                        date=d_iso, level="L4", dimension=dim_name,
+                        value=float(val),
+                    )
             wrote += 1
     finally:
         db.close()
@@ -320,6 +377,7 @@ def get_ability_history(
         l3_scores: dict[str, float | None] = {k: None for k in L3_KEYS}
         l4_composite: float | None = None
         race_s: int | None = None
+        hm_race_s: int | None = None
         for r in by_date[date]:
             level, dim, val = r["level"], r["dimension"], r["value"]
             if level == "L3" and dim in L3_KEYS:
@@ -328,10 +386,13 @@ def get_ability_history(
                 l4_composite = val
             elif level == "L4" and dim == "marathon_race_s" and val is not None:
                 race_s = int(val)
+            elif level == "L4" and dim == "hm_race_s" and val is not None:
+                hm_race_s = int(val)
         out.append({
             "date": date,
             "l4_composite": l4_composite,
             "l4_marathon_race_s": race_s,
+            "l4_hm_race_s": hm_race_s,
             "l3": l3_scores,
         })
     return out

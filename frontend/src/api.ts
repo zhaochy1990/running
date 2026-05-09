@@ -619,13 +619,16 @@ export function getWeeks(user: string) {
 // Ability (4-layer custom running score)
 // ---------------------------------------------------------------------------
 
-export interface MarathonEstimates {
+export interface RaceEstimates {
   training_s: number | null
   race_s: number | null
   best_case_s: number | null
   race_day_boost_pct?: number
   best_case_boost_pct?: number
 }
+
+/** @deprecated Use RaceEstimates — kept for backward compat */
+export type MarathonEstimates = RaceEstimates
 
 export interface L3Dimension {
   score: number | null
@@ -650,9 +653,15 @@ export interface AbilityCurrent {
   l4_marathon_estimate_s: number | null
   distance_to_sub_2_50_s: number | null
   distance_to_target_s?: number | null
+  // Target info — HM or FM.
+  target_distance?: 'HM' | 'FM'
+  target_s?: number | null
+  target_label?: string | null
+  // Backward compat marathon target fields.
   marathon_target_s?: number | null
   marathon_target_label?: string | null
-  marathon_estimates: MarathonEstimates
+  marathon_estimates: RaceEstimates
+  half_marathon_estimates?: RaceEstimates
   evidence_activity_ids: string[]
 }
 
@@ -660,6 +669,7 @@ export interface AbilityHistoryPoint {
   date: string
   l4_composite: number | null
   l4_marathon_race_s: number | null
+  l4_hm_race_s?: number | null
   l3: {
     aerobic: number | null
     lt: number | null

@@ -1,14 +1,17 @@
-import type { MarathonEstimates } from '../api'
+import type { RaceEstimates } from '../api'
 import { fmtHMS, fmtGap } from '../lib/fmt'
 
 export default function AbilityHero({
-  estimates, date, targetS, targetLabel,
+  estimates, date, targetS, targetLabel, distanceLabel,
 }: {
-  estimates: MarathonEstimates
+  estimates: RaceEstimates
   date: string
   targetS?: number | null
   targetLabel?: string | null
+  /** 'MARATHON' or 'HALF MARATHON' — drives the header text. */
+  distanceLabel?: string
 }) {
+  const label = distanceLabel || 'MARATHON'
   const raceS = estimates.race_s
   const hasTarget = targetS != null && Number.isFinite(targetS)
   const gap = raceS != null && hasTarget ? raceS - targetS : null
@@ -17,7 +20,7 @@ export default function AbilityHero({
   return (
     <div className="bg-bg-card border border-border-subtle rounded-2xl p-10 mb-6 text-center animate-fade-in">
       <p className="text-xs font-mono text-text-muted tracking-widest mb-3">
-        MARATHON RACE ESTIMATE · {date}
+        {label} RACE ESTIMATE · {date}
       </p>
       <p
         className="text-7xl md:text-8xl font-bold font-mono tracking-tight leading-none"

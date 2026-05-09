@@ -69,6 +69,11 @@ def _distance_to_km(dist: float, sport_type: Any) -> float:
 # ---------------------------------------------------------------------------
 
 DEFAULT_MARATHON_TARGET_S = 2 * 3600 + 50 * 60
+DEFAULT_HM_TARGET_S = 1 * 3600 + 22 * 60  # 1:22:00
+
+# Half marathon theoretical minimum for boost decay.
+THEORETICAL_MIN_HM_S = 3400   # ~56:40, near world-record territory
+BOOST_NORMALIZE_RANGE_HM_S = 3400
 
 # Reference VDOT for VO2max dimension scoring.
 # Anchor: 3:00:00 marathon (≈ VDOT 62 per Daniels) → score 60.
@@ -215,7 +220,7 @@ def _parse_duration_token(value: str) -> int | None:
         seconds = int(sec)
     except ValueError:
         return None
-    if hours <= 0 or minutes >= 60 or seconds >= 60:
+    if hours < 0 or minutes >= 60 or seconds >= 60:
         return None
     return hours * 3600 + minutes * 60 + seconds
 
@@ -267,6 +272,41 @@ def marathon_target_from_profile(
     return default
 
 
+def race_target_from_profile(
+    profile: Mapping[str, Any] | None,
+) -> tuple[int | None, str]:
+    """Return (target_seconds, target_distance) from user profile.
+
+    target_distance is ``'HM'`` or ``'FM'``.  Defaults to ``'FM'`` when
+    the profile has no ``target_distance`` field.
+    """
+    if not profile:
+        return None, "FM"
+
+    raw_distance = str(profile.get("target_distance") or "").strip().upper()
+    target_time_str = profile.get("target_time")
+
+    hm_aliases = {"HM", "HALF", "HALF MARATHON", "半马"}
+    distance: str = "HM" if raw_distance in hm_aliases else "FM"
+
+    if not isinstance(target_time_str, str) or not target_time_str.strip():
+        return None, distance
+
+    parsed = _parse_duration_token(target_time_str)
+    if parsed is None:
+        return None, distance
+
+    # Validate time range based on distance.
+    if distance == "HM":
+        if 30 * 60 <= parsed <= 4 * 3600:
+            return parsed, "HM"
+    else:
+        if _looks_like_marathon_time(parsed):
+            return parsed, "FM"
+
+    return None, distance
+
+
 def marathon_target_label(target_s: int) -> str:
     s = int(round(target_s))
     h, rem = divmod(s, 3600)
@@ -275,11 +315,16 @@ def marathon_target_label(target_s: int) -> str:
         return f"Sub-{h}:{m:02d}:{sec:02d}"
     return f"Sub-{h}:{m:02d}"
 
-def _scaled_boost(training_s: float, max_boost: float) -> float:
+def _scaled_boost(
+    training_s: float,
+    max_boost: float,
+    floor_s: float = THEORETICAL_MIN_MARATHON_S,
+    range_s: float = BOOST_NORMALIZE_RANGE_S,
+) -> float:
     """Linear-decay race-day boost: smaller as training_s approaches the theoretical limit."""
-    if training_s is None or training_s <= THEORETICAL_MIN_MARATHON_S:
+    if training_s is None or training_s <= floor_s:
         return 0.0
-    progress = min(1.0, (training_s - THEORETICAL_MIN_MARATHON_S) / BOOST_NORMALIZE_RANGE_S)
+    progress = min(1.0, (training_s - floor_s) / range_s)
     return max_boost * progress
 
 # L4 composite weights (sub-2:50 emphasis on LT + endurance).
@@ -411,8 +456,8 @@ def uth_sorensen_vo2max(hr_max: float, hr_rest: float) -> float:
     return 15.3 * hr_max / hr_rest
 
 
-def vdot_to_marathon_s(vdot: float) -> float | None:
-    """Linear interpolation over the canonical Daniels table.
+def _interpolate_daniels_table(table: dict[int, int], vdot: float) -> float | None:
+    """Linear interpolation over a Daniels VDOT→seconds table.
 
     Returns None for VDOT outside [30, 85].
     """
@@ -426,10 +471,38 @@ def vdot_to_marathon_s(vdot: float) -> float | None:
         lo, hi = 30, 35
     if hi > 85:
         lo, hi = 80, 85
-    lo_s = DANIELS_VDOT_TO_MARATHON_S[lo]
-    hi_s = DANIELS_VDOT_TO_MARATHON_S[hi]
+    lo_s = table[lo]
+    hi_s = table[hi]
     frac = (vdot - lo) / (hi - lo) if hi != lo else 0.0
     return lo_s + frac * (hi_s - lo_s)
+
+
+def vdot_to_marathon_s(vdot: float) -> float | None:
+    """Linear interpolation over the canonical Daniels marathon table."""
+    return _interpolate_daniels_table(DANIELS_VDOT_TO_MARATHON_S, vdot)
+
+
+# VDOT → predicted half-marathon time (seconds).  Same derivation method as
+# the marathon table: numerically solve `daniels_pct(T) * VDOT == vo2_required(21097.5, T)`.
+DANIELS_VDOT_TO_HALF_MARATHON_S: dict[int, int] = {
+    30: 8479,   # 2:21:19
+    35: 7454,   # 2:04:14
+    40: 6655,   # 1:50:55
+    45: 6015,   # 1:40:15
+    50: 5492,   # 1:31:32
+    55: 5057,   # 1:24:17
+    60: 4689,   # 1:18:09
+    65: 4375,   # 1:12:55
+    70: 4103,   # 1:08:23
+    75: 3866,   # 1:04:26
+    80: 3657,   # 1:00:57
+    85: 3472,   # 0:57:52
+}
+
+
+def vdot_to_half_marathon_s(vdot: float) -> float | None:
+    """Linear interpolation over the canonical Daniels half-marathon table."""
+    return _interpolate_daniels_table(DANIELS_VDOT_TO_HALF_MARATHON_S, vdot)
 
 
 # ---------------------------------------------------------------------------
@@ -1787,6 +1860,37 @@ def estimate_marathon_time_s(l3: Mapping[str, Any]) -> int | None:
     return int(round(base_s))
 
 
+def estimate_half_marathon_time_s(l3: Mapping[str, Any]) -> int | None:
+    """Estimate half-marathon finishing time from VDOT, with lighter endurance correction.
+
+    Same VDOT extraction as the marathon estimator but uses the half-marathon
+    Daniels table and a smaller endurance adjustment (±1 % vs ±2 % for FM).
+    """
+    vdot = None
+    if "vo2max_used_vdot" in l3 and l3.get("vo2max_used_vdot"):
+        vdot = float(l3["vo2max_used_vdot"])
+    elif "vo2max" in l3 and l3.get("vo2max"):
+        score = float(l3["vo2max"])
+        vdot = VO2MAX_REFERENCE_VDOT + (score - VO2MAX_SCORE_AT_REF) / VO2MAX_POINTS_PER_VDOT
+    if vdot is None or vdot <= 0:
+        return None
+    base_s = vdot_to_half_marathon_s(vdot)
+    if base_s is None:
+        return None
+    # Endurance correction — smaller range for HM (±1 %).
+    endurance = l3.get("endurance")
+    if endurance is not None:
+        e = float(endurance)
+        if e <= 70:
+            factor = 1.01
+        elif e >= 85:
+            factor = 0.99
+        else:
+            factor = 1.01 - (e - 70) / (85 - 70) * 0.02
+        base_s = base_s * factor
+    return int(round(base_s))
+
+
 # ---------------------------------------------------------------------------
 # Contribution (per-activity L3 delta before/after).
 # ---------------------------------------------------------------------------
@@ -1931,6 +2035,25 @@ def compute_ability_snapshot(
     # Default headline = typical race-day estimate.
     marathon_s = marathon_race_s
 
+    # Half-marathon estimates (same VDOT, lighter endurance correction).
+    hm_training_s = estimate_half_marathon_time_s(l3)
+    if hm_training_s:
+        hm_race_boost = _scaled_boost(
+            float(hm_training_s), RACE_DAY_BOOST_MAX,
+            floor_s=THEORETICAL_MIN_HM_S, range_s=BOOST_NORMALIZE_RANGE_HM_S,
+        )
+        hm_best_boost = _scaled_boost(
+            float(hm_training_s), BEST_CASE_BOOST_MAX,
+            floor_s=THEORETICAL_MIN_HM_S, range_s=BOOST_NORMALIZE_RANGE_HM_S,
+        )
+        hm_race_s = int(round(hm_training_s * (1.0 - hm_race_boost)))
+        hm_best_case_s = int(round(hm_training_s * (1.0 - hm_best_boost)))
+    else:
+        hm_race_boost = 0.0
+        hm_best_boost = 0.0
+        hm_race_s = None
+        hm_best_case_s = None
+
     # L1 from most recent activity (if within the window).
     latest_l1 = None
     if activities:
@@ -1968,6 +2091,15 @@ def compute_ability_snapshot(
             "race_day_boost_applied": round(race_boost, 4),  # actual boost applied to this prediction
             "best_case_boost_applied": round(best_boost, 4),
         },
+        "half_marathon_estimates": {
+            "training_s": hm_training_s,
+            "race_s": hm_race_s,
+            "best_case_s": hm_best_case_s,
+            "race_day_boost_max": RACE_DAY_BOOST_MAX,
+            "best_case_boost_max": BEST_CASE_BOOST_MAX,
+            "race_day_boost_applied": round(hm_race_boost, 4),
+            "best_case_boost_applied": round(hm_best_boost, 4),
+        },
         "evidence_activity_ids": evidence_activity_ids,
         "baseline_rhr": baseline_rhr,
     }
@@ -1987,6 +2119,15 @@ def _empty_snapshot(date: str) -> dict:
         "l4_marathon_estimate_s": None,
         "distance_to_sub_2_50_s": None,
         "marathon_estimates": {
+            "training_s": None,
+            "race_s": None,
+            "best_case_s": None,
+            "race_day_boost_max": RACE_DAY_BOOST_MAX,
+            "best_case_boost_max": BEST_CASE_BOOST_MAX,
+            "race_day_boost_applied": 0.0,
+            "best_case_boost_applied": 0.0,
+        },
+        "half_marathon_estimates": {
             "training_s": None,
             "race_s": None,
             "best_case_s": None,
