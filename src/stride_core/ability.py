@@ -112,7 +112,30 @@ AEROBIC_MAX_PEAK_HR_ABOVE_TARGET = 25  # reject if max_hr > target_hr + 25 (e.g.
 
 # Bump this when persisted ability_snapshot rows need to be invalidated.
 # v6: Daniels VDOT→marathon table re-derived from formulas (was ~22 min slow).
-ABILITY_MODEL_VERSION = 6
+# v7: Quality-gated triangulation in compute_l3_vo2max + DNF-guard on the
+#     marathon table reverse-lookup + PB-memory channel with monthly decay.
+#     Persisted v6 snapshots are now stale (the dimension surface adds new
+#     keys in `details`).
+ABILITY_MODEL_VERSION = 7
+
+# ---------------------------------------------------------------------------
+# Triangulation gates for compute_l3_vo2max (v7).
+# Each VO2max estimator must pass its own quality gate before participating
+# in the triangulated final estimate. The bar is intentionally generous —
+# we only want to exclude estimates whose inputs are too thin to be
+# trustworthy (single noisy RHR sample, 2-bpm HR span, fluke single-effort).
+# ---------------------------------------------------------------------------
+
+SECONDARY_MIN_POINTS = 5      # ≥5 (HR, pace) samples
+SECONDARY_HR_SPAN_MIN = 30.0  # spanned HR range across the samples (bpm)
+SECONDARY_MIN_R2 = 0.7        # linear-fit goodness
+FLOOR_MIN_RHR_DAYS = 7        # ≥7 distinct daily_health rows with rhr present
+
+# Daniels table valid range; clamp the final used VDOT to this band so a
+# runaway estimator (e.g. Uth–Sørensen at RHR < 35) cannot push the score
+# off-scale.
+VDOT_CLAMP_MIN = 30.0
+VDOT_CLAMP_MAX = 85.0
 
 # Current race-readiness should be driven by recent evidence, not the best workout
 # from a prior training cycle. A 90-day window keeps one marathon-specific block in
@@ -1157,17 +1180,66 @@ def compute_l3_vo2max(
         )
     vo2max_floor = uth_sorensen_vo2max(hr_max, rhr_med) if rhr_med > 0 else 0.0
 
-    # Select used value by priority.
-    if vo2max_primary > 0:
+    # ---- Quality-gated tiered selection (v7) ----
+    # Replaces the v6 if/elif/elif cascade. The change has two parts:
+    #   (a) Quality gates: each estimator must pass an input-quality check
+    #       before being trusted. Stops a 2-bpm-span regression or a
+    #       single-day RHR sample from carrying the headline number.
+    #   (b) When primary is missing AND both secondary + floor are eligible,
+    #       average them (2-way mean) instead of cascading to whichever the
+    #       legacy code happened to evaluate first. This attenuates either
+    #       estimator's inflation (e.g. Uth–Sørensen blowing up at unusually
+    #       low RHR) by triangulating against the other.
+    # Race-derived primary remains the authority when it's eligible — actual
+    # race-pace performance is a higher-fidelity VO2max signal than HR-pace
+    # extrapolation or a resting-HR formula. Test corpus and physiology both
+    # encode that hierarchy. Pure 3-way median was rejected because it
+    # dilutes a high-confidence primary with weaker estimators (e.g. an
+    # interval session that legitimately raises VO2max gets averaged with a
+    # stale floor and the marathon estimate moves the wrong direction).
+    secondary_q = _secondary_hr_pace_quality(activities_56d, hr_max)
+    secondary_eligible = (
+        vo2max_secondary > 0
+        and secondary_q["n_points"] >= SECONDARY_MIN_POINTS
+        and secondary_q["hr_span"] >= SECONDARY_HR_SPAN_MIN
+        and secondary_q["r2"] >= SECONDARY_MIN_R2
+    )
+
+    floor_rhr_days = 0
+    if daily_health_7d:
+        floor_rhr_days = sum(
+            1 for r in daily_health_7d if _get(r, "rhr") is not None
+        )
+    floor_eligible = vo2max_floor > 0 and floor_rhr_days >= FLOOR_MIN_RHR_DAYS
+
+    # Primary's upstream gate already rejects mixed-intensity sessions
+    # (race-like guard) and DNF-style marathons (Step 2 well-paced guard).
+    # Anything that produced ``vo2max_primary > 0`` is treated as
+    # race-quality evidence and wins outright.
+    primary_eligible = vo2max_primary > 0
+
+    if primary_eligible:
         used, source, used_vdot = vo2max_primary, "primary", vo2max_primary
-    elif vo2max_secondary > 0:
-        used, source = vo2max_secondary, "secondary"
+    elif secondary_eligible and floor_eligible:
+        sec_vdot = _vo2max_to_vdot_approx(vo2max_secondary)
+        floor_vdot = _vo2max_to_vdot_approx(vo2max_floor)
+        used = (vo2max_secondary + vo2max_floor) / 2.0
+        used_vdot = (sec_vdot + floor_vdot) / 2.0
+        source = "floor+secondary"
+    elif secondary_eligible:
+        used = vo2max_secondary
         used_vdot = _vo2max_to_vdot_approx(vo2max_secondary)
-    elif vo2max_floor > 0:
-        used, source = vo2max_floor, "floor"
+        source = "secondary"
+    elif floor_eligible:
+        used = vo2max_floor
         used_vdot = _vo2max_to_vdot_approx(vo2max_floor)
+        source = "floor"
     else:
         used, source, used_vdot = 0.0, "none", 0.0
+
+    # Clamp final VDOT to the Daniels table's supported range. Bounds a
+    # runaway floor (e.g. RHR=35 + HRmax=185 → 80.86 unclamped).
+    used_vdot = _clamp(used_vdot, VDOT_CLAMP_MIN, VDOT_CLAMP_MAX) if used_vdot > 0 else 0.0
 
     # Normalize to 0-100 via (used_vdot − reference)·points_per_vdot + 80.
     if used_vdot > 0:
@@ -1186,6 +1258,20 @@ def compute_l3_vo2max(
         "vo2max_used": round(used, 2) if used else None,
         "vo2max_used_vdot": round(used_vdot, 2) if used_vdot else None,
         "vo2max_source": source,
+        # v7: surface eligibility flags + secondary quality so the dashboard
+        # / debugging endpoints can explain why a given estimator did or
+        # didn't participate.
+        "vo2max_eligible": {
+            "primary": bool(primary_eligible),
+            "secondary": bool(secondary_eligible),
+            "floor": bool(floor_eligible),
+        },
+        "vo2max_secondary_quality": {
+            "n_points": int(secondary_q["n_points"]),
+            "hr_span": round(float(secondary_q["hr_span"]), 1),
+            "r2": round(float(secondary_q["r2"]), 3),
+        },
+        "vo2max_floor_rhr_days": int(floor_rhr_days),
     }
     return round(score, 2), best_evidence, details
 
@@ -1227,6 +1313,58 @@ def _vo2max_to_vdot_approx(vo2: float) -> float:
     # Empirical rule-of-thumb: VDOT ≈ VO2max − 2 to VO2max, because VDOT is a
     # race-performance derivative (higher than pure lab VO2max by a touch).
     return vo2
+
+
+def _secondary_hr_pace_quality(activities: Sequence[Any], hr_max: int) -> dict:
+    """Return quality metrics describing the HR-pace regression's input data.
+
+    Used by ``compute_l3_vo2max`` (v7) to gate whether the secondary
+    estimate is trustworthy enough to participate in triangulation. Mirrors
+    the point-collection logic in ``_vo2max_from_hr_pace`` but stops short
+    of computing the extrapolated VO2max — its job is just to score the
+    regression's inputs.
+
+    Returns a dict with:
+      - ``n_points``: number of (HR, pace) samples in-range
+      - ``hr_span``: max(HR) − min(HR) across samples (bpm)
+      - ``r2``: ordinary-least-squares coefficient of determination
+    """
+    points: list[tuple[float, float]] = []
+    lo = hr_max * EASY_HR_LOW_FACTOR
+    hi = hr_max * EASY_HR_HIGH_FACTOR
+    for a in activities:
+        if not _is_running(a):
+            continue
+        hr = _get(a, "avg_hr")
+        pace = _get(a, "avg_pace_s_km")
+        if hr is None or pace is None:
+            continue
+        if not (lo <= hr <= hi):
+            continue
+        points.append((float(hr), float(pace)))
+
+    if len(points) < 2:
+        return {"n_points": len(points), "hr_span": 0.0, "r2": 0.0}
+
+    hrs = [p[0] for p in points]
+    paces = [p[1] for p in points]
+    hr_span = max(hrs) - min(hrs)
+
+    reg = _linreg(points)
+    if reg is None:
+        return {"n_points": len(points), "hr_span": hr_span, "r2": 0.0}
+    slope, intercept = reg
+    mean_pace = sum(paces) / len(paces)
+    ss_tot = sum((p - mean_pace) ** 2 for p in paces)
+    if ss_tot <= 0:
+        # All paces identical → perfect fit by convention; the regression is
+        # degenerate but the data is internally consistent.
+        return {"n_points": len(points), "hr_span": hr_span, "r2": 1.0}
+    ss_res = sum(
+        (paces[i] - (slope * hrs[i] + intercept)) ** 2 for i in range(len(points))
+    )
+    r2 = 1.0 - (ss_res / ss_tot)
+    return {"n_points": len(points), "hr_span": hr_span, "r2": max(0.0, min(1.0, r2))}
 
 
 def compute_l3_endurance(
