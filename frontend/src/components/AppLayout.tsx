@@ -186,6 +186,16 @@ export default function AppLayout() {
           >
             团队
           </button>
+          <button
+            onClick={() => navigate('/watch')}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg border transition-all ${
+              isActive('/watch')
+                ? 'border-text-muted/50 text-text-secondary bg-text-muted/10'
+                : 'border-text-muted/30 text-text-muted hover:bg-text-muted/10'
+            }`}
+          >
+            手表管理
+          </button>
           {hasInbody && (
             <button
               onClick={() => navigate('/inbody')}

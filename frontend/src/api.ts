@@ -215,6 +215,28 @@ export function deleteMyAccount() {
   return deleteJSON<{ detail?: unknown }>('/users/me')
 }
 
+// ---------------------------------------------------------------------------
+// Watch management
+// ---------------------------------------------------------------------------
+
+export interface WatchInfo {
+  provider: string | null
+  provider_display_name: string | null
+  logged_in: boolean
+  email: string | null
+  device: string | null
+  last_sync_at: string | null
+  capabilities: string[]
+}
+
+export function getWatchInfo() {
+  return fetchJSON<WatchInfo>('/users/me/watch')
+}
+
+export function disconnectWatch() {
+  return deleteJSON<{ ok: boolean; provider: string }>('/users/me/watch')
+}
+
 export function postOnboardingComplete() {
   return postJSON<{ state?: string; error?: string; detail?: string; progress?: SyncProgress }>('/users/me/onboarding/complete')
 }
