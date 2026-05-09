@@ -1499,13 +1499,22 @@ def _months_between(earlier_iso: str, later_iso: str) -> float:
     factor that's already a coarse model of physiological detraining.
     Negative result means ``later_iso`` is actually earlier; callers
     treat negative as "no decay yet" by clamping to 0.
+
+    On parse failure (malformed input — e.g. a backfilled row whose
+    ``pb_date`` ended up empty because the source activity had a NULL
+    ``date`` column), return ``inf`` so the caller's age check
+    (``months > PB_MAX_AGE_MONTHS``) drops the entry. The previous
+    behaviour returned 0.0, which made a garbage date look like "no
+    decay yet" and silently treated a stale PB as fresh.
     """
+    if not earlier_iso or not later_iso:
+        return float("inf")
     try:
         from datetime import date as _date
         a = _date.fromisoformat(earlier_iso[:10])
         b = _date.fromisoformat(later_iso[:10])
     except Exception:
-        return 0.0
+        return float("inf")
     return (b - a).days / 30.4375
 
 

@@ -1349,6 +1349,13 @@ class TestPbMemory:
                 race_type="5K", distance_m=5000, duration_s=1200,
                 vdot=53.0, pb_date="2026-04-15", label_id="A2",
             ) is False
+            # Equal VDOT — must NOT overwrite (strict > only). Preserves
+            # original PB date / label rather than churning the row on
+            # equally-fast efforts.
+            assert db.upsert_vo2max_pb(
+                race_type="5K", distance_m=5000, duration_s=1140,
+                vdot=55.0, pb_date="2026-04-18", label_id="A2_TIE",
+            ) is False
             # Higher VDOT — overwrites.
             assert db.upsert_vo2max_pb(
                 race_type="5K", distance_m=5000, duration_s=1080,
@@ -1360,6 +1367,64 @@ class TestPbMemory:
             assert rows[0]["label_id"] == "A3"
         finally:
             db.close()
+
+    def test_db_upsert_vo2max_pb_atomic_on_conflict(self, tmp_path):
+        """Regression coverage for the v7 follow-up fix: the upsert must
+        be a single atomic statement, not a read-then-write race.
+
+        Open two connections to the same DB, simulate the read-then-
+        write interleave that would defeat the v6 implementation
+        (connection A reads existing=55, B reads existing=55, A writes
+        58, B writes 56 — naive code would land on 56). With the
+        ON CONFLICT WHERE clause, B's write is rejected at SQL level
+        because by the time B's INSERT executes, the stored vdot is
+        already 58 and 56 < 58 fails the WHERE.
+        """
+        path = tmp_path / "concurrent.db"
+        db_a = Database(db_path=path)
+        db_b = Database(db_path=path)
+        try:
+            # Seed shared baseline.
+            assert db_a.upsert_vo2max_pb(
+                race_type="full", distance_m=42000, duration_s=10500,
+                vdot=55.0, pb_date="2026-03-01", label_id="SEED",
+            ) is True
+            # A: write 58 (real PB).
+            assert db_a.upsert_vo2max_pb(
+                race_type="full", distance_m=42000, duration_s=10000,
+                vdot=58.0, pb_date="2026-04-01", label_id="A_PB",
+            ) is True
+            # B: try to write 56. With v6 read-then-write, B might have
+            # cached existing=55 and pass its own check. The atomic
+            # ON CONFLICT WHERE rejects.
+            assert db_b.upsert_vo2max_pb(
+                race_type="full", distance_m=42000, duration_s=10300,
+                vdot=56.0, pb_date="2026-04-02", label_id="B_LATE",
+            ) is False
+            # Final state: A's 58 stands.
+            rows = db_a.fetch_vo2max_pbs()
+            assert len(rows) == 1
+            assert rows[0]["vdot"] == 58.0
+            assert rows[0]["label_id"] == "A_PB"
+        finally:
+            db_a.close()
+            db_b.close()
+
+    def test_decayed_pb_vdot_drops_on_malformed_date(self):
+        """Regression for the v7 follow-up: a malformed/empty pb_date
+        must be treated as 'past max age' (decay → 0), not as 'fresh'.
+        Backfilled rows can land here when the source activity had a
+        NULL ``date`` column, so this matters in practice.
+        """
+        from stride_core.ability import _decayed_pb_vdot, _months_between
+        # _months_between: malformed inputs return inf, not 0.
+        assert _months_between("", "2026-05-01") == float("inf")
+        assert _months_between("not-a-date", "2026-05-01") == float("inf")
+        assert _months_between("2026-05-01", "") == float("inf")
+        # Decayed PB: garbage pb_date → 0 contribution (drops the PB),
+        # not full strength.
+        assert _decayed_pb_vdot(60.0, "", "2026-05-01") == 0.0
+        assert _decayed_pb_vdot(60.0, "garbage", "2026-05-01") == 0.0
 
     def test_compute_l3_vo2max_pb_floor_lifts_estimate(self, tmp_path):
         """End-to-end: PB row gives a higher decayed VDOT than the rolling

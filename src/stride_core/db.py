@@ -1066,29 +1066,38 @@ class Database:
     ) -> bool:
         """Conditionally write a PB row.
 
-        Only overwrites the existing row when ``vdot`` strictly exceeds the
-        stored value — PBs are monotonic by construction. Returns True if a
-        write happened, False otherwise. ``pb_date`` should be an ISO
-        YYYY-MM-DD string (Shanghai-local semantics matching ability_hook).
+        Atomic monotonic upsert: writes only when ``vdot`` strictly exceeds
+        the stored value. The check-and-write happens inside a single
+        ``INSERT … ON CONFLICT … WHERE`` statement so two concurrent
+        connections (sync hook + backfill, or two Container App revisions
+        racing on the same Azure Files SMB-mounted DB) cannot interleave a
+        read with each other's write and demote the PB. Returns True iff a
+        row was actually inserted or updated.
         """
-        existing = self._conn.execute(
-            "SELECT vdot FROM vo2max_pb WHERE race_type = ?",
-            (race_type,),
-        ).fetchone()
-        if existing is not None and float(existing[0]) >= float(vdot):
-            return False
-        self._conn.execute(
-            """INSERT OR REPLACE INTO vo2max_pb
+        cursor = self._conn.execute(
+            """INSERT INTO vo2max_pb
                (race_type, distance_m, duration_s, vdot, pb_date, label_id,
                 even_paced, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(race_type) DO UPDATE SET
+                 distance_m = excluded.distance_m,
+                 duration_s = excluded.duration_s,
+                 vdot = excluded.vdot,
+                 pb_date = excluded.pb_date,
+                 label_id = excluded.label_id,
+                 even_paced = excluded.even_paced,
+                 updated_at = datetime('now')
+               WHERE excluded.vdot > vo2max_pb.vdot""",
             (
                 race_type, float(distance_m), float(duration_s), float(vdot),
                 pb_date, label_id, 1 if even_paced else 0,
             ),
         )
         self._conn.commit()
-        return True
+        # rowcount == 1 when either INSERT happened (no conflict) or
+        # UPDATE happened (conflict + WHERE passed). 0 when conflict's
+        # WHERE clause rejected — i.e. existing.vdot >= incoming.vdot.
+        return cursor.rowcount > 0
 
     def fetch_vo2max_pbs(self) -> list[sqlite3.Row]:
         return self._conn.execute(
