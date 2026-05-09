@@ -119,7 +119,8 @@ export interface PlanVsActualCardProps {
 
 export default function PlanVsActualCard({ session, activity }: PlanVsActualCardProps) {
   const planDistanceM = session.total_distance_m
-  const actualDistanceM = activity.distance_m
+  // activity.distance_m is km-scale (legacy mislabel); convert to true meters
+  const actualDistanceM = (activity.distance_m ?? 0) * 1000
 
   const planPace = planPaceRange(session)
   const planHR = planHRRange(session)

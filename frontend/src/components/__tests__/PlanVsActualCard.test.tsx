@@ -72,7 +72,7 @@ function makeActivity(overrides: Partial<Activity>): Activity {
     sport_type: 8,
     sport_name: 'Run',
     date: '2026-04-20T07:00:00+08:00',
-    distance_m: 20000,
+    distance_m: 20,
     distance_km: 20,
     duration_s: 7200,
     duration_fmt: '2:00:00',
@@ -111,7 +111,7 @@ describe('PlanVsActualCard', () => {
     const { container } = render(
       <PlanVsActualCard
         session={session}
-        activity={makeActivity({ distance_m: 10000, distance_km: 10 })}
+        activity={makeActivity({ distance_m: 10, distance_km: 10 })}
       />,
     )
     const node = container.querySelector('.adherence-red')
