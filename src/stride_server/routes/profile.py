@@ -7,9 +7,10 @@ import re
 from datetime import date
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
+from .. import auth_service_client as auth_client
 from ..bearer import require_bearer
 from ..content_store import read_json, write_json
 
@@ -153,7 +154,10 @@ class ProfilePatch(BaseModel):
 
 
 @router.get("/api/users/me/profile")
-def get_profile(payload: dict = Depends(require_bearer)):
+async def get_profile(
+    payload: dict = Depends(require_bearer),
+    authorization: str | None = Header(default=None),
+):
     uuid = payload["sub"]
     profile = _read_profile(uuid)
     onboarding = _read_onboarding(uuid)
@@ -162,9 +166,20 @@ def get_profile(payload: dict = Depends(require_bearer)):
     # never logged into a provider yet.
     from stride_core.registry import read_user_provider
     provider = read_user_provider(uuid)
+
+    # Fetch display name from auth-service (primary source).
+    # Falls back to local profile.json → UUID.
+    bearer = authorization[len("Bearer "):].strip() if authorization and authorization.lower().startswith("bearer ") else None
+    auth_user = await auth_client.get_me(bearer)
+    auth_name = None
+    if isinstance(auth_user, dict):
+        auth_name = auth_user.get("display_name") or auth_user.get("name")
+
+    display_name = auth_name or profile.get("display_name")
+
     return {
         "id": uuid,
-        "display_name": profile.get("display_name"),
+        "display_name": display_name,
         "provider": provider,
         "profile": profile,
         "onboarding": onboarding,
