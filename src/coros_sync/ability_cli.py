@@ -277,6 +277,18 @@ def _ability_backfill(profile: str, days: int) -> None:
                         date=d_iso, level="L4", dimension=dim_name,
                         value=float(val),
                     )
+            hm_estimates = snapshot.get("half_marathon_estimates") or {}
+            for dim_name, key in (
+                ("hm_training_s", "training_s"),
+                ("hm_race_s",     "race_s"),
+                ("hm_best_case_s", "best_case_s"),
+            ):
+                val = hm_estimates.get(key)
+                if val is not None:
+                    db.upsert_ability_snapshot(
+                        date=d_iso, level="L4", dimension=dim_name,
+                        value=float(val),
+                    )
             wrote += 1
             progress.update(task, description=f"Backfilled {d_iso}")
             progress.advance(task)

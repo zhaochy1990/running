@@ -3,13 +3,15 @@ import { useUser } from '../UserContextValue'
 import {
   fetchAbilityCurrent, fetchAbilityHistory, fetchAbilityWeights,
   triggerAbilityBackfill,
-  type AbilityCurrent, type AbilityHistoryPoint,
+  type AbilityCurrent, type AbilityHistoryPoint, type RaceEstimates,
 } from '../api'
 import AbilityHero from '../components/AbilityHero'
 import AbilityTriptych from '../components/AbilityTriptych'
 import AbilityRadar from '../components/AbilityRadar'
 import AbilityHistoryChart from '../components/AbilityHistoryChart'
 import Vo2maxPanel from '../components/Vo2maxPanel'
+
+const EMPTY_ESTIMATES: RaceEstimates = { training_s: null, race_s: null, best_case_s: null }
 
 export default function AbilityPage() {
   const { user } = useUser()
@@ -67,6 +69,19 @@ export default function AbilityPage() {
       .finally(() => setLoading(false))
   }, [user, days])
 
+  // Determine which distance is the primary target.
+  const targetDist = current?.target_distance ?? 'FM'
+  const isHM = targetDist === 'HM'
+  const primaryEstimates: RaceEstimates = isHM
+    ? (current?.half_marathon_estimates ?? EMPTY_ESTIMATES)
+    : (current?.marathon_estimates ?? EMPTY_ESTIMATES)
+  const secondaryEstimates: RaceEstimates = isHM
+    ? (current?.marathon_estimates ?? EMPTY_ESTIMATES)
+    : (current?.half_marathon_estimates ?? EMPTY_ESTIMATES)
+  const primaryLabel = isHM ? 'HALF MARATHON' : 'MARATHON'
+  const primaryTag = isHM ? '半马' : '全马'
+  const secondaryTag = isHM ? '全马' : '半马'
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
       {loading ? (
@@ -91,14 +106,26 @@ export default function AbilityPage() {
             </div>
           </div>
 
+          {/* Primary distance — the user's target race */}
           <AbilityHero
-            estimates={current.marathon_estimates}
+            estimates={primaryEstimates}
             date={current.date}
-            targetS={current.marathon_target_s}
-            targetLabel={current.marathon_target_label}
+            targetS={current.target_s}
+            targetLabel={current.target_label}
+            distanceLabel={primaryLabel}
           />
 
-          <AbilityTriptych estimates={current.marathon_estimates} />
+          <AbilityTriptych estimates={primaryEstimates} distanceLabel={primaryTag} />
+
+          {/* Secondary distance — always show the other race distance */}
+          {secondaryEstimates.race_s != null && (
+            <div className="mb-6">
+              <p className="text-xs font-mono text-text-muted tracking-widest mb-3 uppercase">
+                {secondaryTag} Race Estimate
+              </p>
+              <AbilityTriptych estimates={secondaryEstimates} distanceLabel={secondaryTag} />
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
             <AbilityRadar current={current} weights={weights} />

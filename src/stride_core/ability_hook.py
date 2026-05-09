@@ -117,6 +117,18 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                         date=today_iso, level="L4", dimension=dim_name,
                         value=float(val),
                     )
+            hm_estimates = snapshot.get("half_marathon_estimates") or {}
+            for dim_name, key in (
+                ("hm_training_s", "training_s"),
+                ("hm_race_s",     "race_s"),
+                ("hm_best_case_s", "best_case_s"),
+            ):
+                val = hm_estimates.get(key)
+                if val is not None:
+                    db.upsert_ability_snapshot(
+                        date=today_iso, level="L4", dimension=dim_name,
+                        value=float(val),
+                    )
         except Exception as e:
             logger.debug("ability snapshot persistence failed: %s", e)
 

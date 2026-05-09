@@ -1,28 +1,36 @@
-import type { MarathonEstimates } from '../api'
+import type { RaceEstimates } from '../api'
 import { fmtHMS } from '../lib/fmt'
 
-export default function AbilityTriptych({ estimates }: { estimates: MarathonEstimates }) {
+export default function AbilityTriptych({
+  estimates,
+  distanceLabel,
+}: {
+  estimates: RaceEstimates
+  /** e.g. '全马' or '半马' */
+  distanceLabel?: string
+}) {
   const racePct = estimates.race_day_boost_pct
   const bestPct = estimates.best_case_boost_pct
+  const tag = distanceLabel ? ` (${distanceLabel})` : ''
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
       <Card
-        label="训练估算"
+        label={`训练估算${tag}`}
         sublabel="Training Estimate"
         value={fmtHMS(estimates.training_s)}
         detail="训练实力 · 未加比赛日增益"
         highlighted={false}
       />
       <Card
-        label="比赛估算"
+        label={`比赛估算${tag}`}
         sublabel="Race Estimate"
         value={fmtHMS(estimates.race_s)}
         detail={`完美赛日 · 减量 ${racePct != null ? `+${racePct}%` : '增益'}`}
         highlighted={true}
       />
       <Card
-        label="最佳情境"
+        label={`最佳情境${tag}`}
         sublabel="Best Case"
         value={fmtHMS(estimates.best_case_s)}
         detail={`理论上限 · ${bestPct != null ? `+${bestPct}%` : '完美执行'}`}
