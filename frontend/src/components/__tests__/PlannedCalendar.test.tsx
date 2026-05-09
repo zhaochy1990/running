@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import PlannedCalendar from '../PlannedCalendar'
 import type { PlannedSession, NormalizedRunWorkout } from '../../types/plan'
@@ -273,5 +273,87 @@ describe('PlannedCalendar', () => {
     const nut = screen.getByTestId('nutrition-row')
     expect(nut.textContent).toContain('2400 kcal')
     expect(nut.textContent).toContain('蛋 130g')
+  })
+
+  it('opens session detail modal when a session row is clicked', () => {
+    render(
+      <PlannedCalendar
+        weekDates={WEEK_DATES}
+        sessions={sessions}
+        nutrition={[]}
+        structuredStatus="fresh"
+        canPushRun={true}
+        onPush={() => {}}
+      />,
+    )
+
+    // Modal should not be visible initially
+    expect(screen.queryByTestId('session-detail-modal')).not.toBeInTheDocument()
+
+    // Click the run session row
+    const sessionRows = screen.getAllByTestId('session-row')
+    fireEvent.click(sessionRows[0])
+
+    // Modal should now be visible
+    const modal = screen.getByTestId('session-detail-modal')
+    expect(modal).toBeInTheDocument()
+    // The modal contains the session summary in its h2
+    expect(modal.querySelector('h2')?.textContent).toBe('Easy 10km')
+  })
+
+  it('closes session detail modal when backdrop is clicked', () => {
+    render(
+      <PlannedCalendar
+        weekDates={WEEK_DATES}
+        sessions={sessions}
+        nutrition={[]}
+        structuredStatus="fresh"
+        canPushRun={true}
+        onPush={() => {}}
+      />,
+    )
+
+    // Open modal
+    const sessionRows = screen.getAllByTestId('session-row')
+    fireEvent.click(sessionRows[0])
+    expect(screen.getByTestId('session-detail-modal')).toBeInTheDocument()
+
+    // Click backdrop to close
+    fireEvent.click(screen.getByTestId('session-detail-modal'))
+    expect(screen.queryByTestId('session-detail-modal')).not.toBeInTheDocument()
+  })
+
+  it('opens modal when Enter key is pressed on a session row', () => {
+    render(
+      <PlannedCalendar
+        weekDates={WEEK_DATES}
+        sessions={sessions}
+        nutrition={[]}
+        structuredStatus="fresh"
+        canPushRun={true}
+        onPush={() => {}}
+      />,
+    )
+
+    const row = screen.getAllByTestId('session-row')[0]
+    fireEvent.keyDown(row, { key: 'Enter' })
+    expect(screen.getByTestId('session-detail-modal')).toBeInTheDocument()
+  })
+
+  it('session rows have interactive attributes', () => {
+    render(
+      <PlannedCalendar
+        weekDates={WEEK_DATES}
+        sessions={sessions}
+        nutrition={[]}
+        structuredStatus="fresh"
+        canPushRun={true}
+        onPush={() => {}}
+      />,
+    )
+
+    const sessionRows = screen.getAllByTestId('session-row')
+    expect(sessionRows[0]).toHaveAttribute('role', 'button')
+    expect(sessionRows[0]).toHaveAttribute('tabindex', '0')
   })
 })
