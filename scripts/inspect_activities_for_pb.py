@@ -1,15 +1,40 @@
 """Diagnostic: scan a user's activities and report what would be PB-classified."""
-import argparse, sys
-sys.path.insert(0, "/app/src")
-from stride_core.db import Database
+import argparse, json, re, sys
+from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import RUN_SPORT_IDS
 from stride_core.ability import classify_race_type, compute_pb_vdot_for_activity, _distance_to_meters
+
+_UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+def _resolve_profile(profile: str) -> str:
+    if _UUID4_RE.match(profile):
+        return profile
+    aliases_file = USER_DATA_DIR / ".slug_aliases.json"
+    if aliases_file.exists():
+        try:
+            aliases = json.loads(aliases_file.read_text(encoding="utf-8"))
+            if profile in aliases:
+                return aliases[profile]
+        except Exception:
+            pass
+    return profile
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-P", "--profile", required=True)
 args = parser.parse_args()
 
-db = Database(user=args.profile)
+user_id = _resolve_profile(args.profile)
+if user_id != args.profile:
+    print(f"[resolved] {args.profile} → {user_id}")
+db = Database(user=user_id)
 conn = db._conn
 sports = ",".join(str(s) for s in RUN_SPORT_IDS)
 rows = conn.execute(

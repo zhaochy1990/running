@@ -21,10 +21,14 @@ safe — DNF marathons won't enroll.
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
 from pathlib import Path
 
-# Allow running as `python scripts/backfill_vo2max_pbs.py` from repo root.
+# Allow running as `python scripts/backfill_vo2max_pbs.py` from repo root,
+# AND as `python /app/scripts/backfill_vo2max_pbs.py` inside the container
+# (where /app/src is on PYTHONPATH already but adding it again is harmless).
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
@@ -34,8 +38,38 @@ from stride_core.ability import (  # noqa: E402
     classify_race_type,
     compute_pb_vdot_for_activity,
 )
-from stride_core.db import Database  # noqa: E402
+from stride_core.db import USER_DATA_DIR, Database  # noqa: E402
 from stride_core.models import RUN_SPORT_IDS  # noqa: E402
+
+
+_UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
+
+def _resolve_profile(profile: str) -> str:
+    """Resolve a slug like ``zhaochaoyi`` to its UUID via
+    ``data/.slug_aliases.json``. Mirrors ``coros_sync.cli._resolve_profile``
+    so the backfill script can take a friendly slug like the CLI does.
+
+    The original Database(user=...) constructor uses the string as-is,
+    so without resolution a slug points at a directory that doesn't
+    exist and we silently create / open an empty DB. This is what bit
+    the first prod backfill attempt — Database(user='zhaochaoyi') went
+    to /app/data/zhaochaoyi/ instead of /app/data/{uuid}/.
+    """
+    if _UUID4_RE.match(profile):
+        return profile
+    aliases_file = USER_DATA_DIR / ".slug_aliases.json"
+    if aliases_file.exists():
+        try:
+            aliases = json.loads(aliases_file.read_text(encoding="utf-8"))
+            if profile in aliases:
+                return aliases[profile]
+        except Exception:
+            pass
+    return profile
 
 
 def _load_full_activity(conn, label_id: str) -> dict | None:
@@ -129,7 +163,10 @@ def main() -> int:
                         help="enumerate candidates without writing")
     args = parser.parse_args()
 
-    db = Database(user=args.profile)
+    user_id = _resolve_profile(args.profile)
+    if user_id != args.profile:
+        print(f"[resolved] {args.profile} → {user_id}")
+    db = Database(user=user_id)
     try:
         stats = backfill(db, dry_run=args.dry_run)
     finally:
