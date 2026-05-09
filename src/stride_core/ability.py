@@ -1004,6 +1004,53 @@ def compute_l3_lt(
     return round(score, 2), evidence, {"best_pace_s_km": round(best_overall, 1)}
 
 
+# Even-pacing threshold for the marathon table reverse-lookup gate (v7).
+# A well-executed marathon's second-half avg pace is typically within 3-7%
+# of the first half (positive split convention). 1.15 = 15% positive split
+# is a generous bar that still rejects walk-jog finishes (e.g. cramp at
+# 30K → switch to 5:30/km from a 4:00/km opening), without false-rejecting
+# a 4:00 → 4:25 fade that's still within "well-paced race" interpretation.
+MARATHON_DNF_PACE_RATIO = 1.15
+
+
+def _is_well_paced_marathon(activity: Any) -> bool:
+    """Return True if the marathon's pacing supports a table-reverse VDOT.
+
+    Daniels's table assumes a *race-quality* effort — an even-pacing
+    sustained attempt at the distance. A walk-jog completion (cramp,
+    bonk, weather collapse) covers the same 42 km but reflects something
+    other than aerobic capacity, and feeding its total time into the
+    inverse table understates VDOT for the same athlete in race shape.
+
+    Heuristic: average pace of the second half ÷ average pace of the
+    first half must be < ``MARATHON_DNF_PACE_RATIO``. Pace stored in
+    seconds-per-km, so a higher second-half value is *slower*.
+
+    If lap data is too sparse to compute the split (<4 laps), return
+    True — the gate intentionally errs toward admission to avoid
+    false-rejecting providers that don't emit per-km splits.
+    """
+    laps = _get(activity, "laps") or []
+    if len(laps) < 4:
+        return True
+    half = len(laps) // 2
+    first_paces = [
+        _get(lp, "avg_pace") for lp in laps[:half]
+        if _get(lp, "avg_pace") is not None and _get(lp, "avg_pace") > 0
+    ]
+    second_paces = [
+        _get(lp, "avg_pace") for lp in laps[half:]
+        if _get(lp, "avg_pace") is not None and _get(lp, "avg_pace") > 0
+    ]
+    if not first_paces or not second_paces:
+        return True
+    p1 = sum(first_paces) / len(first_paces)
+    p2 = sum(second_paces) / len(second_paces)
+    if p1 <= 0:
+        return True
+    return (p2 / p1) < MARATHON_DNF_PACE_RATIO
+
+
 def _marathon_time_to_vdot_table(time_s: float) -> float | None:
     """Inverse lookup of DANIELS_VDOT_TO_MARATHON_S.
 
@@ -1153,6 +1200,16 @@ def compute_l3_vo2max(
     # Marathon race correction: Daniels's formula underestimates %VO2max for 3+ hour
     # efforts. For full marathons, use the empirical table inverse (Daniels's published
     # race-equivalence values) instead of the formula, then take max with best formula VDOT.
+    #
+    # v7 Step 2: gate the table reverse-lookup behind an even-pacing check.
+    # A walk-jog/cramp completion of 42 km reflects something other than
+    # aerobic capacity, and feeding its total time into the inverse table
+    # understates VDOT — a 3:45 DNF-style finish maps to VDOT ~50 even
+    # though the same athlete may have race-fit VDOT ~63. The guard rejects
+    # marathons whose second-half avg pace is ≥15% slower than the first
+    # half (see ``_is_well_paced_marathon``). Sparse-lap activities are
+    # admitted by default since the only signal we have is the headline
+    # time.
     for a in activities_56d:
         if not _is_running(a):
             continue
@@ -1161,6 +1218,8 @@ def compute_l3_vo2max(
         dur_s = _get(a, "duration_s") or 0
         # Full marathon ± 1.3km, duration 2-6h
         if 41000 <= dist_m <= 43500 and 7200 <= dur_s <= 21600:
+            if not _is_well_paced_marathon(a):
+                continue
             table_vdot = _marathon_time_to_vdot_table(float(dur_s))
             if table_vdot is not None and table_vdot > best_vdot:
                 best_vdot = float(table_vdot)

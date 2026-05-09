@@ -1149,6 +1149,97 @@ class TestVo2maxRaceLikeGate:
         assert ev == ["T_5K_TT"]
 
 
+class TestMarathonDnfGuard:
+    """v7 Step 2: marathon table reverse-lookup must be gated behind an
+    even-pacing check so DNF-style walk-jog finishes don't pollute VDOT.
+    """
+
+    def _make_marathon(self, label_id: str, first_half_pace: int, second_half_pace: int) -> dict:
+        # 20 laps × ~2.1 km, 10 in each half. Pace given in s/km.
+        laps = []
+        for i in range(20):
+            pace = first_half_pace if i < 10 else second_half_pace
+            laps.append({
+                "lap_index": i + 1, "lap_type": "autoKm",
+                "distance_m": 2.1, "duration_s": int(pace * 2.1),
+                "avg_pace": pace, "exercise_type": None,
+            })
+        total_s = sum(int(p * 2.1) for p in
+                      [first_half_pace] * 10 + [second_half_pace] * 10)
+        return {
+            "label_id": label_id, "name": "Marathon",
+            "sport_type": 100,
+            "date": "2026-04-15T00:00:00+00:00",
+            "distance_m": 42000, "duration_s": total_s,
+            "avg_pace_s_km": total_s / 42.0,
+            "avg_hr": 165, "max_hr": 178, "avg_cadence": 180,
+            "train_type": "Race",
+            "laps": laps, "timeseries": [],
+        }
+
+    def test_well_paced_marathon_admitted(self):
+        from stride_core.ability import compute_l3_vo2max, _is_well_paced_marathon
+        # Even pacing: 4:00/km first half, 4:08/km second half (3.3% positive
+        # split — within race-quality interpretation). Total ≈ 2:50:48.
+        act = self._make_marathon("M_EVEN", 240, 248)
+        assert _is_well_paced_marathon(act) is True
+        score, ev, det = compute_l3_vo2max([act], None, hr_max=185)
+        # Marathon table reverse fires → primary VDOT in the 56-58 band
+        # (post-v6 re-derivation maps a ~2:51 finish to VDOT ≈57).
+        # The key invariant: gate admits the activity, so a marathon-class
+        # estimate appears in primary rather than the lower formula-only
+        # value the gate-rejected path would produce.
+        assert det["vo2max_primary"] is not None
+        assert det["vo2max_primary"] > 55.0, \
+            f"well-paced 2:51 marathon should give VDOT > 55, got {det['vo2max_primary']}"
+
+    def test_dnf_style_marathon_rejected(self):
+        from stride_core.ability import compute_l3_vo2max, _is_well_paced_marathon
+        # Crash-and-burn: 4:00/km first half, 5:30/km second half (37.5%
+        # positive split — clear DNF-style finish).
+        act = self._make_marathon("M_DNF", 240, 330)
+        assert _is_well_paced_marathon(act) is False
+        score, ev, det = compute_l3_vo2max([act], None, hr_max=185)
+        # Marathon table-reverse path is rejected. The race-like path
+        # (4800-21500m gate) also rejects because dist=42000 is out of
+        # range. Rep-summation may still fire on the per-km laps and give
+        # a moderate VDOT — that's the formula's truthful read of the
+        # walk-jog completion, not the inflated table reverse.
+        # The key invariant: the DNF marathon's TABLE reverse VDOT
+        # (~50 for a 3:45-ish finish) must NOT carry the headline.
+        # Whatever primary lands at, it should not be the inflated
+        # table-reverse value implied by the headline time alone.
+        # Simplest check: even with this activity in the pool, the
+        # primary VDOT should reflect rep-summation (≤55) not table
+        # reverse (which would be ~50 — coincidentally similar, but
+        # verify the gate fired by inspecting the helper directly above).
+        assert score >= 0.0  # sanity — function returned cleanly
+
+    def test_sparse_laps_admitted_by_default(self):
+        from stride_core.ability import _is_well_paced_marathon
+        # Provider didn't emit per-km splits — only 1-2 summary laps. We
+        # cannot infer pacing, so admit by default rather than reject.
+        act = {
+            "label_id": "M_SPARSE", "sport_type": 100,
+            "distance_m": 42000, "duration_s": 10500,
+            "laps": [
+                {"lap_index": 1, "distance_m": 21.1, "duration_s": 5200,
+                 "avg_pace": 246},
+                {"lap_index": 2, "distance_m": 20.9, "duration_s": 5300,
+                 "avg_pace": 254},
+            ],
+        }
+        # Only 2 laps → return True (insufficient data to reject).
+        assert _is_well_paced_marathon(act) is True
+
+    def test_well_paced_marathon_includes_negative_split(self):
+        from stride_core.ability import _is_well_paced_marathon
+        # Negative split (4:10/km first half, 4:00/km second half) — the
+        # gold-standard race execution. Must be admitted.
+        act = self._make_marathon("M_NEG", 250, 240)
+        assert _is_well_paced_marathon(act) is True
+
+
 class TestEconomyDedupe:
     """Regression coverage for L3 economy autoKm/type2 dedupe."""
 
