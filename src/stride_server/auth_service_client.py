@@ -174,5 +174,18 @@ async def list_my_teams(bearer: str | None) -> list[dict[str, Any]]:
     return []
 
 
+async def get_me(bearer: str | None) -> dict[str, Any] | None:
+    """GET /api/users/me — current user info from auth-service.
+
+    Returns the user dict (id, email, name, display_name, …) or None on
+    failure so callers can fall back gracefully.
+    """
+    try:
+        data = await _request("GET", "/api/users/me", bearer=bearer)
+    except (AuthServiceUnavailable, AuthServiceError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 async def delete_my_account(bearer: str | None) -> None:
     await _request("DELETE", "/api/users/me", bearer=bearer)
