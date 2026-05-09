@@ -1316,24 +1316,43 @@ def compute_l3_vo2max(
     # race-quality evidence and wins outright.
     primary_eligible = vo2max_primary > 0
 
+    # Quality-gated max: among eligible estimators take the highest VDOT.
+    # Each estimator measures the same physical quantity (VO2max / VDOT)
+    # through a different lens — race-derived performance (primary), HR-pace
+    # extrapolation (secondary), and resting-HR formula (floor). They tend
+    # to underestimate, not overestimate, the runner's true ceiling: a
+    # mediocre race-day effort underrates a fit runner's VDOT; a narrow-
+    # band easy regression underrates extrapolated peak; Uth–Sørensen with
+    # a noisy RHR sample is a soft floor too.
+    #
+    # Quality gates (the n_points / R² / RHR-days checks above) already
+    # exclude unreliable inputs, so the remaining candidates are each
+    # individually trustworthy estimates of the same quantity. Taking the
+    # max is "best demonstrated capacity across credible measurements" —
+    # which matches user intuition (a sub-3 marathoner's RHR-based VDOT 59
+    # shouldn't be ignored just because they haven't recently run an
+    # all-out 5K race that would set primary higher).
+    #
+    # The earlier v7 design used a Tier-1 cascade (primary > secondary >
+    # floor) and hit zhaochaoyi's actual data with primary=52.9 / floor=59:
+    # cascade picked primary and ignored a stronger physiological signal.
+    # Bug 1 from the original review.
+    candidates: list[tuple[str, float, float]] = []  # (name, raw, vdot)
     if primary_eligible:
-        used, source, used_vdot = vo2max_primary, "primary", vo2max_primary
-    elif secondary_eligible and floor_eligible:
-        sec_vdot = _vo2max_to_vdot_approx(vo2max_secondary)
-        floor_vdot = _vo2max_to_vdot_approx(vo2max_floor)
-        used = (vo2max_secondary + vo2max_floor) / 2.0
-        used_vdot = (sec_vdot + floor_vdot) / 2.0
-        source = "floor+secondary"
-    elif secondary_eligible:
-        used = vo2max_secondary
-        used_vdot = _vo2max_to_vdot_approx(vo2max_secondary)
-        source = "secondary"
-    elif floor_eligible:
-        used = vo2max_floor
-        used_vdot = _vo2max_to_vdot_approx(vo2max_floor)
-        source = "floor"
-    else:
+        candidates.append(("primary", vo2max_primary, vo2max_primary))
+    if secondary_eligible:
+        candidates.append(
+            ("secondary", vo2max_secondary, _vo2max_to_vdot_approx(vo2max_secondary))
+        )
+    if floor_eligible:
+        candidates.append(
+            ("floor", vo2max_floor, _vo2max_to_vdot_approx(vo2max_floor))
+        )
+    if not candidates:
         used, source, used_vdot = 0.0, "none", 0.0
+    else:
+        winner = max(candidates, key=lambda c: c[2])
+        used, source, used_vdot = winner[1], winner[0], winner[2]
 
     # Clamp final VDOT to the Daniels table's supported range. Bounds a
     # runaway floor (e.g. RHR=35 + HRmax=185 → 80.86 unclamped).
