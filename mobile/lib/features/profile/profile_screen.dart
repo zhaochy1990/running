@@ -8,7 +8,9 @@ import '../../core/auth/auth_controller.dart';
 import '../../core/auth/current_user.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/updater/update_checker.dart';
 import '../../data/api/stride_api.dart';
+import '../updater/update_prompt.dart';
 
 /// App version label, read once at startup. Falls back to '?' on failure
 /// (only happens in widget tests where the platform channel isn't wired).
@@ -31,6 +33,7 @@ class ProfileScreen extends ConsumerStatefulWidget {
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   bool _syncing = false;
   String? _syncStatus;
+  bool _checkingUpdate = false;
 
   Future<void> _triggerSync() async {
     final profile = ref.read(currentUserProvider).valueOrNull;
@@ -55,6 +58,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         _syncing = false;
         _syncStatus = '同步失败：$e';
       });
+    }
+  }
+
+  Future<void> _checkForUpdate() async {
+    if (_checkingUpdate) return;
+    setState(() => _checkingUpdate = true);
+    try {
+      final info = await ref.read(updateCheckerProvider).check(force: true);
+      if (!mounted) return;
+      if (info != null) {
+        await showUpdatePrompt(context, ref, info);
+      } else {
+        final pkg = await PackageInfo.fromPlatform();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已是最新版本 (v${pkg.version})')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('检查更新失败：$e')),
+      );
+    } finally {
+      if (mounted) setState(() => _checkingUpdate = false);
     }
   }
 
@@ -165,6 +193,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   icon: Icons.shield_outlined,
                   label: '隐私政策',
                   onTap: _openPrivacy,
+                ),
+                const Divider(height: 1, color: AppColors.border),
+                _SettingRow(
+                  icon: Icons.system_update_alt,
+                  label: '检查新版本',
+                  trailing: _checkingUpdate
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : null,
+                  onTap: _checkingUpdate ? null : _checkForUpdate,
                 ),
                 if (isAuthed) ...[
                   const Divider(height: 1, color: AppColors.border),

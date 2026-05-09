@@ -55,8 +55,10 @@ class UpdateChecker {
   final Logger _log;
 
   /// Returns the newest published mobile release if it is strictly greater
-  /// than the running build AND the user has not previously dismissed it.
-  Future<UpdateInfo?> check() async {
+  /// than the running build. Pass [force] to bypass the dismissed-for-this-
+  /// version flag — the manual "check for updates" button uses this so the
+  /// user always sees the prompt when they ask, even after a prior 稍后.
+  Future<UpdateInfo?> check({bool force = false}) async {
     try {
       final pkg = await PackageInfo.fromPlatform();
       final currentName = pkg.version; // e.g. "2026.5.1"
@@ -80,10 +82,12 @@ class UpdateChecker {
           orElse: () => const {},
         );
         if (apk.isEmpty) continue;
-        final dismissed = await _storage.read(key: _dismissedKey);
-        if (dismissed == versionName) {
-          _log.i('Update $versionName previously dismissed; skipping');
-          return null;
+        if (!force) {
+          final dismissed = await _storage.read(key: _dismissedKey);
+          if (dismissed == versionName) {
+            _log.i('Update $versionName previously dismissed; skipping');
+            return null;
+          }
         }
         return UpdateInfo(
           tagName: tag,
