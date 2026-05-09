@@ -158,24 +158,6 @@ export default function ActivityDetailPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
-      {/* Route map — renders first per UX directive. Strength / indoor
-          activities skip this entirely (the SDK isn't loaded). The map
-          shares hoverElapsed with HR/Pace charts below for synchronized
-          position highlighting. */}
-      {hasGpsTrack && sharedStartTs != null && (
-        <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-6 animate-fade-in">
-          <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">路径轨迹</h3>
-          <ActivityMap
-            points={timeseries}
-            pauses={activity.pauses ?? []}
-            startTs={sharedStartTs}
-            hrZones={hrZones}
-            hoverElapsed={hoverElapsed}
-            onHover={setHoverElapsed}
-          />
-        </div>
-      )}
-
       {/* Variant promote warning — appears when this activity is linked
           to a scheduled_workout that was abandoned by a later variant
           promote. Tells the user to clean up COROS to avoid duplicate
@@ -303,6 +285,24 @@ export default function ActivityDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Route map — placed below the header card (title + key metrics).
+          Strength / indoor activities skip this entirely (the SDK isn't
+          loaded). The map shares hoverElapsed with HR/Pace charts below
+          for synchronized position highlighting. */}
+      {hasGpsTrack && sharedStartTs != null && (
+        <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-6 animate-fade-in">
+          <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">路径轨迹</h3>
+          <ActivityMap
+            points={timeseries}
+            pauses={activity.pauses ?? []}
+            startTs={sharedStartTs}
+            hrZones={hrZones}
+            hoverElapsed={hoverElapsed}
+            onHover={setHoverElapsed}
+          />
+        </div>
+      )}
 
       {/* Plan-vs-actual comparison — owner-only, run sessions only
           (strength activities have no distance/pace targets). */}
