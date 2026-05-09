@@ -91,6 +91,17 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     activity["distance_km"] = round(activity["distance_m"], 2) if activity["distance_m"] else 0
     activity["duration_fmt"] = format_duration(activity["duration_s"])
     activity["pace_fmt"] = pace_str(activity["avg_pace_s_km"]) or "—"
+    # `pauses` is stored as a JSON string (or NULL); decode for the client
+    # so the frontend can render polyline gaps without extra parsing.
+    raw_pauses = activity.get("pauses")
+    if isinstance(raw_pauses, str) and raw_pauses:
+        try:
+            import json as _json
+            activity["pauses"] = _json.loads(raw_pauses)
+        except (ValueError, TypeError):
+            activity["pauses"] = []
+    else:
+        activity["pauses"] = []
 
     # Commentary lives in a Phase-1 abstracted store; callers may pass one in,
     # otherwise we wrap the local db so legacy callers keep working unchanged.
@@ -151,13 +162,18 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     zones = [dict(z) for z in zones_rows]
 
     ts_rows = db.query(
-        """SELECT timestamp, distance, heart_rate, speed, adjusted_pace, cadence, altitude, power
+        """SELECT timestamp, distance, heart_rate, speed, adjusted_pace, cadence, altitude, power,
+                  gps_lat, gps_lon
         FROM timeseries WHERE label_id = ?
         ORDER BY rowid""",
         (label_id,),
     )
     all_ts = [dict(t) for t in ts_rows]
-    step = max(1, len(all_ts) // 500)
+    # Downsample to ~1000 points. HRChart/PaceChart only render ~500 visible
+    # so this is plenty for them; the GPS polyline benefits from the extra
+    # detail (a marathon downsampled to 500 has ~80m spacing between points,
+    # which looks blocky on tight switchbacks). 1000 → ~40m worst case.
+    step = max(1, len(all_ts) // 1000)
     timeseries = all_ts[::step]
 
     return {

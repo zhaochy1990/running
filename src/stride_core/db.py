@@ -142,7 +142,12 @@ CREATE TABLE IF NOT EXISTS timeseries (
     vertical_ratio_pct      REAL,
     cadence_length_cm       REAL,
     slope                   INTEGER,
-    heart_level             INTEGER
+    heart_level             INTEGER,
+    -- WGS84 GPS, decimal degrees. NULL when device had no fix or for
+    -- indoor activities. Older rows synced before this column existed
+    -- also stay NULL (organic backfill on next resync).
+    gps_lat                 REAL,
+    gps_lon                 REAL
 );
 CREATE INDEX IF NOT EXISTS idx_timeseries_label ON timeseries(label_id);
 
@@ -542,6 +547,14 @@ class Database:
         _add("timeseries", "cadence_length_cm", "REAL")
         _add("timeseries", "slope", "INTEGER")
         _add("timeseries", "heart_level", "INTEGER")
+        # WGS84 GPS lat/lng (decimal degrees), parsed from frequencyList.
+        # See `project_coros_gps_coordinate_system` memory for verification.
+        _add("timeseries", "gps_lat", "REAL")
+        _add("timeseries", "gps_lon", "REAL")
+        # Pause intervals as JSON list of {start_ts, end_ts, type} objects.
+        # Frontend cuts the route polyline at these boundaries (decision A,
+        # gap-style). NULL on legacy rows / activities with no pauses.
+        _add("activities", "pauses", "TEXT")
         # Daily wellness extras (Body Battery, stress, sleep stages).
         _add("daily_health", "body_battery_high", "INTEGER")
         _add("daily_health", "body_battery_low", "INTEGER")
@@ -710,6 +723,15 @@ class Database:
     # --- Activities ---
 
     def upsert_activity(self, a: ActivityDetail, *, provider: str = "coros") -> None:
+        # JSON-encode pauses as `[{"start_ts":..., "end_ts":..., "type":...}]`.
+        # Empty/None → NULL so the column stays sparse for the common case.
+        pauses_json = (
+            json.dumps(
+                [{"start_ts": p.start_ts, "end_ts": p.end_ts, "type": p.type} for p in a.pauses],
+                separators=(",", ":"),
+            )
+            if a.pauses else None
+        )
         self._conn.execute(
             """INSERT OR REPLACE INTO activities
             (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
@@ -720,8 +742,8 @@ class Database:
              temperature, humidity, feels_like, wind_speed, feel_type, sport_note,
              sport, train_kind, feel,
              vertical_oscillation_mm, ground_contact_time_ms, vertical_ratio_pct,
-             provider)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             pauses, provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
              a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
              a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
@@ -733,7 +755,7 @@ class Database:
              a.feel_type, a.sport_note,
              a.sport, a.train_kind, a.feel,
              a.vertical_oscillation_mm, a.ground_contact_time_ms, a.vertical_ratio_pct,
-             provider),
+             pauses_json, provider),
         )
         # Upsert child records
         for lap in a.laps:
@@ -771,12 +793,12 @@ class Database:
             """INSERT INTO timeseries
             (label_id, timestamp, distance, heart_rate, speed, adjusted_pace, cadence, altitude, power,
              ground_contact_time_ms, vertical_oscillation_mm, vertical_ratio_pct,
-             cadence_length_cm, slope, heart_level)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             cadence_length_cm, slope, heart_level, gps_lat, gps_lon)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             [(label_id, p.timestamp, p.distance, p.heart_rate, p.speed,
               p.adjusted_pace, p.cadence, p.altitude, p.power,
               p.ground_contact_time_ms, p.vertical_oscillation_mm, p.vertical_ratio_pct,
-              p.cadence_length_cm, p.slope, p.heart_level) for p in points],
+              p.cadence_length_cm, p.slope, p.heart_level, p.gps_lat, p.gps_lon) for p in points],
         )
 
     def activity_exists(self, label_id: str) -> bool:

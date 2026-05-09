@@ -307,6 +307,9 @@ export interface Activity {
   commentary?: string
   commentary_generated_by?: string | null
   commentary_generated_at?: string | null
+  // Watch-paused intervals (decoded from JSON server-side). Empty list
+  // when no pauses or for legacy synced rows.
+  pauses?: Pause[]
 }
 
 export interface Lap {
@@ -346,6 +349,19 @@ export interface TimeseriesPoint {
   cadence: number | null
   altitude: number | null
   power: number | null
+  // WGS84 GPS, decimal degrees. NULL when device had no fix or for indoor
+  // activities. Frontend AMap rendering must apply WGS84→GCJ02 transform.
+  gps_lat: number | null
+  gps_lon: number | null
+}
+
+// Watch-paused interval. Timestamps are raw COROS centiseconds, same shape
+// as `TimeseriesPoint.timestamp` — convert to elapsed seconds the same way
+// HRChart/PaceChart already do (subtract activity start, divide by 100).
+export interface Pause {
+  start_ts: number | null
+  end_ts: number | null
+  type: number | null
 }
 
 export interface WeekSummary {

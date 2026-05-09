@@ -65,24 +65,41 @@ jobs:
           npm install
           npm run test
 
-      - name: Build and push Docker image
-        run: |
-          docker build \
-            --build-arg VITE_AUTH_BASE_URL=${{ vars.VITE_AUTH_BASE_URL }} \
-            --build-arg VITE_AUTH_CLIENT_ID=${{ vars.VITE_AUTH_CLIENT_ID }} \
-            --build-arg VITE_APPLICATIONINSIGHTS_CONNECTION_STRING="${{ vars.VITE_APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
-            -t ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
-            -t ${{ env.GHCR_IMAGE }}:latest \
-            .
-          docker push ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
-          docker push ${{ env.GHCR_IMAGE }}:latest
-
+      # AMap key/securityJsCode live in stride-kv-common AKV. We pull them
+      # BEFORE Docker build because Vite bakes VITE_* env vars into the
+      # bundle at build time — there's no runtime injection path. Domain
+      # whitelist on the AMap console (set on lbs.amap.com) is what gates
+      # use, not the secrecy of the key.
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Pull AMap secrets from Key Vault
+        run: |
+          AMAP_KEY=$(az keyvault secret show --vault-name stride-kv-common --name amap-js-key --query value -o tsv)
+          AMAP_SECURITY_CODE=$(az keyvault secret show --vault-name stride-kv-common --name amap-js-security-code --query value -o tsv)
+          # Mask in workflow logs so values never surface in plain text.
+          echo "::add-mask::$AMAP_KEY"
+          echo "::add-mask::$AMAP_SECURITY_CODE"
+          echo "AMAP_KEY=$AMAP_KEY" >> "$GITHUB_ENV"
+          echo "AMAP_SECURITY_CODE=$AMAP_SECURITY_CODE" >> "$GITHUB_ENV"
+
+      - name: Build and push Docker image
+        run: |
+          docker build \
+            --build-arg VITE_AUTH_BASE_URL=${{ vars.VITE_AUTH_BASE_URL }} \
+            --build-arg VITE_AUTH_CLIENT_ID=${{ vars.VITE_AUTH_CLIENT_ID }} \
+            --build-arg VITE_APPLICATIONINSIGHTS_CONNECTION_STRING="${{ vars.VITE_APPLICATIONINSIGHTS_CONNECTION_STRING }}" \
+            --build-arg VITE_AMAP_KEY="$AMAP_KEY" \
+            --build-arg VITE_AMAP_SECURITY_CODE="$AMAP_SECURITY_CODE" \
+            -t ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
+            -t ${{ env.GHCR_IMAGE }}:latest \
+            .
+          docker push ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
+          docker push ${{ env.GHCR_IMAGE }}:latest
 
       - name: Deploy to Container Apps
         run: |

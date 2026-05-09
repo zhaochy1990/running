@@ -194,10 +194,17 @@ class TimeseriesPoint:
     cadence_length_cm: float | None = None
     slope: int | None = None         # raw COROS value; scale unverified (only 0 seen in flat-run sample)
     heart_level: int | None = None   # COROS-side HR zone label (1-5)
+    # GPS in WGS84 decimal degrees. COROS encodes as int×10^7
+    # (raw 311337430 → 31.1337430°N). Verified WGS84 against ground truth
+    # 2026-05-09 — see project memory `project_coros_gps_coordinate_system`.
+    gps_lat: float | None = None
+    gps_lon: float | None = None
 
     @classmethod
     def from_api(cls, data: dict) -> TimeseriesPoint:
         vsr = data.get("verticalStrideRatio")
+        lat_raw = data.get("gpsLat")
+        lon_raw = data.get("gpsLon")
         return cls(
             timestamp=data.get("timestamp"),
             distance=data.get("distance"),
@@ -213,6 +220,30 @@ class TimeseriesPoint:
             cadence_length_cm=data.get("cadenceLength"),
             slope=data.get("slope"),
             heart_level=data.get("heartLevel"),
+            gps_lat=(lat_raw / 1e7) if lat_raw not in (None, 0) else None,
+            gps_lon=(lon_raw / 1e7) if lon_raw not in (None, 0) else None,
+        )
+
+
+@dataclass
+class Pause:
+    """Watch-paused interval inside an activity.
+
+    Timestamps are raw COROS centiseconds — same shape as
+    `TimeseriesPoint.timestamp`. Frontend converts to elapsed seconds using
+    the activity-start ts. type=0 manual pause (verified); other ints
+    unverified, kept as-is.
+    """
+    start_ts: int | None
+    end_ts: int | None
+    type: int | None = None
+
+    @classmethod
+    def from_api(cls, data: dict) -> Pause:
+        return cls(
+            start_ts=data.get("startTimestamp"),
+            end_ts=data.get("endTimestamp"),
+            type=data.get("type"),
         )
 
 
@@ -267,6 +298,7 @@ class ActivityDetail:
     laps: list[Lap] = field(default_factory=list)
     zones: list[Zone] = field(default_factory=list)
     timeseries: list[TimeseriesPoint] = field(default_factory=list)
+    pauses: list[Pause] = field(default_factory=list)
 
     @classmethod
     def from_api(cls, data: dict, label_id: str) -> ActivityDetail:
@@ -297,6 +329,11 @@ class ActivityDetail:
         timeseries = [
             TimeseriesPoint.from_api(p) for p in detail.get("frequencyList", [])
         ]
+
+        # Parse pauseList. Each item shape verified 2026-05-09:
+        # {startTimestamp, endTimestamp, duration, type}. Frontend draws
+        # the polyline as separate segments at these boundaries (decision A).
+        pauses = [Pause.from_api(p) for p in detail.get("pauseList", []) or []]
 
         # Convert timestamp to ISO date
         start_ts = s.get("startTimestamp")
@@ -342,6 +379,7 @@ class ActivityDetail:
             laps=laps,
             zones=zones,
             timeseries=timeseries,
+            pauses=pauses,
         )
 
 
