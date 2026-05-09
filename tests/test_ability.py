@@ -1692,14 +1692,7 @@ class TestA1_6_MarathonVdotLinearity:
             expected_recent_vdot = daniels_vdot(5000, 1500)
 
             assert vo2["evidence"] == ["RECENT_5K"]
-            # v7 quality-gated max: vo2max_primary still equals the recent
-            # 5K's Daniels VDOT (verifies stale 90d-window evidence does
-            # NOT contaminate primary). vo2max_used_vdot may exceed primary
-            # if the floor is also eligible and higher — the test's
-            # original intent (recent over stale) is preserved at the
-            # primary slot.
-            assert vo2["vo2max_primary"] == pytest.approx(expected_recent_vdot, abs=0.01)
-            assert vo2["vo2max_used_vdot"] >= vo2["vo2max_primary"]
+            assert vo2["vo2max_used_vdot"] == pytest.approx(expected_recent_vdot, abs=0.01)
         finally:
             db.close()
 
@@ -1746,19 +1739,11 @@ class TestA1_7_Vo2maxEstimators:
         assert vo2["vo2max_primary"] is not None
         assert vo2["vo2max_secondary"] is not None
         assert vo2["vo2max_floor"] is not None
-        # v7 quality-gated max: the winning estimator is whichever produced
-        # the highest VDOT among the eligible ones. With this fixture's RHR
-        # baseline (~48), Uth–Sørensen floor lands near 59 — higher than
-        # the 5K TT's primary VDOT (~53). The test's intent is "primary
-        # path fires correctly on a 5K TT", which is verified by
-        # vo2max_primary being non-None and matching the formula above.
-        # The headline source can be primary OR floor depending on
-        # whichever measurement implies higher capacity.
-        assert vo2["vo2max_source"] in ("primary", "floor", "secondary")
-        assert vo2["vo2max_used"] is not None
-        assert vo2["vo2max_used"] >= vo2["vo2max_primary"], (
-            "max() never picks lower than primary when primary is eligible"
-        )
+        # v7 cascade: race-derived primary wins outright over indirect
+        # estimators (Uth–Sørensen tends to overestimate trained athletes,
+        # so we don't let it override actual demonstrated performance).
+        assert vo2["vo2max_source"] == "primary"
+        assert vo2["vo2max_used"] == pytest.approx(vo2["vo2max_primary"], abs=0.01)
 
         db.close()
 

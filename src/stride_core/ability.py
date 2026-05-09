@@ -137,6 +137,15 @@ FLOOR_MIN_RHR_DAYS = 7        # ≥7 distinct daily_health rows with rhr present
 VDOT_CLAMP_MIN = 30.0
 VDOT_CLAMP_MAX = 85.0
 
+# Uth–Sørensen overestimate correction. The 15.3·HRmax/HRrest formula was
+# calibrated on general populations and runs hot for trained endurance
+# athletes by 3–7 ml/kg/min (Uth et al. 2004 + later validation studies on
+# competitive runner cohorts). When floor is used at all (only as a last-
+# resort fallback when no primary or secondary signal is available), apply
+# this correction so the metric doesn't conflate "high cardiovascular base"
+# with "current running capacity".
+UTH_SORENSEN_CORRECTION = 0.93
+
 # ---------------------------------------------------------------------------
 # PB-memory channel (v7 Step 3).
 # Race-distance bands for classifying an activity as a candidate PB. The
@@ -1316,43 +1325,48 @@ def compute_l3_vo2max(
     # race-quality evidence and wins outright.
     primary_eligible = vo2max_primary > 0
 
-    # Quality-gated max: among eligible estimators take the highest VDOT.
-    # Each estimator measures the same physical quantity (VO2max / VDOT)
-    # through a different lens — race-derived performance (primary), HR-pace
-    # extrapolation (secondary), and resting-HR formula (floor). They tend
-    # to underestimate, not overestimate, the runner's true ceiling: a
-    # mediocre race-day effort underrates a fit runner's VDOT; a narrow-
-    # band easy regression underrates extrapolated peak; Uth–Sørensen with
-    # a noisy RHR sample is a soft floor too.
+    # Cascade: race-derived primary is the authoritative VDOT signal —
+    # it reflects actually demonstrated running performance. Secondary
+    # (HR-pace regression on sub-max efforts) is the next-best fallback
+    # because it's at least anchored in running data, even if extrapolated.
     #
-    # Quality gates (the n_points / R² / RHR-days checks above) already
-    # exclude unreliable inputs, so the remaining candidates are each
-    # individually trustworthy estimates of the same quantity. Taking the
-    # max is "best demonstrated capacity across credible measurements" —
-    # which matches user intuition (a sub-3 marathoner's RHR-based VDOT 59
-    # shouldn't be ignored just because they haven't recently run an
-    # all-out 5K race that would set primary higher).
+    # Floor (Uth–Sørensen, 15.3·HRmax/HRrest) does NOT participate in the
+    # rolling estimate. The formula is calibrated against general
+    # populations and systematically overestimates trained athletes by
+    # 3–7 ml/kg/min — it conflates "high cardiovascular ceiling" with
+    # "current running capacity", which are not the same thing. Live
+    # data on a sub-3 marathoner showed floor=59 vs primary=53 vs
+    # secondary=52: trusting floor as a max-eligible peer pushed the
+    # marathon prediction to 2:42 while his actual race shape is 3:00+.
+    # We still compute and surface the floor in `details` for
+    # diagnostic purposes — a large floor-vs-primary gap is a real
+    # signal that running-specific fitness lags cardiovascular base.
     #
-    # The earlier v7 design used a Tier-1 cascade (primary > secondary >
-    # floor) and hit zhaochaoyi's actual data with primary=52.9 / floor=59:
-    # cascade picked primary and ignored a stronger physiological signal.
-    # Bug 1 from the original review.
-    candidates: list[tuple[str, float, float]] = []  # (name, raw, vdot)
+    # The PB-memory channel below picks up the slack when the rolling
+    # estimate is depressed by absence of recent racing — it's still
+    # race-derived (decayed actual race performance), so it can lift
+    # the metric without the Uth–Sørensen bias.
     if primary_eligible:
-        candidates.append(("primary", vo2max_primary, vo2max_primary))
-    if secondary_eligible:
-        candidates.append(
-            ("secondary", vo2max_secondary, _vo2max_to_vdot_approx(vo2max_secondary))
-        )
-    if floor_eligible:
-        candidates.append(
-            ("floor", vo2max_floor, _vo2max_to_vdot_approx(vo2max_floor))
-        )
-    if not candidates:
-        used, source, used_vdot = 0.0, "none", 0.0
+        used = vo2max_primary
+        used_vdot = vo2max_primary
+        source = "primary"
+    elif secondary_eligible:
+        used = vo2max_secondary
+        used_vdot = _vo2max_to_vdot_approx(vo2max_secondary)
+        source = "secondary"
+    elif floor_eligible:
+        # Last-resort fallback. Apply UTH_SORENSEN_CORRECTION because the
+        # raw 15.3·HRmax/HRrest formula systematically overestimates
+        # trained athletes by 3–7 ml/kg/min. Without this correction,
+        # a runner with strong cardiovascular base but no race-derived
+        # data gets a misleadingly high VDOT — see the in-line note above
+        # the cascade.
+        corrected = vo2max_floor * UTH_SORENSEN_CORRECTION
+        used = corrected
+        used_vdot = _vo2max_to_vdot_approx(corrected)
+        source = "floor"
     else:
-        winner = max(candidates, key=lambda c: c[2])
-        used, source, used_vdot = winner[1], winner[0], winner[2]
+        used, source, used_vdot = 0.0, "none", 0.0
 
     # Clamp final VDOT to the Daniels table's supported range. Bounds a
     # runaway floor (e.g. RHR=35 + HRmax=185 → 80.86 unclamped).
