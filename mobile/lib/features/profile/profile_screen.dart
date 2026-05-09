@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/auth/auth_controller.dart';
@@ -8,6 +9,17 @@ import '../../core/auth/current_user.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../data/api/stride_api.dart';
+
+/// App version label, read once at startup. Falls back to '?' on failure
+/// (only happens in widget tests where the platform channel isn't wired).
+final _appVersionProvider = FutureProvider<String>((ref) async {
+  try {
+    final pkg = await PackageInfo.fromPlatform();
+    return 'STRIDE v${pkg.version} (${pkg.buildNumber})';
+  } catch (_) {
+    return 'STRIDE';
+  }
+});
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
@@ -177,7 +189,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
           const SizedBox(height: 16),
           Center(
             child: Text(
-              'STRIDE v2026.5.0',
+              ref.watch(_appVersionProvider).valueOrNull ?? 'STRIDE',
               style: theme.textTheme.bodySmall,
             ),
           ),

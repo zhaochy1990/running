@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:go_router/go_router.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'core/auth/auth_controller.dart';
 import 'core/notifications/jpush_service.dart';
@@ -65,7 +66,8 @@ class _StrideAppState extends ConsumerState<StrideApp> {
           channel: 'default',
           production: true,
         );
-        await jpush.registerOnServer(appVersion: '2026.5.1');
+        final pkg = await PackageInfo.fromPlatform();
+        await jpush.registerOnServer(appVersion: pkg.version);
       } catch (_) {
         // Best-effort.
       }

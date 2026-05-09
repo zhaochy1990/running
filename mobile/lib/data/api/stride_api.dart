@@ -41,7 +41,9 @@ class StrideApi {
     String? from,
     String? to,
   }) async {
-    final json = await _get<List<dynamic>>(
+    // Backend returns {total, offset, limit, activities: [...]} —
+    // unpack the activities field rather than casting the wrapper.
+    final json = await _get<Map<String, dynamic>>(
       '/api/$user/activities',
       query: {
         'limit': ?limit,
@@ -50,10 +52,9 @@ class StrideApi {
         'to': ?to,
       },
     );
-    return json
-        .cast<Map<String, dynamic>>()
-        .map(Activity.fromJson)
-        .toList(growable: false);
+    final list = (json['activities'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    return list.map(Activity.fromJson).toList(growable: false);
   }
 
   Future<ActivityDetailResponse> getActivity(String user, String labelId) async {
