@@ -10,6 +10,7 @@ on:
       - 'src/stride_server/**'
       - 'frontend/**'
       - 'strength_illustrations/**'
+      - 'scripts/**'
       - 'Dockerfile'
       - '.github/workflows/deploy.yml'
       - 'pyproject.toml'
