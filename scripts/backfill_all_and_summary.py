@@ -34,11 +34,44 @@ from stride_core.ability import (
 )
 
 
+_UUID4_NAME_RE = __import__("re").compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    __import__("re").IGNORECASE,
+)
+
+
 def _load_aliases() -> dict[str, str]:
+    """Resolve every user that has data on disk.
+
+    Reads ``data/.slug_aliases.json`` for the friendly-slug → UUID
+    mapping, then ALSO walks ``data/`` and adds any UUID-shaped
+    directory that has a ``coros.db`` file but no slug pointing at it.
+    Prod's slug_aliases.json can be stale (it lives on Azure Files and
+    isn't synced by ``sync-data.yml``), so without this fallback the
+    backfill skips users that exist on disk but don't have a slug.
+    """
     af = USER_DATA_DIR / ".slug_aliases.json"
-    if not af.exists():
-        return {}
-    return json.loads(af.read_text(encoding="utf-8"))
+    aliases: dict[str, str] = {}
+    if af.exists():
+        try:
+            aliases = json.loads(af.read_text(encoding="utf-8"))
+        except Exception:
+            aliases = {}
+    known_uuids = set(aliases.values())
+    if USER_DATA_DIR.exists():
+        for entry in USER_DATA_DIR.iterdir():
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            if not _UUID4_NAME_RE.match(name):
+                continue
+            if name in known_uuids:
+                continue
+            if (entry / "coros.db").exists():
+                # No slug for this UUID — register under the UUID itself.
+                aliases[name] = name
+                known_uuids.add(name)
+    return aliases
 
 
 def backfill(db: Database) -> dict:
