@@ -102,6 +102,24 @@ class CorosDataSource(BaseDataSource):
     def is_logged_in(self, user: str) -> bool:
         return Credentials.load(user=user).is_logged_in
 
+    def logout(self, user: str) -> None:
+        """Clear COROS credentials so is_logged_in returns False.
+
+        Saves empty credential fields while preserving non-credential keys
+        (like ``provider``) in config.json thanks to the merge logic in
+        ``Credentials.save()``.
+        """
+        creds = Credentials.load(user=user)
+        if not creds.is_logged_in:
+            return
+        Credentials(
+            email=creds.email,
+            pwd_hash="",
+            access_token="",
+            region=creds.region,
+            user_id=creds.user_id,
+        ).save(user=user)
+
     def sync_user(
         self,
         user: str,
