@@ -1,23 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAMap } from './useAMap'
 import { wgs84ToGcj02 } from './coordTransform'
-import type { TimeseriesPoint, Pause, Zone } from '../../api'
+import type { TimeseriesPoint, Pause } from '../../api'
 
 // AMap doesn't ship public TS types with the loader; work with `any` at the
 // SDK boundary and isolate it inside this file.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const COLOR_GREEN = '#00a85a'      // accent-green, matches BigMetric "距离"
+const COLOR_GREEN = '#00a85a'      // accent-green
+const COLOR_AMBER = '#e68a00'      // accent-amber
+const COLOR_RED = '#d32f2f'        // accent-red
 const COLOR_BORDER = '#ffffff'
-
-// HR zone palette — mirrors ZoneChart conventions.
-const HR_ZONE_COLORS = [
-  '#0097a7', // Z1 recovery
-  '#00a85a', // Z2 easy
-  '#e68a00', // Z3 tempo
-  '#d32f2f', // Z4 threshold
-  '#7c0a0a', // Z5 max
-]
 
 type Coloring = 'none' | 'hr' | 'pace'
 
@@ -45,7 +38,6 @@ interface Props {
   points: TimeseriesPoint[]
   pauses: Pause[]
   startTs: number       // first non-null timeseries timestamp; matches HR/Pace charts
-  hrZones?: Zone[]      // optional, used for HR coloring
   hoverElapsed?: number | null
   onHover?: (elapsed: number | null) => void
   height?: number
@@ -79,31 +71,22 @@ function lerpColor(a: string, b: string, t: number): string {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${bch.toString(16).padStart(2, '0')}`
 }
 
-function hrToColor(hr: number, zones: Zone[] | undefined): string {
-  if (!zones || zones.length === 0) return COLOR_GREEN
-  for (const z of zones) {
-    if (z.range_min != null && z.range_max != null && hr >= z.range_min && hr <= z.range_max) {
-      return HR_ZONE_COLORS[Math.max(0, Math.min(4, z.zone_index - 1))]
-    }
-  }
-  // Below Z1: cyan; above Z5: deep red.
-  const lowest = zones[0]
-  if (lowest?.range_min != null && hr < lowest.range_min) return HR_ZONE_COLORS[0]
-  return HR_ZONE_COLORS[4]
-}
-
-// Linear pace gradient: fastest (lowest s/km) → green, slowest → red.
-function paceToColor(speed: number, minSpeed: number, maxSpeed: number): string {
-  if (maxSpeed <= minSpeed) return COLOR_GREEN
-  const t = (speed - minSpeed) / (maxSpeed - minSpeed)
-  return lerpColor(COLOR_GREEN, '#d32f2f', t)
+// 3-stop continuous gradient: green → amber → red. Both HR and pace use
+// this so the user sees smooth transitions instead of zone-based jumps
+// (which made a brief HR spike show up as dark-red blips on a route that
+// was otherwise easy effort). Coloring is activity-relative — the same
+// raw HR value maps to different colors across two activities depending
+// on each activity's own min/max range.
+function gradient3(t: number): string {
+  const tt = Math.max(0, Math.min(1, t))
+  if (tt < 0.5) return lerpColor(COLOR_GREEN, COLOR_AMBER, tt * 2)
+  return lerpColor(COLOR_AMBER, COLOR_RED, (tt - 0.5) * 2)
 }
 
 export default function ActivityMap({
   points,
   pauses,
   startTs,
-  hrZones,
   hoverElapsed,
   onHover,
   height = 450,
@@ -181,7 +164,9 @@ export default function ActivityMap({
     return segs
   }, [computed, pauses, startTs])
 
-  // 4) Pace gradient bounds (cached across renders unless points change).
+  // 4) Coloring bounds — activity-relative min/max for HR and pace.
+  // Recomputed only when points change. Used by gradient3 to map each
+  // bin's avg metric onto the green→amber→red color stops.
   const paceBounds = useMemo(() => {
     let min = Infinity
     let max = -Infinity
@@ -189,6 +174,18 @@ export default function ActivityMap({
       if (p.speed != null && p.speed > 0) {
         if (p.speed < min) min = p.speed
         if (p.speed > max) max = p.speed
+      }
+    }
+    return { min: isFinite(min) ? min : 0, max: isFinite(max) ? max : 0 }
+  }, [computed])
+
+  const hrBounds = useMemo(() => {
+    let min = Infinity
+    let max = -Infinity
+    for (const p of computed) {
+      if (p.heart_rate != null && p.heart_rate > 0) {
+        if (p.heart_rate < min) min = p.heart_rate
+        if (p.heart_rate > max) max = p.heart_rate
       }
     }
     return { min: isFinite(min) ? min : 0, max: isFinite(max) ? max : 0 }
@@ -279,12 +276,21 @@ export default function ActivityMap({
             }
           }
           const avg = n > 0 ? sum / n : null
-          const color =
-            avg == null
-              ? COLOR_GREEN
-              : coloring === 'hr'
-                ? hrToColor(avg, hrZones)
-                : paceToColor(avg, paceBounds.min, paceBounds.max)
+          let color: string
+          if (avg == null) {
+            color = COLOR_GREEN
+          } else if (coloring === 'hr') {
+            // HR: low → green, high → red.
+            const range = hrBounds.max - hrBounds.min
+            const t = range > 0 ? (avg - hrBounds.min) / range : 0
+            color = gradient3(t)
+          } else {
+            // Pace: slow (high s/km) → green; fast (low s/km) → red.
+            // Inverted from HR because lower speed value = faster pace.
+            const range = paceBounds.max - paceBounds.min
+            const t = range > 0 ? (paceBounds.max - avg) / range : 0
+            color = gradient3(t)
+          }
           // Path includes overlap with neighbor bin so visual seams disappear.
           const path: Array<[number, number]> = []
           for (let j = a; j <= b; j++) path.push([segPoints[j].lng, segPoints[j].lat])
@@ -402,7 +408,7 @@ export default function ActivityMap({
       }
       onHover?.(p.elapsed)
     }
-  }, [AMap, segments, computed, coloring, paceBounds, hrZones, onHover])
+  }, [AMap, segments, computed, coloring, paceBounds, hrBounds, onHover])
 
   // 7) Hover marker — driven by external hoverElapsed (HR/Pace chart).
   useEffect(() => {

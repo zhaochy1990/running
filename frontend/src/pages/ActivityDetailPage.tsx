@@ -223,6 +223,23 @@ export default function ActivityDetailPage() {
           )}
         </div>
 
+        {/* Route map — sits directly under the title row, above the
+            metrics grid. Strength / indoor activities skip this card
+            entirely (the SDK isn't even loaded). Hover state is shared
+            with HR/Pace charts further down for synchronized position
+            highlighting in both directions. */}
+        {hasGpsTrack && sharedStartTs != null && (
+          <div className="mt-6">
+            <ActivityMap
+              points={timeseries}
+              pauses={activity.pauses ?? []}
+              startTs={sharedStartTs}
+              hoverElapsed={hoverElapsed}
+              onHover={setHoverElapsed}
+            />
+          </div>
+        )}
+
         {/* Key Metrics Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mt-6 pt-6 border-t border-border-subtle">
           {!isStrength && <BigMetric label="距离" value={`${activity.distance_km}`} unit="km" color="#00a85a" />}
@@ -285,24 +302,6 @@ export default function ActivityDetailPage() {
           </div>
         )}
       </div>
-
-      {/* Route map — placed below the header card (title + key metrics).
-          Strength / indoor activities skip this entirely (the SDK isn't
-          loaded). The map shares hoverElapsed with HR/Pace charts below
-          for synchronized position highlighting. */}
-      {hasGpsTrack && sharedStartTs != null && (
-        <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-6 animate-fade-in">
-          <h3 className="text-sm font-semibold text-text-secondary mb-4 tracking-wide">路径轨迹</h3>
-          <ActivityMap
-            points={timeseries}
-            pauses={activity.pauses ?? []}
-            startTs={sharedStartTs}
-            hrZones={hrZones}
-            hoverElapsed={hoverElapsed}
-            onHover={setHoverElapsed}
-          />
-        </div>
-      )}
 
       {/* Plan-vs-actual comparison — owner-only, run sessions only
           (strength activities have no distance/pace targets). */}
