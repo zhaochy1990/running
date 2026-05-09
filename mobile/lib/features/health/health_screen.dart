@@ -480,6 +480,46 @@ class _PmcChartCard extends StatelessWidget {
                     _line(atlSpots, AppColors.warning),
                     _line(tsbSpots, AppColors.accentDark),
                   ],
+                  lineTouchData: LineTouchData(
+                    handleBuiltInTouches: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipColor: (_) =>
+                          AppColors.foreground.withValues(alpha: 0.92),
+                      tooltipRoundedRadius: 4,
+                      tooltipPadding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      getTooltipItems: (spots) {
+                        if (spots.isEmpty) return const [];
+                        final dateIso = dates[spots.first.x.round()
+                            .clamp(0, dates.length - 1)];
+                        const labels = ['CTL', 'ATL', 'TSB'];
+                        return [
+                          for (var i = 0; i < spots.length; i++)
+                            LineTooltipItem(
+                              i == 0 ? '${_shortDate(dateIso)}\n' : '',
+                              const TextStyle(
+                                fontFamily: AppTypography.fontMono,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                              children: [
+                                TextSpan(
+                                  text:
+                                      '${labels[spots[i].barIndex]}: ${spots[i].y.toStringAsFixed(1)}',
+                                  style: TextStyle(
+                                    fontFamily: AppTypography.fontMono,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w400,
+                                    color: spots[i].bar.color ?? Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                        ];
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -610,6 +650,41 @@ class _SingleLineChartCard extends StatelessWidget {
                   ),
                 ),
               ],
+              lineTouchData: LineTouchData(
+                handleBuiltInTouches: true,
+                touchTooltipData: LineTouchTooltipData(
+                  getTooltipColor: (_) =>
+                      AppColors.foreground.withValues(alpha: 0.92),
+                  tooltipRoundedRadius: 4,
+                  tooltipPadding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  getTooltipItems: (spots) {
+                    return spots.map((s) {
+                      final iso = dateByIndex[s.x.round()] ?? '';
+                      return LineTooltipItem(
+                        '${_shortDate(iso)}\n',
+                        const TextStyle(
+                          fontFamily: AppTypography.fontMono,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: s.y.toStringAsFixed(0),
+                            style: TextStyle(
+                              fontFamily: AppTypography.fontMono,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w400,
+                              color: color,
+                            ),
+                          ),
+                        ],
+                      );
+                    }).toList();
+                  },
+                ),
+              ),
             ),
           ),
         ),
@@ -623,6 +698,12 @@ double _bottomInterval(int n) {
   if (n <= 1) return 1;
   final step = (n / 5).ceil().toDouble();
   return step < 1 ? 1 : step;
+}
+
+/// 'YYYY-MM-DD' (or ISO timestamp) → 'MM-DD' string for tooltip headers.
+String _shortDate(String iso) {
+  if (iso.length < 10) return iso;
+  return '${iso.substring(5, 7)}-${iso.substring(8, 10)}';
 }
 
 /// Render a 'YYYY-MM-DD' (or ISO with time) date as a compact 'MM/DD' Text.
