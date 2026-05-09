@@ -51,8 +51,8 @@ export default function TopNav({ onOpenMobileSidebar }: TopNavProps) {
 
         <button
           type="button"
-          onClick={() => navigate('/profile')}
-          title="编辑个人资料"
+          onClick={() => navigate('/settings')}
+          title="用户中心"
           data-testid="profile-button"
           className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border-subtle bg-bg-card hover:bg-bg-card-hover transition-colors cursor-pointer"
         >
