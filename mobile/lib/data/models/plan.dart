@@ -166,6 +166,50 @@ class WeekIndexEntry {
   final String? planTitle;
 }
 
+/// `GET /api/{user}/training-plan` — overall plan markdown + phase timeline.
+class TrainingPhase {
+  const TrainingPhase({
+    required this.name,
+    required this.start,
+    required this.end,
+  });
+
+  factory TrainingPhase.fromJson(Map<String, dynamic> json) {
+    return TrainingPhase(
+      name: json['name'] as String,
+      start: json['start'] as String,
+      end: json['end'] as String,
+    );
+  }
+
+  final String name;
+  final String start;
+  final String end;
+}
+
+class TrainingPlanResponse {
+  const TrainingPlanResponse({
+    this.content,
+    this.phases = const [],
+    this.currentPhase,
+  });
+
+  factory TrainingPlanResponse.fromJson(Map<String, dynamic> json) {
+    return TrainingPlanResponse(
+      content: json['content'] as String?,
+      phases: (json['phases'] as List? ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map(TrainingPhase.fromJson)
+          .toList(),
+      currentPhase: json['current_phase'] as String?,
+    );
+  }
+
+  final String? content;
+  final List<TrainingPhase> phases;
+  final String? currentPhase;
+}
+
 /// Full week — plan markdown + feedback + activity list.
 class WeekDetail {
   const WeekDetail({

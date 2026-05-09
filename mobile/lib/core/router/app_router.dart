@@ -5,7 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../features/activity/activity_detail_screen.dart';
 import '../../features/health/health_screen.dart';
 import '../../features/login/login_screen.dart';
-import '../../features/plan/plan_screen.dart';
+import '../../features/plan/plan_overview_screen.dart';
+import '../../features/plan/week_detail_screen.dart';
 import '../../features/profile/notification_rationale_screen.dart';
 import '../../features/profile/notification_settings_screen.dart';
 import '../../features/profile/profile_screen.dart';
@@ -76,13 +77,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/notifications/settings',
         builder: (_, _) => const NotificationSettingsScreen(),
       ),
+      GoRoute(
+        path: '/plan/weeks/:folder',
+        builder: (_, state) => WeekDetailScreen(
+          folder: Uri.decodeComponent(state.pathParameters['folder']!),
+        ),
+      ),
       ShellRoute(
         builder: (_, _, child) => MainShell(child: child),
         routes: [
           GoRoute(path: '/today', builder: (_, _) => const TodayScreen()),
           GoRoute(path: '/health', builder: (_, _) => const HealthScreen()),
           GoRoute(path: '/teams', builder: (_, _) => const TeamsScreen()),
-          GoRoute(path: '/plan', builder: (_, _) => const PlanScreen()),
+          GoRoute(path: '/plan', builder: (_, _) => const PlanOverviewScreen()),
           GoRoute(path: '/profile', builder: (_, _) => const ProfileScreen()),
         ],
       ),
