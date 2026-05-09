@@ -105,6 +105,12 @@ class StrideApi {
     return WeekDetail.fromJson(json);
   }
 
+  /// Overall TRAINING_PLAN.md + phase timeline.
+  Future<TrainingPlanResponse> getTrainingPlan(String user) async {
+    final json = await _get<Map<String, dynamic>>('/api/$user/training-plan');
+    return TrainingPlanResponse.fromJson(json);
+  }
+
   // ── Health ─────────────────────────────────────────────────────────────
   Future<HealthResponse> getHealth(String user, {int days = 30}) async {
     final json = await _get<Map<String, dynamic>>(

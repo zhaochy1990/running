@@ -161,6 +161,10 @@ class _HealthContent extends StatelessWidget {
           const SizedBox(height: 12),
           _AbilityCard(ability: ability!),
         ],
+        if (pmc != null && summary != null) ...[
+          const SizedBox(height: 12),
+          _PmcSummaryCard(summary: summary),
+        ],
         const SizedBox(height: 24),
         if (pmc != null && pmc!.pmc.isNotEmpty) ...[
           Text('训练负荷 (CTL / ATL / TSB)', style: theme.textTheme.titleLarge),
@@ -226,6 +230,162 @@ class _HealthContent extends StatelessWidget {
   }
 }
 
+/// Compact PMC dashboard — at-a-glance current readiness.
+///
+/// CTL = chronic training load (fitness baseline, 28-day weighted)
+/// ATL = acute training load (last 7 days)
+/// TSB = CTL − ATL (training stress balance / readiness)
+/// CTL ramp = how fast CTL is climbing (positive = growing fitness).
+class _PmcSummaryCard extends StatelessWidget {
+  const _PmcSummaryCard({required this.summary});
+
+  final PMCSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tsb = summary.currentTsb;
+    final zoneLabel = summary.currentTsbZoneLabel;
+    final zone = summary.currentTsbZone;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('PMC · 训练状态', style: theme.textTheme.titleSmall),
+                const Spacer(),
+                if (zoneLabel != null && zoneLabel.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _tsbZoneColor(zone).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      zoneLabel,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: _tsbZoneColor(zone),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  tsb == null
+                      ? '—'
+                      : (tsb >= 0 ? '+' : '') + tsb.toStringAsFixed(1),
+                  style: AppTypography.monoDisplay.copyWith(
+                    color: _tsbZoneColor(zone),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text('TSB', style: theme.textTheme.bodySmall),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _PmcStat(
+                    label: 'CTL',
+                    value: summary.currentCti?.toStringAsFixed(1) ?? '—',
+                    sub: summary.ctlRamp == null
+                        ? null
+                        : '${summary.ctlRamp! >= 0 ? '↑' : '↓'} '
+                            '${summary.ctlRamp!.abs().toStringAsFixed(1)}/d',
+                    subColor: summary.ctlRamp == null
+                        ? null
+                        : (summary.ctlRamp! >= 0
+                            ? AppColors.success
+                            : AppColors.warning),
+                  ),
+                ),
+                Expanded(
+                  child: _PmcStat(
+                    label: 'ATL',
+                    value: summary.currentAti?.toStringAsFixed(1) ?? '—',
+                  ),
+                ),
+                Expanded(
+                  child: _PmcStat(
+                    label: '疲劳',
+                    value: summary.currentFatigue?.toStringAsFixed(0) ?? '—',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Color _tsbZoneColor(String? zone) {
+    switch (zone) {
+      case 'race_ready':
+        return AppColors.accentDark;
+      case 'transition':
+        return AppColors.success;
+      case 'productive':
+        return AppColors.foregroundMuted;
+      case 'overload':
+        return AppColors.danger;
+      case 'detrained':
+        return AppColors.warning;
+      default:
+        return AppColors.foregroundMuted;
+    }
+  }
+}
+
+class _PmcStat extends StatelessWidget {
+  const _PmcStat({
+    required this.label,
+    required this.value,
+    this.sub,
+    this.subColor,
+  });
+
+  final String label;
+  final String value;
+  final String? sub;
+  final Color? subColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: theme.textTheme.labelSmall),
+        const SizedBox(height: 2),
+        Text(value, style: AppTypography.monoTitle),
+        if (sub != null) ...[
+          const SizedBox(height: 2),
+          Text(
+            sub!,
+            style: AppTypography.monoCaption.copyWith(
+              color: subColor ?? AppColors.foregroundMuted,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _PmcChartCard extends StatelessWidget {
   const _PmcChartCard({required this.records});
 
@@ -276,6 +436,8 @@ class _PmcChartCard extends StatelessWidget {
               height: 200,
               child: LineChart(
                 LineChartData(
+                  minX: 0,
+                  maxX: (dates.length - 1).toDouble(),
                   minY: minY - pad,
                   maxY: maxY + pad,
                   gridData: FlGridData(
@@ -291,18 +453,24 @@ class _PmcChartCard extends StatelessWidget {
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
-                        reservedSize: 22,
+                        reservedSize: 30,
                         interval: _bottomInterval(dates.length),
-                        getTitlesWidget: (v, _) => _dateLabel(v, dates),
+                        getTitlesWidget: (v, meta) =>
+                            _dateLabel(v, dates, meta),
                       ),
                     ),
                     leftTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
                         reservedSize: 36,
-                        getTitlesWidget: (v, _) => Text(
-                          v.toStringAsFixed(0),
-                          style: AppTypography.monoCaption.copyWith(fontSize: 10),
+                        getTitlesWidget: (v, meta) => SideTitleWidget(
+                          axisSide: meta.axisSide,
+                          space: 4,
+                          child: Text(
+                            v.toStringAsFixed(0),
+                            style: AppTypography.monoCaption
+                                .copyWith(fontSize: 10),
+                          ),
                         ),
                       ),
                     ),
@@ -364,27 +532,25 @@ class _SingleLineChartCard extends StatelessWidget {
     final minY = ys.reduce((a, b) => a < b ? a : b);
     final maxY = ys.reduce((a, b) => a > b ? a : b);
     final pad = (maxY - minY).abs() * 0.1;
-    // Build a parallel index→date list keyed off the spot's x value (which
-    // matches the original `i` from the values list).
+    // index→date for ALL slots in `values` (including the ones whose value
+    // is null and got skipped). The chart's x values track the original
+    // index so the date lookup stays aligned even with gaps.
     final dateByIndex = <int, String>{};
-    var written = 0;
     for (var i = 0; i < values.length; i++) {
-      if (values[i].value == null) continue;
       dateByIndex[i] = values[i].date;
-      written++;
     }
-    if (written == 0) {
-      // unreachable given the spots.isEmpty check above; safety only
-      return const SizedBox.shrink();
-    }
+    final minX = spots.first.x;
+    final maxX = spots.last.x;
 
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: SizedBox(
-          height: 160,
+          height: 170,
           child: LineChart(
             LineChartData(
+              minX: minX,
+              maxX: maxX,
               minY: minY - pad,
               maxY: maxY + pad,
               gridData: FlGridData(
@@ -400,12 +566,16 @@ class _SingleLineChartCard extends StatelessWidget {
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 22,
+                    reservedSize: 30,
                     interval: _bottomInterval(values.length),
-                    getTitlesWidget: (v, _) {
+                    getTitlesWidget: (v, meta) {
                       final label = dateByIndex[v.round()];
                       if (label == null) return const SizedBox.shrink();
-                      return _dateLabelFor(label);
+                      return SideTitleWidget(
+                        axisSide: meta.axisSide,
+                        space: 6,
+                        child: _dateText(label),
+                      );
                     },
                   ),
                 ),
@@ -413,9 +583,14 @@ class _SingleLineChartCard extends StatelessWidget {
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 36,
-                    getTitlesWidget: (v, _) => Text(
-                      v.toStringAsFixed(0),
-                      style: AppTypography.monoCaption.copyWith(fontSize: 10),
+                    getTitlesWidget: (v, meta) => SideTitleWidget(
+                      axisSide: meta.axisSide,
+                      space: 4,
+                      child: Text(
+                        v.toStringAsFixed(0),
+                        style: AppTypography.monoCaption
+                            .copyWith(fontSize: 10),
+                      ),
                     ),
                   ),
                 ),
@@ -450,27 +625,31 @@ double _bottomInterval(int n) {
   return step < 1 ? 1 : step;
 }
 
-/// Render a 'YYYY-MM-DD' (or ISO with time) date as 'MM/DD'.
-Widget _dateLabelFor(String iso) {
-  if (iso.length < 10) return const SizedBox.shrink();
+/// Render a 'YYYY-MM-DD' (or ISO with time) date as a compact 'MM/DD' Text.
+Text _dateText(String iso) {
+  if (iso.length < 10) {
+    return Text(iso,
+        style: AppTypography.monoCaption.copyWith(fontSize: 10));
+  }
   final mm = iso.substring(5, 7);
   final dd = iso.substring(8, 10);
-  return Padding(
-    padding: const EdgeInsets.only(top: 4),
-    child: Text(
-      '$mm/$dd',
-      style: AppTypography.monoCaption.copyWith(fontSize: 9),
-    ),
+  return Text(
+    '$mm/$dd',
+    style: AppTypography.monoCaption.copyWith(fontSize: 10),
   );
 }
 
-/// Index-based version: look up the date at integer index v in the
-/// `dates` list. Falls back to a blank widget on out-of-range to keep
-/// fl_chart from over-rendering at axis edges.
-Widget _dateLabel(double v, List<String> dates) {
+/// Index-based date label, properly anchored to the chart axis via
+/// [SideTitleWidget]. Returns an empty widget on out-of-range so fl_chart
+/// doesn't over-render at the edges.
+Widget _dateLabel(double v, List<String> dates, TitleMeta meta) {
   final i = v.round();
   if (i < 0 || i >= dates.length) return const SizedBox.shrink();
-  return _dateLabelFor(dates[i]);
+  return SideTitleWidget(
+    axisSide: meta.axisSide,
+    space: 6,
+    child: _dateText(dates[i]),
+  );
 }
 
 class _LegendDot extends StatelessWidget {

@@ -11,15 +11,11 @@ import '../../data/models/plan.dart';
 import '../../data/repos/plan_repository.dart';
 import '../../shared/utils/format.dart';
 
+/// Last 7 activities for "最近活动". Errors surface up via AsyncValue so the
+/// UI can distinguish empty (user has none) from offline / 401 / 500.
 final _recentActivitiesProvider =
     FutureProvider.family<List<Activity>, String>((ref, user) async {
-  try {
-    return await ref
-        .watch(strideApiProvider)
-        .listActivities(user, limit: 7);
-  } catch (_) {
-    return const <Activity>[];
-  }
+  return ref.watch(strideApiProvider).listActivities(user, limit: 7);
 });
 
 class TodayScreen extends ConsumerWidget {
@@ -69,7 +65,7 @@ class _TodayBody extends ConsumerWidget {
           if (!snapshot.hasData) return const _LoadingState();
           return _TodayContent(
             data: snapshot.data!,
-            recent: recent.valueOrNull ?? const <Activity>[],
+            recentState: recent,
           );
         },
       ),
@@ -78,23 +74,22 @@ class _TodayBody extends ConsumerWidget {
 }
 
 class _TodayContent extends StatelessWidget {
-  const _TodayContent({required this.data, required this.recent});
+  const _TodayContent({required this.data, required this.recentState});
 
   final PlanTodayResponse data;
-  final List<Activity> recent;
+  final AsyncValue<List<Activity>> recentState;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final today = data.sessions.isNotEmpty ? data.sessions.first : null;
-    // Recent activities — prefer the dedicated `listActivities` feed since
-    // plannedVsActual only fills slots that have a matching planned session.
-    // Fall back to that mapping when the dedicated feed is unavailable.
+    // Recent activities — primary source is the dedicated /activities feed.
+    // plannedVsActual is a fallback for the rare case where the feed errors
+    // but the plan/today response carries an `actual` mapping (legacy users).
     final fromMapping = data.plannedVsActual
         .map((p) => p.actual)
         .whereType<Activity>()
         .toList();
-    final actuals = recent.isNotEmpty ? recent : fromMapping;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -128,7 +123,58 @@ class _TodayContent extends StatelessWidget {
         Text('最近活动', style: theme.textTheme.titleLarge),
         const SizedBox(height: 12),
 
-        if (actuals.isEmpty)
+        ..._buildRecentList(context, theme, fromMapping),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
+  List<Widget> _buildRecentList(
+    BuildContext context,
+    ThemeData theme,
+    List<Activity> fromMapping,
+  ) {
+    return recentState.when(
+      loading: () {
+        if (fromMapping.isNotEmpty) {
+          return _activityRows(fromMapping);
+        }
+        return const [
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 32),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+          ),
+        ];
+      },
+      error: (e, _) {
+        // Show fallback if any, otherwise an inline error.
+        if (fromMapping.isNotEmpty) {
+          return _activityRows(fromMapping);
+        }
+        return [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Column(
+              children: [
+                const Icon(Icons.cloud_off,
+                    size: 24, color: AppColors.foregroundMuted),
+                const SizedBox(height: 8),
+                Text('无法加载最近活动', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                Text(
+                  '$e',
+                  style: theme.textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ];
+      },
+      data: (list) {
+        if (list.isNotEmpty) return _activityRows(list);
+        if (fromMapping.isNotEmpty) return _activityRows(fromMapping);
+        return [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 32),
             child: Center(
@@ -137,15 +183,22 @@ class _TodayContent extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
             ),
-          )
-        else
-          for (final a in actuals.take(7)) ...[
-            _ActivityRow(activity: a),
-            if (a != actuals.last) const SizedBox(height: 8),
-          ],
-        const SizedBox(height: 24),
-      ],
+          ),
+        ];
+      },
     );
+  }
+
+  List<Widget> _activityRows(List<Activity> list) {
+    final activities = list.take(7).toList();
+    final widgets = <Widget>[];
+    for (var i = 0; i < activities.length; i++) {
+      widgets.add(_ActivityRow(activity: activities[i]));
+      if (i < activities.length - 1) {
+        widgets.add(const SizedBox(height: 8));
+      }
+    }
+    return widgets;
   }
 }
 
