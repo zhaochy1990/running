@@ -22,6 +22,11 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src/ ./src/
 
+# Copy admin / one-shot scripts (backfill, schedule inspection, etc.).
+# Invoked manually via `az containerapp exec` against the running revision —
+# they are not part of the request-serving path.
+COPY scripts/ ./scripts/
+
 # Install dependencies directly (avoid pip install . which copies to site-packages
 # and breaks Path(__file__) resolution for USER_DATA_DIR and FRONTEND_DIR)
 RUN pip install --no-cache-dir \
