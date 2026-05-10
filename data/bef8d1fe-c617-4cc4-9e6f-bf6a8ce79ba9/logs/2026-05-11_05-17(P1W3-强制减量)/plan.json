@@ -1,0 +1,150 @@
+{
+  "schema": "weekly-plan/v1",
+  "user": "dehua",
+  "user_id": "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
+  "week_folder": "2026-05-11_05-17(P1W3-强制减量)",
+  "phase": "Phase 1 W3 (forced taper)",
+  "weekly_mileage_km": 40,
+  "weekly_mileage_cap_km": 50,
+  "theme": "Forced taper after W2 discipline failure (4 deviations, 2 intensity violations, RHR red 2 days). 0 quality sessions. Rebuild monitoring discipline + restore strength compliance.",
+  "sessions": [
+    {
+      "date": "2026-05-11",
+      "day_of_week": "Mon",
+      "kind": "strength",
+      "name": "力量 A — 护腿垫补做",
+      "duration_min": 25,
+      "exercises": [
+        {"name": "靠墙静蹲", "provider_id": "T1231", "sets": 3, "duration_s": 60, "rest_s": 60, "notes": "股四头肌耐力"},
+        {"name": "单腿臀桥保持", "provider_id": "T1219", "sets": 3, "reps": 1, "duration_s": 20, "rest_s": 60, "notes": "20s/侧"},
+        {"name": "单腿离心提踵", "provider_id": "T1275", "sets": 2, "reps": 10, "rest_s": 60, "notes": "4s 慢下放，每侧"},
+        {"name": "平板支撑", "provider_id": "T1010", "sets": 2, "duration_s": 60, "rest_s": 30, "notes": "核心耐力"},
+        {"name": "Dead Bug", "provider_id": "T1243", "sets": 2, "reps": 10, "rest_s": 30, "notes": "每侧"},
+        {"name": "蚌式", "provider_id": "T1317", "sets": 2, "reps": 15, "rest_s": 30, "notes": "每侧"},
+        {"name": "弹力带踝内翻", "provider_id": "T1326", "sets": 2, "reps": 12, "rest_s": 30, "notes": "每侧"},
+        {"name": "弹力带踝外翻", "provider_id": "T1327", "sets": 2, "reps": 12, "rest_s": 30, "notes": "每侧"}
+      ]
+    },
+    {
+      "date": "2026-05-12",
+      "day_of_week": "Tue",
+      "kind": "easy_run",
+      "name": "恢复跑 8K",
+      "distance_km": 8,
+      "pace_target": "5:30-6:00/km",
+      "hr_cap": 138,
+      "notes": "RHR≥55 → 改椭圆机 45min HR<140；关闭配速显示"
+    },
+    {
+      "date": "2026-05-13",
+      "day_of_week": "Wed",
+      "kind": "strength",
+      "name": "力量 B — 核心+灵活性",
+      "duration_min": 30,
+      "exercises": [
+        {"name": "平板支撑", "provider_id": "T1010", "sets": 3, "duration_s": 60, "rest_s": 30},
+        {"name": "侧平板", "provider_id": "T1185", "sets": 3, "duration_s": 40, "rest_s": 30, "notes": "每侧"},
+        {"name": "臀桥", "provider_id": "T1229", "sets": 3, "duration_s": 30, "rest_s": 30, "notes": "15 reps as time"},
+        {"name": "单腿臀桥", "provider_id": "T1219", "sets": 3, "reps": 10, "rest_s": 30, "notes": "每侧"},
+        {"name": "鸟狗式平衡", "provider_id": "T1249", "sets": 3, "reps": 12, "rest_s": 30, "notes": "每侧"},
+        {"name": "胸椎旋转", "provider_id": "T1248", "sets": 3, "reps": 12, "rest_s": 30, "notes": "每侧"},
+        {"name": "蚌式", "provider_id": "T1317", "sets": 2, "reps": 15, "rest_s": 30, "notes": "每侧"}
+      ]
+    },
+    {
+      "date": "2026-05-14",
+      "day_of_week": "Thu",
+      "kind": "easy_run",
+      "name": "轻松跑 10K",
+      "distance_km": 10,
+      "pace_target": "5:20-5:40/km",
+      "hr_cap": 145,
+      "notes": "关闭配速显示；HR>145 立即降速；目标 <140"
+    },
+    {
+      "date": "2026-05-15",
+      "day_of_week": "Fri",
+      "kind": "rest",
+      "name": "完全休息",
+      "notes": "任何形式跑步 = 偏差，触发 W4 仍减量"
+    },
+    {
+      "date": "2026-05-16",
+      "day_of_week": "Sat",
+      "kind": "long_run",
+      "name": "长距离 22K easy",
+      "distance_km": 22,
+      "pace_target": "5:20-5:40/km",
+      "hr_cap": 148,
+      "hr_target": "138-145",
+      "notes": "6:30 前出门；前 5K HR<140 强制；任一 km HR>148 降速；与 zhaochaoyi 同跑；T>25°C 挪周日"
+    },
+    {
+      "date": "2026-05-17",
+      "day_of_week": "Sun",
+      "kind": "strength",
+      "name": "力量 C — 俱乐部源深替代版",
+      "duration_min": 40,
+      "notes": "禁止重量深蹲/弓步/提踵/跳跃/跑步；上肢+核心维持；触发现场版只在三项全绿（fatigue<42 + RHR≤49 + 主观≤4/10）",
+      "exercises": [
+        {"name": "平板支撑", "provider_id": "T1010", "sets": 3, "duration_s": 45, "rest_s": 30},
+        {"name": "鸟狗式", "provider_id": "T1249", "sets": 3, "reps": 12, "rest_s": 30, "notes": "每侧"},
+        {"name": "胸椎旋转", "provider_id": "T1248", "sets": 3, "reps": 12, "rest_s": 30, "notes": "每侧"},
+        {"name": "髋屈肌拉伸", "provider_id": "T1274", "sets": 3, "duration_s": 30, "rest_s": 15, "notes": "每侧"},
+        {"name": "臀部拉伸", "provider_id": "T1244", "sets": 3, "duration_s": 30, "rest_s": 15, "notes": "每侧"}
+      ]
+    }
+  ],
+  "nutrition": [
+    {
+      "day_type": "long_run",
+      "applies_to_dates": ["2026-05-16"],
+      "calories_kcal": 2900,
+      "carbs_g_per_kg": 5.5,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "前夜 21:00 晚餐毕；跑中 30min/30g 碳水（2 个胶）；跑后 30g 蛋白 + 30-60g 快碳"
+    },
+    {
+      "day_type": "strength",
+      "applies_to_dates": ["2026-05-11", "2026-05-13", "2026-05-17"],
+      "calories_kcal": 2600,
+      "carbs_g_per_kg": 4.7,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "训练后 30 min 25-35g 蛋白；蛋白每餐 25-35g 均匀"
+    },
+    {
+      "day_type": "easy_run",
+      "applies_to_dates": ["2026-05-12", "2026-05-14"],
+      "calories_kcal": 2600,
+      "carbs_g_per_kg": 4.5,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "维持，不赤字（恢复优先）"
+    },
+    {
+      "day_type": "rest",
+      "applies_to_dates": ["2026-05-15"],
+      "calories_kcal": 2400,
+      "carbs_g_per_kg": 4.0,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "维持；饮水 2.5-3L"
+    }
+  ],
+  "monitoring": {
+    "daily_checks": ["RHR", "fatigue", "HRV", "subjective_fatigue_1_10", "lower_limb_pain"],
+    "red_lines": [
+      {"signal": "RHR", "threshold": ">=55", "action": "当日跑改椭圆机 45min HR<140"},
+      {"signal": "RHR_3day", "threshold": ">=55 for 3 consecutive days", "action": "周六长距离砍到 16K"},
+      {"signal": "fatigue", "threshold": ">=55", "action": "周六砍到 16K"},
+      {"signal": "HRV", "threshold": "<31", "action": "当日训练降级或顺延"},
+      {"signal": "daily_volume", "threshold": "+20% vs plan", "action": "立即停下次训练"},
+      {"signal": "intensity_violation", "threshold": "any km <4:30 or HR>160 on easy day", "action": "W4 继续减量罚则"}
+    ]
+  },
+  "structured_status": "fresh",
+  "generated_by": "claude-opus-4-7",
+  "notes": "Authored locally 2026-05-10. Will be re-parsed by server LLM on git push via sync-data.yml -> /internal/plan/reparse webhook. structured_status='fresh' in this local file is a hint only; server may overwrite. NO push to COROS watch by author. Strength provider_ids verified against src/coros_sync/exercise_catalog.md."
+}
