@@ -37,6 +37,9 @@ export default function WeekLayout() {
   const [strengthData, setStrengthData] = useState<StrengthTabResponse | null>(null)
   const [strengthLoading, setStrengthLoading] = useState(false)
   const loadingDetail = Boolean(folder && user && loadedFolder !== folder)
+  const _now = new Date()
+  const _today = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`
+  const needsFeedback = weekDetail ? !weekDetail.feedback?.trim() && weekDetail.activity_count > 0 && weekDetail.date_to < _today : false
 
   // Pull the connected provider once so we can dispatch push capabilities
   // (Garmin doesn't support strength push yet → button shows as "in dev").
@@ -221,6 +224,9 @@ export default function WeekLayout() {
             </TabButton>
             <TabButton active={activeTab === 'feedback'} onClick={() => setActiveTab('feedback')} color="cyan">
               本周反馈
+              {needsFeedback && (
+                <span className="ml-1.5 w-1.5 h-1.5 rounded-full bg-accent-amber inline-block align-middle" />
+              )}
             </TabButton>
           </div>
 
@@ -271,6 +277,11 @@ export default function WeekLayout() {
               updatedAt={weekDetail.feedback_updated_at}
               onSaved={(newDetail) => setWeekDetail(newDetail)}
               reload={() => folder && user ? getWeek(user, folder).then(setWeekDetail) : undefined}
+              activities={weekDetail.activities}
+              totalKm={weekDetail.total_km}
+              totalDurationFmt={weekDetail.total_duration_fmt}
+              activityCount={weekDetail.activity_count}
+              dateTo={weekDetail.date_to}
             />
           )}
         </div>
@@ -604,6 +615,7 @@ function TabButton({ active, onClick, color, children }: {
 
 function FeedbackPanel({
   user, folder, feedback, source, updatedAt, onSaved, reload,
+  activities, totalKm, totalDurationFmt, activityCount, dateTo,
 }: {
   user: string
   folder: string
@@ -612,11 +624,20 @@ function FeedbackPanel({
   updatedAt: string | null | undefined
   onSaved: (detail: WeekDetail) => void
   reload: () => Promise<unknown> | undefined
+  activities: Activity[]
+  totalKm: number
+  totalDurationFmt: string
+  activityCount: number
+  dateTo: string
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<string>(feedback || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const weekEnded = dateTo < today
 
   // Re-sync draft when the underlying feedback changes (e.g. switching weeks)
   useEffect(() => {
@@ -627,6 +648,18 @@ function FeedbackPanel({
 
   const startEdit = () => {
     setDraft(feedback || '')
+    setError(null)
+    setEditing(true)
+  }
+
+  const startWithTemplate = () => {
+    let t = `## 本周训练反馈\n\n`
+    t += `本周完成 ${activityCount} 次训练，${totalKm} km，总时长 ${totalDurationFmt}。\n\n`
+    t += `### 整体感受\n\n\n\n`
+    t += `### 身体状态\n\n\n\n`
+    t += `### 计划执行\n\n\n\n`
+    t += `### 下周建议\n\n`
+    setDraft(t)
     setError(null)
     setEditing(true)
   }
@@ -734,9 +767,66 @@ function FeedbackPanel({
           </div>
         </div>
       ) : isEmpty ? (
-        <div className="text-text-muted text-center py-12 text-sm">
-          本周还没有反馈 — 点击右上角"添加反馈"开始记录
-        </div>
+        activityCount > 0 ? (
+          <div className="space-y-5 py-4">
+            {/* Header */}
+            <div className="text-center">
+              <h3 className="text-base font-semibold text-text-primary mb-1">写下本周训练反馈</h3>
+              <p className="text-xs text-text-muted">
+                {weekEnded
+                  ? '反馈帮助 AI 更好地规划下周训练'
+                  : '记录训练感受，帮助调整后续安排'}
+              </p>
+            </div>
+
+            {/* Week stats */}
+            <div className="flex items-center justify-center gap-4 py-3 bg-bg-secondary rounded-xl">
+              <span className="text-sm font-mono font-semibold text-text-primary">{activityCount} 次训练</span>
+              <span className="text-sm font-mono font-semibold text-accent-green">{totalKm} km</span>
+              <span className="text-sm font-mono text-text-muted">{totalDurationFmt}</span>
+            </div>
+
+            {/* Activity mini-list */}
+            <div className="space-y-1">
+              {activities.slice(0, 7).map(a => (
+                <div key={a.label_id} className="flex items-center gap-3 px-3 py-1.5 text-xs font-mono rounded-lg hover:bg-bg-secondary/50">
+                  <span className="text-text-muted w-20 flex-shrink-0">{a.date.slice(5, 10)} {weekdayCN(a.date)}</span>
+                  <span className="text-text-primary flex-1 truncate">{a.name || a.sport_name}</span>
+                  <span className="text-accent-green flex-shrink-0">{a.distance_km} km</span>
+                  <span className="text-text-muted flex-shrink-0">{a.duration_fmt}</span>
+                </div>
+              ))}
+              {activities.length > 7 && (
+                <p className="text-xs text-text-muted text-center pt-1">...及其他 {activities.length - 7} 次训练</p>
+              )}
+            </div>
+
+            {/* Guidance */}
+            <div className="px-4 py-3 bg-accent-cyan/5 border border-accent-cyan/20 rounded-xl">
+              <p className="text-xs font-medium text-accent-cyan mb-2">反馈可以包括</p>
+              <div className="grid grid-cols-2 gap-1.5 text-xs text-text-muted">
+                <span>· 整体训练感受 (RPE 1-10)</span>
+                <span>· 身体状态与恢复</span>
+                <span>· 计划执行情况</span>
+                <span>· 下周训练建议</span>
+              </div>
+            </div>
+
+            {/* CTA */}
+            <div className="text-center">
+              <button
+                onClick={startWithTemplate}
+                className="px-6 py-2.5 text-sm font-medium rounded-lg bg-accent-cyan/10 border border-accent-cyan/30 text-accent-cyan hover:bg-accent-cyan/20 transition-all"
+              >
+                开始写反馈
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="text-text-muted text-center py-12 text-sm">
+            本周暂无训练记录
+          </div>
+        )
       ) : (
         <div className="prose max-w-none">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{feedback as string}</ReactMarkdown>

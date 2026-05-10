@@ -102,7 +102,10 @@ export default function AppLayout() {
             <div className="flex items-center justify-center py-10">
               <div className="w-5 h-5 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
             </div>
-          ) : (
+          ) : (() => {
+            const _n = new Date()
+            const _today = `${_n.getFullYear()}-${String(_n.getMonth() + 1).padStart(2, '0')}-${String(_n.getDate()).padStart(2, '0')}`
+            return (
             <div className="space-y-1.5">
               {weeks.map((week, i) => {
                 const isWeekActive = currentFolder === week.folder
@@ -132,17 +135,22 @@ export default function AppLayout() {
                       <span className="text-xs font-mono text-accent-green">
                         {week.total_km} km
                       </span>
-                      {week.has_feedback && (
+                      {week.has_feedback ? (
                         <span className="text-[11px] font-mono text-accent-cyan bg-accent-cyan/10 px-1 py-0.5 rounded">
                           反馈
                         </span>
-                      )}
+                      ) : week.activity_count > 0 && week.date_to < _today ? (
+                        <span className="text-[11px] font-mono text-accent-amber bg-accent-amber/10 px-1 py-0.5 rounded">
+                          需反馈
+                        </span>
+                      ) : null}
                     </div>
                   </button>
                 )
               })}
             </div>
-          )}
+            )
+          })()}
         </div>
 
         <div className="px-3 py-3 border-t border-border-subtle space-y-2 flex-shrink-0">
