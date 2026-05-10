@@ -133,7 +133,7 @@ def get_week(user: str, folder: str):
             avg_cadence, calories_kcal, training_load, vo2max, train_type,
             ascent_m, aerobic_effect, anaerobic_effect,
             temperature, humidity, feels_like, wind_speed,
-            feel_type, sport_note
+            feel_type, sport_note, route_thumb_json
         FROM activities WHERE date >= ? AND date < ?
         ORDER BY date ASC, label_id ASC""",
         (date_from, date_to + "T99"),
@@ -144,6 +144,16 @@ def get_week(user: str, folder: str):
         d["distance_km"] = round(d["distance_m"], 2) if d["distance_m"] else 0
         d["duration_fmt"] = format_duration(d["duration_s"])
         d["pace_fmt"] = pace_str(d["avg_pace_s_km"]) or "—"
+        # Decode pre-computed route thumbnail (NULL for indoor/strength).
+        raw_thumb = d.pop("route_thumb_json", None)
+        if isinstance(raw_thumb, str) and raw_thumb:
+            try:
+                import json as _json
+                d["route_thumb"] = _json.loads(raw_thumb)
+            except (ValueError, TypeError):
+                d["route_thumb"] = None
+        else:
+            d["route_thumb"] = None
         activities.append(d)
 
     result["activities"] = activities

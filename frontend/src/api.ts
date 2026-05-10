@@ -310,6 +310,10 @@ export interface Activity {
   // Watch-paused intervals (decoded from JSON server-side). Empty list
   // when no pauses or for legacy synced rows.
   pauses?: Pause[]
+  // Pre-computed route polyline for activity-list thumbnails. Each point
+  // is [x, y] in a 0..100 SVG viewport (Y already flipped). Null when
+  // the activity has no GPS (indoor/strength) or hasn't been backfilled.
+  route_thumb?: number[][] | null
 }
 
 export interface Lap {

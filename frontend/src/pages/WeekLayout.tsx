@@ -17,6 +17,7 @@ import { useUser } from '../UserContextValue'
 import PlannedCalendar from '../components/PlannedCalendar'
 import PushAllPlannedButton from '../components/PushAllPlannedButton'
 import VariantComparisonView from '../components/VariantComparisonView'
+import RouteThumbnail from '../components/RouteThumbnail'
 
 type Tab = 'plan' | 'variants' | 'strength' | 'calendar' | 'activities' | 'feedback'
 
@@ -776,9 +777,11 @@ function ActivityList({ activities }: { activities: Activity[] }) {
               <Link key={a.label_id} to={`/activity/${a.label_id}`}>
                 <div className="group bg-bg-card border border-border-subtle rounded-xl px-4 sm:px-5 py-3.5 sm:py-4 hover:bg-bg-card-hover hover:border-border transition-all duration-200 cursor-pointer">
                   <div className="flex items-stretch gap-3 sm:gap-4">
-                    <div
-                      className="w-1 self-stretch rounded-full flex-shrink-0 opacity-70 group-hover:opacity-100 transition-opacity"
-                      style={{ backgroundColor: sportColor(a.sport_name) }}
+                    <RouteThumbnail
+                      polyline={a.route_thumb}
+                      sportName={a.sport_name}
+                      size={56}
+                      color={sportColor(a.sport_name)}
                     />
 
                     <div className="flex-1 min-w-0">

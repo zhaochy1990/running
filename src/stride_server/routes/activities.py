@@ -57,7 +57,8 @@ def list_activities(
             distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
             avg_cadence, calories_kcal, training_load, vo2max, train_type,
             ascent_m, aerobic_effect, anaerobic_effect,
-            temperature, humidity, feels_like, wind_speed
+            temperature, humidity, feels_like, wind_speed,
+            route_thumb_json
         FROM activities {where}
         ORDER BY date DESC, label_id DESC
         LIMIT ? OFFSET ?""",
@@ -71,6 +72,18 @@ def list_activities(
         d["distance_km"] = round(d["distance_m"], 2) if d["distance_m"] else 0
         d["duration_fmt"] = format_duration(d["duration_s"])
         d["pace_fmt"] = pace_str(d["avg_pace_s_km"]) or "—"
+        # Decode route_thumb JSON server-side so the client can drop the
+        # array straight into an SVG <polyline>. NULL → empty so the
+        # frontend can branch on `.length === 0`.
+        raw_thumb = d.pop("route_thumb_json", None)
+        if isinstance(raw_thumb, str) and raw_thumb:
+            try:
+                import json as _json
+                d["route_thumb"] = _json.loads(raw_thumb)
+            except (ValueError, TypeError):
+                d["route_thumb"] = None
+        else:
+            d["route_thumb"] = None
         activities.append(d)
 
     return {"total": total_count, "offset": offset, "limit": limit, "activities": activities}

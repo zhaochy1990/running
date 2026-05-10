@@ -9,6 +9,7 @@ import {
 import { useUserId } from '../../store/authStore'
 import LikeButton from '../../components/LikeButton'
 import MileageLeaderboard from '../../components/MileageLeaderboard'
+import RouteThumbnail from '../../components/RouteThumbnail'
 
 type TeamTab = 'feed' | 'mileage'
 
@@ -294,22 +295,31 @@ export default function TeamDetailPage() {
                       onClick={() => navigate(`/teams/${id}/activity/${act.user_id}/${act.label_id}`)}
                       className="w-full text-left p-4 pb-2"
                     >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-semibold text-text-primary">{act.display_name}</span>
-                        <span className="text-xs font-mono text-text-muted">
-                          {weekdayCN(act.date)} {formatDate(act.date)} {formatTime(act.date)}
-                        </span>
+                      <div className="flex items-start gap-3">
+                        <RouteThumbnail
+                          polyline={act.route_thumb}
+                          sportName={act.sport_name}
+                          size={56}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-semibold text-text-primary">{act.display_name}</span>
+                            <span className="text-xs font-mono text-text-muted">
+                              {weekdayCN(act.date)} {formatDate(act.date)} {formatTime(act.date)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs font-mono text-text-secondary">
+                            <span className="text-accent-red">{sportNameCN(act.sport_name)}</span>
+                            <span>{act.distance_km} km</span>
+                            <span>{act.duration_fmt}</span>
+                            <span>{act.pace_fmt}</span>
+                            {act.avg_hr && <span>HR {act.avg_hr}</span>}
+                          </div>
+                          {act.name && (
+                            <p className="text-xs text-text-muted mt-2 line-clamp-1">{act.name}</p>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 text-xs font-mono text-text-secondary">
-                        <span className="text-accent-red">{sportNameCN(act.sport_name)}</span>
-                        <span>{act.distance_km} km</span>
-                        <span>{act.duration_fmt}</span>
-                        <span>{act.pace_fmt}</span>
-                        {act.avg_hr && <span>HR {act.avg_hr}</span>}
-                      </div>
-                      {act.name && (
-                        <p className="text-xs text-text-muted mt-2 line-clamp-1">{act.name}</p>
-                      )}
                     </button>
                     {id && act.label_id && (
                       <div className="px-4 pb-3">

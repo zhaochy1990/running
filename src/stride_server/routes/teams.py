@@ -265,7 +265,7 @@ def _read_member_activities(user_id: str, limit_per_user: int, days: int) -> lis
         rows = db.query(
             """SELECT label_id, name, sport_type, sport_name, date,
                 distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
-                training_load, vo2max, train_type
+                training_load, vo2max, train_type, route_thumb_json
             FROM activities
             WHERE date >= datetime('now', ? )
             ORDER BY date DESC
@@ -284,6 +284,16 @@ def _read_member_activities(user_id: str, limit_per_user: int, days: int) -> lis
         d["distance_km"] = round(d.get("distance_m") or 0, 2)
         d["duration_fmt"] = format_duration(d.get("duration_s"))
         d["pace_fmt"] = pace_str(d.get("avg_pace_s_km")) or "—"
+        # Decode pre-computed route thumbnail (NULL for indoor/strength).
+        raw_thumb = d.pop("route_thumb_json", None)
+        if isinstance(raw_thumb, str) and raw_thumb:
+            try:
+                import json as _json
+                d["route_thumb"] = _json.loads(raw_thumb)
+            except (ValueError, TypeError):
+                d["route_thumb"] = None
+        else:
+            d["route_thumb"] = None
         out.append(d)
     return out
 

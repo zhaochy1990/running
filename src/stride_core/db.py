@@ -409,6 +409,73 @@ CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_rating_variant
 """
 
 
+_THUMB_TARGET_POINTS = 60
+_THUMB_VIEWBOX = 100
+_THUMB_PADDING = 5
+
+
+def compute_route_thumbnail(timeseries: list[TimeseriesPoint] | list[dict]) -> str | None:
+    """Build a downsampled, normalized polyline for activity-list thumbnails.
+
+    Returns a JSON string ``[[x,y],...]`` with x/y rounded to one decimal,
+    fitting in a ``[0, 100]`` viewport with 5 px padding. Y axis is flipped
+    (south at bottom) so the polyline can drop straight into ``<svg>``
+    without further math. Aspect ratio is preserved by scaling both axes
+    by ``max(range_x, range_y)`` and centering the result.
+
+    Returns ``None`` when fewer than 10 valid GPS samples are present
+    (indoor, treadmill, GPS-failed activities).
+
+    Accepts either a list of ``TimeseriesPoint`` dataclasses or a list of
+    dict rows with ``gps_lat`` / ``gps_lon`` keys, so the same helper
+    works in both the live sync path and the offline backfill script.
+    """
+    pts: list[tuple[float, float]] = []
+    for p in timeseries:
+        if isinstance(p, dict):
+            lat = p.get("gps_lat")
+            lon = p.get("gps_lon")
+        else:
+            lat = getattr(p, "gps_lat", None)
+            lon = getattr(p, "gps_lon", None)
+        if lat is None or lon is None:
+            continue
+        pts.append((lon, lat))
+
+    if len(pts) < 10:
+        return None
+
+    step = max(1, len(pts) // _THUMB_TARGET_POINTS)
+    sampled = pts[::step]
+    # Always include the final point so the route doesn't appear truncated.
+    if sampled[-1] != pts[-1]:
+        sampled.append(pts[-1])
+
+    xs = [p[0] for p in sampled]
+    ys = [p[1] for p in sampled]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    range_x = max_x - min_x
+    range_y = max_y - min_y
+    span = max(range_x, range_y)
+    if span <= 0:
+        return None
+
+    scale = (_THUMB_VIEWBOX - 2 * _THUMB_PADDING) / span
+    cx = (min_x + max_x) / 2
+    cy = (min_y + max_y) / 2
+    half = _THUMB_VIEWBOX / 2
+
+    out: list[list[float]] = []
+    for x, y in sampled:
+        nx = round((x - cx) * scale + half, 1)
+        # Flip Y so north (higher lat) lands at the top of the SVG.
+        ny = round(half - (y - cy) * scale, 1)
+        out.append([nx, ny])
+
+    return json.dumps(out, separators=(",", ":"))
+
+
 class Database:
     def __init__(self, db_path: Path | str | None = None, user: str | None = None):
         if db_path:
@@ -555,6 +622,11 @@ class Database:
         # Frontend cuts the route polyline at these boundaries (decision A,
         # gap-style). NULL on legacy rows / activities with no pauses.
         _add("activities", "pauses", "TEXT")
+        # Pre-computed downsampled + normalized route polyline for activity
+        # list thumbnails. JSON: '[[x,y],...]' with x/y in [0,100] (SVG
+        # viewport-ready). NULL for indoor/strength/no-GPS activities.
+        # Sized for ~60 points × ~10 B/pt = ~600 B per row.
+        _add("activities", "route_thumb_json", "TEXT")
         # Daily wellness extras (Body Battery, stress, sleep stages).
         _add("daily_health", "body_battery_high", "INTEGER")
         _add("daily_health", "body_battery_low", "INTEGER")
@@ -732,6 +804,9 @@ class Database:
             )
             if a.pauses else None
         )
+        # Pre-compute the activity-list thumbnail polyline so reads of the
+        # list API stay one-table. NULL when no GPS (indoor/strength).
+        route_thumb_json = compute_route_thumbnail(a.timeseries)
         self._conn.execute(
             """INSERT OR REPLACE INTO activities
             (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
@@ -742,8 +817,8 @@ class Database:
              temperature, humidity, feels_like, wind_speed, feel_type, sport_note,
              sport, train_kind, feel,
              vertical_oscillation_mm, ground_contact_time_ms, vertical_ratio_pct,
-             pauses, provider)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             pauses, route_thumb_json, provider)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
              a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
              a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
@@ -755,7 +830,7 @@ class Database:
              a.feel_type, a.sport_note,
              a.sport, a.train_kind, a.feel,
              a.vertical_oscillation_mm, a.ground_contact_time_ms, a.vertical_ratio_pct,
-             pauses_json, provider),
+             pauses_json, route_thumb_json, provider),
         )
         # Upsert child records
         for lap in a.laps:
