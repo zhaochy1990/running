@@ -103,17 +103,12 @@ class GarminDataSource(BaseDataSource):
         return GarminCredentials.load(user).is_logged_in
 
     def logout(self, user: str) -> None:
-        # Wipe the local token blob; provider tag in config.json stays so
-        # the user can re-login without going back through onboarding.
-        creds_path = GarminCredentials.load(user)
-        if not creds_path.is_logged_in:
+        # Wipe the stored token blob (file or Key Vault, depending on env);
+        # provider tag in config.json stays so the user can re-login without
+        # going back through onboarding.
+        if not GarminCredentials.load(user).is_logged_in:
             return
-        from .auth import _auth_path
-        path = _auth_path(user)
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
+        GarminCredentials.delete(user)
 
     # ── sync ────────────────────────────────────────────────────────────────
 
