@@ -74,10 +74,11 @@ class TestActivityDetailBuilder:
         d = activity_detail_from_garmin(_sample_activity())
         assert d.label_id == "589314738"
 
-    def test_units_already_si(self):
+    def test_distance_converted_to_km_duration_unchanged(self):
         d = activity_detail_from_garmin(_sample_activity())
-        # Distance/duration come through unchanged (Garmin already meters/sec)
-        assert d.distance_m == 13061.24
+        # Garmin returns meters but `distance_m` column stores km (see module
+        # docstring); 13061.24 m → 13.06 km. Duration stays seconds.
+        assert d.distance_m == 13.06
         assert d.duration_s == 3600.3
         # Calories pass through (kcal)
         assert d.calories_kcal == 848
@@ -179,7 +180,8 @@ class TestActivityDetailBuilder:
         assert len(d.laps) == 1
         lap = d.laps[0]
         assert lap.lap_index == 1
-        assert lap.distance_m == 1000.0
+        # Lap distance is meters in the API; column stores km. 1000m → 1.0km.
+        assert lap.distance_m == 1.0
         assert lap.duration_s == 293.0
         # Pace converted from m/s
         assert lap.avg_pace is not None and 290 < lap.avg_pace < 300
