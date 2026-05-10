@@ -35,13 +35,13 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import RUN_SPORT_SQL_LIST, pace_str
-from stride_core.source import DataSource
+from stride_core.registry import ProviderRegistry, UnknownProvider
 
 from .. import auth_service_client as auth_client
 from .. import likes_store
 from ..bearer import require_bearer
 from ..content_store import read_json
-from ..deps import format_duration, get_source
+from ..deps import format_duration, get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -421,14 +421,16 @@ async def team_feed(
 async def sync_team_all(
     team_id: str,
     authorization: str | None = Header(default=None),
-    source: DataSource = Depends(get_source),
+    registry: ProviderRegistry = Depends(get_registry),
     _claims: dict = Depends(require_bearer),
 ):
     """Run an incremental sync for every member of the team.
 
-    Any team member may trigger this. Members without valid COROS credentials
-    are silently skipped. Returns a per-member summary plus totals so the UI
-    can render a "what changed" panel.
+    Any team member may trigger this. The registry resolves each member's
+    configured provider (COROS / Garmin / …) so a mixed-provider team syncs
+    every member through their own adapter. Members without valid credentials
+    on their bound provider are silently skipped. Returns a per-member summary
+    plus totals so the UI can render a "what changed" panel.
     """
     members = await auth_client.list_members(_bearer(authorization), team_id)
     member_ids = {m.get("user_id") for m in members if m.get("user_id")}
@@ -460,12 +462,28 @@ async def sync_team_all(
         entry: dict[str, Any] = {
             "user_id": user_id,
             "display_name": display_name,
+            "provider": None,
             "status": "skipped_no_auth",
             "new_activities": 0,
             "new_health": 0,
             "error": None,
         }
         try:
+            try:
+                source = registry.for_user(user_id)
+            except UnknownProvider as exc:
+                logger.warning(
+                    "teams.sync_all: user %s bound to unregistered provider %r",
+                    user_id, exc.name,
+                )
+                entry["status"] = "error"
+                entry["error"] = f"unknown provider: {exc.name}"
+                entry["provider"] = exc.name
+                totals["errors"] += 1
+                results.append(entry)
+                continue
+            entry["provider"] = source.info.name
+
             if not source.is_logged_in(user_id):
                 totals["skipped"] += 1
                 results.append(entry)

@@ -485,3 +485,188 @@ def test_list_members_handles_invalid_user_id_safely(app_client, monkeypatch):
     assert resp.status_code == 200
     members = resp.json()["members"]
     assert members[0]["display_name"] == "Sketchy"
+
+
+# ---------------------------------------------------------------------------
+# /sync-all — mixed-provider dispatch
+# ---------------------------------------------------------------------------
+
+
+class _FakeAdapter:
+    """Minimal DataSource stand-in for sync-all dispatch tests."""
+
+    def __init__(
+        self,
+        name: str,
+        *,
+        logged_in: bool = True,
+        sync_activities: int = 0,
+        sync_health: int = 0,
+    ) -> None:
+        from stride_core.source import ProviderInfo
+        self.name = name
+        self._info = ProviderInfo(
+            name=name, display_name=name, regions=("global",), capabilities=frozenset(),
+        )
+        self._logged_in = logged_in
+        self._sync_activities = sync_activities
+        self._sync_health = sync_health
+        self.calls: list[tuple[str, str]] = []
+
+    @property
+    def info(self):
+        return self._info
+
+    def is_logged_in(self, user: str) -> bool:
+        self.calls.append(("is_logged_in", user))
+        return self._logged_in
+
+    def sync_user(self, user: str, *, full: bool = False, **_kwargs):
+        from stride_core.source import SyncResult
+        self.calls.append(("sync_user", user))
+        return SyncResult(activities=self._sync_activities, health=self._sync_health)
+
+
+class _FakeRegistry:
+    """ProviderRegistry stand-in keyed by user_id → adapter."""
+
+    def __init__(self, by_user: dict[str, _FakeAdapter]) -> None:
+        self._by_user = by_user
+
+    def for_user(self, user: str):
+        from stride_core.registry import UnknownProvider
+        if user not in self._by_user:
+            raise UnknownProvider("unknown")
+        return self._by_user[user]
+
+
+def _override_registry(client, registry):
+    from stride_server.deps import get_registry
+    client.app.dependency_overrides[get_registry] = lambda: registry
+
+
+def test_sync_all_dispatches_per_user_provider(app_client, monkeypatch):
+    """Mixed COROS+Garmin team: each user must hit their own adapter, not a single default."""
+    client, token, _ = app_client
+
+    coros_adapter = _FakeAdapter(name="coros", sync_activities=4, sync_health=84)
+    garmin_adapter = _FakeAdapter(name="garmin", sync_activities=17, sync_health=57)
+    registry = _FakeRegistry({USER_A: coros_adapter, USER_B: garmin_adapter})
+    _override_registry(client, registry)
+
+    async def fake_list_members(_bearer, _team_id):
+        return [
+            {"user_id": USER_A, "name": "AliceCoros", "role": "owner"},
+            {"user_id": USER_B, "name": "BobGarmin", "role": "member"},
+        ]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    resp = client.post("/api/teams/t1/sync-all", headers=_auth(token))
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # Each adapter should have been queried for its OWN user only.
+    assert ("is_logged_in", USER_A) in coros_adapter.calls
+    assert ("sync_user", USER_A) in coros_adapter.calls
+    assert ("is_logged_in", USER_B) in garmin_adapter.calls
+    assert ("sync_user", USER_B) in garmin_adapter.calls
+    # And NEVER cross-dispatched.
+    assert all(call[1] != USER_B for call in coros_adapter.calls)
+    assert all(call[1] != USER_A for call in garmin_adapter.calls)
+
+    by_user = {r["user_id"]: r for r in data["results"]}
+    assert by_user[USER_A]["status"] == "synced"
+    assert by_user[USER_A]["provider"] == "coros"
+    assert by_user[USER_A]["new_activities"] == 4
+    assert by_user[USER_B]["status"] == "synced"
+    assert by_user[USER_B]["provider"] == "garmin"
+    assert by_user[USER_B]["new_activities"] == 17
+
+    assert data["totals"]["synced"] == 2
+    assert data["totals"]["new_activities"] == 21
+    assert data["totals"]["new_health"] == 141
+
+
+def test_sync_all_skips_member_not_logged_in_on_their_provider(app_client, monkeypatch):
+    """Garmin-bound user with no Garmin token gets skipped, NOT marked as COROS-skipped."""
+    client, token, _ = app_client
+
+    coros_adapter = _FakeAdapter(name="coros", sync_activities=2, sync_health=42)
+    garmin_adapter = _FakeAdapter(name="garmin", logged_in=False)  # ← key: not logged in
+    registry = _FakeRegistry({USER_A: coros_adapter, USER_B: garmin_adapter})
+    _override_registry(client, registry)
+
+    async def fake_list_members(_bearer, _team_id):
+        return [
+            {"user_id": USER_A, "name": "AliceCoros", "role": "owner"},
+            {"user_id": USER_B, "name": "BobGarmin", "role": "member"},
+        ]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    resp = client.post("/api/teams/t1/sync-all", headers=_auth(token))
+    assert resp.status_code == 200
+    data = resp.json()
+
+    by_user = {r["user_id"]: r for r in data["results"]}
+    assert by_user[USER_A]["status"] == "synced"
+    assert by_user[USER_B]["status"] == "skipped_no_auth"
+    assert by_user[USER_B]["provider"] == "garmin"
+
+    # Critical: Garmin user must NOT have been routed to the COROS adapter.
+    assert all(call[1] != USER_B for call in coros_adapter.calls)
+    # Garmin adapter was queried but sync_user was never reached.
+    assert ("is_logged_in", USER_B) in garmin_adapter.calls
+    assert all(call[0] != "sync_user" for call in garmin_adapter.calls)
+
+    assert data["totals"]["synced"] == 1
+    assert data["totals"]["skipped"] == 1
+
+
+def test_sync_all_marks_unknown_provider_as_error(app_client, monkeypatch):
+    """A user bound to a provider this deployment doesn't ship surfaces as `error`, not skipped."""
+    client, token, _ = app_client
+
+    coros_adapter = _FakeAdapter(name="coros")
+    registry = _FakeRegistry({USER_A: coros_adapter})  # USER_B not in registry
+    _override_registry(client, registry)
+
+    async def fake_list_members(_bearer, _team_id):
+        return [
+            {"user_id": USER_A, "name": "Alice", "role": "owner"},
+            {"user_id": USER_B, "name": "Bob", "role": "member"},
+        ]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    resp = client.post("/api/teams/t1/sync-all", headers=_auth(token))
+    assert resp.status_code == 200
+    data = resp.json()
+
+    by_user = {r["user_id"]: r for r in data["results"]}
+    assert by_user[USER_A]["status"] == "synced"
+    assert by_user[USER_B]["status"] == "error"
+    assert "unknown provider" in by_user[USER_B]["error"]
+    assert data["totals"]["errors"] == 1
+
+
+def test_sync_all_rejects_non_member_caller(app_client, monkeypatch):
+    """Caller must be a member of the team — even though Bearer is valid."""
+    client, token, _ = app_client
+
+    registry = _FakeRegistry({})
+    _override_registry(client, registry)
+
+    async def fake_list_members(_bearer, _team_id):
+        # Caller (USER_A from token) is NOT in this list.
+        return [{"user_id": USER_B, "name": "Bob", "role": "owner"}]
+
+    import stride_server.auth_service_client as ac
+    monkeypatch.setattr(ac, "list_members", fake_list_members)
+
+    resp = client.post("/api/teams/t1/sync-all", headers=_auth(token))
+    assert resp.status_code == 403
