@@ -1,5 +1,8 @@
 import type { RaceEstimates } from '../api'
-import { fmtHMS } from '../lib/fmt'
+import { fmtHMS, fmtPace } from '../lib/fmt'
+
+const MARATHON_KM = 42.195
+const HALF_MARATHON_KM = 21.0975
 
 export default function AbilityTriptych({
   estimates,
@@ -12,6 +15,7 @@ export default function AbilityTriptych({
   const racePct = estimates.race_day_boost_pct
   const bestPct = estimates.best_case_boost_pct
   const tag = distanceLabel ? ` (${distanceLabel})` : ''
+  const distKm = distanceLabel === '半马' ? HALF_MARATHON_KM : MARATHON_KM
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -19,6 +23,7 @@ export default function AbilityTriptych({
         label={`训练估算${tag}`}
         sublabel="Training Estimate"
         value={fmtHMS(estimates.training_s)}
+        pace={fmtPace(estimates.training_s, distKm)}
         detail="训练实力 · 未加比赛日增益"
         highlighted={false}
       />
@@ -26,6 +31,7 @@ export default function AbilityTriptych({
         label={`比赛估算${tag}`}
         sublabel="Race Estimate"
         value={fmtHMS(estimates.race_s)}
+        pace={fmtPace(estimates.race_s, distKm)}
         detail={`完美赛日 · 减量 ${racePct != null ? `+${racePct}%` : '增益'}`}
         highlighted={true}
       />
@@ -33,6 +39,7 @@ export default function AbilityTriptych({
         label={`最佳情境${tag}`}
         sublabel="Best Case"
         value={fmtHMS(estimates.best_case_s)}
+        pace={fmtPace(estimates.best_case_s, distKm)}
         detail={`理论上限 · ${bestPct != null ? `+${bestPct}%` : '完美执行'}`}
         highlighted={false}
       />
@@ -40,8 +47,8 @@ export default function AbilityTriptych({
   )
 }
 
-function Card({ label, sublabel, value, detail, highlighted }: {
-  label: string; sublabel: string; value: string; detail: string; highlighted: boolean
+function Card({ label, sublabel, value, pace, detail, highlighted }: {
+  label: string; sublabel: string; value: string; pace: string; detail: string; highlighted: boolean
 }) {
   return (
     <div
@@ -72,6 +79,14 @@ function Card({ label, sublabel, value, detail, highlighted }: {
       >
         {value}
       </p>
+      {pace !== '—' && (
+        <p
+          className="text-sm font-mono mt-1"
+          style={{ color: highlighted ? '#00a85a' : '#6b6b80' }}
+        >
+          配速 {pace}
+        </p>
+      )}
       <p className="text-xs font-mono text-text-muted mt-2 leading-relaxed">{detail}</p>
     </div>
   )

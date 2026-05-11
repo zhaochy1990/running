@@ -29,3 +29,12 @@ export function fmtScore(n: number | null | undefined, digits = 0): string {
   if (n == null || !isFinite(n)) return '—'
   return n.toFixed(digits)
 }
+
+/** Format pace as M:SS/km given total seconds and distance in km. */
+export function fmtPace(totalSeconds: number | null | undefined, distanceKm: number): string {
+  if (totalSeconds == null || !isFinite(totalSeconds) || totalSeconds <= 0) return '—'
+  const total = Math.round(totalSeconds / distanceKm)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}/km`
+}
