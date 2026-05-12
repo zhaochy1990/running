@@ -39,26 +39,30 @@ def _is_garmin_sport(sport_type: Any) -> bool:
 def _distance_to_meters(dist: float, sport_type: Any) -> float:
     """Normalize a stored distance value to meters.
 
-    Why this exists: COROS rows historically store some distances in
-    KM-units (`distance_m=14.0` means 14 km — a misnomer the column never
-    got renamed away). Garmin rows always store meters. Without provider
-    context, the legacy heuristic `if dist < 500: assume km` would treat a
-    Garmin 130 m sprint segment as a 130 km lap, which exploded VDOT and
-    endurance scores. With provider context we can do the right thing.
+    The DB column ``activities.distance_m`` is misnamed — by current
+    convention both COROS (always) and Garmin (since ``d72d69f``) store
+    **kilometers**, not meters. The magnitude heuristic (``< 500`` → assume
+    km, otherwise meters) handles both:
+
+      - new km value (e.g. 21.12) → 21120 m
+      - legacy meters value (e.g. 21100) → 21100 m (unchanged)
+
+    Pre-``d72d69f`` Garmin rows that still hold meters in a local DB will
+    fall through the ``>= 500`` branch correctly. ``sport_type`` is kept
+    in the signature for backwards compatibility with existing callers
+    but is no longer consulted.
     """
     if not dist or dist <= 0:
         return 0.0
-    if _is_garmin_sport(sport_type):
-        return float(dist)
-    # COROS legacy heuristic preserved verbatim.
     return float(dist) * 1000.0 if dist < 500 else float(dist)
 
 
 def _distance_to_km(dist: float, sport_type: Any) -> float:
+    """Inverse of :func:`_distance_to_meters` — see that docstring for the
+    unit convention and rationale.
+    """
     if not dist or dist <= 0:
         return 0.0
-    if _is_garmin_sport(sport_type):
-        return float(dist) / 1000.0
     return float(dist) / 1000.0 if dist > 500 else float(dist)
 
 
