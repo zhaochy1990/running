@@ -19,6 +19,15 @@ import '../../features_v2/feedback/post_activity_feedback_screen.dart';
 import '../../features_v2/plan/generate_week_screen.dart';
 import '../../features_v2/plan/plan_chat_screen.dart';
 import '../../features_v2/plan/pre_training_screen.dart';
+import '../../features_v2/training_plan/adjust_screen.dart';
+import '../../features_v2/training_plan/generate_screen.dart';
+import '../../features_v2/training_plan/goal_screen.dart';
+import '../../features_v2/training_plan/history_screen.dart';
+import '../../features_v2/training_plan/history_sync_screen.dart';
+import '../../features_v2/training_plan/master_plan_view_screen.dart';
+import '../../features_v2/training_plan/profile_screen.dart';
+import '../../features_v2/training_plan/review_screen.dart';
+import '../../features_v2/training_plan/version_screen.dart';
 import '../../features_v2/plan/session_detail_screen.dart';
 import '../../features_v2/plan/week_detail_screen.dart';
 import '../../features_v2/plan/week_list_screen.dart';
@@ -167,6 +176,60 @@ final appRouterV2Provider = Provider<GoRouter>((ref) {
         path: RoutesV2.generatePattern,
         builder: (_, state) => GenerateWeekScreen(
           weekStart: state.uri.queryParameters['week_start'] ?? '',
+        ),
+      ),
+      // C1 — Training goal
+      GoRoute(
+        path: RoutesV2.trainingPlanGoal,
+        builder: (_, _) => const TrainingGoalScreen(),
+      ),
+      // C2 — Running profile
+      GoRoute(
+        path: RoutesV2.trainingPlanProfile,
+        builder: (_, _) => const RunningProfileScreen(),
+      ),
+      // C3 — 3-year history sync
+      GoRoute(
+        path: RoutesV2.trainingPlanHistorySync,
+        builder: (_, _) => const HistorySyncScreen(),
+      ),
+      // C4 — Master plan generation
+      GoRoute(
+        path: RoutesV2.trainingPlanGenerate,
+        builder: (_, _) => const MasterPlanGenerateScreen(),
+      ),
+      // C5 — Master plan review chat
+      GoRoute(
+        path: RoutesV2.trainingPlanReviewPattern,
+        builder: (_, state) => MasterPlanReviewScreen(
+          planId: state.pathParameters['planId']!,
+        ),
+      ),
+      // C6 — Master plan view
+      GoRoute(
+        path: RoutesV2.trainingPlanView,
+        builder: (_, _) => const MasterPlanViewScreen(),
+      ),
+      // C7 — Master plan adjust chat
+      GoRoute(
+        path: RoutesV2.trainingPlanAdjustPattern,
+        builder: (_, state) => MasterPlanAdjustScreen(
+          planId: state.pathParameters['planId']!,
+        ),
+      ),
+      // C8 — Master plan adjustment history
+      GoRoute(
+        path: RoutesV2.trainingPlanHistoryPattern,
+        builder: (_, state) => MasterPlanHistoryScreen(
+          planId: state.pathParameters['planId']!,
+        ),
+      ),
+      // C8 — Master plan version snapshot
+      GoRoute(
+        path: RoutesV2.trainingPlanVersionPattern,
+        builder: (_, state) => MasterPlanVersionScreen(
+          planId: state.pathParameters['planId']!,
+          version: int.parse(state.pathParameters['version']!),
         ),
       ),
       ShellRoute(

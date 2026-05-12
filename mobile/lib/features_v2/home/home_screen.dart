@@ -234,11 +234,7 @@ class _GeneratePlanCta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('训练计划生成 v1.x 即将开放')),
-        );
-      },
+      onTap: () => context.push(RoutesV2.trainingPlanGoal),
       child: Container(
         padding: const EdgeInsets.all(StrideTokens.spaceLg),
         decoration: BoxDecoration(

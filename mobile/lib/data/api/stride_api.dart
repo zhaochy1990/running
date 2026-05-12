@@ -9,6 +9,9 @@ import '../../features_v2/feedback/models/activity_feedback.dart';
 import '../../features_v2/home/models/home_data.dart';
 import '../../features_v2/onboarding/models/onboarding_defaults.dart';
 import '../../features_v2/review/models/week_review.dart';
+import '../../features_v2/training_plan/models/master_plan.dart';
+import '../../features_v2/training_plan/models/running_profile.dart';
+import '../../features_v2/training_plan/models/training_goal.dart';
 import '../models/activity.dart';
 import '../models/health.dart';
 import '../models/notifications.dart';
@@ -465,6 +468,175 @@ class StrideApi {
         'accepted_op_ids': acceptedOpIds,
       },
     );
+  }
+
+  // ── Full sync (C3 history sync) ────────────────────────────────────────
+  /// Trigger a full 3-year history sync (POST /api/users/me/full-sync).
+  /// Returns the raw response (e.g. `{state: "running"}`).
+  /// Callers should ignore 409 (already running) — handled by history_sync_provider.
+  Future<Map<String, dynamic>> startFullSync() async {
+    return _post<Map<String, dynamic>>('/api/users/me/full-sync', body: {});
+  }
+
+  /// Poll the full sync status.
+  Future<Map<String, dynamic>> getFullSyncStatus() async {
+    return _get<Map<String, dynamic>>('/api/users/me/full-sync/status');
+  }
+
+  // ── Training Goal (M3 C1) ──────────────────────────────────────────────
+  Future<TrainingGoal?> getTrainingGoal() async {
+    try {
+      final r = await _get<Map<String, dynamic>>('/api/users/me/training-goal');
+      return TrainingGoal.fromJson(r);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  Future<TrainingGoal> postTrainingGoal(Map<String, dynamic> body) async {
+    final r = await _post<Map<String, dynamic>>(
+        '/api/users/me/training-goal', body: body);
+    return TrainingGoal.fromJson(r);
+  }
+
+  Future<TrainingGoal> putTrainingGoal(Map<String, dynamic> body) async {
+    final r =
+        await _put<Map<String, dynamic>>('/api/users/me/training-goal', body: body);
+    return TrainingGoal.fromJson(r);
+  }
+
+  // ── Running Profile (M3 C2) ────────────────────────────────────────────
+  Future<RunningProfile?> getRunningProfile() async {
+    try {
+      final r =
+          await _get<Map<String, dynamic>>('/api/users/me/running-profile');
+      return RunningProfile.fromJson(r);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  Future<RunningProfile> postRunningProfile(Map<String, dynamic> body) async {
+    final r = await _post<Map<String, dynamic>>(
+        '/api/users/me/running-profile', body: body);
+    return RunningProfile.fromJson(r);
+  }
+
+  // ── Master Plan (M3 C4/C5) ─────────────────────────────────────────────
+  Future<Map<String, dynamic>> postMasterPlanGenerate(
+      {String? goalId, String? profileId}) async {
+    final body = <String, dynamic>{};
+    if (goalId != null) body['goal_id'] = goalId;
+    if (profileId != null) body['profile_id'] = profileId;
+    return _post<Map<String, dynamic>>(
+        '/api/users/me/master-plan/generate', body: body);
+  }
+
+  Future<Map<String, dynamic>> getMasterPlanJobStatus(String jobId) async {
+    return _get<Map<String, dynamic>>(
+        '/api/users/me/master-plan/jobs/$jobId');
+  }
+
+  Future<Map<String, dynamic>> getMasterPlan(String planId) async {
+    return _get<Map<String, dynamic>>('/api/users/me/master-plan/$planId');
+  }
+
+  Future<Map<String, dynamic>> sendMasterPlanReviewMessage({
+    required String planId,
+    required String message,
+    List<Map<String, dynamic>>? history,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/users/me/master-plan/$planId/review/messages',
+      body: {'message': message, if (history != null) 'history': history},
+    );
+  }
+
+  Future<Map<String, dynamic>> applyMasterPlanReviewDiff({
+    required String planId,
+    required String diffId,
+    required List<String> acceptedOpIds,
+    String? changeReason,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/users/me/master-plan/$planId/review/apply',
+      body: {
+        'diff_id': diffId,
+        'accepted_op_ids': acceptedOpIds,
+        if (changeReason != null) 'change_reason': changeReason,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> confirmMasterPlan(String planId) async {
+    return _post<Map<String, dynamic>>(
+        '/api/users/me/master-plan/$planId/confirm', body: {});
+  }
+
+  /// GET /api/users/me/master-plan/current — active plan with derived fields.
+  Future<MasterPlan?> getCurrentMasterPlan() async {
+    try {
+      final r =
+          await _get<Map<String, dynamic>>('/api/users/me/master-plan/current');
+      return MasterPlan.fromJson(r);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  // ── Master Plan adjust (C7) ────────────────────────────────────────────
+
+  /// POST /api/users/me/master-plan/{planId}/adjust/messages
+  Future<Map<String, dynamic>> sendMasterPlanAdjustMessage({
+    required String planId,
+    required String message,
+    List<Map<String, dynamic>>? history,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/users/me/master-plan/$planId/adjust/messages',
+      body: {'message': message, if (history != null) 'history': history},
+    );
+  }
+
+  /// POST /api/users/me/master-plan/{planId}/adjust/apply
+  Future<Map<String, dynamic>> applyMasterPlanAdjustDiff({
+    required String planId,
+    required String diffId,
+    required List<String> acceptedOpIds,
+    String? changeReason,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/users/me/master-plan/$planId/adjust/apply',
+      body: {
+        'diff_id': diffId,
+        'accepted_op_ids': acceptedOpIds,
+        if (changeReason != null) 'change_reason': changeReason,
+      },
+    );
+  }
+
+  // ── Master Plan versions (C8) ──────────────────────────────────────────
+
+  /// GET /api/users/me/master-plan/{planId}/versions
+  Future<List<MasterPlanVersionSummary>> listMasterPlanVersions(
+      String planId) async {
+    final r = await _get<Map<String, dynamic>>(
+        '/api/users/me/master-plan/$planId/versions');
+    final list =
+        (r['versions'] as List? ?? const []).cast<Map<String, dynamic>>();
+    return list
+        .map(MasterPlanVersionSummary.fromJson)
+        .toList(growable: false);
+  }
+
+  /// GET /api/users/me/master-plan/{planId}/versions/{version}
+  Future<Map<String, dynamic>> getMasterPlanVersion(
+      String planId, int version) async {
+    return _get<Map<String, dynamic>>(
+        '/api/users/me/master-plan/$planId/versions/$version');
   }
 
   // ── Review ─────────────────────────────────────────────────────────────

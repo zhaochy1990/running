@@ -62,4 +62,40 @@ class RoutesV2 {
   static const generatePattern = '/v2/plan/generate';
   static String generate(String weekStart) =>
       '/v2/plan/generate?week_start=$weekStart';
+
+  // C1 — Training goal (fullscreen, no shell)
+  static const trainingPlanGoal = '/v2/training-plan/goal';
+
+  // C2 — Running profile (fullscreen, no shell)
+  static const trainingPlanProfile = '/v2/training-plan/profile';
+
+  // C3 — 3-year history sync (fullscreen, no shell, no back)
+  static const trainingPlanHistorySync = '/v2/training-plan/history-sync';
+
+  // C4 — Master plan generation (fullscreen, no shell)
+  static const trainingPlanGenerate = '/v2/training-plan/generate';
+
+  // C5 — Master plan review chat (fullscreen, no shell)
+  static const trainingPlanReviewPattern = '/v2/training-plan/review/:planId';
+  static String trainingPlanReview(String planId) =>
+      '/v2/training-plan/review/$planId';
+
+  // C6 — Master plan view (fullscreen, no shell)
+  static const trainingPlanView = '/v2/training-plan/view';
+
+  // C7 — Master plan adjust chat (fullscreen, no shell)
+  static const trainingPlanAdjustPattern = '/v2/training-plan/adjust/:planId';
+  static String trainingPlanAdjust(String planId) =>
+      '/v2/training-plan/adjust/$planId';
+
+  // C8 — Master plan adjustment history (fullscreen, no shell)
+  static const trainingPlanHistoryPattern = '/v2/training-plan/history/:planId';
+  static String trainingPlanHistory(String planId) =>
+      '/v2/training-plan/history/$planId';
+
+  // C8 — Master plan version snapshot (fullscreen, no shell)
+  static const trainingPlanVersionPattern =
+      '/v2/training-plan/version/:planId/:version';
+  static String trainingPlanVersion(String planId, int version) =>
+      '/v2/training-plan/version/$planId/$version';
 }

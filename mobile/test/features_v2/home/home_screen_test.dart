@@ -138,14 +138,37 @@ void main() {
     expect(find.text('生成个性化训练计划'), findsNothing);
   });
 
-  testWidgets('tapping CTA shows snackbar', (tester) async {
-    await _pump(tester, AsyncData(_makeHomeData(planState: 'none')));
+  testWidgets('tapping CTA navigates to training goal screen', (tester) async {
+    // Use a router that also registers the goal route so GoRouter doesn't throw.
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (_, __) => const HomeScreen(),
+        ),
+        GoRoute(
+          path: '/v2/training-plan/goal',
+          builder: (_, __) =>
+              const Scaffold(body: Text('goal screen')),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          homeProvider
+              .overrideWith((_) => Future.value(_makeHomeData(planState: 'none'))),
+          currentUserIdProvider.overrideWithValue('user-001'),
+        ],
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    );
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('生成个性化训练计划'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
 
-    expect(find.textContaining('v1.x 即将开放'), findsOneWidget);
+    expect(find.text('goal screen'), findsOneWidget);
   });
 
   testWidgets('empty activities shows 暂无近期活动', (tester) async {

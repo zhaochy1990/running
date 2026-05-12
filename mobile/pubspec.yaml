@@ -57,6 +57,9 @@ dependencies:
   # Markdown rendering (privacy / about pages, in-app docs)
   flutter_markdown: ^0.7.4+3
 
+  # Lightweight key-value store (job_id persistence across app restarts)
+  shared_preferences: ^2.3.3
+
   # In-app self-updater (GitHub Releases sideload, Android only for v1)
   package_info_plus: ^8.1.0
   open_filex: ^4.5.0
