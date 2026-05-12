@@ -122,6 +122,45 @@ class TrainKind(str, Enum):
     UNKNOWN    = "unknown"
 
 
+# Legacy `activities.train_type` string → TrainKind.
+# Used as a fallback when the normalized `train_kind` column is NULL
+# (pre-backfill rows). Covers both COROS Title-Case localized strings
+# ("Aerobic Endurance", "VO2 Max") and Garmin UPPER_SNAKE labels
+# ("AEROBIC_BASE", "LACTATE_THRESHOLD"). Keys are upper-cased with
+# spaces collapsed to underscores so a single dict serves both
+# providers — see :func:`kind_from_legacy_train_type`.
+_LEGACY_TRAIN_TYPE_MAP: dict[str, "TrainKind"] = {
+    "BASE":               TrainKind.BASE,
+    "AEROBIC_BASE":       TrainKind.BASE,
+    "AEROBIC":            TrainKind.AEROBIC,
+    "AEROBIC_ENDURANCE":  TrainKind.AEROBIC,
+    "TEMPO":              TrainKind.TEMPO,
+    "THRESHOLD":          TrainKind.THRESHOLD,
+    "LACTATE_THRESHOLD":  TrainKind.THRESHOLD,
+    "INTERVAL":           TrainKind.INTERVAL,
+    "VO2MAX":             TrainKind.VO2MAX,
+    "VO2_MAX":            TrainKind.VO2MAX,
+    "ANAEROBIC":          TrainKind.ANAEROBIC,
+    "ANAEROBIC_CAPACITY": TrainKind.ANAEROBIC,
+    "SPRINT":             TrainKind.SPRINT,
+    "RECOVERY":           TrainKind.RECOVERY,
+    "LONG_RUN":           TrainKind.LONG_RUN,
+    "RACE":               TrainKind.RACE,
+}
+
+
+def kind_from_legacy_train_type(raw: str | None) -> TrainKind | None:
+    """Best-effort: map a legacy `train_type` cell to its TrainKind.
+
+    Returns None when the string is empty or unrecognized. This is only
+    consulted as a backstop — modern adapters fill `train_kind` directly.
+    """
+    if not raw:
+        return None
+    key = raw.strip().upper().replace(" ", "_")
+    return _LEGACY_TRAIN_TYPE_MAP.get(key)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Subjective effort (post-run feel)
 # ─────────────────────────────────────────────────────────────────────────────

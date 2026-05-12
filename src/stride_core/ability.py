@@ -20,7 +20,37 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
 from stride_core.models import RUN_SPORT_IDS, RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
-from stride_core.normalize import TrainKind
+from stride_core.normalize import TrainKind, kind_from_legacy_train_type
+
+
+def _resolve_train_kind(activity: Any) -> str | None:
+    """Return the activity's normalized ``train_kind`` value (str), or None.
+
+    Prefers the dedicated ``train_kind`` column (filled by adapter
+    normalize step). Falls back to parsing the legacy ``train_type``
+    cell — covers historical rows that pre-date the normalized column
+    or sources that don't yet emit it.
+    """
+    raw = _get(activity, "train_kind")
+    if isinstance(raw, str):
+        s = raw.strip()
+        if s:
+            return s
+    legacy = _get(activity, "train_type")
+    if isinstance(legacy, str) and legacy.strip():
+        kind = kind_from_legacy_train_type(legacy)
+        if kind is not None:
+            return kind.value
+    return None
+
+
+# train_kind values where activity-level avg_pace is contaminated by rest
+# jogs / mixed work-rest segments — use median work-lap pace instead.
+_INTERVAL_LIKE_KINDS: frozenset[str] = frozenset({
+    TrainKind.THRESHOLD.value,
+    TrainKind.INTERVAL.value,
+    TrainKind.VO2MAX.value,
+})
 
 # train_kind values that disqualify an activity from the AEROBIC dimension —
 # these are intensity sessions (threshold / VO2max / anaerobic / sprint / tempo).
@@ -387,16 +417,23 @@ L2_WEIGHTS: dict[str, float] = {
     "fatigue_score": 0.25,
 }
 
-# train_type → target HR zone (as fraction of HRmax) when no plan target given.
-TRAIN_TYPE_HR_TARGETS: dict[str, tuple[float, float]] = {
-    "Base": (0.65, 0.78),
-    "Aerobic Endurance": (0.65, 0.78),
-    "Threshold": (0.82, 0.89),
-    "Interval": (0.87, 0.95),
-    "VO2 Max": (0.90, 0.98),
-    "Anaerobic": (0.92, 1.00),
-    "Sprint": (0.92, 1.00),
-    "Recovery": (0.55, 0.70),
+# TrainKind → target HR zone (as fraction of HRmax) when no plan target given.
+# Keyed by ``TrainKind.value`` so a normalized ``train_kind`` cell from
+# either provider (COROS / Garmin) looks up directly. Inferred kinds
+# (TEMPO / LONG_RUN / RACE) get reasonable defaults; UNKNOWN falls
+# through to the dict default in :func:`_infer_target_hr_range`.
+TRAIN_KIND_HR_TARGETS: dict[str, tuple[float, float]] = {
+    TrainKind.BASE.value:      (0.65, 0.78),
+    TrainKind.AEROBIC.value:   (0.65, 0.78),
+    TrainKind.LONG_RUN.value:  (0.65, 0.78),
+    TrainKind.TEMPO.value:     (0.80, 0.87),
+    TrainKind.THRESHOLD.value: (0.82, 0.89),
+    TrainKind.INTERVAL.value:  (0.87, 0.95),
+    TrainKind.VO2MAX.value:    (0.90, 0.98),
+    TrainKind.ANAEROBIC.value: (0.92, 1.00),
+    TrainKind.SPRINT.value:    (0.92, 1.00),
+    TrainKind.RACE.value:      (0.85, 0.95),
+    TrainKind.RECOVERY.value:  (0.55, 0.70),
 }
 
 
@@ -607,10 +644,14 @@ def _linreg(points: Sequence[tuple[float, float]]) -> tuple[float, float] | None
 # L1 — per-activity quality.
 # ---------------------------------------------------------------------------
 
-def _infer_target_hr_range(train_type: str | None, hr_max: int) -> tuple[int, int]:
-    """Fallback HR target zone when no plan is supplied."""
-    key = train_type or "Base"
-    lo_frac, hi_frac = TRAIN_TYPE_HR_TARGETS.get(key, (0.65, 0.78))
+def _infer_target_hr_range(train_kind: str | None, hr_max: int) -> tuple[int, int]:
+    """Fallback HR target zone (bpm) when no plan target is supplied.
+
+    ``train_kind`` is a :class:`stride_core.normalize.TrainKind` value
+    (string). Unknown/None falls back to the BASE band.
+    """
+    key = train_kind or TrainKind.BASE.value
+    lo_frac, hi_frac = TRAIN_KIND_HR_TARGETS.get(key, (0.65, 0.78))
     return int(round(hr_max * lo_frac)), int(round(hr_max * hi_frac))
 
 
@@ -694,8 +735,8 @@ def compute_l1_quality(
     """Compute L1 quality score (0-100) + 5 sub-scores for one activity.
 
     `activity` may be an `ActivityDetail` dataclass, a dict, or an sqlite3.Row.
-    It should expose: train_type, avg_hr, max_hr, avg_pace_s_km, laps[],
-    zones[], timeseries[].
+    It should expose: train_kind (or legacy train_type), avg_hr, max_hr,
+    avg_pace_s_km, laps[], zones[], timeseries[].
     `plan_target` may provide:
         { "pace_s_km": float, "hr_lo": int, "hr_hi": int }
     Returns dict: {total, breakdown: {...}, evidence: []}
@@ -703,7 +744,7 @@ def compute_l1_quality(
     if activity is None:
         return {"total": 0.0, "breakdown": _empty_l1_breakdown(), "evidence": []}
 
-    train_type = _get(activity, "train_type")
+    train_kind = _resolve_train_kind(activity)
     avg_hr = _get(activity, "avg_hr")
     avg_pace = _get(activity, "avg_pace_s_km")
     laps = _get(activity, "laps") or []
@@ -714,11 +755,11 @@ def compute_l1_quality(
     if plan_target and plan_target.get("hr_lo") and plan_target.get("hr_hi"):
         hr_lo, hr_hi = int(plan_target["hr_lo"]), int(plan_target["hr_hi"])
     else:
-        hr_lo, hr_hi = _infer_target_hr_range(train_type, hr_max)
+        hr_lo, hr_hi = _infer_target_hr_range(train_kind, hr_max)
 
     # Sub-score 1: pace_adherence.
     pace_adherence = _compute_pace_adherence(
-        avg_pace, avg_hr, plan_target, hr_max, laps=laps, train_type=train_type,
+        avg_pace, avg_hr, plan_target, hr_max, laps=laps, train_kind=train_kind,
     )
 
     # Sub-score 2: hr_zone_adherence.
@@ -774,19 +815,19 @@ def _compute_pace_adherence(
     plan_target: dict | None,
     hr_max: int,
     laps: Sequence[Any] | None = None,
-    train_type: str | None = None,
+    train_kind: str | None = None,
 ) -> float:
     """Return 0-100 closeness of avg pace to target.
 
     For interval-style runs, the activity-level avg_pace is contaminated by
     rest jogs and therefore poorly represents the actual training stimulus.
-    When `train_type` indicates an interval/VO2/threshold session and we have
+    When ``train_kind`` is one of :data:`_INTERVAL_LIKE_KINDS` and we have
     enough work laps, use the median pace of those work laps instead.
     """
     # For interval-style runs, average pace is contaminated by rest jogs.
     # Use the median pace of "work" laps instead.
     effective_pace = avg_pace
-    if laps and train_type in ("Interval", "VO2 Max", "Threshold"):
+    if laps and train_kind in _INTERVAL_LIKE_KINDS:
         work_lap_paces = [
             _get(lp, "avg_pace") for lp in laps
             if _get(lp, "avg_pace") and not _is_rest_lap(lp)
@@ -1045,8 +1086,8 @@ def compute_l3_aerobic(
             continue
         # Skip provider-tagged intensity sessions — these can sneak past the
         # avg_hr / max_hr gates when reps are short enough that HR doesn't climb.
-        tk = _get(a, "train_kind")
-        if isinstance(tk, str) and tk in AEROBIC_EXCLUDED_TRAIN_KINDS:
+        tk = _resolve_train_kind(a)
+        if tk in AEROBIC_EXCLUDED_TRAIN_KINDS:
             continue
         hr = _get(a, "avg_hr")
         max_hr = _get(a, "max_hr")
@@ -1067,7 +1108,7 @@ def compute_l3_aerobic(
         # If we have a real tag (base / aerobic / recovery / long_run / race),
         # trust it; otherwise a continuous base run on a 400 m track (autoKm
         # split into 40+ slices) would be misclassified as intervals.
-        if (not isinstance(tk, str) or tk in ("", TrainKind.UNKNOWN.value)) \
+        if tk in (None, TrainKind.UNKNOWN.value) \
                 and _looks_like_interval_session(_get(a, "laps") or []):
             continue
         n_qualifying += 1
@@ -1378,7 +1419,7 @@ def compute_l3_vo2max(
         dist_m = _get(a, "distance_m") or 0
         dur_s = _get(a, "duration_s") or 0
         dist_m_norm = _distance_to_meters(dist_m, _get(a, "sport_type"))
-        train_type = _get(a, "train_type")
+        train_kind = _resolve_train_kind(a)
         laps_for_race = _get(a, "laps") or []
         has_rest_segment = any(
             _is_rest_lap(lp) for lp in laps_for_race
@@ -1388,7 +1429,7 @@ def compute_l3_vo2max(
             (4800 <= dist_m_norm <= 21500)
             and dur_s > 0
             and not has_rest_segment
-            and (train_type in (None, "Interval", "VO2 Max", "Threshold") or dur_s < 3600)
+            and (train_kind is None or train_kind in _INTERVAL_LIKE_KINDS or dur_s < 3600)
         )
         if is_race_like:
             vdot = daniels_vdot(dist_m_norm, dur_s)
