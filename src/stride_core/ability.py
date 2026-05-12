@@ -20,6 +20,29 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Mapping, Sequence
 
 from stride_core.models import RUN_SPORT_IDS, RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
+from stride_core.normalize import TrainKind
+
+# train_kind values that disqualify an activity from the AEROBIC dimension —
+# these are intensity sessions (threshold / VO2max / anaerobic / sprint / tempo).
+# AEROBIC measures peak demonstrated efficiency at a low-intensity steady state;
+# letting a 20×400m LT session through would score 3:42/km @ HR 141 as "easy
+# aerobic" and produce nonsense 100s.
+AEROBIC_EXCLUDED_TRAIN_KINDS: frozenset[str] = frozenset({
+    TrainKind.THRESHOLD.value,
+    TrainKind.INTERVAL.value,
+    TrainKind.VO2MAX.value,
+    TrainKind.ANAEROBIC.value,
+    TrainKind.SPRINT.value,
+    TrainKind.TEMPO.value,
+})
+
+# Lap-structure heuristic — fallback when the provider didn't tag train_kind
+# (or tagged something inconsistent). A session of ≥10 short, similarly-sized
+# laps is almost certainly an interval / track / fartlek workout.
+INTERVAL_LAP_COUNT_THRESHOLD = 10
+INTERVAL_LAP_MAX_KM = 1.5         # individual reps typically ≤ 1 km, allow slack
+INTERVAL_LAP_UNIFORMITY = 0.25    # σ/μ on lap distance — tight enough to flag
+                                  # planned reps and skip mixed-length progressions
 
 
 def _is_garmin_sport(sport_type: Any) -> bool:
@@ -967,6 +990,37 @@ def _is_running(activity: Any) -> bool:
     return sport in RUN_SPORT_IDS
 
 
+def _looks_like_interval_session(laps: Sequence[Any]) -> bool:
+    """Return True when lap structure looks like a planned interval workout.
+
+    Used as a fallback gate when ``train_kind`` is missing or wrong. The
+    400 m / 1 km repeated-rep pattern is the canonical signal: ≥10 work
+    laps of similar short distance. Mixed-length progressions and long
+    runs with the occasional autoKm split don't trigger because the
+    uniformity check fails.
+    """
+    if not laps or len(laps) < INTERVAL_LAP_COUNT_THRESHOLD:
+        return False
+    work_dists_km = []
+    for lp in laps:
+        if _is_rest_lap(lp):
+            continue
+        d_km = _distance_to_km(_get(lp, "distance_m") or 0, None)
+        if d_km <= 0:
+            continue
+        if d_km > INTERVAL_LAP_MAX_KM:
+            return False  # at least one long block → not pure intervals
+        work_dists_km.append(d_km)
+    if len(work_dists_km) < INTERVAL_LAP_COUNT_THRESHOLD:
+        return False
+    mean = sum(work_dists_km) / len(work_dists_km)
+    if mean <= 0:
+        return False
+    variance = sum((x - mean) ** 2 for x in work_dists_km) / len(work_dists_km)
+    cv = (variance ** 0.5) / mean
+    return cv <= INTERVAL_LAP_UNIFORMITY
+
+
 def compute_l3_aerobic(
     activities: Sequence[Any],
     target_hr: int = AEROBIC_TARGET_HR,
@@ -977,14 +1031,22 @@ def compute_l3_aerobic(
     not current-week volume. The list passed in should already be scoped to the desired
     window (typically ABILITY_LOOKBACK_DAYS).
 
-    Evidence: running activities ≥5 km with avg_hr within ±AEROBIC_HR_TOLERANCE of target_hr.
-    Returns best single qualifying run; `evidence` holds the label of that run.
+    Evidence: running activities ≥5 km with avg_hr within ±AEROBIC_HR_TOLERANCE of target_hr,
+    excluding sessions whose ``train_kind`` is a known intensity intent
+    (threshold / interval / vo2max / anaerobic / sprint / tempo) and sessions whose
+    lap structure looks like an interval workout (≥10 uniformly-short laps). Returns
+    best single qualifying run; `evidence` holds the label of that run.
     """
     best_pace: float | None = None
     best_label: str | None = None
     n_qualifying = 0
     for a in activities:
         if not _is_running(a):
+            continue
+        # Skip provider-tagged intensity sessions — these can sneak past the
+        # avg_hr / max_hr gates when reps are short enough that HR doesn't climb.
+        tk = _get(a, "train_kind")
+        if isinstance(tk, str) and tk in AEROBIC_EXCLUDED_TRAIN_KINDS:
             continue
         hr = _get(a, "avg_hr")
         max_hr = _get(a, "max_hr")
@@ -1000,6 +1062,13 @@ def compute_l3_aerobic(
         # Reject mixed-intensity efforts: avg_hr in Z2 but max_hr way above —
         # that's a tempo/progression, not a pure aerobic run.
         if max_hr is not None and max_hr > target_hr + AEROBIC_MAX_PEAK_HR_ABOVE_TARGET:
+            continue
+        # Structural fallback — only when the provider didn't tag train_kind.
+        # If we have a real tag (base / aerobic / recovery / long_run / race),
+        # trust it; otherwise a continuous base run on a 400 m track (autoKm
+        # split into 40+ slices) would be misclassified as intervals.
+        if (not isinstance(tk, str) or tk in ("", TrainKind.UNKNOWN.value)) \
+                and _looks_like_interval_session(_get(a, "laps") or []):
             continue
         n_qualifying += 1
         pace_f = float(pace)
@@ -2159,13 +2228,14 @@ def _fetch_recent_activities(conn: Any, date_iso: str, days: int) -> list[dict]:
     """Return running activities within `days` days up to `date_iso`.
 
     Each item has: label_id, sport_type, date, distance_m, duration_s,
-    avg_pace_s_km, avg_hr, max_hr, avg_cadence, train_type, laps[],
-    timeseries[].
+    avg_pace_s_km, avg_hr, max_hr, avg_cadence, train_type, train_kind,
+    laps[], timeseries[].
     """
     # Use Shanghai local-time filter per project memory.
     sql = """
       SELECT label_id, name, sport_type, date, distance_m, duration_s,
-             avg_pace_s_km, avg_hr, max_hr, avg_cadence, vo2max, train_type
+             avg_pace_s_km, avg_hr, max_hr, avg_cadence, vo2max,
+             train_type, train_kind
       FROM activities
       WHERE sport_type IN (""" + _RUN_SPORT_SQL + """)
         AND date(datetime(date, '+8 hours')) >= date(?, ?)
