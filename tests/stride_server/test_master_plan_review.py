@@ -1,0 +1,901 @@
+"""Tests for T21 (review-chat), T22 (confirm), T23 (current) endpoints.
+
+Covers:
+  POST /api/users/me/master-plan/{plan_id}/review/messages
+  POST /api/users/me/master-plan/{plan_id}/review/apply
+  POST /api/users/me/master-plan/{plan_id}/confirm
+  GET  /api/users/me/master-plan/current
+  GET  /api/users/me/master-plan/{plan_id}
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from datetime import datetime, timezone, timedelta
+from typing import Any
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
+
+import jwt
+import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi import Depends, FastAPI
+from fastapi.testclient import TestClient
+
+from stride_core.master_plan import MasterPlan, MasterPlanStatus, Milestone, MilestoneType, Phase
+from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOp, MasterPlanDiffOpKind
+from stride_server.master_plan_store import FileMasterPlanStore, reset_master_plan_store_cache
+import stride_server.routes.master_plan as mp_mod
+
+USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
+OTHER_UUID = "b1b2c3d4-e5f6-4aaa-89ab-123456789012"
+
+
+# ---------------------------------------------------------------------------
+# Helpers to build test fixtures
+# ---------------------------------------------------------------------------
+
+
+def _make_plan(
+    user_id: str = USER_UUID,
+    status: MasterPlanStatus = MasterPlanStatus.DRAFT,
+    start_date: str = "2026-05-12",
+    end_date: str = "2026-10-26",
+) -> MasterPlan:
+    phase_id = str(uuid4())
+    ms_id = str(uuid4())
+    phase = Phase(
+        id=phase_id,
+        name="基础期",
+        start_date=start_date,
+        end_date="2026-07-06",
+        focus="有氧基础",
+        weekly_distance_km_low=40.0,
+        weekly_distance_km_high=50.0,
+        key_session_types=["长距离", "有氧"],
+        milestone_ids=[ms_id],
+    )
+    milestone = Milestone(
+        id=ms_id,
+        type=MilestoneType.TEST_RUN,
+        date="2026-07-05",
+        phase_id=phase_id,
+        target="30K 测试跑 4'55/km",
+        completed_actual=None,
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    return MasterPlan(
+        plan_id=str(uuid4()),
+        user_id=user_id,
+        status=status,
+        goal_id=str(uuid4()),
+        start_date=start_date,
+        end_date=end_date,
+        phases=[phase],
+        milestones=[milestone],
+        training_principles=["渐进原则", "充足休息"],
+        generated_by="gpt-4.1",
+        version=1,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _make_diff(plan_id: str) -> MasterPlanDiff:
+    op = MasterPlanDiffOp(
+        id=str(uuid4()),
+        op=MasterPlanDiffOpKind.RESIZE_PHASE,
+        phase_id=str(uuid4()),
+        milestone_id=None,
+        old_value={"end_date": "2026-07-06"},
+        new_value={"end_date": "2026-07-20"},
+        spec_patch={"end_date": "2026-07-20"},
+        accepted=None,
+    )
+    return MasterPlanDiff(
+        diff_id=str(uuid4()),
+        plan_id=plan_id,
+        ops=[op],
+        ai_explanation="延长基础期两周",
+        created_at=datetime.now(timezone.utc).isoformat(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# RSA fixtures and token helpers
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def rsa_keypair():
+    private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_pem = private.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    public_pem = private.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
+    return private_pem, public_pem
+
+
+def _token(private_pem: str, sub: str = USER_UUID) -> str:
+    now = int(time.time())
+    return jwt.encode(
+        {"sub": sub, "iss": "auth-service", "exp": now + 3600, "iat": now, "role": "user"},
+        private_pem,
+        algorithm="RS256",
+    )
+
+
+def _auth(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
+# ---------------------------------------------------------------------------
+# App client fixture with isolated FileMasterPlanStore
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def app_client(tmp_path, monkeypatch, rsa_keypair):
+    private_pem, public_pem = rsa_keypair
+
+    import stride_server.bearer as bearer
+    monkeypatch.setattr(bearer, "_cached_public_key", public_pem)
+    monkeypatch.setattr(bearer, "_warned_open", False)
+    for key in (
+        "STRIDE_AUTH_PUBLIC_KEY_PEM",
+        "STRIDE_AUTH_PUBLIC_KEY_PATH",
+        "STRIDE_AUTH_ISSUER",
+        "STRIDE_AUTH_AUDIENCE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PEM", public_pem)
+
+    # Isolate file store to tmp_path
+    import stride_core.db as core_db_mod
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+
+    # Reset the lru_cache so we get a fresh store using tmp_path
+    reset_master_plan_store_cache()
+    monkeypatch.setenv("STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL", "")  # force file backend
+
+    # Clear pending diffs from other tests
+    mp_mod._PENDING_MP_DIFFS.clear()
+
+    from stride_server.bearer import require_bearer
+    from stride_server.routes.master_plan import router
+
+    app = FastAPI()
+    app.include_router(router, dependencies=[Depends(require_bearer)])
+
+    client = TestClient(app, raise_server_exceptions=False)
+    yield client, _token(private_pem), tmp_path, private_pem
+
+    # Cleanup
+    reset_master_plan_store_cache()
+    mp_mod._PENDING_MP_DIFFS.clear()
+
+
+def _get_store(monkeypatch=None) -> FileMasterPlanStore:
+    """Get the current store instance (after fixture setup)."""
+    from stride_server.master_plan_store import get_master_plan_store
+    return get_master_plan_store()
+
+
+# ===========================================================================
+# T21 review/messages tests
+# ===========================================================================
+
+
+class TestReviewMessages:
+
+    def test_valid_llm_response_returns_diff(self, app_client, monkeypatch):
+        """LLM returns valid sentinel-wrapped JSON → 200 with diff.ops non-empty."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        phase_id = plan.phases[0].id
+        llm_output = f"""---BEGIN_MP_DIFF---
+{{
+  "ai_response": "我把基础期延长了两周",
+  "ops": [
+    {{
+      "op": "resize_phase",
+      "phase_id": "{phase_id}",
+      "milestone_id": null,
+      "old_value": {{"end_date": "2026-07-06"}},
+      "new_value": {{"end_date": "2026-07-20"}},
+      "spec_patch": {{"end_date": "2026-07-20"}}
+    }}
+  ]
+}}
+---END_MP_DIFF---"""
+
+        with patch.object(mp_mod, "LLMClient") as MockLLM:
+            MockLLM.return_value.chat_sync.return_value = llm_output
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/review/messages",
+                json={"message": "把基础期延长两周", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert isinstance(data["ai_response"], str)
+        assert data["diff"] is not None
+        assert len(data["diff"]["ops"]) == 1
+        assert data["diff"]["ops"][0]["op"] == "resize_phase"
+        assert data["diff"]["plan_id"] == plan.plan_id
+
+    def test_llm_unavailable_returns_503(self, app_client, monkeypatch):
+        """LLMUnavailable → 503."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        with patch.object(mp_mod, "LLMClient") as MockLLM:
+            MockLLM.side_effect = mp_mod.LLMUnavailable("no config")
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/review/messages",
+                json={"message": "延长基础期", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 503, resp.text
+
+    def test_llm_error_retryable_returns_503(self, app_client, monkeypatch):
+        """LLMError(retryable=True) → 503."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        with patch.object(mp_mod, "LLMClient") as MockLLM:
+            MockLLM.return_value.chat_sync.side_effect = mp_mod.LLMError(
+                "rate limit", retryable=True
+            )
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/review/messages",
+                json={"message": "延长基础期", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 503, resp.text
+
+    def test_llm_error_non_retryable_returns_502(self, app_client):
+        """LLMError(retryable=False) → 502."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        with patch.object(mp_mod, "LLMClient") as MockLLM:
+            MockLLM.return_value.chat_sync.side_effect = mp_mod.LLMError(
+                "auth error", retryable=False
+            )
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/review/messages",
+                json={"message": "延长基础期", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 502, resp.text
+
+    def test_non_json_llm_output_returns_ai_response_diff_null(self, app_client):
+        """LLM returns non-JSON → ai_response is raw text, diff=null."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        with patch.object(mp_mod, "LLMClient") as MockLLM:
+            MockLLM.return_value.chat_sync.return_value = "好的，我帮您调整一下基础期的长度。"
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/review/messages",
+                json={"message": "延长基础期", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert "好的" in data["ai_response"]
+        assert data["diff"] is None
+
+    def test_plan_not_found_returns_404(self, app_client):
+        """Non-existent plan_id → 404."""
+        client, token, tmp_path, _ = app_client
+
+        with patch.object(mp_mod, "LLMClient"):
+            resp = client.post(
+                "/api/users/me/master-plan/nonexistent-plan-id/review/messages",
+                json={"message": "延长基础期", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 404, resp.text
+
+    def test_active_plan_returns_409(self, app_client):
+        """plan.status=ACTIVE → 409."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan(status=MasterPlanStatus.ACTIVE)
+        store.save_plan(plan)
+
+        with patch.object(mp_mod, "LLMClient"):
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/review/messages",
+                json={"message": "延长基础期", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 409, resp.text
+
+    def test_user_mismatch_returns_403(self, app_client):
+        """Plan stored under USER_UUID bucket but plan.user_id=OTHER_UUID → 403.
+
+        The store indexes by the requesting user's id (partition key), so to
+        reach the 403 branch we need the plan row to be *findable* by USER_UUID
+        but have a mismatched plan.user_id field.
+        """
+        client, token, tmp_path, private_pem = app_client
+        store = _get_store()
+        # Build a plan that is stored under USER_UUID but claims OTHER_UUID as owner.
+        plan = _make_plan(user_id=OTHER_UUID)
+        # Force-save under USER_UUID's partition by temporarily overriding user_id
+        # during save only — we do this by directly calling save with a patched plan.
+        plan_as_other = plan.model_copy(update={"user_id": USER_UUID})
+        plan_stored = plan_as_other.model_copy(update={"user_id": OTHER_UUID})
+        # Use FileMasterPlanStore internals: save keyed by USER_UUID, but payload has OTHER_UUID
+        from stride_core.db import USER_DATA_DIR
+        import json as _json
+        plans_file = USER_DATA_DIR / ".master_plans.json"
+        data: dict = {}
+        if plans_file.exists():
+            try:
+                data = _json.loads(plans_file.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+        data.setdefault(USER_UUID, {})[plan.plan_id] = _json.loads(plan_stored.model_dump_json())
+        from stride_server.master_plan_store import _write_json
+        _write_json(plans_file, data)
+
+        with patch.object(mp_mod, "LLMClient"):
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/review/messages",
+                json={"message": "延长基础期", "history": []},
+                headers=_auth(token),  # USER_UUID token
+            )
+
+        assert resp.status_code == 403, resp.text
+
+    def test_diff_stored_in_pending_for_apply(self, app_client):
+        """After /messages, diff is stored and retrievable for /apply."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        phase_id = plan.phases[0].id
+        llm_output = f"""---BEGIN_MP_DIFF---
+{{
+  "ai_response": "延长基础期",
+  "ops": [
+    {{
+      "op": "resize_phase",
+      "phase_id": "{phase_id}",
+      "milestone_id": null,
+      "old_value": {{"end_date": "2026-07-06"}},
+      "new_value": {{"end_date": "2026-07-27"}},
+      "spec_patch": {{"end_date": "2026-07-27"}}
+    }}
+  ]
+}}
+---END_MP_DIFF---"""
+
+        with patch.object(mp_mod, "LLMClient") as MockLLM:
+            MockLLM.return_value.chat_sync.return_value = llm_output
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/review/messages",
+                json={"message": "把基础期延长三周", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        diff_id = resp.json()["diff"]["diff_id"]
+        key = (USER_UUID, plan.plan_id, diff_id)
+        assert key in mp_mod._PENDING_MP_DIFFS
+
+
+# ===========================================================================
+# T21 review/apply tests
+# ===========================================================================
+
+
+class TestReviewApply:
+
+    def _post_messages(self, client, token, plan_id: str, phase_id: str) -> str:
+        """Helper: call /messages and return diff_id."""
+        llm_output = f"""---BEGIN_MP_DIFF---
+{{
+  "ai_response": "延长基础期",
+  "ops": [
+    {{
+      "op": "resize_phase",
+      "phase_id": "{phase_id}",
+      "milestone_id": null,
+      "old_value": {{"end_date": "2026-07-06"}},
+      "new_value": {{"end_date": "2026-07-27"}},
+      "spec_patch": {{"end_date": "2026-07-27"}}
+    }}
+  ]
+}}
+---END_MP_DIFF---"""
+        with patch.object(mp_mod, "LLMClient") as MockLLM:
+            MockLLM.return_value.chat_sync.return_value = llm_output
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan_id}/review/messages",
+                json={"message": "延长基础期", "history": []},
+                headers=_auth(token),
+            )
+        assert resp.status_code == 200, resp.text
+        return resp.json()["diff"]["diff_id"], resp.json()["diff"]["ops"][0]["id"]
+
+    def test_apply_updates_plan(self, app_client):
+        """Apply accepted op → plan phase end_date updated."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        phase_id = plan.phases[0].id
+        diff_id, op_id = self._post_messages(client, token, plan.plan_id, phase_id)
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={"diff_id": diff_id, "accepted_op_ids": [op_id], "change_reason": "想多打基础"},
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["applied"] == 1
+        assert data["plan_id"] == plan.plan_id
+
+        # Verify plan was updated in store
+        updated = store.get_plan(USER_UUID, plan.plan_id)
+        assert updated is not None
+        assert updated.phases[0].end_date == "2026-07-27"
+        # version should NOT be bumped (still 1)
+        assert updated.version == 1
+        # status should still be DRAFT
+        assert updated.status == MasterPlanStatus.DRAFT
+
+    def test_apply_unknown_diff_id_returns_404(self, app_client):
+        """Unknown diff_id → 404."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={
+                "diff_id": "nonexistent-diff-id",
+                "accepted_op_ids": [],
+                "change_reason": "",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 404, resp.text
+
+    def test_apply_active_plan_returns_409(self, app_client):
+        """Apply to active plan → 409."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan(status=MasterPlanStatus.ACTIVE)
+        store.save_plan(plan)
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={"diff_id": "any-id", "accepted_op_ids": [], "change_reason": ""},
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 409, resp.text
+
+    def test_apply_skips_unknown_op_ids(self, app_client):
+        """Unknown op_ids in accepted_op_ids are skipped gracefully."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        phase_id = plan.phases[0].id
+        diff_id, real_op_id = self._post_messages(client, token, plan.plan_id, phase_id)
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={
+                "diff_id": diff_id,
+                "accepted_op_ids": ["nonexistent-op-id"],  # not the real op id
+                "change_reason": "",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["applied"] == 0
+
+    def test_apply_injects_pending_diff_directly(self, app_client):
+        """Directly inject a pending diff and apply it → plan updated."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        # Build a diff for the actual phase id in the plan
+        phase_id = plan.phases[0].id
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.RESIZE_PHASE,
+            phase_id=phase_id,
+            milestone_id=None,
+            old_value={"end_date": "2026-07-06"},
+            new_value={"end_date": "2026-08-03"},
+            spec_patch={"end_date": "2026-08-03"},
+            accepted=None,
+        )
+        diff = MasterPlanDiff(
+            diff_id=str(uuid4()),
+            plan_id=plan.plan_id,
+            ops=[op],
+            ai_explanation="延长基础期",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        mp_mod._PENDING_MP_DIFFS[(USER_UUID, plan.plan_id, diff.diff_id)] = (
+            diff, time.monotonic()
+        )
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={
+                "diff_id": diff.diff_id,
+                "accepted_op_ids": [op.id],
+                "change_reason": "需要更多基础",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["applied"] == 1
+
+        updated = store.get_plan(USER_UUID, plan.plan_id)
+        assert updated.phases[0].end_date == "2026-08-03"
+        assert updated.version == 1  # no version bump in review phase
+
+
+# ===========================================================================
+# T22 confirm tests
+# ===========================================================================
+
+
+class TestConfirm:
+
+    def test_confirm_draft_plan_becomes_active(self, app_client):
+        """Confirming a DRAFT plan → status=active."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        with patch("stride_server.routes.generate.generate_week") as mock_gw:
+            mock_gw.return_value = {"folder": "2026-05-11_05-17"}
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/confirm",
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["plan_id"] == plan.plan_id
+        assert data["status"] == "active"
+        assert "activated_at" in data
+
+        saved = store.get_plan(USER_UUID, plan.plan_id)
+        assert saved is not None
+        assert saved.status == MasterPlanStatus.ACTIVE
+
+    def test_confirm_already_active_returns_409(self, app_client):
+        """Confirming an ACTIVE plan → 409."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan(status=MasterPlanStatus.ACTIVE)
+        store.save_plan(plan)
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/confirm",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 409, resp.text
+
+    def test_confirm_nonexistent_returns_404(self, app_client):
+        """Nonexistent plan → 404."""
+        client, token, tmp_path, _ = app_client
+
+        resp = client.post(
+            "/api/users/me/master-plan/nonexistent-plan-id/confirm",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 404, resp.text
+
+    def test_confirm_archives_previous_active_plan(self, app_client):
+        """Confirming a new draft when an active plan exists → old plan archived."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+
+        # Create and save an existing active plan
+        old_plan = _make_plan(status=MasterPlanStatus.ACTIVE)
+        store.save_plan(old_plan)
+
+        # Create a new draft plan
+        new_plan = _make_plan(status=MasterPlanStatus.DRAFT)
+        store.save_plan(new_plan)
+
+        with patch("stride_server.routes.generate.generate_week") as mock_gw:
+            mock_gw.return_value = {"folder": "2026-05-11_05-17"}
+            resp = client.post(
+                f"/api/users/me/master-plan/{new_plan.plan_id}/confirm",
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+
+        # Old plan should now be archived
+        old_saved = store.get_plan(USER_UUID, old_plan.plan_id)
+        assert old_saved is not None
+        assert old_saved.status == MasterPlanStatus.ARCHIVED
+
+        # New plan should be active
+        new_saved = store.get_plan(USER_UUID, new_plan.plan_id)
+        assert new_saved is not None
+        assert new_saved.status == MasterPlanStatus.ACTIVE
+
+    def test_confirm_triggered_week_generate_true(self, app_client):
+        """When generate_week succeeds, triggered_week_generate=True."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        with patch("stride_server.routes.generate.generate_week") as mock_gw:
+            mock_gw.return_value = {"folder": "2026-05-11_05-17"}
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/confirm",
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["triggered_week_generate"] is True
+        assert data["first_week_folder"] == "2026-05-11_05-17"
+
+    def test_confirm_triggered_week_generate_false_on_failure(self, app_client):
+        """When generate_week raises, triggered_week_generate=False but confirm succeeds."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        with patch("stride_server.routes.generate.generate_week") as mock_gw:
+            mock_gw.side_effect = RuntimeError("DB not found")
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/confirm",
+                headers=_auth(token),
+            )
+
+        # confirm should still succeed even if week generation fails
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["triggered_week_generate"] is False
+        assert data["status"] == "active"
+
+
+# ===========================================================================
+# T23 current endpoint tests
+# ===========================================================================
+
+
+class TestCurrentMasterPlan:
+
+    def test_no_active_plan_returns_404(self, app_client):
+        """No active plan for user → 404."""
+        client, token, tmp_path, _ = app_client
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 404, resp.text
+
+    def test_active_plan_returns_full_fields(self, app_client):
+        """Active plan returns all required fields."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan(status=MasterPlanStatus.ACTIVE)
+        store.save_plan(plan)
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["plan_id"] == plan.plan_id
+        assert data["status"] == "active"
+        assert "phases" in data
+        assert "milestones" in data
+        assert "current_phase_id" in data
+        assert "current_week_number" in data
+        assert "total_weeks" in data
+        assert "next_milestone" in data
+        assert isinstance(data["total_weeks"], int)
+        assert data["total_weeks"] > 0
+
+    def test_current_phase_id_correct(self, app_client):
+        """current_phase_id is set when today falls within a phase."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+
+        today = datetime.now(timezone.utc).date()
+        yesterday = (today - timedelta(days=1)).isoformat()
+        next_month = (today + timedelta(days=30)).isoformat()
+
+        phase_id = str(uuid4())
+        phase = Phase(
+            id=phase_id,
+            name="测试期",
+            start_date=yesterday,
+            end_date=next_month,
+            focus="测试",
+            weekly_distance_km_low=30.0,
+            weekly_distance_km_high=40.0,
+            key_session_types=["有氧"],
+            milestone_ids=[],
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        plan = MasterPlan(
+            plan_id=str(uuid4()),
+            user_id=USER_UUID,
+            status=MasterPlanStatus.ACTIVE,
+            goal_id=str(uuid4()),
+            start_date=yesterday,
+            end_date=(today + timedelta(days=90)).isoformat(),
+            phases=[phase],
+            milestones=[],
+            training_principles=[],
+            generated_by="gpt-4.1",
+            version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        store.save_plan(plan)
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["current_phase_id"] == phase_id
+
+    def test_next_milestone_calculation(self, app_client):
+        """next_milestone returns the nearest incomplete milestone."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+
+        today = datetime.now(timezone.utc).date()
+        future_date = (today + timedelta(days=14)).isoformat()
+
+        phase_id = str(uuid4())
+        ms_id = str(uuid4())
+        phase = Phase(
+            id=phase_id,
+            name="基础期",
+            start_date=today.isoformat(),
+            end_date=(today + timedelta(days=60)).isoformat(),
+            focus="有氧",
+            weekly_distance_km_low=40.0,
+            weekly_distance_km_high=50.0,
+            key_session_types=["有氧"],
+            milestone_ids=[ms_id],
+        )
+        ms = Milestone(
+            id=ms_id,
+            type=MilestoneType.TEST_RUN,
+            date=future_date,
+            phase_id=phase_id,
+            target="30K 测试跑",
+            completed_actual=None,
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        plan = MasterPlan(
+            plan_id=str(uuid4()),
+            user_id=USER_UUID,
+            status=MasterPlanStatus.ACTIVE,
+            goal_id=str(uuid4()),
+            start_date=today.isoformat(),
+            end_date=(today + timedelta(days=90)).isoformat(),
+            phases=[phase],
+            milestones=[ms],
+            training_principles=[],
+            generated_by="gpt-4.1",
+            version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        store.save_plan(plan)
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        nm = resp.json()["next_milestone"]
+        assert nm is not None
+        assert nm["id"] == ms_id
+        assert nm["days_until"] == 14
+
+    def test_get_by_id_returns_plan(self, app_client):
+        """GET /{plan_id} works for any status."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan(status=MasterPlanStatus.DRAFT)
+        store.save_plan(plan)
+
+        resp = client.get(
+            f"/api/users/me/master-plan/{plan.plan_id}",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["plan_id"] == plan.plan_id
+
+    def test_get_by_id_unknown_returns_404(self, app_client):
+        """GET /{plan_id} with unknown id → 404."""
+        client, token, tmp_path, _ = app_client
+
+        resp = client.get(
+            "/api/users/me/master-plan/nonexistent-id",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 404, resp.text
+
+    def test_draft_plan_not_returned_by_current(self, app_client):
+        """DRAFT plan is not returned by /current (only active)."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan(status=MasterPlanStatus.DRAFT)
+        store.save_plan(plan)
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 404, resp.text
