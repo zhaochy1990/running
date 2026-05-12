@@ -51,3 +51,4 @@ packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1011,7 +1011,7 @@ export interface ActivityDetailResponse {
 
 export function getActivity(user: string, id: string) {
   return fetchJSON<ActivityDetailResponse>(
-    `/${user}/activities/${id}`
+    `/${user}/activities/${id}?include=timeseries`
   )
 }
 

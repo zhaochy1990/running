@@ -6,7 +6,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel
@@ -544,3 +544,117 @@ def full_sync_status(payload: dict = Depends(require_bearer)):
     if onboarding.get("full_sync_error"):
         result["error"] = onboarding["full_sync_error"]
     return result
+
+
+# ── B4 onboarding defaults (T17) ───────────────────────────────────────────
+
+
+class OnboardingDefaults(BaseModel):
+    suggested_rhr: int | None = None
+    rhr_source: Literal["health"] | None = None
+    suggested_max_hr: int | None = None
+    max_hr_source: Literal["formula", "health"] | None = None
+
+
+def _parse_birth_year(profile: dict[str, Any]) -> int | None:
+    """Extract birth year from profile.json.
+
+    Looks at ``birth_year`` then ``dob`` (ISO date string).
+    """
+    if isinstance(profile.get("birth_year"), int):
+        return int(profile["birth_year"])
+    dob = profile.get("dob")
+    if isinstance(dob, str) and len(dob) >= 4:
+        try:
+            return int(dob[:4])
+        except ValueError:
+            return None
+    return None
+
+
+def _suggest_rhr_from_health(db) -> int | None:
+    """P25 of non-null ``rhr`` over the last 30 daily_health rows.
+
+    Returns None when fewer than 5 samples are available — we don't want
+    to seed a misleading value off 1-2 days of data.
+    """
+    rows = db.query(
+        "SELECT rhr FROM daily_health "
+        "WHERE rhr IS NOT NULL "
+        "ORDER BY date DESC LIMIT 30"
+    )
+    values: list[int] = []
+    for row in rows or []:
+        r = dict(row)
+        v = r.get("rhr")
+        if v is None:
+            continue
+        try:
+            values.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    if len(values) < 5:
+        return None
+    values.sort()
+    # P25 — lower-quartile index using inclusive rule.
+    idx = max(0, (len(values) - 1) * 25 // 100)
+    return int(values[idx])
+
+
+@router.get(
+    "/api/users/me/onboarding/defaults",
+    response_model=OnboardingDefaults,
+)
+def onboarding_defaults(
+    payload: dict = Depends(require_bearer),
+) -> OnboardingDefaults:
+    """Suggested values for the B4 basic-info form.
+
+    - ``suggested_rhr``: P25 of recent daily_health RHR (≥5 samples).
+    - ``suggested_max_hr``: ``220 - age`` when birth_year is known.
+
+    Both fields may be null when their source isn't available; the
+    client renders fully blank inputs in that case.
+    """
+    from ..deps import get_db  # local import to avoid cycle at module load
+
+    uuid = _validate_uuid(payload["sub"])
+
+    # Profile-side: max_hr formula
+    profile_item = read_json(f"{uuid}/profile.json")
+    profile: dict[str, Any] = {}
+    if profile_item is not None:
+        data, _ = profile_item
+        if isinstance(data, dict):
+            profile = data
+    birth_year = _parse_birth_year(profile)
+
+    suggested_max_hr: int | None = None
+    max_hr_source: Literal["formula", "health"] | None = None
+    if birth_year is not None:
+        age = datetime.now(timezone.utc).year - birth_year
+        if 5 < age < 110:
+            suggested_max_hr = 220 - age
+            max_hr_source = "formula"
+
+    # Health-side: rhr P25
+    suggested_rhr: int | None = None
+    rhr_source: Literal["health"] | None = None
+    try:
+        db = get_db(uuid)
+        try:
+            suggested_rhr = _suggest_rhr_from_health(db)
+            if suggested_rhr is not None:
+                rhr_source = "health"
+        finally:
+            db.close()
+    except Exception as exc:  # noqa: BLE001
+        # New user with no DB yet is normal — log at debug, return null.
+        logger.debug("onboarding_defaults: no health db for user=%s (%s)", uuid, exc)
+
+    return OnboardingDefaults(
+        suggested_rhr=suggested_rhr,
+        rhr_source=rhr_source,
+        suggested_max_hr=suggested_max_hr,
+        max_hr_source=max_hr_source,
+    )

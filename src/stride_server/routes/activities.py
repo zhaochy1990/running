@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from stride_core.models import EXERCISE_TYPES, pace_str
 from stride_core.source import DataSource
@@ -199,7 +199,7 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
 
 
 @router.get("/api/{user}/activities/{label_id}")
-def get_activity(user: str, label_id: str):
+def get_activity(user: str, label_id: str, include: str | None = Query(None)):
     db = get_db(user)
     commentary_store = get_commentary_store(user)
     try:
@@ -230,7 +230,85 @@ def get_activity(user: str, label_id: str):
         db.close()
     if result is None:
         raise HTTPException(status_code=404, detail="Not found")
+    # M1 mobile contract: strip the heavy `timeseries` array by default.
+    # Web clients that still need the inline series pass `?include=timeseries`.
+    includes = {tok.strip() for tok in (include or "").split(",") if tok.strip()}
+    if "timeseries" not in includes:
+        result.pop("timeseries", None)
     return result
+
+
+@router.get("/api/{user}/activities/{label_id}/timeseries")
+def get_activity_timeseries(
+    user: str,
+    label_id: str,
+    response: Response,
+    downsample: int = Query(300, ge=1, le=2000),
+    fields: str = Query("hr,pace,altitude,cadence"),
+):
+    """Per-activity downsampled time-series for charts.
+
+    Field map: ``hr→heart_rate``, ``pace→adjusted_pace``,
+    ``altitude→altitude``, ``cadence→cadence``. Unknown field names
+    return 400. Response is cached for 1 day (`immutable`) since
+    timeseries are append-only once an activity is fully synced.
+    """
+    from stride_core.timeseries import downsample_series
+
+    field_map = {
+        "hr": "heart_rate",
+        "pace": "adjusted_pace",
+        "altitude": "altitude",
+        "cadence": "cadence",
+    }
+    requested = [f.strip() for f in fields.split(",") if f.strip()]
+    unknown = [f for f in requested if f not in field_map]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown fields: {','.join(unknown)}",
+        )
+
+    db = get_db(user)
+    try:
+        rows = db.query(
+            "SELECT label_id, duration_s FROM activities WHERE label_id = ?",
+            (label_id,),
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Not found")
+        duration_s = rows[0]["duration_s"] or 0
+
+        ts_rows = db.query(
+            """SELECT timestamp, heart_rate, adjusted_pace, altitude, cadence
+            FROM timeseries WHERE label_id = ? ORDER BY rowid""",
+            (label_id,),
+        )
+    finally:
+        db.close()
+
+    point_count = len(ts_rows)
+    series: dict[str, list[float | None]] = {}
+    if point_count == 0:
+        for f in requested:
+            series[f] = []
+        interval_sec = 0.0
+    else:
+        for f in requested:
+            col = field_map[f]
+            raw = [r[col] for r in ts_rows]
+            series[f] = downsample_series(raw, downsample)
+        bucket_n = min(point_count, downsample)
+        interval_sec = (duration_s / bucket_n) if bucket_n else 0.0
+
+    response.headers["Cache-Control"] = "public, max-age=86400, immutable"
+    return {
+        "label_id": label_id,
+        "duration_sec": duration_s,
+        "point_count": point_count,
+        "interval_sec": interval_sec,
+        "series": series,
+    }
 
 
 @router.post("/api/{user}/activities/{label_id}/commentary")
