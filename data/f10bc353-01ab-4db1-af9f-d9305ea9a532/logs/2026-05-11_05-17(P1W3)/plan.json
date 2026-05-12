@@ -197,7 +197,7 @@
               {
                 "step_kind": "recovery",
                 "duration": {
-                  "kind": "duration_s",
+                  "kind": "time_s",
                   "value": 120
                 },
                 "target": {
@@ -223,7 +223,7 @@
               {
                 "step_kind": "recovery",
                 "duration": {
-                  "kind": "duration_s",
+                  "kind": "time_s",
                   "value": 120
                 },
                 "target": {
@@ -249,7 +249,7 @@
               {
                 "step_kind": "recovery",
                 "duration": {
-                  "kind": "duration_s",
+                  "kind": "time_s",
                   "value": 120
                 },
                 "target": {
@@ -275,7 +275,7 @@
               {
                 "step_kind": "recovery",
                 "duration": {
-                  "kind": "duration_s",
+                  "kind": "time_s",
                   "value": 120
                 },
                 "target": {
@@ -301,7 +301,7 @@
               {
                 "step_kind": "recovery",
                 "duration": {
-                  "kind": "duration_s",
+                  "kind": "time_s",
                   "value": 120
                 },
                 "target": {

@@ -193,7 +193,7 @@
               },
               {
                 "step_kind": "recovery",
-                "duration": {"kind": "duration_s", "value": 180},
+                "duration": {"kind": "time_s", "value": 180},
                 "target": {"kind": "hr_bpm", "low": 130, "high": 140},
                 "note": "Slow jog 6:00-6:30/km，HR 回到 130-140 再开下组"
               }
@@ -210,7 +210,7 @@
               },
               {
                 "step_kind": "recovery",
-                "duration": {"kind": "duration_s", "value": 180},
+                "duration": {"kind": "time_s", "value": 180},
                 "target": {"kind": "hr_bpm", "low": 130, "high": 140},
                 "note": "Slow jog 6:00-6:30/km，HR 回到 130-140 再开下组"
               }
@@ -227,7 +227,7 @@
               },
               {
                 "step_kind": "recovery",
-                "duration": {"kind": "duration_s", "value": 180},
+                "duration": {"kind": "time_s", "value": 180},
                 "target": {"kind": "hr_bpm", "low": 130, "high": 140},
                 "note": "Slow jog 6:00-6:30/km，HR 回到 130-140 再开末组"
               }
