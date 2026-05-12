@@ -19,6 +19,8 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException
 
+from stride_core.timefmt import SHANGHAI_DAY_SQL
+
 from ..content_store import list_week_folders
 from ..deps import (
     format_duration,
@@ -90,13 +92,19 @@ def _completion_rate_history(user: str, current_folder: str, n: int = 4) -> list
             db = get_db(user)
             try:
                 act_rows = db.query(
-                    "SELECT label_id, date FROM activities WHERE date >= ? AND date < ? ORDER BY date",
-                    (date_from, date_to + "T99"),
+                    f"""SELECT label_id, {SHANGHAI_DAY_SQL} AS shanghai_date
+                        FROM activities
+                        WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
+                        ORDER BY shanghai_date""",
+                    (date_from, date_to),
                 )
             finally:
                 db.close()
-            # Simple heuristic: completed = planned sessions whose date has >=1 actual activity
-            act_dates = {r["date"][:10] for r in act_rows}
+            # Simple heuristic: completed = planned sessions whose Shanghai
+            # calendar day has >=1 actual activity. Match against the SQL-
+            # computed shanghai_date column rather than slicing the raw UTC
+            # `activities.date`, which would be off by 8 hours.
+            act_dates = {r["shanghai_date"] for r in act_rows}
             completed = sum(1 for s in sessions if s["date"] in act_dates)
             planned = len(sessions)
             if planned > 0:
@@ -122,12 +130,12 @@ def get_week_review(user: str, folder: str):
     try:
         # ── 1. Actual activities this week ────────────────────────────────
         act_rows = db.query(
-            """SELECT label_id, name, sport_type, date,
+            f"""SELECT label_id, name, sport_type, date,
                       distance_m, duration_s, avg_pace_s_km, avg_hr
                FROM activities
-               WHERE date >= ? AND date < ?
+               WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
                ORDER BY date ASC, label_id ASC""",
-            (date_from, date_to + "T99"),
+            (date_from, date_to),
         )
         activities = [dict(r) for r in act_rows]
 
@@ -270,13 +278,15 @@ def get_week_review(user: str, folder: str):
 
         # ── 6. Activity highlights (up to 3, latest first, with commentary) ──
         commentary_rows = db.query(
-            """SELECT a.label_id, a.date, a.name, ac.commentary
+            f"""SELECT a.label_id, a.date,
+                      date(datetime(a.date, '+8 hours')) AS shanghai_date,
+                      a.name, ac.commentary
                FROM activities a
                INNER JOIN activity_commentary ac ON ac.label_id = a.label_id
-               WHERE a.date >= ? AND a.date < ?
+               WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
                ORDER BY a.date DESC, a.label_id DESC
                LIMIT 3""",
-            (date_from, date_to + "T99"),
+            (date_from, date_to),
         )
         activity_highlights = []
         for r in commentary_rows:
@@ -284,7 +294,7 @@ def get_week_review(user: str, folder: str):
             excerpt = commentary[:80] if len(commentary) > 80 else commentary
             activity_highlights.append({
                 "label_id": r["label_id"],
-                "date": (r["date"] or "")[:10],
+                "date": r["shanghai_date"] or "",
                 "name": r["name"] or "",
                 "commentary_excerpt": excerpt,
             })

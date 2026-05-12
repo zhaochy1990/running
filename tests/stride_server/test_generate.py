@@ -190,17 +190,20 @@ class TestProgressionFromLastWeek:
             )
         db.upsert_planned_sessions(prev_folder, sessions)
 
-        # Insert activities matching those dates (simulating completion)
+        # Insert activities matching those dates (simulating completion).
+        # activities.date is UTC ISO 8601 in prod (see stride_core/timefmt.py);
+        # pick 08:00 UTC so the row is unambiguously inside the Shanghai day
+        # named by `day_str` (16:00 Shanghai).
         for i, day_str in enumerate(
             ["2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-10"]
         ):
-            day_compact = day_str.replace("-", "")
+            day_iso = f"{day_str}T08:00:00+00:00"
             dist = (completed_km * 1000) / 5  # evenly split across 5 activities
             db._conn.execute(
                 "INSERT OR REPLACE INTO activities "
                 "(label_id, name, sport_type, date, distance_m, duration_s) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (f"A{i}", f"Run {i}", 100, day_compact, dist, dist * 0.3),
+                (f"A{i}", f"Run {i}", 100, day_iso, dist, dist * 0.3),
             )
         db._conn.commit()
         db.close()

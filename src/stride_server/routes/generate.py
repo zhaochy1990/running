@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from stride_core.plan_spec import SessionKind
 from stride_core.source import DataSource
+from stride_core.timefmt import SHANGHAI_DAY_SQL
 
 from ..deps import get_db, get_plan_state_store, get_source_for_user, parse_week_dates
 from ..week_generator import generate_week_plan, week_folder
@@ -76,17 +77,16 @@ def _get_last_week_summary(db, plan_store, week_start: date_cls) -> dict | None:
 
     total_sessions = len(planned_rows)
 
-    # Sum up completed sessions from activities in that week
-    # A planned session is "completed" when there's an activity on the same date
-    # of the same kind. We use a simple date-overlap count rather than strict matching.
-    # activities.date is stored in compact ``YYYYMMDD`` form; convert prev_*
-    # to the same format for the range filter.
-    date_from = prev_start.strftime("%Y%m%d")
-    date_to = prev_end.strftime("%Y%m%d")
+    # Sum up completed sessions from activities in that week.
+    # activities.date is UTC ISO; compare in the Shanghai calendar via
+    # SHANGHAI_DAY_SQL so a 00:30 Shanghai workout (16:30 UTC the previous
+    # day) lands on the correct planned-session date.
+    date_from = prev_start.isoformat()
+    date_to = prev_end.isoformat()
     activity_rows = db.query(
-        """SELECT date, distance_m, avg_pace_s_km
+        f"""SELECT date, distance_m, avg_pace_s_km
            FROM activities
-           WHERE date >= ? AND date <= ?
+           WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
            ORDER BY date""",
         (date_from, date_to),
     )

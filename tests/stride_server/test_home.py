@@ -81,13 +81,16 @@ def _seed(tmp_path, *, with_data: bool = True, with_provider: str | None = "coro
     from stride_core.db import Database
     db = Database(user=USER_UUID)
     if with_data:
-        from datetime import date
-        today = date.today().strftime("%Y%m%d")
+        from datetime import datetime, timezone
+        # activities.date is UTC ISO 8601 in prod (see stride_core/timefmt.py).
+        # Pick a time mid-day in Shanghai so the row is unambiguously "today"
+        # in either timezone.
+        today_iso = datetime.now(timezone.utc).isoformat()
         db._conn.execute(
             "INSERT INTO activities (label_id, name, sport_type, date, distance_m, "
             "duration_s, avg_pace_s_km, avg_hr, calories_kcal) VALUES "
             "(?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("L1", "Easy Run", 100, today, 10.0, 3000.0, 300.0, 150, 600),
+            ("L1", "Easy Run", 100, today_iso, 10.0, 3000.0, 300.0, 150, 600),
         )
         db._conn.execute(
             "INSERT INTO activity_commentary (label_id, commentary, generated_by) "

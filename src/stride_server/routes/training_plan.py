@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date
-
 from fastapi import APIRouter
+
+from stride_core.timefmt import today_shanghai
 
 from ..content_store import read_text
 from ..deps import PROJECT_ROOT
@@ -25,7 +25,7 @@ def get_training_plan(user: str):
         content = plan_path.read_text(encoding="utf-8")
 
     phases: list[dict] = []
-    today = date.today()
+    today = today_shanghai()
     current_phase = None
 
     # Hard-coded phase definitions matching training plan structure

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from stride_core.timefmt import today_shanghai
 from typing import Any
 
 from stride_core import db as core_db
@@ -296,7 +296,7 @@ def load_coach_context(
     try:
         selected_week = load_week_context(user, folder, db) if folder else None
         return {
-            "as_of": date.today().isoformat(),
+            "as_of": today_shanghai().isoformat(),
             "user": user,
             "sync": sync,
             "profile": load_profile(user),

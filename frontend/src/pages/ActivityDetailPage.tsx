@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, getPlanDays, formatDate, formatTime, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint, type PlannedSessionRow, type LinkedScheduledWorkout } from '../api'
+import { shanghaiDate } from '../lib/shanghai'
 import { useUser } from '../UserContextValue'
 import SegmentView from '../components/SegmentView'
 import StrengthView from '../components/StrengthView'
@@ -80,7 +81,11 @@ export default function ActivityDetailPage() {
   // Owner-only: team viewers don't have access to the owner's plan API.
   useEffect(() => {
     if (isTeamView || !user || !activity) return
-    const day = activity.date?.slice(0, 10)
+    // Look up the planned session by Shanghai calendar day. `activity.date`
+    // is a Shanghai-offset ISO string from the API; route it through the
+    // canonical helper rather than slicing the raw string so we stay correct
+    // even if the timezone of the wire format ever changes.
+    const day = shanghaiDate(activity.date)
     if (!day) return
     let cancelled = false
     getPlanDays(user, day, day)

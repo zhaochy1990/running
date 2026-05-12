@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, HTTPException
 
 from stride_core.models import pace_str
+from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
 from ..content_store import any_exists, exists as content_exists, list_week_folders, read_text
 from ..deps import (
@@ -61,12 +62,15 @@ def list_weeks(user: str):
             elif plan_item is not None:
                 week["plan_title"] = _markdown_title(plan_item.content)
 
+            # date_from / date_to are Shanghai-local YYYY-MM-DD; activities.date
+            # is UTC ISO. Use SHANGHAI_DAY_SQL so the comparison happens in the
+            # Shanghai calendar (see stride_core/timefmt.py).
             rows = db.query(
-                """SELECT count(*) as cnt,
+                f"""SELECT count(*) as cnt,
                     round(coalesce(sum(distance_m), 0), 1) as total_km,
                     round(coalesce(sum(duration_s), 0), 0) as total_duration_s
-                FROM activities WHERE date >= ? AND date < ?""",
-                (date_from, date_to + "T99"),
+                FROM activities WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?""",
+                (date_from, date_to),
             )
             summary = dict(rows[0]) if rows else {}
             week["activity_count"] = summary.get("cnt", 0)
@@ -128,19 +132,24 @@ def get_week(user: str, folder: str):
             result["feedback_source"] = "none"
 
     rows = db.query(
-        """SELECT label_id, name, sport_type, sport_name, date,
+        f"""SELECT label_id, name, sport_type, sport_name, date,
             distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
             avg_cadence, calories_kcal, training_load, vo2max, train_type,
             ascent_m, aerobic_effect, anaerobic_effect,
             temperature, humidity, feels_like, wind_speed,
             feel_type, sport_note, route_thumb_json
-        FROM activities WHERE date >= ? AND date < ?
+        FROM activities WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
         ORDER BY date ASC, label_id ASC""",
-        (date_from, date_to + "T99"),
+        (date_from, date_to),
     )
     activities = []
     for r in rows:
         d = dict(r)
+        # Convert the UTC-stored timestamp to Shanghai-local ISO so the
+        # frontend's `slice(0, 10)` / `slice(5, 10)` / weekday classification
+        # all read correctly. The instant is preserved (offset is +08:00, not
+        # stripped) so new Date(d.date) still resolves to the same moment.
+        d["date"] = utc_iso_to_shanghai_iso(d["date"])
         d["distance_km"] = round(d["distance_m"], 2) if d["distance_m"] else 0
         d["duration_fmt"] = format_duration(d["duration_s"])
         d["pace_fmt"] = pace_str(d["avg_pace_s_km"]) or "—"

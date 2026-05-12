@@ -22,6 +22,29 @@ Use the right backend instead:
 
 When adding a new feature, ask: *"Does this row come from a watch sync?"* If no, do not add a SQLite table. The likes_store has a two-backend file (JSON file for dev / Azure Table for prod) with `DefaultAzureCredential` — copy that pattern instead of inventing a new one.
 
+## Timezone discipline (HARD)
+
+All `coros.db` timestamp columns store **UTC ISO 8601**. All user-facing day/week classification is **Asia/Shanghai (UTC+8, no DST)**. Mixing the two silently misclassifies the 00:00–07:59 Shanghai window onto the wrong calendar day.
+
+**Canonical helpers**:
+
+- Python: `src/stride_core/timefmt.py` — `utc_iso_to_shanghai_iso()`, `today_shanghai()`, `SHANGHAI_DAY_SQL`, `shanghai_day_to_utc_range()`, `shanghai_week_range()`, `SHANGHAI_TZ`
+- TypeScript: `frontend/src/lib/shanghai.ts` — `shanghaiDate()`, `shanghaiMonthDay()`, `shanghaiTime()`, `shanghaiToday()`, `shanghaiWeekday()`
+
+**Forbidden patterns** (CI greps for these via `tests/test_timezone_invariants.py`):
+
+| Don't | Use instead |
+|---|---|
+| `WHERE date >= '2026-05-09'` against `activities.*` | `WHERE date(datetime(date, '+8 hours')) >= ?` (use `SHANGHAI_DAY_SQL`) |
+| `date.today()` / `datetime.now()` (no `tz=`) | `today_shanghai()` from `stride_core.timefmt` |
+| `r["date"][:10]` in route serializers | `utc_iso_to_shanghai_iso(r["date"])` then slice — or alias `date(datetime(date, '+8 hours')) AS shanghai_date` in SQL |
+| `activity.date.slice(0, 10)` in React | `shanghaiDate(activity.date)` from `lib/shanghai` |
+| `new Date().getFullYear()` etc. for "today" | `shanghaiToday()` |
+
+**API boundary rule**: the routes in `stride_server/routes/` MUST run `utc_iso_to_shanghai_iso()` over the `date` field on every activity row before serializing it back. This is what makes frontend `.slice(0, 10)` "just work" — the offset is converted, the instant is preserved.
+
+When `tests/test_timezone_invariants.py` fails, almost always the fix is to import + use one of the helpers above, not to whitelist the file. The `WHITELIST` dict in that test exists for files that legitimately operate on Shanghai-local columns (`weekly_plan.date_from`, `daily_health.date` YYYYMMDD) — drive-by additions need a code-review reason.
+
 ## Working Model — Local Authoring + Cloud Draft-Writer
 
 Going forward, keep this split in mind:

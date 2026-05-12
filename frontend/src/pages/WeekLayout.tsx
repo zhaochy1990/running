@@ -11,6 +11,7 @@ import {
   type WeekSummary, type WeekDetail, type Activity,
   type PlannedSessionRow, type PlanDay, type MyProfile,
 } from '../api'
+import { shanghaiDate, shanghaiMonthDay, shanghaiToday } from '../lib/shanghai'
 import type { PlannedNutrition, StructuredStatus } from '../types/plan'
 import type { StrengthTabResponse } from '../types/strength'
 import { useUser } from '../UserContextValue'
@@ -37,8 +38,9 @@ export default function WeekLayout() {
   const [strengthData, setStrengthData] = useState<StrengthTabResponse | null>(null)
   const [strengthLoading, setStrengthLoading] = useState(false)
   const loadingDetail = Boolean(folder && user && loadedFolder !== folder)
-  const _now = new Date()
-  const _today = `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`
+  // Pin "today" to Asia/Shanghai so the past-week heuristic doesn't drift for
+  // anyone opening the dashboard from a different timezone.
+  const _today = shanghaiToday()
   const needsFeedback = weekDetail ? !weekDetail.feedback?.trim() && weekDetail.activity_count > 0 && weekDetail.date_to < _today : false
 
   // Pull the connected provider once so we can dispatch push capabilities
@@ -304,17 +306,29 @@ function Stat({ label, value, accent }: { label: string; value: string; accent?:
 }
 
 function buildWeekDates(dateFrom: string, dateTo: string): string[] {
+  // `dateFrom`/`dateTo` are Shanghai-local YYYY-MM-DD (week-folder format).
+  // Parse the bare strings as Shanghai dates and iterate by day — we
+  // deliberately do NOT use `new Date(yyyy_mm_dd)` because that parses as
+  // UTC midnight and would drift by one day for non-Shanghai browsers.
   const out: string[] = []
-  const start = new Date(dateFrom)
-  const end = new Date(dateTo)
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) return out
-  const cur = new Date(start)
+  const parse = (s: string): [number, number, number] | null => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+    return m ? [+m[1], +m[2], +m[3]] : null
+  }
+  const from = parse(dateFrom)
+  const to = parse(dateTo)
+  if (!from || !to) return out
+  // Use UTC date arithmetic to walk day-by-day; the resulting numbers are
+  // calendar values, not instants, so TZ never enters the picture.
+  let cur = Date.UTC(from[0], from[1] - 1, from[2])
+  const end = Date.UTC(to[0], to[1] - 1, to[2])
   while (cur <= end && out.length < 31) {
-    const y = cur.getFullYear()
-    const m = String(cur.getMonth() + 1).padStart(2, '0')
-    const d = String(cur.getDate()).padStart(2, '0')
-    out.push(`${y}-${m}-${d}`)
-    cur.setDate(cur.getDate() + 1)
+    const d = new Date(cur)
+    const y = d.getUTCFullYear()
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    out.push(`${y}-${m}-${day}`)
+    cur += 24 * 3600 * 1000
   }
   return out
 }
@@ -790,7 +804,7 @@ function FeedbackPanel({
             <div className="space-y-1">
               {activities.slice(0, 7).map(a => (
                 <div key={a.label_id} className="flex items-center gap-3 px-3 py-1.5 text-xs font-mono rounded-lg hover:bg-bg-secondary/50">
-                  <span className="text-text-muted w-20 flex-shrink-0">{a.date.slice(5, 10)} {weekdayCN(a.date)}</span>
+                  <span className="text-text-muted w-20 flex-shrink-0">{shanghaiMonthDay(a.date)} {weekdayCN(a.date)}</span>
                   <span className="text-text-primary flex-1 truncate">{a.name || a.sport_name}</span>
                   <span className="text-accent-green flex-shrink-0">{a.distance_km} km</span>
                   <span className="text-text-muted flex-shrink-0">{a.duration_fmt}</span>
@@ -843,7 +857,10 @@ function ActivityList({ activities }: { activities: Activity[] }) {
 
   const byDate = new Map<string, Activity[]>()
   for (const a of activities) {
-    const dateKey = a.date?.slice(0, 10) || ''
+    // Always group by Shanghai calendar day. `a.date` ships as a
+    // Shanghai-offset ISO string from the API, but go through the helper
+    // anyway so this stays correct if a future endpoint forgets to convert.
+    const dateKey = shanghaiDate(a.date)
     const list = byDate.get(dateKey) || []
     list.push(a)
     byDate.set(dateKey, list)

@@ -1041,43 +1041,39 @@ export function parseDate(dateStr: string): Date | null {
   return new Date(dateStr)
 }
 
+// All date / time formatters route through the canonical Asia/Shanghai
+// helpers in `./lib/shanghai`. They pin every conversion to Asia/Shanghai so
+// the dashboard renders the same calendar day whether it's opened in
+// Beijing or Berlin. Never reintroduce `d.getMonth()` / `d.getDate()` math
+// here — those use browser-local TZ and quietly drift abroad.
+import {
+  shanghaiDate as _shanghaiDate,
+  shanghaiMonthDay as _shanghaiMonthDay,
+  shanghaiTime as _shanghaiTime,
+} from './lib/shanghai'
+
 export function formatDate(dateStr: string): string {
-  const d = parseDate(dateStr)
-  if (!d || isNaN(d.getTime())) return dateStr
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return _shanghaiDate(dateStr) || dateStr
 }
 
 export function formatDateShort(dateStr: string): string {
-  const d = parseDate(dateStr)
-  if (!d || isNaN(d.getTime())) return dateStr
-  return `${d.getMonth() + 1}月${d.getDate()}日`
+  const md = _shanghaiMonthDay(dateStr)
+  if (!md) return dateStr
+  const [m, d] = md.split('-')
+  return `${parseInt(m, 10)}月${parseInt(d, 10)}日`
 }
 
-// HH:MM:SS in Shanghai time. The DB stores UTC; running data is interpreted
-// against Shanghai local time everywhere else in this app, so pin the TZ
-// instead of trusting browser locale.
-const TIME_FMT_SHANGHAI = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Shanghai',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-})
-
 export function formatTime(dateStr: string): string {
-  const d = parseDate(dateStr)
-  if (!d || isNaN(d.getTime())) return ''
-  return TIME_FMT_SHANGHAI.format(d)
+  return _shanghaiTime(dateStr)
 }
 
 export function formatWeekRange(dateFrom: string, dateTo: string): string {
-  const df = parseDate(dateFrom)
-  const dt = parseDate(dateTo)
-  if (!df || !dt) return `${dateFrom} — ${dateTo}`
-  return `${df.getMonth() + 1}/${df.getDate()} — ${dt.getMonth() + 1}/${dt.getDate()}`
+  const from = _shanghaiMonthDay(dateFrom)
+  const to = _shanghaiMonthDay(dateTo)
+  if (!from || !to) return `${dateFrom} — ${dateTo}`
+  const [fm, fd] = from.split('-')
+  const [tm, td] = to.split('-')
+  return `${parseInt(fm, 10)}/${parseInt(fd, 10)} — ${parseInt(tm, 10)}/${parseInt(td, 10)}`
 }
 
 const SPORT_CN: Record<string, string> = {
@@ -1144,13 +1140,9 @@ export function trainTypeColor(trainType: string | null): string {
   return colors[trainType] || '#8888a0'
 }
 
-const WEEKDAY_CN = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-
-export function weekdayCN(dateStr: string): string {
-  const d = parseDate(dateStr)
-  if (!d || isNaN(d.getTime())) return ''
-  return WEEKDAY_CN[d.getDay()]
-}
+// Re-export from the canonical helper. Pinned to Asia/Shanghai so the
+// weekday label matches the date label, even abroad.
+export { shanghaiWeekday as weekdayCN } from './lib/shanghai'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Multi-variant plans (Step 4)

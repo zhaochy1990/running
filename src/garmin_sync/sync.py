@@ -9,11 +9,12 @@ v1 keeps the surface narrow:
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Any
 
 from stride_core.db import Database
 from stride_core.source import SyncProgressCallback
+from stride_core.timefmt import today_shanghai
 
 from .client import GarminClient
 from .models import (
@@ -60,7 +61,9 @@ def run_sync(
     # 90 days, and a fresh onboard frequently truncates that out by
     # activity count alone (heavy ping-pong / strength loggers).
     if since_date is None and full:
-        since_date = (date.today() - timedelta(days=180)).isoformat()
+        # Shanghai calendar — on Azure Container Apps the wall clock is UTC,
+        # so `date.today()` would drift the cutoff window by 8 hours.
+        since_date = (today_shanghai() - timedelta(days=180)).isoformat()
     effective_limit = 2000 if since_date else activity_limit
     activities_synced, new_label_ids = _sync_activities(
         client, db, full=full, progress=progress, limit=effective_limit,
@@ -177,7 +180,7 @@ def _sync_health(
     """
     _emit(progress, phase="health", message="正在同步佳明健康指标", percent=85)
 
-    today = date.today()
+    today = today_shanghai()
     health_count = 0
     consecutive_failures = 0
 

@@ -12,7 +12,7 @@ updates on watch sync — there is no point recomputing on every refresh.
 from __future__ import annotations
 
 import time
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Query
@@ -20,6 +20,7 @@ from pydantic import BaseModel
 
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
 from stride_core.registry import read_user_provider
+from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
 
 from ..deps import get_db
 
@@ -176,15 +177,18 @@ def _build_status_ring(db) -> StatusRing:
 
 
 def _build_recent_activities(db, days: int) -> list[RecentActivity]:
-    cutoff = (date.today() - timedelta(days=days)).strftime("%Y%m%d")
+    # Cutoff in Shanghai calendar (server TZ is UTC on Azure Container Apps —
+    # date.today() would drift). The SQL converts the UTC-stored `date` to
+    # Shanghai-local YYYY-MM-DD for an apples-to-apples comparison.
+    cutoff = (today_shanghai() - timedelta(days=days)).isoformat()
     rows = db.query(
-        """
+        f"""
         SELECT a.label_id, a.name, a.sport_type, a.date,
                a.distance_m, a.duration_s, a.avg_pace_s_km, a.avg_hr, a.calories_kcal,
                c.commentary, c.generated_by AS commentary_generated_by
         FROM activities a
         LEFT JOIN activity_commentary c ON c.label_id = a.label_id
-        WHERE a.date >= ?
+        WHERE date(datetime(a.date, '+8 hours')) >= ?
         ORDER BY a.date DESC, a.label_id DESC
         """,
         (cutoff,),
@@ -201,7 +205,8 @@ def _build_recent_activities(db, days: int) -> list[RecentActivity]:
         distance_m = r["distance_m"]
         out.append(RecentActivity(
             label_id=r["label_id"],
-            date=r["date"],
+            # UTC → Shanghai ISO at the API boundary; see stride_core/timefmt.py.
+            date=utc_iso_to_shanghai_iso(r["date"]) or r["date"],
             name=r["name"],
             sport_type=r["sport_type"],
             distance_km=round(distance_m, 2) if distance_m else None,
@@ -216,17 +221,17 @@ def _build_recent_activities(db, days: int) -> list[RecentActivity]:
 
 
 def _build_weekly_stats(db) -> WeeklyStats:
-    today = date.today()
+    # Week boundary in Shanghai calendar — see stride_core/timefmt.py.
+    today = today_shanghai()
     monday = today - timedelta(days=today.weekday())
     week_start_iso = monday.isoformat()
-    week_start_yyyymmdd = monday.strftime("%Y%m%d")
     rows = db.query(
         f"""
         SELECT distance_m, duration_s
         FROM activities
-        WHERE date >= ? AND sport_type IN ({_RUN_SPORT_SQL})
+        WHERE {SHANGHAI_DAY_SQL} >= ? AND sport_type IN ({_RUN_SPORT_SQL})
         """,
-        (week_start_yyyymmdd,),
+        (week_start_iso,),
     )
     total_km = 0.0
     total_sec = 0.0

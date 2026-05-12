@@ -8,6 +8,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from stride_core.models import EXERCISE_TYPES, pace_str
 from stride_core.source import DataSource
+from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
 from ..bearer import require_bearer
 from ..deps import (
@@ -40,11 +41,15 @@ def list_activities(
     if sport:
         conditions.append("sport_name = ?")
         params.append(sport)
+    # date_from / date_to are Shanghai-local YYYY-MM-DD; activities.date is
+    # UTC ISO. Compare via SHANGHAI_DAY_SQL so a workout that starts at
+    # 00:30 Shanghai (16:30 UTC the previous day) classifies into the
+    # Shanghai day, not the UTC day.
     if date_from:
-        conditions.append("date >= ?")
+        conditions.append(f"{SHANGHAI_DAY_SQL} >= ?")
         params.append(date_from)
     if date_to:
-        conditions.append("date <= ?")
+        conditions.append(f"{SHANGHAI_DAY_SQL} <= ?")
         params.append(date_to)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -69,6 +74,8 @@ def list_activities(
     activities = []
     for r in rows:
         d = dict(r)
+        # UTC → Shanghai ISO at the API boundary; see stride_core/timefmt.py.
+        d["date"] = utc_iso_to_shanghai_iso(d["date"])
         d["distance_km"] = round(d["distance_m"], 2) if d["distance_m"] else 0
         d["duration_fmt"] = format_duration(d["duration_s"])
         d["pace_fmt"] = pace_str(d["avg_pace_s_km"]) or "—"
@@ -101,6 +108,8 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
         return None
 
     activity = dict(rows[0])
+    # UTC → Shanghai ISO at the API boundary; see stride_core/timefmt.py.
+    activity["date"] = utc_iso_to_shanghai_iso(activity["date"])
     activity["distance_km"] = round(activity["distance_m"], 2) if activity["distance_m"] else 0
     activity["duration_fmt"] = format_duration(activity["duration_s"])
     activity["pace_fmt"] = pace_str(activity["avg_pace_s_km"]) or "—"
