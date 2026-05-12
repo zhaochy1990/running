@@ -15,6 +15,7 @@ Two routers live here:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -28,6 +29,12 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, stat
 # guardrail + cost cap; 64 KiB comfortably accommodates a multi-week plan with
 # nutrition tables and detailed daily notes (we observe ~6-12 KiB in practice).
 _MAX_PLAN_MD_BYTES = 64 * 1024
+
+# How far a user can move a planned session when pushing to the watch. The
+# rationale is "moving the session within a small window, not authoring a new
+# week" — wider windows would conflict with the plan structure (week boundaries,
+# spacing between hard days, etc.). Symmetric around the planned date.
+_PUSH_DATE_WINDOW_DAYS = 7
 
 # Common falsy spellings for env-var feature flags. Centralized so ops can use
 # any of the conventional spellings (`false`/`0`/`no`/`off`/`disabled`) instead
@@ -296,14 +303,28 @@ def push_planned_session(
     user: str,
     date: str,
     session_index: int,
+    target_date: str | None = Query(
+        default=None,
+        description=(
+            "Optional ISO YYYY-MM-DD date to actually push to. When provided, "
+            "must be within ±7 days of the planned date. Omitting keeps the "
+            "planned date."
+        ),
+    ),
     source: DataSource = Depends(get_source_for_user),
 ):
     """Push a single planned RUN or STRENGTH session to the user's watch.
+
+    ``target_date`` lets the user move the session within ±7 days of the
+    planned date (calendar shows planned date; watch lands on chosen date).
+    Re-pushing with a different ``target_date`` deletes the prior pushed-date
+    watch entry so the session is moved, not duplicated.
 
     Path:
       - 404 when the planned_session row doesn't exist
       - 409 when the parent week's ``structured_status != 'fresh'`` (e.g.
         ``backfilled`` or ``parse_failed``)
+      - 400 when ``target_date`` is malformed or outside the ±7-day window
       - 400 when the session is not RUN/STRENGTH, has no spec, or the provider
         lacks the matching ``PUSH_RUN_WORKOUT`` / ``PUSH_STRENGTH_WORKOUT``
         capability
@@ -312,8 +333,9 @@ def push_planned_session(
       - 502 when the upstream watch service rejects the push
 
     On success: a new ``scheduled_workout`` row is created with
-    ``status='pushed'``; any prior row attached via FK is marked
-    ``status='superseded'`` after its watch-side template is removed.
+    ``status='pushed'`` (``date=target_date or planned date``); any prior row
+    attached via FK is marked ``status='superseded'`` after its watch-side
+    template is removed.
     """
     db = get_db(user)
     plan_store = get_plan_state_store(user)
@@ -364,6 +386,33 @@ def push_planned_session(
                 detail=f"Stored spec is not a valid normalized workout: {exc}",
             )
 
+        # Resolve push_date: optional target_date moves the session within
+        # ±_PUSH_DATE_WINDOW_DAYS of the planned date. Calendar still anchors
+        # on the planned date; only the watch-side date moves.
+        push_date = date
+        if target_date is not None:
+            try:
+                planned_d = date_cls.fromisoformat(date)
+                target_d = date_cls.fromisoformat(target_date)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail="target_date must be ISO YYYY-MM-DD",
+                )
+            delta_days = abs((target_d - planned_d).days)
+            if delta_days > _PUSH_DATE_WINDOW_DAYS:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"target_date {target_date} is {delta_days} days from planned "
+                        f"date {date}; allowed window is ±{_PUSH_DATE_WINDOW_DAYS} days"
+                    ),
+                )
+            push_date = target_d.isoformat()
+            # Keep the workout's internal date field consistent with push_date
+            # so adapter-side YYYYMMDD translation lands on the right day.
+            workout = dataclasses.replace(workout, date=push_date)
+
         # Compute prior pointer first so we know whether to mark superseded
         # after the new push lands. Note: the *delete sweep* below is no
         # longer gated on having a tracked prior — it always runs when the
@@ -380,40 +429,51 @@ def push_planned_session(
         # workouts.
         prior_id = session_row["scheduled_workout_id"]
         prior_was_pushed = False
+        prior_pushed_date: str | None = None
         if prior_id is not None:
             prior = db.get_scheduled_workout(prior_id)
             if prior is not None and prior["status"] == "pushed":
                 prior_was_pushed = True
+                prior_pushed_date = prior["date"]
 
         if Capability.DELETE_WORKOUT in source.info.capabilities:
-            try:
-                # Filter sweep by exact program name so we only clear the
-                # prior push of THIS session — leaving other [STRIDE]
-                # entries on the same date (run + strength on a force-day,
-                # multiple sessions of the same kind) untouched. Re-pushing
-                # the same session reuses ``workout.name`` so the old copy
-                # is reliably cleared. Both NormalizedRunWorkout and
-                # NormalizedStrengthWorkout expose ``name``.
-                source.delete_scheduled_workout(user, date, name=workout.name)
-            except FeatureNotSupported:
-                # Capability check passed but adapter changed at runtime —
-                # log + skip rather than fail the push. The new push can
-                # still land; user may end up with a duplicate they need to
-                # clean manually.
-                logger.warning(
-                    "delete_scheduled_workout raised FeatureNotSupported "
-                    "despite capability advertised; skipping",
-                )
-            except Exception:
-                # Best-effort: log and continue. We prefer "push succeeds
-                # with possible duplicate watch entry" over "push fails
-                # because the cleanup leg failed". The user can manually
-                # remove the duplicate; failing here would block them
-                # entirely.
-                logger.exception(
-                    "best-effort delete prior STRIDE workouts on %s failed; "
-                    "continuing push", date,
-                )
+            # Sweep both the new target date (clearing any stale STRIDE entry
+            # already there) AND the prior pushed date when the user moved
+            # the session — otherwise the old watch entry is left as
+            # garbage. dedupe so we never call twice for the same date.
+            sweep_dates = {push_date}
+            if prior_pushed_date and prior_pushed_date != push_date:
+                sweep_dates.add(prior_pushed_date)
+            for sweep_date in sweep_dates:
+                try:
+                    # Filter sweep by exact program name so we only clear
+                    # the prior push of THIS session — leaving other
+                    # [STRIDE] entries on the same date (run + strength on
+                    # a force-day, multiple sessions of the same kind)
+                    # untouched. Re-pushing the same session reuses
+                    # ``workout.name`` so the old copy is reliably cleared.
+                    # Both NormalizedRunWorkout and NormalizedStrengthWorkout
+                    # expose ``name``.
+                    source.delete_scheduled_workout(user, sweep_date, name=workout.name)
+                except FeatureNotSupported:
+                    # Capability check passed but adapter changed at runtime
+                    # — log + skip rather than fail the push. The new push
+                    # can still land; user may end up with a duplicate they
+                    # need to clean manually.
+                    logger.warning(
+                        "delete_scheduled_workout raised FeatureNotSupported "
+                        "despite capability advertised; skipping",
+                    )
+                except Exception:
+                    # Best-effort: log and continue. We prefer "push
+                    # succeeds with possible duplicate watch entry" over
+                    # "push fails because the cleanup leg failed". The user
+                    # can manually remove the duplicate; failing here would
+                    # block them entirely.
+                    logger.exception(
+                        "best-effort delete prior STRIDE workouts on %s "
+                        "failed; continuing push", sweep_date,
+                    )
         else:
             if prior_was_pushed:
                 # Provider can't delete and we have a tracked prior →
@@ -457,6 +517,16 @@ def push_planned_session(
         # superseded → back-stamp planned_session.scheduled_workout_id. The
         # ``with db._conn:`` block uses sqlite3's connection-as-context-manager
         # to commit on success and rollback on exception.
+        #
+        # spec_json: when push_date was overridden we re-serialize the workout
+        # so the stored spec's internal ``date`` matches the row's ``date``
+        # column (and matches what the watch actually received). When the
+        # planned date is unchanged we reuse the original payload to avoid
+        # touching whitespace / field ordering.
+        spec_json_to_store = (
+            session_row["spec_json"] if push_date == date
+            else json.dumps(workout.to_dict(), ensure_ascii=False)
+        )
         with db._conn:
             cur = db._conn.execute(
                 """INSERT INTO scheduled_workout
@@ -464,7 +534,7 @@ def push_planned_session(
                     provider_workout_id, pushed_at)
                    VALUES (?, ?, ?, ?, 'pushed', ?, ?, datetime('now'))""",
                 (
-                    date, session_kind, workout.name, session_row["spec_json"],
+                    push_date, session_kind, workout.name, spec_json_to_store,
                     source.info.name, provider_workout_id,
                 ),
             )
@@ -487,6 +557,7 @@ def push_planned_session(
             "scheduled_workout_id": new_sw_id,
             "provider": source.info.name,
             "provider_workout_id": provider_workout_id,
+            "push_date": push_date,
         }
     finally:
         plan_store.close()

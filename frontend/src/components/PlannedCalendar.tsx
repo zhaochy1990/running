@@ -16,7 +16,12 @@ export interface PlannedCalendarProps {
   /** Forwarded to each row's `PushPlannedButton` to lock individual pushes
    * while a batch operation (e.g. "推送全部") is in flight. */
   pushDisabled?: boolean
-  onPush: (s: PlannedSession) => Promise<void> | void
+  /**
+   * Called when the user confirms an individual session push. `targetDate` is
+   * the ISO date selected in the inline date picker — always within ±7 days
+   * of `s.date`. Forward it to `pushPlannedSession` as `target_date`.
+   */
+  onPush: (s: PlannedSession, targetDate: string) => Promise<void> | void
 }
 
 const KIND_ICON: Record<PlannedSession['kind'], string> = {

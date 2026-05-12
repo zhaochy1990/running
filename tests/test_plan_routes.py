@@ -760,6 +760,162 @@ class TestPushSession:
         captured = fake.strength_calls[0]
         assert captured.exercises[0].provider_id is None
 
+    # ── target_date override (±7-day move window) ──────────────────────────
+
+    def test_push_with_target_date_within_window(self, app_client):
+        """target_date within ±7d → scheduled_workout.date = target_date,
+        workout pushed to provider carries the new date, calendar-side
+        planned_session.date stays at the original planned day."""
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            ps_id = _seed_plan(db, WEEK)
+        finally:
+            db.close()
+        # Plan day is 2026-04-22 (Wed); move to 2026-04-25 (Sat) — +3 days.
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push?target_date=2026-04-25",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["push_date"] == "2026-04-25"
+
+        # Delete sweep ran on the new target date (no prior pushed-date sweep
+        # because this is a first push).
+        assert len(fake.delete_calls) == 1
+        assert fake.delete_calls[0] == (USER_UUID, "2026-04-25", "[STRIDE] Easy 10K")
+
+        # The workout pushed to the provider carries the moved date so the
+        # COROS / Garmin adapter lands it on the right calendar day.
+        assert len(fake.push_calls) == 1
+        assert fake.push_calls[0].date == "2026-04-25"
+
+        # DB state: scheduled_workout sits on 2026-04-25; planned_session
+        # keeps its original 2026-04-22 anchor and points to the new row.
+        db = _db(tmp_path)
+        try:
+            sw = db.get_scheduled_workout(body["scheduled_workout_id"])
+            assert sw["date"] == "2026-04-25"
+            assert sw["status"] == "pushed"
+            ps = db.get_planned_session(ps_id)
+            assert ps["date"] == "2026-04-22"
+            assert ps["scheduled_workout_id"] == body["scheduled_workout_id"]
+            # spec_json was re-serialized so its internal date matches the row.
+            spec = json.loads(sw["spec_json"])
+            assert spec["date"] == "2026-04-25"
+        finally:
+            db.close()
+
+    def test_push_with_target_date_at_exact_boundary(self, app_client):
+        """target_date exactly 7 days from planned → accepted (inclusive)."""
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK)
+        finally:
+            db.close()
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push?target_date=2026-04-29",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["push_date"] == "2026-04-29"
+        # And also the symmetric lower bound.
+        resp2 = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push?target_date=2026-04-15",
+            headers=_auth(token),
+        )
+        assert resp2.status_code == 200, resp2.text
+        assert resp2.json()["push_date"] == "2026-04-15"
+
+    def test_push_with_target_date_outside_window_returns_400(self, app_client):
+        """target_date > 7 days from planned → 400 with explanatory detail."""
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK)
+        finally:
+            db.close()
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push?target_date=2026-04-30",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 400
+        assert "±7 days" in resp.json()["detail"]
+        # No watch-side call should have fired when validation rejects.
+        assert len(fake.push_calls) == 0
+        assert len(fake.delete_calls) == 0
+
+    def test_push_with_malformed_target_date_returns_400(self, app_client):
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK)
+        finally:
+            db.close()
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push?target_date=not-a-date",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 400
+        assert "ISO YYYY-MM-DD" in resp.json()["detail"]
+        assert len(fake.push_calls) == 0
+
+    def test_repush_with_changed_target_date_sweeps_both_dates(self, app_client):
+        """Re-pushing to a different target date should sweep BOTH the old
+        pushed date AND the new target so the user perceives the session as
+        moved, not duplicated."""
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK)
+        finally:
+            db.close()
+        # First push: move to 2026-04-23.
+        first = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push?target_date=2026-04-23",
+            headers=_auth(token),
+        )
+        assert first.status_code == 200, first.text
+        # Second push: move to 2026-04-24. Sweep should hit BOTH the new
+        # target (clearing stale entries) and the prior pushed date (the
+        # actual move-from).
+        second = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push?target_date=2026-04-24",
+            headers=_auth(token),
+        )
+        assert second.status_code == 200, second.text
+        assert second.json()["push_date"] == "2026-04-24"
+
+        # First push: 1 sweep (target=2026-04-23).
+        # Second push: 2 sweeps (target=2026-04-24 + prior=2026-04-23).
+        assert len(fake.delete_calls) == 3
+        # First-push sweep date.
+        assert fake.delete_calls[0] == (USER_UUID, "2026-04-23", "[STRIDE] Easy 10K")
+        # Second-push sweeps — order is set-iteration so check membership not order.
+        second_sweep_dates = {fake.delete_calls[1][1], fake.delete_calls[2][1]}
+        assert second_sweep_dates == {"2026-04-23", "2026-04-24"}
+
+    def test_push_without_target_date_unchanged_behavior(self, app_client):
+        """Sanity: omitting target_date keeps the original behavior — single
+        sweep at the planned date, scheduled_workout.date = planned date."""
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK)
+        finally:
+            db.close()
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["push_date"] == "2026-04-22"
+        assert len(fake.delete_calls) == 1
+        assert fake.delete_calls[0] == (USER_UUID, "2026-04-22", "[STRIDE] Easy 10K")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # POST /api/{user}/plan/reparse

@@ -2,6 +2,14 @@ import { useState } from 'react'
 import type { PlannedSession, StructuredStatus } from '../types/plan'
 import { isPushable, isPushableStatus } from '../types/plan'
 
+/**
+ * How far (in days) the user may move the session from its planned date via
+ * the inline date picker. Mirrors `_PUSH_DATE_WINDOW_DAYS` on the server
+ * (`src/stride_server/routes/plan.py`); kept in sync manually because the
+ * value is tiny and the friction of a shared constant outweighs the risk.
+ */
+const PUSH_DATE_WINDOW_DAYS = 7
+
 export interface PushPlannedButtonProps {
   session: PlannedSession
   /** Whole-week structured status; only `'fresh' | 'authored'` allows pushing. */
@@ -24,7 +32,13 @@ export interface PushPlannedButtonProps {
    * promise is unresolved.
    */
   disabled?: boolean
-  onPush: (session: PlannedSession) => Promise<void> | void
+  /**
+   * `targetDate` is the ISO date the user picked in the inline date picker.
+   * Always within ±`PUSH_DATE_WINDOW_DAYS` days of the session's planned date.
+   * Equals `session.date` when the user accepts the default. Parent forwards
+   * this to `pushPlannedSession` as the `target_date` query param.
+   */
+  onPush: (session: PlannedSession, targetDate: string) => Promise<void> | void
 }
 
 interface DisabledReason {
@@ -65,6 +79,15 @@ export function disabledReasonFor(
   return { disabled: false, reason: null }
 }
 
+/** Shift an ISO YYYY-MM-DD date by `days` (signed). Pure date math — no time
+ *  zone shenanigans because we only ever work with calendar dates here. */
+function shiftIsoDate(iso: string, days: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  dt.setUTCDate(dt.getUTCDate() + days)
+  return dt.toISOString().slice(0, 10)
+}
+
 export default function PushPlannedButton({
   session,
   structuredStatus,
@@ -75,6 +98,8 @@ export default function PushPlannedButton({
 }: PushPlannedButtonProps) {
   const [pushing, setPushing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickedDate, setPickedDate] = useState<string>(session.date)
 
   // Capability gating per kind:
   //   - Run capability missing → hide entirely (provider doesn't push at all).
@@ -99,12 +124,33 @@ export default function PushPlannedButton({
         ? '✓ 已推送'
         : '推送到手表'
 
-  const handle = async () => {
+  const minDate = shiftIsoDate(session.date, -PUSH_DATE_WINDOW_DAYS)
+  const maxDate = shiftIsoDate(session.date, PUSH_DATE_WINDOW_DAYS)
+
+  const openPicker = () => {
     if (gateDisabled) return
+    setError(null)
+    setPickedDate(session.date)
+    setPickerOpen(true)
+  }
+
+  const cancel = () => {
+    setPickerOpen(false)
+    setPickedDate(session.date)
+  }
+
+  const confirm = async () => {
+    if (gateDisabled) return
+    // Clamp to the window in case the input was manipulated past min/max.
+    if (pickedDate < minDate || pickedDate > maxDate) {
+      setError(`日期需在 ${minDate} 至 ${maxDate} 之间`)
+      return
+    }
+    setPickerOpen(false)
     setPushing(true)
     setError(null)
     try {
-      await onPush(session)
+      await onPush(session, pickedDate)
     } catch (e) {
       setError(e instanceof Error ? e.message : '推送失败')
     } finally {
@@ -112,11 +158,57 @@ export default function PushPlannedButton({
     }
   }
 
+  if (pickerOpen) {
+    const moved = pickedDate !== session.date
+    return (
+      <div
+        className="inline-flex flex-col items-end gap-1"
+        data-testid="push-date-picker"
+      >
+        <label className="text-[11px] font-mono text-text-muted">
+          推送日期（计划 {session.date}，±{PUSH_DATE_WINDOW_DAYS} 天）
+        </label>
+        <input
+          type="date"
+          value={pickedDate}
+          min={minDate}
+          max={maxDate}
+          onChange={(e) => setPickedDate(e.target.value)}
+          aria-label="选择推送日期"
+          className="px-2 py-1 text-xs font-mono rounded-lg border border-border-subtle bg-bg-card text-text-primary"
+        />
+        <div className="inline-flex gap-1.5">
+          <button
+            type="button"
+            onClick={cancel}
+            aria-label="取消推送"
+            className="px-2 py-1 text-xs font-medium rounded-lg border border-border-subtle text-text-muted hover:bg-bg-hover cursor-pointer"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={confirm}
+            aria-label={moved ? `确认推送到 ${pickedDate}` : '确认推送'}
+            className="px-2 py-1 text-xs font-medium rounded-lg border border-accent-green/40 text-accent-green hover:bg-accent-green/10 cursor-pointer"
+          >
+            {moved ? `推送到 ${pickedDate}` : '确认推送'}
+          </button>
+        </div>
+        {error && (
+          <p className="text-[11px] font-mono text-accent-red" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="inline-flex flex-col items-end">
       <button
         type="button"
-        onClick={handle}
+        onClick={openPicker}
         disabled={gateDisabled}
         title={reason ?? undefined}
         aria-label={label}

@@ -133,9 +133,9 @@ export default function WeekLayout() {
   }, [folder, user])
 
   const handlePush = useCallback(
-    async (sessionDate: string, sessionIndex: number) => {
+    async (sessionDate: string, sessionIndex: number, targetDate?: string) => {
       if (!user) return
-      const res = await pushPlannedSession(user, sessionDate, sessionIndex)
+      const res = await pushPlannedSession(user, sessionDate, sessionIndex, targetDate)
       if (!res.ok) {
         const detail = res.data?.detail
         const msg = typeof detail === 'string'
@@ -337,7 +337,7 @@ function CalendarTab({
   planDays: PlanDay[]
   setPlanDays: (days: PlanDay[]) => void
   structuredStatus: StructuredStatus
-  onPush: (date: string, sessionIndex: number) => Promise<void>
+  onPush: (date: string, sessionIndex: number, targetDate?: string) => Promise<void>
   onReparse: () => void
   reparseBusy: boolean
   reparseError: string | null
@@ -445,7 +445,7 @@ function CalendarTab({
         canPushRun={canPushRun}
         canPushStrength={canPushStrength}
         pushDisabled={batchBusy}
-        onPush={(s) => onPush(s.date, s.session_index)}
+        onPush={(s, targetDate) => onPush(s.date, s.session_index, targetDate)}
       />
     </div>
   )

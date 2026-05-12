@@ -141,8 +141,64 @@ describe('PushPlannedButton', () => {
     expect(btn).toBeDisabled()
   })
 
-  it('invokes onPush when fresh', async () => {
+  it('opens date picker, then invokes onPush with planned date on confirm', async () => {
     const onPush = vi.fn().mockResolvedValue(undefined)
+    const session = makeSession()
+    render(
+      <PushPlannedButton
+        session={session}
+        structuredStatus="fresh"
+        canPushRun={true}
+        onPush={onPush}
+      />,
+    )
+    const btn = screen.getByRole('button', { name: '推送到手表' })
+    expect(btn).not.toBeDisabled()
+    // First click opens the picker without invoking onPush.
+    await act(async () => {
+      fireEvent.click(btn)
+    })
+    expect(onPush).not.toHaveBeenCalled()
+    // The date input defaults to the planned date.
+    const dateInput = screen.getByLabelText('选择推送日期') as HTMLInputElement
+    expect(dateInput.value).toBe(session.date)
+    expect(dateInput.min).toBe('2026-04-13') // -7 days
+    expect(dateInput.max).toBe('2026-04-27') // +7 days
+    // Confirm pushes with the planned date (default — no move).
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '确认推送' }))
+    })
+    expect(onPush).toHaveBeenCalledTimes(1)
+    expect(onPush).toHaveBeenCalledWith(session, session.date)
+  })
+
+  it('forwards picked target_date when user moves the session', async () => {
+    const onPush = vi.fn().mockResolvedValue(undefined)
+    const session = makeSession()
+    render(
+      <PushPlannedButton
+        session={session}
+        structuredStatus="fresh"
+        canPushRun={true}
+        onPush={onPush}
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '推送到手表' }))
+    })
+    const dateInput = screen.getByLabelText('选择推送日期') as HTMLInputElement
+    await act(async () => {
+      fireEvent.change(dateInput, { target: { value: '2026-04-22' } })
+    })
+    // Confirm button label changes to surface the moved date.
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '确认推送到 2026-04-22' }))
+    })
+    expect(onPush).toHaveBeenCalledWith(session, '2026-04-22')
+  })
+
+  it('cancel closes the picker without calling onPush', async () => {
+    const onPush = vi.fn()
     render(
       <PushPlannedButton
         session={makeSession()}
@@ -151,12 +207,15 @@ describe('PushPlannedButton', () => {
         onPush={onPush}
       />,
     )
-    const btn = screen.getByRole('button', { name: '推送到手表' })
-    expect(btn).not.toBeDisabled()
     await act(async () => {
-      fireEvent.click(btn)
+      fireEvent.click(screen.getByRole('button', { name: '推送到手表' }))
     })
-    expect(onPush).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId('push-date-picker')).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '取消推送' }))
+    })
+    expect(screen.queryByTestId('push-date-picker')).not.toBeInTheDocument()
+    expect(onPush).not.toHaveBeenCalled()
   })
 
   it('shows "已推送" success label when already pushed', () => {

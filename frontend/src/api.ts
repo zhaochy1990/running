@@ -939,6 +939,9 @@ export interface PushPlannedSessionResponse {
   scheduled_workout_id?: number
   provider?: string
   provider_workout_id?: string
+  /** Actual ISO date the workout was scheduled to on the watch. Equals the
+   *  planned date when no `target_date` override was supplied. */
+  push_date?: string
   // 409 carries the actual structured_status so the UI can show the right hint.
   detail?: { error?: string; structured_status?: StructuredStatus | null } | string
 }
@@ -966,10 +969,15 @@ export function getPlanToday(user: string) {
   return fetchJSON<PlanTodayResponse>(`/${user}/plan/today`)
 }
 
-export function pushPlannedSession(user: string, date: string, sessionIndex: number) {
-  return postJSON<PushPlannedSessionResponse>(
-    `/${user}/plan/sessions/${date}/${sessionIndex}/push`,
-  )
+export function pushPlannedSession(
+  user: string,
+  date: string,
+  sessionIndex: number,
+  targetDate?: string,
+) {
+  const path = `/${user}/plan/sessions/${date}/${sessionIndex}/push`
+  const qs = targetDate ? `?${new URLSearchParams({ target_date: targetDate }).toString()}` : ''
+  return postJSON<PushPlannedSessionResponse>(`${path}${qs}`)
 }
 
 export function reparsePlan(user: string, folder: string) {
