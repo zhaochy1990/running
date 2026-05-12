@@ -254,6 +254,33 @@ class StrideApi {
     return AbilityCurrent.fromJson(json);
   }
 
+  /// Raw ability/current response for the E4 radar screen.
+  /// Returns the full JSON map so [AbilitySnapshot] can parse l3_dimensions.
+  Future<Map<String, dynamic>> getAbilityCurrentRaw(String user) async {
+    return _get<Map<String, dynamic>>('/api/$user/ability/current');
+  }
+
+  /// Race predictions — E5 screen.
+  Future<Map<String, dynamic>> getRacePredictions(String user) async {
+    return _get<Map<String, dynamic>>('/api/$user/race-predictions');
+  }
+
+  /// Historical race predictions for trend chart.
+  Future<Map<String, dynamic>> getRacePredictionsHistory(
+    String user, {
+    int days = 180,
+  }) async {
+    return _get<Map<String, dynamic>>(
+      '/api/$user/race-predictions/history',
+      query: {'days': days},
+    );
+  }
+
+  /// Personal bests — E6 screen.
+  Future<Map<String, dynamic>> getPbs(String user) async {
+    return _get<Map<String, dynamic>>('/api/$user/pbs');
+  }
+
   // ── Teams ──────────────────────────────────────────────────────────────
   Future<Team> getTeam(String teamId) async {
     final json = await _get<Map<String, dynamic>>('/api/teams/$teamId');

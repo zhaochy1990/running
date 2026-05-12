@@ -18,7 +18,7 @@ from stride_core.source import DataSource
 
 from .bearer import _load_public_key, is_dev_mode, require_bearer, verify_path_user
 from .deps import PROJECT_ROOT
-from .routes import account, ability, activities, feedback, generate, health, home, inbody, likes, master_plan, notifications, onboarding, plan, plan_chat, plan_variants, profile, public, review, running_profile, strength, sync, teams, training_goal, training_plan, users, watch, weeks, workouts
+from .routes import account, ability, activities, feedback, generate, health, home, inbody, likes, master_plan, notifications, onboarding, plan, plan_chat, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, sync, teams, training_goal, training_plan, users, watch, weeks, workouts
 from .static import mount_frontend
 
 
@@ -101,6 +101,8 @@ def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
     app.include_router(strength.router, dependencies=protected_user)
     app.include_router(feedback.router, dependencies=protected_user)
     app.include_router(review.router, dependencies=protected_user)
+    app.include_router(pbs.router, dependencies=protected_user)
+    app.include_router(predictions.router, dependencies=protected_user)
 
     # Internal webhook router — gated by X-Internal-Token, NOT bearer JWT.
     # Path is /internal/... (not /api/internal/...) so future bearer-prefix

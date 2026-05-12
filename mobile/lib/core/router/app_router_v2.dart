@@ -5,6 +5,11 @@ import 'package:go_router/go_router.dart';
 import '../../features_v2/_shared/shell/main_shell.dart';
 import '../../features_v2/activity/activity_detail_screen.dart';
 import '../../features_v2/health/health_overview_screen.dart';
+import '../../features_v2/health/ability_radar_screen.dart';
+import '../../features_v2/health/pb_records_screen.dart';
+import '../../features_v2/health/pmc_screen.dart';
+import '../../features_v2/health/predictions_screen.dart';
+import '../../features_v2/health/trends_screen.dart';
 import '../../features_v2/home/home_screen.dart';
 import '../../features_v2/profile/profile_screen.dart';
 import '../../features_v2/auth/login_screen.dart';
@@ -231,6 +236,31 @@ final appRouterV2Provider = Provider<GoRouter>((ref) {
           planId: state.pathParameters['planId']!,
           version: int.parse(state.pathParameters['version']!),
         ),
+      ),
+      // E2 — PMC training load
+      GoRoute(
+        path: RoutesV2.dataPmc,
+        builder: (_, _) => const PmcScreen(),
+      ),
+      // E3 — Health trends detail
+      GoRoute(
+        path: RoutesV2.dataTrends,
+        builder: (_, _) => const TrendsScreen(),
+      ),
+      // E4 — Ability radar
+      GoRoute(
+        path: RoutesV2.abilityRadar,
+        builder: (_, _) => const AbilityRadarScreen(),
+      ),
+      // E5 — Race predictions
+      GoRoute(
+        path: RoutesV2.predictions,
+        builder: (_, _) => const PredictionsScreen(),
+      ),
+      // E6 — PB records
+      GoRoute(
+        path: RoutesV2.pbRecords,
+        builder: (_, _) => const PbRecordsScreen(),
       ),
       ShellRoute(
         builder: (_, _, child) => MainShellV2(child: child),

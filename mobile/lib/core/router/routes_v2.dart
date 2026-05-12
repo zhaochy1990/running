@@ -98,4 +98,19 @@ class RoutesV2 {
       '/v2/training-plan/version/:planId/:version';
   static String trainingPlanVersion(String planId, int version) =>
       '/v2/training-plan/version/$planId/$version';
+
+  // E2 — PMC training load (fullscreen, no shell)
+  static const dataPmc = '/v2/data/pmc';
+
+  // E3 — Health trends detail (fullscreen, no shell)
+  static const dataTrends = '/v2/data/trends';
+
+  // E4 — Ability radar (fullscreen, no shell)
+  static const abilityRadar = '/v2/data/ability';
+
+  // E5 — Race predictions (fullscreen, no shell)
+  static const predictions = '/v2/data/predictions';
+
+  // E6 — PB records (fullscreen, no shell)
+  static const pbRecords = '/v2/data/pbs';
 }

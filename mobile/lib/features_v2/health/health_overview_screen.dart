@@ -9,7 +9,9 @@ library;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
@@ -55,6 +57,8 @@ class _OverviewBody extends StatelessWidget {
         _SleepCard(overview: overview),
         const SizedBox(height: StrideTokens.spaceLg),
         _AiInterpretCard(overview: overview),
+        const SizedBox(height: StrideTokens.spaceXl),
+        const _DetailEntries(),
         const SizedBox(height: StrideTokens.spaceXl),
       ],
     );
@@ -441,6 +445,138 @@ class _ErrorView extends StatelessWidget {
                 color: StrideTokens.muted,
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Detail entries (E2-E6) ───────────────────────────────────────────────────
+
+class _DetailEntries extends StatelessWidget {
+  const _DetailEntries();
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = <_EntryItem>[
+      _EntryItem(
+        icon: Icons.show_chart,
+        title: '训练负荷',
+        subtitle: 'ATL / CTL / TSB 曲线',
+        route: RoutesV2.dataPmc,
+      ),
+      _EntryItem(
+        icon: Icons.ssid_chart,
+        title: '趋势详情',
+        subtitle: '疲劳 / HRV / RHR / 睡眠 / 负荷',
+        route: RoutesV2.dataTrends,
+      ),
+      _EntryItem(
+        icon: Icons.radar,
+        title: '能力分析',
+        subtitle: '6 维 ability radar',
+        route: RoutesV2.abilityRadar,
+      ),
+      _EntryItem(
+        icon: Icons.flag_outlined,
+        title: '成绩预测',
+        subtitle: '5K / 10K / HM / FM + 目标差距',
+        route: RoutesV2.predictions,
+      ),
+      _EntryItem(
+        icon: Icons.emoji_events_outlined,
+        title: '个人最佳',
+        subtitle: '4 距离自动检测',
+        route: RoutesV2.pbRecords,
+      ),
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: StrideTokens.surface,
+        borderRadius: BorderRadius.circular(StrideTokens.radiusLg),
+        border: Border.all(color: StrideTokens.border2),
+      ),
+      child: Column(
+        children: [
+          for (var i = 0; i < entries.length; i++) ...[
+            if (i > 0)
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: StrideTokens.border2,
+                indent: StrideTokens.spaceLg,
+                endIndent: StrideTokens.spaceLg,
+              ),
+            _EntryTile(item: entries[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _EntryItem {
+  const _EntryItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.route,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final String route;
+}
+
+class _EntryTile extends StatelessWidget {
+  const _EntryTile({required this.item});
+
+  final _EntryItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      key: Key('detail-entry-${item.route}'),
+      onTap: () => context.push(item.route),
+      borderRadius: BorderRadius.circular(StrideTokens.radiusLg),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: StrideTokens.spaceLg,
+          vertical: StrideTokens.spaceMd,
+        ),
+        child: Row(
+          children: [
+            Icon(item.icon, size: 22, color: StrideTokens.accent),
+            const SizedBox(width: StrideTokens.spaceMd),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    style: const TextStyle(
+                      fontFamily: AppTypography.fontSans,
+                      fontSize: StrideTokens.fs14,
+                      fontWeight: FontWeight.w500,
+                      color: StrideTokens.fg,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    item.subtitle,
+                    style: const TextStyle(
+                      fontFamily: AppTypography.fontSans,
+                      fontSize: StrideTokens.fs12,
+                      color: StrideTokens.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, size: 18, color: StrideTokens.muted),
           ],
         ),
       ),
