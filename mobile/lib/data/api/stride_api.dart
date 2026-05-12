@@ -5,8 +5,10 @@ import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
 import '../../features_v2/activity/models/activity_detail.dart';
 import '../../features_v2/activity/models/timeseries_data.dart';
+import '../../features_v2/feedback/models/activity_feedback.dart';
 import '../../features_v2/home/models/home_data.dart';
 import '../../features_v2/onboarding/models/onboarding_defaults.dart';
+import '../../features_v2/review/models/week_review.dart';
 import '../models/activity.dart';
 import '../models/health.dart';
 import '../models/notifications.dart';
@@ -169,6 +171,29 @@ class StrideApi {
   }
 
   // ── Plan ───────────────────────────────────────────────────────────────
+
+  /// Generate a weekly plan via the rule-based engine (T21 endpoint).
+  ///
+  /// Returns a [GeneratedWeek] with the folder + summary counts.
+  /// Throws [ApiException] with statusCode 409 when the week already exists
+  /// and [force] is false — callers should offer the user an override dialog.
+  Future<GeneratedWeek> generateWeek(
+    String user, {
+    required String weekStart,
+    String source = 'manual',
+    bool force = false,
+  }) async {
+    final qs = force ? '?force=true' : '';
+    final resp = await _post<Map<String, dynamic>>(
+      '/api/$user/plan/weeks/generate$qs',
+      body: {
+        'week_start': weekStart,
+        'source': source,
+      },
+    );
+    return GeneratedWeek.fromJson(resp);
+  }
+
   Future<PlanTodayResponse> getPlanToday(String user) async {
     final json = await _get<Map<String, dynamic>>('/api/$user/plan/today');
     return PlanTodayResponse.fromJson(json);
@@ -373,6 +398,84 @@ class StrideApi {
     return NotificationPrefs.fromJson(json);
   }
 
+  // ── Feedback ───────────────────────────────────────────────────────────
+
+  /// Submit (upsert) post-activity feedback.
+  /// Returns the persisted [ActivityFeedback].
+  Future<ActivityFeedback> putActivityFeedback({
+    required String userId,
+    required String labelId,
+    required int rpe,
+    required List<String> moodTags,
+    String? note,
+  }) async {
+    final json = await _put<Map<String, dynamic>>(
+      '/api/$userId/activities/$labelId/feedback',
+      body: {
+        'rpe': rpe,
+        'mood_tags': moodTags,
+        'note': note,
+      },
+    );
+    return ActivityFeedback.fromJson(json);
+  }
+
+  /// Read existing post-activity feedback. Returns a record with null fields
+  /// when no feedback has been submitted yet (backend returns 200, not 404).
+  Future<ActivityFeedback> getActivityFeedback(
+    String userId,
+    String labelId,
+  ) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$userId/activities/$labelId/feedback',
+    );
+    return ActivityFeedback.fromJson(json);
+  }
+
+  // ── Plan Chat ──────────────────────────────────────────────────────────
+
+  /// Send a user message to the plan chat endpoint and return the raw
+  /// response map (contains `ai_response` and optionally `diff`).
+  Future<Map<String, dynamic>> sendPlanChatMessage({
+    required String user,
+    required String folder,
+    required String message,
+    List<Map<String, dynamic>>? history,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/$user/plan/$folder/chat/messages',
+      body: {
+        'message': message,
+        if (history != null) 'history': history,
+      },
+    );
+  }
+
+  /// Apply accepted diff ops from a pending plan chat diff.
+  Future<Map<String, dynamic>> applyPlanChatDiff({
+    required String user,
+    required String folder,
+    required String diffId,
+    required List<String> acceptedOpIds,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/$user/plan/$folder/chat/apply',
+      body: {
+        'diff_id': diffId,
+        'accepted_op_ids': acceptedOpIds,
+      },
+    );
+  }
+
+  // ── Review ─────────────────────────────────────────────────────────────
+  /// Fetch aggregated weekly review for D9 screen.
+  Future<WeekReview> getWeekReview(String user, String folder) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$user/weeks/$folder/review',
+    );
+    return WeekReview.fromJson(json);
+  }
+
   // ── Internals ──────────────────────────────────────────────────────────
   Future<T> _get<T>(String path, {Map<String, dynamic>? query}) async {
     final res = await _dio.get<T>(path, queryParameters: query);
@@ -387,6 +490,11 @@ class StrideApi {
 
   Future<T> _delete<T>(String path) async {
     final res = await _dio.delete<T>(path);
+    return _unpack<T>(res);
+  }
+
+  Future<T> _put<T>(String path, {Object? body}) async {
+    final res = await _dio.put<T>(path, data: body);
     return _unpack<T>(res);
   }
 
@@ -412,3 +520,34 @@ final strideApiProvider = Provider<StrideApi>((ref) {
   final client = ref.watch(apiClientProvider);
   return StrideApi(client.dio);
 });
+
+// ── GeneratedWeek model ────────────────────────────────────────────────────────
+
+/// Response model for `POST /api/{user}/plan/weeks/generate`.
+///
+/// Only the fields needed to navigate to the week detail screen are kept here;
+/// the full plan is fetched by [WeekDetailScreen] once navigation completes.
+class GeneratedWeek {
+  const GeneratedWeek({
+    required this.folder,
+    required this.sessionsCount,
+    required this.totalDistanceKm,
+  });
+
+  /// Backend folder key, e.g. "2026-05-11_05-17(W2)".
+  final String folder;
+
+  /// Number of sessions generated.
+  final int sessionsCount;
+
+  /// Total planned weekly distance in km.
+  final double totalDistanceKm;
+
+  factory GeneratedWeek.fromJson(Map<String, dynamic> json) {
+    return GeneratedWeek(
+      folder: json['folder'] as String,
+      sessionsCount: (json['sessions_count'] as num?)?.toInt() ?? 0,
+      totalDistanceKm: (json['total_distance_km'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
+}

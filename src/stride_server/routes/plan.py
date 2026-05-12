@@ -284,6 +284,51 @@ def _push_guard_or_raise(plan_store, week_folder: str) -> None:
         )
 
 
+def push_single_session(
+    user: str,
+    date: str,
+    session_index: int,
+    source: Any = None,
+    db: Any = None,
+    plan_store: Any = None,
+) -> dict[str, Any]:
+    """Helper: push one planned session, returning a dict (never raises).
+
+    Used by ``POST /api/{user}/plan/{folder}/push`` (whole-week push in
+    ``routes/generate.py``) so a single failing session doesn't blow up
+    the whole batch. Internally delegates to ``push_planned_session``
+    (the route handler) and translates ``HTTPException`` to the
+    ``{success, error, retryable}`` shape.
+
+    Args after ``session_index`` are unused; they exist so callers that
+    pass them by name (legacy signature) don't break.
+    """
+    from fastapi import HTTPException as _HE
+
+    from ..deps import get_source_for_user
+
+    if source is None:
+        source = get_source_for_user(user)
+
+    try:
+        # Call the route handler as a plain function. ``target_date=None``
+        # keeps the planned date.
+        result = push_planned_session(
+            user=user,
+            date=date,
+            session_index=session_index,
+            target_date=None,
+            source=source,
+        )
+        return {"success": True, "error": None, "retryable": False, **(result or {})}
+    except _HE as exc:
+        retryable = exc.status_code in (502, 503, 504)
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        return {"success": False, "error": detail, "retryable": retryable}
+    except Exception as exc:  # noqa: BLE001
+        return {"success": False, "error": str(exc), "retryable": True}
+
+
 def _week_folder_for_date(db: Database, day: str) -> str | None:
     """Best-effort: locate the week_folder a planned session lives under by
     walking the ``weekly_plan`` table. We don't store week_folder on the

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../features_v2/_placeholders/tab_placeholders.dart';
 import '../../features_v2/_shared/shell/main_shell.dart';
 import '../../features_v2/activity/activity_detail_screen.dart';
 import '../../features_v2/health/health_overview_screen.dart';
@@ -16,6 +15,14 @@ import '../../features_v2/onboarding/blocked_screen.dart';
 import '../../features_v2/onboarding/brand_screen.dart';
 import '../../features_v2/onboarding/coros_link_screen.dart';
 import '../../features_v2/onboarding/sync_progress_screen.dart';
+import '../../features_v2/feedback/post_activity_feedback_screen.dart';
+import '../../features_v2/plan/generate_week_screen.dart';
+import '../../features_v2/plan/plan_chat_screen.dart';
+import '../../features_v2/plan/pre_training_screen.dart';
+import '../../features_v2/plan/session_detail_screen.dart';
+import '../../features_v2/plan/week_detail_screen.dart';
+import '../../features_v2/plan/week_list_screen.dart';
+import '../../features_v2/review/week_review_screen.dart';
 import '../auth/auth_controller.dart';
 import '../auth/current_user.dart';
 import 'routes_v2.dart';
@@ -116,6 +123,52 @@ final appRouterV2Provider = Provider<GoRouter>((ref) {
           activityId: state.pathParameters['id']!,
         ),
       ),
+      GoRoute(
+        path: RoutesV2.preTrainingPattern,
+        builder: (_, state) => PreTrainingScreen(
+          date: state.pathParameters['date']!,
+          sessionIndex: int.parse(state.pathParameters['sessionIndex']!),
+        ),
+      ),
+      GoRoute(
+        path: RoutesV2.feedbackPattern,
+        builder: (_, state) => PostActivityFeedbackScreen(
+          labelId: state.pathParameters['labelId']!,
+          activityName: state.extra as String?,
+        ),
+      ),
+      GoRoute(
+        path: RoutesV2.reviewPattern,
+        builder: (_, state) => WeekReviewScreen(
+          folder: state.pathParameters['folder']!,
+        ),
+      ),
+      GoRoute(
+        path: RoutesV2.planChatPattern,
+        builder: (_, state) => PlanChatScreen(
+          folder: state.pathParameters['folder']!,
+        ),
+      ),
+      GoRoute(
+        path: RoutesV2.weekDetailPattern,
+        builder: (_, state) => WeekDetailScreen(
+          folder: state.pathParameters['folder']!,
+        ),
+      ),
+      GoRoute(
+        path: RoutesV2.sessionDetailPattern,
+        builder: (_, state) => SessionDetailScreen(
+          folder: state.pathParameters['folder']!,
+          date: state.pathParameters['date']!,
+          sessionIndex: int.parse(state.pathParameters['sessionIndex']!),
+        ),
+      ),
+      GoRoute(
+        path: RoutesV2.generatePattern,
+        builder: (_, state) => GenerateWeekScreen(
+          weekStart: state.uri.queryParameters['week_start'] ?? '',
+        ),
+      ),
       ShellRoute(
         builder: (_, _, child) => MainShellV2(child: child),
         routes: [
@@ -125,7 +178,7 @@ final appRouterV2Provider = Provider<GoRouter>((ref) {
           ),
           GoRoute(
             path: RoutesV2.train,
-            builder: (_, _) => const TrainPlaceholderScreen(),
+            builder: (_, _) => const WeekListScreen(),
           ),
           GoRoute(
             path: RoutesV2.data,

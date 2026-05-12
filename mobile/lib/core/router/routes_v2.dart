@@ -26,4 +26,40 @@ class RoutesV2 {
   // Detail
   static const activityDetailPattern = '/v2/activity/:id';
   static String activityDetail(String id) => '/v2/activity/$id';
+
+  // D6 — Pre-training screen
+  static const preTrainingPattern = '/v2/plan/:date/:sessionIndex/pre';
+  static String preTraining(String date, int sessionIndex) =>
+      '/v2/plan/$date/$sessionIndex/pre';
+
+  // D7 — Post-activity feedback (full-screen, no shell)
+  static const feedbackPattern = '/v2/feedback/:labelId';
+  static String feedback(String labelId) => '/v2/feedback/$labelId';
+
+  // D9 — Weekly review (full-screen, no shell)
+  static const reviewPattern = '/v2/review/:folder';
+  static String review(String folder) => '/v2/review/$folder';
+
+  // D2a — Week list (inside shell, replaces /v2/train placeholder)
+  // No separate path constant needed — reuses [train] as the tab root.
+
+  // D2 — Week detail (full-screen, no shell)
+  static const weekDetailPattern = '/v2/plan/weeks/:folder';
+  static String weekDetail(String folder) => '/v2/plan/weeks/$folder';
+
+  // D3 — Session detail (full-screen, no shell)
+  static const sessionDetailPattern =
+      '/v2/plan/weeks/:folder/sessions/:date/:sessionIndex';
+  static String sessionDetail(String folder, String date, int sessionIndex) =>
+      '/v2/plan/weeks/$folder/sessions/$date/$sessionIndex';
+
+  // D4 — Plan chat / adjust (full-screen, no shell)
+  static const planChatPattern = '/v2/plan/weeks/:folder/chat';
+  static String planChat(String folder) => '/v2/plan/weeks/$folder/chat';
+
+  // D1 — Generate week (full-screen, no shell)
+  // Query param: week_start=YYYY-MM-DD
+  static const generatePattern = '/v2/plan/generate';
+  static String generate(String weekStart) =>
+      '/v2/plan/generate?week_start=$weekStart';
 }
