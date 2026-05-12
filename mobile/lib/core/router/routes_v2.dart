@@ -113,4 +113,9 @@ class RoutesV2 {
 
   // E6 — PB records (fullscreen, no shell)
   static const pbRecords = '/v2/data/pbs';
+
+  // M5 — Nutrition
+  static const nutritionPrefs = '/v2/nutrition/prefs';
+  static const nutritionDaily = '/v2/nutrition/daily';
+  static const nutritionMeals = '/v2/nutrition/meals';
 }

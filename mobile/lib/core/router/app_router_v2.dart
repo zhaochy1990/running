@@ -36,6 +36,9 @@ import '../../features_v2/training_plan/version_screen.dart';
 import '../../features_v2/plan/session_detail_screen.dart';
 import '../../features_v2/plan/week_detail_screen.dart';
 import '../../features_v2/plan/week_list_screen.dart';
+import '../../features_v2/nutrition/daily_advice_screen.dart';
+import '../../features_v2/nutrition/meal_log_screen.dart';
+import '../../features_v2/nutrition/prefs_screen.dart';
 import '../../features_v2/review/week_review_screen.dart';
 import '../auth/auth_controller.dart';
 import '../auth/current_user.dart';
@@ -261,6 +264,19 @@ final appRouterV2Provider = Provider<GoRouter>((ref) {
       GoRoute(
         path: RoutesV2.pbRecords,
         builder: (_, _) => const PbRecordsScreen(),
+      ),
+      // M5 — Nutrition
+      GoRoute(
+        path: RoutesV2.nutritionPrefs,
+        builder: (_, _) => const NutritionPrefsScreen(),
+      ),
+      GoRoute(
+        path: RoutesV2.nutritionDaily,
+        builder: (_, _) => const DailyAdviceScreen(),
+      ),
+      GoRoute(
+        path: RoutesV2.nutritionMeals,
+        builder: (_, _) => const MealLogScreen(),
       ),
       ShellRoute(
         builder: (_, _, child) => MainShellV2(child: child),

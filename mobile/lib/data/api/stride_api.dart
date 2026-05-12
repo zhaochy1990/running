@@ -7,6 +7,9 @@ import '../../features_v2/activity/models/activity_detail.dart';
 import '../../features_v2/activity/models/timeseries_data.dart';
 import '../../features_v2/feedback/models/activity_feedback.dart';
 import '../../features_v2/home/models/home_data.dart';
+import '../../features_v2/nutrition/models/daily_advice.dart';
+import '../../features_v2/nutrition/models/meals_daily.dart';
+import '../../features_v2/nutrition/models/nutrition_prefs.dart';
 import '../../features_v2/onboarding/models/onboarding_defaults.dart';
 import '../../features_v2/review/models/week_review.dart';
 import '../../features_v2/training_plan/models/master_plan.dart';
@@ -673,6 +676,65 @@ class StrideApi {
       '/api/$user/weeks/$folder/review',
     );
     return WeekReview.fromJson(json);
+  }
+
+  // ── Nutrition (M5) ────────────────────────────────────────────────────────
+
+  /// GET /api/users/me/nutrition-prefs — returns null on 404.
+  Future<NutritionPrefs?> getNutritionPrefs() async {
+    try {
+      final r =
+          await _get<Map<String, dynamic>>('/api/users/me/nutrition-prefs');
+      return NutritionPrefs.fromJson(r);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// PUT /api/users/me/nutrition-prefs
+  Future<NutritionPrefs> putNutritionPrefs(Map<String, dynamic> body) async {
+    final r = await _put<Map<String, dynamic>>(
+      '/api/users/me/nutrition-prefs',
+      body: body,
+    );
+    return NutritionPrefs.fromJson(r);
+  }
+
+  /// GET /api/{user}/nutrition/daily — returns null on 404 (no prefs).
+  Future<DailyAdvice?> getDailyNutrition(String user, {String? date}) async {
+    try {
+      final r = await _get<Map<String, dynamic>>(
+        '/api/$user/nutrition/daily',
+        query: {if (date != null) 'date': date},
+      );
+      return DailyAdvice.fromJson(r);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// GET /api/{user}/nutrition/meals — returns null on 404.
+  Future<MealsDaily?> getDailyMeals(String user, {String? date}) async {
+    try {
+      final r = await _get<Map<String, dynamic>>(
+        '/api/$user/nutrition/meals',
+        query: {if (date != null) 'date': date},
+      );
+      return MealsDaily.fromJson(r);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// POST /api/{user}/nutrition/meals
+  Future<Map<String, dynamic>> postMeal(
+    String user,
+    Map<String, dynamic> body,
+  ) async {
+    return _post<Map<String, dynamic>>('/api/$user/nutrition/meals', body: body);
   }
 
   // ── Internals ──────────────────────────────────────────────────────────

@@ -117,7 +117,7 @@ class _ProfileBody extends ConsumerWidget {
         ProfileMenuItem(
           icon: Icons.restaurant_outlined,
           label: '营养偏好',
-          onTap: () => _showComingSoon(context, '营养偏好'),
+          onTap: () => context.push(RoutesV2.nutritionPrefs),
         ),
         _Divider(),
         // ── Device ──────────────────────────────────────────────────────
