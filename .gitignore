@@ -29,4 +29,5 @@ data/*/onboarding.json
 frontend/.env.local
 frontend/.env.*.local
 evaluation/
+node_modules/
 
