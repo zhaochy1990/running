@@ -22,10 +22,11 @@ data/*/auth.json
 data/*/garmin_auth.json
 data/*/coach.json
 data/coach.json
+data/*/onboarding.json
 .stride-coach.json
 .credentials.local
 .playwright-mcp/
 frontend/.env.local
 frontend/.env.*.local
-evaluation/garmin/
+evaluation/
 
