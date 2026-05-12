@@ -10,6 +10,7 @@ import 'core/auth/auth_controller.dart';
 import 'core/notifications/jpush_service.dart';
 import 'core/notifications/rationale_storage.dart';
 import 'core/router/app_router.dart';
+import 'core/router/app_router_v2.dart';
 import 'core/theme/app_theme.dart';
 import 'core/updater/update_checker.dart';
 import 'features/updater/update_prompt.dart';
@@ -22,11 +23,17 @@ class StrideApp extends ConsumerStatefulWidget {
 }
 
 class _StrideAppState extends ConsumerState<StrideApp> {
+  /// Build-time switch: `flutter run --dart-define=STRIDE_V2=true`.
+  static const bool _kUseV2Routes =
+      bool.fromEnvironment('STRIDE_V2', defaultValue: false);
+
   bool _bootstrapTriggered = false;
 
   @override
   Widget build(BuildContext context) {
-    final router = ref.watch(appRouterProvider);
+    final router = _kUseV2Routes
+        ? ref.watch(appRouterV2Provider)
+        : ref.watch(appRouterProvider);
 
     // When auth becomes Authenticated, kick off post-login work exactly once
     // per app instance: show the rationale screen (first launch) or

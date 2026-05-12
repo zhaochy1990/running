@@ -63,6 +63,28 @@ class AuthController extends StateNotifier<AuthState> {
     }
   }
 
+  Future<void> register({
+    required String email,
+    required String password,
+    String? inviteCode,
+  }) async {
+    state = const AuthLoading();
+    try {
+      final tokens = await _repo.register(
+        email: email,
+        password: password,
+        inviteCode: inviteCode,
+      );
+      state = AuthAuthenticated(tokens);
+    } on AuthException catch (e) {
+      state = AuthUnauthenticated(e.message);
+      rethrow;
+    } catch (_) {
+      state = const AuthUnauthenticated('网络错误，请稍后重试');
+      rethrow;
+    }
+  }
+
   Future<void> logout() async {
     await _repo.logout();
     state = const AuthUnauthenticated();

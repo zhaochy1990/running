@@ -3,6 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/api/api_client.dart';
 import '../../core/api/api_exception.dart';
+import '../../features_v2/activity/models/activity_detail.dart';
+import '../../features_v2/activity/models/timeseries_data.dart';
+import '../../features_v2/home/models/home_data.dart';
+import '../../features_v2/onboarding/models/onboarding_defaults.dart';
 import '../models/activity.dart';
 import '../models/health.dart';
 import '../models/notifications.dart';
@@ -28,9 +32,60 @@ class StrideApi {
     return MyProfile.fromJson(json);
   }
 
+  /// Partial profile update. Backend merges non-null fields into the
+  /// existing `profile.json` (see `src/stride_server/routes/profile.py`
+  /// `ProfilePatch`). Returns the merged profile map.
+  ///
+  /// Schema note: backend's `ProfilePatch` expects `sex` (male/female/other)
+  /// and `dob` (ISO date) rather than the plan's draft `gender`/`birth_year`
+  /// names. We translate at this boundary.
+  Future<Map<String, dynamic>> patchProfile({
+    String? sex,
+    String? dob,
+    double? heightCm,
+    double? weightKg,
+    String? displayName,
+  }) async {
+    final body = <String, dynamic>{
+      if (sex != null) 'sex': sex,
+      if (dob != null) 'dob': dob,
+      if (heightCm != null) 'height_cm': heightCm,
+      if (weightKg != null) 'weight_kg': weightKg,
+      if (displayName != null) 'display_name': displayName,
+    };
+    return _patch<Map<String, dynamic>>(
+      '/api/users/me/profile',
+      body: body,
+    );
+  }
+
+  /// Fetch onboarding-default RHR / MaxHR suggestions for B4. Backend
+  /// derives RHR from recent `daily_health` and MaxHR from 220-age formula.
+  Future<OnboardingDefaults> getOnboardingDefaults() async {
+    final json =
+        await _get<Map<String, dynamic>>('/api/users/me/onboarding/defaults');
+    return OnboardingDefaults.fromJson(json);
+  }
+
+  /// Mark onboarding complete & kick off a lightweight background sync.
+  /// Returns the raw body (e.g. `{state: "running"|"already-complete"}`).
+  Future<Map<String, dynamic>> completeOnboarding() async {
+    return _post<Map<String, dynamic>>('/api/users/me/onboarding/complete');
+  }
+
   Future<MyTeamsResponse> getMyTeams() async {
     final json = await _get<Map<String, dynamic>>('/api/users/me/teams');
     return MyTeamsResponse.fromJson(json);
+  }
+
+  // ── Home ───────────────────────────────────────────────────────────────
+  /// Aggregated home screen data (status ring, recent activities, stats).
+  Future<HomeData> getHome(String user, {int recentDays = 7}) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$user/home',
+      query: {'recent_days': recentDays},
+    );
+    return HomeData.fromJson(json);
   }
 
   // ── Activities ─────────────────────────────────────────────────────────
@@ -60,6 +115,43 @@ class StrideApi {
   Future<ActivityDetailResponse> getActivity(String user, String labelId) async {
     final json = await _get<Map<String, dynamic>>('/api/$user/activities/$labelId');
     return ActivityDetailResponse.fromJson(json);
+  }
+
+  /// Fetch activity detail without timeseries (mobile default).
+  Future<ActivityDetailV2> getActivityDetail(
+    String user,
+    String labelId, {
+    bool includeTimeseries = false,
+  }) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$user/activities/$labelId',
+      query: includeTimeseries ? {'include': 'timeseries'} : null,
+    );
+    return ActivityDetailV2.fromJson(json);
+  }
+
+  /// Fetch downsampled timeseries for a single activity (lazy-load).
+  Future<TimeseriesData> getActivityTimeseries(
+    String user,
+    String labelId, {
+    int downsample = 300,
+    Set<String>? fields,
+  }) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$user/activities/$labelId/timeseries',
+      query: {
+        'downsample': downsample,
+        if (fields != null && fields.isNotEmpty) 'fields': fields.join(','),
+      },
+    );
+    return TimeseriesData.fromJson(json);
+  }
+
+  /// Trigger commentary regeneration for an activity.
+  Future<void> regenerateCommentary(String user, String labelId) async {
+    await _post<Map<String, dynamic>>(
+      '/api/$user/activities/$labelId/commentary/regenerate',
+    );
   }
 
   /// Team-scoped activity detail — used when viewing a teammate's activity.
@@ -156,6 +248,44 @@ class StrideApi {
     return MileageLeaderboard.fromJson(json);
   }
 
+  // ── Onboarding ─────────────────────────────────────────────────────────
+  /// Bind a COROS watch by exchanging email/password via the registered
+  /// adapter. `region` is forwarded as a best-effort hint; the current
+  /// backend endpoint may ignore it (auto-detected at login).
+  ///
+  /// Throws [ApiException] on auth/network failure (backend collapses
+  /// auth errors to 400 with a generic message to avoid enumeration).
+  Future<Map<String, dynamic>> linkCoros({
+    required String email,
+    required String password,
+    String? region,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/users/me/coros/login',
+      body: {
+        'email': email,
+        'password': password,
+        if (region != null) 'region': region,
+      },
+    );
+  }
+
+  /// Kick off the lightweight onboarding sync (health-only). The backend
+  /// returns immediately with `{state: 'running'|'already-complete'}`;
+  /// the client polls [getOnboardingSyncStatus] for progress.
+  Future<Map<String, dynamic>> startOnboardingSync() async {
+    return _post<Map<String, dynamic>>('/api/users/me/onboarding/complete');
+  }
+
+  /// Poll the onboarding sync state. Returns the raw payload — fields:
+  ///   state    : 'running'|'done'|'error'|null
+  ///   progress : { phase, percent, message, synced_activities?,
+  ///               synced_health?, started_at, updated_at, ... }
+  ///   error    : optional message when state == 'error'
+  Future<Map<String, dynamic>> getOnboardingSyncStatus() async {
+    return _get<Map<String, dynamic>>('/api/users/me/sync-status');
+  }
+
   // ── Writes ─────────────────────────────────────────────────────────────
   Future<void> triggerSync(String user, {bool full = false}) async {
     await _post<Map<String, dynamic>>(
@@ -214,6 +344,11 @@ class StrideApi {
     await _delete<Map<String, dynamic>>(
       '/api/users/me/devices/$registrationId',
     );
+  }
+
+  /// Unbind the currently-linked watch. Calls `DELETE /api/users/me/watch`.
+  Future<void> unbindWatch() async {
+    await _delete<Map<String, dynamic>>('/api/users/me/watch');
   }
 
   Future<NotificationPrefs> getNotificationPrefs() async {

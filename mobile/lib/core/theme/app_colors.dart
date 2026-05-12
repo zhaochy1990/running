@@ -1,24 +1,29 @@
 import 'package:flutter/material.dart';
 
+import 'tokens.dart';
+
 /// Color tokens — Vercel DESIGN.md base + STRIDE accent override.
 ///
 /// See [mobile/DESIGN.md](../../../DESIGN.md) for the full design system
 /// and [mobile/STRIDE_OVERRIDES.md](../../../STRIDE_OVERRIDES.md) for the
 /// two STRIDE-specific deviations (accent color, extended Mono usage).
+///
+/// Most concrete values now come from [StrideTokens]; this class is
+/// preserved as a stable API surface for legacy callers.
 abstract final class AppColors {
   // ── Backgrounds ────────────────────────────────────────────────────────
-  static const Color background = Color(0xFFFAFAFA);
-  static const Color surface = Color(0xFFFFFFFF);
+  static const Color background = StrideTokens.bg;
+  static const Color surface = StrideTokens.surface;
   static const Color surfaceMuted = Color(0xFFF5F5F5);
 
   // ── Foregrounds (text, icons) ──────────────────────────────────────────
-  static const Color foreground = Color(0xFF0A0A0A);
-  static const Color foregroundMuted = Color(0xFF525252);
-  static const Color foregroundSubtle = Color(0xFF8C8C8C);
+  static const Color foreground = StrideTokens.fg;
+  static const Color foregroundMuted = StrideTokens.fgSoft;
+  static const Color foregroundSubtle = StrideTokens.muted;
 
   // ── Borders ────────────────────────────────────────────────────────────
-  static const Color border = Color(0xFFE5E5E5);
-  static const Color borderStrong = Color(0xFFD4D4D4);
+  static const Color border = StrideTokens.border;
+  static const Color borderStrong = StrideTokens.border2;
 
   // ── Gray scale (Vercel) ────────────────────────────────────────────────
   static const Color gray100 = Color(0xFFF5F5F5);
@@ -35,18 +40,18 @@ abstract final class AppColors {
   // ── STRIDE accent (override #1) ────────────────────────────────────────
   /// Primary accent: STRIDE green. Used for CTAs, focus rings,
   /// sparkline highlights, "today" badges, like-button active.
-  static const Color accent = Color(0xFF00E676);
-  static const Color accentMuted = Color(0xFFB2F0CA);
-  static const Color accentDark = Color(0xFF00B85A);
+  static const Color accent = StrideTokens.accent;
+  static const Color accentMuted = StrideTokens.accentFg;
+  static const Color accentDark = Color(0xFF158A47);
 
   // ── Status (sparingly applied) ─────────────────────────────────────────
-  static const Color success = Color(0xFF00E676);
-  static const Color warning = Color(0xFFF59E0B);
-  static const Color danger = Color(0xFFE11D48);
+  static const Color success = StrideTokens.accent;
+  static const Color warning = StrideTokens.warn;
+  static const Color danger = StrideTokens.danger;
   static const Color info = Color(0xFF3B82F6);
 
   // ── Sport / training-zone tints (mirrors frontend/src/api.ts) ──────────
-  static const Color sportRun = Color(0xFF00E676);
+  static const Color sportRun = StrideTokens.accent;
   static const Color sportTrack = Color(0xFFB388FF);
   static const Color sportTrail = Color(0xFFFFAB00);
   static const Color sportStrength = Color(0xFFFF6D00);

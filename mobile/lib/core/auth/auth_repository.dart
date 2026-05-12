@@ -46,6 +46,36 @@ class AuthRepository {
     return tokens;
   }
 
+  /// Register a new account.
+  ///
+  /// POSTs to `/api/auth/register`. Optional `inviteCode` is forwarded
+  /// as `invite_code` (snake_case to match the auth-service convention).
+  /// On success the response shape matches `/api/auth/login` and the
+  /// returned tokens are persisted.
+  Future<TokenSet> register({
+    required String email,
+    required String password,
+    String? inviteCode,
+  }) async {
+    final res = await _dio.post<Map<String, dynamic>>(
+      '/api/auth/register',
+      data: {
+        'email': email,
+        'password': password,
+        if (inviteCode != null && inviteCode.isNotEmpty) 'invite_code': inviteCode,
+      },
+    );
+    if (res.statusCode != 200 || res.data == null) {
+      throw AuthException(
+        (res.data?['detail'] as String?) ?? '注册失败',
+        statusCode: res.statusCode,
+      );
+    }
+    final tokens = TokenSet.fromLoginJson(res.data!);
+    await _storage.save(tokens);
+    return tokens;
+  }
+
   Future<TokenSet> refresh(TokenSet current) async {
     final res = await _dio.post<Map<String, dynamic>>(
       '/api/auth/refresh',

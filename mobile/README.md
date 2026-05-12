@@ -36,12 +36,17 @@ flutter run
 ```
 lib/
 ├── main.dart                # entry point + ProviderScope
-├── app.dart                 # MaterialApp + (later) GoRouter
+├── app.dart                 # MaterialApp + GoRouter (v1 legacy + v2 gated)
 ├── core/                    # Cross-cutting concerns
 │   ├── api/                 # Dio client + interceptors
 │   ├── auth/                # auth-service tokens + secure storage
 │   ├── theme/               # Material theme from DESIGN.md tokens
+│   │   ├── tokens.dart      # Design token constants (color, spacing, radius, font size)
+│   │   ├── pill_colors.dart # Pill variant color resolution
+│   │   └── app_colors.dart  # AppColors (legacy, being replaced by tokens.dart)
 │   ├── router/              # GoRouter routes + auth guards
+│   │   ├── app_router_v2.dart  # M1 v2 router with redirect rules
+│   │   └── routes_v2.dart      # RoutesV2 path constants (/v2/*)
 │   ├── env/                 # API base URL, build flavors
 │   └── notifications/       # JPush integration + permission UX
 ├── data/
@@ -49,13 +54,68 @@ lib/
 │   ├── api/                 # @RestApi() Retrofit-Dart services
 │   ├── db/                  # Drift schema + tables (offline cache)
 │   └── repos/               # Cache + network composition
-├── features/                # One folder per screen/feature
+├── features/                # Legacy v1 screens (pre-M1)
 │   ├── login/, today/, activity/, health/
 │   ├── teams/, plan/, profile/
+├── features_v2/             # M1 rewrite — gated behind STRIDE_V2=true
+│   ├── _shared/             # Shared widgets + shell
+│   │   ├── shell/           # MainShellV2 (bottom nav scaffold)
+│   │   └── widgets/         # StridePill, StrideStatRow, StrideTopBar,
+│   │                        # StrideNavTab, StrideSegControl, StridePhoneCard
+│   ├── auth/                # A1 AuthStartScreen, A2 AuthLoginScreen, A3 AuthRegisterScreen
+│   ├── onboarding/          # B1 BrandScreen, B2 CorosLinkScreen, B3 SyncProgressScreen,
+│   │                        # B4 BasicInfoScreen, B5 BlockedScreen
+│   ├── home/                # D5 HomeScreen (status rings + activity feed + plan CTA)
+│   ├── activity/            # D8 ActivityDetailScreen (stats, charts, laps)
+│   ├── health/              # E1 HealthOverviewScreen (2×2 metric cards + sleep chart)
+│   └── profile/             # G1 ProfileScreen (user header + menu + logout)
 └── shared/
     ├── widgets/             # HRChart, PaceChart, primitives
     └── utils/               # date / pace formatting (mirrors api.ts)
 ```
+
+## features_v2 — M1 Rewrite
+
+`features_v2/` contains the full M1 screen set (12 screens). All routes use the `/v2/` prefix and coexist with legacy routes.
+
+### Enabling v2 UI
+
+```bash
+# Run with v2 router enabled
+flutter run --dart-define=STRIDE_V2=true
+
+# Build APK with v2 router enabled
+flutter build apk --dart-define=STRIDE_V2=true
+```
+
+Without `STRIDE_V2=true`, the app falls back to the legacy router and v1 screens.
+
+### v2 Router redirect rules
+
+```
+No token            → /v2/auth/start
+Token, !onboardingComplete → /v2/onboarding/brand
+Token, !hasWatch    → /v2/onboarding/blocked
+else                → as requested (home default)
+```
+
+### v2 Route map
+
+| Path | Screen | ID |
+|------|--------|----|
+| `/v2/auth/start` | AuthStartScreen | A1 |
+| `/v2/auth/login` | AuthLoginScreen | A2 |
+| `/v2/auth/register` | AuthRegisterScreen | A3 |
+| `/v2/onboarding/brand` | BrandScreen | B1 |
+| `/v2/onboarding/coros` | CorosLinkScreen | B2 |
+| `/v2/onboarding/sync` | SyncProgressScreen | B3 |
+| `/v2/onboarding/basic-info` | BasicInfoScreen | B4 |
+| `/v2/onboarding/blocked` | BlockedScreen | B5 |
+| `/v2/home` | HomeScreen (shell tab) | D5 |
+| `/v2/train` | TrainPlaceholderScreen (shell tab) | — |
+| `/v2/data` | HealthOverviewScreen (shell tab) | E1 |
+| `/v2/me` | ProfileScreen (shell tab) | G1 |
+| `/v2/activity/:id` | ActivityDetailScreen (full-screen) | D8 |
 
 ## Hand-written API client (no codegen)
 
