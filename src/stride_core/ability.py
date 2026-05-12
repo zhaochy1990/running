@@ -283,6 +283,13 @@ def race_target_from_profile(
 
     target_distance is ``'HM'`` or ``'FM'``.  Defaults to ``'FM'`` when
     the profile has no ``target_distance`` field.
+
+    For full marathons, falls back to the free-text parser used by
+    :func:`marathon_target_from_profile` when the structured
+    ``target_time`` field is missing or unparseable — so a profile that
+    only has ``{"目标": "马拉松破 3:40"}`` still yields ``(13200, 'FM')``
+    instead of ``(None, 'FM')``. Half marathons keep the structured-only
+    path (no free-text HM extractor exists yet).
     """
     if not profile:
         return None, "FM"
@@ -293,20 +300,19 @@ def race_target_from_profile(
     hm_aliases = {"HM", "HALF", "HALF MARATHON", "半马"}
     distance: str = "HM" if raw_distance in hm_aliases else "FM"
 
-    if not isinstance(target_time_str, str) or not target_time_str.strip():
-        return None, distance
+    if isinstance(target_time_str, str) and target_time_str.strip():
+        parsed = _parse_duration_token(target_time_str)
+        if parsed is not None:
+            if distance == "HM":
+                if 30 * 60 <= parsed <= 4 * 3600:
+                    return parsed, "HM"
+            elif _looks_like_marathon_time(parsed):
+                return parsed, "FM"
 
-    parsed = _parse_duration_token(target_time_str)
-    if parsed is None:
-        return None, distance
-
-    # Validate time range based on distance.
-    if distance == "HM":
-        if 30 * 60 <= parsed <= 4 * 3600:
-            return parsed, "HM"
-    else:
-        if _looks_like_marathon_time(parsed):
-            return parsed, "FM"
+    if distance == "FM":
+        fallback = marathon_target_from_profile(profile)
+        if fallback is not None:
+            return fallback, "FM"
 
     return None, distance
 
