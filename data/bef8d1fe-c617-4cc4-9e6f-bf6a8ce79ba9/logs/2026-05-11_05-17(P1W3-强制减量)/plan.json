@@ -3,20 +3,21 @@
   "user": "dehua",
   "user_id": "bef8d1fe-c617-4cc4-9e6f-bf6a8ce79ba9",
   "week_folder": "2026-05-11_05-17(P1W3-强制减量)",
-  "phase": "Phase 1 W3 (forced taper)",
-  "weekly_mileage_km": 40,
-  "weekly_mileage_cap_km": 50,
-  "theme": "Forced taper after W2 discipline failure (4 deviations, 2 intensity violations, RHR red 2 days). 0 quality sessions. Rebuild monitoring discipline + restore strength compliance.",
+  "phase": "Phase 1 W3 (taper + 1 quality)",
+  "weekly_mileage_km": 53,
+  "weekly_mileage_cap_km": 58,
+  "theme": "User decision 2026-05-10 overrides W2 forced-taper penalty (0 quality) — adds 1 structured interval Tue 5/12 (1.6K x 6 @ 3:45-4:00, identical structure to zhaochaoyi P1W3). Override justified: (1) 5/11 health turned green (fatigue 42 / RHR 51 / TLR 0.88 / TSB +15, race-ready zone); (2) dehua already ran 3:49 self-added 6K on 5/5 — this pace range is familiar, not new stimulus. Discipline anchors retained: long run 22K hard-fixed (no upgrade to 26/28K), 3 strength sessions, sport_note 7/7 mandatory, pace display off, no Thu club strength.",
   "sessions": [
     {
       "date": "2026-05-11",
       "day_of_week": "Mon",
       "kind": "strength",
-      "name": "力量 A — 护腿垫补做",
+      "name": "[STRIDE] 力量 A — 间歇前安全垫",
       "duration_min": 25,
+      "notes": "21:00 前完成，间歇前留 ~20h 恢复窗。锐痛立即停。",
       "exercises": [
         {"name": "靠墙静蹲", "provider_id": "T1231", "sets": 3, "duration_s": 60, "rest_s": 60, "notes": "股四头肌耐力"},
-        {"name": "单腿臀桥保持", "provider_id": "T1219", "sets": 3, "reps": 1, "duration_s": 20, "rest_s": 60, "notes": "20s/侧"},
+        {"name": "单腿臀桥保持", "provider_id": "T1219", "sets": 3, "duration_s": 20, "rest_s": 60, "notes": "20s/侧"},
         {"name": "单腿离心提踵", "provider_id": "T1275", "sets": 2, "reps": 10, "rest_s": 60, "notes": "4s 慢下放，每侧"},
         {"name": "平板支撑", "provider_id": "T1010", "sets": 2, "duration_s": 60, "rest_s": 30, "notes": "核心耐力"},
         {"name": "Dead Bug", "provider_id": "T1243", "sets": 2, "reps": 10, "rest_s": 30, "notes": "每侧"},
@@ -28,64 +29,151 @@
     {
       "date": "2026-05-12",
       "day_of_week": "Tue",
-      "kind": "easy_run",
-      "name": "恢复跑 8K",
-      "distance_km": 8,
-      "pace_target": "5:30-6:00/km",
-      "hr_cap": 138,
-      "notes": "RHR≥55 → 改椭圆机 45min HR<140；关闭配速显示"
+      "kind": "interval",
+      "name": "[STRIDE] 间歇 1.6K x 6 @ 3:45-4:00",
+      "distance_km": 13.6,
+      "notes": "**用户决策 5/10：W3 罚则覆盖 — 加 1 次结构化间歇**。结构与 zhaochaoyi P1W3 完全相同。配速分配 rep1-2 @ 3:55-4:00 → rep3-4 @ 3:50 → rep5-6 @ 3:45-3:50。**不设单组 HR cap**（强度课 HR 高是预期内）。安全红线：HR ≥175 持续 >30s 当组结束 jog 至 HR<150 再决定。Abort：任 1 rep 跑不进 4:00 / anaerobic_effect >3.0 / AE >4.5 / RPE >8.5 / 末 2 组跑进 3:45。降级：T >22°C → 末 2 组放到 3:50；周二晨 RHR ≥54 → 砍 4 reps；≥56 → 取消改 8K 恢复跑。",
+      "blocks": [
+        {
+          "repeat": 1,
+          "steps": [
+            {
+              "step_kind": "warmup",
+              "duration": {"kind": "distance_m", "value": 2000},
+              "target": {"kind": "hr_bpm", "low": 130, "high": 155},
+              "note": "2 km 慢 + 动态拉伸 + 跨步跳 20m×3 + 80m 冲刺×2 @ 80%"
+            }
+          ]
+        },
+        {
+          "repeat": 1,
+          "steps": [
+            {
+              "step_kind": "work",
+              "duration": {"kind": "distance_m", "value": 1600},
+              "target": {"kind": "pace_s_km", "low": 240, "high": 235},
+              "note": "Rep 1: 3:55-4:00 偏慢开节奏；地板 4:00（禁跑进 3:55）"
+            },
+            {
+              "step_kind": "recovery",
+              "duration": {"kind": "duration_s", "value": 120},
+              "target": {"kind": "hr_bpm", "low": 130, "high": 145},
+              "note": "Jog 2 min ~6:00/km"
+            },
+            {
+              "step_kind": "work",
+              "duration": {"kind": "distance_m", "value": 1600},
+              "target": {"kind": "pace_s_km", "low": 240, "high": 235},
+              "note": "Rep 2: 3:55-4:00 偏慢；地板 4:00（禁跑进 3:55）"
+            },
+            {
+              "step_kind": "recovery",
+              "duration": {"kind": "duration_s", "value": 120},
+              "target": {"kind": "hr_bpm", "low": 130, "high": 145},
+              "note": "Jog 2 min ~6:00/km"
+            },
+            {
+              "step_kind": "work",
+              "duration": {"kind": "distance_m", "value": 1600},
+              "target": {"kind": "pace_s_km", "low": 232, "high": 228},
+              "note": "Rep 3: 3:50 中等；地板 3:50（禁跑进 3:48）"
+            },
+            {
+              "step_kind": "recovery",
+              "duration": {"kind": "duration_s", "value": 120},
+              "target": {"kind": "hr_bpm", "low": 130, "high": 145},
+              "note": "Jog 2 min ~6:00/km"
+            },
+            {
+              "step_kind": "work",
+              "duration": {"kind": "distance_m", "value": 1600},
+              "target": {"kind": "pace_s_km", "low": 232, "high": 228},
+              "note": "Rep 4: 3:50 中等；地板 3:50（禁跑进 3:48）"
+            },
+            {
+              "step_kind": "recovery",
+              "duration": {"kind": "duration_s", "value": 120},
+              "target": {"kind": "hr_bpm", "low": 130, "high": 145},
+              "note": "Jog 2 min ~6:00/km"
+            },
+            {
+              "step_kind": "work",
+              "duration": {"kind": "distance_m", "value": 1600},
+              "target": {"kind": "pace_s_km", "low": 230, "high": 225},
+              "note": "Rep 5: 3:45-3:50 偏快；地板 3:50，天花板 3:45（禁跑进 3:45）"
+            },
+            {
+              "step_kind": "recovery",
+              "duration": {"kind": "duration_s", "value": 120},
+              "target": {"kind": "hr_bpm", "low": 130, "high": 145},
+              "note": "Jog 2 min ~6:00/km"
+            },
+            {
+              "step_kind": "work",
+              "duration": {"kind": "distance_m", "value": 1600},
+              "target": {"kind": "pace_s_km", "low": 230, "high": 225},
+              "note": "Rep 6: 3:45-3:50 偏快收尾；地板 3:50，天花板 3:45（禁跑进 3:45）"
+            }
+          ]
+        },
+        {
+          "repeat": 1,
+          "steps": [
+            {
+              "step_kind": "cooldown",
+              "duration": {"kind": "distance_m", "value": 2000},
+              "target": {"kind": "hr_bpm", "low": 120, "high": 145},
+              "note": "2 km 慢跑放松"
+            }
+          ]
+        }
+      ]
     },
     {
       "date": "2026-05-13",
       "day_of_week": "Wed",
-      "kind": "strength",
-      "name": "力量 B — 核心+灵活性",
-      "duration_min": 30,
-      "exercises": [
-        {"name": "平板支撑", "provider_id": "T1010", "sets": 3, "duration_s": 60, "rest_s": 30},
-        {"name": "侧平板", "provider_id": "T1185", "sets": 3, "duration_s": 40, "rest_s": 30, "notes": "每侧"},
-        {"name": "臀桥", "provider_id": "T1229", "sets": 3, "duration_s": 30, "rest_s": 30, "notes": "15 reps as time"},
-        {"name": "单腿臀桥", "provider_id": "T1219", "sets": 3, "reps": 10, "rest_s": 30, "notes": "每侧"},
-        {"name": "鸟狗式平衡", "provider_id": "T1249", "sets": 3, "reps": 12, "rest_s": 30, "notes": "每侧"},
-        {"name": "胸椎旋转", "provider_id": "T1248", "sets": 3, "reps": 12, "rest_s": 30, "notes": "每侧"},
-        {"name": "蚌式", "provider_id": "T1317", "sets": 2, "reps": 15, "rest_s": 30, "notes": "每侧"}
-      ]
+      "kind": "easy_run",
+      "name": "[STRIDE] 恢复跑 8K",
+      "distance_km": 8,
+      "pace_target": "5:30-6:00/km",
+      "hr_cap": 138,
+      "notes": "间歇后 24h 必须低强度；关闭配速显示；HR>138 报警立即降速；RHR ≥55 → 改椭圆机 45min HR<140"
     },
     {
       "date": "2026-05-14",
       "day_of_week": "Thu",
-      "kind": "easy_run",
-      "name": "轻松跑 10K",
-      "distance_km": 10,
-      "pace_target": "5:20-5:40/km",
-      "hr_cap": 145,
-      "notes": "关闭配速显示；HR>145 立即降速；目标 <140"
+      "kind": "rest",
+      "name": "完全休息或 mobility-only",
+      "notes": "间歇后 48h = 迟发负荷峰（DOMS + ATI 滞后）；不跑、不负重等长、不核心耐力、**禁俱乐部周四力量集训**。仅 T1248 胸椎旋转 + T1234 猫牛 + T1244 臀拉伸 + T1274 髂腰肌拉伸 各 30s×4。"
     },
     {
       "date": "2026-05-15",
       "day_of_week": "Fri",
-      "kind": "rest",
-      "name": "完全休息",
-      "notes": "任何形式跑步 = 偏差，触发 W4 仍减量"
+      "kind": "easy_run",
+      "name": "[STRIDE] 轻松跑 10K",
+      "distance_km": 10,
+      "pace_target": "5:20-5:40/km",
+      "hr_cap": 145,
+      "notes": "关闭配速显示；HR>145 立即降速；末段禁加速；为周六长距离保下肢"
     },
     {
       "date": "2026-05-16",
       "day_of_week": "Sat",
       "kind": "long_run",
-      "name": "长距离 22K easy",
+      "name": "[STRIDE] 长距离 22K easy",
       "distance_km": 22,
       "pace_target": "5:20-5:40/km",
       "hr_cap": 148,
       "hr_target": "138-145",
-      "notes": "6:30 前出门；前 5K HR<140 强制；任一 km HR>148 降速；与 zhaochaoyi 同跑；T>25°C 挪周日"
+      "notes": "**W2 罚则保留：22K 硬定，不上 26/28K**。6:30 前出门；前 5K HR<140 强制；任一 km HR>148 降速；T>25°C 挪周日；跑中 30min/30g 碳水（2 个胶）"
     },
     {
       "date": "2026-05-17",
       "day_of_week": "Sun",
       "kind": "strength",
-      "name": "力量 C — 俱乐部源深替代版",
-      "duration_min": 40,
-      "notes": "禁止重量深蹲/弓步/提踵/跳跃/跑步；上肢+核心维持；触发现场版只在三项全绿（fatigue<42 + RHR≤49 + 主观≤4/10）",
+      "name": "力量 C — 俱乐部源深替代版（默认）/ 力量 B（备选）",
+      "duration_min": 35,
+      "notes": "周日 B/C 决策：周六 22K 完成 + 周日晨 RHR ≤52 + 主观疲劳 ≤5 → 力量 C 替代版（如下）；任 1 项不达 → 改力量 B（核心+灵活性，不带下肢负重：T1010 3×60s + T1185 3×40s/侧 + T1249 3×12/侧 + T1248 3×12/侧 + T1274 3×30s/侧 + T1244 3×30s/侧 + T1317 2×15/侧）。禁现场重量深蹲/弓步/提踵/跳跃/跑步。",
       "exercises": [
         {"name": "平板支撑", "provider_id": "T1010", "sets": 3, "duration_s": 45, "rest_s": 30},
         {"name": "鸟狗式", "provider_id": "T1249", "sets": 3, "reps": 12, "rest_s": 30, "notes": "每侧"},
@@ -97,54 +185,86 @@
   ],
   "nutrition": [
     {
+      "day_type": "strength",
+      "applies_to_dates": ["2026-05-11"],
+      "calories_kcal": 2600,
+      "carbs_g_per_kg": 4.7,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "训练后 30 min 25-35g 蛋白"
+    },
+    {
+      "day_type": "interval",
+      "applies_to_dates": ["2026-05-12"],
+      "calories_kcal": 2750,
+      "carbs_g_per_kg": 6.5,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "质量日：碳水上调 6.5 g/kg；跑前 1.5h 100g 燕麦+香蕉+蛋白（低纤维）；跑后 30min 30g 蛋白+50-60g 快碳"
+    },
+    {
+      "day_type": "easy_run",
+      "applies_to_dates": ["2026-05-13"],
+      "calories_kcal": 2600,
+      "carbs_g_per_kg": 4.5,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "维持；间歇后恢复优先"
+    },
+    {
+      "day_type": "rest",
+      "applies_to_dates": ["2026-05-14"],
+      "calories_kcal": 2400,
+      "carbs_g_per_kg": 4.0,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "维持；饮水 2.5-3L"
+    },
+    {
+      "day_type": "easy_run",
+      "applies_to_dates": ["2026-05-15"],
+      "calories_kcal": 2600,
+      "carbs_g_per_kg": 5.5,
+      "protein_g_per_kg": 1.7,
+      "fat_g_per_kg": 1.0,
+      "notes": "长距离前夜碳水加载，低纤维；21:00 前晚餐完毕"
+    },
+    {
       "day_type": "long_run",
       "applies_to_dates": ["2026-05-16"],
       "calories_kcal": 2900,
       "carbs_g_per_kg": 5.5,
       "protein_g_per_kg": 1.7,
       "fat_g_per_kg": 1.0,
-      "notes": "前夜 21:00 晚餐毕；跑中 30min/30g 碳水（2 个胶）；跑后 30g 蛋白 + 30-60g 快碳"
+      "notes": "跑中 30min/30g 碳水（22K = 2 个胶）；跑后 30g 蛋白 + 30-60g 快碳"
     },
     {
       "day_type": "strength",
-      "applies_to_dates": ["2026-05-11", "2026-05-13", "2026-05-17"],
+      "applies_to_dates": ["2026-05-17"],
       "calories_kcal": 2600,
       "carbs_g_per_kg": 4.7,
       "protein_g_per_kg": 1.7,
       "fat_g_per_kg": 1.0,
-      "notes": "训练后 30 min 25-35g 蛋白；蛋白每餐 25-35g 均匀"
-    },
-    {
-      "day_type": "easy_run",
-      "applies_to_dates": ["2026-05-12", "2026-05-14"],
-      "calories_kcal": 2600,
-      "carbs_g_per_kg": 4.5,
-      "protein_g_per_kg": 1.7,
-      "fat_g_per_kg": 1.0,
-      "notes": "维持，不赤字（恢复优先）"
-    },
-    {
-      "day_type": "rest",
-      "applies_to_dates": ["2026-05-15"],
-      "calories_kcal": 2400,
-      "carbs_g_per_kg": 4.0,
-      "protein_g_per_kg": 1.7,
-      "fat_g_per_kg": 1.0,
-      "notes": "维持；饮水 2.5-3L"
+      "notes": "训练后 30 min 25-35g 蛋白"
     }
   ],
   "monitoring": {
     "daily_checks": ["RHR", "fatigue", "HRV", "subjective_fatigue_1_10", "lower_limb_pain"],
     "red_lines": [
-      {"signal": "RHR", "threshold": ">=55", "action": "当日跑改椭圆机 45min HR<140"},
+      {"signal": "RHR", "threshold": ">=55", "action": "当日跑改椭圆机 45min HR<140；间歇日 → 砍 4 reps"},
       {"signal": "RHR_3day", "threshold": ">=55 for 3 consecutive days", "action": "周六长距离砍到 16K"},
-      {"signal": "fatigue", "threshold": ">=55", "action": "周六砍到 16K"},
+      {"signal": "fatigue", "threshold": ">=55", "action": "周六砍到 16K；间歇日触发 → 取消"},
       {"signal": "HRV", "threshold": "<31", "action": "当日训练降级或顺延"},
       {"signal": "daily_volume", "threshold": "+20% vs plan", "action": "立即停下次训练"},
-      {"signal": "intensity_violation", "threshold": "any km <4:30 or HR>160 on easy day", "action": "W4 继续减量罚则"}
+      {"signal": "intensity_violation_easy_day", "threshold": "any km <4:30 or HR>160 on easy day", "action": "W4 仍 50K 减量"},
+      {"signal": "interval_safety_hr", "threshold": "HR >=175 sustained >30s", "action": "当组结束 jog 至 HR<150 再决定"},
+      {"signal": "interval_pace_floor_break", "threshold": "任 1 rep 跑不进 4:00", "action": "当课结束（撞墙）"},
+      {"signal": "interval_pace_ceiling_break", "threshold": "末 2 组跑进 3:45", "action": "当课结束（违反天花板）"},
+      {"signal": "anaerobic_effect", "threshold": "real-time >3.0", "action": "当课结束"},
+      {"signal": "aerobic_effect", "threshold": "real-time >4.5", "action": "当课结束"}
     ]
   },
   "structured_status": "fresh",
   "generated_by": "claude-opus-4-7",
-  "notes": "Authored locally 2026-05-10. Will be re-parsed by server LLM on git push via sync-data.yml -> /internal/plan/reparse webhook. structured_status='fresh' in this local file is a hint only; server may overwrite. NO push to COROS watch by author. Strength provider_ids verified against src/coros_sync/exercise_catalog.md."
+  "notes": "Authored locally 2026-05-11. User decision 2026-05-10 overrides W2 forced-taper penalty: adds 1 structured interval Tue 5/12. Health data 5/11 supports decision (fatigue 42 / RHR 51 / TLR 0.88 / TSB +15, race-ready zone). Discipline anchors retained: 22K long run hard-fixed, sport_note mandatory, pace display off, 3 strength sessions. Strength provider_ids verified against src/coros_sync/exercise_catalog.md. NO push to COROS watch by author."
 }
