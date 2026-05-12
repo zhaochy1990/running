@@ -206,6 +206,15 @@ CREATE TABLE IF NOT EXISTS activity_commentary (
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS activity_feedback (
+    label_id    TEXT PRIMARY KEY,
+    rpe         INTEGER,
+    mood_tags   TEXT,
+    note        TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS weekly_feedback (
     week            TEXT PRIMARY KEY,
     content_md      TEXT NOT NULL,
@@ -406,6 +415,18 @@ CREATE TABLE IF NOT EXISTS weekly_plan_variant_rating (
 );
 CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_rating_variant
     ON weekly_plan_variant_rating(weekly_plan_variant_id);
+
+-- App-side structured post-activity feedback (D7 screen).
+-- Separate from activities.sport_note which is the COROS-synced raw note.
+-- label_id matches activities.label_id but no FK constraint (PRAGMA FK=OFF).
+CREATE TABLE IF NOT EXISTS activity_feedback (
+    label_id    TEXT PRIMARY KEY,
+    rpe         INTEGER,          -- 1-10
+    mood_tags   TEXT,             -- JSON array, e.g. ["腿酸","状态好","天气热"]
+    note        TEXT,             -- user one-liner, nullable
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now'))
+);
 """
 
 
@@ -1002,6 +1023,36 @@ class Database:
             (label_id, commentary, generated_by),
         )
         self._conn.commit()
+
+    # --- Activity feedback (structured RPE + mood_tags, written by mobile app) ---
+
+    def upsert_activity_feedback(
+        self,
+        label_id: str,
+        rpe: int | None,
+        mood_tags: list[str] | None,
+        note: str | None,
+    ) -> None:
+        import json as _json
+        tags_json = _json.dumps(mood_tags, ensure_ascii=False) if mood_tags is not None else None
+        self._conn.execute(
+            """INSERT INTO activity_feedback (label_id, rpe, mood_tags, note, updated_at)
+               VALUES (?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(label_id) DO UPDATE SET
+                   rpe        = excluded.rpe,
+                   mood_tags  = excluded.mood_tags,
+                   note       = excluded.note,
+                   updated_at = excluded.updated_at""",
+            (label_id, rpe, tags_json, note),
+        )
+        self._conn.commit()
+
+    def get_activity_feedback(self, label_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT label_id, rpe, mood_tags, note, created_at, updated_at "
+            "FROM activity_feedback WHERE label_id = ?",
+            (label_id,),
+        ).fetchone()
 
     # --- Weekly feedback (rich-text, edited via UI) ---
 
