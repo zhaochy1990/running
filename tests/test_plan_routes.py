@@ -932,8 +932,8 @@ class TestReparsePlan:
         finally:
             db.close()
 
-        # Stub run_agent so the reparse route doesn't hit a real LLM.
-        from stride_server.coach_agent.agent import AgentResult
+        # Stub parse_plan_md so the reparse route doesn't hit a real LLM.
+        from plan_parser import PlanParseResult
         wp = WeeklyPlan(
             week_folder=WEEK,
             sessions=(PlannedSession(
@@ -944,10 +944,9 @@ class TestReparsePlan:
         )
         import stride_server.routes.plan as plan_mod
         monkeypatch.setattr(
-            plan_mod, "run_agent",
-            lambda *a, **kw: AgentResult(
-                content="", model="test", context_summary={}, sync={},
-                structured=wp, parse_error=None,
+            plan_mod, "parse_plan_md",
+            lambda *a, **kw: PlanParseResult(
+                structured=wp, parse_error=None, model="test",
             ),
         )
 
@@ -989,7 +988,7 @@ class TestInternalReparse:
             db.close()
 
     def _stub_agent(self, monkeypatch, *, structured=True):
-        from stride_server.coach_agent.agent import AgentResult
+        from plan_parser import PlanParseResult
         wp = WeeklyPlan(
             week_folder=WEEK,
             sessions=(PlannedSession(
@@ -1000,10 +999,11 @@ class TestInternalReparse:
         ) if structured else None
         import stride_server.routes.plan as plan_mod
         monkeypatch.setattr(
-            plan_mod, "run_agent",
-            lambda *a, **kw: AgentResult(
-                content="", model="test", context_summary={}, sync={},
-                structured=wp, parse_error=None if structured else "fail",
+            plan_mod, "parse_plan_md",
+            lambda *a, **kw: PlanParseResult(
+                structured=wp,
+                parse_error=None if structured else "fail",
+                model="test",
             ),
         )
 
@@ -1087,14 +1087,14 @@ class TestInternalReparse:
         assert first.status_code == 200
         assert first.json()["noop"] is False
 
-        # Re-stub run_agent to fail loudly if called again — second call should not invoke it.
+        # Re-stub parse_plan_md to fail loudly if called again — second call should not invoke it.
         import stride_server.routes.plan as plan_mod
         sentinel = {"called": False}
 
         def _boom(*a, **kw):
             sentinel["called"] = True
             raise RuntimeError("should not be called when hash matches")
-        monkeypatch.setattr(plan_mod, "run_agent", _boom)
+        monkeypatch.setattr(plan_mod, "parse_plan_md", _boom)
 
         second = client.post(
             f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",

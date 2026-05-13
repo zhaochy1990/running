@@ -6,7 +6,7 @@ import os
 from click.testing import CliRunner
 
 from stride_core import db as core_db
-from stride_server.coach_agent.cli import cli
+from coach_agent.cli import cli
 
 
 def _clear_model_env(monkeypatch) -> None:

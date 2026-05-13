@@ -16,7 +16,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
+
+from stride_core.timefmt import today_shanghai
 from typing import Any
 from uuid import uuid4
 
@@ -482,7 +484,7 @@ def _run_generate_job_inner(
     # ------------------------------------------------------------------
     update_job(job_id, stage=JobStage.PLANNING_PHASES, progress=60)
 
-    today = date.today().isoformat()
+    today = today_shanghai().isoformat()
     system_prompt = _build_system_prompt(goal, profile, history_summary, fitness_state, today)
     user_message = [{"role": "user", "content": "请基于上述信息生成训练总纲"}]
 

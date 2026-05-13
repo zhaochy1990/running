@@ -6,6 +6,8 @@ import logging
 import re
 import uuid as _uuid_mod
 from datetime import date, datetime, timezone
+
+from stride_core.timefmt import today_shanghai
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -88,7 +90,7 @@ class TrainingGoal(BaseModel):
                 rd = date.fromisoformat(self.race_date)
             except ValueError:
                 raise ValueError("race_date must be a valid YYYY-MM-DD date")
-            if rd <= date.today():
+            if rd <= today_shanghai():
                 raise ValueError("race_date must be a future date")
 
         if not (3 <= self.weekly_training_days <= 6):

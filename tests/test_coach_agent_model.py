@@ -7,7 +7,7 @@ import json
 import pytest
 
 from stride_server.aoai_client import AOAIUnavailable
-from stride_server.coach_agent.model import (
+from coach_agent.model import (
     COGNITIVE_SERVICES_SCOPE,
     build_azure_token_provider,
     get_generated_by,
@@ -140,7 +140,7 @@ def test_config_file_values_feed_model_config(tmp_path, monkeypatch):
         encoding="utf-8",
     )
 
-    from stride_server.coach_agent.cli import _apply_model_config_file
+    from coach_agent.cli import _apply_model_config_file
 
     _apply_model_config_file(config_path)
     config = get_model_config()

@@ -1819,8 +1819,8 @@ class Database:
         next push.
         """
         # Lazy import to avoid circular dep:
-        # stride_server.coach_agent.agent imports stride_core.db.Database.
-        from stride_server.coach_agent.agent import apply_weekly_plan
+        # plan_parser.persistence imports stride_core.db.Database.
+        from plan_parser import apply_weekly_plan
         from stride_core.plan_spec import (
             SUPPORTED_SCHEMA_VERSION, WeeklyPlan,
         )

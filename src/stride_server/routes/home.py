@@ -328,8 +328,8 @@ def _compute_plan_state(user_id: str) -> Literal["none", "active_no_week", "acti
         return "none"
 
     # Check for any planned_session in the current week
-    from datetime import date, timedelta
-    today = date.today()
+    from datetime import timedelta
+    today = today_shanghai()
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
     try:

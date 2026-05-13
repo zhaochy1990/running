@@ -789,7 +789,7 @@ def plan_reparse_cmd(
 
     # Local imports — keep the heavy LLM stack lazy so unrelated CLI commands
     # (login/sync/etc.) start fast.
-    from stride_server.coach_agent.agent import apply_weekly_plan, run_agent
+    from plan_parser import apply_weekly_plan, parse_plan_md
 
     table = Table(title=f"Plan reparse for {profile}")
     table.add_column("folder")
@@ -807,10 +807,7 @@ def plan_reparse_cmd(
         with Database(user=profile) as db:
             db.upsert_weekly_plan(f, md, generated_by="claude-opus-4-7-backfill")
         try:
-            result = run_agent(
-                profile, task="parse_plan", user_message="backfill",
-                folder=f, md_text=md, sync_before=False,
-            )
+            result = parse_plan_md(folder=f, md_text=md)
         except Exception as exc:
             console.print(f"[red]LLM call failed for {f}: {exc}[/red]")
             failed.append((f, f"llm error: {exc}"))

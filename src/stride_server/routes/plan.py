@@ -54,7 +54,7 @@ from stride_core.plan_spec import SUPPORTED_SCHEMA_VERSION, SessionKind, WeeklyP
 from stride_core.source import Capability, DataSource, FeatureNotSupported
 from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWorkout
 
-from ..coach_agent.agent import apply_weekly_plan, run_agent
+from plan_parser import apply_weekly_plan, parse_plan_md
 from ..content_store import read_json as content_read_json
 from ..content_store import read_text as content_read_text
 from ..deps import (
@@ -739,10 +739,7 @@ def reparse_plan(
             ),
         )
 
-    result = run_agent(
-        user, task="parse_plan", user_message="reparse",
-        folder=folder, md_text=content_md, sync_before=False,
-    )
+    result = parse_plan_md(folder=folder, md_text=content_md)
     apply_weekly_plan(
         user, folder, content_md,
         generated_by=existing_generated_by,
@@ -861,10 +858,7 @@ def internal_reparse_plan(
             ),
         )
 
-    result = run_agent(
-        user, task="parse_plan", user_message="webhook reparse",
-        folder=folder, md_text=content_md, sync_before=False,
-    )
+    result = parse_plan_md(folder=folder, md_text=content_md)
     apply_weekly_plan(
         user, folder, content_md,
         generated_by=existing_generated_by,

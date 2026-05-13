@@ -7,7 +7,7 @@ from click.testing import CliRunner
 from coros_sync.cli import cli
 from stride_core.db import Database
 from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
-from stride_server.coach_agent.agent import AgentResult
+from plan_parser import PlanParseResult
 
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
@@ -43,14 +43,14 @@ def _stub_run_agent(monkeypatch, *, structured: bool, parse_error: str | None = 
             nutrition=(),
         )
 
-    # The CLI imports run_agent and apply_weekly_plan inside the function body,
-    # so patch them at the source module so the local import picks the stub up.
-    import stride_server.coach_agent.agent as agent_mod
+    # The CLI imports parse_plan_md and apply_weekly_plan inside the function
+    # body via `from plan_parser import ...`, so patching `plan_parser.parse_plan_md`
+    # on the package module is what the local import picks up at call time.
+    import plan_parser
     monkeypatch.setattr(
-        agent_mod, "run_agent",
-        lambda *a, **kw: AgentResult(
-            content="", model="stub", context_summary={}, sync={},
-            structured=wp, parse_error=parse_error,
+        plan_parser, "parse_plan_md",
+        lambda *a, **kw: PlanParseResult(
+            structured=wp, parse_error=parse_error, model="stub",
         ),
     )
 
@@ -174,13 +174,12 @@ def test_plan_reparse_all_processes_multiple_weeks(tmp_path, monkeypatch):
             ),),
             nutrition=(),
         )
-        return AgentResult(
-            content="", model="stub", context_summary={}, sync={},
-            structured=wp, parse_error=None,
+        return PlanParseResult(
+            structured=wp, parse_error=None, model="stub",
         )
 
-    import stride_server.coach_agent.agent as agent_mod
-    monkeypatch.setattr(agent_mod, "run_agent", _make_result)
+    import plan_parser
+    monkeypatch.setattr(plan_parser, "parse_plan_md", _make_result)
 
     runner = CliRunner()
     res = runner.invoke(

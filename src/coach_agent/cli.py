@@ -14,12 +14,13 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.table import Table
 
+from plan_parser import apply_weekly_plan
 from stride_core import db as core_db
-from stride_core.db import Database
-from stride_server.coach_agent.agent import apply_weekly_plan, run_agent
-from stride_server.coach_agent.context import load_coach_context, summarize_context
-from stride_server.coach_agent.model import get_generated_by, get_model_config
 from stride_server.deps import parse_week_dates
+
+from .agent import run_agent
+from .context import load_coach_context, summarize_context
+from .model import get_generated_by, get_model_config
 
 console = Console()
 

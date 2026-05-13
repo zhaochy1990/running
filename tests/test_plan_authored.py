@@ -51,13 +51,13 @@ def _week_dir(tmp_path: Path, week: str = FIXTURE_WEEK) -> Path:
 
 
 def _mock_run_agent(monkeypatch, *, structured: bool = True):
-    """Install a fake run_agent on plan_mod that bumps a sentinel counter.
+    """Install a fake parse_plan_md on plan_mod that bumps a sentinel counter.
 
     Returns the sentinel dict so tests can assert call counts.
     """
     import stride_server.routes.plan as plan_mod
     from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
-    from stride_server.coach_agent.agent import AgentResult
+    from plan_parser import PlanParseResult
 
     wp = (
         WeeklyPlan(
@@ -76,25 +76,26 @@ def _mock_run_agent(monkeypatch, *, structured: bool = True):
 
     def _fake(*a, **kw):
         sentinel["called"] += 1
-        return AgentResult(
-            content="mocked", model="mock", context_summary={}, sync={},
-            structured=wp, parse_error=None if structured else "fail",
+        return PlanParseResult(
+            structured=wp,
+            parse_error=None if structured else "fail",
+            model="mock",
         )
 
-    monkeypatch.setattr(plan_mod, "run_agent", _fake)
+    monkeypatch.setattr(plan_mod, "parse_plan_md", _fake)
     return sentinel
 
 
 def _boom_run_agent(monkeypatch):
-    """Install a run_agent that fails loudly if invoked. Returns sentinel."""
+    """Install a parse_plan_md that fails loudly if invoked. Returns sentinel."""
     import stride_server.routes.plan as plan_mod
     sentinel = {"called": 0}
 
     def _boom(*a, **kw):
         sentinel["called"] += 1
-        raise AssertionError("run_agent should NOT be called")
+        raise AssertionError("parse_plan_md should NOT be called")
 
-    monkeypatch.setattr(plan_mod, "run_agent", _boom)
+    monkeypatch.setattr(plan_mod, "parse_plan_md", _boom)
     return sentinel
 
 
@@ -248,9 +249,11 @@ class TestAuthoredReparse:
         sentinel = _mock_run_agent(monkeypatch, structured=True)
         # Stub get_generated_by because no DB row → no existing_generated_by →
         # apply_weekly_plan falls through to live AOAI lookup which is unset
-        # in the test env. Unrelated to the bug under test.
-        import stride_server.coach_agent.agent as agent_mod
-        monkeypatch.setattr(agent_mod, "get_generated_by", lambda: "test-author")
+        # in the test env. apply_weekly_plan (plan_parser.persistence) lazy-
+        # imports get_generated_by from coach_agent.model, so we patch the
+        # source module.
+        import coach_agent.model as model_mod
+        monkeypatch.setattr(model_mod, "get_generated_by", lambda: "test-author")
 
         resp = client.post(
             f"/internal/plan/reparse?user={USER_UUID}&folder={FIXTURE_WEEK}",

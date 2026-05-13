@@ -14,12 +14,12 @@ import pytest
 
 from stride_core.db import Database
 from stride_core.plan_spec import SessionKind, WeeklyPlan
-from stride_server.coach_agent import agent as agent_mod
-from stride_server.coach_agent.agent import (
+from coach_agent import agent as agent_mod
+from coach_agent.agent import (
     AgentResult,
-    apply_weekly_plan,
     run_agent,
 )
+from plan_parser import PlanParseResult, apply_weekly_plan, parse_plan_md
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -272,10 +272,15 @@ class TestNutritionMacroValidation:
 
 
 class TestParsePlanTask:
+    """The reverse-parser lives in plan_parser now; these tests target
+    ``plan_parser.parse_plan_md`` directly."""
+
+    def _patch_model_id(self, monkeypatch):
+        import coach_agent.model as model_mod
+        monkeypatch.setattr(model_mod, "get_generated_by", lambda: "test-model")
+
     def test_parse_plan_returns_structured(self, monkeypatch):
-        # parse_plan does not load context — no need to patch it, but the
-        # generated_by stub keeps the result deterministic.
-        monkeypatch.setattr(agent_mod, "get_generated_by", lambda: "test-model")
+        self._patch_model_id(monkeypatch)
         plan = {
             "schema": "weekly-plan/v1",
             "week_folder": "2026-04-20_04-26(W0)",
@@ -292,42 +297,57 @@ class TestParsePlanTask:
             "nutrition": [],
             "notes_md": None,
         }
-        # parse_plan's prompt asks JSON-only output, but the parser tolerates
-        # extra surrounding text via the same fenced-block regex.
         fake = FakeChatModel(response=f"```json\n{json.dumps(plan)}\n```\n")
-        result = run_agent(
-            "zhaochaoyi", task="parse_plan", user_message="ignored",
+        result = parse_plan_md(
             folder="2026-04-20_04-26(W0)", md_text="# some markdown",
-            chat_model=fake, sync_before=False,
+            chat_model=fake,
         )
+        assert isinstance(result, PlanParseResult)
         assert result.structured is not None
         assert result.structured.week_folder == "2026-04-20_04-26(W0)"
         assert result.parse_error is None
-        # Context-related fields are empty for parse_plan.
-        assert result.content == ""
-        assert result.context_summary == {}
+        assert result.model == "test-model"
 
     def test_parse_plan_invalid_json_falls_back(self, monkeypatch):
-        monkeypatch.setattr(agent_mod, "get_generated_by", lambda: "test-model")
+        self._patch_model_id(monkeypatch)
         fake = FakeChatModel(response="```json\n{garbage}\n```")
-        result = run_agent(
-            "zhaochaoyi", task="parse_plan", user_message="x",
+        result = parse_plan_md(
             folder="2026-04-20_04-26(W0)", md_text="# md",
-            chat_model=fake, sync_before=False,
+            chat_model=fake,
         )
         assert result.structured is None
         assert result.parse_error is not None
 
     def test_parse_plan_requires_md_and_folder(self, monkeypatch):
-        monkeypatch.setattr(agent_mod, "get_generated_by", lambda: "test-model")
+        self._patch_model_id(monkeypatch)
         with pytest.raises(ValueError, match="md_text"):
-            run_agent("u", task="parse_plan", user_message="x",
-                      folder="2026-04-20_04-26(W0)", md_text=None,
-                      chat_model=FakeChatModel(response=""), sync_before=False)
+            parse_plan_md(folder="2026-04-20_04-26(W0)", md_text=None,
+                          chat_model=FakeChatModel(response=""))
         with pytest.raises(ValueError, match="folder"):
-            run_agent("u", task="parse_plan", user_message="x",
-                      folder=None, md_text="# md",
-                      chat_model=FakeChatModel(response=""), sync_before=False)
+            parse_plan_md(folder=None, md_text="# md",
+                          chat_model=FakeChatModel(response=""))
+
+    def test_parse_plan_uses_parse_only_system_prompt(self, monkeypatch):
+        """Sanity: the reverse-parser uses a focused parse-only system prompt
+        (no coach persona), and the structured-schema hint reaches the model."""
+        self._patch_model_id(monkeypatch)
+        plan = {
+            "schema": "weekly-plan/v1",
+            "week_folder": "2026-04-20_04-26(W0)",
+            "sessions": [],
+            "nutrition": [],
+            "notes_md": None,
+        }
+        fake = FakeChatModel(response=f"```json\n{json.dumps(plan)}\n```")
+        parse_plan_md(folder="2026-04-20_04-26(W0)", md_text="# md",
+                      chat_model=fake)
+        system_msg = fake.seen_messages[0][1]
+        # Parse-only system prompt should not contain the coach persona.
+        assert "马拉松训练 Agent" not in system_msg
+        assert "反向解析" in system_msg
+        # Schema hint reaches the user message.
+        joined = "\n".join(m[1] for m in fake.seen_messages)
+        assert "weekly-plan/v1" in joined
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -342,7 +362,11 @@ class TestApplyWeeklyPlan:
         real per-user folders in data/."""
         import stride_core.db as db_mod
         monkeypatch.setattr(db_mod, "USER_DATA_DIR", tmp_path)
-        # apply_weekly_plan also calls get_generated_by()
+        # apply_weekly_plan (in plan_parser.persistence) lazy-imports
+        # get_generated_by from coach_agent.model, so the stub needs to land
+        # on the model module — agent_mod patches alone wouldn't reach it.
+        import coach_agent.model as model_mod
+        monkeypatch.setattr(model_mod, "get_generated_by", lambda: "test-model")
         monkeypatch.setattr(agent_mod, "get_generated_by", lambda: "test-model")
 
     def test_apply_with_structured_writes_all_layers(self, tmp_path):

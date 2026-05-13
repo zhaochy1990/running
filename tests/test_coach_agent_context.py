@@ -55,7 +55,7 @@ def test_load_coach_context_collects_training_inputs(tmp_path, monkeypatch):
     finally:
         db.close()
 
-    from stride_server.coach_agent.context import load_coach_context
+    from coach_agent.context import load_coach_context
 
     ctx = load_coach_context(USER_UUID, folder=WEEK, sync_before=False)
 
@@ -80,7 +80,7 @@ def test_load_week_context_prefers_db_plan_and_feedback(tmp_path, monkeypatch):
         db.upsert_weekly_plan(WEEK, "FROM DB PLAN", generated_by="gpt-5.5")
         db.upsert_weekly_feedback(WEEK, "FROM DB FEEDBACK", generated_by="user")
 
-        from stride_server.coach_agent.context import load_week_context
+        from coach_agent.context import load_week_context
 
         week = load_week_context(USER_UUID, WEEK, db)
     finally:

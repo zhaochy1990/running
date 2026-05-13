@@ -44,10 +44,10 @@ dev = [
 [project.scripts]
 coros-sync = "coros_sync.cli:cli"
 garmin-sync = "garmin_sync.cli:cli"
-stride-coach = "stride_server.coach_agent.cli:cli"
+stride-coach = "coach_agent.cli:cli"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_server"]
+packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_server", "src/coach_agent", "src/plan_parser"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -219,9 +219,9 @@ class TestInternalTokenTimingSafeCompare:
             db.upsert_weekly_plan(WEEK, "# md", generated_by="t")
         finally:
             db.close()
-        # Stub run_agent + apply_weekly_plan so the route returns 200 fast.
+        # Stub parse_plan_md so the reparse route returns 200 fast.
         import stride_server.routes.plan as plan_mod
-        from stride_server.coach_agent.agent import AgentResult
+        from plan_parser import PlanParseResult
         wp = WeeklyPlan(
             week_folder=WEEK,
             sessions=(PlannedSession(
@@ -231,10 +231,9 @@ class TestInternalTokenTimingSafeCompare:
             nutrition=(),
         )
         monkeypatch.setattr(
-            plan_mod, "run_agent",
-            lambda *a, **kw: AgentResult(
-                content="", model="t", context_summary={}, sync={},
-                structured=wp, parse_error=None,
+            plan_mod, "parse_plan_md",
+            lambda *a, **kw: PlanParseResult(
+                structured=wp, parse_error=None, model="t",
             ),
         )
         resp = client.post(
@@ -347,8 +346,9 @@ class TestApplyWeeklyPlanRollback:
         partial rows landed in any of the three tables."""
         import stride_core.db as core_db
         monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
-        from stride_server.coach_agent import agent as agent_mod
-        monkeypatch.setattr(agent_mod, "get_generated_by", lambda: "test-model")
+        import coach_agent.model as model_mod
+        monkeypatch.setattr(model_mod, "get_generated_by", lambda: "test-model")
+        from plan_parser import apply_weekly_plan
 
         wp = WeeklyPlan(
             week_folder=WEEK,
@@ -374,7 +374,7 @@ class TestApplyWeeklyPlanRollback:
         )
 
         with pytest.raises(RuntimeError, match="simulated"):
-            agent_mod.apply_weekly_plan(
+            apply_weekly_plan(
                 USER_UUID, WEEK, "# Plan markdown",
                 generated_by="claude-opus-4-7",
                 structured=wp, structured_source="fresh",
@@ -409,15 +409,15 @@ class TestPlanMarkdownSizeCap:
     def test_public_reparse_400_when_too_big(self, tmp_path, monkeypatch, rsa_keypair):
         client, token, _ = _build_app(tmp_path, monkeypatch, rsa_keypair)
         self._seed_oversized(tmp_path)
-        # Stub run_agent so we know the route would have called it (and we
-        # can fail loudly if the size cap is bypassed).
+        # Stub parse_plan_md so we know the route would have called it (and
+        # we can fail loudly if the size cap is bypassed).
         import stride_server.routes.plan as plan_mod
         called = {"flag": False}
 
         def boom(*a, **kw):
             called["flag"] = True
             raise RuntimeError("should not be called")
-        monkeypatch.setattr(plan_mod, "run_agent", boom)
+        monkeypatch.setattr(plan_mod, "parse_plan_md", boom)
 
         resp = client.post(
             f"/api/{USER_UUID}/plan/reparse?folder={WEEK}",
@@ -436,7 +436,7 @@ class TestPlanMarkdownSizeCap:
         def boom(*a, **kw):
             called["flag"] = True
             raise RuntimeError("should not be called")
-        monkeypatch.setattr(plan_mod, "run_agent", boom)
+        monkeypatch.setattr(plan_mod, "parse_plan_md", boom)
 
         resp = client.post(
             f"/internal/plan/reparse?user={USER_UUID}&folder={WEEK}",
@@ -454,9 +454,9 @@ class TestPlanMarkdownSizeCap:
 
 class TestSessionDateValidation:
     def test_parser_rejects_out_of_week_session(self):
-        """Direct test on _parse_structured: a session dated outside the
+        """Direct test on parse_structured: a session dated outside the
         parent week's range yields parse_error."""
-        from stride_server.coach_agent.agent import _parse_structured
+        from plan_parser import parse_structured
         plan = {
             "schema": "weekly-plan/v1",
             "week_folder": WEEK,
@@ -478,14 +478,14 @@ class TestSessionDateValidation:
             "notes_md": None,
         }
         raw = f"```json\n{json.dumps(plan)}\n```"
-        result, err = _parse_structured(raw, folder=WEEK)
+        result, err = parse_structured(raw, folder=WEEK)
         assert result is None
         assert err is not None
         assert "outside week" in err
         assert "2026-05-15" in err
 
     def test_parser_accepts_in_range_session(self):
-        from stride_server.coach_agent.agent import _parse_structured
+        from plan_parser import parse_structured
         plan = {
             "schema": "weekly-plan/v1",
             "week_folder": WEEK,
@@ -507,17 +507,18 @@ class TestSessionDateValidation:
             "notes_md": None,
         }
         raw = f"```json\n{json.dumps(plan)}\n```"
-        result, err = _parse_structured(raw, folder=WEEK)
+        result, err = parse_structured(raw, folder=WEEK)
         assert err is None
         assert result is not None
         assert len(result.sessions) == 1
 
     def test_run_agent_marks_parse_failed_on_out_of_week(self, monkeypatch):
-        """End-to-end through run_agent(task='parse_plan') — when the LLM
+        """End-to-end through plan_parser.parse_plan_md — when the LLM
         returns a session dated outside the week, structured is None and
         parse_error is set; downstream apply_weekly_plan would mark
         structured_status='parse_failed'."""
-        from stride_server.coach_agent import agent as agent_mod
+        from plan_parser import parse_plan_md
+        import coach_agent.model as model_mod
 
         plan = {
             "schema": "weekly-plan/v1",
@@ -547,11 +548,9 @@ class TestSessionDateValidation:
                 r.content = f"```json\n{json.dumps(plan)}\n```"
                 return r
 
-        monkeypatch.setattr(agent_mod, "get_generated_by", lambda: "stub")
-        result = agent_mod.run_agent(
-            USER_UUID, task="parse_plan", user_message="reparse",
+        monkeypatch.setattr(model_mod, "get_generated_by", lambda: "stub")
+        result = parse_plan_md(
             folder=WEEK, md_text="# md", chat_model=FakeModel(),
-            sync_before=False,
         )
         assert result.structured is None
         assert result.parse_error is not None
@@ -560,7 +559,7 @@ class TestSessionDateValidation:
     def test_invalid_folder_skips_date_check(self):
         """Defensive: when folder is unparseable we don't reject the plan
         on date grounds (parse_week_dates returns None → skip the guard)."""
-        from stride_server.coach_agent.agent import _parse_structured
+        from plan_parser import parse_structured
         plan = {
             "schema": "weekly-plan/v1",
             "week_folder": "garbage",
@@ -576,6 +575,6 @@ class TestSessionDateValidation:
             "nutrition": [], "notes_md": None,
         }
         raw = f"```json\n{json.dumps(plan)}\n```"
-        result, err = _parse_structured(raw, folder="not-a-week")
+        result, err = parse_structured(raw, folder="not-a-week")
         assert err is None
         assert result is not None
