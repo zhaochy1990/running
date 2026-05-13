@@ -18,7 +18,7 @@ import '../../core/theme/tokens.dart';
 import '../_shared/widgets/top_bar.dart';
 import 'start_screen.dart' show StrideAuthPrimaryButton;
 
-final _emailRe = RegExp(r"^[^\s@]+@[^\s@]+\.[^\s@]+\$");
+final _emailRe = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+\$');
 
 class AuthRegisterScreen extends ConsumerStatefulWidget {
   const AuthRegisterScreen({super.key});
@@ -165,9 +165,9 @@ class _AuthRegisterScreenState extends ConsumerState<AuthRegisterScreen> {
                 hint: '再输入一次密码',
               ),
               if (_pwdConfirmCtrl.text.isNotEmpty && !_passwordsMatch)
-                Padding(
-                  padding: const EdgeInsets.only(top: StrideTokens.spaceXs),
-                  child: const Text(
+                const Padding(
+                  padding: EdgeInsets.only(top: StrideTokens.spaceXs),
+                  child: Text(
                     '两次密码不一致',
                     style: TextStyle(
                       fontFamily: AppTypography.fontSans,
@@ -192,10 +192,10 @@ class _AuthRegisterScreenState extends ConsumerState<AuthRegisterScreen> {
                     onChanged: (v) => setState(() => _agreed = v ?? false),
                     visualDensity: VisualDensity.compact,
                   ),
-                  Expanded(
+                  const Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.only(top: 10),
-                      child: const Text(
+                      padding: EdgeInsets.only(top: 10),
+                      child: Text(
                         '我已阅读并同意《用户协议》《隐私政策》',
                         style: TextStyle(
                           fontFamily: AppTypography.fontSans,

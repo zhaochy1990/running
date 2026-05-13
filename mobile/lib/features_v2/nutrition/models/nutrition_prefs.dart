@@ -2,6 +2,24 @@
 library;
 
 class NutritionPrefs {
+
+  factory NutritionPrefs.fromJson(Map<String, dynamic> json) {
+    return NutritionPrefs(
+      enabled: (json['enabled'] as bool?) ?? false,
+      dietType: (json['diet_type'] as String?) ?? 'none',
+      allergies: (json['allergies'] as List<dynamic>? ?? const [])
+          .map((e) => e as String)
+          .toList(),
+      goal: (json['goal'] as String?) ?? 'maintain',
+      bmrKcal: (json['bmr_kcal'] as num?)?.toInt(),
+      tdeeKcal: (json['tdee_kcal'] as num?)?.toInt(),
+      macroProteinPct: (json['macro_protein_pct'] as num?)?.toDouble() ?? 30.0,
+      macroCarbPct: (json['macro_carb_pct'] as num?)?.toDouble() ?? 50.0,
+      macroFatPct: (json['macro_fat_pct'] as num?)?.toDouble() ?? 20.0,
+      createdAt: json['created_at'] as String?,
+      updatedAt: json['updated_at'] as String?,
+    );
+  }
   const NutritionPrefs({
     required this.enabled,
     required this.dietType,
@@ -31,24 +49,6 @@ class NutritionPrefs {
   final double macroFatPct;
   final String? createdAt;
   final String? updatedAt;
-
-  factory NutritionPrefs.fromJson(Map<String, dynamic> json) {
-    return NutritionPrefs(
-      enabled: (json['enabled'] as bool?) ?? false,
-      dietType: (json['diet_type'] as String?) ?? 'none',
-      allergies: (json['allergies'] as List<dynamic>? ?? const [])
-          .map((e) => e as String)
-          .toList(),
-      goal: (json['goal'] as String?) ?? 'maintain',
-      bmrKcal: (json['bmr_kcal'] as num?)?.toInt(),
-      tdeeKcal: (json['tdee_kcal'] as num?)?.toInt(),
-      macroProteinPct: (json['macro_protein_pct'] as num?)?.toDouble() ?? 30.0,
-      macroCarbPct: (json['macro_carb_pct'] as num?)?.toDouble() ?? 50.0,
-      macroFatPct: (json['macro_fat_pct'] as num?)?.toDouble() ?? 20.0,
-      createdAt: json['created_at'] as String?,
-      updatedAt: json['updated_at'] as String?,
-    );
-  }
 
   Map<String, dynamic> toJson() => {
         'enabled': enabled,

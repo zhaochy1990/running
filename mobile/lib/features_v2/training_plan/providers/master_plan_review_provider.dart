@@ -11,6 +11,16 @@ import '../../plan/models/plan_chat.dart';
 // ── State ─────────────────────────────────────────────────────────────────────
 
 class MasterPlanDiffOp {
+
+  factory MasterPlanDiffOp.fromJson(Map<String, dynamic> json) =>
+      MasterPlanDiffOp(
+        id: json['id'] as String,
+        op: json['op'] as String,
+        phaseName: json['phase_name'] as String?,
+        milestoneName: json['milestone_name'] as String?,
+        oldValue: json['old_value'] as Map<String, dynamic>?,
+        newValue: json['new_value'] as Map<String, dynamic>?,
+      );
   const MasterPlanDiffOp({
     required this.id,
     required this.op,
@@ -29,28 +39,9 @@ class MasterPlanDiffOp {
   final String? milestoneName;
   final Map<String, dynamic>? oldValue;
   final Map<String, dynamic>? newValue;
-
-  factory MasterPlanDiffOp.fromJson(Map<String, dynamic> json) =>
-      MasterPlanDiffOp(
-        id: json['id'] as String,
-        op: json['op'] as String,
-        phaseName: json['phase_name'] as String?,
-        milestoneName: json['milestone_name'] as String?,
-        oldValue: json['old_value'] as Map<String, dynamic>?,
-        newValue: json['new_value'] as Map<String, dynamic>?,
-      );
 }
 
 class MasterPlanDiff {
-  const MasterPlanDiff({
-    required this.diffId,
-    required this.ops,
-    this.aiExplanation = '',
-  });
-
-  final String diffId;
-  final List<MasterPlanDiffOp> ops;
-  final String aiExplanation;
 
   factory MasterPlanDiff.fromJson(Map<String, dynamic> json) => MasterPlanDiff(
         diffId: json['diff_id'] as String? ?? '',
@@ -60,9 +51,29 @@ class MasterPlanDiff {
             .toList(growable: false),
         aiExplanation: json['ai_explanation'] as String? ?? '',
       );
+  const MasterPlanDiff({
+    required this.diffId,
+    required this.ops,
+    this.aiExplanation = '',
+  });
+
+  final String diffId;
+  final List<MasterPlanDiffOp> ops;
+  final String aiExplanation;
 }
 
 class MasterPlanSummary {
+
+  factory MasterPlanSummary.fromJson(Map<String, dynamic> json) =>
+      MasterPlanSummary(
+        planId: json['plan_id'] as String? ?? json['id'] as String? ?? '',
+        startDate: json['start_date'] as String?,
+        endDate: json['end_date'] as String?,
+        totalWeeks: (json['total_weeks'] as num?)?.toInt(),
+        phaseCount: (json['phase_count'] as num?)?.toInt(),
+        milestoneCount: (json['milestone_count'] as num?)?.toInt(),
+        status: json['status'] as String?,
+      );
   const MasterPlanSummary({
     required this.planId,
     this.startDate,
@@ -80,17 +91,6 @@ class MasterPlanSummary {
   final int? phaseCount;
   final int? milestoneCount;
   final String? status;
-
-  factory MasterPlanSummary.fromJson(Map<String, dynamic> json) =>
-      MasterPlanSummary(
-        planId: json['plan_id'] as String? ?? json['id'] as String? ?? '',
-        startDate: json['start_date'] as String?,
-        endDate: json['end_date'] as String?,
-        totalWeeks: (json['total_weeks'] as num?)?.toInt(),
-        phaseCount: (json['phase_count'] as num?)?.toInt(),
-        milestoneCount: (json['milestone_count'] as num?)?.toInt(),
-        status: json['status'] as String?,
-      );
 }
 
 class MasterPlanReviewState {

@@ -22,6 +22,42 @@ enum WeekStatus {
 
 /// Resolved view-model for a week card in D2a.
 class WeekListItem {
+
+  // ── Factory ──────────────────────────────────────────────────────────────
+
+  /// Build from a [WeekIndexEntry] with current date for status inference.
+  factory WeekListItem.fromIndexEntry(
+    WeekIndexEntry entry, {
+    required DateTime today,
+    String? weekLabel,
+  }) {
+    final from = DateTime.tryParse(entry.dateFrom);
+    final to = DateTime.tryParse(entry.dateTo);
+    final todayDate = DateTime(today.year, today.month, today.day);
+
+    WeekStatus status;
+    if (from != null && to != null) {
+      if (todayDate.isBefore(from)) {
+        status = WeekStatus.upcoming;
+      } else if (todayDate.isAfter(to)) {
+        status = WeekStatus.completed;
+      } else {
+        status = WeekStatus.inProgress;
+      }
+    } else {
+      status = WeekStatus.upcoming;
+    }
+
+    return WeekListItem(
+      folder: entry.folder,
+      dateFrom: entry.dateFrom,
+      dateTo: entry.dateTo,
+      status: status,
+      hasPlan: entry.hasPlan,
+      planTitle: entry.planTitle,
+      weekLabel: weekLabel,
+    );
+  }
   const WeekListItem({
     required this.folder,
     required this.dateFrom,
@@ -81,42 +117,6 @@ class WeekListItem {
   /// via a secondary [getPlanDays] call in the provider; if that fails or the
   /// user has no plan, it falls back to null (mini-calendar hidden).
   final List<String?>? miniCalendar;
-
-  // ── Factory ──────────────────────────────────────────────────────────────
-
-  /// Build from a [WeekIndexEntry] with current date for status inference.
-  factory WeekListItem.fromIndexEntry(
-    WeekIndexEntry entry, {
-    required DateTime today,
-    String? weekLabel,
-  }) {
-    final from = DateTime.tryParse(entry.dateFrom);
-    final to = DateTime.tryParse(entry.dateTo);
-    final todayDate = DateTime(today.year, today.month, today.day);
-
-    WeekStatus status;
-    if (from != null && to != null) {
-      if (todayDate.isBefore(from)) {
-        status = WeekStatus.upcoming;
-      } else if (todayDate.isAfter(to)) {
-        status = WeekStatus.completed;
-      } else {
-        status = WeekStatus.inProgress;
-      }
-    } else {
-      status = WeekStatus.upcoming;
-    }
-
-    return WeekListItem(
-      folder: entry.folder,
-      dateFrom: entry.dateFrom,
-      dateTo: entry.dateTo,
-      status: status,
-      hasPlan: entry.hasPlan,
-      planTitle: entry.planTitle,
-      weekLabel: weekLabel,
-    );
-  }
 
   /// Return a copy with enriched fields from a plan days fetch.
   WeekListItem withMiniCalendar({

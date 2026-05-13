@@ -3,6 +3,16 @@
 library;
 
 class MealItem {
+
+  factory MealItem.fromJson(Map<String, dynamic> json) {
+    return MealItem(
+      name: (json['name'] as String?) ?? '',
+      kcal: (json['kcal'] as num?)?.toDouble() ?? 0,
+      proteinG: (json['protein_g'] as num?)?.toDouble() ?? 0,
+      carbG: (json['carb_g'] as num?)?.toDouble() ?? 0,
+      fatG: (json['fat_g'] as num?)?.toDouble() ?? 0,
+    );
+  }
   const MealItem({
     required this.name,
     required this.kcal,
@@ -17,16 +27,6 @@ class MealItem {
   final double carbG;
   final double fatG;
 
-  factory MealItem.fromJson(Map<String, dynamic> json) {
-    return MealItem(
-      name: (json['name'] as String?) ?? '',
-      kcal: (json['kcal'] as num?)?.toDouble() ?? 0,
-      proteinG: (json['protein_g'] as num?)?.toDouble() ?? 0,
-      carbG: (json['carb_g'] as num?)?.toDouble() ?? 0,
-      fatG: (json['fat_g'] as num?)?.toDouble() ?? 0,
-    );
-  }
-
   Map<String, dynamic> toJson() => {
         'name': name,
         'kcal': kcal,
@@ -37,6 +37,17 @@ class MealItem {
 }
 
 class Meal {
+
+  factory Meal.fromJson(Map<String, dynamic> json) {
+    final rawItems =
+        (json['items'] as List<dynamic>? ?? const []).cast<Map<String, dynamic>>();
+    return Meal(
+      mealId: (json['meal_id'] as String?) ?? '',
+      mealType: (json['meal_type'] as String?) ?? 'breakfast',
+      items: rawItems.map(MealItem.fromJson).toList(),
+      notes: json['notes'] as String?,
+    );
+  }
   const Meal({
     required this.mealId,
     required this.mealType,
@@ -49,20 +60,18 @@ class Meal {
   final String mealType;
   final List<MealItem> items;
   final String? notes;
-
-  factory Meal.fromJson(Map<String, dynamic> json) {
-    final rawItems =
-        (json['items'] as List<dynamic>? ?? const []).cast<Map<String, dynamic>>();
-    return Meal(
-      mealId: (json['meal_id'] as String?) ?? '',
-      mealType: (json['meal_type'] as String?) ?? 'breakfast',
-      items: rawItems.map(MealItem.fromJson).toList(),
-      notes: json['notes'] as String?,
-    );
-  }
 }
 
 class MealTotals {
+
+  factory MealTotals.fromJson(Map<String, dynamic> json) {
+    return MealTotals(
+      kcal: (json['kcal'] as num?)?.toDouble() ?? 0,
+      proteinG: (json['protein_g'] as num?)?.toDouble() ?? 0,
+      carbG: (json['carb_g'] as num?)?.toDouble() ?? 0,
+      fatG: (json['fat_g'] as num?)?.toDouble() ?? 0,
+    );
+  }
   const MealTotals({
     required this.kcal,
     required this.proteinG,
@@ -75,28 +84,10 @@ class MealTotals {
   final double carbG;
   final double fatG;
 
-  factory MealTotals.fromJson(Map<String, dynamic> json) {
-    return MealTotals(
-      kcal: (json['kcal'] as num?)?.toDouble() ?? 0,
-      proteinG: (json['protein_g'] as num?)?.toDouble() ?? 0,
-      carbG: (json['carb_g'] as num?)?.toDouble() ?? 0,
-      fatG: (json['fat_g'] as num?)?.toDouble() ?? 0,
-    );
-  }
-
   static const zero = MealTotals(kcal: 0, proteinG: 0, carbG: 0, fatG: 0);
 }
 
 class MealsDaily {
-  const MealsDaily({
-    required this.date,
-    required this.meals,
-    required this.dailyTotals,
-  });
-
-  final String date;
-  final List<Meal> meals;
-  final MealTotals dailyTotals;
 
   factory MealsDaily.fromJson(Map<String, dynamic> json) {
     final rawMeals =
@@ -108,4 +99,13 @@ class MealsDaily {
           (json['daily_totals'] as Map<String, dynamic>?) ?? {}),
     );
   }
+  const MealsDaily({
+    required this.date,
+    required this.meals,
+    required this.dailyTotals,
+  });
+
+  final String date;
+  final List<Meal> meals;
+  final MealTotals dailyTotals;
 }

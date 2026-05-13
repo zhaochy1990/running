@@ -58,7 +58,7 @@ WeekDetailData _make7DayData() {
             title: '轻松跑', distanceM: 10000, durationS: 3600),
       ],
     ),
-    PlanDay(date: '2026-05-12', sessions: []),
+    const PlanDay(date: '2026-05-12', sessions: []),
     PlanDay(
       date: '2026-05-13',
       sessions: [
@@ -73,7 +73,7 @@ WeekDetailData _make7DayData() {
             title: '恢复跑', distanceM: 8000, durationS: 3000),
       ],
     ),
-    PlanDay(date: '2026-05-15', sessions: []),
+    const PlanDay(date: '2026-05-15', sessions: []),
     PlanDay(
       date: '2026-05-16',
       sessions: [
@@ -81,7 +81,7 @@ WeekDetailData _make7DayData() {
             kind: 'strength', title: '力量训练', durationS: 2700),
       ],
     ),
-    PlanDay(date: '2026-05-17', sessions: []),
+    const PlanDay(date: '2026-05-17', sessions: []),
   ];
 
   return WeekDetailData(
@@ -104,7 +104,7 @@ Future<void> _pump(
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, __) => WeekDetailScreen(folder: folder),
+        builder: (_, _) => WeekDetailScreen(folder: folder),
       ),
     ],
   );
@@ -140,7 +140,7 @@ void main() {
       routes: [
         GoRoute(
           path: '/',
-          builder: (_, __) => const WeekDetailScreen(folder: folder),
+          builder: (_, _) => const WeekDetailScreen(folder: folder),
         ),
       ],
     );

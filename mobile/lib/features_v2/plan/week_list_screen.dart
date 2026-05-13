@@ -39,7 +39,7 @@ class _WeekListScreenState extends ConsumerState<WeekListScreen> {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: StrideTopBar(title: '训练'),
+      appBar: const StrideTopBar(title: '训练'),
       body: Column(
         children: [
           // Segmented control
@@ -137,14 +137,14 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.calendar_today_outlined,
+          Icon(Icons.calendar_today_outlined,
               size: 48, color: StrideTokens.muted2),
-          const SizedBox(height: StrideTokens.spaceMd),
-          const Text(
+          SizedBox(height: StrideTokens.spaceMd),
+          Text(
             '暂无训练计划',
             style: TextStyle(
               fontFamily: AppTypography.fontSans,
@@ -152,8 +152,8 @@ class _EmptyState extends StatelessWidget {
               color: StrideTokens.muted,
             ),
           ),
-          const SizedBox(height: StrideTokens.spaceSm),
-          const Text(
+          SizedBox(height: StrideTokens.spaceSm),
+          Text(
             '点击右下角按钮生成本周计划',
             style: TextStyle(
               fontFamily: AppTypography.fontSans,

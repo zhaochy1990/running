@@ -41,7 +41,7 @@ class WeekDetailScreen extends ConsumerWidget {
           title: '本周计划',
           leading: _backButton(context),
         ),
-        error: (_, __) => StrideTopBar(
+        error: (_, _) => StrideTopBar(
           title: '本周计划',
           leading: _backButton(context),
         ),
@@ -134,14 +134,14 @@ class _Body extends StatelessWidget {
                 child: _WeekStatRow(data: data),
               ),
               // 7-day schedule header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
+              const Padding(
+                padding: EdgeInsets.fromLTRB(
                   StrideTokens.spaceLg,
                   0,
                   StrideTokens.spaceLg,
                   StrideTokens.spaceSm,
                 ),
-                child: const Text(
+                child: Text(
                   '本周课表',
                   style: TextStyle(
                     fontFamily: AppTypography.fontSans,

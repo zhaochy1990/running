@@ -49,10 +49,9 @@ class GenerateWeekNotifier extends StateNotifier<GenerateWeekState> {
   /// Protected constructor for subclasses (e.g. test fakes) that want to
   /// start with a specific [initialState] without needing real dependencies.
   @protected
-  GenerateWeekNotifier.withState(GenerateWeekState initialState)
+  GenerateWeekNotifier.withState(super.initialState)
       : _api = null,
-        _userId = '',
-        super(initialState);
+        _userId = '';
 
   final StrideApi? _api;
   final String _userId;

@@ -45,9 +45,9 @@ class BrandScreen extends StatelessWidget {
                 onTap: () => context.go(RoutesV2.onboardingCoros),
               ),
               const SizedBox(height: StrideTokens.spaceLg),
-              _BrandCard(
+              const _BrandCard(
                 brand: 'Garmin',
-                badge: const StridePill(
+                badge: StridePill(
                   text: 'v1.1 即将支持',
                   variant: PillVariant.muted,
                 ),

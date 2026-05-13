@@ -76,6 +76,25 @@ String _strengthToJson(StrengthWillingness w) => switch (w) {
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 class TrainingGoal {
+
+  factory TrainingGoal.fromJson(Map<String, dynamic> json) {
+    final rawSlots =
+        (json['available_time_slots'] as List? ?? const []).cast<String>();
+    final rawDate = json['race_date'] as String?;
+    return TrainingGoal(
+      goalId: json['goal_id'] as String?,
+      type: _goalTypeFromJson(json['type'] as String? ?? 'health'),
+      raceDate: rawDate != null ? DateTime.tryParse(rawDate) : null,
+      raceDistance: json['race_distance'] != null
+          ? _raceDistanceFromJson(json['race_distance'] as String)
+          : null,
+      targetFinishTime: json['target_finish_time'] as String?,
+      weeklyTrainingDays: (json['weekly_training_days'] as num?)?.toInt() ?? 4,
+      availableTimeSlots: rawSlots.map(_timeSlotFromJson).toList(),
+      strengthWillingness: _strengthFromJson(
+          json['strength_willingness'] as String? ?? 'conditional'),
+    );
+  }
   const TrainingGoal({
     this.goalId,
     required this.type,
@@ -114,25 +133,6 @@ class TrainingGoal {
             availableTimeSlots.map(_timeSlotToJson).toList(),
         'strength_willingness': _strengthToJson(strengthWillingness),
       };
-
-  factory TrainingGoal.fromJson(Map<String, dynamic> json) {
-    final rawSlots =
-        (json['available_time_slots'] as List? ?? const []).cast<String>();
-    final rawDate = json['race_date'] as String?;
-    return TrainingGoal(
-      goalId: json['goal_id'] as String?,
-      type: _goalTypeFromJson(json['type'] as String? ?? 'health'),
-      raceDate: rawDate != null ? DateTime.tryParse(rawDate) : null,
-      raceDistance: json['race_distance'] != null
-          ? _raceDistanceFromJson(json['race_distance'] as String)
-          : null,
-      targetFinishTime: json['target_finish_time'] as String?,
-      weeklyTrainingDays: (json['weekly_training_days'] as num?)?.toInt() ?? 4,
-      availableTimeSlots: rawSlots.map(_timeSlotFromJson).toList(),
-      strengthWillingness: _strengthFromJson(
-          json['strength_willingness'] as String? ?? 'conditional'),
-    );
-  }
 
   TrainingGoal copyWith({
     String? goalId,

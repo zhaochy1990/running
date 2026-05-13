@@ -30,6 +30,15 @@ enum MilestoneType {
 // ── Component models ──────────────────────────────────────────────────────────
 
 class PlanMilestone {
+
+  factory PlanMilestone.fromJson(Map<String, dynamic> json) => PlanMilestone(
+        id: json['id'] as String,
+        type: MilestoneType.fromJson(json['type'] as String? ?? ''),
+        date: json['date'] as String? ?? '',
+        phaseId: json['phase_id'] as String? ?? '',
+        target: json['target'] as String? ?? '',
+        completedActual: json['completed_actual'] as String?,
+      );
   const PlanMilestone({
     required this.id,
     required this.type,
@@ -45,18 +54,25 @@ class PlanMilestone {
   final String phaseId;
   final String target;
   final String? completedActual;
-
-  factory PlanMilestone.fromJson(Map<String, dynamic> json) => PlanMilestone(
-        id: json['id'] as String,
-        type: MilestoneType.fromJson(json['type'] as String? ?? ''),
-        date: json['date'] as String? ?? '',
-        phaseId: json['phase_id'] as String? ?? '',
-        target: json['target'] as String? ?? '',
-        completedActual: json['completed_actual'] as String?,
-      );
 }
 
 class PlanPhase {
+
+  factory PlanPhase.fromJson(Map<String, dynamic> json) => PlanPhase(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '',
+        startDate: json['start_date'] as String? ?? '',
+        endDate: json['end_date'] as String? ?? '',
+        focus: json['focus'] as String? ?? '',
+        weeklyDistanceKmLow:
+            (json['weekly_distance_km_low'] as num?)?.toDouble() ?? 0,
+        weeklyDistanceKmHigh:
+            (json['weekly_distance_km_high'] as num?)?.toDouble() ?? 0,
+        keySessionTypes: (json['key_session_types'] as List? ?? const [])
+            .cast<String>(),
+        milestoneIds:
+            (json['milestone_ids'] as List? ?? const []).cast<String>(),
+      );
   const PlanPhase({
     required this.id,
     required this.name,
@@ -78,27 +94,18 @@ class PlanPhase {
   final double weeklyDistanceKmHigh;
   final List<String> keySessionTypes;
   final List<String> milestoneIds;
-
-  factory PlanPhase.fromJson(Map<String, dynamic> json) => PlanPhase(
-        id: json['id'] as String,
-        name: json['name'] as String? ?? '',
-        startDate: json['start_date'] as String? ?? '',
-        endDate: json['end_date'] as String? ?? '',
-        focus: json['focus'] as String? ?? '',
-        weeklyDistanceKmLow:
-            (json['weekly_distance_km_low'] as num?)?.toDouble() ?? 0,
-        weeklyDistanceKmHigh:
-            (json['weekly_distance_km_high'] as num?)?.toDouble() ?? 0,
-        keySessionTypes: (json['key_session_types'] as List? ?? const [])
-            .cast<String>(),
-        milestoneIds:
-            (json['milestone_ids'] as List? ?? const []).cast<String>(),
-      );
 }
 
 // ── NextMilestone (derived field from /current endpoint) ─────────────────────
 
 class NextMilestone {
+
+  factory NextMilestone.fromJson(Map<String, dynamic> json) => NextMilestone(
+        id: json['id'] as String? ?? '',
+        date: json['date'] as String? ?? '',
+        target: json['target'] as String? ?? '',
+        daysUntil: (json['days_until'] as num?)?.toInt() ?? 0,
+      );
   const NextMilestone({
     required this.id,
     required this.date,
@@ -110,18 +117,41 @@ class NextMilestone {
   final String date;
   final String target;
   final int daysUntil;
-
-  factory NextMilestone.fromJson(Map<String, dynamic> json) => NextMilestone(
-        id: json['id'] as String? ?? '',
-        date: json['date'] as String? ?? '',
-        target: json['target'] as String? ?? '',
-        daysUntil: (json['days_until'] as num?)?.toInt() ?? 0,
-      );
 }
 
 // ── MasterPlan (top-level) ────────────────────────────────────────────────────
 
 class MasterPlan {
+
+  factory MasterPlan.fromJson(Map<String, dynamic> json) => MasterPlan(
+        planId: json['plan_id'] as String? ?? '',
+        userId: json['user_id'] as String? ?? '',
+        status: json['status'] as String? ?? '',
+        goalId: json['goal_id'] as String? ?? '',
+        startDate: json['start_date'] as String? ?? '',
+        endDate: json['end_date'] as String? ?? '',
+        phases: (json['phases'] as List? ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map(PlanPhase.fromJson)
+            .toList(growable: false),
+        milestones: (json['milestones'] as List? ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map(PlanMilestone.fromJson)
+            .toList(growable: false),
+        trainingPrinciples:
+            (json['training_principles'] as List? ?? const []).cast<String>(),
+        generatedBy: json['generated_by'] as String? ?? '',
+        version: (json['version'] as num?)?.toInt() ?? 1,
+        createdAt: json['created_at'] as String? ?? '',
+        updatedAt: json['updated_at'] as String? ?? '',
+        currentPhaseId: json['current_phase_id'] as String?,
+        currentWeekNumber: (json['current_week_number'] as num?)?.toInt(),
+        totalWeeks: (json['total_weeks'] as num?)?.toInt(),
+        nextMilestone: json['next_milestone'] is Map<String, dynamic>
+            ? NextMilestone.fromJson(
+                json['next_milestone'] as Map<String, dynamic>)
+            : null,
+      );
   const MasterPlan({
     required this.planId,
     required this.userId,
@@ -163,36 +193,6 @@ class MasterPlan {
   final int? totalWeeks;
   final NextMilestone? nextMilestone;
 
-  factory MasterPlan.fromJson(Map<String, dynamic> json) => MasterPlan(
-        planId: json['plan_id'] as String? ?? '',
-        userId: json['user_id'] as String? ?? '',
-        status: json['status'] as String? ?? '',
-        goalId: json['goal_id'] as String? ?? '',
-        startDate: json['start_date'] as String? ?? '',
-        endDate: json['end_date'] as String? ?? '',
-        phases: (json['phases'] as List? ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map(PlanPhase.fromJson)
-            .toList(growable: false),
-        milestones: (json['milestones'] as List? ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map(PlanMilestone.fromJson)
-            .toList(growable: false),
-        trainingPrinciples:
-            (json['training_principles'] as List? ?? const []).cast<String>(),
-        generatedBy: json['generated_by'] as String? ?? '',
-        version: (json['version'] as num?)?.toInt() ?? 1,
-        createdAt: json['created_at'] as String? ?? '',
-        updatedAt: json['updated_at'] as String? ?? '',
-        currentPhaseId: json['current_phase_id'] as String?,
-        currentWeekNumber: (json['current_week_number'] as num?)?.toInt(),
-        totalWeeks: (json['total_weeks'] as num?)?.toInt(),
-        nextMilestone: json['next_milestone'] is Map<String, dynamic>
-            ? NextMilestone.fromJson(
-                json['next_milestone'] as Map<String, dynamic>)
-            : null,
-      );
-
   /// Completion ratio 0.0–1.0 based on current week vs total weeks.
   double get completionRatio {
     final total = totalWeeks ?? 0;
@@ -205,6 +205,15 @@ class MasterPlan {
 // ── MasterPlanVersionSummary (for C8 history list) ────────────────────────────
 
 class MasterPlanVersionSummary {
+
+  factory MasterPlanVersionSummary.fromJson(Map<String, dynamic> json) =>
+      MasterPlanVersionSummary(
+        versionId: json['version_id'] as String? ?? '',
+        version: (json['version'] as num?)?.toInt() ?? 0,
+        changedAt: json['changed_at'] as String? ?? '',
+        changeReason: json['change_reason'] as String? ?? '',
+        changeSummary: json['change_summary'] as String? ?? '',
+      );
   const MasterPlanVersionSummary({
     required this.versionId,
     required this.version,
@@ -218,13 +227,4 @@ class MasterPlanVersionSummary {
   final String changedAt;
   final String changeReason;
   final String changeSummary;
-
-  factory MasterPlanVersionSummary.fromJson(Map<String, dynamic> json) =>
-      MasterPlanVersionSummary(
-        versionId: json['version_id'] as String? ?? '',
-        version: (json['version'] as num?)?.toInt() ?? 0,
-        changedAt: json['changed_at'] as String? ?? '',
-        changeReason: json['change_reason'] as String? ?? '',
-        changeSummary: json['change_summary'] as String? ?? '',
-      );
 }

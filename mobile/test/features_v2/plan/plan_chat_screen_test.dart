@@ -19,15 +19,15 @@ import 'package:stride/features_v2/plan/providers/plan_chat_provider.dart';
 
 const _folder = '2026-05-04_05-10(W1)';
 
-PlanChatState _stateWithMessages() => PlanChatState(
-      messages: const [
+PlanChatState _stateWithMessages() => const PlanChatState(
+      messages: [
         ChatMessage(role: 'user', content: '将周三改为休息日'),
         ChatMessage(role: 'assistant', content: '好的，已为你将周三调整为休息日'),
       ],
     );
 
 PlanChatState _stateWithDiff() {
-  final diff = PlanDiffView(
+  const diff = PlanDiffView(
     diffId: 'test-diff-id',
     folder: _folder,
     ops: [
@@ -36,29 +36,29 @@ PlanChatState _stateWithDiff() {
         op: 'replace_kind',
         date: '2026-05-07',
         sessionIndex: 0,
-        oldValue: const {'summary': 'E 8K'},
-        newValue: const {'summary': '休息'},
+        oldValue: {'summary': 'E 8K'},
+        newValue: {'summary': '休息'},
       ),
       DiffOpView(
         id: 'op-2',
         op: 'replace_distance',
         date: '2026-05-05',
         sessionIndex: 0,
-        oldValue: const {'summary': 'E 10K'},
-        newValue: const {'summary': 'E 8K'},
+        oldValue: {'summary': 'E 10K'},
+        newValue: {'summary': 'E 8K'},
       ),
     ],
     aiExplanation: '好的，已调整',
     createdAt: '2026-05-12T10:00:00Z',
   );
 
-  return PlanChatState(
-    messages: const [
+  return const PlanChatState(
+    messages: [
       ChatMessage(role: 'user', content: '调整一下'),
       ChatMessage(role: 'assistant', content: '好的，已为你调整'),
     ],
     pendingDiff: diff,
-    acceptedOpIds: const {},
+    acceptedOpIds: {},
   );
 }
 
@@ -164,8 +164,8 @@ void main() {
 
   // ── 7. Apply FAB visible when ops accepted ───────────────────────────────
   testWidgets('apply FAB appears when acceptedOpIds is non-empty', (tester) async {
-    final stateWithAccepted = PlanChatState(
-      messages: const [
+    const stateWithAccepted = PlanChatState(
+      messages: [
         ChatMessage(role: 'user', content: '调整'),
         ChatMessage(role: 'assistant', content: '好的'),
       ],
@@ -183,7 +183,7 @@ void main() {
         aiExplanation: '',
         createdAt: '',
       ),
-      acceptedOpIds: const {'op-1'},
+      acceptedOpIds: {'op-1'},
     );
 
     await _pump(tester, stateWithAccepted);

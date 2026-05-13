@@ -194,7 +194,7 @@ class _HeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isTraining = advice.isTrainingDay as bool;
+    final isTraining = advice.isTrainingDay;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(StrideTokens.spaceXl),

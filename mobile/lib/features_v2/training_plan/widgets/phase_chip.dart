@@ -76,7 +76,7 @@ class PhaseChip extends StatelessWidget {
                 fontFamily: AppTypography.fontMono,
                 fontSize: StrideTokens.fs10,
                 color: isCurrent
-                    ? StrideTokens.surface.withOpacity(0.8)
+                    ? StrideTokens.surface.withValues(alpha: 0.8)
                     : StrideTokens.muted,
               ),
             ),

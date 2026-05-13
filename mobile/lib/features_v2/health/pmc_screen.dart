@@ -1,4 +1,4 @@
-﻿/// E2 — PMC 训练负荷屏幕 (Performance Management Chart).
+/// E2 — PMC 训练负荷屏幕 (Performance Management Chart).
 ///
 /// Displays ATL / CTL / TSB line chart with time-range seg control,
 /// TSB zone band visualization, and a static AI interpretation card.
@@ -136,13 +136,13 @@ class _ChartCard extends StatelessWidget {
 class _LegendRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return const Row(
       children: [
-        _LegendDot(color: const Color(0xFF3B82F6), label: 'ATL'),
-        const SizedBox(width: StrideTokens.spaceMd),
-        _LegendDot(color: const Color(0xFF16A34A), label: 'CTL'),
-        const SizedBox(width: StrideTokens.spaceMd),
-        _LegendDot(color: const Color(0xFFF59E0B), label: 'TSB'),
+        _LegendDot(color: Color(0xFF3B82F6), label: 'ATL'),
+        SizedBox(width: StrideTokens.spaceMd),
+        _LegendDot(color: Color(0xFF16A34A), label: 'CTL'),
+        SizedBox(width: StrideTokens.spaceMd),
+        _LegendDot(color: Color(0xFFF59E0B), label: 'TSB'),
       ],
     );
   }
@@ -507,11 +507,11 @@ class _AiCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(Icons.auto_awesome, size: 16, color: StrideTokens.accent),
-              const SizedBox(width: StrideTokens.spaceXs),
-              const Text(
+              Icon(Icons.auto_awesome, size: 16, color: StrideTokens.accent),
+              SizedBox(width: StrideTokens.spaceXs),
+              Text(
                 'AI 解读',
                 style: TextStyle(
                   fontFamily: AppTypography.fontSans,
@@ -520,8 +520,8 @@ class _AiCard extends StatelessWidget {
                   color: StrideTokens.fg,
                 ),
               ),
-              const SizedBox(width: StrideTokens.spaceSm),
-              const StridePill(text: 'v1 静态', variant: PillVariant.muted, dense: true),
+              SizedBox(width: StrideTokens.spaceSm),
+              StridePill(text: 'v1 静态', variant: PillVariant.muted, dense: true),
             ],
           ),
           const SizedBox(height: StrideTokens.spaceMd),

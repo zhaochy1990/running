@@ -109,7 +109,7 @@ class _NutritionPrefsScreenState extends ConsumerState<NutritionPrefsScreen> {
               const _Label('启用营养建议'),
               Switch(
                 value: form.enabled,
-                activeColor: StrideTokens.accent,
+                activeThumbColor: StrideTokens.accent,
                 onChanged: notifier.setEnabled,
               ),
             ],

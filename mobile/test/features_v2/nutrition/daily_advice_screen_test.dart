@@ -56,15 +56,15 @@ Widget buildApp({FakeStrideApi? api, bool noPrefs = false}) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, __) => const DailyAdviceScreen(),
+        builder: (_, _) => const DailyAdviceScreen(),
       ),
       GoRoute(
         path: '/v2/nutrition/prefs',
-        builder: (_, __) => const Scaffold(body: Text('prefs')),
+        builder: (_, _) => const Scaffold(body: Text('prefs')),
       ),
       GoRoute(
         path: '/v2/nutrition/meals',
-        builder: (_, __) => const Scaffold(body: Text('meals')),
+        builder: (_, _) => const Scaffold(body: Text('meals')),
       ),
     ],
   );

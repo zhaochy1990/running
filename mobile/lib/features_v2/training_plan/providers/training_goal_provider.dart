@@ -105,7 +105,7 @@ const _sentinel = Object();
 class TrainingGoalNotifier extends StateNotifier<TrainingGoalForm> {
   TrainingGoalNotifier(this._ref) : super(const TrainingGoalForm());
 
-  TrainingGoalNotifier.withState(TrainingGoalForm s, this._ref) : super(s);
+  TrainingGoalNotifier.withState(super.s, this._ref);
 
   final Ref _ref;
 
@@ -170,9 +170,12 @@ class TrainingGoalNotifier extends StateNotifier<TrainingGoalForm> {
       state = state.copyWith(submitting: false, goalId: saved.goalId);
       return true;
     } on DioException catch (e) {
+      final data = e.response?.data;
+      final detail =
+          data is Map<String, dynamic> ? data['detail']?.toString() : null;
       state = state.copyWith(
         submitting: false,
-        error: e.response?.data?['detail']?.toString() ?? e.message,
+        error: detail ?? e.message,
       );
       return false;
     } catch (e) {

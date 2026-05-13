@@ -10,6 +10,49 @@ import '../../../data/models/plan.dart';
 
 /// Resolved view-model for a single training session, ready for D6 rendering.
 class DayPlan {
+
+  // ── Factory ───────────────────────────────────────────────────────────────
+
+  /// Build from [PlanDay] + index.
+  ///
+  /// Field-mapping notes vs. spec assumptions:
+  ///
+  /// | Spec assumption           | Actual [PlannedSession] field            | Match? |
+  /// |---------------------------|------------------------------------------|--------|
+  /// | session.kind              | kind (String)                            | YES    |
+  /// | session.distance_m        | totalDistanceM                           | YES (renamed) |
+  /// | session.duration_sec      | totalDurationS                           | YES (renamed) |
+  /// | target_pace_sec_per_km_*  | targetPace (String, e.g. "5:00-5:30")   | PARTIAL — parsed below |
+  /// | target_hr_low/high        | targetHrZone (String, e.g. "130-150")   | PARTIAL — parsed below |
+  /// | warmup_blocks             | NOT in API response (null → default)     | MISMATCH |
+  /// | nutrition.pre             | PlannedNutrition.notes (String?)        | PARTIAL — used as fallback |
+  ///
+  /// Both targetPace and targetHrZone are free-form strings like "5:00-5:30/km"
+  /// or "130-150 bpm".  We parse them best-effort; on failure the fields stay
+  /// null and the UI shows "—".
+  factory DayPlan.fromPlanDay(PlanDay day, int sessionIndex) {
+    final session = day.sessions[sessionIndex];
+
+    final (paceLow, paceHigh) = _parsePaceRange(session.targetPace);
+    final (hrLow, hrHigh) = _parseHrRange(session.targetHrZone);
+
+    return DayPlan(
+      date: day.date,
+      sessionIndex: sessionIndex,
+      kind: session.kind,
+      name: session.title ?? _kindLabel(session.kind),
+      distanceM: session.totalDistanceM,
+      durationSec: session.totalDurationS,
+      targetPaceLowSecPerKm: paceLow,
+      targetPaceHighSecPerKm: paceHigh,
+      targetHrLow: hrLow,
+      targetHrHigh: hrHigh,
+      // warmup_blocks not yet in API; null triggers default list in UI.
+      warmupBlocks: null,
+      // Use nutrition notes as pre-training hint if available.
+      nutritionPre: day.nutrition?.notes,
+    );
+  }
   const DayPlan({
     required this.date,
     required this.sessionIndex,
@@ -60,49 +103,6 @@ class DayPlan {
 
   /// Pre-training nutrition note text.  Null means "use the default text".
   final String? nutritionPre;
-
-  // ── Factory ───────────────────────────────────────────────────────────────
-
-  /// Build from [PlanDay] + index.
-  ///
-  /// Field-mapping notes vs. spec assumptions:
-  ///
-  /// | Spec assumption           | Actual [PlannedSession] field            | Match? |
-  /// |---------------------------|------------------------------------------|--------|
-  /// | session.kind              | kind (String)                            | YES    |
-  /// | session.distance_m        | totalDistanceM                           | YES (renamed) |
-  /// | session.duration_sec      | totalDurationS                           | YES (renamed) |
-  /// | target_pace_sec_per_km_*  | targetPace (String, e.g. "5:00-5:30")   | PARTIAL — parsed below |
-  /// | target_hr_low/high        | targetHrZone (String, e.g. "130-150")   | PARTIAL — parsed below |
-  /// | warmup_blocks             | NOT in API response (null → default)     | MISMATCH |
-  /// | nutrition.pre             | PlannedNutrition.notes (String?)        | PARTIAL — used as fallback |
-  ///
-  /// Both targetPace and targetHrZone are free-form strings like "5:00-5:30/km"
-  /// or "130-150 bpm".  We parse them best-effort; on failure the fields stay
-  /// null and the UI shows "—".
-  factory DayPlan.fromPlanDay(PlanDay day, int sessionIndex) {
-    final session = day.sessions[sessionIndex];
-
-    final (paceLow, paceHigh) = _parsePaceRange(session.targetPace);
-    final (hrLow, hrHigh) = _parseHrRange(session.targetHrZone);
-
-    return DayPlan(
-      date: day.date,
-      sessionIndex: sessionIndex,
-      kind: session.kind,
-      name: session.title ?? _kindLabel(session.kind),
-      distanceM: session.totalDistanceM,
-      durationSec: session.totalDurationS,
-      targetPaceLowSecPerKm: paceLow,
-      targetPaceHighSecPerKm: paceHigh,
-      targetHrLow: hrLow,
-      targetHrHigh: hrHigh,
-      // warmup_blocks not yet in API; null triggers default list in UI.
-      warmupBlocks: null,
-      // Use nutrition notes as pre-training hint if available.
-      nutritionPre: day.nutrition?.notes,
-    );
-  }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 

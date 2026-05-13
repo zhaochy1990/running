@@ -84,8 +84,7 @@ const _sentinel = Object();
 class RunningProfileNotifier extends StateNotifier<RunningProfileForm> {
   RunningProfileNotifier(this._ref) : super(const RunningProfileForm());
 
-  RunningProfileNotifier.withState(RunningProfileForm s, this._ref)
-      : super(s);
+  RunningProfileNotifier.withState(super.s, this._ref);
 
   final Ref _ref;
 
@@ -144,9 +143,12 @@ class RunningProfileNotifier extends StateNotifier<RunningProfileForm> {
       state = state.copyWith(submitting: false, profileId: saved.profileId);
       return true;
     } on DioException catch (e) {
+      final data = e.response?.data;
+      final detail =
+          data is Map<String, dynamic> ? data['detail']?.toString() : null;
       state = state.copyWith(
         submitting: false,
-        error: e.response?.data?['detail']?.toString() ?? e.message,
+        error: detail ?? e.message,
       );
       return false;
     } catch (e) {

@@ -38,11 +38,11 @@ Widget buildApp({FakeStrideApi? api}) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, __) => const NutritionPrefsScreen(),
+        builder: (_, _) => const NutritionPrefsScreen(),
       ),
       GoRoute(
         path: '/v2/nutrition/daily',
-        builder: (_, __) => const Scaffold(body: Text('daily')),
+        builder: (_, _) => const Scaffold(body: Text('daily')),
       ),
     ],
   );

@@ -33,7 +33,7 @@ const _lifetimeStats = LifetimeStats(
   totalActivities: 312,
 );
 
-final _activity = HomeActivity(
+const _activity = HomeActivity(
   labelId: 'ACT_001',
   date: '2026-05-11',
   name: '晨跑 10K',
@@ -71,7 +71,7 @@ Future<void> _pump(
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, __) => const HomeScreen(),
+        builder: (_, _) => const HomeScreen(),
       ),
     ],
   );
@@ -144,11 +144,11 @@ void main() {
       routes: [
         GoRoute(
           path: '/',
-          builder: (_, __) => const HomeScreen(),
+          builder: (_, _) => const HomeScreen(),
         ),
         GoRoute(
           path: '/v2/training-plan/goal',
-          builder: (_, __) =>
+          builder: (_, _) =>
               const Scaffold(body: Text('goal screen')),
         ),
       ],
@@ -181,7 +181,7 @@ void main() {
     // Use pump (not pumpAndSettle) so loading spinner stays
     final router = GoRouter(
       routes: [
-        GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
+        GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
       ],
     );
     await tester.pumpWidget(
@@ -215,7 +215,7 @@ void main() {
       routes: [
         GoRoute(
           path: '/',
-          builder: (_, __) => const HomeScreen(),
+          builder: (_, _) => const HomeScreen(),
         ),
         GoRoute(
           path: '/v2/activity/:id',

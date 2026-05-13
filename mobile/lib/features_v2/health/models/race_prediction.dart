@@ -4,13 +4,6 @@
 library;
 
 class DistancePrediction {
-  const DistancePrediction({
-    required this.predictedTimeSec,
-    required this.predictedPaceSecPerKm,
-  });
-
-  final int predictedTimeSec;
-  final int predictedPaceSecPerKm;
 
   factory DistancePrediction.fromJson(Map<String, dynamic> json) {
     return DistancePrediction(
@@ -20,9 +13,25 @@ class DistancePrediction {
           (json['predicted_pace_sec_per_km'] as num?)?.toInt() ?? 0,
     );
   }
+  const DistancePrediction({
+    required this.predictedTimeSec,
+    required this.predictedPaceSecPerKm,
+  });
+
+  final int predictedTimeSec;
+  final int predictedPaceSecPerKm;
 }
 
 class TargetGap {
+
+  factory TargetGap.fromJson(Map<String, dynamic> json) {
+    return TargetGap(
+      distance: json['distance'] as String? ?? '',
+      targetTimeSec: (json['target_time_sec'] as num?)?.toInt() ?? 0,
+      currentTimeSec: (json['current_time_sec'] as num?)?.toInt() ?? 0,
+      gapSec: (json['gap_sec'] as num?)?.toInt() ?? 0,
+    );
+  }
   const TargetGap({
     required this.distance,
     required this.targetTimeSec,
@@ -34,32 +43,9 @@ class TargetGap {
   final int targetTimeSec;
   final int currentTimeSec;
   final int gapSec;
-
-  factory TargetGap.fromJson(Map<String, dynamic> json) {
-    return TargetGap(
-      distance: json['distance'] as String? ?? '',
-      targetTimeSec: (json['target_time_sec'] as num?)?.toInt() ?? 0,
-      currentTimeSec: (json['current_time_sec'] as num?)?.toInt() ?? 0,
-      gapSec: (json['gap_sec'] as num?)?.toInt() ?? 0,
-    );
-  }
 }
 
 class RacePrediction {
-  const RacePrediction({
-    required this.distances,
-    this.vo2max,
-    this.vo2maxTrend,
-    this.targetGap,
-  });
-
-  /// Predictions keyed by distance label: "5K", "10K", "HM", "FM".
-  final Map<String, DistancePrediction> distances;
-  final double? vo2max;
-
-  /// "up" | "down" | "flat" | null
-  final String? vo2maxTrend;
-  final TargetGap? targetGap;
 
   factory RacePrediction.fromJson(Map<String, dynamic> json) {
     final rawDistances =
@@ -84,19 +70,26 @@ class RacePrediction {
       targetGap: targetGap,
     );
   }
+  const RacePrediction({
+    required this.distances,
+    this.vo2max,
+    this.vo2maxTrend,
+    this.targetGap,
+  });
+
+  /// Predictions keyed by distance label: "5K", "10K", "HM", "FM".
+  final Map<String, DistancePrediction> distances;
+  final double? vo2max;
+
+  /// "up" | "down" | "flat" | null
+  final String? vo2maxTrend;
+  final TargetGap? targetGap;
 
   static const empty = RacePrediction(distances: {});
 }
 
 /// A single historical prediction data point for trend charts.
 class PredictionHistoryPoint {
-  const PredictionHistoryPoint({
-    required this.date,
-    required this.predictedTimeSec,
-  });
-
-  final String date;
-  final int predictedTimeSec;
 
   factory PredictionHistoryPoint.fromJson(Map<String, dynamic> json) {
     return PredictionHistoryPoint(
@@ -105,4 +98,11 @@ class PredictionHistoryPoint {
           (json['predicted_time_sec'] as num?)?.toInt() ?? 0,
     );
   }
+  const PredictionHistoryPoint({
+    required this.date,
+    required this.predictedTimeSec,
+  });
+
+  final String date;
+  final int predictedTimeSec;
 }

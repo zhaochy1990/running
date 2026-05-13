@@ -80,8 +80,8 @@ class PostActivityFeedbackScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: StrideTopBar(
-        leading: const BackButton(),
+      appBar: const StrideTopBar(
+        leading: BackButton(),
         title: '训练反馈',
       ),
       body: _FeedbackBody(
@@ -122,7 +122,7 @@ class _FeedbackBody extends StatelessWidget {
         if (activityName != null) const SizedBox(height: StrideTokens.spaceLg),
 
         // ── RPE section ───────────────────────────────────────────────
-        _SectionLabel('运动强度 (RPE)'),
+        const _SectionLabel('运动强度 (RPE)'),
         const SizedBox(height: StrideTokens.spaceSm),
         _RpeSelector(
           value: formState.rpe,
@@ -131,7 +131,7 @@ class _FeedbackBody extends StatelessWidget {
         const SizedBox(height: StrideTokens.spaceLg),
 
         // ── Mood tags section ─────────────────────────────────────────
-        _SectionLabel('今天感受'),
+        const _SectionLabel('今天感受'),
         const SizedBox(height: StrideTokens.spaceSm),
         _MoodTagsSelector(
           selected: formState.moodTags,
@@ -140,7 +140,7 @@ class _FeedbackBody extends StatelessWidget {
         const SizedBox(height: StrideTokens.spaceLg),
 
         // ── Note section ───────────────────────────────────────────────
-        _SectionLabel('备注（可选）'),
+        const _SectionLabel('备注（可选）'),
         const SizedBox(height: StrideTokens.spaceSm),
         _NoteField(
           value: formState.note,

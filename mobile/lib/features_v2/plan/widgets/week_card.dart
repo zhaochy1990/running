@@ -159,9 +159,9 @@ class _CompletionBar extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
+            const Text(
               '完成进度',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: AppTypography.fontSans,
                 fontSize: StrideTokens.fs12,
                 color: StrideTokens.muted,
@@ -284,8 +284,8 @@ class _StatsRow extends StatelessWidget {
     final durStr = durationS != null ? _fmtDuration(durationS!.toInt()) : null;
 
     final parts = <String>[
-      if (distStr != null) distStr,
-      if (durStr != null) durStr,
+      ?distStr,
+      ?durStr,
     ];
     if (parts.isEmpty) return const SizedBox.shrink();
 

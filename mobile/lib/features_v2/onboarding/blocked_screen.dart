@@ -32,10 +32,10 @@ class BlockedScreen extends StatelessWidget {
                   color: StrideTokens.muted2,
                 ),
                 const SizedBox(height: 16),
-                Text(
+                const Text(
                   '需要先绑定一款手表',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: AppTypography.fontSans,
                     fontSize: StrideTokens.fs20,
                     fontWeight: FontWeight.w600,
@@ -43,10 +43,10 @@ class BlockedScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
+                const Text(
                   '所有功能依赖手表数据，请先完成绑定',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: AppTypography.fontSans,
                     fontSize: StrideTokens.fs13,
                     color: StrideTokens.muted,

@@ -93,7 +93,7 @@ class MasterPlanHistoryScreen extends ConsumerWidget {
               vertical: StrideTokens.spaceMd,
             ),
             itemCount: versions.length,
-            separatorBuilder: (_, __) =>
+            separatorBuilder: (_, _) =>
                 const SizedBox(height: StrideTokens.spaceSm),
             itemBuilder: (context, index) => _VersionCard(
               version: versions[index],

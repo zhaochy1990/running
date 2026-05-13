@@ -5,6 +5,20 @@
 library;
 
 class TimeseriesSeries {
+
+  factory TimeseriesSeries.fromJson(Map<String, dynamic> json) {
+    List<num?>? parseList(dynamic raw) {
+      if (raw == null) return null;
+      return (raw as List).map((e) => e as num?).toList(growable: false);
+    }
+
+    return TimeseriesSeries(
+      hr: parseList(json['hr']),
+      pace: parseList(json['pace']),
+      altitude: parseList(json['altitude']),
+      cadence: parseList(json['cadence']),
+    );
+  }
   const TimeseriesSeries({
     this.hr,
     this.pace,
@@ -16,23 +30,21 @@ class TimeseriesSeries {
   final List<num?>? pace;
   final List<num?>? altitude;
   final List<num?>? cadence;
-
-  factory TimeseriesSeries.fromJson(Map<String, dynamic> json) {
-    List<num?>? _parseList(dynamic raw) {
-      if (raw == null) return null;
-      return (raw as List).map((e) => e as num?).toList(growable: false);
-    }
-
-    return TimeseriesSeries(
-      hr: _parseList(json['hr']),
-      pace: _parseList(json['pace']),
-      altitude: _parseList(json['altitude']),
-      cadence: _parseList(json['cadence']),
-    );
-  }
 }
 
 class TimeseriesData {
+
+  factory TimeseriesData.fromJson(Map<String, dynamic> json) {
+    return TimeseriesData(
+      labelId: (json['label_id'] as String?) ?? '',
+      durationSec: (json['duration_sec'] as num?)?.toInt() ?? 0,
+      pointCount: (json['point_count'] as num?)?.toInt() ?? 0,
+      intervalSec: (json['interval_sec'] as num?)?.toDouble() ?? 1.0,
+      series: TimeseriesSeries.fromJson(
+        (json['series'] as Map<String, dynamic>?) ?? {},
+      ),
+    );
+  }
   const TimeseriesData({
     required this.labelId,
     required this.durationSec,
@@ -46,16 +58,4 @@ class TimeseriesData {
   final int pointCount;
   final double intervalSec;
   final TimeseriesSeries series;
-
-  factory TimeseriesData.fromJson(Map<String, dynamic> json) {
-    return TimeseriesData(
-      labelId: (json['label_id'] as String?) ?? '',
-      durationSec: (json['duration_sec'] as num?)?.toInt() ?? 0,
-      pointCount: (json['point_count'] as num?)?.toInt() ?? 0,
-      intervalSec: (json['interval_sec'] as num?)?.toDouble() ?? 1.0,
-      series: TimeseriesSeries.fromJson(
-        (json['series'] as Map<String, dynamic>?) ?? {},
-      ),
-    );
-  }
 }

@@ -2,19 +2,6 @@
 library;
 
 class ActivityFeedback {
-  const ActivityFeedback({
-    required this.labelId,
-    this.rpe,
-    this.moodTags,
-    this.note,
-    this.updatedAt,
-  });
-
-  final String labelId;
-  final int? rpe;
-  final List<String>? moodTags;
-  final String? note;
-  final String? updatedAt;
 
   factory ActivityFeedback.fromJson(Map<String, dynamic> json) {
     final rawTags = json['mood_tags'];
@@ -30,6 +17,19 @@ class ActivityFeedback {
       updatedAt: json['updated_at'] as String?,
     );
   }
+  const ActivityFeedback({
+    required this.labelId,
+    this.rpe,
+    this.moodTags,
+    this.note,
+    this.updatedAt,
+  });
+
+  final String labelId;
+  final int? rpe;
+  final List<String>? moodTags;
+  final String? note;
+  final String? updatedAt;
 
   Map<String, dynamic> toJson() => {
         'rpe': rpe,

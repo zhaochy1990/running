@@ -195,18 +195,18 @@ void main() {
 
   group('WeekReviewScreen — empty TSB series', () {
     testWidgets('shows 暂无 TSB 数据 placeholder when tsb_series is empty', (tester) async {
-      final review = WeekReview(
+      const review = WeekReview(
         folder: _folder,
         dateFrom: '2026-05-04',
         dateTo: '2026-05-10',
         summary: _summary,
-        tsbSeries: const [],
-        sessions: const [],
-        activityHighlights: const [],
-        insights: const [],
+        tsbSeries: [],
+        sessions: [],
+        activityHighlights: [],
+        insights: [],
         nextWeekPreview: null,
       );
-      await _pump(tester, AsyncData(review));
+      await _pump(tester, const AsyncData(review));
       expect(find.text('暂无 TSB 数据'), findsOneWidget);
     });
   });

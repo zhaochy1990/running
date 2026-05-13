@@ -9,6 +9,13 @@ import '../../../data/models/health.dart';
 
 /// One data-point on the PMC chart.
 class PmcPoint {
+
+  factory PmcPoint.fromRecord(PMCRecord r) => PmcPoint(
+        date: r.date,
+        atl: r.ati?.toDouble() ?? 0.0,
+        ctl: r.cti?.toDouble() ?? 0.0,
+        tsb: r.tsb.toDouble(),
+      );
   const PmcPoint({
     required this.date,
     required this.atl,
@@ -27,13 +34,6 @@ class PmcPoint {
 
   /// Training Stress Balance = CTL - ATL.
   final double tsb;
-
-  factory PmcPoint.fromRecord(PMCRecord r) => PmcPoint(
-        date: r.date,
-        atl: r.ati?.toDouble() ?? 0.0,
-        ctl: r.cti?.toDouble() ?? 0.0,
-        tsb: r.tsb.toDouble(),
-      );
 }
 
 /// TSB zone classification for display.
@@ -85,6 +85,16 @@ enum TsbZone {
 
 /// Aggregated summary for the current state.
 class PmcSummary {
+
+  factory PmcSummary.fromBackend(PMCSummary s) {
+    final tsb = s.currentTsb?.toDouble();
+    return PmcSummary(
+      currentAtl: s.currentAti?.toDouble(),
+      currentCtl: s.currentCti?.toDouble(),
+      currentTsb: tsb,
+      tsbZone: tsb != null ? TsbZone.from(tsb) : null,
+    );
+  }
   const PmcSummary({
     this.currentAtl,
     this.currentCtl,
@@ -96,16 +106,6 @@ class PmcSummary {
   final double? currentCtl;
   final double? currentTsb;
   final TsbZone? tsbZone;
-
-  factory PmcSummary.fromBackend(PMCSummary s) {
-    final tsb = s.currentTsb?.toDouble();
-    return PmcSummary(
-      currentAtl: s.currentAti?.toDouble(),
-      currentCtl: s.currentCti?.toDouble(),
-      currentTsb: tsb,
-      tsbZone: tsb != null ? TsbZone.from(tsb) : null,
-    );
-  }
 }
 
 /// Top-level model passed from provider → screen.

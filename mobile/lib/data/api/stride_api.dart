@@ -55,11 +55,11 @@ class StrideApi {
     String? displayName,
   }) async {
     final body = <String, dynamic>{
-      if (sex != null) 'sex': sex,
-      if (dob != null) 'dob': dob,
-      if (heightCm != null) 'height_cm': heightCm,
-      if (weightKg != null) 'weight_kg': weightKg,
-      if (displayName != null) 'display_name': displayName,
+      'sex': ?sex,
+      'dob': ?dob,
+      'height_cm': ?heightCm,
+      'weight_kg': ?weightKg,
+      'display_name': ?displayName,
     };
     return _patch<Map<String, dynamic>>(
       '/api/users/me/profile',
@@ -323,7 +323,7 @@ class StrideApi {
       body: {
         'email': email,
         'password': password,
-        if (region != null) 'region': region,
+        'region': ?region,
       },
     );
   }
@@ -479,7 +479,7 @@ class StrideApi {
       '/api/$user/plan/$folder/chat/messages',
       body: {
         'message': message,
-        if (history != null) 'history': history,
+        'history': ?history,
       },
     );
   }
@@ -580,7 +580,7 @@ class StrideApi {
   }) async {
     return _post<Map<String, dynamic>>(
       '/api/users/me/master-plan/$planId/review/messages',
-      body: {'message': message, if (history != null) 'history': history},
+      body: {'message': message, 'history': ?history},
     );
   }
 
@@ -595,7 +595,7 @@ class StrideApi {
       body: {
         'diff_id': diffId,
         'accepted_op_ids': acceptedOpIds,
-        if (changeReason != null) 'change_reason': changeReason,
+        'change_reason': ?changeReason,
       },
     );
   }
@@ -627,7 +627,7 @@ class StrideApi {
   }) async {
     return _post<Map<String, dynamic>>(
       '/api/users/me/master-plan/$planId/adjust/messages',
-      body: {'message': message, if (history != null) 'history': history},
+      body: {'message': message, 'history': ?history},
     );
   }
 
@@ -643,7 +643,7 @@ class StrideApi {
       body: {
         'diff_id': diffId,
         'accepted_op_ids': acceptedOpIds,
-        if (changeReason != null) 'change_reason': changeReason,
+        'change_reason': ?changeReason,
       },
     );
   }
@@ -706,7 +706,7 @@ class StrideApi {
     try {
       final r = await _get<Map<String, dynamic>>(
         '/api/$user/nutrition/daily',
-        query: {if (date != null) 'date': date},
+        query: {'date': ?date},
       );
       return DailyAdvice.fromJson(r);
     } on DioException catch (e) {
@@ -720,7 +720,7 @@ class StrideApi {
     try {
       final r = await _get<Map<String, dynamic>>(
         '/api/$user/nutrition/meals',
-        query: {if (date != null) 'date': date},
+        query: {'date': ?date},
       );
       return MealsDaily.fromJson(r);
     } on DioException catch (e) {
@@ -789,6 +789,14 @@ final strideApiProvider = Provider<StrideApi>((ref) {
 /// Only the fields needed to navigate to the week detail screen are kept here;
 /// the full plan is fetched by [WeekDetailScreen] once navigation completes.
 class GeneratedWeek {
+
+  factory GeneratedWeek.fromJson(Map<String, dynamic> json) {
+    return GeneratedWeek(
+      folder: json['folder'] as String,
+      sessionsCount: (json['sessions_count'] as num?)?.toInt() ?? 0,
+      totalDistanceKm: (json['total_distance_km'] as num?)?.toDouble() ?? 0.0,
+    );
+  }
   const GeneratedWeek({
     required this.folder,
     required this.sessionsCount,
@@ -803,12 +811,4 @@ class GeneratedWeek {
 
   /// Total planned weekly distance in km.
   final double totalDistanceKm;
-
-  factory GeneratedWeek.fromJson(Map<String, dynamic> json) {
-    return GeneratedWeek(
-      folder: json['folder'] as String,
-      sessionsCount: (json['sessions_count'] as num?)?.toInt() ?? 0,
-      totalDistanceKm: (json['total_distance_km'] as num?)?.toDouble() ?? 0.0,
-    );
-  }
 }

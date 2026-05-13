@@ -170,7 +170,7 @@ Widget _wrap(Widget screen, {FakeStrideApi? api, List<GoRoute> extra = const []}
   final fakeApi = api ?? FakeStrideApi(planToReturn: _makePlan());
   final router = GoRouter(
     routes: [
-      GoRoute(path: '/', builder: (_, __) => screen),
+      GoRoute(path: '/', builder: (_, _) => screen),
       GoRoute(
         path: '/v2/training-plan/adjust/:planId',
         builder: (_, state) =>
@@ -398,9 +398,9 @@ void main() {
         'goal_id': 'g1',
         'start_date': '2026-05-12',
         'end_date': '2026-10-26',
-        'phases': [],
-        'milestones': [],
-        'training_principles': [],
+        'phases': <dynamic>[],
+        'milestones': <dynamic>[],
+        'training_principles': <dynamic>[],
         'generated_by': 'gpt-4.1',
         'version': 1,
         'created_at': '2026-05-12T00:00:00Z',

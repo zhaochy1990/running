@@ -210,9 +210,9 @@ class _SleepCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Text(
+              Text(
                 '睡眠时长',
                 style: TextStyle(
                   fontFamily: AppTypography.fontSans,
@@ -221,8 +221,8 @@ class _SleepCard extends StatelessWidget {
                   color: StrideTokens.fg,
                 ),
               ),
-              const Spacer(),
-              const StridePill(
+              Spacer(),
+              StridePill(
                 text: '近 7 天',
                 variant: PillVariant.muted,
                 dense: true,
@@ -281,7 +281,7 @@ class _SleepBarChart extends StatelessWidget {
         BarChartData(
           maxY: displayMax,
           minY: 0,
-          gridData: FlGridData(show: false),
+          gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
             leftTitles:
@@ -367,15 +367,15 @@ class _AiInterpretCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.auto_awesome,
                 size: 16,
                 color: StrideTokens.accent,
               ),
-              const SizedBox(width: StrideTokens.spaceXs),
-              const Text(
+              SizedBox(width: StrideTokens.spaceXs),
+              Text(
                 'AI 解读',
                 style: TextStyle(
                   fontFamily: AppTypography.fontSans,
@@ -384,8 +384,8 @@ class _AiInterpretCard extends StatelessWidget {
                   color: StrideTokens.fg,
                 ),
               ),
-              const SizedBox(width: StrideTokens.spaceSm),
-              const StridePill(
+              SizedBox(width: StrideTokens.spaceSm),
+              StridePill(
                 text: 'v1 静态',
                 variant: PillVariant.muted,
                 dense: true,
@@ -426,9 +426,9 @@ class _ErrorView extends StatelessWidget {
             const Icon(Icons.error_outline,
                 size: 40, color: StrideTokens.muted),
             const SizedBox(height: StrideTokens.spaceMd),
-            Text(
+            const Text(
               '加载失败',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: AppTypography.fontSans,
                 fontSize: StrideTokens.fs15,
                 fontWeight: FontWeight.w500,
@@ -460,31 +460,31 @@ class _DetailEntries extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = <_EntryItem>[
-      _EntryItem(
+      const _EntryItem(
         icon: Icons.show_chart,
         title: '训练负荷',
         subtitle: 'ATL / CTL / TSB 曲线',
         route: RoutesV2.dataPmc,
       ),
-      _EntryItem(
+      const _EntryItem(
         icon: Icons.ssid_chart,
         title: '趋势详情',
         subtitle: '疲劳 / HRV / RHR / 睡眠 / 负荷',
         route: RoutesV2.dataTrends,
       ),
-      _EntryItem(
+      const _EntryItem(
         icon: Icons.radar,
         title: '能力分析',
         subtitle: '6 维 ability radar',
         route: RoutesV2.abilityRadar,
       ),
-      _EntryItem(
+      const _EntryItem(
         icon: Icons.flag_outlined,
         title: '成绩预测',
         subtitle: '5K / 10K / HM / FM + 目标差距',
         route: RoutesV2.predictions,
       ),
-      _EntryItem(
+      const _EntryItem(
         icon: Icons.emoji_events_outlined,
         title: '个人最佳',
         subtitle: '4 距离自动检测',

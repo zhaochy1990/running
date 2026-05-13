@@ -246,11 +246,11 @@ class _MessageList extends ConsumerWidget {
     }
 
     if (messages.isEmpty && !state.loading) {
-      return Center(
+      return const Center(
         child: Text(
           '向 AI 教练发送消息\n开始调整总纲计划',
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: AppTypography.fontSans,
             fontSize: StrideTokens.fs14,
             color: StrideTokens.muted,

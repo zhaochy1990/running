@@ -108,16 +108,16 @@ class _NoPlanPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return const Center(
       child: Padding(
-        padding: const EdgeInsets.all(StrideTokens.space2xl),
+        padding: EdgeInsets.all(StrideTokens.space2xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.event_note_outlined,
+            Icon(Icons.event_note_outlined,
                 size: 48, color: StrideTokens.muted),
-            const SizedBox(height: StrideTokens.spaceMd),
-            const Text(
+            SizedBox(height: StrideTokens.spaceMd),
+            Text(
               '暂无激活的训练总纲',
               style: TextStyle(
                 fontFamily: AppTypography.fontSans,

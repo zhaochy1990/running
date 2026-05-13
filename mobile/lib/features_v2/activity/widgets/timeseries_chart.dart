@@ -49,7 +49,7 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
 
     return async.when(
       loading: () => const _ChartPlaceholder(message: '加载中...'),
-      error: (_, __) => const _ChartPlaceholder(message: '暂无数据'),
+      error: (_, _) => const _ChartPlaceholder(message: '暂无数据'),
       data: (data) => _buildChart(data),
     );
   }
@@ -91,7 +91,7 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
             show: true,
             drawVerticalLine: false,
             horizontalInterval: (maxY - minY) / 4,
-            getDrawingHorizontalLine: (_) => FlLine(
+            getDrawingHorizontalLine: (_) => const FlLine(
               color: StrideTokens.grid,
               strokeWidth: 1,
             ),

@@ -42,6 +42,11 @@ String _weeklyKmToJson(WeeklyKm k) => switch (k) {
 // ── Sub-models ────────────────────────────────────────────────────────────────
 
 class PB {
+
+  factory PB.fromJson(Map<String, dynamic> json) => PB(
+        distance: json['distance'] as String,
+        time: json['time'] as String,
+      );
   const PB({required this.distance, required this.time});
 
   /// One of "5K", "10K", "HM", "FM".
@@ -51,16 +56,25 @@ class PB {
   final String time;
 
   Map<String, dynamic> toJson() => {'distance': distance, 'time': time};
-
-  factory PB.fromJson(Map<String, dynamic> json) => PB(
-        distance: json['distance'] as String,
-        time: json['time'] as String,
-      );
 }
 
 // ── Model ─────────────────────────────────────────────────────────────────────
 
 class RunningProfile {
+
+  factory RunningProfile.fromJson(Map<String, dynamic> json) {
+    final rawPbs =
+        (json['pbs'] as List? ?? const []).cast<Map<String, dynamic>>();
+    return RunningProfile(
+      profileId: json['profile_id'] as String?,
+      runningAge:
+          _runningAgeFromJson(json['running_age'] as String? ?? 'lt6m'),
+      currentWeeklyKm:
+          _weeklyKmFromJson(json['current_weekly_km'] as String? ?? 'lt20'),
+      pbs: rawPbs.map(PB.fromJson).toList(),
+      injuries: (json['injuries'] as List? ?? const []).cast<String>(),
+    );
+  }
   const RunningProfile({
     this.profileId,
     required this.runningAge,
@@ -86,20 +100,6 @@ class RunningProfile {
         'pbs': pbs.map((p) => p.toJson()).toList(),
         'injuries': injuries,
       };
-
-  factory RunningProfile.fromJson(Map<String, dynamic> json) {
-    final rawPbs =
-        (json['pbs'] as List? ?? const []).cast<Map<String, dynamic>>();
-    return RunningProfile(
-      profileId: json['profile_id'] as String?,
-      runningAge:
-          _runningAgeFromJson(json['running_age'] as String? ?? 'lt6m'),
-      currentWeeklyKm:
-          _weeklyKmFromJson(json['current_weekly_km'] as String? ?? 'lt20'),
-      pbs: rawPbs.map(PB.fromJson).toList(),
-      injuries: (json['injuries'] as List? ?? const []).cast<String>(),
-    );
-  }
 
   RunningProfile copyWith({
     String? profileId,

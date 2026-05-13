@@ -49,12 +49,12 @@ class ActivityDetailScreen extends ConsumerWidget {
             ),
           ],
         ),
-        loading: () => StrideTopBar(
-          leading: const BackButton(),
+        loading: () => const StrideTopBar(
+          leading: BackButton(),
           title: '活动详情',
         ),
-        error: (_, __) => StrideTopBar(
-          leading: const BackButton(),
+        error: (_, _) => const StrideTopBar(
+          leading: BackButton(),
           title: '活动详情',
         ),
       ),
@@ -155,14 +155,14 @@ class _DetailBody extends StatelessWidget {
 
         // 6. Laps section
         if (detail.laps.isNotEmpty) ...[
-          _SectionHeader(title: '分段数据'),
+          const _SectionHeader(title: '分段数据'),
           const SizedBox(height: StrideTokens.spaceSm),
           _Card(child: LapTable(laps: detail.laps)),
           const SizedBox(height: StrideTokens.spaceLg),
         ],
 
         // 7. HR chart (lazy-load)
-        _SectionHeader(title: '心率曲线'),
+        const _SectionHeader(title: '心率曲线'),
         const SizedBox(height: StrideTokens.spaceSm),
         _Card(
           child: TimeseriesChart(
@@ -174,7 +174,7 @@ class _DetailBody extends StatelessWidget {
         const SizedBox(height: StrideTokens.spaceLg),
 
         // 8. Pace chart (lazy-load)
-        _SectionHeader(title: '配速曲线'),
+        const _SectionHeader(title: '配速曲线'),
         const SizedBox(height: StrideTokens.spaceSm),
         _Card(
           child: TimeseriesChart(

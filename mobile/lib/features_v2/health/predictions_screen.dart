@@ -424,9 +424,9 @@ class _HistoryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          const Row(
             children: [
-              const Text(
+              Text(
                 '全马预测趋势',
                 style: TextStyle(
                   fontFamily: AppTypography.fontSans,
@@ -435,8 +435,8 @@ class _HistoryCard extends StatelessWidget {
                   color: StrideTokens.fg,
                 ),
               ),
-              const Spacer(),
-              const StridePill(
+              Spacer(),
+              StridePill(
                 text: '近 6 月',
                 variant: PillVariant.muted,
                 dense: true,
@@ -450,7 +450,7 @@ class _HistoryCard extends StatelessWidget {
               child: Center(
                   child: CircularProgressIndicator(strokeWidth: 2)),
             ),
-            error: (_, __) => const SizedBox(
+            error: (_, _) => const SizedBox(
               height: 60,
               child: Center(
                 child: Text(
@@ -511,7 +511,7 @@ class _TrendChart extends StatelessWidget {
         LineChartData(
           minY: minY - padding,
           maxY: maxY + padding,
-          gridData: FlGridData(show: false),
+          gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
           titlesData: const FlTitlesData(
             leftTitles:

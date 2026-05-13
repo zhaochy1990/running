@@ -225,7 +225,7 @@ class _MiniChart extends StatelessWidget {
         LineChartData(
           minY: minY - padding,
           maxY: maxY + padding,
-          gridData: FlGridData(show: false),
+          gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
           titlesData: const FlTitlesData(
             leftTitles:

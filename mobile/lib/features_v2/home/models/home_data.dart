@@ -3,7 +3,18 @@
 /// Per `.omc/plans/stride-mobile-m1.md` §3.1.1.
 library;
 
-class StatusRing {
+class StatusRing { // COROS label e.g. Optimal
+
+  factory StatusRing.fromJson(Map<String, dynamic> json) {
+    return StatusRing(
+      fatigue: (json['fatigue'] as num?)?.toInt() ?? 0,
+      fatigueBand: (json['fatigue_band'] as String?) ?? 'normal',
+      tsb: (json['tsb'] as num?)?.toDouble() ?? 0.0,
+      tsbBand: (json['tsb_band'] as String?) ?? 'productive',
+      loadRatio: (json['load_ratio'] as num?)?.toDouble() ?? 1.0,
+      loadState: (json['load_state'] as String?) ?? '',
+    );
+  }
   const StatusRing({
     required this.fatigue,
     required this.fatigueBand,
@@ -18,21 +29,26 @@ class StatusRing {
   final double tsb;
   final String tsbBand; // race_ready|transitional|productive|overload|detraining
   final double loadRatio;
-  final String loadState; // COROS label e.g. Optimal
-
-  factory StatusRing.fromJson(Map<String, dynamic> json) {
-    return StatusRing(
-      fatigue: (json['fatigue'] as num?)?.toInt() ?? 0,
-      fatigueBand: (json['fatigue_band'] as String?) ?? 'normal',
-      tsb: (json['tsb'] as num?)?.toDouble() ?? 0.0,
-      tsbBand: (json['tsb_band'] as String?) ?? 'productive',
-      loadRatio: (json['load_ratio'] as num?)?.toDouble() ?? 1.0,
-      loadState: (json['load_state'] as String?) ?? '',
-    );
-  }
+  final String loadState;
 }
 
 class HomeActivity {
+
+  factory HomeActivity.fromJson(Map<String, dynamic> json) {
+    return HomeActivity(
+      labelId: json['label_id'] as String,
+      date: json['date'] as String,
+      name: (json['name'] as String?) ?? '',
+      sportType: (json['sport_type'] as String?) ?? 'running',
+      distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
+      durationSec: (json['duration_sec'] as num?)?.toInt() ?? 0,
+      avgPaceSecPerKm: (json['avg_pace_sec_per_km'] as num?)?.toInt(),
+      avgHr: (json['avg_hr'] as num?)?.toInt(),
+      calories: (json['calories'] as num?)?.toInt(),
+      commentaryExcerpt: json['commentary_excerpt'] as String?,
+      commentaryGeneratedBy: json['commentary_generated_by'] as String?,
+    );
+  }
   const HomeActivity({
     required this.labelId,
     required this.date,
@@ -58,25 +74,19 @@ class HomeActivity {
   final int? calories;
   final String? commentaryExcerpt; // <= 60 chars
   final String? commentaryGeneratedBy;
-
-  factory HomeActivity.fromJson(Map<String, dynamic> json) {
-    return HomeActivity(
-      labelId: json['label_id'] as String,
-      date: json['date'] as String,
-      name: (json['name'] as String?) ?? '',
-      sportType: (json['sport_type'] as String?) ?? 'running',
-      distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
-      durationSec: (json['duration_sec'] as num?)?.toInt() ?? 0,
-      avgPaceSecPerKm: (json['avg_pace_sec_per_km'] as num?)?.toInt(),
-      avgHr: (json['avg_hr'] as num?)?.toInt(),
-      calories: (json['calories'] as num?)?.toInt(),
-      commentaryExcerpt: json['commentary_excerpt'] as String?,
-      commentaryGeneratedBy: json['commentary_generated_by'] as String?,
-    );
-  }
 }
 
 class WeeklyStats {
+
+  factory WeeklyStats.fromJson(Map<String, dynamic> json) {
+    return WeeklyStats(
+      weekStart: (json['week_start'] as String?) ?? '',
+      totalDistanceKm: (json['total_distance_km'] as num?)?.toDouble() ?? 0.0,
+      totalDurationSec: (json['total_duration_sec'] as num?)?.toInt() ?? 0,
+      sessionCount: (json['session_count'] as num?)?.toInt() ?? 0,
+      longRunKm: (json['long_run_km'] as num?)?.toDouble(),
+    );
+  }
   const WeeklyStats({
     required this.weekStart,
     required this.totalDistanceKm,
@@ -90,26 +100,9 @@ class WeeklyStats {
   final int totalDurationSec;
   final int sessionCount;
   final double? longRunKm;
-
-  factory WeeklyStats.fromJson(Map<String, dynamic> json) {
-    return WeeklyStats(
-      weekStart: (json['week_start'] as String?) ?? '',
-      totalDistanceKm: (json['total_distance_km'] as num?)?.toDouble() ?? 0.0,
-      totalDurationSec: (json['total_duration_sec'] as num?)?.toInt() ?? 0,
-      sessionCount: (json['session_count'] as num?)?.toInt() ?? 0,
-      longRunKm: (json['long_run_km'] as num?)?.toDouble(),
-    );
-  }
 }
 
 class LifetimeStats {
-  const LifetimeStats({
-    required this.totalDistanceKm,
-    required this.totalActivities,
-  });
-
-  final double totalDistanceKm;
-  final int totalActivities;
 
   factory LifetimeStats.fromJson(Map<String, dynamic> json) {
     return LifetimeStats(
@@ -117,13 +110,16 @@ class LifetimeStats {
       totalActivities: (json['total_activities'] as num?)?.toInt() ?? 0,
     );
   }
+  const LifetimeStats({
+    required this.totalDistanceKm,
+    required this.totalActivities,
+  });
+
+  final double totalDistanceKm;
+  final int totalActivities;
 }
 
 class WatchInfo {
-  const WatchInfo({this.brand, this.lastSyncAt});
-
-  final String? brand; // coros|garmin|null
-  final String? lastSyncAt;
 
   factory WatchInfo.fromJson(Map<String, dynamic> json) {
     return WatchInfo(
@@ -131,28 +127,13 @@ class WatchInfo {
       lastSyncAt: json['last_sync_at'] as String?,
     );
   }
+  const WatchInfo({this.brand, this.lastSyncAt});
+
+  final String? brand; // coros|garmin|null
+  final String? lastSyncAt;
 }
 
 class HomeData {
-  const HomeData({
-    required this.userId,
-    required this.date,
-    required this.statusRing,
-    required this.recentActivities,
-    required this.weeklyStats,
-    required this.lifetimeStats,
-    required this.planState,
-    this.watch,
-  });
-
-  final String userId;
-  final String date;
-  final StatusRing statusRing;
-  final List<HomeActivity> recentActivities;
-  final WeeklyStats weeklyStats;
-  final LifetimeStats lifetimeStats;
-  final String planState; // none|active|generating
-  final WatchInfo? watch;
 
   factory HomeData.fromJson(Map<String, dynamic> json) {
     return HomeData(
@@ -177,4 +158,23 @@ class HomeData {
           : null,
     );
   }
+  const HomeData({
+    required this.userId,
+    required this.date,
+    required this.statusRing,
+    required this.recentActivities,
+    required this.weeklyStats,
+    required this.lifetimeStats,
+    required this.planState,
+    this.watch,
+  });
+
+  final String userId;
+  final String date;
+  final StatusRing statusRing;
+  final List<HomeActivity> recentActivities;
+  final WeeklyStats weeklyStats;
+  final LifetimeStats lifetimeStats;
+  final String planState; // none|active|generating
+  final WatchInfo? watch;
 }

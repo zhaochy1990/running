@@ -46,7 +46,7 @@ class MilestoneRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
+              color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
@@ -110,7 +110,7 @@ class MilestoneRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(StrideTokens.radiusPill),
               ),
               child: Text(
-                daysUntil! >= 0 ? '${daysUntil}天后' : '已过',
+                daysUntil! >= 0 ? '$daysUntil天后' : '已过',
                 style: const TextStyle(
                   fontFamily: AppTypography.fontMono,
                   fontSize: StrideTokens.fs11,

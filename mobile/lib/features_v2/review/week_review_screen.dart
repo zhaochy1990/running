@@ -65,42 +65,42 @@ class _ReviewBody extends StatelessWidget {
       ),
       children: [
         // 1. 本周统计 stat-row
-        _SectionHeader(title: '本周统计'),
+        const _SectionHeader(title: '本周统计'),
         const SizedBox(height: StrideTokens.spaceSm),
         _buildStatRow(review.summary),
         const SizedBox(height: StrideTokens.spaceLg),
 
         // 2. TSB 走势
-        _SectionHeader(title: 'TSB 走势'),
+        const _SectionHeader(title: 'TSB 走势'),
         const SizedBox(height: StrideTokens.spaceSm),
         _TsbChart(series: review.tsbSeries),
         const SizedBox(height: StrideTokens.spaceLg),
 
         // 3. 每节课完成情况
-        _SectionHeader(title: '课时完成情况'),
+        const _SectionHeader(title: '课时完成情况'),
         const SizedBox(height: StrideTokens.spaceSm),
         ...review.sessions.map((s) => Padding(
               padding: const EdgeInsets.only(bottom: StrideTokens.spaceSm),
               child: _SessionCard(session: s),
             )),
         if (review.sessions.isEmpty)
-          _EmptyHint(text: '本周暂无计划课时'),
+          const _EmptyHint(text: '本周暂无计划课时'),
         const SizedBox(height: StrideTokens.spaceLg),
 
         // 4. 关键洞察
-        _SectionHeader(title: '关键洞察'),
+        const _SectionHeader(title: '关键洞察'),
         const SizedBox(height: StrideTokens.spaceSm),
         ...review.insights.map((i) => Padding(
               padding: const EdgeInsets.only(bottom: StrideTokens.spaceSm),
               child: _InsightCard(insight: i),
             )),
         if (review.insights.isEmpty)
-          _EmptyHint(text: '暂无洞察数据'),
+          const _EmptyHint(text: '暂无洞察数据'),
         const SizedBox(height: StrideTokens.spaceLg),
 
         // 5. AI 点评精选 (up to 2)
         if (review.activityHighlights.isNotEmpty) ...[
-          _SectionHeader(title: 'AI 点评精选'),
+          const _SectionHeader(title: 'AI 点评精选'),
           const SizedBox(height: StrideTokens.spaceSm),
           ...review.activityHighlights
               .take(2)
@@ -112,7 +112,7 @@ class _ReviewBody extends StatelessWidget {
         ],
 
         // 6. 下周计划预览
-        _SectionHeader(title: '下周计划'),
+        const _SectionHeader(title: '下周计划'),
         const SizedBox(height: StrideTokens.spaceSm),
         _NextWeekCard(preview: review.nextWeekPreview),
 
@@ -138,7 +138,7 @@ class _ReviewBody extends StatelessWidget {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
     if (h > 0) return '${h}h${m.toString().padLeft(2, '0')}m';
-    return '${m}分钟';
+    return '$m分钟';
   }
 }
 
@@ -724,9 +724,9 @@ class _ErrorBody extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline, size: 48, color: StrideTokens.danger),
             const SizedBox(height: StrideTokens.spaceLg),
-            Text(
+            const Text(
               '加载失败',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: AppTypography.fontSans,
                 fontSize: StrideTokens.fs15,
                 fontWeight: FontWeight.w600,

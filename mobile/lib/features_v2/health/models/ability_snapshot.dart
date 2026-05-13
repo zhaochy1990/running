@@ -31,6 +31,27 @@ enum AbilityBand {
 }
 
 class AbilitySnapshot {
+
+  factory AbilitySnapshot.fromJson(Map<String, dynamic> json) {
+    // l3_dimensions may come as a nested map or be absent.
+    final rawDims = json['l3_dimensions'] as Map<String, dynamic>? ?? {};
+    final dims = rawDims.map(
+      (k, v) => MapEntry(k, (v as num?)?.toDouble() ?? 0.0),
+    );
+
+    return AbilitySnapshot(
+      date: json['date'] as String? ?? '',
+      source: json['source'] as String? ?? '',
+      l3Dimensions: dims,
+      l4Composite: (json['l4_composite'] as num?)?.toDouble(),
+      l4MarathonEstimateS:
+          (json['l4_marathon_estimate_s'] as num?)?.toDouble(),
+      distanceToTargetS:
+          (json['distance_to_target_s'] as num?)?.toDouble(),
+      marathonTargetS: (json['marathon_target_s'] as num?)?.toDouble(),
+      marathonTargetLabel: json['marathon_target_label'] as String?,
+    );
+  }
   const AbilitySnapshot({
     required this.date,
     required this.source,
@@ -63,27 +84,6 @@ class AbilitySnapshot {
 
   /// Human-readable target label (e.g. "Sub-4").
   final String? marathonTargetLabel;
-
-  factory AbilitySnapshot.fromJson(Map<String, dynamic> json) {
-    // l3_dimensions may come as a nested map or be absent.
-    final rawDims = json['l3_dimensions'] as Map<String, dynamic>? ?? {};
-    final dims = rawDims.map(
-      (k, v) => MapEntry(k, (v as num?)?.toDouble() ?? 0.0),
-    );
-
-    return AbilitySnapshot(
-      date: json['date'] as String? ?? '',
-      source: json['source'] as String? ?? '',
-      l3Dimensions: dims,
-      l4Composite: (json['l4_composite'] as num?)?.toDouble(),
-      l4MarathonEstimateS:
-          (json['l4_marathon_estimate_s'] as num?)?.toDouble(),
-      distanceToTargetS:
-          (json['distance_to_target_s'] as num?)?.toDouble(),
-      marathonTargetS: (json['marathon_target_s'] as num?)?.toDouble(),
-      marathonTargetLabel: json['marathon_target_label'] as String?,
-    );
-  }
 
   static const empty = AbilitySnapshot(
     date: '',

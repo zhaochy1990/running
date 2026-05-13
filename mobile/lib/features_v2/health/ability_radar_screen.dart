@@ -130,7 +130,7 @@ class _RadarCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dims = DimensionMeta.all;
+    const dims = DimensionMeta.all;
     final values = dims.map((d) {
       return (snapshot.l3Dimensions[d.key] ?? 0.0).clamp(0.0, 100.0);
     }).toList();
@@ -180,7 +180,7 @@ class _RadarCard extends StatelessWidget {
                 ),
                 getTitle: (index, angle) {
                   if (index < 0 || index >= dims.length) {
-                    return RadarChartTitle(text: '');
+                    return const RadarChartTitle(text: '');
                   }
                   return RadarChartTitle(
                     text: dims[index].label,

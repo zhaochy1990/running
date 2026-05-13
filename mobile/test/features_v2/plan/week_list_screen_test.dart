@@ -97,7 +97,7 @@ GoRouter _makeRouter() {
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, __) => const WeekListScreen(),
+        builder: (_, _) => const WeekListScreen(),
       ),
       GoRoute(
         path: RoutesV2.weekDetailPattern,

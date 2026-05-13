@@ -21,8 +21,8 @@ const _folder = '2026-05-11_05-17(W2)';
 /// [generate] method is a no-op. Uses the protected `withState` constructor
 /// so no real [StrideApi] or userId is needed.
 class _FixedNotifier extends GenerateWeekNotifier {
-  _FixedNotifier(GenerateWeekState state)
-      : super.withState(state);
+  _FixedNotifier(super.state)
+      : super.withState();
 
   @override
   Future<void> generate(String weekStart, {bool force = false}) async {
@@ -42,13 +42,13 @@ GoRouter _buildRouter(GenerateWeekState initialState) {
     routes: [
       GoRoute(
         path: '/generate',
-        builder: (_, __) => ProviderScope(
+        builder: (_, _) => ProviderScope(
           overrides: [
             generateWeekProvider.overrideWith(
               (_) => _FixedNotifier(initialState),
             ),
           ],
-          child: GenerateWeekScreen(weekStart: _weekStart),
+          child: const GenerateWeekScreen(weekStart: _weekStart),
         ),
       ),
       // Stub target for D2 week detail navigation.

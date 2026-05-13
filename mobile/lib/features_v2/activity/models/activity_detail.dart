@@ -5,6 +5,18 @@
 library;
 
 class LapV2 {
+
+  factory LapV2.fromJson(Map<String, dynamic> json) {
+    return LapV2(
+      lapIndex: (json['lap_index'] as num?)?.toInt() ?? 0,
+      distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
+      durationS: (json['duration_s'] as num?) ?? 0,
+      durationFmt: (json['duration_fmt'] as String?) ?? '',
+      paceFmt: (json['pace_fmt'] as String?) ?? '',
+      avgHr: (json['avg_hr'] as num?)?.toInt(),
+      maxHr: (json['max_hr'] as num?)?.toInt(),
+    );
+  }
   const LapV2({
     required this.lapIndex,
     required this.distanceKm,
@@ -22,21 +34,20 @@ class LapV2 {
   final String paceFmt;
   final int? avgHr;
   final int? maxHr;
-
-  factory LapV2.fromJson(Map<String, dynamic> json) {
-    return LapV2(
-      lapIndex: (json['lap_index'] as num?)?.toInt() ?? 0,
-      distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
-      durationS: (json['duration_s'] as num?) ?? 0,
-      durationFmt: (json['duration_fmt'] as String?) ?? '',
-      paceFmt: (json['pace_fmt'] as String?) ?? '',
-      avgHr: (json['avg_hr'] as num?)?.toInt(),
-      maxHr: (json['max_hr'] as num?)?.toInt(),
-    );
-  }
 }
 
 class ZoneV2 {
+
+  factory ZoneV2.fromJson(Map<String, dynamic> json) {
+    return ZoneV2(
+      zoneType: (json['zone_type'] as String?) ?? '',
+      zoneIndex: (json['zone_index'] as num?)?.toInt() ?? 0,
+      durationS: (json['duration_s'] as num?) ?? 0,
+      percent: (json['percent'] as num?) ?? 0,
+      rangeMin: json['range_min'] as num?,
+      rangeMax: json['range_max'] as num?,
+    );
+  }
   const ZoneV2({
     required this.zoneType,
     required this.zoneIndex,
@@ -52,20 +63,29 @@ class ZoneV2 {
   final num percent;
   final num? rangeMin;
   final num? rangeMax;
-
-  factory ZoneV2.fromJson(Map<String, dynamic> json) {
-    return ZoneV2(
-      zoneType: (json['zone_type'] as String?) ?? '',
-      zoneIndex: (json['zone_index'] as num?)?.toInt() ?? 0,
-      durationS: (json['duration_s'] as num?) ?? 0,
-      percent: (json['percent'] as num?) ?? 0,
-      rangeMin: json['range_min'] as num?,
-      rangeMax: json['range_max'] as num?,
-    );
-  }
 }
 
 class ActivityV2 {
+
+  factory ActivityV2.fromJson(Map<String, dynamic> json) {
+    return ActivityV2(
+      labelId: (json['label_id'] as String?) ?? '',
+      name: json['name'] as String?,
+      sportName: (json['sport_name'] as String?) ?? '',
+      date: (json['date'] as String?) ?? '',
+      distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
+      durationFmt: (json['duration_fmt'] as String?) ?? '',
+      paceFmt: (json['pace_fmt'] as String?) ?? '',
+      avgHr: (json['avg_hr'] as num?)?.toInt(),
+      maxHr: (json['max_hr'] as num?)?.toInt(),
+      caloriesKcal: json['calories_kcal'] as num?,
+      ascentM: json['ascent_m'] as num?,
+      avgPaceSKm: json['avg_pace_s_km'] as num?,
+      sportNote: json['sport_note'] as String?,
+      commentary: json['commentary'] as String?,
+      commentaryGeneratedBy: json['commentary_generated_by'] as String?,
+    );
+  }
   const ActivityV2({
     required this.labelId,
     required this.sportName,
@@ -99,38 +119,9 @@ class ActivityV2 {
   final String? sportNote;
   final String? commentary;
   final String? commentaryGeneratedBy;
-
-  factory ActivityV2.fromJson(Map<String, dynamic> json) {
-    return ActivityV2(
-      labelId: (json['label_id'] as String?) ?? '',
-      name: json['name'] as String?,
-      sportName: (json['sport_name'] as String?) ?? '',
-      date: (json['date'] as String?) ?? '',
-      distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
-      durationFmt: (json['duration_fmt'] as String?) ?? '',
-      paceFmt: (json['pace_fmt'] as String?) ?? '',
-      avgHr: (json['avg_hr'] as num?)?.toInt(),
-      maxHr: (json['max_hr'] as num?)?.toInt(),
-      caloriesKcal: json['calories_kcal'] as num?,
-      ascentM: json['ascent_m'] as num?,
-      avgPaceSKm: json['avg_pace_s_km'] as num?,
-      sportNote: json['sport_note'] as String?,
-      commentary: json['commentary'] as String?,
-      commentaryGeneratedBy: json['commentary_generated_by'] as String?,
-    );
-  }
 }
 
 class ActivityDetailV2 {
-  const ActivityDetailV2({
-    required this.activity,
-    required this.laps,
-    required this.zones,
-  });
-
-  final ActivityV2 activity;
-  final List<LapV2> laps;
-  final List<ZoneV2> zones;
 
   factory ActivityDetailV2.fromJson(Map<String, dynamic> json) {
     return ActivityDetailV2(
@@ -147,4 +138,13 @@ class ActivityDetailV2 {
           .toList(growable: false),
     );
   }
+  const ActivityDetailV2({
+    required this.activity,
+    required this.laps,
+    required this.zones,
+  });
+
+  final ActivityV2 activity;
+  final List<LapV2> laps;
+  final List<ZoneV2> zones;
 }

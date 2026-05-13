@@ -12,8 +12,7 @@ import '../../core/theme/tokens.dart';
 import '../_shared/widgets/top_bar.dart';
 import '../plan/models/plan_chat.dart';
 import 'providers/master_plan_adjust_provider.dart';
-import 'providers/master_plan_review_provider.dart'
-    show MasterPlanDiff, MasterPlanSummary;
+import 'providers/master_plan_review_provider.dart' show MasterPlanDiff;
 import 'widgets/master_plan_summary_card.dart';
 
 // ── Quick suggestions ─────────────────────────────────────────────────────────
@@ -245,11 +244,11 @@ class _MessageList extends ConsumerWidget {
     }
 
     if (messages.isEmpty && !state.loading) {
-      return Center(
+      return const Center(
         child: Text(
           '向 AI 教练发送消息\n调整当前训练总纲',
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: AppTypography.fontSans,
             fontSize: StrideTokens.fs14,
             color: StrideTokens.muted,
@@ -439,7 +438,7 @@ class _OpPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(

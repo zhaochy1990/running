@@ -11,6 +11,15 @@
 /// }
 /// ```
 class OnboardingDefaults {
+
+  factory OnboardingDefaults.fromJson(Map<String, dynamic> json) {
+    return OnboardingDefaults(
+      suggestedRhr: (json['suggested_rhr'] as num?)?.toInt(),
+      rhrSource: json['rhr_source'] as String?,
+      suggestedMaxHr: (json['suggested_max_hr'] as num?)?.toInt(),
+      maxHrSource: json['max_hr_source'] as String?,
+    );
+  }
   const OnboardingDefaults({
     this.suggestedRhr,
     this.rhrSource,
@@ -22,13 +31,4 @@ class OnboardingDefaults {
   final String? rhrSource;
   final int? suggestedMaxHr;
   final String? maxHrSource;
-
-  factory OnboardingDefaults.fromJson(Map<String, dynamic> json) {
-    return OnboardingDefaults(
-      suggestedRhr: (json['suggested_rhr'] as num?)?.toInt(),
-      rhrSource: json['rhr_source'] as String?,
-      suggestedMaxHr: (json['suggested_max_hr'] as num?)?.toInt(),
-      maxHrSource: json['max_hr_source'] as String?,
-    );
-  }
 }

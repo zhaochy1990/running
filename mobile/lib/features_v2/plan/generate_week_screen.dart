@@ -135,7 +135,7 @@ class _GenerateWeekScreenState extends ConsumerState<GenerateWeekScreen> {
     return Scaffold(
       backgroundColor: StrideTokens.bg,
       // No leading / back button — generation is in progress; user must wait.
-      appBar: StrideTopBar(title: '生成计划'),
+      appBar: const StrideTopBar(title: '生成计划'),
       body: _buildBody(state),
     );
   }

@@ -203,9 +203,12 @@ class NutritionPrefsNotifier extends StateNotifier<NutritionPrefsForm> {
       _ref.invalidate(nutritionPrefsProvider);
       return true;
     } on DioException catch (e) {
+      final data = e.response?.data;
+      final detail =
+          data is Map<String, dynamic> ? data['detail']?.toString() : null;
       state = state.copyWith(
         submitting: false,
-        error: e.response?.data?['detail']?.toString() ?? e.message,
+        error: detail ?? e.message,
       );
       return false;
     } catch (e) {

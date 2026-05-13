@@ -98,7 +98,7 @@ class _ProfileBody extends ConsumerWidget {
         const SizedBox(height: StrideTokens.spaceSm),
         _Divider(),
         // ── Personal ────────────────────────────────────────────────────
-        _SectionTitle('个人'),
+        const _SectionTitle('个人'),
         ProfileMenuItem(
           icon: Icons.person_outline,
           label: '个人信息',
@@ -121,7 +121,7 @@ class _ProfileBody extends ConsumerWidget {
         ),
         _Divider(),
         // ── Device ──────────────────────────────────────────────────────
-        _SectionTitle('设备与通知'),
+        const _SectionTitle('设备与通知'),
         _WatchMenuItem(watch: watch),
         ProfileMenuItem(
           icon: Icons.notifications_outlined,
@@ -137,7 +137,7 @@ class _ProfileBody extends ConsumerWidget {
         ),
         _Divider(),
         // ── App ─────────────────────────────────────────────────────────
-        _SectionTitle('关于'),
+        const _SectionTitle('关于'),
         ProfileMenuItem(
           icon: Icons.system_update_outlined,
           label: '检查更新',

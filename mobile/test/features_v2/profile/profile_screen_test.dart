@@ -21,7 +21,7 @@ const _testProfile = MyProfile(
   profile: {'email': 'test@stride.cn'},
 );
 
-final _testHomeData = HomeData(
+const _testHomeData = HomeData(
   userId: 'user-123',
   date: '2026-05-12',
   statusRing: StatusRing(
@@ -32,19 +32,19 @@ final _testHomeData = HomeData(
     loadRatio: 0.95,
     loadState: 'Optimal',
   ),
-  recentActivities: const [],
+  recentActivities: [],
   weeklyStats: WeeklyStats(
     weekStart: '2026-05-11',
     totalDistanceKm: 50.0,
     totalDurationSec: 18000,
     sessionCount: 4,
   ),
-  lifetimeStats: const LifetimeStats(
+  lifetimeStats: LifetimeStats(
     totalDistanceKm: 1234.5,
     totalActivities: 87,
   ),
   planState: 'none',
-  watch: const WatchInfo(brand: 'coros'),
+  watch: WatchInfo(brand: 'coros'),
 );
 
 // ── Pump helper ───────────────────────────────────────────────────────────────

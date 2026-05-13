@@ -4,16 +4,16 @@ library;
 // ── ChatMessage ───────────────────────────────────────────────────────────────
 
 class ChatMessage {
-  const ChatMessage({required this.role, required this.content});
-
-  /// 'user' or 'assistant'
-  final String role;
-  final String content;
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
         role: json['role'] as String,
         content: json['content'] as String,
       );
+  const ChatMessage({required this.role, required this.content});
+
+  /// 'user' or 'assistant'
+  final String role;
+  final String content;
 
   Map<String, dynamic> toJson() => {'role': role, 'content': content};
 }
@@ -21,6 +21,16 @@ class ChatMessage {
 // ── DiffOpView ────────────────────────────────────────────────────────────────
 
 class DiffOpView {
+
+  factory DiffOpView.fromJson(Map<String, dynamic> json) => DiffOpView(
+        id: json['id'] as String,
+        op: json['op'] as String,
+        date: json['date'] as String? ?? '',
+        sessionIndex: (json['session_index'] as num?)?.toInt() ?? 0,
+        oldValue: json['old_value'] as Map<String, dynamic>?,
+        newValue: json['new_value'] as Map<String, dynamic>?,
+        accepted: json['accepted'] as bool?,
+      );
   const DiffOpView({
     required this.id,
     required this.op,
@@ -42,16 +52,6 @@ class DiffOpView {
 
   /// null = pending, true = accepted, false = rejected
   final bool? accepted;
-
-  factory DiffOpView.fromJson(Map<String, dynamic> json) => DiffOpView(
-        id: json['id'] as String,
-        op: json['op'] as String,
-        date: json['date'] as String? ?? '',
-        sessionIndex: (json['session_index'] as num?)?.toInt() ?? 0,
-        oldValue: json['old_value'] as Map<String, dynamic>?,
-        newValue: json['new_value'] as Map<String, dynamic>?,
-        accepted: json['accepted'] as bool?,
-      );
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -77,6 +77,17 @@ class DiffOpView {
 // ── PlanDiffView ──────────────────────────────────────────────────────────────
 
 class PlanDiffView {
+
+  factory PlanDiffView.fromJson(Map<String, dynamic> json) => PlanDiffView(
+        diffId: json['diff_id'] as String,
+        folder: json['folder'] as String,
+        ops: (json['ops'] as List? ?? const [])
+            .cast<Map<String, dynamic>>()
+            .map(DiffOpView.fromJson)
+            .toList(growable: false),
+        aiExplanation: json['ai_explanation'] as String? ?? '',
+        createdAt: json['created_at'] as String? ?? '',
+      );
   const PlanDiffView({
     required this.diffId,
     required this.folder,
@@ -90,17 +101,6 @@ class PlanDiffView {
   final List<DiffOpView> ops;
   final String aiExplanation;
   final String createdAt;
-
-  factory PlanDiffView.fromJson(Map<String, dynamic> json) => PlanDiffView(
-        diffId: json['diff_id'] as String,
-        folder: json['folder'] as String,
-        ops: (json['ops'] as List? ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map(DiffOpView.fromJson)
-            .toList(growable: false),
-        aiExplanation: json['ai_explanation'] as String? ?? '',
-        createdAt: json['created_at'] as String? ?? '',
-      );
 
   Map<String, dynamic> toJson() => {
         'diff_id': diffId,

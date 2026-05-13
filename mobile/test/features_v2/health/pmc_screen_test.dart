@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -83,7 +83,7 @@ void main() {
   testWidgets('seg control shows 30天/90天/180天', (tester) async {
     await _pump(
       tester,
-      AsyncData(PmcData(points: [], summary: const PmcSummary())),
+      const AsyncData(PmcData(points: [], summary: PmcSummary())),
     );
     expect(find.text('30天'), findsOneWidget);
     expect(find.text('90天'), findsOneWidget);
@@ -191,7 +191,7 @@ void main() {
   testWidgets('empty points shows placeholder text', (tester) async {
     await _pump(
       tester,
-      AsyncData(PmcData(points: [], summary: const PmcSummary())),
+      const AsyncData(PmcData(points: [], summary: PmcSummary())),
     );
     expect(find.text('暂无训练负荷数据'), findsOneWidget);
   });

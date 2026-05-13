@@ -174,11 +174,11 @@ class _MessageList extends ConsumerWidget {
     }
 
     if (messages.isEmpty && !state.loading) {
-      return Center(
+      return const Center(
         child: Text(
           '向 AI 教练发送消息\n开始调整计划',
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: AppTypography.fontSans,
             fontSize: StrideTokens.fs14,
             color: StrideTokens.muted,
@@ -492,7 +492,7 @@ class _OpPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(

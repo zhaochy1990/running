@@ -2,6 +2,20 @@
 library;
 
 class MasterPlanJobStatus {
+
+  factory MasterPlanJobStatus.fromJson(Map<String, dynamic> json) {
+    return MasterPlanJobStatus(
+      jobId: json['job_id'] as String? ?? '',
+      status: json['status'] as String? ?? 'pending',
+      stage: json['stage'] as String?,
+      progress: (json['progress'] as num?)?.toInt() ?? 0,
+      stageLabel: json['stage_label'] as String?,
+      resultPlanId: json['result_plan_id'] as String?,
+      error: json['error'] as String?,
+      rawOutput: json['raw_output'] as String?,
+      elapsedSeconds: (json['elapsed_seconds'] as num?)?.toInt() ?? 0,
+    );
+  }
   const MasterPlanJobStatus({
     required this.jobId,
     required this.status,
@@ -41,20 +55,6 @@ class MasterPlanJobStatus {
   bool get isDone => status == 'done';
   bool get isFailed => status == 'failed';
   bool get isTerminal => isDone || isFailed;
-
-  factory MasterPlanJobStatus.fromJson(Map<String, dynamic> json) {
-    return MasterPlanJobStatus(
-      jobId: json['job_id'] as String? ?? '',
-      status: json['status'] as String? ?? 'pending',
-      stage: json['stage'] as String?,
-      progress: (json['progress'] as num?)?.toInt() ?? 0,
-      stageLabel: json['stage_label'] as String?,
-      resultPlanId: json['result_plan_id'] as String?,
-      error: json['error'] as String?,
-      rawOutput: json['raw_output'] as String?,
-      elapsedSeconds: (json['elapsed_seconds'] as num?)?.toInt() ?? 0,
-    );
-  }
 
   MasterPlanJobStatus copyWith({
     String? status,

@@ -17,12 +17,12 @@ class LapTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (laps.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: StrideTokens.spaceXl),
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: StrideTokens.spaceXl),
         child: Center(
           child: Text(
             '暂无分段数据',
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: AppTypography.fontSans,
               fontSize: StrideTokens.fs13,
               color: StrideTokens.muted,
@@ -35,7 +35,7 @@ class LapTable extends StatelessWidget {
     return Column(
       children: [
         // Header
-        _LapRow(
+        const _LapRow(
           index: '圈',
           distance: '距离',
           duration: '时长',

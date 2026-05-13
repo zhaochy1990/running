@@ -178,15 +178,15 @@ class _LeaveHint extends StatelessWidget {
         borderRadius: BorderRadius.circular(StrideTokens.radiusMd),
         border: Border.all(color: StrideTokens.border2),
       ),
-      child: Row(
+      child: const Row(
         children: [
-          const Icon(
+          Icon(
             Icons.info_outline,
             size: 16,
             color: StrideTokens.muted,
           ),
-          const SizedBox(width: StrideTokens.spaceSm),
-          const Expanded(
+          SizedBox(width: StrideTokens.spaceSm),
+          Expanded(
             child: Text(
               '你可以离开 App，完成后会推送通知',
               style: TextStyle(

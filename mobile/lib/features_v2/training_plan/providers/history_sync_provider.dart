@@ -84,12 +84,12 @@ class HistorySyncNotifier extends StateNotifier<HistorySyncState>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
+  void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_disposed) return;
-    if (lifecycle == AppLifecycleState.resumed && !state.isTerminal) {
+    if (state == AppLifecycleState.resumed && !this.state.isTerminal) {
       _scheduleNextPoll(immediate: true);
-    } else if (lifecycle == AppLifecycleState.paused ||
-        lifecycle == AppLifecycleState.inactive) {
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       _poll?.cancel();
     }
   }

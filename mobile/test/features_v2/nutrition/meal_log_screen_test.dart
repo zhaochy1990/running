@@ -65,7 +65,7 @@ Widget buildApp({FakeStrideApi? api}) {
     routes: [
       GoRoute(
         path: '/',
-        builder: (_, __) => const MealLogScreen(),
+        builder: (_, _) => const MealLogScreen(),
       ),
     ],
   );

@@ -52,7 +52,7 @@ class HomeScreen extends ConsumerWidget {
                 color: StrideTokens.accent,
               ),
             ),
-            error: (_, __) => _SyncButton(onSync: () => _doSync(context, ref)),
+            error: (_, _) => _SyncButton(onSync: () => _doSync(context, ref)),
           ),
         ],
       ),
@@ -157,7 +157,7 @@ class _HomeBody extends StatelessWidget {
           ],
 
           // 3. Weekly stats
-          _SectionHeader(title: '本周统计'),
+          const _SectionHeader(title: '本周统计'),
           const SizedBox(height: StrideTokens.spaceSm),
           StrideStatRow(items: [
             StatItem(
@@ -178,15 +178,15 @@ class _HomeBody extends StatelessWidget {
           const SizedBox(height: StrideTokens.spaceLg),
 
           // 4. Recent activities
-          _SectionHeader(title: '最近活动'),
+          const _SectionHeader(title: '最近活动'),
           const SizedBox(height: StrideTokens.spaceSm),
           if (data.recentActivities.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: StrideTokens.spaceXl),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: StrideTokens.spaceXl),
               child: Center(
                 child: Text(
                   '暂无近期活动',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: AppTypography.fontSans,
                     fontSize: StrideTokens.fs14,
                     color: StrideTokens.muted,
@@ -204,7 +204,7 @@ class _HomeBody extends StatelessWidget {
 
           // 5. Lifetime stats
           const SizedBox(height: StrideTokens.spaceLg),
-          _SectionHeader(title: '累计数据'),
+          const _SectionHeader(title: '累计数据'),
           const SizedBox(height: StrideTokens.spaceSm),
           StrideStatRow(items: [
             StatItem(
@@ -230,7 +230,7 @@ class _HomeBody extends StatelessWidget {
     final h = seconds ~/ 3600;
     final m = (seconds % 3600) ~/ 60;
     if (h > 0) return '${h}h${m.toString().padLeft(2, '0')}m';
-    return '${m}分钟';
+    return '$m分钟';
   }
 }
 
@@ -457,9 +457,9 @@ class _ErrorBody extends StatelessWidget {
           children: [
             const Icon(Icons.error_outline, size: 48, color: StrideTokens.danger),
             const SizedBox(height: StrideTokens.spaceLg),
-            Text(
+            const Text(
               '加载失败',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: AppTypography.fontSans,
                 fontSize: StrideTokens.fs15,
                 fontWeight: FontWeight.w600,

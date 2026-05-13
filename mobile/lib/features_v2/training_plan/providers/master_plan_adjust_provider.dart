@@ -72,15 +72,15 @@ class AdjustApplyResult {
 }
 
 class AffectedWeek {
-  const AffectedWeek({required this.folder, required this.reason});
-
-  final String folder;
-  final String reason;
 
   factory AffectedWeek.fromJson(Map<String, dynamic> json) => AffectedWeek(
         folder: json['folder'] as String? ?? '',
         reason: json['reason'] as String? ?? '',
       );
+  const AffectedWeek({required this.folder, required this.reason});
+
+  final String folder;
+  final String reason;
 }
 
 // ── Notifier ──────────────────────────────────────────────────────────────────

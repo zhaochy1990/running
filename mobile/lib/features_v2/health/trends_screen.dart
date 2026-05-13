@@ -1,4 +1,4 @@
-﻿/// E3 — 趋势详情屏幕 (Health Trends).
+/// E3 — 趋势详情屏幕 (Health Trends).
 ///
 /// Supports 5 dimensions (疲劳/HRV/RHR/睡眠/负荷) × 3 time ranges (7/30/90天).
 /// Data from `GET /api/{user}/health?days=N` via [trendsProvider].
@@ -375,7 +375,7 @@ class _TrendsLineChart extends StatelessWidget {
             barWidth: 2,
             dotData: FlDotData(
               show: spots.length <= 14,
-              getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+              getDotPainter: (_, _, _, _) => FlDotCirclePainter(
                 radius: 3,
                 color: StrideTokens.accent,
                 strokeWidth: 0,

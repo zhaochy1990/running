@@ -114,9 +114,9 @@ class _ProgressBlock extends StatelessWidget {
           ),
         ),
         const SizedBox(height: StrideTokens.space2xl),
-        Text(
+        const Text(
           '3 年历史数据同步',
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: AppTypography.fontSans,
             fontSize: StrideTokens.fs18,
             color: StrideTokens.fg,

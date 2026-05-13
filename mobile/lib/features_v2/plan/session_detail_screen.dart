@@ -98,7 +98,7 @@ class SessionDetailScreen extends ConsumerWidget {
             rawSession: null,
             nutrition: null,
           ),
-          error: (_, __) => _SessionDetailBody(
+          error: (_, _) => _SessionDetailBody(
             plan: plan,
             folder: folder,
             date: date,
@@ -231,7 +231,7 @@ class _SessionDetailBodyState extends ConsumerState<_SessionDetailBody> {
               const SizedBox(height: StrideTokens.spaceLg),
 
               // ── 3. 执行要点 ──
-              _SectionTitle(title: '执行要点'),
+              const _SectionTitle(title: '执行要点'),
               const SizedBox(height: StrideTokens.spaceSm),
               _NotesCard(
                 notes: widget.rawSession?.notes,
@@ -240,7 +240,7 @@ class _SessionDetailBodyState extends ConsumerState<_SessionDetailBody> {
               const SizedBox(height: StrideTokens.spaceLg),
 
               // ── 4. 训前营养 ──
-              _SectionTitle(title: '训前营养'),
+              const _SectionTitle(title: '训前营养'),
               const SizedBox(height: StrideTokens.spaceSm),
               _NutritionCard(
                 notes: widget.nutrition?.notes,
@@ -250,7 +250,7 @@ class _SessionDetailBodyState extends ConsumerState<_SessionDetailBody> {
 
               // ── 5. 力量动作清单 (仅 strength) ──
               if (isStrength) ...[
-                _SectionTitle(title: '力量动作清单'),
+                const _SectionTitle(title: '力量动作清单'),
                 const SizedBox(height: StrideTokens.spaceSm),
                 _StrengthExerciseList(rawSession: widget.rawSession),
                 const SizedBox(height: StrideTokens.spaceLg),

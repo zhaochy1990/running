@@ -2,6 +2,14 @@
 library;
 
 class NutritionMacros {
+
+  factory NutritionMacros.fromJson(Map<String, dynamic> json) {
+    return NutritionMacros(
+      proteinG: (json['protein_g'] as num?)?.toDouble() ?? 0,
+      carbG: (json['carb_g'] as num?)?.toDouble() ?? 0,
+      fatG: (json['fat_g'] as num?)?.toDouble() ?? 0,
+    );
+  }
   const NutritionMacros({
     required this.proteinG,
     required this.carbG,
@@ -11,22 +19,9 @@ class NutritionMacros {
   final double proteinG;
   final double carbG;
   final double fatG;
-
-  factory NutritionMacros.fromJson(Map<String, dynamic> json) {
-    return NutritionMacros(
-      proteinG: (json['protein_g'] as num?)?.toDouble() ?? 0,
-      carbG: (json['carb_g'] as num?)?.toDouble() ?? 0,
-      fatG: (json['fat_g'] as num?)?.toDouble() ?? 0,
-    );
-  }
 }
 
 class NutritionAdvice {
-  const NutritionAdvice({this.pre, this.intra, this.post});
-
-  final String? pre;
-  final String? intra;
-  final String? post;
 
   factory NutritionAdvice.fromJson(Map<String, dynamic> json) {
     return NutritionAdvice(
@@ -35,9 +30,27 @@ class NutritionAdvice {
       post: json['post'] as String?,
     );
   }
+  const NutritionAdvice({this.pre, this.intra, this.post});
+
+  final String? pre;
+  final String? intra;
+  final String? post;
 }
 
 class DailyAdvice {
+
+  factory DailyAdvice.fromJson(Map<String, dynamic> json) {
+    return DailyAdvice(
+      userId: (json['user_id'] as String?) ?? '',
+      date: (json['date'] as String?) ?? '',
+      isTrainingDay: (json['is_training_day'] as bool?) ?? false,
+      targetKcal: (json['target_kcal'] as num?)?.toInt() ?? 0,
+      macros: NutritionMacros.fromJson(
+          (json['macros'] as Map<String, dynamic>?) ?? {}),
+      advice: NutritionAdvice.fromJson(
+          (json['advice'] as Map<String, dynamic>?) ?? {}),
+    );
+  }
   const DailyAdvice({
     required this.userId,
     required this.date,
@@ -53,17 +66,4 @@ class DailyAdvice {
   final int targetKcal;
   final NutritionMacros macros;
   final NutritionAdvice advice;
-
-  factory DailyAdvice.fromJson(Map<String, dynamic> json) {
-    return DailyAdvice(
-      userId: (json['user_id'] as String?) ?? '',
-      date: (json['date'] as String?) ?? '',
-      isTrainingDay: (json['is_training_day'] as bool?) ?? false,
-      targetKcal: (json['target_kcal'] as num?)?.toInt() ?? 0,
-      macros: NutritionMacros.fromJson(
-          (json['macros'] as Map<String, dynamic>?) ?? {}),
-      advice: NutritionAdvice.fromJson(
-          (json['advice'] as Map<String, dynamic>?) ?? {}),
-    );
-  }
 }

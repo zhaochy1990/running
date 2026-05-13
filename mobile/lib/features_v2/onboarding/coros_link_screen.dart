@@ -217,9 +217,9 @@ class _TrustCard extends StatelessWidget {
         border: Border.all(color: StrideTokens.border2),
         borderRadius: BorderRadius.circular(StrideTokens.radiusLg),
       ),
-      child: Row(
+      child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: const [
+        children: [
           Icon(Icons.shield_outlined, color: StrideTokens.accent, size: 22),
           SizedBox(width: StrideTokens.spaceMd),
           Expanded(
