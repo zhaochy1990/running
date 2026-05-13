@@ -125,9 +125,34 @@ class _HomeBody extends StatelessWidget {
           StatusRingCard(ring: data.statusRing),
           const SizedBox(height: StrideTokens.spaceLg),
 
-          // 2. Generate plan CTA (only when plan_state == none)
+          // 2. Plan-state CTA: build master plan (none) or generate this
+          //    week's plan (active_no_week). When state == "active" the
+          //    weekly plan already exists and no CTA is shown.
           if (data.planState == 'none') ...[
-            const _GeneratePlanCta(),
+            _PlanCta(
+              icon: Icons.auto_awesome,
+              title: '生成个性化训练计划',
+              subtitle: '基于你的训练数据，AI 为你定制专属计划',
+              onTap: () => context.push(RoutesV2.trainingPlanGoal),
+            ),
+            const SizedBox(height: StrideTokens.spaceLg),
+          ] else if (data.planState == 'active_no_week') ...[
+            _PlanCta(
+              icon: Icons.calendar_today,
+              title: '立即生成本周计划',
+              subtitle: '基于训练总纲 + 上周完成情况，秒级生成',
+              onTap: () {
+                final today = DateTime.now();
+                final monday = today.subtract(
+                  Duration(days: today.weekday - 1),
+                );
+                final weekStart =
+                    '${monday.year.toString().padLeft(4, '0')}-'
+                    '${monday.month.toString().padLeft(2, '0')}-'
+                    '${monday.day.toString().padLeft(2, '0')}';
+                context.push(RoutesV2.generate(weekStart));
+              },
+            ),
             const SizedBox(height: StrideTokens.spaceLg),
           ],
 
@@ -228,13 +253,23 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _GeneratePlanCta extends StatelessWidget {
-  const _GeneratePlanCta();
+class _PlanCta extends StatelessWidget {
+  const _PlanCta({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.push(RoutesV2.trainingPlanGoal),
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(StrideTokens.spaceLg),
         decoration: BoxDecoration(
@@ -251,17 +286,16 @@ class _GeneratePlanCta extends StatelessWidget {
                 color: StrideTokens.accentFg,
                 borderRadius: BorderRadius.circular(StrideTokens.radiusSm),
               ),
-              child: const Icon(Icons.auto_awesome,
-                  size: 20, color: StrideTokens.accent),
+              child: Icon(icon, size: 20, color: StrideTokens.accent),
             ),
             const SizedBox(width: StrideTokens.spaceMd),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    '生成个性化训练计划',
-                    style: TextStyle(
+                  Text(
+                    title,
+                    style: const TextStyle(
                       fontFamily: AppTypography.fontSans,
                       fontSize: StrideTokens.fs14,
                       fontWeight: FontWeight.w600,
@@ -269,9 +303,9 @@ class _GeneratePlanCta extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  const Text(
-                    '基于你的训练数据，AI 为你定制专属计划',
-                    style: TextStyle(
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
                       fontFamily: AppTypography.fontSans,
                       fontSize: StrideTokens.fs12,
                       color: StrideTokens.muted,

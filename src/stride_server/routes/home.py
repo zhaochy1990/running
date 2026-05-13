@@ -78,7 +78,12 @@ class HomeResponse(BaseModel):
     recent_activities: list[RecentActivity]
     weekly_stats: WeeklyStats
     lifetime_stats: LifetimeStats
-    plan_state: Literal["none"] = "none"
+    # plan_state semantics:
+    #   "none"           → user has no active master plan yet (CTA: build plan)
+    #   "active_no_week" → master plan active but no planned_session this week
+    #                       (CTA: generate this week's plan)
+    #   "active"         → master plan active and this week's plan exists
+    plan_state: Literal["none", "active_no_week", "active"] = "none"
     watch: WatchInfo
 
 
@@ -304,6 +309,47 @@ def _build_watch_info(db, user: str) -> WatchInfo:
     return WatchInfo(brand=brand, last_sync_at=last_sync)
 
 
+def _compute_plan_state(user_id: str) -> Literal["none", "active_no_week", "active"]:
+    """Decide which CTA the home screen should surface.
+
+    - No active master plan → "none" (user should build one via C1).
+    - Active master plan but no planned_session this week → "active_no_week"
+      (user should generate this week's plan via D1).
+    - Active master plan + this week's plan present → "active" (normal).
+    """
+    try:
+        from ..master_plan_store import get_master_plan_store
+
+        store = get_master_plan_store()
+        active = store.get_active_plan_for_user(user_id)
+        if active is None:
+            return "none"
+    except Exception:  # noqa: BLE001 — store backend errors degrade to "none"
+        return "none"
+
+    # Check for any planned_session in the current week
+    from datetime import date, timedelta
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    sunday = monday + timedelta(days=6)
+    try:
+        from ..deps import get_plan_state_store
+        plan_store = get_plan_state_store(user_id)
+        try:
+            sessions = plan_store.get_planned_sessions(
+                date_from=monday.isoformat(),
+                date_to=sunday.isoformat(),
+            )
+        finally:
+            plan_store.close()
+        if sessions:
+            return "active"
+        return "active_no_week"
+    except Exception:  # noqa: BLE001
+        # If plan store query fails, assume no week so user can retry
+        return "active_no_week"
+
+
 @router.get("/api/{user}/home", response_model=HomeResponse)
 def get_home(
     user: str,
@@ -325,7 +371,7 @@ def get_home(
             recent_activities=_build_recent_activities(db, recent_days),
             weekly_stats=_build_weekly_stats(db),
             lifetime_stats=_build_lifetime_stats(db),
-            plan_state="none",
+            plan_state=_compute_plan_state(user),
             watch=_build_watch_info(db, user),
         )
     finally:

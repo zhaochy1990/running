@@ -672,15 +672,19 @@ class TestConfirm:
         assert new_saved is not None
         assert new_saved.status == MasterPlanStatus.ACTIVE
 
-    def test_confirm_triggered_week_generate_true(self, app_client):
-        """When generate_week succeeds, triggered_week_generate=True."""
+    def test_confirm_does_not_auto_generate_week(self, app_client):
+        """Confirm must NOT trigger single-week generation.
+
+        Single-week plans are generated lazily after the user finishes
+        last week's training and supplies feedback. The mobile home
+        screen surfaces a manual CTA to generate the first week.
+        """
         client, token, tmp_path, _ = app_client
         store = _get_store()
         plan = _make_plan()
         store.save_plan(plan)
 
         with patch("stride_server.routes.generate.generate_week") as mock_gw:
-            mock_gw.return_value = {"folder": "2026-05-11_05-17"}
             resp = client.post(
                 f"/api/users/me/master-plan/{plan.plan_id}/confirm",
                 headers=_auth(token),
@@ -688,28 +692,12 @@ class TestConfirm:
 
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        assert data["triggered_week_generate"] is True
-        assert data["first_week_folder"] == "2026-05-11_05-17"
-
-    def test_confirm_triggered_week_generate_false_on_failure(self, app_client):
-        """When generate_week raises, triggered_week_generate=False but confirm succeeds."""
-        client, token, tmp_path, _ = app_client
-        store = _get_store()
-        plan = _make_plan()
-        store.save_plan(plan)
-
-        with patch("stride_server.routes.generate.generate_week") as mock_gw:
-            mock_gw.side_effect = RuntimeError("DB not found")
-            resp = client.post(
-                f"/api/users/me/master-plan/{plan.plan_id}/confirm",
-                headers=_auth(token),
-            )
-
-        # confirm should still succeed even if week generation fails
-        assert resp.status_code == 200, resp.text
-        data = resp.json()
-        assert data["triggered_week_generate"] is False
         assert data["status"] == "active"
+        # Response no longer carries week-generation fields
+        assert "triggered_week_generate" not in data
+        assert "first_week_folder" not in data
+        # generate_week must NOT have been called
+        mock_gw.assert_not_called()
 
 
 # ===========================================================================

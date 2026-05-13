@@ -616,34 +616,14 @@ def confirm_master_plan(
     )
     store.save_plan(activated_plan)
 
-    # Compute this week's Monday
-    today = datetime.now(timezone.utc).date()
-    days_since_monday = today.weekday()  # 0=Mon
-    this_monday = today - timedelta(days=days_since_monday)
-    week_start_str = this_monday.isoformat()
-
-    # Trigger first single-week generation (weak dependency — failure doesn't
-    # block the confirm response)
-    triggered = False
-    first_week_folder: str | None = None
-    try:
-        from stride_server.routes.generate import GenerateWeekRequest, generate_week
-        req = GenerateWeekRequest(week_start=week_start_str, source="manual")
-        result = generate_week(user=user_id, body=req)
-        triggered = True
-        first_week_folder = result.get("folder")
-    except Exception as exc:
-        logger.warning(
-            "confirm_master_plan: first-week generation failed (non-fatal): %s", exc
-        )
-        triggered = False
-
+    # NOTE: Single-week plans are generated lazily — after the user finishes
+    # last week's training and supplies feedback (D7), the next-week plan can
+    # be generated. There is no automatic first-week generation on confirm;
+    # the mobile home screen surfaces a manual "立即生成本周计划" CTA.
     return {
         "plan_id": plan_id,
         "status": MasterPlanStatus.ACTIVE.value,
         "activated_at": now_iso,
-        "triggered_week_generate": triggered,
-        "first_week_folder": first_week_folder,
     }
 
 
