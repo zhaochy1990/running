@@ -7,6 +7,8 @@ the markdown→JSON reverse parser lives in ``plan_parser.parse_plan_md``.
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -16,6 +18,13 @@ from stride_core.source import DataSource
 
 from .context import load_coach_context, summarize_context
 from .model import get_chat_model, get_generated_by
+
+
+StatusCb = Callable[[str], None]
+
+
+def _noop_status(_: str) -> None:
+    pass
 
 
 SYSTEM_PROMPT = """你是 STRIDE 的高级马拉松训练 Agent。
@@ -102,6 +111,7 @@ def run_agent(
     source: DataSource | None = None,
     sync_before: bool = True,
     chat_model: Any | None = None,
+    status_cb: StatusCb | None = None,
 ) -> AgentResult:
     """Run a coaching task.
 
@@ -113,8 +123,14 @@ def run_agent(
             f"unknown task {task!r}; valid: chat, weekly_plan, plan_adjustment. "
             "Use plan_parser.parse_plan_md for markdown→JSON reverse parsing."
         )
+    log = status_cb or _noop_status
 
-    context = load_coach_context(user, folder=folder, source=source, sync_before=sync_before)
+    log(f"加载上下文 (user={user}, folder={folder or '—'}, sync={sync_before})")
+    t_ctx = time.perf_counter()
+    context = load_coach_context(
+        user, folder=folder, source=source, sync_before=sync_before, status_cb=log
+    )
+    log(f"上下文就绪 ({time.perf_counter() - t_ctx:.1f}s)")
     context_summary = summarize_context(context)
 
     if task == "weekly_plan":
@@ -150,13 +166,25 @@ def run_agent(
         ("system", SYSTEM_PROMPT),
         ("user", "\n\n".join(user_parts)),
     ]
+    prompt_chars = sum(len(c) for _, c in messages)
+    log(f"调用 LLM (task={task}, 输入≈{prompt_chars} chars)")
+    t_llm = time.perf_counter()
     raw = _invoke_model(messages, chat_model=chat_model)
+    log(f"LLM 响应已收到 ({time.perf_counter() - t_llm:.1f}s, 输出≈{len(raw)} chars)")
 
     structured: WeeklyPlan | None = None
     parse_error: str | None = None
     content = raw
     if task == "weekly_plan":
+        log("解析结构化 JSON 代码块…")
         structured, parse_error = parse_structured(raw, folder=folder)
+        if parse_error:
+            log(f"  ⚠ 结构化解析失败: {parse_error}")
+        elif structured is not None:
+            log(
+                f"  ✓ 结构化解析成功 ({len(structured.sessions)} sessions, "
+                f"{len(structured.nutrition)} nutrition)"
+            )
         content = strip_json_block(raw)
 
     return AgentResult(

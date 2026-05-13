@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Callable
 from stride_core.timefmt import today_shanghai
 from typing import Any
 
@@ -290,23 +292,53 @@ def load_coach_context(
     sync_before: bool = True,
     recent_limit: int = 80,
     health_days: int = 120,
+    status_cb: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    sync = maybe_sync_user(user, source, enabled=sync_before)
+    log = status_cb or (lambda _: None)
+
+    if sync_before:
+        log("  · COROS 同步…")
+        t = time.perf_counter()
+        sync = maybe_sync_user(user, source, enabled=True)
+        log(f"    {sync.get('message') or 'sync done'} ({time.perf_counter() - t:.1f}s)")
+    else:
+        sync = maybe_sync_user(user, source, enabled=False)
+        log("  · COROS 同步: 跳过")
+
     db = Database(user=user)
     try:
-        selected_week = load_week_context(user, folder, db) if folder else None
+        log("  · 读取 profile / TRAINING_PLAN.md")
+        profile = load_profile(user)
+        training_plan = load_overall_training_plan(user)
+
+        selected_week = None
+        if folder:
+            log(f"  · 读取本周上下文 ({folder}): plan.md / feedback.md / 周内活动")
+            selected_week = load_week_context(user, folder, db)
+
+        log(f"  · 读取近期活动 (limit={recent_limit}) + 周跑量 (12 周)")
+        recent = load_recent_activities(db, limit=recent_limit)
+        weekly = load_weekly_volume(db, weeks=12)
+
+        log(f"  · 读取健康负荷 ({health_days} 天) / dashboard / 比赛预测")
+        health = load_health_context(db, days=health_days)
+
+        log("  · 读取 InBody / 能力快照")
+        inbody = load_inbody_context(db)
+        ability = load_ability_context(db)
+
         return {
             "as_of": today_shanghai().isoformat(),
             "user": user,
             "sync": sync,
-            "profile": load_profile(user),
-            "training_plan": load_overall_training_plan(user),
+            "profile": profile,
+            "training_plan": training_plan,
             "selected_week": selected_week,
-            "recent_activities": load_recent_activities(db, limit=recent_limit),
-            "weekly_volume": load_weekly_volume(db, weeks=12),
-            "health": load_health_context(db, days=health_days),
-            "inbody": load_inbody_context(db),
-            "ability": load_ability_context(db),
+            "recent_activities": recent,
+            "weekly_volume": weekly,
+            "health": health,
+            "inbody": inbody,
+            "ability": ability,
         }
     finally:
         db.close()

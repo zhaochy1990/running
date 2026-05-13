@@ -22,7 +22,7 @@ from .agent import run_agent
 from .context import load_coach_context, summarize_context
 from .model import get_generated_by, get_model_config
 
-console = Console()
+console = Console(log_path=False)
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -61,13 +61,10 @@ def _discover_config_path(profile: str | None, explicit: str | None) -> Path | N
             raise click.ClickException(f"Coach config file not found: {path}")
         return path
 
-    candidates: list[Path] = []
-    if profile:
-        candidates.append(core_db.USER_DATA_DIR / profile / "coach.json")
-    candidates.extend([
-        core_db.USER_DATA_DIR / "coach.json",
+    candidates = [
         Path(".stride-coach.json"),
-    ])
+        core_db.USER_DATA_DIR / "coach.json",
+    ]
     return next((p for p in candidates if p.exists()), None)
 
 
@@ -121,10 +118,16 @@ def _validate_week(folder: str) -> str:
     return folder
 
 
-def _write_output(path: str | None, content: str) -> None:
+def _week_dir(profile: str, folder: str) -> Path:
+    return core_db.USER_DATA_DIR / profile / "logs" / folder
+
+
+def _write_output(path: str | None, content: str, *, base_dir: Path | None = None) -> None:
     if not path:
         return
-    out = Path(path)
+    out = Path(path).expanduser()
+    if base_dir is not None and not out.is_absolute():
+        out = base_dir / out
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(content, encoding="utf-8")
     console.print(f"[green]Wrote output to {out}[/green]")
@@ -192,7 +195,7 @@ def _apply_model_overrides(
 @click.option("-P", "--profile", default=None, envvar="COROS_PROFILE",
               help="User UUID or slug resolved via data/.slug_aliases.json.")
 @click.option("--config", "config_path", default=None, envvar="STRIDE_COACH_CONFIG",
-              help="Coach model config JSON. Defaults to data/{profile}/coach.json, data/coach.json, then .stride-coach.json.")
+              help="Coach model config JSON. Defaults to .stride-coach.json, then data/coach.json.")
 @click.option("--endpoint", default=None,
               help="Azure OpenAI resource endpoint or full /openai/responses URL.")
 @click.option("--deployment", default=None, help="Azure OpenAI deployment name.")
@@ -305,8 +308,9 @@ def chat_cmd(
         folder=folder,
         source=_source(sync_before),
         sync_before=sync_before,
+        status_cb=console.log,
     )
-    _write_output(output, result.content)
+    _write_output(output, result.content, base_dir=_week_dir(profile, folder) if folder else None)
     _render_result(f"stride-coach chat [{result.model}]", result.content, markdown=not plain)
 
 
@@ -335,8 +339,9 @@ def weekly_plan_cmd(
         folder=folder,
         source=_source(sync_before),
         sync_before=sync_before,
+        status_cb=console.log,
     )
-    _write_output(output, result.content)
+    _write_output(output, result.content, base_dir=_week_dir(profile, folder))
     _render_result(f"weekly plan draft [{result.model}]", result.content, markdown=not plain)
 
 
@@ -373,8 +378,9 @@ def adjust_plan_cmd(
         folder=folder,
         source=_source(sync_before),
         sync_before=sync_before,
+        status_cb=console.log,
     )
-    _write_output(output, result.content)
+    _write_output(output, result.content, base_dir=_week_dir(profile, folder))
     _render_result(f"plan adjustment draft [{result.model}]", result.content, markdown=not plain)
     if apply_now:
         row = apply_weekly_plan(profile, folder, result.content, generated_by=result.model)
@@ -397,3 +403,7 @@ def apply_plan_cmd(ctx: click.Context, folder: str, from_file: str, generated_by
     content = Path(from_file).read_text(encoding="utf-8")
     row = apply_weekly_plan(profile, folder, content, generated_by=generated_by or get_generated_by())
     console.print(f"[green]Saved DB plan override for {row['week']} generated_by={row['generated_by']}[/green]")
+
+
+if __name__ == "__main__":
+    cli()

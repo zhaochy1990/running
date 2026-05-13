@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Any
 from urllib.parse import parse_qs, urlparse, urlunparse
 
@@ -166,92 +165,16 @@ def build_azure_token_provider() -> Callable[[], str]:
     return get_bearer_token_provider(credential, COGNITIVE_SERVICES_SCOPE)
 
 
-class AzureResponsesChatModel:
-    """Small LangChain-like wrapper around Azure OpenAI Responses API."""
-
-    def __init__(
-        self,
-        config: CoachModelConfig,
-        *,
-        token_provider: Callable[[], str] | None = None,
-    ) -> None:
-        self.config = config
-        self._token_provider = token_provider
-
-    def _headers(self) -> dict[str, str]:
-        api_key = os.environ.get("STRIDE_COACH_AZURE_OPENAI_API_KEY") or os.environ.get("AZURE_OPENAI_API_KEY")
-        if self.config.auth_mode in {"api-key", "api_key"}:
-            if not api_key:
-                raise AOAIUnavailable(
-                    "STRIDE_COACH_AUTH_MODE=api-key but no "
-                    "STRIDE_COACH_AZURE_OPENAI_API_KEY or AZURE_OPENAI_API_KEY is set"
-                )
-            return {"api-key": api_key, "Content-Type": "application/json"}
-        if self.config.auth_mode == "auto" and api_key:
-            return {"api-key": api_key, "Content-Type": "application/json"}
-        token_provider = self._token_provider or build_azure_token_provider()
-        return {
-            "Authorization": f"Bearer {token_provider()}",
-            "Content-Type": "application/json",
-        }
-
-    def _payload(self, messages: list[tuple[str, str]] | list[dict[str, Any]]) -> dict[str, Any]:
-        input_messages = []
-        for msg in messages:
-            if isinstance(msg, tuple):
-                role, content = msg
-                input_messages.append({"role": role, "content": content})
-            else:
-                input_messages.append({"role": msg.get("role", "user"), "content": msg.get("content", "")})
-        payload: dict[str, Any] = {
-            "model": self.config.deployment,
-            "input": input_messages,
-        }
-        if self.config.temperature is not None:
-            payload["temperature"] = self.config.temperature
-        if self.config.max_tokens is not None:
-            payload["max_output_tokens"] = self.config.max_tokens
-        return payload
-
-    @staticmethod
-    def _extract_text(data: dict[str, Any]) -> str:
-        if isinstance(data.get("output_text"), str):
-            return data["output_text"].strip()
-        chunks: list[str] = []
-        for output in data.get("output") or []:
-            for item in output.get("content") or []:
-                text = item.get("text") or item.get("content")
-                if text:
-                    chunks.append(str(text))
-        if chunks:
-            return "\n".join(chunks).strip()
-        return str(data).strip()
-
-    def invoke(self, messages: list[tuple[str, str]] | list[dict[str, Any]]) -> Any:
-        import httpx
-
-        resp = httpx.post(
-            self.config.responses_url,
-            params={"api-version": self.config.api_version},
-            headers=self._headers(),
-            json=self._payload(messages),
-            timeout=self.config.timeout_s,
-        )
-        resp.raise_for_status()
-        return SimpleNamespace(content=self._extract_text(resp.json()))
-
-
 def get_chat_model() -> Any:
     """Create the local coach chat model.
 
-    Defaults to Azure OpenAI Responses API and AAD auth through VS Code
-    credentials. Set
-    `STRIDE_COACH_AZURE_OPENAI_API_KIND=chat-completions` to use the older
-    LangChain AzureChatOpenAI path.
+    Routes through `langchain_openai.AzureChatOpenAI` for both Responses API
+    (default, `api_kind=responses`) and Chat Completions
+    (`api_kind=chat-completions`). Set
+    `STRIDE_COACH_AZURE_OPENAI_API_KIND=chat-completions` to opt out of the
+    Responses path.
     """
     config = get_model_config()
-    if config.api_kind in {"responses", "response"}:
-        return AzureResponsesChatModel(config)
 
     try:
         from langchain_openai import AzureChatOpenAI
@@ -263,6 +186,8 @@ def get_chat_model() -> Any:
         "azure_endpoint": config.endpoint,
         "azure_deployment": config.deployment,
         "api_version": config.api_version,
+        "request_timeout": config.timeout_s,
+        "use_responses_api": config.api_kind in {"responses", "response"},
     }
     if config.temperature is not None:
         common["temperature"] = config.temperature

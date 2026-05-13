@@ -52,9 +52,31 @@ def _write_config(path, deployment: str = "configured-deployment") -> None:
     )
 
 
-def test_config_command_discovers_profile_config(tmp_path, monkeypatch):
+def test_config_command_discovers_data_root_config(tmp_path, monkeypatch):
+    """USER_DATA_DIR/coach.json is auto-discovered when no --config is given.
+
+    Per-profile data/{user}/coach.json is intentionally not discovered anymore:
+    coach config is project-level, not per-user. Verified separately below.
+    """
     _clear_model_env(monkeypatch)
     monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "coach.json"
+    _write_config(config_path)
+
+    result = CliRunner().invoke(cli, ["config"])
+
+    assert result.exit_code == 0, result.output
+    assert "configured-deployment" in result.output
+    assert "credential" in result.output
+    assert os.environ["STRIDE_COACH_AZURE_OPENAI_DEPLOYMENT"] == "configured-deployment"
+
+
+def test_config_command_ignores_per_profile_config(tmp_path, monkeypatch):
+    """data/{user}/coach.json is no longer a discovery candidate."""
+    _clear_model_env(monkeypatch)
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    monkeypatch.chdir(tmp_path)
     user_id = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
     (tmp_path / ".slug_aliases.json").write_text(
         json.dumps({"runner": user_id}),
@@ -62,15 +84,13 @@ def test_config_command_discovers_profile_config(tmp_path, monkeypatch):
     )
     user_dir = tmp_path / user_id
     user_dir.mkdir()
-    config_path = user_dir / "coach.json"
-    _write_config(config_path)
+    _write_config(user_dir / "coach.json")
 
     result = CliRunner().invoke(cli, ["-P", "runner", "config"])
 
-    assert result.exit_code == 0, result.output
-    assert "configured-deployment" in result.output
-    assert "credential" in result.output
-    assert os.environ["STRIDE_COACH_AZURE_OPENAI_DEPLOYMENT"] == "configured-deployment"
+    # No project-level config + per-profile ignored → AOAIUnavailable.
+    assert result.exit_code != 0
+    assert "configured-deployment" not in result.output
 
 
 def test_cli_options_override_config_file(tmp_path, monkeypatch):
