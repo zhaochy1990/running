@@ -147,15 +147,18 @@ jobs:
               --query "properties.runningState" -o tsv 2>/dev/null || echo "Unknown")
             echo "Attempt $i/30 — revision=$LATEST runningState=$STATE"
 
-            if [[ "$STATE" == "Running" ]]; then
+            # ACA reports several Running variants — Running / RunningAtMaxScale /
+            # Scaling — all of which mean replicas are up. Match the prefix
+            # rather than an exact string so we don't false-fail on scale state.
+            if [[ "$STATE" == Running* ]]; then
               if curl -sf "https://$FQDN/api/health" | grep -q '"status":"ok"'; then
-                echo "✓ Revision $LATEST is Running and /api/health=ok"
+                echo "✓ Revision $LATEST is $STATE and /api/health=ok"
                 exit 0
               fi
-              echo "  revision Running but /api/health not yet ok — retrying"
+              echo "  revision $STATE but /api/health not yet ok — retrying"
             fi
 
-            if [[ "$STATE" == "Failed" ]]; then
+            if [[ "$STATE" == "Failed" || "$STATE" == "Degraded" ]]; then
               echo "✗ Revision $LATEST FAILED to start — dumping logs:"
               az containerapp logs show \
                 --name ${{ env.APP_NAME }} \
