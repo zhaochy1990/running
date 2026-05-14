@@ -548,6 +548,75 @@ data: {
 - Analysis commands lazy-import pandas/matplotlib to keep core deps light
 - `rich` is used for all terminal output (tables, progress bars, colored text)
 
+## Coach Agent (LangGraph + Ports & Adapters)
+
+The STRIDE coach is a LangGraph-based agent that handles three scenarios — S1 master-plan generation / chat, S2 weekly-plan adjustment chat, S3 daily Q&A. It is split into two layers enforced by `.importlinter`:
+
+| Layer | Path | Allowed deps |
+|-------|------|--------------|
+| Core | `src/coach/` | `pydantic`, `langgraph`, `langchain-*`, `stride_core.{plan_spec,workout_spec,plan_diff,master_plan,master_plan_diff}` only |
+| Adapters | `src/stride_server/coach_adapters/` | Core + `stride_core.db` + `coros_sync` + `azure.*` + `fastapi` |
+
+`coach.*` must NOT import `stride_server.*`, `coros_sync.*`, `garmin_sync.*`, `azure.*`, `fastapi.*`, or `stride_core.db`. CI enforces this via `lint-imports` (run `PYTHONPATH=src lint-imports`).
+
+### Three LLM roles, two Azure providers (anti-commitment-bias)
+
+| Role | Default model | Provider tag | LangChain class |
+|------|---------------|--------------|-----------------|
+| Generator (Coach Agent) | GPT-5.4 | `azure-openai` | `AzureChatOpenAI` |
+| Reviewer | Claude Opus 4.7 | `azure-ai-inference` | `AzureAIChatCompletionsModel` |
+| Commentary | GPT-4.1 | `azure-openai` | `AzureChatOpenAI` |
+
+Role→model binding lives in `config/coach.toml` (committed to repo; deployment ids are placeholders until Foundry resources are wired). Both providers reach Azure AI Foundry; auth is Managed Identity (`mode = "managed-identity"`). The AAD token provider is built in `stride_server.coach_runtime` (azure-identity stays out of `coach.*` per import-linter) and injected into every `build_chat_model(spec, azure_ad_token_provider=...)` call.
+
+**Commentary migration safety:** the `[commentary]` section is a forward-looking stub. The production commentary generation path (auto-gen during sync + manual regenerate endpoint) still uses its own direct AOAI client until the migration commit lands. Nothing in the live route surface calls `get_commentary_llm()` yet — modifying coach.toml's `[commentary]` section will not affect production until that commit ships.
+
+Both raise `CoachLLMUnavailable` on (a) missing config file, (b) placeholder deployment id (`<PLACEHOLDER_*>`), (c) missing endpoint env var, or (d) missing auth credentials.
+
+### Persistence (plan §4)
+
+| Table / container | PartitionKey | RowKey | Purpose |
+|-------------------|--------------|--------|---------|
+| `stridecoachcheckpoints` | `thread_id` | `checkpoint_id` (zero-padded ns) | Metadata pointing at a `coach-checkpoints` blob |
+| `stridecoachcheckpointwrites` | `thread_id\|checkpoint_id` | `task_id\|write_idx` | LangGraph pending writes |
+| `stridecoachjobs` | `user_id` | `job_id` | Pattern A job lifecycle + heartbeat |
+| `strideweeklyversions` | `user_id\|folder` | reverse-time `\|` version_id | Audit trail for S2 PlanDiff applies |
+| `coach-checkpoints` blob | — | `{thread_id}/{checkpoint_id}.json.gz` | Full state envelope (gzip + sha256) |
+| `stridemasterplan` / `stridemasterplanversions` | (existing — reused) | | C module audit |
+
+`AzureTableCheckpointSaver.from_env()` auto-selects Azure backend when `STRIDE_COACH_TABLE_ACCOUNT_URL` is set, else falls back to a JSON-file backend under `data/_coach_dev/checkpoints/`.
+
+### v1 architectural patterns
+
+- **Pattern Y**: AI chat draft tools emit a typed `PlanDiff` / `MasterPlanDiff`. The server is stateless between propose and apply — the diff travels back to the apply endpoint in the request body. No in-memory pending-diff dict.
+- **Pattern A**: Long-running jobs use FastAPI `BackgroundTasks` + Azure Table job rows + heartbeats. App startup runs `JobScheduler.reconcile_stale_jobs()` in a lifespan hook (`app.py`); RUNNING rows whose `heartbeat_at` is > 120s old are flipped to `FAILED` with `error_code='interrupted_by_restart'`. ACA single-replica (`--max-replicas 1`) — multi-replica needs Service Bus.
+- **Pattern X**: AI never calls any execute tool. All side effects (push to watch, apply diff, sync, etc.) flow through deterministic UI-chip endpoints. The agent only does (a) reads and (b) draft proposals.
+- **Pattern P**: Conversation graphs are built per request (toolkit binds user_id at construction); checkpointer + LLMs are module-level singletons in `stride_server.coach_runtime` with test-only `set_*_for_tests` injection.
+
+### Coach HTTP endpoints (S3 + audit)
+
+| Method + path | Purpose |
+|---------------|---------|
+| `POST /api/users/me/coach/conversations/qa/messages` | S3 daily Q&A. Server generates `thread_id = f"{user_id}:qa:{today_shanghai().isoformat()}"`. Body `thread_id` is silently dropped (pydantic `extra=ignore`). |
+| `GET /api/users/me/coach/threads/{thread_id}/messages` | Cross-session chat history. Parses thread_id; owner segment must equal JWT.sub or returns 403. Malformed → 400. |
+| `GET /api/users/me/coach/plan-versions/week/{folder}` | List weekly plan versions for `folder` in reverse-chronological order, scoped to JWT.sub user_id. |
+| `GET /api/users/me/coach/plan-versions/week/{folder}/{version_id}` | Version artifact + parent chain. `folder` is mandatory — no fallback to a full table scan. 404 on missing OR cross-user. |
+
+### Generation pipeline (plan §7)
+
+`build_generation_graph(load_context, generator, reviewer, apply_patches, max_iterations=3)` produces a StateGraph routing through `load_context → generator → rule_filter → reviewer → verdict`. Verdict branches:
+
+- `pass` → finalize
+- `auto_fix` → apply_patches → finalize
+- `revise` → loop back to generator (capped at `max_iterations`, else fallback)
+- `block` → fallback (job marked failed)
+
+`coach.graphs.generation.rule_filter.run_rule_filter(plan_dict, ...)` is a pure-Python pre-filter running 7 safety rules (weekly progression ≤ 1.10×, long run ≤ 35%, Z4-Z5 ≤ 20%, ≥ 1 rest day, `WeeklyPlan.from_dict` validity, injury-conflict keyword check, CTL ramp ≤ 6 TSS/wk). HARD violations route back to the generator without invoking the (expensive) reviewer.
+
+### HMAC signature — deliberately not v1
+
+Pattern Y apply integrity is enforced via path-match validation (`diff.folder == path_folder`, `accepted_op_ids ⊆ diff.ops.id`) + post-apply rule_filter rerun + schema validation. HMAC signing was discussed and deferred — the product semantics are "trust + user has full authority over their own plan", and HTTPS handles MITM. If a real abuse pattern emerges, add HMAC later.
+
 ## Frontend (STRIDE Dashboard)
 
 React + Vite + TypeScript SPA at `frontend/`. Light theme, monospace-heavy design. Shared sidebar navigation via `AppLayout` component.
