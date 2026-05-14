@@ -1,0 +1,257 @@
+"""US-009: 6 master-scope draft tools emit valid MasterPlanDiff."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from uuid import uuid4
+
+import pytest
+
+from coach.schemas import ToolResult
+from stride_core.master_plan import (
+    MasterPlan,
+    MasterPlanStatus,
+    Milestone,
+    MilestoneType,
+    Phase,
+)
+from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOpKind
+from stride_server.coach_adapters.tool_impls import draft_impls
+
+
+USER_ID = "test-user-uuid"
+
+
+# ---------------------------------------------------------------------------
+# Fixture: in-memory MasterPlanStore seeded with one active plan
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def seeded_plan(tmp_path, monkeypatch):
+    """Wire FileMasterPlanStore to tmp_path, seed one MasterPlan, return it."""
+    import stride_core.db as core_db_mod
+
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setenv("STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL", "")
+
+    from stride_server.master_plan_store import reset_master_plan_store_cache
+
+    reset_master_plan_store_cache()
+
+    phase1 = Phase(
+        id=str(uuid4()),
+        name="基础期",
+        start_date="2026-05-12",
+        end_date="2026-07-06",
+        focus="有氧基础",
+        weekly_distance_km_low=40.0,
+        weekly_distance_km_high=50.0,
+        key_session_types=["长距离"],
+        milestone_ids=[],
+    )
+    phase2 = Phase(
+        id=str(uuid4()),
+        name="强化期",
+        start_date="2026-07-07",
+        end_date="2026-09-14",
+        focus="阈值+间歇",
+        weekly_distance_km_low=50.0,
+        weekly_distance_km_high=65.0,
+        key_session_types=["阈值跑"],
+        milestone_ids=[],
+    )
+    milestone = Milestone(
+        id=str(uuid4()),
+        type=MilestoneType.TEST_RUN,
+        date="2026-08-15",
+        phase_id=phase2.id,
+        target="20K 测试 4'30/km",
+        completed_actual=None,
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    plan = MasterPlan(
+        plan_id=str(uuid4()),
+        user_id=USER_ID,
+        status=MasterPlanStatus.ACTIVE,
+        goal_id=str(uuid4()),
+        start_date="2026-05-12",
+        end_date="2026-09-14",
+        phases=[phase1, phase2],
+        milestones=[milestone],
+        training_principles=["渐进", "充足恢复"],
+        generated_by="gpt-4.1",
+        version=1,
+        created_at=now,
+        updated_at=now,
+    )
+    from stride_server.master_plan_store import get_master_plan_store
+
+    get_master_plan_store().save_plan(plan)
+    yield plan, phase1, phase2, milestone
+    reset_master_plan_store_cache()
+
+
+def _assert_master_diff(res: ToolResult) -> MasterPlanDiff:
+    assert res.ok, f"tool failed: {res.errors}"
+    assert isinstance(res.data, dict)
+    return MasterPlanDiff.model_validate(res.data)
+
+
+# ---------------------------------------------------------------------------
+# extend_phase / compress_phase
+# ---------------------------------------------------------------------------
+
+
+def test_extend_phase_shifts_end_date_forward(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    res = draft_impls.ExtendPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2
+    )
+    diff = _assert_master_diff(res)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.RESIZE_PHASE
+    assert op.phase_id == phase1.id
+    assert op.spec_patch["end_date"] == "2026-07-20"  # 2026-07-06 + 2 weeks
+
+
+def test_extend_phase_zero_weeks_fails(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    res = draft_impls.ExtendPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=0
+    )
+    assert not res.ok
+
+
+def test_extend_phase_missing_plan_fails(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    res = draft_impls.ExtendPhaseImpl(USER_ID)(
+        plan_id="nonexistent", phase_id=phase1.id, weeks=2
+    )
+    assert not res.ok
+    assert any("not found" in e for e in res.errors)
+
+
+def test_extend_phase_missing_phase_fails(seeded_plan):
+    plan, _, _, _ = seeded_plan
+    res = draft_impls.ExtendPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id, phase_id="bogus", weeks=2
+    )
+    assert not res.ok
+
+
+def test_compress_phase_shifts_end_date_backward(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    res = draft_impls.CompressPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2
+    )
+    diff = _assert_master_diff(res)
+    assert len(diff.ops) == 1
+    assert diff.ops[0].spec_patch["end_date"] == "2026-06-22"  # 2026-07-06 - 2 weeks
+
+
+def test_compress_phase_below_start_fails(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    res = draft_impls.CompressPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=100
+    )
+    assert not res.ok
+
+
+# ---------------------------------------------------------------------------
+# shift_milestone / change_target
+# ---------------------------------------------------------------------------
+
+
+def test_shift_milestone_changes_date(seeded_plan):
+    plan, _, _, milestone = seeded_plan
+    res = draft_impls.ShiftMilestoneImpl(USER_ID)(
+        plan_id=plan.plan_id, milestone_id=milestone.id, new_date="2026-08-22"
+    )
+    diff = _assert_master_diff(res)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.REPLACE_MILESTONE_DATE
+    assert op.milestone_id == milestone.id
+    assert op.spec_patch["date"] == "2026-08-22"
+
+
+def test_shift_milestone_bad_date_fails(seeded_plan):
+    plan, _, _, milestone = seeded_plan
+    res = draft_impls.ShiftMilestoneImpl(USER_ID)(
+        plan_id=plan.plan_id, milestone_id=milestone.id, new_date="not-a-date"
+    )
+    assert not res.ok
+
+
+def test_change_target_replaces_target(seeded_plan):
+    plan, _, _, milestone = seeded_plan
+    res = draft_impls.ChangeTargetImpl(USER_ID)(
+        plan_id=plan.plan_id,
+        milestone_id=milestone.id,
+        new_target_time="20K 测试 4'15/km",
+    )
+    diff = _assert_master_diff(res)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.REPLACE_MILESTONE_TARGET
+    assert op.spec_patch["target"] == "20K 测试 4'15/km"
+
+
+def test_change_target_empty_fails(seeded_plan):
+    plan, _, _, milestone = seeded_plan
+    res = draft_impls.ChangeTargetImpl(USER_ID)(
+        plan_id=plan.plan_id, milestone_id=milestone.id, new_target_time=""
+    )
+    assert not res.ok
+
+
+# ---------------------------------------------------------------------------
+# propose_alternatives
+# ---------------------------------------------------------------------------
+
+
+def test_propose_alternatives_returns_two_diffs(seeded_plan):
+    plan, _, _, _ = seeded_plan
+    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, intent="想加大强度但又怕受伤"
+    )
+    assert res.ok
+    assert "alternatives" in res.data
+    alts = res.data["alternatives"]
+    assert len(alts) == 2
+    # Each alternative validates as a MasterPlanDiff
+    for alt in alts:
+        diff = MasterPlanDiff.model_validate(alt)
+        assert len(diff.ops) == 1
+        assert diff.ops[0].op == MasterPlanDiffOpKind.RESIZE_PHASE
+    # The two alternatives must differ (保守 vs 激进)
+    assert (
+        alts[0]["ops"][0]["spec_patch"]["end_date"]
+        != alts[1]["ops"][0]["spec_patch"]["end_date"]
+    )
+
+
+# ---------------------------------------------------------------------------
+# regenerate_master
+# ---------------------------------------------------------------------------
+
+
+def test_regenerate_master_emits_remove_ops_for_each_entity(seeded_plan):
+    plan, _, _, _ = seeded_plan
+    res = draft_impls.RegenerateMasterImpl(USER_ID)(
+        plan_id=plan.plan_id, reason="目标变了"
+    )
+    diff = _assert_master_diff(res)
+    # 2 phases + 1 milestone → 3 REMOVE ops
+    op_kinds = sorted(o.op.value for o in diff.ops)
+    assert op_kinds == sorted(["remove_phase", "remove_phase", "remove_milestone"])
+    assert "目标变了" in diff.ai_explanation
+
+
+def test_regenerate_master_missing_plan_fails(seeded_plan):
+    res = draft_impls.RegenerateMasterImpl(USER_ID)(
+        plan_id="nope", reason="x"
+    )
+    assert not res.ok

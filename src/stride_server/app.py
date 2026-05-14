@@ -9,6 +9,9 @@ dependencies, so they never import a specific adapter.
 
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -18,7 +21,39 @@ from stride_core.source import DataSource
 
 from .bearer import _load_public_key, is_dev_mode, require_bearer, verify_path_user
 from .deps import PROJECT_ROOT
-from .routes import account, ability, activities, feedback, generate, health, home, inbody, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_chat, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, sync, teams, training_goal, training_plan, users, watch, weeks, workouts
+
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Startup: reconcile stale coach jobs (plan §8.3, Pattern A).
+
+    On every container start we scan ``stridecoachjobs`` for rows still in
+    ``RUNNING`` whose ``heartbeat_at`` is older than the threshold and mark
+    them FAILED with ``error_code='interrupted_by_restart'``. This is what
+    keeps Pattern A safe under ACA restarts at ``--max-replicas 1``.
+    """
+    try:
+        from .coach_adapters.job_scheduler import JobScheduler
+        from .coach_adapters.persistence.jobs_store import jobs_store_from_env
+
+        scheduler = JobScheduler(jobs_store_from_env())
+        swept = scheduler.reconcile_stale_jobs()
+        if swept:
+            logger.warning(
+                "lifespan startup reconcile: marked %d running coach jobs FAILED "
+                "(interrupted_by_restart): %s",
+                len(swept),
+                swept,
+            )
+        else:
+            logger.info("lifespan startup reconcile: no stale coach jobs to sweep")
+    except Exception:  # noqa: BLE001 — startup must not break the app
+        logger.exception("lifespan startup reconcile failed; continuing without sweep")
+    yield
+    # Shutdown: nothing special.
+from .routes import account, ability, activities, coach, feedback, generate, health, home, inbody, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_chat, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, sync, teams, training_goal, training_plan, users, watch, weeks, workouts
 from .static import mount_frontend
 
 
@@ -48,7 +83,7 @@ def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
         registry.register(source_or_registry, default=True)
         default_source = source_or_registry
 
-    app = FastAPI(title="STRIDE - Running Dashboard API")
+    app = FastAPI(title="STRIDE - Running Dashboard API", lifespan=_lifespan)
     app.state.source = default_source
     app.state.registry = registry
 
@@ -106,6 +141,10 @@ def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
     app.include_router(predictions.router, dependencies=protected_user)
     app.include_router(nutrition_meals.router, dependencies=protected_user)
     app.include_router(nutrition_daily.router, dependencies=protected_user)
+    # Coach endpoints: paths are /api/users/me/... so they sit under the
+    # generic `protected` (require_bearer) chain — the owner check happens
+    # inside each handler against payload["sub"] rather than via the path.
+    app.include_router(coach.router, dependencies=protected)
 
     # Internal webhook router — gated by X-Internal-Token, NOT bearer JWT.
     # Path is /internal/... (not /api/internal/...) so future bearer-prefix
