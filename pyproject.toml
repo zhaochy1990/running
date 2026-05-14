@@ -31,6 +31,12 @@ web = [
     "openai>=1.40",
     "langchain>=0.3",
     "langchain-openai>=0.3",
+    # Azure AI Foundry serverless endpoints (Claude / Gemini / Llama / etc.)
+    # All non-OpenAI models reach the coach runtime through this SDK; we no
+    # longer take a direct dependency on anthropic / google-genai because
+    # Foundry exposes them all behind the unified Azure AI Inference API.
+    "langchain-azure-ai>=0.1",
+    "langgraph>=0.2,<0.3",
     "azure-identity>=1.17",
     "azure-keyvault-secrets>=4.8",
     "azure-storage-blob>=12.20",
@@ -39,6 +45,7 @@ web = [
 dev = [
     "pytest>=8.0",
     "pytest-httpx>=0.30",
+    "import-linter>=2.0",
 ]
 
 [project.scripts]
@@ -47,7 +54,7 @@ garmin-sync = "garmin_sync.cli:cli"
 stride-coach = "coach_agent.cli:cli"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_server", "src/coach_agent", "src/plan_parser"]
+packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_server", "src/coach", "src/coach_agent", "src/plan_parser"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

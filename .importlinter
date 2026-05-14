@@ -1,0 +1,32 @@
+[importlinter]
+root_packages =
+    coach
+    stride_server
+    stride_core
+    coros_sync
+    garmin_sync
+include_external_packages = True
+
+# -----------------------------------------------------------------------------
+# Contract 1: coach core isolation
+#
+# `coach.*` is the pure LangGraph runtime. It must NOT depend on any STRIDE
+# infrastructure module — Azure SDKs, FastAPI, the SQLite DB layer, or any
+# data-sync adapter. Domain primitives (plan_spec / workout_spec / plan_diff /
+# master_plan / master_plan_diff) are allowed because they have no I/O.
+#
+# The reverse direction — `stride_server.coach_adapters` importing `coach.*` —
+# is intentionally permitted and is how adapters bridge the two layers.
+# -----------------------------------------------------------------------------
+[importlinter:contract:coach-core-isolation]
+name = Coach core must not import infrastructure modules
+type = forbidden
+source_modules =
+    coach
+forbidden_modules =
+    stride_server
+    coros_sync
+    garmin_sync
+    stride_core.db
+    fastapi
+    azure
