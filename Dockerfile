@@ -35,7 +35,13 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 
 # Install dependencies directly (avoid pip install . which copies to site-packages
-# and breaks Path(__file__) resolution for USER_DATA_DIR and FRONTEND_DIR)
+# and breaks Path(__file__) resolution for USER_DATA_DIR and FRONTEND_DIR).
+#
+# IMPORTANT: keep this list in sync with pyproject.toml's [project.optional-dependencies].web
+# block. The coach package imports langchain / langgraph / langchain-azure-ai
+# at module top level (routes/coach.py loads them via langchain_core.messages),
+# so missing any of these at build time causes app boot to fail and ACA falls
+# back to the prior revision — silent prod regression.
 RUN pip install --no-cache-dir \
     "fastapi>=0.115" \
     "uvicorn[standard]>=0.30" \
@@ -45,6 +51,10 @@ RUN pip install --no-cache-dir \
     "platformdirs>=4.0" \
     "rich>=13.0" \
     "openai>=1.40" \
+    "langchain>=0.3" \
+    "langchain-openai>=0.3" \
+    "langchain-azure-ai>=1.0,<2.0" \
+    "langgraph>=0.2,<0.3" \
     "azure-identity>=1.17" \
     "azure-keyvault-secrets>=4.8" \
     "azure-storage-blob>=12.20" \
