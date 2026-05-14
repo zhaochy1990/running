@@ -120,20 +120,58 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
 
-      - name: Health check
+      - name: Health check (new revision must reach Running + serve /api/health)
+        # Hitting /api/health alone is not enough: in single-revision mode
+        # ACA keeps the prior revision serving when the new one fails to
+        # boot, so /api/health passes against stale code and the deploy
+        # reports false success. This step targets the *new* revision name
+        # explicitly and fails loudly if it never reaches runningState=Running.
         run: |
+          set -e
+          LATEST=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.latestRevisionName" -o tsv)
           FQDN=$(az containerapp show \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "Verifying revision: $LATEST"
           echo "App URL: https://$FQDN"
+
           for i in $(seq 1 30); do
-            if curl -sf "https://$FQDN/api/health" | grep -q '"status":"ok"'; then
-              echo "Health check passed"
-              exit 0
+            STATE=$(az containerapp revision show \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --revision "$LATEST" \
+              --query "properties.runningState" -o tsv 2>/dev/null || echo "Unknown")
+            echo "Attempt $i/30 — revision=$LATEST runningState=$STATE"
+
+            if [[ "$STATE" == "Running" ]]; then
+              if curl -sf "https://$FQDN/api/health" | grep -q '"status":"ok"'; then
+                echo "✓ Revision $LATEST is Running and /api/health=ok"
+                exit 0
+              fi
+              echo "  revision Running but /api/health not yet ok — retrying"
             fi
-            echo "Attempt $i/30 - waiting 10s..."
+
+            if [[ "$STATE" == "Failed" ]]; then
+              echo "✗ Revision $LATEST FAILED to start — dumping logs:"
+              az containerapp logs show \
+                --name ${{ env.APP_NAME }} \
+                --resource-group ${{ env.RESOURCE_GROUP }} \
+                --revision "$LATEST" \
+                --tail 100 || true
+              exit 1
+            fi
+
             sleep 10
           done
-          echo "Health check failed after 5 minutes"
+
+          echo "✗ Revision $LATEST never reached Running after 5 minutes — dumping logs:"
+          az containerapp logs show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --revision "$LATEST" \
+            --tail 100 || true
           exit 1

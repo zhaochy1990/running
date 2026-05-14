@@ -25,7 +25,11 @@ RUN npm run build
 FROM python:3.13-slim
 WORKDIR /app
 
-# Copy source
+# pyproject.toml + src must be present BEFORE the editable install. The
+# editable install (PEP 660) writes a .pth file pointing at /app/src, so
+# Path(__file__) on every package resolves to /app/src/<pkg>/<file>.py at
+# runtime — keeping PROJECT_ROOT / USER_DATA_DIR / FRONTEND_DIR computations
+# correct (they walk up from __file__ to /app/).
 COPY pyproject.toml ./
 COPY src/ ./src/
 
@@ -34,33 +38,10 @@ COPY src/ ./src/
 # they are not part of the request-serving path.
 COPY scripts/ ./scripts/
 
-# Install dependencies directly (avoid pip install . which copies to site-packages
-# and breaks Path(__file__) resolution for USER_DATA_DIR and FRONTEND_DIR).
-#
-# IMPORTANT: keep this list in sync with pyproject.toml's [project.optional-dependencies].web
-# block. The coach package imports langchain / langgraph / langchain-azure-ai
-# at module top level (routes/coach.py loads them via langchain_core.messages),
-# so missing any of these at build time causes app boot to fail and ACA falls
-# back to the prior revision — silent prod regression.
-RUN pip install --no-cache-dir \
-    "fastapi>=0.115" \
-    "uvicorn[standard]>=0.30" \
-    "pyjwt[crypto]>=2.8" \
-    "click>=8.1" \
-    "httpx>=0.27" \
-    "platformdirs>=4.0" \
-    "rich>=13.0" \
-    "openai>=1.40" \
-    "langchain>=1.0,<2.0" \
-    "langchain-openai>=1.0,<2.0" \
-    "langchain-azure-ai>=1.0,<2.0" \
-    "langgraph>=1.0,<2.0" \
-    "azure-identity>=1.17" \
-    "azure-keyvault-secrets>=4.8" \
-    "azure-storage-blob>=12.20" \
-    "azure-data-tables>=12.5" \
-    "garth>=0.5" \
-    "garminconnect>=0.2"
+# Single source of truth for deps: pyproject.toml [project.optional-dependencies].
+# Editable install (-e) keeps /app/src as the import location — no file copy
+# into site-packages, so __file__-based path resolution stays correct.
+RUN pip install --no-cache-dir -e ".[web,analysis]"
 
 # Copy built frontend from stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
@@ -72,7 +53,9 @@ COPY data/ ./data/
 # not per-user data; not affected by the data/ Azure Files mount).
 COPY strength_illustrations/ ./strength_illustrations/
 
-# Source code stays at /app/src, PYTHONPATH makes it importable
+# Editable install adds /app/src via .pth so PYTHONPATH is redundant. Keep
+# it as a defensive backstop in case any subprocess / spawned helper reads
+# sys.path before the .pth file is processed.
 ENV PYTHONPATH=/app/src
 
 # Data directory (Azure Files mount point at runtime)
