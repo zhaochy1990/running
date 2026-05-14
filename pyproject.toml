@@ -29,14 +29,14 @@ web = [
     "uvicorn[standard]>=0.30",
     "pyjwt[crypto]>=2.8",
     "openai>=1.40",
-    "langchain>=0.3",
-    "langchain-openai>=0.3",
+    "langchain>=1.0,<2.0",
+    "langchain-openai>=1.0,<2.0",
     # Azure AI Foundry serverless endpoints (Claude / Gemini / Llama / etc.)
     # All non-OpenAI models reach the coach runtime through this SDK; we no
     # longer take a direct dependency on anthropic / google-genai because
     # Foundry exposes them all behind the unified Azure AI Inference API.
-    "langchain-azure-ai>=0.1",
-    "langgraph>=0.2,<0.3",
+    "langchain-azure-ai>=1.0,<2.0",
+    "langgraph>=1.0,<2.0",
     "azure-identity>=1.17",
     "azure-keyvault-secrets>=4.8",
     "azure-storage-blob>=12.20",

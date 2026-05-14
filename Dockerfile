@@ -51,10 +51,10 @@ RUN pip install --no-cache-dir \
     "platformdirs>=4.0" \
     "rich>=13.0" \
     "openai>=1.40" \
-    "langchain>=0.3" \
-    "langchain-openai>=0.3" \
+    "langchain>=1.0,<2.0" \
+    "langchain-openai>=1.0,<2.0" \
     "langchain-azure-ai>=1.0,<2.0" \
-    "langgraph>=0.2,<0.3" \
+    "langgraph>=1.0,<2.0" \
     "azure-identity>=1.17" \
     "azure-keyvault-secrets>=4.8" \
     "azure-storage-blob>=12.20" \
