@@ -5,142 +5,79 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 This project contains the training plans, logs for multiple marathon runners.
 It also contains tools like coros-sync to sync the training data from COROS to the local for further analysis.
 
+---
+
+## Topic-specific docs（按需 Read）
+
+写代码 / 文档前，按任务类型主动 Read 对应文件：
+
+| 任务 | 必读 |
+|------|------|
+| 写 / 改 weekly `plan.json` | [`docs/plan-json-schema.md`](docs/plan-json-schema.md) —— HARD 校验 gate |
+| 写 plan.md 里的力量动作 / 调 strength push | [`docs/strength-training.md`](docs/strength-training.md) |
+| 分析疲劳 / TSB / HRV / 训练负荷 | [`docs/fatigue-metrics.md`](docs/fatigue-metrics.md) |
+| 写 / 更新 feedback.md，引用 RPE 或 feel_type | [`docs/feedback-md.md`](docs/feedback-md.md) |
+| Multi-model A/B/C variants 流程 | [`docs/multi-variant.md`](docs/multi-variant.md) |
+| Commentary 写入 / 推 prod / daily loop | [`docs/working-model.md`](docs/working-model.md) |
+| 跑 coros-sync CLI / 改 sync 代码 / 直查 DB | [`docs/coros-cli.md`](docs/coros-cli.md) |
+| 改 `src/coach/*` 或 `src/stride_server/coach_*` | [`docs/coach-agent.md`](docs/coach-agent.md) |
+| Auth wiring / Bearer / 401 排障 | [`docs/auth-wiring.md`](docs/auth-wiring.md) |
+| Docker / CI/CD / reparse webhook | [`docs/deployment.md`](docs/deployment.md) |
+| Frontend pages / API 路由清单 | [`docs/frontend.md`](docs/frontend.md) |
+
+---
+
 ## Storage scope rule (HARD)
 
-**The per-user SQLite databases at `data/{user_id}/coros.db` are reserved for watch-synced运动数据 only** — activities, laps, zones, timeseries, daily_health, dashboard, race predictions, ability snapshots, structured planned sessions/nutrition, weekly plan/feedback markdown layer, scheduled workouts. Anything outside this scope (notifications, devices, social signals, cross-user state, app-level config, etc.) **must NOT** be added as a SQLite table.
+**The per-user SQLite databases at `data/{user_id}/coros.db` are reserved for watch-synced 运动数据 only** —— activities, laps, zones, timeseries, daily_health, dashboard, race predictions, ability snapshots, structured planned sessions/nutrition, weekly plan/feedback markdown layer, scheduled workouts。任何不属于这个范围的（notifications, devices, social signals, cross-user state, app-level config 等）**绝不能**加成 SQLite 表。
 
-Use the right backend instead:
+用正确的后端：
 
 | Data shape | Backend |
 |------------|---------|
-| Cross-user social signals (likes, comments, follows) | **Azure Table Storage** (see `stride_server/likes_store.py` for the canonical pattern) |
-| Per-user app preferences not derived from a watch | **Azure Table Storage** (PartitionKey=user_id, RowKey="prefs" or similar) |
+| Cross-user social signals (likes, comments, follows) | **Azure Table Storage**（canonical pattern：`stride_server/likes_store.py`） |
+| Per-user app preferences not derived from a watch | **Azure Table Storage**（PartitionKey=user_id, RowKey="prefs"） |
 | Push device tokens / FCM-style registrations | **Azure Table Storage** |
 | Bulk binary blobs (photos, video, large export files) | **Azure Blob Storage** |
-| Authoring artifacts (plan.md, feedback.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**, synced via `sync-data.yml` to Azure Files |
+| Authoring artifacts (plan.md, feedback.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**，经 `sync-data.yml` 同步到 Azure Files |
 | Auth tokens / secrets | **Azure Key Vault** |
 
-When adding a new feature, ask: *"Does this row come from a watch sync?"* If no, do not add a SQLite table. The likes_store has a two-backend file (JSON file for dev / Azure Table for prod) with `DefaultAzureCredential` — copy that pattern instead of inventing a new one.
+加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。likes_store 是 two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential` —— 复用这个 pattern，不要发明新的。
 
 ## Timezone discipline (HARD)
 
-All `coros.db` timestamp columns store **UTC ISO 8601**. All user-facing day/week classification is **Asia/Shanghai (UTC+8, no DST)**. Mixing the two silently misclassifies the 00:00–07:59 Shanghai window onto the wrong calendar day.
+所有 `coros.db` 时间戳列存 **UTC ISO 8601**。所有面向用户的日 / 周分类是 **Asia/Shanghai (UTC+8, 无 DST)**。混用会把 00:00–07:59 上海窗口静默错分到错误日期。
 
-**Canonical helpers**:
+**Canonical helpers**：
 
-- Python: `src/stride_core/timefmt.py` — `utc_iso_to_shanghai_iso()`, `today_shanghai()`, `SHANGHAI_DAY_SQL`, `shanghai_day_to_utc_range()`, `shanghai_week_range()`, `SHANGHAI_TZ`
-- TypeScript: `frontend/src/lib/shanghai.ts` — `shanghaiDate()`, `shanghaiMonthDay()`, `shanghaiTime()`, `shanghaiToday()`, `shanghaiWeekday()`
+- Python: `src/stride_core/timefmt.py` —— `utc_iso_to_shanghai_iso()`, `today_shanghai()`, `SHANGHAI_DAY_SQL`, `shanghai_day_to_utc_range()`, `shanghai_week_range()`, `SHANGHAI_TZ`
+- TypeScript: `frontend/src/lib/shanghai.ts` —— `shanghaiDate()`, `shanghaiMonthDay()`, `shanghaiTime()`, `shanghaiToday()`, `shanghaiWeekday()`
 
-**Forbidden patterns** (CI greps for these via `tests/test_timezone_invariants.py`):
+**禁用 patterns**（CI 经 `tests/test_timezone_invariants.py` grep）：
 
-| Don't | Use instead |
+| 别这么写 | 用这个 |
 |---|---|
-| `WHERE date >= '2026-05-09'` against `activities.*` | `WHERE date(datetime(date, '+8 hours')) >= ?` (use `SHANGHAI_DAY_SQL`) |
-| `date.today()` / `datetime.now()` (no `tz=`) | `today_shanghai()` from `stride_core.timefmt` |
-| `r["date"][:10]` in route serializers | `utc_iso_to_shanghai_iso(r["date"])` then slice — or alias `date(datetime(date, '+8 hours')) AS shanghai_date` in SQL |
+| `WHERE date >= '2026-05-09'` against `activities.*` | `WHERE date(datetime(date, '+8 hours')) >= ?`（用 `SHANGHAI_DAY_SQL`） |
+| `date.today()` / `datetime.now()`（无 `tz=`） | `today_shanghai()` from `stride_core.timefmt` |
+| `r["date"][:10]` in route serializers | `utc_iso_to_shanghai_iso(r["date"])` 再 slice —— 或 SQL 里 alias `date(datetime(date, '+8 hours')) AS shanghai_date` |
 | `activity.date.slice(0, 10)` in React | `shanghaiDate(activity.date)` from `lib/shanghai` |
-| `new Date().getFullYear()` etc. for "today" | `shanghaiToday()` |
+| `new Date().getFullYear()` 等表示"今天" | `shanghaiToday()` |
 
-**API boundary rule**: the routes in `stride_server/routes/` MUST run `utc_iso_to_shanghai_iso()` over the `date` field on every activity row before serializing it back. This is what makes frontend `.slice(0, 10)` "just work" — the offset is converted, the instant is preserved.
+**API 边界规则**：`stride_server/routes/` 下的路由 MUST 在每个 activity 行序列化前对 `date` 跑 `utc_iso_to_shanghai_iso()`。这就是 frontend `.slice(0, 10)` "刚好能用"的原因 —— offset 转过，instant 保留。
 
-When `tests/test_timezone_invariants.py` fails, almost always the fix is to import + use one of the helpers above, not to whitelist the file. The `WHITELIST` dict in that test exists for files that legitimately operate on Shanghai-local columns (`weekly_plan.date_from`, `daily_health.date` YYYYMMDD) — drive-by additions need a code-review reason.
+`tests/test_timezone_invariants.py` 失败时几乎总是 fix 是 import + 用上面 helper 之一，不是把文件加 whitelist。该 test 里的 `WHITELIST` dict 是给真正操作 Shanghai-local 列（`weekly_plan.date_from`、`daily_health.date` YYYYMMDD）的文件 —— 顺手加项需要 code-review 理由。
 
-## Working Model — Local Authoring + Cloud Draft-Writer
+---
 
-Going forward, keep this split in mind:
+## Working Model summary
 
-- **Local machine** is the **author** environment. Large-language-model tooling (Claude Code) runs here, reads local state (SQLite + markdown under `data/`), and produces the authoritative content: weekly `plan.md`, `feedback.md`, refined `activity_commentary` DB rows, plus ad-hoc analyses.
-- **Azure Container App (`stride-app`)** is the **reader** environment *and* a **default draft-writer**. It serves the dashboard UI and read API; its data comes from:
-  - Markdown files synced via the `sync-data.yml` GitHub Action (push to master → `az storage file upload-batch` to `authstorage2026/stride-data`).
-  - SQLite data (activities, health) synced independently on both sides from COROS.
-  - DB rows that are *not* COROS-sourced and only live locally (e.g. Claude Code–refined `activity_commentary`) must be pushed via the dedicated CLI over the authenticated API — they are not in the markdown sync path.
-  - **Azure OpenAI (GPT-4.1)** auto-generates a commentary **draft** for every newly-synced activity via MI-authenticated calls from the server. Drafts are stamped with `generated_by='gpt-4.1'`.
+- **Local machine** 是 **author** 环境：Claude Code 在这里跑，产出 weekly `plan.md`、`feedback.md`、refined `activity_commentary`。
+- **Azure Container App (`stride-app`)** 是 **reader** 环境 + **default draft-writer**（GPT-4.1 在 sync 时自动写 commentary 草稿）。
+- Markdown 经 `sync-data.yml` 同步到 prod Azure Files；DB 行经 authenticated API 推。
 
-### Commentary authorship rules
+完整 commentary 规则、daily loop bash、prod/local 不一致排障 → [`docs/working-model.md`](docs/working-model.md)。
 
-- Every `activity_commentary` row carries `generated_by` (model identifier: `gpt-4.1`, `claude-opus-4-7`, etc.) and `generated_at`.
-- Auto-generation on `sync` **never overwrites an existing row**. It fills empty slots only.
-- To overwrite an AOAI draft with a Claude Code refinement: locally write the row with `generated_by=<your model>`, then `coros-sync commentary push <id> --generated-by <your model>`.
-- To force a fresh AOAI draft (overwrites whatever's there): `POST /api/{user}/activities/{id}/commentary/regenerate` or use the "重新生成" button on the activity detail page.
-- AOAI is gated by `AOAI_COMMENTARY_ENABLED=true` + `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_DEPLOYMENT` env vars. Auth: set `AZURE_OPENAI_API_KEY` for key-based auth, or leave it unset to use Managed Identity + `Cognitive Services OpenAI User` RBAC on the AOAI account. With any required var unset, sync skips the AOAI step silently.
-
-### Canonical daily loop
-
-```bash
-# 1. Sync COROS data to local DB. Prod-side AOAI auto-writes a gpt-4.1
-#    draft commentary for every newly-synced activity (server does this
-#    on its own sync path; locally we only see the activity rows).
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync
-
-# 2. [Claude does its thing] — refine AOAI drafts, write plan/feedback,
-#    produce deeper commentaries using local data. Local DB row should
-#    stamp generated_by with the model producing it:
-python -c "
-from stride_core.db import Database
-db = Database(user='zhaochaoyi')
-db.upsert_activity_commentary('<label_id>', '<text>', generated_by='claude-opus-4-7')
-"
-
-# 3a. Commentary → STRIDE prod via authenticated POST. MUST pass
-#     --generated-by so the row on prod keeps the correct author stamp
-#     (otherwise generated_by stays NULL on prod and the UI badge is
-#     blank / future AOAI auto-gen on re-sync might overwrite).
-coros-sync -P zhaochaoyi commentary push <label_id> --generated-by claude-opus-4-7
-
-# 3b. plan.md / feedback.md / TRAINING_PLAN.md / status.md → STRIDE prod via git
-git add data/<user-uuid>/logs/<week>/plan.md
-git commit -m "docs: update week plan"
-git push origin master   # sync-data.yml uploads the markdown to Azure Files
-```
-
-### When something only works locally but not in prod
-
-Most likely: the content is a DB row that never propagated. Check `activity_commentary` first. `plan.md` / `feedback.md` should always propagate via git push + `sync-data.yml`; if they don't, inspect the workflow run.
-
-### Multi-model variants 流程 (when applicable)
-
-When you want to A/B/C the same week against multiple LLMs (Claude / Codex / Gemini) before committing to one, use the variant flow. Variants are append-only side rows; selecting one promotes its markdown + structured layer into the canonical `weekly_plan` / `planned_session` / `planned_nutrition` tables — same path the existing UI / push / commentary code already reads.
-
-**Canonical happy path**:
-
-```bash
-# 1. Generate 3 model variants for next week (parallel via omc-teams).
-#    Each model gets the same context (TRAINING_PLAN.md + recent
-#    weeks' plan.md + feedback.md), with a sentinel-anchored JSON
-#    output protocol. Failures upload as parse_failed (browsable but
-#    unselectable). Auth required (no anonymous fallback).
-coros-sync plan generate-variants -P zhaochaoyi --week 2026-05-04_05-10 \
-    --models claude,codex,gemini --prod-url $STRIDE_PROD_URL
-
-# 2. UI: open https://stride-app.../week/<folder> → "方案" tab
-#    (only visible when variants_summary.total > 0)
-#    → rate 4 dimensions + overall on each variant (sliders, 800ms
-#       debounced; comment textarea same)
-#    → click "选定" on the preferred variant
-#    Or via CLI:
-coros-sync plan select -P zhaochaoyi --week 2026-05-04_05-10 --variant-id <N>
-```
-
-**Change-of-mind / re-select scenario**:
-
-If you've already pushed a session to the watch from variant A and then change to variant B, the prior pushed `scheduled_workout` rows lose their plan-side back-pointer:
-
-- `coros-sync plan select` (or UI 改选) returns **HTTP 409 selection_conflict** with `already_pushed_count` when force is false.
-- Pass `--force` (UI: confirm dialog) to override. The response lists `dropped_scheduled_workout_ids: [...]` — those rows get `scheduled_workout.abandoned_by_promote_at = now`.
-- **Manual cleanup required**: open COROS App and delete the listed `[STRIDE]` watch entries before pushing the new variant's sessions, or you'll get duplicates on the watch.
-- The "训练计划" tab shows a red banner listing the abandoned dates; the relevant `ActivityDetailPage` shows a warning card on completed activities tied to abandoned scheduled_workouts.
-
-**Why no auto re-stitch**: Step 0 spike measured `(date, session_index, kind)` matching-key hit rate at **73.7%** across 12 directed pairs of 4 evaluation/ variants — below the 90% gate. Bimodal distribution (8/12 at 100% intra-cluster vs 4/12 at ~45% cross-cluster) means we can't rely on the key being stable across model outputs that disagree on the long-run cadence. Step 1 ships the FALLBACK design: every prior `scheduled_workout` becomes an orphan on 改选; user manually cleans up COROS. See `.omc/plans/multi-variant-weekly-plans.md` § Step 0 + `spike/restitch-findings.md` (local-only).
-
-**`coros-sync plan` subcommands**:
-
-- `generate-variants` — fan out to N `omc ask <model>` workers (ThreadPoolExecutor, 180s timeout each), parse each output via 3-tier sentinel/fenced/balanced-braces parser with hard `schema='weekly-plan/v1'` anchor, POST each to `/api/{user}/plan/{folder}/variants`.
-- `list-variants` — GET active variants (or `--include-superseded`), table view with model_id / status / sessions / overall rating / is_selected / selectable.
-- `rate` — UPSERT per-dimension ratings: `--overall N --suitability N --structure N --nutrition N --difficulty N --comment STR` (any subset of dims).
-- `select` — promote variant; auto-retries once on 409 concurrent_select with `Retry-After: 1`.
-- `delete-variants` — clear all variants + ratings for a week (confirmation prompt unless `--yes`).
-
-(CLAUDE.md is in `deploy.yml`'s trigger paths but doc-only edits don't affect runtime — the build skips on no-code-change deltas.)
+---
 
 ## Folder Structure
 
@@ -153,614 +90,82 @@ data/
         logs/
             2026-04-13_04-19(赛后恢复)/  # format: YYYY-MM-DD_MM-DD(阶段标注)
                 plan.md                  # weekly training plan
+                plan.json                # 结构化版本，server reparse 时优先用
                 feedback.md              # training feedback with RPE
-            2026-04-20_04-26(W0)/
-                plan.md
     dehua/                       # another user
-        coros.db
-        config.json
-        TRAINING_PLAN.md
-        logs/
-src/                 # contains the source code for the tools
-tests/               # contains testing files for the tools
+        ...
+src/                 # tools source code
+tests/               # tests
 frontend/            # React + Vite frontend (STRIDE dashboard)
+docs/                # topic-specific docs（按需 Read，见顶部表）
 ```
 
 ### Multi-user Architecture
 
-Each user has an isolated directory under `data/{user_id}/` (UUID-keyed — `{user_id}` is the JWT `sub` UUID) containing their own SQLite database, COROS credentials, and training logs. The CLI uses `--profile` / `-P` to select a user — pass the UUID directly, or a friendly slug (e.g. `zhaochaoyi`) that's resolved to its UUID via `data/.slug_aliases.json`. The API uses `/{user_id}/` path prefix and rejects requests where the path UUID doesn't match the JWT `sub`.
+每个 user 在 `data/{user_id}/` 下隔离（UUID-keyed —— `{user_id}` 是 JWT `sub` UUID），含自己的 SQLite DB、COROS 凭据、训练 logs。CLI 用 `--profile` / `-P` 选用户 —— 传 UUID 或 friendly slug（如 `zhaochaoyi`）经 `data/.slug_aliases.json` 解析到 UUID。API 用 `/{user_id}/` 路径前缀，路径 UUID 与 JWT `sub` 不匹配则拒绝。
+
+---
 
 ## Training Plan (plan.md)
 
-Each weekly plan.md must comprehensively cover three major components:
+每个 weekly plan.md 必须覆盖三大成分：
 
-1. **Running**: daily run schedule, pace targets, heart rate zones, weekly mileage goal
-2. **Strength & Conditioning**: strength training, core work, flexibility/mobility exercises with specific movements and sets/reps
-3. **Nutrition**: calorie targets based on InBody data, macronutrient breakdown (protein/carbs/fat), meal suggestions
+1. **Running**：每日跑步安排、配速目标、心率区间、周里程目标
+2. **Strength & Conditioning**：力量、核心、柔韧/灵活性，含具体动作与组×次（COROS T-code 见 [`docs/strength-training.md`](docs/strength-training.md)）
+3. **Nutrition**：基于 InBody 数据的热量目标、宏量营养拆分（蛋白/碳水/脂肪）、餐食建议
 
-When creating a plan, consider how these three components interact — for example: differentiated carb intake on run days vs rest days, protein timing around strength sessions, and calorie deficit management during recovery weeks.
+考虑三者交互 —— 跑步日 vs 休息日的差异化碳水、力量后的蛋白时机、恢复周的热量赤字管理。
 
-**Important**: When answering any question about current status, load, fatigue, or training metrics, ALWAYS run `PYTHONIOENCODING=utf-8 python -m coros_sync -P {username} sync` first to ensure the local database has the latest data before querying. Default user is `zhaochaoyi`.
+**关键**：回答任何关于现状 / 负荷 / 疲劳 / 训练指标的问题时，**先**跑 `PYTHONIOENCODING=utf-8 python -m coros_sync -P {username} sync` 确保本地 DB 最新。默认用户 `zhaochaoyi`。
 
-**力量训练动作选择原则**: 优先使用COROS内置动作（377个），这样推送到手表后有动画指导和标准化记录。内置动作库见 `src/coros_sync/exercise_catalog.md`。**生成 plan.md 时必须为每个动作填写 COROS ID 列**（T-code，例 `T1262`），由 adapter 在 push 时按 ID 直接 lookup catalog —— 没有名称匹配，没有模糊容错，错就错在你填的 T-code 上，容易发现和修。catalog 中真没有的动作允许留空，adapter 会自动通过 `client.add_exercise()` 创建自定义（无动画但功能完整）。
+### 起草新 weekly plan 前必看的输入
 
-### 推送力量训练到手表（COROS / Garmin）的动作 ID 策略
+- **当前训练阶段**：本周在整体周期化中的位置（从 TRAINING_PLAN.md）
+- **上周 feedback**：RPE、感知疲劳、上周 feedback.md 记录的问题
+- **近期身体指标**：RHR、HRV 趋势、睡眠质量/时长 —— 经 `coros-sync status` 或 `coros-sync analyze hrv`
+- **最新 InBody**：体重、体脂率、骨骼肌量趋势
 
-**Authoring 时记录 ID**：生成 plan.md 时，力量动作表必须含 "COROS ID" 列。Claude 从 `src/coros_sync/exercise_catalog.md` 查找匹配的 T-code 填入。例：
+按这些信号调整训练负荷、营养、恢复。例：HRV 下行或睡眠差 → 降强度、加恢复；体脂停滞 → 重新评估热量赤字。
 
-| # | 动作 | COROS ID | 组×次 | 组间 | 要点 |
-|---|------|----------|-------|------|------|
-| 1 | 哑铃高脚杯深蹲（5kg） | T1336 | 3×12 | 45s | 哑铃贴胸，全蹲到底 |
-| 2 | 平板支撑 | T1262 | 3×60s | 30s | 臀腰平直 |
+### plan.md 篇幅控制（精简原则）
 
-**plan.json 字段**：每个 `StrengthExerciseSpec` 携带 `provider_id`（COROS T-code）。
-
-**Push 时**：adapter 用 `provider_id` 在 `client.query_exercises` 结果里按 `name` 字段直接 lookup。命中即用 catalog 的 dict（带动画 + 标准化记录）。lookup 失败（provider_id 缺失或 catalog 没有）→ fallback `client.add_exercise` 创建自定义。
-
-**为什么取消名称匹配**：(1) 名称匹配模糊不可靠（中英混杂、equipment suffix、token overlap 都会误命中错误动作）。(2) 错误命中 ≠ 没匹配 — 看似命中但实际是远房动作，watch 端没动画且数据不对。(3) ID 匹配是 O(1) 确定性 lookup，没有匹配错误的可能 — 错就错在 authoring 层填错 T-code，容易发现和修。
-
-**Authoring 责任**：Claude 生成 plan.md 时必须查 `exercise_catalog.md` 选准 T-code。catalog 没有的动作（罕见）允许留空，adapter 会自动创建自定义动作（无动画但功能完整）。
-
-**适配器实现**：`src/coros_sync/translate.py:normalized_to_coros_strength`（COROS）。Garmin adapter 当前还未支持力量推送（参见"Folder Structure"节末尾），将来实现时复用同一 ID 策略。
-
-Before drafting a new weekly plan, always review the following inputs:
-
-- **Current training phase**: where this week sits in the overall periodization (from TRAINING_PLAN.md)
-- **Previous week's feedback**: RPE data, perceived fatigue, and any issues noted in the prior week's feedback.md
-- **Recent body metrics**: resting heart rate, HRV trends, sleep quality/duration — sourced via `coros-sync status` or `coros-sync analyze hrv`
-- **Latest InBody data**: body weight, body fat %, skeletal muscle mass trends
-
-Adjust training load, nutrition, and recovery based on these signals. For example: if HRV is trending down or sleep quality is poor, reduce intensity and increase recovery; if body fat is stalling, revisit the calorie deficit.
-
-当创建或更新训练计划时，不要”已推送到 COROS 手表的训练”这个章节。
-
-当创建或更新训练计划后，检查计划中的内容，剔除或合并相同内容。
-
-**周计划精简原则**（plan.md 篇幅控制）：
-
-- 目标长度 **80-150 行**。超过 200 行就是过度啰嗦，必须精简。
-- **保留**：”为什么这么跑”的简要理由——但用 inline 括号 / 半句带过，不要多段铺陈。例如 “26K 默认（W1 25K +1K，符合 5-10% 周-周递进）” 而不是 5 行论证。
+- 目标长度 **80-150 行**。超过 200 行 = 过度啰嗦，必须精简。
+- **保留**："为什么这么跑"的简要理由 —— inline 括号 / 半句带过，不要多段铺陈
 - **删除**：
-  - 多个备选方案的对比论证（”为什么选 C 不选 A 或 B”）—— 直接给最终决策即可；备选方案讨论放 commit message 或一次性记录。
-  - 重复 TRAINING_PLAN.md 已有的内容（区间定义、阶段定义、温度规则等）—— 引用即可。
-  - 大块”教练思路”或”决策推演”段落 —— 决定就是决定，不要再论证。
-  - 多版本演进记录（V1→V2→V3）—— 不是周计划职责，git history 已经记录了。
-- **优先用表格而不是文字段**：每日表、距离决策矩阵、监控触发表、营养时机表等。表格信息密度高于段落。
-- **结构模板**（仅供参考，不是硬规则）：本周定位 1 段 → 上周小结 → 本周目标 → 每日表 → 各专项（核心课/辅助课/力量等）→ 营养 → 监控 → 下周衔接。
-- **执行视角**优先于解释视角：plan.md 是给未来某天的”我”看的执行清单，不是给读者讲一遍训练学。简洁直白。
+  - 多个备选方案的对比论证（"为什么选 C 不选 A 或 B"）—— 直接给最终决策；备选方案讨论放 commit message
+  - 重复 TRAINING_PLAN.md 已有的内容（区间定义、阶段定义、温度规则等）—— 引用即可
+  - 大块"教练思路"或"决策推演"段落 —— 决定就是决定，不要再论证
+  - 多版本演进记录（V1→V2→V3）—— git history 已经记录
+- **优先表格**：每日表、距离决策矩阵、监控触发表、营养时机表等。表格信息密度高于段落。
+- **执行视角** > 解释视角：plan.md 是给未来某天的"我"看的执行清单，不是给读者讲训练学。
 
-### plan.json canonical schema (HARD)
+不要"已推送到 COROS 手表的训练"这个章节。生成后检查内容，剔除或合并重复。
 
-每次写完 plan.md 必须**同时**写一个 schema-valid 的 `plan.json` 放在同目录。Server 端的`/internal/plan/reparse` webhook（`sync-data.yml` 触发）会优先尝试 plan.json-authored 路径：如果 plan.json 能通过 `WeeklyPlan.from_dict` 校验，直接 `structured_source='authored'` 落库；否则才 fallback 到 LLM 反向解析 plan.md。**plan.json 不合规 → server 静默退回 LLM → 复杂 plan.md 可能解析失败 → 用户日历空白 + "重新解析" 按钮无效。**
+### plan.json 同步必须（HARD）
 
-**Source of truth**：`src/stride_core/plan_spec.py` 和 `src/stride_core/workout_spec.py`。任何字段命名分歧以这两个文件为准；CLAUDE.md 落后于代码时**信代码**。
+每次写完 plan.md 必须**同时**写一个 schema-valid 的 `plan.json` 放在同目录，并经本地 `WeeklyPlan.from_dict` 校验通过才能 commit。完整 schema、字段、枚举、校验脚本 → [`docs/plan-json-schema.md`](docs/plan-json-schema.md)。
 
-**Top-level shape**（`WeeklyPlan`）：
+---
 
-```json
-{
-  "schema": "weekly-plan/v1",
-  "week_folder": "2026-05-11_05-17(P1W3)",
-  "sessions": [PlannedSession, ...],
-  "nutrition": [PlannedNutrition, ...],
-  "notes_md": "可选 — 本周顶层备注"
-}
-```
+## InBody report
 
-不允许的多余顶层字段（authoring 历史漂移过的）：`user`, `user_id`, `phase`, `theme`, `weekly_mileage_km`, `weekly_mileage_cap_km`, `monitoring`, `structured_status`, `generated_by`. 这些信息应该在 plan.md 里，不要塞进 plan.json。
+InBody 报告含核心指标：Weight / Body Fat Percentage / Body Fat Mass / Skeletal Muscle Mass。用来追踪减脂 vs 增肌、监控体能与训练进度、长期趋势对比。
 
-**`PlannedSession`**：必需字段 `date` (ISO YYYY-MM-DD)、`session_index` (int ≥0；同一天多 session 时区分)、`kind`、`summary`、可选 `spec` / `notes_md` / `total_distance_m` / `total_duration_s`。
+---
 
-| 枚举 | 合法值 |
-|------|--------|
-| `SessionKind` | `run`, `strength`, `rest`, `cross`, `note`（**没有** `interval`/`easy_run`/`long_run`/`tempo` — 这些全部映射为 `run`） |
-| `DurationKind` (Run step) | `distance_m`, `time_s`, `open`（**没有** `duration_s`） |
-| `TargetKind` (Run step) | `pace_s_km`, `hr_bpm`, `power_w`, `open` |
-| `StrengthTargetKind` | `reps`, `time_s` |
-| `StepKind` | `warmup`, `work`, `recovery`, `cooldown`, `rest` |
+## Coach Agent — HARD 边界
 
-**RUN session 的 `spec`** 是 `NormalizedRunWorkout`：`{name, date, blocks:[{repeat, steps:[WorkoutStep]}], note?}`。每个 `WorkoutStep` = `{step_kind, duration:{kind,value}, target:{kind,low,high}, note?, hr_cap_bpm?}`。pace 单位是 **秒/km**（4:00/km = 240）。距离是 **米**。
+STRIDE coach 是 LangGraph-based agent，处理 S1（master-plan）/ S2（weekly-plan 调整）/ S3（daily Q&A）。两层架构由 `.importlinter` 强制：
 
-**STRENGTH session 的 `spec`** 是 `NormalizedStrengthWorkout`：`{name, date, exercises:[StrengthExerciseSpec], note?}`。每个 exercise = `{canonical_id, display_name, sets, target_kind, target_value, rest_seconds, note?, provider_id?}`。`canonical_id` 当前等于 COROS T-code（如 `T1262`），`provider_id` 同值。**不允许的字段名**：`name`（用 `display_name`）、`reps`/`duration_s`/`rest_s`（合并到 `target_kind`+`target_value`+`rest_seconds`）、`notes`（用 `note`）。
-
-**REST / CROSS / NOTE session**：`spec` **必须** 为 `null`。
-
-**`PlannedNutrition`**：必需 `date` (ISO YYYY-MM-DD)。可选 `kcal_target`/`carbs_g`/`protein_g`/`fat_g`/`water_ml`/`meals[]`/`notes_md`。**不允许的字段名**：`day_type`、`applies_to_dates`（用 `date` 单值）、`calories_kcal`（用 `kcal_target`）、`carbs_g_per_kg`/`protein_g_per_kg`/`fat_g_per_kg`（已知体重时换算为绝对克数；不知道就放 `notes_md` 里）。
-
-**写入前必须本地校验**——这是硬性 gate，避免再次出现 W2/P1W3 这种"plan.json 假装符合 schema 但 server 嚼不动"的事故：
-
-```bash
-PYTHONIOENCODING=utf-8 python -c "
-import json, sys
-sys.path.insert(0, 'src')
-from stride_core.plan_spec import WeeklyPlan
-path = 'data/<user_uuid>/logs/<week>/plan.json'
-with open(path, encoding='utf-8') as f:
-    wp = WeeklyPlan.from_dict(json.load(f))
-print(f'OK: {len(wp.sessions)} sessions, {len(wp.nutrition)} nutrition')
-"
-```
-
-抛任何异常 = 不要 commit。`from_dict` 递归校验所有嵌套 dataclass，过了就保证 server `_try_authored_reparse` 也能 OK。
-
-### Fatigue / Training Load Data
-
-The `daily_health` table stores daily fatigue and training load metrics synced from COROS. Key fields:
-
-| Field | Description |
-|-------|-------------|
-| `fatigue` | Fatigue score (from COROS `tiredRate`). <40 recovered, 40-50 normal, 50-60 fatigued, >60 high fatigue |
-| `ati` | Acute Training Index — 7-day weighted training load (short-term stress) |
-| `cti` | Chronic Training Index — 28-day weighted training load (fitness baseline) |
-| `training_load_ratio` | ATI/CTI ratio. 0.8-1.0 optimal, >1.2 Very High, <0.7 detraining |
-| `training_load_state` | COROS label: Low / Optimal / High / Very High |
-| `rhr` | Resting heart rate |
-
-To query fatigue trends:
-
-```bash
-# Sync latest health data first
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync
-
-# Query recent fatigue (last 14 days)
-python -c "
-from stride_core.db import Database
-db = Database(user='zhaochaoyi')
-rows = db._conn.execute('''
-    SELECT date, fatigue, training_load_ratio, training_load_state, rhr, ati, cti
-    FROM daily_health ORDER BY date DESC LIMIT 14
-''').fetchall()
-for r in rows: print(dict(r))
-"
-```
-
-When creating weekly plans, include the fatigue trend table for context. Key thresholds for race readiness:
-- **Race-ready**: fatigue <35, load ratio 0.7-0.9, RHR at baseline, TSB 10-25
-- **Normal training**: fatigue 40-50, load ratio 0.8-1.1, TSB -30 to -10
-- **Needs recovery**: fatigue >50, load ratio >1.2, RHR elevated, TSB < -30
-
-### TSB (Training Stress Balance) — PMC
-
-TSB = CTI − ATI. Indicates readiness to perform:
-
-| TSB Zone | Range | Meaning |
-|----------|-------|---------|
-| 比赛就绪 | 10 ~ 25 | Well-rested, peak performance |
-| 过渡区 | -10 ~ 10 | Recovering or maintaining |
-| 正常训练 | -30 ~ -10 | Productive training stress |
-| 过度负荷 | < -30 | Too much stress, injury/overtraining risk |
-| 减量过多 | > 25 | Losing fitness, too much rest |
-
-### HRV (Heart Rate Variability)
-
-HRV data is currently a snapshot from the COROS dashboard (`avg_sleep_hrv`, `hrv_normal_low`, `hrv_normal_high`). Daily HRV trends require the COROS sleep detail API (not yet implemented — tracked as a future feature).
-
-When analyzing status, combine all signals: RHR + HRV + fatigue + TSB + training_load_ratio for a holistic picture. A single metric can be misleading; convergence of multiple signals is more reliable.
-
-## The feedback.md
-
-This file contains the feedback for the trainings in this week, ususally contains perceived exertion.
-
-**自动同步训练反馈**: 每次执行 `coros-sync sync` 同步到新的训练记录后，检查本周的活动是否带有训练反馈（`sport_note` 字段不为空）。如果有，将反馈内容追加到对应周目录的 `feedback.md` 中。格式为直接追加原始文本，保持与用户在 COROS App 中写的一致。查询方式：
-
-```python
-from stride_core.db import Database
-db = Database(user='zhaochaoyi')
-rows = db._conn.execute('''
-    SELECT date, name, sport_name, feel_type, sport_note
-    FROM activities
-    WHERE sport_note IS NOT NULL AND date >= ?
-    ORDER BY date
-''', (week_start_iso,)).fetchall()
-```
-
-`feel_type` 含义（COROS App 训练后表情评分）：1=很好, 2=好, 3=一般, 4=差, 5=很差。若无法确认准确映射，以用户 `sport_note` 文字内容为准。
-
-**Feedback 自动生成，不要使用模板**: feedback.md 不需要提前创建模板。内容全部从数据自动获取：
-1. **主观反馈**（`sport_note` + `feel_type`）— 从 COROS App 训练反馈同步，是用户在训练后写的体感和备注
-2. **客观数据**（10km 测试成绩、周跑量、总时长、平均心率等）— 从 DB 活动记录和健康数据查询
-每次更新 feedback.md 时追加内容，不覆盖已有内容。不要用 `____` 占位符。
-
-I will use RPE (Rate of Perceived Exertion) as the metrics to measure how hard I'm during a run. The RPE effort rates from 1 to 10.
-RPE 1 Very Easy
-No effort. Walking or complete rest.
-RPE 2 Easy
-Very light effort. Comfortable jog, full sentences are easy.
-RPE 3 Easy / Conversational
-Easy running. Breathing is relaxed; you can talk comfortably for a long time.
-RPE 4 Comfortable but Working
-Slight effort. Breathing is deeper but controlled; conversation is still easy.
-RPE 5 Moderate
-Noticeable effort. Breathing is steady but stronger; talking takes more focus.
-(Sustainable for a long time 45 often marathon effort.)
-RPE 6 Moderately Hard
-Challenging but controlled. Breathing is heavier; you can speak only short sentences.
-RPE 7 Hard
-Hard effort. Deep, fast breathing; only a few words at a time.
-(Sustainable for a limited time 45 threshold effort.)
-RPE 8 Very Hard
-Very demanding. Breathing is labored; speaking is difficult.
-(Common for intervals or 5K effort.)
-RPE 9 Extremely Hard
-Near maximal effort. Barely sustainable; focus is on holding pace.
-RPE 10 Maximal
-All-out effort. Sprinting; cannot be sustained for more than a short burst.
-
-## How to use the InBody report
-
-The InBody report contains core metrics like
-- Weight
-- Body Fat Percentage
-- Body Fat Mass
-- Skeletal Muscle Mass
-
-We need to use it to track fat loss vs muscle gain
-monitoring fitness and training progress
-long-term trend analysis, trend comparison over time.
-
-
-## Tools 
-
-**coros-sync** — A CLI tool that syncs running data from COROS watches (via unofficial Training Hub API) into a local SQLite database for analysis, export, and workout scheduling.
-
-### Commands
-
-The CLI entry point `coros-sync` may not be on PATH. Use `python -m coros_sync` instead.
-On Windows, set `PYTHONIOENCODING=utf-8` to avoid Rich/Unicode rendering errors with cp1252.
-
-```bash
-# Install (editable, with all extras)
-pip install -e ".[dev,analysis]"
-
-# Run CLI — use -P/--profile to select user (UUID or slug; data stored in data/{user_id}/)
-# Without -P, falls back to legacy platformdirs paths
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi login
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi sync [--full] [-j 4]
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi status
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi export [--from YYYYMMDD] [--to YYYYMMDD] [-o file.csv]
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi analyze weekly|monthly|zones|load|hrv|predictions
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi workout push easy|tempo|interval|long --date YYYYMMDD [options]
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi workout week --start YYYYMMDD
-PYTHONIOENCODING=utf-8 python -m coros_sync -P zhaochaoyi workout delete YYYYMMDD
-
-# For dehua:
-PYTHONIOENCODING=utf-8 python -m coros_sync -P dehua login
-PYTHONIOENCODING=utf-8 python -m coros_sync -P dehua sync
-
-# Push strength training (programmatic, no CLI command yet)
-python -c "
-from coros_sync.client import CorosClient
-from coros_sync.workout import StrengthWorkout, push_strength_workout
-
-client = CorosClient(user='zhaochaoyi')  # or 'dehua'
-exercises = client.query_exercises(sport_type=4)  # 419 built-in + custom
-
-# Find exercise by overview keyword
-def find_ex(keyword):
-    return next(e for e in exercises if keyword in e.get('overview',''))
-
-workout = StrengthWorkout(name='力量训练', date='20260417')
-workout.add_exercise(find_ex('planks'), sets=3, target_type=2, target_value=45, rest_value=60)
-workout.add_exercise(find_ex('bird_dog'), sets=3, target_type=3, target_value=10, rest_value=30)
-push_strength_workout(client, workout)
-
-# Create custom exercise if no built-in match
-custom = client.add_exercise({
-    'sportType': 4, 'exerciseType': 2,
-    'name': '动作名', 'overview': '动作名',
-    'part': ['4'], 'muscle': ['6'], 'muscleRelevance': [],
-    'equipment': ['1'], 'access': 1,
-    'intensityCustom': 0, 'intensityMultiplier': 0,
-    'intensityType': 1, 'intensityValue': 0, 'intensityValueExtend': 0,
-    'restType': 1, 'restValue': 30, 'targetType': 3, 'targetValue': 15
-})
-"
-
-# Direct DB query (when CLI export doesn't work)
-python -c "
-from stride_core.db import Database
-db = Database(user='zhaochaoyi')
-rows = db._conn.execute('SELECT * FROM activities WHERE date >= ? ORDER BY date', ('2026-03-30',)).fetchall()
-for r in rows: print(dict(r))
-"
-
-# Tests
-pytest                    # run all tests
-pytest tests/test_db.py   # single file
-pytest -k test_pace_str   # single test by name
-```
-
-### Architecture
-
-#### API Layer (`client.py`)
-- `CorosClient` wraps the unofficial COROS Training Hub REST API via `httpx`
-- Three regional API bases: global, cn, eu — auto-detected at login
-- Token auto-refresh with thread-safe re-login (`_relogin_lock`) for parallel fetches
-- Two request patterns: `_request()` for GET/POST with query params (optional `yfheader`), `_request_json()` for JSON body endpoints that need the `yfheader` (workout/training endpoints)
-- Rate-limited with configurable `request_delay` between calls
-- **Exercise library**: `query_exercises(sport_type)` queries built-in + custom exercises; `add_exercise()` creates custom exercises
-
-#### Data Models (`models.py`)
-- Dataclasses with `from_api()` classmethods as the **sole unit-conversion boundary** — all API-to-internal unit mapping happens here
-- Key COROS API quirks: distance in cm*1000 (divide by 100,000 for meters), time in centiseconds (divide by 100), calories in cal*1000
-- `Activity` (list summary) vs `ActivityDetail` (full detail with laps, zones, timeseries) are separate models from different endpoints
-
-#### Database (`db.py`)
-- SQLite with WAL mode, stored at `platformdirs.user_data_dir("coros-sync")/coros.db`
-- Schema: `activities`, `laps`, `zones`, `timeseries`, `daily_health`, `dashboard`, `race_predictions`, `sync_meta`
-- All writes use `INSERT OR REPLACE` for idempotent upserts
-- `Database(db_path)` accepts optional path for testing; tests use `tmp_path` fixture
-
-#### Sync Engine (`sync.py`)
-- Incremental by default: paginate activity list until hitting an already-synced `label_id`
-- Parallel detail fetching via `ThreadPoolExecutor` (configurable `jobs`), sequential DB writes
-- Two phases: `sync_activities()` then `sync_health()` (analyse + dashboard endpoints)
-
-#### Workout Builder (`workout.py`)
-- Reverse-engineered COROS workout protocol for both running and strength training
-- **Running**: `RunWorkout` builder with `exerciseType` (1=warmup, 2=training, 3=cooldown), pace in ms/km, distance in mm
-  - `push_workout()` flow: query schedule for next `idInPlan` → build payload → calculate via API → push update
-- **Strength** (sportType=4): `StrengthWorkout` builder with exercises from COROS library
-  - `push_strength_workout()` — same calculate → push flow as running
-  - Exercises come from `client.query_exercises(sport_type=4)` (419 built-in + custom)
-  - Custom exercises created via `client.add_exercise()` only when plan.json carries no `provider_id` or the T-code isn't in the catalog (rare)
-  - Key fields: `targetType` (2=time in seconds, 3=reps), `sets`, `restValue` (seconds)
-  - **Exercise ID lookup**: plan.json's `StrengthExerciseSpec.provider_id` is the COROS T-code (e.g. `T1262`). The push adapter does O(1) `{T-code: catalog_entry}` lookup against the `query_exercises` result by matching the catalog entry's `name` field. **No name matching, no fuzzy logic** — authoring layer (Claude/marathon-coach) is responsible for picking T-codes from `src/coros_sync/exercise_catalog.md`. See § "推送力量训练" below for the contract.
-
-#### COROS schedule API structure (delete + idempotency)
-
-`client.query_schedule(date, date)` returns:
-
-```
-data: {
-  id: <plan_id>,                        # Plan-level ID (passed to delete_scheduled_workout)
-  entities: [                           # Scheduled instances
-    { idInPlan, planProgramId, happenDay, exerciseBarChart, ... },
-    ...
-  ],
-  programs: [                           # Program *definitions* — names live HERE
-    { id, idInPlan, name: "[STRIDE] 力量 A ...", sportType, ... },
-    ...
-  ],
-}
-```
-
-**Critical gotcha**: `entity.exerciseBarChart` is **empty for newly-pushed entries that haven't been completed yet**. Don't filter watch entries by `exerciseBarChart[*].name` — only by joining `entities[i].idInPlan == programs[j].idInPlan` then checking `programs[j].name.startswith("[STRIDE]")`. The adapter `delete_scheduled_workout` (`src/coros_sync/adapter.py`) follows this pattern; the diagnostic script `scripts/inspect_schedule.py` dumps both arrays for debugging.
-
-**Sweep must filter by exact program name** when called from a per-session push: when a single date carries multiple `[STRIDE]` entries (run + strength on a force-day, or two run sessions, etc.), pushing one must NOT delete the others. The adapter accepts `name=<program-name> | None`; the route (`POST /api/{user}/plan/sessions/{date}/{idx}/push`) passes the current `workout.name` so the sweep is scoped to that one program. Re-pushing the same session reuses the same name, so the old copy is reliably cleared while unrelated `[STRIDE]` entries are preserved. `name=None` keeps the legacy "delete every `[STRIDE]` on the date" behavior for migration tools / CLI.
-
-#### Auth (`auth.py`)
-- Credentials stored as JSON at `platformdirs.user_config_dir("coros-sync")/config.json`
-- Password stored as MD5 hash (matching COROS API expectation)
-
-### Testing
-
-- Tests use `pytest` with `pytest-httpx` available for HTTP mocking
-- `conftest.py` provides a `db` fixture with a temp SQLite database
-- `test_models.py` covers unit conversions; `test_db.py` covers database operations
-- No tests currently exist for `client.py`, `sync.py`, or `workout.py` (these hit external APIs)
-
-### Key Conventions
-
-- Dates are `YYYYMMDD` strings throughout (matching COROS API format)
-- Pace values are seconds-per-km internally; displayed as `M:SS/km` via `pace_str()`
-- CLI uses Click groups: `cli` (top-level), `analyze` (subgroup), `workout` (subgroup)
-- Analysis commands lazy-import pandas/matplotlib to keep core deps light
-- `rich` is used for all terminal output (tables, progress bars, colored text)
-
-## Coach Agent (LangGraph + Ports & Adapters)
-
-The STRIDE coach is a LangGraph-based agent that handles three scenarios — S1 master-plan generation / chat, S2 weekly-plan adjustment chat, S3 daily Q&A. It is split into two layers enforced by `.importlinter`:
-
-| Layer | Path | Allowed deps |
-|-------|------|--------------|
+| Layer | Path | 允许的 deps |
+|-------|------|-------------|
 | Core | `src/coach/` | `pydantic`, `langgraph`, `langchain-*`, `stride_core.{plan_spec,workout_spec,plan_diff,master_plan,master_plan_diff}` only |
 | Adapters | `src/stride_server/coach_adapters/` | Core + `stride_core.db` + `coros_sync` + `azure.*` + `fastapi` |
 
-`coach.*` must NOT import `stride_server.*`, `coros_sync.*`, `garmin_sync.*`, `azure.*`, `fastapi.*`, or `stride_core.db`. CI enforces this via `lint-imports` (run `PYTHONPATH=src lint-imports`).
+`coach.*` **必须不** import `stride_server.*`、`coros_sync.*`、`garmin_sync.*`、`azure.*`、`fastapi.*` 或 `stride_core.db`。CI 经 `lint-imports` 强制（跑 `PYTHONPATH=src lint-imports`）。
 
-### Three LLM roles, two Azure providers (anti-commitment-bias)
+三 LLM role 配置、persistence、Pattern X/Y/A/P、generation pipeline、endpoints → [`docs/coach-agent.md`](docs/coach-agent.md)。
 
-| Role | Default model | Provider tag | LangChain class |
-|------|---------------|--------------|-----------------|
-| Generator (Coach Agent) | GPT-5.4 | `azure-openai` | `AzureChatOpenAI` |
-| Reviewer | Claude Opus 4.7 | `azure-ai-inference` | `AzureAIChatCompletionsModel` |
-| Commentary | GPT-4.1 | `azure-openai` | `AzureChatOpenAI` |
+---
 
-Role→model binding lives in `config/coach.toml` (committed to repo; deployment ids are placeholders until Foundry resources are wired). Both providers reach Azure AI Foundry; auth is Managed Identity (`mode = "managed-identity"`). The AAD token provider is built in `stride_server.coach_runtime` (azure-identity stays out of `coach.*` per import-linter) and injected into every `build_chat_model(spec, azure_ad_token_provider=...)` call.
-
-**Commentary migration safety:** the `[commentary]` section is a forward-looking stub. The production commentary generation path (auto-gen during sync + manual regenerate endpoint) still uses its own direct AOAI client until the migration commit lands. Nothing in the live route surface calls `get_commentary_llm()` yet — modifying coach.toml's `[commentary]` section will not affect production until that commit ships.
-
-Both raise `CoachLLMUnavailable` on (a) missing config file, (b) placeholder deployment id (`<PLACEHOLDER_*>`), (c) missing endpoint env var, or (d) missing auth credentials.
-
-### Persistence (plan §4)
-
-| Table / container | PartitionKey | RowKey | Purpose |
-|-------------------|--------------|--------|---------|
-| `stridecoachcheckpoints` | `thread_id` | `checkpoint_id` (zero-padded ns) | Metadata pointing at a `coach-checkpoints` blob |
-| `stridecoachcheckpointwrites` | `thread_id\|checkpoint_id` | `task_id\|write_idx` | LangGraph pending writes |
-| `stridecoachjobs` | `user_id` | `job_id` | Pattern A job lifecycle + heartbeat |
-| `strideweeklyversions` | `user_id\|folder` | reverse-time `\|` version_id | Audit trail for S2 PlanDiff applies |
-| `coach-checkpoints` blob | — | `{thread_id}/{checkpoint_id}.json.gz` | Full state envelope (gzip + sha256) |
-| `stridemasterplan` / `stridemasterplanversions` | (existing — reused) | | C module audit |
-
-`AzureTableCheckpointSaver.from_env()` auto-selects Azure backend when `STRIDE_COACH_TABLE_ACCOUNT_URL` is set, else falls back to a JSON-file backend under `data/_coach_dev/checkpoints/`.
-
-### v1 architectural patterns
-
-- **Pattern Y**: AI chat draft tools emit a typed `PlanDiff` / `MasterPlanDiff`. The server is stateless between propose and apply — the diff travels back to the apply endpoint in the request body. No in-memory pending-diff dict.
-- **Pattern A**: Long-running jobs use FastAPI `BackgroundTasks` + Azure Table job rows + heartbeats. App startup runs `JobScheduler.reconcile_stale_jobs()` in a lifespan hook (`app.py`); RUNNING rows whose `heartbeat_at` is > 120s old are flipped to `FAILED` with `error_code='interrupted_by_restart'`. ACA single-replica (`--max-replicas 1`) — multi-replica needs Service Bus.
-- **Pattern X**: AI never calls any execute tool. All side effects (push to watch, apply diff, sync, etc.) flow through deterministic UI-chip endpoints. The agent only does (a) reads and (b) draft proposals.
-- **Pattern P**: Conversation graphs are built per request (toolkit binds user_id at construction); checkpointer + LLMs are module-level singletons in `stride_server.coach_runtime` with test-only `set_*_for_tests` injection.
-
-### Coach HTTP endpoints (S3 + audit)
-
-| Method + path | Purpose |
-|---------------|---------|
-| `POST /api/users/me/coach/conversations/qa/messages` | S3 daily Q&A. Server generates `thread_id = f"{user_id}:qa:{today_shanghai().isoformat()}"`. Body `thread_id` is silently dropped (pydantic `extra=ignore`). |
-| `GET /api/users/me/coach/threads/{thread_id}/messages` | Cross-session chat history. Parses thread_id; owner segment must equal JWT.sub or returns 403. Malformed → 400. |
-| `GET /api/users/me/coach/plan-versions/week/{folder}` | List weekly plan versions for `folder` in reverse-chronological order, scoped to JWT.sub user_id. |
-| `GET /api/users/me/coach/plan-versions/week/{folder}/{version_id}` | Version artifact + parent chain. `folder` is mandatory — no fallback to a full table scan. 404 on missing OR cross-user. |
-
-### Generation pipeline (plan §7)
-
-`build_generation_graph(load_context, generator, reviewer, apply_patches, max_iterations=3)` produces a StateGraph routing through `load_context → generator → rule_filter → reviewer → verdict`. Verdict branches:
-
-- `pass` → finalize
-- `auto_fix` → apply_patches → finalize
-- `revise` → loop back to generator (capped at `max_iterations`, else fallback)
-- `block` → fallback (job marked failed)
-
-`coach.graphs.generation.rule_filter.run_rule_filter(plan_dict, ...)` is a pure-Python pre-filter running 7 safety rules (weekly progression ≤ 1.10×, long run ≤ 35%, Z4-Z5 ≤ 20%, ≥ 1 rest day, `WeeklyPlan.from_dict` validity, injury-conflict keyword check, CTL ramp ≤ 6 TSS/wk). HARD violations route back to the generator without invoking the (expensive) reviewer.
-
-### HMAC signature — deliberately not v1
-
-Pattern Y apply integrity is enforced via path-match validation (`diff.folder == path_folder`, `accepted_op_ids ⊆ diff.ops.id`) + post-apply rule_filter rerun + schema validation. HMAC signing was discussed and deferred — the product semantics are "trust + user has full authority over their own plan", and HTTPS handles MITM. If a real abuse pattern emerges, add HMAC later.
-
-## Frontend (STRIDE Dashboard)
-
-React + Vite + TypeScript SPA at `frontend/`. Light theme, monospace-heavy design. Shared sidebar navigation via `AppLayout` component.
-
-### Pages
-
-| Route | Component | Description |
-|-------|-----------|-------------|
-| `/` | `WeekLayout` | Main view — sidebar with week list, main area with plan/activities/feedback tabs |
-| `/week/:folder` | `WeekLayout` | Specific week view |
-| `/activity/:id` | `ActivityDetailPage` | Activity detail — metrics, HR/pace charts, zones, segment data, sport_note feedback |
-| `/health` | `HealthPage` | Fatigue, HRV, RHR, training load trends (recharts) |
-| `/plan` | `TrainingPlanPage` | Overall training plan with phase timeline visualization |
-| `/login` | `LoginPage` | Auth (Entra ID / MSAL) |
-
-### API Layer (`src/stride_server/`)
-
-FastAPI backend serving both the REST API and the built frontend (SPA static files). Entry module is `stride_server.main:app` (run via `uvicorn stride_server.main:app`). The app is a composition of three packages:
-
-- **`stride_core/`** — shared data layer: DB schema, models, analyze/export helpers, and the `DataSource` protocol (`stride_core/source.py`). Source-agnostic — does not import `coros_sync`.
-- **`coros_sync/`** — COROS-specific adapter + CLI. `coros_sync/adapter.py::CorosDataSource` implements `DataSource`.
-- **`stride_server/`** — FastAPI routes split under `routes/{users,activities,weeks,sync,training_plan,health}.py`. Routes access the sync adapter via `Depends(get_source)` — never by importing `coros_sync` directly. Composition happens once in `stride_server/main.py` (`create_app(CorosDataSource())`).
-
-Key endpoints:
-- `GET /api/users` — list user profiles (`routes/users.py`)
-- `GET /api/{user}/activities` — paginated activity list with filters (`routes/activities.py`)
-- `GET /api/{user}/activities/{id}` — activity detail (laps, segments, zones, timeseries)
-- `POST /api/{user}/activities/{id}/resync` — re-fetch single activity from COROS (for updated feedback)
-- `GET /api/{user}/weeks` / `GET /api/{user}/weeks/{folder}` (`routes/weeks.py`) — training-week plan/feedback/activities
-- `GET /api/{user}/training-plan` — TRAINING_PLAN.md content + parsed phase timeline (`routes/training_plan.py`)
-- `GET /api/{user}/dashboard` / `/health` / `/pmc` / `/stats` — fitness & health (`routes/health.py`)
-- `POST /api/{user}/sync` — trigger a full data sync via the configured `DataSource` (`routes/sync.py`)
-
-### Segment Display
-
-Activity segments use `exercise_type` mapping for display names (热身/训练/放松/恢复). For known COROS exercise codes (T-codes for strength, S-codes for rest), names come from `_EXERCISE_NAMES` dict. Unknown S-codes (e.g. running workout plan references like S4208) fall back to `exercise_type` mapping.
-
-### Weekly Feedback
-
-The "本周反馈" tab combines two sources:
-1. `feedback.md` file from the week's logs directory
-2. `sport_note` fields from DB activities for that week (deduplicated by checking first 20 chars against existing feedback)
-
-## Deployment
-
-### Docker
-
-Multi-stage build (`Dockerfile`):
-1. **Stage 1** (node:24-alpine): Build frontend with Vite
-2. **Stage 2** (python:3.13-slim): Python runtime with FastAPI/uvicorn, copies built frontend
-
-`.dockerignore` excludes `data/` but allows `data/*/TRAINING_PLAN.md` so training plans are baked into the image as defaults.
-
-### CI/CD (GitHub Actions)
-
-Two workflows drive production:
-
-**`.github/workflows/deploy.yml`** — rebuild + redeploy the container. Triggers on push to `master` when `src/coros_sync/**`, `src/stride_core/**`, `src/stride_server/**`, `frontend/**`, `Dockerfile`, `.github/workflows/deploy.yml`, or `pyproject.toml` change.
-Pipeline: Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy to Azure Container Apps → Health check.
-
-**`.github/workflows/sync-data.yml`** — sync training-log markdown to the prod Azure Files share. Triggers on push to `master` when `data/*/logs/**`, `data/*/TRAINING_PLAN.md`, or `data/*/status.md` change. Uploads via `az storage file upload-batch` to share `stride-data` on storage account `authstorage2026` (resource group `rg-common-prod`). This is why `plan.md` / `feedback.md` appear in prod without a container rebuild — they land on Azure Files at runtime, not in the image. `.dockerignore` excludes `data/` entirely except `data/*/TRAINING_PLAN.md`; so markdown under `logs/` reaches prod ONLY via `sync-data.yml`, not via the image.
-
-**DB-row content** (e.g. `activity_commentary`) is NOT covered by `sync-data.yml` since it lives inside SQLite, not markdown. Use `coros-sync -P <user> commentary push <label_id> --url $STRIDE_PROD_URL` to sync a row, which POSTs to `/api/{user}/activities/{label_id}/commentary` on the server.
-
-**Structured-plan reparse webhook**: after every `data/*/logs/*/plan.md` push, `sync-data.yml` calls `POST /internal/plan/reparse?user=&folder=` with header `X-Internal-Token: $STRIDE_INTERNAL_TOKEN` so the server re-runs the LLM reverse parser and refreshes the `planned_session` / `planned_nutrition` cache. Two pieces have to be configured for this to work:
-
-- GitHub Actions secrets: `STRIDE_PROD_URL` (e.g. `https://stride-app.<region>.azurecontainerapps.io`) and `STRIDE_INTERNAL_TOKEN` (random 32+ char string).
-- Azure Container App env var: same `STRIDE_INTERNAL_TOKEN` value, e.g. `az containerapp update --name stride-app --resource-group rg-running-prod --set-env-vars STRIDE_INTERNAL_TOKEN=<value>`. With this unset on the server side the route 401s; with both unset the workflow step skips silently.
-
-### Infrastructure
-
-- **Container**: Azure Container Apps (`stride-app` in `rg-running-prod`)
-- **Registry**: GitHub Container Registry (`ghcr.io`)
-- **Storage**: Azure Files share `stride-data` on `authstorage2026` (RG `rg-common-prod`), mounted at `/app/data` — contains per-user SQLite databases, credentials, logs, and training plans
-- **Auth**: Entra ID OIDC for deployment; separate auth-service (see below) for API-level authn/authz
-
-### Authentication (auth-service)
-
-STRIDE does **not** run its own auth. It integrates with a separate in-house auth service:
-
-- **Repo**: `C:\Users\zhaochaoyi\workspace\auth` (monorepo). Backend code: `sources/dev/authentication/` (Rust/Axum, Azure Table Storage, JWT RS256).
-- **Deployment**: Azure Container Apps (image `ghcr.io/<owner>/auth-backend`). JWT keys on Azure File Share. Release model is CalVer (`YYYY.M.MICRO`) via auto-tagged releases.
-- **Auth model**: OAuth2 + JWT (RS256) with PKCE. Public key is served by the auth service and used to verify access tokens.
-
-**Relevant endpoints** (base URL is the auth-service FQDN):
-
-| Prefix | Header | Purpose |
-|--------|--------|---------|
-| `POST /api/auth/register`, `/login`, `/refresh`, `/logout` | `X-Client-Id: <app>` | User auth flows — returns access + refresh tokens |
-| `GET /api/users/me`, `/accounts` | `Authorization: Bearer <jwt>` | Current-user info |
-| `POST /oauth/token`, `/revoke`, `/introspect` | `Authorization: Basic <client_id:secret>` | Machine-to-machine + token lifecycle |
-| `GET /health` | none | health |
-
-**Current wiring** (enabled in prod):
-
-1. **Server** (`src/stride_server/bearer.py`): `require_bearer` FastAPI dependency reads the auth-service public key from `STRIDE_AUTH_PUBLIC_KEY_PEM` (inline PEM) or `STRIDE_AUTH_PUBLIC_KEY_PATH` (file), verifies RS256 tokens locally (no network call). Validates `iss` (default `auth-service`) and, when `STRIDE_AUTH_AUDIENCE` is set, `aud`. If no public key env var is set, verification is bypassed with a one-time warning log (fail-open for dev). This is **enabled** on the Azure Container App as of revision `stride-app--0000037`:
-   - `STRIDE_AUTH_PUBLIC_KEY_PEM` → secretref `auth-public-pem` (downloaded from `authstorage2026/jwt-keys/public.pem`)
-   - `STRIDE_AUTH_AUDIENCE=app_62978bf2803346878a2e4805` (the STRIDE frontend client_id, reused here)
-
-2. **Protected endpoints** — every `/api/*` route except `/api/health` requires Bearer when the key env var is set. The factory in `stride_server/app.py` applies router-level `Depends(require_bearer)` to all routers except `public` (which hosts only `/api/health` for the Azure liveness probe). CORS is intentionally kept wide open (`allow_origins=["*"]`) — the real authz boundary is the Bearer layer, not Origin. Verified: no token on any `/api/*` (except `/api/health`) → 401, with valid user token → 200. This covers both reads (`/users`, `/weeks`, `/activities`, `/dashboard`, `/health`, `/pmc`, `/stats`, `/training-plan`) and writes (`/sync`, `/resync`, `/commentary`).
-
-3. **CLI** (`coros-sync auth` group):
-   - `auth login --email X --auth-url Y --client-id Z` exchanges email/password for tokens via `/api/auth/login` and persists them to `data/{user_id}/auth.json`.
-   - `auth logout` removes the stored token; `auth status` prints metadata.
-   - `commentary push` auto-attaches `Authorization: Bearer <access_token>`, auto-refreshes via `/api/auth/refresh` if the token expires within 60s. Falls back to anonymous if no token is stored.
-
-4. **Canonical env for local CLI**:
-
-   ```bash
-   export STRIDE_AUTH_URL="https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
-   export STRIDE_CLIENT_ID="app_62978bf2803346878a2e4805"
-   export STRIDE_PROD_URL="https://stride-app.victoriousdesert-bd552447.southeastasia.azurecontainerapps.io"
-   ```
-
-   First-time login (credentials from `.credentials.local`, git-ignored):
-
-   ```bash
-   coros-sync -P zhaochaoyi auth login \
-     --email "$(awk -F= '/^email/{print $2}' .credentials.local | tr -d ' ')" \
-     --password "$(awk -F= '/^password/{print $2}' .credentials.local | tr -d ' ')"
-   ```
-
-   Subsequent writes (e.g. after Claude generates a commentary):
-
-   ```bash
-   coros-sync -P zhaochaoyi commentary push <label_id>
-   ```
-
-5. **Frontend**: already on the auth-service flow (no legacy MSAL). `frontend/src/store/authStore.ts` handles login/refresh with `sessionStorage`; `frontend/src/api.ts` attaches `Authorization: Bearer` on every request (including `triggerSync` and `resyncActivity`) and auto-retries once on 401. A 401 after refresh redirects to `/login`.
-
-6. **Still open (follow-ups, non-blocking)**:
-   - Add a JWKS endpoint to the auth-service so public-key rotation becomes network-discoverable instead of requiring env var updates on both sides.
-
-### Build Commands
-
-```bash
-# Frontend dev
-cd frontend && npm run dev      # Vite dev server with HMR
-cd frontend && npm run build    # tsc -b && vite build (used in Docker)
-
-# Backend dev
-PYTHONIOENCODING=utf-8 uvicorn stride_server.main:app --reload --port 8000
-
-# Full Docker build
-docker build -t stride .
-docker run -p 8080:8080 -v ./data:/app/data stride
-```
+(CLAUDE.md 在 `deploy.yml` 触发路径里但纯文档修改不影响 runtime —— build 在 no-code-change delta 上 skip。)
