@@ -21,6 +21,7 @@ from typing import Any, Literal
 Role = Literal["generator", "reviewer", "commentary"]
 Provider = Literal["azure-openai", "azure-ai-inference"]
 AuthMode = Literal["managed-identity", "api-key"]
+ApiKind = Literal["chat-completions", "responses"]
 
 
 @dataclass(frozen=True)
@@ -31,12 +32,13 @@ class ModelSpec:
     provider: Provider
     model: str                # descriptive id (used as ``generated_by`` stamp)
     deployment: str           # Azure deployment name
-    endpoint_env: str         # env var name holding the endpoint URL
+    endpoint: str             # full base URL (e.g. https://x.cognitiveservices.azure.com)
     api_version: str
     temperature: float | None
     max_tokens: int | None
     timeout_s: float
     api_key_env: str | None = None   # ``api-key`` auth only; ``None`` → MI
+    api_kind: ApiKind = "chat-completions"  # ``responses`` → AOAI /openai/responses path
     extra: dict[str, Any] = field(default_factory=dict)
 
     def is_placeholder(self) -> bool:

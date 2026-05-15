@@ -86,21 +86,15 @@ def build_chat_model(
             f"[{spec.role}] deployment is still a placeholder ({spec.deployment!r}); "
             f"fill in config/coach.toml before invoking the {spec.role} model"
         )
-    endpoint = os.environ.get(spec.endpoint_env)
-    if not endpoint:
-        raise CoachLLMUnavailable(
-            f"[{spec.role}] env var {spec.endpoint_env} is not set; required for the "
-            f"{spec.provider} endpoint"
-        )
 
     resolved_api_key = api_key
     if resolved_api_key is None and spec.api_key_env:
         resolved_api_key = os.environ.get(spec.api_key_env)
 
     if spec.provider == "azure-openai":
-        return _build_aoai(spec, endpoint, credentials, resolved_api_key)
+        return _build_aoai(spec, spec.endpoint, credentials, resolved_api_key)
     if spec.provider == "azure-ai-inference":
-        return _build_azure_ai_inference(spec, endpoint, credentials, resolved_api_key)
+        return _build_azure_ai_inference(spec, spec.endpoint, credentials, resolved_api_key)
     raise CoachLLMUnavailable(f"unknown provider {spec.provider!r}")
 
 
@@ -169,6 +163,10 @@ def _build_aoai(
         "azure_deployment": spec.deployment,
         "api_version": spec.api_version,
         "request_timeout": spec.timeout_s,
+        # Route through /openai/responses when the deployment uses the
+        # Responses API (some newer model families are only served there);
+        # default stays on chat completions for back-compat.
+        "use_responses_api": spec.api_kind == "responses",
     }
     if spec.temperature is not None:
         kwargs["temperature"] = spec.temperature

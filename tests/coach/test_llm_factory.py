@@ -46,20 +46,22 @@ def _spec(
     role="generator",
     provider="azure-openai",
     deployment="real-deployment",
-    endpoint_env="TEST_ENDPOINT",
+    endpoint="https://example.openai.azure.com",
     api_key_env=None,
+    api_kind="chat-completions",
 ) -> ModelSpec:
     return ModelSpec(
         role=role,
         provider=provider,
         model="gpt-5",
         deployment=deployment,
-        endpoint_env=endpoint_env,
+        endpoint=endpoint,
         api_version="2024-10-01-preview",
         temperature=0.0,
         max_tokens=1024,
         timeout_s=60,
         api_key_env=api_key_env,
+        api_kind=api_kind,
     )
 
 
@@ -77,21 +79,13 @@ def _cfg(generator=None, reviewer=None, commentary=None) -> CoachConfig:
 # ---------------------------------------------------------------------------
 
 
-def test_placeholder_deployment_raises(monkeypatch):
-    monkeypatch.setenv("TEST_ENDPOINT", "https://example/")
+def test_placeholder_deployment_raises():
     spec = _spec(deployment="<PLACEHOLDER_GPT_5_4_DEPLOYMENT>")
     with pytest.raises(CoachLLMUnavailable, match="placeholder"):
         build_chat_model(spec, credentials=_fake_creds())
 
 
-def test_missing_endpoint_env_raises(monkeypatch):
-    monkeypatch.delenv("TEST_ENDPOINT", raising=False)
-    with pytest.raises(CoachLLMUnavailable, match="TEST_ENDPOINT"):
-        build_chat_model(_spec(), credentials=_fake_creds())
-
-
-def test_unknown_provider_raises(monkeypatch):
-    monkeypatch.setenv("TEST_ENDPOINT", "https://example/")
+def test_unknown_provider_raises():
     # ModelSpec.provider is typed Literal but Python doesn't enforce at runtime
     spec = _spec()
     bad = ModelSpec(**{**spec.__dict__, "provider": "wat"})  # type: ignore[arg-type]
@@ -99,8 +93,7 @@ def test_unknown_provider_raises(monkeypatch):
         build_chat_model(bad, credentials=_fake_creds())
 
 
-def test_aoai_without_credentials_raises(monkeypatch):
-    monkeypatch.setenv("TEST_ENDPOINT", "https://example/")
+def test_aoai_without_credentials_raises():
     with pytest.raises(CoachLLMUnavailable, match="api_key or credentials"):
         build_chat_model(_spec())  # no credentials, no api_key
 
@@ -111,7 +104,6 @@ def test_aoai_without_credentials_raises(monkeypatch):
 
 
 def test_aoai_construction_uses_spec_fields(monkeypatch):
-    monkeypatch.setenv("TEST_ENDPOINT", "https://example.openai.azure.com")
     captured: dict = {}
 
     class FakeAOAI:
@@ -134,8 +126,37 @@ def test_aoai_construction_uses_spec_fields(monkeypatch):
     assert captured["azure_ad_token_provider"]() == "test-token"
 
 
+def test_aoai_chat_completions_disables_responses_flag(monkeypatch):
+    captured: dict = {}
+
+    class FakeAOAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import langchain_openai
+
+    monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
+    build_chat_model(_spec(api_kind="chat-completions"), credentials=_fake_creds())
+    assert captured["use_responses_api"] is False
+
+
+def test_aoai_responses_api_kind_routes_to_responses_endpoint(monkeypatch):
+    """api_kind='responses' must propagate use_responses_api=True so
+    AzureChatOpenAI hits /openai/responses, not /openai/chat/completions."""
+    captured: dict = {}
+
+    class FakeAOAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import langchain_openai
+
+    monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
+    build_chat_model(_spec(api_kind="responses"), credentials=_fake_creds())
+    assert captured["use_responses_api"] is True
+
+
 def test_aoai_uses_api_key_when_provided(monkeypatch):
-    monkeypatch.setenv("TEST_ENDPOINT", "https://example.openai.azure.com")
     captured: dict = {}
 
     class FakeAOAI:
@@ -151,7 +172,6 @@ def test_aoai_uses_api_key_when_provided(monkeypatch):
 
 
 def test_api_key_can_come_from_env(monkeypatch):
-    monkeypatch.setenv("TEST_ENDPOINT", "https://example.openai.azure.com")
     monkeypatch.setenv("MY_KEY", "sk-from-env")
     captured: dict = {}
 
@@ -172,7 +192,6 @@ def test_api_key_can_come_from_env(monkeypatch):
 
 
 def test_role_wrappers_dispatch_to_correct_spec(monkeypatch):
-    monkeypatch.setenv("TEST_ENDPOINT", "https://example/")
     captured: list[ModelSpec] = []
 
     import coach.runtime.llm_factory as factory_mod
@@ -199,7 +218,6 @@ def test_azure_ai_inference_construction_uses_token_credential(monkeypatch):
     """AzureAIChatCompletionsModel must receive the TokenCredential object,
     not the bearer-token callable (regression for the latent bug found by
     architect review)."""
-    monkeypatch.setenv("TEST_ENDPOINT", "https://workspace.services.ai.azure.com/openai/v1")
     captured: dict = {}
 
     class FakeAzureAI:
@@ -210,12 +228,13 @@ def test_azure_ai_inference_construction_uses_token_credential(monkeypatch):
     import langchain_azure_ai.chat_models as mod
 
     monkeypatch.setattr(mod, "AzureAIChatCompletionsModel", FakeAzureAI)
-    spec = _spec(role="reviewer", provider="azure-ai-inference")
+    foundry_endpoint = "https://workspace.services.ai.azure.com/openai/v1"
+    spec = _spec(role="reviewer", provider="azure-ai-inference", endpoint=foundry_endpoint)
     build_chat_model(spec, credentials=_fake_creds())
 
     # ``credential`` must be the TokenCredential, NOT the bearer-token callable
     assert isinstance(captured["credential"], _FakeTokenCredential)
-    assert captured["endpoint"] == "https://workspace.services.ai.azure.com/openai/v1"
+    assert captured["endpoint"] == foundry_endpoint
     assert captured["model_name"] == "real-deployment"
     assert captured["api_version"] == "2024-10-01-preview"
     assert captured["temperature"] == 0.0
@@ -227,7 +246,6 @@ def test_azure_ai_inference_construction_uses_token_credential(monkeypatch):
 
 
 def test_azure_ai_inference_api_key_path(monkeypatch):
-    monkeypatch.setenv("TEST_ENDPOINT", "https://example/")
     captured: dict = {}
 
     class FakeAzureAI:

@@ -1,37 +1,47 @@
 # Coach LLM Configuration
 #
-# Three roles, each backed by an independent model. Replace the
-# `<PLACEHOLDER_*>` values with the actual Azure AI Foundry deployment ids
-# once the resources are provisioned.
+# Three roles, each backed by an independent Azure OpenAI deployment on the
+# word-learner-llm cognitive services resource. Auth is Managed Identity
+# (ACA MI needs the `Cognitive Services OpenAI User` role on the resource).
 #
-# Auth is Managed Identity by default. The endpoint values come from env
-# vars (so the same TOML works across dev/staging/prod with different
-# endpoints); secrets stay in Azure Key Vault, never in this file.
+# Cross-provider review (Claude Opus 4.7 as reviewer to defend against
+# single-provider commitment bias — see plan §7.5) is a follow-up: until
+# the Foundry Claude deployment is provisioned, reviewer reuses gpt-5.4
+# with a much lower temperature + the adversarial reviewer prompt. The
+# prompt difference + temperature=0 still catches a useful fraction of
+# generator bugs even on the same model.
 
 [generator]
 # Coach Agent — generates weekly + master plans, drives chat with tools
 provider     = "azure-openai"
 model        = "gpt-5.4"
-deployment   = "<PLACEHOLDER_GPT_5_4_DEPLOYMENT>"
-endpoint_env = "AZURE_AI_FOUNDRY_ENDPOINT"
-api_version  = "2024-10-01-preview"
+deployment   = "gpt-5.4"
+endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
+api_version  = "2025-04-01-preview"
+api_kind     = "responses"
 temperature  = 0.4
 max_tokens   = 4096
 timeout_s    = 120
 
 [reviewer]
-# Reviewer Agent — critiques generator output, defends against commitment bias
-provider     = "azure-ai-inference"
-model        = "claude-opus-4-7"
-deployment   = "<PLACEHOLDER_CLAUDE_OPUS_4_7_DEPLOYMENT>"
-endpoint_env = "AZURE_AI_FOUNDRY_ENDPOINT"
-api_version  = "2024-05-01-preview"
+# Reviewer Agent — temporarily on gpt-5.4 (see header note). Swap to
+# claude-opus-4-7 via Foundry serverless inference when the deployment is
+# available; only the deployment / model / api_kind / endpoint / api_version
+# fields need to change, no code edits required.
+provider     = "azure-openai"
+model        = "gpt-5.4"
+deployment   = "gpt-5.4"
+endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
+api_version  = "2025-04-01-preview"
+api_kind     = "responses"
 temperature  = 0.0
 max_tokens   = 4096
 timeout_s    = 180
 
 [commentary]
-# Activity Commentary Agent — per-activity coach commentary
+# Activity Commentary Agent — per-activity coach commentary, gpt-4.1 via
+# the chat/completions API.
+#
 # NOTE: This config is a forward-looking stub. The current production
 # commentary path (auto-gen during sync + manual regenerate endpoint) still
 # uses its own direct AOAI client and will be migrated in a separate commit
@@ -39,9 +49,10 @@ timeout_s    = 180
 # migration ships.
 provider     = "azure-openai"
 model        = "gpt-4.1"
-deployment   = "<PLACEHOLDER_GPT_4_1_DEPLOYMENT>"
-endpoint_env = "AZURE_AI_FOUNDRY_ENDPOINT"
-api_version  = "2024-10-01-preview"
+deployment   = "gpt-4.1"
+endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
+api_version  = "2025-01-01-preview"
+api_kind     = "chat-completions"
 temperature  = 0.6
 max_tokens   = 2048
 timeout_s    = 90

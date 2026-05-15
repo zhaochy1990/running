@@ -77,11 +77,12 @@ def _resolve_path(path: str | Path | None) -> Path:
 
 _VALID_PROVIDERS: set[str] = {"azure-openai", "azure-ai-inference"}
 _VALID_AUTH_MODES: set[str] = {"managed-identity", "api-key"}
+_VALID_API_KINDS: set[str] = {"chat-completions", "responses"}
 _REQUIRED_FIELDS = (
     "provider",
     "model",
     "deployment",
-    "endpoint_env",
+    "endpoint",
     "api_version",
     "timeout_s",
 )
@@ -100,17 +101,28 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
         )
     temperature = raw.get("temperature")
     max_tokens = raw.get("max_tokens")
+    api_kind = raw.get("api_kind", "chat-completions")
+    if api_kind not in _VALID_API_KINDS:
+        raise CoachConfigError(
+            f"[{role}] unknown api_kind {api_kind!r}; valid: {sorted(_VALID_API_KINDS)}"
+        )
+    endpoint = str(raw["endpoint"])
+    if not endpoint.startswith(("https://", "http://")):
+        raise CoachConfigError(
+            f"[{role}] endpoint {endpoint!r} must start with https:// or http://"
+        )
     return ModelSpec(
         role=role,
         provider=provider,  # type: ignore[arg-type]
         model=str(raw["model"]),
         deployment=str(raw["deployment"]),
-        endpoint_env=str(raw["endpoint_env"]),
+        endpoint=endpoint,
         api_version=str(raw["api_version"]),
         temperature=float(temperature) if temperature is not None else None,
         max_tokens=int(max_tokens) if max_tokens is not None else None,
         timeout_s=float(raw["timeout_s"]),
         api_key_env=raw.get("api_key_env"),
+        api_kind=api_kind,  # type: ignore[arg-type]
         extra=dict(raw.get("extra") or {}),
     )
 

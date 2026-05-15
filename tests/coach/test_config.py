@@ -26,7 +26,7 @@ def _valid_toml(deployment_suffix: str = "<PLACEHOLDER_X>") -> str:
 provider     = "azure-openai"
 model        = "gpt-5.4"
 deployment   = "{deployment_suffix}"
-endpoint_env = "AZURE_AI_FOUNDRY_ENDPOINT"
+endpoint     = "https://example.openai.azure.com"
 api_version  = "2024-10-01-preview"
 temperature  = 0.4
 max_tokens   = 4096
@@ -36,7 +36,7 @@ timeout_s    = 120
 provider     = "azure-ai-inference"
 model        = "claude-opus-4-7"
 deployment   = "<PLACEHOLDER_CLAUDE>"
-endpoint_env = "AZURE_AI_FOUNDRY_ENDPOINT"
+endpoint     = "https://example.openai.azure.com"
 api_version  = "2024-05-01-preview"
 temperature  = 0.0
 max_tokens   = 4096
@@ -46,7 +46,7 @@ timeout_s    = 180
 provider     = "azure-openai"
 model        = "gpt-4.1"
 deployment   = "<PLACEHOLDER_GPT_4_1>"
-endpoint_env = "AZURE_AI_FOUNDRY_ENDPOINT"
+endpoint     = "https://example.openai.azure.com"
 api_version  = "2024-10-01-preview"
 temperature  = 0.6
 max_tokens   = 2048
@@ -94,7 +94,7 @@ def test_placeholder_detection() -> None:
         provider="azure-openai",
         model="gpt-5",
         deployment="<PLACEHOLDER_FOO>",
-        endpoint_env="X",
+        endpoint="https://example/",
         api_version="2024-01-01",
         temperature=None,
         max_tokens=None,
@@ -147,7 +147,7 @@ def test_missing_required_section_rejected(tmp_path: Path) -> None:
 
 
 def test_missing_required_field_rejected(tmp_path: Path) -> None:
-    bad = _valid_toml().replace('deployment   = "<PLACEHOLDER_X>"', "")
+    bad = _valid_toml().replace('deployment   = "<PLACEHOLDER_X>"', "", 1)
     p = tmp_path / "coach.toml"
     p.write_text(bad)
     with pytest.raises(CoachConfigError, match="missing required fields"):
@@ -163,15 +163,73 @@ def test_unknown_auth_mode_rejected(tmp_path: Path) -> None:
 
 
 def test_canonical_config_file_loads(tmp_path: Path, monkeypatch) -> None:
-    """The repo-shipped config/coach.toml must parse without errors —
-    placeholders are fine, structure must be valid."""
+    """The repo-shipped config/coach.toml must parse without errors and
+    reflect the current real deployments (no placeholders)."""
     monkeypatch.delenv(PATH_ENV, raising=False)
     cfg = load_config()  # uses repo root resolver
-    assert cfg.generator.model == "gpt-5.4"
-    assert cfg.reviewer.model == "claude-opus-4-7"
-    assert cfg.commentary.model == "gpt-4.1"
     assert cfg.auth_mode == "managed-identity"
-    # All three roles are still placeholders (the user fills them later).
-    assert cfg.generator.is_placeholder()
-    assert cfg.reviewer.is_placeholder()
-    assert cfg.commentary.is_placeholder()
+
+    # Generator + Reviewer share the gpt-5.4 deployment on the Responses API
+    # endpoint until the Claude Opus reviewer lands.
+    for spec in (cfg.generator, cfg.reviewer):
+        assert spec.deployment == "gpt-5.4"
+        assert spec.api_kind == "responses"
+        assert spec.endpoint == "https://word-learner-llm.cognitiveservices.azure.com"
+        assert not spec.is_placeholder()
+    # Temperature differentiation between generator (creative) and reviewer
+    # (deterministic) survives even when they share a model.
+    assert cfg.generator.temperature == 0.4
+    assert cfg.reviewer.temperature == 0.0
+
+    # Commentary on gpt-4.1 via chat/completions.
+    assert cfg.commentary.deployment == "gpt-4.1"
+    assert cfg.commentary.api_kind == "chat-completions"
+    assert cfg.commentary.endpoint == "https://word-learner-llm.cognitiveservices.azure.com"
+    assert not cfg.commentary.is_placeholder()
+
+
+def test_endpoint_must_be_http_url(tmp_path: Path) -> None:
+    bad = _valid_toml().replace(
+        'endpoint     = "https://example.openai.azure.com"',
+        'endpoint     = "not-a-url"',
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(bad)
+    with pytest.raises(CoachConfigError, match="endpoint .* must start with"):
+        load_config(p)
+
+
+def test_api_kind_defaults_to_chat_completions(tmp_path: Path) -> None:
+    """A spec without an explicit api_kind defaults to chat-completions
+    (back-compat for older configs)."""
+    p = tmp_path / "coach.toml"
+    p.write_text(_valid_toml())  # _valid_toml doesn't set api_kind
+    cfg = load_config(p)
+    for spec in (cfg.generator, cfg.reviewer, cfg.commentary):
+        assert spec.api_kind == "chat-completions"
+
+
+def test_unknown_api_kind_rejected(tmp_path: Path) -> None:
+    bad = _valid_toml().replace(
+        "timeout_s    = 120",
+        "timeout_s    = 120\napi_kind     = \"streaming\"",
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(bad)
+    with pytest.raises(CoachConfigError, match="unknown api_kind"):
+        load_config(p)
+
+
+def test_api_kind_responses_round_trips(tmp_path: Path) -> None:
+    toml = _valid_toml().replace(
+        "timeout_s    = 120",
+        "timeout_s    = 120\napi_kind     = \"responses\"",
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(toml)
+    cfg = load_config(p)
+    assert cfg.generator.api_kind == "responses"
+    assert cfg.reviewer.api_kind == "chat-completions"  # only generator overridden
