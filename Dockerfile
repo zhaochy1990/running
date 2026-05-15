@@ -38,6 +38,11 @@ COPY src/ ./src/
 # they are not part of the request-serving path.
 COPY scripts/ ./scripts/
 
+# Coach runtime config — coach.runtime.config.load_config() reads this at
+# request time to resolve the role→deployment mapping. Without this COPY
+# the coach endpoints 500 with CoachConfigError at first invocation.
+COPY config/ ./config/
+
 # Single source of truth for deps: pyproject.toml [project.optional-dependencies].
 # Editable install (-e) keeps /app/src as the import location — no file copy
 # into site-packages, so __file__-based path resolution stays correct.
