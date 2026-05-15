@@ -29,6 +29,8 @@ from langchain_core.messages import (
 )
 from pydantic import BaseModel, Field
 
+from coach.schemas import AssistantPart, assistant_parts_from_message
+
 from ..bearer import require_bearer
 from ..coach_adapters.persistence.weekly_version_store import (
     WeeklyPlanVersion,
@@ -59,13 +61,21 @@ class QAMessageRequest(BaseModel):
 
 class QAMessageResponse(BaseModel):
     thread_id: str
-    assistant: str
+    # Renderable assistant parts (text / reasoning / refusal / tool_meta).
+    # See coach.schemas.conversation.AssistantPart for the per-kind contract.
+    # Always at least one part for a successful turn; empty list when the
+    # turn only produced a draft tool call (in which case `last_diff` carries
+    # the proposed change — wired in a follow-up commit).
+    parts: list[AssistantPart]
     iteration: int
 
 
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    # For user / tool turns, ``content`` carries the raw text. For assistant
+    # turns, ``content`` is empty and ``parts`` carries the renderable pieces.
+    content: str = ""
+    parts: list[AssistantPart] = []
     name: str | None = None
     tool_call_id: str | None = None
 
@@ -122,16 +132,18 @@ def _parse_thread_id(thread_id: str) -> tuple[str, str, str]:
 
 
 def _to_chat_message(m: BaseMessage) -> ChatMessage | None:
-    """Translate a langchain BaseMessage to the public Message schema.
+    """Translate a langchain BaseMessage to the public ChatMessage schema.
 
     Returns ``None`` for SystemMessage (shouldn't be in history but tolerate
-    gracefully)."""
+    gracefully). Assistant turns are converted to structured ``parts`` so the
+    history endpoint returns the same shape the POST endpoint uses.
+    """
     if isinstance(m, SystemMessage):
         return None
     if isinstance(m, HumanMessage):
         return ChatMessage(role="user", content=str(m.content))
     if isinstance(m, AIMessage):
-        return ChatMessage(role="assistant", content=str(m.content))
+        return ChatMessage(role="assistant", parts=assistant_parts_from_message(m))
     if isinstance(m, ToolMessage):
         return ChatMessage(
             role="tool",
@@ -139,7 +151,10 @@ def _to_chat_message(m: BaseMessage) -> ChatMessage | None:
             name=m.name,
             tool_call_id=m.tool_call_id,
         )
-    # Unknown subclass — best effort by attribute access
+    # Unknown subclass — best effort: try the parts helper, else fall back.
+    parts = assistant_parts_from_message(m)
+    if parts:
+        return ChatMessage(role="assistant", parts=parts)
     return ChatMessage(role="assistant", content=str(getattr(m, "content", "")))
 
 
@@ -184,14 +199,12 @@ def post_qa_message(
 
     history = state.get("history") or []
     last = history[-1] if history else None
-    content = ""
-    if isinstance(last, AIMessage):
-        content = str(last.content)
-    elif last is not None:
-        content = str(getattr(last, "content", ""))
+    parts: list[AssistantPart] = []
+    if last is not None:
+        parts = assistant_parts_from_message(last)
     return QAMessageResponse(
         thread_id=thread_id,
-        assistant=content,
+        parts=parts,
         iteration=int(state.get("iteration") or 0),
     )
 

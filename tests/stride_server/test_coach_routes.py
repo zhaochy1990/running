@@ -146,9 +146,68 @@ def test_qa_post_returns_assistant_response(coach_client):
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["assistant"].startswith("你的状态看起来")
+    # chat-completions content → single text part with no phase
+    assert isinstance(body["parts"], list)
+    assert len(body["parts"]) == 1
+    part = body["parts"][0]
+    assert part["kind"] == "text"
+    assert part["text"].startswith("你的状态看起来")
+    assert part["phase"] is None
     assert body["thread_id"].startswith(f"{USER_UUID}:qa:")
     assert body["iteration"] >= 1
+
+
+def test_qa_post_responses_api_content_splits_into_parts(coach_client):
+    """When the LLM is on the Responses API, AIMessage.content is a list of
+    typed blocks (output_text + reasoning + function_call + …). The route
+    must surface them as separate AssistantPart entries with the right
+    kind/phase."""
+    client, private_pem, _ = coach_client
+    responses_ai_message = AIMessage(
+        content=[
+            {
+                "type": "reasoning",
+                "id": "rs_001",
+                "summary": [{"type": "summary_text", "text": "用户问疲劳；先取健康数据。"}],
+            },
+            {
+                "type": "text",
+                "id": "msg_002",
+                "text": "我先看一下你最近的疲劳数据。",
+                "annotations": [],
+                "phase": "commentary",
+            },
+            {
+                "type": "function_call",
+                "id": "call_003",
+                "call_id": "call_003",
+                "name": "get_health_snapshot",
+                "arguments": "{}",
+            },
+            {
+                "type": "text",
+                "id": "msg_004",
+                "text": "你最近 TSB 偏疲劳，建议今天降一档强度。",
+                "annotations": [],
+                "phase": "final_answer",
+            },
+        ]
+    )
+    _set_canned_llm([responses_ai_message])
+
+    resp = client.post(
+        "/api/users/me/coach/conversations/qa/messages",
+        json={"message": "我最近疲劳吗？"},
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    parts = resp.json()["parts"]
+    assert [p["kind"] for p in parts] == ["reasoning", "text", "tool_meta", "text"]
+    assert parts[0]["text"] == "用户问疲劳；先取健康数据。"
+    assert parts[1]["phase"] == "commentary"
+    assert parts[2]["text"] == "调用 get_health_snapshot"
+    assert parts[3]["phase"] == "final_answer"
+    assert parts[3]["text"].startswith("你最近 TSB")
 
 
 def test_qa_post_ignores_client_supplied_thread_id(coach_client):
@@ -221,7 +280,7 @@ def test_history_unknown_own_thread_returns_empty(coach_client):
 
 def test_history_returns_messages_after_qa_post(coach_client):
     """Post one message, then GET the thread history — should include
-    both user and assistant turns."""
+    both user and assistant turns; assistant uses ``parts`` shape."""
     client, private_pem, _ = coach_client
     _set_canned_llm([AIMessage(content="你今天看起来精神。")])
 
@@ -240,11 +299,21 @@ def test_history_returns_messages_after_qa_post(coach_client):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     roles = [m["role"] for m in body["messages"]]
-    contents = [m["content"] for m in body["messages"]]
     assert "user" in roles
     assert "assistant" in roles
-    assert "我感觉怎么样？" in contents
-    assert "你今天看起来精神。" in contents
+    # User turns keep raw content; assistant turns use parts and leave content
+    # empty.
+    user_contents = [m["content"] for m in body["messages"] if m["role"] == "user"]
+    assistant_msgs = [m for m in body["messages"] if m["role"] == "assistant"]
+    assert "我感觉怎么样？" in user_contents
+    assert assistant_msgs
+    assistant_texts = [
+        p["text"]
+        for m in assistant_msgs
+        for p in m["parts"]
+        if p["kind"] == "text"
+    ]
+    assert "你今天看起来精神。" in assistant_texts
 
 
 # ---------------------------------------------------------------------------
