@@ -176,9 +176,20 @@ def post_qa_message(
     thread_id = _short_thread_id_for_qa(user_id)
     graph = build_conversation_graph_for_user(user_id=user_id, scope="qa")
 
+    # DEBUG (temporary): trace UTF-8 fidelity of user content end-to-end
+    logger.info(
+        "QA_DEBUG body.message len=%d utf8_first30hex=%s",
+        len(body.message), body.message.encode("utf-8")[:30].hex(),
+    )
+    hm = HumanMessage(content=body.message)
+    logger.info(
+        "QA_DEBUG HumanMessage.content utf8_first30hex=%s",
+        hm.content.encode("utf-8")[:30].hex(),
+    )
+
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
     state_in = {
-        "history": [HumanMessage(content=body.message)],
+        "history": [hm],
         "scope": "qa",
         "user_id": user_id,
         "thread_id": thread_id,
@@ -190,6 +201,14 @@ def post_qa_message(
     }
     try:
         state = graph.invoke(state_in, config=config)
+        _hist = state.get("history") or []
+        for _i, _m in enumerate(_hist[:3]):
+            _c = getattr(_m, "content", None)
+            if isinstance(_c, str):
+                logger.info(
+                    "QA_DEBUG post-invoke hist[%d] %s utf8_first30hex=%s",
+                    _i, type(_m).__name__, _c.encode("utf-8")[:30].hex(),
+                )
     except Exception as exc:  # noqa: BLE001 — coach endpoint boundary
         logger.exception("coach qa graph invocation failed")
         raise HTTPException(
