@@ -1,6 +1,7 @@
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import ProfilePage from './ProfilePage'
 import WatchPage from './WatchPage'
+import ViewHead from '../components/ViewHead'
 
 type Tab = 'profile' | 'watch'
 
@@ -29,10 +30,10 @@ export default function UserCenterPage() {
         &larr; 返回
       </button>
 
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary">用户中心</h1>
-        <p className="text-sm font-mono text-text-muted mt-1">管理你的个人资料和手表绑定</p>
-      </div>
+      <ViewHead
+        eyebrow="设置 · 账户与配置"
+        title="个人设置"
+      />
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 border-b border-border-subtle">

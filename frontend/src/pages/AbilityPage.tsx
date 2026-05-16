@@ -10,6 +10,7 @@ import AbilityTriptych from '../components/AbilityTriptych'
 import AbilityRadar from '../components/AbilityRadar'
 import AbilityHistoryChart from '../components/AbilityHistoryChart'
 import Vo2maxPanel from '../components/Vo2maxPanel'
+import ViewHead from '../components/ViewHead'
 
 const EMPTY_ESTIMATES: RaceEstimates = { training_s: null, race_s: null, best_case_s: null }
 
@@ -94,17 +95,11 @@ export default function AbilityPage() {
         </div>
       ) : current ? (
         <div className="animate-fade-in">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary tracking-tight">成绩预测</h1>
-              <p className="text-xs text-text-muted mt-1">
-                Performance Prediction · 4-layer custom score
-                <span className="ml-2 font-mono text-[10px]">
-                  [{current.source === 'snapshot' ? '快照' : '实时计算'}]
-                </span>
-              </p>
-            </div>
-          </div>
+          <ViewHead
+            eyebrow="训练能力 · 90 天数据"
+            title="你的跑步能力画像"
+            lede="基于过去 90 天的训练数据 + 训练负荷计算"
+          />
 
           {/* Primary distance — the user's target race */}
           <AbilityHero

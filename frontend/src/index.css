@@ -30,6 +30,10 @@
 
   --font-display: 'Outfit', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
+
+  --sidebar-w: 220px;
+  --sidebar-w-collapsed: 60px;
+  --topbar-h: 50px;
 }
 
 * {

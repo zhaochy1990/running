@@ -12,6 +12,7 @@ import {
 import { useUser } from '../UserContextValue'
 import GarminExtrasSection from './health/GarminExtrasSection'
 import WeeklyComplianceChart, { type WeeklyCompliancePoint } from '../components/WeeklyComplianceChart'
+import ViewHead from '../components/ViewHead'
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return dateStr
@@ -220,26 +221,26 @@ export default function HealthPage() {
             </div>
           ) : (
             <div className="animate-fade-in">
-              {/* Header */}
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h1 className="text-2xl font-bold text-text-primary tracking-tight">身体指标</h1>
-                  <p className="text-xs text-text-muted mt-1">Daily Health Metrics</p>
-                </div>
-                <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg">
-                  {[14, 30, 60, 90].map((d) => (
-                    <button
-                      key={d}
-                      onClick={() => setDays(d)}
-                      className={`px-3 py-1.5 text-xs font-mono font-medium rounded-md transition-all ${
-                        days === d ? 'bg-accent-cyan/15 text-accent-cyan' : 'text-text-muted hover:text-text-secondary'
-                      }`}
-                    >
-                      {d}天
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <ViewHead
+                eyebrow="身体指标 · 训练负荷与恢复"
+                title="负荷曲线与恢复状态"
+                lede="CTI 慢性 · ATI 急性 · TSB 体感 · 7 / 30 / 90 天视图"
+                actions={
+                  <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg">
+                    {[14, 30, 60, 90].map((d) => (
+                      <button
+                        key={d}
+                        onClick={() => setDays(d)}
+                        className={`px-3 py-1.5 text-xs font-mono font-medium rounded-md transition-all ${
+                          days === d ? 'bg-accent-cyan/15 text-accent-cyan' : 'text-text-muted hover:text-text-secondary'
+                        }`}
+                      >
+                        {d}天
+                      </button>
+                    ))}
+                  </div>
+                }
+              />
 
               {/* Metric Cards */}
               {latest && <MetricCards latest={latest} hrv={hrv} rhrBaseline={rhrBaseline} />}

@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { getInbody, getInbodySummary, type InBodyScan, type InBodySummary } from '../api'
 import { useUser } from '../UserContextValue'
+import ViewHead from '../components/ViewHead'
 
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
@@ -75,12 +76,11 @@ export default function InbodyPage() {
         </div>
       ) : (
         <div className="animate-fade-in">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary tracking-tight">体测记录</h1>
-              <p className="text-xs text-text-muted mt-1">InBody Body Composition — {scans.length} 次扫描</p>
-            </div>
-          </div>
+          <ViewHead
+            eyebrow="体测记录 · InBody"
+            title="身体成分趋势"
+            lede={`InBody Body Composition — ${scans.length} 次扫描`}
+          />
 
           {!latest && (
             <div className="bg-bg-card border border-border-subtle rounded-2xl p-10 text-center text-text-muted">

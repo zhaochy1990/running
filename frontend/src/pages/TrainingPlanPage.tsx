@@ -4,6 +4,10 @@ import remarkGfm from 'remark-gfm'
 import { getTrainingPlan, getMyProfile, type TrainingPlan } from '../api'
 import { useUser } from '../UserContextValue'
 import TrainingPlanSetup from './TrainingPlanSetup'
+import ViewHead from '../components/ViewHead'
+import WeeksGrid from '../components/WeeksGrid'
+
+type PlanTab = 'overview' | 'weeks'
 
 const PHASE_COLORS: Record<string, string> = {
   '赛后恢复': '#8888a0',
@@ -40,6 +44,7 @@ export default function TrainingPlanPage() {
   const { user } = useUser()
   const [plan, setPlan] = useState<TrainingPlan | null>(null)
   const [pageState, setPageState] = useState<PageState>('loading')
+  const [planTab, setPlanTab] = useState<PlanTab>('overview')
   const requestKey = user || ''
   const [loadedKey, setLoadedKey] = useState('')
 
@@ -96,12 +101,11 @@ export default function TrainingPlanPage() {
   if (pageState === 'setup') {
     return (
       <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-text-primary tracking-tight">训练计划</h1>
-          <p className="text-sm text-text-muted mt-1">
-            设置你的比赛目标，同步历史数据后即可生成训练计划
-          </p>
-        </div>
+        <ViewHead
+          eyebrow="训练计划 · 起步"
+          title="设置你的比赛目标"
+          lede="设置目标赛事并同步历史数据，AI 教练会基于你的能力生成 23 周训练计划"
+        />
         <TrainingPlanSetup
           onComplete={() => {
             // Reload plan data after sync completes
@@ -117,9 +121,11 @@ export default function TrainingPlanPage() {
   if (!plan?.content) {
     return (
       <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-text-primary tracking-tight">训练计划</h1>
-        </div>
+        <ViewHead
+          eyebrow="训练计划"
+          title="训练计划生成中"
+          lede="历史数据已同步完成，训练计划正在后台生成"
+        />
         <div className="text-text-muted text-center py-20">
           <p>历史数据已同步完成，训练计划正在生成中</p>
           <p className="text-xs mt-2">请稍后刷新页面查看</p>
@@ -134,26 +140,59 @@ export default function TrainingPlanPage() {
   const totalEnd = phases.length > 0 ? new Date(phases[phases.length - 1].end).getTime() : 0
   const totalSpan = totalEnd - totalStart || 1
 
+  const planLede = plan.current_phase
+    ? `当前阶段 · ${plan.current_phase}`
+    : 'AI 教练基于你的能力生成的 23 周训练总纲'
+
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-text-primary tracking-tight">2026夏训总纲</h1>
-        {plan.current_phase && (
-          <div className="flex items-center gap-2 mt-2">
-            <span className="text-sm text-text-muted">当前阶段</span>
-            <span
-              className="text-sm font-semibold px-3 py-1 rounded-lg"
-              style={{
-                color: phaseColor(plan.current_phase),
-                backgroundColor: phaseColor(plan.current_phase) + '15',
-              }}
-            >
-              {plan.current_phase}
-            </span>
-          </div>
-        )}
+      <ViewHead
+        eyebrow="23 周训练计划 · 西安马拉松"
+        title="从基础到比赛 · 训练总览"
+        lede={planLede}
+      />
+
+      <div className="inline-flex gap-0.5 p-0.5 bg-bg-elevated rounded-lg mb-5">
+        <button
+          type="button"
+          onClick={() => setPlanTab('overview')}
+          className={`px-3.5 py-1.5 text-[12px] font-medium rounded-md transition-colors ${
+            planTab === 'overview'
+              ? 'bg-bg-card text-text-primary font-semibold shadow-sm'
+              : 'text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          总览 · plan.md
+        </button>
+        <button
+          type="button"
+          onClick={() => setPlanTab('weeks')}
+          className={`px-3.5 py-1.5 text-[12px] font-medium rounded-md transition-colors inline-flex items-center gap-1.5 ${
+            planTab === 'weeks'
+              ? 'bg-bg-card text-text-primary font-semibold shadow-sm'
+              : 'text-text-secondary hover:text-text-primary'
+          }`}
+        >
+          训练周列表
+        </button>
       </div>
+
+      {planTab === 'overview' ? (
+        <div>
+          {plan.current_phase && (
+            <div className="flex items-center gap-2 mb-6">
+              <span className="text-sm text-text-muted">当前阶段</span>
+              <span
+                className="text-sm font-semibold px-3 py-1 rounded-lg"
+                style={{
+                  color: phaseColor(plan.current_phase),
+                  backgroundColor: phaseColor(plan.current_phase) + '15',
+                }}
+              >
+                {plan.current_phase}
+              </span>
+            </div>
+          )}
 
       {/* Phase Timeline */}
       {phases.length > 0 && (
@@ -233,6 +272,10 @@ export default function TrainingPlanPage() {
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan.content}</ReactMarkdown>
         </div>
       </div>
+        </div>
+      ) : (
+        <WeeksGrid />
+      )}
     </div>
   )
 }

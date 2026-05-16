@@ -21,6 +21,16 @@ _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
 _TARGET_TIME_RE = re.compile(r"(?<!\d)(\d{1,2}):(\d{2})(?::(\d{2}))?(?!\d)")
+_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+LEGACY_PROFILE_KEYS = (
+    "姓名", "出生", "出生日期", "年龄", "性别",
+    "身高_cm", "身高", "当前体重_kg", "体重_kg", "体重",
+    "目标", "目标赛事", "目标赛事日期", "目标日期", "目标时间",
+    "PB 5K", "PB 10K", "PB 半马", "PB 马拉松",
+    "手表", "目标配速_km", "已知问题", "伤病史", "伤病",
+    "职业", "训练时间窗", "最近赛事", "训练提示", "当前体能 2026-04",
+)
 
 
 def _validate_uuid(uuid: str) -> str:
@@ -43,45 +53,73 @@ def _onboarding_path(uuid: str) -> str:
 
 
 def _normalize_legacy_profile(data: dict[str, Any]) -> dict[str, Any]:
-    """Return profile data with frontend schema aliases filled from legacy keys."""
+    """Map any legacy CJK keys onto the English schema and drop the CJK copies.
+
+    Idempotent for already-migrated profiles. When legacy keys are detected
+    a warning is logged so prod migration progress is observable; the
+    permanent rewrite lives in ``scripts/migrate_profile_to_english_keys.py``.
+    """
     profile = dict(data)
-    if not profile.get("display_name") and isinstance(profile.get("姓名"), str):
-        profile["display_name"] = profile["姓名"]
-    if not profile.get("dob") and isinstance(profile.get("出生"), str):
-        profile["dob"] = profile["出生"]
-    if profile.get("height_cm") is None and profile.get("身高_cm") is not None:
-        profile["height_cm"] = profile["身高_cm"]
-    if profile.get("weight_kg") is None and profile.get("当前体重_kg") is not None:
-        profile["weight_kg"] = profile["当前体重_kg"]
-    if not profile.get("constraints") and isinstance(profile.get("已知问题"), str):
-        profile["constraints"] = profile["已知问题"]
+    legacy_hits: list[str] = []
+
+    def _move(legacy_key: str, target_key: str, *, require_str: bool = False) -> None:
+        if legacy_key not in profile:
+            return
+        legacy_hits.append(legacy_key)
+        value = profile.pop(legacy_key)
+        if require_str and not isinstance(value, str):
+            return
+        if value is None:
+            return
+        if not profile.get(target_key):
+            profile[target_key] = value
+
+    _move("姓名", "display_name", require_str=True)
+    _move("出生", "dob", require_str=True)
+    _move("身高_cm", "height_cm")
+    _move("当前体重_kg", "weight_kg")
+    _move("体重_kg", "weight_kg")
+    _move("已知问题", "constraints", require_str=True)
+    _move("伤病史", "constraints", require_str=True)
+    _move("目标赛事日期", "target_race_date", require_str=True)
 
     pbs: dict[str, str] = dict(profile.get("pbs") or {}) if isinstance(profile.get("pbs"), dict) else {}
-    if "HM" not in pbs and isinstance(profile.get("PB 半马"), str):
-        pbs["HM"] = profile["PB 半马"]
-    if "FM" not in pbs and isinstance(profile.get("PB 马拉松"), str):
-        pbs["FM"] = profile["PB 马拉松"]
-    if pbs and not profile.get("pbs"):
+    for legacy_pb, eng_pb in (("PB 半马", "HM"), ("PB 马拉松", "FM"), ("PB 10K", "10K"), ("PB 5K", "5K")):
+        if legacy_pb in profile:
+            legacy_hits.append(legacy_pb)
+            value = profile.pop(legacy_pb)
+            if isinstance(value, str) and eng_pb not in pbs:
+                pbs[eng_pb] = value
+    if pbs:
         profile["pbs"] = pbs
 
-    goal = profile.get("目标")
-    if isinstance(goal, str):
-        if not profile.get("target_race"):
-            profile["target_race"] = goal
-        if not profile.get("target_distance"):
-            if "马拉松" in goal or "FM" in goal.upper():
-                profile["target_distance"] = "FM"
-            elif "半马" in goal or "HM" in goal.upper():
-                profile["target_distance"] = "HM"
-            elif "10K" in goal.upper() or "10公里" in goal:
-                profile["target_distance"] = "10K"
-            elif "5K" in goal.upper() or "5公里" in goal:
-                profile["target_distance"] = "5K"
-        if not profile.get("target_time"):
-            match = _TARGET_TIME_RE.search(goal)
-            if match:
-                hours, minutes, seconds = match.groups()
-                profile["target_time"] = f"{int(hours)}:{minutes}:{seconds or '00'}"
+    if "目标" in profile:
+        legacy_hits.append("目标")
+        goal = profile.pop("目标")
+        if isinstance(goal, str):
+            if not profile.get("target_race"):
+                profile["target_race"] = goal
+            if not profile.get("target_distance"):
+                upper = goal.upper()
+                if "马拉松" in goal or "FM" in upper:
+                    profile["target_distance"] = "FM"
+                elif "半马" in goal or "HM" in upper:
+                    profile["target_distance"] = "HM"
+                elif "10K" in upper or "10公里" in goal:
+                    profile["target_distance"] = "10K"
+                elif "5K" in upper or "5公里" in goal:
+                    profile["target_distance"] = "5K"
+            if not profile.get("target_time"):
+                match = _TARGET_TIME_RE.search(goal)
+                if match:
+                    hours, minutes, seconds = match.groups()
+                    profile["target_time"] = f"{int(hours)}:{minutes}:{seconds or '00'}"
+
+    if legacy_hits:
+        logger.warning(
+            "profile contains legacy CJK keys %s — run scripts/migrate_profile_to_english_keys.py",
+            legacy_hits,
+        )
 
     return profile
 

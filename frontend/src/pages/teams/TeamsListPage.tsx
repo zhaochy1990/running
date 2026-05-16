@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listTeams, listMyTeams, joinTeam, type Team, type MyTeam } from '../../api'
+import ViewHead from '../../components/ViewHead'
 
 export default function TeamsListPage() {
   const navigate = useNavigate()
@@ -42,18 +43,19 @@ export default function TeamsListPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary">团队</h1>
-          <p className="text-sm font-mono text-text-muted mt-1">和队友一起跑</p>
-        </div>
-        <button
-          onClick={() => navigate('/teams/new')}
-          className="px-4 py-2 text-sm font-medium rounded-lg border border-accent-red/40 text-accent-red hover:bg-accent-red/10 transition-all"
-        >
-          + 创建团队
-        </button>
-      </div>
+      <ViewHead
+        eyebrow="社群"
+        title="团队"
+        lede="你参与的所有训练团队 · 邀请 / 创建 / 退出"
+        actions={
+          <button
+            onClick={() => navigate('/teams/new')}
+            className="px-4 py-2 text-sm font-medium rounded-lg border border-accent-red/40 text-accent-red hover:bg-accent-red/10 transition-all"
+          >
+            + 创建团队
+          </button>
+        }
+      />
 
       {error && (
         <div className="mb-4 px-4 py-3 rounded-lg border border-accent-red/30 bg-accent-red/5 text-sm text-accent-red font-mono">

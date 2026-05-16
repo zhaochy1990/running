@@ -19,6 +19,18 @@ import PlannedCalendar from '../components/PlannedCalendar'
 import PushAllPlannedButton from '../components/PushAllPlannedButton'
 import VariantComparisonView from '../components/VariantComparisonView'
 import RouteThumbnail from '../components/RouteThumbnail'
+import ViewHead from '../components/ViewHead'
+
+function parseFolderTag(folder: string): { phase: string | null; weekNum: string | null } {
+  const m = /\(([^)]+)\)\s*$/.exec(folder)
+  if (!m) return { phase: null, weekNum: null }
+  const inside = m[1].trim()
+  const wk = /W(\d+)/i.exec(inside)
+  return {
+    phase: inside,
+    weekNum: wk ? wk[1].padStart(2, '0') : null,
+  }
+}
 
 type Tab = 'plan' | 'variants' | 'strength' | 'calendar' | 'activities' | 'feedback'
 
@@ -187,17 +199,24 @@ export default function WeekLayout() {
         </div>
       ) : weekDetail ? (
         <div className="animate-fade-in">
-          {/* Week header */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-text-primary tracking-tight">
-              {formatWeekRange(weekDetail.date_from, weekDetail.date_to)}
-            </h1>
-            <div className="flex items-center flex-wrap gap-4 mt-2">
-              <Stat label="训练次数" value={`${weekDetail.activity_count}`} />
-              <Stat label="总里程" value={`${weekDetail.total_km} km`} accent />
-              <Stat label="总时长" value={weekDetail.total_duration_fmt} />
-            </div>
-          </div>
+          {(() => {
+            const { phase, weekNum } = parseFolderTag(weekDetail.folder)
+            const range = formatWeekRange(weekDetail.date_from, weekDetail.date_to)
+            const title = weekNum ? `W${weekNum} · ${range}` : range
+            return (
+              <>
+                <ViewHead
+                  eyebrow={phase ?? undefined}
+                  title={title}
+                />
+                <div className="mt-2 mb-6 flex gap-3 flex-wrap text-[12px] text-text-secondary font-mono">
+                  <Stat label="训练次数" value={`${weekDetail.activity_count}`} />
+                  <Stat label="总里程" value={`${weekDetail.total_km} km`} accent />
+                  <Stat label="总时长" value={weekDetail.total_duration_fmt} />
+                </div>
+              </>
+            )
+          })()}
 
           {/* Tabs: 训练计划 → 方案 → 日历 → 记录 → 反馈 */}
           <div className="flex gap-1 p-1 bg-bg-secondary rounded-lg w-fit mb-6">

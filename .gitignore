@@ -26,6 +26,11 @@ data/*/onboarding.json
 .stride-coach.json
 .credentials.local
 .playwright-mcp/
+# Root-level Playwright screenshots + snapshot dumps (local QA artifacts).
+/*.png
+/snapshot-*.yml
+# Local migration backups produced by scripts/migrate_profile_to_english_keys.py
+*.json.bak
 frontend/.env.local
 frontend/.env.*.local
 evaluation/

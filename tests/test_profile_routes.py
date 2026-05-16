@@ -184,7 +184,10 @@ def test_get_profile_normalizes_legacy_fields(app_client, tmp_path):
     assert profile["target_time"] == "2:50:00"
     assert profile["pbs"] == {"HM": "1:27:42 (2024-11)", "FM": "2:59:22 (2025-03)"}
     assert profile["constraints"] == "右跟腱止点肌腱病（慢性，可控）"
-    assert profile["姓名"] == "赵超毅"
+    # Legacy CJK keys are stripped after normalization so PATCH writes back
+    # in pure English-key form (idempotent migration on read).
+    for legacy_key in ("姓名", "出生", "身高_cm", "当前体重_kg", "目标", "PB 半马", "PB 马拉松", "已知问题"):
+        assert legacy_key not in profile, f"legacy key {legacy_key!r} should be stripped"
 
 
 def test_post_missing_required_field_returns_422(app_client):
