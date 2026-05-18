@@ -1,0 +1,564 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-05-18_05-24(P1W3)",
+  "notes_md": "P1W3 维持 + 主动养伤双主题周（5/18-5/24）。本周主题：维持有氧量 + 主动养伤双轨并进。跑步侧维持双跑日（周二/周四）+ 周末 LSD ≤25K + 次日恢复跑构建有氧体量（防 detraining）；力量与恢复侧把右腘绳肌持续疼 + 左踝崴脚遗留升级为主动康复主线。🚫 本周硬规则：零强度 / 零加速 —— 整周不跑任何间歇、节奏跑、加速段、strides。包括慢跑末尾、LSD 末段、力量后均不允许加速（理由：腘绳肌劳损再伤首要触发因素是加速，运动员自报间歇会扯着难受）。加速训练放到 W4-W5 渐进重返：W4 解锁 4-6×100m strides 到 5K race pace；W5 解锁 200m×6；W6+ 才回归 800m 间歇。 周量目标 ~69 km（区间 60-72 km）。锚点：(1) 周六 22-25K LSD 末段不加速（末 3K 等于或慢于 km10-15）；(2) 全周慢跑 HR ≤140，LSD HR ≤145；(3) 周一力量 A = 上肢主项 + 核心 + 腘绳肌康复 + 踝周稳定四模块；(4) 周五主动恢复 + 养伤日（默认不跑，上午滚+拉，下午 C+D 模块减半量）。安全闸：康复动作疼痛阈值 ≤2/10 超即跳过；腘绳肌跑中'扯着'感即停 + 当天剩余取消；左踝任何刺痛 → 休息 + 冰敷；腘绳肌晨起痛 ≥3/10 周四改单跑、≥5/10 当日休。养伤期每日补 5g 胶原蛋白肽 + 100mg 维 C 支持肌腱修复。",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-18",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "[STRIDE] 力量 A (上肢+核心+腘绳肌康复+踝稳定, ~50 min)",
+      "notes_md": "💪 力量 A：四模块结构（~50 min）。\n\n**A. 上肢主项（10-12 min）**：引体 T1186 3×6-8（控速 1-1-2，肩胛先启动）；哑铃卧推 T1147 3×8-10（肩胛收紧，肘 45°）；哑铃单臂划船 T1156 3×8/侧（背阔发力不耸肩）；哑铃过头推举 T1149 2×10（不塌腰）。组间 60-90s。\n\n**B. 核心（8-10 min）**：平板 T1010 3×45-60s；侧平板 T1185 3×30s/侧（髋不掉）；Dead Bug T1243 3×10/侧（**腿伸出慢且轻，避免拉腘绳肌**）；Bird Dog T1242 3×10/侧（躯干稳定，对侧手腿同时伸）。组间 30s。\n\n**C. 右腘绳肌主动养护（10-12 min）—— 本周新增重点**：(1) 仰卧屈膝足跟下压等长 8×10s（早期康复入门，**无疼痛触发即可**，脚跟主动下压地面）；(2) 单腿桥 T1187 3×8/侧（双脚屈膝，慢离心，骨盆水平，**任何疼痛立即停**）；(3) Hamstring Slide（毛巾/滑垫）2×6（**仅在等长无痛后再做**，慢离心 3s 下放）；(4) 后侧链泡沫轴/按摩球放松 5 min（腘绳肌+臀大肌+小腿三段，轻压每段 90s）。**所有动作疼痛阈值 ≤2/10，超过即跳过**。\n\n**D. 左踝周稳定（8-10 min）—— 本周新增重点**：(1) 弹力带踝 4 向 2×15/方向（蹠/背/内/外翻；**外翻幅度小、慢动作**避免再次崴脚）；(2) 单腿站立 T1248 睁眼 30s×2 + 闭眼 20s×2（左脚优先）；(3) 慢提踵 T1275 双脚版 3×12（向心 1s+离心 3s，避免单脚负荷过大）；(4) 字母字踝 1×2（脚趾画 A-J）。\n\n**E. Cool-down 静态拉伸 8 min**：腘绳肌/髋屈肌/小腿/髂胫束-TFL/臀大肌 各 30s×2。\n\n RPE 7-8，首次取保守值。整堂 ~50 min。",
+      "total_duration_s": 3000,
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量 A 上肢+核心+腘绳肌康复+踝稳定",
+        "date": "2026-05-18",
+        "note": "四模块：A 上肢主项 / B 核心 / C 腘绳肌康复 / D 踝周稳定 + E 静态拉伸；康复动作疼痛阈值 ≤2/10 超即跳过；RPE 7-8（上肢/核心），康复模块以无痛与质量优先",
+        "exercises": [
+          {
+            "canonical_id": "T1186",
+            "display_name": "引体向上（自重 / 弹力带辅助）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 8,
+            "rest_seconds": 90,
+            "note": "A 上肢主项；控速 1-1-2，肩胛先启动；力竭前停 1-2 次",
+            "provider_id": "T1186"
+          },
+          {
+            "canonical_id": "T1147",
+            "display_name": "哑铃卧推",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 90,
+            "note": "A 上肢主项；肩胛收紧，肘 45°；RPE 7-8",
+            "provider_id": "T1147"
+          },
+          {
+            "canonical_id": "T1156",
+            "display_name": "哑铃单臂划船（左/右）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 8,
+            "rest_seconds": 60,
+            "note": "A 上肢主项；背阔发力，不耸肩；左右各 1 组",
+            "provider_id": "T1156"
+          },
+          {
+            "canonical_id": "T1149",
+            "display_name": "哑铃过头推举",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 60,
+            "note": "A 上肢主项；核心收紧，不要塌腰",
+            "provider_id": "T1149"
+          },
+          {
+            "canonical_id": "T1010",
+            "display_name": "平板支撑",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 60,
+            "rest_seconds": 30,
+            "note": "B 核心；前臂支撑，髋腰平直",
+            "provider_id": "T1010"
+          },
+          {
+            "canonical_id": "T1185",
+            "display_name": "侧平板（左/右）",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 30,
+            "note": "B 核心；髋不掉，肩不耸；左右各 1 组",
+            "provider_id": "T1185"
+          },
+          {
+            "canonical_id": "T1243",
+            "display_name": "Dead Bug",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "note": "B 核心；腰平贴地；左右算 1 次；腿伸出慢且轻，避免拉腘绳肌",
+            "provider_id": "T1243"
+          },
+          {
+            "canonical_id": "T1242",
+            "display_name": "Bird Dog",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "note": "B 核心；对侧手腿同时伸；强调躯干稳定不晃",
+            "provider_id": "T1242"
+          },
+          {
+            "canonical_id": "hamstring_isometric_heel_press",
+            "display_name": "仰卧屈膝足跟下压等长",
+            "sets": 8,
+            "target_kind": "time_s",
+            "target_value": 10,
+            "rest_seconds": 15,
+            "note": "C 腘绳肌康复；早期入门动作；脚跟主动下压地面，腘绳肌等长收缩；无疼痛触发即可；疼痛 >2/10 即跳过",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "T1187",
+            "display_name": "单腿桥（屈膝慢离心）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 8,
+            "rest_seconds": 45,
+            "note": "C 腘绳肌康复；双脚屈膝，慢离心，骨盆保持水平；左右各 1 组；任何疼痛立即停",
+            "provider_id": "T1187"
+          },
+          {
+            "canonical_id": "hamstring_slide",
+            "display_name": "Hamstring Slide（毛巾/滑垫）",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 6,
+            "rest_seconds": 60,
+            "note": "C 腘绳肌康复；高级动作，仅在等长无痛后再做；慢离心 3s 下放；疼痛 >2/10 即跳过",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "foam_roll_posterior_chain",
+            "display_name": "后侧链泡沫轴/按摩球放松",
+            "sets": 1,
+            "target_kind": "time_s",
+            "target_value": 300,
+            "rest_seconds": 0,
+            "note": "C 腘绳肌康复；腘绳肌+臀大肌+小腿三段，轻压每段 90s，共 5 min",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "ankle_band_4way",
+            "display_name": "弹力带踝 4 向（蹠/背/内/外翻）",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 30,
+            "note": "D 踝周稳定；每方向 2×15；外翻幅度小、慢动作，避免再次崴脚",
+            "provider_id": null
+          },
+          {
+            "canonical_id": "T1248",
+            "display_name": "单腿站立稳定",
+            "sets": 4,
+            "target_kind": "time_s",
+            "target_value": 25,
+            "rest_seconds": 20,
+            "note": "D 踝周稳定；左脚优先；睁眼 30s×2 + 闭眼 20s×2；左右各 2 组",
+            "provider_id": "T1248"
+          },
+          {
+            "canonical_id": "T1275",
+            "display_name": "慢提踵（双脚版）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "D 踝周稳定；向心 1s + 离心 3s；双脚避免单脚负荷过大",
+            "provider_id": "T1275"
+          },
+          {
+            "canonical_id": "ankle_alphabet",
+            "display_name": "字母字踝（脚趾画 A-J）",
+            "sets": 1,
+            "target_kind": "reps",
+            "target_value": 2,
+            "rest_seconds": 0,
+            "note": "D 踝周稳定；双脚各画一遍 A-J 字母；动作小而精确",
+            "provider_id": null
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-19",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] Easy AM 8km (HR<140)",
+      "notes_md": "🌅 早慢跑 8K，双跑日上半场。6:30-7:30 出发。配速 5:10-5:30/km，HR ≤140。**跑前热身必含腘绳肌动员**：高抬腿走 30s + 后踢腿 30s + 髋部环绕 10/侧 + 弓步走 6/侧。出门前 200 mL 水 + 香蕉 1 / 30 g 燕麦。HR>142 立即降到 5:30+。如腘绳肌任何'扯着'感 → 当下停步走完，晚跑取消。**跑后硬性 5 min 拉伸 + 5 min 泡沫轴**。距离上限 9 km。",
+      "total_distance_m": 8000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy AM 8km",
+        "date": "2026-05-19",
+        "note": "Z2 偏下；HR<140 硬约束；跑前腘绳肌动员；跑后 5 min 拉伸 + 5 min 泡沫轴硬性",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 140
+                },
+                "note": "5:10-5:30/km；HR>142 立即降到 5:30+；腘绳肌'扯着'即停"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-19",
+      "session_index": 1,
+      "kind": "run",
+      "summary": "[STRIDE] Easy PM 6km (HR<138)",
+      "notes_md": "🌃 晚慢跑 6K，双跑日下半场。19:00-20:00 出发。配速 5:20-5:40/km，HR ≤138。如早跑后腘绳肌有'扯着'感或晨起痛 ≥3/10 → 晚跑取消。HR>140 立即走跑结合。**跑前腘绳肌动员，跑后 5 min 拉伸 + 5 min 泡沫轴**。距离上限 7 km。",
+      "total_distance_m": 6000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy PM 6km",
+        "date": "2026-05-19",
+        "note": "Z2 偏下；HR<138；腘绳肌不适 → 取消；跑前后热身/恢复硬性",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 6000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 118,
+                  "high": 138
+                },
+                "note": "5:20-5:40/km；HR>140 立即走跑结合；腘绳肌不适即取消"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-20",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] Easy 11km (HR<138)",
+      "notes_md": "慢跑 10-12K。晨起评估：腘绳肌晨起痛 ≤2/10 + RHR ≤50 → 10-12K @ HR ≤138 / 5:20-5:40。任一不达 → 改 6K 极慢 + 30 min 骑行。HR>140 立即降到 5:30+。**跑前腘绳肌动员，跑后 5 min 拉伸 + 5 min 泡沫轴**。距离上限 12 km。",
+      "total_distance_m": 11000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy 11km",
+        "date": "2026-05-20",
+        "note": "Z2 偏下；HR<138；腘绳肌晨起痛 ≥3/10 → 降级 6K",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 11000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 118,
+                  "high": 138
+                },
+                "note": "5:20-5:40/km；HR>140 立即降到 5:30+；腘绳肌任何不适即停"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-21",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] Easy AM 8km (HR<140)",
+      "notes_md": "🌅 早慢跑 8K，双跑日上半场。6:30-7:30 出发。配速 5:10-5:30/km，HR ≤140。如周二+周三累积疲劳明显（晨起腘绳肌痛 ≥3/10 或 RHR ≥52）→ 早跑取消，仅保留晚跑。**跑前腘绳肌动员，跑后 5 min 拉伸 + 5 min 泡沫轴**。距离上限 9 km。",
+      "total_distance_m": 8000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy AM 8km",
+        "date": "2026-05-21",
+        "note": "Z2 偏下；HR<140；累积疲劳触发 → 取消",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 140
+                },
+                "note": "5:10-5:30/km；HR>142 立即降到 5:30+；腘绳肌任何不适即停"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-21",
+      "session_index": 1,
+      "kind": "run",
+      "summary": "[STRIDE] Easy PM 6km (HR<138)",
+      "notes_md": "🌃 晚慢跑 6K，双跑日下半场。19:00-20:00 出发。配速 5:20-5:40/km，HR ≤138。如早跑后腘绳肌'扯着'→ 取消晚跑。**跑前腘绳肌动员，跑后 5 min 拉伸 + 5 min 泡沫轴**。距离上限 7 km。",
+      "total_distance_m": 6000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Easy PM 6km",
+        "date": "2026-05-21",
+        "note": "Z2 偏下；HR<138；腘绳肌不适 → 取消",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 6000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 118,
+                  "high": 138
+                },
+                "note": "5:20-5:40/km；HR>140 立即走跑结合；腘绳肌不适即取消"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-22",
+      "session_index": 0,
+      "kind": "cross",
+      "summary": "[STRIDE] 主动恢复 + 养伤日（上午滚+拉 30 min，下午康复 block 20 min）",
+      "notes_md": "🧘 **主动恢复 + 养伤日 —— 默认不跑**，全天分两段康复：\n\n**上午（30 min）**：泡沫轴后侧链 + 髂胫束 + 小腿（轻压每段 90s） + 静态拉伸（腘绳肌 / 髋屈肌 / 小腿 / TFL 各 30s×2）。\n\n**下午（20 min）**：力量 A 的 **C+D 模块减半量**——\n - 仰卧屈膝足跟下压等长 8×10s\n - 单腿桥 T1187 2×8/侧（减半量）\n - 弹力带踝 4 向 1×15/方向（减半量）\n - 单腿站立 T1248 睁眼 30s×2（左脚）\n - 慢提踵 T1275 2×12（减半量）\n - 后侧链泡沫轴 5 min\n\n**例外**：腿状态特别好（晨起腘绳肌痛 0/10 + 主观疲劳 ≤3）→ 极慢摇 5K @ 6:00+/km / HR ≤130。默认不跑。\n\n所有康复动作疼痛阈值 ≤2/10，超过即跳过。",
+      "total_duration_s": 3000,
+      "spec": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-23",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] LSD 23km (no end surge, HR drift ≤8 bpm)",
+      "notes_md": "⭐ 本周核心课。**跑前热身必含腘绳肌动员**：高抬腿走 + 后踢腿 + 髋环 + 弓步走 + 5 min 走+慢跑过渡。**距离选择**：腘绳肌晨起痛 0-1/10 + RHR ≤50 + 主观 ≤4 → 25K；任一不达 → 22K；任 2 不达 → 18K。5:30-6:00 出发；路线**世博滨江 / 徐汇滨江**。**配速分档**：<20°C 4:50-5:00；20-25°C 5:00-5:10；>25°C 纯心率（≤142）5:10-5:25。**HR KPI**：km5/10/15/20 主动看 HR；首 5K avg HR vs 末 5K avg HR ≤ 8 bpm。**末 3K 必须等于或慢于 km10-15——绝不允许末段冲刺**。**应急预案**：km15 后 HR ≥145 → 立即降到 5:20-5:40；km18 后腘绳肌'扯着'→ 当下停步走完 1-2 km 收尾，**当晚冰敷 15 min + 后侧链按摩 10 min**。**补给**：8K + 16K 各 1 个能量胶；每 5K 喝水 100-150 mL。**绝不许加 MP / 渐进段**——任务是有氧体量 + 末段控速。距离上限 25 km，HR avg 142 / max 145。",
+      "total_distance_m": 23000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] LSD 23km",
+        "date": "2026-05-23",
+        "note": "本周锚点；稳态 LSD 无 MP 无渐进；HR 优先于配速；末 3K 不许加速；首末 5K avg HR 差 ≤8 bpm 合格；腘绳肌'扯着'即停 + 当晚冰敷",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 23000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 125,
+                  "high": 142
+                },
+                "note": "4:50-5:10/km（温度分档）；HR>145 立即降速；末 3K 不许加速；末 5K HR - 首 5K HR ≤8 bpm 为合格"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-24",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "[STRIDE] Recovery 7km (HR<135)",
+      "notes_md": "LSD 次日恢复跑。配速 5:30+/km，HR ≤135。**纯泄洪**——绝不进入 Z2 高端，绝不加 strides。如腘绳肌晨起痛 ≥3/10 → 改休息 + 拉伸。HR>138 立即走跑结合。**跑前腘绳肌动员，跑后 5 min 拉伸 + 5 min 泡沫轴**。距离上限 8 km。",
+      "total_distance_m": 7000,
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] Recovery 7km",
+        "date": "2026-05-24",
+        "note": "Z1 恢复跑；HR<135 硬约束；不加 strides；腘绳肌晨起痛 ≥3/10 → 改休息",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 7000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 110,
+                  "high": 135
+                },
+                "note": "5:30+/km；纯泄洪；HR>138 立即走跑结合"
+              }
+            ]
+          }
+        ]
+      },
+      "scheduled_workout_id": null
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-18",
+      "kcal_target": 4500,
+      "carbs_g": 350,
+      "protein_g": 140,
+      "fat_g": 130,
+      "water_ml": 2500,
+      "notes_md": "力量 A 四模块日。碳水 4-5 g/kg，热量 4500 kcal。蛋白 1.8 g/kg = 140 g/天；每餐 ≥30 g。力量后 30 min 内 30 g 乳清 + 30-50 g 快碳。**养伤期额外**：5g 胶原蛋白肽 + 100 mg 维 C，力量前 30-60 min 摄入支持肌腱合成。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-19",
+      "kcal_target": 5000,
+      "carbs_g": 470,
+      "protein_g": 140,
+      "fat_g": 140,
+      "water_ml": 3000,
+      "notes_md": "双跑日 8K + 6K = 14K。碳水 6 g/kg，热量 5000 kcal。早跑前 200 mL 水 + 香蕉 1 / 30g 燕麦；晚跑后 30 min 内 30 g 乳清 + 50 g 快碳。**养伤期**：5g 胶原蛋白肽 + 100mg 维 C 跑前摄入。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-20",
+      "kcal_target": 5000,
+      "carbs_g": 470,
+      "protein_g": 140,
+      "fat_g": 140,
+      "water_ml": 2800,
+      "notes_md": "慢跑 10-12K。碳水 6 g/kg，热量 5000 kcal。蛋白每餐 ≥30 g。**养伤期**：5g 胶原蛋白肽 + 100mg 维 C 跑前摄入。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-21",
+      "kcal_target": 5000,
+      "carbs_g": 470,
+      "protein_g": 140,
+      "fat_g": 140,
+      "water_ml": 3000,
+      "notes_md": "双跑日 8K + 6K = 14K。碳水 6 g/kg，热量 5000 kcal。同周二补给节奏。**养伤期**：5g 胶原蛋白肽 + 100mg 维 C 跑前摄入。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-22",
+      "kcal_target": 4500,
+      "carbs_g": 350,
+      "protein_g": 140,
+      "fat_g": 130,
+      "water_ml": 2500,
+      "notes_md": "主动恢复 + 养伤日 + LSD 前夜。碳水 4-5 g/kg，热量 4500 kcal。**晚餐高碳水低纤维低油**：米饭 2 碗 + 鸡胸 150 g + 蔬菜（少油），为明日 LSD 储备糖原。**养伤期**：5g 胶原蛋白肽 + 100mg 维 C 下午康复 block 前摄入。",
+      "meals": []
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-23",
+      "kcal_target": 5500,
+      "carbs_g": 625,
+      "protein_g": 140,
+      "fat_g": 140,
+      "water_ml": 3500,
+      "notes_md": "⭐ LSD 22-25K。碳水 8 g/kg，热量 5500 kcal。LSD 额外消耗 ~1700 kcal。跑前 + 跑中 + 跑后三段补给。**养伤期**：5g 胶原蛋白肽 + 100mg 维 C 跑前 45 min 摄入，支持肌腱在长距离负荷下的修复。",
+      "meals": [
+        {
+          "name": "跑前 30-45 min",
+          "time_hint": "05:00",
+          "kcal": 550,
+          "carbs_g": 100,
+          "protein_g": 30,
+          "fat_g": 8,
+          "items_md": "燕麦 80g + 香蕉 1 + 蜂蜜 + 30g 蛋白粉 + 黑咖啡 + 300 mL 水 + 5g 胶原蛋白肽 + 100mg 维 C"
+        },
+        {
+          "name": "跑中 8km",
+          "time_hint": "06:30",
+          "kcal": 100,
+          "carbs_g": 25,
+          "protein_g": 0,
+          "fat_g": 0,
+          "items_md": "能量胶 1 个 + 100-150 mL 水"
+        },
+        {
+          "name": "跑中 16km",
+          "time_hint": "07:30",
+          "kcal": 100,
+          "carbs_g": 25,
+          "protein_g": 0,
+          "fat_g": 0,
+          "items_md": "能量胶 1 个 + 100-150 mL 水"
+        },
+        {
+          "name": "跑后 30 min 内恢复餐",
+          "time_hint": "08:30",
+          "kcal": 600,
+          "carbs_g": 80,
+          "protein_g": 30,
+          "fat_g": 10,
+          "items_md": "30g 乳清蛋白 + 米饭 1 碗 + 香蕉 1 + 蜂蜜 1 勺 + 500-700 mL 含电解质水"
+        }
+      ]
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-24",
+      "kcal_target": 5000,
+      "carbs_g": 470,
+      "protein_g": 140,
+      "fat_g": 140,
+      "water_ml": 2800,
+      "notes_md": "LSD 次日恢复跑 6-8K。碳水 6 g/kg，热量 5000 kcal。继续糖原回填 + 蛋白修复。本周收尾，进入下周衔接自评。**养伤期**：5g 胶原蛋白肽 + 100mg 维 C 跑前摄入。",
+      "meals": []
+    }
+  ]
+}
