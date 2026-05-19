@@ -33,6 +33,10 @@ data/*/onboarding.json
 *.json.bak
 frontend/.env.local
 frontend/.env.*.local
-evaluation/
+# Anchored: only ignore a top-level `evaluation/` directory (local scratch).
+# Without the leading `/`, this rule eats `src/coach/graphs/evaluation/` and
+# any other nested `evaluation/` package — same bug pattern as `/profile` above.
+/evaluation/
 node_modules/
+.worktrees/
 
