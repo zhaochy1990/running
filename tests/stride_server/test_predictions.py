@@ -25,6 +25,7 @@ from fastapi.testclient import TestClient
 
 from stride_core.ability import ABILITY_MODEL_VERSION
 from stride_core.db import Database
+from stride_server.config.models import AuthConfig, ServerConfig
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +112,12 @@ def setup(tmp_path, monkeypatch, rsa_keypair):
     monkeypatch.setattr(cs_mod, "read_json", lambda path: None)
 
     from stride_server.app import create_app
-    app = create_app(_StubSource())
+    app = create_app(
+        _StubSource(),
+        config=ServerConfig.default(env="prod").with_updates(
+            auth=AuthConfig(public_key_pem=public_pem)
+        ),
+    )
     client = TestClient(app)
 
     return client, db_path, private_pem, tmp_path, monkeypatch
