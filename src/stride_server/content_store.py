@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
 
 from stride_core import db as core_db
+from stride_server.config import load_server_config
+from stride_server.config.loader import resolve_config_env
+from stride_server.config.models import ConfigError, ContentStorageConfig, ServerConfig
+from stride_server.config.sources import env_source
 
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.INFO)
@@ -43,22 +46,57 @@ def _file_path(relative_path: str) -> Path:
     return core_db.USER_DATA_DIR / _clean_relative_path(relative_path)
 
 
-def _blob_prefix() -> str:
-    return os.environ.get(PREFIX_ENV, DEFAULT_PREFIX).strip().strip("/")
+def _is_auth_config_error(exc: ConfigError) -> bool:
+    return "auth.public_key" in str(exc)
 
 
-def _blob_name(relative_path: str) -> str:
+def _content_config_from_env() -> ContentStorageConfig:
+    config = ServerConfig.default(env=resolve_config_env()).storage.content
+    storage = env_source().get("storage", {})
+    content = storage.get("content", {}) if isinstance(storage, dict) else {}
+    if isinstance(content, dict):
+        return config.with_updates(**content)
+    return config
+
+
+def _content_config(config: ContentStorageConfig | None = None) -> ContentStorageConfig:
+    if config is not None:
+        return config
+    try:
+        return load_server_config().storage.content
+    except ConfigError as exc:
+        if not _is_auth_config_error(exc):
+            raise
+        return _content_config_from_env()
+
+
+def _blob_prefix_from_config(config: ContentStorageConfig) -> str:
+    return config.prefix.strip().strip("/")
+
+
+def _blob_prefix(config: ContentStorageConfig | None = None) -> str:
+    return _blob_prefix_from_config(_content_config(config))
+
+
+def _blob_name(
+    relative_path: str,
+    config: ContentStorageConfig | None = None,
+) -> str:
     clean = _clean_relative_path(relative_path)
-    prefix = _blob_prefix()
+    prefix = _blob_prefix(config)
     return f"{prefix}/{clean}" if prefix else clean
 
 
-def _blob_config() -> tuple[str, str] | None:
-    account_url = os.environ.get(ACCOUNT_URL_ENV, "").strip()
-    container = os.environ.get(CONTAINER_ENV, "").strip()
+def _blob_config_from_config(config: ContentStorageConfig) -> tuple[str, str] | None:
+    account_url = config.account_url.strip()
+    container = config.container.strip()
     if not account_url or not container:
         return None
     return account_url, container
+
+
+def _blob_config(config: ContentStorageConfig | None = None) -> tuple[str, str] | None:
+    return _blob_config_from_config(_content_config(config))
 
 
 @lru_cache(maxsize=4)
@@ -74,14 +112,19 @@ def _is_blob_not_found(exc: Exception) -> bool:
     return exc.__class__.__name__ in {"ResourceNotFoundError", "BlobNotFoundError"}
 
 
-def read_text(relative_path: str) -> ContentItem | None:
+def read_text(
+    relative_path: str,
+    *,
+    config: ContentStorageConfig | None = None,
+) -> ContentItem | None:
     """Read UTF-8 text from Blob if configured, falling back to local files."""
-    config = _blob_config()
-    if config is not None:
-        account_url, container = config
+    storage_config = _content_config(config)
+    blob_config = _blob_config_from_config(storage_config)
+    if blob_config is not None:
+        account_url, container = blob_config
         try:
             data = _container_client(account_url, container).download_blob(
-                _blob_name(relative_path)
+                _blob_name(relative_path, storage_config)
             ).readall()
             logger.info("content read source=blob path=%s", relative_path)
             return ContentItem(data.decode("utf-8"), "blob")
@@ -106,15 +149,17 @@ def write_text(
     content: str,
     *,
     content_type: str = "text/plain; charset=utf-8",
+    config: ContentStorageConfig | None = None,
 ) -> str:
     """Write UTF-8 text to Blob if configured, falling back to local files."""
-    config = _blob_config()
+    storage_config = _content_config(config)
+    blob_config = _blob_config_from_config(storage_config)
     data = content.encode("utf-8")
-    if config is not None:
-        account_url, container = config
+    if blob_config is not None:
+        account_url, container = blob_config
         try:
             _container_client(account_url, container).upload_blob(
-                _blob_name(relative_path),
+                _blob_name(relative_path, storage_config),
                 data,
                 overwrite=True,
             )
@@ -134,25 +179,44 @@ def write_text(
     return "file"
 
 
-def read_json(relative_path: str) -> tuple[Any, str] | None:
-    item = read_text(relative_path)
+def read_json(
+    relative_path: str,
+    *,
+    config: ContentStorageConfig | None = None,
+) -> tuple[Any, str] | None:
+    item = read_text(relative_path, config=config)
     if item is None:
         return None
     return json.loads(item.content), item.source
 
 
-def write_json(relative_path: str, data: Any) -> str:
+def write_json(
+    relative_path: str,
+    data: Any,
+    *,
+    config: ContentStorageConfig | None = None,
+) -> str:
     content = json.dumps(data, indent=2, default=str)
-    return write_text(relative_path, content, content_type="application/json; charset=utf-8")
+    return write_text(
+        relative_path,
+        content,
+        content_type="application/json; charset=utf-8",
+        config=config,
+    )
 
 
-def exists(relative_path: str) -> bool:
-    config = _blob_config()
-    if config is not None:
-        account_url, container = config
+def exists(
+    relative_path: str,
+    *,
+    config: ContentStorageConfig | None = None,
+) -> bool:
+    storage_config = _content_config(config)
+    blob_config = _blob_config_from_config(storage_config)
+    if blob_config is not None:
+        account_url, container = blob_config
         try:
             return bool(_container_client(account_url, container).get_blob_client(
-                _blob_name(relative_path)
+                _blob_name(relative_path, storage_config)
             ).exists())
         except Exception as exc:
             logger.warning(
@@ -164,14 +228,19 @@ def exists(relative_path: str) -> bool:
     return _file_path(relative_path).exists()
 
 
-def list_week_folders(user: str) -> list[str]:
+def list_week_folders(
+    user: str,
+    *,
+    config: ContentStorageConfig | None = None,
+) -> list[str]:
     """Return week folder names discovered in Blob and/or the filesystem."""
     folders: set[str] = set()
 
-    config = _blob_config()
-    if config is not None:
-        account_url, container = config
-        prefix = _blob_name(f"{user}/logs") + "/"
+    storage_config = _content_config(config)
+    blob_config = _blob_config_from_config(storage_config)
+    if blob_config is not None:
+        account_url, container = blob_config
+        prefix = _blob_name(f"{user}/logs", storage_config) + "/"
         try:
             for blob in _container_client(account_url, container).list_blobs(name_starts_with=prefix):
                 rest = blob.name[len(prefix):]
@@ -191,5 +260,9 @@ def list_week_folders(user: str) -> list[str]:
     return sorted(folders, reverse=True)
 
 
-def any_exists(relative_paths: Iterable[str]) -> bool:
-    return any(exists(path) for path in relative_paths)
+def any_exists(
+    relative_paths: Iterable[str],
+    *,
+    config: ContentStorageConfig | None = None,
+) -> bool:
+    return any(exists(path, config=config) for path in relative_paths)

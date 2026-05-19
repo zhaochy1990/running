@@ -17,9 +17,39 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+from stride_server.config.models import NotificationStorageConfig
+
 
 USER_A = "a1b2c3d4-e5f6-4aaa-89ab-111111111111"
 USER_B = "b1b2c3d4-e5f6-4aaa-89ab-222222222222"
+
+
+def test_notifications_backend_uses_config_file_backend() -> None:
+    from stride_server.notifications.store import backend_from_config
+
+    backend = backend_from_config(
+        NotificationStorageConfig(
+            table_account_url="",
+            devices_table="stridedevices",
+            prefs_table="strideprefs",
+        )
+    )
+
+    assert backend.__class__.__name__ == "_FileBackend"
+
+
+def test_notifications_backend_uses_legacy_likes_url_when_dedicated_env_blank(monkeypatch) -> None:
+    from stride_server.notifications import store as nstore
+
+
+    monkeypatch.setenv(nstore.ACCOUNT_URL_ENV, "")
+    monkeypatch.setenv(nstore.LEGACY_ACCOUNT_URL_ENV, "https://acct.table.core.windows.net")
+    nstore.reset_backend_cache()
+
+    backend = nstore._get_backend()
+
+    assert backend.__class__.__name__ == "_AzureTableBackend"
+    nstore.reset_backend_cache()
 
 
 # ---------------------------------------------------------------------------

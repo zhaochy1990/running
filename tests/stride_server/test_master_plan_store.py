@@ -11,6 +11,8 @@ import json
 
 import pytest
 
+from stride_server.config import clear_server_config_cache
+from stride_server.config.models import MasterPlanStorageConfig
 from stride_core.master_plan import (
     MasterPlan,
     MasterPlanStatus,
@@ -97,6 +99,39 @@ def _make_version(
     )
 
 
+def test_master_plan_store_uses_config_file_backend() -> None:
+    from stride_server.master_plan_store import store_from_config
+
+    store = store_from_config(
+        MasterPlanStorageConfig(
+            table_account_url="",
+            table_name="stridemasterplan",
+        )
+    )
+
+    assert store.__class__.__name__ == "FileMasterPlanStore"
+
+
+def test_master_plan_default_file_backend_does_not_require_valid_auth_config(monkeypatch) -> None:
+    from stride_server.master_plan_store import get_master_plan_store, reset_master_plan_store_cache
+
+    monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)
+    monkeypatch.delenv("STRIDE_ENV", raising=False)
+    monkeypatch.setenv("STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL", "")
+    for key in (
+        "STRIDE_AUTH_PUBLIC_KEY_PEM",
+        "STRIDE_AUTH_PUBLIC_KEY_PATH",
+        "STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    reset_master_plan_store_cache()
+
+    store = get_master_plan_store()
+
+    assert store.__class__.__name__ == "FileMasterPlanStore"
+    reset_master_plan_store_cache()
+
+
 # ---------------------------------------------------------------------------
 # Fixture: isolated FileMasterPlanStore per test
 # ---------------------------------------------------------------------------
@@ -109,12 +144,15 @@ def store(tmp_path, monkeypatch):
     import stride_server.master_plan_store as ms
 
     monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "local")
     monkeypatch.delenv("STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL", raising=False)
+    clear_server_config_cache()
     ms.reset_master_plan_store_cache()
 
     yield ms.get_master_plan_store()
 
     ms.reset_master_plan_store_cache()
+    clear_server_config_cache()
 
 
 # ---------------------------------------------------------------------------
