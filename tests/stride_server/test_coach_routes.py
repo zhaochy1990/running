@@ -21,6 +21,8 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
+from stride_server.config.models import AuthConfig, ServerConfig
+
 USER_UUID = "11111111-2222-4aaa-89ab-123456789012"
 OTHER_UUID = "22222222-2222-4aaa-89ab-123456789012"
 
@@ -110,6 +112,9 @@ def coach_client(tmp_path, monkeypatch, rsa_keypair):
     from stride_server.routes import coach as coach_routes
 
     app = FastAPI()
+    app.state.config = ServerConfig.default(env="prod").with_updates(
+        auth=AuthConfig(public_key_pem=public_pem)
+    )
     app.include_router(coach_routes.router, dependencies=[Depends(require_bearer)])
     client = TestClient(app, raise_server_exceptions=True)
 

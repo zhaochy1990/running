@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, Depends
 from fastapi.testclient import TestClient
-from stride_server.config.models import SyncConfig
+from stride_server.config.models import AuthConfig, ServerConfig, SyncConfig
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 
@@ -98,6 +98,9 @@ def app_env(tmp_path, monkeypatch, rsa_keypair):
     from stride_server.bearer import require_bearer
 
     app = FastAPI()
+    app.state.config = ServerConfig.default(env="prod").with_updates(
+        auth=AuthConfig(public_key_pem=public_pem)
+    )
 
     # Inject mock source + real registry via app state (mirrors real app factory)
     app.state.source = mock_source
