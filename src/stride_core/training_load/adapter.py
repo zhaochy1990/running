@@ -105,6 +105,79 @@ def _as_speed_mps(value: Any) -> float | None:
     return 1000.0 / speed if speed > 20 else speed
 
 
+def _as_activity_distance_meters(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        distance = float(value)
+    except (TypeError, ValueError):
+        return None
+    if distance <= 0:
+        return None
+    # activities.distance_m is a legacy name. Current COROS/Garmin sync stores
+    # activity distances in kilometers; older/local tests may still use meters.
+    return distance * 1000.0 if distance < 500 else distance
+
+
+def _row_value(row: Any, key: str) -> Any:
+    try:
+        return row[key] if key in row.keys() else None
+    except AttributeError:
+        return row.get(key) if isinstance(row, dict) else None
+
+
+def _activity_distance_from_db(db: Any, label_id: str) -> tuple[float | None, str | None, int | None]:
+    rows = db.query(
+        "SELECT distance_m, provider, sport_type FROM activities WHERE label_id = ? LIMIT 1",
+        (label_id,),
+    )
+    if not rows:
+        return None, None, None
+    row = rows[0]
+    sport_type = _row_value(row, "sport_type")
+    try:
+        sport_type_int = int(sport_type) if sport_type is not None else None
+    except (TypeError, ValueError):
+        sport_type_int = None
+    return (
+        _as_activity_distance_meters(_row_value(row, "distance_m")),
+        _row_value(row, "provider"),
+        sport_type_int,
+    )
+
+
+def _distance_scale_for_timeseries(
+    rows: Sequence[Any],
+    *,
+    activity_distance_m: float | None,
+    provider: str | None,
+) -> float:
+    distances: list[float] = []
+    for row in rows:
+        distance = _row_value(row, "distance")
+        if distance is None:
+            continue
+        try:
+            value = float(distance)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            distances.append(value)
+    if not distances:
+        return 1.0
+    max_distance = max(distances)
+    if activity_distance_m and activity_distance_m > 0:
+        # COROS frequencyList stores distance in centimeters; Garmin details
+        # stores meters. Compare against normalized activity distance so local
+        # test fixtures that already use meters are preserved.
+        if max_distance / activity_distance_m > 20.0:
+            return 0.01
+        return 1.0
+    if (provider or "").lower() == "coros" and max_distance > 10_000:
+        return 0.01
+    return 1.0
+
+
 def _normalize_elapsed_seconds(rows: Iterable[Any]) -> tuple[float | None, ...]:
     raw: list[float | None] = []
     for row in rows:
@@ -133,13 +206,30 @@ def _normalize_elapsed_seconds(rows: Iterable[Any]) -> tuple[float | None, ...]:
     return tuple(out)
 
 
-def _fetch_samples(db: Any, label_id: str) -> tuple[ActivitySample, ...]:
+def _fetch_samples(
+    db: Any,
+    label_id: str,
+    *,
+    provider: str | None = None,
+    sport_type: int | None = None,
+    activity_distance_m: float | None = None,
+) -> tuple[ActivitySample, ...]:
+    if activity_distance_m is None or provider is None or sport_type is None:
+        db_distance_m, db_provider, db_sport_type = _activity_distance_from_db(db, label_id)
+        activity_distance_m = activity_distance_m if activity_distance_m is not None else db_distance_m
+        provider = provider if provider is not None else db_provider
+        sport_type = sport_type if sport_type is not None else db_sport_type
     rows = db.query(
         """SELECT timestamp, distance, heart_rate, speed, altitude, power
            FROM timeseries WHERE label_id = ? ORDER BY id""",
         (label_id,),
     )
     elapsed = _normalize_elapsed_seconds(rows)
+    distance_scale = _distance_scale_for_timeseries(
+        rows,
+        activity_distance_m=activity_distance_m,
+        provider=provider,
+    )
     samples: list[ActivitySample] = []
     for row, seconds in zip(rows, elapsed):
         distance = row["distance"]
@@ -147,7 +237,7 @@ def _fetch_samples(db: Any, label_id: str) -> tuple[ActivitySample, ...]:
             ActivitySample(
                 timestamp_s=seconds,
                 elapsed_s=seconds,
-                distance_m=float(distance) if distance is not None else None,
+                distance_m=float(distance) * distance_scale if distance is not None else None,
                 heart_rate_bpm=float(row["heart_rate"]) if row["heart_rate"] is not None else None,
                 speed_mps=_as_speed_mps(row["speed"]),
                 altitude_m=float(row["altitude"]) if row["altitude"] is not None else None,
@@ -157,8 +247,23 @@ def _fetch_samples(db: Any, label_id: str) -> tuple[ActivitySample, ...]:
     return tuple(samples)
 
 
-def _fetch_calibration_samples(db: Any, label_id: str) -> tuple[CalibrationSample, ...]:
-    return tuple(_fetch_samples(db, label_id))
+def _fetch_calibration_samples(
+    db: Any,
+    label_id: str,
+    *,
+    provider: str | None = None,
+    sport_type: int | None = None,
+    activity_distance_m: float | None = None,
+) -> tuple[CalibrationSample, ...]:
+    return tuple(
+        _fetch_samples(
+            db,
+            label_id,
+            provider=provider,
+            sport_type=sport_type,
+            activity_distance_m=activity_distance_m,
+        )
+    )
 
 
 def _fetch_activity_rows(
@@ -273,14 +378,20 @@ def _build_activity_input(db: Any, row: Any) -> ActivityLoadInput | None:
         sport=sport,
         session_class=_session_class_from_row(row, sport),
         duration_s=float(row["duration_s"]) if row["duration_s"] is not None else None,
-        distance_m=float(row["distance_m"]) if row["distance_m"] is not None else None,
+        distance_m=_as_activity_distance_meters(row["distance_m"]),
         ascent_m=float(row["ascent_m"]) if "ascent_m" in row.keys() and row["ascent_m"] is not None else None,
         descent_m=float(row["descent_m"]) if "descent_m" in row.keys() and row["descent_m"] is not None else None,
         avg_hr=float(row["avg_hr"]) if "avg_hr" in row.keys() and row["avg_hr"] is not None else None,
         max_hr=float(row["max_hr"]) if "max_hr" in row.keys() and row["max_hr"] is not None else None,
         avg_power=float(row["avg_power"]) if "avg_power" in row.keys() and row["avg_power"] is not None else None,
         calories_kcal=float(row["calories_kcal"]) if "calories_kcal" in row.keys() and row["calories_kcal"] is not None else None,
-        samples=_fetch_samples(db, row["label_id"]),
+        samples=_fetch_samples(
+            db,
+            row["label_id"],
+            provider=row["provider"] if "provider" in row.keys() else None,
+            sport_type=int(row["sport_type"]) if row["sport_type"] is not None else None,
+            activity_distance_m=_as_activity_distance_meters(row["distance_m"]),
+        ),
         rpe=int(rpe) if rpe is not None else None,
     )
 
@@ -297,11 +408,17 @@ def _build_calibration_history(db: Any) -> list[CalibrationActivity]:
             activity_date=activity_date,
             sport=_sport_from_row(row),
             duration_s=float(row["duration_s"]) if row["duration_s"] is not None else None,
-            distance_m=float(row["distance_m"]) if row["distance_m"] is not None else None,
+            distance_m=_as_activity_distance_meters(row["distance_m"]),
             avg_hr=float(row["avg_hr"]) if "avg_hr" in row.keys() and row["avg_hr"] is not None else None,
             max_hr=float(row["max_hr"]) if "max_hr" in row.keys() and row["max_hr"] is not None else None,
             avg_power=float(row["avg_power"]) if "avg_power" in row.keys() and row["avg_power"] is not None else None,
-            samples=_fetch_calibration_samples(db, row["label_id"]),
+            samples=_fetch_calibration_samples(
+                db,
+                row["label_id"],
+                provider=row["provider"] if "provider" in row.keys() else None,
+                sport_type=int(row["sport_type"]) if row["sport_type"] is not None else None,
+                activity_distance_m=_as_activity_distance_meters(row["distance_m"]),
+            ),
         ))
     return out
 

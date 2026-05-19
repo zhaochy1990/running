@@ -6,6 +6,7 @@ import sqlite3
 from stride_core.db import Database
 from stride_core.models import ActivityDetail, DailyHealth, DailyHrv, TimeseriesPoint
 from stride_core.training_load.adapter import (
+    _fetch_samples,
     _normalize_elapsed_seconds,
     recompute_training_load,
 )
@@ -68,11 +69,12 @@ def _timeseries(
     *,
     hr: int | None = 170,
     speed_mps: float | None = 4.0,
+    distance_scale: float = 1.0,
 ) -> list[TimeseriesPoint]:
     return [
         TimeseriesPoint(
             timestamp=i * 100,
-            distance=(speed_mps * i) if speed_mps is not None else None,
+            distance=(speed_mps * i * distance_scale) if speed_mps is not None else None,
             heart_rate=hr,
             speed=(1000.0 / speed_mps) if speed_mps else None,
             adjusted_pace=None,
@@ -92,6 +94,57 @@ def test_normalizes_coros_epoch_centisecond_timestamps_to_elapsed_seconds():
     ]
 
     assert _normalize_elapsed_seconds(rows) == (0.0, 1.0, 2.0)
+
+
+def test_fetch_samples_normalizes_provider_distance_units(db):
+    db.upsert_activity(
+        _make_activity(
+            "coros_run",
+            "2026-05-01T00:00:00+00:00",
+            distance_m=14.4,
+            samples=_timeseries(speed_mps=4.0, distance_scale=100.0),
+        ),
+        provider="coros",
+    )
+    db.upsert_activity(
+        _make_activity(
+            "garmin_run",
+            "2026-05-01T00:00:00+00:00",
+            sport_type=8001,
+            distance_m=14.4,
+            samples=_timeseries(speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    coros_samples = _fetch_samples(db, "coros_run", provider="coros", sport_type=100)
+    garmin_samples = _fetch_samples(db, "garmin_run", provider="garmin", sport_type=8001)
+
+    assert coros_samples[-1].distance_m == 14400.0
+    assert garmin_samples[-1].distance_m == 14400.0
+
+
+def test_recompute_normalizes_activity_distance_stored_as_kilometers(db):
+    db.upsert_daily_health(DailyHealth("2026-05-01", None, None, 50, None, None, None, None, None))
+    db.upsert_activity(
+        _make_activity(
+            "km_run",
+            "2026-05-01T00:00:00+00:00",
+            distance_m=14.4,
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0, distance_scale=100.0),
+        ),
+        provider="coros",
+    )
+
+    recompute_training_load(db, start="2026-05-01", end="2026-05-01")
+
+    calibration = db.query("SELECT * FROM training_load_calibration")[0]
+    activity_row = db.fetch_activity_training_load("km_run")
+    assert calibration["threshold_speed_mps"] == 4.0
+    assert calibration["threshold_hr"] == 170.0
+    assert activity_row["external_tss"] == 100.0
+    assert activity_row["mechanical_load"] == 14.562
 
 
 def test_training_load_tables_exist_on_fresh_db(db):
