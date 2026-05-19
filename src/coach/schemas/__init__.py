@@ -11,6 +11,14 @@ from .conversation import (
     ToolCall,
     assistant_parts_from_message,
 )
+from .evaluation import (
+    AxisScore,
+    EvalReport,
+    FixtureRunOutcome,
+    JudgeScore,
+    OverallVerdict,
+    aggregate_axis_avg,
+)
 from .job import CoachJob, JobStage, JobStatus, JobType
 from .review import ReviewClass, ReviewIssue, ReviewReport, Severity, Verdict
 from .tool_result import ToolResult
@@ -25,6 +33,12 @@ __all__ = [
     "TextPhase",
     "ToolCall",
     "assistant_parts_from_message",
+    "AxisScore",
+    "EvalReport",
+    "FixtureRunOutcome",
+    "JudgeScore",
+    "OverallVerdict",
+    "aggregate_axis_avg",
     "CoachJob",
     "JobStage",
     "JobStatus",
