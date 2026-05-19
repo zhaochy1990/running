@@ -21,6 +21,7 @@ from typing import Literal, get_args
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from coach.runtime.messages import extract_text
 from coach.schemas import AxisScore, JudgeScore
 
 logger = logging.getLogger(__name__)
@@ -207,7 +208,7 @@ def make_s1_judge(llm: BaseChatModel) -> Callable[[dict, dict], JudgeScore]:
         except Exception:  # noqa: BLE001 — judge boundary; runner captures
             raise
 
-        raw = resp.content if isinstance(resp.content, str) else str(resp.content)
+        raw = extract_text(resp.content)
 
         parsed = _parse_judge_output(raw)
         if parsed is None:

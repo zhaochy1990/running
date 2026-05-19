@@ -6,8 +6,8 @@ import json
 
 import pytest
 
-from stride_server.aoai_client import AOAIUnavailable
 from coach_agent.model import (
+    AOAIUnavailable,
     COGNITIVE_SERVICES_SCOPE,
     build_azure_token_provider,
     get_generated_by,

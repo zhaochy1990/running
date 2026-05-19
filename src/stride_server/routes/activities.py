@@ -359,8 +359,7 @@ def regenerate_commentary(
 
     Returns 503 if AOAI is disabled or not configured.
     """
-    from ..commentary_ai import regenerate_and_save
-    from ..aoai_client import AOAIUnavailable
+    from ..commentary_ai import AOAIUnavailable, regenerate_and_save
 
     db = get_db(user)
     try:

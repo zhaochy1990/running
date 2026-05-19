@@ -8,9 +8,17 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, urlparse, urlunparse
 
-from stride_server.aoai_client import AOAIUnavailable
-
 COGNITIVE_SERVICES_SCOPE = "https://cognitiveservices.azure.com/.default"
+
+
+class AOAIUnavailable(RuntimeError):
+    """Raised when the local coach CLI cannot construct its chat model.
+
+    Defined locally so ``coach_agent`` (a developer-side CLI under
+    ``src/coach_agent``) doesn't depend on the deleted
+    ``stride_server.aoai_client`` module. Historical name kept so test
+    fixtures and CLI error messages stay stable.
+    """
 
 
 @dataclass(frozen=True)

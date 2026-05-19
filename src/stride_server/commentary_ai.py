@@ -20,19 +20,53 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from coach.runtime.llm_factory import CoachLLMUnavailable
+from coach.runtime.messages import extract_text
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import pace_str, sport_name
 
-from .aoai_client import AOAIUnavailable, get_client, get_deployment, is_enabled
 from .content_store import list_week_folders as content_week_folders
 from .content_store import read_json as read_content_json
 from .content_store import read_text as read_content_text
 
 logger = logging.getLogger(__name__)
+
+
+# Back-compat alias — historical callers (`routes/activities.py`,
+# `coros_sync/sync.py`) imported ``AOAIUnavailable`` from the old
+# ``aoai_client`` sibling. After consolidation to coach.runtime the
+# canonical exception is ``CoachLLMUnavailable``; the alias keeps the
+# call-sites stable.
+AOAIUnavailable = CoachLLMUnavailable
+
+
+def is_enabled() -> bool:
+    """Feature flag for activity-commentary auto-gen.
+
+    Preserves the legacy ``AOAI_COMMENTARY_ENABLED`` env semantics so dev
+    boxes that never set it stay silent. When ``True``, the actual LLM call
+    can still fail with :class:`CoachLLMUnavailable` if
+    ``config/coach.toml`` ``[commentary]`` is a placeholder.
+    """
+    return os.environ.get("AOAI_COMMENTARY_ENABLED", "").lower() == "true"
+
+
+def get_deployment() -> str:
+    """Return the commentary deployment id for the ``generated_by`` DB stamp.
+
+    Sourced from ``config/coach.toml`` ``[commentary].deployment`` so dev /
+    prod can swap deployments without touching code.
+    """
+    from coach.runtime.config import load_config
+
+    return load_config().commentary.deployment
 
 SHANGHAI_TZ = timezone(timedelta(hours=8))
 
@@ -539,13 +573,24 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
 # ============================================================================
 
 def generate_commentary(user: str, label_id: str, *, db: Database | None = None) -> str:
-    """Make a single AOAI call, return the generated text.
+    """Make a single LLM call, return the generated text.
 
-    Raises AOAIUnavailable if feature is off / deps missing / env not set.
-    Raises LookupError if activity not found.
+    Raises ``CoachLLMUnavailable`` if feature is off / deps missing /
+    ``coach.toml`` misconfigured. Raises ``LookupError`` if activity not found.
+
+    Uses ``coach.runtime.get_commentary_llm()`` so the role-to-model binding
+    is driven by ``config/coach.toml``. The system-message ``cache_control``
+    block is preserved by passing ``content=list[dict]`` to
+    ``SystemMessage`` — langchain ``AzureChatOpenAI`` forwards content blocks
+    as-is, so Azure prompt-cache hit rate is unchanged.
     """
-    client = get_client()
-    deployment = get_deployment()
+    if not is_enabled():
+        raise CoachLLMUnavailable("AOAI_COMMENTARY_ENABLED is not 'true'")
+
+    # Lazy import keeps module load free of coach.runtime singletons.
+    from .coach_runtime import get_commentary_llm
+
+    llm = get_commentary_llm()
     owned = False
     if db is None:
         db = Database(user=user)
@@ -556,14 +601,18 @@ def generate_commentary(user: str, label_id: str, *, db: Database | None = None)
         if owned:
             db.close()
 
-    response = client.chat.completions.create(
-        model=deployment,
-        messages=messages,
-        temperature=0.6,
-        max_tokens=600,
-        timeout=45,
-    )
-    text = response.choices[0].message.content or ""
+    # Convert OpenAI dict messages → langchain. Content can be ``str`` (user
+    # message) or ``list[dict]`` with ``cache_control`` blocks (system message).
+    lc_messages = []
+    for m in messages:
+        content = m["content"]
+        if m["role"] == "system":
+            lc_messages.append(SystemMessage(content=content))
+        else:
+            lc_messages.append(HumanMessage(content=content))
+
+    resp = llm.invoke(lc_messages)
+    text = extract_text(getattr(resp, "content", resp))
     return text.strip()
 
 
@@ -606,7 +655,7 @@ def maybe_generate_for_new_activity(user: str, label_id: str) -> None:
             logger.info("AOAI auto-generated commentary for %s (user=%s)", label_id, user)
         finally:
             db.close()
-    except AOAIUnavailable as e:
-        logger.info("AOAI unavailable, skipping auto-gen for %s: %s", label_id, e)
+    except CoachLLMUnavailable as e:
+        logger.info("LLM unavailable, skipping auto-gen for %s: %s", label_id, e)
     except Exception:
-        logger.exception("AOAI auto-gen failed for %s (user=%s)", label_id, user)
+        logger.exception("LLM commentary auto-gen failed for %s (user=%s)", label_id, user)
