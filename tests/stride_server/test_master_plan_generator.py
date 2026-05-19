@@ -89,6 +89,19 @@ _VALID_PLAN_DICT = {
                 "weekly_distance_km_high": 70,
                 "key_session_types": ["节奏跑", "长距离", "间歇"],
             },
+            {
+                # Added so the plan satisfies master_rule_filter rules
+                # phase_count_min (>= 3 phases) and peak_before_race
+                # (last phase ends 7-21 days before race milestone).
+                # Race is 2026-11-01, peak ends 2026-10-18 -> 14-day taper.
+                "name": "赛前期",
+                "start_date": "2026-09-07",
+                "end_date": "2026-10-18",
+                "focus": "比赛专项 + 减量",
+                "weekly_distance_km_low": 45,
+                "weekly_distance_km_high": 60,
+                "key_session_types": ["马拉松配速", "短间歇", "减量"],
+            },
         ],
         "milestones": [
             {
@@ -270,7 +283,9 @@ class TestBuildMasterPlan:
         assert plan.status == MasterPlanStatus.DRAFT
         assert plan.version == 1
         assert plan.generated_by == "gpt-4.1"
-        assert len(plan.phases) == 2
+        # 3 phases: 基础期 + 进展期 + 赛前期 (the 赛前期 added so the fixture
+        # satisfies the new master_rule_filter; without it phase_count_min fails).
+        assert len(plan.phases) == 3
         assert len(plan.milestones) == 3
         assert len(plan.training_principles) == 3
 
@@ -453,22 +468,27 @@ class TestRunGenerateJob:
                 "start_date": "2026-05-12",
                 "end_date": "2026-11-01",
                 "training_principles": ["原则1"],
-                # phases deliberately omitted
+                # phases deliberately omitted — master_rule_filter
+                # `phase_count_min` (>= 3) now blocks this before persist.
                 "milestones": [],
             },
         }
         raw_response = _sentinel_wrap(json.dumps(data))
-        import stride_server.master_plan_generator as mod
+        import stride_server.master_plan_generator as mod  # noqa: F401
         monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
 
+        # Post-refactor: phase-less plans are blocked by master_rule_filter,
+        # not silently persisted. Generator pipeline routes the verdict=block
+        # outcome to `rule_filter_failed` so the failure is loud, not silent.
         job = get_job(job_id)
-        assert job.status == JobStatus.DONE
-        assert len(patch_store.saved_plans) == 1
-        saved = patch_store.saved_plans[0]
-        assert saved.phases == []
+        assert job.status == JobStatus.FAILED
+        assert job.error is not None
+        assert job.error.startswith("rule_filter_failed")
+        assert "phase_count_min" in job.error
+        assert len(patch_store.saved_plans) == 0
 
     def test_job_stages_progress_through_all_stages(self, monkeypatch, patch_store, patch_history):
         """Verify that job progresses through all 4 stages in order."""
@@ -489,6 +509,11 @@ class TestRunGenerateJob:
                     stage_log.append((job.stage, job.progress))
 
         monkeypatch.setattr(mod, "update_job", spy_update_job)
+        # READING_HISTORY / EVALUATING / PLANNING_PHASES stage updates fire
+        # from inside master_plan_adapter, which imported `update_job` from
+        # `..job_runner` at module-load time. Patching only `mod.update_job`
+        # misses those calls. Patch the adapter's binding too.
+        monkeypatch.setattr(adapter_mod, "update_job", spy_update_job)
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -519,6 +544,13 @@ class TestRunGenerateJob:
             raise RuntimeError("unexpected database crash!")
 
         monkeypatch.setattr(mod, "_query_history", _exploding_history)
+        # master_plan_adapter.load_master_context imports `_query_history`
+        # at module-load time (`from ..master_plan_generator import _query_history`),
+        # so patching `mod._query_history` alone doesn't rebind the adapter's
+        # local name. Patch both so the exception actually fires during
+        # generation rather than letting the adapter call the real DB
+        # (which would then hit a real LLM further downstream).
+        monkeypatch.setattr(adapter_mod, "_query_history", _exploding_history)
 
         job_id = create_job(USER_ID)
         # Must not raise

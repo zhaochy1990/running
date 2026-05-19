@@ -41,7 +41,13 @@ COPY scripts/ ./scripts/
 # Coach runtime config — coach.runtime.config.load_config() reads this at
 # request time to resolve the role→deployment mapping. Without this COPY
 # the coach endpoints 500 with CoachConfigError at first invocation.
+#
+# `config/coach.toml` in the repo is the LOCAL DEV override (per-developer,
+# points at a dev endpoint / deployment). Production must use `coach.prod.toml`.
+# After COPY, overwrite coach.toml with coach.prod.toml so the default config
+# resolver (`<repo-root>/config/coach.toml`) picks up prod values.
 COPY config/ ./config/
+RUN mv ./config/coach.prod.toml ./config/coach.toml
 
 # Single source of truth for deps: pyproject.toml [project.optional-dependencies].
 # Editable install (-e) keeps /app/src as the import location — no file copy
