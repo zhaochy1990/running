@@ -80,13 +80,27 @@ def check_phase_count_min(
 
 
 _NON_PEAK_PHASE_KEYWORDS: tuple[str, ...] = (
-    # Race phases (LLM may emit "比赛" or "race" as a separate phase per the
-    # prompt's `基础期 → 进展期 → 赛前期 → 比赛 → 恢复期` order).
-    "比赛", "race",
+    # Race phases — keep these specific (`比赛周` / `比赛日`) rather than bare
+    # `比赛`, because `比赛准备期` / `比赛专项期` are valid peak phase names
+    # that ALSO contain `比赛` as a substring.
+    "比赛周", "比赛日", "race",
     # Taper / wind-down phases — they end at or near race day by design.
     "减量", "taper", "tapering",
     # Recovery phases (post-race).
     "恢复", "recovery",
+)
+
+# Markers that override the non-peak match. If any of these appears in the
+# phase name, the phase is treated as peak / prep regardless of any
+# race / taper / recovery keyword also being present. Catches:
+#   - 比赛准备期 / 比赛专项期       — peak phase, contains "比赛"
+#   - pre-race peak / race prep    — peak phase, contains "race"
+#   - peak phase                   — peak phase
+# Without this override the substring matcher would misclassify them and
+# fall back to an earlier build phase, producing false `peak_before_race`
+# violations (see codex review round 2, P0 finding).
+_PEAK_PHASE_MARKERS: tuple[str, ...] = (
+    "准备", "专项", "peak", "prep", "preparation", "build",
 )
 
 
@@ -95,6 +109,10 @@ def _is_non_peak_phase(phase_name: str) -> bool:
     if not phase_name:
         return False
     low = phase_name.lower()
+    # Peak-marker override takes precedence so prep-style names ("比赛准备期",
+    # "race prep") are never classified as non-peak.
+    if any(marker in low for marker in _PEAK_PHASE_MARKERS):
+        return False
     return any(kw in low for kw in _NON_PEAK_PHASE_KEYWORDS)
 
 
