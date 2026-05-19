@@ -370,6 +370,89 @@ def _format_history_summary(history: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Input normalisation — bridge prod-route field names to prompt-expected names
+# ---------------------------------------------------------------------------
+
+
+_PB_KEY_MAP: dict[str, str] = {"5K": "5k_s", "10K": "10k_s", "HM": "hm_s", "FM": "fm_s"}
+
+
+def _parse_hms_to_seconds(value: str) -> int | None:
+    """Parse ``H:MM:SS`` (or ``MM:SS``) into total seconds; ``None`` on bad input.
+
+    The training_goal API stores ``target_finish_time`` as ``H:MM:SS`` and the
+    running_profile API stores PB ``time`` the same way. The prompt's
+    goal-realism rule and the S1 eval fixtures both expect integer seconds
+    (``goal_time_s``, ``5k_s`` / ``10k_s`` / ``hm_s`` / ``fm_s``), so we
+    normalise once at the prompt boundary.
+    """
+    if not isinstance(value, str):
+        return None
+    parts = value.strip().split(":")
+    try:
+        if len(parts) == 3:
+            h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+        elif len(parts) == 2:
+            h, m, s = 0, int(parts[0]), int(parts[1])
+        else:
+            return None
+    except ValueError:
+        return None
+    if m >= 60 or s >= 60:
+        return None  # reject malformed components like "1:75:00"
+    return h * 3600 + m * 60 + s
+
+
+def _normalize_for_prompt(
+    goal: dict, profile: dict | None
+) -> tuple[dict, dict | None]:
+    """Map prod route field names → the names the prompt v2 expects.
+
+    Specifically:
+
+    * ``goal.target_finish_time`` (``"H:MM:SS"``) → ``goal.goal_time_s`` (int).
+    * ``profile.pbs`` (``[{distance: "FM", time: "H:MM:SS"}, ...]``) →
+      ``profile.prs`` (``{fm_s: int, hm_s: int, ...}``).
+
+    Existing ``goal_time_s`` / ``prs`` values are kept untouched (eval fixtures
+    already use the normalised shape, and we don't want to clobber explicit
+    overrides). Both inputs are shallow-copied so the caller's dicts are
+    never mutated.
+
+    Returns ``(goal_norm, profile_norm_or_None)``.
+    """
+    goal_norm: dict = dict(goal or {})
+    profile_norm: dict | None = dict(profile) if profile else None
+
+    if "goal_time_s" not in goal_norm:
+        secs = _parse_hms_to_seconds(goal_norm.get("target_finish_time", ""))
+        if secs is not None:
+            goal_norm["goal_time_s"] = secs
+
+    if profile_norm is not None and "prs" not in profile_norm:
+        raw_pbs = profile_norm.get("pbs") or []
+        if isinstance(raw_pbs, list):
+            prs: dict[str, int] = {}
+            for pb in raw_pbs:
+                if not isinstance(pb, dict):
+                    continue
+                dist = pb.get("distance")
+                time_str = pb.get("time")
+                if not isinstance(dist, str) or not isinstance(time_str, str):
+                    continue
+                key = _PB_KEY_MAP.get(dist.upper())
+                if not key:
+                    continue
+                secs = _parse_hms_to_seconds(time_str)
+                if secs is not None:
+                    prs[key] = secs
+            if prs:
+                profile_norm["prs"] = prs
+
+    return goal_norm, profile_norm
+
+
+# ---------------------------------------------------------------------------
 # LLM prompt builder
 # ---------------------------------------------------------------------------
 
@@ -381,6 +464,12 @@ def _build_system_prompt(
     fitness_state: dict[str, Any],
     today: str,
 ) -> str:
+    # Normalise prod-route field names before serialising into the prompt.
+    # Without this, prod payloads carry ``target_finish_time`` / ``pbs`` and
+    # the goal-realism HARD pushback rule (which references ``goal_time_s`` /
+    # ``profile.prs``) silently no-ops in production.
+    goal, profile = _normalize_for_prompt(goal, profile)
+
     goal_json = json.dumps(goal, ensure_ascii=False, indent=2)
     profile_json = json.dumps(profile, ensure_ascii=False, indent=2) if profile else "未填写"
     fitness_summary = fitness_state.get("summary", "体能数据暂无")

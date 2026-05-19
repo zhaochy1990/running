@@ -145,22 +145,29 @@ class LLMClient:
         system: str,
         messages: list[dict],
         model: str | None = None,
-        max_tokens: int = 2048,
+        max_tokens: int | None = None,
     ) -> str:
         """Make a blocking chat call.
 
         ``messages`` follows the OpenAI dict shape. A ``SystemMessage`` with
-        ``system`` is prepended automatically. ``model`` and ``max_tokens``
-        are kept in the signature for API stability but the actual values
-        come from ``config/coach.toml`` (the langchain client was bound at
-        construction time).
+        ``system`` is prepended automatically.
+
+        ``model`` is ignored — the langchain client is bound to the
+        ``[generator]`` deployment from ``config/coach.toml`` at construction
+        time. Signature kept for back-compat with legacy callers.
+
+        ``max_tokens`` IS honoured when set: master plan generation passes
+        ``max_tokens=8192`` because the v2 prompt (recovery / nutrition /
+        goal-realism HARD blocks) plus a full multi-phase plan can exceed the
+        ``coach.toml`` ``[generator]`` default. Falls back to the bound
+        deployment's configured limit when ``max_tokens=None``.
 
         Returns the assistant's text content, stripped.
 
         Raises :class:`LLMError` (with ``retryable`` set) on any SDK-side
         failure.
         """
-        del model, max_tokens  # coach.toml-driven; signature kept for compat
+        del model  # coach.toml-driven; signature kept for compat
 
         lc_messages: list[BaseMessage] = [SystemMessage(content=system)]
         for raw in messages or []:
@@ -173,8 +180,16 @@ class LLMClient:
             else:
                 lc_messages.append(HumanMessage(content=content))
 
+        # Bind per-call max_tokens when provided. langchain's BaseChatModel.bind
+        # returns a Runnable wrapping the model with extra kwargs passed to
+        # invoke. If the underlying provider rejects the param (e.g. some
+        # Responses-API reasoning models), the BadRequestError surfaces as
+        # LLMError(retryable=False) via _map_exception — that's preferable to
+        # silently dropping the caller's intent.
+        target = self._llm.bind(max_tokens=max_tokens) if max_tokens else self._llm
+
         try:
-            resp = self._llm.invoke(lc_messages)
+            resp = target.invoke(lc_messages)
         except CoachLLMUnavailable as exc:
             raise LLMUnavailable(str(exc)) from exc
         except BaseException as exc:

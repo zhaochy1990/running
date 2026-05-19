@@ -117,7 +117,26 @@ def generate_master_plan(state: GenState) -> dict:
     system_prompt = _build_system_prompt(
         goal, profile, history_summary, fitness_state, today
     )
-    user_message = [{"role": "user", "content": "请基于上述信息生成训练总纲"}]
+
+    user_text = "请基于上述信息生成训练总纲"
+    # If rule_filter blocked a previous iteration's draft, the graph routes
+    # back here with `state.rule_violations` populated. Without feeding them
+    # to the next prompt we'd retry with identical input — wasted tokens on
+    # deterministic L1 failures. Inject a corrective postscript so the LLM
+    # can fix the specific issues (e.g. add a 赛前期 phase, push race date
+    # forward, etc.). iteration > 0 guards against the first call.
+    violations = state.get("rule_violations") or []
+    iteration = int(state.get("iteration") or 0)
+    if iteration > 0 and violations:
+        violations_text = "\n".join(
+            f"- {v.get('rule', '?')}: {v.get('message', '')}" for v in violations
+        )
+        user_text += (
+            "\n\n上一次生成违反了以下 L1 硬性规则（rule_filter），请在本次重新生成时"
+            "**显式修复**这些问题，不要重复同样的错误：\n"
+            f"{violations_text}"
+        )
+    user_message = [{"role": "user", "content": user_text}]
 
     client = LLMClient()
     raw = client.chat_sync(system_prompt, user_message, max_tokens=8192)

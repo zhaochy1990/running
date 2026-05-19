@@ -48,33 +48,79 @@ def check_master_schema_validity(plan_dict: dict) -> list[RuleViolation]:
 def check_phase_count_min(
     plan: MasterPlan, *, min_count: int = 3
 ) -> list[RuleViolation]:
-    """At least ``min_count`` phases — typical periodisation needs base / build / peak."""
+    """At least ``min_count`` phases — typical periodisation needs base / build / peak.
+
+    Short race windows (< 8 weeks total) relax to ``min_count=2``: a 5-week
+    mini-cycle can legitimately be a single build phase plus a 1-2 week taper,
+    and the training_goal API accepts those race dates. Forcing 3 phases would
+    block prompt-compliant short-cycle plans without protecting anything.
+    """
+    effective_min = min_count
+    try:
+        span_days = (
+            _date.fromisoformat(plan.end_date)
+            - _date.fromisoformat(plan.start_date)
+        ).days
+        if span_days < 56:  # < 8 weeks → mini-cycle, 2 phases acceptable
+            effective_min = min(min_count, 2)
+    except (ValueError, TypeError, AttributeError):
+        pass
+
     count = len(plan.phases)
-    if count < min_count:
+    if count < effective_min:
         return [
             RuleViolation(
                 rule="phase_count_min",
                 severity="error",
-                message=f"only {count} phase(s); need at least {min_count}",
-                details={"count": count, "min_required": min_count},
+                message=f"only {count} phase(s); need at least {effective_min}",
+                details={"count": count, "min_required": effective_min},
             )
         ]
     return []
 
 
+_NON_PEAK_PHASE_KEYWORDS: tuple[str, ...] = (
+    # Race phases (LLM may emit "比赛" or "race" as a separate phase per the
+    # prompt's `基础期 → 进展期 → 赛前期 → 比赛 → 恢复期` order).
+    "比赛", "race",
+    # Taper / wind-down phases — they end at or near race day by design.
+    "减量", "taper", "tapering",
+    # Recovery phases (post-race).
+    "恢复", "recovery",
+)
+
+
+def _is_non_peak_phase(phase_name: str) -> bool:
+    """True if the phase name suggests taper / race / recovery, NOT the peak."""
+    if not phase_name:
+        return False
+    low = phase_name.lower()
+    return any(kw in low for kw in _NON_PEAK_PHASE_KEYWORDS)
+
+
 def check_peak_before_race(plan: MasterPlan) -> list[RuleViolation]:
-    """RACE milestone must have a phase ending 7-21 days before it.
+    """RACE milestone must have a peak (non-taper) phase ending 7-21 days before it.
 
-    Catches two failure modes:
+    The prompt asks for ``基础期 → 进展期 → 赛前期 → 比赛 →（如有）恢复期`` so
+    the LLM may emit explicit `比赛` / `减量` / `taper` / `恢复` phases. Picking
+    the *latest* phase before race day is wrong: that's the taper / wind-down,
+    which ends 0-3 days before the race by design. We want the *peak* phase's
+    end_date — that's the boundary where taper starts.
 
-    * **Peak after race** — no phase ends before race_date (LLM accidentally
-      put peak phase _after_ the race milestone).
-    * **No taper window** — the last phase before race ends < 7 days (no time
-      to taper) or > 21 days (taper too long, fitness decay) from race day.
+    Strategy: filter out non-peak phases by name keywords, then the latest
+    remaining phase IS the peak. Falls back to "all phases" if every phase
+    looks taper-like (defensive — catches a degenerate plan where the keyword
+    filter would otherwise leave nothing to check).
+
+    Catches:
+
+    * **Peak after race** — no phase ends before race_date.
+    * **No taper window** — peak ends < 7 days (no taper) or > 21 days (taper
+      too long, fitness decay) before race day.
     """
     race_milestones = [m for m in plan.milestones if m.type == MilestoneType.RACE]
     if not race_milestones:
-        return []  # rule only applies when a race exists
+        return []
 
     violations: list[RuleViolation] = []
     for race in race_milestones:
@@ -83,17 +129,19 @@ def check_peak_before_race(plan: MasterPlan) -> list[RuleViolation]:
         except (ValueError, TypeError):
             continue  # malformed milestone date — schema rule should have caught
 
-        # Phases that end before race date
-        ends_before: list[tuple[_date, Any]] = []
+        peak_candidates: list[tuple[_date, Any]] = []
+        all_ends_before: list[tuple[_date, Any]] = []
         for phase in plan.phases:
             try:
                 end = _date.fromisoformat(phase.end_date)
             except (ValueError, TypeError):
                 continue
             if end < race_date:
-                ends_before.append((end, phase))
+                all_ends_before.append((end, phase))
+                if not _is_non_peak_phase(phase.name):
+                    peak_candidates.append((end, phase))
 
-        if not ends_before:
+        if not all_ends_before:
             violations.append(
                 RuleViolation(
                     rule="peak_before_race",
@@ -107,7 +155,8 @@ def check_peak_before_race(plan: MasterPlan) -> list[RuleViolation]:
             )
             continue
 
-        latest_end, latest_phase = max(ends_before, key=lambda t: t[0])
+        ends_to_use = peak_candidates if peak_candidates else all_ends_before
+        latest_end, latest_phase = max(ends_to_use, key=lambda t: t[0])
         days_to_race = (race_date - latest_end).days
         if days_to_race < 7 or days_to_race > 21:
             violations.append(
@@ -123,6 +172,9 @@ def check_peak_before_race(plan: MasterPlan) -> list[RuleViolation]:
                         "peak_phase_id": latest_phase.id,
                         "peak_phase_end": latest_phase.end_date,
                         "days_between": days_to_race,
+                        "taper_phases_present": [
+                            p.name for _, p in all_ends_before if _is_non_peak_phase(p.name)
+                        ],
                     },
                 )
             )
