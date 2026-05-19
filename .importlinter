@@ -1,6 +1,7 @@
 [importlinter]
 root_packages =
     coach
+    coach_eval
     stride_server
     stride_core
     coros_sync
@@ -30,3 +31,27 @@ forbidden_modules =
     stride_core.db
     fastapi
     azure
+
+# -----------------------------------------------------------------------------
+# Contract 2: coach_eval is dev-only — nothing in production touches it
+#
+# `coach_eval.*` is the offline evaluation framework. It reuses production
+# code (coach.* + stride_server.*) but the dependency direction is one-way:
+# production must never import from coach_eval. This keeps the prod image
+# free of eval baggage (judge prompts, fixture loaders, report renderers)
+# and prevents an accidental dev-import from leaking into a route handler.
+#
+# The Dockerfile also strips `src/coach_eval/` from the prod build, but
+# this contract is the static guard that catches drift earlier than build.
+# -----------------------------------------------------------------------------
+[importlinter:contract:coach-eval-dev-only]
+name = Production modules must not import the offline eval framework
+type = forbidden
+source_modules =
+    coach
+    stride_server
+    stride_core
+    coros_sync
+    garmin_sync
+forbidden_modules =
+    coach_eval

@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_full(args: argparse.Namespace) -> int:
     """L1 + L2 (full eval with LLM judge)."""
-    from stride_server.coach_adapters.eval_runner import (
+    from coach_eval.runner import (
         RunMode,
         run_s1_evaluation,
         write_report,

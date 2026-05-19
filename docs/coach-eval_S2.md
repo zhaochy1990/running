@@ -116,7 +116,7 @@ S2 L1 已实现在 `src/coach/graphs/generation/rule_filter.py`：
 
 S1 baseline 跑稳后再启动。预计 3-4 天：
 
-- [ ] 写 `coach/graphs/evaluation/judge_s2.py`（S2 judge prompt v1，复用 framework 模块）
+- [ ] 写 `coach_eval/judge_s2.py`（S2 judge prompt v1，复用 framework 模块）
 - [ ] 从 `data/zhaochaoyi/logs/` 抽 7 个真实周构造 fixture + 3 个手工 edge case
 - [ ] 跑 baseline，存档 `.omc/eval/baselines/s2_v1.json`
 

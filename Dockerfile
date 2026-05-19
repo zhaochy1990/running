@@ -49,6 +49,13 @@ COPY scripts/ ./scripts/
 COPY config/ ./config/
 RUN mv ./config/coach.prod.toml ./config/coach.toml
 
+# coach_eval is the dev-only offline evaluation framework — never invoked
+# from a prod route. Strip it from the image to keep the surface area small
+# and to make accidental imports impossible at runtime. The `.importlinter`
+# `coach-eval-dev-only` contract is the static guard; this is the runtime
+# guard. (See `src/coach_eval/__init__.py` for the rationale.)
+RUN rm -rf /app/src/coach_eval || true
+
 # Single source of truth for deps: pyproject.toml [project.optional-dependencies].
 # Editable install (-e) keeps /app/src as the import location — no file copy
 # into site-packages, so __file__-based path resolution stays correct.

@@ -237,7 +237,7 @@ S1 judge 用与 S2 不同的 axis 集 —— 因为 S1 是 strategic-level，HRV
 
 ## S1 Judge prompt 骨架
 
-完整 prompt 在 `src/coach/graphs/evaluation/judge_s1.py`（实施时建）：
+完整 prompt 在 `src/coach_eval/judge_s1.py`：
 
 ```
 你是 STRIDE 训练 master plan 评估员。
@@ -275,11 +275,11 @@ overall_verdict:
 用户已 redirect 优先级到 S1，S1 是当前 Phase 1。**v1 fixture 覆盖场景 1 + 2（有 `prs` / `hr_zones` 的用户）；场景 3 留到 v1.1**。工作量估计 **6-7 天**（含 refactor）：
 
 - [ ] **前置 refactor**：把 `stride_server/master_plan_generator.py:run_generate_job` 重写成走 `coach.graphs.generation.build_generation_graph(plan_type="master")` —— 把 `_query_history` / `_query_fitness_state` 拆成 ports & adapters 的 `load_context` 函数（adapter layer），把 `_build_master_plan` / `_build_system_prompt` 拆成 `generator` 函数。理由：当前 master_plan_generator self-contained 绕过 generation graph，eval framework 没法复用 generation pipeline；不 refactor 的话 S1 也享受不到 rule_filter / reviewer / verdict 这套通用机制
-- [ ] 写 `coach/schemas/evaluation.py`（JudgeScore / EvalReport，通用 —— 框架级）
-- [ ] 写 `coach/graphs/evaluation/graph.py`（最小骨架 + judge node）
-- [ ] 写 `coach/graphs/evaluation/judge_s1.py`（S1 judge prompt v1，8 axes）
+- [ ] 写 `coach_eval/schemas.py`（JudgeScore / EvalReport，通用 —— 框架级）
+- [ ] 写 `coach_eval/graph.py`（最小骨架 + judge node）
+- [ ] 写 `coach_eval/judge_s1.py`（S1 judge prompt v1，8 axes）
 - [ ] 写 `coach/graphs/generation/master_rule_filter.py`（10 条 S1 L1 rules）
-- [ ] 写 `stride_server/coach_adapters/eval_runner.py`（支持 `live_local_db` / `frozen_fixture` 两种 mode；fixture 加载、本地 SQLite context 聚合、LLM 注入、GPT-5.4 wiring）
+- [ ] 写 `coach_eval/runner.py`（支持 `live_local_db` / `frozen_fixture` 两种 mode；fixture 加载、本地 SQLite context 聚合、LLM 注入、GPT-5.4 wiring）
 - [ ] 写 `scripts/eval_coach.py` CLI
 - [ ] 从 `data/zhaochaoyi/TRAINING_PLAN.md` + 历史 logs 抽 4-5 条真实 master plan fixture
 - [ ] 手工构造 8-10 条 edge case fixture：

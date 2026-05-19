@@ -119,23 +119,27 @@ Fixture 一旦 commit，`input.*` **不可再改**。要测新场景就建新 fi
 
 ### 新增模块
 
+eval framework 是 **dev-only**，单独成顶层 package `coach_eval`，不混进 prod agent (`coach.*` / `stride_server.*`) 的代码路径：
+
 ```
-src/coach/graphs/evaluation/
-    __init__.py
-    graph.py                     # build_evaluation_graph(...)
-    judge_s1.py                  # S1 judge node + prompt
-    judge_s2.py                  # S2 judge node + prompt
-    judge_s3.py                  # S3 judge node + prompt
-    state.py                     # EvalState TypedDict
-src/coach/schemas/
-    evaluation.py                # JudgeScore, EvalReport (通用)
-src/stride_server/coach_adapters/
-    eval_runner.py               # 加载 fixture，注入 LLM，跑 graph，写报告
+src/coach_eval/                  # 顶层 dev-only package
+    __init__.py                  # 仅 re-export schemas
+    schemas.py                   # AxisScore / JudgeScore / EvalReport (通用)
+    graph.py                     # run_evaluation_for_fixture / run_evaluation_suite
+    judge_s1.py                  # S1 judge prompt + make_s1_judge factory
+    judge_s2.py                  # （后续 phase 补）
+    judge_s3.py                  # （后续 phase 补）
+    runner.py                    # 加载 fixture / 注入 LLM / 跑 pipeline / 写报告
 scripts/
-    eval_coach.py                # CLI entrypoint
+    eval_coach.py                # CLI entrypoint → coach_eval.runner
 ```
 
-`coach/graphs/evaluation/*` 受 import-linter 约束 —— 只允许 import `coach.*`、`stride_core.*`、`langgraph`、`langchain-*`、`pydantic`。具体 LLM 实例化、fixture 加载、DB context 重建走 adapter 层。
+依赖方向（`.importlinter` 合约 **coach-eval-dev-only** 强制单向）：
+
+- ✅ `coach_eval.*` 可以 import `coach.*` / `stride_server.*` / `stride_core.*`
+- ❌ `coach.*` / `stride_server.*` / `stride_core.*` **不能** import `coach_eval.*`
+
+Dockerfile 还会在 build 时 `rm -rf /app/src/coach_eval` 把整个包从 prod 镜像里删掉，避免任何意外被 prod route 调用。
 
 ### Flow
 
@@ -158,7 +162,7 @@ fixture_input → load_frozen_context → generate (复用 build_generation_grap
 ### JudgeScore schema (通用)
 
 ```python
-# src/coach/schemas/evaluation.py
+# src/coach_eval/schemas.py
 from typing import Literal
 from pydantic import BaseModel, Field
 

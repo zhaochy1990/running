@@ -74,7 +74,7 @@ S3 fixture 重 **覆盖**而非 **深度** —— 用户每天 N 次互动，单
 
 ## S3 L1 Rules
 
-S3 答案不是结构化的，rule filter 跑 **post-hoc 文本分析**。新增 `src/coach/graphs/evaluation/qa_rule_filter.py`：
+S3 答案不是结构化的，rule filter 跑 **post-hoc 文本分析**。新增 `src/coach_eval/qa_rule_filter.py`：
 
 | Rule | 严重度 | 检查 |
 |------|--------|------|
@@ -123,8 +123,8 @@ S3 不能用 S1/S2 的 8 axis 集 —— 那些 axis 都是评估结构化 plan 
 
 S1 / S2 baseline 跑稳后启动。预计 3 天：
 
-- [ ] 写 `coach/graphs/evaluation/qa_rule_filter.py`（5 条 S3 L1 rules，重点 `metric_traceability`）
-- [ ] 写 `coach/graphs/evaluation/judge_s3.py`（S3 judge prompt v1，5 axes）
+- [ ] 写 `coach_eval/qa_rule_filter.py`（5 条 S3 L1 rules，重点 `metric_traceability`）
+- [ ] 写 `coach_eval/judge_s3.py`（S3 judge prompt v1，5 axes）
 - [ ] 把 conversation graph 接进 eval runner（之前 S1/S2 只跑 generation graph）
 - [ ] Fixture: 10-12 条 Q&A scenario，重点 hallucination edge case
 - [ ] 跑 baseline，存档 `.omc/eval/baselines/s3_v1.json`

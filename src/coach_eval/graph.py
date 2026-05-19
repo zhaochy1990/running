@@ -14,7 +14,7 @@ pipeline with no iteration / branching, so a plain function is clearer
 than a StateGraph wrapper. The doc's "graph" naming is preserved for
 familiarity with the gen-side graph layout.
 
-Caller responsibilities (in :mod:`stride_server.coach_adapters.eval_runner`):
+Caller responsibilities (in :mod:`coach_eval.runner`):
 
 * Build the gen graph via :func:`coach.graphs.generation.build_generation_graph`
   with appropriate adapter callables (live mode = real DB queries;
@@ -29,7 +29,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-from coach.schemas import FixtureRunOutcome, JudgeScore
+from .schemas import FixtureRunOutcome, JudgeScore
 
 logger = logging.getLogger(__name__)
 

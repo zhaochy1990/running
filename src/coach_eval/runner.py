@@ -15,6 +15,17 @@ Bridges fixtures to the coach eval pipeline:
 v1 wires S1 only. ``run_s2_evaluation`` / ``run_s3_evaluation`` are
 placeholders that raise ``NotImplementedError`` until those scopes are
 implemented (Phase 2 / Phase 3 — see ``docs/coach-eval_S{2,3}.md``).
+
+Layered imports:
+
+* ``coach.*`` for the generation graph + master_rule_filter (production
+  pipeline that eval composes on top of).
+* ``stride_server.*`` for the master_plan adapter + LLM factories
+  (production runtime that knows how to wire DB / auth / config).
+* ``.graph`` / ``.judge_s1`` / ``.schemas`` for eval-internal pieces.
+
+The reverse direction is FORBIDDEN by ``.importlinter`` — ``coach.*`` and
+``stride_server.*`` MUST NOT import from ``coach_eval.*``.
 """
 
 from __future__ import annotations
@@ -28,27 +39,25 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from coach.graphs.evaluation import run_evaluation_for_fixture
-from coach.graphs.evaluation.judge_s1 import (
-    JUDGE_PROMPT_VERSION as S1_JUDGE_VERSION,
-    make_s1_judge,
-)
 from coach.graphs.generation.graph import build_generation_graph
 from coach.graphs.generation.master_rule_filter import run_master_rule_filter
-from coach.schemas import EvalReport, FixtureRunOutcome, aggregate_axis_avg
-
-from ..master_plan_generator import _format_history_summary
-from .master_plan_adapter import (
+from stride_server.coach_adapters.master_plan_adapter import (
     apply_master_patches,
     generate_master_plan,
     load_master_context,
     master_reviewer,
 )
+from stride_server.master_plan_generator import _format_history_summary
+
+from .graph import run_evaluation_for_fixture
+from .judge_s1 import JUDGE_PROMPT_VERSION as S1_JUDGE_VERSION
+from .judge_s1 import make_s1_judge
+from .schemas import EvalReport, FixtureRunOutcome, aggregate_axis_avg
 
 logger = logging.getLogger(__name__)
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = REPO_ROOT / "tests" / "fixtures" / "coach_eval"
 REPORT_DIR = REPO_ROOT / ".omc" / "eval" / "reports"
 
@@ -216,8 +225,8 @@ def run_s1_evaluation(
         return _build_report("s1", mode, [], judge_prompt_version=S1_JUDGE_VERSION)
 
     if judge_llm is None:
-        # Lazy import so unit tests can build EvalRunner without LLM config.
-        from ..coach_runtime import get_generator_llm
+        # Lazy import so unit tests can build the runner without LLM config.
+        from stride_server.coach_runtime import get_generator_llm
 
         judge_llm = get_generator_llm()
     judge = make_s1_judge(judge_llm)

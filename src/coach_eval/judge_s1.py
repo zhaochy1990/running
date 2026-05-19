@@ -22,7 +22,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from coach.runtime.messages import extract_text
-from coach.schemas import AxisScore, JudgeScore
+
+from .schemas import AxisScore, JudgeScore
 
 logger = logging.getLogger(__name__)
 
