@@ -22,7 +22,7 @@ def validate_optional_url(path: str, value: str) -> None:
 
 
 def validate_auth(env: str, auth: AuthConfig) -> None:
-    if env.lower() == "dev":
+    if env.lower() in {"dev", "local", "default"}:
         return
     if auth.public_key_pem or auth.public_key_path or auth.allow_insecure_without_key:
         return
@@ -206,7 +206,7 @@ class ServerConfig:
         return cls(env=env)
 
     def __post_init__(self) -> None:
-        if self.env.lower() == "dev" and not self.auth.allow_insecure_without_key:
+        if self.env.lower() in {"dev", "local"} and not self.auth.allow_insecure_without_key:
             object.__setattr__(
                 self,
                 "auth",

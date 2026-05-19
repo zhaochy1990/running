@@ -23,15 +23,14 @@ behaviour for the period before the auth-service ships team endpoints.
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
 import httpx
 
+from stride_server.config import load_server_config
+from stride_server.config.models import AuthServiceConfig
+
 logger = logging.getLogger(__name__)
-
-_DEFAULT_TIMEOUT_S = 5.0
-
 
 class AuthServiceUnavailable(RuntimeError):
     """Auth-service is not configured, unreachable, or returned a 5xx."""
@@ -46,11 +45,19 @@ class AuthServiceError(RuntimeError):
         self.detail = detail
 
 
-def _base_url() -> str:
-    url = os.environ.get("STRIDE_AUTH_URL", "").strip()
+def base_url_from_config(config: AuthServiceConfig) -> str:
+    url = config.base_url.strip()
     if not url:
-        raise AuthServiceUnavailable("STRIDE_AUTH_URL not configured")
+        raise AuthServiceUnavailable("auth_service.base_url not configured")
     return url.rstrip("/")
+
+
+def _auth_service_config() -> AuthServiceConfig:
+    return load_server_config().auth_service
+
+
+def _base_url() -> str:
+    return base_url_from_config(_auth_service_config())
 
 
 def _headers(bearer: str | None) -> dict[str, str]:
@@ -72,10 +79,11 @@ async def _request(
     Raises AuthServiceUnavailable on network / 5xx errors and
     AuthServiceError(status, detail) on 4xx errors.
     """
-    base = _base_url()
+    config = _auth_service_config()
+    base = base_url_from_config(config)
     url = f"{base}{path}"
     try:
-        async with httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT_S) as client:
+        async with httpx.AsyncClient(timeout=config.timeout_s) as client:
             resp = await client.request(method, url, headers=_headers(bearer), json=json_body)
     except httpx.HTTPError as exc:
         logger.warning("auth-service %s %s failed: %s", method, path, exc)

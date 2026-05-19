@@ -61,6 +61,8 @@ _MIRROR_ENV_MAPPING: dict[str, list[tuple[str, str]]] = {
     "STRIDE_LIKES_TABLE_ACCOUNT_URL": [("notifications.table_account_url", "str")],
 }
 
+_EMPTY_AS_UNSET_ENV_NAMES = {"LLM_ENABLED", "AOAI_COMMENTARY_ENABLED"}
+
 
 def deep_merge(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[str, Any]:
     merged = dict(left)
@@ -109,11 +111,14 @@ def env_source(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     env = os.environ if environ is None else environ
     data: dict[str, Any] = {}
     for name, (path, value_type) in _ENV_MAPPING.items():
-        if name in env:
+        if name in env and not (name in _EMPTY_AS_UNSET_ENV_NAMES and env[name].strip() == ""):
             set_path(data, path, parse_env_value(env[name], value_type))
         for mirror_path, mirror_type in _MIRROR_ENV_MAPPING.get(name, []):
-            if name in env:
+            if name in env and not (name in _EMPTY_AS_UNSET_ENV_NAMES and env[name].strip() == ""):
                 set_path(data, mirror_path, parse_env_value(env[name], mirror_type))
+    llm_enabled_set = "LLM_ENABLED" in env and env["LLM_ENABLED"].strip() != ""
+    if "AZURE_OPENAI_ENDPOINT" in env and not llm_enabled_set:
+        set_path(data, "llm.enabled", True)
     return data
 
 

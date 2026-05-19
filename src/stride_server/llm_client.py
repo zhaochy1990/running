@@ -23,10 +23,12 @@ Environment variables (all optional — client raises LLMUnavailable if absent):
 from __future__ import annotations
 
 import logging
-import os
 import threading
 from collections.abc import Callable
 from typing import Any
+
+from stride_server.config import load_server_config
+from stride_server.config.models import LLMConfig
 
 logger = logging.getLogger(__name__)
 
@@ -55,38 +57,50 @@ class LLMError(Exception):
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+
+def is_enabled_from_config(config: LLMConfig) -> bool:
+    return config.enabled
+
+
+def default_model_from_config(config: LLMConfig) -> str:
+    return config.default_model
+
+
+def _llm_config() -> LLMConfig:
+    return load_server_config().llm
+
+
 def _is_enabled() -> bool:
-    """Feature gate. Default ON when AZURE_OPENAI_ENDPOINT is set."""
-    val = os.environ.get("LLM_ENABLED", "").strip().lower()
-    if val:
-        return val == "true"
-    # Implicit: enabled iff the endpoint is configured.
-    return bool(os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip())
+    """Feature gate. Default ON when the Azure OpenAI endpoint is set."""
+    return is_enabled_from_config(_llm_config())
 
 
 def _default_model() -> str:
-    return os.environ.get("LLM_DEFAULT_MODEL", "gpt-4.1")
+    return default_model_from_config(_llm_config())
 
 
-def _build_aoai_client() -> Any:
+def _build_aoai_client(config: LLMConfig | None = None) -> Any:
     """Build and return an AzureOpenAI client; raise LLMUnavailable on failure."""
+    cfg = config or _llm_config()
     try:
         from openai import AzureOpenAI
     except ImportError as exc:
         raise LLMUnavailable(f"openai SDK not installed: {exc}") from exc
 
-    endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT", "").strip()
+    endpoint = cfg.azure_openai.endpoint.strip()
     if not endpoint:
-        raise LLMUnavailable("AZURE_OPENAI_ENDPOINT is not set")
+        raise LLMUnavailable("llm.azure_openai.endpoint is not configured")
 
-    api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-10-21")
-    api_key = os.environ.get("AZURE_OPENAI_API_KEY", "").strip()
+    api_version = cfg.azure_openai.api_version
+    api_key = cfg.azure_openai.api_key.strip()
+    timeout_s = cfg.azure_openai.timeout_s
 
     if api_key:
         client = AzureOpenAI(
             azure_endpoint=endpoint,
             api_version=api_version,
             api_key=api_key,
+            timeout=timeout_s,
         )
         logger.info("LLMClient: AzureOpenAI via API key (endpoint=%s)", endpoint)
         return client
@@ -108,6 +122,7 @@ def _build_aoai_client() -> Any:
         azure_endpoint=endpoint,
         api_version=api_version,
         azure_ad_token_provider=token_provider,
+        timeout=timeout_s,
     )
     logger.info("LLMClient: AzureOpenAI via Managed Identity (endpoint=%s)", endpoint)
     return client
@@ -128,15 +143,17 @@ class LLMClient:
     ``chat_async_job`` spawns a daemon thread; the callback is invoked once.
     """
 
-    def __init__(self) -> None:
-        if not _is_enabled():
+    def __init__(self, config: LLMConfig | None = None) -> None:
+        cfg = config or _llm_config()
+        if not is_enabled_from_config(cfg):
             raise LLMUnavailable(
-                "LLM is not enabled. Set AZURE_OPENAI_ENDPOINT (and optionally "
+                "LLM is not enabled. Set llm.azure_openai.endpoint (and optionally "
                 "LLM_ENABLED=true)."
             )
         # May raise LLMUnavailable.
-        self._client: Any = _build_aoai_client()
-        self._default_model: str = _default_model()
+        self._client: Any = _build_aoai_client(cfg)
+        self._default_model: str = default_model_from_config(cfg)
+        self._timeout_s: float = cfg.azure_openai.timeout_s
 
     # ------------------------------------------------------------------
     # Synchronous call
@@ -169,7 +186,7 @@ class LLMClient:
                 messages=full_messages,
                 max_tokens=max_tokens,
                 temperature=0.7,
-                timeout=60,
+                timeout=self._timeout_s,
             )
             return (response.choices[0].message.content or "").strip()
         except Exception as exc:

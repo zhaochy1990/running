@@ -196,6 +196,35 @@ def test_env_source_maps_legacy_names_and_specific_names(monkeypatch: pytest.Mon
     assert data["internal"]["token"] == ""
 
 
+def test_env_source_azure_openai_endpoint_implicitly_enables_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LLM_ENABLED", raising=False)
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://aoai.example")
+
+    data = env_source(os.environ)
+
+    assert data["llm"]["enabled"] is True
+
+
+def test_env_source_llm_enabled_false_overrides_endpoint_implicit_enable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://aoai.example")
+    monkeypatch.setenv("LLM_ENABLED", "false")
+
+    data = env_source(os.environ)
+
+    assert data["llm"]["enabled"] is False
+
+
+def test_env_source_empty_optional_feature_flags_behave_like_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://aoai.example")
+    monkeypatch.setenv("LLM_ENABLED", "")
+    monkeypatch.setenv("AOAI_COMMENTARY_ENABLED", "")
+
+    data = env_source(os.environ)
+
+    assert data["llm"]["enabled"] is True
+    assert "enabled" not in data.get("commentary", {})
+
+
 def test_toml_file_source_reads_nested_config(tmp_path) -> None:
     path = tmp_path / "stride.toml"
     path.write_text('[storage.likes]\ntable_name = "fromtoml"\n', encoding="utf-8")
@@ -472,6 +501,20 @@ def test_repo_server_config_files_load(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.commentary.enabled is False
     assert cfg.storage.likes.table_name == "stridelikes"
     assert cfg.coach_persistence.file_backend_dir == "data/_coach_dev"
+
+
+def test_default_repo_server_config_loads_without_auth_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("STRIDE_CONFIG_FILES", raising=False)
+    monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)
+    monkeypatch.delenv("STRIDE_ENV", raising=False)
+    monkeypatch.delenv("STRIDE_AUTH_PUBLIC_KEY_PEM", raising=False)
+    monkeypatch.delenv("STRIDE_AUTH_PUBLIC_KEY_PATH", raising=False)
+    monkeypatch.delenv("STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY", raising=False)
+
+    cfg = load_server_config(use_cache=False)
+
+    assert cfg.env == "default"
+    assert cfg.auth.allow_insecure_without_key is False
 
 
 def test_repo_prod_config_file_loads_without_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
