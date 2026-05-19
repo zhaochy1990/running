@@ -1,23 +1,30 @@
-"""LLM client wrapper — Azure OpenAI (same auth pattern as aoai_client.py).
+"""LLM client — coach.runtime / langchain-backed.
 
-Rationale for Azure OpenAI over Anthropic SDK:
-  The project already uses Azure OpenAI (GPT-4.1) via ``aoai_client.py`` with
-  both API-key and Managed Identity auth. Introducing a second provider
-  (Anthropic SDK) would require a new secret, new dep, and diverge from the
-  existing auth pattern. T01 therefore wraps AzureOpenAI under the same env-var
-  conventions, but exposes a provider-neutral interface so a future swap to
-  Anthropic or another backend only requires changing this file.
+Historically this module wrapped ``openai.AzureOpenAI`` directly. After the
+LLM-consolidation refactor it is a thin shim over
+:func:`coach.runtime.coach_runtime.get_generator_llm`, which reads
+``config/coach.toml`` and returns a langchain ``BaseChatModel``. Public
+surface (``LLMClient`` / ``LLMUnavailable`` / ``LLMError``) is preserved so
+existing routes and tests don't need to change.
 
-Environment variables (all optional — client raises LLMUnavailable if absent):
-  AZURE_OPENAI_ENDPOINT      — required
-  AZURE_OPENAI_API_KEY       — if set, used directly; otherwise DefaultAzureCredential
-  AZURE_OPENAI_API_VERSION   — default "2024-10-21"
-  LLM_DEFAULT_MODEL          — deployment name; default "gpt-4.1"
-  LLM_ENABLED                — must be "true" (case-insensitive) for the client
-                                to initialise; useful to gate in prod without
-                                removing env vars. Defaults to "true" when
-                                AZURE_OPENAI_ENDPOINT is set, so existing
-                                deployments need no extra config.
+Why the indirection: routes plus the master-plan adapter call
+``LLMClient().chat_sync(system, messages, max_tokens=...)``. Tests
+monkeypatch ``LLMClient`` on a route module. Reusing this class shape
+lets the production stack consolidate to coach.toml without rewriting
+those call sites.
+
+Single source of truth:
+* Endpoint / deployment / api_version / api_kind → ``config/coach.toml``
+  ``[generator]`` (or ``[reviewer]`` / ``[commentary]`` via the other
+  factory functions if a future caller needs them).
+* Auth → ``coach_runtime._build_azure_credentials`` (chained
+  ``AzureCliCredential`` → ``DefaultAzureCredential``).
+
+The env vars ``AZURE_OPENAI_ENDPOINT`` / ``AZURE_OPENAI_API_KEY`` /
+``AZURE_OPENAI_API_VERSION`` / ``LLM_DEFAULT_MODEL`` / ``LLM_ENABLED`` are
+no longer read here — they're left in place for ``aoai_client`` /
+``commentary_ai`` callers that haven't migrated yet (see
+``commentary_ai.is_enabled`` for the surviving feature gate).
 """
 
 from __future__ import annotations
@@ -27,22 +34,30 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-from stride_server.config import load_server_config
-from stride_server.config.models import LLMConfig
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+
+from coach.runtime.llm_factory import CoachLLMUnavailable
+from coach.runtime.messages import extract_text
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# Exceptions
+# Exceptions — kept name-compatible with the pre-refactor surface.
 # ---------------------------------------------------------------------------
 
 
-class LLMUnavailable(Exception):
-    """Raised at construction time when credentials / config are missing."""
+class LLMUnavailable(CoachLLMUnavailable):
+    """Raised when the LLM cannot be constructed (missing config, placeholder
+    deployment, SDK not installed).
+
+    Subclasses :class:`CoachLLMUnavailable` so legacy ``except LLMUnavailable``
+    handlers and new ``except CoachLLMUnavailable`` handlers both work.
+    """
 
 
 class LLMError(Exception):
-    """Raised when an LLM call fails.
+    """Raised when an LLM call fails at runtime.
 
     ``retryable=True``  — transient (network, rate-limit); caller may retry.
     ``retryable=False`` — permanent (auth, bad request, context too long).
@@ -53,107 +68,73 @@ class LLMError(Exception):
         self.retryable = retryable
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+# Exception classifiers — names match what langchain / openai SDK raise.
+_RETRYABLE_EXC_NAMES = frozenset(
+    {
+        "APIConnectionError",
+        "APITimeoutError",
+        "RateLimitError",
+        "InternalServerError",
+        "ServiceUnavailableError",
+        "ConnectError",
+        "ReadTimeout",
+        "TimeoutException",
+    }
+)
+_PERMANENT_EXC_NAMES = frozenset(
+    {
+        "AuthenticationError",
+        "PermissionDeniedError",
+        "BadRequestError",
+        "NotFoundError",
+        "UnprocessableEntityError",
+        "InvalidRequestError",
+    }
+)
 
 
-def is_enabled_from_config(config: LLMConfig) -> bool:
-    return config.enabled
+def _map_exception(exc: BaseException) -> LLMError:
+    """Translate a langchain / openai SDK exception into an :class:`LLMError`.
 
-
-def default_model_from_config(config: LLMConfig) -> str:
-    return config.default_model
-
-
-def _llm_config() -> LLMConfig:
-    return load_server_config().llm
-
-
-def _is_enabled() -> bool:
-    """Feature gate. Default ON when the Azure OpenAI endpoint is set."""
-    return is_enabled_from_config(_llm_config())
-
-
-def _default_model() -> str:
-    return default_model_from_config(_llm_config())
-
-
-def _build_aoai_client(config: LLMConfig | None = None) -> Any:
-    """Build and return an AzureOpenAI client; raise LLMUnavailable on failure."""
-    cfg = config or _llm_config()
-    try:
-        from openai import AzureOpenAI
-    except ImportError as exc:
-        raise LLMUnavailable(f"openai SDK not installed: {exc}") from exc
-
-    endpoint = cfg.azure_openai.endpoint.strip()
-    if not endpoint:
-        raise LLMUnavailable("llm.azure_openai.endpoint is not configured")
-
-    api_version = cfg.azure_openai.api_version
-    api_key = cfg.azure_openai.api_key.strip()
-    timeout_s = cfg.azure_openai.timeout_s
-
-    if api_key:
-        client = AzureOpenAI(
-            azure_endpoint=endpoint,
-            api_version=api_version,
-            api_key=api_key,
-            timeout=timeout_s,
-        )
-        logger.info("LLMClient: AzureOpenAI via API key (endpoint=%s)", endpoint)
-        return client
-
-    # Fallback: DefaultAzureCredential (MI in prod, az login locally)
-    try:
-        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-    except ImportError as exc:
-        raise LLMUnavailable(
-            "AZURE_OPENAI_API_KEY not set and azure-identity not installed; "
-            f"install azure-identity or set AZURE_OPENAI_API_KEY. ({exc})"
-        ) from exc
-
-    credential = DefaultAzureCredential()
-    token_provider = get_bearer_token_provider(
-        credential, "https://cognitiveservices.azure.com/.default"
-    )
-    client = AzureOpenAI(
-        azure_endpoint=endpoint,
-        api_version=api_version,
-        azure_ad_token_provider=token_provider,
-        timeout=timeout_s,
-    )
-    logger.info("LLMClient: AzureOpenAI via Managed Identity (endpoint=%s)", endpoint)
-    return client
+    Unknown exception types default to non-retryable so we don't accidentally
+    loop on something we can't categorise.
+    """
+    name = type(exc).__name__
+    if name in _RETRYABLE_EXC_NAMES:
+        return LLMError(str(exc), retryable=True)
+    if name in _PERMANENT_EXC_NAMES:
+        return LLMError(str(exc), retryable=False)
+    return LLMError(f"{name}: {exc}", retryable=False)
 
 
 # ---------------------------------------------------------------------------
-# Public client
+# Public client — same API as the pre-refactor version.
 # ---------------------------------------------------------------------------
 
 
 class LLMClient:
-    """Thin provider-neutral wrapper around AzureOpenAI.
+    """Thin shim over :func:`coach_runtime.get_generator_llm`.
 
-    Raises ``LLMUnavailable`` at construction time when env vars are absent or
-    the SDK is not installed.  Callers should catch this and return HTTP 503.
+    Construction may raise :class:`LLMUnavailable` if ``config/coach.toml``
+    points at a placeholder deployment or the langchain provider package
+    isn't installed. Routes that wrap ``LLMClient()`` in a try/except for
+    ``LLMUnavailable`` get the same behaviour as before.
 
-    Thread-safety: ``chat_sync`` is thread-safe (each call is independent).
-    ``chat_async_job`` spawns a daemon thread; the callback is invoked once.
+    ``chat_sync`` accepts the historical OpenAI ``messages`` dict shape so
+    callers don't need to change. Under the hood the messages are converted
+    to langchain ``BaseMessage`` instances and the response's ``.content``
+    string is returned (Responses API ``list[dict]`` content is flattened
+    via :func:`coach.runtime.messages.extract_text`).
     """
 
-    def __init__(self, config: LLMConfig | None = None) -> None:
-        cfg = config or _llm_config()
-        if not is_enabled_from_config(cfg):
-            raise LLMUnavailable(
-                "LLM is not enabled. Set llm.azure_openai.endpoint (and optionally "
-                "LLM_ENABLED=true)."
-            )
-        # May raise LLMUnavailable.
-        self._client: Any = _build_aoai_client(cfg)
-        self._default_model: str = default_model_from_config(cfg)
-        self._timeout_s: float = cfg.azure_openai.timeout_s
+    def __init__(self) -> None:
+        from .coach_runtime import get_generator_llm
+
+        try:
+            self._llm: Any = get_generator_llm()
+        except CoachLLMUnavailable as exc:
+            # Re-wrap so callers that catch our subclass keep working.
+            raise LLMUnavailable(str(exc)) from exc
 
     # ------------------------------------------------------------------
     # Synchronous call
@@ -164,36 +145,60 @@ class LLMClient:
         system: str,
         messages: list[dict],
         model: str | None = None,
-        max_tokens: int = 2048,
+        max_tokens: int | None = None,
     ) -> str:
-        """Make a blocking chat-completion call.
+        """Make a blocking chat call.
 
-        ``messages`` follows the OpenAI messages format (list of dicts with
-        ``role`` and ``content``).  A ``{"role": "system", "content": system}``
-        entry is prepended automatically.
+        ``messages`` follows the OpenAI dict shape. A ``SystemMessage`` with
+        ``system`` is prepended automatically.
 
-        Returns the assistant's text content.
+        ``model`` is ignored — the langchain client is bound to the
+        ``[generator]`` deployment from ``config/coach.toml`` at construction
+        time. Signature kept for back-compat with legacy callers.
 
-        Raises:
-            LLMError(retryable=True)  — rate limit, connection error, timeout.
-            LLMError(retryable=False) — auth failure, context too long, etc.
+        ``max_tokens`` IS honoured when set: master plan generation passes
+        ``max_tokens=8192`` because the v2 prompt (recovery / nutrition /
+        goal-realism HARD blocks) plus a full multi-phase plan can exceed the
+        ``coach.toml`` ``[generator]`` default. Falls back to the bound
+        deployment's configured limit when ``max_tokens=None``.
+
+        Returns the assistant's text content, stripped.
+
+        Raises :class:`LLMError` (with ``retryable`` set) on any SDK-side
+        failure.
         """
-        deployment = model or self._default_model
-        full_messages = [{"role": "system", "content": system}, *messages]
+        del model  # coach.toml-driven; signature kept for compat
+
+        lc_messages: list[BaseMessage] = [SystemMessage(content=system)]
+        for raw in messages or []:
+            role = (raw.get("role") or "user").lower()
+            content = raw.get("content", "")
+            if role == "system":
+                lc_messages.append(SystemMessage(content=content))
+            elif role == "assistant":
+                lc_messages.append(AIMessage(content=content))
+            else:
+                lc_messages.append(HumanMessage(content=content))
+
+        # Bind per-call max_tokens when provided. langchain's BaseChatModel.bind
+        # returns a Runnable wrapping the model with extra kwargs passed to
+        # invoke. If the underlying provider rejects the param (e.g. some
+        # Responses-API reasoning models), the BadRequestError surfaces as
+        # LLMError(retryable=False) via _map_exception — that's preferable to
+        # silently dropping the caller's intent.
+        target = self._llm.bind(max_tokens=max_tokens) if max_tokens else self._llm
+
         try:
-            response = self._client.chat.completions.create(
-                model=deployment,
-                messages=full_messages,
-                max_tokens=max_tokens,
-                temperature=0.7,
-                timeout=self._timeout_s,
-            )
-            return (response.choices[0].message.content or "").strip()
-        except Exception as exc:
+            resp = target.invoke(lc_messages)
+        except CoachLLMUnavailable as exc:
+            raise LLMUnavailable(str(exc)) from exc
+        except BaseException as exc:
             raise _map_exception(exc) from exc
 
+        return extract_text(getattr(resp, "content", resp)).strip()
+
     # ------------------------------------------------------------------
-    # Async (fire-and-forget) job
+    # Async (fire-and-forget) job — legacy surface, kept for back-compat.
     # ------------------------------------------------------------------
 
     def chat_async_job(
@@ -205,51 +210,22 @@ class LLMClient:
         model: str | None = None,
         max_tokens: int = 2048,
     ) -> None:
-        """Spawn a daemon thread; call ``callback(result, None)`` on success or
-        ``callback(None, exc)`` on failure.  Returns immediately.
+        """Spawn a daemon thread; call ``callback`` once with (result, None) or
+        (None, exc).
+
+        Kept for API compatibility; no production code currently calls this
+        path (grep confirms zero callers). Safe to delete in a follow-up once
+        this is verified across forks / branches.
         """
 
         def _run() -> None:
             try:
-                result = self.chat_sync(system, messages, model=model, max_tokens=max_tokens)
-                logger.debug("LLMClient async job %s completed", job_id)
+                result = self.chat_sync(
+                    system, messages, model=model, max_tokens=max_tokens
+                )
                 callback(result, None)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — boundary
                 logger.warning("LLMClient async job %s failed: %s", job_id, exc)
                 callback(None, exc)
 
-        t = threading.Thread(target=_run, daemon=True, name=f"llm-job-{job_id}")
-        t.start()
-
-
-# ---------------------------------------------------------------------------
-# Exception mapping
-# ---------------------------------------------------------------------------
-
-
-def _map_exception(exc: Exception) -> LLMError:
-    """Translate SDK / network exceptions into ``LLMError``."""
-    exc_type = type(exc).__name__
-    exc_module = type(exc).__module__ or ""
-
-    # openai SDK exceptions live under openai.*
-    if "openai" in exc_module or exc_type in {
-        "APIConnectionError", "APITimeoutError",
-        "RateLimitError", "InternalServerError",
-    }:
-        retryable = exc_type in {
-            "APIConnectionError", "APITimeoutError",
-            "RateLimitError", "InternalServerError",
-        }
-        return LLMError(str(exc), retryable=retryable)
-
-    # Generic network errors
-    if exc_type in {"ConnectError", "ReadTimeout", "TimeoutException"}:
-        return LLMError(str(exc), retryable=True)
-
-    # Auth / quota / bad-request — non-retryable
-    if exc_type in {"AuthenticationError", "PermissionDeniedError", "BadRequestError"}:
-        return LLMError(str(exc), retryable=False)
-
-    # Unknown — treat as non-retryable to avoid accidental loops
-    return LLMError(f"{exc_type}: {exc}", retryable=False)
+        threading.Thread(target=_run, daemon=True, name=f"llm-job-{job_id}").start()

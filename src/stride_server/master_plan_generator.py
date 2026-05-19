@@ -370,6 +370,89 @@ def _format_history_summary(history: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Input normalisation — bridge prod-route field names to prompt-expected names
+# ---------------------------------------------------------------------------
+
+
+_PB_KEY_MAP: dict[str, str] = {"5K": "5k_s", "10K": "10k_s", "HM": "hm_s", "FM": "fm_s"}
+
+
+def _parse_hms_to_seconds(value: str) -> int | None:
+    """Parse ``H:MM:SS`` (or ``MM:SS``) into total seconds; ``None`` on bad input.
+
+    The training_goal API stores ``target_finish_time`` as ``H:MM:SS`` and the
+    running_profile API stores PB ``time`` the same way. The prompt's
+    goal-realism rule and the S1 eval fixtures both expect integer seconds
+    (``goal_time_s``, ``5k_s`` / ``10k_s`` / ``hm_s`` / ``fm_s``), so we
+    normalise once at the prompt boundary.
+    """
+    if not isinstance(value, str):
+        return None
+    parts = value.strip().split(":")
+    try:
+        if len(parts) == 3:
+            h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+        elif len(parts) == 2:
+            h, m, s = 0, int(parts[0]), int(parts[1])
+        else:
+            return None
+    except ValueError:
+        return None
+    if m >= 60 or s >= 60:
+        return None  # reject malformed components like "1:75:00"
+    return h * 3600 + m * 60 + s
+
+
+def _normalize_for_prompt(
+    goal: dict, profile: dict | None
+) -> tuple[dict, dict | None]:
+    """Map prod route field names → the names the prompt v2 expects.
+
+    Specifically:
+
+    * ``goal.target_finish_time`` (``"H:MM:SS"``) → ``goal.goal_time_s`` (int).
+    * ``profile.pbs`` (``[{distance: "FM", time: "H:MM:SS"}, ...]``) →
+      ``profile.prs`` (``{fm_s: int, hm_s: int, ...}``).
+
+    Existing ``goal_time_s`` / ``prs`` values are kept untouched (eval fixtures
+    already use the normalised shape, and we don't want to clobber explicit
+    overrides). Both inputs are shallow-copied so the caller's dicts are
+    never mutated.
+
+    Returns ``(goal_norm, profile_norm_or_None)``.
+    """
+    goal_norm: dict = dict(goal or {})
+    profile_norm: dict | None = dict(profile) if profile else None
+
+    if "goal_time_s" not in goal_norm:
+        secs = _parse_hms_to_seconds(goal_norm.get("target_finish_time", ""))
+        if secs is not None:
+            goal_norm["goal_time_s"] = secs
+
+    if profile_norm is not None and "prs" not in profile_norm:
+        raw_pbs = profile_norm.get("pbs") or []
+        if isinstance(raw_pbs, list):
+            prs: dict[str, int] = {}
+            for pb in raw_pbs:
+                if not isinstance(pb, dict):
+                    continue
+                dist = pb.get("distance")
+                time_str = pb.get("time")
+                if not isinstance(dist, str) or not isinstance(time_str, str):
+                    continue
+                key = _PB_KEY_MAP.get(dist.upper())
+                if not key:
+                    continue
+                secs = _parse_hms_to_seconds(time_str)
+                if secs is not None:
+                    prs[key] = secs
+            if prs:
+                profile_norm["prs"] = prs
+
+    return goal_norm, profile_norm
+
+
+# ---------------------------------------------------------------------------
 # LLM prompt builder
 # ---------------------------------------------------------------------------
 
@@ -381,6 +464,12 @@ def _build_system_prompt(
     fitness_state: dict[str, Any],
     today: str,
 ) -> str:
+    # Normalise prod-route field names before serialising into the prompt.
+    # Without this, prod payloads carry ``target_finish_time`` / ``pbs`` and
+    # the goal-realism HARD pushback rule (which references ``goal_time_s`` /
+    # ``profile.prs``) silently no-ops in production.
+    goal, profile = _normalize_for_prompt(goal, profile)
+
     goal_json = json.dumps(goal, ensure_ascii=False, indent=2)
     profile_json = json.dumps(profile, ensure_ascii=False, indent=2) if profile else "未填写"
     fitness_summary = fitness_state.get("summary", "体能数据暂无")
@@ -408,7 +497,7 @@ def _build_system_prompt(
   "end_date": "YYYY-MM-DD",
   "training_principles": ["原则1","原则2"],
   "phases": [
-    {{"name":"基础期","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
+    {{"name":"基础期","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
     ...
   ],
   "milestones": [
@@ -424,10 +513,36 @@ def _build_system_prompt(
 - 每个阶段至少 2 周
 - weekly_distance_km_low / high 应反映该阶段周量目标
 - 里程碑应贯穿训练周期（每 2-4 周一个）
-- 训练原则 3-5 条
+- 训练原则 6-10 条（含下方营养、recovery week、目标现实性三项强制要求）
 - 用户跑龄短 / 周量低时阶段周量更保守
 - 周末日期作为 long_run 里程碑日期
-- 输出**仅 JSON 块**，无额外解释文字"""
+- 输出**仅 JSON 块**，无额外解释文字
+
+**Recovery week 节奏（HARD）**：
+- 任何 ≥ 4 周的非 base 阶段（进展期 / 赛前期）必须采用 3:1 周期化：连续 3 周渐进负荷 + 1 周降量到该阶段周量下限的 70-80%
+- 必须在对应 phase.focus 字段中显式写明 recovery week 安排，例如："3:1 周期，每 4 周降量 1 周至 W3 周量的 70%；recovery week 取消所有质量课"
+- 阶段不足 4 周时可省略 recovery week，但 focus 必须说明"不足 4 周，无 recovery week"
+
+**营养策略（HARD）**：
+- training_principles 必须包含至少 3 条独立的营养原则，整体覆盖以下维度：
+  - 基础期：维持热量平衡，蛋白质 1.4-1.6 g/kg/天，训后 30 min 补 carbs+protein 3:1
+  - 进展期 / 赛前期：增加碳水至 5-7 g/kg/天，长课前 30-60 min 补碳 30-60 g，长课中每小时 30-60 g
+  - 比赛减量期（taper）：维持糖原储备，赛前 3 天 carb-loading 8-10 g/kg/天
+  - 比赛后恢复期：增蛋白至 1.8-2.0 g/kg/天促修复，补水 + 电解质
+- 用户档案若含目标体重 / 体脂调整诉求，营养原则必须显式应对（如"build 期保持小幅热量盈余以支撑训练负荷而非追求减重"）
+- **不要**只写一条笼统的"注重营养"，必须按 phase 给具体数字
+
+**Goal realism 与 pushback（HARD）**：
+- 收到 goal_time_s 后，必须对照用户近期 PB（profile.prs 或 history_summary 里的"最好成绩"）计算改善幅度
+- 单周期改善上限阈值（超过即视为不现实）：
+  - 全马 (fm_s)：> 10%
+  - 半马 (hm_s)：> 12%
+  - 10K (10k_s)：> 15%
+- 如果 goal 改善幅度 **超过**阈值（典型例子：FM PB 3:45 → goal 2:50 是 24% 提升）：
+  - training_principles 第 1 条必须显式 push back，例如："用户 FM PB 3:45 → goal 2:50 单周期改善 24%（> 10% 上限），不现实。本周期建议目标 3:25-3:30（10-12% 改善），下个周期再冲击 sub-3:00"
+  - 训练强度按建议的现实 target_time 排，**不能**按用户原 goal 配速排训练
+  - race milestone 的 target 字段写本周期建议成绩 + 远期 A 目标，例如："本周期目标 3:30；2:50 为下一周期 A 目标"
+- 如果 goal 改善幅度在阈值内：正常排训练，建议给出 A / B / C 目标分层（A 目标条件 / B 目标 / 保底）"""
 
 
 # ---------------------------------------------------------------------------
@@ -459,79 +574,105 @@ def _run_generate_job_inner(
     goal: dict,
     profile: dict | None,
 ) -> None:
-    # ------------------------------------------------------------------
-    # Stage 1: READING_HISTORY
-    # ------------------------------------------------------------------
-    update_job(
-        job_id,
-        status=JobStatus.RUNNING,
-        stage=JobStage.READING_HISTORY,
-        progress=10,
+    """Drive master-plan generation through the coach generation graph.
+
+    Pipeline (load_context → generator → rule_filter → reviewer → verdict)
+    is compiled here from adapter callables; the adapter emits READING_HISTORY
+    / EVALUATING / PLANNING_PHASES stage updates. This function only owns
+    OUTPUTTING + final persist + error mapping.
+    """
+    # Lazy imports — keeps the heavy coach / langgraph machinery out of cold
+    # paths (e.g. routes that only need to enqueue a job without invoking it).
+    from coach.graphs.generation.graph import build_generation_graph
+    from coach.graphs.generation.master_rule_filter import run_master_rule_filter
+
+    from .coach_adapters.master_plan_adapter import (
+        apply_master_patches,
+        generate_master_plan,
+        load_master_context,
+        master_reviewer,
     )
-    history = _query_history(user_id)
-    history_summary = _format_history_summary(history)
-    logger.debug("job=%s history loaded: %d activities", job_id, history.get("total_activities", 0))
 
-    # ------------------------------------------------------------------
-    # Stage 2: EVALUATING
-    # ------------------------------------------------------------------
-    update_job(job_id, stage=JobStage.EVALUATING, progress=30)
-    fitness_state = _query_fitness_state(user_id)
-    logger.debug("job=%s fitness state: %s", job_id, fitness_state.get("summary"))
+    update_job(job_id, status=JobStatus.RUNNING)
 
-    # ------------------------------------------------------------------
-    # Stage 3: PLANNING_PHASES — call LLM
-    # ------------------------------------------------------------------
-    update_job(job_id, stage=JobStage.PLANNING_PHASES, progress=60)
+    graph = build_generation_graph(
+        load_context=load_master_context,
+        generator=generate_master_plan,
+        reviewer=master_reviewer,
+        apply_patches=apply_master_patches,
+        rule_filter=run_master_rule_filter,
+    )
 
-    today = today_shanghai().isoformat()
-    system_prompt = _build_system_prompt(goal, profile, history_summary, fitness_state, today)
-    user_message = [{"role": "user", "content": "请基于上述信息生成训练总纲"}]
+    initial_state: dict = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "plan_type": "master",
+        "input_payload": {"goal": goal, "profile": profile},
+    }
 
     try:
-        client = LLMClient()
-        raw = client.chat_sync(system_prompt, user_message, max_tokens=8192)
-    except Exception as exc:
-        exc_type_name = type(exc).__name__
-        if exc_type_name == "LLMUnavailable":
-            logger.warning("job=%s LLM unavailable: %s", job_id, exc)
-            update_job(job_id, status=JobStatus.FAILED, error="llm_unavailable")
+        final_state = graph.invoke(initial_state)
+    except LLMUnavailable as exc:
+        logger.warning("job=%s LLM unavailable: %s", job_id, exc)
+        update_job(job_id, status=JobStatus.FAILED, error="llm_unavailable")
+        return
+    except LLMError as exc:
+        retryable = getattr(exc, "retryable", False)
+        logger.warning("job=%s LLM error retryable=%s: %s", job_id, retryable, exc)
+        update_job(job_id, status=JobStatus.FAILED, error=f"llm_error: {exc}")
+        return
+    except ValueError as exc:
+        # generate_master_plan raises two prefixed ValueError kinds:
+        #   "parse_failed: ..." — all 3 parse tiers missed (raw_output attached)
+        #   "bad_schema: ..."    — _build_master_plan rejected the parsed JSON
+        msg = str(exc)
+        if msg.startswith("parse_failed"):
+            raw_output = getattr(exc, "raw_output", None)
+            logger.warning("job=%s parse failed: %s", job_id, exc)
+            update_job(
+                job_id,
+                status=JobStatus.FAILED,
+                error="parse_failed",
+                raw_output=raw_output,
+            )
             return
-        if exc_type_name == "LLMError":
-            retryable = getattr(exc, "retryable", False)
-            logger.warning("job=%s LLM error retryable=%s: %s", job_id, retryable, exc)
-            update_job(job_id, status=JobStatus.FAILED, error=f"llm_error: {exc}")
+        if msg.startswith("bad_schema"):
+            logger.warning("job=%s plan build failed: %s", job_id, exc)
+            update_job(job_id, status=JobStatus.FAILED, error=msg)
             return
-        # Unknown exception — re-raise to outer handler
         raise
 
     # ------------------------------------------------------------------
-    # Stage 4: OUTPUTTING — parse + persist
+    # Stage 4: OUTPUTTING — verdict gate + persist
     # ------------------------------------------------------------------
     update_job(job_id, stage=JobStage.OUTPUTTING, progress=85)
 
-    parsed = _parse_llm_output(raw)
-    if parsed is None:
-        logger.warning("job=%s JSON parse failed; raw output len=%d", job_id, len(raw))
+    verdict = final_state.get("final_verdict")
+    if verdict == "block":
+        violations = final_state.get("rule_violations") or []
+        rules_str = "; ".join(v.get("rule", "?") for v in violations) or "unknown"
+        logger.warning("job=%s verdict=block rules=%s", job_id, rules_str)
         update_job(
             job_id,
             status=JobStatus.FAILED,
-            error="parse_failed",
-            raw_output=raw[:2000],
+            error=f"rule_filter_failed: {rules_str}",
         )
         return
 
+    parsed = final_state.get("final_artifact")
+    if not isinstance(parsed, dict):
+        logger.warning("job=%s no final_artifact in state", job_id)
+        update_job(job_id, status=JobStatus.FAILED, error="no_artifact")
+        return
+
+    # current_draft is already a MasterPlan-shaped dict (adapter did the
+    # _build_master_plan transform); model_validate is essentially round-trip
+    # validation here, but kept as a safety net + to reconstruct the instance.
     try:
-        goal_id = goal.get("id") or goal.get("goal_id") or str(uuid4())
-        plan = _build_master_plan(parsed, user_id, goal_id)
-    except ValueError as exc:
-        logger.warning("job=%s plan build failed: %s", job_id, exc)
-        update_job(
-            job_id,
-            status=JobStatus.FAILED,
-            error=f"bad_schema: {exc}",
-            raw_output=raw[:2000],
-        )
+        plan = MasterPlan.model_validate(parsed)
+    except Exception as exc:  # noqa: BLE001 — pydantic ValidationError catch-all
+        logger.warning("job=%s final_artifact model_validate failed: %s", job_id, exc)
+        update_job(job_id, status=JobStatus.FAILED, error=f"bad_schema: {exc}")
         return
 
     store = get_master_plan_store()

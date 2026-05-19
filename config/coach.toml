@@ -1,64 +1,65 @@
-# Coach LLM Configuration
+# Coach LLM Configuration — LOCAL DEV
 #
-# Three roles, each backed by an independent Azure OpenAI deployment on the
-# word-learner-llm cognitive services resource. Auth is Managed Identity
-# (ACA MI needs the `Cognitive Services OpenAI User` role on the resource).
+# Points the coach runtime at the developer-shared Azure AI Foundry resource
+# (`azureai4identity`) instead of the production `word-learner-llm` resource.
+# Auth is Azure CLI credential: `DefaultAzureCredential` walks through
+# Environment > Workload Identity > Managed Identity > Azure CLI > Visual Studio
+# > etc. — `az login` is what makes this work on a developer machine.
 #
-# Cross-provider review (Claude Opus 4.7 as reviewer to defend against
-# single-provider commitment bias — see plan §7.5) is a follow-up: until
-# the Foundry Claude deployment is provisioned, reviewer reuses gpt-5.4
-# with a much lower temperature + the adversarial reviewer prompt. The
-# prompt difference + temperature=0 still catches a useful fraction of
-# generator bugs even on the same model.
+# Prod settings live in `config/coach.prod.toml`. The loader (see
+# `src/coach/runtime/config.py`) resolves in this order:
+#   1. `load_config(path=...)` arg
+#   2. `STRIDE_COACH_CONFIG_PATH` env var
+#   3. `<repo-root>/config/coach.toml`  ← this file (default for local)
+#   4. `<cwd>/config/coach.toml`         (ad-hoc fallback)
 
 [generator]
 # Coach Agent — generates weekly + master plans, drives chat with tools
 provider     = "azure-openai"
-model        = "gpt-5.4"
-deployment   = "gpt-5.4"
-endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
+model        = "gpt-5.5"
+deployment   = "gpt-5.5"
+endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
 api_version  = "2025-04-01-preview"
 api_kind     = "responses"
-temperature  = 0.4
+# temperature deliberately omitted — gpt-5.5 is a reasoning model that rejects
+# the parameter (400 "Unsupported parameter: 'temperature' is not supported
+# with this model"). llm_factory skips the kwarg when ModelSpec.temperature
+# is None. Re-add this line only if you point the role at a non-reasoning model.
 max_tokens   = 4096
 timeout_s    = 120
 
 [reviewer]
-# Reviewer Agent — temporarily on gpt-5.4 (see header note). Swap to
-# claude-opus-4-7 via Foundry serverless inference when the deployment is
-# available; only the deployment / model / api_kind / endpoint / api_version
-# fields need to change, no code edits required.
+# Reviewer Agent — same model for now (no separate Claude Opus deployment on
+# this resource yet); temperature dropped to 0 + reviewer prompt still surfaces
+# a useful fraction of generator bugs.
 provider     = "azure-openai"
-model        = "gpt-5.4"
-deployment   = "gpt-5.4"
-endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
+model        = "gpt-5.5"
+deployment   = "gpt-5.5"
+endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
 api_version  = "2025-04-01-preview"
 api_kind     = "responses"
-temperature  = 0.0
+# temperature omitted — gpt-5.5 reasoning model rejects it (see [generator]).
 max_tokens   = 4096
 timeout_s    = 180
 
 [commentary]
-# Activity Commentary Agent — per-activity coach commentary, gpt-4.1 via
-# the chat/completions API.
-#
-# NOTE: This config is a forward-looking stub. The current production
-# commentary path (auto-gen during sync + manual regenerate endpoint) still
-# uses its own direct AOAI client and will be migrated in a separate commit
-# so prod behavior is unchanged. Treat this section as inactive until that
-# migration ships.
+# Activity Commentary Agent — forward-looking stub (production commentary
+# path still uses its own direct AOAI client). Pointed at the same dev
+# deployment so a future migration test can exercise it without touching
+# prod config.
 provider     = "azure-openai"
-model        = "gpt-4.1"
-deployment   = "gpt-4.1"
-endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
-api_version  = "2025-01-01-preview"
-api_kind     = "chat-completions"
-temperature  = 0.6
+model        = "gpt-5.5"
+deployment   = "gpt-5.5"
+endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
+api_version  = "2025-04-01-preview"
+api_kind     = "responses"
+# temperature omitted — gpt-5.5 reasoning model rejects it (see [generator]).
 max_tokens   = 2048
 timeout_s    = 90
 
 [auth]
-# Managed Identity is the only supported auth mode for prod. For local dev
-# / unit tests, inject a fake LLM via coach_runtime.set_*_for_tests instead
-# of switching to api-key auth.
+# DefaultAzureCredential — picks up Azure CLI token after `az login`.
+# Same enum value as prod (managed-identity) because the credential chain is
+# the same code path; the runtime just uses whichever credential source the
+# chain finds first.
 mode = "managed-identity"

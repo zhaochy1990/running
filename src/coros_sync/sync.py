@@ -301,8 +301,10 @@ def _try_generate_commentaries(db: Database, label_ids: list[str]) -> None:
     """
     try:
         # Lazy import — stride_server is not a hard dep of coros_sync
-        from stride_server.commentary_ai import maybe_generate_for_new_activity
-        from stride_server.aoai_client import is_enabled
+        from stride_server.commentary_ai import (
+            is_enabled,
+            maybe_generate_for_new_activity,
+        )
     except Exception as e:
         logger.debug("AOAI commentary module unavailable: %s", e)
         return

@@ -1,9 +1,8 @@
 """Garmin sync orchestrator — fetches activities + health and stores in SQLite.
 
-v1 keeps the surface narrow:
-- Activity list paginated, then per-activity detail (no FIT timeseries yet).
-- Daily health for yesterday + today (lighter than COROS's range pull).
-- Dashboard singleton (HRV + threshold + race predictions).
+Garmin rows are normalized into the same storage model as other providers:
+activities, laps, zones, and per-sample timeseries all land in the shared SQLite
+tables with provider-specific raw payloads converted at the adapter boundary.
 """
 
 from __future__ import annotations
@@ -22,10 +21,14 @@ from .models import (
     daily_health_from_garmin,
     daily_hrv_from_garmin,
     dashboard_from_garmin,
+    timeseries_points_from_activity_details,
 )
 from .normalize import apply_to_detail
 
 logger = logging.getLogger(__name__)
+
+GARMIN_ACTIVITY_DETAILS_MAXCHART = 20_000
+GARMIN_ACTIVITY_DETAILS_MAXPOLY = 20_000
 
 
 def _emit(progress: SyncProgressCallback | None, **payload: Any) -> None:
@@ -130,18 +133,26 @@ def _sync_activities(
                 return new_count, new_label_ids
 
             try:
+                details = client.get_activity_details(
+                    activity_id,
+                    maxchart=GARMIN_ACTIVITY_DETAILS_MAXCHART,
+                    maxpoly=GARMIN_ACTIVITY_DETAILS_MAXPOLY,
+                )
                 splits = client.get_activity_splits(activity_id)
                 hr_zones = client.get_activity_hr_in_timezones(activity_id)
                 weather = client.get_activity_weather(activity_id)
             except Exception as exc:
                 logger.warning("Skipping detail fetch for %s: %s", activity_id, exc)
-                splits, hr_zones, weather = None, None, None
+                details, splits, hr_zones, weather = None, None, None, None
+
+            timeseries_points = timeseries_points_from_activity_details(details)
 
             detail = activity_detail_from_garmin(
                 activity,
                 splits=splits,
                 hr_zones=hr_zones,
                 weather=weather,
+                timeseries_points=timeseries_points,
             )
             apply_to_detail(detail, activity)
             db.upsert_activity(detail, provider="garmin")

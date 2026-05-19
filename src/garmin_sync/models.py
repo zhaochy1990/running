@@ -97,6 +97,31 @@ def _ms_to_pace_s_km(speed_m_s: float | None) -> float | None:
     return 1000.0 / float(speed_m_s)
 
 
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_positive_int(value: Any) -> int | None:
+    num = _to_int(value)
+    if num is None or num <= 0:
+        return None
+    return num
+
+
 def _gmt_to_iso(start_time_gmt: str | None) -> str | None:
     """Garmin returns 'YYYY-MM-DD HH:MM:SS' in GMT. Convert to ISO with +00:00."""
     if not start_time_gmt:
@@ -106,6 +131,89 @@ def _gmt_to_iso(start_time_gmt: str | None) -> str | None:
         return dt.replace(tzinfo=timezone.utc).isoformat()
     except (TypeError, ValueError):
         return start_time_gmt  # let caller see the raw string if format changes
+
+
+def timeseries_points_from_activity_details(
+    activity_details: dict[str, Any] | None,
+) -> list[TimeseriesPoint]:
+    """Convert Garmin ``/activity/{id}/details`` chart rows to TimeseriesPoint.
+
+    Garmin exposes per-sample arrays plus ``metricDescriptors`` that name each
+    array index. The database stores provider-normalized values, matching the
+    COROS-facing semantics already used by charts and analysis:
+
+    - ``timestamp``: centiseconds from activity start
+    - ``speed`` / ``adjusted_pace``: pace in seconds per km
+    - ``distance``: cumulative meters from Garmin details
+    - GPS: WGS84 decimal degrees
+    """
+    details = activity_details or {}
+    descriptors = details.get("metricDescriptors") or []
+    rows = details.get("activityDetailMetrics") or []
+    if not descriptors or not rows:
+        return []
+
+    index_by_key: dict[str, int] = {}
+    for desc in descriptors:
+        if not isinstance(desc, dict):
+            continue
+        key = desc.get("key")
+        idx = desc.get("metricsIndex")
+        if key is None or idx is None:
+            continue
+        try:
+            index_by_key[str(key)] = int(idx)
+        except (TypeError, ValueError):
+            continue
+
+    def metric(metrics: list[Any], *keys: str) -> Any:
+        for key in keys:
+            idx = index_by_key.get(key)
+            if idx is None or idx < 0 or idx >= len(metrics):
+                continue
+            value = metrics[idx]
+            if value is not None:
+                return value
+        return None
+
+    def pace_from_speed(value: Any) -> float | None:
+        speed = _to_float(value)
+        if speed is None or speed <= 0:
+            return None
+        return 1000.0 / speed
+
+    out: list[TimeseriesPoint] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        metrics = row.get("metrics") or []
+        if not isinstance(metrics, list):
+            continue
+
+        elapsed_s = _to_float(metric(metrics, "sumElapsedDuration", "sumDuration"))
+        timestamp = int(round(elapsed_s * 100)) if elapsed_s is not None else None
+        cadence = _to_positive_int(
+            metric(metrics, "directRunCadence", "directDoubleCadence", "directFractionalCadence")
+        )
+
+        out.append(TimeseriesPoint(
+            timestamp=timestamp,
+            distance=_to_float(metric(metrics, "sumDistance")),
+            heart_rate=_to_positive_int(metric(metrics, "directHeartRate")),
+            speed=pace_from_speed(metric(metrics, "directSpeed")),
+            adjusted_pace=pace_from_speed(metric(metrics, "directGradeAdjustedSpeed")),
+            cadence=cadence,
+            altitude=_to_float(metric(metrics, "directElevation")),
+            power=_to_positive_int(metric(metrics, "directPower")),
+            ground_contact_time_ms=_to_float(metric(metrics, "directGroundContactTime")),
+            vertical_oscillation_mm=_to_float(metric(metrics, "directVerticalOscillation")),
+            vertical_ratio_pct=_to_float(metric(metrics, "directVerticalRatio")),
+            cadence_length_cm=_to_float(metric(metrics, "directStrideLength")),
+            gps_lat=_to_float(metric(metrics, "directLatitude")),
+            gps_lon=_to_float(metric(metrics, "directLongitude")),
+        ))
+
+    return out
 
 
 # ─────────────────────────────────────────────────────────────────────────────

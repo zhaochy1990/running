@@ -27,9 +27,13 @@ from stride_core.workout_spec import NormalizedRunWorkout
 
 from .auth import GarminCredentials
 from .client import GarminAuthError, GarminClient
-from .models import activity_detail_from_garmin
+from .models import activity_detail_from_garmin, timeseries_points_from_activity_details
 from .normalize import apply_to_detail
-from .sync import run_sync
+from .sync import (
+    GARMIN_ACTIVITY_DETAILS_MAXCHART,
+    GARMIN_ACTIVITY_DETAILS_MAXPOLY,
+    run_sync,
+)
 from .translate import normalized_to_garmin_workout
 
 logger = logging.getLogger(__name__)
@@ -190,15 +194,22 @@ class GarminDataSource(BaseDataSource):
             activity = client.get_activity(label_id)
             if not activity:
                 raise ActivityNotFoundError(label_id)
+            details = client.get_activity_details(
+                label_id,
+                maxchart=GARMIN_ACTIVITY_DETAILS_MAXCHART,
+                maxpoly=GARMIN_ACTIVITY_DETAILS_MAXPOLY,
+            )
             splits = client.get_activity_splits(label_id)
             hr_zones = client.get_activity_hr_in_timezones(label_id)
             weather = client.get_activity_weather(label_id)
+            timeseries_points = timeseries_points_from_activity_details(details)
 
             detail = activity_detail_from_garmin(
                 activity,
                 splits=splits,
                 hr_zones=hr_zones,
                 weather=weather,
+                timeseries_points=timeseries_points,
             )
             if not detail.date:
                 detail.date = activity_date

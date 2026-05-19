@@ -1,4 +1,11 @@
-"""Pydantic + TypedDict schemas shared across coach graphs."""
+"""Pydantic + TypedDict schemas shared across coach graphs.
+
+Evaluation schemas (``AxisScore`` / ``JudgeScore`` / ``EvalReport`` /
+``FixtureRunOutcome`` / ``aggregate_axis_avg``) previously lived here but
+moved out to the dev-only :mod:`coach_eval.schemas` package. The eval
+framework is offline-only and must not be importable from production
+runtime code (enforced by ``.importlinter``).
+"""
 
 from .conversation import (
     AssistantPart,

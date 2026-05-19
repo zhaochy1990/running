@@ -163,10 +163,17 @@ def test_unknown_auth_mode_rejected(tmp_path: Path) -> None:
 
 
 def test_canonical_config_file_loads(tmp_path: Path, monkeypatch) -> None:
-    """The repo-shipped config/coach.toml must parse without errors and
-    reflect the current real deployments (no placeholders)."""
-    monkeypatch.delenv(PATH_ENV, raising=False)
-    cfg = load_config()  # uses repo root resolver
+    """The repo-shipped ``config/coach.prod.toml`` must parse without errors
+    and reflect the current real prod deployments (no placeholders).
+
+    ``config/coach.toml`` is the per-developer LOCAL override (e.g. pointing
+    at a dev resource with gpt-5.5). Prod settings live in ``coach.prod.toml``
+    which deploy.yml copies into the image. This test pins the prod values.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    prod_config_path = repo_root / "config" / "coach.prod.toml"
+    monkeypatch.setenv(PATH_ENV, str(prod_config_path))
+    cfg = load_config()
     assert cfg.auth_mode == "managed-identity"
 
     # Generator + Reviewer share the gpt-5.4 deployment on the Responses API

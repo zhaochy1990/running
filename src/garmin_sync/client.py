@@ -110,8 +110,18 @@ class GarminClient:
     def get_activity(self, activity_id: int | str) -> dict[str, Any]:
         return self._api.get_activity(activity_id) or {}
 
-    def get_activity_details(self, activity_id: int | str) -> dict[str, Any]:
-        return self._api.get_activity_details(activity_id) or {}
+    def get_activity_details(
+        self,
+        activity_id: int | str,
+        *,
+        maxchart: int = 2000,
+        maxpoly: int = 4000,
+    ) -> dict[str, Any]:
+        return self._api.get_activity_details(
+            activity_id,
+            maxchart=maxchart,
+            maxpoly=maxpoly,
+        ) or {}
 
     def get_activity_splits(self, activity_id: int | str) -> dict[str, Any]:
         return self._api.get_activity_splits(activity_id) or {}

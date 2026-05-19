@@ -41,7 +41,29 @@ COPY scripts/ ./scripts/
 # Coach runtime config — coach.runtime.config.load_config() reads this at
 # request time to resolve the role→deployment mapping. Without this COPY
 # the coach endpoints 500 with CoachConfigError at first invocation.
+#
+# `config/coach.toml` in the repo is the LOCAL DEV override (per-developer,
+# points at a dev endpoint / deployment). Production must use `coach.prod.toml`.
+# After COPY, overwrite coach.toml with coach.prod.toml so the default config
+# resolver (`<repo-root>/config/coach.toml`) picks up prod values.
+#
+# We `cp` (not `mv`) so coach.prod.toml stays on the image — that way a future
+# deployment that points `STRIDE_COACH_CONFIG_PATH` at `coach.prod.toml`
+# explicitly still finds the file instead of hitting CoachConfigError.
 COPY config/ ./config/
+RUN cp ./config/coach.prod.toml ./config/coach.toml
+
+# coach_eval is the dev-only offline evaluation framework — never invoked
+# from a prod route. Strip it from the image to keep the surface area small
+# and to make accidental imports impossible at runtime. The `.importlinter`
+# `coach-eval-dev-only` contract is the static guard; this is the runtime
+# guard. (See `src/coach_eval/__init__.py` for the rationale.)
+#
+# The CLI entrypoint `scripts/eval_coach.py` imports `coach_eval` — strip it
+# too so the prod image doesn't ship a broken script that would crash on
+# import if anything (cron, ad-hoc shell) tried to run it.
+RUN rm -rf /app/src/coach_eval || true
+RUN rm -f /app/scripts/eval_coach.py || true
 
 # Single source of truth for deps: pyproject.toml [project.optional-dependencies].
 # Editable install (-e) keeps /app/src as the import location — no file copy

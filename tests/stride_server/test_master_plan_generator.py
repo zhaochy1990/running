@@ -30,6 +30,7 @@ from stride_server.job_runner import (
     get_job,
     _reset_jobs_for_tests,
 )
+import stride_server.coach_adapters.master_plan_adapter as adapter_mod
 from stride_server.master_plan_generator import (
     _build_master_plan,
     _parse_llm_output,
@@ -87,6 +88,19 @@ _VALID_PLAN_DICT = {
                 "weekly_distance_km_low": 55,
                 "weekly_distance_km_high": 70,
                 "key_session_types": ["节奏跑", "长距离", "间歇"],
+            },
+            {
+                # Added so the plan satisfies master_rule_filter rules
+                # phase_count_min (>= 3 phases) and peak_before_race
+                # (last phase ends 7-21 days before race milestone).
+                # Race is 2026-11-01, peak ends 2026-10-18 -> 14-day taper.
+                "name": "赛前期",
+                "start_date": "2026-09-07",
+                "end_date": "2026-10-18",
+                "focus": "比赛专项 + 减量",
+                "weekly_distance_km_low": 45,
+                "weekly_distance_km_high": 60,
+                "key_session_types": ["马拉松配速", "短间歇", "减量"],
             },
         ],
         "milestones": [
@@ -152,6 +166,7 @@ def mock_store():
 def patch_store(monkeypatch, mock_store):
     """Monkeypatch get_master_plan_store to return mock_store."""
     import stride_server.master_plan_generator as mod
+    import stride_server.coach_adapters.master_plan_adapter as adapter_mod  # noqa: F401 — fixture-scoped seed; tests below reuse the alias
     monkeypatch.setattr(mod, "get_master_plan_store", lambda: mock_store)
     return mock_store
 
@@ -161,30 +176,24 @@ def patch_history(monkeypatch):
     """Patch DB queries to return empty history (avoids needing a real DB)."""
     import stride_server.master_plan_generator as mod
 
-    def _empty_history(uid: str) -> dict:
-        return {
-            "monthly_km": [],
-            "max_weekly_km": 0.0,
-            "total_activities": 0,
-            "best_5k_s": None,
-            "best_10k_s": None,
-            "best_hm_s": None,
-            "best_fm_s": None,
-        }
-
-    def _empty_fitness(uid: str) -> dict:
-        return {
-            "ctl": None,
-            "atl": None,
-            "tsb": None,
-            "fatigue": None,
-            "rhr": None,
-            "training_load_state": None,
-            "summary": "体能数据暂无",
-        }
-
-    monkeypatch.setattr(mod, "_query_history", _empty_history)
-    monkeypatch.setattr(mod, "_query_fitness_state", _empty_fitness)
+    monkeypatch.setattr(mod, "_query_history", lambda uid: {
+        "monthly_km": [],
+        "max_weekly_km": 0.0,
+        "total_activities": 0,
+        "best_5k_s": None,
+        "best_10k_s": None,
+        "best_hm_s": None,
+        "best_fm_s": None,
+    })
+    monkeypatch.setattr(mod, "_query_fitness_state", lambda uid: {
+        "ctl": None,
+        "atl": None,
+        "tsb": None,
+        "fatigue": None,
+        "rhr": None,
+        "training_load_state": None,
+        "summary": "体能数据暂无",
+    })
 
 
 def _make_fake_llm(response: str):
@@ -198,12 +207,6 @@ def _make_fake_llm(response: str):
             return response
 
     return FakeLLMClient
-
-
-def _patch_llm(monkeypatch, client_cls: type) -> None:
-    import stride_server.master_plan_generator as mod
-
-    monkeypatch.setattr(mod, "LLMClient", client_cls)
 
 
 def _run_job_sync(job_id: str, goal: dict = GOAL, profile: dict | None = PROFILE) -> None:
@@ -280,7 +283,9 @@ class TestBuildMasterPlan:
         assert plan.status == MasterPlanStatus.DRAFT
         assert plan.version == 1
         assert plan.generated_by == "gpt-4.1"
-        assert len(plan.phases) == 2
+        # 3 phases: 基础期 + 进展期 + 赛前期 (the 赛前期 added so the fixture
+        # satisfies the new master_rule_filter; without it phase_count_min fails).
+        assert len(plan.phases) == 3
         assert len(plan.milestones) == 3
         assert len(plan.training_principles) == 3
 
@@ -338,7 +343,8 @@ class TestRunGenerateJob:
     def test_valid_sentinel_json_produces_done_job(self, monkeypatch, patch_store, patch_history):
         """Layer 1: sentinel-anchored JSON → job DONE + plan saved."""
         raw_response = _sentinel_wrap(_VALID_JSON_STR)
-        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
+        import stride_server.master_plan_generator as mod
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -359,7 +365,8 @@ class TestRunGenerateJob:
     def test_fenced_json_produces_done_job(self, monkeypatch, patch_store, patch_history):
         """Layer 2: fenced ```json block → job DONE."""
         raw_response = _fenced_wrap(_VALID_JSON_STR)
-        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
+        import stride_server.master_plan_generator as mod
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -370,7 +377,8 @@ class TestRunGenerateJob:
     def test_balanced_braces_produces_done_job(self, monkeypatch, patch_store, patch_history):
         """Layer 3: bare JSON (with preamble noise) → job DONE."""
         raw_response = "教练说：" + _VALID_JSON_STR
-        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
+        import stride_server.master_plan_generator as mod
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -381,7 +389,8 @@ class TestRunGenerateJob:
     def test_garbage_response_fails_with_parse_failed(self, monkeypatch, patch_store, patch_history):
         """Unparseable output → job FAILED + error='parse_failed' + raw_output set."""
         raw_response = "这是完全无法解析的输出！没有 JSON 也没有格式。"
-        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
+        import stride_server.master_plan_generator as mod
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -395,13 +404,14 @@ class TestRunGenerateJob:
 
     def test_llm_unavailable_fails_job(self, monkeypatch, patch_store, patch_history):
         """LLMUnavailable at construction → job FAILED + error='llm_unavailable'."""
-        import stride_server.master_plan_generator as mod
+        from stride_server.llm_client import LLMUnavailable
 
         class UnavailableLLMClient:
             def __init__(self) -> None:
-                raise mod.LLMUnavailable("AZURE_OPENAI_ENDPOINT not set")
+                raise LLMUnavailable("AZURE_OPENAI_ENDPOINT not set")
 
-        _patch_llm(monkeypatch, UnavailableLLMClient)
+        import stride_server.master_plan_generator as mod
+        monkeypatch.setattr(adapter_mod, "LLMClient", UnavailableLLMClient)
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -412,16 +422,17 @@ class TestRunGenerateJob:
 
     def test_llm_error_retryable_fails_job(self, monkeypatch, patch_store, patch_history):
         """LLMError(retryable=True) → job FAILED + error contains llm_error."""
-        import stride_server.master_plan_generator as mod
+        from stride_server.llm_client import LLMError
 
         class RateLimitedLLMClient:
             def __init__(self) -> None:
                 pass
 
             def chat_sync(self, *args: Any, **kwargs: Any) -> str:
-                raise mod.LLMError("rate limit exceeded", retryable=True)
+                raise LLMError("rate limit exceeded", retryable=True)
 
-        _patch_llm(monkeypatch, RateLimitedLLMClient)
+        import stride_server.master_plan_generator as mod
+        monkeypatch.setattr(adapter_mod, "LLMClient", RateLimitedLLMClient)
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -437,7 +448,8 @@ class TestRunGenerateJob:
         bad_dict = dict(_VALID_PLAN_DICT)
         bad_dict["schema"] = "some-other/v2"
         raw_response = _sentinel_wrap(json.dumps(bad_dict))
-        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
+        import stride_server.master_plan_generator as mod
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -456,28 +468,33 @@ class TestRunGenerateJob:
                 "start_date": "2026-05-12",
                 "end_date": "2026-11-01",
                 "training_principles": ["原则1"],
-                # phases deliberately omitted
+                # phases deliberately omitted — master_rule_filter
+                # `phase_count_min` (>= 3) now blocks this before persist.
                 "milestones": [],
             },
         }
         raw_response = _sentinel_wrap(json.dumps(data))
-        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
+        import stride_server.master_plan_generator as mod  # noqa: F401
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
 
+        # Post-refactor: phase-less plans are blocked by master_rule_filter,
+        # not silently persisted. Generator pipeline routes the verdict=block
+        # outcome to `rule_filter_failed` so the failure is loud, not silent.
         job = get_job(job_id)
-        assert job.status == JobStatus.DONE
-        assert len(patch_store.saved_plans) == 1
-        saved = patch_store.saved_plans[0]
-        assert saved.phases == []
+        assert job.status == JobStatus.FAILED
+        assert job.error is not None
+        assert job.error.startswith("rule_filter_failed")
+        assert "phase_count_min" in job.error
+        assert len(patch_store.saved_plans) == 0
 
     def test_job_stages_progress_through_all_stages(self, monkeypatch, patch_store, patch_history):
         """Verify that job progresses through all 4 stages in order."""
         raw_response = _sentinel_wrap(_VALID_JSON_STR)
         import stride_server.master_plan_generator as mod
-
-        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         stage_log: list[tuple[JobStage | None, int]] = []
         original_update_job = mod.update_job
@@ -492,6 +509,11 @@ class TestRunGenerateJob:
                     stage_log.append((job.stage, job.progress))
 
         monkeypatch.setattr(mod, "update_job", spy_update_job)
+        # READING_HISTORY / EVALUATING / PLANNING_PHASES stage updates fire
+        # from inside master_plan_adapter, which imported `update_job` from
+        # `..job_runner` at module-load time. Patching only `mod.update_job`
+        # misses those calls. Patch the adapter's binding too.
+        monkeypatch.setattr(adapter_mod, "update_job", spy_update_job)
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -505,7 +527,8 @@ class TestRunGenerateJob:
     def test_no_profile_still_succeeds(self, monkeypatch, patch_store, patch_history):
         """profile=None (user skipped C2) → still generates a plan."""
         raw_response = _sentinel_wrap(_VALID_JSON_STR)
-        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
+        import stride_server.master_plan_generator as mod
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         run_generate_job(job_id, USER_ID, GOAL, None)  # profile=None
@@ -521,6 +544,13 @@ class TestRunGenerateJob:
             raise RuntimeError("unexpected database crash!")
 
         monkeypatch.setattr(mod, "_query_history", _exploding_history)
+        # master_plan_adapter.load_master_context imports `_query_history`
+        # at module-load time (`from ..master_plan_generator import _query_history`),
+        # so patching `mod._query_history` alone doesn't rebind the adapter's
+        # local name. Patch both so the exception actually fires during
+        # generation rather than letting the adapter call the real DB
+        # (which would then hit a real LLM further downstream).
+        monkeypatch.setattr(adapter_mod, "_query_history", _exploding_history)
 
         job_id = create_job(USER_ID)
         # Must not raise
