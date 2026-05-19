@@ -18,7 +18,6 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
-import os
 import secrets as _secrets
 from datetime import date as date_cls, datetime, timedelta, timezone
 from typing import Any
@@ -36,19 +35,6 @@ _MAX_PLAN_MD_BYTES = 64 * 1024
 # spacing between hard days, etc.). Symmetric around the planned date.
 _PUSH_DATE_WINDOW_DAYS = 7
 
-# Common falsy spellings for env-var feature flags. Centralized so ops can use
-# any of the conventional spellings (`false`/`0`/`no`/`off`/`disabled`) instead
-# of having to remember the exact string each call site checks for.
-_FALSY_STR = frozenset({"false", "0", "no", "off", "disabled"})
-
-
-def _env_bool(name: str, default: bool = True) -> bool:
-    """Parse env var as bool. Default returned when var unset/empty."""
-    raw = os.environ.get(name, "").strip().lower()
-    if not raw:
-        return default
-    return raw not in _FALSY_STR
-
 from stride_core.db import Database
 from stride_core.plan_spec import SUPPORTED_SCHEMA_VERSION, SessionKind, WeeklyPlan
 from stride_core.source import Capability, DataSource, FeatureNotSupported
@@ -57,11 +43,14 @@ from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWor
 from plan_parser import apply_weekly_plan, parse_plan_md
 from ..content_store import read_json as content_read_json
 from ..content_store import read_text as content_read_text
+from ..config import load_server_config
+from ..config.models import InternalConfig, PlanConfig, ServerConfig
 from ..deps import (
     format_duration,
     get_db,
     get_plan_state_store,
     get_source_for_user,
+    get_server_config,
     parse_week_dates,
 )
 
@@ -76,17 +65,15 @@ internal_router = APIRouter()
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def require_internal_token(
-    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
-) -> None:
-    """Validate ``X-Internal-Token`` against ``STRIDE_INTERNAL_TOKEN``.
+def validate_internal_token_value(actual: str | None, config: InternalConfig) -> None:
+    """Validate an internal token header value against typed config.
 
-    Returns 401 when the env var is unset (we won't accept *any* token if the
+    Returns 401 when the config value is unset (we won't accept *any* token if the
     server has no expected value), the header is missing, or the values do
     not match. Mirrors the ``Bearer`` dep's failure shape so clients see a
     consistent error envelope.
     """
-    expected = os.environ.get("STRIDE_INTERNAL_TOKEN")
+    expected = config.token
     if not expected:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -94,11 +81,27 @@ def require_internal_token(
         )
     # Use constant-time comparison to avoid leaking the expected token via
     # response-time differences (str ``==`` short-circuits on first mismatch).
-    if not x_internal_token or not _secrets.compare_digest(x_internal_token, expected):
+    if not actual or not _secrets.compare_digest(actual, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid internal token",
         )
+
+
+def _server_config(config: ServerConfig | None) -> ServerConfig:
+    return config if config is not None else load_server_config(use_cache=False)
+
+
+def require_internal_token(
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+    config: ServerConfig | None = Depends(get_server_config),
+) -> None:
+    """Validate ``X-Internal-Token`` against server runtime config."""
+    validate_internal_token_value(x_internal_token, _server_config(config).internal)
+
+
+def prefer_authored_json_from_config(config: PlanConfig) -> bool:
+    return config.prefer_authored_json
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -614,15 +617,16 @@ def _try_authored_reparse(
 ) -> dict[str, Any] | None:
     """Try plan.json-first reparse path. Returns response dict on success, None to fall through.
 
-    Phase 1 plan.json-priority logic. Gated by env var ``STRIDE_PLAN_JSON_PRIORITY``
-    (default ``true``). When plan.json exists at the canonical content store path
+    Phase 1 plan.json-priority logic. Gated by server config. The legacy
+    ``STRIDE_PLAN_JSON_PRIORITY`` env var maps to ``plan.prefer_authored_json``.
+    When plan.json exists at the canonical content store path
     and parses against ``SUPPORTED_SCHEMA_VERSION``, we promote it directly to the
     structured layer with ``structured_source='authored'`` — bypassing the LLM
     reverse parser entirely. Any failure (missing file, malformed JSON, schema
     skew, validation error) returns ``None`` so the caller falls through to the
     existing LLM path.
     """
-    if not _env_bool("STRIDE_PLAN_JSON_PRIORITY", default=True):
+    if not prefer_authored_json_from_config(load_server_config(use_cache=False).plan):
         return None
     plan_json_path = f"{user}/logs/{folder}/plan.json"
     try:

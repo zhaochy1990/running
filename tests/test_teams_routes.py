@@ -9,6 +9,8 @@ SQLite Database fixture with USER_DATA_DIR pointed at tmp_path.
 from __future__ import annotations
 
 import time
+import sys
+import types
 
 import jwt
 import pytest
@@ -17,9 +19,126 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+from stride_server.config.models import (
+    AuthServiceConfig,
+    AzureOpenAIConfig,
+    CommentaryConfig,
+    JPushConfig,
+    NotificationStorageConfig,
+)
+
 
 USER_A = "a1b2c3d4-e5f6-4aaa-89ab-111111111111"
 USER_B = "b1b2c3d4-e5f6-4aaa-89ab-222222222222"
+
+
+def test_notifications_backend_uses_config_file_backend() -> None:
+    from stride_server.notifications.store import backend_from_config
+
+    backend = backend_from_config(
+        NotificationStorageConfig(
+            table_account_url="",
+            devices_table="stridedevices",
+            prefs_table="strideprefs",
+        )
+    )
+
+    assert backend.__class__.__name__ == "_FileBackend"
+
+
+def test_commentary_enabled_from_config() -> None:
+    from stride_server.aoai_client import get_deployment_from_config, is_enabled_from_config
+
+    cfg = CommentaryConfig(
+        enabled=True,
+        azure_openai=AzureOpenAIConfig(deployment="commentary-model"),
+    )
+
+    assert is_enabled_from_config(cfg) is True
+    assert get_deployment_from_config(cfg) == "commentary-model"
+
+
+def test_aoai_client_cache_is_scoped_to_effective_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    import stride_server.aoai_client as aoai_client
+
+    created: list[dict[str, object]] = []
+
+    class FakeAzureOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            self.kwargs = kwargs
+            created.append(kwargs)
+
+    fake_openai = types.SimpleNamespace(AzureOpenAI=FakeAzureOpenAI)
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+    monkeypatch.setattr(aoai_client, "_client", None)
+
+    first_cfg = CommentaryConfig(
+        enabled=True,
+        azure_openai=AzureOpenAIConfig(
+            endpoint="https://first.example",
+            api_key="first-key",
+            api_version="2024-10-21",
+            timeout_s=10.0,
+        ),
+    )
+    second_cfg = CommentaryConfig(
+        enabled=True,
+        azure_openai=AzureOpenAIConfig(
+            endpoint="https://second.example",
+            api_key="second-key",
+            api_version="2024-10-21",
+            timeout_s=10.0,
+        ),
+    )
+
+    first = aoai_client.get_client(config=first_cfg)
+    second = aoai_client.get_client(config=second_cfg)
+    second_again = aoai_client.get_client(config=second_cfg)
+
+    assert first is not second
+    assert second is second_again
+    assert [call["azure_endpoint"] for call in created] == [
+        "https://first.example",
+        "https://second.example",
+    ]
+
+
+def test_jpush_credentials_from_config() -> None:
+    from stride_server.notifications.jpush_client import credentials_from_config
+
+    cfg = JPushConfig(app_key="app", master_secret="secret")
+
+    assert credentials_from_config(cfg) == ("app", "secret")
+
+
+def test_auth_service_base_url_from_config() -> None:
+    from stride_server.auth_service_client import base_url_from_config
+
+    assert (
+        base_url_from_config(AuthServiceConfig(base_url="https://auth.example/", timeout_s=2.0))
+        == "https://auth.example"
+    )
+
+
+def test_auth_service_base_url_from_config_raises_when_empty() -> None:
+    from stride_server.auth_service_client import AuthServiceUnavailable, base_url_from_config
+
+    with pytest.raises(AuthServiceUnavailable, match="auth_service.base_url"):
+        base_url_from_config(AuthServiceConfig(base_url="", timeout_s=2.0))
+
+
+def test_notifications_backend_uses_legacy_likes_url_when_dedicated_env_blank(monkeypatch) -> None:
+    from stride_server.notifications import store as nstore
+
+
+    monkeypatch.setenv(nstore.ACCOUNT_URL_ENV, "")
+    monkeypatch.setenv(nstore.LEGACY_ACCOUNT_URL_ENV, "https://acct.table.core.windows.net")
+    nstore.reset_backend_cache()
+
+    backend = nstore._get_backend()
+
+    assert backend.__class__.__name__ == "_AzureTableBackend"
+    nstore.reset_backend_cache()
 
 
 # ---------------------------------------------------------------------------

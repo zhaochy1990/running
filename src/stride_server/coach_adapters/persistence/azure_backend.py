@@ -11,8 +11,9 @@ need azure-data-tables / azure-storage-blob installed.
 
 from __future__ import annotations
 
-import os
 from typing import Any
+
+from stride_server.config.models import CoachPersistenceConfig
 
 from .store import CheckpointRow, CheckpointStore, CheckpointWrite
 
@@ -38,22 +39,18 @@ class AzureCheckpointStore(CheckpointStore):
 
     @classmethod
     def from_env(cls) -> AzureCheckpointStore:
-        table_url = os.environ["STRIDE_COACH_TABLE_ACCOUNT_URL"]
-        blob_url = os.environ["STRIDE_COACH_BLOB_ACCOUNT_URL"]
-        cp_table = os.environ.get("STRIDE_COACH_CHECKPOINTS_TABLE_NAME", "stridecoachcheckpoints")
-        # ``_writes_table_name`` keeps the same prefix so Azure RBAC scopes
-        # apply transitively (one table-scope role assignment covers both).
-        writes_table = os.environ.get(
-            "STRIDE_COACH_CHECKPOINT_WRITES_TABLE_NAME",
-            "stridecoachcheckpointwrites",
-        )
-        blob_container = os.environ.get("STRIDE_COACH_BLOB_CONTAINER", "coach-checkpoints")
+        from stride_server.config import load_server_config
+
+        return cls.from_config(load_server_config().coach_persistence)
+
+    @classmethod
+    def from_config(cls, config: CoachPersistenceConfig) -> AzureCheckpointStore:
         return cls(
-            table_account_url=table_url,
-            checkpoints_table_name=cp_table,
-            writes_table_name=writes_table,
-            blob_account_url=blob_url,
-            blob_container_name=blob_container,
+            table_account_url=config.table_account_url,
+            checkpoints_table_name=config.checkpoints_table_name,
+            writes_table_name=config.checkpoint_writes_table_name,
+            blob_account_url=config.blob_account_url,
+            blob_container_name=config.blob_container,
         )
 
     def _init_clients(self) -> None:

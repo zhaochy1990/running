@@ -16,10 +16,12 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import os
 from typing import Any
 
 import httpx
+
+from stride_server.config import load_server_config
+from stride_server.config.models import JPushConfig
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +29,20 @@ JPUSH_URL = "https://api.jpush.cn/v3/push"
 TIMEOUT_S = 10.0
 
 
-def _credentials() -> tuple[str, str] | None:
-    app_key = os.environ.get("JPUSH_APP_KEY", "").strip()
-    master_secret = os.environ.get("JPUSH_MASTER_SECRET", "").strip()
+def credentials_from_config(config: JPushConfig) -> tuple[str, str] | None:
+    app_key = config.app_key.strip()
+    master_secret = config.master_secret.strip()
     if not app_key or not master_secret:
         return None
     return app_key, master_secret
+
+
+def _jpush_config() -> JPushConfig:
+    return load_server_config().notifications.jpush
+
+
+def _credentials() -> tuple[str, str] | None:
+    return credentials_from_config(_jpush_config())
 
 
 def is_enabled() -> bool:
@@ -57,7 +67,8 @@ def push_to_registration_ids(
     Returns the JPush response JSON on success, None on failure or when
     JPush is not configured. Never raises — push is best-effort.
     """
-    creds = _credentials()
+    config = _jpush_config()
+    creds = credentials_from_config(config)
     if creds is None:
         logger.debug("JPush not configured (env vars missing); skipping push")
         return None
@@ -80,14 +91,14 @@ def push_to_registration_ids(
             },
         },
         "options": {
-            "apns_production": True,  # iOS Phase 2 toggles when sandbox cert lands
+            "apns_production": config.apns_production,
         },
     }
 
     try:
-        with httpx.Client(timeout=TIMEOUT_S) as client:
+        with httpx.Client(timeout=config.timeout_s) as client:
             resp = client.post(
-                JPUSH_URL,
+                config.url,
                 content=json.dumps(payload).encode(),
                 headers={
                     "Authorization": _basic_header(app_key, master_secret),

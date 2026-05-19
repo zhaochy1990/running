@@ -23,6 +23,7 @@ from stride_core.state_stores import (
     SqliteInBodyStore,
     SqlitePlanStateStore,
 )
+from stride_server.config.models import ServerConfig
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend" / "dist"
@@ -141,6 +142,16 @@ def get_registry(request: Request) -> ProviderRegistry:
     """FastAPI dependency — retrieve the ProviderRegistry from app state."""
     registry: ProviderRegistry = request.app.state.registry
     return registry
+
+
+def get_server_config(request: Request) -> ServerConfig:
+    """FastAPI dependency — retrieve runtime server config from app state."""
+    config: ServerConfig | None = getattr(request.app.state, "config", None)
+    if config is not None:
+        return config
+    from stride_server.config import load_server_config
+
+    return load_server_config(use_cache=False)
 
 
 def get_source_for_user(

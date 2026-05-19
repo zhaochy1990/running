@@ -11,13 +11,13 @@ key order — exactly the pattern :func:`make_reverse_time_key` produces.
 from __future__ import annotations
 
 import json
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
+from stride_server.config.models import CoachPersistenceConfig
 
 from .store import path_safe
 
@@ -184,12 +184,12 @@ class AzureWeeklyVersionStore(WeeklyVersionStore):
 
     @classmethod
     def from_env(cls) -> AzureWeeklyVersionStore:
+        from stride_server.config import load_server_config
+
+        config = load_server_config().coach_persistence
         return cls(
-            table_account_url=os.environ["STRIDE_COACH_TABLE_ACCOUNT_URL"],
-            table_name=os.environ.get(
-                "STRIDE_COACH_WEEKLY_VERSIONS_TABLE_NAME",
-                "strideweeklyversions",
-            ),
+            table_account_url=config.table_account_url,
+            table_name=config.weekly_versions_table_name,
         )
 
     def add_version(self, version: WeeklyPlanVersion) -> str:
@@ -244,10 +244,15 @@ class AzureWeeklyVersionStore(WeeklyVersionStore):
 
 
 def weekly_version_store_from_env() -> WeeklyVersionStore:
-    if os.environ.get("STRIDE_COACH_TABLE_ACCOUNT_URL"):
-        return AzureWeeklyVersionStore.from_env()
-    base = os.environ.get(
-        "STRIDE_COACH_FILE_BACKEND_DIR",
-        os.path.join("data", "_coach_dev", "weekly_versions"),
-    )
-    return FileWeeklyVersionStore(base)
+    from stride_server.config import load_server_config
+
+    return weekly_version_store_from_config(load_server_config().coach_persistence)
+
+
+def weekly_version_store_from_config(config: CoachPersistenceConfig) -> WeeklyVersionStore:
+    if config.table_account_url:
+        return AzureWeeklyVersionStore(
+            table_account_url=config.table_account_url,
+            table_name=config.weekly_versions_table_name,
+        )
+    return FileWeeklyVersionStore(Path(config.file_backend_dir) / "weekly_versions")

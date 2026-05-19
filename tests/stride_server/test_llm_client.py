@@ -11,6 +11,60 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from stride_server.config.models import AzureOpenAIConfig, LLMConfig
+
+
+@pytest.fixture(autouse=True)
+def clear_server_config_cache_between_tests():
+    from stride_server.config import clear_server_config_cache
+
+    clear_server_config_cache()
+    try:
+        yield
+    finally:
+        clear_server_config_cache()
+
+
+# ---------------------------------------------------------------------------
+# Config helpers
+# ---------------------------------------------------------------------------
+
+
+def test_llm_enabled_from_config_without_env() -> None:
+    from stride_server.llm_client import is_enabled_from_config
+
+    cfg = LLMConfig(
+        enabled=True,
+        default_model="gpt-test",
+        azure_openai=AzureOpenAIConfig(endpoint="https://aoai.example"),
+    )
+
+    assert is_enabled_from_config(cfg) is True
+
+
+def test_llm_disabled_from_config_without_endpoint() -> None:
+    from stride_server.llm_client import is_enabled_from_config
+
+    cfg = LLMConfig(
+        enabled=False,
+        default_model="gpt-test",
+        azure_openai=AzureOpenAIConfig(endpoint=""),
+    )
+
+    assert is_enabled_from_config(cfg) is False
+
+
+def test_llm_disabled_from_config_even_with_endpoint() -> None:
+    from stride_server.llm_client import is_enabled_from_config
+
+    cfg = LLMConfig(
+        enabled=False,
+        default_model="gpt-test",
+        azure_openai=AzureOpenAIConfig(endpoint="https://aoai.example"),
+    )
+
+    assert is_enabled_from_config(cfg) is False
+
 
 # ---------------------------------------------------------------------------
 # Helpers

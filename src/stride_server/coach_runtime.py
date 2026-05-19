@@ -46,8 +46,11 @@ def get_checkpointer() -> Any:
                 from .coach_adapters.persistence.checkpointer import (
                     AzureTableCheckpointSaver,
                 )
+                from .config import load_server_config
 
-                _CHECKPOINTER = AzureTableCheckpointSaver.from_env()
+                _CHECKPOINTER = AzureTableCheckpointSaver.from_config(
+                    load_server_config().coach_persistence
+                )
     return _CHECKPOINTER
 
 

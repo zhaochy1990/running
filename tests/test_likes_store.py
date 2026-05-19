@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from stride_server.config import clear_server_config_cache
+from stride_server.config.models import LikesStorageConfig
+
 
 USER_A = "a1b2c3d4-e5f6-4aaa-89ab-111111111111"
 USER_B = "b1b2c3d4-e5f6-4aaa-89ab-222222222222"
@@ -17,13 +20,59 @@ def store(tmp_path, monkeypatch):
     import stride_server.likes_store as ls
 
     monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "local")
     monkeypatch.delenv("STRIDE_LIKES_TABLE_ACCOUNT_URL", raising=False)
+    clear_server_config_cache()
     ls.reset_backend_cache()
     yield ls
     ls.reset_backend_cache()
+    clear_server_config_cache()
 
 
 TEAM = "t1"
+
+
+def test_likes_backend_uses_config_file_backend() -> None:
+    import stride_server.likes_store as ls
+
+    cfg = LikesStorageConfig(table_account_url="", table_name="stridelikes")
+
+    backend = ls.backend_from_config(cfg)
+
+    assert backend.__class__.__name__ == "_FileBackend"
+
+
+def test_likes_backend_uses_config_azure_backend() -> None:
+    import stride_server.likes_store as ls
+
+    cfg = LikesStorageConfig(
+        table_account_url="https://acct.table.core.windows.net",
+        table_name="customlikes",
+    )
+
+    backend = ls.backend_from_config(cfg)
+
+    assert backend.__class__.__name__ == "_AzureTableBackend"
+
+
+def test_likes_default_file_backend_does_not_require_valid_auth_config(monkeypatch) -> None:
+    import stride_server.likes_store as ls
+
+    monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)
+    monkeypatch.delenv("STRIDE_ENV", raising=False)
+    monkeypatch.setenv("STRIDE_LIKES_TABLE_ACCOUNT_URL", "")
+    for key in (
+        "STRIDE_AUTH_PUBLIC_KEY_PEM",
+        "STRIDE_AUTH_PUBLIC_KEY_PATH",
+        "STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    ls.reset_backend_cache()
+
+    backend = ls._get_backend()
+
+    assert backend.__class__.__name__ == "_FileBackend"
+    ls.reset_backend_cache()
 
 
 def test_put_like_idempotent(store):

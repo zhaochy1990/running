@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from stride_core.db import Database
 from stride_core.source import DataSource
 from stride_core.ability import ABILITY_MODEL_VERSION
+from stride_server.config.models import AuthConfig, ServerConfig
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +97,7 @@ def tmp_db(tmp_path):
 
 
 @pytest.fixture
-def client_and_db(tmp_db, monkeypatch):
+def client_and_db(tmp_db, monkeypatch, rsa_keypair):
     """Return (TestClient, db_path). Patches `get_db` so both the route layer
     and this test talk to the same on-disk DB.
     """
@@ -107,14 +108,16 @@ def client_and_db(tmp_db, monkeypatch):
 
     monkeypatch.setattr(ability_mod, "get_db", _open_db)
 
-    # create_app() fails closed unless STRIDE_AUTH_PUBLIC_KEY_* is set or we're
-    # in dev mode. Tests issue their own keys via _reset_bearer_module so dev
-    # mode is the right escape hatch here.
-    monkeypatch.setenv("STRIDE_ENV", "dev")
+    _, public_pem = rsa_keypair
 
     from stride_server.app import create_app
 
-    app = create_app(_StubSource())
+    app = create_app(
+        _StubSource(),
+        config=ServerConfig.default(env="prod").with_updates(
+            auth=AuthConfig(public_key_pem=public_pem, audience="stride-client")
+        ),
+    )
     return TestClient(app), tmp_db
 
 

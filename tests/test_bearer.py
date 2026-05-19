@@ -45,6 +45,9 @@ def _issue(private_pem: str, **overrides) -> str:
 def _reset_module_state(monkeypatch, env: dict | None = None):
     """Reset the bearer module's cached key + warning flag + env between tests."""
     import stride_server.bearer as bearer
+    from stride_server.config import clear_server_config_cache
+
+    clear_server_config_cache()
     monkeypatch.setattr(bearer, "_cached_public_key", None)
     monkeypatch.setattr(bearer, "_warned_open", False)
     for key in (
@@ -52,14 +55,18 @@ def _reset_module_state(monkeypatch, env: dict | None = None):
         "STRIDE_AUTH_PUBLIC_KEY_PATH",
         "STRIDE_AUTH_ISSUER",
         "STRIDE_AUTH_AUDIENCE",
+        "STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY",
+        "STRIDE_CONFIG_ENV",
+        "STRIDE_ENV",
     ):
         monkeypatch.delenv(key, raising=False)
     for k, v in (env or {}).items():
         monkeypatch.setenv(k, v)
+    clear_server_config_cache()
 
 
 def test_open_mode_when_key_unset(monkeypatch):
-    _reset_module_state(monkeypatch)
+    _reset_module_state(monkeypatch, {"STRIDE_CONFIG_ENV": "local"})
     from stride_server.bearer import require_bearer
     claims = require_bearer(authorization=None)
     assert claims == {"sub": "anonymous", "role": "anonymous"}
@@ -139,3 +146,42 @@ def test_pem_path_env(tmp_path, monkeypatch, rsa_keypair):
     _reset_module_state(monkeypatch, {"STRIDE_AUTH_PUBLIC_KEY_PATH": str(path)})
     from stride_server.bearer import _load_public_key
     assert _load_public_key() == public_pem
+
+
+def test_load_public_key_cache_tracks_env_key_material(monkeypatch) -> None:
+    _reset_module_state(monkeypatch, {"STRIDE_AUTH_PUBLIC_KEY_PEM": "pem-one"})
+    from stride_server.bearer import _load_public_key
+    from stride_server.config import clear_server_config_cache
+
+    assert _load_public_key() == "pem-one"
+
+    monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PEM", "pem-two")
+    clear_server_config_cache()
+
+    assert _load_public_key() == "pem-two"
+
+
+def test_is_dev_mode_no_arg_treats_default_env_as_dev(monkeypatch) -> None:
+    _reset_module_state(monkeypatch)
+    from stride_server.bearer import is_dev_mode
+
+    assert is_dev_mode() is True
+
+
+def test_load_public_key_from_config_prefers_inline_pem() -> None:
+    from stride_server.bearer import load_public_key_from_config
+    from stride_server.config.models import AuthConfig
+
+    cfg = AuthConfig(public_key_pem="pem-inline", public_key_path="missing.pem")
+
+    assert load_public_key_from_config(cfg) == "pem-inline"
+
+
+def test_is_dev_mode_uses_config_env() -> None:
+    from stride_server.bearer import is_dev_mode
+    from stride_server.config.models import ServerConfig
+
+    assert is_dev_mode(ServerConfig.default(env="dev")) is True
+    assert is_dev_mode(ServerConfig.default(env="local")) is True
+    assert is_dev_mode(ServerConfig.default(env="default")) is True
+    assert is_dev_mode(ServerConfig.default(env="prod")) is False

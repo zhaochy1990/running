@@ -35,6 +35,10 @@ from pathlib import Path
 from typing import Any
 
 from stride_core import db as core_db
+from stride_server.config import clear_server_config_cache, load_server_config
+from stride_server.config.loader import resolve_config_env
+from stride_server.config.models import ConfigError, NotificationStorageConfig, ServerConfig
+from stride_server.config.sources import env_source
 
 logger = logging.getLogger(__name__)
 
@@ -354,18 +358,10 @@ class _AzureTableBackend(_Backend):
 # ---------------------------------------------------------------------------
 
 
-@lru_cache(maxsize=1)
-def _get_backend() -> _Backend:
-    account_url = (
-        os.environ.get(ACCOUNT_URL_ENV, "").strip()
-        or os.environ.get(LEGACY_ACCOUNT_URL_ENV, "").strip()
-    )
-    devices_table = (
-        os.environ.get(DEVICES_TABLE_ENV, "").strip() or DEFAULT_DEVICES_TABLE
-    )
-    prefs_table = (
-        os.environ.get(PREFS_TABLE_ENV, "").strip() or DEFAULT_PREFS_TABLE
-    )
+def backend_from_config(config: NotificationStorageConfig) -> _Backend:
+    account_url = config.table_account_url.strip()
+    devices_table = config.devices_table.strip() or DEFAULT_DEVICES_TABLE
+    prefs_table = config.prefs_table.strip() or DEFAULT_PREFS_TABLE
     if account_url:
         logger.info(
             "notifications.store: Azure Tables backend devices=%s prefs=%s",
@@ -378,9 +374,45 @@ def _get_backend() -> _Backend:
     return _FileBackend()
 
 
+def _is_auth_config_error(exc: ConfigError) -> bool:
+    return "auth.public_key" in str(exc)
+
+
+def _notification_config_from_env() -> NotificationStorageConfig:
+    config = ServerConfig.default(env=resolve_config_env()).notifications
+    notifications = env_source().get("notifications", {})
+    if isinstance(notifications, dict):
+        config = config.with_updates(**notifications)
+    return _with_legacy_account_url(config)
+
+
+def _with_legacy_account_url(config: NotificationStorageConfig) -> NotificationStorageConfig:
+    if config.table_account_url.strip():
+        return config
+    legacy_account_url = os.environ.get(LEGACY_ACCOUNT_URL_ENV, "").strip()
+    if not legacy_account_url:
+        return config
+    return config.with_updates(table_account_url=legacy_account_url)
+
+
+def _notification_config() -> NotificationStorageConfig:
+    try:
+        return _with_legacy_account_url(load_server_config().notifications)
+    except ConfigError as exc:
+        if not _is_auth_config_error(exc):
+            raise
+        return _notification_config_from_env()
+
+
+@lru_cache(maxsize=1)
+def _get_backend() -> _Backend:
+    return backend_from_config(_notification_config())
+
+
 def reset_backend_cache() -> None:
     """Test helper — drop the cached backend so env changes take effect."""
     _get_backend.cache_clear()
+    clear_server_config_cache()
 
 
 def _now_iso() -> str:

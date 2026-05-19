@@ -21,6 +21,8 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
+from stride_server.config.models import AuthConfig, ServerConfig
+
 USER_UUID = "11111111-2222-4aaa-89ab-123456789012"
 OTHER_UUID = "22222222-2222-4aaa-89ab-123456789012"
 
@@ -110,6 +112,9 @@ def coach_client(tmp_path, monkeypatch, rsa_keypair):
     from stride_server.routes import coach as coach_routes
 
     app = FastAPI()
+    app.state.config = ServerConfig.default(env="prod").with_updates(
+        auth=AuthConfig(public_key_pem=public_pem)
+    )
     app.include_router(coach_routes.router, dependencies=[Depends(require_bearer)])
     client = TestClient(app, raise_server_exceptions=True)
 
@@ -433,3 +438,27 @@ def test_plan_versions_detail_blocks_cross_user_access(coach_client_with_version
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 404
+
+
+def test_weekly_version_store_from_config_uses_file_backend(tmp_path):
+    from stride_server.coach_adapters.persistence.weekly_version_store import (
+        weekly_version_store_from_config,
+    )
+    from stride_server.config.models import CoachPersistenceConfig
+
+    store = weekly_version_store_from_config(
+        CoachPersistenceConfig(file_backend_dir=str(tmp_path / "coach"))
+    )
+
+    assert store.__class__.__name__ == "FileWeeklyVersionStore"
+
+
+def test_checkpointer_from_config_uses_file_store(tmp_path):
+    from stride_server.coach_adapters.persistence.checkpointer import AzureTableCheckpointSaver
+    from stride_server.config.models import CoachPersistenceConfig
+
+    saver = AzureTableCheckpointSaver.from_config(
+        CoachPersistenceConfig(file_backend_dir=str(tmp_path / "coach"))
+    )
+
+    assert saver.store.__class__.__name__ == "FileCheckpointStore"

@@ -161,24 +161,30 @@ def patch_history(monkeypatch):
     """Patch DB queries to return empty history (avoids needing a real DB)."""
     import stride_server.master_plan_generator as mod
 
-    monkeypatch.setattr(mod, "_query_history", lambda uid: {
-        "monthly_km": [],
-        "max_weekly_km": 0.0,
-        "total_activities": 0,
-        "best_5k_s": None,
-        "best_10k_s": None,
-        "best_hm_s": None,
-        "best_fm_s": None,
-    })
-    monkeypatch.setattr(mod, "_query_fitness_state", lambda uid: {
-        "ctl": None,
-        "atl": None,
-        "tsb": None,
-        "fatigue": None,
-        "rhr": None,
-        "training_load_state": None,
-        "summary": "体能数据暂无",
-    })
+    def _empty_history(uid: str) -> dict:
+        return {
+            "monthly_km": [],
+            "max_weekly_km": 0.0,
+            "total_activities": 0,
+            "best_5k_s": None,
+            "best_10k_s": None,
+            "best_hm_s": None,
+            "best_fm_s": None,
+        }
+
+    def _empty_fitness(uid: str) -> dict:
+        return {
+            "ctl": None,
+            "atl": None,
+            "tsb": None,
+            "fatigue": None,
+            "rhr": None,
+            "training_load_state": None,
+            "summary": "体能数据暂无",
+        }
+
+    monkeypatch.setattr(mod, "_query_history", _empty_history)
+    monkeypatch.setattr(mod, "_query_fitness_state", _empty_fitness)
 
 
 def _make_fake_llm(response: str):
@@ -192,6 +198,12 @@ def _make_fake_llm(response: str):
             return response
 
     return FakeLLMClient
+
+
+def _patch_llm(monkeypatch, client_cls: type) -> None:
+    import stride_server.master_plan_generator as mod
+
+    monkeypatch.setattr(mod, "LLMClient", client_cls)
 
 
 def _run_job_sync(job_id: str, goal: dict = GOAL, profile: dict | None = PROFILE) -> None:
@@ -326,8 +338,7 @@ class TestRunGenerateJob:
     def test_valid_sentinel_json_produces_done_job(self, monkeypatch, patch_store, patch_history):
         """Layer 1: sentinel-anchored JSON → job DONE + plan saved."""
         raw_response = _sentinel_wrap(_VALID_JSON_STR)
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", _make_fake_llm(raw_response))
+        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -348,8 +359,7 @@ class TestRunGenerateJob:
     def test_fenced_json_produces_done_job(self, monkeypatch, patch_store, patch_history):
         """Layer 2: fenced ```json block → job DONE."""
         raw_response = _fenced_wrap(_VALID_JSON_STR)
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", _make_fake_llm(raw_response))
+        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -360,8 +370,7 @@ class TestRunGenerateJob:
     def test_balanced_braces_produces_done_job(self, monkeypatch, patch_store, patch_history):
         """Layer 3: bare JSON (with preamble noise) → job DONE."""
         raw_response = "教练说：" + _VALID_JSON_STR
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", _make_fake_llm(raw_response))
+        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -372,8 +381,7 @@ class TestRunGenerateJob:
     def test_garbage_response_fails_with_parse_failed(self, monkeypatch, patch_store, patch_history):
         """Unparseable output → job FAILED + error='parse_failed' + raw_output set."""
         raw_response = "这是完全无法解析的输出！没有 JSON 也没有格式。"
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", _make_fake_llm(raw_response))
+        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -387,14 +395,13 @@ class TestRunGenerateJob:
 
     def test_llm_unavailable_fails_job(self, monkeypatch, patch_store, patch_history):
         """LLMUnavailable at construction → job FAILED + error='llm_unavailable'."""
-        from stride_server.llm_client import LLMUnavailable
+        import stride_server.master_plan_generator as mod
 
         class UnavailableLLMClient:
             def __init__(self) -> None:
-                raise LLMUnavailable("AZURE_OPENAI_ENDPOINT not set")
+                raise mod.LLMUnavailable("AZURE_OPENAI_ENDPOINT not set")
 
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", UnavailableLLMClient)
+        _patch_llm(monkeypatch, UnavailableLLMClient)
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -405,17 +412,16 @@ class TestRunGenerateJob:
 
     def test_llm_error_retryable_fails_job(self, monkeypatch, patch_store, patch_history):
         """LLMError(retryable=True) → job FAILED + error contains llm_error."""
-        from stride_server.llm_client import LLMError
+        import stride_server.master_plan_generator as mod
 
         class RateLimitedLLMClient:
             def __init__(self) -> None:
                 pass
 
             def chat_sync(self, *args: Any, **kwargs: Any) -> str:
-                raise LLMError("rate limit exceeded", retryable=True)
+                raise mod.LLMError("rate limit exceeded", retryable=True)
 
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", RateLimitedLLMClient)
+        _patch_llm(monkeypatch, RateLimitedLLMClient)
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -431,8 +437,7 @@ class TestRunGenerateJob:
         bad_dict = dict(_VALID_PLAN_DICT)
         bad_dict["schema"] = "some-other/v2"
         raw_response = _sentinel_wrap(json.dumps(bad_dict))
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", _make_fake_llm(raw_response))
+        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -456,8 +461,7 @@ class TestRunGenerateJob:
             },
         }
         raw_response = _sentinel_wrap(json.dumps(data))
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", _make_fake_llm(raw_response))
+        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         _run_job_sync(job_id)
@@ -472,7 +476,8 @@ class TestRunGenerateJob:
         """Verify that job progresses through all 4 stages in order."""
         raw_response = _sentinel_wrap(_VALID_JSON_STR)
         import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", _make_fake_llm(raw_response))
+
+        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
 
         stage_log: list[tuple[JobStage | None, int]] = []
         original_update_job = mod.update_job
@@ -500,8 +505,7 @@ class TestRunGenerateJob:
     def test_no_profile_still_succeeds(self, monkeypatch, patch_store, patch_history):
         """profile=None (user skipped C2) → still generates a plan."""
         raw_response = _sentinel_wrap(_VALID_JSON_STR)
-        import stride_server.master_plan_generator as mod
-        monkeypatch.setattr(mod, "LLMClient", _make_fake_llm(raw_response))
+        _patch_llm(monkeypatch, _make_fake_llm(raw_response))
 
         job_id = create_job(USER_ID)
         run_generate_job(job_id, USER_ID, GOAL, None)  # profile=None

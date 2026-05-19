@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 from collections.abc import Iterator, Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -31,6 +31,8 @@ from langgraph.checkpoint.base import (
     PendingWrite,
     SerializerProtocol,
 )
+
+from stride_server.config.models import CoachPersistenceConfig
 
 from .envelope import (
     CheckpointIntegrityError,
@@ -97,16 +99,23 @@ class AzureTableCheckpointSaver(BaseCheckpointSaver):
         ``data/_coach_dev/checkpoints/`` so developer machines run without
         any Azure creds.
         """
-        if os.environ.get("STRIDE_COACH_TABLE_ACCOUNT_URL"):
+        from stride_server.config import load_server_config
+
+        return cls.from_config(load_server_config().coach_persistence, serde=serde)
+
+    @classmethod
+    def from_config(
+        cls,
+        config: CoachPersistenceConfig,
+        *,
+        serde: SerializerProtocol | None = None,
+    ) -> AzureTableCheckpointSaver:
+        if config.table_account_url:
             from .azure_backend import AzureCheckpointStore
 
-            store: CheckpointStore = AzureCheckpointStore.from_env()
+            store: CheckpointStore = AzureCheckpointStore.from_config(config)
         else:
-            base = os.environ.get(
-                "STRIDE_COACH_FILE_BACKEND_DIR",
-                os.path.join("data", "_coach_dev", "checkpoints"),
-            )
-            store = FileCheckpointStore(base)
+            store = FileCheckpointStore(Path(config.file_backend_dir) / "checkpoints")
         return cls(store=store, serde=serde)
 
     @property

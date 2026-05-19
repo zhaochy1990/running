@@ -1,0 +1,63 @@
+env = "prod"
+
+[akv]
+enabled = true
+vault_url = "https://stride-kv-common.vault.azure.net/"
+secret_prefix = "stride-server"
+
+[auth]
+public_key_pem = """-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq4J3RVWZN60lbeSQNiai
+iUCSl6Uv6lVwhhmk7Gs9FU9Yq6FCp0FZWo07EURfe7QmqShJcXfw8VM+2gHJrv2c
+AnpyTd9hA5VywVJrIkeAt2mU9UN3vkqtS+v/lG7hgAvPkjNsjHzIwYFo77AL3Z2P
+uhGmemiUpRzwOc06T0kCIhj86POpiTZJPViU39VNEftu4wH6H52CIEKb3s9GQMGg
+xAiz7+14vr1CBPXkGtcSaBlsyAqrzoJMesGzgkoix4uzo1G6EFA/O7WVq+3qr339
+EPzy5kJsdJ2SSk5kN/9677ImSJFGrZTvpva02uDiclS5HN3yZPxu1kTFL7LR4ool
+cQIDAQAB
+-----END PUBLIC KEY-----
+"""
+allow_insecure_without_key = false
+audience = "app_62978bf2803346878a2e4805"
+
+[auth_service]
+base_url = "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
+
+[llm]
+enabled = true
+
+[llm.azure_openai]
+endpoint = "https://word-learner-llm.cognitiveservices.azure.com/"
+api_version = "2024-10-21"
+deployment = "gpt-4.1"
+
+[commentary]
+enabled = true
+
+[commentary.azure_openai]
+endpoint = "https://word-learner-llm.cognitiveservices.azure.com/"
+api_version = "2024-10-21"
+deployment = "gpt-4.1"
+
+[storage.content]
+account_url = "https://authstorage2026.blob.core.windows.net/"
+container = "stride-data"
+prefix = "users"
+
+[storage.likes]
+table_account_url = "https://authstorage2026.table.core.windows.net/"
+
+[storage.master_plan]
+table_account_url = "https://authstorage2026.table.core.windows.net/"
+
+[coach_persistence]
+table_account_url = "https://authstorage2026.table.core.windows.net/"
+blob_account_url = "https://authstorage2026.blob.core.windows.net/"
+file_backend_dir = "data/_coach_dev"
+
+[notifications]
+table_account_url = "https://authstorage2026.table.core.windows.net/"
+devices_table = "stridedevices"
+prefs_table = "strideprefs"
+
+[notifications.jpush]
+app_key = "ab305c4addc8f9aa2b5efb4c"

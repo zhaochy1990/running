@@ -37,11 +37,48 @@ from stride_core.workout_spec import (
     WorkoutBlock,
     WorkoutStep,
 )
+from stride_server.config.models import InternalConfig, PlanConfig
 
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 WEEK = "2026-04-20_04-26(W0)"
 INTERNAL_TOKEN = "test-internal-token-very-secret"
+
+
+def test_internal_token_validation_uses_config() -> None:
+    from stride_server.routes.plan import validate_internal_token_value
+
+    assert validate_internal_token_value(INTERNAL_TOKEN, InternalConfig(token=INTERNAL_TOKEN)) is None
+
+
+def test_internal_token_validation_rejects_missing_config() -> None:
+    from fastapi import HTTPException
+    from stride_server.routes.plan import validate_internal_token_value
+
+    with pytest.raises(HTTPException) as exc_info:
+        validate_internal_token_value("anything", InternalConfig(token=""))
+
+    assert exc_info.value.status_code == 401
+
+
+def test_plan_json_priority_uses_config() -> None:
+    from stride_server.routes.plan import prefer_authored_json_from_config
+
+    assert prefer_authored_json_from_config(PlanConfig(prefer_authored_json=False)) is False
+
+
+def test_internal_token_dependency_uses_uncached_fallback_config(monkeypatch) -> None:
+    from stride_server.config import clear_server_config_cache, load_server_config
+    from stride_server.routes.plan import require_internal_token
+
+    monkeypatch.delenv("STRIDE_INTERNAL_TOKEN", raising=False)
+    clear_server_config_cache()
+    load_server_config()
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+
+    assert require_internal_token(x_internal_token=INTERNAL_TOKEN, config=None) is None
+    clear_server_config_cache()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

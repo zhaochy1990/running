@@ -5,6 +5,8 @@ import json
 import pytest
 
 from stride_server import content_store
+from stride_server.config import clear_server_config_cache
+from stride_server.config.models import ContentStorageConfig
 
 
 class ResourceNotFoundError(Exception):
@@ -52,13 +54,19 @@ class FakeContainerClient:
 
 @pytest.fixture(autouse=True)
 def clear_blob_env(monkeypatch):
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "local")
     for key in (
         content_store.ACCOUNT_URL_ENV,
         content_store.CONTAINER_ENV,
         content_store.PREFIX_ENV,
     ):
         monkeypatch.delenv(key, raising=False)
+    clear_server_config_cache()
     content_store._container_client.cache_clear()
+    try:
+        yield
+    finally:
+        clear_server_config_cache()
 
 
 def test_read_text_uses_filesystem_by_default(tmp_path, monkeypatch):
@@ -76,13 +84,54 @@ def test_read_text_uses_filesystem_by_default(tmp_path, monkeypatch):
     assert item.content == "# Plan"
 
 
+def test_read_text_file_fallback_does_not_require_valid_auth_config(tmp_path, monkeypatch):
+    from stride_core import db as core_db
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)
+    monkeypatch.delenv("STRIDE_ENV", raising=False)
+    for key in (
+        "STRIDE_AUTH_PUBLIC_KEY_PEM",
+        "STRIDE_AUTH_PUBLIC_KEY_PATH",
+        "STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    clear_server_config_cache()
+    path = tmp_path / "user-1" / "TRAINING_PLAN.md"
+    path.parent.mkdir(parents=True)
+    path.write_text("# Plan", encoding="utf-8")
+
+    item = content_store.read_text("user-1/TRAINING_PLAN.md")
+
+    assert item is not None
+    assert item.source == "file"
+    assert item.content == "# Plan"
+
+
 def test_read_text_prefers_blob_when_configured(monkeypatch):
     fake = FakeContainerClient({"users/user-1/TRAINING_PLAN.md": "# Blob Plan".encode()})
     monkeypatch.setenv(content_store.ACCOUNT_URL_ENV, "https://acct.blob.core.windows.net/")
     monkeypatch.setenv(content_store.CONTAINER_ENV, "stride-data")
+    clear_server_config_cache()
     monkeypatch.setattr(content_store, "_container_client", lambda _account, _container: fake)
 
     item = content_store.read_text("user-1/TRAINING_PLAN.md")
+
+    assert item is not None
+    assert item.source == "blob"
+    assert item.content == "# Blob Plan"
+
+
+def test_read_text_uses_direct_config_for_blob(monkeypatch):
+    fake = FakeContainerClient({"custom/user-1/TRAINING_PLAN.md": b"# Blob Plan"})
+    cfg = ContentStorageConfig(
+        account_url="https://acct.blob.core.windows.net/",
+        container="stride-data",
+        prefix="/custom/",
+    )
+    monkeypatch.setattr(content_store, "_container_client", lambda _account, _container: fake)
+
+    item = content_store.read_text("user-1/TRAINING_PLAN.md", config=cfg)
 
     assert item is not None
     assert item.source == "blob"
@@ -96,6 +145,7 @@ def test_blob_miss_falls_back_to_filesystem(tmp_path, monkeypatch):
     monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
     monkeypatch.setenv(content_store.ACCOUNT_URL_ENV, "https://acct.blob.core.windows.net/")
     monkeypatch.setenv(content_store.CONTAINER_ENV, "stride-data")
+    clear_server_config_cache()
     monkeypatch.setattr(content_store, "_container_client", lambda _account, _container: fake)
     path = tmp_path / "user-1" / "logs" / "2026-04-20_04-26(W0)" / "plan.md"
     path.parent.mkdir(parents=True)
@@ -127,6 +177,7 @@ def test_json_write_prefers_blob_when_configured(monkeypatch):
     fake = FakeContainerClient({})
     monkeypatch.setenv(content_store.ACCOUNT_URL_ENV, "https://acct.blob.core.windows.net/")
     monkeypatch.setenv(content_store.CONTAINER_ENV, "stride-data")
+    clear_server_config_cache()
     monkeypatch.setattr(content_store, "_container_client", lambda _account, _container: fake)
 
     source = content_store.write_json("user-1/onboarding.json", {"profile_ready": True})
@@ -148,6 +199,7 @@ def test_list_week_folders_merges_blob_and_filesystem(tmp_path, monkeypatch):
     monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
     monkeypatch.setenv(content_store.ACCOUNT_URL_ENV, "https://acct.blob.core.windows.net/")
     monkeypatch.setenv(content_store.CONTAINER_ENV, "stride-data")
+    clear_server_config_cache()
     monkeypatch.setattr(content_store, "_container_client", lambda _account, _container: fake)
     (tmp_path / "user-1" / "logs" / "2026-04-27_05-03(P1W1)").mkdir(parents=True)
 
