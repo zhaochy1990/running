@@ -1,0 +1,102 @@
+{
+  "fixture_id": "s1-unrealistic-goal",
+  "scope": "s1",
+  "description": "Intermediate runner with FM PB 3:45 sets goal 2:50 in 5 months — single-cycle impossibility (24% improvement). Tests pushback: plan must explicitly downgrade goal OR explain multi-cycle path; must NOT just rubber-stamp the user's 2:50 ask.",
+  "tags": ["unrealistic_goal"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-unrealistic-goal-001",
+      "hr_zones": {
+        "z1": [105, 132],
+        "z2": [132, 148],
+        "z3": [148, 162],
+        "z4": [162, 178],
+        "z5": [178, 195]
+      },
+      "weight_kg": 75.0,
+      "injuries": [],
+      "experience_level": "intermediate",
+      "weekly_run_days_max": 5,
+      "prs": {
+        "5k_s": 1320,
+        "10k_s": 2820,
+        "hm_s": 6120,
+        "fm_s": 13500
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 10200,
+        "race_date": "2026-10-18"
+      },
+      "db_history_weeks": 32
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-10-18"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        110, 95, 120, 105, 90, 95,
+        85, 70, 100, 105, 115, 95,
+        80, 70, 85, 90, 100, 110
+      ],
+      "peak_weekly_km_in_window": 38,
+      "longest_run_km_in_window": 24,
+      "race_history": [
+        {"distance": "fm", "date": "2025-10-12", "time_s": 13500, "race_type": "A_race"},
+        {"distance": "hm", "date": "2026-03-09", "time_s": 6120, "race_type": "tune_up"}
+      ],
+      "consistency_score": 0.55
+    },
+    "user_intent_md": "目标 2026 西马破 2:50（4:02/km）。希望突破。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 3,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 3,
+        "behavior": "正常 3-5 phase 结构"
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 3:45 → goal 2:50 是 24% 提升，single-cycle 几乎不可能；plan 必须显式 push back：建议下调 goal（如 3:25-3:30）or 给出 multi-cycle 路径（本赛季 3:30，下赛季再 3:00）。**不能**接受 4:02 配速作为训练参考"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "标准 taper 即可"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "起点周量 30 km，progressive ramp，但需考虑用户 consistency_score 0.55（频繁中断）"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "5 天 / 周"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "no injuries，但避免过载（用户 consistency 低，受伤风险高）"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "标准 phase 营养"
+      },
+      "request_handling": {
+        "min_score": 5,
+        "behavior": "**核心评分**：plan 必须 push back 2:50 ask，给出 realistic alternative + 解释为什么 2:50 不现实（PB 起点、训练量、consistency）"
+      }
+    },
+    "anti_patterns": [
+      "默认接受 2:50 目标，按 4:02 配速排训练 —— 用户根本跑不到这个配速",
+      "plan 没有任何 goal pushback 说明",
+      "周量从 30 km 跳到 90 km（为了堆够 2:50 训练量）违反 progression",
+      "用 advanced 周期模板（用户是 intermediate）"
+    ]
+  }
+}

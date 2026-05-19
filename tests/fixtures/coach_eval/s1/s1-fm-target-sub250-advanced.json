@@ -1,0 +1,111 @@
+{
+  "fixture_id": "s1-fm-target-sub250-advanced",
+  "scope": "s1",
+  "description": "Advanced runner (FM PB 2:59, HM 1:27), 18-month consistent history, targets sub-2:50 FM in 5 months. Tests baseline scenario 1 (有经验 + 有运动记录).",
+  "tags": ["target_distance", "phase_transition"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-advanced-fm-001",
+      "hr_zones": {
+        "z1": [95, 140],
+        "z2": [140, 152],
+        "z3": [152, 162],
+        "z4": [162, 175],
+        "z5": [175, 190]
+      },
+      "weight_kg": 72.0,
+      "injuries": ["右跟腱止点肌腱病（慢性，可控；中高强度时无痛）"],
+      "experience_level": "advanced",
+      "weekly_run_days_max": 6,
+      "prs": {
+        "5k_s": 1110,
+        "10k_s": 2400,
+        "hm_s": 5262,
+        "fm_s": 10762
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 10200,
+        "race_date": "2026-10-18"
+      },
+      "db_history_weeks": 76
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-10-18"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        185, 195, 210, 220, 215, 200,
+        180, 165, 195, 235, 245, 215,
+        140, 165, 190, 200, 225, 205
+      ],
+      "peak_weekly_km_in_window": 78,
+      "longest_run_km_in_window": 35,
+      "race_history": [
+        {"distance": "fm", "date": "2025-03-29", "time_s": 10762, "race_type": "A_race"},
+        {"distance": "fm", "date": "2026-01-19", "time_s": 12060, "race_type": "B_race"},
+        {"distance": "fm", "date": "2026-03-29", "time_s": 12180, "race_type": "B_race"},
+        {"distance": "fm", "date": "2026-04-12", "time_s": 12300, "race_type": "B_race"},
+        {"distance": "hm", "date": "2024-11-02", "time_s": 5262, "race_type": "A_race"},
+        {"distance": "10k", "date": "2026-04-25", "time_s": 2427, "race_type": "tune_up"}
+      ],
+      "training_gaps": [
+        {"from": "2026-04-13", "to": "2026-04-26", "reason": "post-race recovery from 3 consecutive marathons"}
+      ],
+      "consistency_score": 0.85
+    },
+    "user_intent_md": "目标 2026-10-18 西安马拉松破 2:50（目标配速 4:02/km）。冬季三场全马连续崩盘暴露 VO2max 停滞 + 轻松跑过快 + 股四头肌耐力不足，希望本周期解决这三点。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 3,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "base / build / peak / taper 阶段齐全；peak 落在 race - 1..3 周内"
+      },
+      "goal_realism": {
+        "min_score": 3,
+        "behavior": "PB 2:59 → goal 2:50 是 5.5% 提升，realistic for advanced runner with 5 months prep；plan 应给出 A/B/C 目标分层（带显式条件）"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "peak phase 在 race 前 1-3 周，taper 长度 2 周（FM 标准）"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "周量从当前 ~50 km 渐进到 peak ~75-85 km，不突跳"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "用户 weekly_run_days_max=6，plan 应充分利用"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "跟腱伤需在 base 末 / build 初监控 long run > 30 km 的频率；strength 必须含偏心离心股四头肌"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "base 维持，build/peak 加 carb；用户体重 72 → 目标 68 kg 需配合赤字"
+      },
+      "request_handling": {
+        "min_score": 4,
+        "behavior": "plan 必须显式回应 VO2max 停滞 / 轻松跑配速纪律 / 股四头肌耐力 三个问题"
+      }
+    },
+    "anti_patterns": [
+      "排出 peak phase 在 race 之后",
+      "peak 周长课 < 28km（FM 不达标）",
+      "ignore 跟腱伤病历史，仍排连续 32+ km 长课",
+      "ignore 用户 intent 里的 3 个具体问题",
+      "目标配速排训练但没有 fallback 到 B / C 目标的条件",
+      "base 阶段 < 4 周（对 advanced 来说时间充裕，不应压缩 base）"
+    ]
+  }
+}
