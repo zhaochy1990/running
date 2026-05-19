@@ -13,10 +13,13 @@ local DBs directly. Idempotent — re-running only touches rows still NULL.
 
 Usage::
 
-    PYTHONIOENCODING=utf-8 python scripts/backfill_route_thumbnails.py [--user UUID]
+    PYTHONIOENCODING=utf-8 python scripts/backfill_route_thumbnails.py [--user UUID] [--force]
 
 Without --user, walks every `data/<uuid>/coros.db`. With --user, restricts
 to one user (UUID or slug from data/.slug_aliases.json).
+
+By default the script only fills NULL thumbnails. Pass --force after changing
+the thumbnail algorithm to regenerate existing, possibly stale thumbnails.
 """
 
 from __future__ import annotations
@@ -44,14 +47,17 @@ def _resolve_user(user_arg: str) -> str:
     return user_arg
 
 
-def _backfill_one(db_path: Path) -> tuple[int, int, int]:
+def _backfill_one(db_path: Path, *, force: bool = False) -> tuple[int, int, int]:
     """Returns (touched, skipped_no_gps, skipped_already_done)."""
     db = Database(db_path=db_path)
     try:
-        # Activities still missing a thumbnail.
-        rows = db._conn.execute(
-            "SELECT label_id FROM activities WHERE route_thumb_json IS NULL"
-        ).fetchall()
+        if force:
+            rows = db._conn.execute("SELECT label_id FROM activities").fetchall()
+        else:
+            # Activities still missing a thumbnail.
+            rows = db._conn.execute(
+                "SELECT label_id FROM activities WHERE route_thumb_json IS NULL"
+            ).fetchall()
         if not rows:
             return (0, 0, 0)
 
@@ -88,6 +94,11 @@ def _backfill_one(db_path: Path) -> tuple[int, int, int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--user", help="UUID or slug; default = walk every user")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate route thumbnails even when route_thumb_json is already populated",
+    )
     args = parser.parse_args()
 
     if args.user:
@@ -102,7 +113,7 @@ def main() -> int:
         if not db_path.exists():
             continue
         try:
-            touched, no_gps, _ = _backfill_one(db_path)
+            touched, no_gps, _ = _backfill_one(db_path, force=args.force)
         except Exception as exc:  # noqa: BLE001
             print(f"[{user_dir.name}] FAILED: {exc}")
             continue
