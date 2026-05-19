@@ -552,13 +552,68 @@ def test_default_repo_server_config_loads_without_auth_secret(monkeypatch: pytes
     assert cfg.auth.allow_insecure_without_key is False
 
 
-def test_repo_prod_config_file_loads_without_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_repo_prod_config_file_fails_closed_without_auth_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("STRIDE_CONFIG_FILES", raising=False)
     monkeypatch.delenv("STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY", raising=False)
+    monkeypatch.delenv("STRIDE_AUTH_PUBLIC_KEY_PEM", raising=False)
+    monkeypatch.delenv("STRIDE_AUTH_PUBLIC_KEY_PATH", raising=False)
     monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+
+    with pytest.raises(ConfigError, match="auth.public_key"):
+        load_server_config(use_cache=False)
+
+
+def test_repo_prod_config_file_loads_prod_env_values_with_secret_env_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in {
+        "STRIDE_CONFIG_FILES",
+        "STRIDE_ENV",
+        "STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY",
+        "STRIDE_AUTH_PUBLIC_KEY_PATH",
+        "STRIDE_AUTH_AUDIENCE",
+        "STRIDE_AUTH_URL",
+        "AZURE_OPENAI_ENDPOINT",
+        "AZURE_OPENAI_API_KEY",
+        "AZURE_OPENAI_API_VERSION",
+        "AZURE_OPENAI_DEPLOYMENT",
+        "LLM_ENABLED",
+        "LLM_DEFAULT_MODEL",
+        "AOAI_COMMENTARY_ENABLED",
+        "STRIDE_CONTENT_BLOB_ACCOUNT_URL",
+        "STRIDE_CONTENT_BLOB_CONTAINER",
+        "STRIDE_CONTENT_BLOB_PREFIX",
+        "STRIDE_LIKES_TABLE_ACCOUNT_URL",
+        "STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL",
+        "STRIDE_NOTIFICATIONS_TABLE_ACCOUNT_URL",
+        "JPUSH_APP_KEY",
+        "JPUSH_MASTER_SECRET",
+    }:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+    monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PEM", "prod-public-key-from-secretref")
 
     cfg = load_server_config(use_cache=False)
 
     assert cfg.env == "prod"
     assert cfg.auth.allow_insecure_without_key is False
-    assert cfg.auth.public_key_path == "config/auth-public.pem"
+    assert cfg.auth.public_key_pem == "prod-public-key-from-secretref"
+    assert cfg.auth.public_key_path == ""
+    assert cfg.auth.audience == "app_62978bf2803346878a2e4805"
+    assert cfg.auth_service.base_url == "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
+    assert cfg.llm.enabled is True
+    assert cfg.llm.azure_openai.endpoint == "https://word-learner-llm.cognitiveservices.azure.com/"
+    assert cfg.llm.azure_openai.api_version == "2024-10-21"
+    assert cfg.llm.azure_openai.deployment == "gpt-4.1"
+    assert cfg.commentary.enabled is True
+    assert cfg.commentary.azure_openai.endpoint == "https://word-learner-llm.cognitiveservices.azure.com/"
+    assert cfg.commentary.azure_openai.api_version == "2024-10-21"
+    assert cfg.commentary.azure_openai.deployment == "gpt-4.1"
+    assert cfg.storage.content.account_url == "https://authstorage2026.blob.core.windows.net/"
+    assert cfg.storage.content.container == "stride-data"
+    assert cfg.storage.content.prefix == "users"
+    assert cfg.storage.likes.table_account_url == "https://authstorage2026.table.core.windows.net"
+    assert cfg.storage.master_plan.table_account_url == ""
+    assert cfg.notifications.table_account_url == "https://authstorage2026.table.core.windows.net"
+    assert cfg.notifications.jpush.app_key == "ab305c4addc8f9aa2b5efb4c"
+    assert cfg.notifications.jpush.master_secret == ""

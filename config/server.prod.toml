@@ -1,16 +1,48 @@
 env = "prod"
 
-[auth]
-allow_insecure_without_key = false
-public_key_path = "config/auth-public.pem"
-
 [akv]
 enabled = false
 vault_url = ""
 secret_prefix = "stride-server"
 
+[auth]
+allow_insecure_without_key = false
+audience = "app_62978bf2803346878a2e4805"
+
+[auth_service]
+base_url = "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
+
+[llm]
+enabled = true
+
+[llm.azure_openai]
+endpoint = "https://word-learner-llm.cognitiveservices.azure.com/"
+api_version = "2024-10-21"
+deployment = "gpt-4.1"
+
+[commentary]
+enabled = true
+
+[commentary.azure_openai]
+endpoint = "https://word-learner-llm.cognitiveservices.azure.com/"
+api_version = "2024-10-21"
+deployment = "gpt-4.1"
+
 [storage.content]
+account_url = "https://authstorage2026.blob.core.windows.net/"
+container = "stride-data"
 prefix = "users"
+
+[storage.likes]
+table_account_url = "https://authstorage2026.table.core.windows.net"
 
 [coach_persistence]
 file_backend_dir = "data/_coach_dev"
+
+[notifications]
+table_account_url = "https://authstorage2026.table.core.windows.net"
+devices_table = "stridedevices"
+prefs_table = "strideprefs"
+
+[notifications.jpush]
+app_key = "ab305c4addc8f9aa2b5efb4c"

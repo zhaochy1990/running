@@ -110,7 +110,8 @@ jobs:
           az containerapp update \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
+            --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
+            --set-env-vars STRIDE_CONFIG_ENV=prod
 
       - name: Update plan-reminder cron job image
         # Pinned to the same image tag as stride-app so the daily cron
