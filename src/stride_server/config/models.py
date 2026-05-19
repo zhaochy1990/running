@@ -21,6 +21,11 @@ def validate_optional_url(path: str, value: str) -> None:
         raise ConfigError(f"{path} must be an http(s) URL")
 
 
+def validate_required_when(path: str, value: str, *, when_path: str, when_value: str) -> None:
+    if when_value and not value:
+        raise ConfigError(f"{path} is required when {when_path} is configured")
+
+
 def validate_auth(env: str, auth: AuthConfig) -> None:
     if env.lower() in {"dev", "local", "default"}:
         return
@@ -235,3 +240,9 @@ class ServerConfig:
         validate_optional_url("coach_persistence.blob_account_url", self.coach_persistence.blob_account_url)
         validate_optional_url("notifications.table_account_url", self.notifications.table_account_url)
         validate_optional_url("notifications.jpush.url", self.notifications.jpush.url)
+        validate_required_when(
+            "coach_persistence.blob_account_url",
+            self.coach_persistence.blob_account_url,
+            when_path="coach_persistence.table_account_url",
+            when_value=self.coach_persistence.table_account_url,
+        )

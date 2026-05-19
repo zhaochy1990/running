@@ -197,3 +197,14 @@ def test_stage_maps_cover_all_stages():
         assert stage in STAGE_LABEL_MAP, f"Missing label for {stage}"
         assert isinstance(STAGE_LABEL_MAP[stage], str) and STAGE_LABEL_MAP[stage]
         assert 0 <= STAGE_PROGRESS_MAP[stage] <= 100
+
+
+def test_jobs_store_from_config_uses_file_backend(tmp_path):
+    from stride_server.coach_adapters.persistence.jobs_store import jobs_store_from_config
+    from stride_server.config.models import CoachPersistenceConfig
+
+    store = jobs_store_from_config(
+        CoachPersistenceConfig(file_backend_dir=str(tmp_path / "coach"))
+    )
+
+    assert store.__class__.__name__ == "FileJobsStore"

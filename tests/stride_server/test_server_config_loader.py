@@ -139,6 +139,18 @@ def test_notifications_jpush_url_validation_names_config_path() -> None:
         cfg.validate()
 
 
+def test_coach_persistence_requires_blob_url_when_table_backend_selected() -> None:
+    cfg = ServerConfig.default(env="dev").with_updates(
+        coach_persistence=CoachPersistenceConfig(
+            table_account_url="https://acct.table.core.windows.net",
+            blob_account_url="",
+        )
+    )
+
+    with pytest.raises(ConfigError, match="coach_persistence.blob_account_url"):
+        cfg.validate()
+
+
 def test_deep_merge_recurses_and_replaces_lists() -> None:
     left = {"storage": {"likes": {"table_name": "a", "tags": ["old"]}}}
     right = {"storage": {"likes": {"table_account_url": "https://x", "tags": ["new"]}}}

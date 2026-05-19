@@ -12,12 +12,12 @@ Azure Table for prod, byte-equivalent semantics.
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from coach.schemas import CoachJob, JobStage, JobStatus, JobType
+from stride_server.config.models import CoachPersistenceConfig
 
 from .store import path_safe
 
@@ -188,10 +188,10 @@ class AzureJobsStore(JobsStore):
 
     @classmethod
     def from_env(cls) -> AzureJobsStore:
-        return cls(
-            table_account_url=os.environ["STRIDE_COACH_TABLE_ACCOUNT_URL"],
-            table_name=os.environ.get("STRIDE_COACH_JOBS_TABLE_NAME", "stridecoachjobs"),
-        )
+        from stride_server.config import load_server_config
+
+        config = load_server_config().coach_persistence
+        return cls(table_account_url=config.table_account_url, table_name=config.jobs_table_name)
 
     def create(self, job: CoachJob) -> CoachJob:
         self._client.create_entity(_job_to_entity(job))
@@ -251,12 +251,17 @@ class AzureJobsStore(JobsStore):
 
 
 def jobs_store_from_env() -> JobsStore:
-    if os.environ.get("STRIDE_COACH_TABLE_ACCOUNT_URL"):
-        return AzureJobsStore.from_env()
-    base = os.environ.get(
-        "STRIDE_COACH_FILE_BACKEND_DIR",
-        os.path.join("data", "_coach_dev", "jobs"),
-    )
-    return FileJobsStore(base)
+    from stride_server.config import load_server_config
+
+    return jobs_store_from_config(load_server_config().coach_persistence)
+
+
+def jobs_store_from_config(config: CoachPersistenceConfig) -> JobsStore:
+    if config.table_account_url:
+        return AzureJobsStore(
+            table_account_url=config.table_account_url,
+            table_name=config.jobs_table_name,
+        )
+    return FileJobsStore(Path(config.file_backend_dir) / "jobs")
 
 

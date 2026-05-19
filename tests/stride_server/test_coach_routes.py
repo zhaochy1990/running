@@ -433,3 +433,27 @@ def test_plan_versions_detail_blocks_cross_user_access(coach_client_with_version
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 404
+
+
+def test_weekly_version_store_from_config_uses_file_backend(tmp_path):
+    from stride_server.coach_adapters.persistence.weekly_version_store import (
+        weekly_version_store_from_config,
+    )
+    from stride_server.config.models import CoachPersistenceConfig
+
+    store = weekly_version_store_from_config(
+        CoachPersistenceConfig(file_backend_dir=str(tmp_path / "coach"))
+    )
+
+    assert store.__class__.__name__ == "FileWeeklyVersionStore"
+
+
+def test_checkpointer_from_config_uses_file_store(tmp_path):
+    from stride_server.coach_adapters.persistence.checkpointer import AzureTableCheckpointSaver
+    from stride_server.config.models import CoachPersistenceConfig
+
+    saver = AzureTableCheckpointSaver.from_config(
+        CoachPersistenceConfig(file_backend_dir=str(tmp_path / "coach"))
+    )
+
+    assert saver.store.__class__.__name__ == "FileCheckpointStore"
