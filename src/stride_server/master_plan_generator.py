@@ -408,7 +408,7 @@ def _build_system_prompt(
   "end_date": "YYYY-MM-DD",
   "training_principles": ["原则1","原则2"],
   "phases": [
-    {{"name":"基础期","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
+    {{"name":"基础期","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
     ...
   ],
   "milestones": [
@@ -424,10 +424,36 @@ def _build_system_prompt(
 - 每个阶段至少 2 周
 - weekly_distance_km_low / high 应反映该阶段周量目标
 - 里程碑应贯穿训练周期（每 2-4 周一个）
-- 训练原则 3-5 条
+- 训练原则 6-10 条（含下方营养、recovery week、目标现实性三项强制要求）
 - 用户跑龄短 / 周量低时阶段周量更保守
 - 周末日期作为 long_run 里程碑日期
-- 输出**仅 JSON 块**，无额外解释文字"""
+- 输出**仅 JSON 块**，无额外解释文字
+
+**Recovery week 节奏（HARD）**：
+- 任何 ≥ 4 周的非 base 阶段（进展期 / 赛前期）必须采用 3:1 周期化：连续 3 周渐进负荷 + 1 周降量到该阶段周量下限的 70-80%
+- 必须在对应 phase.focus 字段中显式写明 recovery week 安排，例如："3:1 周期，每 4 周降量 1 周至 W3 周量的 70%；recovery week 取消所有质量课"
+- 阶段不足 4 周时可省略 recovery week，但 focus 必须说明"不足 4 周，无 recovery week"
+
+**营养策略（HARD）**：
+- training_principles 必须包含至少 3 条独立的营养原则，整体覆盖以下维度：
+  - 基础期：维持热量平衡，蛋白质 1.4-1.6 g/kg/天，训后 30 min 补 carbs+protein 3:1
+  - 进展期 / 赛前期：增加碳水至 5-7 g/kg/天，长课前 30-60 min 补碳 30-60 g，长课中每小时 30-60 g
+  - 比赛减量期（taper）：维持糖原储备，赛前 3 天 carb-loading 8-10 g/kg/天
+  - 比赛后恢复期：增蛋白至 1.8-2.0 g/kg/天促修复，补水 + 电解质
+- 用户档案若含目标体重 / 体脂调整诉求，营养原则必须显式应对（如"build 期保持小幅热量盈余以支撑训练负荷而非追求减重"）
+- **不要**只写一条笼统的"注重营养"，必须按 phase 给具体数字
+
+**Goal realism 与 pushback（HARD）**：
+- 收到 goal_time_s 后，必须对照用户近期 PB（profile.prs 或 history_summary 里的"最好成绩"）计算改善幅度
+- 单周期改善上限阈值（超过即视为不现实）：
+  - 全马 (fm_s)：> 10%
+  - 半马 (hm_s)：> 12%
+  - 10K (10k_s)：> 15%
+- 如果 goal 改善幅度 **超过**阈值（典型例子：FM PB 3:45 → goal 2:50 是 24% 提升）：
+  - training_principles 第 1 条必须显式 push back，例如："用户 FM PB 3:45 → goal 2:50 单周期改善 24%（> 10% 上限），不现实。本周期建议目标 3:25-3:30（10-12% 改善），下个周期再冲击 sub-3:00"
+  - 训练强度按建议的现实 target_time 排，**不能**按用户原 goal 配速排训练
+  - race milestone 的 target 字段写本周期建议成绩 + 远期 A 目标，例如："本周期目标 3:30；2:50 为下一周期 A 目标"
+- 如果 goal 改善幅度在阈值内：正常排训练，建议给出 A / B / C 目标分层（A 目标条件 / B 目标 / 保底）"""
 
 
 # ---------------------------------------------------------------------------
