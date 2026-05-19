@@ -311,6 +311,59 @@ CREATE TABLE IF NOT EXISTS daily_hrv (
     provider                   TEXT NOT NULL DEFAULT 'coros'
 );
 
+-- Objective training-load v1. Vendor black-box fields stay in activities /
+-- daily_health; these tables hold STRIDE-computed TSS-like load. Mapping:
+-- cardio_load_raw = Banister TRIMP; external_tss = rTSS/RSS/power TSS;
+-- acute_load = ATL; chronic_load = CTL; form = TSB.
+CREATE TABLE IF NOT EXISTS training_load_calibration (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    as_of_date            TEXT NOT NULL,
+    algorithm_version     INTEGER NOT NULL,
+    rhr_baseline          REAL,
+    hrmax_estimate        REAL,
+    threshold_hr          REAL,
+    threshold_speed_mps   REAL,
+    critical_power_w      REAL,
+    source_json           TEXT,
+    computed_at           TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(as_of_date, algorithm_version)
+);
+
+CREATE TABLE IF NOT EXISTS activity_training_load (
+    label_id                 TEXT PRIMARY KEY REFERENCES activities(label_id),
+    activity_date            TEXT NOT NULL,
+    sport                    TEXT,
+    session_class            TEXT,
+    algorithm_version        INTEGER NOT NULL,
+    calibration_id           INTEGER REFERENCES training_load_calibration(id),
+    cardio_load_raw          REAL,
+    cardio_tss               REAL,
+    external_tss             REAL,
+    mechanical_load          REAL,
+    subjective_internal_load REAL,
+    training_dose            REAL,
+    load_confidence          TEXT,
+    excluded_from_pmc        INTEGER NOT NULL DEFAULT 1,
+    reasons_json             TEXT,
+    computed_at              TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_activity_training_load_date ON activity_training_load(activity_date);
+
+CREATE TABLE IF NOT EXISTS daily_training_load (
+    date                    TEXT NOT NULL,
+    algorithm_version       INTEGER NOT NULL,
+    calibration_id          INTEGER REFERENCES training_load_calibration(id),
+    training_dose           REAL NOT NULL DEFAULT 0,
+    acute_load              REAL,
+    chronic_load            REAL,
+    form                    REAL,
+    load_ratio              REAL,
+    readiness_gate          TEXT,
+    readiness_reasons_json  TEXT,
+    computed_at             TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY(date, algorithm_version)
+);
+
 CREATE TABLE IF NOT EXISTS scheduled_workout (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
     date                  TEXT NOT NULL,                          -- ISO YYYY-MM-DD
@@ -846,6 +899,53 @@ class Database:
             ")",
             "CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_rating_variant "
             "ON weekly_plan_variant_rating(weekly_plan_variant_id)",
+            "CREATE TABLE IF NOT EXISTS training_load_calibration ("
+            "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "    as_of_date TEXT NOT NULL,"
+            "    algorithm_version INTEGER NOT NULL,"
+            "    rhr_baseline REAL,"
+            "    hrmax_estimate REAL,"
+            "    threshold_hr REAL,"
+            "    threshold_speed_mps REAL,"
+            "    critical_power_w REAL,"
+            "    source_json TEXT,"
+            "    computed_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            "    UNIQUE(as_of_date, algorithm_version)"
+            ")",
+            "CREATE TABLE IF NOT EXISTS activity_training_load ("
+            "    label_id TEXT PRIMARY KEY REFERENCES activities(label_id),"
+            "    activity_date TEXT NOT NULL,"
+            "    sport TEXT,"
+            "    session_class TEXT,"
+            "    algorithm_version INTEGER NOT NULL,"
+            "    calibration_id INTEGER REFERENCES training_load_calibration(id),"
+            "    cardio_load_raw REAL,"
+            "    cardio_tss REAL,"
+            "    external_tss REAL,"
+            "    mechanical_load REAL,"
+            "    subjective_internal_load REAL,"
+            "    training_dose REAL,"
+            "    load_confidence TEXT,"
+            "    excluded_from_pmc INTEGER NOT NULL DEFAULT 1,"
+            "    reasons_json TEXT,"
+            "    computed_at TEXT NOT NULL DEFAULT (datetime('now'))"
+            ")",
+            "CREATE INDEX IF NOT EXISTS idx_activity_training_load_date "
+            "ON activity_training_load(activity_date)",
+            "CREATE TABLE IF NOT EXISTS daily_training_load ("
+            "    date TEXT NOT NULL,"
+            "    algorithm_version INTEGER NOT NULL,"
+            "    calibration_id INTEGER REFERENCES training_load_calibration(id),"
+            "    training_dose REAL NOT NULL DEFAULT 0,"
+            "    acute_load REAL,"
+            "    chronic_load REAL,"
+            "    form REAL,"
+            "    load_ratio REAL,"
+            "    readiness_gate TEXT,"
+            "    readiness_reasons_json TEXT,"
+            "    computed_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            "    PRIMARY KEY(date, algorithm_version)"
+            ")",
         ):
             self._conn.execute(stmt)
 
@@ -1194,6 +1294,142 @@ class Database:
             "FROM activity_feedback WHERE label_id = ?",
             (label_id,),
         ).fetchone()
+
+    # --- Objective training load (STRIDE-computed, TSS-like scale) ---
+
+    def upsert_training_load_calibration(self, calibration) -> int:
+        source_json = json.dumps(calibration.source or {}, ensure_ascii=False, sort_keys=True)
+        self._conn.execute(
+            """INSERT INTO training_load_calibration
+               (as_of_date, algorithm_version, rhr_baseline, hrmax_estimate,
+                threshold_hr, threshold_speed_mps, critical_power_w, source_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(as_of_date, algorithm_version) DO UPDATE SET
+                   rhr_baseline        = excluded.rhr_baseline,
+                   hrmax_estimate      = excluded.hrmax_estimate,
+                   threshold_hr        = excluded.threshold_hr,
+                   threshold_speed_mps = excluded.threshold_speed_mps,
+                   critical_power_w    = excluded.critical_power_w,
+                   source_json         = excluded.source_json,
+                   computed_at         = excluded.computed_at""",
+            (
+                calibration.as_of_date.isoformat(),
+                calibration.algorithm_version,
+                calibration.rhr_baseline,
+                calibration.hrmax_estimate,
+                calibration.threshold_hr,
+                calibration.threshold_speed_mps,
+                calibration.critical_power_w,
+                source_json,
+            ),
+        )
+        row = self._conn.execute(
+            "SELECT id FROM training_load_calibration WHERE as_of_date = ? AND algorithm_version = ?",
+            (calibration.as_of_date.isoformat(), calibration.algorithm_version),
+        ).fetchone()
+        self._conn.commit()
+        return int(row["id"])
+
+    def upsert_activity_training_load(self, result) -> None:
+        reasons_json = json.dumps(result.reasons or [], ensure_ascii=False)
+        self._conn.execute(
+            """INSERT INTO activity_training_load
+               (label_id, activity_date, sport, session_class, algorithm_version,
+                calibration_id, cardio_load_raw, cardio_tss, external_tss,
+                mechanical_load, subjective_internal_load, training_dose,
+                load_confidence, excluded_from_pmc, reasons_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(label_id) DO UPDATE SET
+                   activity_date = excluded.activity_date,
+                   sport = excluded.sport,
+                   session_class = excluded.session_class,
+                   algorithm_version = excluded.algorithm_version,
+                   calibration_id = excluded.calibration_id,
+                   cardio_load_raw = excluded.cardio_load_raw,
+                   cardio_tss = excluded.cardio_tss,
+                   external_tss = excluded.external_tss,
+                   mechanical_load = excluded.mechanical_load,
+                   subjective_internal_load = excluded.subjective_internal_load,
+                   training_dose = excluded.training_dose,
+                   load_confidence = excluded.load_confidence,
+                   excluded_from_pmc = excluded.excluded_from_pmc,
+                   reasons_json = excluded.reasons_json,
+                   computed_at = excluded.computed_at""",
+            (
+                result.label_id,
+                result.activity_date.isoformat(),
+                result.sport,
+                result.session_class.value,
+                result.algorithm_version,
+                result.calibration_id,
+                result.cardio_load_raw,
+                result.cardio_tss,
+                result.external_tss,
+                result.mechanical_load,
+                result.subjective_internal_load,
+                result.training_dose,
+                result.load_confidence.value,
+                1 if result.excluded_from_pmc else 0,
+                reasons_json,
+            ),
+        )
+        self._conn.commit()
+
+    def upsert_daily_training_load(self, result) -> None:
+        reasons_json = json.dumps(result.readiness_reasons or [], ensure_ascii=False)
+        self._conn.execute(
+            """INSERT INTO daily_training_load
+               (date, algorithm_version, calibration_id, training_dose, acute_load,
+                chronic_load, form, load_ratio, readiness_gate,
+                readiness_reasons_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(date, algorithm_version) DO UPDATE SET
+                   calibration_id = excluded.calibration_id,
+                   training_dose = excluded.training_dose,
+                   acute_load = excluded.acute_load,
+                   chronic_load = excluded.chronic_load,
+                   form = excluded.form,
+                   load_ratio = excluded.load_ratio,
+                   readiness_gate = excluded.readiness_gate,
+                   readiness_reasons_json = excluded.readiness_reasons_json,
+                   computed_at = excluded.computed_at""",
+            (
+                result.date.isoformat(),
+                result.algorithm_version,
+                result.calibration_id,
+                result.training_dose,
+                result.acute_load,
+                result.chronic_load,
+                result.form,
+                result.load_ratio,
+                result.readiness_gate,
+                reasons_json,
+            ),
+        )
+        self._conn.commit()
+
+    def fetch_activity_training_load(self, label_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM activity_training_load WHERE label_id = ?",
+            (label_id,),
+        ).fetchone()
+
+    def fetch_daily_training_load(
+        self, start: str | None = None, end: str | None = None,
+    ) -> list[sqlite3.Row]:
+        clauses: list[str] = []
+        params: list[str] = []
+        if start is not None:
+            clauses.append("date >= ?")
+            params.append(start)
+        if end is not None:
+            clauses.append("date <= ?")
+            params.append(end)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        return self._conn.execute(
+            "SELECT * FROM daily_training_load" + where + " ORDER BY date",
+            tuple(params),
+        ).fetchall()
 
     # --- Weekly feedback (rich-text, edited via UI) ---
 
