@@ -62,6 +62,7 @@ _MIRROR_ENV_MAPPING: dict[str, list[tuple[str, str]]] = {
 }
 
 _EMPTY_AS_UNSET_ENV_NAMES = {"LLM_ENABLED", "AOAI_COMMENTARY_ENABLED"}
+_LEGACY_FALSY_ENV_VALUES = {"false", "0", "no", "off", "disabled"}
 
 
 def deep_merge(left: Mapping[str, Any], right: Mapping[str, Any]) -> dict[str, Any]:
@@ -107,6 +108,13 @@ def parse_env_value(value: str, value_type: str) -> Any:
     raise ConfigError(f"unknown env value type {value_type!r}")
 
 
+def parse_legacy_truthy_default_true(value: str) -> bool | None:
+    raw = value.strip().lower()
+    if not raw:
+        return None
+    return raw not in _LEGACY_FALSY_ENV_VALUES
+
+
 def env_source(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     env = os.environ if environ is None else environ
     data: dict[str, Any] = {}
@@ -119,6 +127,10 @@ def env_source(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
     llm_enabled_set = "LLM_ENABLED" in env and env["LLM_ENABLED"].strip() != ""
     if "AZURE_OPENAI_ENDPOINT" in env and not llm_enabled_set:
         set_path(data, "llm.enabled", True)
+    if "STRIDE_PLAN_JSON_PRIORITY" in env:
+        value = parse_legacy_truthy_default_true(env["STRIDE_PLAN_JSON_PRIORITY"])
+        if value is not None:
+            set_path(data, "plan.prefer_authored_json", value)
     return data
 
 

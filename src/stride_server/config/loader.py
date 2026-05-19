@@ -114,6 +114,7 @@ def _known_secret_manifest() -> list[str]:
         "notifications.jpush.apns_production",
         "sync.stale_after_seconds",
         "internal.token",
+        "plan.prefer_authored_json",
     ]
 
 

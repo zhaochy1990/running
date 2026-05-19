@@ -193,6 +193,14 @@ class InternalConfig:
 
 
 @dataclass(frozen=True)
+class PlanConfig:
+    prefer_authored_json: bool = True
+
+    def with_updates(self, **updates: object) -> PlanConfig:
+        return replace(self, **updates)
+
+
+@dataclass(frozen=True)
 class ServerConfig:
     env: str
     akv: AzureKeyVaultConfig = field(default_factory=AzureKeyVaultConfig)
@@ -205,6 +213,7 @@ class ServerConfig:
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
     internal: InternalConfig = field(default_factory=InternalConfig)
+    plan: PlanConfig = field(default_factory=PlanConfig)
 
     @classmethod
     def default(cls, *, env: str) -> ServerConfig:

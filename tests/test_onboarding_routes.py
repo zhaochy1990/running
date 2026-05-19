@@ -13,8 +13,29 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, Depends
 from fastapi.testclient import TestClient
+from stride_server.config.models import SyncConfig
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
+
+
+def test_sync_stale_after_uses_config() -> None:
+    from stride_server.routes.onboarding import sync_stale_after_seconds_from_config
+
+    assert sync_stale_after_seconds_from_config(SyncConfig(stale_after_seconds=42)) == 42
+
+
+def test_sync_stale_after_fallback_config_is_uncached(monkeypatch: pytest.MonkeyPatch) -> None:
+    from stride_server.config import clear_server_config_cache, load_server_config
+    from stride_server.routes.onboarding import _sync_stale_after_seconds
+
+    monkeypatch.delenv("STRIDE_SYNC_STALE_AFTER_SECONDS", raising=False)
+    clear_server_config_cache()
+    load_server_config()
+
+    monkeypatch.setenv("STRIDE_SYNC_STALE_AFTER_SECONDS", "999")
+
+    assert _sync_stale_after_seconds() == 999.0
+    clear_server_config_cache()
 
 
 @pytest.fixture

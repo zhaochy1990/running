@@ -197,6 +197,7 @@ def test_env_source_maps_legacy_names_and_specific_names(monkeypatch: pytest.Mon
     monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://aoai.example")
     monkeypatch.setenv("STRIDE_STORAGE_LIKES_TABLE_NAME", "customlikes")
     monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", "")
+    monkeypatch.setenv("STRIDE_PLAN_JSON_PRIORITY", "false")
 
     data = env_source(os.environ)
 
@@ -206,6 +207,28 @@ def test_env_source_maps_legacy_names_and_specific_names(monkeypatch: pytest.Mon
     assert data["commentary"]["azure_openai"]["endpoint"] == "https://aoai.example"
     assert data["storage"]["likes"]["table_name"] == "customlikes"
     assert data["internal"]["token"] == ""
+    assert data["plan"]["prefer_authored_json"] is False
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("", True),
+        ("disabled", False),
+        ("anything", True),
+    ],
+)
+def test_env_source_plan_json_priority_preserves_legacy_bool_semantics(
+    monkeypatch: pytest.MonkeyPatch, raw: str, expected: bool
+) -> None:
+    monkeypatch.setenv("STRIDE_PLAN_JSON_PRIORITY", raw)
+
+    data = env_source(os.environ)
+
+    if raw == "":
+        assert "plan" not in data
+    else:
+        assert data["plan"]["prefer_authored_json"] is expected
 
 
 def test_env_source_azure_openai_endpoint_implicitly_enables_llm(monkeypatch: pytest.MonkeyPatch) -> None:

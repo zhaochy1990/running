@@ -208,7 +208,7 @@ class TestInternalTokenTimingSafeCompare:
         cheaper and more reliable than statistical timing tests in CI."""
         import inspect
         import stride_server.routes.plan as plan_mod
-        src = inspect.getsource(plan_mod.require_internal_token)
+        src = inspect.getsource(plan_mod.validate_internal_token_value)
         assert "compare_digest" in src
         assert " == " not in src or "compare_digest" in src
 

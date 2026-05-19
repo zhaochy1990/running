@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -15,6 +14,8 @@ from stride_core.registry import ProviderRegistry, UnknownProvider
 from stride_core.source import DataSource, LoginCredentials, SyncProgress
 
 from ..bearer import require_bearer
+from ..config import load_server_config
+from ..config.models import SyncConfig
 from ..content_store import read_json, write_json
 from ..deps import get_source
 
@@ -67,14 +68,12 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def sync_stale_after_seconds_from_config(config: SyncConfig) -> int:
+    return config.stale_after_seconds
+
+
 def _sync_stale_after_seconds() -> float:
-    value = os.environ.get("STRIDE_SYNC_STALE_AFTER_SECONDS", "300")
-    try:
-        seconds = float(value)
-    except ValueError:
-        logger.warning("Invalid STRIDE_SYNC_STALE_AFTER_SECONDS=%r; using 300s", value)
-        return 300.0
-    return max(seconds, 30.0)
+    return float(sync_stale_after_seconds_from_config(load_server_config(use_cache=False).sync))
 
 
 def _parse_iso_datetime(value: str | None) -> datetime | None:

@@ -146,8 +146,12 @@ def get_registry(request: Request) -> ProviderRegistry:
 
 def get_server_config(request: Request) -> ServerConfig:
     """FastAPI dependency — retrieve runtime server config from app state."""
-    config: ServerConfig = request.app.state.config
-    return config
+    config: ServerConfig | None = getattr(request.app.state, "config", None)
+    if config is not None:
+        return config
+    from stride_server.config import load_server_config
+
+    return load_server_config(use_cache=False)
 
 
 def get_source_for_user(
