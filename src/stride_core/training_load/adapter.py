@@ -428,9 +428,6 @@ def _defaulted_calibration(
     activity_inputs: Sequence[ActivityLoadInput],
 ) -> CalibrationSnapshot:
     rhr = calibration.rhr_baseline
-    if rhr is None:
-        hr_values = [a.avg_hr for a in activity_inputs if a.avg_hr is not None]
-        rhr = max(35.0, min(hr_values) - 50.0) if hr_values else None
     hrmax = calibration.hrmax_estimate
     if hrmax is None:
         max_values = [a.max_hr for a in activity_inputs if a.max_hr is not None]

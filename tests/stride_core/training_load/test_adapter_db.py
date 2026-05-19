@@ -142,7 +142,7 @@ def test_recompute_normalizes_activity_distance_stored_as_kilometers(db):
     calibration = db.query("SELECT * FROM training_load_calibration")[0]
     activity_row = db.fetch_activity_training_load("km_run")
     assert calibration["threshold_speed_mps"] == 4.0
-    assert calibration["threshold_hr"] == 170.0
+    assert calibration["threshold_hr"] == 168.0
     assert activity_row["external_tss"] == 100.0
     assert activity_row["mechanical_load"] == 14.562
 
@@ -252,7 +252,8 @@ def test_recompute_does_not_normalize_raw_trimp_when_threshold_hr_is_unavailable
     row = db.fetch_activity_training_load("hr_only")
 
     assert row is not None
-    assert row["cardio_load_raw"] is not None
+    assert row["cardio_load_raw"] is None
     assert row["cardio_tss"] is None
     assert row["training_dose"] is None
     assert row["excluded_from_pmc"] == 1
+    assert "hr_calibration_missing" in json.loads(row["reasons_json"])

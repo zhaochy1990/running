@@ -32,6 +32,32 @@ def _running(activity: CalibrationActivity) -> bool:
     return sport.startswith("run") or sport.startswith("run_")
 
 
+def _activity_hr_estimate(activity: CalibrationActivity) -> float | None:
+    if activity.avg_hr is not None and 80 <= float(activity.avg_hr) <= 230:
+        return float(activity.avg_hr)
+    hrs = [
+        float(sample.heart_rate_bpm)
+        for sample in activity.samples
+        if sample.heart_rate_bpm is not None and 80 <= float(sample.heart_rate_bpm) <= 230
+    ]
+    return median(hrs) if hrs else None
+
+
+def _plausible_threshold_hr(
+    hr: float,
+    *,
+    rhr_baseline: float | None,
+    hrmax_estimate: float | None,
+) -> bool:
+    if rhr_baseline is None or hrmax_estimate is None or hrmax_estimate <= rhr_baseline:
+        return True
+    hrr = (float(hr) - rhr_baseline) / (hrmax_estimate - rhr_baseline)
+    # Lactate-threshold HR usually lives below near-max race HR but above easy
+    # aerobic HR. Keep this broad enough for individual variance while avoiding
+    # obvious low-HR device/segment outliers and 10K-race HR being used as LT.
+    return 0.75 <= hrr <= 0.90
+
+
 def estimate_calibration(
     history: Sequence[CalibrationActivity],
     *,
@@ -91,19 +117,31 @@ def estimate_calibration(
         }
 
     threshold_hr = None
-    if threshold_speed is not None and threshold_activity is not None:
-        hr_near_threshold = [
-            float(sample.heart_rate_bpm)
-            for sample in threshold_activity.samples
-            if sample.heart_rate_bpm is not None
-            and sample.speed_mps is not None
-            and abs(float(sample.speed_mps) - threshold_speed) <= max(0.08 * threshold_speed, 0.1)
+    if threshold_speed is not None:
+        threshold_hr_candidates: list[float] = []
+        for speed, activity in run_candidates:
+            if speed < 0.90 * threshold_speed:
+                continue
+            hr = _activity_hr_estimate(activity)
+            if hr is None:
+                continue
+            threshold_hr_candidates.append(hr)
+
+        plausible_hr_candidates = [
+            hr for hr in threshold_hr_candidates
+            if _plausible_threshold_hr(
+                hr,
+                rhr_baseline=rhr_baseline,
+                hrmax_estimate=hrmax,
+            )
         ]
-        if hr_near_threshold:
-            threshold_hr = median(hr_near_threshold)
+        selected_hr_candidates = plausible_hr_candidates or threshold_hr_candidates
+        if selected_hr_candidates:
+            threshold_hr = median(selected_hr_candidates)
             source["threshold_hr"] = {
-                "method": "median_hr_near_threshold_speed",
-                "sample_count": len(hr_near_threshold),
+                "method": "median_plausible_activity_hr_near_threshold_speed",
+                "candidate_count": len(selected_hr_candidates),
+                "raw_candidate_count": len(threshold_hr_candidates),
             }
 
     power_candidates: list[float] = []
