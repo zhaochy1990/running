@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re as _re
 import shutil
 import sqlite3
@@ -433,16 +434,174 @@ CREATE TABLE IF NOT EXISTS activity_feedback (
 _THUMB_TARGET_POINTS = 60
 _THUMB_VIEWBOX = 100
 _THUMB_PADDING = 5
+_THUMB_MIN_GPS_SAMPLES = 10
+_THUMB_REPEATED_ROUTE_MIN_PATH_M = 1_200
+_THUMB_REPEATED_ROUTE_MAX_BBOX_M = 600
+_THUMB_REPEATED_ROUTE_MIN_BBOX_M = 20
+_THUMB_REPEATED_ROUTE_PATH_TO_PERIMETER = 3.0
+_THUMB_REPEATED_ROUTE_MIN_ANGLE_COVERAGE = 0.75
+_THUMB_REPEATED_ROUTE_MAX_CENTER_DENSITY = 0.08
+
+
+def _distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+    return math.hypot(b[0] - a[0], b[1] - a[1])
+
+
+def _polyline_length(points: list[tuple[float, float]]) -> float:
+    return sum(_distance(a, b) for a, b in zip(points, points[1:]))
+
+
+def _project_gps_to_local_meters(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Project ``(lon, lat)`` degrees to approximate local meter offsets."""
+    mean_lat_rad = math.radians(sum(lat for _, lat in points) / len(points))
+    meters_per_lon = 111_000 * math.cos(mean_lat_rad)
+    meters_per_lat = 111_000
+    origin_lon, origin_lat = points[0]
+    return [
+        ((lon - origin_lon) * meters_per_lon, (lat - origin_lat) * meters_per_lat)
+        for lon, lat in points
+    ]
+
+
+def _is_repeated_compact_route(points: list[tuple[float, float]]) -> bool:
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    width = max(xs) - min(xs)
+    height = max(ys) - min(ys)
+    if width <= 0 or height <= 0:
+        return False
+    if max(width, height) > _THUMB_REPEATED_ROUTE_MAX_BBOX_M:
+        return False
+    if min(width, height) < _THUMB_REPEATED_ROUTE_MIN_BBOX_M:
+        return False
+
+    cx = (min(xs) + max(xs)) / 2
+    cy = (min(ys) + max(ys)) / 2
+    angle_bins = 24
+    occupied_angles = set()
+    for x, y in points:
+        angle = (math.atan2(y - cy, x - cx) + 2 * math.pi) % (2 * math.pi)
+        occupied_angles.add(min(int(angle / (2 * math.pi) * angle_bins), angle_bins - 1))
+    angle_coverage = len(occupied_angles) / angle_bins
+    if angle_coverage < _THUMB_REPEATED_ROUTE_MIN_ANGLE_COVERAGE:
+        return False
+
+    half_width = width / 2
+    half_height = height / 2
+    center_count = sum(
+        math.hypot((x - cx) / half_width, (y - cy) / half_height) < 0.6
+        for x, y in points
+    )
+    if center_count / len(points) > _THUMB_REPEATED_ROUTE_MAX_CENTER_DENSITY:
+        return False
+
+    path_length = _polyline_length(points)
+    bbox_perimeter = 2 * (width + height)
+    return (
+        path_length >= _THUMB_REPEATED_ROUTE_MIN_PATH_M
+        and path_length / bbox_perimeter >= _THUMB_REPEATED_ROUTE_PATH_TO_PERIMETER
+    )
+
+
+def _downsample_by_distance(
+    points: list[tuple[float, float]],
+    target: int,
+) -> list[tuple[float, float]]:
+    if len(points) <= target:
+        return list(points)
+
+    total = _polyline_length(points)
+    if total <= 0:
+        return list(points[:target])
+
+    interval = total / (target - 1)
+    out = [points[0]]
+    next_distance = interval
+    walked = 0.0
+    prev = points[0]
+
+    for curr in points[1:]:
+        segment = _distance(prev, curr)
+        while segment > 0 and walked + segment >= next_distance and len(out) < target - 1:
+            ratio = (next_distance - walked) / segment
+            out.append((
+                prev[0] + (curr[0] - prev[0]) * ratio,
+                prev[1] + (curr[1] - prev[1]) * ratio,
+            ))
+            next_distance += interval
+        walked += segment
+        prev = curr
+
+    if out[-1] != points[-1]:
+        out.append(points[-1])
+    return out
+
+
+def _loop_footprint(points: list[tuple[float, float]], target: int) -> list[tuple[float, float]]:
+    """Collapse repeated compact loops into one ordered footprint."""
+    cx = sum(x for x, _ in points) / len(points)
+    cy = sum(y for _, y in points) / len(points)
+    bin_count = max(12, target - 1)
+    buckets: list[list[tuple[float, float]]] = [[] for _ in range(bin_count)]
+
+    for x, y in points:
+        angle = (math.atan2(y - cy, x - cx) + 2 * math.pi) % (2 * math.pi)
+        index = min(int(angle / (2 * math.pi) * bin_count), bin_count - 1)
+        buckets[index].append((x, y))
+
+    start_x, start_y = points[0]
+    start_angle = (math.atan2(start_y - cy, start_x - cx) + 2 * math.pi) % (2 * math.pi)
+    start_index = min(int(start_angle / (2 * math.pi) * bin_count), bin_count - 1)
+    ordered_buckets = buckets[start_index:] + buckets[:start_index]
+
+    footprint = [
+        (sum(x for x, _ in bucket) / len(bucket), sum(y for _, y in bucket) / len(bucket))
+        for bucket in ordered_buckets
+        if bucket
+    ]
+    if len(footprint) < 12:
+        return _downsample_by_distance(points, target)
+    footprint.append(footprint[0])
+    return footprint
+
+
+def _normalize_thumbnail_points(points: list[tuple[float, float]]) -> list[list[float]] | None:
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    range_x = max_x - min_x
+    range_y = max_y - min_y
+    span = max(range_x, range_y)
+    if span <= 0:
+        return None
+
+    scale = (_THUMB_VIEWBOX - 2 * _THUMB_PADDING) / span
+    cx = (min_x + max_x) / 2
+    cy = (min_y + max_y) / 2
+    half = _THUMB_VIEWBOX / 2
+
+    out: list[list[float]] = []
+    for x, y in points:
+        nx = round((x - cx) * scale + half, 1)
+        # Flip Y so north lands at the top of the SVG.
+        ny = round(half - (y - cy) * scale, 1)
+        out.append([nx, ny])
+    return out
 
 
 def compute_route_thumbnail(timeseries: list[TimeseriesPoint] | list[dict]) -> str | None:
     """Build a downsampled, normalized polyline for activity-list thumbnails.
 
     Returns a JSON string ``[[x,y],...]`` with x/y rounded to one decimal,
-    fitting in a ``[0, 100]`` viewport with 5 px padding. Y axis is flipped
-    (south at bottom) so the polyline can drop straight into ``<svg>``
-    without further math. Aspect ratio is preserved by scaling both axes
-    by ``max(range_x, range_y)`` and centering the result.
+    fitting in a ``[0, 100]`` viewport with 5 px padding. GPS is first projected
+    into approximate local meters so aspect ratio is preserved. Y axis is
+    flipped (south at bottom) so the polyline can drop straight into ``<svg>``
+    without further math.
+
+    Compact repeated routes, especially track-mode activities, are collapsed
+    into one ordered loop footprint. Uniformly sampling the full time-ordered
+    trace aliases multi-lap tracks into long infield chords at thumbnail size.
 
     Returns ``None`` when fewer than 10 valid GPS samples are present
     (indoor, treadmill, GPS-failed activities).
@@ -463,36 +622,18 @@ def compute_route_thumbnail(timeseries: list[TimeseriesPoint] | list[dict]) -> s
             continue
         pts.append((lon, lat))
 
-    if len(pts) < 10:
+    if len(pts) < _THUMB_MIN_GPS_SAMPLES:
         return None
 
-    step = max(1, len(pts) // _THUMB_TARGET_POINTS)
-    sampled = pts[::step]
-    # Always include the final point so the route doesn't appear truncated.
-    if sampled[-1] != pts[-1]:
-        sampled.append(pts[-1])
+    projected = _project_gps_to_local_meters(pts)
+    if _is_repeated_compact_route(projected):
+        sampled = _loop_footprint(projected, _THUMB_TARGET_POINTS)
+    else:
+        sampled = _downsample_by_distance(projected, _THUMB_TARGET_POINTS)
 
-    xs = [p[0] for p in sampled]
-    ys = [p[1] for p in sampled]
-    min_x, max_x = min(xs), max(xs)
-    min_y, max_y = min(ys), max(ys)
-    range_x = max_x - min_x
-    range_y = max_y - min_y
-    span = max(range_x, range_y)
-    if span <= 0:
+    out = _normalize_thumbnail_points(sampled)
+    if out is None:
         return None
-
-    scale = (_THUMB_VIEWBOX - 2 * _THUMB_PADDING) / span
-    cx = (min_x + max_x) / 2
-    cy = (min_y + max_y) / 2
-    half = _THUMB_VIEWBOX / 2
-
-    out: list[list[float]] = []
-    for x, y in sampled:
-        nx = round((x - cx) * scale + half, 1)
-        # Flip Y so north (higher lat) lands at the top of the SVG.
-        ny = round(half - (y - cy) * scale, 1)
-        out.append([nx, ny])
 
     return json.dumps(out, separators=(",", ":"))
 
