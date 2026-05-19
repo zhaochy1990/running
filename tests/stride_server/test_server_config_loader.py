@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -66,6 +67,31 @@ def test_server_config_default_shape_keeps_current_defaults() -> None:
     assert cfg.notifications.devices_table == "stridedevices"
     assert cfg.notifications.prefs_table == "strideprefs"
     assert cfg.sync.stale_after_seconds == 300
+
+
+def _mapping_value_at_path(data: dict[str, object], path: str) -> object:
+    current: object = data
+    for part in path.split("."):
+        assert isinstance(current, dict), f"{path} parent is not a table"
+        assert part in current, f"{path} is missing from config/server.toml"
+        current = current[part]
+    return current
+
+
+def _object_value_at_path(instance: object, path: str) -> object:
+    current = instance
+    for part in path.split("."):
+        current = getattr(current, part)
+    return current
+
+
+def test_repo_base_server_config_declares_all_runtime_defaults() -> None:
+    raw = (loader_module.PROJECT_ROOT / "config" / "server.toml").read_text(encoding="utf-8")
+    data = tomllib.loads(raw)
+    cfg = ServerConfig.default(env="default")
+
+    for path in ["env", *loader_module._known_secret_manifest()]:
+        assert _mapping_value_at_path(data, path) == _object_value_at_path(cfg, path)
 
 
 def test_non_dev_auth_requires_public_key_or_explicit_insecure_flag() -> None:
