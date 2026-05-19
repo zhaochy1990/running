@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from garmin_sync.models import (
     activity_detail_from_garmin,
+    timeseries_points_from_activity_details,
     daily_health_from_garmin,
     daily_hrv_from_garmin,
     dashboard_from_garmin,
@@ -197,6 +198,60 @@ class TestActivityDetailBuilder:
         assert d.zones[0].zone_index == 1
         assert d.zones[0].duration_s == 25
         assert d.zones[0].range_unit == "bpm"
+
+
+class TestTimeseriesFromActivityDetails:
+    def test_activity_detail_metrics_are_normalized_to_timeseries_points(self):
+        details = {
+            "metricDescriptors": [
+                {"key": "directSpeed", "metricsIndex": 0},
+                {"key": "sumDistance", "metricsIndex": 1},
+                {"key": "sumElapsedDuration", "metricsIndex": 2},
+                {"key": "directElevation", "metricsIndex": 3},
+                {"key": "directLatitude", "metricsIndex": 4},
+                {"key": "directHeartRate", "metricsIndex": 5},
+                {"key": "sumDuration", "metricsIndex": 6},
+                {"key": "directLongitude", "metricsIndex": 7},
+                {"key": "directGradeAdjustedSpeed", "metricsIndex": 8},
+                {"key": "directRunCadence", "metricsIndex": 9},
+                {"key": "directPower", "metricsIndex": 10},
+                {"key": "directStrideLength", "metricsIndex": 11},
+                {"key": "directVerticalRatio", "metricsIndex": 12},
+                {"key": "directVerticalOscillation", "metricsIndex": 13},
+                {"key": "directGroundContactTime", "metricsIndex": 14},
+                {"key": "directTimestamp", "metricsIndex": 15},
+            ],
+            "activityDetailMetrics": [
+                {"metrics": [0.0, 0.0, 0.0, 4.2, 31.1, 120, 0.0, 121.2, 0.0, 170, 0, 112, 7.8, 82, 240, "2026-05-16T21:58:52.0"]},
+                {"metrics": [4.0, 4.0, 1.0, 4.4, 31.1001, 122, 1.0, 121.2001, 4.2, 172, 310, 113, 7.9, 83, 241, "2026-05-16T21:58:53.0"]},
+            ],
+        }
+
+        points = timeseries_points_from_activity_details(details)
+
+        assert len(points) == 2
+        first, second = points
+        # Same storage convention as COROS: timestamp is centiseconds from activity start.
+        assert first.timestamp == 0
+        assert second.timestamp == 100
+        assert second.distance == 4.0
+        assert second.heart_rate == 122
+        # Garmin detail speed is m/s; our timeseries speed stores pace s/km.
+        assert second.speed == 250.0
+        assert 237 < second.adjusted_pace < 239
+        assert second.cadence == 172
+        assert second.altitude == 4.4
+        assert second.power == 310
+        assert second.gps_lat == 31.1001
+        assert second.gps_lon == 121.2001
+        assert second.cadence_length_cm == 113
+        assert second.vertical_ratio_pct == 7.9
+        assert second.vertical_oscillation_mm == 83
+        assert second.ground_contact_time_ms == 241
+
+    def test_missing_descriptors_or_metrics_return_empty_list(self):
+        assert timeseries_points_from_activity_details({}) == []
+        assert timeseries_points_from_activity_details({"metricDescriptors": []}) == []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
