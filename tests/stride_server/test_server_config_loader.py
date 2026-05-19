@@ -458,3 +458,29 @@ def test_clear_server_config_cache_allows_default_reload(tmp_path: Path, monkeyp
     assert cached.storage.likes.table_name == "first"
     assert second.storage.likes.table_name == "second"
     clear_server_config_cache()
+
+
+def test_repo_server_config_files_load(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("STRIDE_CONFIG_FILES", raising=False)
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "local")
+
+    cfg = load_server_config(use_cache=False)
+
+    assert cfg.env == "local"
+    assert cfg.auth.allow_insecure_without_key is True
+    assert cfg.llm.enabled is False
+    assert cfg.commentary.enabled is False
+    assert cfg.storage.likes.table_name == "stridelikes"
+    assert cfg.coach_persistence.file_backend_dir == "data/_coach_dev"
+
+
+def test_repo_prod_config_file_loads_without_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("STRIDE_CONFIG_FILES", raising=False)
+    monkeypatch.delenv("STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY", raising=False)
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+
+    cfg = load_server_config(use_cache=False)
+
+    assert cfg.env == "prod"
+    assert cfg.auth.allow_insecure_without_key is False
+    assert cfg.auth.public_key_path == "config/auth-public.pem"

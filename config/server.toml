@@ -1,0 +1,83 @@
+# STRIDE backend runtime configuration.
+# Source precedence: file layer < Azure Key Vault < environment variables.
+
+env = "default"
+
+[akv]
+enabled = false
+vault_url = ""
+secret_prefix = "stride-server"
+
+[auth]
+public_key_pem = ""
+public_key_path = ""
+issuer = "auth-service"
+audience = ""
+allow_insecure_without_key = false
+
+[auth_service]
+base_url = ""
+timeout_s = 5.0
+
+[llm]
+enabled = false
+default_model = "gpt-4.1"
+
+[llm.azure_openai]
+endpoint = ""
+api_key = ""
+api_version = "2024-10-21"
+deployment = "gpt-4.1"
+timeout_s = 60.0
+
+[commentary]
+enabled = false
+
+[commentary.azure_openai]
+endpoint = ""
+api_key = ""
+api_version = "2024-10-21"
+deployment = "gpt-4.1"
+timeout_s = 60.0
+
+[storage.content]
+account_url = ""
+container = ""
+prefix = "users"
+
+[storage.likes]
+table_account_url = ""
+table_name = "stridelikes"
+
+[storage.master_plan]
+table_account_url = ""
+table_name = "stridemasterplan"
+
+[coach_persistence]
+table_account_url = ""
+blob_account_url = ""
+checkpoints_table_name = "stridecoachcheckpoints"
+checkpoint_writes_table_name = "stridecoachcheckpointwrites"
+jobs_table_name = "stridecoachjobs"
+weekly_versions_table_name = "strideweeklyversions"
+blob_container = "coach-checkpoints"
+file_backend_dir = "data/_coach_dev"
+jobs_stale_after_seconds = 120
+
+[notifications]
+table_account_url = ""
+devices_table = "stridedevices"
+prefs_table = "strideprefs"
+
+[notifications.jpush]
+app_key = ""
+master_secret = ""
+url = "https://api.jpush.cn/v3/push"
+timeout_s = 10.0
+apns_production = true
+
+[sync]
+stale_after_seconds = 300
+
+[internal]
+token = ""

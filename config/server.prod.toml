@@ -1,0 +1,16 @@
+env = "prod"
+
+[auth]
+allow_insecure_without_key = false
+public_key_path = "config/auth-public.pem"
+
+[akv]
+enabled = false
+vault_url = ""
+secret_prefix = "stride-server"
+
+[storage.content]
+prefix = "users"
+
+[coach_persistence]
+file_backend_dir = "data/_coach_dev"
