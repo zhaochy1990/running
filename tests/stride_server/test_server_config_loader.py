@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
+from stride_server.config.loader import (
+    clear_server_config_cache,
+    load_server_config,
+    resolve_config_env,
+    resolve_file_layer,
+)
+from stride_server.config import loader as loader_module
 from stride_server.config.models import (
     AuthConfig,
     AzureOpenAIConfig,
@@ -25,6 +33,15 @@ from stride_server.config.sources import (
     set_path,
     toml_file_source,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_config_cache_between_tests():
+    clear_server_config_cache()
+    try:
+        yield
+    finally:
+        clear_server_config_cache()
 
 
 def test_server_config_default_shape_keeps_current_defaults() -> None:
@@ -189,3 +206,255 @@ def test_toml_file_source_reads_nested_config(tmp_path) -> None:
 def test_akv_secret_name_normalizes_path_and_prefix() -> None:
     assert akv_secret_name("stride-server", "llm.azure_openai.api_key") == "stride-server--llm-azure-openai-api-key"
     assert akv_secret_name("", "storage.likes.table_account_url") == "storage-likes-table-account-url"
+
+
+def test_resolve_config_env_prefers_stride_config_env() -> None:
+    assert resolve_config_env({"STRIDE_ENV": "prod", "STRIDE_CONFIG_ENV": "local"}) == "local"
+
+
+def test_resolve_config_env_falls_back_to_stride_env_and_default() -> None:
+    assert resolve_config_env({"STRIDE_ENV": "prod"}) == "prod"
+    assert resolve_config_env({}) == "default"
+
+
+def test_resolve_file_layer_uses_default_base_and_optional_env_file(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    base = config_dir / "server.toml"
+    prod = config_dir / "server.prod.toml"
+    base.write_text("env = 'base'", encoding="utf-8")
+    prod.write_text("env = 'prod'", encoding="utf-8")
+
+    assert resolve_file_layer(env="prod", project_root=tmp_path, environ={}) == [base, prod]
+
+
+def test_resolve_file_layer_allows_missing_default_env_file(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    base = config_dir / "server.toml"
+    base.write_text("env = 'base'", encoding="utf-8")
+
+    assert resolve_file_layer(env="local", project_root=tmp_path, environ={}) == [base]
+
+
+def test_resolve_file_layer_requires_base_file(tmp_path: Path) -> None:
+    (tmp_path / "config").mkdir()
+
+    with pytest.raises(ConfigError, match="base server config not found"):
+        resolve_file_layer(env="local", project_root=tmp_path, environ={})
+
+
+def test_resolve_file_layer_explicit_files_replace_discovery_and_support_separators(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text("env = 'base'", encoding="utf-8")
+    first = tmp_path / "first.toml"
+    second = tmp_path / "second.toml"
+    third = tmp_path / "third.toml"
+    first.write_text("env = 'first'", encoding="utf-8")
+    second.write_text("env = 'second'", encoding="utf-8")
+    third.write_text("env = 'third'", encoding="utf-8")
+    environ = {"STRIDE_CONFIG_FILES": f"{first};{second},{third}"}
+
+    assert resolve_file_layer(env="prod", project_root=tmp_path, environ=environ) == [first, second, third]
+
+
+def test_resolve_file_layer_empty_explicit_env_replaces_discovery(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text("env = 'base'", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="did not contain any config files"):
+        resolve_file_layer(env="prod", project_root=tmp_path, environ={"STRIDE_CONFIG_FILES": ""})
+
+
+def test_resolve_file_layer_empty_explicit_arg_replaces_discovery(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text("env = 'base'", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="did not contain any config files"):
+        resolve_file_layer(env="prod", project_root=tmp_path, environ={}, explicit_files="")
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        ('[akv]\nenabled = "maybe"\n', "akv.enabled must be a boolean"),
+        ('[sync]\nstale_after_seconds = "soon"\n', "sync.stale_after_seconds must be an integer"),
+        ('[auth_service]\ntimeout_s = "slow"\n', "auth_service.timeout_s must be a number"),
+    ],
+)
+def test_load_server_config_wraps_invalid_string_coercions_from_files(
+    tmp_path: Path, body: str, message: str
+) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text(f"env = 'dev'\n{body}", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=message):
+        load_server_config(project_root=tmp_path, environ={}, use_cache=False)
+
+
+def test_load_server_config_wraps_invalid_string_coercions_from_akv(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text(
+        """
+env = "dev"
+
+[akv]
+enabled = true
+vault_url = "https://vault.example"
+""",
+        encoding="utf-8",
+    )
+
+    def fake_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[str]) -> dict[str, object]:
+        return {"sync": {"stale_after_seconds": "soon"}}
+
+    with pytest.raises(ConfigError, match="sync.stale_after_seconds must be an integer"):
+        load_server_config(
+            project_root=tmp_path,
+            environ={},
+            akv_source=fake_akv_source,
+            use_cache=False,
+        )
+
+
+def test_load_server_config_akv_overrides_files(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text(
+        """
+env = "dev"
+
+[akv]
+enabled = true
+vault_url = "https://vault.example"
+secret_prefix = "stride-server"
+
+[storage.likes]
+table_name = "from-file"
+""",
+        encoding="utf-8",
+    )
+
+    def fake_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[str]) -> dict[str, object]:
+        assert vault_url == "https://vault.example"
+        assert secret_prefix == "stride-server"
+        assert "storage.likes.table_name" in manifest
+        return {"storage": {"likes": {"table_name": "from-akv"}}}
+
+    cfg = load_server_config(
+        project_root=tmp_path,
+        environ={},
+        akv_source=fake_akv_source,
+        use_cache=False,
+    )
+
+    assert cfg.storage.likes.table_name == "from-akv"
+
+
+def test_load_server_config_env_overrides_akv(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text(
+        """
+env = "dev"
+
+[akv]
+enabled = true
+vault_url = "https://vault.example"
+
+[storage.likes]
+table_name = "from-file"
+""",
+        encoding="utf-8",
+    )
+
+    def fake_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[str]) -> dict[str, object]:
+        return {"storage": {"likes": {"table_name": "from-akv"}}}
+
+    cfg = load_server_config(
+        project_root=tmp_path,
+        environ={"STRIDE_STORAGE_LIKES_TABLE_NAME": "from-env"},
+        akv_source=fake_akv_source,
+        use_cache=False,
+    )
+
+    assert cfg.storage.likes.table_name == "from-env"
+
+
+def test_load_server_config_explicit_files_replace_default_layer(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text("[storage.likes]\ntable_name = 'default'", encoding="utf-8")
+    explicit = tmp_path / "custom.toml"
+    explicit.write_text("env = 'dev'\n[storage.likes]\ntable_name = 'explicit'", encoding="utf-8")
+
+    cfg = load_server_config(
+        project_root=tmp_path,
+        environ={"STRIDE_CONFIG_FILES": str(explicit)},
+        use_cache=False,
+    )
+
+    assert cfg.storage.likes.table_name == "explicit"
+
+
+def test_load_server_config_converts_nested_dicts_to_dataclasses(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text(
+        """
+env = "dev"
+
+[auth_service]
+timeout_s = 2.5
+
+[llm.azure_openai]
+endpoint = "https://aoai.example"
+timeout_s = 30.0
+""",
+        encoding="utf-8",
+    )
+
+    cfg = load_server_config(project_root=tmp_path, environ={}, use_cache=False)
+
+    assert cfg.auth_service.timeout_s == 2.5
+    assert cfg.llm.azure_openai.endpoint == "https://aoai.example"
+    assert cfg.llm.azure_openai.timeout_s == 30.0
+    assert cfg.storage.likes.table_name == "stridelikes"
+
+
+def test_clear_server_config_cache_allows_default_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in list(os.environ):
+        if name.startswith("STRIDE_") or name in {
+            "AZURE_OPENAI_ENDPOINT",
+            "AZURE_OPENAI_API_KEY",
+            "AZURE_OPENAI_API_VERSION",
+            "AZURE_OPENAI_DEPLOYMENT",
+            "LLM_ENABLED",
+            "LLM_DEFAULT_MODEL",
+            "AOAI_COMMENTARY_ENABLED",
+            "JPUSH_APP_KEY",
+            "JPUSH_MASTER_SECRET",
+        }:
+            monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(loader_module, "PROJECT_ROOT", tmp_path)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    base = config_dir / "server.toml"
+    base.write_text("env = 'dev'\n[storage.likes]\ntable_name = 'first'", encoding="utf-8")
+
+    clear_server_config_cache()
+    first = load_server_config()
+    base.write_text("env = 'dev'\n[storage.likes]\ntable_name = 'second'", encoding="utf-8")
+    cached = load_server_config()
+    clear_server_config_cache()
+    second = load_server_config()
+
+    assert first.storage.likes.table_name == "first"
+    assert cached.storage.likes.table_name == "first"
+    assert second.storage.likes.table_name == "second"
+    clear_server_config_cache()
