@@ -1,0 +1,95 @@
+{
+  "fixture_id": "s1-sparse-db-capable",
+  "scope": "s1",
+  "description": "Advanced runner just migrated from Garmin to COROS — only 2 weeks of synced data but user-reported PRs show clear sub-3 FM history. Tests scenario 2: plan must trust user-reported prs + hr_zones, NOT downgrade to '新手 base' because DB is sparse.",
+  "tags": ["sparse_db_capable_user"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-sparse-db-001",
+      "hr_zones": {
+        "z1": [95, 138],
+        "z2": [138, 152],
+        "z3": [152, 165],
+        "z4": [165, 178],
+        "z5": [178, 192]
+      },
+      "weight_kg": 70.0,
+      "injuries": [],
+      "experience_level": "advanced",
+      "weekly_run_days_max": 6,
+      "prs": {
+        "5k_s": 1140,
+        "10k_s": 2460,
+        "hm_s": 5400,
+        "fm_s": 11400
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 10800,
+        "race_date": "2026-10-18"
+      },
+      "db_history_weeks": 2
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-10-18"
+    },
+    "training_history_summary": {
+      "history_window_months": 2,
+      "monthly_mileage_km": [85, 60],
+      "peak_weekly_km_in_window": 28,
+      "longest_run_km_in_window": 18,
+      "race_history": [],
+      "consistency_score": 0.75
+    },
+    "user_intent_md": "刚从 Garmin 换到 COROS PACE 4，过去 2 周数据是新手表第一次同步的。实际是 3 年跑龄、5 个全马完赛、FM PB 3:10（2025 春），目标 2026-10 西马破 3:00。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 3,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "正常 base / build / peak / taper — advanced 用户不需 onboarding 周"
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 3:10 → goal 3:00 是 5% 提升，realistic；plan 应给 confident 路径"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "标准 taper 2 周"
+      },
+      "volume_progression": {
+        "min_score": 5,
+        "behavior": "**核心评分**：base 起点 50-60 km/wk（advanced 应有水平），不能因 DB 只显示 28 km/wk peak 就从 30 km 起。Peak 周量目标 70-85 km"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "6 天 / 周充分利用"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "no active injuries"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "标准 phase 营养"
+      },
+      "request_handling": {
+        "min_score": 4,
+        "behavior": "plan 必须显式 acknowledge 用户 user-reported 3 年跑龄 + PB 3:10，**不依赖**稀疏 DB"
+      }
+    },
+    "anti_patterns": [
+      "**关键 anti-pattern**：plan base phase 周量从 25-35 km 起（按 DB 显示的 28 km peak 推断 → 把 advanced 用户当新手 onboard）",
+      "plan 排 fitness assessment 周 / 测试周（用户已自报 PR，不需重测）",
+      "ignore 用户自报的 5 次马拉松完赛历史",
+      "peak 周量 < 60 km（不符合 sub-3 训练需求）"
+    ]
+  }
+}

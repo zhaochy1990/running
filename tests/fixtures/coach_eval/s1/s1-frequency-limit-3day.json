@@ -1,0 +1,103 @@
+{
+  "fixture_id": "s1-frequency-limit-3day",
+  "scope": "s1",
+  "description": "Time-constrained intermediate runner (3 days/week max) targets FM sub-3:30. Tests frequency_respect: every week in plan must schedule ≤ 3 runs while still containing long run + at least 1 quality session.",
+  "tags": ["frequency_limit"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-frequency-limit-001",
+      "hr_zones": {
+        "z1": [100, 135],
+        "z2": [135, 150],
+        "z3": [150, 162],
+        "z4": [162, 175],
+        "z5": [175, 188]
+      },
+      "weight_kg": 78.0,
+      "injuries": [],
+      "experience_level": "intermediate",
+      "weekly_run_days_max": 3,
+      "prs": {
+        "5k_s": 1260,
+        "10k_s": 2640,
+        "hm_s": 5820,
+        "fm_s": 12900
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 12600,
+        "race_date": "2026-10-18"
+      },
+      "db_history_weeks": 65
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-10-18"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        95, 100, 105, 110, 105, 95,
+        85, 75, 95, 105, 110, 100,
+        80, 75, 85, 95, 100, 95
+      ],
+      "peak_weekly_km_in_window": 38,
+      "longest_run_km_in_window": 30,
+      "race_history": [
+        {"distance": "fm", "date": "2025-10-12", "time_s": 12900, "race_type": "A_race"},
+        {"distance": "hm", "date": "2026-03-09", "time_s": 5820, "race_type": "tune_up"}
+      ],
+      "consistency_score": 0.82
+    },
+    "user_intent_md": "因工作 / 育儿，每周只能安排 3 次跑步（通常周二、周四、周日）。目标 2026 西马破 3:30。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 3,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "正常 base / build / peak / taper"
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 3:35 → goal 3:30 是 2% 提升，very realistic；plan 应给出 confident 路径"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "标准 taper 2 周"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "3 days/wk 受限下 peak 周量目标 ~45-55 km（合理 ceiling for 3 sessions）"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "**核心评分**：每周计划必须 ≤ 3 跑步课。3 课分配：1 长课（周末）+ 1 质量课（tempo/interval）+ 1 中等距离有氧"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "no injuries，受限频次本身降低过载风险"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "标准 phase 营养"
+      },
+      "request_handling": {
+        "min_score": 4,
+        "behavior": "plan 应在 notes 解释 3 课 / 周的 trade-off （比 6 课周量低但 quality 密度高）"
+      }
+    },
+    "anti_patterns": [
+      "任一周 plan 排 4+ 跑步课（用户跑不完）",
+      "排两个质量课在同一周（3 课中 2 课硬刺激，恢复不够）",
+      "peak 周量 > 60 km（3 课撑不起来）",
+      "ignore 用户 'every 周二、周四、周日' 安排（plan 排到周一三五就违反实际可执行）",
+      "没有 long run（3 课中至少 1 课必须 ≥ 18 km）"
+    ]
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "fixture_id": "s1-target-distance-hm",
+  "scope": "s1",
+  "description": "Same advanced runner profile but target = half marathon sub-1:20 (instead of FM). Tests target_distance differentiation: HM peak weekly should be lower than FM, long run 18-22 km, taper 1 week not 2.",
+  "tags": ["target_distance"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-advanced-hm-001",
+      "hr_zones": {
+        "z1": [95, 140],
+        "z2": [140, 152],
+        "z3": [152, 162],
+        "z4": [162, 175],
+        "z5": [175, 190]
+      },
+      "weight_kg": 72.0,
+      "injuries": [],
+      "experience_level": "advanced",
+      "weekly_run_days_max": 6,
+      "prs": {
+        "5k_s": 1110,
+        "10k_s": 2400,
+        "hm_s": 5262,
+        "fm_s": 10762
+      },
+      "target_race": {
+        "distance": "hm",
+        "goal_time_s": 4800,
+        "race_date": "2026-09-20"
+      },
+      "db_history_weeks": 76
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-09-20"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        185, 195, 210, 220, 215, 200,
+        180, 165, 195, 235, 245, 215,
+        140, 165, 190, 200, 225, 205
+      ],
+      "peak_weekly_km_in_window": 78,
+      "longest_run_km_in_window": 35,
+      "race_history": [
+        {"distance": "hm", "date": "2024-11-02", "time_s": 5262, "race_type": "A_race"},
+        {"distance": "10k", "date": "2026-04-25", "time_s": 2427, "race_type": "tune_up"}
+      ],
+      "consistency_score": 0.85
+    },
+    "user_intent_md": "目标 2026-09-20 半马破 1:20（目标配速 3:47/km）。秋季后再筹备马拉松。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 3,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "HM-focused base / build / peak / taper；peak 较 FM 更短（~2-3 周）"
+      },
+      "goal_realism": {
+        "min_score": 3,
+        "behavior": "PB 1:27:42 → goal 1:20 是 9% 提升，aggressive but possible for advanced; needs显式说明"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "peak 在 race - 1..2 周；taper 1 周（HM 标准，不是 2 周 FM-taper）"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "peak 周量 60-70 km（比 FM 略低），long run 18-22 km（不是 FM 的 30-35）"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "充分利用 6 天 / 周"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "无 active injury，正常 progression"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "HM 不需 marathon-specific carb-loading；正常 base / build / peak 营养"
+      },
+      "request_handling": {
+        "min_score": 3,
+        "behavior": "回应秋季后筹备马拉松的延续考量"
+      }
+    },
+    "anti_patterns": [
+      "peak 周长课 ≥ 28 km（HM 不需要这么长，过载）",
+      "taper 排 2 周（HM 1 周足够）",
+      "把 FM-style plan 硬套到 HM（confusing target_distance）",
+      "peak 周量 > 75 km（HM 不需要这么高）"
+    ]
+  }
+}
