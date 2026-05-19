@@ -11,6 +11,8 @@ from coros_sync.adapter import CorosDataSource
 from garmin_sync.adapter import GarminDataSource
 from stride_core.registry import ProviderRegistry
 
+from stride_server.config import load_server_config
+
 from .app import create_app
 
 
@@ -21,4 +23,4 @@ def _build_registry() -> ProviderRegistry:
     return registry
 
 
-app = create_app(_build_registry())
+app = create_app(_build_registry(), config=load_server_config())

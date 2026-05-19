@@ -19,7 +19,10 @@ from fastapi.staticfiles import StaticFiles
 from stride_core.registry import ProviderRegistry
 from stride_core.source import DataSource
 
-from .bearer import _load_public_key, is_dev_mode, require_bearer, verify_path_user
+from stride_server.config import load_server_config
+from stride_server.config.models import ServerConfig
+
+from .bearer import load_public_key_from_config, require_bearer, verify_path_user
 from .deps import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
@@ -57,15 +60,16 @@ from .routes import account, ability, activities, coach, feedback, generate, hea
 from .static import mount_frontend
 
 
-def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
-    # Fail-closed: in non-dev environments the auth public key must be set so
-    # Bearer verification is enforced. Dev mode (STRIDE_ENV=dev) keeps the
-    # legacy fail-open behaviour with a one-time warning.
-    if _load_public_key() is None and not is_dev_mode():
+def create_app(
+    source_or_registry: DataSource | ProviderRegistry,
+    config: ServerConfig | None = None,
+) -> FastAPI:
+    config = config or load_server_config()
+    # Fail-closed unless config explicitly permits local insecure auth.
+    if load_public_key_from_config(config.auth) is None and not config.auth.allow_insecure_without_key:
         raise RuntimeError(
-            "STRIDE auth not configured: set STRIDE_AUTH_PUBLIC_KEY_PEM or "
-            "STRIDE_AUTH_PUBLIC_KEY_PATH for production, or STRIDE_ENV=dev "
-            "for local development."
+            "STRIDE auth not configured: set auth.public_key_pem/path or "
+            "allow_insecure_without_key=true for local development."
         )
 
     # Normalize to a registry. Single-adapter callers (existing tests + the
@@ -84,6 +88,7 @@ def create_app(source_or_registry: DataSource | ProviderRegistry) -> FastAPI:
         default_source = source_or_registry
 
     app = FastAPI(title="STRIDE - Running Dashboard API", lifespan=_lifespan)
+    app.state.config = config
     app.state.source = default_source
     app.state.registry = registry
 
