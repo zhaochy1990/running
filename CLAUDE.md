@@ -21,6 +21,10 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 | Commentary 写入 / 推 prod / daily loop | [`docs/working-model.md`](docs/working-model.md) |
 | 跑 coros-sync CLI / 改 sync 代码 / 直查 DB | [`docs/coros-cli.md`](docs/coros-cli.md) |
 | 改 `src/coach/*` 或 `src/stride_server/coach_*` | [`docs/coach-agent.md`](docs/coach-agent.md) |
+| 加 / 改 coach agent 评估（框架 / L1+L2+L3、Judge graph、CLI、目录约定） | [`docs/coach-eval.md`](docs/coach-eval.md) |
+| 改 S1 赛季备战计划评估（fixture / L1 master_rule_filter / S1 judge axes） | [`docs/coach-eval_S1.md`](docs/coach-eval_S1.md) |
+| 改 S2 周训练计划评估（fixture / L1 rule_filter / S2 judge axes） | [`docs/coach-eval_S2.md`](docs/coach-eval_S2.md) |
+| 改 S3 每日问答评估（fixture / metric_traceability / S3 judge axes） | [`docs/coach-eval_S3.md`](docs/coach-eval_S3.md) |
 | Auth wiring / Bearer / 401 排障 | [`docs/auth-wiring.md`](docs/auth-wiring.md) |
 | Docker / CI/CD / reparse webhook | [`docs/deployment.md`](docs/deployment.md) |
 | Frontend pages / API 路由清单 | [`docs/frontend.md`](docs/frontend.md) |

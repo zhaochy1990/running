@@ -459,79 +459,105 @@ def _run_generate_job_inner(
     goal: dict,
     profile: dict | None,
 ) -> None:
-    # ------------------------------------------------------------------
-    # Stage 1: READING_HISTORY
-    # ------------------------------------------------------------------
-    update_job(
-        job_id,
-        status=JobStatus.RUNNING,
-        stage=JobStage.READING_HISTORY,
-        progress=10,
+    """Drive master-plan generation through the coach generation graph.
+
+    Pipeline (load_context → generator → rule_filter → reviewer → verdict)
+    is compiled here from adapter callables; the adapter emits READING_HISTORY
+    / EVALUATING / PLANNING_PHASES stage updates. This function only owns
+    OUTPUTTING + final persist + error mapping.
+    """
+    # Lazy imports — keeps the heavy coach / langgraph machinery out of cold
+    # paths (e.g. routes that only need to enqueue a job without invoking it).
+    from coach.graphs.generation.graph import build_generation_graph
+    from coach.graphs.generation.master_rule_filter import run_master_rule_filter
+
+    from .coach_adapters.master_plan_adapter import (
+        apply_master_patches,
+        generate_master_plan,
+        load_master_context,
+        master_reviewer,
     )
-    history = _query_history(user_id)
-    history_summary = _format_history_summary(history)
-    logger.debug("job=%s history loaded: %d activities", job_id, history.get("total_activities", 0))
 
-    # ------------------------------------------------------------------
-    # Stage 2: EVALUATING
-    # ------------------------------------------------------------------
-    update_job(job_id, stage=JobStage.EVALUATING, progress=30)
-    fitness_state = _query_fitness_state(user_id)
-    logger.debug("job=%s fitness state: %s", job_id, fitness_state.get("summary"))
+    update_job(job_id, status=JobStatus.RUNNING)
 
-    # ------------------------------------------------------------------
-    # Stage 3: PLANNING_PHASES — call LLM
-    # ------------------------------------------------------------------
-    update_job(job_id, stage=JobStage.PLANNING_PHASES, progress=60)
+    graph = build_generation_graph(
+        load_context=load_master_context,
+        generator=generate_master_plan,
+        reviewer=master_reviewer,
+        apply_patches=apply_master_patches,
+        rule_filter=run_master_rule_filter,
+    )
 
-    today = today_shanghai().isoformat()
-    system_prompt = _build_system_prompt(goal, profile, history_summary, fitness_state, today)
-    user_message = [{"role": "user", "content": "请基于上述信息生成训练总纲"}]
+    initial_state: dict = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "plan_type": "master",
+        "input_payload": {"goal": goal, "profile": profile},
+    }
 
     try:
-        client = LLMClient()
-        raw = client.chat_sync(system_prompt, user_message, max_tokens=8192)
-    except Exception as exc:
-        exc_type_name = type(exc).__name__
-        if exc_type_name == "LLMUnavailable":
-            logger.warning("job=%s LLM unavailable: %s", job_id, exc)
-            update_job(job_id, status=JobStatus.FAILED, error="llm_unavailable")
+        final_state = graph.invoke(initial_state)
+    except LLMUnavailable as exc:
+        logger.warning("job=%s LLM unavailable: %s", job_id, exc)
+        update_job(job_id, status=JobStatus.FAILED, error="llm_unavailable")
+        return
+    except LLMError as exc:
+        retryable = getattr(exc, "retryable", False)
+        logger.warning("job=%s LLM error retryable=%s: %s", job_id, retryable, exc)
+        update_job(job_id, status=JobStatus.FAILED, error=f"llm_error: {exc}")
+        return
+    except ValueError as exc:
+        # generate_master_plan raises two prefixed ValueError kinds:
+        #   "parse_failed: ..." — all 3 parse tiers missed (raw_output attached)
+        #   "bad_schema: ..."    — _build_master_plan rejected the parsed JSON
+        msg = str(exc)
+        if msg.startswith("parse_failed"):
+            raw_output = getattr(exc, "raw_output", None)
+            logger.warning("job=%s parse failed: %s", job_id, exc)
+            update_job(
+                job_id,
+                status=JobStatus.FAILED,
+                error="parse_failed",
+                raw_output=raw_output,
+            )
             return
-        if exc_type_name == "LLMError":
-            retryable = getattr(exc, "retryable", False)
-            logger.warning("job=%s LLM error retryable=%s: %s", job_id, retryable, exc)
-            update_job(job_id, status=JobStatus.FAILED, error=f"llm_error: {exc}")
+        if msg.startswith("bad_schema"):
+            logger.warning("job=%s plan build failed: %s", job_id, exc)
+            update_job(job_id, status=JobStatus.FAILED, error=msg)
             return
-        # Unknown exception — re-raise to outer handler
         raise
 
     # ------------------------------------------------------------------
-    # Stage 4: OUTPUTTING — parse + persist
+    # Stage 4: OUTPUTTING — verdict gate + persist
     # ------------------------------------------------------------------
     update_job(job_id, stage=JobStage.OUTPUTTING, progress=85)
 
-    parsed = _parse_llm_output(raw)
-    if parsed is None:
-        logger.warning("job=%s JSON parse failed; raw output len=%d", job_id, len(raw))
+    verdict = final_state.get("final_verdict")
+    if verdict == "block":
+        violations = final_state.get("rule_violations") or []
+        rules_str = "; ".join(v.get("rule", "?") for v in violations) or "unknown"
+        logger.warning("job=%s verdict=block rules=%s", job_id, rules_str)
         update_job(
             job_id,
             status=JobStatus.FAILED,
-            error="parse_failed",
-            raw_output=raw[:2000],
+            error=f"rule_filter_failed: {rules_str}",
         )
         return
 
+    parsed = final_state.get("final_artifact")
+    if not isinstance(parsed, dict):
+        logger.warning("job=%s no final_artifact in state", job_id)
+        update_job(job_id, status=JobStatus.FAILED, error="no_artifact")
+        return
+
+    # current_draft is already a MasterPlan-shaped dict (adapter did the
+    # _build_master_plan transform); model_validate is essentially round-trip
+    # validation here, but kept as a safety net + to reconstruct the instance.
     try:
-        goal_id = goal.get("id") or goal.get("goal_id") or str(uuid4())
-        plan = _build_master_plan(parsed, user_id, goal_id)
-    except ValueError as exc:
-        logger.warning("job=%s plan build failed: %s", job_id, exc)
-        update_job(
-            job_id,
-            status=JobStatus.FAILED,
-            error=f"bad_schema: {exc}",
-            raw_output=raw[:2000],
-        )
+        plan = MasterPlan.model_validate(parsed)
+    except Exception as exc:  # noqa: BLE001 — pydantic ValidationError catch-all
+        logger.warning("job=%s final_artifact model_validate failed: %s", job_id, exc)
+        update_job(job_id, status=JobStatus.FAILED, error=f"bad_schema: {exc}")
         return
 
     store = get_master_plan_store()

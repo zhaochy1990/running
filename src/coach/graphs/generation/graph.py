@@ -37,6 +37,7 @@ GeneratorFn = Callable[[GenState], dict]
 ReviewerFn = Callable[[GenState], ReviewReport]
 ContextLoaderFn = Callable[[GenState], dict]
 PatchApplierFn = Callable[[dict, list[dict]], dict]
+RuleFilterFn = Callable[..., RuleFilterReport]
 
 
 def build_generation_graph(
@@ -46,6 +47,7 @@ def build_generation_graph(
     reviewer: ReviewerFn,
     apply_patches: PatchApplierFn | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
+    rule_filter: RuleFilterFn | None = None,
     rule_filter_kwargs: dict | None = None,
     max_iterations: int = 3,
 ) -> Any:
@@ -58,9 +60,14 @@ def build_generation_graph(
     * ``reviewer(state)`` returns a ``ReviewReport``.
     * ``apply_patches(draft, patches)`` applies ``auto_fix`` patches; defaults
       to a no-op identity.
+    * ``rule_filter(plan_dict, **kwargs)`` runs deterministic rules; defaults
+      to :func:`run_rule_filter` (WeeklyPlan / S2 rules). S1 master plan
+      callers inject ``run_master_rule_filter`` from
+      ``coach.graphs.generation.master_rule_filter`` instead.
 
-    ``rule_filter_kwargs`` flows through to :func:`run_rule_filter` (e.g.
-    ``prev_week_km``, ``injuries``).
+    ``rule_filter_kwargs`` flows through to the rule_filter callable
+    (e.g. ``prev_week_km`` / ``injuries`` for S2, or ``target_race`` /
+    ``season_window`` for S1).
     """
     rfk = dict(rule_filter_kwargs or {})
 
@@ -68,6 +75,7 @@ def build_generation_graph(
         return draft
 
     apply_patches_fn = apply_patches or _patch_default
+    rule_filter_fn = rule_filter or run_rule_filter
 
     # ------------------------------------------------------------------
     # Nodes
@@ -88,7 +96,7 @@ def build_generation_graph(
 
     def rule_filter_node(state: GenState) -> dict:
         draft = state.get("current_draft") or {}
-        report: RuleFilterReport = run_rule_filter(draft, **rfk)
+        report: RuleFilterReport = rule_filter_fn(draft, **rfk)
         return {
             "rule_violations": [
                 {
