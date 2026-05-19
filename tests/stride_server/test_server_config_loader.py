@@ -552,18 +552,7 @@ def test_default_repo_server_config_loads_without_auth_secret(monkeypatch: pytes
     assert cfg.auth.allow_insecure_without_key is False
 
 
-def test_repo_prod_config_file_fails_closed_without_auth_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("STRIDE_CONFIG_FILES", raising=False)
-    monkeypatch.delenv("STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY", raising=False)
-    monkeypatch.delenv("STRIDE_AUTH_PUBLIC_KEY_PEM", raising=False)
-    monkeypatch.delenv("STRIDE_AUTH_PUBLIC_KEY_PATH", raising=False)
-    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
-
-    with pytest.raises(ConfigError, match="auth.public_key"):
-        load_server_config(use_cache=False)
-
-
-def test_repo_prod_config_file_loads_prod_env_values_with_secret_env_override(
+def test_repo_prod_config_file_loads_prod_values_without_env_secrets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for name in {
@@ -591,13 +580,21 @@ def test_repo_prod_config_file_loads_prod_env_values_with_secret_env_override(
     }:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
-    monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PEM", "prod-public-key-from-secretref")
 
-    cfg = load_server_config(use_cache=False)
+    def empty_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[str]) -> dict[str, object]:
+        assert vault_url == "https://stride-kv-common.vault.azure.net/"
+        assert secret_prefix == "stride-server"
+        assert "internal.token" in manifest
+        return {}
+
+    cfg = load_server_config(akv_source=empty_akv_source, use_cache=False)
 
     assert cfg.env == "prod"
+    assert cfg.akv.enabled is True
+    assert cfg.akv.vault_url == "https://stride-kv-common.vault.azure.net/"
+    assert cfg.akv.secret_prefix == "stride-server"
     assert cfg.auth.allow_insecure_without_key is False
-    assert cfg.auth.public_key_pem == "prod-public-key-from-secretref"
+    assert cfg.auth.public_key_pem.startswith("-----BEGIN PUBLIC KEY-----")
     assert cfg.auth.public_key_path == ""
     assert cfg.auth.audience == "app_62978bf2803346878a2e4805"
     assert cfg.auth_service.base_url == "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
@@ -612,8 +609,29 @@ def test_repo_prod_config_file_loads_prod_env_values_with_secret_env_override(
     assert cfg.storage.content.account_url == "https://authstorage2026.blob.core.windows.net/"
     assert cfg.storage.content.container == "stride-data"
     assert cfg.storage.content.prefix == "users"
-    assert cfg.storage.likes.table_account_url == "https://authstorage2026.table.core.windows.net"
-    assert cfg.storage.master_plan.table_account_url == ""
-    assert cfg.notifications.table_account_url == "https://authstorage2026.table.core.windows.net"
+    assert cfg.storage.likes.table_account_url == "https://authstorage2026.table.core.windows.net/"
+    assert cfg.storage.master_plan.table_account_url == "https://authstorage2026.table.core.windows.net/"
+    assert cfg.coach_persistence.table_account_url == "https://authstorage2026.table.core.windows.net/"
+    assert cfg.coach_persistence.blob_account_url == "https://authstorage2026.blob.core.windows.net/"
+    assert cfg.notifications.table_account_url == "https://authstorage2026.table.core.windows.net/"
     assert cfg.notifications.jpush.app_key == "ab305c4addc8f9aa2b5efb4c"
     assert cfg.notifications.jpush.master_secret == ""
+
+
+def test_repo_prod_config_env_still_overrides_file_and_akv(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("STRIDE_CONFIG_FILES", raising=False)
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+    monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PEM", "prod-public-key-from-env")
+    monkeypatch.setenv("STRIDE_LIKES_TABLE_ACCOUNT_URL", "https://env-table.example/")
+
+    def fake_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[str]) -> dict[str, object]:
+        return {
+            "auth": {"public_key_pem": "prod-public-key-from-akv"},
+            "storage": {"likes": {"table_account_url": "https://akv-table.example/"}},
+        }
+
+    cfg = load_server_config(akv_source=fake_akv_source, use_cache=False)
+
+    assert cfg.auth.public_key_pem == "prod-public-key-from-env"
+    assert cfg.storage.likes.table_account_url == "https://env-table.example/"
+    assert cfg.notifications.table_account_url == "https://env-table.example/"

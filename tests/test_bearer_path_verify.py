@@ -225,7 +225,7 @@ class _StubSource:
         return True
 
 
-def test_create_app_raises_when_no_key_and_no_dev_env(monkeypatch):
+def test_create_app_raises_when_no_key_and_no_dev_env(monkeypatch, tmp_path):
     """In production-like configs (no public key, no dev env), startup must fail."""
     from stride_server.config import clear_server_config_cache
 
@@ -235,10 +235,14 @@ def test_create_app_raises_when_no_key_and_no_dev_env(monkeypatch):
     monkeypatch.setattr(bearer, "_warned_open", False)
     for key in ("STRIDE_AUTH_PUBLIC_KEY_PEM", "STRIDE_AUTH_PUBLIC_KEY_PATH",
                 "STRIDE_AUTH_ISSUER", "STRIDE_AUTH_AUDIENCE", "STRIDE_ENV",
-                "STRIDE_CONFIG_ENV"):
+                "STRIDE_CONFIG_ENV", "STRIDE_CONFIG_FILES"):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
-    monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PATH", "missing.pem")
+    config_file = tmp_path / "server.prod.toml"
+    config_file.write_text(
+        'env = "prod"\n[auth]\npublic_key_path = "missing.pem"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("STRIDE_CONFIG_FILES", str(config_file))
     clear_server_config_cache()
 
     from stride_server.app import create_app
