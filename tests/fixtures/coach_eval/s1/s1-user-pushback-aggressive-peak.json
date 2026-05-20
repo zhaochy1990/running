@@ -1,0 +1,102 @@
+{
+  "fixture_id": "s1-user-pushback-aggressive-peak",
+  "scope": "s1",
+  "description": "Intermediate runner asks for unrealistic 100 km/week peak in user_intent_md, but training_history_summary shows history peak only 55 km. Plan should push back rather than rubber-stamp — propose peak 60-65 km with explicit explanation, or schedule a 100 km goal across multiple cycles.",
+  "tags": ["user_pushback"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-pushback-001",
+      "hr_zones": {
+        "z1": [93, 132],
+        "z2": [132, 147],
+        "z3": [147, 160],
+        "z4": [160, 174],
+        "z5": [174, 188]
+      },
+      "weight_kg": 69.5,
+      "injuries": [],
+      "experience_level": "intermediate",
+      "weekly_run_days_max": 6,
+      "prs": {
+        "5k_s": 1260,
+        "10k_s": 2700,
+        "hm_s": 5760,
+        "fm_s": 12180
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 11700,
+        "race_date": "2026-11-15"
+      },
+      "db_history_weeks": 70
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-11-15"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        140, 145, 155, 165, 170, 155,
+        145, 130, 135, 150, 165, 155,
+        140, 125, 115, 145, 160, 165
+      ],
+      "peak_weekly_km_in_window": 55,
+      "longest_run_km_in_window": 30,
+      "race_history": [
+        {"distance": "fm", "date": "2025-10-19", "time_s": 12180, "race_type": "A_race"},
+        {"distance": "hm", "date": "2026-03-15", "time_s": 5760, "race_type": "tune_up"}
+      ],
+      "consistency_score": 0.85
+    },
+    "user_intent_md": "目标 2026-11-15 北马破 3:15。我看到很多精英跑者都堆量到 100 km/周，我想 peak 周量也排 100 km。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 4,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "base / build / peak / taper，peak 周量 65-72 km（≤ history peak 55 × 1.3 安全上限）"
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 3:23 → goal 3:15 是 4% 提升，realistic"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "peak 在 race - 14..21 天"
+      },
+      "volume_progression": {
+        "min_score": 5,
+        "behavior": "peak 周量必须 ≤ 70-72 km（history peak 55 × 1.3）；明确解释 100 km 跳跃过激"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "每周 ≤ 6 跑日"
+      },
+      "injury_safety": {
+        "min_score": 5,
+        "behavior": "强调过激堆量风险 (overuse / stress fracture / overtraining)，给出渐进路径建议（本赛季 70，下赛季 80，再下赛季 90+）"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "正常 FM carb-loading 与营养匹配"
+      },
+      "request_handling": {
+        "min_score": 5,
+        "behavior": "明确 push back 100 km/周诉求：(a) 引用 history peak 55 km，(b) 解释 weekly progression < 1.10 不允许从 55 跳到 100 一个赛季内，(c) 提出 multi-cycle path"
+      }
+    },
+    "anti_patterns": [
+      "plan peak 周量 ≥ 85 km（rubber-stamping unrealistic ask；远超 history peak）",
+      "training_principles 完全不提及 user_intent_md 的 100 km 诉求（沉默忽略）",
+      "鼓励『下个 4 周直接堆 30%』（违反 weekly_volume_ramp 渐进原则）",
+      "把 100 km/wk 当作合理诉求接受并按那个量级排训练"
+    ]
+  }
+}

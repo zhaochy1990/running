@@ -1,0 +1,101 @@
+{
+  "fixture_id": "s1-data-gap-no-recent-race",
+  "scope": "s1",
+  "description": "Intermediate runner with no race in past 14 months (last race was prior cycle FM). Zone calibration is uncertain. Plan should insert a tune-up race (10K or HM) in mid-base / build to recalibrate paces before peak.",
+  "tags": ["data_gap"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-data-gap-001",
+      "hr_zones": {
+        "z1": [95, 132],
+        "z2": [132, 148],
+        "z3": [148, 161],
+        "z4": [161, 175],
+        "z5": [175, 188]
+      },
+      "weight_kg": 70.0,
+      "injuries": [],
+      "experience_level": "intermediate",
+      "weekly_run_days_max": 5,
+      "prs": {
+        "5k_s": 1245,
+        "10k_s": 2640,
+        "hm_s": 5700,
+        "fm_s": 12000
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 11700,
+        "race_date": "2026-11-15"
+      },
+      "db_history_weeks": 55
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-11-15"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        110, 105, 100, 115, 120, 105,
+        95, 90, 100, 110, 125, 135,
+        130, 120, 105, 140, 155, 150
+      ],
+      "peak_weekly_km_in_window": 52,
+      "longest_run_km_in_window": 28,
+      "race_history": [
+        {"distance": "fm", "date": "2025-04-13", "time_s": 12000, "race_type": "A_race"}
+      ],
+      "consistency_score": 0.75
+    },
+    "user_intent_md": "目标 2026-11-15 北马 PB（破 3:15）。最近一年没比赛，不知道现在配速。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 4,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "base / build / peak / taper，并在 base 末或 build 中插入 tune-up race（10K 或 HM）作为 fitness assessment"
+      },
+      "goal_realism": {
+        "min_score": 3,
+        "behavior": "PB 3:20 → goal 3:15 是 2.5% 提升，realistic 但配速未校准，需 tune-up race 验证"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "peak 在 race - 14..21 天"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "周量从 30 km 起，逐步到 peak 55-65 km，参考 history peak 52"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "每周 ≤ 5 跑日"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "无 active injury，正常 progression"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "FM-specific carb-loading 在赛前 3 天"
+      },
+      "request_handling": {
+        "min_score": 5,
+        "behavior": "明确响应『不知道现在配速』 → 必须排 tune-up race，并指出根据该 race 时间调整后续训练配速"
+      }
+    },
+    "anti_patterns": [
+      "plan 完全没有 tune-up race / time trial 里程碑（用户明确说不知道配速）",
+      "训练配速完全按 PB 时间排（PB 是 14 个月前，可能高估当前能力）",
+      "peak 周量 > 70 km（远超 history peak 52，过载）",
+      "base phase ≤ 6 周（数据稀缺需要更长 calibration 期）"
+    ]
+  }
+}

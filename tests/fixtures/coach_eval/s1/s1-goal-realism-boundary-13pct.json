@@ -1,0 +1,102 @@
+{
+  "fixture_id": "s1-goal-realism-boundary-13pct",
+  "scope": "s1",
+  "description": "Goal improvement vs PB is 13% on FM — just past the 10% goal_realism threshold. Plan should explicitly call out the gap (warning), provide A/B/C goal stratification, and not silently rubber-stamp.",
+  "tags": ["goal_realism_boundary"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-boundary-13pct-001",
+      "hr_zones": {
+        "z1": [95, 135],
+        "z2": [135, 150],
+        "z3": [150, 162],
+        "z4": [162, 176],
+        "z5": [176, 188]
+      },
+      "weight_kg": 70.0,
+      "injuries": [],
+      "experience_level": "advanced",
+      "weekly_run_days_max": 6,
+      "prs": {
+        "5k_s": 1170,
+        "10k_s": 2460,
+        "hm_s": 5340,
+        "fm_s": 11400
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 9900,
+        "race_date": "2026-10-18"
+      },
+      "db_history_weeks": 88
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-10-18"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        195, 205, 220, 230, 225, 210,
+        185, 175, 195, 230, 245, 230,
+        205, 185, 170, 195, 220, 215
+      ],
+      "peak_weekly_km_in_window": 75,
+      "longest_run_km_in_window": 36,
+      "race_history": [
+        {"distance": "fm", "date": "2025-10-19", "time_s": 11400, "race_type": "A_race"},
+        {"distance": "hm", "date": "2026-04-12", "time_s": 5340, "race_type": "tune_up"}
+      ],
+      "consistency_score": 0.88
+    },
+    "user_intent_md": "目标 2026-10-18 西马 2:45。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 4,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "完整 base / build / peak / taper，5 个月赛季充裕"
+      },
+      "goal_realism": {
+        "min_score": 5,
+        "behavior": "必须显式：PB 3:10 → goal 2:45 是 13% 提升，刚超过 FM 10% 单周期上限，aggressive；建议 A 目标 2:45 (需 hm sub 1:18 / 10k sub 36 的中期 fitness), B 目标 2:50 (8% / 现实), C 目标 PB ≥ 3:10。训练强度按 B 目标排"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "peak 在 race - 14..21 天"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "peak 75-82 km（与 history peak 75 持平或略上）"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "每周 ≤ 6 跑日"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "advanced runner，正常 progression"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 4,
+        "behavior": "正常 FM carb-loading；增 carb during build to support 75+ km weeks"
+      },
+      "request_handling": {
+        "min_score": 5,
+        "behavior": "(a) 不沉默接受 2:45 也不直接否决；(b) A/B/C 分层；(c) 训练 pacing 按 B (2:50/4:00 pace) 排；(d) 中期 tune-up race 验证 sub-2:45 可行性"
+      }
+    },
+    "anti_patterns": [
+      "无视 13% gap，直接按 2:45 配速 (3:54/km) 排所有 marathon-pace work（容易过激）",
+      "完全不提 A/B/C 目标分层（一句『继续努力』就接受 2:45）",
+      "全盘否决 2:45 直接给 3:00（过度保守，advanced runner 有可能性）",
+      "training_principles 第 1 条不提 goal-realism 说明（用户应能看到 plan 的判断）"
+    ]
+  }
+}

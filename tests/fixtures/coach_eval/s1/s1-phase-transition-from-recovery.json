@@ -1,0 +1,103 @@
+{
+  "fixture_id": "s1-phase-transition-from-recovery",
+  "scope": "s1",
+  "description": "Intermediate runner just finishing recovery phase from prior FM (2025-10-19). prev_master_plan_md describes the past cycle. New plan must continue from recovery → base (NOT jump straight to build), and not duplicate the recovery weeks that just ended.",
+  "tags": ["phase_transition"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-phase-transition-001",
+      "hr_zones": {
+        "z1": [95, 135],
+        "z2": [135, 150],
+        "z3": [150, 163],
+        "z4": [163, 177],
+        "z5": [177, 190]
+      },
+      "weight_kg": 71.0,
+      "injuries": [],
+      "experience_level": "intermediate",
+      "weekly_run_days_max": 5,
+      "prs": {
+        "5k_s": 1245,
+        "10k_s": 2640,
+        "hm_s": 5640,
+        "fm_s": 11820
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 11400,
+        "race_date": "2026-11-15"
+      },
+      "db_history_weeks": 90
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-11-15"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        70, 85, 30, 50, 165, 195,
+        180, 140, 95, 145, 180, 195,
+        185, 165, 130, 145, 170, 180
+      ],
+      "peak_weekly_km_in_window": 62,
+      "longest_run_km_in_window": 34,
+      "race_history": [
+        {"distance": "fm", "date": "2025-10-19", "time_s": 11820, "race_type": "A_race"},
+        {"distance": "hm", "date": "2025-09-14", "time_s": 5640, "race_type": "tune_up"}
+      ],
+      "consistency_score": 0.82
+    },
+    "prev_master_plan_md": "## 2025 秋季备战北马\n\n### 阶段\n1. 基础期 (06-01 ~ 07-26, 8 周) — 周量 40-55 km，z2 为主，每周 1 个 long run + 1 个 tempo\n2. 进展期 (07-27 ~ 09-13, 7 周) — 周量 50-62 km，引入 threshold + interval；9-14 半马 tune-up race 1:34\n3. 赛前期 (09-14 ~ 10-04, 3 周) — peak 62 km/wk, long run 32-34 km, race pace work\n4. 减量期 (10-05 ~ 10-18, 2 周) — 35 → 25 km/wk\n5. 比赛 (10-19) — 北马 PB 3:17:00\n6. 恢复期 (10-20 ~ 2026-05-18) — 6 周 active recovery (z1-z2 only, 周量 25-40 km)，4 周 base maintenance, 持续到本赛季 start\n\n### 反思\n- peak 周量 62 已是历史最高，pacing 偏保守，30 km 之后腿酸\n- next cycle 可以适度堆量到 70 km，并在 race-specific 期更多 marathon-pace work",
+    "user_intent_md": "上赛季完成北马 3:17，本赛季想破 3:10。已完成赛后恢复，最近 4 周周量恢复到 45 km，状态感觉好。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 4,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 5,
+        "behavior": "明确从『已完成恢复』继续，base 起点反映当前 45 km/wk 而非从 0 起；不重复 recovery 阶段；plan: base / build / peak / taper"
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 3:17 → goal 3:10 是 3.6% 提升，realistic；plan 应引用上赛季反思（peak 周量可加到 70）"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "peak 在 race - 14..21 天"
+      },
+      "volume_progression": {
+        "min_score": 5,
+        "behavior": "base 起点 45-50 km（reflect current state），peak 65-70 km（reflect prev cycle reflection 上调）"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "每周 ≤ 5 跑日"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "无 active injury；上赛季 30 km 后腿酸 → 本赛季 strength 加强"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "正常 FM-specific carb-loading"
+      },
+      "request_handling": {
+        "min_score": 5,
+        "behavior": "(a) 引用 prev_master_plan_md 关键数据（peak 62 / long run 32-34）；(b) 显式应用上赛季反思 (peak 加到 70 / marathon-pace work 加强)；(c) 不无视已完成的 recovery 阶段"
+      }
+    },
+    "anti_patterns": [
+      "base 周量从 25-30 km 起（无视用户当前 45 km 状态，把已完成的恢复期重复一遍）",
+      "完全不引用 prev_master_plan_md（缺乏 continuity，被当作新用户）",
+      "peak 周量 ≤ 60 km（无视上赛季已 62 + 反思要加到 70）",
+      "plan 含『恢复期』phase（用户已完成，不需要再排）"
+    ]
+  }
+}
