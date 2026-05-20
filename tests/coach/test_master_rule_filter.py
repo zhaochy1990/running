@@ -1,11 +1,17 @@
 """Unit tests for S1 master plan rule_filter — see docs/coach-eval_S1.md § S1 L1 Rules.
 
-Covers 6 rules total:
+Covers all 12 S1 L1 rules:
   - master_schema_validity, phase_count_min, peak_before_race (existing — smoke
     coverage here; deeper coverage in their dedicated cases inline below)
-  - phase_duration_balance (new — Batch A)
-  - season_window_fits          (new — Batch A)
-  - goal_realism                (new — Batch A)
+  - phase_duration_balance       (Batch A — incl. race-phase exempt from Batch D)
+  - season_window_fits           (Batch A)
+  - goal_realism                 (Batch A)
+  - weekly_key_sessions_present  (Batch B)
+  - weekly_volume_ramp           (Batch B)
+  - taper_volume_drop            (Batch B)
+  - target_distance_long_run     (Batch B)
+  - key_session_density          (Batch B)
+  - hard_session_spacing         (Batch B)
 """
 
 from __future__ import annotations
@@ -14,8 +20,14 @@ from copy import deepcopy
 
 from coach.graphs.generation.master_rule_filter import (
     check_goal_realism,
+    check_hard_session_spacing,
+    check_key_session_density,
     check_phase_duration_balance,
     check_season_window_fits,
+    check_target_distance_long_run,
+    check_taper_volume_drop,
+    check_weekly_key_sessions_present,
+    check_weekly_volume_ramp,
     run_master_rule_filter,
 )
 from stride_core.master_plan import MasterPlan
@@ -433,3 +445,827 @@ def test_orchestrator_does_not_mutate_input():
     before = deepcopy(plan_dict)
     run_master_rule_filter(plan_dict, **_kwargs_full())
     assert plan_dict == before
+
+
+# ---------------------------------------------------------------------------
+# Race-phase exempt for phase_duration_balance (Batch D, lives in Batch B PR)
+# ---------------------------------------------------------------------------
+
+
+def _plan_with_race_phase(race_phase_name: str) -> dict:
+    """Base plan with a short (4-day) race-week phase tacked on the end."""
+    plan_dict = _base_plan_dict()
+    plan_dict["phases"][-1]["end_date"] = "2026-10-14"  # shorten taper
+    plan_dict["phases"].append({
+        "id": "ph_race", "name": race_phase_name,
+        "start_date": "2026-10-15", "end_date": "2026-10-19",  # 4 days
+        "focus": "race week", "weekly_distance_km_low": 10,
+        "weekly_distance_km_high": 15,
+        "key_session_types": ["race"], "milestone_ids": ["m1"],
+    })
+    plan_dict["milestones"][0]["phase_id"] = "ph_race"
+    return plan_dict
+
+
+def test_phase_duration_balance_exempts_race_week_zh():
+    """A 4-day phase named '比赛' must NOT trigger the < 14 day warning."""
+    plan = MasterPlan.model_validate(_plan_with_race_phase("比赛"))
+    violations = check_phase_duration_balance(plan)
+    race_warns = [
+        v for v in violations
+        if v.details.get("phase_name") == "比赛"
+    ]
+    assert race_warns == []
+
+
+def test_phase_duration_balance_exempts_race_week_en():
+    plan = MasterPlan.model_validate(_plan_with_race_phase("race week"))
+    violations = check_phase_duration_balance(plan)
+    race_warns = [
+        v for v in violations
+        if v.details.get("phase_name") == "race week"
+    ]
+    assert race_warns == []
+
+
+def test_phase_duration_balance_does_NOT_exempt_prep_phase():
+    """'比赛准备期' contains '比赛' but is a peak/prep phase — NOT exempt.
+
+    Tightens the substring-match boundary so a too-short prep block still
+    warns. (Tests the _PEAK_PHASE_MARKERS override in _is_race_phase.)
+    """
+    plan_dict = _base_plan_dict()
+    # Rename peak to '比赛准备期' and shrink to 5 days
+    plan_dict["phases"][2]["name"] = "比赛准备期"
+    plan_dict["phases"][2]["start_date"] = "2026-09-28"
+    plan_dict["phases"][2]["end_date"] = "2026-10-02"  # 4 days
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_phase_duration_balance(plan)
+    prep = [v for v in violations if v.details.get("phase_name") == "比赛准备期"]
+    assert len(prep) == 1
+    assert prep[0].details["days"] == 4
+
+
+# ---------------------------------------------------------------------------
+# Helpers for Batch B weekly_key_sessions tests
+# ---------------------------------------------------------------------------
+
+
+def _week(
+    *,
+    week_index: int,
+    week_start: str,
+    phase_id: str = "ph3",  # peak phase in _base_plan_dict() — most rule
+                            # tests want weeks "inside the peak" by default;
+                            # tests can override for non-peak weeks
+    km_low: float = 40,
+    km_high: float = 50,
+    sessions: list[dict] | None = None,
+    is_recovery_week: bool = False,
+    is_taper_week: bool = False,
+) -> dict:
+    if sessions is None:
+        sessions = [{"type": "long_run", "distance_km": 18, "intensity": "z2"}]
+    return {
+        "week_index": week_index,
+        "week_start": week_start,
+        "phase_id": phase_id,
+        "target_weekly_km_low": km_low,
+        "target_weekly_km_high": km_high,
+        "key_sessions": sessions,
+        "is_recovery_week": is_recovery_week,
+        "is_taper_week": is_taper_week,
+    }
+
+
+def _plan_with_weeks(weeks: list[dict]) -> dict:
+    """Build a plan dict whose plan span matches the number of weeks emitted,
+    so the weekly_key_sessions_present coverage check doesn't false-positive.
+
+    The plan's start_date is taken from the first week's week_start; end_date
+    is computed to give exactly ``len(weeks)`` weeks of coverage (with the
+    -1-day tolerance the coverage rule grants for partial last weeks).
+    """
+    from datetime import date as _date_cls
+    from datetime import timedelta
+
+    plan_dict = _base_plan_dict()
+    plan_dict["weekly_key_sessions"] = weeks
+    if weeks:
+        first_start = weeks[0]["week_start"]
+        start = _date_cls.fromisoformat(first_start)
+        # Each week is 7 days; -1 to land on Sunday of the last week.
+        end = start + timedelta(days=len(weeks) * 7 - 1)
+        plan_dict["start_date"] = first_start
+        plan_dict["end_date"] = end.isoformat()
+        # Drop the race milestone & most phases — the test plans here aren't
+        # exercising peak_before_race / phase_count_min, and a 1-2 week
+        # test plan can't realistically host a 4-phase season.
+        plan_dict["milestones"] = []
+        plan_dict["phases"] = [
+            {
+                "id": "ph3", "name": "peak",
+                "start_date": first_start, "end_date": end.isoformat(),
+                "focus": "test peak", "weekly_distance_km_low": 40,
+                "weekly_distance_km_high": 70,
+                "key_session_types": ["race_pace"], "milestone_ids": [],
+            },
+        ]
+    return plan_dict
+
+
+# ---------------------------------------------------------------------------
+# weekly_key_sessions_present
+# ---------------------------------------------------------------------------
+
+
+def test_weekly_key_sessions_present_empty_skeleton_is_noop():
+    """Empty weekly_key_sessions list → silent no-op (back-compat)."""
+    plan = MasterPlan.model_validate(_base_plan_dict())
+    assert check_weekly_key_sessions_present(plan) == []
+
+
+def test_weekly_key_sessions_present_happy_path():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 18},
+        {"type": "threshold", "duration_min": 30},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_weekly_key_sessions_present(plan) == []
+
+
+def test_weekly_key_sessions_present_zero_sessions_fails():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_weekly_key_sessions_present(plan)
+    assert len(violations) == 1
+    assert violations[0].severity == "error"
+    assert violations[0].details["key_session_count"] == 0
+
+
+def test_weekly_key_sessions_present_too_many_fails():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 18},
+        {"type": "threshold", "duration_min": 30},
+        {"type": "tempo", "duration_min": 25},
+        {"type": "interval", "duration_min": 35},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_weekly_key_sessions_present(plan)
+    assert len(violations) == 1
+    assert violations[0].details["key_session_count"] == 4
+
+
+def test_weekly_key_sessions_present_recovery_week_exempt():
+    weeks = [_week(
+        week_index=1, week_start="2026-05-19",
+        sessions=[], is_recovery_week=True,
+    )]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_weekly_key_sessions_present(plan) == []
+
+
+def test_weekly_key_sessions_present_taper_week_exempt():
+    weeks = [_week(
+        week_index=1, week_start="2026-05-19",
+        sessions=[], is_taper_week=True,
+    )]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_weekly_key_sessions_present(plan) == []
+
+
+# ---------------------------------------------------------------------------
+# weekly_volume_ramp
+# ---------------------------------------------------------------------------
+
+
+def test_weekly_volume_ramp_within_cap_passes():
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=50),
+        _week(week_index=2, week_start="2026-05-26", km_high=55),  # 1.10x
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_weekly_volume_ramp(plan) == []
+
+
+def test_weekly_volume_ramp_exceeds_cap_fails():
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=50),
+        _week(week_index=2, week_start="2026-05-26", km_high=60),  # 1.20x
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_weekly_volume_ramp(plan)
+    assert len(violations) == 1
+    assert violations[0].severity == "error"
+    assert violations[0].details["ratio"] > 1.10
+
+
+def test_weekly_volume_ramp_recovery_week_exempt():
+    """Drop into a recovery week is allowed (intentional deload)."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=65),
+        _week(week_index=2, week_start="2026-05-26", km_high=45, is_recovery_week=True),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_weekly_volume_ramp(plan) == []
+
+
+def test_weekly_volume_ramp_taper_week_exempt():
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=65),
+        _week(week_index=2, week_start="2026-05-26", km_high=40, is_taper_week=True),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_weekly_volume_ramp(plan) == []
+
+
+def test_weekly_volume_ramp_zero_prev_skipped():
+    """If previous week has 0 km_high, no ratio is defined → skip."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=0),
+        _week(week_index=2, week_start="2026-05-26", km_high=40),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_weekly_volume_ramp(plan) == []
+
+
+# ---------------------------------------------------------------------------
+# taper_volume_drop
+# ---------------------------------------------------------------------------
+
+
+def test_taper_volume_drop_happy_path():
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=70),  # peak
+        _week(week_index=2, week_start="2026-05-26", km_high=45, is_taper_week=True),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_taper_volume_drop(plan) == []
+
+
+def test_taper_volume_drop_insufficient_drop_fails():
+    """20% drop is below the 25% min → violation."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=70),
+        _week(week_index=2, week_start="2026-05-26", km_high=58, is_taper_week=True),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_taper_volume_drop(plan)
+    assert len(violations) == 1
+    assert violations[0].severity == "error"
+    assert violations[0].details["drop_pct"] < 25.0
+
+
+def test_taper_volume_drop_no_taper_week_is_noop():
+    """No is_taper_week=True → silent no-op (peak_before_race catches the gap)."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=70),
+        _week(week_index=2, week_start="2026-05-26", km_high=65),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_taper_volume_drop(plan) == []
+
+
+def test_taper_volume_drop_walks_back_past_recovery_to_find_peak():
+    """Recovery week immediately before taper shouldn't trick rule into
+    thinking the recovery week is the peak."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=72),  # true peak
+        _week(week_index=2, week_start="2026-05-26", km_high=50, is_recovery_week=True),  # deload before taper
+        _week(week_index=3, week_start="2026-06-02", km_high=45, is_taper_week=True),  # taper drops to 45
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    # peak=72 → taper=45 = 37.5% drop, OK
+    assert check_taper_volume_drop(plan) == []
+
+
+def test_taper_volume_drop_empty_skeleton_is_noop():
+    plan = MasterPlan.model_validate(_base_plan_dict())
+    assert check_taper_volume_drop(plan) == []
+
+
+# ---------------------------------------------------------------------------
+# target_distance_long_run
+# ---------------------------------------------------------------------------
+
+
+def test_target_distance_long_run_fm_happy_path():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 30},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
+    assert violations == []
+
+
+def test_target_distance_long_run_fm_too_short_fails():
+    """FM peak long_run < 28km → violation."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 22},  # marathon-style training needs 28+
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
+    assert len(violations) == 1
+    assert violations[0].severity == "error"
+    assert violations[0].details["max_long_run_km"] == 22.0
+
+
+def test_target_distance_long_run_hm_too_short_fails():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 16},  # HM needs 18+
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_target_distance_long_run(plan, target_race={"distance": "hm"})
+    assert len(violations) == 1
+
+
+def test_target_distance_long_run_no_long_run_session_fails():
+    """Skeleton has weeks but no long_run with distance_km → violation."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "threshold", "duration_min": 30},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
+    assert len(violations) == 1
+    assert violations[0].details["max_long_run_km_found"] == 0.0
+
+
+def test_target_distance_long_run_unknown_distance_is_noop():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 8},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_target_distance_long_run(plan, target_race={"distance": "marathon"})
+    assert violations == []
+
+
+def test_target_distance_long_run_case_insensitive():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 22},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_target_distance_long_run(plan, target_race={"distance": "FM"})
+    assert len(violations) == 1
+
+
+def test_target_distance_long_run_uses_max_across_weeks():
+    """The max long_run across all weeks counts as 'peak', not a per-week check."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", sessions=[
+            {"type": "long_run", "distance_km": 18},
+        ]),
+        _week(week_index=2, week_start="2026-05-26", sessions=[
+            {"type": "long_run", "distance_km": 30},  # peak — > 28km threshold
+        ]),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
+    assert violations == []
+
+
+def test_target_distance_long_run_deload_long_run_doesnt_count_for_peak():
+    """A taper-week long_run isn't the peak — base plan's max comes from peak/build weeks."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", sessions=[
+            {"type": "long_run", "distance_km": 22},  # build week max
+        ]),
+        _week(week_index=2, week_start="2026-05-26", is_taper_week=True, sessions=[
+            {"type": "long_run", "distance_km": 30},  # in taper — shouldn't count
+        ]),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
+    # Build week peak only 22km, below 28km → fail
+    assert len(violations) == 1
+    assert violations[0].details["max_long_run_km"] == 22.0
+
+
+# ---------------------------------------------------------------------------
+# key_session_density
+# ---------------------------------------------------------------------------
+
+
+def test_key_session_density_3day_user_limit_2():
+    """weekly_run_days_max=3 → at most 2 key sessions per week."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 18},
+        {"type": "threshold", "duration_min": 30},
+        {"type": "tempo", "duration_min": 25},  # 3rd — too many
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_key_session_density(plan, weekly_run_days_max=3)
+    assert len(violations) == 1
+    assert violations[0].severity == "error"
+    assert violations[0].details["limit"] == 2
+
+
+def test_key_session_density_5day_user_limit_3():
+    """weekly_run_days_max=5 → at most 3 key sessions per week."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 22},
+        {"type": "threshold", "duration_min": 35},
+        {"type": "tempo", "duration_min": 25},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_key_session_density(plan, weekly_run_days_max=5) == []
+
+
+def test_key_session_density_4_sessions_5day_fails():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 22},
+        {"type": "threshold", "duration_min": 35},
+        {"type": "tempo", "duration_min": 25},
+        {"type": "vo2max", "duration_min": 25},  # 4th
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_key_session_density(plan, weekly_run_days_max=5)
+    assert len(violations) == 1
+
+
+def test_key_session_density_race_week_exempt():
+    """A week with a `race` session bypasses the density limit."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "race", "distance_km": 42.2},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_key_session_density(plan, weekly_run_days_max=3) == []
+
+
+def test_key_session_density_missing_max_days_defaults_to_3():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 22},
+        {"type": "threshold", "duration_min": 30},
+        {"type": "tempo", "duration_min": 25},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    # No weekly_run_days_max → defaults to lenient (3-session) limit
+    assert check_key_session_density(plan, weekly_run_days_max=None) == []
+
+
+# ---------------------------------------------------------------------------
+# hard_session_spacing
+# ---------------------------------------------------------------------------
+
+
+def test_hard_session_spacing_two_hards_passes():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 22},
+        {"type": "threshold", "duration_min": 30},
+        {"type": "tempo", "duration_min": 25},  # 2 hards
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_hard_session_spacing(plan) == []
+
+
+def test_hard_session_spacing_three_hards_fails():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "interval", "duration_min": 30},
+        {"type": "threshold", "duration_min": 30},
+        {"type": "race_pace", "distance_km": 12},  # 3 hards
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_hard_session_spacing(plan)
+    assert len(violations) == 1
+    assert violations[0].severity == "error"
+    assert violations[0].details["limit"] == 2
+    assert set(violations[0].details["hard_session_types"]) == {
+        "interval", "threshold", "race_pace",
+    }
+
+
+def test_hard_session_spacing_long_run_doesnt_count_as_hard():
+    """long_run is in the skeleton but NOT in _HARD_SESSION_TYPES."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 30},
+        {"type": "long_run", "distance_km": 22},
+        {"type": "long_run", "distance_km": 18},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_hard_session_spacing(plan) == []
+
+
+def test_hard_session_spacing_empty_skeleton_is_noop():
+    plan = MasterPlan.model_validate(_base_plan_dict())
+    assert check_hard_session_spacing(plan) == []
+
+
+# ---------------------------------------------------------------------------
+# Orchestrator integration: Batch B fires via run_master_rule_filter
+# ---------------------------------------------------------------------------
+
+
+def test_orchestrator_runs_batch_b_rules():
+    """Plan with 3 hards in one week should produce hard_session_spacing error."""
+    plan_dict = _base_plan_dict()
+    plan_dict["weekly_key_sessions"] = [_week(
+        week_index=1, week_start="2026-05-19",
+        sessions=[
+            {"type": "interval", "duration_min": 30},
+            {"type": "threshold", "duration_min": 30},
+            {"type": "race_pace", "distance_km": 12},
+        ],
+    )]
+    report = run_master_rule_filter(plan_dict, **_kwargs_full())
+    rules_hit = {v.rule for v in report.violations}
+    assert "hard_session_spacing" in rules_hit
+
+
+# ---------------------------------------------------------------------------
+# Codex-review round-2 regressions (P0 + P1 fixes)
+# ---------------------------------------------------------------------------
+
+
+def test_weekly_volume_ramp_post_recovery_rebound_allowed():
+    """60 → 42 (recovery) → 62 must NOT trigger weekly_volume_ramp (P0 #1).
+
+    The rule now compares to the most recent non-deload week, so a normal
+    post-recovery rebound (+3% vs the previous load week) is not flagged
+    as a 1.48x ramp.
+    """
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=60),  # load week
+        _week(week_index=2, week_start="2026-05-26", km_high=42, is_recovery_week=True),
+        _week(week_index=3, week_start="2026-06-02", km_high=62),  # rebound: +3% vs week 1
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_weekly_volume_ramp(plan) == []
+
+
+def test_weekly_volume_ramp_still_catches_jump_past_deload():
+    """60 → 42 (recovery) → 72 IS a violation (+20% vs the last load week)."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", km_high=60),
+        _week(week_index=2, week_start="2026-05-26", km_high=42, is_recovery_week=True),
+        _week(week_index=3, week_start="2026-06-02", km_high=72),  # 1.20x vs week 1
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_weekly_volume_ramp(plan)
+    assert len(violations) == 1
+    assert violations[0].details["prev_load_week_index"] == 1
+
+
+def test_peak_before_race_5k_allows_3_to_7_day_window():
+    """5K race: peak ending 5 days before race must pass (3-5 day taper window).
+
+    Pre-fix this would have failed the universal 7-21 day rule.
+    """
+    from coach.graphs.generation.master_rule_filter import check_peak_before_race
+    plan_dict = _base_plan_dict()
+    plan_dict["phases"][2]["end_date"] = "2026-10-14"  # peak ends 5 days before race 10-19
+    plan_dict["phases"][3]["start_date"] = "2026-10-15"  # taper covers 4 days
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_peak_before_race(plan, target_race={"distance": "5k"})
+    assert violations == []
+
+
+def test_peak_before_race_5k_rejects_14_day_window():
+    """5K race: peak ending 14 days before race is too far out (5K cap is 7)."""
+    from coach.graphs.generation.master_rule_filter import check_peak_before_race
+    plan_dict = _base_plan_dict()
+    # _base_plan_dict has peak ending 10-02, race 10-19 = 17 days → too far for 5K
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_peak_before_race(plan, target_race={"distance": "5k"})
+    assert len(violations) == 1
+    assert violations[0].details["max_days"] == 7
+
+
+def test_peak_before_race_hm_allows_7_to_14_days():
+    """HM race: peak ending 14 days before race (1-week taper boundary)."""
+    from coach.graphs.generation.master_rule_filter import check_peak_before_race
+    plan_dict = _base_plan_dict()
+    # Default peak ends 10-02, race 10-19 = 17 days
+    plan_dict["phases"][2]["end_date"] = "2026-10-05"  # 14 days before race
+    plan_dict["phases"][3]["start_date"] = "2026-10-06"
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_peak_before_race(plan, target_race={"distance": "hm"})
+    assert violations == []
+
+
+def test_peak_before_race_default_when_no_distance():
+    """Missing target_race kwarg falls back to permissive 3-21 day window."""
+    from coach.graphs.generation.master_rule_filter import check_peak_before_race
+    plan = MasterPlan.model_validate(_base_plan_dict())
+    # Peak ends 10-02, race 10-19 = 17 days → within default 3-21 window
+    violations = check_peak_before_race(plan, target_race=None)
+    assert violations == []
+
+
+def test_weekly_key_sessions_coverage_truncated_plan_fails():
+    """20-week plan span with only 8 weeks emitted must fail (P1 #2)."""
+    plan_dict = _base_plan_dict()  # 153-day plan = ~22 weeks
+    plan_dict["weekly_key_sessions"] = [
+        _week(week_index=i, week_start="2026-05-19", sessions=[
+            {"type": "long_run", "distance_km": 18},
+        ])
+        for i in range(1, 9)  # only 8 weeks
+    ]
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_weekly_key_sessions_present(plan)
+    coverage = [v for v in violations if "weeks but plan span" in v.message]
+    assert len(coverage) == 1
+    assert coverage[0].details["actual_weeks"] == 8
+    assert coverage[0].details["expected_weeks"] >= 21
+
+
+def test_weekly_key_sessions_coverage_nonsequential_index_fails():
+    """week_index 1, 3, 4, ... fails the sequential check."""
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19"),
+        _week(week_index=3, week_start="2026-05-26"),  # gap!
+    ]
+    plan_dict = _plan_with_weeks(weeks)
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_weekly_key_sessions_present(plan)
+    seq = [v for v in violations if "expected" in v.message and "sequential" in v.message]
+    assert len(seq) == 1
+
+
+def test_key_session_density_race_week_with_extras_fails():
+    """[race, threshold, tempo, interval] in one week must fail (P1 #3)."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "race", "distance_km": 42.2},
+        {"type": "threshold", "duration_min": 30},
+        {"type": "tempo", "duration_min": 25},
+        {"type": "interval", "duration_min": 35},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_key_session_density(plan, weekly_run_days_max=5)
+    assert len(violations) == 1
+    # And hard_session_spacing should also fail (3 hards in same week)
+    spacing = check_hard_session_spacing(plan)
+    assert len(spacing) == 1
+
+
+def test_target_distance_long_run_early_build_doesnt_satisfy_peak(monkeypatch):
+    """28km long_run in a build-phase week (ph1) doesn't satisfy peak rule (P1 #4)."""
+    plan_dict = _base_plan_dict()
+    plan_dict["weekly_key_sessions"] = [
+        _week(week_index=1, week_start="2026-05-19", phase_id="ph1",  # base phase
+              sessions=[{"type": "long_run", "distance_km": 30}]),  # plenty
+    ]
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
+    # peak phase is ph3; no long_run in ph3 → violation
+    assert len(violations) == 1
+    assert "no long_run session" in violations[0].message
+
+
+def test_hard_session_spacing_time_trial_counts_as_hard():
+    """time_trial + tune_up_race now count as hard sessions (P1 #5)."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "threshold", "duration_min": 30},
+        {"type": "tempo", "duration_min": 25},
+        {"type": "time_trial", "distance_km": 8},  # 3rd hard
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_hard_session_spacing(plan)
+    same_week = [v for v in violations if "per week" in v.message]
+    assert len(same_week) == 1
+
+
+def test_hard_session_spacing_5_consecutive_hard_weeks_fails():
+    """5 consecutive non-deload weeks with ≥ 2 hard sessions each fails (P1 #5)."""
+    sessions = [
+        {"type": "threshold", "duration_min": 30},
+        {"type": "tempo", "duration_min": 25},
+    ]
+    weeks = [
+        _week(week_index=i, week_start=f"2026-05-{19 + (i - 1) * 7:02d}",
+              sessions=sessions)
+        for i in range(1, 6)  # 5 weeks, no deload
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_hard_session_spacing(plan)
+    streak = [v for v in violations if "consecutive non-deload weeks" in v.message]
+    assert len(streak) == 1
+    assert streak[0].details["streak_length"] == 5
+
+
+def test_hard_session_spacing_deload_resets_streak():
+    """3 hard weeks + 1 deload + 3 hard weeks must NOT fail (streak resets)."""
+    sessions_hard = [
+        {"type": "threshold", "duration_min": 30},
+        {"type": "tempo", "duration_min": 25},
+    ]
+    sessions_easy = [{"type": "long_run", "distance_km": 18}]
+    weeks = [
+        _week(week_index=1, week_start="2026-05-19", sessions=sessions_hard),
+        _week(week_index=2, week_start="2026-05-26", sessions=sessions_hard),
+        _week(week_index=3, week_start="2026-06-02", sessions=sessions_hard),
+        _week(week_index=4, week_start="2026-06-09",
+              sessions=sessions_easy, is_recovery_week=True),
+        _week(week_index=5, week_start="2026-06-16", sessions=sessions_hard),
+        _week(week_index=6, week_start="2026-06-23", sessions=sessions_hard),
+        _week(week_index=7, week_start="2026-06-30", sessions=sessions_hard),
+    ]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_hard_session_spacing(plan)
+    streak = [v for v in violations if "consecutive non-deload weeks" in v.message]
+    assert streak == []
+
+
+def test_key_session_density_race_plus_one_extra_fails():
+    """Race-week with ANY extra session must fail, even when under the
+    density limit (codex round-2 P1 #3 follow-up)."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "race", "distance_km": 42.2},
+        {"type": "threshold", "duration_min": 30},  # extra — still under limit but wrong
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_key_session_density(plan, weekly_run_days_max=5)
+    assert len(violations) == 1
+    msg = violations[0].message
+    assert "race weeks must contain only the race" in msg
+
+
+def test_identify_peak_phase_bare_比赛_not_picked_as_peak():
+    """Bare 比赛 phase should NOT be selected as peak (codex round-2 P1 #4
+    follow-up). Verifies _is_non_peak_phase now classifies it correctly."""
+    from coach.graphs.generation.master_rule_filter import (
+        _identify_peak_phase,
+        _is_non_peak_phase,
+    )
+    assert _is_non_peak_phase("比赛") is True
+    # Peak-prep override still works:
+    assert _is_non_peak_phase("比赛准备期") is False
+    assert _is_non_peak_phase("race prep") is False
+    # 比赛 phase included in plan — peak should be the prep phase, not 比赛
+    plan_dict = _base_plan_dict()
+    plan_dict["phases"] = [
+        {"id": "ph_base", "name": "基础期",
+         "start_date": "2026-05-19", "end_date": "2026-07-13",
+         "focus": "base", "weekly_distance_km_low": 40,
+         "weekly_distance_km_high": 50,
+         "key_session_types": ["long_run"], "milestone_ids": []},
+        {"id": "ph_prep", "name": "比赛准备期",
+         "start_date": "2026-07-14", "end_date": "2026-10-02",
+         "focus": "peak", "weekly_distance_km_low": 60,
+         "weekly_distance_km_high": 70,
+         "key_session_types": ["race_pace"], "milestone_ids": []},
+        {"id": "ph_taper", "name": "减量期",
+         "start_date": "2026-10-03", "end_date": "2026-10-14",
+         "focus": "taper", "weekly_distance_km_low": 30,
+         "weekly_distance_km_high": 40,
+         "key_session_types": ["interval"], "milestone_ids": []},
+        {"id": "ph_race", "name": "比赛",  # bare 比赛
+         "start_date": "2026-10-15", "end_date": "2026-10-19",
+         "focus": "race", "weekly_distance_km_low": 10,
+         "weekly_distance_km_high": 15,
+         "key_session_types": ["race"], "milestone_ids": ["m1"]},
+    ]
+    plan = MasterPlan.model_validate(plan_dict)
+    # Peak should be ph_prep (比赛准备期), NOT ph_race (比赛)
+    assert _identify_peak_phase(plan) == "ph_prep"
+
+
+def test_target_distance_long_run_with_bare_比赛_phase():
+    """End-to-end: a valid plan with a 比赛 race phase and long_run in
+    赛前期 must pass target_distance_long_run (codex P1 #4 follow-up)."""
+    plan_dict = _base_plan_dict()
+    plan_dict["phases"] = [
+        {"id": "ph_base", "name": "基础期",
+         "start_date": "2026-05-19", "end_date": "2026-07-13",
+         "focus": "base", "weekly_distance_km_low": 40,
+         "weekly_distance_km_high": 50,
+         "key_session_types": ["long_run"], "milestone_ids": []},
+        {"id": "ph_prep", "name": "赛前期",
+         "start_date": "2026-07-14", "end_date": "2026-10-02",
+         "focus": "peak", "weekly_distance_km_low": 60,
+         "weekly_distance_km_high": 70,
+         "key_session_types": ["race_pace"], "milestone_ids": []},
+        {"id": "ph_taper", "name": "减量期",
+         "start_date": "2026-10-03", "end_date": "2026-10-14",
+         "focus": "taper", "weekly_distance_km_low": 30,
+         "weekly_distance_km_high": 40,
+         "key_session_types": ["interval"], "milestone_ids": []},
+        {"id": "ph_race", "name": "比赛",
+         "start_date": "2026-10-15", "end_date": "2026-10-19",
+         "focus": "race", "weekly_distance_km_low": 10,
+         "weekly_distance_km_high": 15,
+         "key_session_types": ["race"], "milestone_ids": ["m1"]},
+    ]
+    plan_dict["weekly_key_sessions"] = [_week(
+        week_index=1, week_start="2026-09-15", phase_id="ph_prep",
+        sessions=[{"type": "long_run", "distance_km": 30}],
+    )]
+    # Override plan end to fit the 1-week skeleton
+    plan_dict["end_date"] = "2026-09-21"
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
+    # Peak phase is 赛前期 (ph_prep), long_run there is 30km > 28km threshold
+    assert violations == []
+
+
+def test_orchestrator_back_compat_empty_weekly_key_sessions():
+    """Existing plans with empty weekly_key_sessions still pass all rules."""
+    plan_dict = _base_plan_dict()
+    # weekly_key_sessions default = [] via schema
+    report = run_master_rule_filter(plan_dict, **_kwargs_full())
+    # Batch B rules should NOT fire for empty skeleton
+    batch_b_rules = {
+        "weekly_key_sessions_present", "weekly_volume_ramp",
+        "taper_volume_drop", "target_distance_long_run",
+        "key_session_density", "hard_session_spacing",
+    }
+    assert not any(v.rule in batch_b_rules for v in report.violations)
+    assert report.ok

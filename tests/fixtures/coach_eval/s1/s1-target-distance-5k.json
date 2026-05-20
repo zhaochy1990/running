@@ -1,0 +1,101 @@
+{
+  "fixture_id": "s1-target-distance-5k",
+  "scope": "s1",
+  "description": "Same advanced runner profile as 10K/HM fixtures but target = 5K sub-18:00. Tests target_distance differentiation: 5K peak weekly lowest, long run 8-10km, heavy VO2max + speed work, very short taper (3-5 days).",
+  "tags": ["target_distance"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-advanced-5k-001",
+      "hr_zones": {
+        "z1": [95, 140],
+        "z2": [140, 152],
+        "z3": [152, 162],
+        "z4": [162, 175],
+        "z5": [175, 190]
+      },
+      "weight_kg": 72.0,
+      "injuries": [],
+      "experience_level": "advanced",
+      "weekly_run_days_max": 6,
+      "prs": {
+        "5k_s": 1110,
+        "10k_s": 2400,
+        "hm_s": 5262,
+        "fm_s": 10762
+      },
+      "target_race": {
+        "distance": "5k",
+        "goal_time_s": 1080,
+        "race_date": "2026-09-20"
+      },
+      "db_history_weeks": 76
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-09-20"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        185, 195, 210, 220, 215, 200,
+        180, 165, 195, 235, 245, 215,
+        140, 165, 190, 200, 225, 205
+      ],
+      "peak_weekly_km_in_window": 78,
+      "longest_run_km_in_window": 35,
+      "race_history": [
+        {"distance": "5k", "date": "2026-05-02", "time_s": 1110, "race_type": "tune_up"}
+      ],
+      "consistency_score": 0.85
+    },
+    "user_intent_md": "目标 2026-09-20 5K 破 18 分（3:36/km）。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 3,
+      "peak_before_race_days_min": 3,
+      "peak_before_race_days_max": 14
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "5K-focused base / build / peak / mini-taper；peak 期 1-2 周"
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 18:30 → goal 18:00 是 2.7% 提升，realistic"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "peak 在 race - 3..14 天；taper 3-5 天（5K 最短 taper）"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "peak 周量 40-55 km，long run 8-12 km（5K-specific）"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "充分利用 6 天 / 周，可保留 2-3 次质量课密度"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "无 active injury，正常 progression"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "5K 完全不需要 carb-loading；正常 base / build 营养"
+      },
+      "request_handling": {
+        "min_score": 3,
+        "behavior": "回应核心 sub-18 目标"
+      }
+    },
+    "anti_patterns": [
+      "peak 周长课 ≥ 16 km (5K 不需要长距离堆积，浪费训练特异性)",
+      "taper 排 1+ 周 (5K 3-5 天足够)",
+      "把 HM/FM 训练模式硬套到 5K (peak 周量 60+ 或 long run 18+)",
+      "周量超过 60 km (5K 不需要这么高基础量)"
+    ]
+  }
+}

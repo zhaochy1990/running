@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +66,62 @@ class Phase(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Weekly key-session skeleton (S1 strategic — see docs/coach-eval_S1.md)
+# ---------------------------------------------------------------------------
+
+
+class KeySession(BaseModel):
+    """One key training session inside a weekly skeleton.
+
+    A *key* session drives physiological adaptation or carries injury /
+    race risk — long runs, threshold / tempo / interval / VO2max / hill,
+    race pace, time trials, tune-up races, the goal race, and key strength.
+    Ordinary easy / aerobic / recovery / commute runs are NOT key sessions
+    and do not appear here (they live in S2 weekly plans).
+
+    ``type`` enumeration (str so we can extend without schema churn):
+    ``long_run`` / ``threshold`` / ``tempo`` / ``interval`` / ``vo2max`` /
+    ``hill`` / ``race_pace`` / ``time_trial`` / ``tune_up_race`` /
+    ``race`` / ``strength_key``.
+
+    One of ``distance_km`` / ``duration_min`` is typically populated:
+    distance-anchored sessions (long_run / race_pace / tune_up_race / race)
+    set ``distance_km``; time-anchored sessions (threshold / interval) set
+    ``duration_min``. Both can be set when the prompt produces both.
+    """
+
+    type: str                       # see docstring enumeration
+    distance_km: float | None = None
+    duration_min: float | None = None
+    intensity: str | None = None    # "z2" / "z4" / "race_pace" / "mp" / etc.
+    purpose: str | None = None      # 1-line rationale, e.g. "建立 FM 专项耐力"
+
+
+class WeeklyKeySessions(BaseModel):
+    """One week of the weekly_key_sessions skeleton.
+
+    Per ``docs/coach-eval_S1.md`` § "S1 Output Requirement: Weekly
+    Key-Session Skeleton" — S1 doesn't expand full daily sessions; it only
+    lists the key stimuli per week so the eval framework can check
+    progression, taper, target-distance specificity, and density.
+
+    ``is_recovery_week`` / ``is_taper_week`` flag deload / wind-down weeks
+    so L1 rules can skip the volume-ramp cap and the
+    weekly_key_sessions_present requirement for these weeks (a recovery
+    week with 0-1 key sessions is correct; a build week with 0 is not).
+    """
+
+    week_index: int                # 1-based, sequential across the whole plan
+    week_start: str                # ISO YYYY-MM-DD, the Monday of the week
+    phase_id: str                  # owning phase (uuid4 from Phase.id)
+    target_weekly_km_low: float
+    target_weekly_km_high: float
+    key_sessions: list[KeySession]
+    is_recovery_week: bool = False
+    is_taper_week: bool = False
+
+
+# ---------------------------------------------------------------------------
 # Top-level plan models
 # ---------------------------------------------------------------------------
 
@@ -79,6 +135,14 @@ class MasterPlan(BaseModel):
     end_date: str                  # 总纲结束日期 ISO YYYY-MM-DD
     phases: list[Phase]
     milestones: list[Milestone]
+    # Weekly key-session skeleton — list ordered by week_index. Default empty
+    # so plans authored before Batch B (existing fixtures, test stubs, legacy
+    # MasterPlanVersion snapshots) still validate. New plans MUST populate it
+    # for the Batch B L1 rules (weekly_key_sessions_present /
+    # weekly_volume_ramp / taper_volume_drop / target_distance_long_run /
+    # key_session_density / hard_session_spacing) to do anything; empty list
+    # → those rules silently no-op for backwards compatibility.
+    weekly_key_sessions: list[WeeklyKeySessions] = Field(default_factory=list)
     training_principles: list[str]  # 训练原则，3-5 条
     generated_by: str              # "gpt-4.1" 等
     version: int                   # 从 1 开始，每次 adjust 递增
@@ -125,11 +189,26 @@ def _apply_review_diff(
     """
     from datetime import datetime, timezone
 
+    from stride_core.master_plan_diff import MasterPlanDiffOpKind as _K
+
     accepted_set = set(accepted_op_ids)
     active_ops = [op for op in diff.ops if op.id in accepted_set and op.accepted is not False]
 
     if not active_ops:
         return plan
+
+    # Phase-affecting ops invalidate the weekly_key_sessions skeleton — its
+    # week_start dates, target_weekly_km_* targets and phase_id back-refs all
+    # tie to specific phase shapes. Rather than partially patch the skeleton
+    # (which would need a diff op of its own to be safe), clear it so the
+    # next generation pass / explicit edit can rebuild it consistently.
+    PHASE_AFFECTING = {
+        _K.ADD_PHASE,
+        _K.REMOVE_PHASE,
+        _K.RESIZE_PHASE,
+        _K.REPLACE_WEEKLY_RANGE,
+    }
+    phase_affecting_applied = any(op.op in PHASE_AFFECTING for op in active_ops)
 
     phases: dict[str, Phase] = {p.id: p for p in plan.phases}
     milestones: dict[str, Milestone] = {m.id: m for m in plan.milestones}
@@ -137,9 +216,6 @@ def _apply_review_diff(
     for op in active_ops:
         patch = op.spec_patch or {}
         op_kind = op.op  # MasterPlanDiffOpKind value
-
-        # Import enum lazily to avoid circular import
-        from stride_core.master_plan_diff import MasterPlanDiffOpKind as _K
 
         if op_kind == _K.ADD_PHASE:
             new_phase = Phase(
@@ -224,11 +300,15 @@ def _apply_review_diff(
                 )
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    return plan.model_copy(
-        update={
-            "phases": list(phases.values()),
-            "milestones": list(milestones.values()),
-            "updated_at": now_iso,
-            # version and status intentionally unchanged
-        }
-    )
+    update: dict = {
+        "phases": list(phases.values()),
+        "milestones": list(milestones.values()),
+        "updated_at": now_iso,
+        # version and status intentionally unchanged
+    }
+    if phase_affecting_applied:
+        # See "Phase-affecting ops invalidate..." comment above. Caller (the
+        # review-chat /apply route) is responsible for triggering a fresh
+        # skeleton generation before the plan is /confirmed.
+        update["weekly_key_sessions"] = []
+    return plan.model_copy(update=update)

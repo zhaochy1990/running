@@ -129,6 +129,20 @@ def apply_master_plan_diff(
     )
     store.add_version(snapshot)
 
+    # Phase-affecting ops invalidate the weekly_key_sessions skeleton —
+    # the week_start dates, target_weekly_km_* targets and phase_id back-
+    # refs all tie to specific phase shapes. Clear the skeleton if any
+    # such op applied, so we don't persist stale references after a
+    # version bump. Matches the parallel logic in
+    # :func:`stride_core.master_plan._apply_review_diff`.
+    PHASE_AFFECTING = {
+        MasterPlanDiffOpKind.ADD_PHASE,
+        MasterPlanDiffOpKind.REMOVE_PHASE,
+        MasterPlanDiffOpKind.RESIZE_PHASE,
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+    }
+    phase_affecting_applied = any(op.op in PHASE_AFFECTING for op in active_ops)
+
     # Work on mutable copies.
     phases: dict[str, Phase] = {p.id: p for p in plan.phases}
     milestones: dict[str, Milestone] = {m.id: m for m in plan.milestones}
@@ -144,14 +158,15 @@ def apply_master_plan_diff(
 
     now_iso = datetime.now(timezone.utc).isoformat()
 
-    updated_plan = plan.model_copy(
-        update={
-            "phases": list(phases.values()),
-            "milestones": list(milestones.values()),
-            "version": plan.version + 1,
-            "updated_at": now_iso,
-        }
-    )
+    update: dict = {
+        "phases": list(phases.values()),
+        "milestones": list(milestones.values()),
+        "version": plan.version + 1,
+        "updated_at": now_iso,
+    }
+    if phase_affecting_applied:
+        update["weekly_key_sessions"] = []
+    updated_plan = plan.model_copy(update=update)
     store.save_plan(updated_plan)
     return updated_plan
 

@@ -503,3 +503,142 @@ def test_version_bumped_by_one():
     diff2 = _make_diff([op2], plan_id="plan-test")
     result2 = apply_master_plan_diff(store, "plan-test", diff2, [op2.id], "bump2")
     assert result2.version == 3
+
+
+# ---------------------------------------------------------------------------
+# weekly_key_sessions clearing on phase-affecting ops (codex round-2 P1 #6)
+# ---------------------------------------------------------------------------
+
+
+def _plan_with_skeleton() -> MasterPlan:
+    """A plan that carries non-empty weekly_key_sessions, used to verify
+    the clearing behavior on phase-affecting diffs."""
+    from stride_core.master_plan import KeySession, WeeklyKeySessions
+    phase = _make_phase()
+    skeleton = [
+        WeeklyKeySessions(
+            week_index=1, week_start="2026-06-01", phase_id=phase.id,
+            target_weekly_km_low=40.0, target_weekly_km_high=50.0,
+            key_sessions=[
+                KeySession(type="long_run", distance_km=18.0, intensity="z2"),
+            ],
+        ),
+    ]
+    return _make_plan(phases=[phase]).model_copy(
+        update={"weekly_key_sessions": skeleton}
+    )
+
+
+def test_apply_diff_resize_phase_clears_weekly_key_sessions():
+    """RESIZE_PHASE invalidates skeleton week dates — must clear."""
+    plan = _plan_with_skeleton()
+    assert plan.weekly_key_sessions  # baseline: non-empty before
+    store = InMemoryStore(plan)
+    op = _op(
+        MasterPlanDiffOpKind.RESIZE_PHASE,
+        phase_id="phase-1",
+        spec_patch={"start_date": "2026-06-15", "end_date": "2026-08-15"},
+    )
+    diff = _make_diff([op])
+    result = apply_master_plan_diff(
+        store, "plan-test", diff, [op.id], "resize"
+    )
+    assert result.weekly_key_sessions == []
+
+
+def test_apply_diff_remove_phase_clears_weekly_key_sessions():
+    plan = _plan_with_skeleton()
+    store = InMemoryStore(plan)
+    op = _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="phase-1")
+    diff = _make_diff([op])
+    result = apply_master_plan_diff(
+        store, "plan-test", diff, [op.id], "remove"
+    )
+    assert result.weekly_key_sessions == []
+
+
+def test_apply_diff_add_phase_clears_weekly_key_sessions():
+    plan = _plan_with_skeleton()
+    store = InMemoryStore(plan)
+    op = _op(
+        MasterPlanDiffOpKind.ADD_PHASE,
+        spec_patch={
+            "id": str(uuid.uuid4()),
+            "name": "专项期",
+            "start_date": "2026-08-01",
+            "end_date": "2026-09-30",
+            "focus": "speed",
+            "weekly_distance_km_low": 60.0,
+            "weekly_distance_km_high": 75.0,
+            "key_session_types": ["interval"],
+            "milestone_ids": [],
+        },
+    )
+    diff = _make_diff([op])
+    result = apply_master_plan_diff(
+        store, "plan-test", diff, [op.id], "add"
+    )
+    assert result.weekly_key_sessions == []
+
+
+def test_apply_diff_replace_weekly_range_clears_weekly_key_sessions():
+    plan = _plan_with_skeleton()
+    store = InMemoryStore(plan)
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={"weekly_distance_km_low": 55.0, "weekly_distance_km_high": 72.0},
+    )
+    diff = _make_diff([op])
+    result = apply_master_plan_diff(
+        store, "plan-test", diff, [op.id], "ranges"
+    )
+    assert result.weekly_key_sessions == []
+
+
+def test_apply_diff_focus_change_keeps_weekly_key_sessions():
+    """REPLACE_PHASE_FOCUS does NOT shift any week boundary; skeleton stays."""
+    plan = _plan_with_skeleton()
+    store = InMemoryStore(plan)
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS,
+        phase_id="phase-1",
+        spec_patch={"focus": "new focus copy"},
+    )
+    diff = _make_diff([op])
+    result = apply_master_plan_diff(
+        store, "plan-test", diff, [op.id], "focus"
+    )
+    assert len(result.weekly_key_sessions) == 1
+
+
+def test_apply_diff_milestone_change_keeps_weekly_key_sessions():
+    """REPLACE_MILESTONE_DATE doesn't affect phases; skeleton stays."""
+    from stride_core.master_plan import Milestone, MilestoneType
+    phase = _make_phase(milestone_ids=["m-1"])
+    ms = Milestone(
+        id="m-1", type=MilestoneType.LONG_RUN, date="2026-06-15",
+        phase_id="phase-1", target="20K easy",
+    )
+    plan_base = _make_plan(phases=[phase], milestones=[ms])
+    from stride_core.master_plan import KeySession, WeeklyKeySessions
+    plan = plan_base.model_copy(update={
+        "weekly_key_sessions": [
+            WeeklyKeySessions(
+                week_index=1, week_start="2026-06-01", phase_id="phase-1",
+                target_weekly_km_low=40.0, target_weekly_km_high=50.0,
+                key_sessions=[KeySession(type="long_run", distance_km=18.0)],
+            ),
+        ],
+    })
+    store = InMemoryStore(plan)
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_MILESTONE_DATE,
+        milestone_id="m-1",
+        spec_patch={"date": "2026-06-22"},
+    )
+    diff = _make_diff([op])
+    result = apply_master_plan_diff(
+        store, "plan-test", diff, [op.id], "ms-date"
+    )
+    assert len(result.weekly_key_sessions) == 1

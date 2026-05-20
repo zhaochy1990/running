@@ -1,0 +1,105 @@
+{
+  "fixture_id": "s1-injury-knee-return",
+  "scope": "s1",
+  "description": "Intermediate runner returning from knee injury (8 weeks of partial training). Plan must (a) extend base phase, (b) avoid deep squats / plyo / hills, (c) start volume at 70% of pre-injury baseline, (d) include 2-week 'rebuild' micro-phase before normal base.",
+  "tags": ["injury_constraint"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-injury-knee-001",
+      "hr_zones": {
+        "z1": [90, 130],
+        "z2": [130, 145],
+        "z3": [145, 158],
+        "z4": [158, 172],
+        "z5": [172, 185]
+      },
+      "weight_kg": 68.5,
+      "injuries": ["knee"],
+      "experience_level": "intermediate",
+      "weekly_run_days_max": 5,
+      "prs": {
+        "5k_s": 1290,
+        "10k_s": 2760,
+        "hm_s": 5940,
+        "fm_s": 12480
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 12600,
+        "race_date": "2026-11-15"
+      },
+      "db_history_weeks": 40
+    },
+    "season_window": {
+      "start_date": "2026-05-19",
+      "end_date": "2026-11-15"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        45, 50, 60, 95, 120, 35,
+        20, 25, 35, 95, 145, 165,
+        150, 130, 110, 145, 160, 155
+      ],
+      "peak_weekly_km_in_window": 58,
+      "longest_run_km_in_window": 28,
+      "race_history": [
+        {"distance": "fm", "date": "2025-04-13", "time_s": 12480, "race_type": "A_race"}
+      ],
+      "training_gaps": [
+        {"from": "2026-02-15", "to": "2026-04-10", "reason": "knee injury (patellar tendinitis) + PT rehab"}
+      ],
+      "consistency_score": 0.55
+    },
+    "user_intent_md": "膝盖 8 周前因髌腱炎停训，4 月开始 PT 恢复跑。目标 2026-11-15 北马完赛，保底 3:30。希望避免深蹲和高强度坡跑。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 4,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "重建期 (2-4 周) → 延长基础期 (8-10 周) → 进展期 → 赛前期 → 减量期。base 比正常长 2-4 周以确保膝盖适应"
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 3:28 → goal 3:30 保底（伤后保守），realistic；plan 应显式说"
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "peak 在 race - 14..21 天，taper 2 周保守"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "周量从 30 km 起 (70% pre-injury 50km)，每 4 周加 10%；peak 不超过 55-60 km（与 pre-injury 58 km 持平）"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "每周 ≤ 5 跑日"
+      },
+      "injury_safety": {
+        "min_score": 5,
+        "behavior": "强制：避免深蹲 / lunge / 高箱跳 / plyo / 高强度坡跑；力量训练改 isometric squat / leg press / glute bridge；如疼痛 NRS ≥ 4 立即降量"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 3,
+        "behavior": "增加蛋白至 1.6-1.8 g/kg 促胶原修复，补充维生素 D + 钙"
+      },
+      "request_handling": {
+        "min_score": 5,
+        "behavior": "明确确认避免深蹲和高强度坡跑诉求，提出 alternatives"
+      }
+    },
+    "anti_patterns": [
+      "plan 力量训练含深蹲 / 弓步 / 跳跃动作（直接违反伤病约束）",
+      "peak 周量 > 60 km（伤后过早堆量，复发风险）",
+      "base phase ≤ 4 周（伤后不够 rebuild）",
+      "key_sessions[] 含 hill repeats（用户明确要求避免）",
+      "周量起点从 50+ km 起（无视 70% 重建原则）"
+    ]
+  }
+}

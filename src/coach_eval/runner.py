@@ -242,8 +242,9 @@ def run_s1_evaluation(
             load_ctx = load_master_context
 
         # Extract input-aware rule_filter kwargs from the fixture so the
-        # season_window_fits / goal_realism L1 checks have data to evaluate.
-        # No-op for fixtures lacking these fields (older fixtures predate them).
+        # input-aware L1 checks (season_window_fits / goal_realism /
+        # target_distance_long_run / key_session_density) have data to
+        # evaluate. No-op for fixtures lacking a given field.
         finput = fixture.get("input") or {}
         fprofile = finput.get("user_profile") or {}
         rfk: dict = {}
@@ -253,6 +254,8 @@ def run_s1_evaluation(
             rfk["prs"] = fprofile["prs"]
         if finput.get("season_window"):
             rfk["season_window"] = finput["season_window"]
+        if fprofile.get("weekly_run_days_max") is not None:
+            rfk["weekly_run_days_max"] = fprofile["weekly_run_days_max"]
 
         gen_graph = build_generation_graph(
             load_context=load_ctx,

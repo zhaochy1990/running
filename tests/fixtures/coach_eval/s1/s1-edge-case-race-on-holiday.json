@@ -1,0 +1,102 @@
+{
+  "fixture_id": "s1-edge-case-race-on-holiday",
+  "scope": "s1",
+  "description": "Race is scheduled during Chinese New Year (Spring Festival) holiday — 2027-02-17. Training plan must address holiday travel, family schedule, and limited equipment access during the final 1-2 weeks before race. Plan should propose hotel-friendly key sessions and adjust taper logistics.",
+  "tags": ["edge_case"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-fixture-edge-case-holiday-001",
+      "hr_zones": {
+        "z1": [92, 130],
+        "z2": [130, 145],
+        "z3": [145, 158],
+        "z4": [158, 172],
+        "z5": [172, 188]
+      },
+      "weight_kg": 70.5,
+      "injuries": [],
+      "experience_level": "intermediate",
+      "weekly_run_days_max": 5,
+      "prs": {
+        "5k_s": 1230,
+        "10k_s": 2580,
+        "hm_s": 5520,
+        "fm_s": 11700
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 11400,
+        "race_date": "2027-02-17"
+      },
+      "db_history_weeks": 60
+    },
+    "season_window": {
+      "start_date": "2026-09-15",
+      "end_date": "2027-02-17"
+    },
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        135, 145, 155, 160, 145, 130,
+        115, 125, 145, 155, 165, 155,
+        140, 130, 110, 130, 145, 150
+      ],
+      "peak_weekly_km_in_window": 58,
+      "longest_run_km_in_window": 32,
+      "race_history": [
+        {"distance": "fm", "date": "2025-10-19", "time_s": 11700, "race_type": "A_race"},
+        {"distance": "hm", "date": "2026-05-31", "time_s": 5520, "race_type": "tune_up"}
+      ],
+      "consistency_score": 0.80
+    },
+    "user_intent_md": "目标 2027-02-17 厦门马 PB（破 3:10）。比赛日撞春节假期，2/9 - 2/15 家人出游，可能酒店不方便长距离训练。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 4,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "5 个月赛季 base / build / peak / taper，peak 落在春节前 2 周，taper 跨越春节假期"
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 3:15 → goal 3:10 是 2.5% 提升，realistic"
+      },
+      "peak_timing": {
+        "min_score": 5,
+        "behavior": "peak phase 必须结束于 race - 14 天左右 (2027-02-03 前后)，避开春节高峰出行；taper 2 周 (2027-02-04 - 2027-02-17)"
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "peak 周量 65-72 km，比 history peak 58 略高但不过激"
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "每周 ≤ 5 跑日"
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "无 active injury，节假日期间避免突然加量 / 跑陌生陡坡路线"
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 4,
+        "behavior": "carb-loading 在赛前 3 天 (2/14-16) — 春节期间可能多油腻食物，需特别提醒避免高脂高糖；行李带运动补给"
+      },
+      "request_handling": {
+        "min_score": 5,
+        "behavior": "必须显式回应春节假期出行约束：(a) 长课在春节前完成 (b) 假期内排短 z2 + 短间歇可以酒店跑步机完成 (c) 装备 / 补给打包提醒"
+      }
+    },
+    "anti_patterns": [
+      "long_run 安排在 2/9 - 2/15 期间（用户明确说出行不便长距离）",
+      "peak phase 跨越或终止于春节假期（peak 应在假期前完成）",
+      "完全无视 user_intent_md 的春节约束（taper 期普通排课，不考虑酒店 / 出行）",
+      "carb-loading 排在假期前但没提醒避免春节油腻饮食"
+    ]
+  }
+}
