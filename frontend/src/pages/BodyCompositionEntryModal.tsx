@@ -129,7 +129,13 @@ export default function BodyCompositionEntryModal({
     }
     setSubmitting(true)
     try {
-      await upsertBodyComposition(user, result.payload)
+      const res = await upsertBodyComposition(user, result.payload)
+      if (!res.ok) {
+        const detail = (res.data as { detail?: unknown } | null)?.detail
+        const msg = typeof detail === 'string' ? detail : JSON.stringify(detail ?? res.data)
+        setError(`提交失败 (${res.status})：${msg}`)
+        return
+      }
       onSaved()
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)

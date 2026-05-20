@@ -532,13 +532,16 @@ class BodyCompositionScan:
         if not isinstance(vf, int) or not 1 <= vf <= 20:
             raise ValueError(f"visceral_fat_level must be int in [1,20]: {vf!r}")
 
-        segments_raw = data.get("segments", [])
-        if not isinstance(segments_raw, list) or len(segments_raw) != 5:
-            raise ValueError(f"segments must be a list of 5 entries, got {len(segments_raw) if isinstance(segments_raw, list) else type(segments_raw)}")
-        segments = [BodySegment.from_dict(s) for s in segments_raw]
-        names = {s.segment for s in segments}
-        if names != BODY_COMPOSITION_SEGMENTS:
-            raise ValueError(f"segments must cover {BODY_COMPOSITION_SEGMENTS}, got {names}")
+        segments_raw = data.get("segments")
+        if segments_raw is None or segments_raw == []:
+            segments = []
+        elif not isinstance(segments_raw, list) or len(segments_raw) != 5:
+            raise ValueError(f"segments must be omitted, empty, or a list of 5 entries, got {len(segments_raw) if isinstance(segments_raw, list) else type(segments_raw)}")
+        else:
+            segments = [BodySegment.from_dict(s) for s in segments_raw]
+            names = {s.segment for s in segments}
+            if names != BODY_COMPOSITION_SEGMENTS:
+                raise ValueError(f"segments must cover {BODY_COMPOSITION_SEGMENTS}, got {names}")
 
         return cls(
             scan_date=scan_date,

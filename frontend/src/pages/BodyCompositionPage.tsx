@@ -42,6 +42,7 @@ export default function BodyCompositionPage() {
   const [loadedKey, setLoadedKey] = useState('')
   const loading = Boolean(requestKey && loadedKey !== requestKey)
   const [showEntry, setShowEntry] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -58,7 +59,7 @@ export default function BodyCompositionPage() {
     return () => {
       cancelled = true
     }
-  }, [requestKey, user])
+  }, [requestKey, user, refreshKey])
 
   // Charts want oldest-first
   const chartData = [...scans].reverse().map((s) => ({
@@ -299,7 +300,7 @@ export default function BodyCompositionPage() {
               onClose={() => setShowEntry(false)}
               onSaved={() => {
                 setShowEntry(false)
-                setLoadedKey('')  // forces useEffect to refetch
+                setRefreshKey((k) => k + 1)
               }}
             />
           )}

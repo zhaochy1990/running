@@ -84,6 +84,16 @@ class TestBodyCompositionScan:
         with pytest.raises(ValueError, match="segments"):
             BodyCompositionScan.from_dict(_scan_ok(segments=segs))
 
+    def test_accept_missing_segments(self):
+        data = _scan_ok()
+        data.pop("segments")
+        scan = BodyCompositionScan.from_dict(data)
+        assert scan.segments == []
+
+    def test_accept_empty_segments(self):
+        scan = BodyCompositionScan.from_dict(_scan_ok(segments=[]))
+        assert scan.segments == []
+
     def test_reject_duplicate_segment_name(self):
         segs = _segments_ok()
         segs[1]["segment"] = "left_arm"  # duplicate
