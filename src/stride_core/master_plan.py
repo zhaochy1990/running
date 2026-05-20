@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +142,7 @@ class MasterPlan(BaseModel):
     # weekly_volume_ramp / taper_volume_drop / target_distance_long_run /
     # key_session_density / hard_session_spacing) to do anything; empty list
     # → those rules silently no-op for backwards compatibility.
-    weekly_key_sessions: list[WeeklyKeySessions] = []
+    weekly_key_sessions: list[WeeklyKeySessions] = Field(default_factory=list)
     training_principles: list[str]  # 训练原则，3-5 条
     generated_by: str              # "gpt-4.1" 等
     version: int                   # 从 1 开始，每次 adjust 递增
@@ -189,11 +189,26 @@ def _apply_review_diff(
     """
     from datetime import datetime, timezone
 
+    from stride_core.master_plan_diff import MasterPlanDiffOpKind as _K
+
     accepted_set = set(accepted_op_ids)
     active_ops = [op for op in diff.ops if op.id in accepted_set and op.accepted is not False]
 
     if not active_ops:
         return plan
+
+    # Phase-affecting ops invalidate the weekly_key_sessions skeleton — its
+    # week_start dates, target_weekly_km_* targets and phase_id back-refs all
+    # tie to specific phase shapes. Rather than partially patch the skeleton
+    # (which would need a diff op of its own to be safe), clear it so the
+    # next generation pass / explicit edit can rebuild it consistently.
+    PHASE_AFFECTING = {
+        _K.ADD_PHASE,
+        _K.REMOVE_PHASE,
+        _K.RESIZE_PHASE,
+        _K.REPLACE_WEEKLY_RANGE,
+    }
+    phase_affecting_applied = any(op.op in PHASE_AFFECTING for op in active_ops)
 
     phases: dict[str, Phase] = {p.id: p for p in plan.phases}
     milestones: dict[str, Milestone] = {m.id: m for m in plan.milestones}
@@ -201,9 +216,6 @@ def _apply_review_diff(
     for op in active_ops:
         patch = op.spec_patch or {}
         op_kind = op.op  # MasterPlanDiffOpKind value
-
-        # Import enum lazily to avoid circular import
-        from stride_core.master_plan_diff import MasterPlanDiffOpKind as _K
 
         if op_kind == _K.ADD_PHASE:
             new_phase = Phase(
@@ -288,11 +300,15 @@ def _apply_review_diff(
                 )
 
     now_iso = datetime.now(timezone.utc).isoformat()
-    return plan.model_copy(
-        update={
-            "phases": list(phases.values()),
-            "milestones": list(milestones.values()),
-            "updated_at": now_iso,
-            # version and status intentionally unchanged
-        }
-    )
+    update: dict = {
+        "phases": list(phases.values()),
+        "milestones": list(milestones.values()),
+        "updated_at": now_iso,
+        # version and status intentionally unchanged
+    }
+    if phase_affecting_applied:
+        # See "Phase-affecting ops invalidate..." comment above. Caller (the
+        # review-chat /apply route) is responsible for triggering a fresh
+        # skeleton generation before the plan is /confirmed.
+        update["weekly_key_sessions"] = []
+    return plan.model_copy(update=update)

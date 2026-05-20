@@ -597,3 +597,114 @@ class TestRunGenerateJob:
         job = get_job(job_id)
         assert job.status == JobStatus.FAILED
         assert "unexpected database crash" in (job.error or "")
+
+
+# ---------------------------------------------------------------------------
+# Prod input alias normalisation (codex round-2 P1 #1) — verifies that
+# _normalize_for_prompt maps TrainingGoal field names to the canonical
+# names the prompt + L1 rules read.
+# ---------------------------------------------------------------------------
+
+
+class TestNormalizeForPrompt:
+    def test_race_distance_uppercase_mapped_to_canonical_lowercase(self):
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        goal = {"race_distance": "FM"}
+        norm_goal, _ = _normalize_for_prompt(goal, None)
+        assert norm_goal["distance"] == "fm"
+
+    def test_race_distance_trail_maps_to_ultra(self):
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        goal = {"race_distance": "trail"}
+        norm_goal, _ = _normalize_for_prompt(goal, None)
+        assert norm_goal["distance"] == "ultra"
+
+    def test_explicit_distance_not_clobbered(self):
+        """Eval fixtures pass `distance` directly — must not be overwritten."""
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        goal = {"distance": "hm", "race_distance": "FM"}
+        norm_goal, _ = _normalize_for_prompt(goal, None)
+        assert norm_goal["distance"] == "hm"
+
+    def test_weekly_training_days_mapped_from_profile(self):
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        _, norm_profile = _normalize_for_prompt({}, {"weekly_training_days": 5})
+        assert norm_profile["weekly_run_days_max"] == 5
+
+    def test_weekly_training_days_falls_back_to_goal(self):
+        """TrainingGoal.weekly_training_days lives on the goal dict — also OK."""
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        _, norm_profile = _normalize_for_prompt(
+            {"weekly_training_days": 4}, {"some_other_field": "x"}
+        )
+        assert norm_profile["weekly_run_days_max"] == 4
+
+    def test_explicit_weekly_run_days_max_not_clobbered(self):
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        _, norm_profile = _normalize_for_prompt(
+            {}, {"weekly_run_days_max": 3, "weekly_training_days": 6}
+        )
+        assert norm_profile["weekly_run_days_max"] == 3
+
+    def test_inputs_not_mutated(self):
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        goal = {"race_distance": "FM"}
+        profile = {"weekly_training_days": 5}
+        goal_before = dict(goal)
+        profile_before = dict(profile)
+        _normalize_for_prompt(goal, profile)
+        assert goal == goal_before
+        assert profile == profile_before
+
+
+# ---------------------------------------------------------------------------
+# Prompt regression test (codex round-2 P2 #1) — pins the schema example +
+# HARD blocks so silent prompt drift fails fast.
+# ---------------------------------------------------------------------------
+
+
+class TestPromptRegression:
+    def _build(self) -> str:
+        from stride_server.master_plan_generator import _build_system_prompt
+        return _build_system_prompt(
+            goal={"distance": "fm", "race_date": "2026-10-19", "goal_time_s": 12000},
+            profile={"prs": {"fm_s": 13200}, "weekly_run_days_max": 5},
+            history_summary="(test summary)",
+            fitness_state={"summary": "(test fitness)"},
+            today="2026-05-19",
+        )
+
+    def test_prompt_includes_weekly_key_sessions_schema(self):
+        """LLM must see `weekly_key_sessions` field in the example block."""
+        prompt = self._build()
+        assert "weekly_key_sessions" in prompt
+        # Must call out the canonical session-type tokens
+        for t in ("long_run", "threshold", "race_pace"):
+            assert t in prompt
+        # Per-week structure
+        for f in ("week_index", "week_start", "target_weekly_km_high",
+                  "is_recovery_week", "is_taper_week"):
+            assert f in prompt
+
+    def test_prompt_includes_distance_specificity_block(self):
+        """Distance specificity HARD block calls out FM / HM / 10K / 5K."""
+        prompt = self._build()
+        assert "Distance specificity" in prompt
+        assert "FM (full marathon)" in prompt
+        assert "HM (half marathon)" in prompt
+        assert "10K" in prompt
+        assert "5K" in prompt
+
+    def test_prompt_includes_goal_realism_block(self):
+        """Goal realism HARD block preserved across Batch B + D."""
+        prompt = self._build()
+        assert "Goal realism" in prompt or "目标现实性" in prompt
+
+    def test_prompt_serialises_canonical_goal_keys(self):
+        """`distance` (lowercase) — not `race_distance` — should appear in
+        the serialised goal block. Catches a regression where the prompt
+        consumes the raw prod field name."""
+        prompt = self._build()
+        # the JSON block in the prompt should carry our canonical keys
+        assert "\"distance\": \"fm\"" in prompt
+        assert "\"goal_time_s\": 12000" in prompt

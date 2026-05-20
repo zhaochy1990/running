@@ -424,6 +424,19 @@ def _format_history_summary(history: dict[str, Any]) -> str:
 
 _PB_KEY_MAP: dict[str, str] = {"5K": "5k_s", "10K": "10k_s", "HM": "hm_s", "FM": "fm_s"}
 
+# Map ``TrainingGoal.race_distance`` enum values to the canonical lowercase
+# token the eval framework, prompt, and L1 rules read. The prod
+# ``TrainingGoal`` enum is ``Literal["5K","10K","HM","FM","trail"]`` (see
+# routes/training_goal.py); fixtures and rule_filter expect lowercase
+# ``"5k"/"10k"/"hm"/"fm"/"ultra"``. ``trail`` maps to ``ultra`` since the
+# prompt currently treats trail/ultra as the same category for distance-
+# specificity decisions. Anything else passes through unchanged so an
+# unrecognised value still surfaces a downstream violation rather than
+# being silently dropped.
+_RACE_DISTANCE_NORMALIZE: dict[str, str] = {
+    "5K": "5k", "10K": "10k", "HM": "hm", "FM": "fm", "trail": "ultra",
+}
+
 
 def _parse_hms_to_seconds(value: str) -> int | None:
     """Parse ``H:MM:SS`` (or ``MM:SS``) into total seconds; ``None`` on bad input.
@@ -459,13 +472,24 @@ def _normalize_for_prompt(
     Specifically:
 
     * ``goal.target_finish_time`` (``"H:MM:SS"``) → ``goal.goal_time_s`` (int).
+    * ``goal.race_distance`` (``"5K"/"10K"/"HM"/"FM"/"trail"``) →
+      ``goal.distance`` (lowercase ``"5k"/"10k"/"hm"/"fm"/"ultra"``). Without
+      this, the prompt's Distance specificity block and the input-aware L1
+      rules (``target_distance_long_run`` / ``peak_before_race`` window)
+      silently no-op against prod payloads.
     * ``profile.pbs`` (``[{distance: "FM", time: "H:MM:SS"}, ...]``) →
       ``profile.prs`` (``{fm_s: int, hm_s: int, ...}``).
+    * ``profile.weekly_training_days`` (int 3-6 from ``TrainingGoal``) →
+      ``profile.weekly_run_days_max``. Same rationale as ``distance``: the
+      ``key_session_density`` rule reads ``weekly_run_days_max`` and would
+      otherwise fall through to the lenient 3-session default in prod.
+      Note ``TrainingGoal`` carries this field, not ``RunningProfile``;
+      callers that pass the goal dict as the source of ``weekly_training_days``
+      are also handled (we read from either).
 
-    Existing ``goal_time_s`` / ``prs`` values are kept untouched (eval fixtures
-    already use the normalised shape, and we don't want to clobber explicit
-    overrides). Both inputs are shallow-copied so the caller's dicts are
-    never mutated.
+    Existing canonical values are kept untouched (eval fixtures already use
+    the normalised shape, and we don't want to clobber explicit overrides).
+    Both inputs are shallow-copied so the caller's dicts are never mutated.
 
     Returns ``(goal_norm, profile_norm_or_None)``.
     """
@@ -476,6 +500,13 @@ def _normalize_for_prompt(
         secs = _parse_hms_to_seconds(goal_norm.get("target_finish_time", ""))
         if secs is not None:
             goal_norm["goal_time_s"] = secs
+
+    # race_distance → distance (lowercase canonical)
+    if "distance" not in goal_norm:
+        raw_dist = goal_norm.get("race_distance")
+        if isinstance(raw_dist, str):
+            canonical = _RACE_DISTANCE_NORMALIZE.get(raw_dist) or raw_dist.lower()
+            goal_norm["distance"] = canonical
 
     if profile_norm is not None and "prs" not in profile_norm:
         raw_pbs = profile_norm.get("pbs") or []
@@ -496,6 +527,15 @@ def _normalize_for_prompt(
                     prs[key] = secs
             if prs:
                 profile_norm["prs"] = prs
+
+    # weekly_training_days (TrainingGoal) → weekly_run_days_max. Look in
+    # both profile and goal because callers may pass it on either dict.
+    if profile_norm is not None and "weekly_run_days_max" not in profile_norm:
+        wtd = profile_norm.get("weekly_training_days")
+        if wtd is None:
+            wtd = goal_norm.get("weekly_training_days")
+        if isinstance(wtd, int):
+            profile_norm["weekly_run_days_max"] = wtd
 
     return goal_norm, profile_norm
 
