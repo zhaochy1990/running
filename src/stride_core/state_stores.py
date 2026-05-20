@@ -2,7 +2,7 @@
 
 Phase 1 of the "everything except watch-synced data leaves SQLite" migration.
 The interfaces below define the surface the routes / coach agent rely on for
-plan, commentary, and InBody state. SQLite implementations wrap the existing
+plan, commentary, and body-composition state. SQLite implementations wrap the existing
 ``Database`` class so behavior is unchanged. A future Azure Table backend can
 implement the same Protocols without route-side changes.
 

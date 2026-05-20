@@ -233,13 +233,13 @@ def load_health_context(db: Database, *, days: int = 120) -> dict[str, Any]:
 
 
 def load_body_composition_context(db: Database) -> dict[str, Any]:
-    inbody_store = SqliteInBodyStore(db)
-    latest = inbody_store.latest_body_composition_scan()
+    body_comp_store = SqliteInBodyStore(db)
+    latest = body_comp_store.latest_body_composition_scan()
     if latest is None:
         return {"latest": None, "deltas": None, "checkpoints": PHASE_CHECKPOINTS}
 
     latest_d = dict(latest)
-    latest_d["segments"] = [dict(s) for s in inbody_store.get_body_composition_segments(latest_d["scan_date"])]
+    latest_d["segments"] = [dict(s) for s in body_comp_store.get_body_composition_segments(latest_d["scan_date"])]
     prior_rows = db.query(
         "SELECT * FROM body_composition_scan WHERE scan_date < ? ORDER BY scan_date DESC LIMIT 1",
         (latest_d["scan_date"],),
@@ -338,7 +338,7 @@ def load_coach_context(
         health = load_health_context(db, days=health_days)
 
         log("  · 读取体测 / 能力快照")
-        inbody = load_body_composition_context(db)
+        body_composition = load_body_composition_context(db)
         ability = load_ability_context(db)
 
         return {
@@ -351,7 +351,7 @@ def load_coach_context(
             "recent_activities": recent,
             "weekly_volume": weekly,
             "health": health,
-            "inbody": inbody,
+            "body_composition": body_composition,
             "ability": ability,
         }
     finally:
@@ -361,7 +361,7 @@ def load_coach_context(
 def summarize_context(context: dict[str, Any]) -> dict[str, Any]:
     week = context.get("selected_week") or {}
     health = context.get("health") or {}
-    inbody = context.get("inbody") or {}
+    body_composition = context.get("body_composition") or {}
     ability = context.get("ability") or {}
     return {
         "sync": context.get("sync"),
@@ -375,6 +375,6 @@ def summarize_context(context: dict[str, Any]) -> dict[str, Any]:
         } if week else None,
         "recent_activity_count": len(context.get("recent_activities") or []),
         "latest_health": health.get("latest"),
-        "latest_body_composition_date": (inbody.get("latest") or {}).get("scan_date"),
+        "latest_body_composition_date": (body_composition.get("latest") or {}).get("scan_date"),
         "latest_ability_date": ability.get("latest_date"),
     }
