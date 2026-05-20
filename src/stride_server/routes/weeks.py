@@ -7,7 +7,30 @@ from fastapi import APIRouter, Body, HTTPException
 from stride_core.models import pace_str
 from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
-from ..content_store import any_exists, exists as content_exists, list_week_folders, read_text
+from ..content_store import (
+    any_exists,
+    exists as content_exists,
+    list_files_in_folder,
+    list_week_folders,
+    read_text,
+)
+
+
+_BODY_COMP_EXTS = (".json", ".jpg", ".jpeg", ".png")
+_BODY_COMP_PREFIXES = ("body-composition.", "inbody.")
+
+
+def _has_body_composition_file(files: list[str]) -> bool:
+    """True if any filename matches the body-composition.* / inbody.* pattern.
+
+    Accepts suffixed variants (e.g. ``body-composition.4-14.json``) — the
+    only requirement is that the basename starts with one of the known
+    prefixes AND ends with a recognized extension.
+    """
+    return any(
+        f.startswith(_BODY_COMP_PREFIXES) and f.endswith(_BODY_COMP_EXTS)
+        for f in files
+    )
 from ..deps import (
     format_duration,
     get_db,
@@ -48,10 +71,8 @@ def list_weeks(user: str):
                 "date_to": date_to,
                 "has_plan": has_plan,
                 "has_feedback": db_feedback_row is not None or content_exists(feedback_rel),
-                "has_body_composition": any_exists(
-                    f"{user}/logs/{folder_name}/{name}{ext}"
-                    for name in ("body-composition", "inbody")
-                    for ext in (".json", ".jpg", ".jpeg", ".png")
+                "has_body_composition": _has_body_composition_file(
+                    list_files_in_folder(f"{user}/logs/{folder_name}")
                 ),
                 "plan_source": "db" if db_plan_row is not None else (plan_item.source if plan_item else "none"),
             }
