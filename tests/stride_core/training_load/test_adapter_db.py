@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import date
 
 import pytest
 
 from stride_core.db import Database
 from stride_core.models import ActivityDetail, DailyHealth, DailyHrv, TimeseriesPoint
 from stride_core.training_load.adapter import (
+    _fetch_health_rows,
     _fetch_samples,
     _normalize_elapsed_seconds,
     recompute_training_load,
@@ -300,6 +302,63 @@ def test_partial_window_recompute_seeds_atl_ctl_from_prior_day(db):
 
     # Persisted ATL/CTL are rounded to 4 decimals before seeding prior_state, so
     # accept that round-trip tolerance instead of bit-exact equality.
+    # Persisted ATL/CTL are rounded to 4 decimals before seeding prior_state, so
+    # accept that round-trip tolerance instead of bit-exact equality.
     assert partial_day2["acute_load"] == pytest.approx(full_day2["acute_load"], abs=1e-3)
     assert partial_day2["chronic_load"] == pytest.approx(full_day2["chronic_load"], abs=1e-3)
     assert partial_day2["form"] == pytest.approx(full_day2["form"], abs=1e-3)
+
+
+def test_partial_window_recompute_decays_through_rest_day_gap(db):
+    """When the prior persisted day is followed by N rest days before the
+    recompute window, the EWMA must decay through those zero-dose days before
+    applying the new window's dose. Without gap-decay the new window would
+    treat the prior load as if it were yesterday's."""
+    # Day 1: a training day, then a 4-day rest gap, then day 6.
+    db.upsert_activity(
+        _make_activity(
+            "d1",
+            "2026-05-01T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+    db.upsert_activity(
+        _make_activity(
+            "d6",
+            "2026-05-06T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    # Truth: a full-range recompute walks every day including the 4 zero-dose
+    # days, so its day-6 ATL/CTL is the correct target.
+    recompute_training_load(db, start="2026-05-01", end="2026-05-06")
+    full_day6 = db.fetch_daily_training_load("2026-05-06", "2026-05-06")[0]
+
+    # Wipe May 2–6 and recompute only May 6. Prior state will load from May 1.
+    db.query("DELETE FROM daily_training_load WHERE date > '2026-05-01'")
+    recompute_training_load(db, start="2026-05-06", end="2026-05-06")
+    partial_day6 = db.fetch_daily_training_load("2026-05-06", "2026-05-06")[0]
+
+    assert partial_day6["acute_load"] == pytest.approx(full_day6["acute_load"], abs=1e-3)
+    assert partial_day6["chronic_load"] == pytest.approx(full_day6["chronic_load"], abs=1e-3)
+
+
+def test_fetch_health_rows_handles_compact_yyyymmdd_dates(db):
+    """`daily_health.date` is stored as Shanghai-local YYYYMMDD on some
+    providers and ISO YYYY-MM-DD on others. Bounded fetches must include
+    both — `'20260501' <= '2026-05-02'` is lexicographically false, so an
+    SQL `BETWEEN` against ISO bounds would silently drop the compact row."""
+    db._conn.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260501', 50)")
+    db._conn.execute("INSERT INTO daily_health (date, rhr) VALUES ('2026-05-02', 52)")
+    db._conn.commit()
+
+    rows = _fetch_health_rows(db, start=date(2026, 5, 1), end=date(2026, 5, 2))
+    by_date = {row.date: row.rhr for row in rows}
+
+    assert by_date[date(2026, 5, 1)] == 50.0
+    assert by_date[date(2026, 5, 2)] == 52.0

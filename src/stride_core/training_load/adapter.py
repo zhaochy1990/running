@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date
 from typing import Any, Iterable, Sequence
 
@@ -289,28 +290,20 @@ def _fetch_activity_rows(
     return db.query(f"SELECT * FROM activities {where} ORDER BY date, label_id", tuple(params))
 
 
-def _date_range_clause(
-    start: date | None, end: date | None,
-) -> tuple[str, tuple[str, ...]]:
-    clauses: list[str] = []
-    params: list[str] = []
-    if start is not None:
-        clauses.append("date >= ?")
-        params.append(start.isoformat())
-    if end is not None:
-        clauses.append("date <= ?")
-        params.append(end.isoformat())
-    where = " WHERE " + " AND ".join(clauses) if clauses else ""
-    return where, tuple(params)
-
-
 def _fetch_health_rows(db: Any, *, start: date | None = None, end: date | None = None) -> list[HealthRow]:
-    where, params = _date_range_clause(start, end)
-    rows = db.query(f"SELECT * FROM daily_health{where} ORDER BY date", params)
+    # `daily_health.date` is stored as Shanghai-local YYYYMMDD on COROS-sourced
+    # rows but ISO YYYY-MM-DD elsewhere. Lexicographic SQL `BETWEEN` cannot
+    # safely compare both formats against an ISO bound, so normalize in Python
+    # after a broad SELECT. The table is small (one row per user-day).
+    rows = db.query("SELECT * FROM daily_health ORDER BY date")
     out: list[HealthRow] = []
     for row in rows:
         d = _parse_date(row["date"])
         if d is None:
+            continue
+        if start is not None and d < start:
+            continue
+        if end is not None and d > end:
             continue
         out.append(HealthRow(
             date=d,
@@ -332,15 +325,17 @@ def _fetch_calibration_health_rows(db: Any) -> list[CalibrationHealthRow]:
 
 
 def _fetch_hrv_rows(db: Any, *, start: date | None = None, end: date | None = None) -> list[HrvRow]:
-    where, params = _date_range_clause(start, end)
-    rows = db.query(
-        f"SELECT date, last_night_avg, status FROM daily_hrv{where} ORDER BY date",
-        params,
-    )
+    # daily_hrv shares the mixed YYYYMMDD/ISO storage convention; filter in
+    # Python after parsing for the same reason as `_fetch_health_rows`.
+    rows = db.query("SELECT date, last_night_avg, status FROM daily_hrv ORDER BY date")
     out: list[HrvRow] = []
     for row in rows:
         d = _parse_date(row["date"])
         if d is None:
+            continue
+        if start is not None and d < start:
+            continue
+        if end is not None and d > end:
             continue
         out.append(HrvRow(
             date=d,
@@ -389,24 +384,37 @@ def _fetch_feedback_rows(db: Any, activity_rows: Sequence[Any]) -> list[Feedback
     return out
 
 
-def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
-    """Read the last persisted daily_training_load row before series_start.
+_K_ACUTE = 1.0 - math.exp(-1.0 / 7.0)
+_K_CHRONIC = 1.0 - math.exp(-1.0 / 42.0)
 
-    Ensures partial-window recomputes continue EWMA from prior ATL/CTL instead
-    of resetting to zero. Returns None when no earlier row exists.
+
+def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
+    """Read the last persisted daily_training_load row before series_start
+    and decay its ATL/CTL through any rest-day gap.
+
+    Without this, a recompute starting N days after the last persisted row
+    would seed the EWMA with values that are "too fresh" — the dose on day N
+    would be applied to load state from day 0, skipping N-1 zero-dose decay
+    steps. The decay loop here matches the recursion in
+    `compute_daily_load_series` for a dose of 0.
     """
     rows = db.query(
-        "SELECT acute_load, chronic_load FROM daily_training_load "
+        "SELECT date, acute_load, chronic_load FROM daily_training_load "
         "WHERE date < ? ORDER BY date DESC LIMIT 1",
         (series_start.isoformat(),),
     )
     if not rows:
         return None
     row = rows[0]
-    return PriorLoadState(
-        acute_load=float(row["acute_load"]) if row["acute_load"] is not None else 0.0,
-        chronic_load=float(row["chronic_load"]) if row["chronic_load"] is not None else 0.0,
-    )
+    acute = float(row["acute_load"]) if row["acute_load"] is not None else 0.0
+    chronic = float(row["chronic_load"]) if row["chronic_load"] is not None else 0.0
+    prior_date = _parse_date(row["date"])
+    if prior_date is not None:
+        gap_days = max(0, (series_start - prior_date).days - 1)
+        for _ in range(gap_days):
+            acute += _K_ACUTE * (0.0 - acute)
+            chronic += _K_CHRONIC * (0.0 - chronic)
+    return PriorLoadState(acute_load=acute, chronic_load=chronic)
 
 
 def _build_activity_input(db: Any, row: Any) -> ActivityLoadInput | None:
