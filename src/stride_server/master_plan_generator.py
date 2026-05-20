@@ -530,12 +530,25 @@ def _normalize_for_prompt(
 
     # weekly_training_days (TrainingGoal) → weekly_run_days_max. Look in
     # both profile and goal because callers may pass it on either dict.
-    if profile_norm is not None and "weekly_run_days_max" not in profile_norm:
-        wtd = profile_norm.get("weekly_training_days")
-        if wtd is None:
-            wtd = goal_norm.get("weekly_training_days")
-        if isinstance(wtd, int):
-            profile_norm["weekly_run_days_max"] = wtd
+    # When ``profile`` was None and ``goal`` carries the field, synthesise
+    # a minimal profile dict so the canonical name is available downstream
+    # (rfk extraction in _run_generate_job_inner + the prompt block both
+    # read ``profile.weekly_run_days_max``). Without this, prod requests
+    # with no running-profile attached (which is the common path —
+    # routes/master_plan.py treats profile as optional) silently dropped
+    # weekly_training_days and key_session_density fell back to its
+    # lenient 3-session default.
+    if profile_norm is not None:
+        if "weekly_run_days_max" not in profile_norm:
+            wtd = profile_norm.get("weekly_training_days")
+            if wtd is None:
+                wtd = goal_norm.get("weekly_training_days")
+            if isinstance(wtd, int):
+                profile_norm["weekly_run_days_max"] = wtd
+    else:
+        goal_wtd = goal_norm.get("weekly_training_days")
+        if isinstance(goal_wtd, int):
+            profile_norm = {"weekly_run_days_max": goal_wtd}
 
     return goal_norm, profile_norm
 

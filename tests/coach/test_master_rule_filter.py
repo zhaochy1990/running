@@ -1164,6 +1164,98 @@ def test_hard_session_spacing_deload_resets_streak():
     assert streak == []
 
 
+def test_key_session_density_race_plus_one_extra_fails():
+    """Race-week with ANY extra session must fail, even when under the
+    density limit (codex round-2 P1 #3 follow-up)."""
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "race", "distance_km": 42.2},
+        {"type": "threshold", "duration_min": 30},  # extra — still under limit but wrong
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    violations = check_key_session_density(plan, weekly_run_days_max=5)
+    assert len(violations) == 1
+    msg = violations[0].message
+    assert "race weeks must contain only the race" in msg
+
+
+def test_identify_peak_phase_bare_比赛_not_picked_as_peak():
+    """Bare 比赛 phase should NOT be selected as peak (codex round-2 P1 #4
+    follow-up). Verifies _is_non_peak_phase now classifies it correctly."""
+    from coach.graphs.generation.master_rule_filter import (
+        _identify_peak_phase,
+        _is_non_peak_phase,
+    )
+    assert _is_non_peak_phase("比赛") is True
+    # Peak-prep override still works:
+    assert _is_non_peak_phase("比赛准备期") is False
+    assert _is_non_peak_phase("race prep") is False
+    # 比赛 phase included in plan — peak should be the prep phase, not 比赛
+    plan_dict = _base_plan_dict()
+    plan_dict["phases"] = [
+        {"id": "ph_base", "name": "基础期",
+         "start_date": "2026-05-19", "end_date": "2026-07-13",
+         "focus": "base", "weekly_distance_km_low": 40,
+         "weekly_distance_km_high": 50,
+         "key_session_types": ["long_run"], "milestone_ids": []},
+        {"id": "ph_prep", "name": "比赛准备期",
+         "start_date": "2026-07-14", "end_date": "2026-10-02",
+         "focus": "peak", "weekly_distance_km_low": 60,
+         "weekly_distance_km_high": 70,
+         "key_session_types": ["race_pace"], "milestone_ids": []},
+        {"id": "ph_taper", "name": "减量期",
+         "start_date": "2026-10-03", "end_date": "2026-10-14",
+         "focus": "taper", "weekly_distance_km_low": 30,
+         "weekly_distance_km_high": 40,
+         "key_session_types": ["interval"], "milestone_ids": []},
+        {"id": "ph_race", "name": "比赛",  # bare 比赛
+         "start_date": "2026-10-15", "end_date": "2026-10-19",
+         "focus": "race", "weekly_distance_km_low": 10,
+         "weekly_distance_km_high": 15,
+         "key_session_types": ["race"], "milestone_ids": ["m1"]},
+    ]
+    plan = MasterPlan.model_validate(plan_dict)
+    # Peak should be ph_prep (比赛准备期), NOT ph_race (比赛)
+    assert _identify_peak_phase(plan) == "ph_prep"
+
+
+def test_target_distance_long_run_with_bare_比赛_phase():
+    """End-to-end: a valid plan with a 比赛 race phase and long_run in
+    赛前期 must pass target_distance_long_run (codex P1 #4 follow-up)."""
+    plan_dict = _base_plan_dict()
+    plan_dict["phases"] = [
+        {"id": "ph_base", "name": "基础期",
+         "start_date": "2026-05-19", "end_date": "2026-07-13",
+         "focus": "base", "weekly_distance_km_low": 40,
+         "weekly_distance_km_high": 50,
+         "key_session_types": ["long_run"], "milestone_ids": []},
+        {"id": "ph_prep", "name": "赛前期",
+         "start_date": "2026-07-14", "end_date": "2026-10-02",
+         "focus": "peak", "weekly_distance_km_low": 60,
+         "weekly_distance_km_high": 70,
+         "key_session_types": ["race_pace"], "milestone_ids": []},
+        {"id": "ph_taper", "name": "减量期",
+         "start_date": "2026-10-03", "end_date": "2026-10-14",
+         "focus": "taper", "weekly_distance_km_low": 30,
+         "weekly_distance_km_high": 40,
+         "key_session_types": ["interval"], "milestone_ids": []},
+        {"id": "ph_race", "name": "比赛",
+         "start_date": "2026-10-15", "end_date": "2026-10-19",
+         "focus": "race", "weekly_distance_km_low": 10,
+         "weekly_distance_km_high": 15,
+         "key_session_types": ["race"], "milestone_ids": ["m1"]},
+    ]
+    plan_dict["weekly_key_sessions"] = [_week(
+        week_index=1, week_start="2026-09-15", phase_id="ph_prep",
+        sessions=[{"type": "long_run", "distance_km": 30}],
+    )]
+    # Override plan end to fit the 1-week skeleton
+    plan_dict["end_date"] = "2026-09-21"
+    plan = MasterPlan.model_validate(plan_dict)
+    violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
+    # Peak phase is 赛前期 (ph_prep), long_run there is 30km > 28km threshold
+    assert violations == []
+
+
 def test_orchestrator_back_compat_empty_weekly_key_sessions():
     """Existing plans with empty weekly_key_sessions still pass all rules."""
     plan_dict = _base_plan_dict()

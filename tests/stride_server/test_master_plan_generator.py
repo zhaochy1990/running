@@ -656,6 +656,23 @@ class TestNormalizeForPrompt:
         assert goal == goal_before
         assert profile == profile_before
 
+    def test_profile_none_with_goal_weekly_training_days_synthesises_profile(self):
+        """When profile=None but goal carries weekly_training_days, the
+        normaliser MUST synthesise a profile dict so the rfk extraction
+        downstream picks it up. Without this, prod requests without an
+        attached running_profile silently lose the frequency cap."""
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        goal = {"weekly_training_days": 3}
+        _, norm_profile = _normalize_for_prompt(goal, None)
+        assert norm_profile is not None
+        assert norm_profile["weekly_run_days_max"] == 3
+
+    def test_profile_none_and_no_goal_field_returns_none(self):
+        """No data anywhere → norm_profile stays None (don't fabricate)."""
+        from stride_server.master_plan_generator import _normalize_for_prompt
+        _, norm_profile = _normalize_for_prompt({}, None)
+        assert norm_profile is None
+
 
 # ---------------------------------------------------------------------------
 # Prompt regression test (codex round-2 P2 #1) — pins the schema example +

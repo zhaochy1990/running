@@ -104,10 +104,13 @@ def check_phase_count_min(
 
 
 _NON_PEAK_PHASE_KEYWORDS: tuple[str, ...] = (
-    # Race phases — keep these specific (`比赛周` / `比赛日`) rather than bare
-    # `比赛`, because `比赛准备期` / `比赛专项期` are valid peak phase names
-    # that ALSO contain `比赛` as a substring.
-    "比赛周", "比赛日", "race",
+    # Race phases — bare `比赛` / `race` are race-week phases per the prompt's
+    # recommended order (基础期 → 进展期 → 赛前期 → 比赛 → 恢复期). False-
+    # positive risk for prep-style names (`比赛准备期` / `race prep`) is
+    # neutralised by the `_PEAK_PHASE_MARKERS` override in
+    # :func:`_is_non_peak_phase` — those names match `准备` / `prep` first
+    # and return False before the substring scan runs.
+    "比赛", "比赛周", "比赛日", "race",
     # Taper / wind-down phases — they end at or near race day by design.
     "减量", "taper", "tapering",
     # Recovery phases (post-race).
@@ -932,11 +935,31 @@ def check_key_session_density(
     violations: list[RuleViolation] = []
     for week in plan.weekly_key_sessions:
         types = [ks.type for ks in week.key_sessions]
-        # Race-week exempt: ONLY when the week consists solely of `race`
-        # session(s). A week like [race, threshold, tempo, interval] is
-        # NOT a legitimate race week — race day + extra hard work the
-        # week of the race is a load-management catastrophe.
-        if types and set(types) == {"race"}:
+        # Race-week handling: when ``race`` is one of the session types,
+        # the only legitimate week shape is exactly {race} — race day plus
+        # anything else (even a single extra session under the density
+        # limit) is a load-management catastrophe. Flag explicitly rather
+        # than letting the under-limit count pass.
+        if "race" in types:
+            if set(types) == {"race"}:
+                continue  # only race in the week — fine
+            violations.append(
+                RuleViolation(
+                    rule="key_session_density",
+                    severity="error",
+                    message=(
+                        f"week {week.week_index} has a race session plus "
+                        f"{len(types) - 1} extra key session(s) "
+                        f"({', '.join(t for t in types if t != 'race')}); "
+                        f"race weeks must contain only the race"
+                    ),
+                    details={
+                        "week_index": week.week_index,
+                        "key_session_types": types,
+                        "race_week_only_race_allowed": True,
+                    },
+                )
+            )
             continue
         if len(types) > limit:
             violations.append(
