@@ -238,8 +238,6 @@ def _compute_external_tss(
     rolling = _rolling_mean(ifs, 30)
     normalized_if = (sum(v**4 for v in rolling) / len(rolling)) ** 0.25
     tss = (duration_min / 60.0) * normalized_if**2 * 100.0
-    if normalized_if < 1.0:
-        tss = max(0.0, tss - 0.0001)
     confidence = LoadConfidence.HIGH if len(ifs) / len(samples) >= 0.8 else LoadConfidence.LOW
     return _round(tss), reasons, confidence, _round(normalized_if)
 

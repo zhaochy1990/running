@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import sqlite3
 
+import pytest
+
 from stride_core.db import Database
 from stride_core.models import ActivityDetail, DailyHealth, DailyHrv, TimeseriesPoint
 from stride_core.training_load.adapter import (
@@ -144,6 +146,8 @@ def test_recompute_normalizes_activity_distance_stored_as_kilometers(db):
     assert calibration["threshold_speed_mps"] == 4.0
     assert calibration["threshold_hr"] == 168.0
     assert activity_row["external_tss"] == 100.0
+    # 14.4 km flat → grade_factor=1.0, descent_factor=1.0, intensity_factor ≈ 1.011
+    # (normalized_IF ≈ 1.0 → 1 + 0.5*(0.15)^2). 14.4 * 1.011 ≈ 14.562.
     assert activity_row["mechanical_load"] == 14.562
 
 
@@ -257,3 +261,45 @@ def test_recompute_does_not_normalize_raw_trimp_when_threshold_hr_is_unavailable
     assert row["training_dose"] is None
     assert row["excluded_from_pmc"] == 1
     assert "hr_calibration_missing" in json.loads(row["reasons_json"])
+
+
+def test_partial_window_recompute_seeds_atl_ctl_from_prior_day(db):
+    """A range-limited recompute must continue the EWMA from the last persisted
+    daily_training_load row instead of restarting acute/chronic at zero."""
+    db.upsert_daily_health(DailyHealth("2026-05-01", None, None, 50, None, None, None, None, None))
+    db.upsert_activity(
+        _make_activity(
+            "day1",
+            "2026-05-01T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+    db.upsert_activity(
+        _make_activity(
+            "day2",
+            "2026-05-02T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    full = recompute_training_load(db, start="2026-05-01", end="2026-05-02")
+    assert full.daily_rows_written == 2
+    full_day2 = db.fetch_daily_training_load("2026-05-02", "2026-05-02")[0]
+
+    # Wipe the day-2 row and recompute only day 2. Without prior-state plumbing
+    # this would reset acute_load to k_acute*dose ≈ 13.3 instead of carrying
+    # over day-1's residual.
+    db.query("DELETE FROM daily_training_load WHERE date = '2026-05-02'")
+
+    recompute_training_load(db, start="2026-05-02", end="2026-05-02")
+    partial_day2 = db.fetch_daily_training_load("2026-05-02", "2026-05-02")[0]
+
+    # Persisted ATL/CTL are rounded to 4 decimals before seeding prior_state, so
+    # accept that round-trip tolerance instead of bit-exact equality.
+    assert partial_day2["acute_load"] == pytest.approx(full_day2["acute_load"], abs=1e-3)
+    assert partial_day2["chronic_load"] == pytest.approx(full_day2["chronic_load"], abs=1e-3)
+    assert partial_day2["form"] == pytest.approx(full_day2["form"], abs=1e-3)

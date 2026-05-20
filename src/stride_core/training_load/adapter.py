@@ -20,9 +20,12 @@ from .types import (
     FeedbackRow,
     HealthRow,
     HrvRow,
+    PriorLoadState,
     SessionClass,
     TrainingLoadRunSummary,
 )
+
+_IN_CLAUSE_CHUNK = 500
 
 
 def _parse_date(value: Any) -> date | None:
@@ -181,7 +184,7 @@ def _distance_scale_for_timeseries(
 def _normalize_elapsed_seconds(rows: Iterable[Any]) -> tuple[float | None, ...]:
     raw: list[float | None] = []
     for row in rows:
-        ts = row["timestamp"] if isinstance(row, dict) else row["timestamp"]
+        ts = row["timestamp"]
         if ts is None:
             raw.append(None)
             continue
@@ -189,21 +192,18 @@ def _normalize_elapsed_seconds(rows: Iterable[Any]) -> tuple[float | None, ...]:
             raw.append(float(ts))
         except (TypeError, ValueError):
             raw.append(None)
-    present = [(i, v) for i, v in enumerate(raw) if v is not None]
+    present = [v for v in raw if v is not None]
     if not present:
         return tuple(raw)
-    first = present[0][1]
+    first = present[0]
+    # Large first values are epoch-centiseconds (anchor to first sample); smaller
+    # values are already activity-elapsed centiseconds and only need / 100.
     is_epoch_centiseconds = first > 1_000_000
-    out: list[float | None] = []
-    for value in raw:
-        if value is None:
-            out.append(None)
-            continue
-        elapsed = (value - first) / 100.0 if is_epoch_centiseconds else value / 100.0
-        if not is_epoch_centiseconds and value < 86400:
-            elapsed = value / 100.0
-        out.append(round(elapsed, 4))
-    return tuple(out)
+    anchor = first if is_epoch_centiseconds else 0.0
+    return tuple(
+        None if v is None else round((v - anchor) / 100.0, 4)
+        for v in raw
+    )
 
 
 def _fetch_samples(
@@ -289,16 +289,28 @@ def _fetch_activity_rows(
     return db.query(f"SELECT * FROM activities {where} ORDER BY date, label_id", tuple(params))
 
 
+def _date_range_clause(
+    start: date | None, end: date | None,
+) -> tuple[str, tuple[str, ...]]:
+    clauses: list[str] = []
+    params: list[str] = []
+    if start is not None:
+        clauses.append("date >= ?")
+        params.append(start.isoformat())
+    if end is not None:
+        clauses.append("date <= ?")
+        params.append(end.isoformat())
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    return where, tuple(params)
+
+
 def _fetch_health_rows(db: Any, *, start: date | None = None, end: date | None = None) -> list[HealthRow]:
-    rows = db.query("SELECT * FROM daily_health ORDER BY date")
+    where, params = _date_range_clause(start, end)
+    rows = db.query(f"SELECT * FROM daily_health{where} ORDER BY date", params)
     out: list[HealthRow] = []
     for row in rows:
         d = _parse_date(row["date"])
         if d is None:
-            continue
-        if start is not None and d < start:
-            continue
-        if end is not None and d > end:
             continue
         out.append(HealthRow(
             date=d,
@@ -320,15 +332,15 @@ def _fetch_calibration_health_rows(db: Any) -> list[CalibrationHealthRow]:
 
 
 def _fetch_hrv_rows(db: Any, *, start: date | None = None, end: date | None = None) -> list[HrvRow]:
-    rows = db.query("SELECT date, last_night_avg, status FROM daily_hrv ORDER BY date")
+    where, params = _date_range_clause(start, end)
+    rows = db.query(
+        f"SELECT date, last_night_avg, status FROM daily_hrv{where} ORDER BY date",
+        params,
+    )
     out: list[HrvRow] = []
     for row in rows:
         d = _parse_date(row["date"])
         if d is None:
-            continue
-        if start is not None and d < start:
-            continue
-        if end is not None and d > end:
             continue
         out.append(HrvRow(
             date=d,
@@ -338,19 +350,31 @@ def _fetch_hrv_rows(db: Any, *, start: date | None = None, end: date | None = No
     return out
 
 
+def _query_feedback_for_labels(db: Any, label_ids: Sequence[str]) -> list[Any]:
+    out: list[Any] = []
+    # SQLite caps host-parameter count (default 999 in older builds). Chunk
+    # to keep multi-year recomputes safely below the limit.
+    for i in range(0, len(label_ids), _IN_CLAUSE_CHUNK):
+        chunk = label_ids[i : i + _IN_CLAUSE_CHUNK]
+        placeholders = ",".join("?" for _ in chunk)
+        out.extend(
+            db.query(
+                f"SELECT label_id, rpe FROM activity_feedback WHERE label_id IN ({placeholders})",
+                tuple(chunk),
+            )
+        )
+    return out
+
+
 def _fetch_feedback_rows(db: Any, activity_rows: Sequence[Any]) -> list[FeedbackRow]:
     if not activity_rows:
         return []
     activity_dates = {row["label_id"]: _activity_shanghai_date(row["date"]) for row in activity_rows}
-    placeholders = ",".join("?" for _ in activity_dates)
-    rows = db.query(
-        f"SELECT label_id, rpe FROM activity_feedback WHERE label_id IN ({placeholders})",
-        tuple(activity_dates.keys()),
-    )
     duration_by_label = {
         row["label_id"]: (float(row["duration_s"]) / 60.0 if row["duration_s"] is not None else None)
         for row in activity_rows
     }
+    rows = _query_feedback_for_labels(db, list(activity_dates.keys()))
     out: list[FeedbackRow] = []
     for row in rows:
         d = activity_dates.get(row["label_id"])
@@ -363,6 +387,26 @@ def _fetch_feedback_rows(db: Any, activity_rows: Sequence[Any]) -> list[Feedback
             duration_minutes=duration_by_label.get(row["label_id"]),
         ))
     return out
+
+
+def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
+    """Read the last persisted daily_training_load row before series_start.
+
+    Ensures partial-window recomputes continue EWMA from prior ATL/CTL instead
+    of resetting to zero. Returns None when no earlier row exists.
+    """
+    rows = db.query(
+        "SELECT acute_load, chronic_load FROM daily_training_load "
+        "WHERE date < ? ORDER BY date DESC LIMIT 1",
+        (series_start.isoformat(),),
+    )
+    if not rows:
+        return None
+    row = rows[0]
+    return PriorLoadState(
+        acute_load=float(row["acute_load"]) if row["acute_load"] is not None else 0.0,
+        chronic_load=float(row["chronic_load"]) if row["chronic_load"] is not None else 0.0,
+    )
 
 
 def _build_activity_input(db: Any, row: Any) -> ActivityLoadInput | None:
@@ -465,11 +509,16 @@ def recompute_training_load(
     end: str | date | None = None,
     label_ids: Sequence[str] | None = None,
     persist: bool = True,
+    prior_state: PriorLoadState | None = None,
 ) -> TrainingLoadRunSummary:
     """Recompute objective activity and daily training-load rows.
 
     This is the only DB adapter entry point for v1; it does not hook into sync
     and does not alter vendor-provided training-load fields.
+
+    When ``start`` is provided without an explicit ``prior_state``, the most
+    recent persisted ``daily_training_load`` row before the window is loaded
+    so the rolling ATL/CTL continues instead of restarting at zero.
     """
     start_date = _parse_date(start)
     end_date = _parse_date(end)
@@ -488,7 +537,9 @@ def recompute_training_load(
         health_rows=_fetch_calibration_health_rows(db),
     )
     calibration = _defaulted_calibration(calibration, activity_inputs)
-    calibration_id = db.upsert_training_load_calibration(calibration) if persist else None
+    calibration_id = (
+        db.upsert_training_load_calibration(calibration, commit=False) if persist else None
+    )
     if calibration_id is not None:
         calibration = CalibrationSnapshot(
             as_of_date=calibration.as_of_date,
@@ -505,6 +556,8 @@ def recompute_training_load(
     health_rows = _fetch_health_rows(db, start=series_start, end=series_end)
     hrv_rows = _fetch_hrv_rows(db, start=series_start, end=series_end)
     feedback_rows = _fetch_feedback_rows(db, activity_rows)
+    if prior_state is None and start_date is not None:
+        prior_state = _load_prior_state(db, series_start)
     daily_results = compute_daily_load_series(
         activity_results,
         health_rows,
@@ -512,12 +565,14 @@ def recompute_training_load(
         feedback_rows,
         series_start,
         series_end,
+        prior_state=prior_state,
     )
     if persist:
         for result in activity_results:
-            db.upsert_activity_training_load(result)
+            db.upsert_activity_training_load(result, commit=False)
         for result in daily_results:
-            db.upsert_daily_training_load(result)
+            db.upsert_daily_training_load(result, commit=False)
+        db.commit()
     return TrainingLoadRunSummary(
         activities_processed=len(activity_results),
         activity_rows_written=len(activity_results) if persist else 0,

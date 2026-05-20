@@ -1297,7 +1297,11 @@ class Database:
 
     # --- Objective training load (STRIDE-computed, TSS-like scale) ---
 
-    def upsert_training_load_calibration(self, calibration) -> int:
+    def commit(self) -> None:
+        """Flush pending writes on the underlying sqlite3 connection."""
+        self._conn.commit()
+
+    def upsert_training_load_calibration(self, calibration, *, commit: bool = True) -> int:
         source_json = json.dumps(calibration.source or {}, ensure_ascii=False, sort_keys=True)
         self._conn.execute(
             """INSERT INTO training_load_calibration
@@ -1327,10 +1331,11 @@ class Database:
             "SELECT id FROM training_load_calibration WHERE as_of_date = ? AND algorithm_version = ?",
             (calibration.as_of_date.isoformat(), calibration.algorithm_version),
         ).fetchone()
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
         return int(row["id"])
 
-    def upsert_activity_training_load(self, result) -> None:
+    def upsert_activity_training_load(self, result, *, commit: bool = True) -> None:
         reasons_json = json.dumps(result.reasons or [], ensure_ascii=False)
         self._conn.execute(
             """INSERT INTO activity_training_load
@@ -1373,9 +1378,10 @@ class Database:
                 reasons_json,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
-    def upsert_daily_training_load(self, result) -> None:
+    def upsert_daily_training_load(self, result, *, commit: bool = True) -> None:
         reasons_json = json.dumps(result.readiness_reasons or [], ensure_ascii=False)
         self._conn.execute(
             """INSERT INTO daily_training_load
@@ -1406,7 +1412,8 @@ class Database:
                 reasons_json,
             ),
         )
-        self._conn.commit()
+        if commit:
+            self._conn.commit()
 
     def fetch_activity_training_load(self, label_id: str) -> sqlite3.Row | None:
         return self._conn.execute(
