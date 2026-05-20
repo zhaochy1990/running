@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import time
 
 from stride_core.models import ActivityDetail, TimeseriesPoint
 
@@ -217,15 +219,17 @@ def test_activity_commentary_handler_generates_missing_rows_provider_neutral(db,
 
     db.upsert_activity(_make_run("run1", "2026-05-01T08:00:00+00:00"))
     calls: list[tuple[str, str]] = []
+    generated = threading.Event()
 
     monkeypatch.setattr("stride_server.commentary_ai.is_enabled", lambda: True)
 
-    def fake_regenerate(user: str, label_id: str, *, db=None):
+    def fake_generate(user: str, label_id: str, **_kwargs):
         calls.append((user, label_id))
-        db.upsert_activity_commentary(label_id, "draft", generated_by="test")
+        generated.set()
         return {"commentary": "draft"}
 
-    monkeypatch.setattr("stride_server.commentary_ai.regenerate_and_save", fake_regenerate)
+    monkeypatch.setattr("stride_server.commentary_ai.regenerate_and_save", fake_generate)
+    monkeypatch.setattr("stride_server.commentary_ai.maybe_generate_for_new_activity", fake_generate)
     context = PostSyncContext(
         user="u",
         provider="garmin",
@@ -235,8 +239,43 @@ def test_activity_commentary_handler_generates_missing_rows_provider_neutral(db,
     )
     ActivityCommentaryHandler().run(context)
 
+    assert generated.wait(1)
     assert calls == [("u", "run1")]
-    assert db.get_activity_commentary("run1") == "draft"
+
+
+def test_activity_commentary_handler_does_not_block_on_generation(db, monkeypatch):
+    from stride_core.post_sync import ActivityCommentaryHandler, PostSyncContext
+
+    db.upsert_activity(_make_run("run1", "2026-05-01T08:00:00+00:00"))
+    calls: list[tuple[str, str]] = []
+    generated = threading.Event()
+
+    monkeypatch.setattr("stride_server.commentary_ai.is_enabled", lambda: True)
+
+    def slow_generate(user: str, label_id: str, **_kwargs):
+        time.sleep(0.25)
+        calls.append((user, label_id))
+        generated.set()
+        return {"commentary": "draft"}
+
+    monkeypatch.setattr("stride_server.commentary_ai.regenerate_and_save", slow_generate)
+    monkeypatch.setattr("stride_server.commentary_ai.maybe_generate_for_new_activity", slow_generate)
+    context = PostSyncContext(
+        user="u",
+        provider="coros",
+        operation="sync",
+        db=db,
+        activity_label_ids=("run1",),
+    )
+
+    started = time.perf_counter()
+    ActivityCommentaryHandler().run(context)
+    elapsed = time.perf_counter() - started
+
+    assert elapsed < 0.1
+    assert calls == []
+    assert generated.wait(1)
+    assert calls == [("u", "run1")]
 
 
 def test_ability_handler_forwards_label_ids(db, monkeypatch):

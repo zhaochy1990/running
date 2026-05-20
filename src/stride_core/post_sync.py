@@ -10,6 +10,7 @@ sync into a failed sync.
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -169,7 +170,7 @@ class ActivityCommentaryHandler:
         if not label_ids:
             return
         try:
-            from stride_server.commentary_ai import is_enabled, regenerate_and_save
+            from stride_server.commentary_ai import is_enabled, maybe_generate_for_new_activity
         except Exception as exc:  # pragma: no cover - optional server deps
             logger.debug("commentary module unavailable: %s", exc)
             return
@@ -187,14 +188,21 @@ class ActivityCommentaryHandler:
                 if context.db.activity_commentary_exists(label_id):
                     logger.debug("commentary already exists for %s, skipping auto-gen", label_id)
                     continue
-                regenerate_and_save(context.user, label_id, db=context.db)
-                logger.info("auto-generated commentary for %s (user=%s)", label_id, context.user)
             except Exception:
                 logger.exception(
-                    "activity commentary post-sync failed for %s (user=%s)",
+                    "activity commentary preflight failed for %s (user=%s)",
                     label_id,
                     context.user,
                 )
+                continue
+
+            thread = threading.Thread(
+                target=maybe_generate_for_new_activity,
+                args=(context.user, label_id),
+                daemon=True,
+                name=f"post-sync-commentary-{label_id}",
+            )
+            thread.start()
 
 
 DEFAULT_POST_SYNC_HANDLERS: tuple[PostSyncHandler, ...] = (
