@@ -95,7 +95,7 @@ def estimate_calibration(
     explicit_max_hr = max(hr_candidates) if hr_candidates else None
     hrmax = explicit_max_hr
     if hrmax is not None:
-        source["hrmax_estimate"] = {"method": "p98_180d", "sample_count": len(hr_candidates)}
+        source["hrmax_estimate"] = {"method": "max_180d", "sample_count": len(hr_candidates)}
 
     run_candidates: list[tuple[float, CalibrationActivity]] = []
     for activity in recent_history:

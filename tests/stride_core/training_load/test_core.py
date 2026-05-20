@@ -130,7 +130,8 @@ def test_threshold_speed_for_one_hour_is_external_tss_100_and_not_inverse_pace()
     )
 
     assert threshold.external_tss == pytest.approx(100.0, rel=0.01)
-    assert easy.external_tss < 25.0
+    # At half threshold speed IF is clamped to 0.5 → external_tss ≈ 25.
+    assert easy.external_tss == pytest.approx(25.0, rel=0.01)
     assert easy.external_tss < threshold.external_tss
 
 
@@ -199,6 +200,27 @@ def test_missing_threshold_hr_keeps_raw_trimp_out_of_pmc():
     assert result.training_dose is None
     assert result.excluded_from_pmc is True
     assert "threshold_hr_missing" in result.reasons
+
+
+def test_flat_easy_run_mechanical_load_is_close_to_distance_km():
+    """Design-doc acceptance bar: flat easy run gives mechanical_load/distance_km ≈ 1.0.
+
+    No ascent/descent, easy-pace IF ≈ 0.5 → intensity_factor = 1 + 0.5 * max(0, 0.5-0.85)^2
+    = 1.0613, so 14.4 km * 1.0 * 1.0 * 1.0613 ≈ 15.28. We allow ≤ 1.10 / km to keep the
+    proxy honest on benign terrain.
+    """
+    result = compute_activity_load(
+        _activity(
+            distance_m=14400,
+            samples=_samples(speed_mps=2.0, altitude_m=0.0, heart_rate_bpm=None),
+        ),
+        _calibration(threshold_hr=None, critical_power_w=None),
+    )
+
+    assert result.mechanical_load is not None
+    distance_km = 14.4
+    ratio = result.mechanical_load / distance_km
+    assert ratio == pytest.approx(1.0, abs=0.10)
 
 
 def test_strength_without_hr_or_tss_like_external_load_is_excluded_from_pmc():

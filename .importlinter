@@ -55,3 +55,29 @@ source_modules =
     garmin_sync
 forbidden_modules =
     coach_eval
+
+# -----------------------------------------------------------------------------
+# Contract 3: training-load core isolation
+#
+# `stride_core.training_load.core` and `stride_core.training_load.calibration`
+# are pure-formula modules — they normalize HR / pace / power into TSS-like
+# scale and walk an EWMA. They must not reach into DB, HTTP, vendor sync, or
+# cloud SDKs. The only place that touches I/O is `training_load.adapter`,
+# which deliberately depends on `stride_core.db` to load activities and
+# upsert results. Keep the contamination out of the formula layer so the
+# math stays unit-testable in isolation.
+# -----------------------------------------------------------------------------
+[importlinter:contract:training-load-core-isolation]
+name = Training-load formulas must not import infrastructure modules
+type = forbidden
+source_modules =
+    stride_core.training_load.core
+    stride_core.training_load.calibration
+    stride_core.training_load.types
+forbidden_modules =
+    stride_core.db
+    stride_server
+    coros_sync
+    garmin_sync
+    fastapi
+    azure
