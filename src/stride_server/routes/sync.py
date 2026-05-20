@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, Depends
 
 from stride_core.source import DataSource
+from stride_core.post_sync import run_post_sync_for_result
 
 from ..bearer import require_bearer
 from ..deps import get_source_for_user
@@ -40,6 +41,15 @@ def trigger_sync(
                 "error": f"用户 {user} 未登录，请先运行: coros-sync --profile {user} login",
             }
         result = source.sync_user(user, full=full)
+        try:
+            run_post_sync_for_result(
+                user=user,
+                provider=source.info.name,
+                operation="sync",
+                result=result,
+            )
+        except Exception:
+            logger.exception("post-sync events failed for user %s", user)
         return {
             "success": True,
             "output": f"同步完成: {result.activities} 条活动, {result.health} 条健康记录",

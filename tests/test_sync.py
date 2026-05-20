@@ -187,9 +187,10 @@ class TestActivityDetailJobs:
                 calls.append(label_id)
                 return _activity_detail(label_id)
 
-        synced = sync_activities(FakeClient(), db, jobs=1)
+        synced, activity_label_ids = sync_activities(FakeClient(), db, jobs=1)
 
         assert synced == 2
+        assert activity_label_ids == ("stuck", "new")
         assert calls == ["stuck", "new"]
         assert db.activity_exists("old")
         assert db.activity_exists("stuck")

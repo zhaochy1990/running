@@ -42,7 +42,6 @@ def _activity_details() -> dict:
 class TestGarminSyncTimeseries:
     def test_sync_writes_activity_detail_metrics_to_unified_timeseries_table(self, db, monkeypatch):
         monkeypatch.setattr("garmin_sync.sync._sync_health", lambda *args, **kwargs: 0)
-        monkeypatch.setattr("stride_core.ability_hook.run_ability_hook", lambda *args, **kwargs: None)
 
         class FakeClient:
             details_call = None
@@ -66,10 +65,11 @@ class TestGarminSyncTimeseries:
                 return _activity_details()
 
         client = FakeClient()
-        activities, health = run_sync(client, db, full=True, activity_limit=1)
+        activities, health, activity_label_ids = run_sync(client, db, full=True, activity_limit=1)
 
         assert activities == 1
         assert health == 0
+        assert activity_label_ids == ("12345",)
         assert client.details_call == {"maxchart": 20000, "maxpoly": 20000}
         rows = db.query(
             "SELECT timestamp, distance, heart_rate, speed, power "

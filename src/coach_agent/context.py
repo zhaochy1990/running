@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable
 from stride_core.timefmt import today_shanghai
@@ -11,6 +12,7 @@ from typing import Any
 from stride_core import db as core_db
 from stride_core.db import Database
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
+from stride_core.post_sync import run_post_sync_for_result
 from stride_core.source import DataSource
 from stride_core.state_stores import (
     SqliteInBodyStore,
@@ -21,6 +23,9 @@ from stride_server import content_store
 from stride_server.deps import PROJECT_ROOT, format_duration, parse_week_dates
 from stride_server.routes.inbody import PHASE_CHECKPOINTS
 from stride_server.routes.training_plan import get_training_plan
+
+
+logger = logging.getLogger(__name__)
 
 
 def _row_dict(row) -> dict[str, Any]:
@@ -275,6 +280,15 @@ def maybe_sync_user(user: str, source: DataSource | None, *, enabled: bool) -> d
     if not source.is_logged_in(user):
         return {"attempted": True, "success": False, "message": "user is not logged in to data source"}
     result = source.sync_user(user, full=False)
+    try:
+        run_post_sync_for_result(
+            user=user,
+            provider=source.info.name,
+            operation="sync",
+            result=result,
+        )
+    except Exception:
+        logger.exception("post-sync events failed for coach-agent sync user=%s", user)
     return {
         "attempted": True,
         "success": True,

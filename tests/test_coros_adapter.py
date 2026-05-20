@@ -59,11 +59,32 @@ def test_sync_user_forwards_to_run_sync(tmp_path, monkeypatch):
 
     with patch("coros_sync.adapter.CorosClient", return_value=fake_client), \
          patch("coros_sync.adapter.Database", return_value=fake_db), \
-         patch("coros_sync.adapter.run_sync", return_value=(7, 3)) as run_sync_mock:
+         patch("coros_sync.adapter.run_sync", return_value=(7, 3, ("L1", "L2"))) as run_sync_mock:
         result = CorosDataSource(jobs=2).sync_user("alice", full=True)
 
-    assert result == SyncResult(activities=7, health=3)
+    assert result == SyncResult(activities=7, health=3, activity_label_ids=("L1", "L2"))
     run_sync_mock.assert_called_once_with(fake_client, fake_db, full=True, jobs=2)
+
+
+def test_sync_user_health_only_returns_no_activity_label_ids(tmp_path, monkeypatch):
+    from coros_sync.auth import Credentials
+    monkeypatch.setattr("coros_sync.auth.USER_DATA_DIR", tmp_path)
+    Credentials(email="x@y", pwd_hash="h", access_token="tok", region="cn").save(user="alice")
+
+    fake_client = MagicMock()
+    fake_client.__enter__.return_value = fake_client
+    fake_client.__exit__.return_value = False
+    fake_db = MagicMock()
+    fake_db.__enter__.return_value = fake_db
+    fake_db.__exit__.return_value = False
+
+    with patch("coros_sync.adapter.CorosClient", return_value=fake_client), \
+         patch("coros_sync.adapter.Database", return_value=fake_db), \
+         patch("coros_sync.adapter.run_health_only_sync", return_value=(0, 3)) as health_sync_mock:
+        result = CorosDataSource(jobs=2).sync_user("alice", mode="health_only")
+
+    assert result == SyncResult(activities=0, health=3, activity_label_ids=())
+    health_sync_mock.assert_called_once_with(fake_client, fake_db, progress=None)
 
 
 def test_resync_activity_raises_when_activity_missing(tmp_path, monkeypatch):

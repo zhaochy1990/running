@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from stride_core.models import EXERCISE_TYPES, pace_str
+from stride_core.post_sync import run_post_sync_for_labels
 from stride_core.source import DataSource
 from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
@@ -399,6 +400,15 @@ def resync_activity(
         if not source.is_logged_in(user):
             return {"success": False, "error": f"用户 {user} 未登录"}
         source.resync_activity(user, label_id)
+        try:
+            run_post_sync_for_labels(
+                user=user,
+                provider=source.info.name,
+                operation="resync_activity",
+                activity_label_ids=(label_id,),
+            )
+        except Exception:
+            logger.exception("post-sync events failed for user=%s label_id=%s", user, label_id)
         return {"success": True}
     except LookupError:
         return {"success": False, "error": "活动不存在"}

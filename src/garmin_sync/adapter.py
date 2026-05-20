@@ -20,6 +20,7 @@ from stride_core.source import (
     LoginCredentials,
     LoginResult,
     ProviderInfo,
+    SyncMode,
     SyncProgressCallback,
     SyncResult,
 )
@@ -32,6 +33,7 @@ from .normalize import apply_to_detail
 from .sync import (
     GARMIN_ACTIVITY_DETAILS_MAXCHART,
     GARMIN_ACTIVITY_DETAILS_MAXPOLY,
+    run_health_only_sync,
     run_sync,
 )
 from .translate import normalized_to_garmin_workout
@@ -121,6 +123,7 @@ class GarminDataSource(BaseDataSource):
         user: str,
         *,
         full: bool = False,
+        mode: SyncMode = "full",
         progress: SyncProgressCallback | None = None,
     ) -> SyncResult:
         creds = GarminCredentials.load(user)
@@ -131,8 +134,16 @@ class GarminDataSource(BaseDataSource):
 
         client = GarminClient.from_stored(creds)
         with Database(user=user) as db:
-            activities, health = run_sync(client, db, full=full, progress=progress)
-        return SyncResult(activities=activities, health=health)
+            if mode == "health_only":
+                activities, health = run_health_only_sync(client, db, progress=progress)
+                activity_label_ids: tuple[str, ...] = ()
+            else:
+                activities, health, activity_label_ids = run_sync(client, db, full=full, progress=progress)
+        return SyncResult(
+            activities=activities,
+            health=health,
+            activity_label_ids=activity_label_ids,
+        )
 
     def push_run_workout(self, user: str, workout: NormalizedRunWorkout) -> str:
         """Translate `NormalizedRunWorkout` and push to the user's Garmin schedule.

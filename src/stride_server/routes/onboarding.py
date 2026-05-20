@@ -11,6 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from pydantic import BaseModel
 
 from stride_core.registry import ProviderRegistry, UnknownProvider
+from stride_core.post_sync import run_post_sync_for_result
 from stride_core.source import DataSource, LoginCredentials, SyncProgress
 
 from ..bearer import require_bearer
@@ -336,6 +337,16 @@ def _run_background_sync(
         result = source.sync_user(
             uuid, full=full, mode=mode, progress=report_progress,
         )
+        try:
+            run_post_sync_for_result(
+                user=uuid,
+                provider=source.info.name,
+                operation="sync",
+                result=result,
+                progress=report_progress,
+            )
+        except Exception:
+            logger.exception("post-sync events failed for onboarding sync user=%s", uuid)
     except Exception as exc:
         logger.exception("Background sync (mode=%s) failed for %s", mode, uuid)
         onboarding = _read_onboarding(uuid)
