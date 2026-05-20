@@ -63,7 +63,7 @@ export default function BodyCompositionEntryModal({
       ['body_fat_pct', bf, 3, 50],
       ['smm_kg', smm, 10, 60],
       ['fat_mass_kg', fatMass, 0, 80],
-      ['visceral_fat_level', vfl, 1, 30],
+      ['visceral_fat_level', vfl, 1, 20],
     ]
     for (const [name, raw, lo, hi] of required) {
       const v = num(raw)
