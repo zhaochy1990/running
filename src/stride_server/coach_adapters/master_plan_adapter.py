@@ -139,15 +139,23 @@ def generate_master_plan(state: GenState) -> dict:
     user_message = [{"role": "user", "content": user_text}]
 
     client = LLMClient()
-    # max_tokens=16384 (was 8192): gpt-5.5 is a reasoning model whose
-    # reasoning tokens share the output budget. A typical MasterPlan
-    # serialisation is ~3500 chars (~1200 tokens); reasoning can consume
-    # 4-6k tokens, leaving us bumping against 8192 occasionally and
-    # truncating the JSON mid-stream → parse_failed. Doubling the cap is
-    # cheap insurance against intermittent truncation. See probe results
-    # in 2026-05-20 S1 baseline run (.tmp/raw/*.txt).
-    _MAX_TOKENS = 16384
-    raw = client.chat_sync(system_prompt, user_message, max_tokens=_MAX_TOKENS)
+    # max_tokens=32768 + reasoning_effort=low — empirical sizing for the
+    # Batch B prompt (weekly_key_sessions HARD block + Distance specificity).
+    # A 14-22 week S1 plan with one weekly_key_sessions entry per week,
+    # training_principles + phases + milestones runs 5-9 k chars of
+    # visible output (≈ 2-3 k output tokens). On gpt-5.5 with default
+    # reasoning_effort=medium, the model consumes ~14-20 k tokens of
+    # reasoning, which combined with the visible output bumps against
+    # the budget cap and truncates the JSON mid-stream — see the
+    # 2026-05-20 live_local_db probe (.tmp/live_raw/*.txt).
+    # reasoning_effort=low gives the model less chain-of-thought budget
+    # but the task is structured enough that this is sufficient; 32 k
+    # is the resulting safe ceiling for the visible output.
+    _MAX_TOKENS = 32768
+    raw = client.chat_sync(
+        system_prompt, user_message,
+        max_tokens=_MAX_TOKENS, reasoning_effort="low",
+    )
 
     parsed = _parse_llm_output(raw)
     if parsed is None:
@@ -162,7 +170,8 @@ def generate_master_plan(state: GenState) -> dict:
             len(raw),
         )
         raw_retry = client.chat_sync(
-            system_prompt, user_message, max_tokens=_MAX_TOKENS
+            system_prompt, user_message,
+            max_tokens=_MAX_TOKENS, reasoning_effort="low",
         )
         parsed = _parse_llm_output(raw_retry)
         if parsed is None:
