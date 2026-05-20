@@ -1,6 +1,8 @@
 """Master plan rule filter — see ``docs/coach-eval_S1.md`` § S1 L1 Rules.
 
-Batch A (current) implements 6 rules — 3 schema-based + 3 input-aware:
+Implements 12 S1 L1 rules. Empty ``MasterPlan.weekly_key_sessions`` makes
+all Batch B rules silent no-ops so legacy plans / fixtures don't trip on
+the new structure.
 
 Schema-only (no kwargs):
 
@@ -8,7 +10,8 @@ Schema-only (no kwargs):
 * ``phase_count_min``: at least 3 phases (base / build / peak typical).
 * ``peak_before_race``: if any RACE milestone exists, the phase ending closest
   before the race must finish within 7-21 days of race_date (1-3 week taper).
-* ``phase_duration_balance``: per-phase span 2-16 weeks (warning).
+* ``phase_duration_balance``: per-phase span 2-16 weeks (warning); race
+  phases (1-week wrap-around blocks) are exempt — they're inherently short.
 
 Input-aware (need ``rule_filter_kwargs``):
 
@@ -17,11 +20,21 @@ Input-aware (need ``rule_filter_kwargs``):
 * ``goal_realism``: PB → ``target_race.goal_time_s`` improvement vs
   distance-specific threshold — fm 10%, hm 12%, 5k/10k 15%, ultra 10%
   (warning).
+* ``target_distance_long_run``: peak long_run distance_km matches target
+  race distance — fm ≥ 28km, hm ≥ 18km, 10k ≥ 10km, 5k ≥ 6km (error).
+* ``key_session_density``: ``weekly_run_days_max <= 3`` → ≤2 key sessions
+  per week; otherwise ≤3 (error).
 
-Batch B rules (deferred — require ``weekly_key_sessions`` schema extension):
-``weekly_key_sessions_present`` / ``weekly_volume_ramp`` / ``taper_volume_drop``
-/ ``target_distance_long_run`` / ``key_session_density`` / ``hard_session_spacing``.
-See ``docs/coach-eval_S1.md`` § S1 L1 Rules.
+Weekly-skeleton (no kwargs but require ``weekly_key_sessions`` populated):
+
+* ``weekly_key_sessions_present``: every non-recovery / non-taper week has
+  1-3 key sessions (error).
+* ``weekly_volume_ramp``: adjacent-week ``target_weekly_km_high`` ratio
+  ≤ 1.10 except recovery / taper weeks (error).
+* ``taper_volume_drop``: first taper week's ``target_weekly_km_high``
+  drops ≥ 25% vs the immediately preceding peak week (error).
+* ``hard_session_spacing``: same-week threshold / tempo / interval /
+  vo2max / hill / race_pace count ≤ 2 (error).
 
 LLM-free: no langchain / anthropic imports.
 """
@@ -210,6 +223,39 @@ def check_peak_before_race(plan: MasterPlan) -> list[RuleViolation]:
     return violations
 
 
+# Phase names that designate the race week itself (`比赛` / `race` / `比赛周`).
+# These are inherently short — a single race week or a 1-2 day race wrap-up
+# legitimately spans 1-7 days, so phase_duration_balance must NOT fire for
+# them. We share the markers with _is_non_peak_phase but exclude `taper` /
+# `减量` / `recovery` / `恢复` here — taper / recovery phases SHOULD be ≥ 2
+# weeks per the docs, only the race week itself is the exempt edge case.
+_RACE_PHASE_MARKERS: tuple[str, ...] = (
+    "比赛周", "比赛日", "race week", "race-week",
+    # Bare "比赛" / "race" are also valid race-phase names (the LLM may emit
+    # the standalone phase `比赛` per the prompt's recommended phase order).
+    # _PEAK_PHASE_MARKERS already overrides false matches like `比赛准备期`
+    # so we can keep these short tokens here without producing collisions.
+    "比赛", "race",
+)
+
+
+def _is_race_phase(phase_name: str) -> bool:
+    """True if the phase name designates the race week itself.
+
+    Used to exempt phase_duration_balance — race weeks are inherently
+    1-week blocks and shouldn't trip the 2-week minimum. Peak / prep
+    phases (e.g. ``比赛准备期`` / ``race prep``) match the peak override
+    first via :data:`_PEAK_PHASE_MARKERS`, so this function won't false-
+    positive on them.
+    """
+    if not phase_name:
+        return False
+    low = phase_name.lower()
+    if any(marker in low for marker in _PEAK_PHASE_MARKERS):
+        return False  # peak/prep phase, not a race phase
+    return any(kw in low for kw in _RACE_PHASE_MARKERS)
+
+
 def check_phase_duration_balance(
     plan: MasterPlan, *, min_days: int = 14, max_days: int = 112
 ) -> list[RuleViolation]:
@@ -221,9 +267,14 @@ def check_phase_duration_balance(
     fresh stimulus. Severity is **warning**: a 1-week intro / deload micro-
     phase can be legitimate, and an 18-week base for an ultramarathon
     isn't catastrophic — the L2 judge owns the final call.
+
+    Race-week phases (``比赛`` / ``race`` / ``比赛周``) are exempt — they
+    are inherently 1-week blocks; the 2-week minimum doesn't apply.
     """
     violations: list[RuleViolation] = []
     for phase in plan.phases:
+        if _is_race_phase(phase.name):
+            continue  # race-week phases are inherently short
         try:
             start = _date.fromisoformat(phase.start_date)
             end = _date.fromisoformat(phase.end_date)
@@ -446,6 +497,325 @@ def check_goal_realism(
 
 
 # ---------------------------------------------------------------------------
+# Weekly key-session rules (Batch B) — operate on MasterPlan.weekly_key_sessions
+# ---------------------------------------------------------------------------
+
+
+# Sessions with high systemic / mechanical load. Two of these in one week
+# is the docs-mandated upper bound (hard_session_spacing); race-pace counts
+# because the prompt's HARD rule covers it explicitly.
+_HARD_SESSION_TYPES: frozenset[str] = frozenset({
+    "threshold", "tempo", "interval", "vo2max", "hill", "race_pace",
+})
+
+# Long-run distance minimums per target-race distance (peak phase).
+# Source: ``docs/coach-eval_S1.md`` § S1 L1 Rules § target_distance_long_run.
+# ``ultra`` extrapolation — peak long run for an ultra should at least hit
+# a marathon-distance long run; we default to 32km until a fixture motivates
+# a stricter rule.
+_LONG_RUN_MIN_KM: dict[str, float] = {
+    "5k": 6.0,
+    "10k": 10.0,
+    "hm": 18.0,
+    "fm": 28.0,
+    "ultra": 32.0,
+}
+
+
+def _week_is_deload(week: Any) -> bool:
+    """True if the week is a recovery or taper week (rules skip these)."""
+    return bool(getattr(week, "is_recovery_week", False) or getattr(week, "is_taper_week", False))
+
+
+def check_weekly_key_sessions_present(plan: MasterPlan) -> list[RuleViolation]:
+    """Every non-recovery / non-taper week must have 1-3 key sessions.
+
+    Recovery weeks (``is_recovery_week=True``) and taper weeks
+    (``is_taper_week=True``) are exempt — a deload by definition runs
+    fewer / no quality sessions. The 1-3 range is the docs-mandated band
+    (single quality session in a base week is OK; >3 risks overtraining
+    and is caught more sharply by key_session_density).
+    """
+    if not plan.weekly_key_sessions:
+        return []  # back-compat: empty skeleton → no-op
+    violations: list[RuleViolation] = []
+    for week in plan.weekly_key_sessions:
+        if _week_is_deload(week):
+            continue
+        n = len(week.key_sessions)
+        if n < 1 or n > 3:
+            violations.append(
+                RuleViolation(
+                    rule="weekly_key_sessions_present",
+                    severity="error",
+                    message=(
+                        f"week {week.week_index} ({week.week_start}) has "
+                        f"{n} key session(s); expected 1-3 for a non-deload week"
+                    ),
+                    details={
+                        "week_index": week.week_index,
+                        "week_start": week.week_start,
+                        "phase_id": week.phase_id,
+                        "key_session_count": n,
+                    },
+                )
+            )
+    return violations
+
+
+def check_weekly_volume_ramp(
+    plan: MasterPlan, *, max_ramp_ratio: float = 1.10
+) -> list[RuleViolation]:
+    """Adjacent-week ``target_weekly_km_high`` ratio must be ≤ 1.10.
+
+    Skips when the *destination* week is a deload (recovery / taper) —
+    those weeks are meant to drop, not ramp. Also skips when the previous
+    week's volume is 0 (degenerate / starting from zero, no ratio defined).
+    """
+    if not plan.weekly_key_sessions:
+        return []
+    weeks_sorted = sorted(plan.weekly_key_sessions, key=lambda w: w.week_index)
+    violations: list[RuleViolation] = []
+    for prev, curr in zip(weeks_sorted, weeks_sorted[1:]):
+        if _week_is_deload(curr):
+            continue  # deload is supposed to drop
+        if prev.target_weekly_km_high <= 0:
+            continue
+        ratio = curr.target_weekly_km_high / prev.target_weekly_km_high
+        if ratio > max_ramp_ratio:
+            violations.append(
+                RuleViolation(
+                    rule="weekly_volume_ramp",
+                    severity="error",
+                    message=(
+                        f"week {curr.week_index} target_weekly_km_high "
+                        f"({curr.target_weekly_km_high:.1f}km) jumps "
+                        f"{ratio:.2f}x vs week {prev.week_index} "
+                        f"({prev.target_weekly_km_high:.1f}km); cap is "
+                        f"{max_ramp_ratio:.2f}x"
+                    ),
+                    details={
+                        "prev_week_index": prev.week_index,
+                        "curr_week_index": curr.week_index,
+                        "prev_km_high": prev.target_weekly_km_high,
+                        "curr_km_high": curr.target_weekly_km_high,
+                        "ratio": round(ratio, 3),
+                        "max_ratio": max_ramp_ratio,
+                    },
+                )
+            )
+    return violations
+
+
+def check_taper_volume_drop(
+    plan: MasterPlan, *, min_drop_pct: float = 0.25
+) -> list[RuleViolation]:
+    """First taper week must drop ``target_weekly_km_high`` ≥ 25% vs peak.
+
+    "Peak" here = the week immediately preceding the first taper week
+    (well-defined because the prompt asks for ordered weekly_key_sessions).
+    No-op when there is no taper week at all — the prompt's HARD rule
+    requires one, but ``peak_before_race`` already covers that gap and
+    we'd be double-counting.
+    """
+    if not plan.weekly_key_sessions:
+        return []
+    weeks_sorted = sorted(plan.weekly_key_sessions, key=lambda w: w.week_index)
+    first_taper_idx = next(
+        (i for i, w in enumerate(weeks_sorted) if w.is_taper_week), -1
+    )
+    if first_taper_idx <= 0:
+        return []  # no taper week, or taper is week 1 (degenerate, peak_before_race catches)
+    taper_week = weeks_sorted[first_taper_idx]
+    # Peak = previous non-deload week. Walking backwards lets us skip a
+    # spurious recovery deload-week that the LLM might have placed right
+    # before taper (which would otherwise make taper "drop" look invalid).
+    peak_week = None
+    for candidate in reversed(weeks_sorted[:first_taper_idx]):
+        if not _week_is_deload(candidate):
+            peak_week = candidate
+            break
+    if peak_week is None or peak_week.target_weekly_km_high <= 0:
+        return []
+    drop_pct = (
+        peak_week.target_weekly_km_high - taper_week.target_weekly_km_high
+    ) / peak_week.target_weekly_km_high
+    if drop_pct < min_drop_pct:
+        return [
+            RuleViolation(
+                rule="taper_volume_drop",
+                severity="error",
+                message=(
+                    f"taper week {taper_week.week_index} only drops "
+                    f"{drop_pct * 100:.1f}% from peak week {peak_week.week_index} "
+                    f"({peak_week.target_weekly_km_high:.1f}km → "
+                    f"{taper_week.target_weekly_km_high:.1f}km); expected "
+                    f"≥ {min_drop_pct * 100:.0f}%"
+                ),
+                details={
+                    "peak_week_index": peak_week.week_index,
+                    "taper_week_index": taper_week.week_index,
+                    "peak_km_high": peak_week.target_weekly_km_high,
+                    "taper_km_high": taper_week.target_weekly_km_high,
+                    "drop_pct": round(drop_pct * 100, 2),
+                    "min_drop_pct": round(min_drop_pct * 100, 2),
+                },
+            )
+        ]
+    return []
+
+
+def check_target_distance_long_run(
+    plan: MasterPlan, *, target_race: dict | None
+) -> list[RuleViolation]:
+    """Peak long_run distance_km must match target race distance.
+
+    Thresholds (from docs/coach-eval_S1.md):
+    fm ≥ 28km, hm ≥ 18km, 10k ≥ 10km, 5k ≥ 6km, ultra ≥ 32km.
+
+    We take the max ``distance_km`` across all ``long_run`` sessions in
+    non-taper / non-recovery weeks — that's the peak long run by
+    construction. No-op when ``target_race`` lacks ``distance``, or the
+    skeleton is empty, or no ``long_run`` session was emitted at all.
+    """
+    if not plan.weekly_key_sessions:
+        return []
+    if not target_race:
+        return []
+    distance = (target_race.get("distance") or "").lower()
+    if not distance:
+        return []
+    threshold = _LONG_RUN_MIN_KM.get(distance)
+    if threshold is None:
+        return []  # unrecognised race distance — let L2 judge handle
+
+    max_long_run_km = 0.0
+    for week in plan.weekly_key_sessions:
+        if _week_is_deload(week):
+            continue
+        for sess in week.key_sessions:
+            if sess.type != "long_run":
+                continue
+            if sess.distance_km is None:
+                continue
+            if sess.distance_km > max_long_run_km:
+                max_long_run_km = sess.distance_km
+    if max_long_run_km == 0.0:
+        # Plan has weeks but no long_run with distance_km — that's its own
+        # bug (the prompt asks for distance-anchored long runs). Flag it.
+        return [
+            RuleViolation(
+                rule="target_distance_long_run",
+                severity="error",
+                message=(
+                    f"no long_run session with distance_km found in any "
+                    f"non-deload week; target {distance} requires peak "
+                    f"long_run ≥ {threshold:.0f}km"
+                ),
+                details={
+                    "distance": distance,
+                    "min_long_run_km": threshold,
+                    "max_long_run_km_found": 0.0,
+                },
+            )
+        ]
+    if max_long_run_km < threshold:
+        return [
+            RuleViolation(
+                rule="target_distance_long_run",
+                severity="error",
+                message=(
+                    f"peak long_run is {max_long_run_km:.1f}km; target "
+                    f"{distance} requires ≥ {threshold:.0f}km"
+                ),
+                details={
+                    "distance": distance,
+                    "min_long_run_km": threshold,
+                    "max_long_run_km": max_long_run_km,
+                },
+            )
+        ]
+    return []
+
+
+def check_key_session_density(
+    plan: MasterPlan, *, weekly_run_days_max: int | None
+) -> list[RuleViolation]:
+    """Per-week key session count must respect the frequency cap.
+
+    ``weekly_run_days_max <= 3`` → max 2 key sessions/week.
+    ``weekly_run_days_max >= 4`` (or missing) → max 3 key sessions/week.
+
+    Race weeks (any week containing a ``race`` session) are exempt — a
+    race week's single ``race`` session is the whole week's training, not
+    a density violation.
+    """
+    if not plan.weekly_key_sessions:
+        return []
+    try:
+        max_days = int(weekly_run_days_max) if weekly_run_days_max is not None else 99
+    except (ValueError, TypeError):
+        max_days = 99
+    limit = 2 if max_days <= 3 else 3
+
+    violations: list[RuleViolation] = []
+    for week in plan.weekly_key_sessions:
+        types = [ks.type for ks in week.key_sessions]
+        if "race" in types:
+            continue  # race-week exempt
+        if len(types) > limit:
+            violations.append(
+                RuleViolation(
+                    rule="key_session_density",
+                    severity="error",
+                    message=(
+                        f"week {week.week_index} has {len(types)} key sessions; "
+                        f"limit is {limit} (weekly_run_days_max="
+                        f"{weekly_run_days_max if weekly_run_days_max is not None else 'unset'})"
+                    ),
+                    details={
+                        "week_index": week.week_index,
+                        "key_session_types": types,
+                        "limit": limit,
+                        "weekly_run_days_max": weekly_run_days_max,
+                    },
+                )
+            )
+    return violations
+
+
+def check_hard_session_spacing(plan: MasterPlan) -> list[RuleViolation]:
+    """Same-week hard session count must be ≤ 2.
+
+    Hard sessions: threshold / tempo / interval / vo2max / hill / race_pace.
+    Two per week is the prompt's HARD upper bound; three+ in one week is
+    the canonical overtraining trap the L1 should fast-fail on.
+    """
+    if not plan.weekly_key_sessions:
+        return []
+    violations: list[RuleViolation] = []
+    for week in plan.weekly_key_sessions:
+        hard = [ks.type for ks in week.key_sessions if ks.type in _HARD_SESSION_TYPES]
+        if len(hard) > 2:
+            violations.append(
+                RuleViolation(
+                    rule="hard_session_spacing",
+                    severity="error",
+                    message=(
+                        f"week {week.week_index} has {len(hard)} hard sessions "
+                        f"({', '.join(hard)}); limit is 2"
+                    ),
+                    details={
+                        "week_index": week.week_index,
+                        "hard_session_types": hard,
+                        "limit": 2,
+                    },
+                )
+            )
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -456,15 +826,21 @@ def run_master_rule_filter(
     target_race: dict | None = None,
     season_window: dict | None = None,
     prs: dict | None = None,
+    weekly_run_days_max: int | None = None,
     **_extra: Any,
 ) -> RuleFilterReport:
     """Run every master-plan rule against ``plan_dict``.
 
     The schema rule runs first because subsequent checks need a parsed
     ``MasterPlan`` instance. Input-aware rules (``season_window_fits`` /
-    ``goal_realism``) accept kwargs from
+    ``goal_realism`` / ``target_distance_long_run`` /
+    ``key_session_density``) accept kwargs from
     :func:`build_generation_graph` → ``rule_filter_kwargs``; missing kwargs
     are silent no-ops so legacy callers don't break.
+
+    Batch B rules (``weekly_key_sessions_present`` / ``weekly_volume_ramp``
+    / ``taper_volume_drop`` / ``hard_session_spacing``) no-op when
+    ``MasterPlan.weekly_key_sessions`` is empty — same back-compat shape.
 
     ``**_extra`` swallows any future kwargs (e.g. ``injuries``, ``hr_zones``)
     that haven't been wired into a rule yet.
@@ -486,4 +862,17 @@ def run_master_rule_filter(
     violations.extend(
         check_goal_realism(plan, target_race=target_race, prs=prs)
     )
+    # Batch B — weekly-skeleton rules
+    violations.extend(check_weekly_key_sessions_present(plan))
+    violations.extend(check_weekly_volume_ramp(plan))
+    violations.extend(check_taper_volume_drop(plan))
+    violations.extend(
+        check_target_distance_long_run(plan, target_race=target_race)
+    )
+    violations.extend(
+        check_key_session_density(
+            plan, weekly_run_days_max=weekly_run_days_max
+        )
+    )
+    violations.extend(check_hard_session_spacing(plan))
     return RuleFilterReport(violations=violations)

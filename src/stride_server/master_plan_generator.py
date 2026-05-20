@@ -23,11 +23,13 @@ from typing import Any
 from uuid import uuid4
 
 from stride_core.master_plan import (
+    KeySession,
     MasterPlan,
     MasterPlanStatus,
     Milestone,
     MilestoneType,
     Phase,
+    WeeklyKeySessions,
 )
 
 from .job_runner import JobStage, JobStatus, update_job
@@ -163,6 +165,41 @@ def _build_master_plan(
         if phase is not None:
             phase.milestone_ids.append(milestone_id)
 
+    # Build weekly_key_sessions skeleton (Batch B). Maps phase_name → phase_id
+    # the same way milestones do; unknown phase_name falls back to phases[0].id.
+    # Plans authored before Batch B simply omit the field → empty list, which
+    # makes the new Batch B L1 rules silent no-ops for backwards compatibility.
+    weekly_key_sessions: list[WeeklyKeySessions] = []
+    for w in plan_data.get("weekly_key_sessions", []) or []:
+        if not isinstance(w, dict):
+            continue
+        wk_phase_id = phase_name_to_id.get(w.get("phase_name", ""), fallback_phase_id)
+        sessions: list[KeySession] = []
+        for ks in w.get("key_sessions", []) or []:
+            if not isinstance(ks, dict):
+                continue
+            sessions.append(
+                KeySession(
+                    type=str(ks.get("type", "long_run")),
+                    distance_km=_to_optional_float(ks.get("distance_km")),
+                    duration_min=_to_optional_float(ks.get("duration_min")),
+                    intensity=ks.get("intensity"),
+                    purpose=ks.get("purpose"),
+                )
+            )
+        weekly_key_sessions.append(
+            WeeklyKeySessions(
+                week_index=int(w.get("week_index", 0) or 0),
+                week_start=str(w.get("week_start", start_date)),
+                phase_id=wk_phase_id,
+                target_weekly_km_low=float(w.get("target_weekly_km_low", 0)),
+                target_weekly_km_high=float(w.get("target_weekly_km_high", 0)),
+                key_sessions=sessions,
+                is_recovery_week=bool(w.get("is_recovery_week", False)),
+                is_taper_week=bool(w.get("is_taper_week", False)),
+            )
+        )
+
     now_iso = datetime.now(timezone.utc).isoformat()
     return MasterPlan(
         plan_id=str(uuid4()),
@@ -173,12 +210,23 @@ def _build_master_plan(
         end_date=end_date,
         phases=phases,
         milestones=milestones,
+        weekly_key_sessions=weekly_key_sessions,
         training_principles=plan_data.get("training_principles", []),
         generated_by="gpt-4.1",
         version=1,
         created_at=now_iso,
         updated_at=now_iso,
     )
+
+
+def _to_optional_float(value: Any) -> float | None:
+    """Coerce a JSON value to float; return None for missing / unparseable."""
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -503,6 +551,13 @@ def _build_system_prompt(
   "milestones": [
     {{"type":"race|test_run|long_run|strength_test","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述"}},
     ...
+  ],
+  "weekly_key_sessions": [
+    {{"week_index":1,"week_start":"YYYY-MM-DD","phase_name":"<对应阶段>","target_weekly_km_low":45,"target_weekly_km_high":52,"is_recovery_week":false,"is_taper_week":false,"key_sessions":[
+      {{"type":"long_run","distance_km":24,"intensity":"z2","purpose":"建立马拉松专项耐力"}},
+      {{"type":"threshold","duration_min":35,"intensity":"z4","purpose":"提高乳酸阈值"}}
+    ]}},
+    ...
   ]
 }}}}
 ---END_MASTER_PLAN---
@@ -518,6 +573,18 @@ def _build_system_prompt(
 - 周末日期作为 long_run 里程碑日期
 - 输出**仅 JSON 块**，无额外解释文字
 
+**Weekly key-session skeleton（HARD）**：
+- `weekly_key_sessions` 必须**逐周**列出 plan.start_date 到 plan.end_date 之间的每一周（按 week_index 从 1 顺序递增，week_start 写该周周一的 ISO 日期）
+- 每个 entry 关联到对应 phase 的 `phase_name`，并写明该周的 `target_weekly_km_low` / `target_weekly_km_high`（应落在该 phase 的周量区间内，recovery week 取 phase 下限的 70-80%）
+- `key_sessions[]` **仅**列驱动训练适应或负载的重点课（long_run / threshold / tempo / interval / vo2max / hill / race_pace / time_trial / tune_up_race / race / strength_key），普通 easy / aerobic / recovery / commute run **不要**列入
+- 每个非 recovery / taper 周必须有 **1-3 个**重点课；race 周可只列一个 `race` 类型；recovery week 允许 0-1 个
+- 距离锚定的课（long_run / race_pace / tune_up_race / race）写 `distance_km`；时间锚定的课（threshold / interval / tempo）写 `duration_min`
+- 同一周内 threshold / tempo / interval / vo2max / hill / race_pace 等高负荷课**不得超过 2 个**
+- 当 `profile.weekly_run_days_max <= 3` 时，每周重点课**不得超过 2 个**；否则不超过 3 个
+- 在 race 前 1-2 周必须将 `is_taper_week=true`，且 `target_weekly_km_high` 相比 peak 周下降 ≥ 25%
+- 每 4 周一次 recovery week 时 `is_recovery_week=true`，对应 `target_weekly_km_*` 取 phase 下限的 70-80%
+- peak 阶段最长 `long_run.distance_km` 必须匹配目标比赛距离：fm ≥ 28km，hm ≥ 18km，10k ≥ 10km，5k ≥ 6km
+
 **Recovery week 节奏（HARD）**：
 - 任何 ≥ 4 周的非 base 阶段（进展期 / 赛前期）必须采用 3:1 周期化：连续 3 周渐进负荷 + 1 周降量到该阶段周量下限的 70-80%
 - 必须在对应 phase.focus 字段中显式写明 recovery week 安排，例如："3:1 周期，每 4 周降量 1 周至 W3 周量的 70%；recovery week 取消所有质量课"
@@ -531,6 +598,14 @@ def _build_system_prompt(
   - 比赛后恢复期：增蛋白至 1.8-2.0 g/kg/天促修复，补水 + 电解质
 - 用户档案若含目标体重 / 体脂调整诉求，营养原则必须显式应对（如"build 期保持小幅热量盈余以支撑训练负荷而非追求减重"）
 - **不要**只写一条笼统的"注重营养"，必须按 phase 给具体数字
+
+**Distance specificity（HARD）**：
+- 训练 / 备战的几乎一切（peak 周量、long_run 距离、taper 长度、间歇课比例）都要按 target_race.distance 调整。**不要**把 FM-style plan 套到 HM / 10K / 5K，反之亦然。
+- FM (full marathon)：peak 周量 65-80 km；peak long_run **≥ 28 km**（典型 28-35）；taper **2 周**；peak phase 3-4 周；race-specific 期重 marathon-pace long runs + tempo
+- HM (half marathon)：peak 周量 55-72 km；peak long_run **18-22 km**（不超过 25 km）；taper **1 周**；peak phase 2-3 周
+- 10K：peak 周量 45-65 km；peak long_run **14-16 km**（不超过 18 km）；taper **3-7 天**；peak phase 1-2 周；key_sessions 重 interval / vo2max / threshold（远多于 long_run / race_pace）
+- 5K：peak 周量 40-55 km；peak long_run **8-12 km**（不超过 14 km）；taper **3-5 天**；peak phase 1-2 周；key_sessions 重 vo2max / 短间歇（200m-1k 重复）+ 速度
+- 把上述硬指标显式反映到 `weekly_key_sessions[].target_weekly_km_high` / `key_sessions[].distance_km`。
 
 **Goal realism 与 pushback（HARD）**：
 - 收到 goal_time_s 后，必须对照用户近期 PB（profile.prs 或 history_summary 里的"最好成绩"）计算改善幅度
@@ -612,6 +687,8 @@ def _run_generate_job_inner(
     # season_window is a fixture-only concept (eval framework); prod uses
     # goal.race_date as the implicit upper bound and trusts the LLM to
     # respect it. Skip season_window_fits in prod by not passing it.
+    if norm_profile and norm_profile.get("weekly_run_days_max") is not None:
+        rfk["weekly_run_days_max"] = norm_profile["weekly_run_days_max"]
 
     graph = build_generation_graph(
         load_context=load_master_context,

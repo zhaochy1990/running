@@ -66,6 +66,62 @@ class Phase(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Weekly key-session skeleton (S1 strategic — see docs/coach-eval_S1.md)
+# ---------------------------------------------------------------------------
+
+
+class KeySession(BaseModel):
+    """One key training session inside a weekly skeleton.
+
+    A *key* session drives physiological adaptation or carries injury /
+    race risk — long runs, threshold / tempo / interval / VO2max / hill,
+    race pace, time trials, tune-up races, the goal race, and key strength.
+    Ordinary easy / aerobic / recovery / commute runs are NOT key sessions
+    and do not appear here (they live in S2 weekly plans).
+
+    ``type`` enumeration (str so we can extend without schema churn):
+    ``long_run`` / ``threshold`` / ``tempo`` / ``interval`` / ``vo2max`` /
+    ``hill`` / ``race_pace`` / ``time_trial`` / ``tune_up_race`` /
+    ``race`` / ``strength_key``.
+
+    One of ``distance_km`` / ``duration_min`` is typically populated:
+    distance-anchored sessions (long_run / race_pace / tune_up_race / race)
+    set ``distance_km``; time-anchored sessions (threshold / interval) set
+    ``duration_min``. Both can be set when the prompt produces both.
+    """
+
+    type: str                       # see docstring enumeration
+    distance_km: float | None = None
+    duration_min: float | None = None
+    intensity: str | None = None    # "z2" / "z4" / "race_pace" / "mp" / etc.
+    purpose: str | None = None      # 1-line rationale, e.g. "建立 FM 专项耐力"
+
+
+class WeeklyKeySessions(BaseModel):
+    """One week of the weekly_key_sessions skeleton.
+
+    Per ``docs/coach-eval_S1.md`` § "S1 Output Requirement: Weekly
+    Key-Session Skeleton" — S1 doesn't expand full daily sessions; it only
+    lists the key stimuli per week so the eval framework can check
+    progression, taper, target-distance specificity, and density.
+
+    ``is_recovery_week`` / ``is_taper_week`` flag deload / wind-down weeks
+    so L1 rules can skip the volume-ramp cap and the
+    weekly_key_sessions_present requirement for these weeks (a recovery
+    week with 0-1 key sessions is correct; a build week with 0 is not).
+    """
+
+    week_index: int                # 1-based, sequential across the whole plan
+    week_start: str                # ISO YYYY-MM-DD, the Monday of the week
+    phase_id: str                  # owning phase (uuid4 from Phase.id)
+    target_weekly_km_low: float
+    target_weekly_km_high: float
+    key_sessions: list[KeySession]
+    is_recovery_week: bool = False
+    is_taper_week: bool = False
+
+
+# ---------------------------------------------------------------------------
 # Top-level plan models
 # ---------------------------------------------------------------------------
 
@@ -79,6 +135,14 @@ class MasterPlan(BaseModel):
     end_date: str                  # 总纲结束日期 ISO YYYY-MM-DD
     phases: list[Phase]
     milestones: list[Milestone]
+    # Weekly key-session skeleton — list ordered by week_index. Default empty
+    # so plans authored before Batch B (existing fixtures, test stubs, legacy
+    # MasterPlanVersion snapshots) still validate. New plans MUST populate it
+    # for the Batch B L1 rules (weekly_key_sessions_present /
+    # weekly_volume_ramp / taper_volume_drop / target_distance_long_run /
+    # key_session_density / hard_session_spacing) to do anything; empty list
+    # → those rules silently no-op for backwards compatibility.
+    weekly_key_sessions: list[WeeklyKeySessions] = []
     training_principles: list[str]  # 训练原则，3-5 条
     generated_by: str              # "gpt-4.1" 等
     version: int                   # 从 1 开始，每次 adjust 递增
