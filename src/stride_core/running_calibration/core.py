@@ -27,6 +27,10 @@ from .types import (
 BEST_EFFORT_DURATIONS_S = (3 * 60, 5 * 60, 10 * 60, 20 * 60, 30 * 60, 45 * 60, 60 * 60)
 THRESHOLD_HR_HRMAX_LOW_RATIO = 0.82
 THRESHOLD_HR_HRMAX_HIGH_RATIO = 0.94
+THRESHOLD_SPEED_MODEL_MIN_DURATION_S = 20 * 60
+THRESHOLD_SPEED_LONG_ANCHOR_S = 45 * 60
+THRESHOLD_SPEED_LONG_ANCHOR_CAP_RATIO = 1.02
+THRESHOLD_SPEED_RIEGEL_EXPONENT = 0.06
 
 
 def estimate_running_calibration(
@@ -38,7 +42,7 @@ def estimate_running_calibration(
     provider-specific units, and persistence are connector responsibilities.
     """
     recent = [a for a in history if as_of_date - timedelta(days=180) <= a.activity_date <= as_of_date]
-    source: dict[str, object] = {"algorithm": "running_calibration_v2", "lookback_days": 180}
+    source: dict[str, object] = {"algorithm": "running_calibration_v3", "lookback_days": 180}
     evidence: list[CalibrationEvidence] = []
     hrmax_profile = estimate_hrmax_profile(recent)
     if hrmax_profile.source:
@@ -48,7 +52,7 @@ def estimate_running_calibration(
     threshold_speed, speed_confidence, speed_evidence = _estimate_threshold_speed(speed_candidates)
     if threshold_speed is not None:
         source["threshold_speed"] = {
-            "method": "best_efforts_critical_speed_curve",
+            "method": "best_efforts_upper_envelope_model",
             "candidate_count": len(speed_candidates),
         }
         evidence.extend(speed_evidence)
@@ -218,21 +222,21 @@ def _estimate_threshold_speed(
 
     if 60 * 60 in best_by_duration:
         best_60 = best_by_duration[60 * 60]
-        confidence = CalibrationConfidence.HIGH if best_60.confidence == CalibrationConfidence.HIGH else CalibrationConfidence.MEDIUM
-        return best_60.avg_speed_mps, confidence, [evidence_from_speed(best_60)]
+        if best_60.confidence == CalibrationConfidence.HIGH and best_60.source == "timeseries":
+            return best_60.avg_speed_mps, CalibrationConfidence.HIGH, [evidence_from_speed(best_60)]
 
     if len(best_by_duration) >= 2:
-        curve_speed = _critical_speed_curve(best_by_duration)
-        if curve_speed is not None:
+        model_speed = _threshold_speed_model(best_by_duration)
+        if model_speed is not None:
             evidence = [evidence_from_speed(c) for _, c in sorted(best_by_duration.items())]
             confidence = CalibrationConfidence.HIGH if _has_long_high_quality(best_by_duration) else CalibrationConfidence.MEDIUM
-            return curve_speed, confidence, evidence
+            return model_speed, confidence, evidence
 
     longest = max(best_by_duration.values(), key=lambda c: c.duration_s)
     if longest.duration_s >= 20 * 60:
         # Riegel-style extrapolation toward one-hour threshold. This is
         # intentionally conservative for 20-45 minute efforts.
-        adjusted = longest.avg_speed_mps * (longest.duration_s / (60 * 60)) ** 0.06
+        adjusted = _riegel_threshold_projection(longest)
         confidence = CalibrationConfidence.MEDIUM if longest.duration_s >= 30 * 60 else CalibrationConfidence.LOW
         return adjusted, confidence, [evidence_from_speed(longest)]
     return None, CalibrationConfidence.NONE, []
@@ -264,8 +268,66 @@ def _critical_speed_curve(best_by_duration: dict[float, SpeedCandidate]) -> floa
     # Blend with the 60-minute projection so sparse short efforts do not
     # overstate threshold speed from the critical-speed intercept model.
     longest = max(best_by_duration.values(), key=lambda c: c.duration_s)
-    projected = longest.avg_speed_mps * (longest.duration_s / (60 * 60)) ** 0.06
+    projected = _riegel_threshold_projection(longest)
     return min(projected, max(slope, 0.9 * projected))
+
+
+def _threshold_speed_model(best_by_duration: dict[float, SpeedCandidate]) -> float | None:
+    projections = _threshold_speed_projections(best_by_duration)
+    if projections:
+        # Why: historical best efforts are one-sided observations. Non-maximal
+        # workouts bias slow, while GPS spikes are already filtered upstream.
+        speed = _weighted_quantile(projections, 0.75)
+        long_anchor = max(
+            (value for value, _, duration in projections if duration >= THRESHOLD_SPEED_LONG_ANCHOR_S),
+            default=None,
+        )
+        if speed is not None and long_anchor is not None:
+            speed = min(speed, long_anchor * THRESHOLD_SPEED_LONG_ANCHOR_CAP_RATIO)
+        if speed is not None:
+            curve_speed = _critical_speed_curve(best_by_duration)
+            return max(speed, curve_speed) if curve_speed is not None else speed
+    return _critical_speed_curve(best_by_duration)
+
+
+def _threshold_speed_projections(best_by_duration: dict[float, SpeedCandidate]) -> list[tuple[float, float, float]]:
+    projections: list[tuple[float, float, float]] = []
+    for candidate in best_by_duration.values():
+        if candidate.duration_s < THRESHOLD_SPEED_MODEL_MIN_DURATION_S:
+            continue
+        speed = _riegel_threshold_projection(candidate)
+        if not math.isfinite(speed) or speed <= 0:
+            continue
+        weight = math.sqrt(max(candidate.duration_s, 1.0) / (60 * 60))
+        if candidate.confidence == CalibrationConfidence.HIGH:
+            weight *= 1.5
+        elif candidate.confidence == CalibrationConfidence.LOW:
+            weight *= 0.6
+        if candidate.source == "timeseries":
+            weight *= 1.15
+        projections.append((speed, weight, candidate.duration_s))
+    return projections
+
+
+def _riegel_threshold_projection(candidate: SpeedCandidate) -> float:
+    duration = max(float(candidate.duration_s), 1.0)
+    return float(candidate.avg_speed_mps) * (duration / (60 * 60)) ** THRESHOLD_SPEED_RIEGEL_EXPONENT
+
+
+def _weighted_quantile(values: Sequence[tuple[float, float, float]], quantile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted((float(value), max(0.0, float(weight))) for value, weight, _ in values)
+    total = sum(weight for _, weight in ordered)
+    if total <= 0:
+        return median(value for value, _ in ordered)
+    target = total * max(0.0, min(1.0, quantile))
+    acc = 0.0
+    for value, weight in ordered:
+        acc += weight
+        if acc >= target:
+            return value
+    return ordered[-1][0]
 
 
 def _estimate_threshold_hr(

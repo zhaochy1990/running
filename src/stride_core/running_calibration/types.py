@@ -7,7 +7,7 @@ from datetime import date
 from enum import Enum
 from typing import Any
 
-RUNNING_CALIBRATION_MODEL_VERSION = 2
+RUNNING_CALIBRATION_MODEL_VERSION = 3
 
 
 class CalibrationConfidence(str, Enum):

@@ -8,12 +8,13 @@ from dataclasses import dataclass
 from statistics import mean, median
 from typing import Iterable, Sequence
 
-from .types import CalibrationConfidence, CalibrationEvidence, RunningActivity, RunningSample
+from .types import CalibrationConfidence, CalibrationEvidence, RunningActivity, RunningLap, RunningSample
 
 THRESHOLD_SPEED_LOW_RATIO = 0.94
 THRESHOLD_SPEED_HIGH_RATIO = 1.07
 THRESHOLD_SPEED_MAX_CV = 0.07
 SHORT_SPRINT_HR_CUTOFF_BPM = 198
+LAP_STREAM_ACTIVITY_TOLERANCE = 1.1
 
 
 @dataclass(frozen=True)
@@ -275,28 +276,29 @@ def _best_lap_block(activity: RunningActivity, duration_s: int) -> SpeedCandidat
     if not activity.laps:
         return None
     best_speed: float | None = None
-    best_span: tuple[int, int, float] | None = None
-    for left in range(len(activity.laps)):
-        total_duration = 0.0
-        total_distance = 0.0
-        for right in range(left, len(activity.laps)):
-            lap = activity.laps[right]
-            if not lap.duration_s or not lap.distance_m:
-                continue
-            total_duration += float(lap.duration_s)
-            total_distance += float(lap.distance_m)
-            if total_duration < duration_s * 0.9:
-                continue
-            if total_duration > duration_s * 1.2:
-                break
-            speed = total_distance / total_duration if total_duration > 0 else None
-            if speed is not None and 1.5 <= speed <= 8.5 and (best_speed is None or speed > best_speed):
-                best_speed = speed
-                best_span = (left, right, total_duration)
+    best_span: tuple[Sequence[RunningLap], int, int, float] | None = None
+    for laps in _valid_lap_streams(activity):
+        for left in range(len(laps)):
+            total_duration = 0.0
+            total_distance = 0.0
+            for right in range(left, len(laps)):
+                lap = laps[right]
+                if not lap.duration_s or not lap.distance_m:
+                    continue
+                total_duration += float(lap.duration_s)
+                total_distance += float(lap.distance_m)
+                if total_duration < duration_s * 0.9:
+                    continue
+                if total_duration > duration_s * 1.2:
+                    break
+                speed = total_distance / total_duration if total_duration > 0 else None
+                if speed is not None and 1.5 <= speed <= 8.5 and (best_speed is None or speed > best_speed):
+                    best_speed = speed
+                    best_span = (laps, left, right, total_duration)
     if best_speed is None or best_span is None:
         return None
-    left, right, total_duration = best_span
-    start_s = sum(float(l.duration_s or 0) for l in activity.laps[:left])
+    laps, left, _right, total_duration = best_span
+    start_s = sum(float(l.duration_s or 0) for l in laps[:left])
     return SpeedCandidate(
         activity=activity,
         duration_s=total_duration,
@@ -306,6 +308,39 @@ def _best_lap_block(activity: RunningActivity, duration_s: int) -> SpeedCandidat
         end_s=start_s + total_duration,
         confidence=CalibrationConfidence.MEDIUM,
     )
+
+
+def _valid_lap_streams(activity: RunningActivity) -> list[tuple[RunningLap, ...]]:
+    by_type: dict[str, list[RunningLap]] = {}
+    for lap in activity.laps:
+        by_type.setdefault(str(lap.lap_type or "default"), []).append(lap)
+    streams = [tuple(laps) for laps in by_type.values()]
+    if len(streams) == 1:
+        return streams if _lap_stream_matches_activity(activity, streams[0]) else []
+    return [stream for stream in streams if _lap_stream_matches_activity(activity, stream)]
+
+
+def _lap_stream_matches_activity(activity: RunningActivity, laps: Sequence[RunningLap]) -> bool:
+    total_duration = 0.0
+    total_distance = 0.0
+    has_duration = False
+    has_distance = False
+    for lap in laps:
+        if not lap.duration_s or not lap.distance_m:
+            continue
+        total_duration += float(lap.duration_s)
+        total_distance += float(lap.distance_m)
+        has_duration = True
+        has_distance = True
+    if not has_duration or not has_distance:
+        return False
+    # Why: providers may store overlapping lap streams (km, mile, workout
+    # phases). Each stream must be plausible against the parent activity.
+    if activity.duration_s and total_duration > float(activity.duration_s) * LAP_STREAM_ACTIVITY_TOLERANCE:
+        return False
+    if activity.distance_m and total_distance > float(activity.distance_m) * LAP_STREAM_ACTIVITY_TOLERANCE:
+        return False
+    return True
 
 
 def best_speed_candidates(

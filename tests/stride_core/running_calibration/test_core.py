@@ -5,10 +5,12 @@ from datetime import date, timedelta
 import pytest
 
 from stride_core.running_calibration import compute_training_zones, estimate_running_calibration
+from stride_core.running_calibration.segments import best_speed_candidates
 from stride_core.running_calibration.types import (
     RUNNING_CALIBRATION_MODEL_VERSION,
     CalibrationConfidence,
     RunningActivity,
+    RunningLap,
     RunningSample,
 )
 
@@ -77,6 +79,71 @@ def test_60_minute_performance_recovers_threshold_speed():
 
     assert snapshot.threshold_speed_mps == pytest.approx(4.0, rel=0.02)
     assert snapshot.threshold_speed_confidence == CalibrationConfidence.HIGH
+
+
+def test_overlapping_lap_streams_do_not_create_longer_best_efforts():
+    as_of = date(2026, 5, 1)
+    laps: list[RunningLap] = []
+    for lap_index in range(6):
+        laps.extend(
+            [
+                RunningLap(lap_index=lap_index, duration_s=430, distance_m=1000, lap_type="autoKm"),
+                RunningLap(lap_index=lap_index, duration_s=690, distance_m=1609, lap_type="autoMile"),
+                RunningLap(lap_index=lap_index, duration_s=430, distance_m=1000, lap_type="type2"),
+            ]
+        )
+    activity = RunningActivity(
+        label_id="overlapping_laps",
+        activity_date=as_of,
+        sport="run_outdoor",
+        duration_s=43 * 60,
+        distance_m=6020,
+        laps=tuple(laps),
+    )
+
+    candidates = best_speed_candidates([activity], [60 * 60])
+
+    assert candidates == []
+
+
+def test_medium_confidence_60_minute_lap_uses_performance_model_not_direct_copy():
+    as_of = date(2026, 5, 1)
+    lap_60 = RunningActivity(
+        label_id="lap_60m",
+        activity_date=as_of - timedelta(days=1),
+        sport="run_outdoor",
+        duration_s=60 * 60,
+        distance_m=4.0 * 60 * 60,
+        laps=tuple(
+            RunningLap(lap_index=i, duration_s=600, distance_m=4.0 * 600, lap_type="autoKm")
+            for i in range(6)
+        ),
+    )
+    steady_45 = _steady_activity(
+        "steady_45m",
+        as_of,
+        days_ago=5,
+        duration_s=45 * 60,
+        speed_mps=4.25,
+        hr_bpm=166,
+    )
+    steady_30 = _steady_activity(
+        "steady_30m",
+        as_of,
+        days_ago=10,
+        duration_s=30 * 60,
+        speed_mps=4.4,
+        hr_bpm=168,
+    )
+
+    snapshot = estimate_running_calibration([lap_60, steady_45, steady_30], as_of)
+
+    assert snapshot.threshold_speed_mps is not None
+    assert snapshot.threshold_speed_mps > 4.05
+    assert snapshot.threshold_speed_mps < 4.25
+    assert snapshot.threshold_speed_confidence == CalibrationConfidence.HIGH
+    assert snapshot.algorithm_version == 3
+    assert snapshot.source["algorithm"] == "running_calibration_v3"
 
 
 def test_interval_recovery_windows_do_not_pollute_threshold_hr():
