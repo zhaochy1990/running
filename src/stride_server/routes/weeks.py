@@ -48,8 +48,8 @@ def list_weeks(user: str):
                 "date_to": date_to,
                 "has_plan": has_plan,
                 "has_feedback": db_feedback_row is not None or content_exists(feedback_rel),
-                "has_inbody": any_exists(
-                    f"{user}/logs/{folder_name}/inbody{ext}"
+                "has_body_composition": any_exists(
+                    f"{user}/logs/{folder_name}/body-composition{ext}"
                     for ext in [".jpg", ".png", ".jpeg"]
                 ),
                 "plan_source": "db" if db_plan_row is not None else (plan_item.source if plan_item else "none"),

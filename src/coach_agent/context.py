@@ -21,7 +21,7 @@ from stride_core.state_stores import (
 
 from stride_server import content_store
 from stride_server.deps import PROJECT_ROOT, format_duration, parse_week_dates
-from stride_server.routes.inbody import PHASE_CHECKPOINTS
+from stride_server.routes.body_composition import PHASE_CHECKPOINTS
 from stride_server.routes.training_plan import get_training_plan
 
 
