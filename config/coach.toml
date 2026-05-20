@@ -25,18 +25,29 @@ api_kind     = "responses"
 # the parameter (400 "Unsupported parameter: 'temperature' is not supported
 # with this model"). llm_factory skips the kwarg when ModelSpec.temperature
 # is None. Re-add this line only if you point the role at a non-reasoning model.
-# max_tokens=32768 — S1 master plan with 14-22 week weekly_key_sessions
-# skeleton routinely needs 5-9k chars of visible output (≈ 2-3k tokens),
-# and gpt-5.5 reasoning tokens share this budget. 32k gives sufficient
-# headroom for the largest realistic master plan; smaller LLM calls
-# (week generation, chat) simply use less and aren't affected.
-max_tokens   = 32768
+# max_tokens=131072 — gpt-5.5 supports a 1M-token context window total
+# (input + reasoning + visible output) with up to ~128k of that
+# reservable for the visible output. S1 master plan with 14-22 week
+# weekly_key_sessions skeleton needs 5-9k chars of visible output
+# (≈ 2-3k tokens), but reasoning tokens are billed against the same
+# budget and can consume 14-20k tokens at default reasoning_effort.
+# Setting the ceiling at 131072 (128k) removes max_tokens entirely as
+# a bottleneck — the model only consumes what it needs, and smaller
+# LLM calls (week generation, chat) simply use less. If output is
+# still truncating at this setting, the bottleneck is the Azure
+# deployment's max_response_tokens (set at deployment create time, NOT
+# this config) — raise it in the Azure portal to unlock.
+max_tokens   = 131072
 # reasoning_effort intentionally NOT set — defaults to model's medium,
 # which is what S1 strategic reasoning (phase ordering, goal realism,
 # injury safety, distance specificity) needs. Lowering it to "low" or
 # "minimal" trades depth for budget; only flip this if you have evidence
 # the output is consistently truncating at max_tokens.
-timeout_s    = 120
+# timeout_s=300 — at default reasoning_effort=medium and the new 131072
+# token ceiling, the model can spend a lot of compute on reasoning for
+# longer S1 plans (22-week dingchentao etc). 120s was too tight; 5 min
+# accommodates the reasoning latency without hanging callers indefinitely.
+timeout_s    = 300
 
 [reviewer]
 # Reviewer Agent — same model for now (no separate Claude Opus deployment on

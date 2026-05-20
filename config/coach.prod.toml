@@ -20,10 +20,17 @@ endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
 api_version  = "2025-04-01-preview"
 api_kind     = "responses"
 temperature  = 0.4
-# max_tokens=32768 — S1 master plan (14-22 week weekly_key_sessions
-# skeleton) needs 5-9k chars of visible output. Smaller LLM calls use less.
-max_tokens   = 32768
-timeout_s    = 120
+# max_tokens=131072 — gpt-5 family supports up to ~128k visible output
+# tokens within the 1M context window. S1 master plan with 14-22 week
+# weekly_key_sessions skeleton needs 5-9k chars but reasoning tokens
+# share this budget. 128k removes max_tokens as a possible bottleneck;
+# the model only emits what it needs. If output still truncates, the
+# Azure deployment's max_response_tokens needs to be raised in the
+# portal.
+max_tokens   = 131072
+# timeout_s=300 — S1 master plan with reasoning_effort=medium and
+# 128k output budget can take 2-4 min for 22-week plans. 5 min cap.
+timeout_s    = 300
 
 [reviewer]
 # Reviewer Agent — temporarily on gpt-5.4 (see header note). Swap to
