@@ -97,7 +97,7 @@ def test_threshold_hr_uses_plausible_sustained_efforts_not_fastest_race_hr():
 
     calibration = estimate_calibration(history, as_of_date=as_of, health_rows=health)
 
-    assert calibration.threshold_speed_mps == pytest.approx(4.1, rel=0.01)
+    assert calibration.threshold_speed_mps == pytest.approx(4.0, rel=0.01)
     assert calibration.threshold_hr == pytest.approx(165.0, abs=2.0)
 
 
@@ -112,5 +112,5 @@ def test_threshold_hr_rejects_low_hr_outlier_at_fast_threshold_speed():
 
     calibration = estimate_calibration(history, as_of_date=as_of, health_rows=health)
 
-    assert calibration.threshold_speed_mps == pytest.approx(4.5, rel=0.01)
+    assert calibration.threshold_speed_mps == pytest.approx(4.32, rel=0.01)
     assert calibration.threshold_hr == pytest.approx(168.5, abs=2.0)

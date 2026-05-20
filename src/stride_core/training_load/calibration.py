@@ -1,10 +1,13 @@
-"""Automatic calibration for objective training-load normalization."""
+"""Compatibility calibration wrapper for objective training-load normalization."""
 
 from __future__ import annotations
 
 from datetime import date, timedelta
 from statistics import median
 from typing import Sequence
+
+from stride_core.running_calibration import estimate_running_calibration
+from stride_core.running_calibration.types import RunningActivity, RunningSample
 
 from .types import CalibrationActivity, CalibrationHealthRow, CalibrationSnapshot
 
@@ -18,44 +21,66 @@ def _percentile(values: Sequence[float], pct: float) -> float | None:
     return clean[index]
 
 
-def _activity_speed_mps(activity: CalibrationActivity) -> float | None:
-    distance_m = activity.distance_m
-    if not distance_m or not activity.duration_s or activity.duration_s <= 0:
-        return None
-    if distance_m < 500:
-        return None
-    return float(distance_m) / float(activity.duration_s)
-
-
 def _running(activity: CalibrationActivity) -> bool:
     sport = (activity.sport or "").lower()
-    return sport.startswith("run") or sport.startswith("run_")
+    return sport == "run" or sport.startswith("run_") or sport.startswith("running")
 
 
-def _activity_hr_estimate(activity: CalibrationActivity) -> float | None:
-    if activity.avg_hr is not None and 80 <= float(activity.avg_hr) <= 230:
-        return float(activity.avg_hr)
-    hrs = [
-        float(sample.heart_rate_bpm)
-        for sample in activity.samples
-        if sample.heart_rate_bpm is not None and 80 <= float(sample.heart_rate_bpm) <= 230
+def _to_running_activity(activity: CalibrationActivity) -> RunningActivity:
+    return RunningActivity(
+        label_id=activity.label_id,
+        activity_date=activity.activity_date,
+        sport=activity.sport,
+        duration_s=activity.duration_s,
+        distance_m=activity.distance_m,
+        avg_hr=activity.avg_hr,
+        max_hr=activity.max_hr,
+        avg_power_w=activity.avg_power,
+        samples=tuple(
+            RunningSample(
+                timestamp_s=sample.timestamp_s,
+                elapsed_s=sample.elapsed_s,
+                distance_m=sample.distance_m,
+                heart_rate_bpm=sample.heart_rate_bpm,
+                speed_mps=sample.speed_mps,
+                power_w=sample.power_w,
+                altitude_m=sample.altitude_m,
+            )
+            for sample in activity.samples
+        ),
+    )
+
+
+def _estimate_hrmax(history: Sequence[CalibrationActivity], as_of_date: date) -> tuple[float | None, int]:
+    recent_history = [
+        a for a in history if as_of_date - timedelta(days=180) <= a.activity_date <= as_of_date
     ]
-    return median(hrs) if hrs else None
+    values: list[float] = []
+    for activity in recent_history:
+        if activity.max_hr is not None and 80 <= float(activity.max_hr) <= 230:
+            values.append(float(activity.max_hr))
+        for sample in activity.samples:
+            hr = sample.heart_rate_bpm
+            if hr is not None and 80 <= float(hr) <= 230:
+                values.append(float(hr))
+    return (max(values) if values else None, len(values))
 
 
-def _plausible_threshold_hr(
-    hr: float,
-    *,
-    rhr_baseline: float | None,
-    hrmax_estimate: float | None,
-) -> bool:
-    if rhr_baseline is None or hrmax_estimate is None or hrmax_estimate <= rhr_baseline:
-        return True
-    hrr = (float(hr) - rhr_baseline) / (hrmax_estimate - rhr_baseline)
-    # Lactate-threshold HR usually lives below near-max race HR but above easy
-    # aerobic HR. Keep this broad enough for individual variance while avoiding
-    # obvious low-HR device/segment outliers and 10K-race HR being used as LT.
-    return 0.75 <= hrr <= 0.90
+def _estimate_critical_power(history: Sequence[CalibrationActivity], as_of_date: date) -> tuple[float | None, int]:
+    power_values: list[float] = []
+    for activity in history:
+        if not (as_of_date - timedelta(days=180) <= activity.activity_date <= as_of_date):
+            continue
+        if not _running(activity):
+            continue
+        if activity.avg_power is not None and float(activity.avg_power) > 0:
+            power_values.append(float(activity.avg_power))
+        power_values.extend(
+            float(sample.power_w)
+            for sample in activity.samples
+            if sample.power_w is not None and float(sample.power_w) > 0
+        )
+    return (median(power_values) if power_values else None, len(power_values))
 
 
 def estimate_calibration(
@@ -64,10 +89,11 @@ def estimate_calibration(
     as_of_date: date,
     health_rows: Sequence[CalibrationHealthRow] = (),
 ) -> CalibrationSnapshot:
-    """Estimate RHR, HRmax, threshold HR/speed, and critical power.
+    """Estimate training-load calibration values.
 
-    v1 is deliberately conservative: when evidence is missing it leaves fields
-    as ``None`` so raw, non-normalized values stay out of PMC.
+    Threshold speed and threshold HR now come from
+    ``stride_core.running_calibration``. This wrapper keeps the legacy
+    ``CalibrationSnapshot`` shape used by training-load computations.
     """
     source: dict[str, dict] = {}
 
@@ -80,90 +106,26 @@ def estimate_calibration(
     if rhr_baseline is not None:
         source["rhr_baseline"] = {"method": "p10_90d", "sample_count": len(recent_rhr)}
 
-    recent_history = [
-        a for a in history if as_of_date - timedelta(days=180) <= a.activity_date <= as_of_date
-    ]
-
-    hr_candidates: list[float] = []
-    for activity in recent_history:
-        if activity.max_hr is not None and 80 <= float(activity.max_hr) <= 230:
-            hr_candidates.append(float(activity.max_hr))
-        for sample in activity.samples:
-            hr = sample.heart_rate_bpm
-            if hr is not None and 80 <= float(hr) <= 230:
-                hr_candidates.append(float(hr))
-    explicit_max_hr = max(hr_candidates) if hr_candidates else None
-    hrmax = explicit_max_hr
+    hrmax, hrmax_count = _estimate_hrmax(history, as_of_date)
     if hrmax is not None:
-        source["hrmax_estimate"] = {"method": "max_180d", "sample_count": len(hr_candidates)}
+        source["hrmax_estimate"] = {"method": "max_valid_180d", "sample_count": hrmax_count}
 
-    run_candidates: list[tuple[float, CalibrationActivity]] = []
-    for activity in recent_history:
-        if not _running(activity):
-            continue
-        speed = _activity_speed_mps(activity)
-        duration = activity.duration_s or 0
-        if speed is None or not (1200 <= duration <= 4500):
-            continue
-        run_candidates.append((speed, activity))
+    running_snapshot = estimate_running_calibration(
+        tuple(_to_running_activity(activity) for activity in history),
+        as_of_date,
+    )
+    source["running_calibration"] = running_snapshot.source
 
-    threshold_speed = None
-    threshold_activity: CalibrationActivity | None = None
-    if run_candidates:
-        threshold_speed, threshold_activity = max(run_candidates, key=lambda item: item[0])
-        source["threshold_speed_mps"] = {
-            "method": "best_20_75_min_speed",
-            "label_id": threshold_activity.label_id,
-        }
-
-    threshold_hr = None
-    if threshold_speed is not None:
-        threshold_hr_candidates: list[float] = []
-        for speed, activity in run_candidates:
-            if speed < 0.90 * threshold_speed:
-                continue
-            hr = _activity_hr_estimate(activity)
-            if hr is None:
-                continue
-            threshold_hr_candidates.append(hr)
-
-        plausible_hr_candidates = [
-            hr for hr in threshold_hr_candidates
-            if _plausible_threshold_hr(
-                hr,
-                rhr_baseline=rhr_baseline,
-                hrmax_estimate=hrmax,
-            )
-        ]
-        selected_hr_candidates = plausible_hr_candidates or threshold_hr_candidates
-        if selected_hr_candidates:
-            threshold_hr = median(selected_hr_candidates)
-            source["threshold_hr"] = {
-                "method": "median_plausible_activity_hr_near_threshold_speed",
-                "candidate_count": len(selected_hr_candidates),
-                "raw_candidate_count": len(threshold_hr_candidates),
-            }
-
-    power_candidates: list[float] = []
-    for activity in run_candidates:
-        candidate = activity[1]
-        if candidate.avg_power is not None and float(candidate.avg_power) > 0:
-            power_candidates.append(float(candidate.avg_power))
-        power_candidates.extend(
-            float(sample.power_w)
-            for sample in candidate.samples
-            if sample.power_w is not None and float(sample.power_w) > 0
-        )
-    critical_power = median(power_candidates) if power_candidates else None
+    critical_power, power_count = _estimate_critical_power(history, as_of_date)
     if critical_power is not None:
-        source["critical_power_w"] = {"method": "median_180d", "sample_count": len(power_candidates)}
+        source["critical_power_w"] = {"method": "median_180d", "sample_count": power_count}
 
     return CalibrationSnapshot(
         as_of_date=as_of_date,
         rhr_baseline=rhr_baseline,
         hrmax_estimate=hrmax,
-        threshold_hr=threshold_hr,
-        threshold_speed_mps=threshold_speed,
+        threshold_hr=running_snapshot.threshold_hr,
+        threshold_speed_mps=running_snapshot.threshold_speed_mps,
         critical_power_w=critical_power,
         source=source,
     )
