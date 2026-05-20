@@ -111,11 +111,13 @@ class StrideTrainingLoadHandler:
 
         for attempt in range(1, self._attempts + 1):
             try:
+                # Daily training load is date-scoped, so recompute every
+                # activity in the affected Shanghai date window. A label-only
+                # activity set would overwrite same-day daily totals.
                 recompute_training_load(
                     context.db,
                     start=start,
                     end=end,
-                    label_ids=label_ids,
                 )
                 return
             except Exception:

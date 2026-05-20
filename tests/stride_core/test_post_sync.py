@@ -111,7 +111,33 @@ def test_stride_training_load_handler_recomputes_shanghai_label_window(db, monke
     )
     StrideTrainingLoadHandler(backoff_s=0).run(context)
 
-    assert calls == [{"start": "2026-05-02", "end": "2026-05-02", "label_ids": ("late_utc",)}]
+    assert calls == [{"start": "2026-05-02", "end": "2026-05-02"}]
+
+
+def test_stride_training_load_handler_recomputes_full_days_for_daily_totals(db):
+    from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
+    from stride_core.training_load import recompute_training_load
+
+    db.upsert_activity(_make_run("run1", "2026-05-01T00:00:00+00:00"), provider="coros")
+    db.upsert_activity(_make_run("run2", "2026-05-01T08:00:00+00:00"), provider="coros")
+
+    recompute_training_load(db, start="2026-05-01", end="2026-05-01")
+    before = db.fetch_daily_training_load("2026-05-01", "2026-05-01")[0]["training_dose"]
+
+    context = PostSyncContext(
+        user="u",
+        provider="coros",
+        operation="sync",
+        db=db,
+        activity_label_ids=("run2",),
+    )
+    StrideTrainingLoadHandler(backoff_s=0).run(context)
+
+    after = db.fetch_daily_training_load("2026-05-01", "2026-05-01")[0]["training_dose"]
+    assert before > 0
+    assert after == before
+    assert db.fetch_activity_training_load("run1") is not None
+    assert db.fetch_activity_training_load("run2") is not None
 
 
 def test_stride_training_load_handler_persists_stride_tables_without_overwriting_vendor_load(db):
