@@ -5,7 +5,12 @@ from datetime import date, timedelta
 import pytest
 
 from stride_core.running_calibration import compute_training_zones, estimate_running_calibration
-from stride_core.running_calibration.types import CalibrationConfidence, RunningActivity, RunningSample
+from stride_core.running_calibration.types import (
+    RUNNING_CALIBRATION_MODEL_VERSION,
+    CalibrationConfidence,
+    RunningActivity,
+    RunningSample,
+)
 
 
 def _steady_activity(
@@ -148,6 +153,122 @@ def test_threshold_hr_rejects_cluster_of_low_hr_device_segments_when_hrmax_is_kn
     assert not [e for e in snapshot.evidence if e.kind == "threshold_hr" and e.label_id.startswith("bad_optical")]
 
 
+def test_threshold_hr_is_empty_when_all_candidates_fail_known_hrmax_plausibility():
+    as_of = date(2026, 5, 1)
+    history = [
+        _steady_activity(
+            "bad_optical_only",
+            as_of,
+            days_ago=2,
+            duration_s=35 * 60,
+            speed_mps=4.1,
+            hr_bpm=140,
+            max_hr=200,
+        )
+    ]
+
+    snapshot = estimate_running_calibration(history, as_of)
+
+    assert snapshot.threshold_speed_mps is not None
+    assert snapshot.threshold_hr is None
+    assert snapshot.threshold_hr_confidence == CalibrationConfidence.NONE
+    assert not [e for e in snapshot.evidence if e.kind == "threshold_hr"]
+
+
+def test_hrmax_profile_separates_observed_max_from_high_reference():
+    as_of = date(2026, 5, 1)
+    samples = tuple(
+            RunningSample(
+                elapsed_s=float(i * 30),
+                distance_m=4.0 * i * 30,
+                heart_rate_bpm=184 if i >= 118 else 150 + min(i, 20),
+                speed_mps=4.0,
+            )
+        for i in range(120)
+    )
+    activity = RunningActivity(
+        label_id="hrmax_run",
+        activity_date=as_of - timedelta(days=1),
+        sport="run_outdoor",
+        duration_s=3600,
+        distance_m=14400,
+        avg_hr=168,
+        max_hr=184,
+        samples=samples,
+    )
+
+    snapshot = estimate_running_calibration([activity], as_of)
+
+    assert snapshot.observed_max_hr == 184
+    assert snapshot.hrmax_estimate == 184
+    assert snapshot.hrmax_confidence == CalibrationConfidence.MEDIUM
+    assert snapshot.high_hr_reference is not None
+    assert snapshot.high_hr_reference <= snapshot.observed_max_hr
+    assert snapshot.source["hrmax_profile"]["method"] == "observed_valid_max_with_distribution_reference"
+
+
+def test_hrmax_profile_ignores_isolated_timeseries_spike():
+    as_of = date(2026, 5, 1)
+    samples = []
+    for i in range(60):
+        hr = 158 if i == 30 else 150 + min(i // 10, 5)
+        samples.append(
+            RunningSample(
+                elapsed_s=float(i * 30),
+                distance_m=3.0 * i * 30,
+                heart_rate_bpm=hr,
+                speed_mps=3.0,
+            )
+        )
+    samples.append(
+        RunningSample(elapsed_s=1800.0, distance_m=5400.0, heart_rate_bpm=220, speed_mps=3.0)
+    )
+    activity = RunningActivity(
+        label_id="spike_hr",
+        activity_date=as_of - timedelta(days=1),
+        sport="run_outdoor",
+        duration_s=1800,
+        distance_m=5400,
+        avg_hr=153,
+        samples=tuple(samples),
+    )
+
+    snapshot = estimate_running_calibration([activity], as_of)
+
+    assert snapshot.observed_max_hr == 158
+    assert snapshot.hrmax_estimate == 158
+    assert snapshot.source["hrmax_profile"]["raw_observed_max_hr"] == 220
+
+
+def test_hrmax_profile_does_not_let_activity_max_corroborate_its_own_spike():
+    as_of = date(2026, 5, 1)
+    samples = tuple(
+        RunningSample(
+            elapsed_s=float(i * 30),
+            distance_m=3.0 * i * 30,
+            heart_rate_bpm=220 if i == 30 else 154,
+            speed_mps=3.0,
+        )
+        for i in range(61)
+    )
+    activity = RunningActivity(
+        label_id="summary_spike_hr",
+        activity_date=as_of - timedelta(days=1),
+        sport="run_outdoor",
+        duration_s=1800,
+        distance_m=5400,
+        avg_hr=154,
+        max_hr=220,
+        samples=samples,
+    )
+
+    snapshot = estimate_running_calibration([activity], as_of)
+
+    assert snapshot.observed_max_hr == 154
+    assert snapshot.hrmax_estimate == 154
+    assert snapshot.source["hrmax_profile"]["raw_observed_max_hr"] == 220
+
+
 def test_threshold_hr_rejects_high_hr_race_outlier_segments():
     as_of = date(2026, 5, 1)
     history = [
@@ -194,6 +315,7 @@ def test_gps_distance_spike_does_not_raise_threshold_speed():
 def test_insufficient_history_returns_empty_low_confidence_snapshot():
     snapshot = estimate_running_calibration([], date(2026, 5, 1))
 
+    assert snapshot.algorithm_version == RUNNING_CALIBRATION_MODEL_VERSION
     assert snapshot.threshold_speed_mps is None
     assert snapshot.threshold_hr is None
     assert snapshot.threshold_speed_confidence == CalibrationConfidence.NONE

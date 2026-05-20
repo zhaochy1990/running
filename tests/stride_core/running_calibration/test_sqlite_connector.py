@@ -75,7 +75,7 @@ def test_sqlite_connector_fetches_history_with_normalized_units(db: Database):
     db.upsert_activity(_activity("run1"), provider="coros")
     repo = SQLiteRunningCalibrationRepository(db)
 
-    history = repo.fetch_history("2026-05-01", "2026-05-02")
+    history = repo.fetch_history(date(2026, 5, 1), date(2026, 5, 2))
 
     assert len(history) == 1
     activity = history[0]
@@ -103,6 +103,10 @@ def test_sqlite_connector_persists_snapshot_zones_and_evidence_idempotently(db: 
         threshold_speed_mps=4.0,
         threshold_hr_confidence=CalibrationConfidence.HIGH,
         threshold_speed_confidence=CalibrationConfidence.HIGH,
+        observed_max_hr=184.0,
+        hrmax_estimate=184.0,
+        hrmax_confidence=CalibrationConfidence.MEDIUM,
+        high_hr_reference=172.0,
         source={"test": True},
     )
 
@@ -115,9 +119,47 @@ def test_sqlite_connector_persists_snapshot_zones_and_evidence_idempotently(db: 
     assert latest.id == first
     assert latest.threshold_hr == 168.0
     assert latest.threshold_speed_mps == 4.0
+    assert latest.observed_max_hr == 184.0
+    assert latest.hrmax_estimate == 184.0
+    assert latest.hrmax_confidence == CalibrationConfidence.MEDIUM
+    assert latest.high_hr_reference == 172.0
     row = db.query("SELECT source_json FROM running_calibration_snapshot WHERE id = ?", (first,))[0]
     assert json.loads(row["source_json"]) == {"test": True}
     assert db.query("SELECT COUNT(*) AS n FROM running_calibration_zone WHERE snapshot_id = ?", (first,))[0]["n"] > 0
+
+
+def test_evidence_uniqueness_treats_null_bounds_as_duplicate(db: Database):
+    repo = SQLiteRunningCalibrationRepository(db)
+    snapshot_id = repo.save_snapshot(RunningCalibrationSnapshot(as_of_date=date(2026, 5, 1)))
+    params = (
+        snapshot_id,
+        "threshold_speed",
+        "activity_without_bounds",
+        "2026-05-01",
+        None,
+        None,
+        3600.0,
+        4.0,
+        None,
+        "medium",
+        "{}",
+    )
+    db._conn.execute(
+        """INSERT INTO running_calibration_evidence
+           (snapshot_id, kind, label_id, activity_date, start_s, end_s, duration_s,
+            avg_speed_mps, avg_hr, confidence, source_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        params,
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        db._conn.execute(
+            """INSERT INTO running_calibration_evidence
+               (snapshot_id, kind, label_id, activity_date, start_s, end_s, duration_s,
+                avg_speed_mps, avg_hr, confidence, source_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            params,
+        )
 
 
 def test_running_calibration_tables_added_to_legacy_db(tmp_path):

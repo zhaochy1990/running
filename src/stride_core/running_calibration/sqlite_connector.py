@@ -10,7 +10,6 @@ from typing import Any, Sequence
 
 from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
-from .repository import RunningCalibrationRepository
 from .types import (
     CalibrationConfidence,
     CalibrationEvidence,
@@ -34,7 +33,10 @@ RUNNING_CALIBRATION_SCHEMA = (
         threshold_hr_confidence TEXT NOT NULL,
         threshold_speed_confidence TEXT NOT NULL,
         rhr_baseline REAL,
+        observed_max_hr REAL,
         hrmax_estimate REAL,
+        hrmax_confidence TEXT NOT NULL DEFAULT 'none',
+        high_hr_reference REAL,
         source_json TEXT,
         computed_at TEXT NOT NULL DEFAULT (datetime('now')),
         UNIQUE(as_of_date, algorithm_version)
@@ -71,10 +73,20 @@ RUNNING_CALIBRATION_SCHEMA = (
         UNIQUE(snapshot_id, kind, label_id, start_s, end_s)
     )
     """,
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_running_calibration_evidence_unique_bounds
+    ON running_calibration_evidence(
+        snapshot_id,
+        kind,
+        label_id,
+        coalesce(start_s, -1.0),
+        coalesce(end_s, -1.0)
+    )
+    """,
 )
 
 
-class SQLiteRunningCalibrationRepository(RunningCalibrationRepository):
+class SQLiteRunningCalibrationRepository:
     def __init__(self, db: Any) -> None:
         self.db = db
         self._conn = _connection(db)
@@ -83,9 +95,18 @@ class SQLiteRunningCalibrationRepository(RunningCalibrationRepository):
     def ensure_schema(self) -> None:
         for stmt in RUNNING_CALIBRATION_SCHEMA:
             self._conn.execute(stmt)
+        _ensure_columns(
+            self._conn,
+            "running_calibration_snapshot",
+            {
+                "observed_max_hr": "REAL",
+                "hrmax_confidence": "TEXT NOT NULL DEFAULT 'none'",
+                "high_hr_reference": "REAL",
+            },
+        )
         self._conn.commit()
 
-    def fetch_history(self, start: str | date, end: str | date) -> list[RunningActivity]:
+    def fetch_history(self, start: date, end: date) -> list[RunningActivity]:
         start_date = _parse_date(start)
         end_date = _parse_date(end)
         if start_date is None or end_date is None:
@@ -107,15 +128,19 @@ class SQLiteRunningCalibrationRepository(RunningCalibrationRepository):
             """INSERT INTO running_calibration_snapshot
                (as_of_date, algorithm_version, threshold_hr, threshold_speed_mps,
                 threshold_hr_confidence, threshold_speed_confidence,
-                rhr_baseline, hrmax_estimate, source_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                rhr_baseline, observed_max_hr, hrmax_estimate, hrmax_confidence,
+                high_hr_reference, source_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(as_of_date, algorithm_version) DO UPDATE SET
                    threshold_hr = excluded.threshold_hr,
                    threshold_speed_mps = excluded.threshold_speed_mps,
                    threshold_hr_confidence = excluded.threshold_hr_confidence,
                    threshold_speed_confidence = excluded.threshold_speed_confidence,
                    rhr_baseline = excluded.rhr_baseline,
+                   observed_max_hr = excluded.observed_max_hr,
                    hrmax_estimate = excluded.hrmax_estimate,
+                   hrmax_confidence = excluded.hrmax_confidence,
+                   high_hr_reference = excluded.high_hr_reference,
                    source_json = excluded.source_json,
                    computed_at = excluded.computed_at""",
             (
@@ -126,7 +151,10 @@ class SQLiteRunningCalibrationRepository(RunningCalibrationRepository):
                 snapshot.threshold_hr_confidence.value,
                 snapshot.threshold_speed_confidence.value,
                 snapshot.rhr_baseline,
+                snapshot.observed_max_hr,
                 snapshot.hrmax_estimate,
+                snapshot.hrmax_confidence.value,
+                snapshot.high_hr_reference,
                 source_json,
             ),
         )
@@ -163,7 +191,10 @@ class SQLiteRunningCalibrationRepository(RunningCalibrationRepository):
             threshold_hr_confidence=CalibrationConfidence(str(_row_value(row, "threshold_hr_confidence"))),
             threshold_speed_confidence=CalibrationConfidence(str(_row_value(row, "threshold_speed_confidence"))),
             rhr_baseline=_float_or_none(_row_value(row, "rhr_baseline")),
+            observed_max_hr=_float_or_none(_row_value(row, "observed_max_hr")),
             hrmax_estimate=_float_or_none(_row_value(row, "hrmax_estimate")),
+            hrmax_confidence=CalibrationConfidence(str(_row_value(row, "hrmax_confidence") or CalibrationConfidence.NONE.value)),
+            high_hr_reference=_float_or_none(_row_value(row, "high_hr_reference")),
             source=_json_dict(_row_value(row, "source_json")),
             evidence=evidence,
         )
@@ -338,6 +369,13 @@ def _connection(db: Any) -> sqlite3.Connection:
             raise TypeError("SQLiteRunningCalibrationRepository requires Database or sqlite3.Connection")
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    for name, definition in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
 
 
 def _parse_date(value: str | date | None) -> date | None:

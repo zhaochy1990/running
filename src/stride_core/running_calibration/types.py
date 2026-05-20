@@ -7,7 +7,7 @@ from datetime import date
 from enum import Enum
 from typing import Any
 
-RUNNING_CALIBRATION_MODEL_VERSION = 1
+RUNNING_CALIBRATION_MODEL_VERSION = 2
 
 
 class CalibrationConfidence(str, Enum):
@@ -70,6 +70,17 @@ class CalibrationEvidence:
 
 
 @dataclass(frozen=True)
+class HrMaxProfile:
+    observed_max_hr: float | None = None
+    estimated_hrmax: float | None = None
+    confidence: CalibrationConfidence = CalibrationConfidence.NONE
+    high_hr_reference: float | None = None
+    sample_count: int = 0
+    evidence: tuple[CalibrationEvidence, ...] = ()
+    source: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class RunningCalibrationSnapshot:
     as_of_date: date
     threshold_hr: float | None = None
@@ -77,7 +88,10 @@ class RunningCalibrationSnapshot:
     threshold_hr_confidence: CalibrationConfidence = CalibrationConfidence.NONE
     threshold_speed_confidence: CalibrationConfidence = CalibrationConfidence.NONE
     rhr_baseline: float | None = None
+    observed_max_hr: float | None = None
     hrmax_estimate: float | None = None
+    hrmax_confidence: CalibrationConfidence = CalibrationConfidence.NONE
+    high_hr_reference: float | None = None
     source: dict[str, Any] = field(default_factory=dict)
     evidence: tuple[CalibrationEvidence, ...] = ()
     id: int | str | None = None

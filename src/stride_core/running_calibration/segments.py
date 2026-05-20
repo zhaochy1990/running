@@ -10,6 +10,11 @@ from typing import Iterable, Sequence
 
 from .types import CalibrationConfidence, CalibrationEvidence, RunningActivity, RunningSample
 
+THRESHOLD_SPEED_LOW_RATIO = 0.94
+THRESHOLD_SPEED_HIGH_RATIO = 1.07
+THRESHOLD_SPEED_MAX_CV = 0.07
+SHORT_SPRINT_HR_CUTOFF_BPM = 198
+
 
 @dataclass(frozen=True)
 class SpeedCandidate:
@@ -189,29 +194,6 @@ def activity_mean_speed(activity: RunningActivity) -> float | None:
     return mean(speeds) if speeds else None
 
 
-def _coverage(values: Sequence[object | None]) -> float:
-    if not values:
-        return 0.0
-    return sum(v is not None for v in values) / len(values)
-
-
-def _window_average_speed(samples: Sequence[RunningSample], start: int, end: int) -> float | None:
-    window = samples[start : end + 1]
-    distances = [sample.distance_m for sample in window]
-    speeds = [sample.speed_mps for sample in window]
-    if _coverage(distances) >= 0.8 and window[0].distance_m is not None and window[-1].distance_m is not None:
-        dt = sample_time(window[-1], end) - sample_time(window[0], start)
-        dd = float(window[-1].distance_m) - float(window[0].distance_m)
-        if dt > 0 and dd > 0:
-            speed = dd / dt
-            if 1.5 <= speed <= 8.5:
-                return speed
-    clean_speeds = [float(s) for s in speeds if s is not None and 1.5 <= float(s) <= 8.5]
-    if len(clean_speeds) / len(window) >= 0.8:
-        return mean(clean_speeds)
-    return None
-
-
 def _window_average_speed_prepared(prepared: _PreparedSamples, start: int, end: int) -> float | None:
     size = end - start + 1
     if size <= 1:
@@ -230,11 +212,6 @@ def _window_average_speed_prepared(prepared: _PreparedSamples, start: int, end: 
     if speed_count / size >= 0.8 and speed_count > 0:
         return _range_sum(prepared.speed_sum, start, end) / speed_count
     return None
-
-
-def best_speed_for_duration(activity: RunningActivity, duration_s: int) -> SpeedCandidate | None:
-    prepared = _prepare_samples(activity.samples)
-    return _best_speed_for_duration_prepared(activity, duration_s, prepared)
 
 
 def _best_speed_for_duration_prepared(
@@ -432,16 +409,24 @@ def _timeseries_threshold_hr_candidates(
                 continue
             size = right - left + 1
             avg_speed = _window_average_speed_prepared(prepared, left, right)
-            if avg_speed is None or not (0.94 * threshold_speed_mps <= avg_speed <= 1.07 * threshold_speed_mps):
+            # Why: threshold-HR evidence should come from sustained work near,
+            # not far below or far above, the estimated threshold speed.
+            if avg_speed is None or not (
+                THRESHOLD_SPEED_LOW_RATIO * threshold_speed_mps
+                <= avg_speed
+                <= THRESHOLD_SPEED_HIGH_RATIO * threshold_speed_mps
+            ):
                 continue
             speed_count = _range_count(prepared.speed_count, left, right)
-            if speed_count / size < 0.8 or not _stable_speed_window_prepared(prepared, left, right, max_cv=0.07):
+            if speed_count / size < 0.8 or not _stable_speed_window_prepared(prepared, left, right, max_cv=THRESHOLD_SPEED_MAX_CV):
                 continue
             hr_count = _range_count(prepared.hr_count, left, right)
             if hr_count / size < 0.8:
                 continue
             max_hr = max((hr for hr in prepared.hrs[left : right + 1] if hr is not None), default=0.0)
-            if max_hr >= 198 and elapsed < 30 * 60:
+            # Why: very high HR in sub-30-minute windows is more likely a short
+            # race/sprint than a lactate-threshold segment.
+            if max_hr >= SHORT_SPRINT_HR_CUTOFF_BPM and elapsed < 30 * 60:
                 continue
             tail_start_time = prepared.times[right] - min(20 * 60, elapsed * 0.5)
             tail_start = bisect_left(prepared.times, tail_start_time, left, right + 1)
