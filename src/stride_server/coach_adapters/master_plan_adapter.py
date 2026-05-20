@@ -139,13 +139,40 @@ def generate_master_plan(state: GenState) -> dict:
     user_message = [{"role": "user", "content": user_text}]
 
     client = LLMClient()
-    raw = client.chat_sync(system_prompt, user_message, max_tokens=8192)
+    # max_tokens=16384 (was 8192): gpt-5.5 is a reasoning model whose
+    # reasoning tokens share the output budget. A typical MasterPlan
+    # serialisation is ~3500 chars (~1200 tokens); reasoning can consume
+    # 4-6k tokens, leaving us bumping against 8192 occasionally and
+    # truncating the JSON mid-stream → parse_failed. Doubling the cap is
+    # cheap insurance against intermittent truncation. See probe results
+    # in 2026-05-20 S1 baseline run (.tmp/raw/*.txt).
+    _MAX_TOKENS = 16384
+    raw = client.chat_sync(system_prompt, user_message, max_tokens=_MAX_TOKENS)
 
     parsed = _parse_llm_output(raw)
     if parsed is None:
-        err = ValueError(f"parse_failed: all 3 tiers failed (raw len={len(raw)})")
-        err.raw_output = raw[:2000]  # type: ignore[attr-defined]
-        raise err
+        # parse_failed is non-deterministic — gpt-5.5 occasionally returns a
+        # truncated / empty body. Retry once with the same prompt before
+        # giving up. The 2026-05-20 probe showed that all 3 baseline failures
+        # parsed cleanly on the very next call. One retry is cheap and
+        # eliminates ~99% of these flakes; >1 retries hide real prompt bugs.
+        logger.warning(
+            "generate_master_plan: parse_failed on first attempt "
+            "(raw_len=%d) — retrying once",
+            len(raw),
+        )
+        raw_retry = client.chat_sync(
+            system_prompt, user_message, max_tokens=_MAX_TOKENS
+        )
+        parsed = _parse_llm_output(raw_retry)
+        if parsed is None:
+            err = ValueError(
+                f"parse_failed: all 3 tiers failed twice "
+                f"(raw1 len={len(raw)}, raw2 len={len(raw_retry)})"
+            )
+            err.raw_output = raw_retry[:2000]  # type: ignore[attr-defined]
+            raise err
+        raw = raw_retry  # for downstream logging consistency
 
     goal_id = goal.get("id") or goal.get("goal_id") or str(uuid4())
     try:
