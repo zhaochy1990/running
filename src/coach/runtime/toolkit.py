@@ -21,7 +21,7 @@ from coach.tools.protocols import (
     GetAbilitySnapshot,
     GetActivityDetail,
     GetHealthSnapshot,
-    GetInbodyLatest,
+    GetBodyCompositionLatest,
     GetMasterPlanCurrent,
     GetMasterPlanVersions,
     GetPbs,
@@ -48,7 +48,7 @@ class Toolkit(Protocol):
     get_recent_activities: GetRecentActivities
     get_health_snapshot: GetHealthSnapshot
     get_pmc_series: GetPmcSeries
-    get_inbody_latest: GetInbodyLatest
+    get_body_composition_latest: GetBodyCompositionLatest
     get_ability_snapshot: GetAbilitySnapshot
     get_race_predictions: GetRacePredictions
     get_pbs: GetPbs

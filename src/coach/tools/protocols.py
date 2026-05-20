@@ -46,7 +46,7 @@ class GetPmcSeries(Protocol):
 
 
 @runtime_checkable
-class GetInbodyLatest(Protocol):
+class GetBodyCompositionLatest(Protocol):
     def __call__(self) -> ToolResult: ...
 
 
@@ -169,7 +169,7 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "get_recent_activities",
     "get_health_snapshot",
     "get_pmc_series",
-    "get_inbody_latest",
+    "get_body_composition_latest",
     "get_ability_snapshot",
     "get_race_predictions",
     "get_pbs",

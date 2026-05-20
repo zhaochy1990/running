@@ -192,11 +192,11 @@ class GetPmcSeriesImpl:
 
 
 # ---------------------------------------------------------------------------
-# 4. get_inbody_latest
+# 4. get_body_composition_latest
 # ---------------------------------------------------------------------------
 
 
-class GetInbodyLatestImpl:
+class GetBodyCompositionLatestImpl:
     def __init__(self, user_id: str) -> None:
         self._user_id = user_id
 

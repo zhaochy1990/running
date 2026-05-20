@@ -232,7 +232,7 @@ def load_health_context(db: Database, *, days: int = 120) -> dict[str, Any]:
     }
 
 
-def load_inbody_context(db: Database) -> dict[str, Any]:
+def load_body_composition_context(db: Database) -> dict[str, Any]:
     inbody_store = SqliteInBodyStore(db)
     latest = inbody_store.latest_body_composition_scan()
     if latest is None:
@@ -337,8 +337,8 @@ def load_coach_context(
         log(f"  · 读取健康负荷 ({health_days} 天) / dashboard / 比赛预测")
         health = load_health_context(db, days=health_days)
 
-        log("  · 读取 InBody / 能力快照")
-        inbody = load_inbody_context(db)
+        log("  · 读取体测 / 能力快照")
+        inbody = load_body_composition_context(db)
         ability = load_ability_context(db)
 
         return {
