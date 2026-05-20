@@ -234,14 +234,14 @@ def load_health_context(db: Database, *, days: int = 120) -> dict[str, Any]:
 
 def load_inbody_context(db: Database) -> dict[str, Any]:
     inbody_store = SqliteInBodyStore(db)
-    latest = inbody_store.latest_inbody_scan()
+    latest = inbody_store.latest_body_composition_scan()
     if latest is None:
         return {"latest": None, "deltas": None, "checkpoints": PHASE_CHECKPOINTS}
 
     latest_d = dict(latest)
-    latest_d["segments"] = [dict(s) for s in inbody_store.get_inbody_segments(latest_d["scan_date"])]
+    latest_d["segments"] = [dict(s) for s in inbody_store.get_body_composition_segments(latest_d["scan_date"])]
     prior_rows = db.query(
-        "SELECT * FROM inbody_scan WHERE scan_date < ? ORDER BY scan_date DESC LIMIT 1",
+        "SELECT * FROM body_composition_scan WHERE scan_date < ? ORDER BY scan_date DESC LIMIT 1",
         (latest_d["scan_date"],),
     )
     prior = dict(prior_rows[0]) if prior_rows else None
@@ -375,6 +375,6 @@ def summarize_context(context: dict[str, Any]) -> dict[str, Any]:
         } if week else None,
         "recent_activity_count": len(context.get("recent_activities") or []),
         "latest_health": health.get("latest"),
-        "latest_inbody_date": (inbody.get("latest") or {}).get("scan_date"),
+        "latest_body_composition_date": (inbody.get("latest") or {}).get("scan_date"),
         "latest_ability_date": ability.get("latest_date"),
     }

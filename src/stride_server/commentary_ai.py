@@ -310,11 +310,11 @@ def get_weekly_volume_trend(db: Database, weeks: int = 4) -> list[dict[str, Any]
 
 
 def get_latest_inbody(db: Database) -> dict[str, Any] | None:
-    row = db.latest_inbody_scan()
+    row = db.latest_body_composition_scan()
     if row is None:
         return None
     scan = dict(row)
-    segs = db.get_inbody_segments(scan["scan_date"])
+    segs = db.get_body_composition_segments(scan["scan_date"])
     scan["segments"] = [dict(s) for s in segs]
     return scan
 

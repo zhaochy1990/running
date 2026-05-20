@@ -234,7 +234,7 @@ CREATE TABLE IF NOT EXISTS weekly_plan (
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS inbody_scan (
+CREATE TABLE IF NOT EXISTS body_composition_scan (
     scan_date           TEXT PRIMARY KEY,
     jpg_path            TEXT,
     weight_kg           REAL NOT NULL,
@@ -250,8 +250,8 @@ CREATE TABLE IF NOT EXISTS inbody_scan (
     ingested_at         TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS inbody_segment (
-    scan_date               TEXT NOT NULL REFERENCES inbody_scan(scan_date) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS body_composition_segment (
+    scan_date               TEXT NOT NULL REFERENCES body_composition_scan(scan_date) ON DELETE CASCADE,
     segment                 TEXT NOT NULL,
     lean_mass_kg            REAL NOT NULL,
     fat_mass_kg             REAL NOT NULL,
@@ -751,7 +751,33 @@ class Database:
             shutil.move(str(seed), str(self._path))
         return True
 
+    def _pre_rename_legacy_tables(self) -> None:
+        """Rename legacy brand-named tables before SCHEMA runs.
+
+        SCHEMA contains only the new names (body_composition_*). If the old
+        names exist and the new names don't, rename them first so SCHEMA's
+        ``CREATE TABLE IF NOT EXISTS`` is a no-op (table already exists) and
+        the existing data is preserved in place.
+        """
+        try:
+            existing = {
+                r[0] for r in self._conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            # Parent before child so SQLite rewrites internal FK reference text.
+            for old, new in (
+                ("inbody_scan",    "body_composition_scan"),
+                ("inbody_segment", "body_composition_segment"),
+            ):
+                if old in existing and new not in existing:
+                    self._conn.execute(f"ALTER TABLE {old} RENAME TO {new}")
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass  # brand-new DB — no legacy tables; ignore
+
     def _init_schema(self) -> None:
+        self._pre_rename_legacy_tables()
         self._conn.executescript(SCHEMA)
         self._migrate()
 
@@ -784,7 +810,7 @@ class Database:
         _add("activities", "wind_speed", "REAL")
         _add("activities", "feel_type", "INTEGER")
         _add("activities", "sport_note", "TEXT")
-        _add("inbody_segment", "fat_pct_of_standard", "REAL")
+        _add("body_composition_segment", "fat_pct_of_standard", "REAL")
         _add("activity_commentary", "generated_by", "TEXT")
         _add("activity_commentary", "generated_at", "TEXT")
         _add("weekly_feedback", "generated_by", "TEXT")
@@ -860,6 +886,25 @@ class Database:
         _add("weekly_plan", "selected_variant_id", "INTEGER")
         _add("weekly_plan", "selected_at", "TEXT")
         _add("scheduled_workout", "abandoned_by_promote_at", "TEXT")
+
+        def _rename(old: str, new: str) -> None:
+            """Rename table if old exists and new doesn't. Idempotent."""
+            try:
+                existing = {
+                    r[0] for r in self._conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+                if old in existing and new not in existing:
+                    self._conn.execute(f"ALTER TABLE {old} RENAME TO {new}")
+            except sqlite3.OperationalError:
+                pass  # race-condition swallow, same pattern as _add
+
+        # Parent before child so SQLite rewrites FK reference text.
+        _rename("inbody_scan",    "body_composition_scan")
+        _rename("inbody_segment", "body_composition_segment")
+        self._conn.commit()
+
         # The two new variant tables are created via SCHEMA above (idempotent
         # CREATE TABLE IF NOT EXISTS). Older DBs that ran SCHEMA before these
         # tables existed will not have them yet, so re-run the targeted
@@ -1509,11 +1554,11 @@ class Database:
         if commit:
             c.commit()
 
-    # --- InBody body-composition scans ---
+    # --- Body-composition scans ---
 
-    def upsert_inbody_scan(self, scan: BodyCompositionScan) -> None:
+    def upsert_body_composition_scan(self, scan: BodyCompositionScan) -> None:
         self._conn.execute(
-            """INSERT OR REPLACE INTO inbody_scan
+            """INSERT OR REPLACE INTO body_composition_scan
             (scan_date, jpg_path, weight_kg, body_fat_pct, smm_kg, fat_mass_kg,
              visceral_fat_level, bmr_kcal, protein_kg, water_l, smi, inbody_score,
              ingested_at)
@@ -1523,10 +1568,10 @@ class Database:
              scan.bmr_kcal, scan.protein_kg, scan.water_l, scan.smi, scan.inbody_score),
         )
         # Replace all segments for this scan
-        self._conn.execute("DELETE FROM inbody_segment WHERE scan_date = ?", (scan.scan_date,))
+        self._conn.execute("DELETE FROM body_composition_segment WHERE scan_date = ?", (scan.scan_date,))
         for seg in scan.segments:
             self._conn.execute(
-                """INSERT INTO inbody_segment
+                """INSERT INTO body_composition_segment
                 (scan_date, segment, lean_mass_kg, fat_mass_kg, lean_pct_of_standard, fat_pct_of_standard)
                 VALUES (?,?,?,?,?,?)""",
                 (scan.scan_date, seg.segment, seg.lean_mass_kg, seg.fat_mass_kg,
@@ -1534,31 +1579,31 @@ class Database:
             )
         self._conn.commit()
 
-    def list_inbody_scans(self, days: int | None = None) -> list[sqlite3.Row]:
+    def list_body_composition_scans(self, days: int | None = None) -> list[sqlite3.Row]:
         if days is not None:
             return self._conn.execute(
-                "SELECT * FROM inbody_scan WHERE scan_date >= date('now', ?) "
+                "SELECT * FROM body_composition_scan WHERE scan_date >= date('now', ?) "
                 "ORDER BY scan_date DESC",
                 (f"-{days} days",),
             ).fetchall()
         return self._conn.execute(
-            "SELECT * FROM inbody_scan ORDER BY scan_date DESC"
+            "SELECT * FROM body_composition_scan ORDER BY scan_date DESC"
         ).fetchall()
 
-    def get_inbody_scan(self, scan_date: str) -> sqlite3.Row | None:
+    def get_body_composition_scan(self, scan_date: str) -> sqlite3.Row | None:
         return self._conn.execute(
-            "SELECT * FROM inbody_scan WHERE scan_date = ?", (scan_date,)
+            "SELECT * FROM body_composition_scan WHERE scan_date = ?", (scan_date,)
         ).fetchone()
 
-    def get_inbody_segments(self, scan_date: str) -> list[sqlite3.Row]:
+    def get_body_composition_segments(self, scan_date: str) -> list[sqlite3.Row]:
         return self._conn.execute(
-            "SELECT * FROM inbody_segment WHERE scan_date = ? ORDER BY segment",
+            "SELECT * FROM body_composition_segment WHERE scan_date = ? ORDER BY segment",
             (scan_date,),
         ).fetchall()
 
-    def latest_inbody_scan(self) -> sqlite3.Row | None:
+    def latest_body_composition_scan(self) -> sqlite3.Row | None:
         return self._conn.execute(
-            "SELECT * FROM inbody_scan ORDER BY scan_date DESC LIMIT 1"
+            "SELECT * FROM body_composition_scan ORDER BY scan_date DESC LIMIT 1"
         ).fetchone()
 
     # --- Ability score (custom running ability system) ---

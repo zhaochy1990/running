@@ -577,7 +577,7 @@ def inbody_add_cmd(ctx: click.Context, json_path: str) -> None:
         raise SystemExit(1)
 
     with Database(user=profile) as db:
-        db.upsert_inbody_scan(scan)
+        db.upsert_body_composition_scan(scan)
     console.print(
         f"[green]Upserted scan {scan.scan_date} "
         f"(weight={scan.weight_kg} smm={scan.smm_kg} bf={scan.body_fat_pct}%) "
@@ -605,11 +605,11 @@ def inbody_push_cmd(ctx: click.Context, scan_date: str, url: str | None) -> None
     from .stride_auth import bearer_header
 
     with Database(user=profile) as db:
-        row = db.get_inbody_scan(scan_date)
+        row = db.get_body_composition_scan(scan_date)
         if not row:
             console.print(f"[yellow]No local scan found for {scan_date}[/yellow]")
             raise SystemExit(1)
-        segs = db.get_inbody_segments(scan_date)
+        segs = db.get_body_composition_segments(scan_date)
 
     payload = dict(row)
     payload.pop("ingested_at", None)
@@ -648,7 +648,7 @@ def inbody_list_cmd(ctx: click.Context, days: int | None) -> None:
         raise SystemExit(1)
 
     with Database(user=profile) as db:
-        scans = [_scan_row_to_display(r) for r in db.list_inbody_scans(days=days)]
+        scans = [_scan_row_to_display(r) for r in db.list_body_composition_scans(days=days)]
 
     if not scans:
         console.print("[yellow]No local InBody scans.[/yellow]")

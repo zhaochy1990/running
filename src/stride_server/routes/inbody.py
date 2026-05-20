@@ -64,9 +64,9 @@ def list_inbody(user: str, days: int | None = Query(None, ge=1, le=3650)):
     """List scans (newest-first) with derived per-scan fields + segments."""
     store = get_inbody_store(user)
     try:
-        scans = [_scan_row_to_dict(r) for r in store.list_inbody_scans(days=days)]
+        scans = [_scan_row_to_dict(r) for r in store.list_body_composition_scans(days=days)]
         for s in scans:
-            segs = _segments_by_name(store.get_inbody_segments(s["scan_date"]))
+            segs = _segments_by_name(store.get_body_composition_segments(s["scan_date"]))
             _derive(s, segs)
             s["segments"] = list(segs.values())
         return {"scans": scans}
@@ -79,15 +79,15 @@ def inbody_summary(user: str):
     """Latest scan + 30-day deltas + phase-checkpoint comparison."""
     store = get_inbody_store(user)
     try:
-        latest = store.latest_inbody_scan()
+        latest = store.latest_body_composition_scan()
         if not latest:
             return {"latest": None, "deltas": None, "checkpoints": PHASE_CHECKPOINTS}
         latest_d = _scan_row_to_dict(latest)
-        segs = _segments_by_name(store.get_inbody_segments(latest_d["scan_date"]))
+        segs = _segments_by_name(store.get_body_composition_segments(latest_d["scan_date"]))
         _derive(latest_d, segs)
         latest_d["segments"] = list(segs.values())
 
-        prior_row = store.inbody_scan_before(latest_d["scan_date"])
+        prior_row = store.body_composition_scan_before(latest_d["scan_date"])
         prior = dict(prior_row) if prior_row else None
 
         deltas = None
@@ -111,11 +111,11 @@ def get_inbody(user: str, scan_date: str):
     """Single scan with all 5 segments."""
     store = get_inbody_store(user)
     try:
-        row = store.get_inbody_scan(scan_date)
+        row = store.get_body_composition_scan(scan_date)
         if not row:
             raise HTTPException(status_code=404, detail=f"No scan on {scan_date}")
         scan = _scan_row_to_dict(row)
-        segs = _segments_by_name(store.get_inbody_segments(scan_date))
+        segs = _segments_by_name(store.get_body_composition_segments(scan_date))
         _derive(scan, segs)
         scan["segments"] = list(segs.values())
         return scan
@@ -133,10 +133,10 @@ def upsert_inbody(user: str, payload: dict):
 
     store = get_inbody_store(user)
     try:
-        store.upsert_inbody_scan(scan)
-        row = store.get_inbody_scan(scan.scan_date)
+        store.upsert_body_composition_scan(scan)
+        row = store.get_body_composition_scan(scan.scan_date)
         stored = _scan_row_to_dict(row)
-        segs = _segments_by_name(store.get_inbody_segments(scan.scan_date))
+        segs = _segments_by_name(store.get_body_composition_segments(scan.scan_date))
         _derive(stored, segs)
         stored["segments"] = list(segs.values())
         return stored
