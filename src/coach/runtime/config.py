@@ -101,6 +101,7 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
         )
     temperature = raw.get("temperature")
     max_tokens = raw.get("max_tokens")
+    reasoning_effort = raw.get("reasoning_effort")
     api_kind = raw.get("api_kind", "chat-completions")
     if api_kind not in _VALID_API_KINDS:
         raise CoachConfigError(
@@ -123,6 +124,7 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
         timeout_s=float(raw["timeout_s"]),
         api_key_env=raw.get("api_key_env"),
         api_kind=api_kind,  # type: ignore[arg-type]
+        reasoning_effort=str(reasoning_effort) if reasoning_effort is not None else None,
         extra=dict(raw.get("extra") or {}),
     )
 

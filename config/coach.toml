@@ -25,7 +25,17 @@ api_kind     = "responses"
 # the parameter (400 "Unsupported parameter: 'temperature' is not supported
 # with this model"). llm_factory skips the kwarg when ModelSpec.temperature
 # is None. Re-add this line only if you point the role at a non-reasoning model.
-max_tokens   = 4096
+# max_tokens=32768 — S1 master plan with 14-22 week weekly_key_sessions
+# skeleton routinely needs 5-9k chars of visible output (≈ 2-3k tokens),
+# and gpt-5.5 reasoning tokens share this budget. 32k gives sufficient
+# headroom for the largest realistic master plan; smaller LLM calls
+# (week generation, chat) simply use less and aren't affected.
+max_tokens   = 32768
+# reasoning_effort intentionally NOT set — defaults to model's medium,
+# which is what S1 strategic reasoning (phase ordering, goal realism,
+# injury safety, distance specificity) needs. Lowering it to "low" or
+# "minimal" trades depth for budget; only flip this if you have evidence
+# the output is consistently truncating at max_tokens.
 timeout_s    = 120
 
 [reviewer]
