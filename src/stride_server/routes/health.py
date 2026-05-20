@@ -128,10 +128,15 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         (days,),
     )
     stride_rows = db.query(
-        """WITH recent AS (
+        """WITH active_version AS (
+               SELECT MAX(algorithm_version) AS algorithm_version
+               FROM daily_training_load
+           ),
+           recent AS (
                SELECT date, algorithm_version, training_dose, acute_load, chronic_load,
                       form, load_ratio, readiness_gate, readiness_reasons_json
                FROM daily_training_load
+               WHERE algorithm_version = (SELECT algorithm_version FROM active_version)
                ORDER BY date DESC
                LIMIT ?
            )

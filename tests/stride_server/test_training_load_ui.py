@@ -115,6 +115,37 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
     }
 
 
+def test_pmc_uses_single_latest_stride_algorithm_version(app_client):
+    client, tmp_path = app_client
+    db = _open_user_db(tmp_path)
+    try:
+        rows = [
+            ("2026-05-01", 1, 10.0, 1.0, 11.0, 10.0, 0.09, "green", []),
+            ("2026-05-02", 1, 20.0, 2.0, 12.0, 10.0, 0.17, "green", []),
+            ("2026-05-01", 2, 100.0, 10.0, 30.0, 20.0, 0.33, "yellow", ["v2"]),
+            ("2026-05-02", 2, 110.0, 12.0, 34.0, 22.0, 0.35, "yellow", ["v2"]),
+        ]
+        db._conn.executemany(
+            """INSERT INTO daily_training_load
+               (date, algorithm_version, training_dose, acute_load, chronic_load,
+                form, load_ratio, readiness_gate, readiness_reasons_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(*row[:-1], json.dumps(row[-1])) for row in rows],
+        )
+        db._conn.commit()
+    finally:
+        db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/pmc?days=14")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [row["date"] for row in body["stride_pmc"]] == ["2026-05-01", "2026-05-02"]
+    assert {row["algorithm_version"] for row in body["stride_pmc"]} == {2}
+    assert body["stride_summary"]["date"] == "2026-05-02"
+    assert body["stride_summary"]["current_training_dose"] == 110.0
+
+
 def test_activity_detail_returns_stride_training_load(app_client):
     _client, tmp_path = app_client
     db = _open_user_db(tmp_path)
