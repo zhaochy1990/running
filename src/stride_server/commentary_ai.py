@@ -526,7 +526,7 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
         lines.append("")
 
     if inbody:
-        lines.append("## 最新 InBody 快照")
+        lines.append("## 最新体测快照")
         lines.append(
             f"- {inbody['scan_date']}：体重 {inbody['weight_kg']} kg，"
             f"BF% {inbody['body_fat_pct']}，SMM {inbody['smm_kg']} kg，"
