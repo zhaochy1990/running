@@ -1571,16 +1571,20 @@ class Database:
              scan.smm_kg, scan.fat_mass_kg, scan.visceral_fat_level,
              scan.bmr_kcal, scan.protein_kg, scan.water_l, scan.smi, scan.inbody_score),
         )
-        # Replace all segments for this scan
-        self._conn.execute("DELETE FROM body_composition_segment WHERE scan_date = ?", (scan.scan_date,))
-        for seg in scan.segments:
-            self._conn.execute(
-                """INSERT INTO body_composition_segment
-                (scan_date, segment, lean_mass_kg, fat_mass_kg, lean_pct_of_standard, fat_pct_of_standard)
-                VALUES (?,?,?,?,?,?)""",
-                (scan.scan_date, seg.segment, seg.lean_mass_kg, seg.fat_mass_kg,
-                 seg.lean_pct_of_standard, seg.fat_pct_of_standard),
-            )
+        # Replace segments only when the caller actually provided them.
+        # An upsert from a main-metrics-only edit (e.g. the web form) sends
+        # an empty list; preserving the existing breakdown avoids a silent
+        # destructive update.
+        if scan.segments:
+            self._conn.execute("DELETE FROM body_composition_segment WHERE scan_date = ?", (scan.scan_date,))
+            for seg in scan.segments:
+                self._conn.execute(
+                    """INSERT INTO body_composition_segment
+                    (scan_date, segment, lean_mass_kg, fat_mass_kg, lean_pct_of_standard, fat_pct_of_standard)
+                    VALUES (?,?,?,?,?,?)""",
+                    (scan.scan_date, seg.segment, seg.lean_mass_kg, seg.fat_mass_kg,
+                     seg.lean_pct_of_standard, seg.fat_pct_of_standard),
+                )
         self._conn.commit()
 
     def list_body_composition_scans(self, days: int | None = None) -> list[sqlite3.Row]:

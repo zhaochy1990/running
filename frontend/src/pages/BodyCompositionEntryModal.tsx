@@ -72,30 +72,33 @@ export default function BodyCompositionEntryModal({
       }
     }
 
-    // Segment all-or-none rule
-    const segFilled = segments.map(s =>
-      s.lean_mass_kg.trim() !== '' || s.fat_mass_kg.trim() !== ''
-    )
-    const filledCount = segFilled.filter(Boolean).length
-    let segmentPayload: BodyCompositionScanInput['segments'] = undefined
-    if (filledCount > 0 && filledCount < 5) {
+    // Segment all-or-none rule. A row is "full" when both lean+fat are
+    // numeric, "empty" when both are blank, otherwise "partial".
+    const segState = segments.map((s) => {
+      const lean = num(s.lean_mass_kg)
+      const fat = num(s.fat_mass_kg)
+      const leanOk = lean != null && !Number.isNaN(lean)
+      const fatOk = fat != null && !Number.isNaN(fat)
+      if (leanOk && fatOk) return 'full'
+      if (!leanOk && !fatOk) return 'empty'
+      return 'partial'
+    })
+    if (segState.some((s) => s === 'partial')) {
+      return { ok: false, message: '节段每行的肌肉量和脂肪量必须同时填写' }
+    }
+    const fullCount = segState.filter((s) => s === 'full').length
+    if (fullCount > 0 && fullCount < 5) {
       return { ok: false, message: '节段数据必须 5 个都填，或者全部留空' }
     }
-    if (filledCount === 5) {
-      segmentPayload = segments.map((s) => {
-        const lean = num(s.lean_mass_kg)
-        const fat = num(s.fat_mass_kg)
-        if (lean == null || fat == null) {
-          throw new Error('segment lean/fat must be numeric when filled')
-        }
-        return {
-          segment: s.segment,
-          lean_mass_kg: lean,
-          fat_mass_kg: fat,
-          lean_pct_of_standard: num(s.lean_pct_of_standard),
-          fat_pct_of_standard: num(s.fat_pct_of_standard),
-        }
-      })
+    let segmentPayload: BodyCompositionScanInput['segments'] = undefined
+    if (fullCount === 5) {
+      segmentPayload = segments.map((s) => ({
+        segment: s.segment,
+        lean_mass_kg: num(s.lean_mass_kg)!,
+        fat_mass_kg: num(s.fat_mass_kg)!,
+        lean_pct_of_standard: num(s.lean_pct_of_standard),
+        fat_pct_of_standard: num(s.fat_pct_of_standard),
+      }))
     }
 
     return {

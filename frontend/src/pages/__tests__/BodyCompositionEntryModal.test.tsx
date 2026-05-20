@@ -24,7 +24,7 @@ describe('BodyCompositionEntryModal', () => {
     expect(upsertSpy).not.toHaveBeenCalled()
   })
 
-  it('blocks submit when segments are partially filled', async () => {
+  it('blocks submit when only some rows are filled (count mismatch)', async () => {
     const upsertSpy = vi.spyOn(api, 'upsertBodyComposition').mockResolvedValue({} as never)
     renderModal()
 
@@ -35,13 +35,34 @@ describe('BodyCompositionEntryModal', () => {
     fireEvent.change(screen.getByLabelText(/脂肪量/), { target: { value: '16.4' } })
     fireEvent.change(screen.getByLabelText(/内脏脂肪等级/), { target: { value: '5' } })
 
-    // Open segments and fill only 2 rows partially
+    // Open segments and fully fill only 2 of 5 rows
     fireEvent.click(screen.getByText(/节段数据/))
     fireEvent.change(screen.getByLabelText('左臂 lean_mass_kg'), { target: { value: '2.5' } })
+    fireEvent.change(screen.getByLabelText('左臂 fat_mass_kg'), { target: { value: '1.0' } })
     fireEvent.change(screen.getByLabelText('右臂 lean_mass_kg'), { target: { value: '2.6' } })
+    fireEvent.change(screen.getByLabelText('右臂 fat_mass_kg'), { target: { value: '1.0' } })
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
     expect(await screen.findByText(/节段数据必须 5 个都填/)).toBeInTheDocument()
+    expect(upsertSpy).not.toHaveBeenCalled()
+  })
+
+  it('blocks submit when a row has lean but not fat (partial row)', async () => {
+    const upsertSpy = vi.spyOn(api, 'upsertBodyComposition').mockResolvedValue({} as never)
+    renderModal()
+
+    fireEvent.change(screen.getByLabelText(/体重/), { target: { value: '71.6' } })
+    fireEvent.change(screen.getByLabelText(/体脂率/), { target: { value: '22.9' } })
+    fireEvent.change(screen.getByLabelText(/骨骼肌量/), { target: { value: '31.1' } })
+    fireEvent.change(screen.getByLabelText(/脂肪量/), { target: { value: '16.4' } })
+    fireEvent.change(screen.getByLabelText(/内脏脂肪等级/), { target: { value: '5' } })
+
+    // Fill lean but not fat — earlier code would crash on submit
+    fireEvent.click(screen.getByText(/节段数据/))
+    fireEvent.change(screen.getByLabelText('左臂 lean_mass_kg'), { target: { value: '2.5' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    expect(await screen.findByText(/节段每行的肌肉量和脂肪量必须同时填写/)).toBeInTheDocument()
     expect(upsertSpy).not.toHaveBeenCalled()
   })
 

@@ -49,8 +49,9 @@ def list_weeks(user: str):
                 "has_plan": has_plan,
                 "has_feedback": db_feedback_row is not None or content_exists(feedback_rel),
                 "has_body_composition": any_exists(
-                    f"{user}/logs/{folder_name}/body-composition{ext}"
-                    for ext in [".jpg", ".png", ".jpeg"]
+                    f"{user}/logs/{folder_name}/{name}{ext}"
+                    for name in ("body-composition", "inbody")
+                    for ext in (".json", ".jpg", ".jpeg", ".png")
                 ),
                 "plan_source": "db" if db_plan_row is not None else (plan_item.source if plan_item else "none"),
             }

@@ -65,6 +65,25 @@ class TestBodyCompositionUpsert:
         assert db.get_body_composition_scan("2099-01-01") is None
         assert db.get_body_composition_segments("2099-01-01") == []
 
+    def test_upsert_without_segments_preserves_existing(self, db):
+        """Main-metrics-only correction must not erase existing segment rows."""
+        db.upsert_body_composition_scan(_make_scan(weight=71.6))
+        assert len(db.get_body_composition_segments("2026-04-23")) == 5
+
+        from stride_core.models import BodyCompositionScan
+        bare = BodyCompositionScan.from_dict({
+            "scan_date": "2026-04-23",
+            "weight_kg": 72.0, "body_fat_pct": 22.5, "smm_kg": 31.2,
+            "fat_mass_kg": 16.1, "visceral_fat_level": 5,
+        })
+        assert bare.segments == []
+        db.upsert_body_composition_scan(bare)
+
+        row = db.get_body_composition_scan("2026-04-23")
+        assert dict(row)["weight_kg"] == 72.0
+        # Segment breakdown preserved — not silently wiped.
+        assert len(db.get_body_composition_segments("2026-04-23")) == 5
+
 
 def test_migration_renames_legacy_tables(tmp_path):
     """Existing inbody_scan / inbody_segment tables auto-rename on Database() open."""
