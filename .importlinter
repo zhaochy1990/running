@@ -81,3 +81,27 @@ forbidden_modules =
     garmin_sync
     fastapi
     azure
+
+# -----------------------------------------------------------------------------
+# Contract 4: running-calibration core isolation
+#
+# `stride_core.running_calibration.{core,segments,types,zones,repository}` are
+# pure domain modules and repository protocol/orchestration. SQLite, HTTP,
+# vendor sync, and cloud SDK details belong in replaceable connector modules.
+# -----------------------------------------------------------------------------
+[importlinter:contract:running-calibration-core-isolation]
+name = Running-calibration core must not import infrastructure modules
+type = forbidden
+source_modules =
+    stride_core.running_calibration.core
+    stride_core.running_calibration.segments
+    stride_core.running_calibration.types
+    stride_core.running_calibration.zones
+    stride_core.running_calibration.repository
+forbidden_modules =
+    stride_core.db
+    stride_server
+    coros_sync
+    garmin_sync
+    fastapi
+    azure

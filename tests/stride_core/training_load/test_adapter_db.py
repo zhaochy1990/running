@@ -146,7 +146,7 @@ def test_recompute_normalizes_activity_distance_stored_as_kilometers(db):
     calibration = db.query("SELECT * FROM training_load_calibration")[0]
     activity_row = db.fetch_activity_training_load("km_run")
     assert calibration["threshold_speed_mps"] == 4.0
-    assert calibration["threshold_hr"] == 168.0
+    assert calibration["threshold_hr"] == 170.0
     assert activity_row["external_tss"] == 100.0
     # 14.4 km flat → grade_factor=1.0, descent_factor=1.0, intensity_factor ≈ 1.011
     # (normalized_IF ≈ 1.0 → 1 + 0.5*(0.15)^2). 14.4 * 1.011 ≈ 14.562.

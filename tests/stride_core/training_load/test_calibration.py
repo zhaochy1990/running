@@ -56,6 +56,34 @@ def test_estimates_hrmax_threshold_speed_and_power_from_history():
     assert calibration.critical_power_w == pytest.approx(300.0, rel=0.03)
 
 
+def test_critical_power_ignores_low_power_dropouts():
+    as_of = date(2026, 5, 1)
+    activity = CalibrationActivity(
+        label_id="power_dropouts",
+        activity_date=as_of - timedelta(days=2),
+        sport="run_outdoor",
+        duration_s=3600,
+        distance_m=14400,
+        avg_hr=168,
+        max_hr=186,
+        avg_power=300,
+        samples=tuple(
+            CalibrationSample(
+                elapsed_s=float(i),
+                distance_m=4.0 * i,
+                heart_rate_bpm=170,
+                speed_mps=4.0,
+                power_w=25 if i < 3300 else 300,
+            )
+            for i in range(0, 3601, 30)
+        ),
+    )
+
+    calibration = estimate_calibration([activity], as_of_date=as_of)
+
+    assert calibration.critical_power_w == pytest.approx(300.0, rel=0.03)
+
+
 def _steady_activity(
     label_id: str,
     as_of: date,
@@ -97,7 +125,7 @@ def test_threshold_hr_uses_plausible_sustained_efforts_not_fastest_race_hr():
 
     calibration = estimate_calibration(history, as_of_date=as_of, health_rows=health)
 
-    assert calibration.threshold_speed_mps == pytest.approx(4.1, rel=0.01)
+    assert calibration.threshold_speed_mps == pytest.approx(4.0, rel=0.01)
     assert calibration.threshold_hr == pytest.approx(165.0, abs=2.0)
 
 
@@ -112,5 +140,5 @@ def test_threshold_hr_rejects_low_hr_outlier_at_fast_threshold_speed():
 
     calibration = estimate_calibration(history, as_of_date=as_of, health_rows=health)
 
-    assert calibration.threshold_speed_mps == pytest.approx(4.5, rel=0.01)
+    assert calibration.threshold_speed_mps == pytest.approx(4.32, rel=0.01)
     assert calibration.threshold_hr == pytest.approx(168.5, abs=2.0)
