@@ -6,6 +6,7 @@ import {
 import { getBodyComposition, getBodyCompositionSummary, type BodyCompositionScan, type BodyCompositionSummary } from '../api'
 import { useUser } from '../UserContextValue'
 import ViewHead from '../components/ViewHead'
+import BodyCompositionEntryModal from './BodyCompositionEntryModal'
 
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
@@ -40,6 +41,7 @@ export default function BodyCompositionPage() {
   const requestKey = user || ''
   const [loadedKey, setLoadedKey] = useState('')
   const loading = Boolean(requestKey && loadedKey !== requestKey)
+  const [showEntry, setShowEntry] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -76,11 +78,20 @@ export default function BodyCompositionPage() {
         </div>
       ) : (
         <div className="animate-fade-in">
-          <ViewHead
-            eyebrow="体测记录"
-            title="身体成分趋势"
-            lede={`Body Composition — ${scans.length} 次扫描`}
-          />
+          <div className="flex items-start justify-between gap-4">
+            <ViewHead
+              eyebrow="体测记录"
+              title="身体成分趋势"
+              lede={`Body Composition — ${scans.length} 次扫描`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowEntry(true)}
+              className="shrink-0 mt-2 px-3 py-2 text-xs font-mono font-medium rounded-md bg-accent-amber/15 text-accent-amber hover:bg-accent-amber/25 transition-colors"
+            >
+              + 录入新数据
+            </button>
+          </div>
 
           {!latest && (
             <div className="bg-bg-card border border-border-subtle rounded-2xl p-10 text-center text-text-muted">
@@ -279,6 +290,18 @@ export default function BodyCompositionPage() {
                 </div>
               </div>
             </>
+          )}
+
+          {showEntry && user && (
+            <BodyCompositionEntryModal
+              user={user}
+              existingDates={new Set(scans.map((s) => s.scan_date))}
+              onClose={() => setShowEntry(false)}
+              onSaved={() => {
+                setShowEntry(false)
+                setLoadedKey('')  // forces useEffect to refetch
+              }}
+            />
           )}
         </div>
       )}
