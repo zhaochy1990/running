@@ -45,8 +45,10 @@ def run_sync(
     progress: SyncProgressCallback | None = None,
     activity_limit: int = 200,
     since_date: str | None = None,
-) -> tuple[int, int]:
-    """Sync the user's Garmin data into `db`. Returns `(activities_count, health_count)`.
+) -> tuple[int, int, tuple[str, ...]]:
+    """Sync the user's Garmin data into `db`.
+
+    Returns `(activities_count, health_count, activity_label_ids)`.
 
     Incremental by default: stops paginating activities once it hits one
     that's already in the local DB. `full=True` pulls everything in the
@@ -74,14 +76,17 @@ def run_sync(
     )
     health_synced = _sync_health(client, db, progress=progress)
 
-    # Mirror coros_sync behaviour: refresh today's ability snapshot so the
-    # cached row at /api/{user}/ability/current reflects the new activities
-    # without the user having to manually pass ?refresh=1. Best-effort —
-    # never fails the sync.
-    from stride_core.ability_hook import run_ability_hook
-    run_ability_hook(db, new_label_ids)
+    return activities_synced, health_synced, tuple(new_label_ids)
 
-    return activities_synced, health_synced
+
+def run_health_only_sync(
+    client: GarminClient,
+    db: Database,
+    *,
+    progress: SyncProgressCallback | None = None,
+) -> tuple[int, int]:
+    health_synced = _sync_health(client, db, progress=progress)
+    return 0, health_synced
 
 
 def _sync_activities(

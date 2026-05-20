@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -247,6 +248,66 @@ class TestPushRunWorkout:
         src = GarminDataSource()
         with pytest.raises(GarminNotLoggedInError):
             src.push_run_workout("nobody", workout)
+
+
+class TestSyncUser:
+    def test_sync_user_returns_activity_label_ids(self, tmp_path: Path, monkeypatch):
+        from stride_core import db as db_mod
+        import garmin_sync.adapter as adapter_mod
+
+        monkeypatch.setattr(db_mod, "USER_DATA_DIR", tmp_path)
+        creds_path = tmp_path / "alice" / "garmin_auth.json"
+        creds_path.parent.mkdir(parents=True)
+        creds_path.write_text(
+            json.dumps({"email": "x@y.com", "region": "cn", "tokens_dump": "{}"}),
+            encoding="utf-8",
+        )
+
+        fake_db = MagicMock()
+        fake_db.__enter__.return_value = fake_db
+        fake_db.__exit__.return_value = False
+        monkeypatch.setattr(adapter_mod, "Database", lambda user=None: fake_db)
+        monkeypatch.setattr(
+            adapter_mod.GarminClient,
+            "from_stored",
+            classmethod(lambda cls, creds: object()),
+        )
+        monkeypatch.setattr(adapter_mod, "run_sync", lambda *args, **kwargs: (2, 5, ("g1", "g2")))
+
+        result = GarminDataSource().sync_user("alice", full=True)
+
+        assert result.activities == 2
+        assert result.health == 5
+        assert result.activity_label_ids == ("g1", "g2")
+
+    def test_sync_user_health_only_returns_no_activity_label_ids(self, tmp_path: Path, monkeypatch):
+        from stride_core import db as db_mod
+        import garmin_sync.adapter as adapter_mod
+
+        monkeypatch.setattr(db_mod, "USER_DATA_DIR", tmp_path)
+        creds_path = tmp_path / "alice" / "garmin_auth.json"
+        creds_path.parent.mkdir(parents=True)
+        creds_path.write_text(
+            json.dumps({"email": "x@y.com", "region": "cn", "tokens_dump": "{}"}),
+            encoding="utf-8",
+        )
+
+        fake_db = MagicMock()
+        fake_db.__enter__.return_value = fake_db
+        fake_db.__exit__.return_value = False
+        monkeypatch.setattr(adapter_mod, "Database", lambda user=None: fake_db)
+        monkeypatch.setattr(
+            adapter_mod.GarminClient,
+            "from_stored",
+            classmethod(lambda cls, creds: object()),
+        )
+        monkeypatch.setattr(adapter_mod, "run_health_only_sync", lambda *args, **kwargs: (0, 5))
+
+        result = GarminDataSource().sync_user("alice", mode="health_only")
+
+        assert result.activities == 0
+        assert result.health == 5
+        assert result.activity_label_ids == ()
 
 
 class TestGarminCredentialsRoundtrip:

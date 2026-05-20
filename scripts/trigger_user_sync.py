@@ -6,14 +6,16 @@ exception printed instead of swallowed by the ``return {error: 'sync
 failed'}`` shape.
 """
 from __future__ import annotations
-import argparse, json, re, sys, traceback
+import argparse, json, logging, re, sys, traceback
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+logger = logging.getLogger(__name__)
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 from stride_core.db import USER_DATA_DIR
+from stride_core.post_sync import run_post_sync_for_result
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -64,6 +66,15 @@ print()
 try:
     print("running sync...")
     result = source.sync_user(uuid, full=args.full)
+    try:
+        run_post_sync_for_result(
+            user=uuid,
+            provider=source.info.name,
+            operation="sync",
+            result=result,
+        )
+    except Exception:
+        logger.exception("post-sync events failed for triggered sync user=%s", uuid)
     print(f"  activities: {result.activities}")
     print(f"  health: {result.health}")
     print("done.")

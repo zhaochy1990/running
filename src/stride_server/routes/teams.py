@@ -35,6 +35,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import RUN_SPORT_SQL_LIST, pace_str
+from stride_core.post_sync import run_post_sync_for_result
 from stride_core.registry import ProviderRegistry, UnknownProvider
 
 from .. import auth_service_client as auth_client
@@ -491,6 +492,16 @@ async def sync_team_all(
             # sync_user is sync + network-bound; offload so we don't block the
             # event loop while syncing each member sequentially.
             sync_result = await asyncio.to_thread(source.sync_user, user_id, full=False)
+            try:
+                await asyncio.to_thread(
+                    run_post_sync_for_result,
+                    user=user_id,
+                    provider=source.info.name,
+                    operation="sync",
+                    result=sync_result,
+                )
+            except Exception:
+                logger.exception("post-sync events failed for team sync user=%s", user_id)
             entry["status"] = "synced"
             entry["new_activities"] = sync_result.activities
             entry["new_health"] = sync_result.health

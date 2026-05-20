@@ -7,11 +7,14 @@ Profile slug → UUID resolution is shared with coros-sync.
 
 from __future__ import annotations
 
+import logging
+
 import click
 from rich.console import Console
 
 from coros_sync.cli import _resolve_profile
 from stride_core.db import Database
+from stride_core.post_sync import run_post_sync_for_labels
 from stride_core.registry import write_user_provider
 
 from .auth import GarminCredentials
@@ -19,6 +22,7 @@ from .client import GarminAuthError, GarminClient
 from .sync import run_sync
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -91,10 +95,19 @@ def sync(ctx: click.Context, full: bool, since_date: str | None) -> None:
         raise SystemExit(1)
 
     with Database(user=profile) as db:
-        activities, health = run_sync(client, db, full=full, since_date=since_date)
+        activities, health, activity_label_ids = run_sync(client, db, full=full, since_date=since_date)
     console.print(
         f"\n[green]Synced {activities} activities, {health} daily health records[/green]"
     )
+    try:
+        run_post_sync_for_labels(
+            user=profile,
+            provider="garmin",
+            operation="sync",
+            activity_label_ids=activity_label_ids,
+        )
+    except Exception:
+        logger.exception("post-sync events failed for Garmin CLI sync profile=%s", profile)
 
 
 @cli.command()

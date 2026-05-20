@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -13,9 +14,11 @@ from rich.table import Table
 from .auth import Credentials, USER_DATA_DIR
 from .client import CorosClient, CorosAuthError
 from stride_core.db import Database
+from stride_core.post_sync import run_post_sync_for_labels
 from .sync import run_sync
 
 console = Console()
+logger = logging.getLogger(__name__)
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -89,8 +92,17 @@ def sync(ctx: click.Context, full: bool, jobs: int) -> None:
         raise SystemExit(1)
 
     with CorosClient(creds, user=profile) as client, Database(user=profile) as db:
-        activities, health = run_sync(client, db, full=full, jobs=jobs)
+        activities, health, activity_label_ids = run_sync(client, db, full=full, jobs=jobs)
         console.print(f"\n[green]Synced {activities} activities, {health} daily health records[/green]")
+    try:
+        run_post_sync_for_labels(
+            user=profile,
+            provider="coros",
+            operation="sync",
+            activity_label_ids=activity_label_ids,
+        )
+    except Exception:
+        logger.exception("post-sync events failed for COROS CLI sync profile=%s", profile)
 
 
 @cli.command()
@@ -109,8 +121,17 @@ def resync(ctx: click.Context, date_from: str, date_to: str, jobs: int) -> None:
         raise SystemExit(1)
 
     with CorosClient(creds, user=profile) as client, Database(user=profile) as db:
-        count = resync_date_range(client, db, date_from, date_to, jobs=jobs)
+        count, activity_label_ids = resync_date_range(client, db, date_from, date_to, jobs=jobs)
         console.print(f"\n[green]Re-synced {count} activities ({date_from} to {date_to})[/green]")
+    try:
+        run_post_sync_for_labels(
+            user=profile,
+            provider="coros",
+            operation="resync_range",
+            activity_label_ids=activity_label_ids,
+        )
+    except Exception:
+        logger.exception("post-sync events failed for COROS CLI resync profile=%s", profile)
 
 
 @cli.command()

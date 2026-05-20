@@ -139,12 +139,17 @@ class CorosDataSource(BaseDataSource):
                 activities, health = run_health_only_sync(
                     client, db, progress=progress,
                 )
+                activity_label_ids: tuple[str, ...] = ()
             else:
                 kwargs: dict = {"full": full, "jobs": self._jobs}
                 if progress is not None:
                     kwargs["progress"] = progress
-                activities, health = run_sync(client, db, **kwargs)
-        return SyncResult(activities=activities, health=health)
+                activities, health, activity_label_ids = run_sync(client, db, **kwargs)
+        return SyncResult(
+            activities=activities,
+            health=health,
+            activity_label_ids=activity_label_ids,
+        )
 
     def push_run_workout(self, user: str, workout: NormalizedRunWorkout) -> str:
         """Push a `NormalizedRunWorkout` to the user's COROS schedule.

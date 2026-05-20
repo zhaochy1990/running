@@ -119,8 +119,8 @@ def sync_activities(
     page_size: int = 20,
     jobs: int = 1,
     progress_callback: SyncProgressCallback | None = None,
-) -> int:
-    """Sync activities from COROS to local DB. Returns count of new activities synced."""
+) -> tuple[int, tuple[str, ...]]:
+    """Sync activities from COROS to local DB. Returns count and saved labels."""
     synced = 0
 
     with Progress(
@@ -175,7 +175,7 @@ def sync_activities(
                 total=0,
                 synced_activities=0,
             )
-            return 0
+            return 0, ()
 
         # Phase 2: Fetch details for each new activity (parallel API calls, sequential DB writes)
         ordered = list(reversed(new_activities))  # Oldest first
@@ -260,29 +260,6 @@ def sync_activities(
             synced_activities=synced,
         )
 
-    # AOAI auto-commentary for each newly synced activity (fire-and-forget).
-    # Isolated here so any import/network failure cannot break sync.
-    if ai_targets:
-        _emit_sync_progress(
-            progress_callback,
-            phase="commentary",
-            message="正在准备活动解读草稿",
-            percent=75,
-            synced_activities=synced,
-        )
-        _try_generate_commentaries(db, ai_targets)
-
-    # Ability hook — compute L1 per new activity + rebuild today's snapshot.
-    # Wrapped so any failure cannot break the sync pipeline.
-    _emit_sync_progress(
-        progress_callback,
-        phase="ability",
-        message="正在更新能力模型和训练状态",
-        percent=76,
-        synced_activities=synced,
-    )
-    from stride_core.ability_hook import run_ability_hook
-    run_ability_hook(db, ai_targets)
     _emit_sync_progress(
         progress_callback,
         phase="activities_done",
@@ -291,43 +268,7 @@ def sync_activities(
         synced_activities=synced,
     )
 
-    return synced
-
-
-def _try_generate_commentaries(db: Database, label_ids: list[str]) -> None:
-    """Kick off AOAI commentary generation in a bounded thread pool.
-
-    Best-effort: never raises, never blocks the caller for long.
-    """
-    try:
-        # Lazy import — stride_server is not a hard dep of coros_sync
-        from stride_server.commentary_ai import (
-            is_enabled,
-            maybe_generate_for_new_activity,
-        )
-    except Exception as e:
-        logger.debug("AOAI commentary module unavailable: %s", e)
-        return
-    if not is_enabled():
-        return
-    # Resolve user from the DB path: data/{user_id}/coros.db
-    try:
-        user = db._path.parent.name  # type: ignore[attr-defined]
-    except Exception:
-        logger.debug("Cannot resolve user from DB path, skipping AOAI")
-        return
-
-    def worker(lid: str) -> None:
-        try:
-            maybe_generate_for_new_activity(user, lid)
-        except Exception:
-            logger.exception("AOAI worker failed for %s", lid)
-
-    # Small pool, daemon threads — do not wait for them to finish.
-    import threading
-    for lid in label_ids:
-        t = threading.Thread(target=worker, args=(lid,), daemon=True)
-        t.start()
+    return synced, tuple(ai_targets)
 
 
 # Ability-hook implementation moved to stride_core.ability_hook so any
@@ -350,7 +291,7 @@ def resync_date_range(
     date_from: str,
     date_to: str,
     jobs: int = 1,
-) -> int:
+) -> tuple[int, tuple[str, ...]]:
     """Re-sync activities within a date range. Dates are YYYY-MM-DD or YYYYMMDD format."""
     # Normalize dates for comparison with DB
     df = date_from.replace("-", "")
@@ -365,9 +306,10 @@ def resync_date_range(
     activities = [dict(r) for r in rows]
 
     if not activities:
-        return 0
+        return 0, ()
 
     synced = 0
+    label_ids: list[str] = []
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -398,6 +340,7 @@ def resync_date_range(
             if detail:
                 db.upsert_activity(detail)
                 synced += 1
+                label_ids.append(str(act["label_id"]))
             progress.update(
                 task,
                 description=f"Re-syncing: {act.get('name') or act.get('sport_name', '')}",
@@ -412,7 +355,7 @@ def resync_date_range(
             on_commit=on_resync_commit,
         )
 
-    return synced
+    return synced, tuple(label_ids)
 
 
 def sync_health(
@@ -530,15 +473,15 @@ def run_sync(
     full: bool = False,
     jobs: int = 1,
     progress: SyncProgressCallback | None = None,
-) -> tuple[int, int]:
-    """Run full sync: activities + health. Returns (activities_synced, health_days_synced)."""
+) -> tuple[int, int, tuple[str, ...]]:
+    """Run full sync. Returns (activities, health, activity_label_ids)."""
     _emit_sync_progress(
         progress,
         phase="connecting",
         message="已连接 COROS，准备开始同步",
         percent=5,
     )
-    activities = sync_activities(
+    activities, activity_label_ids = sync_activities(
         client,
         db,
         full=full,
@@ -555,4 +498,4 @@ def run_sync(
         synced_health=health,
     )
     db.set_meta("last_sync_time", datetime.now().isoformat())
-    return activities, health
+    return activities, health, activity_label_ids

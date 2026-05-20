@@ -48,6 +48,7 @@ class SyncResult:
     """Summary of a sync run."""
     activities: int
     health: int
+    activity_label_ids: tuple[str, ...] = ()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
