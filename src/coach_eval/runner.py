@@ -241,12 +241,26 @@ def run_s1_evaluation(
         else:
             load_ctx = load_master_context
 
+        # Extract input-aware rule_filter kwargs from the fixture so the
+        # season_window_fits / goal_realism L1 checks have data to evaluate.
+        # No-op for fixtures lacking these fields (older fixtures predate them).
+        finput = fixture.get("input") or {}
+        fprofile = finput.get("user_profile") or {}
+        rfk: dict = {}
+        if fprofile.get("target_race"):
+            rfk["target_race"] = fprofile["target_race"]
+        if fprofile.get("prs"):
+            rfk["prs"] = fprofile["prs"]
+        if finput.get("season_window"):
+            rfk["season_window"] = finput["season_window"]
+
         gen_graph = build_generation_graph(
             load_context=load_ctx,
             generator=generate_master_plan,
             reviewer=master_reviewer,
             apply_patches=apply_master_patches,
             rule_filter=run_master_rule_filter,
+            rule_filter_kwargs=rfk,
         )
 
         outcome = run_evaluation_for_fixture(

@@ -595,12 +595,31 @@ def _run_generate_job_inner(
 
     update_job(job_id, status=JobStatus.RUNNING)
 
+    # Build rule_filter kwargs from the same goal / profile shape the prompt
+    # uses (post-normalisation). The input-aware L1 rules (season_window_fits
+    # / goal_realism) need target_race + prs to do anything — missing kwargs
+    # are silent no-ops per run_master_rule_filter's contract.
+    norm_goal, norm_profile = _normalize_for_prompt(goal, profile)
+    rfk: dict = {
+        "target_race": {
+            "distance": norm_goal.get("distance"),
+            "goal_time_s": norm_goal.get("goal_time_s"),
+            "race_date": norm_goal.get("race_date"),
+        },
+    }
+    if norm_profile and norm_profile.get("prs"):
+        rfk["prs"] = norm_profile["prs"]
+    # season_window is a fixture-only concept (eval framework); prod uses
+    # goal.race_date as the implicit upper bound and trusts the LLM to
+    # respect it. Skip season_window_fits in prod by not passing it.
+
     graph = build_generation_graph(
         load_context=load_master_context,
         generator=generate_master_plan,
         reviewer=master_reviewer,
         apply_patches=apply_master_patches,
         rule_filter=run_master_rule_filter,
+        rule_filter_kwargs=rfk,
     )
 
     initial_state: dict = {
