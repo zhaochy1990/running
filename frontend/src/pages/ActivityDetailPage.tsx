@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, getPlanDays, formatDate, formatTime, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type Lap, type Segment, type Zone, type TimeseriesPoint, type PlannedSessionRow, type LinkedScheduledWorkout } from '../api'
+import { getActivity, getTeamActivity, resyncActivity, regenerateCommentary, getPlanDays, formatDate, formatTime, sportColor, trainTypeColor, sportNameCN, trainTypeCN, type Activity, type ActivityStrideTrainingLoad, type Lap, type Segment, type Zone, type TimeseriesPoint, type PlannedSessionRow, type LinkedScheduledWorkout } from '../api'
 import { shanghaiDate } from '../lib/shanghai'
 import { useUser } from '../UserContextValue'
 import SegmentView from '../components/SegmentView'
@@ -32,6 +32,7 @@ export default function ActivityDetailPage() {
   const [segments, setSegments] = useState<Segment[]>([])
   const [zones, setZones] = useState<Zone[]>([])
   const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([])
+  const [strideTrainingLoad, setStrideTrainingLoad] = useState<ActivityStrideTrainingLoad | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
@@ -57,6 +58,7 @@ export default function ActivityDetailPage() {
       setSegments(data.segments || [])
       setZones(data.zones)
       setTimeseries(data.timeseries)
+      setStrideTrainingLoad(data.stride_training_load ?? null)
       setLinkedSw(data.linked_scheduled_workout ?? null)
     })
   }, [activityId, fetchDetail, isTeamView, user])
@@ -72,6 +74,7 @@ export default function ActivityDetailPage() {
         setSegments(data.segments || [])
         setZones(data.zones)
         setTimeseries(data.timeseries)
+        setStrideTrainingLoad(data.stride_training_load ?? null)
         setLinkedSw(data.linked_scheduled_workout ?? null)
       })
       .finally(() => setLoading(false))
@@ -259,11 +262,15 @@ export default function ActivityDetailPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4 mt-4 pt-4 border-t border-border-subtle">
           {!isStrength && <SmallMetric label="步频" value={activity.avg_cadence ? `${activity.avg_cadence} spm` : '—'} />}
           {!isStrength && <SmallMetric label="累计爬升" value={activity.ascent_m ? `${activity.ascent_m} m` : '—'} />}
-          <SmallMetric label="训练负荷" value={activity.training_load ? `${activity.training_load.toFixed(0)}` : '—'} />
+          <SmallMetric label="手表负荷" value={activity.training_load ? `${activity.training_load.toFixed(0)}` : '—'} />
           {!isStrength && <SmallMetric label="最大摄氧量" value={activity.vo2max ? `${activity.vo2max.toFixed(1)}` : '—'} />}
           <SmallMetric label="有氧效果" value={activity.aerobic_effect ? `${activity.aerobic_effect.toFixed(1)}` : '—'} />
           <SmallMetric label="无氧效果" value={activity.anaerobic_effect ? `${activity.anaerobic_effect.toFixed(1)}` : '—'} />
         </div>
+
+        {strideTrainingLoad && (
+          <StrideTrainingLoadPanel load={strideTrainingLoad} />
+        )}
 
         {/* Weather */}
         {activity.temperature != null && (
@@ -449,6 +456,49 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs font-mono text-text-muted uppercase tracking-wider">{label}</p>
       <p className="text-sm font-mono text-text-secondary mt-0.5">{value}</p>
+    </div>
+  )
+}
+
+function formatLoadValue(value: number | null | undefined, digits = 1): string {
+  return value == null ? '—' : value.toFixed(digits)
+}
+
+function StrideTrainingLoadPanel({ load }: { load: ActivityStrideTrainingLoad }) {
+  const reasons = load.reasons.length > 0 ? load.reasons : ['无触发']
+  const included = !load.excluded_from_pmc
+  return (
+    <div className="mt-4 pt-4 border-t border-border-subtle">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div>
+          <h3 className="text-sm font-semibold text-text-secondary tracking-wide">STRIDE 客观负荷</h3>
+          <p className="text-xs font-mono text-text-muted">Objective dose · v{load.algorithm_version}</p>
+        </div>
+        <span
+          className="text-[11px] font-mono px-2.5 py-1 rounded-lg"
+          style={{
+            color: included ? '#00a85a' : '#e68a00',
+            backgroundColor: included ? '#00a85a15' : '#e68a0015',
+          }}
+        >
+          {included ? '计入PMC' : '未计入PMC'}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+        <SmallMetric label="训练剂量" value={formatLoadValue(load.training_dose)} />
+        <SmallMetric label="Cardio TSS" value={formatLoadValue(load.cardio_tss)} />
+        <SmallMetric label="External TSS" value={formatLoadValue(load.external_tss)} />
+        <SmallMetric label="机械负荷" value={formatLoadValue(load.mechanical_load)} />
+        <SmallMetric label="置信度" value={load.load_confidence || '—'} />
+        <SmallMetric label="分类" value={load.session_class || '—'} />
+      </div>
+      <div className="flex flex-wrap gap-1.5 mt-3">
+        {reasons.map((reason) => (
+          <span key={reason} className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-bg-secondary text-text-muted">
+            {reason}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

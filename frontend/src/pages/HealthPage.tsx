@@ -7,6 +7,7 @@ import {
 import {
   getHealth, getPMC,
   type HealthRecord, type PMCRecord, type PMCSummary, type HRVSnapshot,
+  type StridePMCRecord, type StridePMCSummary,
 } from '../api'
 import { useUser } from '../UserContextValue'
 import GarminExtrasSection from './health/GarminExtrasSection'
@@ -81,6 +82,15 @@ function tsbZoneColor(zone: string | null): string {
   return zone ? (map[zone] || '#8888a0') : '#8888a0'
 }
 
+function readinessColor(gate: string | null): string {
+  const map: Record<string, string> = {
+    green: '#00a85a',
+    yellow: '#e68a00',
+    red: '#d32f2f',
+  }
+  return gate ? (map[gate] || '#8888a0') : '#8888a0'
+}
+
 export default function HealthPage() {
   const { user } = useUser()
   const [records, setRecords] = useState<HealthRecord[]>([])
@@ -88,6 +98,8 @@ export default function HealthPage() {
   const [rhrBaseline, setRhrBaseline] = useState<number | null>(null)
   const [pmcData, setPmcData] = useState<PMCRecord[]>([])
   const [pmcSummary, setPmcSummary] = useState<PMCSummary | null>(null)
+  const [stridePmcData, setStridePmcData] = useState<StridePMCRecord[]>([])
+  const [stridePmcSummary, setStridePmcSummary] = useState<StridePMCSummary | null>(null)
   const [days, setDays] = useState(30)
   const [pmcDays, setPmcDays] = useState(90)
   const requestKey = user ? `${user}:${days}:${pmcDays}` : ''
@@ -108,6 +120,8 @@ export default function HealthPage() {
         setRhrBaseline(healthData.rhr_baseline ?? null)
         setPmcData(pmcResult.pmc)
         setPmcSummary(pmcResult.summary)
+        setStridePmcData(pmcResult.stride_pmc ?? [])
+        setStridePmcSummary(pmcResult.stride_summary ?? null)
       })
       .finally(() => {
         if (!cancelled) setLoadedKey(requestKey)
@@ -125,6 +139,11 @@ export default function HealthPage() {
 
   // PMC data is already chronological
   const pmcChartData = pmcData.map((r) => ({
+    ...r,
+    dateLabel: formatDate(r.date),
+  }))
+
+  const strideChartData = stridePmcData.map((r) => ({
     ...r,
     dateLabel: formatDate(r.date),
   }))
@@ -363,6 +382,86 @@ export default function HealthPage() {
                           {label}
                         </span>
                       ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {stridePmcData.length > 0 && stridePmcSummary && (
+                <div className="mb-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-4">
+                    <MetricCard
+                      label="客观剂量" sublabel="Objective Dose"
+                      value={stridePmcSummary.current_training_dose != null ? stridePmcSummary.current_training_dose.toFixed(0) : '—'} unit=""
+                      color="#00a85a" detail={stridePmcSummary.date ? formatDate(stridePmcSummary.date) : ''}
+                    />
+                    <MetricCard
+                      label="急性负荷" sublabel="Acute Load"
+                      value={stridePmcSummary.current_acute_load != null ? stridePmcSummary.current_acute_load.toFixed(1) : '—'} unit=""
+                      color="#0097a7" detail="7天指数负荷"
+                    />
+                    <MetricCard
+                      label="慢性负荷" sublabel="Chronic Load"
+                      value={stridePmcSummary.current_chronic_load != null ? stridePmcSummary.current_chronic_load.toFixed(1) : '—'} unit=""
+                      color="#00a85a" detail="42天指数负荷"
+                    />
+                    <MetricCard
+                      label="状态" sublabel="Form"
+                      value={stridePmcSummary.current_form != null ? `${stridePmcSummary.current_form > 0 ? '+' : ''}${stridePmcSummary.current_form.toFixed(1)}` : '—'} unit=""
+                      color={tsbColor(stridePmcSummary.current_form)} detail="CTL - ATL"
+                    />
+                    <MetricCard
+                      label="负荷比" sublabel="Load Ratio"
+                      value={stridePmcSummary.current_load_ratio != null ? stridePmcSummary.current_load_ratio.toFixed(2) : '—'} unit=""
+                      color={ratioColor(stridePmcSummary.current_load_ratio)} detail={stridePmcSummary.chronic_load_ramp != null ? `7天 ${stridePmcSummary.chronic_load_ramp > 0 ? '+' : ''}${stridePmcSummary.chronic_load_ramp}` : '7天 —'}
+                    />
+                    <MetricCard
+                      label="恢复门控" sublabel="Readiness"
+                      value={stridePmcSummary.current_readiness_gate || '—'} unit=""
+                      color={readinessColor(stridePmcSummary.current_readiness_gate)} detail={(stridePmcSummary.current_readiness_reasons ?? []).join(', ') || '无触发'}
+                    />
+                  </div>
+
+                  <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
+                    <div className="mb-4">
+                      <h3 className="text-sm font-semibold text-text-primary">STRIDE 客观负荷</h3>
+                      <p className="text-xs font-mono text-text-muted">Objective load — Dose / Acute / Chronic / Form</p>
+                    </div>
+
+                    <ResponsiveContainer width="100%" height={220}>
+                      <ComposedChart data={strideChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+                        <defs>
+                          <linearGradient id="gradStrideChronic" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#00a85a" stopOpacity={0.18} />
+                            <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid {...GRID_STYLE} />
+                        <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
+                        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <Tooltip {...TOOLTIP_STYLE} />
+                        <Bar dataKey="training_dose" name="Dose" fill="#e68a00" fillOpacity={0.55} maxBarSize={14} />
+                        <Area type="monotone" dataKey="chronic_load" name="Chronic" stroke="#00a85a" strokeWidth={2} fill="url(#gradStrideChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
+                        <Line type="monotone" dataKey="acute_load" name="Acute" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+
+                    <div className="mt-4">
+                      <p className="text-xs font-mono text-text-muted mb-2 ml-1">STRIDE Form (Chronic − Acute)</p>
+                      <ResponsiveContainer width="100%" height={160}>
+                        <BarChart data={strideChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+                          <CartesianGrid {...GRID_STYLE} />
+                          <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
+                          <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                          <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [typeof v === 'number' ? `${v > 0 ? '+' : ''}${v}` : `${v}`, 'Form']} />
+                          <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
+                          <Bar dataKey="form" name="Form">
+                            {strideChartData.map((entry, idx) => (
+                              <Cell key={idx} fill={tsbColor(entry.form)} fillOpacity={0.8} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
                 </div>

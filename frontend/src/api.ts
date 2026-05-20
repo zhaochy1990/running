@@ -525,8 +525,38 @@ export interface PMCSummary {
   date: string | null
 }
 
+export interface StridePMCRecord {
+  date: string
+  algorithm_version: number
+  training_dose: number | null
+  acute_load: number | null
+  chronic_load: number | null
+  form: number | null
+  load_ratio: number | null
+  readiness_gate: string | null
+  readiness_reasons: string[]
+  chronic_load_ramp: number | null
+}
+
+export interface StridePMCSummary {
+  date: string | null
+  current_training_dose: number | null
+  current_acute_load: number | null
+  current_chronic_load: number | null
+  current_form: number | null
+  current_load_ratio: number | null
+  current_readiness_gate: string | null
+  current_readiness_reasons: string[] | null
+  chronic_load_ramp: number | null
+}
+
 export function getPMC(user: string, days = 90) {
-  return fetchJSON<{ pmc: PMCRecord[]; summary: PMCSummary }>(`/${user}/pmc?days=${days}`)
+  return fetchJSON<{
+    pmc: PMCRecord[]
+    summary: PMCSummary
+    stride_pmc?: StridePMCRecord[]
+    stride_summary?: StridePMCSummary
+  }>(`/${user}/pmc?days=${days}`)
 }
 
 export interface InBodySegment {
@@ -1008,8 +1038,27 @@ export interface LinkedScheduledWorkout {
   abandoned_by_promote_at: string | null
 }
 
+export interface ActivityStrideTrainingLoad {
+  label_id: string
+  activity_date: string
+  sport: string | null
+  session_class: string | null
+  algorithm_version: number
+  calibration_id: number | null
+  cardio_load_raw: number | null
+  cardio_tss: number | null
+  external_tss: number | null
+  mechanical_load: number | null
+  subjective_internal_load: number | null
+  training_dose: number | null
+  load_confidence: string | null
+  excluded_from_pmc: boolean
+  reasons: string[]
+}
+
 export interface ActivityDetailResponse {
   activity: Activity
+  stride_training_load?: ActivityStrideTrainingLoad | null
   laps: Lap[]
   segments: Segment[]
   zones: Zone[]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
@@ -24,6 +25,41 @@ from ..deps import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _json_list(value) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed]
+
+
+def _serialize_activity_training_load(row) -> dict | None:
+    if not row:
+        return None
+    rec = dict(row)
+    return {
+        "label_id": rec.get("label_id"),
+        "activity_date": rec.get("activity_date"),
+        "sport": rec.get("sport"),
+        "session_class": rec.get("session_class"),
+        "algorithm_version": rec.get("algorithm_version"),
+        "calibration_id": rec.get("calibration_id"),
+        "cardio_load_raw": rec.get("cardio_load_raw"),
+        "cardio_tss": rec.get("cardio_tss"),
+        "external_tss": rec.get("external_tss"),
+        "mechanical_load": rec.get("mechanical_load"),
+        "subjective_internal_load": rec.get("subjective_internal_load"),
+        "training_dose": rec.get("training_dose"),
+        "load_confidence": rec.get("load_confidence"),
+        "excluded_from_pmc": bool(rec.get("excluded_from_pmc")),
+        "reasons": _json_list(rec.get("reasons_json")),
+    }
 
 
 @router.get("/api/{user}/activities")
@@ -184,6 +220,10 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     )
     zones = [dict(z) for z in zones_rows]
 
+    stride_training_load = _serialize_activity_training_load(
+        db.fetch_activity_training_load(label_id)
+    )
+
     ts_rows = db.query(
         """SELECT timestamp, distance, heart_rate, speed, adjusted_pace, cadence, altitude, power,
                   gps_lat, gps_lon
@@ -201,6 +241,7 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
 
     return {
         "activity": activity,
+        "stride_training_load": stride_training_load,
         "laps": laps,
         "segments": segments,
         "zones": zones,
