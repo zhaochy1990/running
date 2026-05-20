@@ -139,4 +139,65 @@ describe('HealthPage', () => {
     expect(getWeeks).not.toHaveBeenCalled()
     expect(getPlanDays).not.toHaveBeenCalled()
   })
+
+  it('renders STRIDE objective training load when PMC includes STRIDE rows', async () => {
+    vi.mocked(getPMC).mockResolvedValueOnce({
+      pmc: [],
+      summary: {
+        current_cti: null,
+        current_ati: null,
+        current_tsb: null,
+        current_tsb_zone: null,
+        current_tsb_zone_label: null,
+        current_fatigue: null,
+        current_rhr: null,
+        ctl_ramp: null,
+        date: null,
+      },
+      stride_pmc: [
+        {
+          date: '2026-05-18',
+          algorithm_version: 1,
+          training_dose: 80,
+          acute_load: 18,
+          chronic_load: 24,
+          form: 6,
+          load_ratio: 0.75,
+          readiness_gate: 'green',
+          readiness_reasons: [],
+          chronic_load_ramp: null,
+        },
+        {
+          date: '2026-05-19',
+          algorithm_version: 1,
+          training_dose: 120,
+          acute_load: 21,
+          chronic_load: 27,
+          form: 6,
+          load_ratio: 0.78,
+          readiness_gate: 'yellow',
+          readiness_reasons: ['low_hrv'],
+          chronic_load_ramp: 3,
+        },
+      ],
+      stride_summary: {
+        date: '2026-05-19',
+        current_training_dose: 120,
+        current_acute_load: 21,
+        current_chronic_load: 27,
+        current_form: 6,
+        current_load_ratio: 0.78,
+        current_readiness_gate: 'yellow',
+        current_readiness_reasons: ['low_hrv'],
+        chronic_load_ramp: 3,
+      },
+    } as Awaited<ReturnType<typeof getPMC>>)
+
+    renderHealthPage()
+
+    expect(await screen.findByText('STRIDE 客观负荷')).toBeInTheDocument()
+    expect(screen.getByText('Objective Dose')).toBeInTheDocument()
+    expect(screen.getByText('Readiness')).toBeInTheDocument()
+    expect(screen.getByText('yellow')).toBeInTheDocument()
+  })
 })

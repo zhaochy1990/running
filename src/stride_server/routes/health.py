@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Query
 
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
@@ -9,6 +11,18 @@ from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
 from ..deps import format_duration, get_db
 
 router = APIRouter()
+
+
+def _json_list(value) -> list[str]:
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed]
 
 
 @router.get("/api/{user}/dashboard")
@@ -113,6 +127,28 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         "FROM daily_health ORDER BY date DESC LIMIT ?",
         (days,),
     )
+    stride_rows = db.query(
+        """WITH active_version AS (
+               SELECT MAX(algorithm_version) AS algorithm_version
+               FROM daily_training_load
+           ),
+           recent AS (
+               SELECT date, algorithm_version, training_dose, acute_load, chronic_load,
+                      form, load_ratio, readiness_gate, readiness_reasons_json
+               FROM daily_training_load
+               WHERE algorithm_version = (SELECT algorithm_version FROM active_version)
+               ORDER BY date DESC
+               LIMIT ?
+           )
+           SELECT recent.*,
+                  prior.chronic_load AS chronic_load_7d_ago
+           FROM recent
+           LEFT JOIN daily_training_load AS prior
+             ON prior.date = date(recent.date, '-7 day')
+            AND prior.algorithm_version = recent.algorithm_version
+           ORDER BY recent.date""",
+        (days,),
+    )
     db.close()
 
     records = [dict(r) for r in rows]
@@ -167,7 +203,38 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         "date": latest.get("date"),
     }
 
-    return {"pmc": records, "summary": summary}
+    stride_records = []
+    for row in stride_rows:
+        rec = dict(row)
+        chronic_load = rec.get("chronic_load")
+        prior_chronic = rec.pop("chronic_load_7d_ago", None)
+        rec["readiness_reasons"] = _json_list(rec.pop("readiness_reasons_json", None))
+        rec["chronic_load_ramp"] = (
+            round(chronic_load - prior_chronic, 1)
+            if chronic_load is not None and prior_chronic is not None
+            else None
+        )
+        stride_records.append(rec)
+
+    latest_stride = stride_records[-1] if stride_records else {}
+    stride_summary = {
+        "date": latest_stride.get("date"),
+        "current_training_dose": latest_stride.get("training_dose"),
+        "current_acute_load": latest_stride.get("acute_load"),
+        "current_chronic_load": latest_stride.get("chronic_load"),
+        "current_form": latest_stride.get("form"),
+        "current_load_ratio": latest_stride.get("load_ratio"),
+        "current_readiness_gate": latest_stride.get("readiness_gate"),
+        "current_readiness_reasons": latest_stride.get("readiness_reasons"),
+        "chronic_load_ramp": latest_stride.get("chronic_load_ramp"),
+    }
+
+    return {
+        "pmc": records,
+        "summary": summary,
+        "stride_pmc": stride_records,
+        "stride_summary": stride_summary,
+    }
 
 
 @router.get("/api/{user}/stats")
