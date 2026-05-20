@@ -510,16 +510,16 @@ def auth_status_cmd(ctx: click.Context) -> None:
     console.print(table)
 
 
-@cli.group()
-def inbody() -> None:
-    """Manage InBody body-composition scans (local DB + push to prod)."""
+@cli.group(name="body-composition")
+def body_composition() -> None:
+    """Manage body-composition scans (local DB + push to prod)."""
 
 
 def _scan_row_to_display(row) -> dict:
     return dict(row)
 
 
-def _render_inbody_table(scans: list[dict], title: str) -> Table:
+def _render_body_composition_table(scans: list[dict], title: str) -> Table:
     table = Table(title=title)
     table.add_column("Date", style="cyan")
     table.add_column("Weight kg", justify="right")
@@ -553,12 +553,12 @@ def _render_inbody_table(scans: list[dict], title: str) -> Table:
     return table
 
 
-@inbody.command("add")
+@body_composition.command("add")
 @click.option("--from-json", "json_path", required=True,
               type=click.Path(exists=True, dir_okay=False),
-              help="Path to a JSON file matching the InBody scan schema.")
+              help="Path to a JSON file matching the body-composition scan schema.")
 @click.pass_context
-def inbody_add_cmd(ctx: click.Context, json_path: str) -> None:
+def body_composition_add_cmd(ctx: click.Context, json_path: str) -> None:
     """Validate and upsert a scan into the local DB."""
     import json as _json
 
@@ -585,12 +585,12 @@ def inbody_add_cmd(ctx: click.Context, json_path: str) -> None:
     )
 
 
-@inbody.command("push")
+@body_composition.command("push")
 @click.argument("scan_date")
 @click.option("--url", default=None, envvar="STRIDE_PROD_URL",
               help="STRIDE server base URL. Defaults to $STRIDE_PROD_URL.")
 @click.pass_context
-def inbody_push_cmd(ctx: click.Context, scan_date: str, url: str | None) -> None:
+def body_composition_push_cmd(ctx: click.Context, scan_date: str, url: str | None) -> None:
     """Push the local scan for SCAN_DATE (YYYY-MM-DD) to the remote server."""
     if not url:
         console.print("[red]Missing --url (or set $STRIDE_PROD_URL)[/red]")
@@ -621,7 +621,7 @@ def inbody_push_cmd(ctx: click.Context, scan_date: str, url: str | None) -> None
         for s in segs
     ]
 
-    endpoint = f"{url.rstrip('/')}/api/{profile}/inbody"
+    endpoint = f"{url.rstrip('/')}/api/{profile}/body-composition"
     headers = bearer_header(profile)
     resp = httpx.post(endpoint, json=payload, headers=headers, timeout=30)
     if resp.status_code == 401:
@@ -637,10 +637,10 @@ def inbody_push_cmd(ctx: click.Context, scan_date: str, url: str | None) -> None
     console.print(f"[green]Pushed scan {scan_date} to {endpoint} ({auth_label})[/green]")
 
 
-@inbody.command("list")
+@body_composition.command("list")
 @click.option("--days", default=None, type=int, help="Limit to the last N days")
 @click.pass_context
-def inbody_list_cmd(ctx: click.Context, days: int | None) -> None:
+def body_composition_list_cmd(ctx: click.Context, days: int | None) -> None:
     """Print a table of local scans, newest first."""
     profile = ctx.obj["profile"]
     if not profile:
@@ -651,18 +651,18 @@ def inbody_list_cmd(ctx: click.Context, days: int | None) -> None:
         scans = [_scan_row_to_display(r) for r in db.list_body_composition_scans(days=days)]
 
     if not scans:
-        console.print("[yellow]No local InBody scans.[/yellow]")
+        console.print("[yellow]No local body-composition scans.[/yellow]")
         return
-    console.print(_render_inbody_table(scans, f"InBody scans [{profile}] (local)"))
+    console.print(_render_body_composition_table(scans, f"Body Composition scans [{profile}] (local)"))
 
 
-@inbody.command("fetch")
+@body_composition.command("fetch")
 @click.option("--url", default=None, envvar="STRIDE_PROD_URL",
               help="STRIDE server base URL. Defaults to $STRIDE_PROD_URL.")
 @click.option("--days", default=None, type=int, help="Limit to the last N days")
 @click.pass_context
-def inbody_fetch_cmd(ctx: click.Context, url: str | None, days: int | None) -> None:
-    """GET prod's scans and print the same table (reconcile vs `inbody list`)."""
+def body_composition_fetch_cmd(ctx: click.Context, url: str | None, days: int | None) -> None:
+    """GET prod's scans and print the same table (reconcile vs `body-composition list`)."""
     if not url:
         console.print("[red]Missing --url (or set $STRIDE_PROD_URL)[/red]")
         raise SystemExit(1)
@@ -676,16 +676,16 @@ def inbody_fetch_cmd(ctx: click.Context, url: str | None, days: int | None) -> N
     from .stride_auth import bearer_header
 
     params = {"days": days} if days else {}
-    endpoint = f"{url.rstrip('/')}/api/{profile}/inbody"
+    endpoint = f"{url.rstrip('/')}/api/{profile}/body-composition"
     resp = httpx.get(endpoint, params=params, headers=bearer_header(profile), timeout=30)
     if resp.status_code >= 400:
         console.print(f"[red]GET failed: {resp.status_code} {resp.text}[/red]")
         raise SystemExit(1)
     scans = resp.json().get("scans", [])
     if not scans:
-        console.print("[yellow]No remote InBody scans.[/yellow]")
+        console.print("[yellow]No remote body-composition scans.[/yellow]")
         return
-    console.print(_render_inbody_table(scans, f"InBody scans [{profile}] (prod)"))
+    console.print(_render_body_composition_table(scans, f"Body Composition scans [{profile}] (prod)"))
 
 
 @workout.command("delete")
