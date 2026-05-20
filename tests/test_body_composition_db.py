@@ -122,3 +122,13 @@ def test_migration_renames_legacy_tables(tmp_path):
         assert "inbody_segment" not in tables
         assert "body_composition_scan" in tables
         assert "body_composition_segment" in tables
+
+    # Idempotent re-open: a second open on the already-migrated DB must not error.
+    with Database(db_path) as db2:
+        scan = db2.get_body_composition_scan("2026-04-23")
+        assert scan is not None
+        tables = {r[0] for r in db2._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()}
+        assert "body_composition_scan" in tables
+        assert "inbody_scan" not in tables

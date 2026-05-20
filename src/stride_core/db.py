@@ -773,8 +773,10 @@ class Database:
                 if old in existing and new not in existing:
                     self._conn.execute(f"ALTER TABLE {old} RENAME TO {new}")
             self._conn.commit()
-        except sqlite3.OperationalError:
-            pass  # brand-new DB — no legacy tables; ignore
+        except sqlite3.OperationalError as e:
+            # Tolerate name-collision race only — re-raise anything else.
+            if "already exists" not in str(e).lower():
+                raise
 
     def _init_schema(self) -> None:
         self._pre_rename_legacy_tables()
@@ -897,8 +899,10 @@ class Database:
                 }
                 if old in existing and new not in existing:
                     self._conn.execute(f"ALTER TABLE {old} RENAME TO {new}")
-            except sqlite3.OperationalError:
-                pass  # race-condition swallow, same pattern as _add
+            except sqlite3.OperationalError as e:
+                # Tolerate name-collision race only — re-raise anything else.
+                if "already exists" not in str(e).lower():
+                    raise
 
         # Parent before child so SQLite rewrites FK reference text.
         _rename("inbody_scan",    "body_composition_scan")
