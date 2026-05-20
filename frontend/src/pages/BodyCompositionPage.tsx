@@ -3,7 +3,7 @@ import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend,
 } from 'recharts'
-import { getInbody, getInbodySummary, type InBodyScan, type InBodySummary } from '../api'
+import { getBodyComposition, getBodyCompositionSummary, type BodyCompositionScan, type BodyCompositionSummary } from '../api'
 import { useUser } from '../UserContextValue'
 import ViewHead from '../components/ViewHead'
 
@@ -33,10 +33,10 @@ function formatDelta(v: number | null | undefined, unit = ''): string {
   return `${s}${unit}`
 }
 
-export default function InbodyPage() {
+export default function BodyCompositionPage() {
   const { user } = useUser()
-  const [scans, setScans] = useState<InBodyScan[]>([])
-  const [summary, setSummary] = useState<InBodySummary | null>(null)
+  const [scans, setScans] = useState<BodyCompositionScan[]>([])
+  const [summary, setSummary] = useState<BodyCompositionSummary | null>(null)
   const requestKey = user || ''
   const [loadedKey, setLoadedKey] = useState('')
   const loading = Boolean(requestKey && loadedKey !== requestKey)
@@ -44,7 +44,7 @@ export default function InbodyPage() {
   useEffect(() => {
     if (!user) return
     let cancelled = false
-    Promise.all([getInbody(user), getInbodySummary(user)])
+    Promise.all([getBodyComposition(user), getBodyCompositionSummary(user)])
       .then(([list, sum]) => {
         if (cancelled) return
         setScans(list.scans)
@@ -77,17 +77,17 @@ export default function InbodyPage() {
       ) : (
         <div className="animate-fade-in">
           <ViewHead
-            eyebrow="体测记录 · InBody"
+            eyebrow="体测记录"
             title="身体成分趋势"
-            lede={`InBody Body Composition — ${scans.length} 次扫描`}
+            lede={`Body Composition — ${scans.length} 次扫描`}
           />
 
           {!latest && (
             <div className="bg-bg-card border border-border-subtle rounded-2xl p-10 text-center text-text-muted">
-              暂无 InBody 数据。本地通过{' '}
-              <code className="font-mono text-text-primary">coros-sync inbody add</code> 录入，
+              暂无体测数据。本地通过{' '}
+              <code className="font-mono text-text-primary">coros-sync body-composition add</code> 录入，
               然后{' '}
-              <code className="font-mono text-text-primary">coros-sync inbody push</code> 同步至线上。
+              <code className="font-mono text-text-primary">coros-sync body-composition push</code> 同步至线上。
             </div>
           )}
 
@@ -325,7 +325,7 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle: str
 }
 
 type Mode = 'lean' | 'fat'
-type ChartRow = InBodyScan & { dateLabel: string }
+type ChartRow = BodyCompositionScan & { dateLabel: string }
 
 const SEGMENTS: { key: string; label: string; color: string }[] = [
   { key: 'left_arm',  label: '左臂',  color: '#7c4dff' },
@@ -416,7 +416,7 @@ function SegmentTrendChart({
   )
 }
 
-function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: InBodyScan }) {
+function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: BodyCompositionScan }) {
   const [mode, setMode] = useState<Mode>('lean')
 
   const modeLabel = mode === 'lean' ? '肌肉量 (kg)' : '脂肪量 (kg)'

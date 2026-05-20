@@ -6,7 +6,7 @@ import AppLayout from './components/AppLayout'
 import WeekLayout from './pages/WeekLayout'
 import ActivityDetailPage from './pages/ActivityDetailPage'
 import HealthPage from './pages/HealthPage'
-import InbodyPage from './pages/InbodyPage'
+import BodyCompositionPage from './pages/BodyCompositionPage'
 import TrainingPlanPage from './pages/TrainingPlanPage'
 import AbilityPage from './pages/AbilityPage'
 import LoginPage from './pages/LoginPage'
@@ -88,7 +88,7 @@ function App() {
                     <Route path="/activity/:id" element={<ActivityDetailPage />} />
                     <Route path="/teams/:teamId/activity/:userId/:labelId" element={<ActivityDetailPage />} />
                     <Route path="/health" element={<HealthPage />} />
-                    <Route path="/inbody" element={<InbodyPage />} />
+                    <Route path="/body-composition" element={<BodyCompositionPage />} />
                     <Route path="/plan" element={<TrainingPlanPage />} />
                     <Route path="/ability" element={<AbilityPage />} />
                     <Route path="/teams" element={<TeamsListPage />} />

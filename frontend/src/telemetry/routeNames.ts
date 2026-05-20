@@ -5,7 +5,7 @@ const RULES: readonly RouteRule[] = [
   [/^\/week\/[^/]+$/, 'Week View'],
   [/^\/activity\/[^/]+$/, 'Activity Detail'],
   ['/health', 'Health'],
-  ['/inbody', 'InBody'],
+  ['/body-composition', 'BodyComposition'],
   ['/plan', 'Training Plan'],
   ['/ability', 'Ability'],
   ['/status', 'Status'],

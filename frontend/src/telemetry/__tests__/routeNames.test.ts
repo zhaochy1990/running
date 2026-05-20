@@ -8,7 +8,7 @@ describe('routeNameFor', () => {
 
   it.each([
     ['/health', 'Health'],
-    ['/inbody', 'InBody'],
+    ['/body-composition', 'BodyComposition'],
     ['/plan', 'Training Plan'],
     ['/ability', 'Ability'],
     ['/status', 'Status'],

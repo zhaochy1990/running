@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
-import { getInbody } from '../api'
+import { getBodyComposition } from '../api'
 import { useUser } from '../UserContextValue'
 import TopNav from './TopNav'
 import NotificationPopup from './NotificationPopup'
@@ -26,7 +26,7 @@ export default function AppLayout() {
       return false
     }
   })
-  const [hasInbody, setHasInbody] = useState(false)
+  const [hasBodyComposition, setHasBodyComposition] = useState(false)
 
   useEffect(() => {
     setMobileOpen(false)
@@ -34,9 +34,9 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (!user) return
-    getInbody(user)
-      .then((data) => setHasInbody(data.scans.length > 0))
-      .catch(() => setHasInbody(false))
+    getBodyComposition(user)
+      .then((data) => setHasBodyComposition(data.scans.length > 0))
+      .catch(() => setHasBodyComposition(false))
   }, [user])
 
   const toggleCollapsed = () => {
@@ -130,9 +130,9 @@ export default function AppLayout() {
                 icon={<PulseIcon />}
                 text="身体指标"
               />
-              {hasInbody && (
+              {hasBodyComposition && (
                 <NavItem
-                  to="/inbody"
+                  to="/body-composition"
                   collapsed={collapsed}
                   icon={<UserIcon />}
                   text="体测记录"
