@@ -12,8 +12,11 @@ from stride_core.training_load.adapter import (
     _fetch_health_rows,
     _fetch_samples,
     _normalize_elapsed_seconds,
+    backfill_training_load,
+    refresh_training_load_calibration,
     recompute_training_load,
 )
+from stride_core.training_load.types import CalibrationSnapshot
 
 
 def _make_activity(
@@ -141,6 +144,7 @@ def test_recompute_normalizes_activity_distance_stored_as_kilometers(db):
         provider="coros",
     )
 
+    refresh_training_load_calibration(db, as_of_date="2026-05-01")
     recompute_training_load(db, start="2026-05-01", end="2026-05-01")
 
     calibration = db.query("SELECT * FROM training_load_calibration")[0]
@@ -151,6 +155,265 @@ def test_recompute_normalizes_activity_distance_stored_as_kilometers(db):
     # 14.4 km flat → grade_factor=1.0, descent_factor=1.0, intensity_factor ≈ 1.011
     # (normalized_IF ≈ 1.0 → 1 + 0.5*(0.15)^2). 14.4 * 1.011 ≈ 14.562.
     assert activity_row["mechanical_load"] == 14.562
+
+
+def test_refresh_training_load_calibration_persists_weekly_threshold_snapshot(db):
+    db.upsert_daily_health(DailyHealth("2026-05-01", None, None, 50, None, None, None, None, None))
+    db.upsert_activity(
+        _make_activity(
+            "calibration_run",
+            "2026-05-01T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    calibration = refresh_training_load_calibration(db, as_of_date="2026-05-01")
+
+    rows = db.query("SELECT * FROM training_load_calibration")
+    assert len(rows) == 1
+    assert calibration.id == rows[0]["id"]
+    assert calibration.threshold_speed_mps == 4.0
+    assert calibration.threshold_hr == 170.0
+
+
+def test_recompute_reuses_latest_training_load_calibration_without_reestimating(db, monkeypatch):
+    calibration_id = db.upsert_training_load_calibration(
+        CalibrationSnapshot(
+            as_of_date=date(2026, 5, 1),
+            rhr_baseline=50.0,
+            hrmax_estimate=186.0,
+            threshold_hr=170.0,
+            threshold_speed_mps=4.0,
+            critical_power_w=None,
+        )
+    )
+    db.upsert_activity(
+        _make_activity(
+            "run1",
+            "2026-05-03T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    def fail_estimate(*_args, **_kwargs):
+        raise AssertionError("recompute_training_load must not estimate thresholds")
+
+    monkeypatch.setattr("stride_core.training_load.adapter.estimate_calibration", fail_estimate)
+
+    summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
+
+    assert summary.calibration_id == calibration_id
+    assert db.query("SELECT COUNT(*) AS n FROM training_load_calibration")[0]["n"] == 1
+    row = db.fetch_activity_training_load("run1")
+    assert row is not None
+    assert row["calibration_id"] == calibration_id
+    assert row["training_dose"] is not None
+
+
+def test_recompute_ignores_latest_calibration_from_other_algorithm_version(db):
+    current_id = db.upsert_training_load_calibration(
+        CalibrationSnapshot(
+            as_of_date=date(2026, 5, 1),
+            rhr_baseline=50.0,
+            hrmax_estimate=186.0,
+            threshold_hr=170.0,
+            threshold_speed_mps=4.0,
+            critical_power_w=None,
+            algorithm_version=1,
+        )
+    )
+    db.upsert_training_load_calibration(
+        CalibrationSnapshot(
+            as_of_date=date(2026, 5, 2),
+            rhr_baseline=50.0,
+            hrmax_estimate=186.0,
+            threshold_hr=170.0,
+            threshold_speed_mps=2.0,
+            critical_power_w=None,
+            algorithm_version=99,
+        )
+    )
+    db.upsert_activity(
+        _make_activity(
+            "run1",
+            "2026-05-03T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
+
+    assert summary.calibration_id == current_id
+    row = db.fetch_activity_training_load("run1")
+    assert row is not None
+    assert row["calibration_id"] == current_id
+
+
+def test_recompute_does_not_attach_cached_calibration_id_when_runtime_defaults_change_it(db):
+    calibration_id = db.upsert_training_load_calibration(
+        CalibrationSnapshot(
+            as_of_date=date(2026, 5, 1),
+            rhr_baseline=50.0,
+            hrmax_estimate=186.0,
+            threshold_hr=170.0,
+            threshold_speed_mps=None,
+            critical_power_w=None,
+        )
+    )
+    db.upsert_activity(
+        _make_activity(
+            "run1",
+            "2026-05-03T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
+
+    assert summary.calibration_id is None
+    cached = db.query("SELECT threshold_speed_mps FROM training_load_calibration WHERE id = ?", (calibration_id,))[0]
+    assert cached["threshold_speed_mps"] is None
+    row = db.fetch_activity_training_load("run1")
+    assert row is not None
+    assert row["calibration_id"] is None
+    assert row["external_tss"] is not None
+
+
+def test_recompute_does_not_attach_cached_calibration_id_when_hrmax_is_defaulted(db):
+    calibration_id = db.upsert_training_load_calibration(
+        CalibrationSnapshot(
+            as_of_date=date(2026, 5, 1),
+            rhr_baseline=50.0,
+            hrmax_estimate=None,
+            threshold_hr=170.0,
+            threshold_speed_mps=4.0,
+            critical_power_w=None,
+        )
+    )
+    db.upsert_activity(
+        _make_activity(
+            "run1",
+            "2026-05-03T00:00:00+00:00",
+            avg_power=None,
+            max_hr=186,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
+
+    assert summary.calibration_id is None
+    cached = db.query("SELECT hrmax_estimate FROM training_load_calibration WHERE id = ?", (calibration_id,))[0]
+    assert cached["hrmax_estimate"] is None
+    row = db.fetch_activity_training_load("run1")
+    assert row is not None
+    assert row["calibration_id"] is None
+    assert row["cardio_tss"] is not None
+
+
+def test_recompute_without_cached_calibration_does_not_create_threshold_snapshot(db, monkeypatch):
+    db.upsert_activity(
+        _make_activity(
+            "run1",
+            "2026-05-03T00:00:00+00:00",
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    def fail_estimate(*_args, **_kwargs):
+        raise AssertionError("recompute_training_load must not estimate thresholds")
+
+    monkeypatch.setattr("stride_core.training_load.adapter.estimate_calibration", fail_estimate)
+
+    summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
+
+    assert summary.calibration_id is None
+    assert db.query("SELECT COUNT(*) AS n FROM training_load_calibration")[0]["n"] == 0
+    row = db.fetch_activity_training_load("run1")
+    assert row is not None
+    assert row["training_dose"] is not None
+
+
+def test_backfill_refreshes_calibration_then_recomputes_recent_load_window(db):
+    db.upsert_daily_health(DailyHealth("2026-05-20", None, None, 50, None, None, None, None, None))
+    db.upsert_activity(
+        _make_activity(
+            "old_run",
+            "2026-01-01T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+    db.upsert_activity(
+        _make_activity(
+            "recent_run",
+            "2026-05-20T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    summary = backfill_training_load(db, as_of_date="2026-05-20", load_lookback_days=90)
+
+    assert summary.calibration.id is not None
+    assert summary.load.start == date(2026, 2, 19)
+    assert summary.load.end == date(2026, 5, 20)
+    assert db.fetch_activity_training_load("old_run") is None
+    assert db.fetch_activity_training_load("recent_run") is not None
+
+
+def test_backfill_persist_false_uses_refreshed_calibration_without_writes(db):
+    stale_id = db.upsert_training_load_calibration(
+        CalibrationSnapshot(
+            as_of_date=date(2026, 4, 1),
+            rhr_baseline=50.0,
+            hrmax_estimate=186.0,
+            threshold_hr=170.0,
+            threshold_speed_mps=2.0,
+            critical_power_w=None,
+        )
+    )
+    db.upsert_daily_health(DailyHealth("2026-05-20", None, None, 50, None, None, None, None, None))
+    db.upsert_activity(
+        _make_activity(
+            "recent_run",
+            "2026-05-20T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    summary = backfill_training_load(
+        db,
+        as_of_date="2026-05-20",
+        load_lookback_days=90,
+        persist=False,
+    )
+
+    assert summary.calibration.id is None
+    assert summary.calibration.threshold_speed_mps == 4.0
+    assert summary.load.calibration_id is None
+    assert summary.load.activities_processed == 1
+    assert db.query("SELECT COUNT(*) AS n FROM training_load_calibration")[0]["n"] == 1
+    stale_row = db.query(
+        "SELECT threshold_speed_mps FROM training_load_calibration WHERE id = ?",
+        (stale_id,),
+    )[0]
+    assert stale_row["threshold_speed_mps"] == 2.0
+    assert db.fetch_activity_training_load("recent_run") is None
 
 
 def test_training_load_tables_exist_on_fresh_db(db):
@@ -203,6 +466,7 @@ def test_recompute_persists_activity_and_daily_load_idempotently(db):
         provider="garmin",
     )
 
+    refresh_training_load_calibration(db, as_of_date="2026-05-01")
     first = recompute_training_load(db, start="2026-05-01", end="2026-05-01")
     second = recompute_training_load(db, start="2026-05-01", end="2026-05-01")
 
@@ -241,6 +505,24 @@ def test_recompute_label_filter_limits_processed_activities(db):
     assert summary.activities_processed == 1
     assert db.fetch_activity_training_load("run1") is None
     assert db.fetch_activity_training_load("run2") is not None
+
+
+def test_refresh_bounds_calibration_history_to_lookback_window(db, monkeypatch):
+    db.upsert_activity(_make_activity("old", "2025-01-01T00:00:00+00:00", samples=_timeseries()))
+    db.upsert_activity(_make_activity("recent", "2026-05-01T00:00:00+00:00", samples=_timeseries()))
+
+    fetched_labels: list[str] = []
+
+    def fake_fetch_samples(db_arg, label_id: str, **kwargs):
+        fetched_labels.append(label_id)
+        return ()
+
+    monkeypatch.setattr("stride_core.training_load.adapter._fetch_calibration_samples", fake_fetch_samples)
+
+    refresh_training_load_calibration(db, as_of_date="2026-05-01")
+
+    assert "recent" in fetched_labels
+    assert "old" not in fetched_labels
 
 
 def test_recompute_does_not_normalize_raw_trimp_when_threshold_hr_is_unavailable(db):

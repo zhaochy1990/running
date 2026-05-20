@@ -1335,6 +1335,22 @@ class Database:
             self._conn.commit()
         return int(row["id"])
 
+    def fetch_latest_training_load_calibration(
+        self,
+        algorithm_version: int | None = None,
+    ) -> sqlite3.Row | None:
+        if algorithm_version is not None:
+            return self._conn.execute(
+                "SELECT * FROM training_load_calibration "
+                "WHERE algorithm_version = ? "
+                "ORDER BY as_of_date DESC, id DESC LIMIT 1",
+                (algorithm_version,),
+            ).fetchone()
+        return self._conn.execute(
+            "SELECT * FROM training_load_calibration "
+            "ORDER BY as_of_date DESC, id DESC LIMIT 1"
+        ).fetchone()
+
     def upsert_activity_training_load(self, result, *, commit: bool = True) -> None:
         reasons_json = json.dumps(result.reasons or [], ensure_ascii=False)
         self._conn.execute(

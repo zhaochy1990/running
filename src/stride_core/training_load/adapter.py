@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import math
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Iterable, Sequence
 
 from stride_core.normalize import kind_from_legacy_train_type
-from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
+from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
 
 from .calibration import estimate_calibration
 from .core import compute_activity_load, compute_daily_load_series
@@ -23,7 +24,9 @@ from .types import (
     HrvRow,
     PriorLoadState,
     SessionClass,
+    TrainingLoadBackfillSummary,
     TrainingLoadRunSummary,
+    TRAINING_LOAD_MODEL_VERSION,
 )
 
 _IN_CLAUSE_CHUNK = 500
@@ -448,8 +451,22 @@ def _build_activity_input(db: Any, row: Any) -> ActivityLoadInput | None:
     )
 
 
-def _build_calibration_history(db: Any) -> list[CalibrationActivity]:
-    rows = db.query("SELECT * FROM activities ORDER BY date")
+def _build_calibration_history(
+    db: Any,
+    *,
+    as_of_date: date | None = None,
+    lookback_days: int = 180,
+) -> list[CalibrationActivity]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if as_of_date is not None:
+        start = as_of_date - timedelta(days=max(0, lookback_days))
+        clauses.append(f"{SHANGHAI_DAY_SQL} >= ?")
+        params.append(start.isoformat())
+        clauses.append(f"{SHANGHAI_DAY_SQL} <= ?")
+        params.append(as_of_date.isoformat())
+    where = "WHERE " + " AND ".join(clauses) if clauses else ""
+    rows = db.query(f"SELECT * FROM activities {where} ORDER BY date", tuple(params))
     out: list[CalibrationActivity] = []
     for row in rows:
         activity_date = _activity_shanghai_date(row["date"])
@@ -475,15 +492,109 @@ def _build_calibration_history(db: Any) -> list[CalibrationActivity]:
     return out
 
 
+def _json_dict(value: Any) -> dict[str, Any]:
+    if not value:
+        return {}
+    try:
+        data = json.loads(str(value))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _calibration_from_row(row: Any) -> CalibrationSnapshot:
+    return CalibrationSnapshot(
+        as_of_date=_parse_date(row["as_of_date"]) or today_shanghai(),
+        rhr_baseline=float(row["rhr_baseline"]) if row["rhr_baseline"] is not None else None,
+        hrmax_estimate=float(row["hrmax_estimate"]) if row["hrmax_estimate"] is not None else None,
+        threshold_hr=float(row["threshold_hr"]) if row["threshold_hr"] is not None else None,
+        threshold_speed_mps=float(row["threshold_speed_mps"]) if row["threshold_speed_mps"] is not None else None,
+        critical_power_w=float(row["critical_power_w"]) if row["critical_power_w"] is not None else None,
+        source=_json_dict(row["source_json"] if "source_json" in row.keys() else None),
+        id=int(row["id"]) if row["id"] is not None else None,
+        algorithm_version=int(row["algorithm_version"]) if row["algorithm_version"] is not None else 1,
+    )
+
+
+def _fetch_latest_calibration(db: Any) -> CalibrationSnapshot | None:
+    fetch_latest = getattr(db, "fetch_latest_training_load_calibration", None)
+    if callable(fetch_latest):
+        row = fetch_latest(TRAINING_LOAD_MODEL_VERSION)
+    else:
+        rows = db.query(
+            "SELECT * FROM training_load_calibration "
+            "WHERE algorithm_version = ? "
+            "ORDER BY as_of_date DESC, id DESC LIMIT 1",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        row = rows[0] if rows else None
+    return _calibration_from_row(row) if row is not None else None
+
+
+def _fallback_calibration(
+    *,
+    as_of_date: date,
+    activity_inputs: Sequence[ActivityLoadInput],
+) -> CalibrationSnapshot:
+    max_values = [a.max_hr for a in activity_inputs if a.max_hr is not None]
+    speed_values: list[float] = []
+    power_values: list[float] = []
+    for activity in activity_inputs:
+        if activity.duration_s and activity.distance_m and activity.duration_s > 0 and activity.distance_m > 500:
+            speed_values.append(activity.distance_m / activity.duration_s)
+        speed_values.extend(s.speed_mps for s in activity.samples if s.speed_mps is not None and s.speed_mps > 0)
+        if activity.avg_power is not None and activity.avg_power > 0:
+            power_values.append(float(activity.avg_power))
+        power_values.extend(s.power_w for s in activity.samples if s.power_w is not None and s.power_w > 0)
+    return CalibrationSnapshot(
+        as_of_date=as_of_date,
+        hrmax_estimate=max(max_values) if max_values else None,
+        threshold_speed_mps=max(speed_values) if speed_values else None,
+        critical_power_w=sorted(power_values)[len(power_values) // 2] if power_values else None,
+        source={"adapter_defaults": {"used": True, "reason": "missing_training_load_calibration"}},
+    )
+
+
+def refresh_training_load_calibration(
+    db: Any,
+    *,
+    as_of_date: str | date | None = None,
+    lookback_days: int = 180,
+    persist: bool = True,
+) -> CalibrationSnapshot:
+    as_of = _parse_date(as_of_date) or today_shanghai()
+    calibration = estimate_calibration(
+        _build_calibration_history(db, as_of_date=as_of, lookback_days=lookback_days),
+        as_of_date=as_of,
+        health_rows=_fetch_calibration_health_rows(db),
+    )
+    if not persist:
+        return calibration
+    calibration_id = db.upsert_training_load_calibration(calibration, commit=True)
+    return CalibrationSnapshot(
+        as_of_date=calibration.as_of_date,
+        rhr_baseline=calibration.rhr_baseline,
+        hrmax_estimate=calibration.hrmax_estimate,
+        threshold_hr=calibration.threshold_hr,
+        threshold_speed_mps=calibration.threshold_speed_mps,
+        critical_power_w=calibration.critical_power_w,
+        source=calibration.source,
+        id=calibration_id,
+        algorithm_version=calibration.algorithm_version,
+    )
+
+
 def _defaulted_calibration(
     calibration: CalibrationSnapshot,
     activity_inputs: Sequence[ActivityLoadInput],
 ) -> CalibrationSnapshot:
     rhr = calibration.rhr_baseline
     hrmax = calibration.hrmax_estimate
+    used_runtime_defaults = False
     if hrmax is None:
         max_values = [a.max_hr for a in activity_inputs if a.max_hr is not None]
         hrmax = max(max_values) if max_values else None
+        used_runtime_defaults = hrmax is not None
 
     threshold_hr = calibration.threshold_hr
     threshold_speed = calibration.threshold_speed_mps
@@ -497,6 +608,7 @@ def _defaulted_calibration(
         if speeds:
             threshold_speed = max(speeds)
             source.setdefault("adapter_defaults", {"used": True})
+            used_runtime_defaults = True
     return CalibrationSnapshot(
         as_of_date=calibration.as_of_date,
         rhr_baseline=rhr,
@@ -505,7 +617,7 @@ def _defaulted_calibration(
         threshold_speed_mps=threshold_speed,
         critical_power_w=calibration.critical_power_w,
         source=source,
-        id=calibration.id,
+        id=None if used_runtime_defaults else calibration.id,
         algorithm_version=calibration.algorithm_version,
     )
 
@@ -518,6 +630,7 @@ def recompute_training_load(
     label_ids: Sequence[str] | None = None,
     persist: bool = True,
     prior_state: PriorLoadState | None = None,
+    calibration_override: CalibrationSnapshot | None = None,
 ) -> TrainingLoadRunSummary:
     """Recompute objective activity and daily training-load rows.
 
@@ -539,27 +652,12 @@ def recompute_training_load(
     series_start = start_date or min(a.activity_date for a in activity_inputs)
     series_end = end_date or max(a.activity_date for a in activity_inputs)
     as_of = series_end
-    calibration = estimate_calibration(
-        _build_calibration_history(db),
+    calibration = calibration_override or _fetch_latest_calibration(db) or _fallback_calibration(
         as_of_date=as_of,
-        health_rows=_fetch_calibration_health_rows(db),
+        activity_inputs=activity_inputs,
     )
     calibration = _defaulted_calibration(calibration, activity_inputs)
-    calibration_id = (
-        db.upsert_training_load_calibration(calibration, commit=False) if persist else None
-    )
-    if calibration_id is not None:
-        calibration = CalibrationSnapshot(
-            as_of_date=calibration.as_of_date,
-            rhr_baseline=calibration.rhr_baseline,
-            hrmax_estimate=calibration.hrmax_estimate,
-            threshold_hr=calibration.threshold_hr,
-            threshold_speed_mps=calibration.threshold_speed_mps,
-            critical_power_w=calibration.critical_power_w,
-            source=calibration.source,
-            id=calibration_id,
-            algorithm_version=calibration.algorithm_version,
-        )
+    calibration_id = calibration.id
     activity_results = [compute_activity_load(activity, calibration) for activity in activity_inputs]
     health_rows = _fetch_health_rows(db, start=series_start, end=series_end)
     hrv_rows = _fetch_hrv_rows(db, start=series_start, end=series_end)
@@ -589,4 +687,35 @@ def recompute_training_load(
         start=series_start,
         end=series_end,
         persist=persist,
+    )
+
+
+def backfill_training_load(
+    db: Any,
+    *,
+    as_of_date: str | date | None = None,
+    calibration_lookback_days: int = 180,
+    load_lookback_days: int = 90,
+    persist: bool = True,
+) -> TrainingLoadBackfillSummary:
+    as_of = _parse_date(as_of_date) or today_shanghai()
+    calibration = refresh_training_load_calibration(
+        db,
+        as_of_date=as_of,
+        lookback_days=calibration_lookback_days,
+        persist=persist,
+    )
+    load_start = as_of - timedelta(days=max(0, load_lookback_days))
+    load = recompute_training_load(
+        db,
+        start=load_start,
+        end=as_of,
+        persist=persist,
+        calibration_override=calibration,
+    )
+    return TrainingLoadBackfillSummary(
+        calibration=calibration,
+        load=load,
+        calibration_lookback_days=calibration_lookback_days,
+        load_lookback_days=load_lookback_days,
     )
