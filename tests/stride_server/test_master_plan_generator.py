@@ -387,7 +387,12 @@ class TestRunGenerateJob:
         assert job.status == JobStatus.DONE
 
     def test_garbage_response_fails_with_parse_failed(self, monkeypatch, patch_store, patch_history):
-        """Unparseable output → job FAILED + error='parse_failed' + raw_output set."""
+        """Unparseable output (both attempts) → job FAILED + error='parse_failed'.
+
+        Adapter does one retry on parse_failed (see master_plan_adapter for
+        rationale — gpt-5.5 occasionally truncates). The fake client returns
+        the same garbage for both calls, so both parses fail.
+        """
         raw_response = "这是完全无法解析的输出！没有 JSON 也没有格式。"
         import stride_server.master_plan_generator as mod
         monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
@@ -401,6 +406,39 @@ class TestRunGenerateJob:
         assert job.raw_output is not None
         assert len(job.raw_output) > 0
         assert len(patch_store.saved_plans) == 0
+
+    def test_parse_failed_first_attempt_recovers_on_retry(
+        self, monkeypatch, patch_store, patch_history
+    ):
+        """First LLM call returns garbage; retry returns valid JSON → job DONE.
+
+        Pinpoints the adapter's 1-shot retry on parse_failed. Without retry
+        we'd hit job.status=FAILED here, so this test guards against
+        accidentally removing the resilience.
+        """
+        valid_response = _sentinel_wrap(_VALID_JSON_STR)
+        garbage = "完全无法解析的输出，没有 JSON。"
+
+        class FlakyLLMClient:
+            calls = 0
+
+            def __init__(self) -> None:
+                pass
+
+            def chat_sync(self, *args: Any, **kwargs: Any) -> str:
+                FlakyLLMClient.calls += 1
+                return garbage if FlakyLLMClient.calls == 1 else valid_response
+
+        FlakyLLMClient.calls = 0  # reset per-test
+        monkeypatch.setattr(adapter_mod, "LLMClient", FlakyLLMClient)
+
+        job_id = create_job(USER_ID)
+        _run_job_sync(job_id)
+
+        job = get_job(job_id)
+        assert job.status == JobStatus.DONE, f"unexpected error: {job.error!r}"
+        assert FlakyLLMClient.calls == 2, "retry should fire exactly once"
+        assert len(patch_store.saved_plans) == 1
 
     def test_llm_unavailable_fails_job(self, monkeypatch, patch_store, patch_history):
         """LLMUnavailable at construction → job FAILED + error='llm_unavailable'."""
