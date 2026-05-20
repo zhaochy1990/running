@@ -407,6 +407,8 @@ def test_training_zones_are_anchored_to_threshold_speed_and_hr():
         "interval",
         "repetition",
     ]
+    for previous, current in zip(zones.pace_zones, zones.pace_zones[1:]):
+        assert previous.max_speed_mps == current.min_speed_mps
     threshold_pace = next(z for z in zones.pace_zones if z.name == "threshold")
     assert threshold_pace.min_pace_s_per_km == pytest.approx(243, abs=2)
     assert threshold_pace.max_pace_s_per_km == pytest.approx(258, abs=2)

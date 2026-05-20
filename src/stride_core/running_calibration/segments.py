@@ -255,8 +255,7 @@ def _best_speed_for_duration_prepared(
     speed = activity_mean_speed(activity)
     if duration is None or speed is None:
         return None
-    if duration_s >= 20 * 60 and len(activity.samples) >= 2:
-        prepared = _prepare_samples(activity.samples)
+    if duration_s >= 20 * 60 and len(prepared.samples) >= 2:
         if not _stable_speed_window_prepared(prepared, 0, len(prepared.samples) - 1, max_cv=0.12):
             return None
     if duration >= duration_s * 0.9:

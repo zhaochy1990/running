@@ -11,6 +11,9 @@ from stride_core.running_calibration.types import RunningActivity, RunningSample
 
 from .types import CalibrationActivity, CalibrationHealthRow, CalibrationSnapshot
 
+MIN_RUNNING_POWER_W = 50.0
+MAX_RUNNING_POWER_W = 1000.0
+
 
 def _percentile(values: Sequence[float], pct: float) -> float | None:
     clean = sorted(float(v) for v in values if v is not None)
@@ -73,14 +76,21 @@ def _estimate_critical_power(history: Sequence[CalibrationActivity], as_of_date:
             continue
         if not _running(activity):
             continue
-        if activity.avg_power is not None and float(activity.avg_power) > 0:
+        if _valid_running_power(activity.avg_power):
             power_values.append(float(activity.avg_power))
         power_values.extend(
             float(sample.power_w)
             for sample in activity.samples
-            if sample.power_w is not None and float(sample.power_w) > 0
+            if _valid_running_power(sample.power_w)
         )
     return (median(power_values) if power_values else None, len(power_values))
+
+
+def _valid_running_power(value: float | None) -> bool:
+    if value is None:
+        return False
+    power = float(value)
+    return MIN_RUNNING_POWER_W <= power <= MAX_RUNNING_POWER_W
 
 
 def estimate_calibration(

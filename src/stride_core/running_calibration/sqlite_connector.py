@@ -509,6 +509,7 @@ def _distance_scale_for_timeseries(
         if max_distance / activity_distance_m > 20.0:
             return 0.01
         return 1.0
+    # TODO: extend this fallback as provider-specific distance units are added.
     if str(provider or "").lower() == "coros" and max_distance > 10_000:
         return 0.01
     return 1.0

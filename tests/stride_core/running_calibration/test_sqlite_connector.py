@@ -27,6 +27,8 @@ def _activity(
         sport_type=100,
         sport_name="Run",
         date=date_iso,
+        # Exercise connector normalization for legacy rows that store km in a
+        # column named distance_m.
         distance_m=distance_m,
         duration_s=duration_s,
         avg_pace_s_km=250.0,

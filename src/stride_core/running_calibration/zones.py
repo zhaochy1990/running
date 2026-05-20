@@ -17,7 +17,7 @@ ZONE_NAMES = ("recovery", "easy", "marathon", "threshold", "interval", "repetiti
 PACE_ZONE_SPEED_RATIOS: dict[str, tuple[float | None, float | None]] = {
     "recovery": (None, 0.72),
     "easy": (0.72, 0.84),
-    "marathon": (0.84, 0.94),
+    "marathon": (0.84, 0.97),
     "threshold": (0.97, 1.03),
     "interval": (1.03, 1.11),
     "repetition": (1.11, None),
