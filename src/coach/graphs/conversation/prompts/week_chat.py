@@ -17,7 +17,7 @@ WEEK_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - get_week_plan(folder) — 本周 plan.md + planned_session + planned_nutrition
 - get_health_snapshot / get_pmc_series — TSB / 疲劳 / RHR / HRV
 - get_recent_activities — 最近完成的训练
-- get_inbody_latest — InBody 数据
+- get_body_composition_latest — 体测数据
 - get_pbs / get_race_predictions / get_master_plan_current
 
 **Draft tools** (输出 PlanDiff —— 不会立刻应用, 等用户在 UI 上点"采纳")

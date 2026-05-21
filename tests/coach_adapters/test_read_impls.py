@@ -13,7 +13,7 @@ from coach.tools.protocols import (
     GetAbilitySnapshot,
     GetActivityDetail,
     GetHealthSnapshot,
-    GetInbodyLatest,
+    GetBodyCompositionLatest,
     GetMasterPlanCurrent,
     GetMasterPlanVersions,
     GetPbs,
@@ -58,7 +58,7 @@ def test_all_impls_satisfy_protocols() -> None:
         (read_impls.GetRecentActivitiesImpl(uid), GetRecentActivities),
         (read_impls.GetHealthSnapshotImpl(uid), GetHealthSnapshot),
         (read_impls.GetPmcSeriesImpl(uid), GetPmcSeries),
-        (read_impls.GetInbodyLatestImpl(uid), GetInbodyLatest),
+        (read_impls.GetBodyCompositionLatestImpl(uid), GetBodyCompositionLatest),
         (read_impls.GetAbilitySnapshotImpl(uid), GetAbilitySnapshot),
         (read_impls.GetRacePredictionsImpl(uid), GetRacePredictions),
         (read_impls.GetPbsImpl(uid), GetPbs),
@@ -110,7 +110,7 @@ def test_pmc_series_invalid_granularity_returns_error(patched_db) -> None:
 
 
 def test_inbody_empty(patched_db) -> None:
-    res = read_impls.GetInbodyLatestImpl("uid")()
+    res = read_impls.GetBodyCompositionLatestImpl("uid")()
     assert res.ok
     assert res.data == {"latest": None, "deltas": None}
 

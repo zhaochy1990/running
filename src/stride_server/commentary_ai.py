@@ -8,7 +8,7 @@ Context blocks (all fed on every call):
   5. 训练分段 (laps lap_type='type2')
   6. HR 曲线下采样 (timeseries → 1 point/min)
   7. 活动当日 daily_health 快照 (fatigue / TSB / RHR)
-  8. 最新 InBody 快照 (inbody_scan latest)
+  8. 最新身体成分快照 (body_composition_scan latest)
   9. 最近 4 周跑量趋势 (activities aggregated by week)
  10. 本周计划 plan.md 节选 (logs/<week>/plan.md)
  11. 同类活动近期 commentary (activity_commentary by sport_type)
@@ -310,11 +310,11 @@ def get_weekly_volume_trend(db: Database, weeks: int = 4) -> list[dict[str, Any]
 
 
 def get_latest_inbody(db: Database) -> dict[str, Any] | None:
-    row = db.latest_inbody_scan()
+    row = db.latest_body_composition_scan()
     if row is None:
         return None
     scan = dict(row)
-    segs = db.get_inbody_segments(scan["scan_date"])
+    segs = db.get_body_composition_segments(scan["scan_date"])
     scan["segments"] = [dict(s) for s in segs]
     return scan
 
@@ -526,7 +526,7 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
         lines.append("")
 
     if inbody:
-        lines.append("## 最新 InBody 快照")
+        lines.append("## 最新体测快照")
         lines.append(
             f"- {inbody['scan_date']}：体重 {inbody['weight_kg']} kg，"
             f"BF% {inbody['body_fat_pct']}，SMM {inbody['smm_kg']} kg，"

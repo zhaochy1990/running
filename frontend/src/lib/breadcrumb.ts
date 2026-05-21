@@ -32,7 +32,7 @@ export function resolveBreadcrumb(pathname: string, ctx?: BreadcrumbCtx): Breadc
     return { section: '数据', current: '身体指标' }
   }
 
-  if (pathname === '/inbody') {
+  if (pathname === '/body-composition') {
     return { section: '数据', current: '体测记录' }
   }
 

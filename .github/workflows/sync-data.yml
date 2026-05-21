@@ -17,7 +17,8 @@ on:
     paths:
       - 'data/*/logs/**/*.md'
       - 'data/*/logs/**/*.json'
-      - 'data/*/logs/**/inbody.*'
+      - 'data/*/logs/**/inbody.*'              # legacy + photo files
+      - 'data/*/logs/**/body-composition.*'    # new structured data + future renames
       - 'data/*/TRAINING_PLAN.md'
       - 'data/*/status.md'
       - 'data/*/profile.json'
@@ -107,7 +108,7 @@ jobs:
                 --overwrite \
                 --output none
 
-              # InBody photos (inbody.jpg / .jpeg / .png per week folder)
+              # Body-composition photos and structured data
               az storage file upload-batch \
                 --account-name authstorage2026 \
                 --account-key "$ACCOUNT_KEY" \
@@ -123,6 +124,23 @@ jobs:
                 --destination-path "users/$user/logs" \
                 --source "$user_dir/logs" \
                 --pattern "*/inbody.*" \
+                --overwrite \
+                --output none
+              az storage file upload-batch \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --destination stride-data \
+                --destination-path "$user/logs" \
+                --source "$user_dir/logs" \
+                --pattern "*/body-composition.*" \
+                --output none
+              az storage blob upload-batch \
+                --account-name authstorage2026 \
+                --account-key "$ACCOUNT_KEY" \
+                --destination "$BLOB_CONTAINER" \
+                --destination-path "users/$user/logs" \
+                --source "$user_dir/logs" \
+                --pattern "*/body-composition.*" \
                 --overwrite \
                 --output none
             fi

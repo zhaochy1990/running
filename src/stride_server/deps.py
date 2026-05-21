@@ -82,7 +82,7 @@ def get_commentary_store(user: str) -> CommentaryStore:
     return SqliteCommentaryStore(get_db(user))
 
 
-def get_inbody_store(user: str) -> InBodyStore:
+def get_body_composition_store(user: str) -> InBodyStore:
     return SqliteInBodyStore(get_db(user))
 
 

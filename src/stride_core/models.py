@@ -452,7 +452,7 @@ class RacePrediction:
         )
 
 
-INBODY_SEGMENTS = {"left_arm", "right_arm", "trunk", "left_leg", "right_leg"}
+BODY_COMPOSITION_SEGMENTS = {"left_arm", "right_arm", "trunk", "left_leg", "right_leg"}
 
 
 @dataclass
@@ -466,8 +466,8 @@ class BodySegment:
     @classmethod
     def from_dict(cls, data: dict) -> BodySegment:
         segment = data.get("segment")
-        if segment not in INBODY_SEGMENTS:
-            raise ValueError(f"segment must be one of {INBODY_SEGMENTS}, got {segment!r}")
+        if segment not in BODY_COMPOSITION_SEGMENTS:
+            raise ValueError(f"segment must be one of {BODY_COMPOSITION_SEGMENTS}, got {segment!r}")
         lean = data.get("lean_mass_kg")
         fat = data.get("fat_mass_kg")
         if not isinstance(lean, (int, float)) or not 0 <= lean <= 40:
@@ -491,7 +491,7 @@ class BodySegment:
 
 @dataclass
 class BodyCompositionScan:
-    """InBody scan snapshot. Validated at the `from_dict()` boundary."""
+    """Body-composition scan snapshot. Validated at the `from_dict()` boundary."""
     scan_date: str  # ISO8601 date, e.g. "2026-04-23"
     weight_kg: float
     body_fat_pct: float
@@ -532,13 +532,16 @@ class BodyCompositionScan:
         if not isinstance(vf, int) or not 1 <= vf <= 20:
             raise ValueError(f"visceral_fat_level must be int in [1,20]: {vf!r}")
 
-        segments_raw = data.get("segments", [])
-        if not isinstance(segments_raw, list) or len(segments_raw) != 5:
-            raise ValueError(f"segments must be a list of 5 entries, got {len(segments_raw) if isinstance(segments_raw, list) else type(segments_raw)}")
-        segments = [BodySegment.from_dict(s) for s in segments_raw]
-        names = {s.segment for s in segments}
-        if names != INBODY_SEGMENTS:
-            raise ValueError(f"segments must cover {INBODY_SEGMENTS}, got {names}")
+        segments_raw = data.get("segments")
+        if segments_raw is None or segments_raw == []:
+            segments = []
+        elif not isinstance(segments_raw, list) or len(segments_raw) != 5:
+            raise ValueError(f"segments must be omitted, empty, or a list of 5 entries, got {len(segments_raw) if isinstance(segments_raw, list) else type(segments_raw)}")
+        else:
+            segments = [BodySegment.from_dict(s) for s in segments_raw]
+            names = {s.segment for s in segments}
+            if names != BODY_COMPOSITION_SEGMENTS:
+                raise ValueError(f"segments must cover {BODY_COMPOSITION_SEGMENTS}, got {names}")
 
         return cls(
             scan_date=scan_date,

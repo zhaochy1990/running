@@ -1,4 +1,4 @@
-"""InBody body-composition scans — read trends + upsert writes from local CLI."""
+"""Body-composition scans — read trends + upsert writes from local CLI / web form."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from stride_core.models import BodyCompositionScan
 
-from ..deps import get_inbody_store
+from ..deps import get_body_composition_store
 
 router = APIRouter()
 
@@ -59,14 +59,14 @@ def _derive(scan: dict, segs: dict[str, dict]) -> dict:
     return scan
 
 
-@router.get("/api/{user}/inbody")
-def list_inbody(user: str, days: int | None = Query(None, ge=1, le=3650)):
+@router.get("/api/{user}/body-composition")
+def list_body_composition(user: str, days: int | None = Query(None, ge=1, le=3650)):
     """List scans (newest-first) with derived per-scan fields + segments."""
-    store = get_inbody_store(user)
+    store = get_body_composition_store(user)
     try:
-        scans = [_scan_row_to_dict(r) for r in store.list_inbody_scans(days=days)]
+        scans = [_scan_row_to_dict(r) for r in store.list_body_composition_scans(days=days)]
         for s in scans:
-            segs = _segments_by_name(store.get_inbody_segments(s["scan_date"]))
+            segs = _segments_by_name(store.get_body_composition_segments(s["scan_date"]))
             _derive(s, segs)
             s["segments"] = list(segs.values())
         return {"scans": scans}
@@ -74,20 +74,20 @@ def list_inbody(user: str, days: int | None = Query(None, ge=1, le=3650)):
         store.close()
 
 
-@router.get("/api/{user}/inbody/summary")
-def inbody_summary(user: str):
+@router.get("/api/{user}/body-composition/summary")
+def body_composition_summary(user: str):
     """Latest scan + 30-day deltas + phase-checkpoint comparison."""
-    store = get_inbody_store(user)
+    store = get_body_composition_store(user)
     try:
-        latest = store.latest_inbody_scan()
+        latest = store.latest_body_composition_scan()
         if not latest:
             return {"latest": None, "deltas": None, "checkpoints": PHASE_CHECKPOINTS}
         latest_d = _scan_row_to_dict(latest)
-        segs = _segments_by_name(store.get_inbody_segments(latest_d["scan_date"]))
+        segs = _segments_by_name(store.get_body_composition_segments(latest_d["scan_date"]))
         _derive(latest_d, segs)
         latest_d["segments"] = list(segs.values())
 
-        prior_row = store.inbody_scan_before(latest_d["scan_date"])
+        prior_row = store.body_composition_scan_before(latest_d["scan_date"])
         prior = dict(prior_row) if prior_row else None
 
         deltas = None
@@ -106,16 +106,16 @@ def inbody_summary(user: str):
         store.close()
 
 
-@router.get("/api/{user}/inbody/{scan_date}")
-def get_inbody(user: str, scan_date: str):
+@router.get("/api/{user}/body-composition/{scan_date}")
+def get_body_composition(user: str, scan_date: str):
     """Single scan with all 5 segments."""
-    store = get_inbody_store(user)
+    store = get_body_composition_store(user)
     try:
-        row = store.get_inbody_scan(scan_date)
+        row = store.get_body_composition_scan(scan_date)
         if not row:
             raise HTTPException(status_code=404, detail=f"No scan on {scan_date}")
         scan = _scan_row_to_dict(row)
-        segs = _segments_by_name(store.get_inbody_segments(scan_date))
+        segs = _segments_by_name(store.get_body_composition_segments(scan_date))
         _derive(scan, segs)
         scan["segments"] = list(segs.values())
         return scan
@@ -123,20 +123,20 @@ def get_inbody(user: str, scan_date: str):
         store.close()
 
 
-@router.post("/api/{user}/inbody")
-def upsert_inbody(user: str, payload: dict):
+@router.post("/api/{user}/body-composition")
+def upsert_body_composition(user: str, payload: dict):
     """Upsert a scan + 5 segments. Body validated via `BodyCompositionScan.from_dict()`."""
     try:
         scan = BodyCompositionScan.from_dict(payload)
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    store = get_inbody_store(user)
+    store = get_body_composition_store(user)
     try:
-        store.upsert_inbody_scan(scan)
-        row = store.get_inbody_scan(scan.scan_date)
+        store.upsert_body_composition_scan(scan)
+        row = store.get_body_composition_scan(scan.scan_date)
         stored = _scan_row_to_dict(row)
-        segs = _segments_by_name(store.get_inbody_segments(scan.scan_date))
+        segs = _segments_by_name(store.get_body_composition_segments(scan.scan_date))
         _derive(stored, segs)
         stored["segments"] = list(segs.values())
         return stored

@@ -12,7 +12,7 @@ from .context import (
     load_ability_context,
     load_coach_context,
     load_health_context,
-    load_inbody_context,
+    load_body_composition_context,
     load_recent_activities,
     load_week_context,
     load_weekly_volume,
@@ -65,10 +65,10 @@ def build_tools(user: str, source: DataSource | None = None) -> list[Any]:
         finally:
             db.close()
 
-    def inbody_context() -> str:
+    def body_composition_context() -> str:
         db = Database(user=user)
         try:
-            return _json(load_inbody_context(db))
+            return _json(load_body_composition_context(db))
         finally:
             db.close()
 
@@ -86,6 +86,6 @@ def build_tools(user: str, source: DataSource | None = None) -> list[Any]:
         StructuredTool.from_function(recent_activities, name="recent_activities", description="Load recent activity summaries."),
         StructuredTool.from_function(health_context, name="health_context", description="Load fatigue, PMC, HRV, and dashboard health context."),
         StructuredTool.from_function(weekly_volume, name="weekly_volume", description="Load weekly running volume trend."),
-        StructuredTool.from_function(inbody_context, name="inbody_context", description="Load latest InBody context."),
+        StructuredTool.from_function(body_composition_context, name="body_composition_context", description="Load latest body-composition context."),
         StructuredTool.from_function(ability_context, name="ability_context", description="Load running ability model snapshots."),
     ]

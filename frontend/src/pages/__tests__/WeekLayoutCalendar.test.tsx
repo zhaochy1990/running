@@ -43,7 +43,7 @@ const weeks: WeekSummary[] = [
     date_to: '2026-04-26',
     has_plan: true,
     has_feedback: false,
-    has_inbody: false,
+    has_body_composition: false,
     plan_title: 'Week 0',
     activity_count: 3,
     total_km: 35,

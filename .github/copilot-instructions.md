@@ -49,7 +49,7 @@ This repository combines a COROS sync CLI, a source-agnostic data layer, a FastA
 Deployment has two separate data paths:
 
 - Code/frontend changes trigger `.github/workflows/deploy.yml`, which builds the frontend, builds the Docker image, pushes to GHCR, deploys Azure Container Apps, and checks `/api/health`.
-- Markdown/profile data changes trigger `.github/workflows/sync-data.yml`, which uploads weekly `plan.md`, `feedback.md`, InBody images, `TRAINING_PLAN.md`, `status.md`, and `profile.json` to Azure Files. SQLite-only rows such as `activity_commentary` are not covered by this workflow; push them through the CLI/API.
+- Markdown/profile data changes trigger `.github/workflows/sync-data.yml`, which uploads weekly `plan.md`, `feedback.md`, body-composition photos and data files, `TRAINING_PLAN.md`, `status.md`, and `profile.json` to Azure Files. SQLite-only rows such as `activity_commentary` are not covered by this workflow; push them through the CLI/API.
 
 ## Key conventions
 
@@ -58,7 +58,7 @@ Deployment has two separate data paths:
 - COROS API-to-internal unit conversion belongs in `stride_core.models.*.from_api()` classmethods. Do not scatter COROS unit conversions through routes or UI code.
 - Dates are `YYYYMMDD` strings in COROS-facing CLI/model code. Pace is seconds per km internally and displayed with `pace_str()`.
 - SQLite writes are idempotent upserts. CLI profile slugs are resolved before opening data; server routes and direct `Database(user=...)` handles should use the UUID directory name. Tests use temp DB paths/fixtures.
-- Weekly `plan.md` files must cover running, strength/conditioning, and nutrition. Before drafting a new plan, review the current phase from `TRAINING_PLAN.md`, previous feedback, recent health/load metrics, and latest InBody data. Include fatigue/load context when creating weekly plans.
+- Weekly `plan.md` files must cover running, strength/conditioning, and nutrition. Before drafting a new plan, review the current phase from `TRAINING_PLAN.md`, previous feedback, recent health/load metrics, and latest body-composition data. Include fatigue/load context when creating weekly plans.
 - Do not add a “已推送到 COROS 手表的训练” section to weekly plans. After editing a plan, remove duplicated or repeated content.
 - `feedback.md` is generated/appended from actual data: `sport_note`/`feel_type` plus objective DB metrics. Do not create placeholder templates or overwrite existing feedback; append new feedback verbatim when syncing activity notes.
 - `activity_commentary` rows carry `generated_by` and `generated_at`. AOAI drafts use `generated_by='gpt-4.1'` and sync never overwrites an existing row. Claude/Copilot-authored refinements must upsert locally with the producing model id and be pushed with `commentary push <label_id> --generated-by <model>`.

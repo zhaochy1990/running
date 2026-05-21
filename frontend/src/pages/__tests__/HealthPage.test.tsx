@@ -117,7 +117,7 @@ beforeEach(() => {
         date_to: '2026-05-24',
         has_plan: true,
         has_feedback: false,
-        has_inbody: false,
+        has_body_composition: false,
         activity_count: 1,
         total_km: 12,
         total_duration_s: 3600,

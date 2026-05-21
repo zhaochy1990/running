@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
-import { getInbody } from '../api'
-import { useUser } from '../UserContextValue'
 import TopNav from './TopNav'
 import NotificationPopup from './NotificationPopup'
 import NavSection from './sidebar/NavSection'
@@ -16,7 +14,6 @@ const SIDEBAR_COLLAPSED_KEY = 'stride.sidebar.collapsed'
 export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { user } = useUser()
 
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -26,18 +23,9 @@ export default function AppLayout() {
       return false
     }
   })
-  const [hasInbody, setHasInbody] = useState(false)
-
   useEffect(() => {
     setMobileOpen(false)
   }, [location.pathname])
-
-  useEffect(() => {
-    if (!user) return
-    getInbody(user)
-      .then((data) => setHasInbody(data.scans.length > 0))
-      .catch(() => setHasInbody(false))
-  }, [user])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -130,14 +118,12 @@ export default function AppLayout() {
                 icon={<PulseIcon />}
                 text="身体指标"
               />
-              {hasInbody && (
-                <NavItem
-                  to="/inbody"
-                  collapsed={collapsed}
-                  icon={<UserIcon />}
-                  text="体测记录"
-                />
-              )}
+              <NavItem
+                to="/body-composition"
+                collapsed={collapsed}
+                icon={<UserIcon />}
+                text="体测记录"
+              />
             </NavSection>
 
             <NavSection label="社群" collapsed={collapsed}>

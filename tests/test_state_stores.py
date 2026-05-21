@@ -247,15 +247,15 @@ class TestSqliteInBodyStore:
                 ),
             ),
         )
-        store.upsert_inbody_scan(scan)
+        store.upsert_body_composition_scan(scan)
 
-        row = store.get_inbody_scan("2026-04-20")
+        row = store.get_body_composition_scan("2026-04-20")
         assert row is not None
         assert row["weight_kg"] == 68.0
 
-        rows = store.list_inbody_scans()
+        rows = store.list_body_composition_scans()
         assert len(rows) == 1
 
-        segs = store.get_inbody_segments("2026-04-20")
+        segs = store.get_body_composition_segments("2026-04-20")
         assert len(segs) == 1
         assert segs[0]["segment"] == "left_arm"

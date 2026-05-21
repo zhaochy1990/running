@@ -374,7 +374,7 @@ export interface WeekSummary {
   date_to: string
   has_plan: boolean
   has_feedback: boolean
-  has_inbody: boolean
+  has_body_composition: boolean
   plan_title?: string
   activity_count: number
   total_km: number
@@ -559,7 +559,7 @@ export function getPMC(user: string, days = 90) {
   }>(`/${user}/pmc?days=${days}`)
 }
 
-export interface InBodySegment {
+export interface BodyCompositionSegment {
   segment: 'left_arm' | 'right_arm' | 'trunk' | 'left_leg' | 'right_leg'
   lean_mass_kg: number
   fat_mass_kg: number
@@ -567,7 +567,7 @@ export interface InBodySegment {
   fat_pct_of_standard: number | null
 }
 
-export interface InBodyScan {
+export interface BodyCompositionScan {
   scan_date: string
   jpg_path: string | null
   weight_kg: number
@@ -579,7 +579,7 @@ export interface InBodyScan {
   protein_kg: number | null
   water_l: number | null
   smi: number | null
-  inbody_score: number | null
+  inbody_score: number | null   // brand-specific reading kept verbatim
   ingested_at: string
   // Derived
   leg_smm_delta: number | null
@@ -606,10 +606,10 @@ export interface InBodyScan {
   trunk_fat_pct_std: number | null
   left_leg_fat_pct_std: number | null
   right_leg_fat_pct_std: number | null
-  segments?: InBodySegment[]
+  segments?: BodyCompositionSegment[]
 }
 
-export interface InBodyCheckpoint {
+export interface BodyCompositionCheckpoint {
   phase: string
   date: string
   weight_kg: number
@@ -617,7 +617,7 @@ export interface InBodyCheckpoint {
   smm_kg_min: number
 }
 
-export interface InBodyDeltas {
+export interface BodyCompositionDeltas {
   prev_date: string
   weight_kg: number
   body_fat_pct: number
@@ -626,23 +626,48 @@ export interface InBodyDeltas {
   visceral_fat_level: number
 }
 
-export interface InBodySummary {
-  latest: InBodyScan | null
-  deltas: InBodyDeltas | null
-  checkpoints: InBodyCheckpoint[]
+export interface BodyCompositionSummary {
+  latest: BodyCompositionScan | null
+  deltas: BodyCompositionDeltas | null
+  checkpoints: BodyCompositionCheckpoint[]
 }
 
-export function getInbody(user: string, days?: number) {
+export function getBodyComposition(user: string, days?: number) {
   const qs = days ? `?days=${days}` : ''
-  return fetchJSON<{ scans: InBodyScan[] }>(`/${user}/inbody${qs}`)
+  return fetchJSON<{ scans: BodyCompositionScan[] }>(`/${user}/body-composition${qs}`)
 }
 
-export function getInbodySummary(user: string) {
-  return fetchJSON<InBodySummary>(`/${user}/inbody/summary`)
+export function getBodyCompositionSummary(user: string) {
+  return fetchJSON<BodyCompositionSummary>(`/${user}/body-composition/summary`)
 }
 
-export function getInbodyScan(user: string, scanDate: string) {
-  return fetchJSON<InBodyScan>(`/${user}/inbody/${scanDate}`)
+export function getBodyCompositionScan(user: string, scanDate: string) {
+  return fetchJSON<BodyCompositionScan>(`/${user}/body-composition/${scanDate}`)
+}
+
+export type BodyCompositionScanInput = {
+  scan_date: string
+  weight_kg: number
+  body_fat_pct: number
+  smm_kg: number
+  fat_mass_kg: number
+  visceral_fat_level: number
+  bmr_kcal?: number | null
+  protein_kg?: number | null
+  water_l?: number | null
+  smi?: number | null
+  inbody_score?: number | null
+  segments?: Array<{
+    segment: 'left_arm' | 'right_arm' | 'trunk' | 'left_leg' | 'right_leg'
+    lean_mass_kg: number
+    fat_mass_kg: number
+    lean_pct_of_standard?: number | null
+    fat_pct_of_standard?: number | null
+  }>
+}
+
+export function upsertBodyComposition(user: string, payload: BodyCompositionScanInput): Promise<{ ok: boolean; status: number; data: BodyCompositionScan }> {
+  return postJSON<BodyCompositionScan>(`/${user}/body-composition`, payload)
 }
 
 export function getWeeks(user: string) {

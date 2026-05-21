@@ -31,7 +31,7 @@ from .tool_impls.read_impls import (
     GetAbilitySnapshotImpl,
     GetActivityDetailImpl,
     GetHealthSnapshotImpl,
-    GetInbodyLatestImpl,
+    GetBodyCompositionLatestImpl,
     GetMasterPlanCurrentImpl,
     GetMasterPlanVersionsImpl,
     GetPbsImpl,
@@ -50,7 +50,7 @@ class StrideToolkit:
     get_recent_activities: GetRecentActivitiesImpl
     get_health_snapshot: GetHealthSnapshotImpl
     get_pmc_series: GetPmcSeriesImpl
-    get_inbody_latest: GetInbodyLatestImpl
+    get_body_composition_latest: GetBodyCompositionLatestImpl
     get_ability_snapshot: GetAbilitySnapshotImpl
     get_race_predictions: GetRacePredictionsImpl
     get_pbs: GetPbsImpl
@@ -85,7 +85,7 @@ def build_stride_toolkit(user_id: str) -> Toolkit:
         get_recent_activities=GetRecentActivitiesImpl(user_id),
         get_health_snapshot=GetHealthSnapshotImpl(user_id),
         get_pmc_series=GetPmcSeriesImpl(user_id),
-        get_inbody_latest=GetInbodyLatestImpl(user_id),
+        get_body_composition_latest=GetBodyCompositionLatestImpl(user_id),
         get_ability_snapshot=GetAbilitySnapshotImpl(user_id),
         get_race_predictions=GetRacePredictionsImpl(user_id),
         get_pbs=GetPbsImpl(user_id),

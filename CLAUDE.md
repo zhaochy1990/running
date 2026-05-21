@@ -116,7 +116,7 @@ docs/                # topic-specific docs（按需 Read，见顶部表）
 
 1. **Running**：每日跑步安排、配速目标、心率区间、周里程目标
 2. **Strength & Conditioning**：力量、核心、柔韧/灵活性，含具体动作与组×次（COROS T-code 见 [`docs/strength-training.md`](docs/strength-training.md)）
-3. **Nutrition**：基于 InBody 数据的热量目标、宏量营养拆分（蛋白/碳水/脂肪）、餐食建议
+3. **Nutrition**：基于体测数据的热量目标、宏量营养拆分（蛋白/碳水/脂肪）、餐食建议
 
 考虑三者交互 —— 跑步日 vs 休息日的差异化碳水、力量后的蛋白时机、恢复周的热量赤字管理。
 
@@ -127,7 +127,7 @@ docs/                # topic-specific docs（按需 Read，见顶部表）
 - **当前训练阶段**：本周在整体周期化中的位置（从 TRAINING_PLAN.md）
 - **上周 feedback**：RPE、感知疲劳、上周 feedback.md 记录的问题
 - **近期身体指标**：RHR、HRV 趋势、睡眠质量/时长 —— 经 `coros-sync status` 或 `coros-sync analyze hrv`
-- **最新 InBody**：体重、体脂率、骨骼肌量趋势
+- **最新体测数据**：体重、体脂率、骨骼肌量趋势
 
 按这些信号调整训练负荷、营养、恢复。例：HRV 下行或睡眠差 → 降强度、加恢复；体脂停滞 → 重新评估热量赤字。
 
@@ -151,9 +151,9 @@ docs/                # topic-specific docs（按需 Read，见顶部表）
 
 ---
 
-## InBody report
+## 体测报告（Body Composition Report）
 
-InBody 报告含核心指标：Weight / Body Fat Percentage / Body Fat Mass / Skeletal Muscle Mass。用来追踪减脂 vs 增肌、监控体能与训练进度、长期趋势对比。
+体测报告含核心指标：Weight / Body Fat Percentage / Body Fat Mass / Skeletal Muscle Mass。用来追踪减脂 vs 增肌、监控体能与训练进度、长期趋势对比。
 
 ---
 

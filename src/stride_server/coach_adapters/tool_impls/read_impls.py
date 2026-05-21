@@ -192,11 +192,11 @@ class GetPmcSeriesImpl:
 
 
 # ---------------------------------------------------------------------------
-# 4. get_inbody_latest
+# 4. get_body_composition_latest
 # ---------------------------------------------------------------------------
 
 
-class GetInbodyLatestImpl:
+class GetBodyCompositionLatestImpl:
     def __init__(self, user_id: str) -> None:
         self._user_id = user_id
 
@@ -207,12 +207,12 @@ class GetInbodyLatestImpl:
         db = _open_db(self._user_id)
         try:
             store = SqliteInBodyStore(db)
-            latest = store.latest_inbody_scan()
+            latest = store.latest_body_composition_scan()
             if latest is None:
                 return ToolResult(ok=True, data={"latest": None, "deltas": None})
             latest_d = dict(latest)
             prior_rows = db.query(
-                "SELECT * FROM inbody_scan WHERE scan_date < ? ORDER BY scan_date DESC LIMIT 1",
+                "SELECT * FROM body_composition_scan WHERE scan_date < ? ORDER BY scan_date DESC LIMIT 1",
                 (latest_d["scan_date"],),
             )
             prior = dict(prior_rows[0]) if prior_rows else None

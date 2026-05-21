@@ -2,7 +2,7 @@
 
 Phase 1 of the "everything except watch-synced data leaves SQLite" migration.
 The interfaces below define the surface the routes / coach agent rely on for
-plan, commentary, and InBody state. SQLite implementations wrap the existing
+plan, commentary, and body-composition state. SQLite implementations wrap the existing
 ``Database`` class so behavior is unchanged. A future Azure Table backend can
 implement the same Protocols without route-side changes.
 
@@ -182,29 +182,29 @@ class CommentaryStore(Protocol):
 
 
 class InBodyStore(Protocol):
-    """InBody body-composition scans + per-segment breakdown. Authoring is
+    """Body-composition scans + per-segment breakdown. Authoring is
     out-of-band (OCR from JPG into a sidecar JSON), but the rows are queried
     constantly by the coach context + dashboard."""
 
     def close(self) -> None: ...
 
-    def upsert_inbody_scan(self, scan: BodyCompositionScan) -> None: ...
+    def upsert_body_composition_scan(self, scan: BodyCompositionScan) -> None: ...
 
-    def list_inbody_scans(
+    def list_body_composition_scans(
         self, days: int | None = None,
     ) -> list[Mapping[str, Any]]: ...
 
-    def get_inbody_scan(
+    def get_body_composition_scan(
         self, scan_date: str,
     ) -> Mapping[str, Any] | None: ...
 
-    def get_inbody_segments(
+    def get_body_composition_segments(
         self, scan_date: str,
     ) -> list[Mapping[str, Any]]: ...
 
-    def latest_inbody_scan(self) -> Mapping[str, Any] | None: ...
+    def latest_body_composition_scan(self) -> Mapping[str, Any] | None: ...
 
-    def inbody_scan_before(
+    def body_composition_scan_before(
         self, scan_date: str,
     ) -> Mapping[str, Any] | None: ...
 
@@ -434,32 +434,32 @@ class SqliteInBodyStore:
     def close(self) -> None:
         self._db.close()
 
-    def upsert_inbody_scan(self, scan: BodyCompositionScan) -> None:
-        self._db.upsert_inbody_scan(scan)
+    def upsert_body_composition_scan(self, scan: BodyCompositionScan) -> None:
+        self._db.upsert_body_composition_scan(scan)
 
-    def list_inbody_scans(
+    def list_body_composition_scans(
         self, days: int | None = None,
     ) -> list[Mapping[str, Any]]:
-        return self._db.list_inbody_scans(days)
+        return self._db.list_body_composition_scans(days)
 
-    def get_inbody_scan(
+    def get_body_composition_scan(
         self, scan_date: str,
     ) -> Mapping[str, Any] | None:
-        return self._db.get_inbody_scan(scan_date)
+        return self._db.get_body_composition_scan(scan_date)
 
-    def get_inbody_segments(
+    def get_body_composition_segments(
         self, scan_date: str,
     ) -> list[Mapping[str, Any]]:
-        return self._db.get_inbody_segments(scan_date)
+        return self._db.get_body_composition_segments(scan_date)
 
-    def latest_inbody_scan(self) -> Mapping[str, Any] | None:
-        return self._db.latest_inbody_scan()
+    def latest_body_composition_scan(self) -> Mapping[str, Any] | None:
+        return self._db.latest_body_composition_scan()
 
-    def inbody_scan_before(
+    def body_composition_scan_before(
         self, scan_date: str,
     ) -> Mapping[str, Any] | None:
         rows = self._db._conn.execute(
-            "SELECT * FROM inbody_scan WHERE scan_date < ? "
+            "SELECT * FROM body_composition_scan WHERE scan_date < ? "
             "ORDER BY scan_date DESC LIMIT 1",
             (scan_date,),
         ).fetchall()

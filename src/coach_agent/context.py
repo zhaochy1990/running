@@ -21,7 +21,7 @@ from stride_core.state_stores import (
 
 from stride_server import content_store
 from stride_server.deps import PROJECT_ROOT, format_duration, parse_week_dates
-from stride_server.routes.inbody import PHASE_CHECKPOINTS
+from stride_server.routes.body_composition import PHASE_CHECKPOINTS
 from stride_server.routes.training_plan import get_training_plan
 
 
@@ -232,16 +232,16 @@ def load_health_context(db: Database, *, days: int = 120) -> dict[str, Any]:
     }
 
 
-def load_inbody_context(db: Database) -> dict[str, Any]:
-    inbody_store = SqliteInBodyStore(db)
-    latest = inbody_store.latest_inbody_scan()
+def load_body_composition_context(db: Database) -> dict[str, Any]:
+    body_comp_store = SqliteInBodyStore(db)
+    latest = body_comp_store.latest_body_composition_scan()
     if latest is None:
         return {"latest": None, "deltas": None, "checkpoints": PHASE_CHECKPOINTS}
 
     latest_d = dict(latest)
-    latest_d["segments"] = [dict(s) for s in inbody_store.get_inbody_segments(latest_d["scan_date"])]
+    latest_d["segments"] = [dict(s) for s in body_comp_store.get_body_composition_segments(latest_d["scan_date"])]
     prior_rows = db.query(
-        "SELECT * FROM inbody_scan WHERE scan_date < ? ORDER BY scan_date DESC LIMIT 1",
+        "SELECT * FROM body_composition_scan WHERE scan_date < ? ORDER BY scan_date DESC LIMIT 1",
         (latest_d["scan_date"],),
     )
     prior = dict(prior_rows[0]) if prior_rows else None
@@ -337,8 +337,8 @@ def load_coach_context(
         log(f"  · 读取健康负荷 ({health_days} 天) / dashboard / 比赛预测")
         health = load_health_context(db, days=health_days)
 
-        log("  · 读取 InBody / 能力快照")
-        inbody = load_inbody_context(db)
+        log("  · 读取体测 / 能力快照")
+        body_composition = load_body_composition_context(db)
         ability = load_ability_context(db)
 
         return {
@@ -351,7 +351,7 @@ def load_coach_context(
             "recent_activities": recent,
             "weekly_volume": weekly,
             "health": health,
-            "inbody": inbody,
+            "body_composition": body_composition,
             "ability": ability,
         }
     finally:
@@ -361,7 +361,7 @@ def load_coach_context(
 def summarize_context(context: dict[str, Any]) -> dict[str, Any]:
     week = context.get("selected_week") or {}
     health = context.get("health") or {}
-    inbody = context.get("inbody") or {}
+    body_composition = context.get("body_composition") or {}
     ability = context.get("ability") or {}
     return {
         "sync": context.get("sync"),
@@ -375,6 +375,6 @@ def summarize_context(context: dict[str, Any]) -> dict[str, Any]:
         } if week else None,
         "recent_activity_count": len(context.get("recent_activities") or []),
         "latest_health": health.get("latest"),
-        "latest_inbody_date": (inbody.get("latest") or {}).get("scan_date"),
+        "latest_body_composition_date": (body_composition.get("latest") or {}).get("scan_date"),
         "latest_ability_date": ability.get("latest_date"),
     }

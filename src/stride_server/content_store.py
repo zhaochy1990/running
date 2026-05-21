@@ -266,3 +266,40 @@ def any_exists(
     config: ContentStorageConfig | None = None,
 ) -> bool:
     return any(exists(path, config=config) for path in relative_paths)
+
+
+def list_files_in_folder(
+    relative_dir: str,
+    *,
+    config: ContentStorageConfig | None = None,
+) -> list[str]:
+    """Return basenames of files in ``relative_dir`` from blob + filesystem.
+
+    Used by the weeks route to probe for body-composition artifacts that
+    follow a ``body-composition.*`` / ``inbody.*`` pattern (e.g.
+    ``body-composition.4-14.json`` — dated extra scans).
+    """
+    files: set[str] = set()
+    storage_config = _content_config(config)
+    blob_config = _blob_config_from_config(storage_config)
+    if blob_config is not None:
+        account_url, container = blob_config
+        prefix = _blob_name(relative_dir, storage_config).rstrip("/") + "/"
+        try:
+            for blob in _container_client(account_url, container).list_blobs(name_starts_with=prefix):
+                rest = blob.name[len(prefix):]
+                if rest and "/" not in rest:
+                    files.add(rest)
+        except Exception as exc:
+            logger.warning(
+                "Blob list_files failed for %s; falling back to filesystem: %s",
+                relative_dir,
+                exc,
+            )
+
+    dir_path = _file_path(relative_dir)
+    if dir_path.exists() and dir_path.is_dir():
+        for p in dir_path.iterdir():
+            if p.is_file():
+                files.add(p.name)
+    return sorted(files)

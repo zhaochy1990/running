@@ -3,9 +3,10 @@ import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, Legend,
 } from 'recharts'
-import { getInbody, getInbodySummary, type InBodyScan, type InBodySummary } from '../api'
+import { getBodyComposition, getBodyCompositionSummary, type BodyCompositionScan, type BodyCompositionSummary } from '../api'
 import { useUser } from '../UserContextValue'
 import ViewHead from '../components/ViewHead'
+import BodyCompositionEntryModal from './BodyCompositionEntryModal'
 
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
@@ -33,18 +34,20 @@ function formatDelta(v: number | null | undefined, unit = ''): string {
   return `${s}${unit}`
 }
 
-export default function InbodyPage() {
+export default function BodyCompositionPage() {
   const { user } = useUser()
-  const [scans, setScans] = useState<InBodyScan[]>([])
-  const [summary, setSummary] = useState<InBodySummary | null>(null)
+  const [scans, setScans] = useState<BodyCompositionScan[]>([])
+  const [summary, setSummary] = useState<BodyCompositionSummary | null>(null)
   const requestKey = user || ''
   const [loadedKey, setLoadedKey] = useState('')
   const loading = Boolean(requestKey && loadedKey !== requestKey)
+  const [showEntry, setShowEntry] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     if (!user) return
     let cancelled = false
-    Promise.all([getInbody(user), getInbodySummary(user)])
+    Promise.all([getBodyComposition(user), getBodyCompositionSummary(user)])
       .then(([list, sum]) => {
         if (cancelled) return
         setScans(list.scans)
@@ -56,7 +59,7 @@ export default function InbodyPage() {
     return () => {
       cancelled = true
     }
-  }, [requestKey, user])
+  }, [requestKey, user, refreshKey])
 
   // Charts want oldest-first
   const chartData = [...scans].reverse().map((s) => ({
@@ -76,18 +79,27 @@ export default function InbodyPage() {
         </div>
       ) : (
         <div className="animate-fade-in">
-          <ViewHead
-            eyebrow="体测记录 · InBody"
-            title="身体成分趋势"
-            lede={`InBody Body Composition — ${scans.length} 次扫描`}
-          />
+          <div className="flex items-start justify-between gap-4">
+            <ViewHead
+              eyebrow="体测记录"
+              title="身体成分趋势"
+              lede={`Body Composition — ${scans.length} 次扫描`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowEntry(true)}
+              className="shrink-0 mt-2 px-3 py-2 text-xs font-mono font-medium rounded-md bg-accent-amber/15 text-accent-amber hover:bg-accent-amber/25 transition-colors"
+            >
+              + 录入新数据
+            </button>
+          </div>
 
           {!latest && (
             <div className="bg-bg-card border border-border-subtle rounded-2xl p-10 text-center text-text-muted">
-              暂无 InBody 数据。本地通过{' '}
-              <code className="font-mono text-text-primary">coros-sync inbody add</code> 录入，
+              暂无体测数据。本地通过{' '}
+              <code className="font-mono text-text-primary">coros-sync body-composition add</code> 录入，
               然后{' '}
-              <code className="font-mono text-text-primary">coros-sync inbody push</code> 同步至线上。
+              <code className="font-mono text-text-primary">coros-sync body-composition push</code> 同步至线上。
             </div>
           )}
 
@@ -280,6 +292,18 @@ export default function InbodyPage() {
               </div>
             </>
           )}
+
+          {showEntry && user && (
+            <BodyCompositionEntryModal
+              user={user}
+              existingDates={new Set(scans.map((s) => s.scan_date))}
+              onClose={() => setShowEntry(false)}
+              onSaved={() => {
+                setShowEntry(false)
+                setRefreshKey((k) => k + 1)
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -325,7 +349,7 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle: str
 }
 
 type Mode = 'lean' | 'fat'
-type ChartRow = InBodyScan & { dateLabel: string }
+type ChartRow = BodyCompositionScan & { dateLabel: string }
 
 const SEGMENTS: { key: string; label: string; color: string }[] = [
   { key: 'left_arm',  label: '左臂',  color: '#7c4dff' },
@@ -416,7 +440,7 @@ function SegmentTrendChart({
   )
 }
 
-function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: InBodyScan }) {
+function SegmentAnalysis({ chartData, latest }: { chartData: ChartRow[]; latest: BodyCompositionScan }) {
   const [mode, setMode] = useState<Mode>('lean')
 
   const modeLabel = mode === 'lean' ? '肌肉量 (kg)' : '脂肪量 (kg)'
