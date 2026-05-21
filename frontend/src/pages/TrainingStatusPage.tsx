@@ -411,5 +411,20 @@ function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null
   )
 }
 
-// Placeholder for task 12
-function DataStatusFooter(_props: { zones: any; load: any }) { return <div data-section="footer" /> }
+// === Task 12: DataStatusFooter ===
+function DataStatusFooter({
+  zones, load,
+}: {
+  zones: StrideZonesResponse | null
+  load: StrideTrainingLoadResponse | null
+}) {
+  return (
+    <div className="text-[10px] font-mono text-text-faint border-t border-border-subtle pt-3 mt-4 space-y-0.5">
+      <div>
+        Calibration: {zones?.threshold?.as_of_date ?? '—'} · 来源：STRIDE 自研算法
+      </div>
+      <div>Training load latest: {load?.current?.date ?? '—'}</div>
+      <div>RHR / HRV: 来自手表原始读数（COROS / Garmin）</div>
+    </div>
+  )
+}
