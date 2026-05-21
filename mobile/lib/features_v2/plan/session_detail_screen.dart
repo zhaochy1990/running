@@ -4,7 +4,7 @@
 /// 参数：folder, date (YYYY-MM-DD), sessionIndex (int)
 ///
 /// 内容：
-///   1. StrideTopBar：返回 + "课时详情"
+///   1. StrideScreenHero：返回 + 「{周X} · {kind}」eyebrow + 课名 h1
 ///   2. 顶部摘要卡：课名 + 强度 pill + StrideStatRow（距离/时长/配速区间）
 ///   3. 第二 StatRow：心率区间 / 卡路里估算 / 区间标签
 ///   4. 执行要点 section（notes_md 或占位）
@@ -22,9 +22,10 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/api/stride_api.dart';
+import '../../shared/utils/format.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/stat_row.dart';
-import '../_shared/widgets/top_bar.dart';
 import '../../data/models/plan.dart';
 import 'models/day_plan.dart';
 import 'providers/plan_day_provider.dart';
@@ -56,63 +57,94 @@ class SessionDetailScreen extends ConsumerWidget {
     // Also fetch the raw PlanDay to access nutrition + session.notes
     final rawAsync = ref.watch(_planDayRawProvider((date: date, sessionIndex: sessionIndex)));
 
+    final weekday = weekdayCN(date);
+    final fallbackEyebrow = weekday.isEmpty ? '课时' : weekday;
+
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: StrideTopBar(
-        title: '课时详情',
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      body: SafeArea(
+        bottom: false,
+        child: async.when(
+          loading: () => Column(
             children: [
-              const Text(
-                '加载失败',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs15,
-                  color: StrideTokens.danger,
-                ),
+              StrideScreenHero.withBack(
+                eyebrow: fallbackEyebrow,
+                title: '加载中…',
               ),
-              const SizedBox(height: StrideTokens.spaceMd),
-              TextButton(
-                onPressed: () => ref.invalidate(
-                  planDayProvider((date: date, sessionIndex: sessionIndex)),
-                ),
-                child: const Text('重试'),
+              const Expanded(
+                child: Center(child: CircularProgressIndicator()),
               ),
             ],
           ),
-        ),
-        data: (plan) => rawAsync.when(
-          loading: () => _SessionDetailBody(
-            plan: plan,
-            folder: folder,
-            date: date,
-            sessionIndex: sessionIndex,
-            rawSession: null,
-            nutrition: null,
+          error: (e, _) => Column(
+            children: [
+              StrideScreenHero.withBack(
+                eyebrow: fallbackEyebrow,
+                title: '加载失败',
+              ),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '加载失败',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontSans,
+                          fontSize: StrideTokens.fs15,
+                          color: StrideTokens.danger,
+                        ),
+                      ),
+                      const SizedBox(height: StrideTokens.spaceMd),
+                      TextButton(
+                        onPressed: () => ref.invalidate(
+                          planDayProvider(
+                            (date: date, sessionIndex: sessionIndex),
+                          ),
+                        ),
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-          error: (_, _) => _SessionDetailBody(
-            plan: plan,
-            folder: folder,
-            date: date,
-            sessionIndex: sessionIndex,
-            rawSession: null,
-            nutrition: null,
-          ),
-          data: (raw) => _SessionDetailBody(
-            plan: plan,
-            folder: folder,
-            date: date,
-            sessionIndex: sessionIndex,
-            rawSession: raw.session,
-            nutrition: raw.nutrition,
+          data: (plan) => Column(
+            children: [
+              StrideScreenHero.withBack(
+                eyebrow: '$fallbackEyebrow · ${DayPlan.kindLabel(plan.kind)}',
+                title: plan.name,
+              ),
+              Expanded(
+                child: rawAsync.when(
+                  loading: () => _SessionDetailBody(
+                    plan: plan,
+                    folder: folder,
+                    date: date,
+                    sessionIndex: sessionIndex,
+                    rawSession: null,
+                    nutrition: null,
+                  ),
+                  error: (_, _) => _SessionDetailBody(
+                    plan: plan,
+                    folder: folder,
+                    date: date,
+                    sessionIndex: sessionIndex,
+                    rawSession: null,
+                    nutrition: null,
+                  ),
+                  data: (raw) => _SessionDetailBody(
+                    plan: plan,
+                    folder: folder,
+                    date: date,
+                    sessionIndex: sessionIndex,
+                    rawSession: raw.session,
+                    nutrition: raw.nutrition,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

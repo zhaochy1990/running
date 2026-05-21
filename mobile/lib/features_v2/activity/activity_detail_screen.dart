@@ -16,8 +16,8 @@ import '../../data/api/stride_api.dart';
 import '../../core/auth/current_user.dart';
 import '../../core/theme/pill_colors.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/stat_row.dart';
-import '../_shared/widgets/top_bar.dart';
 import 'models/activity_detail.dart';
 import 'providers/activity_detail_provider.dart';
 import 'widgets/lap_table.dart';
@@ -34,39 +34,41 @@ class ActivityDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: detailAsync.when(
-        data: (d) => StrideTopBar(
-          leading: const BackButton(),
-          title: d.activity.name ?? d.activity.sportName,
-          actions: [
-            Text(
-              d.activity.date,
-              style: const TextStyle(
-                fontFamily: AppTypography.fontMono,
-                fontSize: StrideTokens.fs12,
-                color: StrideTokens.muted,
+      body: SafeArea(
+        bottom: false,
+        child: detailAsync.when(
+          loading: () => Column(
+            children: [
+              StrideScreenHero.withBack(eyebrow: '活动详情', title: '加载中…'),
+              const Expanded(
+                child: Center(
+                  child: CircularProgressIndicator(color: StrideTokens.accent),
+                ),
               ),
-            ),
-          ],
-        ),
-        loading: () => const StrideTopBar(
-          leading: BackButton(),
-          title: '活动详情',
-        ),
-        error: (_, _) => const StrideTopBar(
-          leading: BackButton(),
-          title: '活动详情',
-        ),
-      ),
-      body: detailAsync.when(
-        loading: () => const Center(
-          child: CircularProgressIndicator(color: StrideTokens.accent),
-        ),
-        error: (err, _) => _ErrorBody(message: err.toString()),
-        data: (detail) => _DetailBody(
-          detail: detail,
-          activityId: activityId,
-          ref: ref,
+            ],
+          ),
+          error: (err, _) => Column(
+            children: [
+              StrideScreenHero.withBack(eyebrow: '活动详情', title: '加载失败'),
+              Expanded(child: _ErrorBody(message: err.toString())),
+            ],
+          ),
+          data: (detail) => Column(
+            children: [
+              StrideScreenHero.withBack(
+                eyebrow: '活动 · ${detail.activity.sportName}',
+                title: detail.activity.name ?? detail.activity.sportName,
+                deck: '${detail.activity.date} · ${detail.activity.durationFmt}',
+              ),
+              Expanded(
+                child: _DetailBody(
+                  detail: detail,
+                  activityId: activityId,
+                  ref: ref,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -175,6 +175,6 @@ class HomeData {
   final List<HomeActivity> recentActivities;
   final WeeklyStats weeklyStats;
   final LifetimeStats lifetimeStats;
-  final String planState; // none|active|generating
+  final String planState; // none|active_no_week|active (src/stride_server/routes/home.py)
   final WatchInfo? watch;
 }

@@ -16,8 +16,9 @@ import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/api/stride_api.dart';
+import '../_shared/widgets/screen_hero.dart';
+import '../_shared/widgets/section_header.dart';
 import '../_shared/widgets/stat_row.dart';
-import '../_shared/widgets/top_bar.dart';
 import 'models/home_data.dart';
 import 'providers/home_provider.dart';
 import 'widgets/status_ring_card.dart';
@@ -31,31 +32,6 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: StrideTopBar(
-        leading: GestureDetector(
-          onTap: () => context.go(RoutesV2.me),
-          child: const CircleAvatar(
-            radius: 16,
-            backgroundColor: StrideTokens.grid,
-            child: Icon(Icons.person, size: 18, color: StrideTokens.fgSoft),
-          ),
-        ),
-        title: _todayLabel(),
-        actions: [
-          homeAsync.when(
-            data: (_) => _SyncButton(onSync: () => _doSync(context, ref)),
-            loading: () => const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: StrideTokens.accent,
-              ),
-            ),
-            error: (_, _) => _SyncButton(onSync: () => _doSync(context, ref)),
-          ),
-        ],
-      ),
       body: homeAsync.when(
         loading: () => const Center(
           child: CircularProgressIndicator(color: StrideTokens.accent),
@@ -74,11 +50,6 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  String _todayLabel() {
-    final now = DateTime.now();
-    return '${now.month}月${now.day}日';
-  }
-
   Future<void> _doSync(BuildContext context, WidgetRef ref) async {
     final userId = ref.read(currentUserIdProvider);
     if (userId == null) return;
@@ -92,19 +63,6 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _SyncButton extends StatelessWidget {
-  const _SyncButton({required this.onSync});
-  final VoidCallback onSync;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onSync,
-      child: const Icon(Icons.sync, size: 22, color: StrideTokens.fgSoft),
-    );
-  }
-}
-
 class _HomeBody extends StatelessWidget {
   const _HomeBody({required this.data, required this.onRefresh});
   final HomeData data;
@@ -112,118 +70,157 @@ class _HomeBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      color: StrideTokens.accent,
-      onRefresh: onRefresh,
-      child: ListView(
-        padding: const EdgeInsets.symmetric(
-          horizontal: StrideTokens.spaceLg,
-          vertical: StrideTokens.spaceLg,
-        ),
-        children: [
-          // 1. Status rings
-          StatusRingCard(ring: data.statusRing),
-          const SizedBox(height: StrideTokens.spaceLg),
+    return SafeArea(
+      bottom: false,
+      child: RefreshIndicator(
+        color: StrideTokens.accent,
+        onRefresh: onRefresh,
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: [
+            StrideScreenHero(
+              eyebrow: '主页 · 本周',
+              title: _heroTitle(data.planState),
+              deck: _heroDeck(data),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                StrideTokens.spaceLg,
+                StrideTokens.spaceSm,
+                StrideTokens.spaceLg,
+                StrideTokens.space3xl,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  StatusRingCard(ring: data.statusRing),
+                  const SizedBox(height: StrideTokens.spaceLg),
 
-          // 2. Plan-state CTA: build master plan (none) or generate this
-          //    week's plan (active_no_week). When state == "active" the
-          //    weekly plan already exists and no CTA is shown.
-          if (data.planState == 'none') ...[
-            _PlanCta(
-              icon: Icons.auto_awesome,
-              title: '生成个性化训练计划',
-              subtitle: '基于你的训练数据，AI 为你定制专属计划',
-              onTap: () => context.push(RoutesV2.trainingPlanGoal),
+                  // planState values match server Literal in
+                  // src/stride_server/routes/home.py: when "active" the
+                  // weekly plan already exists so no CTA is shown.
+                  if (data.planState == 'none') ...[
+                    _PlanCta(
+                      icon: Icons.auto_awesome,
+                      title: '生成个性化训练计划',
+                      subtitle: '基于你的训练数据，AI 为你定制专属计划',
+                      onTap: () => context.push(RoutesV2.trainingPlanGoal),
+                    ),
+                    const SizedBox(height: StrideTokens.spaceLg),
+                  ] else if (data.planState == 'active_no_week') ...[
+                    _PlanCta(
+                      icon: Icons.calendar_today,
+                      title: '立即生成本周计划',
+                      subtitle: '基于训练总纲 + 上周完成情况，秒级生成',
+                      onTap: () {
+                        final today = DateTime.now();
+                        final monday = today.subtract(
+                          Duration(days: today.weekday - 1),
+                        );
+                        final weekStart =
+                            '${monday.year.toString().padLeft(4, '0')}-'
+                            '${monday.month.toString().padLeft(2, '0')}-'
+                            '${monday.day.toString().padLeft(2, '0')}';
+                        context.push(RoutesV2.generate(weekStart));
+                      },
+                    ),
+                    const SizedBox(height: StrideTokens.spaceLg),
+                  ],
+
+                  const WfSectionHeader(title: '本周统计'),
+                  StrideStatRow(items: [
+                    StatItem(
+                      label: '里程',
+                      value:
+                          data.weeklyStats.totalDistanceKm.toStringAsFixed(1),
+                      unit: 'km',
+                    ),
+                    StatItem(
+                      label: '时长',
+                      value: _fmtDuration(data.weeklyStats.totalDurationSec),
+                    ),
+                    StatItem(
+                      label: '课次',
+                      value: data.weeklyStats.sessionCount.toString(),
+                      unit: '次',
+                    ),
+                  ]),
+                  const SizedBox(height: StrideTokens.spaceLg),
+
+                  const WfSectionHeader(title: '最近活动'),
+                  if (data.recentActivities.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(
+                        vertical: StrideTokens.spaceXl,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '暂无近期活动',
+                          style: TextStyle(
+                            fontFamily: AppTypography.fontSans,
+                            fontSize: StrideTokens.fs14,
+                            color: StrideTokens.muted,
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    ...data.recentActivities.map(
+                      (a) => Padding(
+                        padding: const EdgeInsets.only(
+                          bottom: StrideTokens.spaceSm,
+                        ),
+                        child: _ActivityCard(activity: a),
+                      ),
+                    ),
+
+                  const SizedBox(height: StrideTokens.spaceLg),
+                  const WfSectionHeader(title: '累计数据'),
+                  StrideStatRow(items: [
+                    StatItem(
+                      label: '总里程',
+                      value: data.lifetimeStats.totalDistanceKm
+                          .toStringAsFixed(0),
+                      unit: 'km',
+                    ),
+                    StatItem(
+                      label: '总活动',
+                      value: data.lifetimeStats.totalActivities.toString(),
+                      unit: '次',
+                    ),
+                    const StatItem(label: '', value: ''),
+                  ]),
+                ],
+              ),
             ),
-            const SizedBox(height: StrideTokens.spaceLg),
-          ] else if (data.planState == 'active_no_week') ...[
-            _PlanCta(
-              icon: Icons.calendar_today,
-              title: '立即生成本周计划',
-              subtitle: '基于训练总纲 + 上周完成情况，秒级生成',
-              onTap: () {
-                final today = DateTime.now();
-                final monday = today.subtract(
-                  Duration(days: today.weekday - 1),
-                );
-                final weekStart =
-                    '${monday.year.toString().padLeft(4, '0')}-'
-                    '${monday.month.toString().padLeft(2, '0')}-'
-                    '${monday.day.toString().padLeft(2, '0')}';
-                context.push(RoutesV2.generate(weekStart));
-              },
-            ),
-            const SizedBox(height: StrideTokens.spaceLg),
           ],
-
-          // 3. Weekly stats
-          const _SectionHeader(title: '本周统计'),
-          const SizedBox(height: StrideTokens.spaceSm),
-          StrideStatRow(items: [
-            StatItem(
-              label: '里程',
-              value: data.weeklyStats.totalDistanceKm.toStringAsFixed(1),
-              unit: 'km',
-            ),
-            StatItem(
-              label: '时长',
-              value: _fmtDuration(data.weeklyStats.totalDurationSec),
-            ),
-            StatItem(
-              label: '课次',
-              value: data.weeklyStats.sessionCount.toString(),
-              unit: '次',
-            ),
-          ]),
-          const SizedBox(height: StrideTokens.spaceLg),
-
-          // 4. Recent activities
-          const _SectionHeader(title: '最近活动'),
-          const SizedBox(height: StrideTokens.spaceSm),
-          if (data.recentActivities.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: StrideTokens.spaceXl),
-              child: Center(
-                child: Text(
-                  '暂无近期活动',
-                  style: TextStyle(
-                    fontFamily: AppTypography.fontSans,
-                    fontSize: StrideTokens.fs14,
-                    color: StrideTokens.muted,
-                  ),
-                ),
-              ),
-            )
-          else
-            ...data.recentActivities.map(
-              (a) => Padding(
-                padding: const EdgeInsets.only(bottom: StrideTokens.spaceSm),
-                child: _ActivityCard(activity: a),
-              ),
-            ),
-
-          // 5. Lifetime stats
-          const SizedBox(height: StrideTokens.spaceLg),
-          const _SectionHeader(title: '累计数据'),
-          const SizedBox(height: StrideTokens.spaceSm),
-          StrideStatRow(items: [
-            StatItem(
-              label: '总里程',
-              value: data.lifetimeStats.totalDistanceKm.toStringAsFixed(0),
-              unit: 'km',
-            ),
-            StatItem(
-              label: '总活动',
-              value: data.lifetimeStats.totalActivities.toString(),
-              unit: '次',
-            ),
-            const StatItem(label: '', value: ''),
-          ]),
-
-          const SizedBox(height: StrideTokens.space3xl),
-        ],
+        ),
       ),
     );
+  }
+
+  String _heroTitle(String planState) {
+    switch (planState) {
+      case 'active':
+        return '本周训练 · 进展中';
+      case 'active_no_week':
+        return '本周计划待生成';
+      case 'none':
+      default:
+        return '欢迎来到 STRIDE';
+    }
+  }
+
+  String _heroDeck(HomeData data) {
+    final now = DateTime.now();
+    final monday = now.subtract(Duration(days: now.weekday - 1));
+    final sunday = monday.add(const Duration(days: 6));
+    final range =
+        '${monday.month}/${monday.day.toString().padLeft(2, '0')} — '
+        '${sunday.month}/${sunday.day.toString().padLeft(2, '0')}';
+    final km = data.weeklyStats.totalDistanceKm.toStringAsFixed(1);
+    final sessions = data.weeklyStats.sessionCount;
+    return '$range · 本周完成 $km km · $sessions 节';
   }
 
   String _fmtDuration(int seconds) {
@@ -231,25 +228,6 @@ class _HomeBody extends StatelessWidget {
     final m = (seconds % 3600) ~/ 60;
     if (h > 0) return '${h}h${m.toString().padLeft(2, '0')}m';
     return '$m分钟';
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: const TextStyle(
-        fontFamily: AppTypography.fontSans,
-        fontSize: StrideTokens.fs13,
-        fontWeight: FontWeight.w600,
-        color: StrideTokens.muted,
-        letterSpacing: 0.5,
-      ),
-    );
   }
 }
 
