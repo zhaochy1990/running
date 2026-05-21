@@ -341,6 +341,75 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
   )
 }
 
-// Placeholders for tasks 11-12
-function TrainingLoadSection(_props: { load: any }) { return <div data-section="load" /> }
+// === Task 11: TrainingLoadSection ===
+function LoadStat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="flex flex-col">
+      <div className="text-[10px] font-mono text-text-faint">{label}</div>
+      <div className="text-lg font-mono font-medium" style={{ color }}>{value}</div>
+    </div>
+  )
+}
+
+function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null }) {
+  const cur = load?.current
+  const series = (load?.series ?? []).map((r) => ({
+    ...r,
+    dateLabel: formatDateShort(r.date),
+  }))
+
+  const stateLabel = (() => {
+    const ratio = cur?.load_ratio
+    if (ratio == null) return '—'
+    if (ratio < 0.8) return '恢复期'
+    if (ratio < 1.0) return '正常训练'
+    if (ratio < 1.3) return '产出期'
+    return '过度负荷'
+  })()
+
+  return (
+    <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 mb-6">
+      <div className="text-xs font-mono text-text-muted mb-2">训练负荷（STRIDE）</div>
+      {!cur ? (
+        <div className="text-xs font-mono text-text-muted py-6 text-center">暂无训练负荷数据</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            <LoadStat label="Acute" value={cur.acute_load?.toFixed(1) ?? '—'} color="#d97706" />
+            <LoadStat label="Chronic" value={cur.chronic_load?.toFixed(1) ?? '—'} color="#0097a7" />
+            <LoadStat
+              label="Form"
+              value={cur.form != null ? (cur.form > 0 ? `+${cur.form.toFixed(1)}` : cur.form.toFixed(1)) : '—'}
+              color={cur.form != null && cur.form < -10 ? '#d32f2f' : '#00a85a'}
+            />
+            <LoadStat label="Ratio" value={cur.load_ratio?.toFixed(2) ?? '—'} color="#7a4dd4" />
+            <LoadStat label="状态" value={stateLabel} color="#1a1c2e" />
+          </div>
+          <div className="text-[11px] font-mono text-text-muted mb-2">
+            Readiness: <span className="text-text-primary">{cur.readiness_gate ?? '—'}</span>
+            {cur.readiness_reasons.length > 0 && (
+              <span className="ml-2 text-text-faint">· {cur.readiness_reasons.join(' · ')}</span>
+            )}
+          </div>
+          {series.length > 0 && (
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid {...GRID_STYLE} />
+                <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
+                <YAxis tick={AXIS_TICK} />
+                <Tooltip {...TOOLTIP_STYLE} />
+                <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+                <Area type="monotone" dataKey="acute_load" name="Acute" stroke="#d97706" fill="#d97706" fillOpacity={0.15} />
+                <Area type="monotone" dataKey="chronic_load" name="Chronic" stroke="#0097a7" fill="#0097a7" fillOpacity={0.15} />
+                <Area type="monotone" dataKey="form" name="Form" stroke="#00a85a" fill="#00a85a" fillOpacity={0.1} />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+// Placeholder for task 12
 function DataStatusFooter(_props: { zones: any; load: any }) { return <div data-section="footer" /> }
