@@ -9,6 +9,7 @@ import HealthPage from './pages/HealthPage'
 import BodyCompositionPage from './pages/BodyCompositionPage'
 import TrainingPlanPage from './pages/TrainingPlanPage'
 import AbilityPage from './pages/AbilityPage'
+import TrainingStatusPage from './pages/TrainingStatusPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import OnboardingWizard from './pages/OnboardingWizard'
@@ -91,6 +92,7 @@ function App() {
                     <Route path="/body-composition" element={<BodyCompositionPage />} />
                     <Route path="/plan" element={<TrainingPlanPage />} />
                     <Route path="/ability" element={<AbilityPage />} />
+                    <Route path="/training-status" element={<TrainingStatusPage />} />
                     <Route path="/teams" element={<TeamsListPage />} />
                     <Route path="/teams/new" element={<CreateTeamPage />} />
                     <Route path="/teams/:id" element={<TeamDetailPage />} />
