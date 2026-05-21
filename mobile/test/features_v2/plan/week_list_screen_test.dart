@@ -262,9 +262,10 @@ void main() {
     expect(find.text('日'), findsAtLeastNWidgets(1));
   });
 
-  // ── 10. Top bar title ─────────────────────────────────────────────────────
-  testWidgets('top bar shows 训练 title', (tester) async {
+  // ── 10. Hero title + eyebrow ─────────────────────────────────────────────
+  testWidgets('hero shows 训练周 title', (tester) async {
     await _pump(tester, AsyncData([_week1]));
-    expect(find.text('训练'), findsOneWidget);
+    expect(find.text('训练周'), findsOneWidget);
+    expect(find.text('训练 · 周计划'), findsOneWidget);
   });
 }

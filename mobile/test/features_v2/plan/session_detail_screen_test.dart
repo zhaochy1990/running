@@ -145,9 +145,12 @@ Future<DayPlan> _resolve(AsyncValue<DayPlan> state) {
 void main() {
   // ── 1. E 课渲染 ─────────────────────────────────────────────────────────────
 
-  testWidgets('renders session name with fs20 bold style', (tester) async {
+  testWidgets('renders session name in hero + summary card', (tester) async {
     await _pump(tester, AsyncData(_makeEasyPlan(name: '晨间轻松跑')));
-    expect(find.text('晨间轻松跑'), findsOneWidget);
+    // Name appears twice post-wave-1: once in StrideScreenHero h1, once in
+    // the _SummaryCard title. The duplicate is intentional until wave 2
+    // collapses the summary card.
+    expect(find.text('晨间轻松跑'), findsAtLeastNWidgets(1));
   });
 
   testWidgets('E-kind pill has green variant background', (tester) async {
@@ -186,7 +189,12 @@ void main() {
       AsyncData(_makeStrengthPlan()),
       date: '2026-05-14',
     );
-    expect(find.text('力量动作清单'), findsOneWidget);
+    // The hero now occupies the top of the viewport, pushing the strength
+    // section header below the fold. Look past Sliver offstage clipping.
+    expect(
+      find.text('力量动作清单', skipOffstage: false),
+      findsOneWidget,
+    );
   });
 
   testWidgets('E kind does NOT show 力量动作清单 section', (tester) async {
@@ -281,7 +289,9 @@ void main() {
       tester,
       AsyncError(Exception('network error'), StackTrace.empty),
     );
-    expect(find.text('加载失败'), findsOneWidget);
+    // Post-wave-1 the error string appears both in the hero title and the
+    // body's error column.
+    expect(find.text('加载失败'), findsAtLeastNWidgets(1));
   });
 
   // ── 6. 第二 stat row ──────────────────────────────────────────────────────────
@@ -304,9 +314,11 @@ void main() {
     expect(find.text('训前营养'), findsOneWidget);
   });
 
-  testWidgets('top bar shows 课时详情 title', (tester) async {
+  testWidgets('hero eyebrow shows weekday and kind label', (tester) async {
     await _pump(tester, AsyncData(_makeEasyPlan()));
-    expect(find.text('课时详情'), findsOneWidget);
+    // Date 2026-05-12 is Tuesday → weekdayCN → 周二. Kind 'E' falls back to
+    // the upper-cased raw code per DayPlan.kindLabel.
+    expect(find.text('周二 · E'), findsOneWidget);
   });
 
   // ── 8. Bottom buttons ─────────────────────────────────────────────────────────

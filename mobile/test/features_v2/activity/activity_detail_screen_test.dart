@@ -141,23 +141,25 @@ void main() {
       AsyncData(_makeDetail(sportNote: '今天感觉很好，配速轻松。')),
     );
 
-    // Scroll to reveal the training note section (at bottom of list)
-    await tester.scrollUntilVisible(
-      find.textContaining('今天感觉很好'),
-      500,
+    // The training-note section sits below the chart sections. Looking
+    // past sliver offstage clipping is enough to assert it's rendered —
+    // scrollUntilVisible would mount the charts and fire real Dio calls,
+    // leaking pending timers (the test's `timeseriesProvider` override
+    // is keyed by a Set literal that does not Record-equal the widget's
+    // own Set literal).
+    expect(
+      find.textContaining('今天感觉很好', skipOffstage: false),
+      findsOneWidget,
     );
-    expect(find.textContaining('今天感觉很好'), findsOneWidget);
   });
 
   testWidgets('sport_note=null shows v1.x placeholder', (tester) async {
     await _pump(tester, AsyncData(_makeDetail(sportNote: null)));
 
-    // The placeholder text may be scrolled off — scroll to bottom to find it
-    await tester.scrollUntilVisible(
-      find.textContaining('v1.x 即将支持'),
-      500,
+    expect(
+      find.textContaining('v1.x 即将支持', skipOffstage: false),
+      findsOneWidget,
     );
-    expect(find.textContaining('v1.x 即将支持'), findsOneWidget);
   });
 
   testWidgets('GPS map placeholder is shown', (tester) async {
@@ -169,8 +171,9 @@ void main() {
   testWidgets('lap table renders lap rows', (tester) async {
     await _pump(tester, AsyncData(_makeDetail()));
 
-    // Header row labels
-    expect(find.text('圈'), findsOneWidget);
+    // Lap table sits below the charts; same offstage-clipping concern
+    // as the sport_note tests.
+    expect(find.text('圈', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('loading state shows CircularProgressIndicator', (tester) async {
@@ -205,7 +208,8 @@ void main() {
       AsyncError(Exception('network error'), StackTrace.empty),
     );
 
-    expect(find.text('加载失败'), findsOneWidget);
+    // Hero title + body error column both render the string post-wave-1.
+    expect(find.text('加载失败'), findsAtLeastNWidgets(1));
   });
 
   testWidgets('AI commentary card shows 重新生成 button', (tester) async {
