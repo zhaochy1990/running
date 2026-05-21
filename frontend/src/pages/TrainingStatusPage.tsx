@@ -112,8 +112,82 @@ function TimeRangeToggle({ value, onChange }: { value: DaysWindow; onChange: (d:
   )
 }
 
-// === Placeholders filled by subsequent tasks (8-12) ===
-function MetricsRow(_props: { health: any; hrv: any; zones: any }) { return <div data-section="metrics" /> }
+// === Task 8: MetricsRow ===
+function MetricCard({
+  label, sublabel, value, unit, baseline, color,
+}: {
+  label: string
+  sublabel: string
+  value: string
+  unit: string
+  baseline?: string | null
+  color: string
+}) {
+  return (
+    <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 flex flex-col gap-1">
+      <div className="text-xs font-mono text-text-muted">{label}</div>
+      <div className="text-[10px] font-mono text-text-faint">{sublabel}</div>
+      <div className="flex items-baseline gap-1 mt-1">
+        <span className="text-2xl font-mono font-medium" style={{ color }}>{value}</span>
+        <span className="text-xs font-mono text-text-muted">{unit}</span>
+      </div>
+      {baseline != null && (
+        <div className="text-[10px] font-mono text-text-muted mt-0.5">基线 {baseline}</div>
+      )}
+    </div>
+  )
+}
+
+function MetricsRow({
+  health, hrv, zones,
+}: {
+  health: { health: HealthRecord[]; rhr_baseline: number | null } | null
+  hrv: { hrv: HrvDailyRecord[] } | null
+  zones: StrideZonesResponse | null
+}) {
+  const latestRhr = health?.health.find((r) => r.rhr != null)?.rhr ?? null
+  const rhrBaseline = health?.rhr_baseline ?? null
+  const latestHrv = hrv?.hrv.slice().reverse().find((r) => r.last_night_avg != null)?.last_night_avg ?? null
+  const threshold = zones?.threshold
+
+  const pacePerKm = threshold?.pace_per_km_sec
+  const paceStr = pacePerKm != null ? `${Math.floor(pacePerKm / 60)}:${String(pacePerKm % 60).padStart(2, '0')}` : '—'
+  const hrStr = threshold?.hr_bpm != null ? String(Math.round(threshold.hr_bpm)) : '—'
+
+  return (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <MetricCard
+        label="RHR" sublabel="Resting HR · 手表读数"
+        value={latestRhr != null ? String(latestRhr) : '—'}
+        unit="bpm"
+        baseline={rhrBaseline != null ? `${rhrBaseline} bpm` : null}
+        color="#0097a7"
+      />
+      <MetricCard
+        label="HRV" sublabel="Last-night avg · 手表读数"
+        value={latestHrv != null ? String(latestHrv) : '—'}
+        unit="ms"
+        color="#7a4dd4"
+      />
+      <MetricCard
+        label="阈值配速" sublabel="STRIDE Threshold Pace"
+        value={paceStr}
+        unit="/km"
+        baseline={threshold?.speed_confidence ? `置信 ${threshold.speed_confidence}` : null}
+        color="#00a85a"
+      />
+      <MetricCard
+        label="阈值心率" sublabel="STRIDE Threshold HR"
+        value={hrStr}
+        unit="bpm"
+        baseline={threshold?.hr_confidence ? `置信 ${threshold.hr_confidence}` : null}
+        color="#d97706"
+      />
+    </div>
+  )
+}
+
+// Placeholders for tasks 9-12
 function TrendsRow(_props: { health: any; hrv: any; days: DaysWindow }) { return <div data-section="trends" /> }
 function ZonesRow(_props: { zones: any }) { return <div data-section="zones" /> }
 function TrainingLoadSection(_props: { load: any }) { return <div data-section="load" /> }
