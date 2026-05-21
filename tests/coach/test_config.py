@@ -240,3 +240,142 @@ def test_api_kind_responses_round_trips(tmp_path: Path) -> None:
     cfg = load_config(p)
     assert cfg.generator.api_kind == "responses"
     assert cfg.reviewer.api_kind == "chat-completions"  # only generator overridden
+
+
+# ---------------------------------------------------------------------------
+# reasoning_effort (PR #25 — gpt-5 / o-series reasoning models)
+# ---------------------------------------------------------------------------
+
+
+def test_reasoning_effort_unset_defaults_to_none(tmp_path: Path) -> None:
+    """Default behaviour: when not in toml, ModelSpec.reasoning_effort=None,
+    so llm_factory leaves the kwarg unset and the model's own default
+    (typically ``medium``) applies."""
+    p = tmp_path / "coach.toml"
+    p.write_text(_valid_toml())
+    cfg = load_config(p)
+    assert cfg.generator.reasoning_effort is None
+
+
+def test_reasoning_effort_each_valid_value_round_trips(tmp_path: Path) -> None:
+    for effort in ("minimal", "low", "medium", "high"):
+        toml = _valid_toml().replace(
+            "timeout_s    = 120",
+            f"timeout_s    = 120\nreasoning_effort = \"{effort}\"",
+            1,
+        )
+        p = tmp_path / f"coach-{effort}.toml"
+        p.write_text(toml)
+        cfg = load_config(p)
+        assert cfg.generator.reasoning_effort == effort, effort
+
+
+def test_reasoning_effort_typo_rejected_at_load(tmp_path: Path) -> None:
+    """A typo (``"hihg"`` for ``"high"``) must fail at load time, not at
+    the first LLM call returning 400. Guards against the round-trip-only
+    string passthrough that the original PR #25 had."""
+    bad = _valid_toml().replace(
+        "timeout_s    = 120",
+        "timeout_s    = 120\nreasoning_effort = \"hihg\"",
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(bad)
+    with pytest.raises(CoachConfigError, match="unknown reasoning_effort"):
+        load_config(p)
+
+
+def test_reasoning_effort_error_lists_valid_values(tmp_path: Path) -> None:
+    """The error message tells the operator what to use — important when
+    the typo is subtle (``"med"`` vs ``"medium"``)."""
+    bad = _valid_toml().replace(
+        "timeout_s    = 120",
+        "timeout_s    = 120\nreasoning_effort = \"med\"",
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(bad)
+    with pytest.raises(CoachConfigError, match="high.*low.*medium.*minimal"):
+        load_config(p)
+
+
+# ---------------------------------------------------------------------------
+# Resolver precedence — coach.local.toml > coach.toml
+# (PR #25 rename: developer config split from the Docker-build prod artifact)
+# ---------------------------------------------------------------------------
+
+
+def test_resolver_prefers_coach_local_toml_when_present(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When both ``coach.local.toml`` and ``coach.toml`` exist at the
+    repo root, the local file wins. This is the developer-machine path:
+    fresh checkout has ``coach.local.toml`` (committed) and may or may
+    not have ``coach.toml`` after building Docker locally."""
+    from coach.runtime.config import _resolve_path
+
+    monkeypatch.delenv("STRIDE_COACH_CONFIG_PATH", raising=False)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "coach.local.toml").write_text("# local\n", encoding="utf-8")
+    (config_dir / "coach.toml").write_text("# prod fallback\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "coach.runtime.config._find_repo_root", lambda: tmp_path
+    )
+    resolved = _resolve_path(None)
+    assert resolved.name == "coach.local.toml"
+
+
+def test_resolver_falls_back_to_coach_toml_when_local_absent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The Docker prod path: only ``coach.toml`` exists (created by
+    ``cp coach.prod.toml coach.toml`` in the Dockerfile). The local
+    file isn't shipped — resolver must fall through to the prod file."""
+    from coach.runtime.config import _resolve_path
+
+    monkeypatch.delenv("STRIDE_COACH_CONFIG_PATH", raising=False)
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "coach.toml").write_text("# prod\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "coach.runtime.config._find_repo_root", lambda: tmp_path
+    )
+    resolved = _resolve_path(None)
+    assert resolved.name == "coach.toml"
+
+
+def test_resolver_explicit_path_overrides_both(tmp_path: Path) -> None:
+    """Explicit ``path=`` argument bypasses the file-discovery chain."""
+    from coach.runtime.config import _resolve_path
+
+    custom = tmp_path / "custom.toml"
+    custom.write_text("# custom\n", encoding="utf-8")
+    resolved = _resolve_path(custom)
+    assert resolved == custom.resolve()
+
+
+def test_resolver_env_var_overrides_repo_files(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """``STRIDE_COACH_CONFIG_PATH`` env var trumps the repo-root files."""
+    from coach.runtime.config import _resolve_path
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "coach.local.toml").write_text("# local\n", encoding="utf-8")
+    custom = tmp_path / "env.toml"
+    custom.write_text("# from env\n", encoding="utf-8")
+
+    monkeypatch.setenv("STRIDE_COACH_CONFIG_PATH", str(custom))
+    monkeypatch.setattr(
+        "coach.runtime.config._find_repo_root", lambda: tmp_path
+    )
+    resolved = _resolve_path(None)
+    assert resolved == custom.resolve()

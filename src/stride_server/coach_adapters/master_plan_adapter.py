@@ -139,15 +139,12 @@ def generate_master_plan(state: GenState) -> dict:
     user_message = [{"role": "user", "content": user_text}]
 
     client = LLMClient()
-    # max_tokens=16384 (was 8192): gpt-5.5 is a reasoning model whose
-    # reasoning tokens share the output budget. A typical MasterPlan
-    # serialisation is ~3500 chars (~1200 tokens); reasoning can consume
-    # 4-6k tokens, leaving us bumping against 8192 occasionally and
-    # truncating the JSON mid-stream → parse_failed. Doubling the cap is
-    # cheap insurance against intermittent truncation. See probe results
-    # in 2026-05-20 S1 baseline run (.tmp/raw/*.txt).
-    _MAX_TOKENS = 16384
-    raw = client.chat_sync(system_prompt, user_message, max_tokens=_MAX_TOKENS)
+    # max_tokens + reasoning_effort flow from ``config/coach.toml [generator]``
+    # via ModelSpec → llm_factory → the langchain AzureChatOpenAI client.
+    # Passing None here means "use the construction-time defaults"; this
+    # keeps the budget tunable from the config file alone — no code edit
+    # required to bump output size for S1 master plan generation.
+    raw = client.chat_sync(system_prompt, user_message)
 
     parsed = _parse_llm_output(raw)
     if parsed is None:
@@ -161,9 +158,7 @@ def generate_master_plan(state: GenState) -> dict:
             "(raw_len=%d) — retrying once",
             len(raw),
         )
-        raw_retry = client.chat_sync(
-            system_prompt, user_message, max_tokens=_MAX_TOKENS
-        )
+        raw_retry = client.chat_sync(system_prompt, user_message)
         parsed = _parse_llm_output(raw_retry)
         if parsed is None:
             err = ValueError(

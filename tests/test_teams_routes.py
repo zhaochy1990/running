@@ -9,8 +9,6 @@ SQLite Database fixture with USER_DATA_DIR pointed at tmp_path.
 from __future__ import annotations
 
 import time
-import sys
-import types
 
 import jwt
 import pytest
@@ -21,8 +19,6 @@ from fastapi.testclient import TestClient
 
 from stride_server.config.models import (
     AuthServiceConfig,
-    AzureOpenAIConfig,
-    CommentaryConfig,
     JPushConfig,
     NotificationStorageConfig,
 )
@@ -44,63 +40,6 @@ def test_notifications_backend_uses_config_file_backend() -> None:
     )
 
     assert backend.__class__.__name__ == "_FileBackend"
-
-
-def test_commentary_enabled_from_config() -> None:
-    from stride_server.aoai_client import get_deployment_from_config, is_enabled_from_config
-
-    cfg = CommentaryConfig(
-        enabled=True,
-        azure_openai=AzureOpenAIConfig(deployment="commentary-model"),
-    )
-
-    assert is_enabled_from_config(cfg) is True
-    assert get_deployment_from_config(cfg) == "commentary-model"
-
-
-def test_aoai_client_cache_is_scoped_to_effective_config(monkeypatch: pytest.MonkeyPatch) -> None:
-    import stride_server.aoai_client as aoai_client
-
-    created: list[dict[str, object]] = []
-
-    class FakeAzureOpenAI:
-        def __init__(self, **kwargs: object) -> None:
-            self.kwargs = kwargs
-            created.append(kwargs)
-
-    fake_openai = types.SimpleNamespace(AzureOpenAI=FakeAzureOpenAI)
-    monkeypatch.setitem(sys.modules, "openai", fake_openai)
-    monkeypatch.setattr(aoai_client, "_client", None)
-
-    first_cfg = CommentaryConfig(
-        enabled=True,
-        azure_openai=AzureOpenAIConfig(
-            endpoint="https://first.example",
-            api_key="first-key",
-            api_version="2024-10-21",
-            timeout_s=10.0,
-        ),
-    )
-    second_cfg = CommentaryConfig(
-        enabled=True,
-        azure_openai=AzureOpenAIConfig(
-            endpoint="https://second.example",
-            api_key="second-key",
-            api_version="2024-10-21",
-            timeout_s=10.0,
-        ),
-    )
-
-    first = aoai_client.get_client(config=first_cfg)
-    second = aoai_client.get_client(config=second_cfg)
-    second_again = aoai_client.get_client(config=second_cfg)
-
-    assert first is not second
-    assert second is second_again
-    assert [call["azure_endpoint"] for call in created] == [
-        "https://first.example",
-        "https://second.example",
-    ]
 
 
 def test_jpush_credentials_from_config() -> None:

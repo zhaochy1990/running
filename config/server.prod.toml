@@ -22,21 +22,12 @@ audience = "app_62978bf2803346878a2e4805"
 [auth_service]
 base_url = "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
 
-[llm]
-enabled = true
-
-[llm.azure_openai]
-endpoint = "https://word-learner-llm.cognitiveservices.azure.com/"
-api_version = "2024-10-21"
-deployment = "gpt-4.1"
-
-[commentary]
-enabled = true
-
-[commentary.azure_openai]
-endpoint = "https://word-learner-llm.cognitiveservices.azure.com/"
-api_version = "2024-10-21"
-deployment = "gpt-4.1"
+# NOTE: LLM / commentary configuration intentionally lives in
+# `config/coach.{toml,prod.toml}` (loaded via `coach.runtime.config`).
+# All LLM calls in the runtime go through
+# `stride_server.coach_runtime.get_*_llm()` which reads coach.toml, NOT
+# this file. Earlier `[llm]` / `[commentary]` blocks here were dead config
+# from the pre-PR-#16 `aoai_client` path and were removed.
 
 [storage.content]
 account_url = "https://authstorage2026.blob.core.windows.net/"

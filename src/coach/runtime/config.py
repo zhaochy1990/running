@@ -17,12 +17,13 @@ import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
-from .model_spec import AuthMode, ModelSpec, Provider, Role
+from .model_spec import AuthMode, ModelSpec, Provider, ReasoningEffort, Role
 
 
 CONFIG_FILENAME = "config/coach.toml"
+LOCAL_CONFIG_FILENAME = "config/coach.local.toml"
 PATH_ENV = "STRIDE_COACH_CONFIG_PATH"
 
 
@@ -61,6 +62,22 @@ def _find_repo_root() -> Path | None:
 
 
 def _resolve_path(path: str | Path | None) -> Path:
+    """Resolve which coach config file to load.
+
+    Order (first hit wins):
+
+    1. Explicit ``path=`` argument
+    2. ``STRIDE_COACH_CONFIG_PATH`` env var
+    3. ``<repo-root>/config/coach.local.toml`` — developer override (gpt-5.5
+       on the dev resource; checked into the repo so every developer shares
+       the same dev endpoint without having to re-create it)
+    4. ``<repo-root>/config/coach.toml`` — prod config; in the Docker image
+       this file is created by ``cp coach.prod.toml coach.toml`` and is the
+       only config present. On a developer machine this file does NOT
+       normally exist; resolution falls through to the local file above.
+    5. ``<cwd>/config/coach.toml`` — last-resort fallback for tests / ad-hoc
+       runs that happen to ``cd`` into a directory containing the config.
+    """
     if path is not None:
         return Path(path).resolve()
     env_override = os.environ.get(PATH_ENV)
@@ -68,9 +85,12 @@ def _resolve_path(path: str | Path | None) -> Path:
         return Path(env_override).resolve()
     repo_root = _find_repo_root()
     if repo_root is not None:
-        candidate = repo_root / CONFIG_FILENAME
-        if candidate.exists():
-            return candidate.resolve()
+        local_candidate = repo_root / LOCAL_CONFIG_FILENAME
+        if local_candidate.exists():
+            return local_candidate.resolve()
+        prod_candidate = repo_root / CONFIG_FILENAME
+        if prod_candidate.exists():
+            return prod_candidate.resolve()
     cwd_candidate = Path.cwd() / CONFIG_FILENAME
     return cwd_candidate.resolve()
 
@@ -78,6 +98,10 @@ def _resolve_path(path: str | Path | None) -> Path:
 _VALID_PROVIDERS: set[str] = {"azure-openai", "azure-ai-inference"}
 _VALID_AUTH_MODES: set[str] = {"managed-identity", "api-key"}
 _VALID_API_KINDS: set[str] = {"chat-completions", "responses"}
+# Derived from the ``ReasoningEffort`` Literal so adding a new level
+# (e.g. ``"maximal"``) is a single-line change in ``model_spec.py`` and
+# doesn't drift between the type alias and runtime validation.
+_VALID_REASONING_EFFORTS: frozenset[str] = frozenset(get_args(ReasoningEffort))
 _REQUIRED_FIELDS = (
     "provider",
     "model",
@@ -101,6 +125,14 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
         )
     temperature = raw.get("temperature")
     max_tokens = raw.get("max_tokens")
+    reasoning_effort = raw.get("reasoning_effort")
+    if reasoning_effort is not None and reasoning_effort not in _VALID_REASONING_EFFORTS:
+        # Validate at config-load time so a typo (``"hihg"``) raises here
+        # instead of surviving until the first LLM call returns 400.
+        raise CoachConfigError(
+            f"[{role}] unknown reasoning_effort {reasoning_effort!r}; "
+            f"valid: {sorted(_VALID_REASONING_EFFORTS)}"
+        )
     api_kind = raw.get("api_kind", "chat-completions")
     if api_kind not in _VALID_API_KINDS:
         raise CoachConfigError(
@@ -123,6 +155,7 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
         timeout_s=float(raw["timeout_s"]),
         api_key_env=raw.get("api_key_env"),
         api_kind=api_kind,  # type: ignore[arg-type]
+        reasoning_effort=reasoning_effort,  # validated against enum above
         extra=dict(raw.get("extra") or {}),
     )
 

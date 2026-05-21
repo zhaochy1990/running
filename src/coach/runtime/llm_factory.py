@@ -172,6 +172,12 @@ def _build_aoai(
         kwargs["temperature"] = spec.temperature
     if spec.max_tokens is not None:
         kwargs["max_tokens"] = spec.max_tokens
+    if spec.reasoning_effort is not None:
+        # Only meaningful for gpt-5 / o-series reasoning models on the
+        # Responses API. langchain-openai accepts it as a direct kwarg;
+        # non-reasoning models will surface a BadRequest at first
+        # invocation rather than silently ignoring it.
+        kwargs["reasoning_effort"] = spec.reasoning_effort
 
     if api_key:
         return AzureChatOpenAI(api_key=api_key, **kwargs)
