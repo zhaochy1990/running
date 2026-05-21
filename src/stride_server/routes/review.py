@@ -19,7 +19,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException
 
-from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
 from ..content_store import list_week_folders
 from ..deps import (
@@ -155,7 +155,7 @@ def get_week_review(user: str, folder: str):
         # Map date -> list of actual activities for matching
         acts_by_date: dict[str, list[dict]] = {}
         for a in activities:
-            d = (a.get("date") or "")[:10]
+            d = (utc_iso_to_shanghai_iso(a.get("date")) or "")[:10]
             acts_by_date.setdefault(d, []).append(a)
 
         # ── 3. Feedback lookup ────────────────────────────────────────────

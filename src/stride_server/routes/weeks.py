@@ -204,7 +204,7 @@ def get_week(user: str, folder: str):
             first_line = note.strip().split("\n")[0].strip()[:20]
             if first_line and first_line in existing_normalized:
                 continue
-            date_str = a["date"][:10] if a.get("date") else ""
+            date_str = (utc_iso_to_shanghai_iso(a["date"]) or "")[:10] if a.get("date") else ""
             feel = FEEL_LABELS.get(a.get("feel_type") or 0, "")
             header = f"{date_str} {a.get('name', '')}"
             if feel:

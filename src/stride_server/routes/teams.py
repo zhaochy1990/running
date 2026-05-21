@@ -37,6 +37,11 @@ from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import RUN_SPORT_SQL_LIST, pace_str
 from stride_core.post_sync import run_post_sync_for_result
 from stride_core.registry import ProviderRegistry, UnknownProvider
+from stride_core.timefmt import (
+    SHANGHAI_DAY_SQL,
+    today_shanghai,
+    utc_iso_to_shanghai_iso,
+)
 
 from .. import auth_service_client as auth_client
 from .. import likes_store
@@ -262,16 +267,21 @@ def _read_member_activities(user_id: str, limit_per_user: int, days: int) -> lis
         logger.warning("teams.feed: cannot open db for %s: %s", user_id, exc)
         return []
 
+    # Cutoff is a Shanghai-local YYYY-MM-DD; SHANGHAI_DAY_SQL converts the
+    # stored UTC `date` column to its Shanghai calendar day for comparison,
+    # so a 02:00 Shanghai run (18:00 UTC the prior day) lands on the right day.
+    cutoff_day = (today_shanghai() - timedelta(days=int(days))).isoformat()
+
     try:
         rows = db.query(
-            """SELECT label_id, name, sport_type, sport_name, date,
+            f"""SELECT label_id, name, sport_type, sport_name, date,
                 distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
                 training_load, vo2max, train_type, route_thumb_json
             FROM activities
-            WHERE date >= datetime('now', ? )
+            WHERE {SHANGHAI_DAY_SQL} >= ?
             ORDER BY date DESC
             LIMIT ?""",
-            (f"-{int(days)} days", int(limit_per_user)),
+            (cutoff_day, int(limit_per_user)),
         )
     except sqlite3.Error as exc:
         logger.warning("teams.feed: query failed for %s: %s", user_id, exc)
@@ -282,6 +292,7 @@ def _read_member_activities(user_id: str, limit_per_user: int, days: int) -> lis
     out = []
     for r in rows:
         d = dict(r)
+        d["date"] = utc_iso_to_shanghai_iso(d.get("date"))
         d["distance_km"] = round(d.get("distance_m") or 0, 2)
         d["duration_fmt"] = format_duration(d.get("duration_s"))
         d["pace_fmt"] = pace_str(d.get("avg_pace_s_km")) or "—"

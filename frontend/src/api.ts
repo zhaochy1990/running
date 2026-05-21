@@ -1103,18 +1103,6 @@ export function getTeamActivity(teamId: string, userId: string, labelId: string)
   )
 }
 
-export function parseDate(dateStr: string): Date | null {
-  if (!dateStr) return null
-  // Handle ISO format: 2026-04-04T11:53:48.710000+00:00
-  if (dateStr.includes('T')) return new Date(dateStr)
-  // Handle YYYYMMDD format
-  if (dateStr.length === 8) {
-    return new Date(+dateStr.slice(0, 4), +dateStr.slice(4, 6) - 1, +dateStr.slice(6, 8))
-  }
-  // Handle YYYY-MM-DD
-  return new Date(dateStr)
-}
-
 // All date / time formatters route through the canonical Asia/Shanghai
 // helpers in `./lib/shanghai`. They pin every conversion to Asia/Shanghai so
 // the dashboard renders the same calendar day whether it's opened in

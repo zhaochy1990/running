@@ -16,6 +16,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
+from stride_core.timefmt import utc_iso_to_shanghai_iso
 
 from ..deps import get_db
 
@@ -126,12 +127,13 @@ def _normalise_date(raw: str) -> str:
     """
     if not raw:
         return raw
-    # ISO 8601 with time component
+    # ISO 8601 with time component — UTC instant, convert to Shanghai calendar
+    # so PB "achieved_at" matches what the user saw on their watch.
     if "T" in raw or (len(raw) > 10 and raw[10] == " "):
-        try:
-            return datetime.fromisoformat(raw.replace("Z", "+00:00")).date().isoformat()
-        except ValueError:
-            pass
+        shanghai = utc_iso_to_shanghai_iso(raw)
+        if shanghai and shanghai != raw:
+            return shanghai[:10]
+        # Helper returned unchanged → input wasn't parseable; fall through.
     # Compact YYYYMMDD
     if len(raw) == 8 and raw.isdigit():
         return f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"

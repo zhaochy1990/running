@@ -668,9 +668,7 @@ function FeedbackPanel({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const now = new Date()
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-  const weekEnded = dateTo < today
+  const weekEnded = dateTo < shanghaiToday()
 
   // Re-sync draft when the underlying feedback changes (e.g. switching weeks)
   useEffect(() => {

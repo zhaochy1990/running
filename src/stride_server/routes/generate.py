@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from stride_core.plan_spec import SessionKind
 from stride_core.source import DataSource
-from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
 from ..deps import get_db, get_plan_state_store, get_source_for_user, parse_week_dates
 from ..week_generator import generate_week_plan, week_folder
@@ -111,7 +111,9 @@ def _get_last_week_summary(db, plan_store, week_start: date_cls) -> dict | None:
         if len(raw) == 8 and raw.isdigit():
             act_date = f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
         else:
-            act_date = raw[:10]
+            # UTC ISO → Shanghai calendar day so 00:00–07:59 Shanghai activities
+            # match against `planned_run_dates` (which is Shanghai-local).
+            act_date = (utc_iso_to_shanghai_iso(raw) or raw)[:10]
         if act_date in planned_run_dates:
             completed += 1
             actual_distance_m += float(act["distance_m"] or 0)

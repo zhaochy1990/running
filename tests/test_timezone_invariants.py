@@ -53,7 +53,6 @@ WHITELIST: dict[str, str] = {
     # health daily tables (`daily_health.date`) store Shanghai-local
     # YYYY-MM-DD strings, not UTC ISO — comparing them directly is correct.
     "stride_server/routes/plan.py": "operates on Shanghai-local YYYY-MM-DD plan tables; uses Shanghai TZ helper internally",
-    "stride_server/routes/teams.py": "uses explicit Asia/Shanghai TZ; calls datetime(date, '+8 hours') where needed",
     "stride_server/routes/ability.py": "uses explicit _SHANGHAI_TZ; calls datetime(date, '+8 hours') in ability.py core",
     "stride_server/routes/health.py": "queries daily_health.date which is YYYYMMDD Shanghai-local already",
     "stride_server/notifications/plan_reminder_job.py": "uses explicit SHANGHAI_TZ throughout",
@@ -102,10 +101,12 @@ def _iter_py(root: Path):
 # ── Rule 1: no naive `date >= 'YYYY-MM-DD'` SQL on UTC-ISO columns ─────────
 
 # Looks for SQL fragments that compare a bare `date` column with a parameter
-# placeholder, NOT wrapped in `datetime(...)`. False positives are dampened by
-# requiring the activities/laps table neighborhood.
+# placeholder OR with `datetime('now', ...)` — neither converts the LHS into
+# Shanghai-local first. False positives are dampened by requiring the
+# activities/laps table neighborhood.
 _NAIVE_SQL_RE = re.compile(
-    r"""WHERE\s+(?:[a-z_]+\.)?date\s*(?:>=|<=|>|<|=|BETWEEN)\s*\?""",
+    r"""WHERE\s+(?:[a-z_]+\.)?date\s*(?:>=|<=|>|<|=|BETWEEN)\s*"""
+    r"""(?:\?|datetime\(\s*['"]now)""",
     re.IGNORECASE,
 )
 _SAFE_SQL_RE = re.compile(
@@ -168,6 +169,55 @@ def test_no_naive_clock_calls_in_src():
             offenders.append(f"{rel}:{line_no}: datetime.now() (missing tz=)")
     assert not offenders, (
         "Naive clock calls found. Use today_shanghai() or pass tz=.\n"
+        + "\n".join(offenders)
+    )
+
+
+# ── Rule 4: no `[:10]` slicing on a UTC-ISO `date` field in routes/ ───────
+
+# Catches two common shapes:
+#   a["date"][:10]
+#   (a.get("date") or "")[:10]    /   a.get("date").something[:10]
+# Both yield a UTC-local YYYY-MM-DD, mis-bucketing the 00:00–07:59 Shanghai
+# window onto the prior calendar day. The fix is to route the value through
+# ``utc_iso_to_shanghai_iso(...)`` before slicing.
+_DATE_DICT_SLICE_RE = re.compile(
+    r"""\[\s*['"]date['"]\s*\]\s*\[\s*:\s*10\s*\]"""
+)
+_DATE_GET_SLICE_RE = re.compile(
+    r"""\.get\(\s*['"]date['"]\s*\)[^\n]*?\[\s*:\s*10\s*\]"""
+)
+_SAFE_SLICE_RE = re.compile(r"""utc_iso_to_shanghai_iso\(""")
+
+
+def test_no_naive_slice_on_activity_date_in_routes():
+    """``a["date"][:10]`` returns the UTC calendar day, not Shanghai —
+    activities recorded between 00:00 and 07:59 Shanghai (16:00–23:59 UTC the
+    day before) are silently misfiled. Route the value through
+    ``utc_iso_to_shanghai_iso(...)`` from ``stride_core.timefmt`` first."""
+    offenders: list[str] = []
+    for path in _iter_py(SERVER_ROUTES):
+        rel = _rel(path)
+        if rel in WHITELIST:
+            continue
+        text = _strip_comments(_read(path))
+        for regex in (_DATE_DICT_SLICE_RE, _DATE_GET_SLICE_RE):
+            for m in regex.finditer(text):
+                # Allow the safe pattern when the match is preceded on the
+                # same line by ``utc_iso_to_shanghai_iso(``.
+                line_start = text.rfind("\n", 0, m.start()) + 1
+                line_end = text.find("\n", m.end())
+                if line_end < 0:
+                    line_end = len(text)
+                line = text[line_start:line_end]
+                if _SAFE_SLICE_RE.search(line):
+                    continue
+                line_no = text[: m.start()].count("\n") + 1
+                offenders.append(f"{rel}:{line_no}: {m.group(0)!r}")
+    assert not offenders, (
+        "Naive `[:10]` slice on a UTC-ISO `date` field. Wrap with "
+        "`utc_iso_to_shanghai_iso(...)` from `stride_core.timefmt` before "
+        "slicing, or the Shanghai 00:00–07:59 window gets misfiled.\n"
         + "\n".join(offenders)
     )
 
