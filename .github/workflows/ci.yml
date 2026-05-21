@@ -14,7 +14,10 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          # Match Dockerfile (python:3.13-slim). Production code uses
+          # 3.12+ f-string features (PEP 701) even though pyproject.toml
+          # declares requires-python = ">=3.11".
+          python-version: '3.13'
           cache: 'pip'
 
       - name: Install backend (dev extras)
