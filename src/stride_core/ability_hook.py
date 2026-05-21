@@ -75,10 +75,14 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                             label_id=str(lid),
                             even_paced=True,
                         )
-                except Exception as e:
-                    logger.debug("ability PB upsert failed for %s: %s", lid, e)
-            except Exception as e:
-                logger.debug("ability L1 compute failed for %s: %s", lid, e)
+                except Exception:
+                    logger.warning(
+                        "ability PB upsert failed for %s", lid, exc_info=True
+                    )
+            except Exception:
+                logger.warning(
+                    "ability L1 compute failed for %s", lid, exc_info=True
+                )
 
         snapshot = compute_ability_snapshot(db, date=today_iso)
 
@@ -129,8 +133,8 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                         date=today_iso, level="L4", dimension=dim_name,
                         value=float(val),
                     )
-        except Exception as e:
-            logger.debug("ability snapshot persistence failed: %s", e)
+        except Exception:
+            logger.warning("ability snapshot persistence failed", exc_info=True)
 
         new_l4 = snapshot.get("l4_composite")
         new_marathon = snapshot.get("l4_marathon_estimate_s")
@@ -144,8 +148,8 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
             f"ability: L4 {l4_before} -> {l4_after} ({l4_delta}) | "
             f"全马典型预测 {m_before} -> {m_after} ({m_delta})"
         )
-    except Exception as e:
-        logger.warning("ability hook failed: %s", e)
+    except Exception:
+        logger.warning("ability hook failed", exc_info=True)
 
 
 def _activity_iso_date(activity: dict, fallback_iso: str) -> str:
@@ -187,6 +191,7 @@ def _fetch_latest_l4_and_marathon(db: Database) -> tuple[float | None, int | Non
         mar = int(row_mar[0]) if row_mar and row_mar[0] is not None else None
         return comp, mar
     except Exception:
+        logger.debug("ability prior L4/marathon read failed", exc_info=True)
         return None, None
 
 
@@ -226,6 +231,9 @@ def _load_activity_for_l1(db: Database, label_id: str) -> dict | None:
         ]
         return d
     except Exception:
+        logger.warning(
+            "ability: _load_activity_for_l1 failed for %s", label_id, exc_info=True
+        )
         return None
 
 
