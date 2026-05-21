@@ -26,6 +26,18 @@ class StrideScreenHero extends StatelessWidget {
     this.trailing,
   });
 
+  /// Convenience constructor for pushed screens that need a back arrow as the
+  /// hero's leading slot. Defaults to `Navigator.maybePop` so it works on any
+  /// stack depth; callers can override via [onBack].
+  StrideScreenHero.withBack({
+    super.key,
+    required this.eyebrow,
+    required this.title,
+    this.deck,
+    this.trailing,
+    VoidCallback? onBack,
+  }) : leading = _BackButton(onPressed: onBack);
+
   final String eyebrow;
   final String title;
   final String? deck;
@@ -103,6 +115,21 @@ class StrideScreenHero extends StatelessWidget {
           const SizedBox(height: 6),
         ],
       ),
+    );
+  }
+}
+
+class _BackButton extends StatelessWidget {
+  const _BackButton({this.onPressed});
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+      icon: const Icon(Icons.arrow_back, size: 20),
+      onPressed: onPressed ?? () => Navigator.of(context).maybePop(),
     );
   }
 }

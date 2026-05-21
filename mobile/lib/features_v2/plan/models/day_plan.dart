@@ -40,7 +40,7 @@ class DayPlan {
       date: day.date,
       sessionIndex: sessionIndex,
       kind: session.kind,
-      name: session.title ?? _kindLabel(session.kind),
+      name: session.title ?? kindLabel(session.kind),
       distanceM: session.totalDistanceM,
       durationSec: session.totalDurationS,
       targetPaceLowSecPerKm: paceLow,
@@ -142,16 +142,20 @@ class DayPlan {
     return (low, high);
   }
 
-  /// Fallback session name from kind when title is absent.
-  static String _kindLabel(String kind) {
+  /// Chinese label for a session kind code. Falls back to the upper-case
+  /// raw code so unknown values stay debuggable instead of collapsing into a
+  /// generic "训练课".
+  static String kindLabel(String kind) {
     return switch (kind.toUpperCase()) {
       'E' => '轻松跑',
       'M' => '马配跑',
       'T' => '节奏跑',
       'I' => '间歇跑',
       'R' => '冲刺跑',
+      'L' => '长距',
+      'STRENGTH' => '力量',
       'REST' => '休息日',
-      _ => '训练课',
+      _ => kind.toUpperCase(),
     };
   }
 }

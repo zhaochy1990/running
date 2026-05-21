@@ -22,6 +22,7 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/api/stride_api.dart';
+import '../../shared/utils/format.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/stat_row.dart';
@@ -56,6 +57,9 @@ class SessionDetailScreen extends ConsumerWidget {
     // Also fetch the raw PlanDay to access nutrition + session.notes
     final rawAsync = ref.watch(_planDayRawProvider((date: date, sessionIndex: sessionIndex)));
 
+    final weekday = weekdayCN(date);
+    final fallbackEyebrow = weekday.isEmpty ? '课时' : weekday;
+
     return Scaffold(
       backgroundColor: StrideTokens.bg,
       body: SafeArea(
@@ -63,7 +67,10 @@ class SessionDetailScreen extends ConsumerWidget {
         child: async.when(
           loading: () => Column(
             children: [
-              _hero(context, eyebrow: '课时详情', title: '加载中…'),
+              StrideScreenHero.withBack(
+                eyebrow: fallbackEyebrow,
+                title: '加载中…',
+              ),
               const Expanded(
                 child: Center(child: CircularProgressIndicator()),
               ),
@@ -71,7 +78,10 @@ class SessionDetailScreen extends ConsumerWidget {
           ),
           error: (e, _) => Column(
             children: [
-              _hero(context, eyebrow: '课时详情', title: '加载失败'),
+              StrideScreenHero.withBack(
+                eyebrow: fallbackEyebrow,
+                title: '加载失败',
+              ),
               Expanded(
                 child: Center(
                   child: Column(
@@ -102,9 +112,8 @@ class SessionDetailScreen extends ConsumerWidget {
           ),
           data: (plan) => Column(
             children: [
-              _hero(
-                context,
-                eyebrow: '${_weekdayLabel(date)} · ${_kindLabel(plan.kind)}',
+              StrideScreenHero.withBack(
+                eyebrow: '$fallbackEyebrow · ${DayPlan.kindLabel(plan.kind)}',
                 title: plan.name,
               ),
               Expanded(
@@ -140,61 +149,6 @@ class SessionDetailScreen extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  Widget _hero(
-    BuildContext context, {
-    required String eyebrow,
-    required String title,
-  }) {
-    return StrideScreenHero(
-      eyebrow: eyebrow,
-      title: title,
-      leading: IconButton(
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-        icon: const Icon(Icons.arrow_back, size: 20),
-        onPressed: () => context.pop(),
-      ),
-    );
-  }
-
-  static const _weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-
-  String _weekdayLabel(String isoDate) {
-    try {
-      final d = DateTime.parse(isoDate);
-      return _weekdays[d.weekday - 1];
-    } catch (_) {
-      return '课时';
-    }
-  }
-
-  String _kindLabel(String kind) {
-    switch (kind.toLowerCase()) {
-      case 'e':
-      case 'easy':
-        return '轻松跑';
-      case 'm':
-      case 'tempo':
-        return '节奏跑';
-      case 'i':
-      case 'interval':
-        return '间歇跑';
-      case 'l':
-      case 'long':
-        return '长距';
-      case 't':
-      case 'threshold':
-        return '阈值跑';
-      case 'r':
-      case 'rest':
-        return '休息';
-      case 'strength':
-        return '力量';
-      default:
-        return kind.toUpperCase();
-    }
   }
 }
 

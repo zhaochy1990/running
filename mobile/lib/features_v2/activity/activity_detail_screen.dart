@@ -39,7 +39,7 @@ class ActivityDetailScreen extends ConsumerWidget {
         child: detailAsync.when(
           loading: () => Column(
             children: [
-              _hero(context, eyebrow: '活动详情', title: '加载中…'),
+              StrideScreenHero.withBack(eyebrow: '活动详情', title: '加载中…'),
               const Expanded(
                 child: Center(
                   child: CircularProgressIndicator(color: StrideTokens.accent),
@@ -49,14 +49,13 @@ class ActivityDetailScreen extends ConsumerWidget {
           ),
           error: (err, _) => Column(
             children: [
-              _hero(context, eyebrow: '活动详情', title: '加载失败'),
+              StrideScreenHero.withBack(eyebrow: '活动详情', title: '加载失败'),
               Expanded(child: _ErrorBody(message: err.toString())),
             ],
           ),
           data: (detail) => Column(
             children: [
-              _hero(
-                context,
+              StrideScreenHero.withBack(
                 eyebrow: '活动 · ${detail.activity.sportName}',
                 title: detail.activity.name ?? detail.activity.sportName,
                 deck: '${detail.activity.date} · ${detail.activity.durationFmt}',
@@ -71,25 +70,6 @@ class ActivityDetailScreen extends ConsumerWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _hero(
-    BuildContext context, {
-    required String eyebrow,
-    required String title,
-    String? deck,
-  }) {
-    return StrideScreenHero(
-      eyebrow: eyebrow,
-      title: title,
-      deck: deck,
-      leading: IconButton(
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-        icon: const Icon(Icons.arrow_back, size: 20),
-        onPressed: () => Navigator.of(context).maybePop(),
       ),
     );
   }

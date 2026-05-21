@@ -78,10 +78,6 @@ class _HomeBody extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            // Hero — eyebrow + h1 + deck. Wave 1 surfaces what HomeData
-            // already exposes; week-phase + race-countdown copy lands in
-            // wave 2 when /home returns week_plan fields
-            // (spec/app_scope_analysis.md §5 #28).
             StrideScreenHero(
               eyebrow: '主页 · 本周',
               title: _heroTitle(data.planState),
@@ -100,11 +96,9 @@ class _HomeBody extends StatelessWidget {
                   StatusRingCard(ring: data.statusRing),
                   const SizedBox(height: StrideTokens.spaceLg),
 
-                  // Plan-state CTA: build master plan (none) or generate
-                  // this week's plan (active_no_week). When planState is
-                  // "active" the weekly plan already exists and no CTA
-                  // is shown. NB: design D5 assumes plan exists — wave 2
-                  // will move first-time generation out of the home screen.
+                  // planState values match server Literal in
+                  // src/stride_server/routes/home.py: when "active" the
+                  // weekly plan already exists so no CTA is shown.
                   if (data.planState == 'none') ...[
                     _PlanCta(
                       icon: Icons.auto_awesome,
