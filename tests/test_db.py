@@ -241,7 +241,9 @@ class TestActivitiesIndexes:
             (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} = ?", ("2026-05-09",)),
         ]:
             plan = db.query(f"EXPLAIN QUERY PLAN {sql}", params)
-            joined = " ".join(str(row) for row in plan)
+            # sqlite3.Row.__str__ doesn't expose columns; pull the `detail`
+            # column where the EXPLAIN narrative lives.
+            joined = " | ".join(row["detail"] for row in plan)
             assert "idx_activities_shanghai_day" in joined, (
                 f"functional index not used for: {sql}\nplan: {joined}"
             )
