@@ -18,13 +18,6 @@ _ENV_MAPPING: dict[str, tuple[str, str]] = {
     "STRIDE_AUTH_ALLOW_INSECURE_WITHOUT_KEY": ("auth.allow_insecure_without_key", "bool"),
     "STRIDE_AUTH_URL": ("auth_service.base_url", "str"),
     "STRIDE_AUTH_SERVICE_TIMEOUT_SECONDS": ("auth_service.timeout_s", "float"),
-    "AZURE_OPENAI_ENDPOINT": ("llm.azure_openai.endpoint", "str"),
-    "AZURE_OPENAI_API_KEY": ("llm.azure_openai.api_key", "str"),
-    "AZURE_OPENAI_API_VERSION": ("llm.azure_openai.api_version", "str"),
-    "AZURE_OPENAI_DEPLOYMENT": ("llm.azure_openai.deployment", "str"),
-    "LLM_ENABLED": ("llm.enabled", "bool"),
-    "LLM_DEFAULT_MODEL": ("llm.default_model", "str"),
-    "AOAI_COMMENTARY_ENABLED": ("commentary.enabled", "bool"),
     "STRIDE_INTERNAL_TOKEN": ("internal.token", "str"),
     "STRIDE_COACH_TABLE_ACCOUNT_URL": ("coach_persistence.table_account_url", "str"),
     "STRIDE_COACH_BLOB_ACCOUNT_URL": ("coach_persistence.blob_account_url", "str"),
@@ -54,14 +47,10 @@ _ENV_MAPPING: dict[str, tuple[str, str]] = {
 }
 
 _MIRROR_ENV_MAPPING: dict[str, list[tuple[str, str]]] = {
-    "AZURE_OPENAI_ENDPOINT": [("commentary.azure_openai.endpoint", "str")],
-    "AZURE_OPENAI_API_KEY": [("commentary.azure_openai.api_key", "str")],
-    "AZURE_OPENAI_API_VERSION": [("commentary.azure_openai.api_version", "str")],
-    "AZURE_OPENAI_DEPLOYMENT": [("commentary.azure_openai.deployment", "str")],
     "STRIDE_LIKES_TABLE_ACCOUNT_URL": [("notifications.table_account_url", "str")],
 }
 
-_EMPTY_AS_UNSET_ENV_NAMES = {"LLM_ENABLED", "AOAI_COMMENTARY_ENABLED"}
+_EMPTY_AS_UNSET_ENV_NAMES: set[str] = set()
 _LEGACY_FALSY_ENV_VALUES = {"false", "0", "no", "off", "disabled"}
 
 
@@ -124,9 +113,6 @@ def env_source(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
         for mirror_path, mirror_type in _MIRROR_ENV_MAPPING.get(name, []):
             if name in env and not (name in _EMPTY_AS_UNSET_ENV_NAMES and env[name].strip() == ""):
                 set_path(data, mirror_path, parse_env_value(env[name], mirror_type))
-    llm_enabled_set = "LLM_ENABLED" in env and env["LLM_ENABLED"].strip() != ""
-    if "AZURE_OPENAI_ENDPOINT" in env and not llm_enabled_set:
-        set_path(data, "llm.enabled", True)
     if "STRIDE_PLAN_JSON_PRIORITY" in env:
         value = parse_legacy_truthy_default_true(env["STRIDE_PLAN_JSON_PRIORITY"])
         if value is not None:

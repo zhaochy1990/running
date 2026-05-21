@@ -10,8 +10,11 @@
 # `src/coach/runtime/config.py`) resolves in this order:
 #   1. `load_config(path=...)` arg
 #   2. `STRIDE_COACH_CONFIG_PATH` env var
-#   3. `<repo-root>/config/coach.toml`  ← this file (default for local)
-#   4. `<cwd>/config/coach.toml`         (ad-hoc fallback)
+#   3. `<repo-root>/config/coach.local.toml` ← this file (developer default)
+#   4. `<repo-root>/config/coach.toml`        (prod; only present after the
+#                                              Docker build copies it from
+#                                              `coach.prod.toml`)
+#   5. `<cwd>/config/coach.toml`              (ad-hoc fallback for tests)
 
 [generator]
 # Coach Agent — generates weekly + master plans, drives chat with tools

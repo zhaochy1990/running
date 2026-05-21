@@ -19,26 +19,14 @@ allow_insecure_without_key = false
 base_url = ""
 timeout_s = 5.0
 
-[llm]
-enabled = false
-default_model = "gpt-4.1"
-
-[llm.azure_openai]
-endpoint = ""
-api_key = ""
-api_version = "2024-10-21"
-deployment = "gpt-4.1"
-timeout_s = 60.0
-
-[commentary]
-enabled = false
-
-[commentary.azure_openai]
-endpoint = ""
-api_key = ""
-api_version = "2024-10-21"
-deployment = "gpt-4.1"
-timeout_s = 60.0
+# NOTE: LLM / commentary configuration intentionally lives in
+# `config/coach.{toml,local.toml,prod.toml}` (loaded via
+# `coach.runtime.config`). All LLM calls in the runtime — coach
+# generator / reviewer / commentary / S1 master plan / S2 weekly plan /
+# eval judge — go through `stride_server.coach_runtime.get_*_llm()`
+# which reads coach.toml, NOT this file. Earlier `[llm]` / `[commentary]`
+# blocks were dead config (legacy from the pre-PR-#16 `aoai_client`
+# path) and were removed.
 
 [storage.content]
 account_url = ""

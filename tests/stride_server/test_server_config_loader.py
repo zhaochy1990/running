@@ -15,13 +15,10 @@ from stride_server.config.loader import (
 from stride_server.config import loader as loader_module
 from stride_server.config.models import (
     AuthConfig,
-    AzureOpenAIConfig,
     CoachPersistenceConfig,
     ConfigError,
-    CommentaryConfig,
     ContentStorageConfig,
     JPushConfig,
-    LLMConfig,
     NotificationConfig,
     ServerConfig,
 )
@@ -52,10 +49,6 @@ def test_server_config_default_shape_keeps_current_defaults() -> None:
     assert cfg.auth.issuer == "auth-service"
     assert cfg.auth.allow_insecure_without_key is True
     assert cfg.auth_service.timeout_s == 5.0
-    assert cfg.llm.default_model == "gpt-4.1"
-    assert cfg.llm.azure_openai.api_version == "2024-10-21"
-    assert cfg.llm.azure_openai.timeout_s == 60.0
-    assert cfg.commentary.azure_openai.deployment == "gpt-4.1"
     assert cfg.storage.content.prefix == "users"
     assert cfg.storage.likes.table_name == "stridelikes"
     assert cfg.storage.master_plan.table_name == "stridemasterplan"
@@ -126,24 +119,6 @@ def test_url_validation_names_config_path() -> None:
     )
 
     with pytest.raises(ConfigError, match="storage.content.account_url"):
-        cfg.validate()
-
-
-def test_llm_azure_openai_timeout_validation_names_config_path() -> None:
-    cfg = ServerConfig.default(env="dev").with_updates(
-        llm=LLMConfig(azure_openai=AzureOpenAIConfig(timeout_s=0))
-    )
-
-    with pytest.raises(ConfigError, match="llm.azure_openai.timeout_s"):
-        cfg.validate()
-
-
-def test_commentary_azure_openai_timeout_validation_names_config_path() -> None:
-    cfg = ServerConfig.default(env="dev").with_updates(
-        commentary=CommentaryConfig(azure_openai=AzureOpenAIConfig(timeout_s=0))
-    )
-
-    with pytest.raises(ConfigError, match="commentary.azure_openai.timeout_s"):
         cfg.validate()
 
 
@@ -219,8 +194,6 @@ def test_parse_env_value_preserves_empty_string() -> None:
 
 def test_env_source_maps_legacy_names_and_specific_names(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PATH", "config/auth-public.pem")
-    monkeypatch.setenv("LLM_ENABLED", "true")
-    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://aoai.example")
     monkeypatch.setenv("STRIDE_STORAGE_LIKES_TABLE_NAME", "customlikes")
     monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", "")
     monkeypatch.setenv("STRIDE_PLAN_JSON_PRIORITY", "false")
@@ -228,9 +201,6 @@ def test_env_source_maps_legacy_names_and_specific_names(monkeypatch: pytest.Mon
     data = env_source(os.environ)
 
     assert data["auth"]["public_key_path"] == "config/auth-public.pem"
-    assert data["llm"]["enabled"] is True
-    assert data["llm"]["azure_openai"]["endpoint"] == "https://aoai.example"
-    assert data["commentary"]["azure_openai"]["endpoint"] == "https://aoai.example"
     assert data["storage"]["likes"]["table_name"] == "customlikes"
     assert data["internal"]["token"] == ""
     assert data["plan"]["prefer_authored_json"] is False
@@ -257,35 +227,6 @@ def test_env_source_plan_json_priority_preserves_legacy_bool_semantics(
         assert data["plan"]["prefer_authored_json"] is expected
 
 
-def test_env_source_azure_openai_endpoint_implicitly_enables_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("LLM_ENABLED", raising=False)
-    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://aoai.example")
-
-    data = env_source(os.environ)
-
-    assert data["llm"]["enabled"] is True
-
-
-def test_env_source_llm_enabled_false_overrides_endpoint_implicit_enable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://aoai.example")
-    monkeypatch.setenv("LLM_ENABLED", "false")
-
-    data = env_source(os.environ)
-
-    assert data["llm"]["enabled"] is False
-
-
-def test_env_source_empty_optional_feature_flags_behave_like_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AZURE_OPENAI_ENDPOINT", "https://aoai.example")
-    monkeypatch.setenv("LLM_ENABLED", "")
-    monkeypatch.setenv("AOAI_COMMENTARY_ENABLED", "")
-
-    data = env_source(os.environ)
-
-    assert data["llm"]["enabled"] is True
-    assert "enabled" not in data.get("commentary", {})
-
-
 def test_toml_file_source_reads_nested_config(tmp_path) -> None:
     path = tmp_path / "stride.toml"
     path.write_text('[storage.likes]\ntable_name = "fromtoml"\n', encoding="utf-8")
@@ -294,7 +235,7 @@ def test_toml_file_source_reads_nested_config(tmp_path) -> None:
 
 
 def test_akv_secret_name_normalizes_path_and_prefix() -> None:
-    assert akv_secret_name("stride-server", "llm.azure_openai.api_key") == "stride-server--llm-azure-openai-api-key"
+    assert akv_secret_name("stride-server", "auth.public_key_pem") == "stride-server--auth-public-key-pem"
     assert akv_secret_name("", "storage.likes.table_account_url") == "storage-likes-table-account-url"
 
 
@@ -500,11 +441,12 @@ def test_load_server_config_converts_nested_dicts_to_dataclasses(tmp_path: Path)
 env = "dev"
 
 [auth_service]
+base_url = "https://auth.example"
 timeout_s = 2.5
 
-[llm.azure_openai]
-endpoint = "https://aoai.example"
-timeout_s = 30.0
+[storage.content]
+account_url = "https://content.example"
+prefix = "users-test"
 """,
         encoding="utf-8",
     )
@@ -512,9 +454,10 @@ timeout_s = 30.0
     cfg = load_server_config(project_root=tmp_path, environ={}, use_cache=False)
 
     assert cfg.auth_service.timeout_s == 2.5
-    assert cfg.llm.azure_openai.endpoint == "https://aoai.example"
-    assert cfg.llm.azure_openai.timeout_s == 30.0
-    assert cfg.storage.likes.table_name == "stridelikes"
+    assert cfg.auth_service.base_url == "https://auth.example"
+    assert cfg.storage.content.account_url == "https://content.example"
+    assert cfg.storage.content.prefix == "users-test"
+    assert cfg.storage.likes.table_name == "stridelikes"  # default preserved
 
 
 def test_clear_server_config_cache_allows_default_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -558,8 +501,6 @@ def test_repo_server_config_files_load(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert cfg.env == "local"
     assert cfg.auth.allow_insecure_without_key is True
-    assert cfg.llm.enabled is False
-    assert cfg.commentary.enabled is False
     assert cfg.storage.likes.table_name == "stridelikes"
     assert cfg.coach_persistence.file_backend_dir == "data/_coach_dev"
 
@@ -624,14 +565,6 @@ def test_repo_prod_config_file_loads_prod_values_without_env_secrets(
     assert cfg.auth.public_key_path == ""
     assert cfg.auth.audience == "app_62978bf2803346878a2e4805"
     assert cfg.auth_service.base_url == "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io"
-    assert cfg.llm.enabled is True
-    assert cfg.llm.azure_openai.endpoint == "https://word-learner-llm.cognitiveservices.azure.com/"
-    assert cfg.llm.azure_openai.api_version == "2024-10-21"
-    assert cfg.llm.azure_openai.deployment == "gpt-4.1"
-    assert cfg.commentary.enabled is True
-    assert cfg.commentary.azure_openai.endpoint == "https://word-learner-llm.cognitiveservices.azure.com/"
-    assert cfg.commentary.azure_openai.api_version == "2024-10-21"
-    assert cfg.commentary.azure_openai.deployment == "gpt-4.1"
     assert cfg.storage.content.account_url == "https://authstorage2026.blob.core.windows.net/"
     assert cfg.storage.content.container == "stride-data"
     assert cfg.storage.content.prefix == "users"

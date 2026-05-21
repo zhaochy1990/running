@@ -65,35 +65,12 @@ class AuthServiceConfig:
         return replace(self, **updates)
 
 
-@dataclass(frozen=True)
-class AzureOpenAIConfig:
-    endpoint: str = ""
-    api_key: str = ""
-    api_version: str = "2024-10-21"
-    deployment: str = "gpt-4.1"
-    timeout_s: float = 60.0
-
-    def with_updates(self, **updates: object) -> AzureOpenAIConfig:
-        return replace(self, **updates)
-
-
-@dataclass(frozen=True)
-class LLMConfig:
-    enabled: bool = False
-    default_model: str = "gpt-4.1"
-    azure_openai: AzureOpenAIConfig = field(default_factory=AzureOpenAIConfig)
-
-    def with_updates(self, **updates: object) -> LLMConfig:
-        return replace(self, **updates)
-
-
-@dataclass(frozen=True)
-class CommentaryConfig:
-    enabled: bool = False
-    azure_openai: AzureOpenAIConfig = field(default_factory=AzureOpenAIConfig)
-
-    def with_updates(self, **updates: object) -> CommentaryConfig:
-        return replace(self, **updates)
+# NOTE: AzureOpenAIConfig / LLMConfig / CommentaryConfig were removed.
+# All LLM configuration now lives in `config/coach.{toml,local.toml,
+# prod.toml}` and is consumed via `coach.runtime.config`. The dead path
+# is documented in commit history; if you're looking for "where does
+# the runtime talk to Azure OpenAI?", start at
+# `stride_server.coach_runtime.get_generator_llm`.
 
 
 @dataclass(frozen=True)
@@ -206,8 +183,6 @@ class ServerConfig:
     akv: AzureKeyVaultConfig = field(default_factory=AzureKeyVaultConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
     auth_service: AuthServiceConfig = field(default_factory=AuthServiceConfig)
-    llm: LLMConfig = field(default_factory=LLMConfig)
-    commentary: CommentaryConfig = field(default_factory=CommentaryConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     coach_persistence: CoachPersistenceConfig = field(default_factory=CoachPersistenceConfig)
     notifications: NotificationConfig = field(default_factory=NotificationConfig)
@@ -233,15 +208,11 @@ class ServerConfig:
     def validate(self) -> None:
         validate_auth(self.env, self.auth)
         validate_positive("auth_service.timeout_s", self.auth_service.timeout_s)
-        validate_positive("llm.azure_openai.timeout_s", self.llm.azure_openai.timeout_s)
-        validate_positive("commentary.azure_openai.timeout_s", self.commentary.azure_openai.timeout_s)
         validate_positive("coach_persistence.jobs_stale_after_seconds", self.coach_persistence.jobs_stale_after_seconds)
         validate_positive("notifications.jpush.timeout_s", self.notifications.jpush.timeout_s)
         validate_positive("sync.stale_after_seconds", self.sync.stale_after_seconds)
         validate_optional_url("akv.vault_url", self.akv.vault_url)
         validate_optional_url("auth_service.base_url", self.auth_service.base_url)
-        validate_optional_url("llm.azure_openai.endpoint", self.llm.azure_openai.endpoint)
-        validate_optional_url("commentary.azure_openai.endpoint", self.commentary.azure_openai.endpoint)
         validate_optional_url("storage.content.account_url", self.storage.content.account_url)
         validate_optional_url("storage.likes.table_account_url", self.storage.likes.table_account_url)
         validate_optional_url("storage.master_plan.table_account_url", self.storage.master_plan.table_account_url)
