@@ -9,10 +9,10 @@ jobs:
     name: Backend (pytest + lint-imports)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           # Match Dockerfile (python:3.13-slim). Production code uses
           # 3.12+ f-string features (PEP 701) even though pyproject.toml
@@ -33,7 +33,7 @@ jobs:
     name: Frontend (vitest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
