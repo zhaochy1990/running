@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
 from stride_core.db import Database
+from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
 
 
 USER_ID = "00000000-0000-4000-8000-000000000001"
@@ -87,9 +88,14 @@ class _StubSource:
 
 @pytest.fixture
 def tmp_db_path(tmp_path) -> Path:
-    """Create an empty, schema-migrated DB at a known tmp path."""
+    """Create an empty, schema-migrated DB at a known tmp path.
+
+    Bootstraps calibration tables via the canonical connector so the
+    schema matches running_calibration/sqlite_connector.py exactly.
+    """
     db_path = tmp_path / "stride_test.db"
     db = Database(db_path)
+    SQLiteRunningCalibrationRepository(db)  # calls ensure_schema() in __init__
     db.close()
     return db_path
 
