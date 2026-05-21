@@ -1,0 +1,89 @@
+name: Weekly running calibration recompute
+
+# Required GitHub Actions secrets (configured in repo settings):
+#   STRIDE_PROD_URL           — base URL of the deployed stride-app, e.g.
+#                               https://stride-app.<region>.azurecontainerapps.io
+#   STRIDE_INTERNAL_TOKEN     — random 32+ char string. Same value must be set
+#                               on the Azure Container App as STRIDE_INTERNAL_TOKEN
+#                               env var.
+# If either secret is unset the workflow fails so the omission is visible.
+
+on:
+  schedule:
+    # Every Sunday at 04:00 UTC = 12:00 Asia/Shanghai
+    - cron: '0 4 * * 0'
+  workflow_dispatch: {}
+
+jobs:
+  recompute:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build user UUID list from data/.slug_aliases.json
+        id: users
+        run: |
+          if [ ! -f data/.slug_aliases.json ]; then
+            echo "No data/.slug_aliases.json found — nothing to recompute"
+            : > users.txt
+            echo "count=0" >> "$GITHUB_OUTPUT"
+          else
+            python3 -c "
+          import json
+          aliases = json.load(open('data/.slug_aliases.json'))
+          uuids = sorted(set(str(v) for v in aliases.values()))
+          print('\n'.join(uuids))
+          " > users.txt
+            count=$(wc -l < users.txt | tr -d ' ')
+            echo "count=$count" >> "$GITHUB_OUTPUT"
+            echo "Found $count user(s):"
+            cat users.txt
+          fi
+
+      - name: Recompute running calibration per user
+        if: steps.users.outputs.count != '0'
+        env:
+          STRIDE_PROD_URL: ${{ secrets.STRIDE_PROD_URL }}
+          INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+        run: |
+          set -u
+          if [ -z "$STRIDE_PROD_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then
+            echo "::error::STRIDE_PROD_URL or STRIDE_INTERNAL_TOKEN secret missing"
+            exit 1
+          fi
+
+          echo "## Weekly running calibration recompute" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| user | http | response |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|------|----------|" >> "$GITHUB_STEP_SUMMARY"
+
+          fail=0
+          ok=0
+          while read -r user; do
+            [ -z "$user" ] && continue
+            echo "==> POST /internal/training-load/calibration/refresh user=$user"
+            http=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+              --max-time 60 \
+              -X POST \
+              -H "X-Internal-Token: $INTERNAL_TOKEN" \
+              "$STRIDE_PROD_URL/internal/training-load/calibration/refresh?user=$user")
+            body=$(head -c 500 /tmp/resp.json | tr '\n' ' ')
+            if [ "$http" = "200" ] || [ "$http" = "204" ]; then
+              ok=$((ok+1))
+              echo "  ✓ $user (HTTP $http)"
+              echo "| $user | $http | $body |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              fail=$((fail+1))
+              echo "::warning::Recompute failed for $user (HTTP $http): $body"
+              echo "| $user | $http | $body |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done < users.txt
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Summary: $ok ok, $fail failed**" >> "$GITHUB_STEP_SUMMARY"
+          echo "Summary: $ok ok, $fail failed"
+          if [ "$fail" -gt 0 ]; then
+            exit 1
+          fi

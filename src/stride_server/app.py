@@ -56,7 +56,7 @@ async def _lifespan(app: FastAPI):
         logger.exception("lifespan startup reconcile failed; continuing without sweep")
     yield
     # Shutdown: nothing special.
-from .routes import account, ability, activities, body_composition, coach, feedback, generate, health, home, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_chat, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, sync, teams, training_goal, training_load, training_plan, users, watch, weeks, workouts
+from .routes import account, ability, activities, body_composition, coach, feedback, generate, health, home, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_chat, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, stride, sync, teams, training_goal, training_load, training_plan, users, watch, weeks, workouts
 from .static import mount_frontend
 
 
@@ -134,6 +134,7 @@ def create_app(
     app.include_router(health.router, dependencies=protected_user)
     app.include_router(body_composition.router, dependencies=protected_user)
     app.include_router(ability.router, dependencies=protected_user)
+    app.include_router(stride.router, dependencies=protected_user)
     app.include_router(workouts.router, dependencies=protected_user)
     app.include_router(plan.router, dependencies=protected_user)
     app.include_router(plan_chat.router, dependencies=protected_user)

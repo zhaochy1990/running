@@ -1370,3 +1370,62 @@ export function overallRating(variant: PlanVariant): RatingScore | null {
   const v = variant.ratings.overall
   return typeof v === 'number' ? (v as RatingScore) : null
 }
+
+// =============================================================
+// STRIDE self-developed endpoints (/api/{user}/stride/*)
+// =============================================================
+
+export interface StrideThreshold {
+  speed_mps: number | null
+  pace_per_km_sec: number | null
+  hr_bpm: number | null
+  speed_confidence: string | null
+  hr_confidence: string | null
+  as_of_date: string
+  calibration_id: number
+}
+
+export interface StridePaceZone {
+  name: string             // 'Z1' | 'Z2' | 'Z3' | 'Z4' | 'Z5'
+  label: string            // '轻松' / '有氧' / ...
+  lower_pace: string | null  // 'M:SS' /km (slower edge)
+  upper_pace: string | null  // 'M:SS' /km (faster edge)
+}
+
+export interface StrideHrZone {
+  name: string
+  label: string
+  lower_bpm: number | null
+  upper_bpm: number | null
+}
+
+export interface StrideZonesResponse {
+  threshold: StrideThreshold | null
+  pace_zones: StridePaceZone[]
+  hr_zones: StrideHrZone[]
+}
+
+export function getStrideZones(user: string) {
+  return fetchJSON<StrideZonesResponse>(`/${user}/stride/zones`)
+}
+
+export interface StrideTrainingLoadRecord {
+  date: string
+  algorithm_version: number
+  training_dose: number | null
+  acute_load: number | null
+  chronic_load: number | null
+  form: number | null
+  load_ratio: number | null
+  readiness_gate: string | null
+  readiness_reasons: string[]
+}
+
+export interface StrideTrainingLoadResponse {
+  current: StrideTrainingLoadRecord | null
+  series: StrideTrainingLoadRecord[]
+}
+
+export function getStrideTrainingLoad(user: string, days = 90) {
+  return fetchJSON<StrideTrainingLoadResponse>(`/${user}/stride/training-load?days=${days}`)
+}

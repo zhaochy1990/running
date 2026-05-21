@@ -315,27 +315,13 @@ CREATE TABLE IF NOT EXISTS daily_hrv (
 -- daily_health; these tables hold STRIDE-computed TSS-like load. Mapping:
 -- cardio_load_raw = Banister TRIMP; external_tss = rTSS/RSS/power TSS;
 -- acute_load = ATL; chronic_load = CTL; form = TSB.
-CREATE TABLE IF NOT EXISTS training_load_calibration (
-    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-    as_of_date            TEXT NOT NULL,
-    algorithm_version     INTEGER NOT NULL,
-    rhr_baseline          REAL,
-    hrmax_estimate        REAL,
-    threshold_hr          REAL,
-    threshold_speed_mps   REAL,
-    critical_power_w      REAL,
-    source_json           TEXT,
-    computed_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(as_of_date, algorithm_version)
-);
-
 CREATE TABLE IF NOT EXISTS activity_training_load (
     label_id                 TEXT PRIMARY KEY REFERENCES activities(label_id),
     activity_date            TEXT NOT NULL,
     sport                    TEXT,
     session_class            TEXT,
     algorithm_version        INTEGER NOT NULL,
-    calibration_id           INTEGER REFERENCES training_load_calibration(id),
+    calibration_id           INTEGER REFERENCES running_calibration_snapshot(id),
     cardio_load_raw          REAL,
     cardio_tss               REAL,
     external_tss             REAL,
@@ -352,7 +338,7 @@ CREATE INDEX IF NOT EXISTS idx_activity_training_load_date ON activity_training_
 CREATE TABLE IF NOT EXISTS daily_training_load (
     date                    TEXT NOT NULL,
     algorithm_version       INTEGER NOT NULL,
-    calibration_id          INTEGER REFERENCES training_load_calibration(id),
+    calibration_id          INTEGER REFERENCES running_calibration_snapshot(id),
     training_dose           REAL NOT NULL DEFAULT 0,
     acute_load              REAL,
     chronic_load            REAL,
@@ -948,26 +934,13 @@ class Database:
             ")",
             "CREATE INDEX IF NOT EXISTS idx_weekly_plan_variant_rating_variant "
             "ON weekly_plan_variant_rating(weekly_plan_variant_id)",
-            "CREATE TABLE IF NOT EXISTS training_load_calibration ("
-            "    id INTEGER PRIMARY KEY AUTOINCREMENT,"
-            "    as_of_date TEXT NOT NULL,"
-            "    algorithm_version INTEGER NOT NULL,"
-            "    rhr_baseline REAL,"
-            "    hrmax_estimate REAL,"
-            "    threshold_hr REAL,"
-            "    threshold_speed_mps REAL,"
-            "    critical_power_w REAL,"
-            "    source_json TEXT,"
-            "    computed_at TEXT NOT NULL DEFAULT (datetime('now')),"
-            "    UNIQUE(as_of_date, algorithm_version)"
-            ")",
             "CREATE TABLE IF NOT EXISTS activity_training_load ("
             "    label_id TEXT PRIMARY KEY REFERENCES activities(label_id),"
             "    activity_date TEXT NOT NULL,"
             "    sport TEXT,"
             "    session_class TEXT,"
             "    algorithm_version INTEGER NOT NULL,"
-            "    calibration_id INTEGER REFERENCES training_load_calibration(id),"
+            "    calibration_id INTEGER REFERENCES running_calibration_snapshot(id),"
             "    cardio_load_raw REAL,"
             "    cardio_tss REAL,"
             "    external_tss REAL,"
@@ -984,7 +957,7 @@ class Database:
             "CREATE TABLE IF NOT EXISTS daily_training_load ("
             "    date TEXT NOT NULL,"
             "    algorithm_version INTEGER NOT NULL,"
-            "    calibration_id INTEGER REFERENCES training_load_calibration(id),"
+            "    calibration_id INTEGER REFERENCES running_calibration_snapshot(id),"
             "    training_dose REAL NOT NULL DEFAULT 0,"
             "    acute_load REAL,"
             "    chronic_load REAL,"
@@ -1093,6 +1066,13 @@ class Database:
                     CREATE INDEX IF NOT EXISTS idx_planned_nutrition_week ON planned_nutrition(week_folder);
                 """)
                 self._conn.commit()
+
+        # Thresholds moved to running_calibration_snapshot; drop the legacy table.
+        if self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='training_load_calibration'"
+        ).fetchone():
+            self._conn.execute("DROP TABLE training_load_calibration")
+            self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
@@ -1349,56 +1329,6 @@ class Database:
     def commit(self) -> None:
         """Flush pending writes on the underlying sqlite3 connection."""
         self._conn.commit()
-
-    def upsert_training_load_calibration(self, calibration, *, commit: bool = True) -> int:
-        source_json = json.dumps(calibration.source or {}, ensure_ascii=False, sort_keys=True)
-        self._conn.execute(
-            """INSERT INTO training_load_calibration
-               (as_of_date, algorithm_version, rhr_baseline, hrmax_estimate,
-                threshold_hr, threshold_speed_mps, critical_power_w, source_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-               ON CONFLICT(as_of_date, algorithm_version) DO UPDATE SET
-                   rhr_baseline        = excluded.rhr_baseline,
-                   hrmax_estimate      = excluded.hrmax_estimate,
-                   threshold_hr        = excluded.threshold_hr,
-                   threshold_speed_mps = excluded.threshold_speed_mps,
-                   critical_power_w    = excluded.critical_power_w,
-                   source_json         = excluded.source_json,
-                   computed_at         = excluded.computed_at""",
-            (
-                calibration.as_of_date.isoformat(),
-                calibration.algorithm_version,
-                calibration.rhr_baseline,
-                calibration.hrmax_estimate,
-                calibration.threshold_hr,
-                calibration.threshold_speed_mps,
-                calibration.critical_power_w,
-                source_json,
-            ),
-        )
-        row = self._conn.execute(
-            "SELECT id FROM training_load_calibration WHERE as_of_date = ? AND algorithm_version = ?",
-            (calibration.as_of_date.isoformat(), calibration.algorithm_version),
-        ).fetchone()
-        if commit:
-            self._conn.commit()
-        return int(row["id"])
-
-    def fetch_latest_training_load_calibration(
-        self,
-        algorithm_version: int | None = None,
-    ) -> sqlite3.Row | None:
-        if algorithm_version is not None:
-            return self._conn.execute(
-                "SELECT * FROM training_load_calibration "
-                "WHERE algorithm_version = ? "
-                "ORDER BY as_of_date DESC, id DESC LIMIT 1",
-                (algorithm_version,),
-            ).fetchone()
-        return self._conn.execute(
-            "SELECT * FROM training_load_calibration "
-            "ORDER BY as_of_date DESC, id DESC LIMIT 1"
-        ).fetchone()
 
     def upsert_activity_training_load(self, result, *, commit: bool = True) -> None:
         reasons_json = json.dumps(result.reasons or [], ensure_ascii=False)

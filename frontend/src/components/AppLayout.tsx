@@ -124,6 +124,12 @@ export default function AppLayout() {
                 icon={<UserIcon />}
                 text="体测记录"
               />
+              <NavItem
+                to="/training-status"
+                collapsed={collapsed}
+                icon={<PulseIcon />}
+                text="训练状态（STRIDE）"
+              />
             </NavSection>
 
             <NavSection label="社群" collapsed={collapsed}>
