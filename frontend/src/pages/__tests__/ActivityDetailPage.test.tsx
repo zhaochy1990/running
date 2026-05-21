@@ -1,8 +1,8 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
-import { getActivity, getPlanDays } from '../../api'
+import { fetchActivityAbility, getActivity, getPlanDays } from '../../api'
 import { UserContext } from '../../UserContextValue'
 import ActivityDetailPage from '../ActivityDetailPage'
 
@@ -12,6 +12,7 @@ vi.mock('../../api', () => ({
   resyncActivity: vi.fn(),
   regenerateCommentary: vi.fn(),
   getPlanDays: vi.fn(),
+  fetchActivityAbility: vi.fn(),
   formatDate: (value: string) => value,
   formatTime: (value: string) => value,
   sportColor: () => '#00a85a',
@@ -65,6 +66,10 @@ function renderActivityDetail() {
 }
 
 describe('ActivityDetailPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
   it('labels provider load as watch load and renders STRIDE load when present', async () => {
     vi.mocked(getActivity).mockResolvedValue({
       activity,
@@ -101,5 +106,55 @@ describe('ActivityDetailPage', () => {
     expect(screen.getByText('训练剂量')).toBeInTheDocument()
     expect(screen.getByText('86.4')).toBeInTheDocument()
     expect(screen.getByText('gps_ok')).toBeInTheDocument()
+  })
+
+  it('does not fetch or render plan comparison on activity detail', async () => {
+    vi.mocked(getActivity).mockResolvedValue({
+      activity: {
+        ...activity,
+        sport_type: 100,
+        sport_name: 'Run',
+        distance_m: 10,
+        distance_km: 10,
+        avg_pace_s_km: 300,
+        pace_fmt: '5:00/km',
+      },
+      laps: [],
+      segments: [],
+      zones: [],
+      timeseries: [],
+      linked_scheduled_workout: null,
+      stride_training_load: null,
+    } as unknown as Awaited<ReturnType<typeof getActivity>>)
+    vi.mocked(getPlanDays).mockResolvedValue({
+      days: [
+        {
+          date: '2026-05-19',
+          sessions: [
+            {
+              schema: 'plan-session/v1',
+              date: '2026-05-19',
+              session_index: 0,
+              kind: 'run',
+              summary: 'Easy 10K',
+              spec: null,
+              notes_md: null,
+              total_distance_m: 10000,
+              total_duration_s: null,
+              scheduled_workout_id: null,
+            },
+          ],
+          nutrition: [],
+        },
+      ],
+    })
+    vi.mocked(fetchActivityAbility).mockRejectedValue(new Error('not computed'))
+
+    renderActivityDetail()
+
+    expect(await screen.findByText('Easy Run')).toBeInTheDocument()
+    expect(getPlanDays).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('plan-vs-actual-card')).not.toBeInTheDocument()
+    expect(screen.queryByText('训练计划对照')).not.toBeInTheDocument()
   })
 })
