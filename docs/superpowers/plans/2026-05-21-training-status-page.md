@@ -619,6 +619,409 @@ Expected: No previously-passing tests have broken (regression check).
 
 ---
 
+## Phase 2.5: Calibration Migration — unify on `running_calibration_snapshot`
+
+**Why this phase exists**: During Task 1 implementation we discovered the spec's data-source assumption was wrong — `running_calibration_snapshot` schema exists but **nothing in production writes to it** (the entire `SQLiteRunningCalibrationRepository` class has no caller outside tests). Production thresholds actually live in `training_load_calibration`, populated by the training-load module. User decision: unify on `running_calibration_snapshot` as the single source of truth; pivot training-load to read from it; truncate `daily_training_load` + `activity_training_load` and re-backfill with the running-calibration algorithm.
+
+**Scope decisions (locked-in)**:
+- Algorithm: `running_calibration/core.py:estimate_running_calibration` (richer; includes confidence + evidence)
+- FK migration: **截断式** — drop / truncate `daily_training_load` + `activity_training_load`, re-run training-load backfill with new algorithm
+- Cron transport: GitHub Action weekly schedule trigger → POST internal endpoint in Container App (mirrors existing `/internal/training-load/calibration/refresh` pattern)
+
+### Task 4a: Internal `recompute_running_calibration` wrapper + Database integration
+
+**Files:**
+- Modify: `src/stride_core/db.py` — drop `upsert_training_load_calibration` + `fetch_latest_training_load_calibration` methods + the `training_load_calibration` schema block (lines ~318-330 + the duplicated block ~951-970)
+- Modify: `src/stride_core/training_load/adapter.py` — `_fetch_latest_calibration` reads from `running_calibration_snapshot`; `refresh_training_load_calibration` becomes a thin wrapper around `recompute_running_calibration`
+- Modify: `src/stride_server/routes/training_load.py` — endpoint imports + body shape (use `RunningCalibrationSnapshot` fields instead of `CalibrationSnapshot`)
+- Create: `tests/test_calibration_migration.py` — verify pivot
+
+- [ ] **Step 1: Write failing test**
+
+Create `tests/test_calibration_migration.py`:
+
+```python
+"""Verify training-load module now reads thresholds from running_calibration_snapshot."""
+from __future__ import annotations
+
+from datetime import date
+from pathlib import Path
+
+import pytest
+
+from stride_core.db import Database
+from stride_core.running_calibration import (
+    RUNNING_CALIBRATION_MODEL_VERSION,
+    RunningCalibrationSnapshot,
+    CalibrationConfidence,
+)
+from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_core.training_load.adapter import _fetch_latest_calibration
+
+
+@pytest.fixture
+def db_with_calibration(tmp_path: Path) -> Database:
+    db_path = tmp_path / "test.db"
+    db = Database(db_path)
+    repo = SQLiteRunningCalibrationRepository(db)
+    snapshot = RunningCalibrationSnapshot(
+        as_of_date=date(2026, 5, 15),
+        algorithm_version=RUNNING_CALIBRATION_MODEL_VERSION,
+        threshold_hr=175.0,
+        threshold_speed_mps=4.65,
+        threshold_hr_confidence=CalibrationConfidence.MEDIUM,
+        threshold_speed_confidence=CalibrationConfidence.MEDIUM,
+        rhr_baseline=47.0,
+        observed_max_hr=188.0,
+        hrmax_estimate=188.0,
+        hrmax_confidence=CalibrationConfidence.MEDIUM,
+    )
+    repo.save_snapshot(snapshot)
+    return db
+
+
+def test_training_load_reads_threshold_from_running_calibration_snapshot(db_with_calibration):
+    calib = _fetch_latest_calibration(db_with_calibration)
+    assert calib is not None
+    assert calib.threshold_hr == 175.0
+    assert calib.threshold_speed_mps == 4.65
+
+
+def test_old_training_load_calibration_table_no_longer_exists(db_with_calibration):
+    """Schema migration: training_load_calibration table is gone."""
+    cur = db_with_calibration._conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='training_load_calibration'"
+    )
+    assert cur.fetchone() is None, "training_load_calibration should be dropped"
+```
+
+- [ ] **Step 2: Run the test, expect FAIL**
+
+```powershell
+pytest tests/test_calibration_migration.py -v
+```
+Expected: FAIL — `_fetch_latest_calibration` still reads old table OR training_load_calibration still exists.
+
+- [ ] **Step 3: Pivot `_fetch_latest_calibration`**
+
+In `src/stride_core/training_load/adapter.py`, replace `_fetch_latest_calibration` to read `running_calibration_snapshot` via raw SQL (no new Database method needed — keep the change surgical). Constants: import `RUNNING_CALIBRATION_MODEL_VERSION` from `stride_core.running_calibration`. The returned `CalibrationSnapshot` (training-load dataclass) maps:
+- `threshold_hr` ← row["threshold_hr"]
+- `threshold_speed_mps` ← row["threshold_speed_mps"]
+- `hrmax_estimate` ← row["hrmax_estimate"]
+- `rhr_baseline` ← row["rhr_baseline"]
+- `critical_power_w` ← None (not stored in new table — running-only)
+- `source` ← parse `source_json` if present, else `{}`
+- `id` ← row["id"]
+- `algorithm_version` ← row["algorithm_version"]
+
+Use `db.query("SELECT * FROM running_calibration_snapshot WHERE algorithm_version = ? ORDER BY as_of_date DESC, id DESC LIMIT 1", (RUNNING_CALIBRATION_MODEL_VERSION,))`. Discard the `getattr(db, "fetch_latest_training_load_calibration", None)` branch.
+
+- [ ] **Step 4: Replace `refresh_training_load_calibration` body**
+
+`refresh_training_load_calibration(db, *, as_of_date, lookback_days, persist)` becomes:
+```python
+def refresh_training_load_calibration(db, *, as_of_date=None, lookback_days=180, persist=True):
+    """Recompute thresholds via running_calibration module and persist to running_calibration_snapshot."""
+    from stride_core.running_calibration import recompute_running_calibration
+    from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+
+    repo = SQLiteRunningCalibrationRepository(db)
+    summary = recompute_running_calibration(
+        repo,
+        as_of_date=_parse_date(as_of_date) or today_shanghai(),
+        lookback_days=lookback_days,
+        persist=persist,
+    )
+    # Return shape kept compatible with old callers (CalibrationSnapshot-like)
+    snap = summary.snapshot
+    return CalibrationSnapshot(
+        as_of_date=snap.as_of_date,
+        rhr_baseline=snap.rhr_baseline,
+        hrmax_estimate=snap.hrmax_estimate,
+        threshold_hr=snap.threshold_hr,
+        threshold_speed_mps=snap.threshold_speed_mps,
+        critical_power_w=None,
+        source=snap.source if hasattr(snap, "source") else {},
+        id=summary.snapshot_id,
+        algorithm_version=snap.algorithm_version,
+    )
+```
+
+Delete the now-orphan helpers `_build_calibration_history`, `estimate_calibration`, `_fallback_calibration` (and their imports) IF they have no other callers. Verify with grep before deleting.
+
+- [ ] **Step 5: Drop `training_load_calibration` table + Database methods**
+
+In `src/stride_core/db.py`:
+- Remove the `CREATE TABLE IF NOT EXISTS training_load_calibration (...)` block (around line 318-330)
+- Remove the duplicated CREATE TABLE statement near line 951 (the alt schema block — find via `grep -n "training_load_calibration" src/stride_core/db.py`)
+- Remove `upsert_training_load_calibration` method (around line 1353)
+- Remove `fetch_latest_training_load_calibration` method (around line 1387)
+- The `calibration_id` FK references on `activity_training_load` and `daily_training_load` need to be updated. Two options:
+  - **(a)** Change the FK to reference `running_calibration_snapshot(id)` — keep the column, repoint the constraint via `REFERENCES running_calibration_snapshot(id)`
+  - **(b)** Drop the FK constraint entirely (SQLite doesn't enforce FKs by default unless `PRAGMA foreign_keys = ON`) — column stays as an opaque int referring to whichever calibration generated the row
+  - **Choose (a)** for type safety.
+
+In `src/stride_server/routes/training_load.py`, the `_calibration_body()` function references `calibration.threshold_hr / threshold_speed_mps / critical_power_w`. After the pivot, the returned `CalibrationSnapshot` has `critical_power_w=None` — verify route still produces valid JSON (None serializes as null).
+
+- [ ] **Step 6: Run test, verify PASS**
+
+```powershell
+pytest tests/test_calibration_migration.py -v
+```
+Expected: PASS (both tests).
+
+- [ ] **Step 7: Run pytest tests/ broadly, fix obvious regressions**
+
+```powershell
+$env:PYTHONPATH = "src"; pytest tests/ -q
+```
+Expected: training_load module tests may need light updates (the old `_fallback_calibration` is gone; tests using `estimate_calibration` directly need to switch to `estimate_running_calibration`).
+
+- [ ] **Step 8: Commit**
+
+```powershell
+git -c core.safecrlf=warn add src/stride_core/db.py src/stride_core/training_load/adapter.py src/stride_server/routes/training_load.py tests/test_calibration_migration.py
+git -c core.safecrlf=warn commit -m "refactor(calibration): pivot training-load to read from running_calibration_snapshot; drop training_load_calibration"
+```
+
+---
+
+### Task 4b: Truncate-and-rebackfill helper + training-load backfill regression test
+
+**Files:**
+- Modify: `src/stride_core/training_load/core.py` or wherever `backfill_training_load` lives — verify it can be called after FK migration
+- Create: `tests/test_training_load_rebackfill.py`
+
+- [ ] **Step 1: Write a regression test that exercises the full truncate → recompute calibration → backfill chain**
+
+```python
+"""End-to-end test: truncate training-load rows, recompute calibration via
+running_calibration, re-backfill training load. Verify rows reappear linked
+to the new calibration snapshot."""
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from stride_core.db import Database
+from stride_core.training_load import backfill_training_load
+
+
+@pytest.fixture
+def db_with_history(tmp_path: Path) -> Database:
+    db = Database(tmp_path / "test.db")
+    # Seed a few activities with HR + speed samples sufficient for calibration
+    # (helper to mint synthetic activities — implementer to add or inline)
+    _seed_running_activities(db, count=20)
+    return db
+
+
+def _seed_running_activities(db: Database, count: int) -> None:
+    """Insert `count` synthetic running activities with HR + speed samples
+    such that running_calibration can compute thresholds from them.
+    Implementer: inline minimal valid rows to satisfy
+    estimate_running_calibration's input requirements."""
+    raise NotImplementedError("inline synthetic activity seeding")
+
+
+def test_truncate_and_rebackfill(db_with_history):
+    summary = backfill_training_load(db_with_history)
+    # After backfill, both tables have rows again, linked to a snapshot
+    daily = db_with_history.query("SELECT count(*) AS n FROM daily_training_load")
+    activity = db_with_history.query("SELECT count(*) AS n FROM activity_training_load")
+    assert daily[0]["n"] > 0
+    assert activity[0]["n"] > 0
+    snap = db_with_history.query(
+        "SELECT count(*) AS n FROM running_calibration_snapshot"
+    )
+    assert snap[0]["n"] >= 1
+```
+
+If `_seed_running_activities` is too complex to write inline, simplify the test to just verify that `backfill_training_load(empty_db)` does not crash and creates zero rows; defer the full e2e to manual verification.
+
+- [ ] **Step 2: Run test (expect FAIL due to NotImplementedError unless simplified)**
+
+Adjust scope until the test exists and is meaningful, even if just smoke-level.
+
+- [ ] **Step 3: Implement / adjust whatever is needed for backfill to work**
+
+Most likely just minor adapter call-site adjustments — `backfill_training_load` should already work since it calls `refresh_training_load_calibration` (which we pivoted) and then loops over activities.
+
+- [ ] **Step 4: Commit**
+
+```powershell
+git -c core.safecrlf=warn add tests/test_training_load_rebackfill.py
+git -c core.safecrlf=warn commit -m "test(calibration): verify training-load rebackfill after truncate works against new snapshot table"
+```
+
+---
+
+### Task 4c: Internal endpoint for cron-triggered recompute
+
+**Files:**
+- Modify: `src/stride_server/routes/training_load.py` — add new internal endpoint OR
+- Create: `src/stride_server/routes/stride_internal.py` — cleaner separation (decide by reading the existing file)
+
+Recommendation: add to `routes/training_load.py` since it already exposes `/internal/training-load/calibration/refresh` and the new endpoint is conceptually the same operation. Keep naming consistent.
+
+- [ ] **Step 1: Write failing test**
+
+Append to `tests/test_stride_routes.py`:
+
+```python
+def test_internal_recompute_recalibration(rsa_keypair, monkeypatch, seeded_db, tmp_path):
+    """POST /internal/training-load/calibration/refresh re-computes via running_calibration
+    and persists a snapshot to running_calibration_snapshot."""
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem)
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", "test-internal-token")
+
+    # seed enough activities for calibration to succeed (or assert graceful no-op on empty)
+    client = _build_client(public_pem)
+    resp = client.post(
+        f"/api/internal/training-load/calibration/refresh?user={USER_ID}",
+        headers={"X-Stride-Internal-Token": "test-internal-token"},
+    )
+    assert resp.status_code in (200, 204)
+```
+
+Note: the existing internal endpoint already exists at `POST /internal/training-load/calibration/refresh` (per `src/stride_server/routes/training_load.py` line 25). After Task 4a's pivot, this endpoint now writes to `running_calibration_snapshot` via the pivoted `refresh_training_load_calibration`. No new endpoint needed — just verify the existing one works post-pivot.
+
+- [ ] **Step 2: Run test**
+
+```powershell
+pytest tests/test_stride_routes.py::test_internal_recompute_recalibration -v
+```
+Expected: PASS (assuming Task 4a's pivot is correct).
+
+- [ ] **Step 3: Commit**
+
+```powershell
+git -c core.safecrlf=warn add tests/test_stride_routes.py
+git -c core.safecrlf=warn commit -m "test(stride): verify existing internal calibration endpoint post-pivot writes to running_calibration_snapshot"
+```
+
+---
+
+### Task 4d: Weekly GitHub Action cron
+
+**Files:**
+- Create: `.github/workflows/weekly-running-calibration.yml`
+
+- [ ] **Step 1: Inspect existing weekly / scheduled workflows in the repo for conventions**
+
+```powershell
+ls .github/workflows
+```
+
+Find one already using `schedule: cron: ...` and mirror its style (env, secrets, runtime).
+
+- [ ] **Step 2: Create the workflow**
+
+```yaml
+name: Weekly running calibration recompute
+
+on:
+  schedule:
+    # Every Sunday at 04:00 UTC (12:00 Asia/Shanghai)
+    - cron: '0 4 * * 0'
+  workflow_dispatch: {}
+
+jobs:
+  recompute:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve active user UUIDs
+        id: users
+        run: |
+          # Read data/.slug_aliases.json -> get the UUID list (jq or python one-liner)
+          python -c "import json,sys; aliases=json.load(open('data/.slug_aliases.json')); print('\n'.join(set(aliases.values())))" > users.txt
+          echo "count=$(wc -l < users.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Recompute for each user
+        env:
+          PROD_BASE_URL: ${{ secrets.STRIDE_PROD_BASE_URL }}
+          INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+        run: |
+          fail=0
+          while read -r user; do
+            [ -z "$user" ] && continue
+            echo "Recompute for $user"
+            code=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+              -X POST \
+              -H "X-Stride-Internal-Token: $INTERNAL_TOKEN" \
+              "$PROD_BASE_URL/api/internal/training-load/calibration/refresh?user=$user")
+            if [ "$code" != "200" ] && [ "$code" != "204" ]; then
+              echo "FAIL $user code=$code body=$(cat /tmp/resp.json)"
+              fail=$((fail+1))
+            fi
+          done < users.txt
+          if [ "$fail" -gt 0 ]; then
+            echo "$fail user(s) failed"
+            exit 1
+          fi
+```
+
+Adjust the secret names + base URL convention to match what the repo already uses for production calls (grep `.github/workflows` for existing `STRIDE_PROD_BASE_URL` or equivalent).
+
+- [ ] **Step 3: Commit (workflow doesn't run until merged to master)**
+
+```powershell
+git -c core.safecrlf=warn add .github/workflows/weekly-running-calibration.yml
+git -c core.safecrlf=warn commit -m "ci: add weekly running-calibration recompute workflow"
+```
+
+---
+
+### Task 4e: Run truncate + rebackfill once locally to seed worktree DB
+
+**Files:** N/A (one-shot data operation)
+
+- [ ] **Step 1: For user `zhaochaoyi`, run the data migration locally**
+
+```powershell
+$env:PYTHONPATH = "src"
+python -c "
+from stride_core.db import Database
+db = Database(user='zhaochaoyi')
+db._conn.execute('DELETE FROM daily_training_load')
+db._conn.execute('DELETE FROM activity_training_load')
+db._conn.commit()
+print('truncated training_load rows')
+db.close()
+"
+```
+
+- [ ] **Step 2: Trigger backfill via existing CLI / internal endpoint**
+
+```powershell
+$env:PYTHONPATH = "src"
+python -c "
+from stride_core.db import Database
+from stride_core.training_load import backfill_training_load
+db = Database(user='zhaochaoyi')
+result = backfill_training_load(db)
+print(result)
+db.close()
+"
+```
+
+Verify:
+- One row in `running_calibration_snapshot` (new)
+- N rows in `daily_training_load` (rebackfilled with new algorithm)
+- M rows in `activity_training_load`
+
+- [ ] **Step 3: Spot-check that current values look reasonable**
+
+Compare current values (`acute_load / chronic_load / form`) before/after — they should be similar in magnitude but not identical (new algorithm). If they're wildly different (e.g., 10x scale), pause and investigate.
+
+(No commit — this is a local data operation, not source change. Worktree DB is dev data; production data is separately migrated by Task 4d's cron once merged.)
+
+---
+
 ## Phase 3: Frontend — API client + Routing
 
 ### Task 5: Add types + fetchers to api.ts
