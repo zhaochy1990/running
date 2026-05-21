@@ -92,6 +92,12 @@ CREATE TABLE IF NOT EXISTS activities (
     provider        TEXT NOT NULL DEFAULT 'coros',
     synced_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
+-- Functional index on the Shanghai-day expression so queries that compare
+-- `activities.date` (UTC ISO) in the Shanghai calendar via SHANGHAI_DAY_SQL
+-- (see stride_core/timefmt.py) avoid a full table scan. Must match the
+-- exact expression text in SHANGHAI_DAY_SQL for SQLite to use it.
+CREATE INDEX IF NOT EXISTS idx_activities_shanghai_day
+    ON activities(date(datetime(date, '+8 hours')));
 
 CREATE TABLE IF NOT EXISTS laps (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

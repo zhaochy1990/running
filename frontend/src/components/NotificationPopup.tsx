@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { shanghaiDate } from '../lib/shanghai'
 import { useNotificationsStore } from '../store/notificationsStore'
 
 const SEVERITY_ACCENT: Record<string, string> = {
@@ -69,7 +70,7 @@ export default function NotificationPopup() {
               {message.title}
             </h2>
             <p className="mt-1 text-[11px] font-mono text-text-muted tracking-wider">
-              {message.publishedAt.slice(0, 10)}
+              {shanghaiDate(message.publishedAt)}
             </p>
             <p className="mt-3 text-sm leading-relaxed text-text-secondary whitespace-pre-line">
               {message.body}

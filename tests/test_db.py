@@ -218,3 +218,32 @@ class TestAbility:
         assert row2["l1_quality"] == 90.0
         # Missing label_id returns None
         assert db.fetch_activity_ability("nonexistent") is None
+
+
+class TestActivitiesIndexes:
+    """Verify SQLite picks up the functional index for SHANGHAI_DAY_SQL queries."""
+
+    def test_shanghai_day_index_used_for_common_query_shapes(self, db):
+        from stride_core.timefmt import SHANGHAI_DAY_SQL
+
+        # Need some data + ANALYZE so the planner has stats to prefer the
+        # index over a scan.
+        for i in range(64):
+            db.query(
+                "INSERT INTO activities (label_id, sport_type, date) VALUES (?, ?, ?)",
+                (f"a{i}", 100, f"2026-05-{(i % 28) + 1:02d}T10:00:00+00:00"),
+            )
+        db.query("ANALYZE")
+
+        for sql, params in [
+            (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} >= ?", ("2026-05-09",)),
+            (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?", ("2026-05-04", "2026-05-10")),
+            (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} = ?", ("2026-05-09",)),
+        ]:
+            plan = db.query(f"EXPLAIN QUERY PLAN {sql}", params)
+            # sqlite3.Row.__str__ doesn't expose columns; pull the `detail`
+            # column where the EXPLAIN narrative lives.
+            joined = " | ".join(row["detail"] for row in plan)
+            assert "idx_activities_shanghai_day" in joined, (
+                f"functional index not used for: {sql}\nplan: {joined}"
+            )
