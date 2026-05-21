@@ -227,11 +227,16 @@ class TestActivitiesIndexes:
 
     @pytest.fixture
     def seeded_db(self, db):
+        """64 activities + ANALYZE so the planner has stats to prefer the
+        index over a scan. SQLite may default to a sequential scan on a
+        small unANALYZE'd table even when the right index exists; dropping
+        either the row count or ANALYZE here will silently regress these
+        tests on some SQLite builds."""
         for i in range(64):
-            db.query(
-                "INSERT INTO activities (label_id, sport_type, date) VALUES (?, ?, ?)",
-                (f"a{i}", 100, f"2026-05-{(i % 28) + 1:02d}T10:00:00+00:00"),
-            )
+            db.upsert_activity(_make_detail(
+                label_id=f"a{i}",
+                date=f"2026-05-{(i % 28) + 1:02d}T10:00:00+00:00",
+            ))
         db.query("ANALYZE")
         return db
 

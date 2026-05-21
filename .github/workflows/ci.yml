@@ -14,8 +14,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v6
         with:
-          # Match Dockerfile (python:3.13-slim). pyproject.toml pins
-          # requires-python = ">=3.12" (commit 1e154b9).
+          # Match Dockerfile (python:3.13-slim); pyproject requires >=3.12.
           python-version: '3.13'
           cache: 'pip'
 
