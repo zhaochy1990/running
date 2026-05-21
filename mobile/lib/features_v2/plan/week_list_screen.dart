@@ -2,8 +2,8 @@
 ///
 /// 路由：/v2/train（替换 TrainPlaceholderScreen，作为训练 tab 主页）
 ///
-/// 内容：
-///   1. StrideTopBar 标题 "训练"
+/// 内容（wave 1 — 仅接入 hero；下周待生成卡 + 阶段进度条留待 wave 2）：
+///   1. StrideScreenHero "训练 · 周计划"
 ///   2. StrideSegControl ['本周', '下周', '历史']（本周 + 历史实现；下周 SnackBar）
 ///   3. 周卡列表 → 点击进入 D2 周计划预览
 ///   4. FAB "生成本周计划"（仅在无计划时显示）→ SnackBar 占位
@@ -16,8 +16,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
+import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/seg_control.dart';
-import '../_shared/widgets/top_bar.dart';
 import 'models/week_list_item.dart';
 import 'providers/week_list_provider.dart';
 import 'widgets/week_card.dart';
@@ -39,14 +39,24 @@ class _WeekListScreenState extends ConsumerState<WeekListScreen> {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(title: '训练'),
-      body: Column(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
         children: [
+          // Hero. NB: design D2a wants phase progress + "下周待生成" card
+          // here — wave 2 will replace the segmented control + FAB below
+          // with the spec layout. For now the hero gives the screen its
+          // identity per spec/mobile_design.html:2660-2662.
+          const StrideScreenHero(
+            eyebrow: '训练 · 周计划',
+            title: '训练周',
+            deck: '查看本周课表、滚动生成下周计划，或回看历史周复盘。',
+          ),
           // Segmented control
           Padding(
             padding: const EdgeInsets.fromLTRB(
               StrideTokens.spaceLg,
-              StrideTokens.spaceMd,
+              StrideTokens.spaceXs,
               StrideTokens.spaceLg,
               StrideTokens.spaceSm,
             ),
@@ -77,6 +87,7 @@ class _WeekListScreenState extends ConsumerState<WeekListScreen> {
             ),
           ),
         ],
+        ),
       ),
       floatingActionButton: _GenerateFab(asyncWeeks: asyncWeeks),
     );

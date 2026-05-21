@@ -17,7 +17,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/updater/update_checker.dart';
 import '../../data/api/stride_api.dart';
 import '../../features/updater/update_prompt.dart';
-import '../_shared/widgets/top_bar.dart';
+import '../_shared/widgets/screen_hero.dart';
 import '../home/models/home_data.dart';
 import '../home/providers/home_provider.dart';
 import 'widgets/menu_item.dart';
@@ -32,35 +32,52 @@ class ProfileScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(title: '我'),
-      body: profileAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Text(
-            '加载失败: $e',
-            style: const TextStyle(
-                fontFamily: AppTypography.fontSans,
-                fontSize: StrideTokens.fs13,
-                color: StrideTokens.muted),
-          ),
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            const StrideScreenHero(
+              eyebrow: '个人中心',
+              title: '我',
+              deck: '账号、训练目标、手表绑定、通知与系统设置。',
+            ),
+            Expanded(
+              child: profileAsync.when(
+                loading: () =>
+                    const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(
+                  child: Text(
+                    '加载失败: $e',
+                    style: const TextStyle(
+                      fontFamily: AppTypography.fontSans,
+                      fontSize: StrideTokens.fs13,
+                      color: StrideTokens.muted,
+                    ),
+                  ),
+                ),
+                data: (profile) {
+                  final displayName = profile?.displayName ??
+                      profile?.profile?['display_name'] as String? ??
+                      _emailPrefix(
+                          (profile?.profile?['email'] as String?) ?? '');
+
+                  final email =
+                      (profile?.profile?['email'] as String?) ?? '';
+
+                  final lifetimeKm =
+                      homeAsync.valueOrNull?.lifetimeStats.totalDistanceKm;
+
+                  return _ProfileBody(
+                    displayName: displayName,
+                    email: email,
+                    lifetimeKm: lifetimeKm,
+                    watch: homeAsync.valueOrNull?.watch,
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-        data: (profile) {
-          final displayName = profile?.displayName ??
-              profile?.profile?['display_name'] as String? ??
-              _emailPrefix(
-                  (profile?.profile?['email'] as String?) ?? '');
-
-          final email = (profile?.profile?['email'] as String?) ?? '';
-
-          final lifetimeKm = homeAsync.valueOrNull?.lifetimeStats.totalDistanceKm;
-
-          return _ProfileBody(
-            displayName: displayName,
-            email: email,
-            lifetimeKm: lifetimeKm,
-            watch: homeAsync.valueOrNull?.watch,
-          );
-        },
       ),
     );
   }

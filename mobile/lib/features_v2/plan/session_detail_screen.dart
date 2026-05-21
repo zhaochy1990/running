@@ -4,7 +4,7 @@
 /// 参数：folder, date (YYYY-MM-DD), sessionIndex (int)
 ///
 /// 内容：
-///   1. StrideTopBar：返回 + "课时详情"
+///   1. StrideScreenHero：返回 + 「{周X} · {kind}」eyebrow + 课名 h1
 ///   2. 顶部摘要卡：课名 + 强度 pill + StrideStatRow（距离/时长/配速区间）
 ///   3. 第二 StatRow：心率区间 / 卡路里估算 / 区间标签
 ///   4. 执行要点 section（notes_md 或占位）
@@ -23,8 +23,8 @@ import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/api/stride_api.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/stat_row.dart';
-import '../_shared/widgets/top_bar.dart';
 import '../../data/models/plan.dart';
 import 'models/day_plan.dart';
 import 'providers/plan_day_provider.dart';
@@ -58,65 +58,143 @@ class SessionDetailScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: StrideTopBar(
-        title: '课时详情',
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      body: SafeArea(
+        bottom: false,
+        child: async.when(
+          loading: () => Column(
             children: [
-              const Text(
-                '加载失败',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs15,
-                  color: StrideTokens.danger,
+              _hero(context, eyebrow: '课时详情', title: '加载中…'),
+              const Expanded(
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ],
+          ),
+          error: (e, _) => Column(
+            children: [
+              _hero(context, eyebrow: '课时详情', title: '加载失败'),
+              Expanded(
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '加载失败',
+                        style: TextStyle(
+                          fontFamily: AppTypography.fontSans,
+                          fontSize: StrideTokens.fs15,
+                          color: StrideTokens.danger,
+                        ),
+                      ),
+                      const SizedBox(height: StrideTokens.spaceMd),
+                      TextButton(
+                        onPressed: () => ref.invalidate(
+                          planDayProvider(
+                            (date: date, sessionIndex: sessionIndex),
+                          ),
+                        ),
+                        child: const Text('重试'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: StrideTokens.spaceMd),
-              TextButton(
-                onPressed: () => ref.invalidate(
-                  planDayProvider((date: date, sessionIndex: sessionIndex)),
+            ],
+          ),
+          data: (plan) => Column(
+            children: [
+              _hero(
+                context,
+                eyebrow: '${_weekdayLabel(date)} · ${_kindLabel(plan.kind)}',
+                title: plan.name,
+              ),
+              Expanded(
+                child: rawAsync.when(
+                  loading: () => _SessionDetailBody(
+                    plan: plan,
+                    folder: folder,
+                    date: date,
+                    sessionIndex: sessionIndex,
+                    rawSession: null,
+                    nutrition: null,
+                  ),
+                  error: (_, _) => _SessionDetailBody(
+                    plan: plan,
+                    folder: folder,
+                    date: date,
+                    sessionIndex: sessionIndex,
+                    rawSession: null,
+                    nutrition: null,
+                  ),
+                  data: (raw) => _SessionDetailBody(
+                    plan: plan,
+                    folder: folder,
+                    date: date,
+                    sessionIndex: sessionIndex,
+                    rawSession: raw.session,
+                    nutrition: raw.nutrition,
+                  ),
                 ),
-                child: const Text('重试'),
               ),
             ],
           ),
         ),
-        data: (plan) => rawAsync.when(
-          loading: () => _SessionDetailBody(
-            plan: plan,
-            folder: folder,
-            date: date,
-            sessionIndex: sessionIndex,
-            rawSession: null,
-            nutrition: null,
-          ),
-          error: (_, _) => _SessionDetailBody(
-            plan: plan,
-            folder: folder,
-            date: date,
-            sessionIndex: sessionIndex,
-            rawSession: null,
-            nutrition: null,
-          ),
-          data: (raw) => _SessionDetailBody(
-            plan: plan,
-            folder: folder,
-            date: date,
-            sessionIndex: sessionIndex,
-            rawSession: raw.session,
-            nutrition: raw.nutrition,
-          ),
-        ),
       ),
     );
+  }
+
+  Widget _hero(
+    BuildContext context, {
+    required String eyebrow,
+    required String title,
+  }) {
+    return StrideScreenHero(
+      eyebrow: eyebrow,
+      title: title,
+      leading: IconButton(
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+        icon: const Icon(Icons.arrow_back, size: 20),
+        onPressed: () => context.pop(),
+      ),
+    );
+  }
+
+  static const _weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+  String _weekdayLabel(String isoDate) {
+    try {
+      final d = DateTime.parse(isoDate);
+      return _weekdays[d.weekday - 1];
+    } catch (_) {
+      return '课时';
+    }
+  }
+
+  String _kindLabel(String kind) {
+    switch (kind.toLowerCase()) {
+      case 'e':
+      case 'easy':
+        return '轻松跑';
+      case 'm':
+      case 'tempo':
+        return '节奏跑';
+      case 'i':
+      case 'interval':
+        return '间歇跑';
+      case 'l':
+      case 'long':
+        return '长距';
+      case 't':
+      case 'threshold':
+        return '阈值跑';
+      case 'r':
+      case 'rest':
+        return '休息';
+      case 'strength':
+        return '力量';
+      default:
+        return kind.toUpperCase();
+    }
   }
 }
 
