@@ -268,7 +268,79 @@ function TrendsRow({
   )
 }
 
-// Placeholders for tasks 10-12
-function ZonesRow(_props: { zones: any }) { return <div data-section="zones" /> }
+// === Task 10: ZonesRow ===
+function EmptyZones() {
+  return (
+    <div className="text-xs font-mono text-text-muted py-6 text-center">
+      暂无 STRIDE 校准数据
+      <br />
+      需先完成一定次数的跑步活动
+    </div>
+  )
+}
+
+function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
+  const hasData = !!zones?.threshold && zones.pace_zones.length > 0 && zones.hr_zones.length > 0
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <ChartCard title="配速区间" sublabel="STRIDE-derived from threshold pace">
+        {hasData ? (
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="text-text-faint border-b border-border-subtle">
+                <th className="text-left py-1">Zone</th>
+                <th className="text-left py-1">名称</th>
+                <th className="text-right py-1">慢边</th>
+                <th className="text-right py-1">快边</th>
+              </tr>
+            </thead>
+            <tbody>
+              {zones!.pace_zones.map((z) => (
+                <tr key={z.name} className="border-b border-border-subtle/50 last:border-0">
+                  <td className="py-1.5 text-accent-green">{z.name}</td>
+                  <td className="py-1.5 text-text-primary">{z.label}</td>
+                  <td className="py-1.5 text-right text-text-muted">{z.lower_pace ?? '—'}</td>
+                  <td className="py-1.5 text-right text-text-muted">{z.upper_pace ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyZones />
+        )}
+      </ChartCard>
+
+      <ChartCard title="心率区间" sublabel="STRIDE-derived from threshold HR">
+        {hasData ? (
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="text-text-faint border-b border-border-subtle">
+                <th className="text-left py-1">Zone</th>
+                <th className="text-left py-1">名称</th>
+                <th className="text-right py-1">下限</th>
+                <th className="text-right py-1">上限</th>
+              </tr>
+            </thead>
+            <tbody>
+              {zones!.hr_zones.map((z) => (
+                <tr key={z.name} className="border-b border-border-subtle/50 last:border-0">
+                  <td className="py-1.5 text-accent-amber">{z.name}</td>
+                  <td className="py-1.5 text-text-primary">{z.label}</td>
+                  <td className="py-1.5 text-right text-text-muted">{z.lower_bpm ?? '—'}</td>
+                  <td className="py-1.5 text-right text-text-muted">{z.upper_bpm ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyZones />
+        )}
+      </ChartCard>
+    </div>
+  )
+}
+
+// Placeholders for tasks 11-12
 function TrainingLoadSection(_props: { load: any }) { return <div data-section="load" /> }
 function DataStatusFooter(_props: { zones: any; load: any }) { return <div data-section="footer" /> }
