@@ -209,3 +209,81 @@ def test_stride_zones_unauthenticated(rsa_keypair, monkeypatch, seeded_db):
     client = _build_client(public_pem)
     resp = client.get(f"/api/{USER_ID}/stride/zones")
     assert resp.status_code == 401
+
+
+def _seed_training_load(db_path: Path):
+    """Insert 5 days of daily_training_load."""
+    db = Database(db_path)
+    try:
+        rows = [
+            ("2026-05-17", 1, None, 60.0, 70.0, 70.0, 0.0, 1.00, "go",  '["ok"]'),
+            ("2026-05-18", 1, None, 75.0, 72.0, 70.5, -1.5, 1.02, "go",  '["ok"]'),
+            ("2026-05-19", 1, None, 80.0, 75.0, 71.5, -3.5, 1.05, "caution", '["high_load"]'),
+            ("2026-05-20", 1, None, 70.0, 76.0, 72.5, -3.5, 1.05, "go",  '["ok"]'),
+            ("2026-05-21", 1, None, 75.2, 78.0, 72.0, -6.0, 1.08, "go",  '["ok"]'),
+        ]
+        db._conn.executemany(
+            """INSERT INTO daily_training_load
+               (date, algorithm_version, calibration_id, training_dose,
+                acute_load, chronic_load, form, load_ratio,
+                readiness_gate, readiness_reasons_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            rows,
+        )
+        db._conn.commit()
+    finally:
+        db.close()
+
+
+def test_stride_training_load_happy_path(rsa_keypair, monkeypatch, seeded_db):
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem)
+    _seed_training_load(seeded_db)
+
+    client = _build_client(public_pem)
+    token = _issue_token(private_pem)
+    resp = client.get(
+        f"/api/{USER_ID}/stride/training-load?days=30",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["current"]["date"] == "2026-05-21"
+    assert body["current"]["acute_load"] == 78.0
+    assert body["current"]["chronic_load"] == 72.0
+    assert body["current"]["form"] == -6.0
+    assert body["current"]["load_ratio"] == 1.08
+    assert body["current"]["readiness_gate"] == "go"
+    assert body["current"]["readiness_reasons"] == ["ok"]
+    assert len(body["series"]) == 5
+    # series oldest-first
+    assert body["series"][0]["date"] == "2026-05-17"
+    assert body["series"][-1]["date"] == "2026-05-21"
+
+
+def test_stride_training_load_no_data(rsa_keypair, monkeypatch, seeded_db):
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem)
+
+    client = _build_client(public_pem)
+    token = _issue_token(private_pem)
+    resp = client.get(
+        f"/api/{USER_ID}/stride/training-load?days=30",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"current": None, "series": []}
+
+
+def test_stride_training_load_validates_days(rsa_keypair, monkeypatch, seeded_db):
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem)
+
+    client = _build_client(public_pem)
+    token = _issue_token(private_pem)
+    for bad in (0, 6, 400, -1):
+        resp = client.get(
+            f"/api/{USER_ID}/stride/training-load?days={bad}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 422, f"days={bad} should 422"

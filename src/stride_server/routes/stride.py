@@ -12,9 +12,10 @@ Strictly avoids: daily_health.ati / cti / training_load_*
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from ..deps import get_db
 
@@ -101,5 +102,42 @@ def get_stride_zones(user: str) -> dict[str, Any]:
             "pace_zones": pace_zones,
             "hr_zones": hr_zones,
         }
+    finally:
+        db.close()
+
+
+@router.get("/api/{user}/stride/training-load")
+def get_stride_training_load(
+    user: str,
+    days: int = Query(90, ge=7, le=365),
+) -> dict[str, Any]:
+    db = get_db(user)
+    try:
+        rows = db._conn.execute(
+            """SELECT date, algorithm_version, training_dose, acute_load,
+                      chronic_load, form, load_ratio, readiness_gate,
+                      readiness_reasons_json
+               FROM daily_training_load
+               ORDER BY date DESC
+               LIMIT ?""",
+            (days,),
+        ).fetchall()
+        if not rows:
+            return {"current": None, "series": []}
+
+        records: list[dict[str, Any]] = []
+        for r in rows:
+            rec = dict(r)
+            reasons_raw = rec.pop("readiness_reasons_json", None)
+            try:
+                reasons = json.loads(reasons_raw) if reasons_raw else []
+            except (TypeError, ValueError):
+                reasons = []
+            rec["readiness_reasons"] = reasons if isinstance(reasons, list) else []
+            records.append(rec)
+
+        records.sort(key=lambda r: r["date"])
+        current = dict(records[-1])
+        return {"current": current, "series": records}
     finally:
         db.close()
