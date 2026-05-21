@@ -1067,13 +1067,10 @@ class Database:
                 """)
                 self._conn.commit()
 
-        # Thresholds moved to running_calibration_snapshot; drop the legacy
-        # table on existing DBs. Gate on sqlite_master so the steady-state
-        # warm path skips the DDL + commit (matches planned_session style).
-        legacy_calibration = self._conn.execute(
+        # Thresholds moved to running_calibration_snapshot; drop the legacy table.
+        if self._conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='training_load_calibration'"
-        ).fetchone()
-        if legacy_calibration is not None:
+        ).fetchone():
             self._conn.execute("DROP TABLE training_load_calibration")
             self._conn.commit()
 

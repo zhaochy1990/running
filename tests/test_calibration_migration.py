@@ -57,13 +57,7 @@ def test_migration_drops_pre_pivot_training_load_calibration_table(tmp_path: Pat
     """Pre-existing legacy table must be dropped, not just absent on fresh DBs."""
     db_path = tmp_path / "legacy.db"
     raw = sqlite3.connect(db_path)
-    raw.execute(
-        "CREATE TABLE training_load_calibration ("
-        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        " as_of_date TEXT NOT NULL,"
-        " algorithm_version INTEGER NOT NULL,"
-        " UNIQUE(as_of_date, algorithm_version))"
-    )
+    raw.execute("CREATE TABLE training_load_calibration (id INTEGER PRIMARY KEY)")
     raw.close()
 
     db = Database(db_path)
