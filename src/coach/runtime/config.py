@@ -17,9 +17,9 @@ import os
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
-from .model_spec import AuthMode, ModelSpec, Provider, Role
+from .model_spec import AuthMode, ModelSpec, Provider, ReasoningEffort, Role
 
 
 CONFIG_FILENAME = "config/coach.toml"
@@ -98,7 +98,10 @@ def _resolve_path(path: str | Path | None) -> Path:
 _VALID_PROVIDERS: set[str] = {"azure-openai", "azure-ai-inference"}
 _VALID_AUTH_MODES: set[str] = {"managed-identity", "api-key"}
 _VALID_API_KINDS: set[str] = {"chat-completions", "responses"}
-_VALID_REASONING_EFFORTS: set[str] = {"minimal", "low", "medium", "high"}
+# Derived from the ``ReasoningEffort`` Literal so adding a new level
+# (e.g. ``"maximal"``) is a single-line change in ``model_spec.py`` and
+# doesn't drift between the type alias and runtime validation.
+_VALID_REASONING_EFFORTS: frozenset[str] = frozenset(get_args(ReasoningEffort))
 _REQUIRED_FIELDS = (
     "provider",
     "model",

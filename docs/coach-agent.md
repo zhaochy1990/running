@@ -27,9 +27,9 @@ STRIDE coach 是 LangGraph-based agent，处理三个场景：
 | Reviewer | Claude Opus 4.7 | `azure-ai-inference` | `AzureAIChatCompletionsModel` |
 | Commentary | GPT-4.1 | `azure-openai` | `AzureChatOpenAI` |
 
-Role→model 绑定在 `config/coach.toml`（已 commit；deployment id 是 placeholder 直到 Foundry 资源接好）。两个 provider 都打 Azure AI Foundry；auth 是 Managed Identity（`mode = "managed-identity"`）。AAD token provider 在 `stride_server.coach_runtime` 构建（azure-identity 不能进 `coach.*`，import-linter 限制），每次 `build_chat_model(spec, azure_ad_token_provider=...)` 注入。
+Role→model 绑定在两个 toml：**dev** `config/coach.local.toml`（gpt-5.5 @ azureai4identity，checked in 共享给所有 dev）+ **prod** `config/coach.prod.toml`（gpt-5.4 @ word-learner-llm；Docker build `cp coach.prod.toml coach.toml` 后这个就是 `coach.toml`）。`coach.runtime.config._resolve_path` 5 步链：(1) 显式 `path=` arg → (2) `STRIDE_COACH_CONFIG_PATH` env → (3) `coach.local.toml` → (4) `coach.toml` (Docker prod) → (5) cwd fallback。dev fresh checkout 自动跑 local；prod 容器里没 local 文件自动 fallback。两个 provider 都打 Azure AI Foundry；auth 是 Managed Identity（`mode = "managed-identity"`）。AAD token provider 在 `stride_server.coach_runtime` 构建（azure-identity 不能进 `coach.*`，import-linter 限制），每次 `build_chat_model(spec, azure_ad_token_provider=...)` 注入。
 
-**Commentary migration safety**：`[commentary]` section 是 forward-looking stub。生产环境 commentary 生成路径（sync 时 auto-gen + manual regenerate endpoint）仍用自己的 direct AOAI client，直到 migration commit 落地。live route surface 里没东西调 `get_commentary_llm()` —— 改 coach.toml 的 `[commentary]` section 不影响生产，直到那个 commit ship。
+**Commentary migrated**：自 PR #16 起 `stride_server.commentary_ai.generate_commentary` 通过 `coach_runtime.get_commentary_llm()` 走 `[commentary]` section。改 coach.toml 的 `[commentary]` section **会**直接影响生产 commentary 路径。`server.toml` 里历史 `[commentary]` 块（pre-PR-#16 残留）在 PR #25 删除。
 
 两者在以下情况 raise `CoachLLMUnavailable`：(a) 配置文件缺失；(b) deployment id 是 placeholder（`<PLACEHOLDER_*>`）；(c) endpoint env var 缺失；(d) auth credentials 缺失。
 

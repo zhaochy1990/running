@@ -43,14 +43,18 @@ class ServerConfig:
     akv: AzureKeyVaultConfig
     auth: AuthConfig
     auth_service: AuthServiceConfig
-    llm: LLMConfig
-    commentary: CommentaryConfig
     storage: StorageConfig
     coach_persistence: CoachPersistenceConfig
     notifications: NotificationConfig
     sync: SyncConfig
     internal: InternalConfig
 ```
+
+> **Note (PR #25, 2026-05-21)**: Original `llm: LLMConfig` and
+> `commentary: CommentaryConfig` fields were removed as dead code —
+> nothing in the runtime ever read them after PR #16 consolidated LLM
+> calls to `coach.runtime.config`. LLM / commentary configuration now
+> lives exclusively in `config/coach.{toml,local.toml,prod.toml}`.
 
 The config center stays in `stride_server`, not `coach`, to preserve the existing import-linter boundary: `coach.*` must not import server, Azure, FastAPI, or database modules.
 
