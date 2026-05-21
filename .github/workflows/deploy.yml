@@ -56,6 +56,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install backend (dev extras)
+        run: pip install -e ".[web,dev]"
+
+      - name: Verify import contracts
+        run: lint-imports
+
+      - name: Run backend tests
+        run: pytest -q
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
