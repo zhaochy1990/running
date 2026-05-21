@@ -46,7 +46,7 @@ export default function SyncStatusPill() {
       onClick={handleClick}
       disabled={syncing}
       data-testid="sync-status-pill"
-      className="hidden sm:inline-flex items-center gap-1.5 h-[24px] px-3 rounded-full bg-bg-secondary border border-border-subtle font-mono text-[11px] text-text-secondary hover:border-border disabled:opacity-60 transition-colors cursor-pointer"
+      className="inline-flex items-center gap-1.5 h-[24px] px-3 rounded-full bg-bg-secondary border border-border-subtle font-mono text-[11px] text-text-secondary hover:border-border disabled:opacity-60 transition-colors cursor-pointer"
     >
       {!syncing && lastSync && (
         <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" aria-hidden />
