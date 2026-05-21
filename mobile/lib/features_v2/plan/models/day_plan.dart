@@ -142,20 +142,21 @@ class DayPlan {
     return (low, high);
   }
 
-  /// Chinese label for a session kind code. Falls back to the upper-case
-  /// raw code so unknown values stay debuggable instead of collapsing into a
-  /// generic "训练课".
+  /// Chinese label for a planned session's `kind` field. Values match the
+  /// server's `SessionKind` enum (`src/stride_core/plan_spec.py`) — the
+  /// per-row column in `planned_sessions.kind` is one of
+  /// `run | strength | rest | cross | note` (see `db.py:395`). Intensity
+  /// codes like E/M/T/I/R/L live elsewhere (workout spec steps, not
+  /// `session.kind`), so this helper does not handle them.
   static String kindLabel(String kind) {
-    return switch (kind.toUpperCase()) {
-      'E' => '轻松跑',
-      'M' => '马配跑',
-      'T' => '节奏跑',
-      'I' => '间歇跑',
-      'R' => '冲刺跑',
-      'L' => '长距',
+    final upper = kind.toUpperCase();
+    return switch (upper) {
+      'RUN' => '跑步',
       'STRENGTH' => '力量',
       'REST' => '休息日',
-      _ => kind.toUpperCase(),
+      'CROSS' => '交叉训练',
+      'NOTE' => '备注',
+      _ => upper,
     };
   }
 }
