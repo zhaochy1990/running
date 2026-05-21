@@ -132,6 +132,8 @@ describe('ActivityDetailPage', () => {
           date: '2026-05-19',
           sessions: [
             {
+              id: 1,
+              pushable: false,
               schema: 'plan-session/v1',
               date: '2026-05-19',
               session_index: 0,
@@ -144,7 +146,7 @@ describe('ActivityDetailPage', () => {
               scheduled_workout_id: null,
             },
           ],
-          nutrition: [],
+          nutrition: null,
         },
       ],
     })
