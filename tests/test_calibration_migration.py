@@ -1,6 +1,7 @@
 """Verify training-load module now reads thresholds from running_calibration_snapshot."""
 from __future__ import annotations
 
+import sqlite3
 from datetime import date
 from pathlib import Path
 
@@ -53,48 +54,21 @@ def test_old_training_load_calibration_table_no_longer_exists(db_with_calibratio
 
 
 def test_migration_drops_pre_pivot_training_load_calibration_table(tmp_path: Path):
-    """Existing DBs that already had `training_load_calibration` must lose
-    the table when `Database.__init__` runs its migrations.
-
-    Without this, fresh DBs are clean but production DBs keep the dead
-    table indefinitely after the pivot.
-    """
+    """Pre-existing legacy table must be dropped, not just absent on fresh DBs."""
     db_path = tmp_path / "legacy.db"
-    # Materialize a legacy table on the file before letting Database run
-    # migrations on it. We open a raw sqlite3 connection so we don't go
-    # through the new schema bootstrap.
-    import sqlite3
-
     raw = sqlite3.connect(db_path)
     raw.execute(
-        """CREATE TABLE training_load_calibration (
-               id INTEGER PRIMARY KEY AUTOINCREMENT,
-               as_of_date TEXT NOT NULL,
-               algorithm_version INTEGER NOT NULL,
-               threshold_hr REAL,
-               threshold_speed_mps REAL,
-               UNIQUE(as_of_date, algorithm_version)
-           )"""
+        "CREATE TABLE training_load_calibration ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " as_of_date TEXT NOT NULL,"
+        " algorithm_version INTEGER NOT NULL,"
+        " UNIQUE(as_of_date, algorithm_version))"
     )
-    raw.execute(
-        "INSERT INTO training_load_calibration "
-        "(as_of_date, algorithm_version, threshold_hr, threshold_speed_mps) "
-        "VALUES (?, ?, ?, ?)",
-        ("2025-01-01", 1, 170.0, 4.5),
-    )
-    raw.commit()
     raw.close()
 
-    # Opening through Database triggers `_migrate()`, which must DROP it.
     db = Database(db_path)
-    try:
-        cur = db._conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='training_load_calibration'"
-        )
-        assert cur.fetchone() is None, (
-            "Database migration should DROP the legacy "
-            "training_load_calibration table on existing DBs"
-        )
-    finally:
-        db.close()
+    cur = db._conn.execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='training_load_calibration'"
+    )
+    assert cur.fetchone() is None

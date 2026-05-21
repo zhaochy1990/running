@@ -1067,18 +1067,15 @@ class Database:
                 """)
                 self._conn.commit()
 
-        # Drop the legacy `training_load_calibration` table on existing DBs.
-        # The training-load pipeline now reads thresholds from
-        # `running_calibration_snapshot` (single source of truth); the old
-        # table has no remaining readers. `activity_training_load` and
-        # `daily_training_load` keep `calibration_id` columns whose textual
-        # FK definition still names `training_load_calibration` on tables
-        # created before this pivot — that is harmless because the project
-        # runs with `PRAGMA foreign_keys=OFF` (see comment near the schema
-        # block), and fresh DBs get the correct `running_calibration_snapshot`
-        # FK from the canonical CREATE TABLE.
-        self._conn.execute("DROP TABLE IF EXISTS training_load_calibration")
-        self._conn.commit()
+        # Thresholds moved to running_calibration_snapshot; drop the legacy
+        # table on existing DBs. Gate on sqlite_master so the steady-state
+        # warm path skips the DDL + commit (matches planned_session style).
+        legacy_calibration = self._conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='training_load_calibration'"
+        ).fetchone()
+        if legacy_calibration is not None:
+            self._conn.execute("DROP TABLE training_load_calibration")
+            self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()
