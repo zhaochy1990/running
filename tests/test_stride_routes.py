@@ -183,3 +183,29 @@ def test_stride_zones_happy_path(rsa_keypair, monkeypatch, seeded_db):
     assert body["pace_zones"][0]["name"] == "Z1"
     assert ":" in body["pace_zones"][0]["lower_pace"]
     assert ":" in body["pace_zones"][0]["upper_pace"]
+
+
+def test_stride_zones_no_calibration(rsa_keypair, monkeypatch, seeded_db):
+    """User exists but has no calibration row → null threshold + empty zones."""
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem)
+    # Note: no _seed_calibration() call — DB has the schema but no rows
+
+    client = _build_client(public_pem)
+    token = _issue_token(private_pem)
+    resp = client.get(
+        f"/api/{USER_ID}/stride/zones",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"threshold": None, "pace_zones": [], "hr_zones": []}
+
+
+def test_stride_zones_unauthenticated(rsa_keypair, monkeypatch, seeded_db):
+    """No Bearer token → 401."""
+    _, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem)
+
+    client = _build_client(public_pem)
+    resp = client.get(f"/api/{USER_ID}/stride/zones")
+    assert resp.status_code == 401
