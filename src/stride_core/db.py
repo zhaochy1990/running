@@ -481,6 +481,45 @@ CREATE TABLE IF NOT EXISTS activity_feedback (
     created_at  TEXT DEFAULT (datetime('now')),
     updated_at  TEXT DEFAULT (datetime('now'))
 );
+
+-- STRIDE self-computed calibration snapshots (threshold HR + speed).
+-- Written by stride_core/running_calibration/core.py; separate from
+-- training_load_calibration which carries the load-model inputs.
+CREATE TABLE IF NOT EXISTS running_calibration_snapshot (
+    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+    as_of_date                  TEXT NOT NULL,              -- ISO YYYY-MM-DD
+    algorithm_version           INTEGER NOT NULL DEFAULT 1,
+    threshold_hr                REAL,                       -- bpm
+    threshold_speed_mps         REAL,                       -- m/s
+    threshold_hr_confidence     TEXT,                       -- 'low'|'medium'|'high'
+    threshold_speed_confidence  TEXT,
+    rhr_baseline                REAL,                       -- 90d p10 RHR
+    observed_max_hr             REAL,
+    hrmax_estimate              REAL,
+    hrmax_confidence            TEXT,
+    computed_at                 TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(as_of_date, algorithm_version)
+);
+CREATE INDEX IF NOT EXISTS idx_running_calibration_snapshot_date
+    ON running_calibration_snapshot(as_of_date);
+
+-- Per-snapshot training zones derived from the calibration thresholds.
+-- zone_kind: 'hr' | 'pace'.  For 'hr' zones use min_value/max_value (bpm);
+-- for 'pace' zones use min_speed_mps/max_speed_mps.
+CREATE TABLE IF NOT EXISTS running_calibration_zone (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    snapshot_id     INTEGER NOT NULL REFERENCES running_calibration_snapshot(id),
+    zone_kind       TEXT NOT NULL,      -- 'hr' | 'pace'
+    name            TEXT NOT NULL,      -- 'Z1'..'Z5'
+    min_value       REAL,               -- hr lower bound (bpm) for zone_kind='hr'
+    max_value       REAL,               -- hr upper bound (bpm) for zone_kind='hr'
+    min_speed_mps   REAL,               -- lower speed for zone_kind='pace'
+    max_speed_mps   REAL,               -- upper speed for zone_kind='pace'
+    confidence      TEXT,
+    UNIQUE(snapshot_id, zone_kind, name)
+);
+CREATE INDEX IF NOT EXISTS idx_running_calibration_zone_snapshot
+    ON running_calibration_zone(snapshot_id);
 """
 
 

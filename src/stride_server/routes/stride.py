@@ -1,0 +1,105 @@
+"""STRIDE self-developed metric endpoints — /api/{user}/stride/*.
+
+These endpoints expose STRIDE-algorithm-computed values (calibration
+thresholds, training zones, daily training load) explicitly separate
+from watch-passthrough fields served by /api/{user}/health and /hrv.
+
+Owns: running_calibration_snapshot, running_calibration_zone,
+      daily_training_load.
+Strictly avoids: daily_health.ati / cti / training_load_*
+                 (those are COROS-reported pass-throughs).
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter
+
+from ..deps import get_db
+
+router = APIRouter()
+
+
+def _pace_per_km_sec(speed_mps: float | None) -> int | None:
+    if not speed_mps or speed_mps <= 0:
+        return None
+    return int(round(1000.0 / speed_mps))
+
+
+def _pace_fmt(speed_mps: float | None) -> str | None:
+    """Convert speed (m/s) to 'M:SS' /km."""
+    secs = _pace_per_km_sec(speed_mps)
+    if secs is None:
+        return None
+    return f"{secs // 60}:{secs % 60:02d}"
+
+
+_ZONE_LABELS_HR = {
+    "Z1": "恢复", "Z2": "有氧", "Z3": "节奏", "Z4": "阈值", "Z5": "VO2max",
+}
+_ZONE_LABELS_PACE = {
+    "Z1": "轻松", "Z2": "有氧", "Z3": "节奏", "Z4": "阈值", "Z5": "VO2max",
+}
+
+
+@router.get("/api/{user}/stride/zones")
+def get_stride_zones(user: str) -> dict[str, Any]:
+    db = get_db(user)
+    try:
+        snap_rows = db._conn.execute(
+            """SELECT id, as_of_date, threshold_hr, threshold_speed_mps,
+                      threshold_hr_confidence, threshold_speed_confidence
+               FROM running_calibration_snapshot
+               ORDER BY as_of_date DESC, id DESC
+               LIMIT 1"""
+        ).fetchall()
+        if not snap_rows:
+            return {"threshold": None, "pace_zones": [], "hr_zones": []}
+        snap = dict(snap_rows[0])
+
+        threshold = {
+            "speed_mps": snap["threshold_speed_mps"],
+            "pace_per_km_sec": _pace_per_km_sec(snap["threshold_speed_mps"]),
+            "hr_bpm": snap["threshold_hr"],
+            "speed_confidence": snap["threshold_speed_confidence"],
+            "hr_confidence": snap["threshold_hr_confidence"],
+            "as_of_date": snap["as_of_date"],
+            "calibration_id": snap["id"],
+        }
+
+        zone_rows = db._conn.execute(
+            """SELECT zone_kind, name, min_value, max_value,
+                      min_speed_mps, max_speed_mps
+               FROM running_calibration_zone
+               WHERE snapshot_id = ?
+               ORDER BY zone_kind, name""",
+            (snap["id"],),
+        ).fetchall()
+
+        hr_zones = []
+        pace_zones = []
+        for row in zone_rows:
+            r = dict(row)
+            if r["zone_kind"] == "hr":
+                hr_zones.append({
+                    "name": r["name"],
+                    "label": _ZONE_LABELS_HR.get(r["name"], r["name"]),
+                    "lower_bpm": int(r["min_value"]) if r["min_value"] is not None else None,
+                    "upper_bpm": int(r["max_value"]) if r["max_value"] is not None else None,
+                })
+            elif r["zone_kind"] == "pace":
+                pace_zones.append({
+                    "name": r["name"],
+                    "label": _ZONE_LABELS_PACE.get(r["name"], r["name"]),
+                    "lower_pace": _pace_fmt(r["min_speed_mps"]),
+                    "upper_pace": _pace_fmt(r["max_speed_mps"]),
+                })
+
+        return {
+            "threshold": threshold,
+            "pace_zones": pace_zones,
+            "hr_zones": hr_zones,
+        }
+    finally:
+        db.close()
