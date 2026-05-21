@@ -10,14 +10,10 @@ from typing import Any, Iterable, Sequence
 from stride_core.normalize import kind_from_legacy_train_type
 from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
 
-from .calibration import estimate_calibration
 from .core import compute_activity_load, compute_daily_load_series
 from .types import (
     ActivityLoadInput,
     ActivitySample,
-    CalibrationActivity,
-    CalibrationHealthRow,
-    CalibrationSample,
     CalibrationSnapshot,
     FeedbackRow,
     HealthRow,
@@ -26,7 +22,6 @@ from .types import (
     SessionClass,
     TrainingLoadBackfillSummary,
     TrainingLoadRunSummary,
-    TRAINING_LOAD_MODEL_VERSION,
 )
 
 _IN_CLAUSE_CHUNK = 500
@@ -251,25 +246,6 @@ def _fetch_samples(
     return tuple(samples)
 
 
-def _fetch_calibration_samples(
-    db: Any,
-    label_id: str,
-    *,
-    provider: str | None = None,
-    sport_type: int | None = None,
-    activity_distance_m: float | None = None,
-) -> tuple[CalibrationSample, ...]:
-    return tuple(
-        _fetch_samples(
-            db,
-            label_id,
-            provider=provider,
-            sport_type=sport_type,
-            activity_distance_m=activity_distance_m,
-        )
-    )
-
-
 def _fetch_activity_rows(
     db: Any,
     *,
@@ -314,16 +290,6 @@ def _fetch_health_rows(db: Any, *, start: date | None = None, end: date | None =
             sleep_total_s=float(row["sleep_total_s"]) if "sleep_total_s" in row.keys() and row["sleep_total_s"] is not None else None,
             sleep_score=float(row["sleep_score"]) if "sleep_score" in row.keys() and row["sleep_score"] is not None else None,
         ))
-    return out
-
-
-def _fetch_calibration_health_rows(db: Any) -> list[CalibrationHealthRow]:
-    rows = db.query("SELECT date, rhr FROM daily_health ORDER BY date")
-    out: list[CalibrationHealthRow] = []
-    for row in rows:
-        d = _parse_date(row["date"])
-        if d is not None:
-            out.append(CalibrationHealthRow(date=d, rhr=float(row["rhr"]) if row["rhr"] is not None else None))
     return out
 
 
@@ -451,47 +417,6 @@ def _build_activity_input(db: Any, row: Any) -> ActivityLoadInput | None:
     )
 
 
-def _build_calibration_history(
-    db: Any,
-    *,
-    as_of_date: date | None = None,
-    lookback_days: int = 180,
-) -> list[CalibrationActivity]:
-    clauses: list[str] = []
-    params: list[Any] = []
-    if as_of_date is not None:
-        start = as_of_date - timedelta(days=max(0, lookback_days))
-        clauses.append(f"{SHANGHAI_DAY_SQL} >= ?")
-        params.append(start.isoformat())
-        clauses.append(f"{SHANGHAI_DAY_SQL} <= ?")
-        params.append(as_of_date.isoformat())
-    where = "WHERE " + " AND ".join(clauses) if clauses else ""
-    rows = db.query(f"SELECT * FROM activities {where} ORDER BY date", tuple(params))
-    out: list[CalibrationActivity] = []
-    for row in rows:
-        activity_date = _activity_shanghai_date(row["date"])
-        if activity_date is None:
-            continue
-        out.append(CalibrationActivity(
-            label_id=row["label_id"],
-            activity_date=activity_date,
-            sport=_sport_from_row(row),
-            duration_s=float(row["duration_s"]) if row["duration_s"] is not None else None,
-            distance_m=_as_activity_distance_meters(row["distance_m"]),
-            avg_hr=float(row["avg_hr"]) if "avg_hr" in row.keys() and row["avg_hr"] is not None else None,
-            max_hr=float(row["max_hr"]) if "max_hr" in row.keys() and row["max_hr"] is not None else None,
-            avg_power=float(row["avg_power"]) if "avg_power" in row.keys() and row["avg_power"] is not None else None,
-            samples=_fetch_calibration_samples(
-                db,
-                row["label_id"],
-                provider=row["provider"] if "provider" in row.keys() else None,
-                sport_type=int(row["sport_type"]) if row["sport_type"] is not None else None,
-                activity_distance_m=_as_activity_distance_meters(row["distance_m"]),
-            ),
-        ))
-    return out
-
-
 def _json_dict(value: Any) -> dict[str, Any]:
     if not value:
         return {}
@@ -502,57 +427,62 @@ def _json_dict(value: Any) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _calibration_from_row(row: Any) -> CalibrationSnapshot:
+def _calibration_from_running_snapshot_row(row: Any) -> CalibrationSnapshot:
+    """Map a running_calibration_snapshot row to the training-load CalibrationSnapshot."""
+    def _get(key: str) -> Any:
+        try:
+            return row[key]
+        except (KeyError, IndexError):
+            return None
+
     return CalibrationSnapshot(
-        as_of_date=_parse_date(row["as_of_date"]) or today_shanghai(),
-        rhr_baseline=float(row["rhr_baseline"]) if row["rhr_baseline"] is not None else None,
-        hrmax_estimate=float(row["hrmax_estimate"]) if row["hrmax_estimate"] is not None else None,
-        threshold_hr=float(row["threshold_hr"]) if row["threshold_hr"] is not None else None,
-        threshold_speed_mps=float(row["threshold_speed_mps"]) if row["threshold_speed_mps"] is not None else None,
-        critical_power_w=float(row["critical_power_w"]) if row["critical_power_w"] is not None else None,
-        source=_json_dict(row["source_json"] if "source_json" in row.keys() else None),
-        id=int(row["id"]) if row["id"] is not None else None,
-        algorithm_version=int(row["algorithm_version"]) if row["algorithm_version"] is not None else 1,
+        as_of_date=_parse_date(_get("as_of_date")) or today_shanghai(),
+        rhr_baseline=float(_get("rhr_baseline")) if _get("rhr_baseline") is not None else None,
+        hrmax_estimate=float(_get("hrmax_estimate")) if _get("hrmax_estimate") is not None else None,
+        threshold_hr=float(_get("threshold_hr")) if _get("threshold_hr") is not None else None,
+        threshold_speed_mps=float(_get("threshold_speed_mps")) if _get("threshold_speed_mps") is not None else None,
+        critical_power_w=None,  # not tracked in running_calibration
+        source=_json_dict(_get("source_json")),
+        id=int(_get("id")) if _get("id") is not None else None,
+        algorithm_version=int(_get("algorithm_version")) if _get("algorithm_version") is not None else 1,
     )
 
 
 def _fetch_latest_calibration(db: Any) -> CalibrationSnapshot | None:
-    fetch_latest = getattr(db, "fetch_latest_training_load_calibration", None)
-    if callable(fetch_latest):
-        row = fetch_latest(TRAINING_LOAD_MODEL_VERSION)
-    else:
-        rows = db.query(
-            "SELECT * FROM training_load_calibration "
-            "WHERE algorithm_version = ? "
-            "ORDER BY as_of_date DESC, id DESC LIMIT 1",
-            (TRAINING_LOAD_MODEL_VERSION,),
-        )
-        row = rows[0] if rows else None
-    return _calibration_from_row(row) if row is not None else None
-
-
-def _fallback_calibration(
-    *,
-    as_of_date: date,
-    activity_inputs: Sequence[ActivityLoadInput],
-) -> CalibrationSnapshot:
-    max_values = [a.max_hr for a in activity_inputs if a.max_hr is not None]
-    speed_values: list[float] = []
-    power_values: list[float] = []
-    for activity in activity_inputs:
-        if activity.duration_s and activity.distance_m and activity.duration_s > 0 and activity.distance_m > 500:
-            speed_values.append(activity.distance_m / activity.duration_s)
-        speed_values.extend(s.speed_mps for s in activity.samples if s.speed_mps is not None and s.speed_mps > 0)
-        if activity.avg_power is not None and activity.avg_power > 0:
-            power_values.append(float(activity.avg_power))
-        power_values.extend(s.power_w for s in activity.samples if s.power_w is not None and s.power_w > 0)
-    return CalibrationSnapshot(
-        as_of_date=as_of_date,
-        hrmax_estimate=max(max_values) if max_values else None,
-        threshold_speed_mps=max(speed_values) if speed_values else None,
-        critical_power_w=sorted(power_values)[len(power_values) // 2] if power_values else None,
-        source={"adapter_defaults": {"used": True, "reason": "missing_training_load_calibration"}},
+    from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
+    from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+    # Ensure the running_calibration_snapshot table exists (idempotent).
+    SQLiteRunningCalibrationRepository(db).ensure_schema()
+    rows = db.query(
+        "SELECT * FROM running_calibration_snapshot "
+        "WHERE algorithm_version = ? "
+        "ORDER BY as_of_date DESC, id DESC LIMIT 1",
+        (RUNNING_CALIBRATION_MODEL_VERSION,),
     )
+    row = rows[0] if rows else None
+    return _calibration_from_running_snapshot_row(row) if row is not None else None
+
+
+def _compute_rhr_baseline(db: Any, as_of_date: date, lookback_days: int = 90) -> float | None:
+    """Compute rhr_baseline as the p10 of daily RHR values in the lookback window.
+
+    This replicates the logic from the old estimate_calibration to keep
+    Banister-TRIMP computation (which requires rhr_baseline) working after the
+    pivot away from training_load_calibration.
+    """
+    start = as_of_date - timedelta(days=max(0, lookback_days))
+    rows = db.query("SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date")
+    values: list[float] = []
+    for row in rows:
+        d = _parse_date(row["date"])
+        if d is not None and start <= d <= as_of_date:
+            values.append(float(row["rhr"]))
+    if not values:
+        return None
+    # p10 of sorted values
+    sorted_vals = sorted(values)
+    index = max(0, min(len(sorted_vals) - 1, int(round((len(sorted_vals) - 1) * 0.1))))
+    return sorted_vals[index]
 
 
 def refresh_training_load_calibration(
@@ -562,25 +492,42 @@ def refresh_training_load_calibration(
     lookback_days: int = 180,
     persist: bool = True,
 ) -> CalibrationSnapshot:
+    """Recompute thresholds via running_calibration module and persist to running_calibration_snapshot."""
+    from dataclasses import replace as dc_replace
+    from stride_core.running_calibration import recompute_running_calibration
+    from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+
     as_of = _parse_date(as_of_date) or today_shanghai()
-    calibration = estimate_calibration(
-        _build_calibration_history(db, as_of_date=as_of, lookback_days=lookback_days),
+    repo = SQLiteRunningCalibrationRepository(db)
+    summary = recompute_running_calibration(
+        repo,
         as_of_date=as_of,
-        health_rows=_fetch_calibration_health_rows(db),
+        lookback_days=lookback_days,
+        persist=False,  # we'll save manually after augmenting with rhr_baseline
     )
-    if not persist:
-        return calibration
-    calibration_id = db.upsert_training_load_calibration(calibration, commit=True)
+    snap = summary.snapshot
+
+    # Augment snapshot with rhr_baseline from daily_health (running_calibration
+    # doesn't compute RHR, but Banister TRIMP requires it).
+    rhr = _compute_rhr_baseline(db, as_of)
+    if rhr is not None:
+        snap = dc_replace(snap, rhr_baseline=rhr)
+
+    snapshot_id: int | None = None
+    if persist:
+        snapshot_id = repo.save_snapshot(snap)
+        snap = dc_replace(snap, id=snapshot_id)
+
     return CalibrationSnapshot(
-        as_of_date=calibration.as_of_date,
-        rhr_baseline=calibration.rhr_baseline,
-        hrmax_estimate=calibration.hrmax_estimate,
-        threshold_hr=calibration.threshold_hr,
-        threshold_speed_mps=calibration.threshold_speed_mps,
-        critical_power_w=calibration.critical_power_w,
-        source=calibration.source,
-        id=calibration_id,
-        algorithm_version=calibration.algorithm_version,
+        as_of_date=snap.as_of_date,
+        rhr_baseline=snap.rhr_baseline,
+        hrmax_estimate=snap.hrmax_estimate,
+        threshold_hr=snap.threshold_hr,
+        threshold_speed_mps=snap.threshold_speed_mps,
+        critical_power_w=None,
+        source=snap.source if isinstance(snap.source, dict) else {},
+        id=snapshot_id,
+        algorithm_version=snap.algorithm_version,
     )
 
 
@@ -652,9 +599,8 @@ def recompute_training_load(
     series_start = start_date or min(a.activity_date for a in activity_inputs)
     series_end = end_date or max(a.activity_date for a in activity_inputs)
     as_of = series_end
-    calibration = calibration_override or _fetch_latest_calibration(db) or _fallback_calibration(
+    calibration = calibration_override or _fetch_latest_calibration(db) or CalibrationSnapshot(
         as_of_date=as_of,
-        activity_inputs=activity_inputs,
     )
     calibration = _defaulted_calibration(calibration, activity_inputs)
     calibration_id = calibration.id
