@@ -36,11 +36,17 @@ def _pace_fmt(speed_mps: float | None) -> str | None:
     return f"{secs // 60}:{secs % 60:02d}"
 
 
-_ZONE_LABELS_HR = {
-    "Z1": "恢复", "Z2": "有氧", "Z3": "节奏", "Z4": "阈值", "Z5": "VO2max",
+_ZONE_LABELS = {
+    "recovery":   "恢复",
+    "easy":       "轻松",
+    "marathon":   "马拉松",
+    "threshold":  "阈值",
+    "interval":   "间歇",
+    "repetition": "反复",
 }
-_ZONE_LABELS_PACE = {
-    "Z1": "轻松", "Z2": "有氧", "Z3": "节奏", "Z4": "阈值", "Z5": "VO2max",
+_ZONE_ORDER = {
+    "recovery": 0, "easy": 1, "marathon": 2,
+    "threshold": 3, "interval": 4, "repetition": 5,
 }
 
 
@@ -82,20 +88,28 @@ def get_stride_zones(user: str) -> dict[str, Any]:
         pace_zones = []
         for row in zone_rows:
             r = dict(row)
-            if r["zone_kind"] == "hr":
+            kind = r["zone_kind"]
+            if kind in ("hr", "heart_rate"):
                 hr_zones.append({
                     "name": r["name"],
-                    "label": _ZONE_LABELS_HR.get(r["name"], r["name"]),
+                    "label": _ZONE_LABELS.get(r["name"], r["name"]),
                     "lower_bpm": int(r["min_value"]) if r["min_value"] is not None else None,
                     "upper_bpm": int(r["max_value"]) if r["max_value"] is not None else None,
                 })
-            elif r["zone_kind"] == "pace":
+            elif kind == "pace":
+                # Pace zone speeds: min_speed_mps = slower edge (larger pace seconds),
+                # max_speed_mps = faster edge (smaller pace seconds). Display lower_pace
+                # as the slower edge (so users read top-to-bottom recovery → repetition).
                 pace_zones.append({
                     "name": r["name"],
-                    "label": _ZONE_LABELS_PACE.get(r["name"], r["name"]),
+                    "label": _ZONE_LABELS.get(r["name"], r["name"]),
                     "lower_pace": _pace_fmt(r["min_speed_mps"]),
                     "upper_pace": _pace_fmt(r["max_speed_mps"]),
                 })
+        # Physiological order: recovery → easy → marathon → threshold → interval → repetition.
+        # SQL ORDER BY name only gives alphabetic which scrambles the intuitive flow.
+        hr_zones.sort(key=lambda z: _ZONE_ORDER.get(z["name"], 99))
+        pace_zones.sort(key=lambda z: _ZONE_ORDER.get(z["name"], 99))
 
         return {
             "threshold": threshold,

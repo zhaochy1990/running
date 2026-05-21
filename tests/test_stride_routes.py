@@ -125,17 +125,25 @@ def _seed_calibration(db_path: Path):
             ("2026-05-15", 1, 175.0, 4.65, "medium", "medium", 47.0, 188.0, 188.0, "medium"),
         )
         snap_id = cur.lastrowid
+        # Use the canonical zone names + zone_kinds emitted by
+        # running_calibration/zones.py: 6 zones per kind, names
+        # recovery/easy/marathon/threshold/interval/repetition; kinds
+        # 'heart_rate' and 'pace'. Earlier test data used 'hr' + Z1..Z5
+        # which let a route filter mismatch (looking for 'hr', not
+        # 'heart_rate') ship in the first prod-data run.
         zones = [
-            (snap_id, "hr", "Z1", 105.0, 140.0, None, None, "medium"),
-            (snap_id, "hr", "Z2", 140.0, 154.0, None, None, "medium"),
-            (snap_id, "hr", "Z3", 154.0, 165.0, None, None, "medium"),
-            (snap_id, "hr", "Z4", 165.0, 175.0, None, None, "medium"),
-            (snap_id, "hr", "Z5", 175.0, 188.0, None, None, "medium"),
-            (snap_id, "pace", "Z1", None, None, 2.79, 3.35, "medium"),
-            (snap_id, "pace", "Z2", None, None, 3.35, 3.91, "medium"),
-            (snap_id, "pace", "Z3", None, None, 3.91, 4.51, "medium"),
-            (snap_id, "pace", "Z4", None, None, 4.51, 4.79, "medium"),
-            (snap_id, "pace", "Z5", None, None, 4.79, 5.16, "medium"),
+            (snap_id, "heart_rate", "recovery",   None,  140.0, None, None, "medium"),
+            (snap_id, "heart_rate", "easy",       140.0, 154.0, None, None, "medium"),
+            (snap_id, "heart_rate", "marathon",   154.0, 165.0, None, None, "medium"),
+            (snap_id, "heart_rate", "threshold",  165.0, 175.0, None, None, "medium"),
+            (snap_id, "heart_rate", "interval",   175.0, 188.0, None, None, "medium"),
+            (snap_id, "heart_rate", "repetition", 188.0, None,  None, None, "medium"),
+            (snap_id, "pace", "recovery",   None, None, None, 2.79, "medium"),
+            (snap_id, "pace", "easy",       None, None, 2.79, 3.35, "medium"),
+            (snap_id, "pace", "marathon",   None, None, 3.35, 3.91, "medium"),
+            (snap_id, "pace", "threshold",  None, None, 3.91, 4.51, "medium"),
+            (snap_id, "pace", "interval",   None, None, 4.51, 4.79, "medium"),
+            (snap_id, "pace", "repetition", None, None, 4.79, None, "medium"),
         ]
         db._conn.executemany(
             """INSERT INTO running_calibration_zone
@@ -175,14 +183,28 @@ def test_stride_zones_happy_path(rsa_keypair, monkeypatch, seeded_db):
     assert body["threshold"]["hr_bpm"] == pytest.approx(175.0)
     assert body["threshold"]["pace_per_km_sec"] == pytest.approx(1000 / 4.65, rel=1e-3)
     assert body["threshold"]["as_of_date"] == "2026-05-15"
-    assert len(body["pace_zones"]) == 5
-    assert len(body["hr_zones"]) == 5
-    assert body["hr_zones"][0]["name"] == "Z1"
-    assert body["hr_zones"][0]["lower_bpm"] == 105
+    assert len(body["pace_zones"]) == 6
+    assert len(body["hr_zones"]) == 6
+    # Physiological ordering: recovery → easy → marathon → threshold → interval → repetition.
+    assert [z["name"] for z in body["hr_zones"]] == [
+        "recovery", "easy", "marathon", "threshold", "interval", "repetition",
+    ]
+    assert [z["name"] for z in body["pace_zones"]] == [
+        "recovery", "easy", "marathon", "threshold", "interval", "repetition",
+    ]
+    # Chinese labels look up by canonical name
+    assert body["hr_zones"][0]["label"] == "恢复"
+    assert body["pace_zones"][0]["label"] == "恢复"
+    assert body["hr_zones"][3]["label"] == "阈值"
+    # recovery zone: HR upper_bpm = 140, lower_bpm = None (open lower)
+    assert body["hr_zones"][0]["lower_bpm"] is None
     assert body["hr_zones"][0]["upper_bpm"] == 140
-    assert body["pace_zones"][0]["name"] == "Z1"
-    assert ":" in body["pace_zones"][0]["lower_pace"]
-    assert ":" in body["pace_zones"][0]["upper_pace"]
+    # easy zone: HR 140–154
+    assert body["hr_zones"][1]["lower_bpm"] == 140
+    assert body["hr_zones"][1]["upper_bpm"] == 154
+    # Pace edges format as "M:SS"
+    assert ":" in body["pace_zones"][1]["lower_pace"]
+    assert ":" in body["pace_zones"][1]["upper_pace"]
 
 
 def test_stride_zones_no_calibration(rsa_keypair, monkeypatch, seeded_db):
