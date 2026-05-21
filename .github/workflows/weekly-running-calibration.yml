@@ -102,6 +102,7 @@ jobs:
             if [ "$http" = "200" ] || [ "$http" = "204" ]; then
               ok=$((ok+1))
               echo "  ✓ $user (HTTP $http)"
+              echo "    response: $body"
               echo "| $user | $http | $body |" >> "$GITHUB_STEP_SUMMARY"
             else
               fail=$((fail+1))
