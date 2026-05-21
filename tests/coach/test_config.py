@@ -240,3 +240,60 @@ def test_api_kind_responses_round_trips(tmp_path: Path) -> None:
     cfg = load_config(p)
     assert cfg.generator.api_kind == "responses"
     assert cfg.reviewer.api_kind == "chat-completions"  # only generator overridden
+
+
+# ---------------------------------------------------------------------------
+# reasoning_effort (PR #25 — gpt-5 / o-series reasoning models)
+# ---------------------------------------------------------------------------
+
+
+def test_reasoning_effort_unset_defaults_to_none(tmp_path: Path) -> None:
+    """Default behaviour: when not in toml, ModelSpec.reasoning_effort=None,
+    so llm_factory leaves the kwarg unset and the model's own default
+    (typically ``medium``) applies."""
+    p = tmp_path / "coach.toml"
+    p.write_text(_valid_toml())
+    cfg = load_config(p)
+    assert cfg.generator.reasoning_effort is None
+
+
+def test_reasoning_effort_each_valid_value_round_trips(tmp_path: Path) -> None:
+    for effort in ("minimal", "low", "medium", "high"):
+        toml = _valid_toml().replace(
+            "timeout_s    = 120",
+            f"timeout_s    = 120\nreasoning_effort = \"{effort}\"",
+            1,
+        )
+        p = tmp_path / f"coach-{effort}.toml"
+        p.write_text(toml)
+        cfg = load_config(p)
+        assert cfg.generator.reasoning_effort == effort, effort
+
+
+def test_reasoning_effort_typo_rejected_at_load(tmp_path: Path) -> None:
+    """A typo (``"hihg"`` for ``"high"``) must fail at load time, not at
+    the first LLM call returning 400. Guards against the round-trip-only
+    string passthrough that the original PR #25 had."""
+    bad = _valid_toml().replace(
+        "timeout_s    = 120",
+        "timeout_s    = 120\nreasoning_effort = \"hihg\"",
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(bad)
+    with pytest.raises(CoachConfigError, match="unknown reasoning_effort"):
+        load_config(p)
+
+
+def test_reasoning_effort_error_lists_valid_values(tmp_path: Path) -> None:
+    """The error message tells the operator what to use — important when
+    the typo is subtle (``"med"`` vs ``"medium"``)."""
+    bad = _valid_toml().replace(
+        "timeout_s    = 120",
+        "timeout_s    = 120\nreasoning_effort = \"med\"",
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(bad)
+    with pytest.raises(CoachConfigError, match="high.*low.*medium.*minimal"):
+        load_config(p)

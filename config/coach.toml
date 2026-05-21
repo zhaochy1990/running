@@ -21,10 +21,10 @@ deployment   = "gpt-5.5"
 endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
 api_version  = "2025-04-01-preview"
 api_kind     = "responses"
-# temperature deliberately omitted — gpt-5.5 is a reasoning model that rejects
-# the parameter (400 "Unsupported parameter: 'temperature' is not supported
-# with this model"). llm_factory skips the kwarg when ModelSpec.temperature
-# is None. Re-add this line only if you point the role at a non-reasoning model.
+# temperature intentionally NOT set — gpt-5.5 is a reasoning model that
+# rejects the parameter (400 "Unsupported parameter"). llm_factory skips
+# the kwarg when ModelSpec.temperature is None. Re-add this line only if
+# you point the role at a non-reasoning model.
 # max_tokens=131072 — gpt-5.5 supports a 1M-token context window total
 # (input + reasoning + visible output) with up to ~128k of that
 # reservable for the visible output. S1 master plan with 14-22 week

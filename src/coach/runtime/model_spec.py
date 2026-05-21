@@ -22,6 +22,7 @@ Role = Literal["generator", "reviewer", "commentary"]
 Provider = Literal["azure-openai", "azure-ai-inference"]
 AuthMode = Literal["managed-identity", "api-key"]
 ApiKind = Literal["chat-completions", "responses"]
+ReasoningEffort = Literal["minimal", "low", "medium", "high"]
 
 
 @dataclass(frozen=True)
@@ -47,8 +48,9 @@ class ModelSpec:
     # plan) bumps against the cap — but it can degrade quality on tasks
     # that legitimately need deep chain-of-thought (multi-month
     # periodisation reasoning, goal realism, etc.). Leave None unless
-    # there's a concrete reason.
-    reasoning_effort: str | None = None
+    # there's a concrete reason. Typed as a Literal so an invalid value
+    # in coach.toml fails at config-load time, not at first LLM call.
+    reasoning_effort: ReasoningEffort | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     def is_placeholder(self) -> bool:

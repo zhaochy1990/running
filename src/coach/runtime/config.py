@@ -78,6 +78,7 @@ def _resolve_path(path: str | Path | None) -> Path:
 _VALID_PROVIDERS: set[str] = {"azure-openai", "azure-ai-inference"}
 _VALID_AUTH_MODES: set[str] = {"managed-identity", "api-key"}
 _VALID_API_KINDS: set[str] = {"chat-completions", "responses"}
+_VALID_REASONING_EFFORTS: set[str] = {"minimal", "low", "medium", "high"}
 _REQUIRED_FIELDS = (
     "provider",
     "model",
@@ -102,6 +103,13 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
     temperature = raw.get("temperature")
     max_tokens = raw.get("max_tokens")
     reasoning_effort = raw.get("reasoning_effort")
+    if reasoning_effort is not None and reasoning_effort not in _VALID_REASONING_EFFORTS:
+        # Validate at config-load time so a typo (``"hihg"``) raises here
+        # instead of surviving until the first LLM call returns 400.
+        raise CoachConfigError(
+            f"[{role}] unknown reasoning_effort {reasoning_effort!r}; "
+            f"valid: {sorted(_VALID_REASONING_EFFORTS)}"
+        )
     api_kind = raw.get("api_kind", "chat-completions")
     if api_kind not in _VALID_API_KINDS:
         raise CoachConfigError(
@@ -124,7 +132,7 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
         timeout_s=float(raw["timeout_s"]),
         api_key_env=raw.get("api_key_env"),
         api_kind=api_kind,  # type: ignore[arg-type]
-        reasoning_effort=str(reasoning_effort) if reasoning_effort is not None else None,
+        reasoning_effort=reasoning_effort,  # validated against enum above
         extra=dict(raw.get("extra") or {}),
     )
 

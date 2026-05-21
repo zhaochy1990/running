@@ -49,6 +49,7 @@ def _spec(
     endpoint="https://example.openai.azure.com",
     api_key_env=None,
     api_kind="chat-completions",
+    reasoning_effort=None,
 ) -> ModelSpec:
     return ModelSpec(
         role=role,
@@ -62,6 +63,7 @@ def _spec(
         timeout_s=60,
         api_key_env=api_key_env,
         api_kind=api_kind,
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -154,6 +156,42 @@ def test_aoai_responses_api_kind_routes_to_responses_endpoint(monkeypatch):
     monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
     build_chat_model(_spec(api_kind="responses"), credentials=_fake_creds())
     assert captured["use_responses_api"] is True
+
+
+def test_aoai_reasoning_effort_set_propagates_kwarg(monkeypatch):
+    """ModelSpec.reasoning_effort must reach AzureChatOpenAI as a kwarg
+    so gpt-5 / o-series models receive the budget hint at construction.
+    Without this, lowering reasoning depth from config would silently
+    no-op (the historical bug the PR #25 review caught)."""
+    captured: dict = {}
+
+    class FakeAOAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import langchain_openai
+
+    monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
+    build_chat_model(_spec(reasoning_effort="low"), credentials=_fake_creds())
+    assert captured["reasoning_effort"] == "low"
+
+
+def test_aoai_reasoning_effort_unset_omits_kwarg(monkeypatch):
+    """When reasoning_effort is None, the kwarg must be omitted entirely
+    so the model uses its own default (typically ``medium``). Passing
+    ``None`` through would either no-op or trigger a 400 depending on
+    SDK version — explicit omission is safer."""
+    captured: dict = {}
+
+    class FakeAOAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import langchain_openai
+
+    monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
+    build_chat_model(_spec(reasoning_effort=None), credentials=_fake_creds())
+    assert "reasoning_effort" not in captured
 
 
 def test_aoai_uses_api_key_when_provided(monkeypatch):

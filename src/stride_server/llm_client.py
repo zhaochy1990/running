@@ -157,24 +157,23 @@ class LLMClient:
         ``[generator]`` deployment from ``config/coach.toml`` at construction
         time. Signature kept for back-compat with legacy callers.
 
-        ``max_tokens`` IS honoured when set. Callers pass a per-call budget
-        — master plan generation passes ``32768`` because a 14-22 week S1
-        plan with weekly_key_sessions skeleton + multi-phase plan + training
-        principles routinely produces 5-9 k characters of visible output,
-        and a reasoning model also consumes the same budget for its
-        thinking tokens. We bind the value under BOTH ``max_tokens`` (Chat
-        Completions API) AND ``max_output_tokens`` (Responses API) names
-        so the kwarg is honoured regardless of ``api_kind`` in
-        ``config/coach.toml`` — langchain-openai's Responses-API path
-        silently drops ``max_tokens``, which previously truncated S1
-        plans mid-JSON.
+        ``max_tokens`` IS honoured when set as a per-call override. When
+        ``None`` (default), the bound deployment's construction-time
+        ``max_tokens`` from ``[generator]`` config applies — that's the
+        path callers should usually take, so the budget is tunable from
+        ``config/coach.toml`` without code edits. We bind the value under
+        whichever kwarg name the bound model's API uses
+        (``max_output_tokens`` for Responses API, ``max_tokens`` for Chat
+        Completions); langchain-openai's Responses-API path silently
+        drops ``max_tokens``, which previously truncated S1 plans
+        mid-JSON.
 
         ``reasoning_effort`` (``"minimal"`` / ``"low"`` / ``"medium"`` /
-        ``"high"``) caps the reasoning-token consumption on gpt-5 family
-        models. ``"low"`` is the right choice for S1 master plan
-        generation — the task is well-structured and benefits from more
-        of the output budget going to the visible JSON rather than
-        chain-of-thought. Non-reasoning models silently ignore the kwarg.
+        ``"high"``) caps reasoning-token consumption on gpt-5 / o-series
+        models. Lowering it trades depth for output-token budget; only
+        flip from the model default when you have evidence the output is
+        consistently truncating. Non-reasoning models reject the kwarg
+        (surfaces as ``LLMError(retryable=False)``).
 
         Returns the assistant's text content, stripped.
 
@@ -202,13 +201,18 @@ class LLMClient:
         # preferable to silently dropping the caller's intent.
         bind_kwargs: dict[str, Any] = {}
         if max_tokens is not None:
-            # Bind both names so Chat-Completions and Responses-API code
-            # paths both pick up the cap. langchain-openai's Responses-API
-            # path translates ``max_tokens`` → nothing (silently dropped)
-            # but reads ``max_output_tokens`` directly; the chat-completions
-            # path is the inverse. Binding both is forward-compat for either.
-            bind_kwargs["max_tokens"] = max_tokens
-            bind_kwargs["max_output_tokens"] = max_tokens
+            # Branch on api_kind so we only bind the kwarg the underlying
+            # SDK accepts: ``max_output_tokens`` for Responses API,
+            # ``max_tokens`` for Chat Completions. Binding the wrong name
+            # is silently dropped at best (the original truncation bug);
+            # binding the right name guarantees the cap reaches the SDK.
+            # langchain's AzureChatOpenAI exposes the routing decision as
+            # ``use_responses_api`` (set at construction from
+            # ``ModelSpec.api_kind``).
+            if getattr(self._llm, "use_responses_api", False):
+                bind_kwargs["max_output_tokens"] = max_tokens
+            else:
+                bind_kwargs["max_tokens"] = max_tokens
         if reasoning_effort is not None:
             bind_kwargs["reasoning_effort"] = reasoning_effort
         target = self._llm.bind(**bind_kwargs) if bind_kwargs else self._llm
