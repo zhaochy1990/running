@@ -139,6 +139,18 @@ def test_internal_training_load_calibration_refresh_updates_threshold_only(tmp_p
     assert body["calibration"]["threshold_speed_mps"] is not None
 
     with Database(user=USER_UUID) as db:
+        # Task 4a pivot: calibration row now lives in running_calibration_snapshot
         assert db.query("SELECT COUNT(*) AS n FROM running_calibration_snapshot")[0]["n"] == 1
         assert db.query("SELECT COUNT(*) AS n FROM activity_training_load")[0]["n"] == 0
         assert db.query("SELECT COUNT(*) AS n FROM daily_training_load")[0]["n"] == 0
+        # Verify the old training_load_calibration table does NOT exist post-pivot
+        tables = {
+            r["name"]
+            for r in db.query(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='training_load_calibration'"
+            )
+        }
+        assert "training_load_calibration" not in tables, (
+            "training_load_calibration table still exists — pivot to "
+            "running_calibration_snapshot may be incomplete"
+        )
