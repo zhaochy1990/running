@@ -145,6 +145,14 @@ class TrainingLoadRunSummary:
     persist: bool
 
 
+@dataclass(frozen=True)
+class TrainingLoadBackfillSummary:
+    calibration: CalibrationSnapshot
+    load: TrainingLoadRunSummary
+    calibration_lookback_days: int
+    load_lookback_days: int
+
+
 CalibrationSample = ActivitySample
 
 
