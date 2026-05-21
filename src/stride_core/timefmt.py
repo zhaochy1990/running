@@ -57,6 +57,23 @@ def utc_iso_to_shanghai_iso(s: str | None) -> str | None:
     return dt.astimezone(SHANGHAI_TZ).isoformat()
 
 
+def shanghai_day_str(value: str | None) -> str:
+    """Shanghai calendar day (``YYYY-MM-DD``) for a UTC ISO timestamp.
+
+    The canonical replacement for ``activity["date"][:10]`` / ``raw[:10]``
+    patterns in route serializers — those silently drop activities recorded
+    in the 00:00–07:59 Shanghai window onto the prior calendar day. Returns
+    ``""`` for None/empty input. Unparseable input falls back to the first
+    10 characters, matching the prior in-line behavior.
+
+    >>> shanghai_day_str("2026-05-08T18:00:00+00:00")
+    '2026-05-09'
+    >>> shanghai_day_str(None)
+    ''
+    """
+    return (utc_iso_to_shanghai_iso(value) or "")[:10]
+
+
 def today_shanghai() -> date:
     """Today's calendar date in Asia/Shanghai. Replaces ``date.today()``,
     which returns the server's TZ — on Azure Container Apps that's UTC, so

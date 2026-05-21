@@ -267,9 +267,7 @@ def _read_member_activities(user_id: str, limit_per_user: int, days: int) -> lis
         logger.warning("teams.feed: cannot open db for %s: %s", user_id, exc)
         return []
 
-    # Cutoff is a Shanghai-local YYYY-MM-DD; SHANGHAI_DAY_SQL converts the
-    # stored UTC `date` column to its Shanghai calendar day for comparison,
-    # so a 02:00 Shanghai run (18:00 UTC the prior day) lands on the right day.
+    # Cutoff is a Shanghai-local YYYY-MM-DD; LHS converted via SHANGHAI_DAY_SQL.
     cutoff_day = (today_shanghai() - timedelta(days=int(days))).isoformat()
 
     try:

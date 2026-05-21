@@ -221,10 +221,7 @@ class TestAbility:
 
 
 class TestActivitiesIndexes:
-    """The functional index on the Shanghai-day expression must actually be
-    picked up by SQLite for `SHANGHAI_DAY_SQL`-based queries — otherwise the
-    routes that converted to the canonical pattern (weeks/review/generate/
-    teams) will quietly fall back to full table scans on growing tables."""
+    """Verify SQLite picks up the functional index for SHANGHAI_DAY_SQL queries."""
 
     def test_shanghai_day_index_used_for_common_query_shapes(self, db):
         from stride_core.timefmt import SHANGHAI_DAY_SQL

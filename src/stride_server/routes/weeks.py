@@ -5,7 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Body, HTTPException
 
 from stride_core.models import pace_str
-from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
+from stride_core.timefmt import (
+    SHANGHAI_DAY_SQL,
+    shanghai_day_str,
+    utc_iso_to_shanghai_iso,
+)
 
 from ..content_store import (
     any_exists,
@@ -204,7 +208,7 @@ def get_week(user: str, folder: str):
             first_line = note.strip().split("\n")[0].strip()[:20]
             if first_line and first_line in existing_normalized:
                 continue
-            date_str = (utc_iso_to_shanghai_iso(a["date"]) or "")[:10] if a.get("date") else ""
+            date_str = shanghai_day_str(a.get("date"))
             feel = FEEL_LABELS.get(a.get("feel_type") or 0, "")
             header = f"{date_str} {a.get('name', '')}"
             if feel:

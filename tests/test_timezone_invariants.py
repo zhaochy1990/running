@@ -234,6 +234,7 @@ def test_timefmt_api_surface():
         "SHANGHAI_TZ",
         "SHANGHAI_DAY_SQL",
         "utc_iso_to_shanghai_iso",
+        "shanghai_day_str",
         "today_shanghai",
         "shanghai_day_to_utc_range",
         "shanghai_week_range",

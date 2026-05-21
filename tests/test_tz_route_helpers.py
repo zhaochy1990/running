@@ -73,27 +73,14 @@ class TestPbsNormaliseDate:
 
 class _StubPlanStore:
     """Minimal plan_store implementing the surface ``_get_last_week_summary``
-    actually touches. Real implementations live in stride_core.state_stores."""
+    actually touches. The PlanStateStore protocol lives in
+    ``stride_core.state_stores``."""
 
     def __init__(self, sessions: list[dict[str, Any]]):
         self._sessions = sessions
 
     def get_planned_sessions(self, *, week_folder: str | None = None, **_kw):
-        # ``_get_last_week_summary`` only calls with ``week_folder=...``;
-        # the stub returns the same fixture irrespective of which folder is
-        # asked about (the test sets up exactly the prev-week folder).
         return list(self._sessions)
-
-
-class _StubDb:
-    """Wraps an in-memory sqlite3 connection with ``.query()`` matching the
-    Database adapter contract."""
-
-    def __init__(self, conn):
-        self._conn = conn
-
-    def query(self, sql: str, params: tuple = ()):  # noqa: D401
-        return self._conn.execute(sql, params).fetchall()
 
 
 @pytest.fixture
@@ -103,27 +90,19 @@ def last_week_summary():
 
 
 @pytest.fixture
-def db_with_one_activity():
-    """A coros.db-shaped activities table containing exactly one row at the
-    Shanghai-morning boundary (02:00 Shanghai 2026-05-05 == 18:00 UTC
-    2026-05-04). Caller supplies the planned-session date as 2026-05-05;
-    a regression in the per-row UTC→Shanghai conversion would miss the
-    match and report completed=0."""
-    import sqlite3
-
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.execute(
-        "CREATE TABLE activities (date TEXT, distance_m REAL, avg_pace_s_km REAL)"
+def db_with_one_activity(db):
+    """Real ``Database`` (via the ``db`` fixture in conftest, so the full
+    SCHEMA + functional indices are loaded) with exactly one activity at
+    the Shanghai-morning boundary: 02:00 Shanghai 2026-05-05 == 18:00 UTC
+    2026-05-04. A regression in the per-row UTC→Shanghai conversion would
+    miss the match and report completed=0."""
+    db._conn.execute(
+        "INSERT INTO activities (label_id, sport_type, date, distance_m, avg_pace_s_km) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("a0", 100, "2026-05-04T18:00:00+00:00", 10000.0, 300.0),
     )
-    # UTC 18:00 May 4 == Shanghai 02:00 May 5.
-    conn.execute(
-        "INSERT INTO activities VALUES (?, ?, ?)",
-        ("2026-05-04T18:00:00+00:00", 10000.0, 300.0),
-    )
-    conn.commit()
-    yield _StubDb(conn)
-    conn.close()
+    db._conn.commit()
+    return db
 
 
 class TestGenerateLastWeekSummary:

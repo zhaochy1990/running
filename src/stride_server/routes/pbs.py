@@ -127,17 +127,14 @@ def _normalise_date(raw: str) -> str:
     """
     if not raw:
         return raw
-    # ISO 8601 with time component — UTC instant, convert to Shanghai calendar
-    # so PB "achieved_at" matches what the user saw on their watch.
+    # ISO 8601 with time component — convert UTC instant to Shanghai calendar
+    # so PB "achieved_at" matches the day the user saw on their watch.
     if "T" in raw or (len(raw) > 10 and raw[10] == " "):
         shanghai = utc_iso_to_shanghai_iso(raw)
         if shanghai and shanghai != raw:
             return shanghai[:10]
-        # Helper returned unchanged → input wasn't parseable; fall through.
-    # Compact YYYYMMDD
     if len(raw) == 8 and raw.isdigit():
         return f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
-    # Already YYYY-MM-DD (or unknown — return as-is)
     return raw[:10]
 
 
