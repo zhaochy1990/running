@@ -56,18 +56,20 @@ const happyZones: api.StrideZonesResponse = {
     calibration_id: 1,
   },
   pace_zones: [
-    { name: 'Z1', label: '轻松', lower_pace: '6:42', upper_pace: '5:58' },
-    { name: 'Z2', label: '有氧', lower_pace: '5:58', upper_pace: '5:06' },
-    { name: 'Z3', label: '节奏', lower_pace: '5:06', upper_pace: '4:36' },
-    { name: 'Z4', label: '阈值', lower_pace: '4:36', upper_pace: '4:18' },
-    { name: 'Z5', label: 'VO2max', lower_pace: '4:18', upper_pace: '3:52' },
+    { name: 'recovery',   label: '配速1区', lower_pace: null,   upper_pace: '6:42' },
+    { name: 'easy',       label: '配速2区', lower_pace: '6:42', upper_pace: '5:58' },
+    { name: 'marathon',   label: '配速3区', lower_pace: '5:58', upper_pace: '5:06' },
+    { name: 'threshold',  label: '配速4区', lower_pace: '5:06', upper_pace: '4:36' },
+    { name: 'interval',   label: '配速5区', lower_pace: '4:36', upper_pace: '4:18' },
+    { name: 'repetition', label: '配速6区', lower_pace: '4:18', upper_pace: null },
   ],
   hr_zones: [
-    { name: 'Z1', label: '恢复', lower_bpm: 105, upper_bpm: 140 },
-    { name: 'Z2', label: '有氧', lower_bpm: 140, upper_bpm: 154 },
-    { name: 'Z3', label: '节奏', lower_bpm: 154, upper_bpm: 165 },
-    { name: 'Z4', label: '阈值', lower_bpm: 165, upper_bpm: 175 },
-    { name: 'Z5', label: 'VO2max', lower_bpm: 175, upper_bpm: 188 },
+    { name: 'recovery',   label: '心率1区', lower_bpm: null, upper_bpm: 140 },
+    { name: 'easy',       label: '心率2区', lower_bpm: 140,  upper_bpm: 154 },
+    { name: 'marathon',   label: '心率3区', lower_bpm: 154,  upper_bpm: 165 },
+    { name: 'threshold',  label: '心率4区', lower_bpm: 165,  upper_bpm: 175 },
+    { name: 'interval',   label: '心率5区', lower_bpm: 175,  upper_bpm: 188 },
+    { name: 'repetition', label: '心率6区', lower_bpm: 188,  upper_bpm: null },
   ],
 }
 
@@ -110,10 +112,11 @@ describe('TrainingStatusPage', () => {
     // 175 appears in metric card + HR zone table boundaries; just confirm it's present
     expect(screen.getAllByText('175').length).toBeGreaterThan(0)  // threshold HR
 
-    // Zone tables — Z1 appears in both pace + HR zone tables
-    expect(screen.getAllByText('Z1').length).toBe(2)
-    expect(screen.getByText('轻松')).toBeInTheDocument()
-    expect(screen.getByText('恢复')).toBeInTheDocument()
+    // Zone tables: 6 rows per table, named recovery..repetition, labelled
+    // "配速N区" / "心率N区". "recovery" appears in both pace + HR tables.
+    expect(screen.getAllByText('recovery').length).toBe(2)
+    expect(screen.getByText('配速1区')).toBeInTheDocument()
+    expect(screen.getByText('心率1区')).toBeInTheDocument()
 
     // Training load stats
     expect(screen.getByText('Acute')).toBeInTheDocument()

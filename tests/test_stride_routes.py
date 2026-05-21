@@ -192,10 +192,12 @@ def test_stride_zones_happy_path(rsa_keypair, monkeypatch, seeded_db):
     assert [z["name"] for z in body["pace_zones"]] == [
         "recovery", "easy", "marathon", "threshold", "interval", "repetition",
     ]
-    # Chinese labels look up by canonical name
-    assert body["hr_zones"][0]["label"] == "恢复"
-    assert body["pace_zones"][0]["label"] == "恢复"
-    assert body["hr_zones"][3]["label"] == "阈值"
+    # Display labels are 配速N区 / 心率N区 indexed by physiological order
+    # (1=recovery .. 6=repetition) so they line up with watch-zone numbering.
+    assert body["hr_zones"][0]["label"] == "心率1区"
+    assert body["pace_zones"][0]["label"] == "配速1区"
+    assert body["hr_zones"][3]["label"] == "心率4区"
+    assert body["pace_zones"][5]["label"] == "配速6区"
     # recovery zone: HR upper_bpm = 140, lower_bpm = None (open lower)
     assert body["hr_zones"][0]["lower_bpm"] is None
     assert body["hr_zones"][0]["upper_bpm"] == 140

@@ -36,18 +36,22 @@ def _pace_fmt(speed_mps: float | None) -> str | None:
     return f"{secs // 60}:{secs % 60:02d}"
 
 
-_ZONE_LABELS = {
-    "recovery":   "恢复",
-    "easy":       "轻松",
-    "marathon":   "马拉松",
-    "threshold":  "阈值",
-    "interval":   "间歇",
-    "repetition": "反复",
-}
+# Numeric zone index in physiological order. Drives both sort + display label.
+# Display labels are "配速N区" / "心率N区" rather than translated Daniels names
+# (轻松 / 马拉松 / 间歇 / ...) because numbered zones map directly onto the watch
+# UI users see during workouts.
 _ZONE_ORDER = {
     "recovery": 0, "easy": 1, "marathon": 2,
     "threshold": 3, "interval": 4, "repetition": 5,
 }
+
+
+def _zone_label(zone_kind: str, name: str) -> str:
+    idx = _ZONE_ORDER.get(name)
+    if idx is None:
+        return name
+    prefix = "心率" if zone_kind in ("hr", "heart_rate") else "配速"
+    return f"{prefix}{idx + 1}区"
 
 
 @router.get("/api/{user}/stride/zones")
@@ -92,7 +96,7 @@ def get_stride_zones(user: str) -> dict[str, Any]:
             if kind in ("hr", "heart_rate"):
                 hr_zones.append({
                     "name": r["name"],
-                    "label": _ZONE_LABELS.get(r["name"], r["name"]),
+                    "label": _zone_label(kind, r["name"]),
                     "lower_bpm": int(r["min_value"]) if r["min_value"] is not None else None,
                     "upper_bpm": int(r["max_value"]) if r["max_value"] is not None else None,
                 })
@@ -102,7 +106,7 @@ def get_stride_zones(user: str) -> dict[str, Any]:
                 # as the slower edge (so users read top-to-bottom recovery → repetition).
                 pace_zones.append({
                     "name": r["name"],
-                    "label": _ZONE_LABELS.get(r["name"], r["name"]),
+                    "label": _zone_label(kind, r["name"]),
                     "lower_pace": _pace_fmt(r["min_speed_mps"]),
                     "upper_pace": _pace_fmt(r["max_speed_mps"]),
                 })
