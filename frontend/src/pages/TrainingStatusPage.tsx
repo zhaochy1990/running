@@ -187,8 +187,88 @@ function MetricsRow({
   )
 }
 
-// Placeholders for tasks 9-12
-function TrendsRow(_props: { health: any; hrv: any; days: DaysWindow }) { return <div data-section="trends" /> }
+// === Task 9: TrendsRow ===
+function ChartCard({ title, sublabel, children }: { title: string; sublabel: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-bg-card border border-border-subtle rounded-2xl p-4">
+      <div className="text-xs font-mono text-text-muted">{title}</div>
+      <div className="text-[10px] font-mono text-text-faint mb-2">{sublabel}</div>
+      {children}
+    </div>
+  )
+}
+
+function EmptyChart({ text }: { text: string }) {
+  return (
+    <div className="flex items-center justify-center h-[200px] text-xs font-mono text-text-muted">{text}</div>
+  )
+}
+
+function TrendsRow({
+  health, hrv, days,
+}: {
+  health: { health: HealthRecord[]; rhr_baseline: number | null } | null
+  hrv: { hrv: HrvDailyRecord[] } | null
+  days: DaysWindow
+}) {
+  const rhrData = (health?.health ?? [])
+    .slice()
+    .reverse()
+    .filter((r) => r.rhr != null)
+    .slice(-days)
+    .map((r) => ({
+      date: r.date,
+      dateLabel: formatDateShort(r.date.length === 8 ? `${r.date.slice(0,4)}-${r.date.slice(4,6)}-${r.date.slice(6,8)}` : r.date),
+      rhr: r.rhr,
+    }))
+
+  const hrvData = (hrv?.hrv ?? [])
+    .slice()
+    .filter((r) => r.last_night_avg != null)
+    .slice(-days)
+    .map((r) => ({
+      date: r.date,
+      dateLabel: formatDateShort(r.date),
+      hrv: r.last_night_avg,
+    }))
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+      <ChartCard title="RHR 趋势" sublabel={`最近 ${days} 天 · 手表读数`}>
+        {rhrData.length === 0 ? (
+          <EmptyChart text="暂无 RHR 数据" />
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={rhrData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid {...GRID_STYLE} />
+              <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
+              <YAxis tick={AXIS_TICK} domain={['dataMin - 2', 'dataMax + 2']} />
+              <Tooltip {...TOOLTIP_STYLE} />
+              <Area type="monotone" dataKey="rhr" stroke="#0097a7" fill="#0097a7" fillOpacity={0.15} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </ChartCard>
+      <ChartCard title="HRV 趋势" sublabel={`最近 ${days} 天 · 手表读数`}>
+        {hrvData.length === 0 ? (
+          <EmptyChart text="暂无 HRV 数据" />
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={hrvData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <CartesianGrid {...GRID_STYLE} />
+              <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
+              <YAxis tick={AXIS_TICK} domain={['dataMin - 5', 'dataMax + 5']} />
+              <Tooltip {...TOOLTIP_STYLE} />
+              <Area type="monotone" dataKey="hrv" stroke="#7a4dd4" fill="#7a4dd4" fillOpacity={0.15} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </ChartCard>
+    </div>
+  )
+}
+
+// Placeholders for tasks 10-12
 function ZonesRow(_props: { zones: any }) { return <div data-section="zones" /> }
 function TrainingLoadSection(_props: { load: any }) { return <div data-section="load" /> }
 function DataStatusFooter(_props: { zones: any; load: any }) { return <div data-section="footer" /> }
