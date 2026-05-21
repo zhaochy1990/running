@@ -12,7 +12,16 @@ on:
   schedule:
     # Every Sunday at 04:00 UTC = 12:00 Asia/Shanghai
     - cron: '0 4 * * 0'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "refresh = update calibration snapshot only (weekly default); backfill = recompute daily/activity training-load too (heavier, used after schema migrations)"
+        required: true
+        type: choice
+        default: refresh
+        options:
+          - refresh
+          - backfill
 
 jobs:
   recompute:
@@ -47,6 +56,8 @@ jobs:
         env:
           STRIDE_PROD_URL: ${{ secrets.STRIDE_PROD_URL }}
           INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+          # `mode` is only set for workflow_dispatch. Cron runs default to refresh.
+          MODE: ${{ inputs.mode || 'refresh' }}
         run: |
           set -u
           if [ -z "$STRIDE_PROD_URL" ] || [ -z "$INTERNAL_TOKEN" ]; then
@@ -54,7 +65,24 @@ jobs:
             exit 1
           fi
 
-          echo "## Weekly running calibration recompute" >> "$GITHUB_STEP_SUMMARY"
+          # refresh = light snapshot-only update; backfill = also re-derive
+          # daily/activity training-load rows with the new calibration (heavier;
+          # use after schema migrations or first rollout of the new algorithm).
+          case "$MODE" in
+            refresh)  ENDPOINT="/internal/training-load/calibration/refresh"; TIMEOUT=60 ;;
+            backfill) ENDPOINT="/internal/training-load/backfill?load_lookback_days=365"; TIMEOUT=300 ;;
+            *) echo "::error::unknown mode $MODE"; exit 1 ;;
+          esac
+          # The endpoint string already contains a query param for backfill;
+          # append `user=` with the correct separator.
+          case "$ENDPOINT" in
+            *\?*) USER_SEP="&" ;;
+            *)    USER_SEP="?" ;;
+          esac
+
+          echo "## Running calibration $MODE" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Endpoint: \`$ENDPOINT\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| user | http | response |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|------|----------|" >> "$GITHUB_STEP_SUMMARY"
@@ -63,12 +91,13 @@ jobs:
           ok=0
           while read -r user; do
             [ -z "$user" ] && continue
-            echo "==> POST /internal/training-load/calibration/refresh user=$user"
+            url="$STRIDE_PROD_URL$ENDPOINT${USER_SEP}user=$user"
+            echo "==> POST $url"
             http=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
-              --max-time 60 \
+              --max-time "$TIMEOUT" \
               -X POST \
               -H "X-Internal-Token: $INTERNAL_TOKEN" \
-              "$STRIDE_PROD_URL/internal/training-load/calibration/refresh?user=$user")
+              "$url")
             body=$(head -c 500 /tmp/resp.json | tr '\n' ' ')
             if [ "$http" = "200" ] || [ "$http" = "204" ]; then
               ok=$((ok+1))
@@ -76,7 +105,7 @@ jobs:
               echo "| $user | $http | $body |" >> "$GITHUB_STEP_SUMMARY"
             else
               fail=$((fail+1))
-              echo "::warning::Recompute failed for $user (HTTP $http): $body"
+              echo "::warning::$MODE failed for $user (HTTP $http): $body"
               echo "| $user | $http | $body |" >> "$GITHUB_STEP_SUMMARY"
             fi
           done < users.txt
