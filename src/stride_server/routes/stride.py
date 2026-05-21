@@ -58,6 +58,16 @@ def _zone_label(zone_kind: str, name: str) -> str:
 def get_stride_zones(user: str) -> dict[str, Any]:
     db = get_db(user)
     try:
+        # Ensure running_calibration_snapshot + running_calibration_zone tables
+        # exist before SELECTing — they are bootstrapped lazily by
+        # SQLiteRunningCalibrationRepository, not by Database.__init__, so a
+        # user whose DB has never been backfilled would 500 with "no such
+        # table". The repo constructor is idempotent (CREATE IF NOT EXISTS).
+        from stride_core.running_calibration.sqlite_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+        SQLiteRunningCalibrationRepository(db)
+
         snap_rows = db._conn.execute(
             """SELECT id, as_of_date, threshold_hr, threshold_speed_mps,
                       threshold_hr_confidence, threshold_speed_confidence

@@ -235,6 +235,37 @@ def test_stride_zones_unauthenticated(rsa_keypair, monkeypatch, seeded_db):
     assert resp.status_code == 401
 
 
+def test_stride_zones_bootstraps_missing_calibration_schema(
+    rsa_keypair, monkeypatch, tmp_path
+):
+    """User DB has never had SQLiteRunningCalibrationRepository instantiated.
+
+    In production this happens for any user whose DB predates the calibration
+    migration — the running_calibration_snapshot / running_calibration_zone
+    tables only get bootstrapped lazily by the connector. The route must
+    create them on first hit and return the empty-state shape, not 500 with
+    'no such table'.
+    """
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem)
+
+    # Open a fresh DB WITHOUT calling SQLiteRunningCalibrationRepository.
+    raw_db_path = tmp_path / "no_calibration_schema.db"
+    Database(raw_db_path).close()  # only the main Database schema, no calibration tables
+
+    import stride_server.routes.stride as stride_mod
+    monkeypatch.setattr(stride_mod, "get_db", lambda user: Database(raw_db_path))
+
+    client = _build_client(public_pem)
+    token = _issue_token(private_pem)
+    resp = client.get(
+        f"/api/{USER_ID}/stride/zones",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"threshold": None, "pace_zones": [], "hr_zones": []}
+
+
 def _seed_training_load(db_path: Path):
     """Insert 5 days of daily_training_load."""
     db = Database(db_path)
