@@ -56,18 +56,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Run frontend tests
-        run: |
-          cd frontend
-          npm install
-          npm run test
+      # Tests (pytest + lint-imports + vitest) run on every PR via
+      # .github/workflows/ci.yml. Master is reached only via merged PR
+      # so re-running them here would be wasted minutes — deploy.yml
+      # is intentionally build-and-ship only.
 
       # AMap key/securityJsCode live in stride-kv-common AKV. We pull them
       # BEFORE Docker build because Vite bakes VITE_* env vars into the
