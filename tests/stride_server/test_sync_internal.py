@@ -94,3 +94,49 @@ def test_invalid_uuid_returns_422(monkeypatch):
 
     assert resp.status_code == 422, resp.text
     assert "UUID4" in resp.json()["detail"]
+
+
+def test_happy_path_returns_200_and_calls_sync_user(monkeypatch):
+    calls: list[tuple[str, bool]] = []
+
+    class RecordingSource(FakeSource):
+        def sync_user(self, user: str, full: bool = False) -> SyncResult:
+            calls.append((user, full))
+            return SyncResult(activities=3, health=1)
+
+    source = RecordingSource()
+    app = _build_app(monkeypatch, source=source)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        f"/internal/sync?user={USER_UUID}",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["success"] is True
+    assert "3 条活动" in body["output"]
+    assert "1 条健康记录" in body["output"]
+    assert calls == [(USER_UUID, False)]
+
+
+def test_full_flag_forwarded_to_sync_user(monkeypatch):
+    calls: list[tuple[str, bool]] = []
+
+    class RecordingSource(FakeSource):
+        def sync_user(self, user: str, full: bool = False) -> SyncResult:
+            calls.append((user, full))
+            return SyncResult(activities=0, health=0)
+
+    source = RecordingSource()
+    app = _build_app(monkeypatch, source=source)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        f"/internal/sync?user={USER_UUID}&full=true",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert calls == [(USER_UUID, True)]
