@@ -22,3 +22,22 @@ def test_unauthenticated_is_401(prod_client_anon) -> None:
     """
     resp = prod_client_anon.get("/api/users")
     assert resp.status_code == 401, f"expected 401, got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.e2e
+def test_users_returns_current_user(prod_client, e2e_user_id) -> None:
+    """Case 3: GET /api/users with a valid Bearer includes the e2e user UUID.
+
+    Proves: auth verification succeeds end-to-end (public key env var set on
+    prod), AND the Azure Files share is mounted with the e2e user's data dir
+    present (the route lists subdirectories of /app/data).
+    """
+    resp = prod_client.get("/api/users")
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert "users" in payload, f"missing 'users' key: {payload}"
+    assert isinstance(payload["users"], list), payload
+    assert e2e_user_id in payload["users"], (
+        f"e2e user {e2e_user_id} not present in /api/users response "
+        f"(got {len(payload['users'])} users) — was the test user seeded?"
+    )
