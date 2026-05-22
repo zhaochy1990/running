@@ -77,3 +77,38 @@ def trigger_sync(
     Protected by Bearer auth when STRIDE_AUTH_PUBLIC_KEY_PEM/PATH is set.
     """
     return _run_sync(user, full, source)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal route — used by scheduled workflows (see .github/workflows/daily-sync.yml)
+# Auth via X-Internal-Token, NOT bearer. Path is /internal/... so future
+# bearer-prefix middleware on /api/* won't accidentally catch it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+internal_router = APIRouter()
+
+
+@internal_router.post("/internal/sync")
+def internal_trigger_sync(
+    request: Request,
+    user: str = Query(..., description="User UUID"),
+    full: bool = Query(False),
+    _token: None = Depends(require_internal_token),
+) -> dict:
+    """Trigger a sync for `user` — same logic as POST /api/{user}/sync but
+    authenticated via X-Internal-Token instead of Bearer JWT.
+    """
+    if not _UUID4_RE.match(user):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="user must be a UUID4",
+        )
+    registry: ProviderRegistry = request.app.state.registry
+    try:
+        source: DataSource = registry.for_user(user)
+    except UnknownProvider as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Configured watch provider {exc.name!r} is not available in this deployment",
+        ) from exc
+    return _run_sync(user, full, source)
