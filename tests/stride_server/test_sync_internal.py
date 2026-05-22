@@ -69,3 +69,15 @@ def test_missing_internal_token_returns_401(monkeypatch):
     resp = client.post(f"/internal/sync?user={USER_UUID}")
 
     assert resp.status_code == 401, resp.text
+
+
+def test_bad_internal_token_returns_401(monkeypatch):
+    app = _build_app(monkeypatch)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        f"/internal/sync?user={USER_UUID}",
+        headers={"X-Internal-Token": "wrong-token-value"},
+    )
+
+    assert resp.status_code == 401, resp.text
