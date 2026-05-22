@@ -15,7 +15,9 @@ import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
+import '../_shared/sync/sync_controller.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
 import 'models/health_overview.dart';
 import 'providers/health_overview_provider.dart';
@@ -34,10 +36,35 @@ class HealthOverviewScreen extends ConsumerWidget {
         bottom: false,
         child: Column(
           children: [
-            const StrideScreenHero(
-              eyebrow: '身体指标 · 今日',
-              title: '健康概览',
-              deck: '同步自手表的静息心率、HRV、训练负荷与睡眠。',
+            Consumer(
+              builder: (context, ref, _) {
+                final syncState = ref.watch(syncControllerProvider);
+                final messenger = ScaffoldMessenger.of(context);
+                return StrideScreenHero(
+                  eyebrow: '身体指标 · 今日',
+                  title: '健康概览',
+                  deck: '同步自手表的静息心率、HRV、训练负荷与睡眠。',
+                  trailing: _SyncIcon(
+                    syncing: syncState.syncing,
+                    onTap: syncState.syncing
+                        ? null
+                        : () async {
+                            try {
+                              await ref
+                                  .read(syncControllerProvider.notifier)
+                                  .triggerSync();
+                              messenger.showSnackBar(
+                                const SnackBar(content: Text('已同步')),
+                              );
+                            } catch (e) {
+                              messenger.showSnackBar(
+                                SnackBar(content: Text('同步失败：$e')),
+                              );
+                            }
+                          },
+                  ),
+                );
+              },
             ),
             Expanded(
               child: async.when(
@@ -63,18 +90,47 @@ class _OverviewBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      children: [
-        _MetricGrid(overview: overview),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _SleepCard(overview: overview),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _AiInterpretCard(overview: overview),
-        const SizedBox(height: StrideTokens.spaceXl),
-        const _DetailEntries(),
-        const SizedBox(height: StrideTokens.spaceXl),
-      ],
+    return StrideRefreshable<HealthOverview>(
+      provider: healthOverviewProvider.future,
+      child: ListView(
+        padding: const EdgeInsets.all(StrideTokens.spaceLg),
+        children: [
+          _MetricGrid(overview: overview),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _SleepCard(overview: overview),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _AiInterpretCard(overview: overview),
+          const SizedBox(height: StrideTokens.spaceXl),
+          const _DetailEntries(),
+          const SizedBox(height: StrideTokens.spaceXl),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Sync icon ─────────────────────────────────────────────────────────────────
+
+class _SyncIcon extends StatelessWidget {
+  const _SyncIcon({required this.syncing, required this.onTap});
+  final bool syncing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (syncing) {
+      return const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: StrideTokens.accent,
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: onTap,
+      child: const Icon(Icons.sync, size: 20, color: StrideTokens.fgSoft),
     );
   }
 }

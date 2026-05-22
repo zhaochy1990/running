@@ -152,4 +152,9 @@ void main() {
     expect(find.text('身体指标 · 今日'), findsOneWidget);
     expect(find.text('健康概览'), findsOneWidget);
   });
+
+  testWidgets('hero trailing renders sync icon', (tester) async {
+    await _pump(tester, const AsyncData(_fullOverview));
+    expect(find.byIcon(Icons.sync), findsOneWidget);
+  });
 }
