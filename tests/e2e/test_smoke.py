@@ -62,3 +62,21 @@ def test_home_dashboard(prod_client, e2e_user_id) -> None:
     assert isinstance(payload, dict), f"expected object, got {type(payload).__name__}"
     missing = HOME_REQUIRED_KEYS - payload.keys()
     assert not missing, f"home response missing keys: {sorted(missing)} (got {sorted(payload.keys())})"
+
+
+@pytest.mark.e2e
+def test_weeks_list(prod_client, e2e_user_id) -> None:
+    """Case 5: /api/{user}/weeks returns at least one folder.
+
+    Proves Azure Files mount + week-folder discovery. The e2e user must
+    have at least one `data/{uuid}/logs/<date-folder>/plan.md` synced.
+    """
+    resp = prod_client.get(f"/api/{e2e_user_id}/weeks")
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert "weeks" in payload and isinstance(payload["weeks"], list), payload
+    assert len(payload["weeks"]) > 0, (
+        "weeks list is empty — did sync-data.yml push the seed plan.md to Azure Files?"
+    )
+    first = payload["weeks"][0]
+    assert "folder" in first and isinstance(first["folder"], str), first
