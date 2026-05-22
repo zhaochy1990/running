@@ -6,11 +6,30 @@ import json
 
 from fastapi import APIRouter, Query
 
+from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
 
 from ..deps import format_duration, get_db
 
 router = APIRouter()
+
+
+def _normalize_health_date(d):
+    """Coerce `daily_health.date` to bare ISO ``YYYY-MM-DD``.
+
+    The column stores ``YYYYMMDD`` for COROS-sourced rows and ISO
+    ``YYYY-MM-DD`` (sometimes with a ``T...`` suffix) for Garmin-sourced
+    rows — both already Shanghai-local. Frontend code joins these with
+    ``daily_hrv.date`` (always ISO) and would silently miss COROS days
+    without this normalization.
+    """
+    if not isinstance(d, str) or not d:
+        return d
+    if len(d) == 8 and d.isdigit():
+        return f"{d[:4]}-{d[4:6]}-{d[6:]}"
+    if len(d) >= 10 and d[4:5] == "-":
+        return d[:10]
+    return d
 
 
 def _json_list(value) -> list[str]:
@@ -55,11 +74,46 @@ def get_dashboard(user: str):
 def get_health(user: str, days: int = Query(30, ge=1, le=365)):
     db = get_db(user)
     rows = db.query("SELECT * FROM daily_health ORDER BY date DESC LIMIT ?", (days,))
+    health = []
+    for r in rows:
+        record = dict(r)
+        record["date"] = _normalize_health_date(record.get("date"))
+        health.append(record)
+
+    # Init with every required HRVSnapshot field so the response shape stays
+    # stable even for fresh users with no dashboard row yet.
+    hrv = {
+        "avg_sleep_hrv": None,
+        "hrv_normal_low": None,
+        "hrv_normal_high": None,
+        "recovery_pct": None,
+    }
     dash = db.query(
         "SELECT avg_sleep_hrv, hrv_normal_low, hrv_normal_high, recovery_pct "
         "FROM dashboard WHERE id = 1"
     )
-    hrv = dict(dash[0]) if dash else {}
+    if dash:
+        hrv.update(dict(dash[0]))
+
+    # Per-day HRV trend (both COROS and Garmin populate this now). Capped
+    # at the same window as `health` so a single /health call gives the
+    # training-status skill everything it needs to render the HRV row.
+    # Returned oldest→newest to match /api/hrv and /api/pmc — chart-friendly.
+    # The `daily_balanced_*` fields are renamed from the DB columns
+    # `baseline_balanced_*` so consumers don't conflate them with the
+    # `hrv_normal_*` user-level baseline above (`hrv_normal_*` is a stable
+    # band from the dashboard; `daily_balanced_*` is the watch's per-day
+    # threshold and is expected to drift day to day).
+    hrv_trend_rows = db.query(
+        "SELECT date, last_night_avg, status, "
+        "baseline_balanced_low AS daily_balanced_low, "
+        "baseline_balanced_upper AS daily_balanced_upper "
+        f"FROM ({HRV_PREFERRED_PER_DATE_SQL}) ORDER BY date DESC LIMIT ?",
+        (days,),
+    )
+    trend = [dict(r) for r in hrv_trend_rows]
+    trend.reverse()
+    hrv["trend"] = trend
 
     # 10th percentile of last 90 days of RHR = "rested baseline"; None if too few samples
     rhr_rows = db.query(
@@ -75,7 +129,7 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
 
     db.close()
     return {
-        "health": [dict(r) for r in rows],
+        "health": health,
         "hrv": hrv,
         "rhr_baseline": rhr_baseline,
     }
@@ -83,13 +137,20 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
 
 @router.get("/api/{user}/hrv")
 def get_hrv(user: str, days: int = Query(30, ge=1, le=365)):
-    """Per-day HRV detail (Garmin-rich; COROS users get an empty list).
+    """Per-day HRV detail (populated by both COROS and Garmin sync).
 
     Returns the last `days` rows from `daily_hrv` ordered oldest → newest
     (chart-friendly), plus a small summary block for the latest reading.
+    COROS rows are derived from `/dashboard/query`'s sleepHrvList (last
+    7 days per sync — trend accumulates over time); Garmin rows come from
+    `get_hrv_data(date)` per day.
     """
     db = get_db(user)
-    rows = db.query("SELECT * FROM daily_hrv ORDER BY date DESC LIMIT ?", (days,))
+    rows = db.query(
+        f"SELECT * FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
+        "ORDER BY date DESC LIMIT ?",
+        (days,),
+    )
     db.close()
 
     records = [dict(r) for r in rows]

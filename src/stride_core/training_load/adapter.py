@@ -7,6 +7,7 @@ import math
 from datetime import date, timedelta
 from typing import Any, Iterable, Sequence
 
+from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.normalize import kind_from_legacy_train_type
 from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
 
@@ -296,7 +297,12 @@ def _fetch_health_rows(db: Any, *, start: date | None = None, end: date | None =
 def _fetch_hrv_rows(db: Any, *, start: date | None = None, end: date | None = None) -> list[HrvRow]:
     # daily_hrv shares the mixed YYYYMMDD/ISO storage convention; filter in
     # Python after parsing for the same reason as `_fetch_health_rows`.
-    rows = db.query("SELECT date, last_night_avg, status FROM daily_hrv ORDER BY date")
+    # Dedupe multi-provider rows per date (Garmin > COROS) so a dual-watch
+    # user doesn't get both providers' values fed into the readiness model.
+    rows = db.query(
+        "SELECT date, last_night_avg, status "
+        f"FROM ({HRV_PREFERRED_PER_DATE_SQL}) ORDER BY date"
+    )
     out: list[HrvRow] = []
     for row in rows:
         d = _parse_date(row["date"])

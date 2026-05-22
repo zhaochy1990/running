@@ -303,9 +303,11 @@ CREATE TABLE IF NOT EXISTS vo2max_pb (
 );
 
 -- Phase 3: per-day HRV detail (separate table because the row is heavier
--- than daily_health and not all providers populate it).
+-- than daily_health and not all providers populate it). Composite PK so
+-- a dual-watch user (e.g. COROS night + Garmin night for the same date)
+-- can keep both rows — readers dedupe with a provider-priority order.
 CREATE TABLE IF NOT EXISTS daily_hrv (
-    date                       TEXT PRIMARY KEY,
+    date                       TEXT NOT NULL,
     weekly_avg                 INTEGER,
     last_night_avg             INTEGER,
     last_night_5min_high       INTEGER,
@@ -314,7 +316,8 @@ CREATE TABLE IF NOT EXISTS daily_hrv (
     baseline_balanced_low      INTEGER,
     baseline_balanced_upper    INTEGER,
     feedback_phrase            TEXT,
-    provider                   TEXT NOT NULL DEFAULT 'coros'
+    provider                   TEXT NOT NULL DEFAULT 'coros',
+    PRIMARY KEY (date, provider)
 );
 
 -- Objective training-load v1. Vendor black-box fields stay in activities /
@@ -473,6 +476,30 @@ CREATE TABLE IF NOT EXISTS activity_feedback (
     created_at  TEXT DEFAULT (datetime('now')),
     updated_at  TEXT DEFAULT (datetime('now'))
 );
+"""
+
+
+# Pick one daily_hrv row per date when a user has multiple providers writing
+# the same calendar day. Garmin first because it populates more fields
+# (weekly_avg, last_night_5min_high, feedback_phrase) than the COROS adapter
+# can extract from /dashboard/query. Falls through alphabetically for unknown
+# providers so adding a third source (Apple, Fitbit, ...) is non-breaking.
+# Wrap this string as an inner subquery, e.g.:
+#   SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) ORDER BY date DESC
+HRV_PREFERRED_PER_DATE_SQL = """
+    SELECT * FROM daily_hrv WHERE rowid IN (
+        SELECT rowid FROM daily_hrv h1
+        WHERE provider = (
+            SELECT provider FROM daily_hrv h2
+            WHERE h2.date = h1.date
+            ORDER BY CASE provider
+                WHEN 'garmin' THEN 1
+                WHEN 'coros' THEN 2
+                ELSE 3
+            END, provider
+            LIMIT 1
+        )
+    )
 """
 
 
@@ -1079,6 +1106,50 @@ class Database:
         ).fetchone():
             self._conn.execute("DROP TABLE training_load_calibration")
             self._conn.commit()
+
+        # Migrate daily_hrv PRIMARY KEY from (date) to (date, provider). The
+        # original single-column PK silently let a COROS upsert overwrite a
+        # Garmin row for the same date (or vice versa), losing data for any
+        # dual-watch user. Composite PK isolates by provider; readers dedupe
+        # with a Garmin-first priority because Garmin populates more fields.
+        hrv_sql_row = self._conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='daily_hrv'"
+        ).fetchone()
+        if hrv_sql_row is not None:
+            hrv_table_sql = hrv_sql_row[0] or ""
+            needs_hrv_rebuild = (
+                "date                       TEXT PRIMARY KEY" in hrv_table_sql
+                or "date TEXT PRIMARY KEY" in hrv_table_sql
+                or ("PRIMARY KEY" in hrv_table_sql
+                    and "PRIMARY KEY (date, provider)" not in hrv_table_sql)
+            )
+            if needs_hrv_rebuild:
+                self._conn.executescript("""
+                    CREATE TABLE daily_hrv_new (
+                        date                       TEXT NOT NULL,
+                        weekly_avg                 INTEGER,
+                        last_night_avg             INTEGER,
+                        last_night_5min_high       INTEGER,
+                        status                     TEXT,
+                        baseline_low_upper         INTEGER,
+                        baseline_balanced_low      INTEGER,
+                        baseline_balanced_upper    INTEGER,
+                        feedback_phrase            TEXT,
+                        provider                   TEXT NOT NULL DEFAULT 'coros',
+                        PRIMARY KEY (date, provider)
+                    );
+                    -- Preserve every existing row. Pre-migration the PK was
+                    -- (date) alone, so there's at most one row per date; no
+                    -- dedup needed here.
+                    INSERT INTO daily_hrv_new
+                    SELECT date, weekly_avg, last_night_avg, last_night_5min_high,
+                           status, baseline_low_upper, baseline_balanced_low,
+                           baseline_balanced_upper, feedback_phrase, provider
+                    FROM daily_hrv;
+                    DROP TABLE daily_hrv;
+                    ALTER TABLE daily_hrv_new RENAME TO daily_hrv;
+                """)
+                self._conn.commit()
 
     def close(self) -> None:
         self._conn.close()

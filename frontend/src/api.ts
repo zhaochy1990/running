@@ -462,11 +462,23 @@ export interface HealthRecord {
   provider: string | null
 }
 
+export interface HrvTrendPoint {
+  date: string
+  last_night_avg: number | null
+  status: string | null
+  // Per-day watch-reported balanced band — distinct from the user-level
+  // `hrv_normal_low/high` snapshot on HRVSnapshot (which is a stable
+  // baseline range, while these drift day by day).
+  daily_balanced_low: number | null
+  daily_balanced_upper: number | null
+}
+
 export interface HRVSnapshot {
   avg_sleep_hrv: number | null
   hrv_normal_low: number | null
   hrv_normal_high: number | null
   recovery_pct: number | null
+  trend: HrvTrendPoint[]
 }
 
 export function getHealth(user: string, days = 30) {

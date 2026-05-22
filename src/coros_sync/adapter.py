@@ -47,6 +47,7 @@ _COROS_INFO = ProviderInfo(
     display_name="高驰",
     regions=("global", "cn", "eu"),
     capabilities=frozenset({
+        Capability.SYNC_HRV_DETAIL,
         Capability.PUSH_RUN_WORKOUT,
         Capability.PUSH_STRENGTH_WORKOUT,
         Capability.DELETE_WORKOUT,

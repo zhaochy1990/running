@@ -85,12 +85,14 @@ function formatDate(dateStr: string): string {
 
 
 /**
- * Garmin-only extras: Sleep / Body Battery / Stress cards + HRV daily trend chart.
+ * Watch extras: Sleep / Body Battery / Stress cards (Garmin-only) +
+ * HRV daily trend chart (both COROS and Garmin).
  *
- * Renders nothing when the latest record has no Garmin-specific data
- * (i.e. COROS users see a clean health page unchanged from before).
+ * Individual cards hide when their data is null so COROS users — who get
+ * HRV but not the other Garmin-specific signals — see only the HRV card +
+ * trend chart, not a row of empty placeholders.
  */
-export default function GarminExtrasSection({
+export default function WatchExtrasSection({
   user, latest, days,
 }: {
   user: string
@@ -113,13 +115,11 @@ export default function GarminExtrasSection({
     return () => { cancelled = true }
   }, [user, days])
 
-  // Hide entirely for users with no Garmin data anywhere on this row
-  const hasAnyData = latest && (
-    latest.sleep_total_s != null ||
-    latest.body_battery_high != null ||
-    latest.stress_avg != null ||
-    hrvRecords.length > 0
-  )
+  const hasSleep = latest?.sleep_total_s != null
+  const hasBodyBattery = latest?.body_battery_high != null
+  const hasStress = latest?.stress_avg != null
+  const hasHrv = hrvRecords.length > 0 || hrvSummary?.last_night_avg != null
+  const hasAnyData = hasSleep || hasBodyBattery || hasStress || hasHrv
   if (!hasAnyData) return null
 
   const chartData = [...hrvRecords].map((r) => ({
@@ -130,65 +130,85 @@ export default function GarminExtrasSection({
   const hrvBalancedLow = hrvSummary?.baseline_balanced_low ?? null
   const hrvBalancedHigh = hrvSummary?.baseline_balanced_upper ?? null
 
+  // Adaptive grid: a COROS-only user (just the HRV card) shouldn't sit
+  // pinned to the left of a 4-column grid with three empty cells. Tailwind
+  // can't see dynamic class names, so map each count to a literal class.
+  const visibleCount = [hasSleep, hasBodyBattery, hasStress, hasHrv].filter(Boolean).length
+  const cardGridClass = visibleCount === 1
+    ? 'grid grid-cols-1'
+    : visibleCount === 2
+      ? 'grid grid-cols-2'
+      : visibleCount === 3
+        ? 'grid grid-cols-2 lg:grid-cols-3'
+        : 'grid grid-cols-2 lg:grid-cols-4'
+
   return (
     <div className="mb-6">
       <div className="flex items-baseline gap-2 mb-3">
         <h3 className="text-sm font-semibold text-text-primary">手表扩展数据</h3>
-        <p className="text-xs font-mono text-text-muted">Watch Extras · Garmin</p>
+        <p className="text-xs font-mono text-text-muted">Watch Extras</p>
       </div>
 
       {/* Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-        <ExtraCard
-          label="昨夜睡眠"
-          sublabel="Sleep"
-          value={formatHM(latest?.sleep_total_s ?? null)}
-          color={sleepScoreColor(latest?.sleep_score ?? null)}
-          detail={
-            latest?.sleep_score != null
-              ? `Score ${latest.sleep_score}`
-              : (latest?.sleep_deep_s != null
-                  ? `深 ${formatHM(latest.sleep_deep_s)} · REM ${formatHM(latest.sleep_rem_s)}`
-                  : '—')
-          }
-        />
-        <ExtraCard
-          label="Body Battery"
-          sublabel="Energy"
-          value={
-            latest?.body_battery_high != null && latest?.body_battery_low != null
-              ? `${latest.body_battery_low} ~ ${latest.body_battery_high}`
-              : '—'
-          }
-          color={bodyBatteryColor(latest?.body_battery_low ?? null)}
-          detail={
-            latest?.body_battery_low != null
-              ? (latest.body_battery_low > 30 ? '储备良好' : latest.body_battery_low > 15 ? '储备不足' : '严重耗尽')
-              : ''
-          }
-        />
-        <ExtraCard
-          label="日均压力"
-          sublabel="Stress"
-          value={latest?.stress_avg != null ? `${latest.stress_avg}` : '—'}
-          color={stressColor(latest?.stress_avg ?? null)}
-          detail={
-            latest?.stress_avg != null
-              ? (latest.stress_avg < 25 ? '低压力' : latest.stress_avg < 50 ? '中等' : '高压力')
-              : ''
-          }
-        />
-        <ExtraCard
-          label="HRV 状态"
-          sublabel="Last Night"
-          value={hrvSummary?.last_night_avg != null ? `${hrvSummary.last_night_avg}ms` : '—'}
-          color={hrvStatusColor(hrvSummary?.status ?? null)}
-          detail={
-            hrvSummary?.status
-              ? hrvStatusLabel(hrvSummary.status)
-              : (hrvSummary?.weekly_avg != null ? `7日均 ${hrvSummary.weekly_avg}` : '')
-          }
-        />
+      <div className={`${cardGridClass} gap-4 mb-4`}>
+        {hasSleep && (
+          <ExtraCard
+            label="昨夜睡眠"
+            sublabel="Sleep"
+            value={formatHM(latest?.sleep_total_s ?? null)}
+            color={sleepScoreColor(latest?.sleep_score ?? null)}
+            detail={
+              latest?.sleep_score != null
+                ? `Score ${latest.sleep_score}`
+                : (latest?.sleep_deep_s != null
+                    ? `深 ${formatHM(latest.sleep_deep_s)} · REM ${formatHM(latest.sleep_rem_s)}`
+                    : '—')
+            }
+          />
+        )}
+        {hasBodyBattery && (
+          <ExtraCard
+            label="Body Battery"
+            sublabel="Energy"
+            value={
+              latest?.body_battery_high != null && latest?.body_battery_low != null
+                ? `${latest.body_battery_low} ~ ${latest.body_battery_high}`
+                : '—'
+            }
+            color={bodyBatteryColor(latest?.body_battery_low ?? null)}
+            detail={
+              latest?.body_battery_low != null
+                ? (latest.body_battery_low > 30 ? '储备良好' : latest.body_battery_low > 15 ? '储备不足' : '严重耗尽')
+                : ''
+            }
+          />
+        )}
+        {hasStress && (
+          <ExtraCard
+            label="日均压力"
+            sublabel="Stress"
+            value={latest?.stress_avg != null ? `${latest.stress_avg}` : '—'}
+            color={stressColor(latest?.stress_avg ?? null)}
+            detail={
+              latest?.stress_avg != null
+                ? (latest.stress_avg < 25 ? '低压力' : latest.stress_avg < 50 ? '中等' : '高压力')
+                : ''
+            }
+          />
+        )}
+        {hasHrv && (
+          <ExtraCard
+            label="HRV 状态"
+            sublabel="Last Night"
+            value={hrvSummary?.last_night_avg != null ? `${hrvSummary.last_night_avg}ms` : '—'}
+            color={hrvStatusColor(hrvSummary?.status ?? null)}
+            detail={
+              hrvSummary?.status
+                ? hrvStatusLabel(hrvSummary.status)
+                : (hrvSummary?.weekly_avg != null ? `7日均 ${hrvSummary.weekly_avg}` : '')
+            }
+          />
+        )}
       </div>
 
       {/* HRV trend chart */}
