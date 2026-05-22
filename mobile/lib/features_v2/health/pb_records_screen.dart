@@ -15,6 +15,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
+import '../_shared/widgets/refreshable.dart';
+import '../_shared/widgets/sync_icon.dart';
 import '../_shared/widgets/top_bar.dart';
 import 'models/pb_record.dart';
 import 'providers/pb_records_provider.dart';
@@ -28,7 +30,10 @@ class PbRecordsScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(title: '个人最佳'),
+      appBar: const StrideTopBar(
+        title: '个人最佳',
+        actions: [SyncIconButton()],
+      ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorView(message: e.toString()),
@@ -57,21 +62,24 @@ class _PbBody extends StatelessWidget {
 
     final pbMap = {for (final r in response.pbs) r.distance: r};
 
-    return ListView(
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      children: [
-        ...distances.map((key) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: StrideTokens.spaceMd),
-            child: _PbCard(
-              distance: key,
-              label: labels[key] ?? key,
-              record: pbMap[key],
-            ),
-          );
-        }),
-        const SizedBox(height: StrideTokens.spaceXl),
-      ],
+    return StrideRefreshable<PbsResponse>(
+      provider: pbRecordsProvider.future,
+      child: ListView(
+        padding: const EdgeInsets.all(StrideTokens.spaceLg),
+        children: [
+          ...distances.map((key) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: StrideTokens.spaceMd),
+              child: _PbCard(
+                distance: key,
+                label: labels[key] ?? key,
+                record: pbMap[key],
+              ),
+            );
+          }),
+          const SizedBox(height: StrideTokens.spaceXl),
+        ],
+      ),
     );
   }
 }

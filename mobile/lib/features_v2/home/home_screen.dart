@@ -15,9 +15,9 @@ import 'package:go_router/go_router.dart';
 import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
-import '../_shared/sync/sync_controller.dart';
 import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
+import '../_shared/widgets/sync_icon.dart';
 import '../_shared/widgets/section_header.dart';
 import '../_shared/widgets/stat_row.dart';
 import 'models/home_data.dart';
@@ -47,15 +47,12 @@ class HomeScreen extends ConsumerWidget {
   }
 }
 
-class _HomeBody extends ConsumerWidget {
+class _HomeBody extends StatelessWidget {
   const _HomeBody({required this.data});
   final HomeData data;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final syncState = ref.watch(syncControllerProvider);
-    final messenger = ScaffoldMessenger.of(context);
-
+  Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
       child: StrideRefreshable<HomeData>(
@@ -67,25 +64,7 @@ class _HomeBody extends ConsumerWidget {
               eyebrow: '主页 · 本周',
               title: _heroTitle(data.planState),
               deck: _heroDeck(data),
-              trailing: _SyncIcon(
-                syncing: syncState.syncing,
-                onTap: syncState.syncing
-                    ? null
-                    : () async {
-                        try {
-                          await ref
-                              .read(syncControllerProvider.notifier)
-                              .triggerSync();
-                          messenger.showSnackBar(
-                            const SnackBar(content: Text('已同步')),
-                          );
-                        } catch (e) {
-                          messenger.showSnackBar(
-                            SnackBar(content: Text('同步失败：$e')),
-                          );
-                        }
-                      },
-              ),
+              trailing: const SyncIconButton(),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -232,30 +211,6 @@ class _HomeBody extends ConsumerWidget {
     final m = (seconds % 3600) ~/ 60;
     if (h > 0) return '${h}h${m.toString().padLeft(2, '0')}m';
     return '$m分钟';
-  }
-}
-
-class _SyncIcon extends StatelessWidget {
-  const _SyncIcon({required this.syncing, required this.onTap});
-  final bool syncing;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    if (syncing) {
-      return const SizedBox(
-        width: 20,
-        height: 20,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: StrideTokens.accent,
-        ),
-      );
-    }
-    return GestureDetector(
-      onTap: onTap,
-      child: const Icon(Icons.sync, size: 20, color: StrideTokens.fgSoft),
-    );
   }
 }
 
