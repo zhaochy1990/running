@@ -81,3 +81,16 @@ def test_bad_internal_token_returns_401(monkeypatch):
     )
 
     assert resp.status_code == 401, resp.text
+
+
+def test_invalid_uuid_returns_422(monkeypatch):
+    app = _build_app(monkeypatch)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        "/internal/sync?user=not-a-uuid",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 422, resp.text
+    assert "UUID4" in resp.json()["detail"]
