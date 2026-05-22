@@ -24,6 +24,7 @@ import '../../core/theme/tokens.dart';
 import '../../data/api/stride_api.dart';
 import '../../shared/utils/format.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/stat_row.dart';
 import '../../data/models/plan.dart';
@@ -251,9 +252,11 @@ class _SessionDetailBodyState extends ConsumerState<_SessionDetailBody> {
     return Column(
       children: [
         Expanded(
-          child: ListView(
-            padding: const EdgeInsets.all(StrideTokens.spaceLg),
-            children: [
+          child: StrideRefreshable<DayPlan>(
+            provider: planDayProvider((date: widget.date, sessionIndex: widget.sessionIndex)).future,
+            child: ListView(
+              padding: const EdgeInsets.all(StrideTokens.spaceLg),
+              children: [
               // ── 1. 摘要卡 ──
               _SummaryCard(plan: plan),
               const SizedBox(height: StrideTokens.spaceLg),
@@ -290,6 +293,7 @@ class _SessionDetailBodyState extends ConsumerState<_SessionDetailBody> {
 
               const SizedBox(height: 80),
             ],
+          ),
           ),
         ),
 

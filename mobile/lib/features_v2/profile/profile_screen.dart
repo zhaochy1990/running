@@ -17,6 +17,7 @@ import '../../core/theme/tokens.dart';
 import '../../core/updater/update_checker.dart';
 import '../../data/api/stride_api.dart';
 import '../../features/updater/update_prompt.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
 import '../home/models/home_data.dart';
 import '../home/providers/home_provider.dart';
@@ -105,13 +106,15 @@ class _ProfileBody extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return ListView(
-      children: [
-        _UserHeader(
-          displayName: displayName,
-          email: email,
-          lifetimeKm: lifetimeKm,
-        ),
+    return StrideRefreshable<HomeData>(
+      provider: homeProvider.future,
+      child: ListView(
+        children: [
+          _UserHeader(
+            displayName: displayName,
+            email: email,
+            lifetimeKm: lifetimeKm,
+          ),
         const SizedBox(height: StrideTokens.spaceSm),
         _Divider(),
         // ── Personal ────────────────────────────────────────────────────
@@ -176,7 +179,8 @@ class _ProfileBody extends ConsumerWidget {
           onTap: () => _confirmLogout(context, ref),
         ),
         const SizedBox(height: StrideTokens.space3xl),
-      ],
+        ],
+      ),
     );
   }
 
