@@ -98,6 +98,11 @@ CREATE TABLE IF NOT EXISTS activities (
 -- exact expression text in SHANGHAI_DAY_SQL for SQLite to use it.
 CREATE INDEX IF NOT EXISTS idx_activities_shanghai_day
     ON activities(date(datetime(date, '+8 hours')));
+-- Plain index on the raw UTC `date` column for queries that don't go through
+-- SHANGHAI_DAY_SQL — `ORDER BY date DESC` (team feed, weeks list) and
+-- last-sync probes (`SELECT MAX(date) FROM activities`).
+CREATE INDEX IF NOT EXISTS idx_activities_date
+    ON activities(date);
 
 CREATE TABLE IF NOT EXISTS laps (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

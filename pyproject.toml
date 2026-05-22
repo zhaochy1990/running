@@ -45,6 +45,7 @@ web = [
 dev = [
     "pytest>=8.0",
     "pytest-httpx>=0.30",
+    "pytest-xdist>=3.5",
     "import-linter>=2.0",
 ]
 

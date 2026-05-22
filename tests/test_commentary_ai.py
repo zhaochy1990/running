@@ -23,14 +23,16 @@ def _load_commentary_ai():
     pkg.__path__ = [str(Path(__file__).resolve().parent.parent / "src" / "stride_server")]
     sys.modules["stride_server"] = pkg
 
-    # Preload aoai_client
-    for mod_name in ("aoai_client", "commentary_ai"):
-        src = Path(__file__).resolve().parent.parent / "src" / "stride_server" / f"{mod_name}.py"
-        spec = importlib.util.spec_from_file_location(f"stride_server.{mod_name}", str(src))
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[f"stride_server.{mod_name}"] = module
-        spec.loader.exec_module(module)
-    return sys.modules["stride_server.commentary_ai"]
+    # Load commentary_ai directly off disk. `aoai_client` used to be a
+    # sibling module that needed preloading; it was deleted in 4ae1cbe
+    # (the AOAI consolidation into coach.runtime), so commentary_ai now
+    # imports nothing TZ/LLM-shaped from stride_server.
+    src = Path(__file__).resolve().parent.parent / "src" / "stride_server" / "commentary_ai.py"
+    spec = importlib.util.spec_from_file_location("stride_server.commentary_ai", str(src))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["stride_server.commentary_ai"] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 @pytest.fixture(scope="module")

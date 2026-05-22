@@ -2,6 +2,8 @@
 
 import json
 
+import pytest
+
 from stride_core.models import (
     ActivityDetail, DailyHealth, Dashboard, Lap, TimeseriesPoint, Zone,
 )
@@ -221,29 +223,52 @@ class TestAbility:
 
 
 class TestActivitiesIndexes:
-    """Verify SQLite picks up the functional index for SHANGHAI_DAY_SQL queries."""
+    """Verify SQLite picks up the two activity-date indexes."""
 
-    def test_shanghai_day_index_used_for_common_query_shapes(self, db):
-        from stride_core.timefmt import SHANGHAI_DAY_SQL
-
-        # Need some data + ANALYZE so the planner has stats to prefer the
-        # index over a scan.
+    @pytest.fixture
+    def seeded_db(self, db):
+        """64 activities + ANALYZE so the planner has stats to prefer the
+        index over a scan. SQLite may default to a sequential scan on a
+        small unANALYZE'd table even when the right index exists; dropping
+        either the row count or ANALYZE here will silently regress these
+        tests on some SQLite builds."""
         for i in range(64):
-            db.query(
-                "INSERT INTO activities (label_id, sport_type, date) VALUES (?, ?, ?)",
-                (f"a{i}", 100, f"2026-05-{(i % 28) + 1:02d}T10:00:00+00:00"),
-            )
+            db.upsert_activity(_make_detail(
+                label_id=f"a{i}",
+                date=f"2026-05-{(i % 28) + 1:02d}T10:00:00+00:00",
+            ))
         db.query("ANALYZE")
+        return db
+
+    @staticmethod
+    def _plan(db, sql, params=()):
+        # sqlite3.Row.__str__ doesn't expose columns; pull the `detail`
+        # column where the EXPLAIN narrative lives.
+        return " | ".join(
+            row["detail"]
+            for row in db.query(f"EXPLAIN QUERY PLAN {sql}", params)
+        )
+
+    def test_shanghai_day_index_used_for_common_query_shapes(self, seeded_db):
+        from stride_core.timefmt import SHANGHAI_DAY_SQL
 
         for sql, params in [
             (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} >= ?", ("2026-05-09",)),
             (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?", ("2026-05-04", "2026-05-10")),
             (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} = ?", ("2026-05-09",)),
         ]:
-            plan = db.query(f"EXPLAIN QUERY PLAN {sql}", params)
-            # sqlite3.Row.__str__ doesn't expose columns; pull the `detail`
-            # column where the EXPLAIN narrative lives.
-            joined = " | ".join(row["detail"] for row in plan)
+            joined = self._plan(seeded_db, sql, params)
             assert "idx_activities_shanghai_day" in joined, (
                 f"functional index not used for: {sql}\nplan: {joined}"
+            )
+
+    def test_plain_date_index_used_for_ordering_and_max_probes(self, seeded_db):
+        for sql, params in [
+            ("SELECT label_id, date FROM activities ORDER BY date DESC LIMIT 5", ()),
+            ("SELECT MAX(date) FROM activities", ()),
+            ("SELECT label_id FROM activities WHERE date >= ?", ("2026-05-09T00:00:00+00:00",)),
+        ]:
+            joined = self._plan(seeded_db, sql, params)
+            assert "idx_activities_date" in joined, (
+                f"plain date index not used for: {sql}\nplan: {joined}"
             )
