@@ -1,13 +1,3 @@
-// mobile/lib/features_v2/_shared/sync/sync_controller.dart
-//
-// SyncController — process-wide singleton owning the in-flight
-// COROS sync state.  Re-entry while syncing is silently dropped so a
-// second tap on any sync button (or on a different screen's button)
-// while a sync is running is a no-op.
-//
-// Successful sync invalidates every watch-data provider so any active
-// screen re-fetches.  The list is hard-coded; future watch-data
-// providers must be appended here.
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +12,14 @@ import '../../health/providers/race_prediction_provider.dart';
 import '../../health/providers/trends_provider.dart';
 import '../../home/providers/home_provider.dart';
 
+/// SyncController — process-wide singleton owning the in-flight
+/// COROS sync state.  Re-entry while syncing is silently dropped so a
+/// second tap on any sync button (or on a different screen's button)
+/// while a sync is running is a no-op.
+///
+/// Successful sync invalidates every watch-data provider so any active
+/// screen re-fetches.  The list is hard-coded; future watch-data
+/// providers must be appended here.
 class SyncState {
   const SyncState({
     this.syncing = false,
@@ -47,6 +45,17 @@ class SyncState {
   }
 }
 
+/// Singleton sync state owner.
+///
+/// On `triggerSync` failure the controller does two things deliberately:
+///   1. Stores the exception in `state.error` (for future inspection —
+///      no current screen renders it; reserved for a persistent badge).
+///   2. Rethrows so the calling screen's `try { await triggerSync(); }
+///      catch (e) { SnackBar(...) }` path can show user-facing feedback.
+///
+/// When a screen starts watching `state.error` for display, that screen
+/// must NOT also catch the rethrown exception or the error will render
+/// twice.
 class SyncController extends Notifier<SyncState> {
   @override
   SyncState build() => const SyncState();
@@ -56,6 +65,9 @@ class SyncController extends Notifier<SyncState> {
   Future<void> triggerSync() async {
     if (state.syncing) return;
     final userId = ref.read(currentUserIdProvider);
+    // userId == null is unreachable in production because the v2 router
+    // redirects unauthenticated requests to /v2/auth/start before any
+    // data screen mounts. Silently return as a defensive no-op.
     if (userId == null) return;
 
     state = state.copyWith(syncing: true, clearError: true);
