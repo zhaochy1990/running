@@ -30,7 +30,7 @@ These are intentionally *not* wired into CI:
      libxrandr2 libxkbcommon0
    ```
 
-2. **Credentials** — copy `.credentials.local.example` (or hand-write):
+2. **Credentials** — hand-write `.credentials.local` (or a named override):
    ```
    email=you@example.com
    password=...
@@ -38,13 +38,28 @@ These are intentionally *not* wired into CI:
    File is git-ignored (see `.gitignore`). Same file the COROS CLI uses; see
    `docs/auth-wiring.md`.
 
+   For ongoing per-provider regression coverage, also keep:
+   - `.credentials.zhaochaoyi.local` — exercises the COROS code path
+   - `.credentials.dingchentao.local` — exercises Garmin
+
+   The script picks the right file via `--profile <name>`; without the
+   flag it falls back to `.credentials.local`.
+
 3. **Prod URL** — optional. The script defaults to the documented prod URL;
    override with `STRIDE_PROD_URL` if you're pointing at a staging slot.
 
 ## Run
 
 ```bash
+# Default — reads .credentials.local
 node tests/e2e/prod-health-check.mjs
+
+# Provider-targeted — reads .credentials.<profile>.local, switches the
+# Sleep / BodyBattery / Stress visibility expectations to match what
+# WatchExtrasSection should render for that provider:
+node tests/e2e/prod-health-check.mjs --profile zhaochaoyi   # COROS
+node tests/e2e/prod-health-check.mjs --profile dingchentao  # Garmin
+
 # Skip screenshots if you only want the boolean pass/fail:
 node tests/e2e/prod-health-check.mjs --no-screenshots
 ```
