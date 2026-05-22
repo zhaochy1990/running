@@ -146,9 +146,10 @@ void main() {
     expect(find.text('AI 解读'), findsOneWidget);
   });
 
-  testWidgets('top bar title is 身体指标', (tester) async {
+  testWidgets('hero renders 身体指标 eyebrow + 健康概览 title', (tester) async {
     await _pump(tester, const AsyncData(_fullOverview));
 
-    expect(find.text('身体指标'), findsOneWidget);
+    expect(find.text('身体指标 · 今日'), findsOneWidget);
+    expect(find.text('健康概览'), findsOneWidget);
   });
 }

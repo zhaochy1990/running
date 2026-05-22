@@ -154,13 +154,15 @@ void main() {
     expect(find.text('我'), findsOneWidget);
   });
 
-  testWidgets('menu items are visible', (tester) async {
+  testWidgets('menu items are present in tree', (tester) async {
     await _pump(tester, profile: _testProfile, homeData: _testHomeData);
 
-    expect(find.text('个人信息'), findsOneWidget);
-    expect(find.text('手表绑定'), findsOneWidget);
-    expect(find.text('通知设置'), findsOneWidget);
-    expect(find.text('关于 STRIDE'), findsOneWidget);
+    // Hero now occupies the top ~80px; bottom-half menu items can fall
+    // below the 600px test viewport. Look past sliver offstage clipping.
+    expect(find.text('个人信息', skipOffstage: false), findsOneWidget);
+    expect(find.text('手表绑定', skipOffstage: false), findsOneWidget);
+    expect(find.text('通知设置', skipOffstage: false), findsOneWidget);
+    expect(find.text('关于 STRIDE', skipOffstage: false), findsOneWidget);
   });
 
   testWidgets('null home data shows — km placeholder', (tester) async {
