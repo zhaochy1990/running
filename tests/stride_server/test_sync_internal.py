@@ -140,3 +140,21 @@ def test_full_flag_forwarded_to_sync_user(monkeypatch):
 
     assert resp.status_code == 200, resp.text
     assert calls == [(USER_UUID, True)]
+
+
+def test_not_logged_in_returns_success_false(monkeypatch):
+    source = FakeSource(logged_in=False)
+    app = _build_app(monkeypatch, source=source)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        f"/internal/sync?user={USER_UUID}",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    # HTTP is 200 — the route returns a structured error body, not an HTTP error,
+    # because the GH Action consumes the body to surface the reason per-user.
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["success"] is False
+    assert "未登录" in body["error"]
