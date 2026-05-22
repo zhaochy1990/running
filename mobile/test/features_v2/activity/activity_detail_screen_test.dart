@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:stride/core/auth/current_user.dart';
+import 'package:stride/data/api/stride_api.dart';
 import 'package:stride/features_v2/activity/activity_detail_screen.dart';
 import 'package:stride/features_v2/activity/models/activity_detail.dart';
 import 'package:stride/features_v2/activity/models/timeseries_data.dart';
@@ -48,11 +50,32 @@ ActivityDetailV2 _makeDetail({
   );
 }
 
+// ── Stub StrideApi ───────────────────────────────────────────────────────
+//
+// The (id, fields: Set<String>) family key has identity equality on the
+// `fields` Set, so a per-record `timeseriesProvider(...).overrideWith(...)`
+// does NOT match the widget's own `{fieldStr}` Set literal at call time.
+// Override `strideApiProvider` instead so the real Dio client never fires
+// when scrollUntilVisible scrolls past a chart sliver.
+class _StubApi extends StrideApi {
+  _StubApi() : super(Dio());
+
+  @override
+  Future<TimeseriesData> getActivityTimeseries(
+    String user,
+    String labelId, {
+    int downsample = 300,
+    Set<String>? fields,
+  }) {
+    // Never resolves — matches the pre-wave-1 "verifies AC7 lazy load"
+    // contract while keeping the FakeAsync timer queue empty.
+    return Completer<TimeseriesData>().future;
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 /// Build a ProviderScope + MaterialApp with [activityDetailProvider] overridden.
-/// timeseries providers are stubbed to never resolve (no network calls on
-/// initial render — charts defer their fetch).
 Future<void> _pump(
   WidgetTester tester,
   AsyncValue<ActivityDetailV2> state, {
@@ -64,13 +87,7 @@ Future<void> _pump(
         activityDetailProvider(activityId).overrideWith(
           (_) => _resolve(state),
         ),
-        // Timeseries is lazy — stub so it never resolves (verifies AC7).
-        timeseriesProvider((id: activityId, fields: {'hr'})).overrideWith(
-          (_) => Completer<TimeseriesData>().future,
-        ),
-        timeseriesProvider((id: activityId, fields: {'pace'})).overrideWith(
-          (_) => Completer<TimeseriesData>().future,
-        ),
+        strideApiProvider.overrideWithValue(_StubApi()),
         currentUserIdProvider.overrideWithValue('user-001'),
       ],
       child: MaterialApp(
@@ -141,25 +158,24 @@ void main() {
       AsyncData(_makeDetail(sportNote: '今天感觉很好，配速轻松。')),
     );
 
-    // The training-note section sits below the chart sections. Looking
-    // past sliver offstage clipping is enough to assert it's rendered —
-    // scrollUntilVisible would mount the charts and fire real Dio calls,
-    // leaking pending timers (the test's `timeseriesProvider` override
-    // is keyed by a Set literal that does not Record-equal the widget's
-    // own Set literal).
-    expect(
-      find.textContaining('今天感觉很好', skipOffstage: false),
-      findsOneWidget,
+    // Training-note section sits below the charts; SliverChildListDelegate
+    // is lazy, so the children must scroll into view to mount. The _StubApi
+    // keeps the chart's timeseries future unresolved, so no real Dio fires.
+    await tester.scrollUntilVisible(
+      find.textContaining('今天感觉很好'),
+      500,
     );
+    expect(find.textContaining('今天感觉很好'), findsOneWidget);
   });
 
   testWidgets('sport_note=null shows v1.x placeholder', (tester) async {
     await _pump(tester, AsyncData(_makeDetail(sportNote: null)));
 
-    expect(
-      find.textContaining('v1.x 即将支持', skipOffstage: false),
-      findsOneWidget,
+    await tester.scrollUntilVisible(
+      find.textContaining('v1.x 即将支持'),
+      500,
     );
+    expect(find.textContaining('v1.x 即将支持'), findsOneWidget);
   });
 
   testWidgets('GPS map placeholder is shown', (tester) async {
