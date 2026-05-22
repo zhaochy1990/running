@@ -1,6 +1,8 @@
 """Read-only prod smoke suite. Opt-in via `pytest -m e2e`."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest
 
 
@@ -80,3 +82,33 @@ def test_weeks_list(prod_client, e2e_user_id) -> None:
     )
     first = payload["weeks"][0]
     assert "folder" in first and isinstance(first["folder"], str), first
+
+
+SHANGHAI_UTCOFFSET = timedelta(hours=8)
+
+
+@pytest.mark.e2e
+def test_activities_list_and_timezone(prod_client, e2e_user_id) -> None:
+    """Case 6: /api/{user}/activities returns rows with Shanghai-offset dates.
+
+    Proves: SQLite read works, the route applied utc_iso_to_shanghai_iso
+    (so every `date` ends in `+08:00`), and the seed activity was synced.
+    """
+    resp = prod_client.get(f"/api/{e2e_user_id}/activities", params={"limit": 5})
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert "activities" in payload and isinstance(payload["activities"], list), payload
+    assert len(payload["activities"]) > 0, (
+        "activities list is empty — did the e2e user sync at least one activity?"
+    )
+    for row in payload["activities"]:
+        date_str = row.get("date")
+        assert isinstance(date_str, str) and date_str, f"row missing `date`: {row}"
+        try:
+            dt = datetime.fromisoformat(date_str)
+        except ValueError as e:
+            pytest.fail(f"row `date` not ISO-parseable: {date_str!r} ({e})")
+        assert dt.utcoffset() == SHANGHAI_UTCOFFSET, (
+            f"row `date` offset is {dt.utcoffset()}, expected +08:00 — "
+            f"the route may have dropped utc_iso_to_shanghai_iso. Row: {row}"
+        )
