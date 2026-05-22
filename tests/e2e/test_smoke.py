@@ -112,3 +112,19 @@ def test_activities_list_and_timezone(prod_client, e2e_user_id) -> None:
             f"row `date` offset is {dt.utcoffset()}, expected +08:00 — "
             f"the route may have dropped utc_iso_to_shanghai_iso. Row: {row}"
         )
+
+
+@pytest.mark.e2e
+def test_spa_bundle_served(prod_client_anon) -> None:
+    """Case 7: GET / returns the Vite-built SPA shell.
+
+    Catches the deploy class of bug where Docker stage 1 (npm run build)
+    failed silently and the image shipped without the frontend bundle.
+    """
+    resp = prod_client_anon.get("/")
+    assert resp.status_code == 200, resp.text[:300]
+    ctype = resp.headers.get("content-type", "")
+    assert ctype.startswith("text/html"), f"expected text/html, got {ctype!r}"
+    assert 'id="root"' in resp.text, (
+        "SPA mount point `id=\"root\"` not in response — Vite bundle may not be in the image"
+    )
