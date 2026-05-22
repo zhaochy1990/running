@@ -1,39 +1,39 @@
-"""Full-user sync endpoint — delegates to the configured DataSource."""
+"""Full-user sync endpoints — delegates to the configured DataSource.
+
+Two routes:
+- POST /api/{user}/sync  — Bearer JWT, called from frontend
+- POST /internal/sync    — X-Internal-Token, called from scheduled workflows
+                           (see .github/workflows/daily-sync.yml)
+Both share `_run_sync` so behavior stays in lockstep.
+"""
 
 from __future__ import annotations
 
 import logging
+import re
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from stride_core.source import DataSource
 from stride_core.post_sync import run_post_sync_for_result
+from stride_core.registry import ProviderRegistry, UnknownProvider
+from stride_core.source import DataSource
 
 from ..bearer import require_bearer
 from ..deps import get_source_for_user
+from .plan import require_internal_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+_UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 
-@router.post("/api/{user}/sync")
-def trigger_sync(
-    user: str,
-    full: bool = False,
-    source: DataSource = Depends(get_source_for_user),
-    _claims: dict = Depends(require_bearer),
-):
-    """Trigger a data sync for the given user (via the configured adapter).
 
-    Pass `?full=true` to bypass the incremental cutoff and re-pull a deeper
-    activity history. Useful when the cached snapshot needs older activities
-    to populate (e.g. the L3 endurance dimension needs a 25km+ run within
-    the 90d window — without `full=1` after a fresh onboard, the user's
-    longest historical run may have been truncated by `activity_limit`).
-
-    Protected by Bearer auth when STRIDE_AUTH_PUBLIC_KEY_PEM/PATH is set.
-    """
+def _run_sync(user: str, full: bool, source: DataSource) -> dict:
+    """Shared sync handler used by both the Bearer and internal-token routes."""
     try:
         if not source.is_logged_in(user):
             return {
@@ -57,3 +57,58 @@ def trigger_sync(
     except Exception:
         logger.exception("sync failed for user %s", user)
         return {"success": False, "error": "sync failed"}
+
+
+@router.post("/api/{user}/sync")
+def trigger_sync(
+    user: str,
+    full: bool = False,
+    source: DataSource = Depends(get_source_for_user),
+    _claims: dict = Depends(require_bearer),
+):
+    """Trigger a data sync for the given user (via the configured adapter).
+
+    Pass `?full=true` to bypass the incremental cutoff and re-pull a deeper
+    activity history. Useful when the cached snapshot needs older activities
+    to populate (e.g. the L3 endurance dimension needs a 25km+ run within
+    the 90d window — without `full=1` after a fresh onboard, the user's
+    longest historical run may have been truncated by `activity_limit`).
+
+    Protected by Bearer auth when STRIDE_AUTH_PUBLIC_KEY_PEM/PATH is set.
+    """
+    return _run_sync(user, full, source)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal route — used by scheduled workflows (see .github/workflows/daily-sync.yml)
+# Auth via X-Internal-Token, NOT bearer. Path is /internal/... so future
+# bearer-prefix middleware on /api/* won't accidentally catch it.
+# ─────────────────────────────────────────────────────────────────────────────
+
+internal_router = APIRouter()
+
+
+@internal_router.post("/internal/sync")
+def internal_trigger_sync(
+    request: Request,
+    user: str = Query(..., description="User UUID"),
+    full: bool = Query(False),
+    _token: None = Depends(require_internal_token),
+) -> dict:
+    """Trigger a sync for `user` — same logic as POST /api/{user}/sync but
+    authenticated via X-Internal-Token instead of Bearer JWT.
+    """
+    if not _UUID4_RE.match(user):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="user must be a UUID4",
+        )
+    registry: ProviderRegistry = request.app.state.registry
+    try:
+        source: DataSource = registry.for_user(user)
+    except UnknownProvider as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Configured watch provider {exc.name!r} is not available in this deployment",
+        ) from exc
+    return _run_sync(user, full, source)

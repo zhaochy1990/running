@@ -157,6 +157,7 @@ def create_app(
     # middleware on /api/* cannot accidentally catch it.
     app.include_router(plan.internal_router)
     app.include_router(training_load.internal_router)
+    app.include_router(sync.internal_router)
 
     # Curated strength-illustration library — public static assets baked
     # into the image. Mount BEFORE the SPA fallback so the catch-all in
