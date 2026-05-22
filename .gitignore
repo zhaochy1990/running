@@ -45,4 +45,5 @@ frontend/.env.*.local
 /evaluation/
 node_modules/
 .worktrees/
-
+tests/e2e/e2e.config.local.json
+out/

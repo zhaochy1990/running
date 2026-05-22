@@ -1,0 +1,7 @@
+{
+  "prod_url": "https://stride-app.victoriousdesert-bd552447.southeastasia.azurecontainerapps.io",
+  "auth_url": "https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io",
+  "client_id": "app_62978bf2803346878a2e4805",
+  "e2e_email": "stride-e2e@example.com",
+  "e2e_password": "<fill in real password here, then rename file to e2e.config.local.json>"
+}

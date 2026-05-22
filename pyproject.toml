@@ -67,3 +67,7 @@ packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not e2e'"
+markers = [
+    "e2e: prod smoke test; hits live network, opt-in via -m e2e",
+]
