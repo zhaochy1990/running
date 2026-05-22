@@ -127,8 +127,8 @@ export default function WatchExtrasSection({
     dateLabel: formatDate(r.date),
   }))
 
-  const hrvBalancedLow = hrvSummary?.baseline_balanced_low ?? null
-  const hrvBalancedHigh = hrvSummary?.baseline_balanced_upper ?? null
+  const hrvBalancedLow = hrvSummary?.daily_balanced_low ?? null
+  const hrvBalancedHigh = hrvSummary?.daily_balanced_upper ?? null
 
   // Adaptive grid: a COROS-only user (just the HRV card) shouldn't sit
   // pinned to the left of a 4-column grid with three empty cells. Tailwind

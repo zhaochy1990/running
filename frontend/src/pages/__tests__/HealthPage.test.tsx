@@ -106,8 +106,8 @@ beforeEach(() => {
       last_night_avg: null,
       weekly_avg: null,
       status: null,
-      baseline_balanced_low: null,
-      baseline_balanced_upper: null,
+      daily_balanced_low: null,
+      daily_balanced_upper: null,
     },
   })
   vi.mocked(getWeeks).mockResolvedValue({

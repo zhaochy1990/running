@@ -144,11 +144,22 @@ def get_hrv(user: str, days: int = Query(30, ge=1, le=365)):
     COROS rows are derived from `/dashboard/query`'s sleepHrvList (last
     7 days per sync — trend accumulates over time); Garmin rows come from
     `get_hrv_data(date)` per day.
+
+    The DB columns `baseline_balanced_low/upper` are aliased to
+    `daily_balanced_low/upper` in the response so consumers see one
+    consistent naming across `/api/hrv` and `/api/health.hrv.trend`.
+    The label also disambiguates the per-day watch threshold from the
+    user-level baseline range (`hrv_normal_low/high` on `/api/dashboard`).
     """
     db = get_db(user)
     rows = db.query(
-        f"SELECT * FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
-        "ORDER BY date DESC LIMIT ?",
+        f"""SELECT date, weekly_avg, last_night_avg, last_night_5min_high,
+                   status, baseline_low_upper,
+                   baseline_balanced_low  AS daily_balanced_low,
+                   baseline_balanced_upper AS daily_balanced_upper,
+                   feedback_phrase, provider
+            FROM ({HRV_PREFERRED_PER_DATE_SQL})
+            ORDER BY date DESC LIMIT ?""",
         (days,),
     )
     db.close()
@@ -164,8 +175,8 @@ def get_hrv(user: str, days: int = Query(30, ge=1, le=365)):
             "last_night_avg": latest.get("last_night_avg"),
             "weekly_avg": latest.get("weekly_avg"),
             "status": latest.get("status"),
-            "baseline_balanced_low": latest.get("baseline_balanced_low"),
-            "baseline_balanced_upper": latest.get("baseline_balanced_upper"),
+            "daily_balanced_low": latest.get("daily_balanced_low"),
+            "daily_balanced_upper": latest.get("daily_balanced_upper"),
         },
     }
 
