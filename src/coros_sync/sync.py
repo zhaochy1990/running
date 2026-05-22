@@ -12,6 +12,7 @@ from typing import TypeVar
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 from .client import CorosClient, CorosAPIError
+from .models import hrv_list_from_dashboard
 from .normalize import apply_to_detail
 from stride_core.db import Database
 from stride_core.models import Activity, ActivityDetail, DailyHealth, Dashboard
@@ -406,6 +407,12 @@ def sync_health(
             logger.warning("Failed to sync health analysis: %s", e)
 
         # Dashboard from /dashboard/query + /dashboard/detail/query
+        # Two narrowed try blocks: API errors must NOT swallow DB errors and
+        # vice versa, otherwise a single sqlite OperationalError silently
+        # aborts the rest of health sync (e.g. dropping the HRV write).
+        summary: dict = {}
+        week: dict = {}
+        dashboard_fetched = False
         try:
             progress.update(task, description="Fetching dashboard...")
             _emit_sync_progress(
@@ -420,11 +427,25 @@ def sync_health(
 
             detail_data = client.get_dashboard_detail()
             week = detail_data.get("data", {}).get("currentWeekRecord", {})
-
-            dashboard = Dashboard.from_api(summary, week)
-            db.upsert_dashboard(dashboard)
+            dashboard_fetched = True
         except CorosAPIError as e:
-            logger.warning("Failed to sync dashboard: %s", e)
+            logger.warning("Failed to fetch dashboard from COROS: %s", e)
+
+        if dashboard_fetched:
+            try:
+                dashboard = Dashboard.from_api(summary, week)
+                db.upsert_dashboard(dashboard)
+            except Exception as e:  # noqa: BLE001 - storage failures must not abort the rest of sync
+                logger.warning("Failed to persist dashboard: %s", e, exc_info=True)
+
+            # Per-day HRV trend is embedded in the dashboard summary
+            # (sleepHrvData.sleepHrvList — last 7 days). Each sync upserts
+            # those rows into daily_hrv so trend accumulates over time.
+            try:
+                for hrv_row in hrv_list_from_dashboard(summary):
+                    db.upsert_daily_hrv(hrv_row, provider="coros")
+            except Exception as e:  # noqa: BLE001 - same isolation as dashboard upsert
+                logger.warning("Failed to persist daily HRV rows: %s", e, exc_info=True)
 
         progress.update(task, description="Health sync complete")
         _emit_sync_progress(

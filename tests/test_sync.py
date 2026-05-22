@@ -14,6 +14,7 @@ from coros_sync.sync import (
     _run_detail_jobs,
     _try_run_ability_hook,
     sync_activities,
+    sync_health,
 )
 from stride_core.models import ActivityDetail
 
@@ -224,3 +225,124 @@ class TestAbilityHook:
 
         # Should not raise.
         _try_run_ability_hook(BrokenDB(), ["x"])
+
+
+class TestSyncHealthHrv:
+    """Verify sync_health writes per-day HRV rows from /dashboard/query's
+    sleepHrvList. Regression guard: before #zhaochy/on-hrv, COROS users had
+    an always-empty daily_hrv table even though the data was already in the
+    dashboard response."""
+
+    def _dashboard_payload(self) -> dict:
+        # Trimmed copy of trainingcn.coros.com /dashboard/query (CN region)
+        # — keeps just enough to drive Dashboard.from_api + hrv_list_from_dashboard.
+        return {
+            "result": "0000",
+            "data": {
+                "summaryInfo": {
+                    "rhr": 45,
+                    "recoveryPct": 100,
+                    "sleepHrvData": {
+                        "avgSleepHrv": 31,
+                        "happenDay": 20260522,
+                        "sleepHrvAllIntervalList": [5, 25, 29, 39, 54],
+                        "sleepHrvList": [
+                            {"avgSleepHrv": 42, "happenDay": 20260516,
+                             "sleepHrvIntervalList": [5, 26, 30, 38], "sleepHrvBase": 34},
+                            {"avgSleepHrv": 27, "happenDay": 20260520,
+                             "sleepHrvIntervalList": [5, 26, 31, 39], "sleepHrvBase": 35},
+                            {"avgSleepHrv": 31, "happenDay": 20260522,
+                             "sleepHrvIntervalList": [5, 25, 29, 39], "sleepHrvBase": 34},
+                        ],
+                    },
+                    "runScoreList": [],
+                },
+            },
+        }
+
+    def _make_client(self, dashboard_payload: dict):
+        class FakeClient:
+            def get_analyse(_self):
+                return {"data": {"dayList": []}}
+
+            def get_dashboard(_self):
+                return dashboard_payload
+
+            def get_dashboard_detail(_self):
+                return {"data": {"currentWeekRecord": {}}}
+
+        return FakeClient()
+
+    def test_writes_daily_hrv_rows_from_dashboard(self, db):
+        sync_health(self._make_client(self._dashboard_payload()), db)
+
+        rows = db.query("SELECT * FROM daily_hrv ORDER BY date")
+        assert [r["date"] for r in rows] == ["2026-05-16", "2026-05-20", "2026-05-22"]
+        assert [r["last_night_avg"] for r in rows] == [42, 27, 31]
+        # provider tag is what /api/hrv and downstream readers key off
+        assert all(r["provider"] == "coros" for r in rows)
+        # status is derived from per-day baseline interval
+        statuses = {r["date"]: r["status"] for r in rows}
+        assert statuses["2026-05-16"] == "UNBALANCED"  # 42 > balanced_upper=38
+        assert statuses["2026-05-20"] == "UNBALANCED"  # 27 < balanced_low=31 but ≥ low_upper=26
+        assert statuses["2026-05-22"] == "BALANCED"   # 31 in [29, 39]
+
+    def test_handles_missing_sleephrvlist(self, db):
+        payload = self._dashboard_payload()
+        payload["data"]["summaryInfo"]["sleepHrvData"].pop("sleepHrvList")
+        sync_health(self._make_client(payload), db)
+
+        rows = db.query("SELECT * FROM daily_hrv")
+        assert rows == []
+
+    def test_repeat_sync_upserts_in_place(self, db):
+        # First sync writes 3 rows. Second sync (same payload) must not
+        # duplicate them — composite (date, provider) PK + INSERT OR REPLACE
+        # means the row keyed on ('2026-05-16', 'coros') is overwritten,
+        # not duplicated.
+        sync_health(self._make_client(self._dashboard_payload()), db)
+        sync_health(self._make_client(self._dashboard_payload()), db)
+
+        rows = db.query("SELECT COUNT(*) AS c FROM daily_hrv")
+        assert rows[0]["c"] == 3
+
+    def test_coros_does_not_clobber_garmin_same_date(self, db):
+        # Dual-watch user: Garmin syncs first (richer data), then COROS
+        # syncs the same date. The composite PK keeps both rows; the
+        # /api/hrv reader picks Garmin via HRV_PREFERRED_PER_DATE_SQL.
+        from stride_core.models import DailyHrv
+        garmin_row = DailyHrv(
+            date="2026-05-22",
+            weekly_avg=55,
+            last_night_avg=58,
+            last_night_5min_high=80,
+            status="BALANCED",
+            baseline_low_upper=40,
+            baseline_balanced_low=45,
+            baseline_balanced_upper=65,
+            feedback_phrase="HRV_BALANCED_5",
+        )
+        db.upsert_daily_hrv(garmin_row, provider="garmin")
+
+        sync_health(self._make_client(self._dashboard_payload()), db)
+
+        # Both rows present — composite PK isolates them.
+        all_rows = db.query(
+            "SELECT date, provider, last_night_avg "
+            "FROM daily_hrv WHERE date = '2026-05-22' ORDER BY provider"
+        )
+        assert [(r["provider"], r["last_night_avg"]) for r in all_rows] == [
+            ("coros", 31),
+            ("garmin", 58),
+        ]
+
+        # Reader picks Garmin (richer) when both exist for the same date.
+        from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
+        picked = db.query(
+            f"SELECT provider, last_night_avg, feedback_phrase "
+            f"FROM ({HRV_PREFERRED_PER_DATE_SQL}) WHERE date = '2026-05-22'"
+        )
+        assert len(picked) == 1
+        assert picked[0]["provider"] == "garmin"
+        assert picked[0]["last_night_avg"] == 58
+        assert picked[0]["feedback_phrase"] == "HRV_BALANCED_5"

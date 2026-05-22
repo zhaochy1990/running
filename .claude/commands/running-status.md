@@ -45,10 +45,28 @@ ORDER BY date DESC
 ### 2b. Fatigue & Training Load Trend (last 21 days)
 
 ```sql
-SELECT date, fatigue, ati, cti, training_load_ratio, training_load_state, rhr, hrv
+SELECT date, fatigue, ati, cti, training_load_ratio, training_load_state, rhr
 FROM daily_health
 ORDER BY date DESC LIMIT 21
 ```
+
+### 2b1. HRV Trend (last 21 days)
+
+`daily_health` does NOT carry HRV — per-day HRV lives in the `daily_hrv` table
+(populated by both COROS and Garmin sync). `daily_hrv.date` is always ISO
+`YYYY-MM-DD`. Run this in addition to 2b:
+
+```sql
+SELECT date, last_night_avg, status,
+       baseline_low_upper, baseline_balanced_low, baseline_balanced_upper
+FROM daily_hrv
+ORDER BY date DESC LIMIT 21
+```
+
+If the table is empty for the user, fall back to the dashboard snapshot in
+2c (`avg_sleep_hrv`, `hrv_normal_low`, `hrv_normal_high`) — but call this
+out in the report so the athlete knows they only have a single point, not a
+trend.
 
 ### 2b2. TSB (Training Stress Balance) — PMC Data
 
@@ -176,7 +194,7 @@ Structure the report as follows:
 - **训练负荷状态**：来自COROS（Low/Optimal/High/Very High）
 - **静息心率**：最新值 vs 基线（运动员档案中47 bpm）。RHR升高 = 疲劳信号。
 - **恢复百分比**：来自dashboard
-- **HRV**：睡眠HRV均值 vs 正常范围（来自dashboard）。HRV下降 = 恢复不良/过度训练信号
+- **HRV**：最近 last_night_avg + 7 天趋势（来自 `daily_hrv`，COROS 与 Garmin 都写）。结合 `baseline_balanced_low/upper` 判定是否落入个人 baseline 区间。若 `daily_hrv` 为空（首次同步、还没攒到数据），降级用 dashboard 的 `avg_sleep_hrv` 单点 + `hrv_normal_low/high`，并在报告里注明"暂时只有单点快照"。HRV 持续低于 baseline 或下降 = 恢复不良 / 过度训练信号
 - **TSB竞技状态**：CTI - ATI。TSB > 10 = 比赛就绪，-10~10 = 过渡区，-30~-10 = 正常训练，< -30 = 过度负荷
 
 使用 TRAINING_PLAN.md 中的阈值：

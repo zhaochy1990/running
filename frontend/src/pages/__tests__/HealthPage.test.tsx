@@ -81,6 +81,7 @@ beforeEach(() => {
       hrv_normal_low: null,
       hrv_normal_high: null,
       recovery_pct: null,
+      trend: [],
     },
     rhr_baseline: 47,
   })
