@@ -5,7 +5,7 @@
 ///
 /// Data: single `GET /api/{user}/home?recent_days=7` call via [homeProvider].
 /// Pull-to-refresh: StrideRefreshable triggers ref.refresh(homeProvider.future).
-/// Sync button: _SyncIcon → SyncController.triggerSync().
+/// Sync button: SyncIconButton (shared widget) → SyncController.triggerSync().
 library;
 
 import 'package:flutter/material.dart';
