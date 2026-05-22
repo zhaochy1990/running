@@ -41,3 +41,24 @@ def test_users_returns_current_user(prod_client, e2e_user_id) -> None:
         f"e2e user {e2e_user_id} not present in /api/users response "
         f"(got {len(payload['users'])} users) — was the test user seeded?"
     )
+
+
+HOME_REQUIRED_KEYS = frozenset({
+    "status_ring", "recent_activities", "weekly_stats",
+    "lifetime_stats", "plan_state", "watch",
+})
+
+
+@pytest.mark.e2e
+def test_home_dashboard(prod_client, e2e_user_id) -> None:
+    """Case 4: /api/{user}/home returns all HomeResponse top-level keys.
+
+    Asserts schema-shape, not values — daily content varies; missing keys
+    indicate a real backend regression.
+    """
+    resp = prod_client.get(f"/api/{e2e_user_id}/home")
+    assert resp.status_code == 200, resp.text
+    payload = resp.json()
+    assert isinstance(payload, dict), f"expected object, got {type(payload).__name__}"
+    missing = HOME_REQUIRED_KEYS - payload.keys()
+    assert not missing, f"home response missing keys: {sorted(missing)} (got {sorted(payload.keys())})"
