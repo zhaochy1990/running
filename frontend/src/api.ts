@@ -492,8 +492,12 @@ export interface HrvDailyRecord {
   last_night_5min_high: number | null
   status: string | null
   baseline_low_upper: number | null
-  baseline_balanced_low: number | null
-  baseline_balanced_upper: number | null
+  // Per-day watch-reported balanced band — see HrvTrendPoint for the same
+  // semantics on /api/health. Named `daily_*` not `baseline_*` so callers
+  // don't conflate this with `hrv_normal_*` on HRVSnapshot (which is the
+  // user-level baseline range, not a per-day threshold).
+  daily_balanced_low: number | null
+  daily_balanced_upper: number | null
   feedback_phrase: string | null
   provider: string | null
 }
@@ -503,8 +507,8 @@ export interface HrvSummary {
   last_night_avg: number | null
   weekly_avg: number | null
   status: string | null
-  baseline_balanced_low: number | null
-  baseline_balanced_upper: number | null
+  daily_balanced_low: number | null
+  daily_balanced_upper: number | null
 }
 
 export function getHrv(user: string, days = 30) {
