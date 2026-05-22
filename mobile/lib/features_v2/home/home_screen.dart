@@ -4,18 +4,19 @@
 /// weekly + lifetime stats, and an optional "generate plan" CTA.
 ///
 /// Data: single `GET /api/{user}/home?recent_days=7` call via [homeProvider].
-/// Pull-to-refresh: POST /api/{user}/sync → invalidate homeProvider.
+/// Pull-to-refresh: StrideRefreshable triggers ref.refresh(homeProvider.future).
+/// Sync button: _SyncIcon → SyncController.triggerSync().
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../core/auth/current_user.dart';
 import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
-import '../../data/api/stride_api.dart';
+import '../_shared/sync/sync_controller.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/section_header.dart';
 import '../_shared/widgets/stat_row.dart';
@@ -40,41 +41,25 @@ class HomeScreen extends ConsumerWidget {
           message: err.toString(),
           onRetry: () => ref.invalidate(homeProvider),
         ),
-        data: (data) => _HomeBody(
-          data: data,
-          onRefresh: () async {
-            await _doSync(context, ref);
-          },
-        ),
+        data: (data) => _HomeBody(data: data),
       ),
     );
   }
-
-  Future<void> _doSync(BuildContext context, WidgetRef ref) async {
-    final userId = ref.read(currentUserIdProvider);
-    if (userId == null) return;
-    final api = ref.read(strideApiProvider);
-    try {
-      await api.triggerSync(userId);
-    } catch (_) {
-      // Best-effort: sync errors are non-fatal
-    }
-    ref.invalidate(homeProvider);
-  }
 }
 
-class _HomeBody extends StatelessWidget {
-  const _HomeBody({required this.data, required this.onRefresh});
+class _HomeBody extends ConsumerWidget {
+  const _HomeBody({required this.data});
   final HomeData data;
-  final Future<void> Function() onRefresh;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final syncState = ref.watch(syncControllerProvider);
+    final messenger = ScaffoldMessenger.of(context);
+
     return SafeArea(
       bottom: false,
-      child: RefreshIndicator(
-        color: StrideTokens.accent,
-        onRefresh: onRefresh,
+      child: StrideRefreshable<HomeData>(
+        provider: homeProvider.future,
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
@@ -82,6 +67,25 @@ class _HomeBody extends StatelessWidget {
               eyebrow: '主页 · 本周',
               title: _heroTitle(data.planState),
               deck: _heroDeck(data),
+              trailing: _SyncIcon(
+                syncing: syncState.syncing,
+                onTap: syncState.syncing
+                    ? null
+                    : () async {
+                        try {
+                          await ref
+                              .read(syncControllerProvider.notifier)
+                              .triggerSync();
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('已同步')),
+                          );
+                        } catch (e) {
+                          messenger.showSnackBar(
+                            SnackBar(content: Text('同步失败：$e')),
+                          );
+                        }
+                      },
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -228,6 +232,30 @@ class _HomeBody extends StatelessWidget {
     final m = (seconds % 3600) ~/ 60;
     if (h > 0) return '${h}h${m.toString().padLeft(2, '0')}m';
     return '$m分钟';
+  }
+}
+
+class _SyncIcon extends StatelessWidget {
+  const _SyncIcon({required this.syncing, required this.onTap});
+  final bool syncing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (syncing) {
+      return const SizedBox(
+        width: 20,
+        height: 20,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: StrideTokens.accent,
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: onTap,
+      child: const Icon(Icons.sync, size: 20, color: StrideTokens.fgSoft),
+    );
   }
 }
 
