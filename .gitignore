@@ -26,6 +26,7 @@ data/*/onboarding.json
 .stride-coach.json
 .credentials.local
 .playwright-mcp/
+tests/e2e/.shots/
 # Root-level Playwright screenshots + snapshot dumps (local QA artifacts).
 /*.png
 /snapshot-*.yml
