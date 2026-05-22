@@ -27,6 +27,9 @@ data/coach.json
 data/*/onboarding.json
 .stride-coach.json
 .credentials.local
+# Per-profile credential overrides used by tests/e2e/prod-health-check.mjs
+# `--profile <name>` — same flat `email=…/password=…` format.
+.credentials.*.local
 .playwright-mcp/
 tests/e2e/.shots/
 # Root-level Playwright screenshots + snapshot dumps (local QA artifacts).

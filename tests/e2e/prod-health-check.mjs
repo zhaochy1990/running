@@ -18,14 +18,19 @@
 //
 //   STRIDE_PROD_URL=https://stride-app.<region>.azurecontainerapps.io \
 //   PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome \
-//   node tests/e2e/prod-health-check.mjs [--no-screenshots]
+//   node tests/e2e/prod-health-check.mjs [--no-screenshots] [--profile <name>]
 //
-// Credentials are read from `.credentials.local` in the repo root, matching
-// the convention documented in `docs/auth-wiring.md`. The file is
-// git-ignored. Format:
+// Credentials are read from `.credentials.local` in the repo root (the
+// default) or `.credentials.<name>.local` when `--profile <name>` is set.
+// Both formats match the convention documented in `docs/auth-wiring.md`
+// and are git-ignored. Format:
 //
 //   email=you@example.com
 //   password=...
+//
+// `--profile zhaochaoyi` exercises the COROS code path; `--profile
+// dingchentao` exercises Garmin. Maintain one named file per provider
+// for ongoing regression coverage.
 //
 // Exit codes: 0 = all checks pass, 1 = at least one failed.
 
@@ -43,24 +48,36 @@ const HEADLESS = process.env.HEADFUL !== '1';
 const TAKE_SHOTS = !process.argv.includes('--no-screenshots');
 const SHOT_DIR = process.env.SHOT_DIR || path.join(__dirname, '.shots');
 
+function profileFlag() {
+  const idx = process.argv.indexOf('--profile');
+  if (idx >= 0 && idx + 1 < process.argv.length) return process.argv[idx + 1];
+  return null;
+}
+
 function loadCredentials() {
-  const credPath = path.join(REPO_ROOT, '.credentials.local');
-  if (!fs.existsSync(credPath)) {
-    throw new Error(
-      `.credentials.local not found at ${credPath}. ` +
-      `Create it with two lines: email=... and password=... ` +
-      `(see docs/auth-wiring.md).`
-    );
+  const profile = profileFlag();
+  const candidates = profile
+    ? [`.credentials.${profile}.local`, '.credentials.local']
+    : ['.credentials.local'];
+  for (const name of candidates) {
+    const credPath = path.join(REPO_ROOT, name);
+    if (!fs.existsSync(credPath)) continue;
+    const out = {};
+    for (const line of fs.readFileSync(credPath, 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^([a-zA-Z_]+)\s*=\s*(.+?)\s*$/);
+      if (m) out[m[1]] = m[2];
+    }
+    if (out.email && out.password) {
+      out._file = name;
+      return out;
+    }
   }
-  const out = {};
-  for (const line of fs.readFileSync(credPath, 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^([a-zA-Z_]+)\s*=\s*(.+?)\s*$/);
-    if (m) out[m[1]] = m[2];
-  }
-  if (!out.email || !out.password) {
-    throw new Error('.credentials.local must define both email= and password=');
-  }
-  return out;
+  const need = candidates.join(' or ');
+  throw new Error(
+    `No usable credentials file found (tried ${need}). ` +
+    `Create one with two lines: email=... and password=... ` +
+    `(see docs/auth-wiring.md).`
+  );
 }
 
 function resolveChromiumPath() {
@@ -104,6 +121,7 @@ function check(name, pass, detail) {
 
 async function main() {
   const creds = loadCredentials();
+  console.log(`using credentials from ${creds._file}`);
   const { chromium } = await loadPlaywright();
 
   if (TAKE_SHOTS) fs.mkdirSync(SHOT_DIR, { recursive: true });
@@ -137,13 +155,27 @@ async function main() {
     }
     check('post-login', !/\/login/.test(page.url()), `landed on ${page.url()}`);
 
+    // Discover the user's provider so card-visibility expectations match.
+    // Garmin populates sleep / body battery / stress in `daily_health` and the
+    // corresponding cards SHOULD render; COROS leaves those fields null so
+    // the adaptive WatchExtrasSection hides them.
+    const provider = await page.evaluate(async () => {
+      const token = sessionStorage.getItem('access_token');
+      const r = await fetch('/api/users/me/watch', { headers: { Authorization: `Bearer ${token}` } });
+      const j = await r.json();
+      return j.provider || null;
+    });
+    console.log(`detected provider: ${provider}`);
+
     // Navigate to Health.
     await page.goto(BASE + '/health', { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForTimeout(2_000);  // allow async chart hydration
     if (TAKE_SHOTS) await page.screenshot({ path: path.join(SHOT_DIR, '01-health-fullpage.png'), fullPage: true });
 
-    // Probe DOM. Counts are what the WatchExtrasSection logic should produce
-    // for a COROS user: HRV present, the three Garmin-only cards absent.
+    // Probe DOM. The HRV pieces are required for both providers (since #39
+    // wired COROS into the same `daily_hrv` table Garmin already used).
+    // Sleep / BodyBattery / Stress cards are Garmin-only signals and the
+    // adaptive grid hides them for COROS users — the inverse for Garmin.
     const counts = {
       watchExtrasTitle: await page.locator('text=手表扩展数据').count(),
       watchExtrasSubLabel: await page.locator('text=Watch Extras').count(),
@@ -160,9 +192,16 @@ async function main() {
     check('section renamed (no `Watch Extras · Garmin` leftover)', counts.garminLeftover === 0);
     check('HRV trend chart rendered',          counts.hrvTitle === 1);
     check('HRV status card rendered',          counts.hrvStatusCard === 1);
-    check('Sleep card hidden for COROS user',  counts.sleepCard === 0);
-    check('BodyBattery card hidden for COROS', counts.bbCard === 0);
-    check('Stress card hidden for COROS',      counts.stressCard === 0);
+
+    if (provider === 'garmin') {
+      check('Sleep card visible for Garmin user',       counts.sleepCard === 1);
+      check('BodyBattery card visible for Garmin user', counts.bbCard === 1);
+      check('Stress card visible for Garmin user',      counts.stressCard === 1);
+    } else {
+      check('Sleep card hidden for non-Garmin user',       counts.sleepCard === 0);
+      check('BodyBattery card hidden for non-Garmin user', counts.bbCard === 0);
+      check('Stress card hidden for non-Garmin user',      counts.stressCard === 0);
+    }
 
     // Section-focused screenshot.
     if (TAKE_SHOTS && counts.watchExtrasTitle) {
