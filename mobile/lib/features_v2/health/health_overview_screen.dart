@@ -16,7 +16,9 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
+import '../_shared/widgets/sync_icon.dart';
 import 'models/health_overview.dart';
 import 'providers/health_overview_provider.dart';
 import 'widgets/metric_card.dart';
@@ -38,6 +40,7 @@ class HealthOverviewScreen extends ConsumerWidget {
               eyebrow: '身体指标 · 今日',
               title: '健康概览',
               deck: '同步自手表的静息心率、HRV、训练负荷与睡眠。',
+              trailing: SyncIconButton(),
             ),
             Expanded(
               child: async.when(
@@ -63,18 +66,21 @@ class _OverviewBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      children: [
-        _MetricGrid(overview: overview),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _SleepCard(overview: overview),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _AiInterpretCard(overview: overview),
-        const SizedBox(height: StrideTokens.spaceXl),
-        const _DetailEntries(),
-        const SizedBox(height: StrideTokens.spaceXl),
-      ],
+    return StrideRefreshable<HealthOverview>(
+      provider: healthOverviewProvider.future,
+      child: ListView(
+        padding: const EdgeInsets.all(StrideTokens.spaceLg),
+        children: [
+          _MetricGrid(overview: overview),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _SleepCard(overview: overview),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _AiInterpretCard(overview: overview),
+          const SizedBox(height: StrideTokens.spaceXl),
+          const _DetailEntries(),
+          const SizedBox(height: StrideTokens.spaceXl),
+        ],
+      ),
     );
   }
 }

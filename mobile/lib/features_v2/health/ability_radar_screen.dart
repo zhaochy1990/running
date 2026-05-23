@@ -14,6 +14,8 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/refreshable.dart';
+import '../_shared/widgets/sync_icon.dart';
 import '../_shared/widgets/top_bar.dart';
 import 'models/ability_snapshot.dart';
 import 'providers/ability_snapshot_provider.dart';
@@ -27,7 +29,10 @@ class AbilityRadarScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(title: '能力分析'),
+      appBar: const StrideTopBar(
+        title: '能力分析',
+        actions: [SyncIconButton()],
+      ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorView(message: e.toString()),
@@ -46,23 +51,26 @@ class _RadarBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      children: [
-        if (snapshot.l4Composite != null)
-          _ScoreBadge(score: snapshot.l4Composite!),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _RadarCard(snapshot: snapshot),
-        const SizedBox(height: StrideTokens.spaceLg),
-        ...DimensionMeta.all.map((meta) {
-          final score = snapshot.l3Dimensions[meta.key];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: StrideTokens.spaceMd),
-            child: _DimensionCard(meta: meta, score: score),
-          );
-        }),
-        const SizedBox(height: StrideTokens.spaceXl),
-      ],
+    return StrideRefreshable<AbilitySnapshot>(
+      provider: abilitySnapshotProvider.future,
+      child: ListView(
+        padding: const EdgeInsets.all(StrideTokens.spaceLg),
+        children: [
+          if (snapshot.l4Composite != null)
+            _ScoreBadge(score: snapshot.l4Composite!),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _RadarCard(snapshot: snapshot),
+          const SizedBox(height: StrideTokens.spaceLg),
+          ...DimensionMeta.all.map((meta) {
+            final score = snapshot.l3Dimensions[meta.key];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: StrideTokens.spaceMd),
+              child: _DimensionCard(meta: meta, score: score),
+            );
+          }),
+          const SizedBox(height: StrideTokens.spaceXl),
+        ],
+      ),
     );
   }
 }

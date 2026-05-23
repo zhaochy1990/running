@@ -11,8 +11,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../../data/models/health.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/seg_control.dart';
 import '../_shared/widgets/stat_row.dart';
+import '../_shared/widgets/sync_icon.dart';
 import '../_shared/widgets/top_bar.dart';
 import 'providers/trends_provider.dart';
 
@@ -113,7 +115,10 @@ class _TrendsScreenState extends ConsumerState<TrendsScreen> {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(title: '趋势详情'),
+      appBar: const StrideTopBar(
+        title: '趋势详情',
+        actions: [SyncIconButton()],
+      ),
       body: Column(
         children: [
           // ── Dimension seg ─────────────────────────────────────────────────
@@ -148,7 +153,8 @@ class _TrendsScreenState extends ConsumerState<TrendsScreen> {
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => _ErrorView(message: e.toString()),
-              data: (records) => _TrendsBody(records: records, dim: _dim),
+              data: (records) =>
+                  _TrendsBody(records: records, dim: _dim, days: _days),
             ),
           ),
         ],
@@ -160,10 +166,15 @@ class _TrendsScreenState extends ConsumerState<TrendsScreen> {
 // ── Body ──────────────────────────────────────────────────────────────────────
 
 class _TrendsBody extends StatelessWidget {
-  const _TrendsBody({required this.records, required this.dim});
+  const _TrendsBody({
+    required this.records,
+    required this.dim,
+    required this.days,
+  });
 
   final List<HealthRecord> records;
   final _TrendDim dim;
+  final int days;
 
   @override
   Widget build(BuildContext context) {
@@ -179,14 +190,17 @@ class _TrendsBody extends StatelessWidget {
         : values);
     final trend = _trendArrow(values);
 
-    return ListView(
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      children: [
-        _ChartCard(values: values, dim: dim),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _StatsCard(dim: dim, current: current, avg7: avg7, trend: trend),
-        const SizedBox(height: StrideTokens.spaceXl),
-      ],
+    return StrideRefreshable<List<HealthRecord>>(
+      provider: trendsProvider(days).future,
+      child: ListView(
+        padding: const EdgeInsets.all(StrideTokens.spaceLg),
+        children: [
+          _ChartCard(values: values, dim: dim),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _StatsCard(dim: dim, current: current, avg7: avg7, trend: trend),
+          const SizedBox(height: StrideTokens.spaceXl),
+        ],
+      ),
     );
   }
 

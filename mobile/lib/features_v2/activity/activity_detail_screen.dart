@@ -16,6 +16,7 @@ import '../../data/api/stride_api.dart';
 import '../../core/auth/current_user.dart';
 import '../../core/theme/pill_colors.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/stat_row.dart';
 import 'models/activity_detail.dart';
@@ -90,12 +91,14 @@ class _DetailBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final act = detail.activity;
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(
-        horizontal: StrideTokens.spaceLg,
-        vertical: StrideTokens.spaceLg,
-      ),
-      children: [
+    return StrideRefreshable<ActivityDetailV2>(
+      provider: activityDetailProvider(activityId).future,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(
+          horizontal: StrideTokens.spaceLg,
+          vertical: StrideTokens.spaceLg,
+        ),
+        children: [
         // 2. GPS map placeholder
         // TODO(M1.x): replace with AMap widget with WGS84→GCJ02 conversion
         _GpsMapPlaceholder(),
@@ -192,6 +195,7 @@ class _DetailBody extends StatelessWidget {
 
         const SizedBox(height: StrideTokens.space3xl),
       ],
+      ),
     );
   }
 }

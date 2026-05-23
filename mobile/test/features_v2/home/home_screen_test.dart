@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stride/core/auth/current_user.dart';
+import 'package:stride/features_v2/_shared/sync/sync_controller.dart';
 import 'package:stride/features_v2/home/home_screen.dart';
 import 'package:stride/features_v2/home/models/home_data.dart';
 import 'package:stride/features_v2/home/providers/home_provider.dart';
@@ -242,5 +243,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(navigatedTo, equals('ACT_001'));
+  });
+
+  testWidgets('sync icon renders in hero trailing slot', (tester) async {
+    await _pump(tester, AsyncData(_makeHomeData()));
+    expect(find.byIcon(Icons.sync), findsOneWidget);
+  });
+
+  testWidgets('tapping sync icon does not crash', (tester) async {
+    // syncControllerProvider auto-initialises with syncing=false so the icon
+    // is rendered as a GestureDetector wrapping Icons.sync.  triggerSync()
+    // will silently no-op because currentUserIdProvider is overridden to a
+    // non-null stub value but strideApiProvider is not overridden — the call
+    // will throw, which the _SyncIcon onTap handler catches and shows a
+    // SnackBar.  Either way the tap must not rethrow to the test harness.
+    await _pump(tester, AsyncData(_makeHomeData()));
+    await tester.tap(find.byIcon(Icons.sync));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
   });
 }

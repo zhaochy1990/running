@@ -16,6 +16,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/seg_control.dart';
 import 'models/week_list_item.dart';
@@ -106,21 +107,24 @@ class _WeekList extends StatelessWidget {
       return const _EmptyState();
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(
-        StrideTokens.spaceLg,
-        StrideTokens.spaceSm,
-        StrideTokens.spaceLg,
-        100, // extra bottom padding for FAB
+    return StrideRefreshable<List<WeekListItem>>(
+      provider: weekListProvider.future,
+      child: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(
+          StrideTokens.spaceLg,
+          StrideTokens.spaceSm,
+          StrideTokens.spaceLg,
+          100, // extra bottom padding for FAB
+        ),
+        itemCount: filtered.length,
+        itemBuilder: (context, i) {
+          final item = filtered[i];
+          return WeekCard(
+            item: item,
+            onTap: () => context.push(RoutesV2.weekDetail(item.folder)),
+          );
+        },
       ),
-      itemCount: filtered.length,
-      itemBuilder: (context, i) {
-        final item = filtered[i];
-        return WeekCard(
-          item: item,
-          onTap: () => context.push(RoutesV2.weekDetail(item.folder)),
-        );
-      },
     );
   }
 

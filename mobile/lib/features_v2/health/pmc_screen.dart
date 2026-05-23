@@ -14,8 +14,10 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/seg_control.dart';
 import '../_shared/widgets/stat_row.dart';
+import '../_shared/widgets/sync_icon.dart';
 import '../_shared/widgets/top_bar.dart';
 import 'models/pmc_data.dart';
 import 'providers/pmc_provider.dart';
@@ -43,7 +45,10 @@ class _PmcScreenState extends ConsumerState<PmcScreen> {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(title: '训练负荷'),
+      appBar: const StrideTopBar(
+        title: '训练负荷',
+        actions: [SyncIconButton()],
+      ),
       body: Column(
         children: [
           // ── Seg control ───────────────────────────────────────────────────
@@ -68,7 +73,7 @@ class _PmcScreenState extends ConsumerState<PmcScreen> {
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator()),
               error: (e, _) => _ErrorView(message: e.toString()),
-              data: (data) => _PmcBody(data: data),
+              data: (data) => _PmcBody(data: data, days: _days),
             ),
           ),
         ],
@@ -80,22 +85,26 @@ class _PmcScreenState extends ConsumerState<PmcScreen> {
 // ── Body ──────────────────────────────────────────────────────────────────────
 
 class _PmcBody extends StatelessWidget {
-  const _PmcBody({required this.data});
+  const _PmcBody({required this.data, required this.days});
 
   final PmcData data;
+  final int days;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      children: [
-        _ChartCard(data: data),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _TsbBandCard(summary: data.summary),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _AiCard(summary: data.summary),
-        const SizedBox(height: StrideTokens.spaceXl),
-      ],
+    return StrideRefreshable<PmcData>(
+      provider: pmcProvider(days).future,
+      child: ListView(
+        padding: const EdgeInsets.all(StrideTokens.spaceLg),
+        children: [
+          _ChartCard(data: data),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _TsbBandCard(summary: data.summary),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _AiCard(summary: data.summary),
+          const SizedBox(height: StrideTokens.spaceXl),
+        ],
+      ),
     );
   }
 }

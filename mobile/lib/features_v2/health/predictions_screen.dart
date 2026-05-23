@@ -15,6 +15,8 @@ import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/pill.dart';
+import '../_shared/widgets/refreshable.dart';
+import '../_shared/widgets/sync_icon.dart';
 import '../_shared/widgets/top_bar.dart';
 import 'models/race_prediction.dart';
 import 'providers/race_prediction_provider.dart';
@@ -28,7 +30,10 @@ class PredictionsScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(title: '成绩预测'),
+      appBar: const StrideTopBar(
+        title: '成绩预测',
+        actions: [SyncIconButton()],
+      ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => _ErrorView(message: e.toString()),
@@ -49,22 +54,25 @@ class _PredictionsBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final historyAsync = ref.watch(racePredictionHistoryProvider);
 
-    return ListView(
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      children: [
-        _HeroCard(prediction: prediction),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _DistanceCompareCard(prediction: prediction),
-        const SizedBox(height: StrideTokens.spaceLg),
-        _Vo2maxCard(prediction: prediction),
-        if (prediction.targetGap != null) ...[
+    return StrideRefreshable<RacePrediction>(
+      provider: racePredictionProvider.future,
+      child: ListView(
+        padding: const EdgeInsets.all(StrideTokens.spaceLg),
+        children: [
+          _HeroCard(prediction: prediction),
           const SizedBox(height: StrideTokens.spaceLg),
-          _TargetGapCard(gap: prediction.targetGap!),
+          _DistanceCompareCard(prediction: prediction),
+          const SizedBox(height: StrideTokens.spaceLg),
+          _Vo2maxCard(prediction: prediction),
+          if (prediction.targetGap != null) ...[
+            const SizedBox(height: StrideTokens.spaceLg),
+            _TargetGapCard(gap: prediction.targetGap!),
+          ],
+          const SizedBox(height: StrideTokens.spaceLg),
+          _HistoryCard(historyAsync: historyAsync),
+          const SizedBox(height: StrideTokens.spaceXl),
         ],
-        const SizedBox(height: StrideTokens.spaceLg),
-        _HistoryCard(historyAsync: historyAsync),
-        const SizedBox(height: StrideTokens.spaceXl),
-      ],
+      ),
     );
   }
 }
