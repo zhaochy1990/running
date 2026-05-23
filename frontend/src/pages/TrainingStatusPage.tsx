@@ -5,7 +5,7 @@ import {
 } from 'recharts'
 import {
   getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
-  type HealthRecord, type HrvDailyRecord,
+  type HealthRecord, type HRVSnapshot, type HrvDailyRecord,
   type StrideZonesResponse, type StrideTrainingLoadResponse,
 } from '../api'
 import { useUser } from '../UserContextValue'
@@ -28,7 +28,7 @@ function formatDateShort(iso: string): string {
 export default function TrainingStatusPage() {
   const { user } = useUser()
   const [days, setDays] = useState<DaysWindow>(30)
-  const [health, setHealth] = useState<{ health: HealthRecord[]; rhr_baseline: number | null } | null>(null)
+  const [health, setHealth] = useState<{ health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null>(null)
   const [hrv, setHrv] = useState<{ hrv: HrvDailyRecord[] } | null>(null)
   const [zones, setZones] = useState<StrideZonesResponse | null>(null)
   const [load, setLoad] = useState<StrideTrainingLoadResponse | null>(null)
@@ -48,7 +48,7 @@ export default function TrainingStatusPage() {
     ])
       .then(([h, hv, z, ld]) => {
         if (cancelled) return
-        setHealth({ health: h.health, rhr_baseline: h.rhr_baseline })
+        setHealth({ health: h.health, rhr_baseline: h.rhr_baseline, hrv_snapshot: h.hrv ?? null })
         setHrv({ hrv: hv.hrv })
         setZones(z)
         setLoad(ld)
@@ -132,7 +132,7 @@ function MetricCard({
         <span className="text-xs font-mono text-text-muted">{unit}</span>
       </div>
       {baseline != null && (
-        <div className="text-[10px] font-mono text-text-muted mt-0.5">基线 {baseline}</div>
+        <div className="text-[10px] font-mono text-text-muted mt-0.5">{baseline}</div>
       )}
     </div>
   )
@@ -141,13 +141,16 @@ function MetricCard({
 function MetricsRow({
   health, hrv, zones,
 }: {
-  health: { health: HealthRecord[]; rhr_baseline: number | null } | null
+  health: { health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null
   hrv: { hrv: HrvDailyRecord[] } | null
   zones: StrideZonesResponse | null
 }) {
   const latestRhr = health?.health.find((r) => r.rhr != null)?.rhr ?? null
   const rhrBaseline = health?.rhr_baseline ?? null
   const latestHrv = hrv?.hrv.slice().reverse().find((r) => r.last_night_avg != null)?.last_night_avg ?? null
+  const hrvLow = health?.hrv_snapshot?.hrv_normal_low ?? null
+  const hrvHigh = health?.hrv_snapshot?.hrv_normal_high ?? null
+  const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : null
   const threshold = zones?.threshold
 
   const pacePerKm = threshold?.pace_per_km_sec
@@ -157,16 +160,17 @@ function MetricsRow({
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       <MetricCard
-        label="RHR" sublabel="Resting HR · 手表读数"
+        label="静息心率(RHR)" sublabel="Resting HR · 手表读数"
         value={latestRhr != null ? String(latestRhr) : '—'}
         unit="bpm"
-        baseline={rhrBaseline != null ? `${rhrBaseline} bpm` : null}
+        baseline={rhrBaseline != null ? `基线 ${rhrBaseline} bpm` : null}
         color="#0097a7"
       />
       <MetricCard
-        label="HRV" sublabel="Last-night avg · 手表读数"
+        label="心率变异性(HRV)" sublabel="Last-night avg · 手表读数"
         value={latestHrv != null ? String(latestHrv) : '—'}
         unit="ms"
+        baseline={hrvBaseline}
         color="#7a4dd4"
       />
       <MetricCard
@@ -279,6 +283,22 @@ function EmptyZones() {
   )
 }
 
+// Format a zone bound pair into a single "区间" string.
+//
+// Pace zones order pace strings from slower (lower_pace, e.g. 6:42) to faster
+// (upper_pace, e.g. 5:58). Open-ended zones — recovery has no slow cap, the
+// fastest zone has no fast cap — render with ≤ / ≥ relative to the only bound
+// present. HR zones use the same shape, with bpm rising from recovery up.
+function formatZoneRange<T extends string | number>(
+  lower: T | null,
+  upper: T | null,
+): string {
+  if (lower != null && upper != null) return `${lower} – ${upper}`
+  if (upper != null) return `≤ ${upper}`
+  if (lower != null) return `≥ ${lower}`
+  return '—'
+}
+
 function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
   const hasData = !!zones?.threshold && zones.pace_zones.length > 0 && zones.hr_zones.length > 0
 
@@ -291,8 +311,7 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
               <tr className="text-text-faint border-b border-border-subtle">
                 <th className="text-left py-1">Zone</th>
                 <th className="text-left py-1">名称</th>
-                <th className="text-right py-1">慢边</th>
-                <th className="text-right py-1">快边</th>
+                <th className="text-right py-1">区间</th>
               </tr>
             </thead>
             <tbody>
@@ -300,8 +319,7 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
                 <tr key={z.name} className="border-b border-border-subtle/50 last:border-0">
                   <td className="py-1.5 text-accent-green">{z.name}</td>
                   <td className="py-1.5 text-text-primary">{z.label}</td>
-                  <td className="py-1.5 text-right text-text-muted">{z.lower_pace ?? '—'}</td>
-                  <td className="py-1.5 text-right text-text-muted">{z.upper_pace ?? '—'}</td>
+                  <td className="py-1.5 text-right text-text-muted">{formatZoneRange(z.lower_pace, z.upper_pace)}</td>
                 </tr>
               ))}
             </tbody>
@@ -318,8 +336,7 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
               <tr className="text-text-faint border-b border-border-subtle">
                 <th className="text-left py-1">Zone</th>
                 <th className="text-left py-1">名称</th>
-                <th className="text-right py-1">下限</th>
-                <th className="text-right py-1">上限</th>
+                <th className="text-right py-1">区间</th>
               </tr>
             </thead>
             <tbody>
@@ -327,8 +344,7 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
                 <tr key={z.name} className="border-b border-border-subtle/50 last:border-0">
                   <td className="py-1.5 text-accent-amber">{z.name}</td>
                   <td className="py-1.5 text-text-primary">{z.label}</td>
-                  <td className="py-1.5 text-right text-text-muted">{z.lower_bpm ?? '—'}</td>
-                  <td className="py-1.5 text-right text-text-muted">{z.upper_bpm ?? '—'}</td>
+                  <td className="py-1.5 text-right text-text-muted">{formatZoneRange(z.lower_bpm, z.upper_bpm)}</td>
                 </tr>
               ))}
             </tbody>
@@ -375,14 +391,14 @@ function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-            <LoadStat label="Acute" value={cur.acute_load?.toFixed(1) ?? '—'} color="#d97706" />
-            <LoadStat label="Chronic" value={cur.chronic_load?.toFixed(1) ?? '—'} color="#0097a7" />
+            <LoadStat label="急性负荷(Acute)" value={cur.acute_load?.toFixed(1) ?? '—'} color="#d97706" />
+            <LoadStat label="慢性负荷(Chronic)" value={cur.chronic_load?.toFixed(1) ?? '—'} color="#0097a7" />
             <LoadStat
-              label="Form"
+              label="竞技状态(Form)"
               value={cur.form != null ? (cur.form > 0 ? `+${cur.form.toFixed(1)}` : cur.form.toFixed(1)) : '—'}
               color={cur.form != null && cur.form < -10 ? '#d32f2f' : '#00a85a'}
             />
-            <LoadStat label="Ratio" value={cur.load_ratio?.toFixed(2) ?? '—'} color="#7a4dd4" />
+            <LoadStat label="负荷比(Ratio)" value={cur.load_ratio?.toFixed(2) ?? '—'} color="#7a4dd4" />
             <LoadStat label="状态" value={stateLabel} color="#1a1c2e" />
           </div>
           <div className="text-[11px] font-mono text-text-muted mb-2">

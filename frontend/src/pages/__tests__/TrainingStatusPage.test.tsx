@@ -119,7 +119,7 @@ describe('TrainingStatusPage', () => {
     expect(screen.getByText('心率1区')).toBeInTheDocument()
 
     // Training load stats
-    expect(screen.getByText('Acute')).toBeInTheDocument()
+    expect(screen.getByText('急性负荷(Acute)')).toBeInTheDocument()
     expect(screen.getByText('78.0')).toBeInTheDocument()
 
     // Footer contains calibration date
