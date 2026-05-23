@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:stride/core/auth/current_user.dart';
-import 'package:stride/features_v2/_shared/sync/sync_controller.dart';
 import 'package:stride/features_v2/home/home_screen.dart';
 import 'package:stride/features_v2/home/models/home_data.dart';
 import 'package:stride/features_v2/home/providers/home_provider.dart';
