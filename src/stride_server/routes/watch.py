@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.registry import ProviderRegistry, UnknownProvider
+from stride_core.timefmt import utc_iso_to_shanghai_iso
 
 from ..bearer import require_bearer
 from ..content_store import read_json, write_json
@@ -101,22 +102,16 @@ def _get_device_and_last_sync(uuid: str) -> tuple[str | None, str | None]:
 
     try:
         row = db._conn.execute(
-            "SELECT value FROM sync_meta WHERE key = 'last_sync'"
+            "SELECT value FROM sync_meta WHERE key = 'last_sync_time'"
         ).fetchone()
-        if row:
+        if row and row[0]:
             last_sync = row[0]
     except Exception:
         pass
 
-    if not last_sync:
-        try:
-            row = db._conn.execute(
-                "SELECT date FROM activities ORDER BY date DESC LIMIT 1"
-            ).fetchone()
-            if row:
-                last_sync = row[0]
-        except Exception:
-            pass
+    # Normalize naive-ISO legacy rows (written before tz=UTC enforcement) by
+    # assuming UTC + converting to canonical Shanghai-offset ISO.
+    last_sync = utc_iso_to_shanghai_iso(last_sync)
 
     return device, last_sync
 

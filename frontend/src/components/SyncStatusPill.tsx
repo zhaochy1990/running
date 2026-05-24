@@ -1,17 +1,32 @@
-import { useState, useEffect } from 'react'
-import { triggerSync } from '../api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { triggerSync, getWatchInfo } from '../api'
 import { useUser } from '../UserContextValue'
-
-const LAST_SYNC_KEY = 'stride.last_sync_ts'
 
 export default function SyncStatusPill() {
   const { user } = useUser()
-  const [lastSync, setLastSync] = useState<number | null>(() => {
-    const raw = localStorage.getItem(LAST_SYNC_KEY)
-    return raw ? parseInt(raw, 10) : null
-  })
+  const [lastSync, setLastSync] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [tick, setTick] = useState(0)
+  const requestIdRef = useRef(0)
+
+  const refreshLastSync = useCallback(async () => {
+    if (!user) return
+    const myId = ++requestIdRef.current
+    try {
+      const info = await getWatchInfo()
+      // Discard stale responses — a slow initial fetch may resolve after
+      // a fresher post-sync fetch and would otherwise overwrite it.
+      if (myId === requestIdRef.current) {
+        setLastSync(info.last_sync_at)
+      }
+    } catch {
+      // leave previous value; transient error
+    }
+  }, [user])
+
+  useEffect(() => {
+    refreshLastSync()
+  }, [refreshLastSync])
 
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 60_000)
@@ -25,19 +40,19 @@ export default function SyncStatusPill() {
     try {
       const res = await triggerSync(user)
       if (res.success) {
-        const ts = Date.now()
-        localStorage.setItem(LAST_SYNC_KEY, String(ts))
-        setLastSync(ts)
+        await refreshLastSync()
       }
     } finally {
       setSyncing(false)
     }
   }
 
+  const lastSyncMs = lastSync ? Date.parse(lastSync) : NaN
+  const haveLastSync = Number.isFinite(lastSyncMs)
   const label = syncing
     ? '同步中...'
-    : lastSync
-      ? `已同步 · ${relativeTime(Date.now() - lastSync)}`
+    : haveLastSync
+      ? `已同步 · ${relativeTime(Date.now() - lastSyncMs)}`
       : '未同步'
 
   return (
@@ -48,7 +63,7 @@ export default function SyncStatusPill() {
       data-testid="sync-status-pill"
       className="inline-flex items-center gap-1.5 h-[24px] px-3 rounded-full bg-bg-secondary border border-border-subtle font-mono text-[11px] text-text-secondary hover:border-border disabled:opacity-60 transition-colors cursor-pointer"
     >
-      {!syncing && lastSync && (
+      {!syncing && haveLastSync && (
         <span className="w-1.5 h-1.5 rounded-full bg-accent-green animate-pulse" aria-hidden />
       )}
       {label}
@@ -57,6 +72,7 @@ export default function SyncStatusPill() {
 }
 
 function relativeTime(ms: number): string {
+  if (ms < 0) ms = 0
   const min = Math.floor(ms / 60_000)
   if (min < 1) return '刚刚'
   if (min < 60) return `${min}m ago`
