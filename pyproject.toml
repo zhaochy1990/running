@@ -47,6 +47,7 @@ dev = [
     "pytest-httpx>=0.30",
     "pytest-xdist>=3.5",
     "import-linter>=2.0",
+    "pytest-html>=4.1",
 ]
 
 [project.scripts]
@@ -67,3 +68,7 @@ packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-m 'not e2e'"
+markers = [
+    "e2e: prod smoke test; hits live network, opt-in via -m e2e",
+]
