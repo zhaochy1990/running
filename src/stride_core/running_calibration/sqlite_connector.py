@@ -17,6 +17,7 @@ from .types import (
     PaceZone,
     RunningActivity,
     RunningCalibrationSnapshot,
+    RunningHealthRow,
     RunningLap,
     RunningSample,
 )
@@ -122,6 +123,31 @@ class SQLiteRunningCalibrationRepository:
             activity = self._activity_from_row(row)
             if activity is not None:
                 out.append(activity)
+        return out
+
+    def fetch_health_rows(self, start: date, end: date) -> list[RunningHealthRow]:
+        """Read `daily_health.rhr` between [start, end] inclusive.
+
+        `daily_health.date` is stored in YYYYMMDD (Shanghai-local) — see
+        CLAUDE.md Timezone discipline whitelist. We convert each row's date
+        to a Python `date` before returning. Rows with NULL `rhr` are skipped.
+        """
+        start_compact = start.strftime("%Y%m%d")
+        end_compact = end.strftime("%Y%m%d")
+        rows = self._conn.execute(
+            "SELECT date, rhr FROM daily_health "
+            "WHERE rhr IS NOT NULL AND date >= ? AND date <= ?",
+            (start_compact, end_compact),
+        ).fetchall()
+        out: list[RunningHealthRow] = []
+        for row in rows or []:
+            date_str = str(_row_value(row, "date"))
+            rhr_val = _row_value(row, "rhr")
+            try:
+                d = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
+            except (ValueError, IndexError):
+                continue
+            out.append(RunningHealthRow(date=d, rhr=float(rhr_val) if rhr_val is not None else None))
         return out
 
     def save_snapshot(self, snapshot: RunningCalibrationSnapshot) -> int:

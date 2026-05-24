@@ -263,3 +263,26 @@ def test_schema_migration_adds_critical_power_w_column(tmp_path):
     SQLiteRunningCalibrationRepository(db)  # ensure_schema runs in __init__
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(running_calibration_snapshot)").fetchall()}
     assert "critical_power_w" in cols
+
+
+def test_fetch_health_rows_reads_daily_health(tmp_path):
+    from datetime import date as _d
+    from stride_core.running_calibration.types import RunningHealthRow
+    db_path = tmp_path / "h.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE activities (label_id TEXT PRIMARY KEY, date TEXT);
+        CREATE TABLE daily_health (date TEXT PRIMARY KEY, rhr INTEGER);
+        INSERT INTO daily_health (date, rhr) VALUES
+            ('20260501', 50),
+            ('20260510', 48),
+            ('20260520', 47),
+            ('20260101', 60),
+            ('20260515', NULL);
+    """)
+    db = type("DB", (), {"_conn": conn, "_path": str(db_path)})()
+    repo = SQLiteRunningCalibrationRepository(db)
+    rows = repo.fetch_health_rows(start=_d(2026, 2, 25), end=_d(2026, 5, 25))
+    assert {r.date for r in rows} == {_d(2026, 5, 1), _d(2026, 5, 10), _d(2026, 5, 20)}
+    assert all(isinstance(r, RunningHealthRow) for r in rows)

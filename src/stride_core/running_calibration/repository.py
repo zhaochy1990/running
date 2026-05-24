@@ -9,12 +9,14 @@ from typing import Protocol
 from stride_core.timefmt import today_shanghai
 
 from .core import estimate_running_calibration
-from .types import RunningActivity, RunningCalibrationRunSummary, RunningCalibrationSnapshot
+from .types import RunningActivity, RunningCalibrationRunSummary, RunningCalibrationSnapshot, RunningHealthRow
 from .zones import compute_training_zones
 
 
 class RunningCalibrationRepository(Protocol):
     def fetch_history(self, start: date, end: date) -> list[RunningActivity]: ...
+
+    def fetch_health_rows(self, start: date, end: date) -> list[RunningHealthRow]: ...
 
     def save_snapshot(self, snapshot: RunningCalibrationSnapshot) -> str | int: ...
 
