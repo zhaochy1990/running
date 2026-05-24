@@ -158,7 +158,9 @@ describe('TrainingStatusPage', () => {
 
   it('refetches training-load on time-range toggle', async () => {
     renderPage()
-    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 30))
+    // Initial window is 30d, but the 8-week trend chart needs ≥ 56 days, so
+    // the fetch is clamped to max(window, 56).
+    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 56))
 
     fireEvent.click(screen.getByRole('button', { name: '90d' }))
     await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 90))

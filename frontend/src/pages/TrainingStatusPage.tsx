@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  ResponsiveContainer, AreaChart, Area, BarChart, Bar, Cell, ComposedChart, Line,
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar, Cell, ComposedChart, Line, LineChart,
   XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine,
 } from 'recharts'
 import {
@@ -9,6 +9,7 @@ import {
   type StrideZonesResponse, type StrideTrainingLoadResponse,
 } from '../api'
 import { useUser } from '../UserContextValue'
+import { aggregateWeeklyDose } from '../lib/weeklyLoad'
 import ViewHead from '../components/ViewHead'
 
 // Form color band matches HealthPage's STRIDE block originally — kept here as
@@ -72,11 +73,14 @@ export default function TrainingStatusPage() {
     let cancelled = false
     setLoaded(false)
     setError(null)
+    // The 8-week trend chart needs ≥ 56 days to fill all buckets, regardless
+    // of the user's chosen daily-chart window. Fetch the larger of the two.
+    const loadFetchDays = Math.max(days, 56)
     Promise.all([
       getHealth(user, 90),
       getHrv(user, 90),
       getStrideZones(user),
-      getStrideTrainingLoad(user, days),
+      getStrideTrainingLoad(user, loadFetchDays),
     ])
       .then(([h, hv, z, ld]) => {
         if (cancelled) return
@@ -118,7 +122,7 @@ export default function TrainingStatusPage() {
       <MetricsRow health={health} hrv={hrv} zones={zones} />
       <TrendsRow health={health} hrv={hrv} days={days} />
       <ZonesRow zones={zones} />
-      <TrainingLoadSection load={load} />
+      <TrainingLoadSection load={load} dailyWindowDays={days} />
       <DataStatusFooter zones={zones} load={load} />
     </div>
   )
@@ -436,12 +440,25 @@ function LoadStat({ label, value, color, help }: {
   )
 }
 
-function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null }) {
+function TrainingLoadSection({ load, dailyWindowDays }: {
+  load: StrideTrainingLoadResponse | null
+  dailyWindowDays: number
+}) {
   const cur = load?.current
-  const series = (load?.series ?? []).map((r) => ({
+  // Daily chart respects the user's window; weekly chart always uses the
+  // full series the parent fetched (≥ 56 days) so all 8 buckets fill.
+  const rawSeries = load?.series ?? []
+  const series = rawSeries.slice(-dailyWindowDays).map((r) => ({
     ...r,
     dateLabel: formatDateShort(r.date),
   }))
+  const weeklySeries = useMemo(
+    () => aggregateWeeklyDose(rawSeries).map((b) => ({
+      ...b,
+      totalDose: Math.round(b.totalDose * 10) / 10,
+    })),
+    [rawSeries],
+  )
 
   const stateLabel = (() => {
     const ratio = cur?.load_ratio
@@ -554,6 +571,38 @@ function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null
                       ))}
                     </Bar>
                   </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">8 周负荷趋势 · 8-Week Load Trend (每周 Dose 累加)</p>
+                <ResponsiveContainer width="100%" height={180}>
+                  <LineChart data={weeklySeries} margin={{ top: 5, right: 10, bottom: 0, left: -5 }}>
+                    <CartesianGrid {...GRID_STYLE} />
+                    <XAxis dataKey="weekLabel" tick={AXIS_TICK} />
+                    <YAxis tick={AXIS_TICK} />
+                    <Tooltip
+                      {...TOOLTIP_STYLE}
+                      labelFormatter={(label: unknown, payload) => {
+                        const row = payload?.[0]?.payload as { weekStart?: string } | undefined
+                        return row?.weekStart ? `周一 ${row.weekStart}` : `${label}`
+                      }}
+                      formatter={(value: unknown, _name, ctx) => {
+                        const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload
+                        const dose = typeof value === 'number' ? value.toFixed(1) : `${value}`
+                        return [`${dose}（${row?.activeDays ?? 0} 天）`, '周剂量']
+                      }}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="totalDose"
+                      name="周剂量"
+                      stroke="#e68a00"
+                      strokeWidth={2}
+                      dot={{ r: 3.5, fill: '#e68a00', stroke: '#fff', strokeWidth: 1.5 }}
+                      activeDot={{ r: 5, fill: '#e68a00', stroke: '#fff', strokeWidth: 2 }}
+                    />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             </>

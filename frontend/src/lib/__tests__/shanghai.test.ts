@@ -6,6 +6,7 @@ import {
   shanghaiTimeShort,
   shanghaiToday,
   shanghaiWeekday,
+  shanghaiWeekStart,
 } from '../shanghai'
 
 describe('shanghaiDate', () => {
@@ -65,5 +66,33 @@ describe('shanghaiWeekday', () => {
     expect(['周日','周一','周二','周三','周四','周五','周六']).toContain(out)
     // Sanity: Shanghai 2026-05-09 == Saturday
     expect(out).toBe('周六')
+  })
+})
+
+describe('shanghaiWeekStart', () => {
+  it('returns the Monday for any day in the same Shanghai week', () => {
+    // 2026-05-25 is a Monday in Shanghai (verified: Jan 1 2026 = Thursday,
+    // +144 days lands on Monday).
+    expect(shanghaiWeekStart('2026-05-25')).toBe('2026-05-25')
+    expect(shanghaiWeekStart('2026-05-26')).toBe('2026-05-25') // Tue
+    expect(shanghaiWeekStart('2026-05-27')).toBe('2026-05-25') // Wed
+    expect(shanghaiWeekStart('2026-05-31')).toBe('2026-05-25') // Sun, still 5/25 week
+  })
+
+  it('crosses month boundary backward', () => {
+    // 2026-05-03 is a Sunday → previous Monday is 2026-04-27
+    expect(shanghaiWeekStart('2026-05-03')).toBe('2026-04-27')
+  })
+
+  it('resolves a UTC-late-Sunday into the correct Shanghai-Monday week', () => {
+    // 2026-05-24 17:00 UTC == 2026-05-25 01:00 Shanghai (Monday).
+    // Must NOT bucket into the previous week.
+    expect(shanghaiWeekStart('2026-05-24T17:00:00+00:00')).toBe('2026-05-25')
+  })
+
+  it('returns empty for invalid input', () => {
+    expect(shanghaiWeekStart(null)).toBe('')
+    expect(shanghaiWeekStart('')).toBe('')
+    expect(shanghaiWeekStart('not-a-date')).toBe('')
   })
 })
