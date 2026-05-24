@@ -22,6 +22,27 @@ function formColor(v: number | null): string {
   return '#d32f2f'
 }
 
+// Readiness gate is produced by `src/stride_core/training_load/core.py` as
+// 'green' / 'yellow' / 'red'. Anything else gets neutral grey so an unexpected
+// gate doesn't look like a STOP signal.
+function readinessColor(gate: string | null): string {
+  const map: Record<string, string> = {
+    green: '#00a85a',
+    yellow: '#e68a00',
+    red: '#d32f2f',
+  }
+  return gate ? (map[gate] ?? '#8888a0') : '#8888a0'
+}
+
+function readinessLabel(gate: string | null): string {
+  const map: Record<string, string> = {
+    green: '可上',
+    yellow: '注意',
+    red: '停训',
+  }
+  return gate ? (map[gate] ?? gate) : '—'
+}
+
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
   contentStyle: { background: '#ffffff', border: '1px solid #d8dae5', borderRadius: 8, fontFamily: 'JetBrains Mono', fontSize: 12, color: '#1a1c2e' },
@@ -428,7 +449,13 @@ function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null
         <div className="text-xs font-mono text-text-muted py-6 text-center">暂无训练负荷数据</div>
       ) : (
         <>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+            <LoadStat
+              label="客观剂量(Dose)"
+              value={cur.training_dose?.toFixed(0) ?? '—'}
+              color="#e68a00"
+              help={<><strong>当日 STRIDE 客观训练剂量</strong>。基于配速 × 心率区间累积的应激分。{'\n\n'}使用方法：{'\n'}• 是 Acute / Chronic 的输入；单日值高 = 当天硬课{'\n'}• 日累计 → 7 天平均 = Acute Load{'\n'}• 用于横向跨课次量化训练应激而非主观 RPE</>}
+            />
             <LoadStat
               label="急性负荷(Acute)"
               value={cur.acute_load?.toFixed(1) ?? '—'}
@@ -460,15 +487,22 @@ function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null
               help={<><strong>由负荷比衍生的状态分类</strong>，给出今日训练决策参考。{'\n\n'}阈值：{'\n'}• 恢复期：ratio &lt; 0.8{'\n'}• 正常训练：0.8 – 1.0{'\n'}• 产出期：1.0 – 1.3{'\n'}• 过度负荷：&gt; 1.3</>}
             />
           </div>
-          <div className="text-[11px] font-mono text-text-muted mb-2">
-            Readiness: <span className="text-text-primary">{cur.readiness_gate ?? '—'}</span>
+          <div className="text-[11px] font-mono text-text-muted mb-2 flex items-center flex-wrap gap-x-1">
+            <span>Readiness:</span>
+            <span
+              className="px-1.5 py-0.5 rounded font-semibold"
+              style={{ color: readinessColor(cur.readiness_gate), backgroundColor: `${readinessColor(cur.readiness_gate)}15` }}
+            >
+              {cur.readiness_gate ?? '—'}
+              {cur.readiness_gate && ` · ${readinessLabel(cur.readiness_gate)}`}
+            </span>
             {cur.readiness_reasons.length > 0 && (
-              <span className="ml-2 text-text-faint">· {cur.readiness_reasons.join(' · ')}</span>
+              <span className="text-text-faint">· {cur.readiness_reasons.join(' · ')}</span>
             )}
           </div>
           {series.length > 0 && (
             <>
-              <div className="text-[11px] font-mono text-text-muted mb-2 mt-1">STRIDE 客观负荷 · Dose / Chronic / Acute</div>
+              <div className="text-[11px] font-mono text-text-muted mb-2 mt-1">STRIDE 客观负荷 · Dose (右轴) / Chronic / Acute (左轴)</div>
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <defs>
@@ -479,12 +513,16 @@ function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null
                   </defs>
                   <CartesianGrid {...GRID_STYLE} />
                   <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
-                  <YAxis tick={AXIS_TICK} />
+                  {/* Left axis: Acute / Chronic EWMA (~10-80 typical) */}
+                  <YAxis yAxisId="load" tick={AXIS_TICK} />
+                  {/* Right axis: per-day Dose (~50-250 typical for hard sessions) — separated so a single
+                      race-week dose spike doesn't compress the Acute / Chronic curves into a flat ribbon. */}
+                  <YAxis yAxisId="dose" orientation="right" tick={AXIS_TICK} />
                   <Tooltip {...TOOLTIP_STYLE} />
                   <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-                  <Bar dataKey="training_dose" name="Dose" fill="#e68a00" fillOpacity={0.55} maxBarSize={14} />
-                  <Area type="monotone" dataKey="chronic_load" name="Chronic" stroke="#00a85a" strokeWidth={2} fill="url(#gradTrainingLoadChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
-                  <Line type="monotone" dataKey="acute_load" name="Acute" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+                  <Bar yAxisId="dose" dataKey="training_dose" name="Dose" fill="#e68a00" fillOpacity={0.55} maxBarSize={14} />
+                  <Area yAxisId="load" type="monotone" dataKey="chronic_load" name="Chronic" stroke="#00a85a" strokeWidth={2} fill="url(#gradTrainingLoadChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
+                  <Line yAxisId="load" type="monotone" dataKey="acute_load" name="Acute" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
                 </ComposedChart>
               </ResponsiveContainer>
 
