@@ -29,6 +29,18 @@ class RunningSample:
 
 
 @dataclass(frozen=True)
+class RunningHealthRow:
+    """Per-day resting-HR row sourced from `daily_health`.
+
+    Defined here (not in `training_load.types`) to keep
+    `running_calibration` free of cross-package dependencies — it is the
+    canonical baseline module.
+    """
+    date: date
+    rhr: float | None = None
+
+
+@dataclass(frozen=True)
 class RunningLap:
     lap_index: int
     duration_s: float | None = None
