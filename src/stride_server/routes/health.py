@@ -8,6 +8,8 @@ from fastapi import APIRouter, Query
 
 from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
+from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_core.timefmt import today_shanghai
 
 from ..deps import format_duration, get_db
 
@@ -115,16 +117,12 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
     trend.reverse()
     hrv["trend"] = trend
 
-    # 10th percentile of last 90 days of RHR = "rested baseline"; None if too few samples
-    rhr_rows = db.query(
-        "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL AND rhr > 0 "
-        "ORDER BY date DESC LIMIT 90"
-    )
-    rhr_vals = sorted(int(r["rhr"]) for r in rhr_rows)
-    if len(rhr_vals) >= 14:
-        idx = max(0, int(len(rhr_vals) * 0.1) - 1)
-        rhr_baseline = rhr_vals[idx]
-    else:
+    try:
+        repo = SQLiteRunningCalibrationRepository(db)
+        snap = repo.fetch_latest(as_of_date=today_shanghai())
+        rhr_baseline = int(snap.rhr_baseline) if snap and snap.rhr_baseline is not None else None
+    except Exception:  # noqa: BLE001
+        # New user with no calibration snapshot yet is normal — return None.
         rhr_baseline = None
 
     db.close()
