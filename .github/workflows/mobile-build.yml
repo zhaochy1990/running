@@ -8,12 +8,19 @@ name: Mobile Build (Android)
 #   ANDROID_KEY_PASSWORD      — key password (often equal to keystore pw)
 #
 # Triggers:
+#   - pull_request against master touching mobile/** → analyze + tests +
+#     debug APK so Flutter problems surface BEFORE merge, not after.
 #   - push to master touching mobile/** → debug APK uploaded as artifact
 #   - tag push matching `mobile-v*`     → signed release APK attached to a
 #     GitHub Release (creates one if needed)
 #   - workflow_dispatch                 → manual debug build
 
 on:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'mobile/**'
+      - '.github/workflows/mobile-build.yml'
   push:
     branches: [master]
     paths:
