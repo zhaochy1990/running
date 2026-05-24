@@ -114,7 +114,7 @@ function TimeRangeToggle({ value, onChange }: { value: DaysWindow; onChange: (d:
 
 // === Task 8: MetricsRow ===
 function MetricCard({
-  label, sublabel, value, unit, baseline, color,
+  label, sublabel, value, unit, baseline, color, help,
 }: {
   label: string
   sublabel: string
@@ -122,10 +122,21 @@ function MetricCard({
   unit: string
   baseline?: string | null
   color: string
+  help?: React.ReactNode
 }) {
   return (
-    <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 flex flex-col gap-1">
-      <div className="text-xs font-mono text-text-muted">{label}</div>
+    <div className="bg-bg-card border border-border-subtle rounded-2xl p-4 flex flex-col gap-1 overflow-visible">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-mono text-text-muted">{label}</div>
+        {help && (
+          <div className="group relative">
+            <div className="w-4 h-4 rounded-full border border-border-subtle text-[10px] font-mono text-text-muted cursor-help flex items-center justify-center hover:border-text-secondary hover:text-text-secondary transition-colors">?</div>
+            <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute right-0 top-6 z-50 w-64 bg-bg-card border border-border-subtle rounded-lg p-3 shadow-lg text-xs text-text-primary font-normal leading-relaxed whitespace-pre-line pointer-events-none">
+              {help}
+            </div>
+          </div>
+        )}
+      </div>
       <div className="text-[10px] font-mono text-text-faint">{sublabel}</div>
       <div className="flex items-baseline gap-1 mt-1">
         <span className="text-2xl font-mono font-medium" style={{ color }}>{value}</span>
@@ -165,6 +176,7 @@ function MetricsRow({
         unit="bpm"
         baseline={rhrBaseline != null ? `基线 ${rhrBaseline} bpm` : null}
         color="#0097a7"
+        help={<><strong>清晨静息心率</strong>。反映心血管恢复与自主神经平衡。{'\n\n'}使用方法：{'\n'}• 接近基线 = 恢复良好{'\n'}• 高出基线 3+ bpm 持续 3 天 = 疲劳累积{'\n'}• 高出 8+ = 生病 / 过劳，立即休息{'\n'}• 基线按过去 90 天 RHR 低 10 分位动态计算</>}
       />
       <MetricCard
         label="心率变异性(HRV)" sublabel="Last-night avg · 手表读数"
@@ -172,6 +184,7 @@ function MetricsRow({
         unit="ms"
         baseline={hrvBaseline}
         color="#7a4dd4"
+        help={<><strong>睡眠心率变异性</strong>。反映副交感神经恢复程度。{'\n\n'}使用方法：{'\n'}• 在正常范围内稳定 = 恢复充分{'\n'}• 下降 10% = 黄灯，注意{'\n'}• 下降 20%+ = 红灯，跳过高质量{'\n'}• 高于上限 = 深度恢复 / 副交感活跃{'\n'}• 正常范围按 dashboard 个人 baseline</>}
       />
       <MetricCard
         label="阈值配速" sublabel="STRIDE Threshold Pace"
@@ -179,6 +192,7 @@ function MetricsRow({
         unit="/km"
         baseline={threshold?.speed_confidence ? `置信 ${threshold.speed_confidence}` : null}
         color="#00a85a"
+        help={<><strong>STRIDE 自研阈值配速</strong>。乳酸阈附近的可持续配速，是所有 6 个配速区间的锚点。{'\n\n'}使用方法：{'\n'}• 节奏跑配速 ≈ 阈值 ± 5 s/km{'\n'}• 长距离配速 = 阈值 + 30 ~ 60 s/km{'\n'}• 由近 90 天 HR-pace 回归 + tempo 段落识别得出{'\n'}• 置信度低 = 样本不足，需要更多 tempo / LT 课</>}
       />
       <MetricCard
         label="阈值心率" sublabel="STRIDE Threshold HR"
@@ -186,6 +200,7 @@ function MetricsRow({
         unit="bpm"
         baseline={threshold?.hr_confidence ? `置信 ${threshold.hr_confidence}` : null}
         color="#d97706"
+        help={<><strong>STRIDE 自研阈值心率</strong>。乳酸阈附近的可持续心率，是 6 个心率区间的锚点。{'\n\n'}使用方法：{'\n'}• 比赛全马目标 HR ≈ 阈值 − 5{'\n'}• 节奏跑 HR = 阈值 ± 3{'\n'}• 间歇课 HR 可短暂超过 阈值 + 5{'\n'}• 置信度低 = 缺少结构化课次</>}
       />
     </div>
   )
@@ -358,10 +373,22 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
 }
 
 // === Task 11: TrainingLoadSection ===
-function LoadStat({ label, value, color }: { label: string; value: string; color: string }) {
+function LoadStat({ label, value, color, help }: {
+  label: string; value: string; color: string; help?: React.ReactNode
+}) {
   return (
-    <div className="flex flex-col">
-      <div className="text-[10px] font-mono text-text-faint">{label}</div>
+    <div className="flex flex-col overflow-visible">
+      <div className="flex items-center gap-1.5">
+        <div className="text-[10px] font-mono text-text-faint">{label}</div>
+        {help && (
+          <div className="group relative">
+            <div className="w-3.5 h-3.5 rounded-full border border-border-subtle text-[9px] font-mono text-text-muted cursor-help flex items-center justify-center hover:border-text-secondary hover:text-text-secondary transition-colors">?</div>
+            <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity absolute left-0 top-5 z-50 w-64 bg-bg-card border border-border-subtle rounded-lg p-3 shadow-lg text-xs text-text-primary font-normal leading-relaxed whitespace-pre-line pointer-events-none">
+              {help}
+            </div>
+          </div>
+        )}
+      </div>
       <div className="text-lg font-mono font-medium" style={{ color }}>{value}</div>
     </div>
   )
@@ -391,15 +418,36 @@ function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-            <LoadStat label="急性负荷(Acute)" value={cur.acute_load?.toFixed(1) ?? '—'} color="#d97706" />
-            <LoadStat label="慢性负荷(Chronic)" value={cur.chronic_load?.toFixed(1) ?? '—'} color="#0097a7" />
+            <LoadStat
+              label="急性负荷(Acute)"
+              value={cur.acute_load?.toFixed(1) ?? '—'}
+              color="#d97706"
+              help={<><strong>近 7 天指数加权训练剂量</strong>。代表当前训练应激强度。{'\n\n'}使用方法：{'\n'}• 高于慢性负荷 → 负荷累积期{'\n'}• 低于慢性负荷 → 恢复 / 减量期{'\n'}• 单日突增 = 比赛或高质量课{'\n'}• 与慢性负荷波浪式交替为健康节奏</>}
+            />
+            <LoadStat
+              label="慢性负荷(Chronic)"
+              value={cur.chronic_load?.toFixed(1) ?? '—'}
+              color="#0097a7"
+              help={<><strong>近 42 天指数加权训练剂量</strong>。代表长期体能基线。{'\n\n'}使用方法：{'\n'}• 缓慢上升 = 健康进步{'\n'}• 持平 = 维持期{'\n'}• 下降 = 体能流失，需加量{'\n'}• 上升过快（每周 +8 以上）= 易受伤</>}
+            />
             <LoadStat
               label="竞技状态(Form)"
               value={cur.form != null ? (cur.form > 0 ? `+${cur.form.toFixed(1)}` : cur.form.toFixed(1)) : '—'}
               color={cur.form != null && cur.form < -10 ? '#d32f2f' : '#00a85a'}
+              help={<><strong>Form = 慢性负荷 − 急性负荷</strong>。衡量已从近期训练中恢复多少。{'\n\n'}使用方法：{'\n'}• +10 ~ +25 = 比赛就绪甜区{'\n'}• −10 ~ +10 = 过渡区，维持或轻松日{'\n'}• −30 ~ −10 = 正常训练刺激{'\n'}• 低于 −30 = 过度负荷，必须减量{'\n'}• 高于 +25 = 减量过多，开始流失体能</>}
             />
-            <LoadStat label="负荷比(Ratio)" value={cur.load_ratio?.toFixed(2) ?? '—'} color="#7a4dd4" />
-            <LoadStat label="状态" value={stateLabel} color="#1a1c2e" />
+            <LoadStat
+              label="负荷比(Ratio)"
+              value={cur.load_ratio?.toFixed(2) ?? '—'}
+              color="#7a4dd4"
+              help={<><strong>ACWR = 急性 / 慢性</strong>。衡量近期负荷相对长期基线。{'\n\n'}使用方法：{'\n'}• 0.8 – 1.1 = 健康训练区{'\n'}• 高于 1.2 = 过度应激，减量{'\n'}• 高于 1.5 = 极高风险，强制休息{'\n'}• 低于 0.7 = 流失体能，需加量{'\n'}• 4 周块均值 ≈ 1.0 为理想周期化</>}
+            />
+            <LoadStat
+              label="状态"
+              value={stateLabel}
+              color="#1a1c2e"
+              help={<><strong>由负荷比衍生的状态分类</strong>，给出今日训练决策参考。{'\n\n'}阈值：{'\n'}• 恢复期：ratio &lt; 0.8{'\n'}• 正常训练：0.8 – 1.0{'\n'}• 产出期：1.0 – 1.3{'\n'}• 过度负荷：&gt; 1.3</>}
+            />
           </div>
           <div className="text-[11px] font-mono text-text-muted mb-2">
             Readiness: <span className="text-text-primary">{cur.readiness_gate ?? '—'}</span>
