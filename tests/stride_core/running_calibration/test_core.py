@@ -415,3 +415,17 @@ def test_training_zones_are_anchored_to_threshold_speed_and_hr():
     threshold_hr = next(z for z in zones.heart_rate_zones if z.name == "threshold")
     assert threshold_hr.min_bpm == pytest.approx(158, abs=1)
     assert threshold_hr.max_bpm == pytest.approx(170, abs=1)
+
+
+def test_snapshot_has_critical_power_field():
+    from datetime import date as _d
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+    snap = RunningCalibrationSnapshot(as_of_date=_d(2026, 5, 1), critical_power_w=265.0)
+    assert snap.critical_power_w == 265.0
+
+
+def test_snapshot_critical_power_defaults_to_none():
+    from datetime import date as _d
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+    snap = RunningCalibrationSnapshot(as_of_date=_d(2026, 5, 1))
+    assert snap.critical_power_w is None

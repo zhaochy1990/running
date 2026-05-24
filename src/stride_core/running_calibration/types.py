@@ -104,6 +104,7 @@ class RunningCalibrationSnapshot:
     hrmax_estimate: float | None = None
     hrmax_confidence: CalibrationConfidence = CalibrationConfidence.NONE
     high_hr_reference: float | None = None
+    critical_power_w: float | None = None
     source: dict[str, Any] = field(default_factory=dict)
     evidence: tuple[CalibrationEvidence, ...] = ()
     id: int | str | None = None
