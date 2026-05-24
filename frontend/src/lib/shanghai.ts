@@ -143,3 +143,27 @@ export function shanghaiWeekday(s: string | null | undefined): string {
   const idx = DOW_MAP[SHANGHAI_DOW.format(d)] ?? 0
   return WEEKDAYS[idx]
 }
+
+/**
+ * Return the Monday of the Shanghai-local week containing the given date,
+ * as `YYYY-MM-DD`. Week start = Monday (ISO 8601, matches the project's
+ * weekly_plan convention).
+ *
+ * Returns '' for null/empty/unparseable input. The arithmetic is done in
+ * Shanghai time, so Sunday 23:00 UTC (= Monday 07:00 Shanghai) correctly
+ * resolves to that Monday's week.
+ */
+export function shanghaiWeekStart(s: string | null | undefined): string {
+  const d = parseToInstant(s)
+  if (!d) return ''
+  const ymd = SHANGHAI_YMD.format(d)
+  const dowIdx = DOW_MAP[SHANGHAI_DOW.format(d)] ?? 0
+  const daysBack = (dowIdx + 6) % 7  // Mon→0, Tue→1, …, Sun→6
+  const [y, m, day] = ymd.split('-').map(Number)
+  const anchor = new Date(Date.UTC(y, m - 1, day))
+  anchor.setUTCDate(anchor.getUTCDate() - daysBack)
+  const yy = anchor.getUTCFullYear()
+  const mm = String(anchor.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(anchor.getUTCDate()).padStart(2, '0')
+  return `${yy}-${mm}-${dd}`
+}
