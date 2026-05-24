@@ -12,6 +12,10 @@ vi.mock('recharts', () => {
     ResponsiveContainer: NullChartElement,
     AreaChart: NullChartElement,
     Area: NullChartElement,
+    BarChart: NullChartElement,
+    Bar: NullChartElement,
+    Cell: NullChartElement,
+    ComposedChart: NullChartElement,
     LineChart: NullChartElement,
     Line: NullChartElement,
     XAxis: NullChartElement,
@@ -19,6 +23,7 @@ vi.mock('recharts', () => {
     Tooltip: NullChartElement,
     CartesianGrid: NullChartElement,
     Legend: NullChartElement,
+    ReferenceLine: NullChartElement,
   }
 })
 

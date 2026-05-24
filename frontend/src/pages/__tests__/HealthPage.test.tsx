@@ -141,7 +141,7 @@ describe('HealthPage', () => {
     expect(getPlanDays).not.toHaveBeenCalled()
   })
 
-  it('renders STRIDE objective training load when PMC includes STRIDE rows', async () => {
+  it('does not render STRIDE 客观负荷 on HealthPage (moved to TrainingStatusPage)', async () => {
     vi.mocked(getPMC).mockResolvedValueOnce({
       pmc: [],
       summary: {
@@ -156,18 +156,6 @@ describe('HealthPage', () => {
         date: null,
       },
       stride_pmc: [
-        {
-          date: '2026-05-18',
-          algorithm_version: 1,
-          training_dose: 80,
-          acute_load: 18,
-          chronic_load: 24,
-          form: 6,
-          load_ratio: 0.75,
-          readiness_gate: 'green',
-          readiness_reasons: [],
-          chronic_load_ramp: null,
-        },
         {
           date: '2026-05-19',
           algorithm_version: 1,
@@ -196,9 +184,100 @@ describe('HealthPage', () => {
 
     renderHealthPage()
 
-    expect(await screen.findByText('STRIDE 客观负荷')).toBeInTheDocument()
-    expect(screen.getByText('Objective Dose')).toBeInTheDocument()
-    expect(screen.getByText('Readiness')).toBeInTheDocument()
-    expect(screen.getByText('yellow')).toBeInTheDocument()
+    await screen.findByText('负荷曲线与恢复状态')
+    expect(screen.queryByText('STRIDE 客观负荷')).not.toBeInTheDocument()
+    expect(screen.queryByText('Objective Dose')).not.toBeInTheDocument()
+    expect(screen.queryByText('Readiness')).not.toBeInTheDocument()
+  })
+
+  it('renders HRV trend card when getHrv returns data with non-null last_night_avg', async () => {
+    vi.mocked(getHrv).mockResolvedValueOnce({
+      hrv: [
+        {
+          date: '2026-05-18',
+          weekly_avg: 50,
+          last_night_avg: 52,
+          last_night_5min_high: 60,
+          status: 'BALANCED',
+          baseline_low_upper: 45,
+          daily_balanced_low: 45,
+          daily_balanced_upper: 60,
+          feedback_phrase: null,
+          provider: 'garmin',
+        },
+        {
+          date: '2026-05-19',
+          weekly_avg: 51,
+          last_night_avg: 48,
+          last_night_5min_high: 58,
+          status: 'BALANCED',
+          baseline_low_upper: 45,
+          daily_balanced_low: 45,
+          daily_balanced_upper: 60,
+          feedback_phrase: null,
+          provider: 'garmin',
+        },
+      ],
+      summary: {
+        date: '2026-05-19',
+        last_night_avg: 48,
+        weekly_avg: 51,
+        status: 'BALANCED',
+        daily_balanced_low: 45,
+        daily_balanced_upper: 60,
+      },
+    })
+
+    renderHealthPage()
+
+    expect(await screen.findByText('HRV 趋势')).toBeInTheDocument()
+    expect(screen.getByText('平衡带 45-60ms')).toBeInTheDocument()
+  })
+
+  it('hides HRV card when every record has null last_night_avg (sparse nights)', async () => {
+    vi.mocked(getHrv).mockResolvedValueOnce({
+      hrv: [
+        {
+          date: '2026-05-18',
+          weekly_avg: null,
+          last_night_avg: null,
+          last_night_5min_high: null,
+          status: null,
+          baseline_low_upper: null,
+          daily_balanced_low: null,
+          daily_balanced_upper: null,
+          feedback_phrase: null,
+          provider: 'garmin',
+        },
+      ],
+      summary: {
+        date: '2026-05-18',
+        last_night_avg: null,
+        weekly_avg: null,
+        status: null,
+        daily_balanced_low: null,
+        daily_balanced_upper: null,
+      },
+    })
+
+    renderHealthPage()
+
+    await screen.findByText('负荷曲线与恢复状态')
+    expect(screen.queryByText('HRV 趋势')).not.toBeInTheDocument()
+  })
+
+  it('preserves prior state and logs warning when getHrv rejects', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.mocked(getHrv).mockRejectedValueOnce(new Error('boom'))
+
+    renderHealthPage()
+
+    await screen.findByText('负荷曲线与恢复状态')
+    expect(screen.queryByText('HRV 趋势')).not.toBeInTheDocument()
+    expect(consoleWarn).toHaveBeenCalledWith(
+      '[HealthPage] HRV fetch failed; preserving prior state',
+      expect.any(Error),
+    )
+    consoleWarn.mockRestore()
   })
 })

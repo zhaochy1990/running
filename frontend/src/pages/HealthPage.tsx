@@ -2,15 +2,14 @@ import { useEffect, useState } from 'react'
 import {
   ResponsiveContainer, AreaChart, Area, Line, BarChart, Bar, Cell,
   ComposedChart,
-  XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine,
+  XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine, ReferenceArea,
 } from 'recharts'
 import {
-  getHealth, getPMC,
+  getHealth, getPMC, getHrv,
   type HealthRecord, type PMCRecord, type PMCSummary, type HRVSnapshot,
-  type StridePMCRecord, type StridePMCSummary,
+  type HrvDailyRecord, type HrvSummary,
 } from '../api'
 import { useUser } from '../UserContextValue'
-import WatchExtrasSection from './health/WatchExtrasSection'
 import ViewHead from '../components/ViewHead'
 
 function formatDate(dateStr: string): string {
@@ -19,6 +18,12 @@ function formatDate(dateStr: string): string {
   if (dateStr.length === 8) {
     const m = parseInt(dateStr.slice(4, 6), 10)
     const d = parseInt(dateStr.slice(6, 8), 10)
+    return `${m}/${d}`
+  }
+  // YYYY-MM-DD → M/D (HRV / Garmin daily_health dates)
+  if (dateStr.length === 10 && dateStr[4] === '-') {
+    const m = parseInt(dateStr.slice(5, 7), 10)
+    const d = parseInt(dateStr.slice(8, 10), 10)
     return `${m}/${d}`
   }
   return dateStr
@@ -82,15 +87,6 @@ function tsbZoneColor(zone: string | null): string {
   return zone ? (map[zone] || '#8888a0') : '#8888a0'
 }
 
-function readinessColor(gate: string | null): string {
-  const map: Record<string, string> = {
-    green: '#00a85a',
-    yellow: '#e68a00',
-    red: '#d32f2f',
-  }
-  return gate ? (map[gate] || '#8888a0') : '#8888a0'
-}
-
 export default function HealthPage() {
   const { user } = useUser()
   const [records, setRecords] = useState<HealthRecord[]>([])
@@ -98,8 +94,8 @@ export default function HealthPage() {
   const [rhrBaseline, setRhrBaseline] = useState<number | null>(null)
   const [pmcData, setPmcData] = useState<PMCRecord[]>([])
   const [pmcSummary, setPmcSummary] = useState<PMCSummary | null>(null)
-  const [stridePmcData, setStridePmcData] = useState<StridePMCRecord[]>([])
-  const [stridePmcSummary, setStridePmcSummary] = useState<StridePMCSummary | null>(null)
+  const [hrvRecords, setHrvRecords] = useState<HrvDailyRecord[]>([])
+  const [hrvSummary, setHrvSummary] = useState<HrvSummary | null>(null)
   const [days, setDays] = useState(30)
   const [pmcDays, setPmcDays] = useState(90)
   const requestKey = user ? `${user}:${days}:${pmcDays}` : ''
@@ -109,19 +105,30 @@ export default function HealthPage() {
   useEffect(() => {
     if (!user) return
     let cancelled = false
+    // HRV in same load group as health+PMC so the 2x2 chart grid resolves atomically.
+    // Failure path preserves prior HRV state instead of clearing it (see commit history for rationale).
     Promise.all([
       getHealth(user, days),
       getPMC(user, pmcDays),
+      getHrv(user, days).then(
+        (res) => ({ ok: true as const, res }),
+        (err) => {
+          if (!cancelled) console.warn('[HealthPage] HRV fetch failed; preserving prior state', err)
+          return { ok: false as const }
+        },
+      ),
     ])
-      .then(([healthData, pmcResult]) => {
+      .then(([healthData, pmcResult, hrvOutcome]) => {
         if (cancelled) return
         setRecords(healthData.health)
         setHrv(healthData.hrv || null)
         setRhrBaseline(healthData.rhr_baseline ?? null)
         setPmcData(pmcResult.pmc)
         setPmcSummary(pmcResult.summary)
-        setStridePmcData(pmcResult.stride_pmc ?? [])
-        setStridePmcSummary(pmcResult.stride_summary ?? null)
+        if (hrvOutcome.ok) {
+          setHrvRecords(hrvOutcome.res.hrv ?? [])
+          setHrvSummary(hrvOutcome.res.summary)
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadedKey(requestKey)
@@ -143,10 +150,19 @@ export default function HealthPage() {
     dateLabel: formatDate(r.date),
   }))
 
-  const strideChartData = stridePmcData.map((r) => ({
-    ...r,
-    dateLabel: formatDate(r.date),
-  }))
+  // Defensive client-side sort — server's /hrv route already reverses to oldest→newest,
+  // but a future server-side ordering change shouldn't silently flip the chart.
+  const hrvChartData = [...hrvRecords]
+    .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
+    .map((r) => ({
+      ...r,
+      dateLabel: formatDate(r.date),
+    }))
+  // length>0 alone isn't enough — every row's last_night_avg can still be null
+  // (sparse Garmin nights, no-wear), which collapses Recharts' dataMin/dataMax.
+  const hasHrvData = hrvChartData.some((r) => r.last_night_avg != null)
+  const hrvBalancedLow = hrvSummary?.daily_balanced_low ?? null
+  const hrvBalancedHigh = hrvSummary?.daily_balanced_upper ?? null
 
   const latest = records[0] // newest
 
@@ -181,10 +197,6 @@ export default function HealthPage() {
 
               {/* Metric Cards */}
               {latest && <MetricCards latest={latest} hrv={hrv} rhrBaseline={rhrBaseline} />}
-
-              {/* Garmin-only extras (Sleep / Body Battery / Stress / HRV trend).
-                  Auto-hides for COROS users via internal data-presence check. */}
-              {user && <WatchExtrasSection user={user} latest={latest ?? null} days={days} />}
 
               {/* Charts 2x2 */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
@@ -247,6 +259,59 @@ export default function HealthPage() {
                     </AreaChart>
                   </ResponsiveContainer>
                 </ChartCard>
+
+                {hasHrvData && (
+                  <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
+                    <div className="mb-4 flex items-baseline justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-text-primary">HRV 趋势</h3>
+                        <p className="text-xs font-mono text-text-muted">Heart Rate Variability · Last Night Avg</p>
+                      </div>
+                      {hrvBalancedLow != null && hrvBalancedHigh != null && (
+                        <p className="text-xs font-mono text-text-muted whitespace-nowrap">
+                          平衡带 {hrvBalancedLow}-{hrvBalancedHigh}ms
+                        </p>
+                      )}
+                    </div>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={hrvChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+                        <defs>
+                          <linearGradient id="gradHealthHrv" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#0097a7" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#0097a7" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid {...GRID_STYLE} />
+                        <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
+                        <YAxis domain={['dataMin - 10', 'dataMax + 10']} tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          {...TOOLTIP_STYLE}
+                          formatter={(v: unknown) => (v == null ? ['—', 'HRV'] : [`${v} ms`, 'HRV'])}
+                        />
+                        {hrvBalancedLow != null && hrvBalancedHigh != null && (
+                          <ReferenceArea
+                            y1={hrvBalancedLow}
+                            y2={hrvBalancedHigh}
+                            fill="#00a85a"
+                            fillOpacity={0.06}
+                            stroke="#00a85a"
+                            strokeOpacity={0.2}
+                            strokeDasharray="3 3"
+                          />
+                        )}
+                        <Area
+                          type="monotone"
+                          dataKey="last_night_avg"
+                          stroke="#0097a7"
+                          strokeWidth={1.5}
+                          fill="url(#gradHealthHrv)"
+                          dot={false}
+                          activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
 
                 <ChartCard title="训练负荷比" subtitle="Training Load Ratio (ATI/CTI)">
                   <ResponsiveContainer width="100%" height={200}>
@@ -387,85 +452,6 @@ export default function HealthPage() {
                 </div>
               )}
 
-              {stridePmcData.length > 0 && stridePmcSummary && (
-                <div className="mb-6">
-                  <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mb-4">
-                    <MetricCard
-                      label="客观剂量" sublabel="Objective Dose"
-                      value={stridePmcSummary.current_training_dose != null ? stridePmcSummary.current_training_dose.toFixed(0) : '—'} unit=""
-                      color="#00a85a" detail={stridePmcSummary.date ? formatDate(stridePmcSummary.date) : ''}
-                    />
-                    <MetricCard
-                      label="急性负荷" sublabel="Acute Load"
-                      value={stridePmcSummary.current_acute_load != null ? stridePmcSummary.current_acute_load.toFixed(1) : '—'} unit=""
-                      color="#0097a7" detail="7天指数负荷"
-                    />
-                    <MetricCard
-                      label="慢性负荷" sublabel="Chronic Load"
-                      value={stridePmcSummary.current_chronic_load != null ? stridePmcSummary.current_chronic_load.toFixed(1) : '—'} unit=""
-                      color="#00a85a" detail="42天指数负荷"
-                    />
-                    <MetricCard
-                      label="状态" sublabel="Form"
-                      value={stridePmcSummary.current_form != null ? `${stridePmcSummary.current_form > 0 ? '+' : ''}${stridePmcSummary.current_form.toFixed(1)}` : '—'} unit=""
-                      color={tsbColor(stridePmcSummary.current_form)} detail="CTL - ATL"
-                    />
-                    <MetricCard
-                      label="负荷比" sublabel="Load Ratio"
-                      value={stridePmcSummary.current_load_ratio != null ? stridePmcSummary.current_load_ratio.toFixed(2) : '—'} unit=""
-                      color={ratioColor(stridePmcSummary.current_load_ratio)} detail={stridePmcSummary.chronic_load_ramp != null ? `7天 ${stridePmcSummary.chronic_load_ramp > 0 ? '+' : ''}${stridePmcSummary.chronic_load_ramp}` : '7天 —'}
-                    />
-                    <MetricCard
-                      label="恢复门控" sublabel="Readiness"
-                      value={stridePmcSummary.current_readiness_gate || '—'} unit=""
-                      color={readinessColor(stridePmcSummary.current_readiness_gate)} detail={(stridePmcSummary.current_readiness_reasons ?? []).join(', ') || '无触发'}
-                    />
-                  </div>
-
-                  <div className="bg-bg-card border border-border-subtle rounded-2xl p-5">
-                    <div className="mb-4">
-                      <h3 className="text-sm font-semibold text-text-primary">STRIDE 客观负荷</h3>
-                      <p className="text-xs font-mono text-text-muted">Objective load — Dose / Acute / Chronic / Form</p>
-                    </div>
-
-                    <ResponsiveContainer width="100%" height={220}>
-                      <ComposedChart data={strideChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-                        <defs>
-                          <linearGradient id="gradStrideChronic" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#00a85a" stopOpacity={0.18} />
-                            <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid {...GRID_STYLE} />
-                        <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                        <Tooltip {...TOOLTIP_STYLE} />
-                        <Bar dataKey="training_dose" name="Dose" fill="#e68a00" fillOpacity={0.55} maxBarSize={14} />
-                        <Area type="monotone" dataKey="chronic_load" name="Chronic" stroke="#00a85a" strokeWidth={2} fill="url(#gradStrideChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
-                        <Line type="monotone" dataKey="acute_load" name="Acute" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-
-                    <div className="mt-4">
-                      <p className="text-xs font-mono text-text-muted mb-2 ml-1">STRIDE Form (Chronic − Acute)</p>
-                      <ResponsiveContainer width="100%" height={160}>
-                        <BarChart data={strideChartData} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
-                          <CartesianGrid {...GRID_STYLE} />
-                          <XAxis dataKey="dateLabel" tick={AXIS_TICK} axisLine={{ stroke: '#d8dae5' }} tickLine={false} />
-                          <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
-                          <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => [typeof v === 'number' ? `${v > 0 ? '+' : ''}${v}` : `${v}`, 'Form']} />
-                          <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
-                          <Bar dataKey="form" name="Form">
-                            {strideChartData.map((entry, idx) => (
-                              <Cell key={idx} fill={tsbColor(entry.form)} fillOpacity={0.8} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Data Table */}
               <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 animate-fade-in">
