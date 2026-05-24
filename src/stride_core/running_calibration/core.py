@@ -13,6 +13,7 @@ from .segments import (
     best_speed_candidates,
     evidence_from_hr,
     evidence_from_speed,
+    is_running,
     stable_threshold_hr_candidates,
     weighted_median,
 )
@@ -228,6 +229,46 @@ def estimate_rhr_baseline(
         return None
     idx = max(0, min(len(values) - 1, round((len(values) - 1) * 0.10)))
     return values[idx]
+
+
+MIN_RUNNING_POWER_W = 50.0
+MAX_RUNNING_POWER_W = 1000.0
+
+
+def _valid_running_power(value: float | None) -> bool:
+    if value is None:
+        return False
+    p = float(value)
+    return MIN_RUNNING_POWER_W <= p <= MAX_RUNNING_POWER_W
+
+
+def estimate_critical_power(
+    history: Sequence[RunningActivity],
+    *,
+    as_of_date: date,
+    lookback_days: int = 180,
+) -> tuple[float | None, int]:
+    """Median running-power proxy over the lookback window.
+
+    Replaces `training_load.calibration._estimate_critical_power` (which is
+    deleted in Phase 2). Filters to running sports only. Returns
+    `(median_power_w, sample_count)`.
+    """
+    window_start = as_of_date - timedelta(days=lookback_days)
+    values: list[float] = []
+    for activity in history:
+        if not (window_start <= activity.activity_date <= as_of_date):
+            continue
+        if not is_running(activity):
+            continue
+        if _valid_running_power(activity.avg_power_w):
+            values.append(float(activity.avg_power_w))
+        values.extend(
+            float(sample.power_w)
+            for sample in activity.samples
+            if _valid_running_power(sample.power_w)
+        )
+    return (median(values) if values else None, len(values))
 
 
 def _percentile_sorted(values: Sequence[float], pct: float) -> float | None:
