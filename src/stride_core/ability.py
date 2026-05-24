@@ -23,6 +23,29 @@ from stride_core.models import RUN_SPORT_IDS, RUN_SPORT_SQL_LIST as _RUN_SPORT_S
 from stride_core.normalize import TrainKind, kind_from_legacy_train_type
 
 
+def _resolve_hr_max(db: Any, as_of_date_iso: str, fallback: int = 185) -> int:
+    """Look up hrmax_estimate from running_calibration_snapshot.
+
+    Falls back to `fallback` (default 185) when:
+      - the connector cannot be constructed (legacy DB / missing schema)
+      - no snapshot exists yet
+      - snapshot has no hrmax_estimate
+    See CLAUDE.md HARD rule "Athlete baseline metrics — single source".
+    """
+    try:
+        from datetime import date as _date
+        from stride_core.running_calibration.sqlite_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+        repo = SQLiteRunningCalibrationRepository(db)
+        snap = repo.fetch_latest(as_of_date=_date.fromisoformat(as_of_date_iso))
+    except Exception:  # noqa: BLE001
+        return fallback
+    if snap is None or snap.hrmax_estimate is None:
+        return fallback
+    return int(round(snap.hrmax_estimate))
+
+
 def _resolve_train_kind(activity: Any) -> str | None:
     """Return the activity's normalized ``train_kind`` value (str), or None.
 
@@ -1596,6 +1619,7 @@ def compute_l3_vo2max(
         "vo2max_used": round(used, 2) if used else None,
         "vo2max_used_vdot": round(used_vdot, 2) if used_vdot else None,
         "vo2max_source": source,
+        "hr_max_used": int(hr_max),
         # v7: surface eligibility flags + secondary quality so the dashboard
         # / debugging endpoints can explain why a given estimator did or
         # didn't participate.
@@ -2040,15 +2064,21 @@ def compute_contribution(
 def compute_ability_snapshot(
     db: Any,
     date: str,
-    hr_max: int = 185,
+    hr_max: int | None = None,
 ) -> dict:
     """Compute full snapshot {l1 (latest), l2, l3, l4, marathon_s} for `date`.
 
     `date` is an ISO YYYY-MM-DD string.  All date filtering uses Shanghai
     local time (UTC+8) as project memory requires.
+
+    `hr_max` defaults to the user's latest detected `hrmax_estimate` from
+    `running_calibration_snapshot`; falls back to 185 when no snapshot
+    exists. Explicit kwargs override.
     """
     if db is None:
         return _empty_snapshot(date)
+    if hr_max is None:
+        hr_max = _resolve_hr_max(db, date)
 
     try:
         conn = db._conn

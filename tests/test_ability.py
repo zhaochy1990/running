@@ -1811,3 +1811,58 @@ class TestBoundary:
         snap = compute_ability_snapshot(db, "2026-04-23")
         assert snap["date"] == "2026-04-23"
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 12: hr_max baseline resolver tests.
+# ---------------------------------------------------------------------------
+
+class TestComputeAbilitySnapshotHrMaxResolver:
+    """compute_ability_snapshot should resolve hr_max from baseline reader."""
+
+    def test_compute_ability_snapshot_uses_baseline_hrmax(self, ability_db):
+        """compute_ability_snapshot resolves hr_max from
+        running_calibration_snapshot when the kwarg is not provided.
+        Previously hardcoded to 185.
+        """
+        from datetime import date
+        from stride_core.ability import compute_ability_snapshot
+        from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+        from stride_core.running_calibration.types import (
+            CalibrationConfidence, RunningCalibrationSnapshot,
+        )
+        # Seed a baseline with hrmax_estimate=200 (well above default 185)
+        repo = SQLiteRunningCalibrationRepository(ability_db)
+        repo.save_snapshot(RunningCalibrationSnapshot(
+            as_of_date=date(2026, 4, 23),
+            hrmax_estimate=200.0,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.MEDIUM,
+        ))
+        snap = compute_ability_snapshot(ability_db, "2026-04-23")
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 200
+
+    def test_compute_ability_snapshot_explicit_hr_max_overrides_baseline(self, ability_db):
+        from datetime import date
+        from stride_core.ability import compute_ability_snapshot
+        from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+        from stride_core.running_calibration.types import (
+            CalibrationConfidence, RunningCalibrationSnapshot,
+        )
+        repo = SQLiteRunningCalibrationRepository(ability_db)
+        repo.save_snapshot(RunningCalibrationSnapshot(
+            as_of_date=date(2026, 4, 23),
+            hrmax_estimate=200.0,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.MEDIUM,
+        ))
+        snap = compute_ability_snapshot(ability_db, "2026-04-23", hr_max=210)
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 210
+
+    def test_compute_ability_snapshot_falls_back_to_185(self, ability_db):
+        """When no baseline exists, the legacy 185 default is preserved."""
+        from stride_core.ability import compute_ability_snapshot
+        snap = compute_ability_snapshot(ability_db, "2026-04-23")
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 185
