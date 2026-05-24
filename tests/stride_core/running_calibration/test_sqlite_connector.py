@@ -212,3 +212,54 @@ def test_sqlite_connector_supports_plain_sqlite_connection(tmp_path):
 
     assert repo.fetch_latest().id == snapshot_id
     conn.close()
+
+
+def test_persists_critical_power_w(tmp_path):
+    db_path = tmp_path / "test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    # Bare-minimum schema to satisfy the connector
+    conn.executescript("""
+        CREATE TABLE activities (label_id TEXT PRIMARY KEY, date TEXT, sport_name TEXT);
+    """)
+    db = type("DB", (), {"_conn": conn, "_path": str(db_path)})()
+    repo = SQLiteRunningCalibrationRepository(db)
+    snap = RunningCalibrationSnapshot(
+        as_of_date=date(2026, 5, 20),
+        critical_power_w=265.0,
+        hrmax_estimate=185.0,
+        threshold_hr=165.0,
+        threshold_hr_confidence=CalibrationConfidence.MEDIUM,
+        threshold_speed_confidence=CalibrationConfidence.MEDIUM,
+        hrmax_confidence=CalibrationConfidence.MEDIUM,
+    )
+    snap_id = repo.save_snapshot(snap)
+    row = conn.execute(
+        "SELECT critical_power_w FROM running_calibration_snapshot WHERE id = ?",
+        (snap_id,),
+    ).fetchone()
+    assert row["critical_power_w"] == 265.0
+
+
+def test_schema_migration_adds_critical_power_w_column(tmp_path):
+    """Simulate a legacy DB created before the migration."""
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE activities (label_id TEXT PRIMARY KEY, date TEXT);
+        CREATE TABLE running_calibration_snapshot (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            as_of_date TEXT NOT NULL,
+            algorithm_version INTEGER NOT NULL,
+            threshold_hr_confidence TEXT NOT NULL,
+            threshold_speed_confidence TEXT NOT NULL,
+            hrmax_confidence TEXT NOT NULL DEFAULT 'none',
+            UNIQUE(as_of_date, algorithm_version)
+        );
+    """)
+    conn.commit()
+    db = type("DB", (), {"_conn": conn, "_path": str(db_path)})()
+    SQLiteRunningCalibrationRepository(db)  # ensure_schema runs in __init__
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(running_calibration_snapshot)").fetchall()}
+    assert "critical_power_w" in cols

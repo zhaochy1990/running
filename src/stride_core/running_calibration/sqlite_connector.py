@@ -37,6 +37,7 @@ RUNNING_CALIBRATION_SCHEMA = (
         hrmax_estimate REAL,
         hrmax_confidence TEXT NOT NULL DEFAULT 'none',
         high_hr_reference REAL,
+        critical_power_w REAL,
         source_json TEXT,
         computed_at TEXT NOT NULL DEFAULT (datetime('now')),
         UNIQUE(as_of_date, algorithm_version)
@@ -102,6 +103,7 @@ class SQLiteRunningCalibrationRepository:
                 "observed_max_hr": "REAL",
                 "hrmax_confidence": "TEXT NOT NULL DEFAULT 'none'",
                 "high_hr_reference": "REAL",
+                "critical_power_w": "REAL",
             },
         )
         self._conn.commit()
@@ -129,8 +131,8 @@ class SQLiteRunningCalibrationRepository:
                (as_of_date, algorithm_version, threshold_hr, threshold_speed_mps,
                 threshold_hr_confidence, threshold_speed_confidence,
                 rhr_baseline, observed_max_hr, hrmax_estimate, hrmax_confidence,
-                high_hr_reference, source_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                high_hr_reference, critical_power_w, source_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(as_of_date, algorithm_version) DO UPDATE SET
                    threshold_hr = excluded.threshold_hr,
                    threshold_speed_mps = excluded.threshold_speed_mps,
@@ -141,6 +143,7 @@ class SQLiteRunningCalibrationRepository:
                    hrmax_estimate = excluded.hrmax_estimate,
                    hrmax_confidence = excluded.hrmax_confidence,
                    high_hr_reference = excluded.high_hr_reference,
+                   critical_power_w = excluded.critical_power_w,
                    source_json = excluded.source_json,
                    computed_at = excluded.computed_at""",
             (
@@ -155,6 +158,7 @@ class SQLiteRunningCalibrationRepository:
                 snapshot.hrmax_estimate,
                 snapshot.hrmax_confidence.value,
                 snapshot.high_hr_reference,
+                snapshot.critical_power_w,
                 source_json,
             ),
         )
@@ -195,6 +199,7 @@ class SQLiteRunningCalibrationRepository:
             hrmax_estimate=_float_or_none(_row_value(row, "hrmax_estimate")),
             hrmax_confidence=CalibrationConfidence(str(_row_value(row, "hrmax_confidence") or CalibrationConfidence.NONE.value)),
             high_hr_reference=_float_or_none(_row_value(row, "high_hr_reference")),
+            critical_power_w=_float_or_none(_row_value(row, "critical_power_w")),
             source=_json_dict(_row_value(row, "source_json")),
             evidence=evidence,
         )
