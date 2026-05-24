@@ -89,6 +89,7 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
         "hrv_normal_low": None,
         "hrv_normal_high": None,
         "recovery_pct": None,
+        "date": None,
     }
     dash = db.query(
         "SELECT avg_sleep_hrv, hrv_normal_low, hrv_normal_high, recovery_pct "
@@ -96,6 +97,17 @@ def get_health(user: str, days: int = Query(30, ge=1, le=365)):
     )
     if dash:
         hrv.update(dict(dash[0]))
+
+    # Date of the most recent daily_hrv reading. Saves consumers from scanning
+    # `hrv.trend` (which is windowed by `days`) just to label a card; the value
+    # in `avg_sleep_hrv` above is a `dashboard`-table snapshot with no date of
+    # its own, so this is the closest "as-of" we can attach to it.
+    latest_hrv_date_row = db.query(
+        f"SELECT date FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
+        "WHERE last_night_avg IS NOT NULL ORDER BY date DESC LIMIT 1"
+    )
+    if latest_hrv_date_row:
+        hrv["date"] = latest_hrv_date_row[0]["date"]
 
     # Per-day HRV trend (both COROS and Garmin populate this now). Capped
     # at the same window as `health` so a single /health call gives the
