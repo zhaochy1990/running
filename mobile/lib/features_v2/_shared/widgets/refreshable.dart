@@ -2,7 +2,7 @@
 //
 // Pull-to-refresh triggers `ref.refresh(provider)` (Riverpod's
 // invalidate-and-return-new-future combinator), keeping the spinner
-// active until the awaited future resolves. Provider-side errors are
+// active until the awaited future resolves.  Provider-side errors are
 // caught here so the indicator stops cleanly; the screen's own
 // AsyncValue.when(error: ...) branch is the one that renders error UI.
 library;
@@ -32,6 +32,10 @@ class StrideRefreshable<T> extends ConsumerWidget {
       color: StrideTokens.accent,
       onRefresh: () async {
         try {
+          // ref.refresh is annotated @useResult; we intentionally only
+          // await for completion (the resolved value belongs to the
+          // watching screen).  ignore the lint locally.
+          // ignore: unused_result
           await ref.refresh(provider);
         } catch (_) {
           // Screen owns its own error UI via AsyncValue.when(error:).
