@@ -479,6 +479,10 @@ export interface HRVSnapshot {
   hrv_normal_high: number | null
   recovery_pct: number | null
   trend: HrvTrendPoint[]
+  // Date of the most recent daily_hrv reading. The `avg_sleep_hrv` value is
+  // a dashboard snapshot with no date of its own; this is the closest "as-of"
+  // the server can attach. Null until the user has any daily_hrv rows.
+  date: string | null
 }
 
 export function getHealth(user: string, days = 30) {

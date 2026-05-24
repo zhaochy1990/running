@@ -544,7 +544,7 @@ function MetricCards({ latest, hrv, rhrBaseline }: { latest: HealthRecord; hrv: 
       />
       <MetricCard
         label="睡眠HRV"
-        sublabel={formatDate(latest.date)}
+        sublabel={hrv?.date ? formatDate(hrv.date) : ''}
         value={hrvValue != null ? `${hrvValue}` : '—'}
         unit="ms"
         color={hrvColor}
