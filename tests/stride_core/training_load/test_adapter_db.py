@@ -470,10 +470,11 @@ def test_training_load_tables_added_to_legacy_db(tmp_path):
 
 def test_recompute_persists_activity_and_daily_load_idempotently(db):
     # estimate_rhr_baseline requires min_samples=14; supply 14 days of RHR data.
+    # daily_health.date is stored as YYYYMMDD (Shanghai-local) per CLAUDE.md timezone rules.
     for _i in range(14):
         _d = date(2026, 5, 1) - timedelta(days=_i)
         db.upsert_daily_health(
-            DailyHealth(_d.isoformat(), None, None, 50, None, None, None, None, None)
+            DailyHealth(_d.strftime("%Y%m%d"), None, None, 50, None, None, None, None, None)
         )
     db.upsert_daily_hrv(DailyHrv("2026-05-01", last_night_avg=60))
     db.upsert_activity_feedback("run1", rpe=5, mood_tags=[], note="ok")
