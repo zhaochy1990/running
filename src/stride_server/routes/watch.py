@@ -101,7 +101,7 @@ def _get_device_and_last_sync(uuid: str) -> tuple[str | None, str | None]:
 
     try:
         row = db._conn.execute(
-            "SELECT value FROM sync_meta WHERE key = 'last_sync'"
+            "SELECT value FROM sync_meta WHERE key = 'last_sync_time'"
         ).fetchone()
         if row:
             last_sync = row[0]

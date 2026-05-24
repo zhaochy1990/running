@@ -6,7 +6,7 @@ import logging
 import os
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TypeVar
 
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
@@ -463,7 +463,7 @@ def run_health_only_sync(
         synced_activities=0,
         synced_health=health,
     )
-    db.set_meta("last_sync_time", datetime.now().isoformat())
+    db.set_meta("last_sync_time", datetime.now(timezone.utc).isoformat())
     return 0, health
 
 
@@ -497,5 +497,5 @@ def run_sync(
         synced_activities=activities,
         synced_health=health,
     )
-    db.set_meta("last_sync_time", datetime.now().isoformat())
+    db.set_meta("last_sync_time", datetime.now(timezone.utc).isoformat())
     return activities, health, activity_label_ids

@@ -285,7 +285,7 @@ def _build_watch_info(db, user: str) -> WatchInfo:
     last_sync: str | None = None
     try:
         row = db._conn.execute(
-            "SELECT value FROM sync_meta WHERE key = 'last_sync'"
+            "SELECT value FROM sync_meta WHERE key = 'last_sync_time'"
         ).fetchone()
         if row and row[0]:
             last_sync = row[0]

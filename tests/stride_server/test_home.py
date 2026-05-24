@@ -104,7 +104,7 @@ def _seed(tmp_path, *, with_data: bool = True, with_provider: str | None = "coro
         )
         db._conn.execute(
             "INSERT OR REPLACE INTO sync_meta (key, value) VALUES "
-            "('last_sync', '2026-05-10T08:00:00')"
+            "('last_sync_time', '2026-05-10T08:00:00+00:00')"
         )
         db._conn.commit()
     db.close()
@@ -131,7 +131,7 @@ def test_home_normal_user(app_client):
     assert a0["commentary_generated_by"] == "gpt-4.1"
     assert data["lifetime_stats"]["total_activities"] == 1
     assert data["watch"]["brand"] == "coros"
-    assert data["watch"]["last_sync_at"] == "2026-05-10T08:00:00"
+    assert data["watch"]["last_sync_at"] == "2026-05-10T08:00:00+00:00"
 
 
 def test_home_new_user_no_activities(app_client):
