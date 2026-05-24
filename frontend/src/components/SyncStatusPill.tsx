@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { triggerSync, getWatchInfo } from '../api'
 import { useUser } from '../UserContextValue'
 
@@ -7,12 +7,18 @@ export default function SyncStatusPill() {
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [syncing, setSyncing] = useState(false)
   const [tick, setTick] = useState(0)
+  const requestIdRef = useRef(0)
 
   const refreshLastSync = useCallback(async () => {
     if (!user) return
+    const myId = ++requestIdRef.current
     try {
       const info = await getWatchInfo()
-      setLastSync(info.last_sync_at)
+      // Discard stale responses — a slow initial fetch may resolve after
+      // a fresher post-sync fetch and would otherwise overwrite it.
+      if (myId === requestIdRef.current) {
+        setLastSync(info.last_sync_at)
+      }
     } catch {
       // leave previous value; transient error
     }
@@ -66,6 +72,7 @@ export default function SyncStatusPill() {
 }
 
 function relativeTime(ms: number): string {
+  if (ms < 0) ms = 0
   const min = Math.floor(ms / 60_000)
   if (min < 1) return '刚刚'
   if (min < 60) return `${min}m ago`

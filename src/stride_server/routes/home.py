@@ -12,7 +12,7 @@ updates on watch sync — there is no point recomputing on every refresh.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Query
@@ -291,21 +291,10 @@ def _build_watch_info(db, user: str) -> WatchInfo:
             last_sync = row[0]
     except Exception:
         pass
-    if not last_sync:
-        try:
-            row = db._conn.execute(
-                "SELECT date FROM activities ORDER BY date DESC LIMIT 1"
-            ).fetchone()
-            if row:
-                last_sync = row[0]
-        except Exception:
-            pass
-    # Normalize YYYYMMDD → ISO date string for the mobile client.
-    if last_sync and len(last_sync) == 8 and last_sync.isdigit():
-        try:
-            last_sync = datetime.strptime(last_sync, "%Y%m%d").date().isoformat()
-        except ValueError:
-            pass
+    # Normalize naive-ISO legacy rows (written before tz=UTC enforcement) by
+    # assuming UTC + converting to canonical Shanghai-offset ISO. No fallback
+    # to activities.date — that's the latest workout time, not the sync time.
+    last_sync = utc_iso_to_shanghai_iso(last_sync)
     return WatchInfo(brand=brand, last_sync_at=last_sync)
 
 

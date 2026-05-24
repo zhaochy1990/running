@@ -435,7 +435,7 @@ def sync_health(
             synced_health=synced,
         )
 
-    db.set_meta("last_health_sync", datetime.now().isoformat())
+    db.set_meta("last_health_sync", datetime.now(timezone.utc).isoformat())
     return synced
 
 
