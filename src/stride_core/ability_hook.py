@@ -39,7 +39,9 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
         return
 
     try:
+        from stride_core.ability import _resolve_hr_max
         today_iso = (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
+        hr_max = _resolve_hr_max(db, today_iso)
         prior_l4, prior_marathon = _fetch_latest_l4_and_marathon(db)
 
         for lid in new_label_ids or []:
@@ -49,7 +51,7 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                     continue
                 if activity.get("sport_type") not in RUN_SPORT_IDS:
                     continue
-                l1 = compute_l1_quality(activity, plan_target=None)
+                l1 = compute_l1_quality(activity, plan_target=None, hr_max=hr_max)
                 db.upsert_activity_ability(
                     label_id=lid,
                     l1_quality=l1.get("total"),

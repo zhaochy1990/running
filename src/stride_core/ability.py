@@ -753,7 +753,7 @@ def _get(obj: Any, key: str, default: Any = None) -> Any:
 def compute_l1_quality(
     activity: Any,
     plan_target: dict | None = None,
-    hr_max: int = 185,
+    hr_max: int | None = None,
 ) -> dict:
     """Compute L1 quality score (0-100) + 5 sub-scores for one activity.
 
@@ -766,6 +766,11 @@ def compute_l1_quality(
     """
     if activity is None:
         return {"total": 0.0, "breakdown": _empty_l1_breakdown(), "evidence": []}
+    if hr_max is None:
+        raise TypeError(
+            "hr_max is required for compute_l1_quality — pass a resolved value "
+            "via stride_core.ability._resolve_hr_max(db, today_iso)"
+        )
 
     train_kind = _resolve_train_kind(activity)
     avg_hr = _get(activity, "avg_hr")
@@ -1399,7 +1404,7 @@ def _extract_interval_reps(activity: Any) -> list[tuple[float, float]]:
 def compute_l3_vo2max(
     activities_56d: Sequence[Any],
     daily_health_7d: Sequence[Any] | None = None,
-    hr_max: int = 185,
+    hr_max: int | None = None,
     *,
     pbs: Sequence[Any] | None = None,
     today_iso: str | None = None,
@@ -1416,6 +1421,8 @@ def compute_l3_vo2max(
     no longer silently disappears — it decays at 0.5%/month and stops
     contributing entirely after 18 months.
     """
+    if hr_max is None:
+        raise TypeError("hr_max is required for compute_l3_vo2max")
     # ---- Primary: Daniels VDOT from best interval-set or best-effort race ----
     best_vdot = 0.0
     best_evidence: list[str] = []
