@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
-  ResponsiveContainer, AreaChart, Area,
-  XAxis, YAxis, Tooltip, CartesianGrid, Legend,
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar, Cell, ComposedChart, Line,
+  XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine,
 } from 'recharts'
 import {
   getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
@@ -10,6 +10,17 @@ import {
 } from '../api'
 import { useUser } from '../UserContextValue'
 import ViewHead from '../components/ViewHead'
+
+// Form color band matches HealthPage's STRIDE block originally — kept here as
+// the single source of truth after the chart relocated.
+function formColor(v: number | null): string {
+  if (v == null) return '#8888a0'
+  if (v >= 25) return '#ffab00'
+  if (v >= 10) return '#00a85a'
+  if (v >= -10) return '#8888a0'
+  if (v >= -30) return '#0097a7'
+  return '#d32f2f'
+}
 
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
@@ -456,18 +467,48 @@ function TrainingLoadSection({ load }: { load: StrideTrainingLoadResponse | null
             )}
           </div>
           {series.length > 0 && (
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <CartesianGrid {...GRID_STYLE} />
-                <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
-                <YAxis tick={AXIS_TICK} />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-                <Area type="monotone" dataKey="acute_load" name="Acute" stroke="#d97706" fill="#d97706" fillOpacity={0.15} />
-                <Area type="monotone" dataKey="chronic_load" name="Chronic" stroke="#0097a7" fill="#0097a7" fillOpacity={0.15} />
-                <Area type="monotone" dataKey="form" name="Form" stroke="#00a85a" fill="#00a85a" fillOpacity={0.1} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <>
+              <div className="text-[11px] font-mono text-text-muted mb-2 mt-1">STRIDE 客观负荷 · Dose / Chronic / Acute</div>
+              <ResponsiveContainer width="100%" height={220}>
+                <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradTrainingLoadChronic" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00a85a" stopOpacity={0.18} />
+                      <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid {...GRID_STYLE} />
+                  <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
+                  <YAxis tick={AXIS_TICK} />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+                  <Bar dataKey="training_dose" name="Dose" fill="#e68a00" fillOpacity={0.55} maxBarSize={14} />
+                  <Area type="monotone" dataKey="chronic_load" name="Chronic" stroke="#00a85a" strokeWidth={2} fill="url(#gradTrainingLoadChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
+                  <Line type="monotone" dataKey="acute_load" name="Acute" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+
+              <div className="mt-4">
+                <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">竞技状态 Form (Chronic − Acute)</p>
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={series} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
+                    <CartesianGrid {...GRID_STYLE} />
+                    <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
+                    <YAxis tick={AXIS_TICK} />
+                    <Tooltip
+                      {...TOOLTIP_STYLE}
+                      formatter={(v: unknown) => [typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}` : `${v}`, 'Form']}
+                    />
+                    <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
+                    <Bar dataKey="form" name="Form">
+                      {series.map((entry, idx) => (
+                        <Cell key={idx} fill={formColor(entry.form)} fillOpacity={0.8} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
           )}
         </>
       )}
