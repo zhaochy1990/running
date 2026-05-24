@@ -82,11 +82,11 @@ const happyLoad: api.StrideTrainingLoadResponse = {
   current: {
     date: '2026-05-21', algorithm_version: 1, training_dose: 75.2,
     acute_load: 78, chronic_load: 72, form: -6, load_ratio: 1.08,
-    readiness_gate: 'go', readiness_reasons: ['ok'],
+    readiness_gate: 'green', readiness_reasons: ['ok'],
   },
   series: [
-    { date: '2026-05-17', algorithm_version: 1, training_dose: 60, acute_load: 70, chronic_load: 70, form: 0, load_ratio: 1.0, readiness_gate: 'go', readiness_reasons: [] },
-    { date: '2026-05-21', algorithm_version: 1, training_dose: 75.2, acute_load: 78, chronic_load: 72, form: -6, load_ratio: 1.08, readiness_gate: 'go', readiness_reasons: [] },
+    { date: '2026-05-17', algorithm_version: 1, training_dose: 60, acute_load: 70, chronic_load: 70, form: 0, load_ratio: 1.0, readiness_gate: 'green', readiness_reasons: [] },
+    { date: '2026-05-21', algorithm_version: 1, training_dose: 75.2, acute_load: 78, chronic_load: 72, form: -6, load_ratio: 1.08, readiness_gate: 'green', readiness_reasons: [] },
   ],
 }
 
@@ -126,6 +126,13 @@ describe('TrainingStatusPage', () => {
     // Training load stats
     expect(screen.getByText('急性负荷(Acute)')).toBeInTheDocument()
     expect(screen.getByText('78.0')).toBeInTheDocument()
+
+    // Dose stat (added in follow-up polish)
+    expect(screen.getByText('客观剂量(Dose)')).toBeInTheDocument()
+    expect(screen.getByText('75')).toBeInTheDocument() // training_dose 75.2 → toFixed(0)
+
+    // Readiness gate is now color-pilled with Chinese label
+    expect(screen.getByText(/green · 可上/)).toBeInTheDocument()
 
     // Footer contains calibration date
     expect(screen.getByText(/2026-05-15/)).toBeInTheDocument()
