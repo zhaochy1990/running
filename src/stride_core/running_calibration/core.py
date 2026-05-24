@@ -36,7 +36,10 @@ THRESHOLD_SPEED_RIEGEL_EXPONENT = 0.06
 
 
 def estimate_running_calibration(
-    history: Sequence[RunningActivity], as_of_date: date,
+    history: Sequence[RunningActivity],
+    as_of_date: date,
+    *,
+    health_rows: Sequence[RunningHealthRow] = (),
 ) -> RunningCalibrationSnapshot:
     """Estimate running threshold speed, threshold HR, and supporting evidence.
 
@@ -75,17 +78,26 @@ def estimate_running_calibration(
             }
             evidence.extend(hr_evidence)
 
+    rhr_baseline = estimate_rhr_baseline(health_rows, as_of_date=as_of_date)
+    if rhr_baseline is not None:
+        source["rhr_baseline"] = {"method": "p10_90d", "sample_count": len(tuple(health_rows))}
+
+    critical_power, cp_count = estimate_critical_power(history, as_of_date=as_of_date)
+    if critical_power is not None:
+        source["critical_power_w"] = {"method": "median_180d", "sample_count": cp_count}
+
     return RunningCalibrationSnapshot(
         as_of_date=as_of_date,
         threshold_hr=_round(threshold_hr),
         threshold_speed_mps=_round(threshold_speed),
         threshold_hr_confidence=hr_confidence,
         threshold_speed_confidence=speed_confidence,
-        rhr_baseline=None,
+        rhr_baseline=_round(rhr_baseline),
         observed_max_hr=_round(hrmax_profile.observed_max_hr),
         hrmax_estimate=_round(hrmax_profile.estimated_hrmax),
         hrmax_confidence=hrmax_profile.confidence,
         high_hr_reference=_round(hrmax_profile.high_hr_reference),
+        critical_power_w=_round(critical_power),
         source=source,
         evidence=tuple(evidence + list(hrmax_profile.evidence)),
     )
