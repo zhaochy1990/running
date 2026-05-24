@@ -28,12 +28,15 @@ def recompute_running_calibration(
     *,
     as_of_date: date | None = None,
     lookback_days: int = 180,
+    health_lookback_days: int = 90,
     persist: bool = True,
 ) -> RunningCalibrationRunSummary:
     end = as_of_date or today_shanghai()
     start = end - timedelta(days=lookback_days)
     history = repo.fetch_history(start, end)
-    snapshot = estimate_running_calibration(history, end)
+    health_start = end - timedelta(days=health_lookback_days)
+    health_rows = repo.fetch_health_rows(health_start, end)
+    snapshot = estimate_running_calibration(history, end, health_rows=health_rows)
     snapshot_id: str | int | None = None
     if persist:
         snapshot_id = repo.save_snapshot(snapshot)

@@ -33,6 +33,9 @@ class FakeRepository:
         self.fetch_calls.append((start, end))
         return [a for a in self.history if start <= a.activity_date <= end]
 
+    def fetch_health_rows(self, start: date, end: date):
+        return []
+
     def save_snapshot(self, snapshot: RunningCalibrationSnapshot) -> int:
         snapshot_id = len(self.saved) + 1
         self.saved.append(replace(snapshot, id=snapshot_id))
@@ -69,3 +72,40 @@ def test_recompute_persist_false_does_not_save_snapshot():
     assert summary.snapshot_id is None
     assert summary.snapshot.threshold_speed_mps is not None
     assert summary.persist is False
+
+
+def test_recompute_passes_health_rows_to_estimator(monkeypatch):
+    from datetime import date as _d
+    from stride_core.running_calibration import recompute_running_calibration
+    from stride_core.running_calibration.types import (
+        RunningCalibrationSnapshot, RunningHealthRow, CalibrationConfidence,
+    )
+
+    captured: dict = {}
+
+    def fake_estimate(history, as_of_date, *, health_rows=()):
+        captured["health_rows"] = tuple(health_rows)
+        captured["as_of_date"] = as_of_date
+        return RunningCalibrationSnapshot(
+            as_of_date=as_of_date,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.NONE,
+        )
+
+    monkeypatch.setattr(
+        "stride_core.running_calibration.repository.estimate_running_calibration",
+        fake_estimate,
+    )
+
+    class FakeRepo:
+        def fetch_history(self, start, end): return []
+        def fetch_health_rows(self, start, end):
+            return [RunningHealthRow(date=_d(2026, 5, 10), rhr=48.0)]
+        def save_snapshot(self, snap): return 1
+        def fetch_latest(self, as_of_date=None): return None
+
+    repo = FakeRepo()
+    summary = recompute_running_calibration(repo, as_of_date=_d(2026, 5, 20), persist=False)
+    assert len(captured["health_rows"]) == 1
+    assert captured["health_rows"][0].rhr == 48.0
