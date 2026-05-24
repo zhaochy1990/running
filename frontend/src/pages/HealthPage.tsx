@@ -530,7 +530,7 @@ function MetricCards({ latest, hrv, rhrBaseline }: { latest: HealthRecord; hrv: 
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
       <MetricCard
         label="静息心率"
-        sublabel="RHR"
+        sublabel={formatDate(latest.date)}
         value={latest.rhr != null ? `${latest.rhr}` : '—'}
         unit="bpm"
         color={
@@ -544,7 +544,7 @@ function MetricCards({ latest, hrv, rhrBaseline }: { latest: HealthRecord; hrv: 
       />
       <MetricCard
         label="睡眠HRV"
-        sublabel="Heart Rate Variability"
+        sublabel={formatDate(latest.date)}
         value={hrvValue != null ? `${hrvValue}` : '—'}
         unit="ms"
         color={hrvColor}

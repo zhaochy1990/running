@@ -188,9 +188,19 @@ function MetricsRow({
   hrv: { hrv: HrvDailyRecord[] } | null
   zones: StrideZonesResponse | null
 }) {
-  const latestRhr = health?.health.find((r) => r.rhr != null)?.rhr ?? null
+  const latestRhrRow = health?.health.find((r) => r.rhr != null) ?? null
+  const latestRhr = latestRhrRow?.rhr ?? null
+  const latestRhrDate = latestRhrRow?.date
+    ? formatDateShort(
+        latestRhrRow.date.length === 8
+          ? `${latestRhrRow.date.slice(0, 4)}-${latestRhrRow.date.slice(4, 6)}-${latestRhrRow.date.slice(6, 8)}`
+          : latestRhrRow.date,
+      )
+    : null
   const rhrBaseline = health?.rhr_baseline ?? null
-  const latestHrv = hrv?.hrv.slice().reverse().find((r) => r.last_night_avg != null)?.last_night_avg ?? null
+  const latestHrvRow = hrv?.hrv.slice().reverse().find((r) => r.last_night_avg != null) ?? null
+  const latestHrv = latestHrvRow?.last_night_avg ?? null
+  const latestHrvDate = latestHrvRow?.date ? formatDateShort(latestHrvRow.date) : null
   const hrvLow = health?.hrv_snapshot?.hrv_normal_low ?? null
   const hrvHigh = health?.hrv_snapshot?.hrv_normal_high ?? null
   const hrvBaseline = hrvLow != null && hrvHigh != null ? `正常 ${hrvLow}-${hrvHigh} ms` : null
@@ -203,7 +213,7 @@ function MetricsRow({
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
       <MetricCard
-        label="静息心率(RHR)" sublabel="Resting HR · 手表读数"
+        label="静息心率(RHR)" sublabel={latestRhrDate ? `${latestRhrDate} · 手表读数` : '手表读数'}
         value={latestRhr != null ? String(latestRhr) : '—'}
         unit="bpm"
         baseline={rhrBaseline != null ? `基线 ${rhrBaseline} bpm` : null}
@@ -211,7 +221,7 @@ function MetricsRow({
         help={<><strong>清晨静息心率</strong>。反映心血管恢复与自主神经平衡。{'\n\n'}使用方法：{'\n'}• 接近基线 = 恢复良好{'\n'}• 高出基线 3+ bpm 持续 3 天 = 疲劳累积{'\n'}• 高出 8+ = 生病 / 过劳，立即休息{'\n'}• 基线按过去 90 天 RHR 低 10 分位动态计算</>}
       />
       <MetricCard
-        label="心率变异性(HRV)" sublabel="Last-night avg · 手表读数"
+        label="心率变异性(HRV)" sublabel={latestHrvDate ? `${latestHrvDate} · 手表读数` : '手表读数'}
         value={latestHrv != null ? String(latestHrv) : '—'}
         unit="ms"
         baseline={hrvBaseline}
