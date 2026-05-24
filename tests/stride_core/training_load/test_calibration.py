@@ -22,7 +22,7 @@ def test_estimates_resting_hr_from_low_percentile_health_history():
     calibration = estimate_calibration([], as_of_date=as_of, health_rows=health)
 
     assert calibration.rhr_baseline == pytest.approx(47.0, abs=1.0)
-    assert calibration.source["rhr_baseline"]["sample_count"] == 14
+    assert calibration.source["rhr_baseline"]["source"] == "running_calibration"
 
 
 def test_estimates_hrmax_threshold_speed_and_power_from_history():
@@ -142,3 +142,59 @@ def test_threshold_hr_rejects_low_hr_outlier_at_fast_threshold_speed():
 
     assert calibration.threshold_speed_mps == pytest.approx(4.32, rel=0.01)
     assert calibration.threshold_hr == pytest.approx(168.5, abs=2.0)
+
+
+def test_calibration_delegates_hrmax_to_running_snapshot():
+    """training_load.calibration.estimate_calibration must source hrmax_estimate
+    from running_calibration, not from a local copy of the same algorithm.
+    """
+    from datetime import date as _d
+    from stride_core.training_load.calibration import estimate_calibration
+    from stride_core.training_load.types import (
+        CalibrationActivity, CalibrationHealthRow,
+    )
+    history = (
+        CalibrationActivity(
+            label_id="a",
+            activity_date=_d(2026, 5, 1),
+            sport="run_outdoor",
+            max_hr=192.0,
+            samples=(),
+        ),
+    )
+    snap = estimate_calibration(history, as_of_date=_d(2026, 5, 20))
+    # running_calibration.estimate_hrmax_profile accepts the activity max_hr
+    # when samples=() (vacuously supported).
+    assert snap.hrmax_estimate == 192.0
+    # source must indicate running_calibration is the producer
+    assert snap.source.get("hrmax_estimate", {}).get("source") == "running_calibration"
+
+
+def test_calibration_delegates_rhr_to_running_snapshot():
+    from datetime import date as _d
+    from stride_core.training_load.calibration import estimate_calibration
+    from stride_core.training_load.types import CalibrationHealthRow
+
+    health = tuple(
+        CalibrationHealthRow(date=_d(2026, 5, i), rhr=float(40 + i))
+        for i in range(1, 21)
+    )
+    snap = estimate_calibration((), as_of_date=_d(2026, 5, 25), health_rows=health)
+    assert snap.rhr_baseline == 43.0
+
+
+def test_calibration_no_local_hrmax_function():
+    """Guard: there must be no _estimate_hrmax or _estimate_critical_power
+    in training_load.calibration. See CLAUDE.md HARD rule
+    'Athlete baseline metrics — single source'.
+    """
+    from stride_core.training_load import calibration as cal_mod
+    assert not hasattr(cal_mod, "_estimate_hrmax"), (
+        "Found duplicate _estimate_hrmax in training_load.calibration — "
+        "delegate to running_calibration.estimate_hrmax_profile instead "
+        "(see CLAUDE.md 'Athlete baseline metrics — single source')"
+    )
+    assert not hasattr(cal_mod, "_estimate_critical_power"), (
+        "Found duplicate _estimate_critical_power — delegate to "
+        "running_calibration.estimate_critical_power"
+    )

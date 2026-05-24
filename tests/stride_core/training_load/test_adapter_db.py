@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -469,7 +469,12 @@ def test_training_load_tables_added_to_legacy_db(tmp_path):
 
 
 def test_recompute_persists_activity_and_daily_load_idempotently(db):
-    db.upsert_daily_health(DailyHealth("2026-05-01", None, None, 50, None, None, None, None, None))
+    # estimate_rhr_baseline requires min_samples=14; supply 14 days of RHR data.
+    for _i in range(14):
+        _d = date(2026, 5, 1) - timedelta(days=_i)
+        db.upsert_daily_health(
+            DailyHealth(_d.isoformat(), None, None, 50, None, None, None, None, None)
+        )
     db.upsert_daily_hrv(DailyHrv("2026-05-01", last_night_avg=60))
     db.upsert_activity_feedback("run1", rpe=5, mood_tags=[], note="ok")
     db.upsert_activity(
