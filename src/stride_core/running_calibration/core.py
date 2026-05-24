@@ -13,6 +13,7 @@ from .segments import (
     best_speed_candidates,
     evidence_from_hr,
     evidence_from_speed,
+    is_running,
     stable_threshold_hr_candidates,
     weighted_median,
 )
@@ -22,6 +23,7 @@ from .types import (
     HrMaxProfile,
     RunningActivity,
     RunningCalibrationSnapshot,
+    RunningHealthRow,
 )
 
 BEST_EFFORT_DURATIONS_S = (3 * 60, 5 * 60, 10 * 60, 20 * 60, 30 * 60, 45 * 60, 60 * 60)
@@ -34,7 +36,10 @@ THRESHOLD_SPEED_RIEGEL_EXPONENT = 0.06
 
 
 def estimate_running_calibration(
-    history: Sequence[RunningActivity], as_of_date: date,
+    history: Sequence[RunningActivity],
+    as_of_date: date,
+    *,
+    health_rows: Sequence[RunningHealthRow] = (),
 ) -> RunningCalibrationSnapshot:
     """Estimate running threshold speed, threshold HR, and supporting evidence.
 
@@ -73,17 +78,26 @@ def estimate_running_calibration(
             }
             evidence.extend(hr_evidence)
 
+    rhr_baseline = estimate_rhr_baseline(health_rows, as_of_date=as_of_date)
+    if rhr_baseline is not None:
+        source["rhr_baseline"] = {"method": "p10_90d", "sample_count": len(tuple(health_rows))}
+
+    critical_power, cp_count = estimate_critical_power(history, as_of_date=as_of_date)
+    if critical_power is not None:
+        source["critical_power_w"] = {"method": "median_180d", "sample_count": cp_count}
+
     return RunningCalibrationSnapshot(
         as_of_date=as_of_date,
         threshold_hr=_round(threshold_hr),
         threshold_speed_mps=_round(threshold_speed),
         threshold_hr_confidence=hr_confidence,
         threshold_speed_confidence=speed_confidence,
-        rhr_baseline=None,
+        rhr_baseline=_round(rhr_baseline),
         observed_max_hr=_round(hrmax_profile.observed_max_hr),
         hrmax_estimate=_round(hrmax_profile.estimated_hrmax),
         hrmax_confidence=hrmax_profile.confidence,
         high_hr_reference=_round(hrmax_profile.high_hr_reference),
+        critical_power_w=_round(critical_power),
         source=source,
         evidence=tuple(evidence + list(hrmax_profile.evidence)),
     )
@@ -198,6 +212,75 @@ def _raw_observed_max_hr(history: Sequence[RunningActivity]) -> float | None:
             if sample.heart_rate_bpm is not None and 80 <= float(sample.heart_rate_bpm) <= 230
         )
     return max(values) if values else None
+
+
+def estimate_rhr_baseline(
+    health_rows: Sequence[RunningHealthRow],
+    *,
+    as_of_date: date,
+    lookback_days: int = 90,
+    min_samples: int = 14,
+) -> float | None:
+    """P10 of recent valid daily-RHR samples.
+
+    Returns None when fewer than `min_samples` valid rows fall inside the
+    window. Mirrors the algorithm previously inlined in
+    `training_load.calibration.estimate_calibration`,
+    `routes/health.py::get_health`, and `coach_agent/context.py::_rhr_baseline`
+    — those three sites now read this single implementation.
+    """
+    window_start = as_of_date - timedelta(days=lookback_days)
+    values = sorted(
+        float(row.rhr)
+        for row in health_rows
+        if row.rhr is not None
+        and float(row.rhr) > 0
+        and window_start <= row.date <= as_of_date
+    )
+    if len(values) < min_samples:
+        return None
+    idx = max(0, min(len(values) - 1, round((len(values) - 1) * 0.10)))
+    return values[idx]
+
+
+MIN_RUNNING_POWER_W = 50.0
+MAX_RUNNING_POWER_W = 1000.0
+
+
+def _valid_running_power(value: float | None) -> bool:
+    if value is None:
+        return False
+    p = float(value)
+    return MIN_RUNNING_POWER_W <= p <= MAX_RUNNING_POWER_W
+
+
+def estimate_critical_power(
+    history: Sequence[RunningActivity],
+    *,
+    as_of_date: date,
+    lookback_days: int = 180,
+) -> tuple[float | None, int]:
+    """Median running-power proxy over the lookback window.
+
+    Replaces `training_load.calibration._estimate_critical_power` (which is
+    deleted in Phase 2). Filters to running sports only. Returns
+    `(median_power_w, sample_count)`.
+    """
+    window_start = as_of_date - timedelta(days=lookback_days)
+    values: list[float] = []
+    for activity in history:
+        if not (window_start <= activity.activity_date <= as_of_date):
+            continue
+        if not is_running(activity):
+            continue
+        if _valid_running_power(activity.avg_power_w):
+            values.append(float(activity.avg_power_w))
+        values.extend(
+            float(sample.power_w)
+            for sample in activity.samples
+            if _valid_running_power(sample.power_w)
+        )
+    return (median(values) if values else None, len(values))
 
 
 def _percentile_sorted(values: Sequence[float], pct: float) -> float | None:

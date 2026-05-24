@@ -41,14 +41,20 @@ def _activity_payload(row) -> dict[str, Any]:
 
 
 def _rhr_baseline(db: Database) -> int | None:
-    rows = db.query(
-        "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL AND rhr > 0 "
-        "ORDER BY date DESC LIMIT 90"
-    )
-    vals = sorted(int(r["rhr"]) for r in rows)
-    if len(vals) < 14:
+    """Trained RHR baseline (P10/90d).
+
+    Reads from `running_calibration_snapshot` via the canonical reader. See
+    CLAUDE.md HARD rule "Athlete baseline metrics — single source".
+    """
+    from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+    try:
+        repo = SQLiteRunningCalibrationRepository(db)
+        snap = repo.fetch_latest(as_of_date=today_shanghai())
+    except Exception:  # noqa: BLE001
         return None
-    return vals[max(0, int(len(vals) * 0.1) - 1)]
+    if snap is None or snap.rhr_baseline is None:
+        return None
+    return int(snap.rhr_baseline)
 
 
 def _tsb_zone(tsb: float) -> tuple[str, str]:

@@ -17,6 +17,7 @@ from .types import (
     PaceZone,
     RunningActivity,
     RunningCalibrationSnapshot,
+    RunningHealthRow,
     RunningLap,
     RunningSample,
 )
@@ -37,6 +38,7 @@ RUNNING_CALIBRATION_SCHEMA = (
         hrmax_estimate REAL,
         hrmax_confidence TEXT NOT NULL DEFAULT 'none',
         high_hr_reference REAL,
+        critical_power_w REAL,
         source_json TEXT,
         computed_at TEXT NOT NULL DEFAULT (datetime('now')),
         UNIQUE(as_of_date, algorithm_version)
@@ -102,6 +104,7 @@ class SQLiteRunningCalibrationRepository:
                 "observed_max_hr": "REAL",
                 "hrmax_confidence": "TEXT NOT NULL DEFAULT 'none'",
                 "high_hr_reference": "REAL",
+                "critical_power_w": "REAL",
             },
         )
         self._conn.commit()
@@ -122,6 +125,31 @@ class SQLiteRunningCalibrationRepository:
                 out.append(activity)
         return out
 
+    def fetch_health_rows(self, start: date, end: date) -> list[RunningHealthRow]:
+        """Read `daily_health.rhr` between [start, end] inclusive.
+
+        `daily_health.date` is stored in YYYYMMDD (Shanghai-local) — see
+        CLAUDE.md Timezone discipline whitelist. We convert each row's date
+        to a Python `date` before returning. Rows with NULL `rhr` are skipped.
+        """
+        start_compact = start.strftime("%Y%m%d")
+        end_compact = end.strftime("%Y%m%d")
+        rows = self._conn.execute(
+            "SELECT date, rhr FROM daily_health "
+            "WHERE rhr IS NOT NULL AND date >= ? AND date <= ?",
+            (start_compact, end_compact),
+        ).fetchall()
+        out: list[RunningHealthRow] = []
+        for row in rows or []:
+            date_str = str(_row_value(row, "date"))
+            rhr_val = _row_value(row, "rhr")
+            try:
+                d = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
+            except (ValueError, IndexError):
+                continue
+            out.append(RunningHealthRow(date=d, rhr=float(rhr_val) if rhr_val is not None else None))
+        return out
+
     def save_snapshot(self, snapshot: RunningCalibrationSnapshot) -> int:
         source_json = json.dumps(snapshot.source or {}, ensure_ascii=False, sort_keys=True)
         self._conn.execute(
@@ -129,8 +157,8 @@ class SQLiteRunningCalibrationRepository:
                (as_of_date, algorithm_version, threshold_hr, threshold_speed_mps,
                 threshold_hr_confidence, threshold_speed_confidence,
                 rhr_baseline, observed_max_hr, hrmax_estimate, hrmax_confidence,
-                high_hr_reference, source_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                high_hr_reference, critical_power_w, source_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(as_of_date, algorithm_version) DO UPDATE SET
                    threshold_hr = excluded.threshold_hr,
                    threshold_speed_mps = excluded.threshold_speed_mps,
@@ -141,6 +169,7 @@ class SQLiteRunningCalibrationRepository:
                    hrmax_estimate = excluded.hrmax_estimate,
                    hrmax_confidence = excluded.hrmax_confidence,
                    high_hr_reference = excluded.high_hr_reference,
+                   critical_power_w = excluded.critical_power_w,
                    source_json = excluded.source_json,
                    computed_at = excluded.computed_at""",
             (
@@ -155,6 +184,7 @@ class SQLiteRunningCalibrationRepository:
                 snapshot.hrmax_estimate,
                 snapshot.hrmax_confidence.value,
                 snapshot.high_hr_reference,
+                snapshot.critical_power_w,
                 source_json,
             ),
         )
@@ -195,6 +225,7 @@ class SQLiteRunningCalibrationRepository:
             hrmax_estimate=_float_or_none(_row_value(row, "hrmax_estimate")),
             hrmax_confidence=CalibrationConfidence(str(_row_value(row, "hrmax_confidence") or CalibrationConfidence.NONE.value)),
             high_hr_reference=_float_or_none(_row_value(row, "high_hr_reference")),
+            critical_power_w=_float_or_none(_row_value(row, "critical_power_w")),
             source=_json_dict(_row_value(row, "source_json")),
             evidence=evidence,
         )

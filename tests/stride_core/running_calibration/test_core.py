@@ -415,3 +415,53 @@ def test_training_zones_are_anchored_to_threshold_speed_and_hr():
     threshold_hr = next(z for z in zones.heart_rate_zones if z.name == "threshold")
     assert threshold_hr.min_bpm == pytest.approx(158, abs=1)
     assert threshold_hr.max_bpm == pytest.approx(170, abs=1)
+
+
+def test_snapshot_has_critical_power_field():
+    from datetime import date as _d
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+    snap = RunningCalibrationSnapshot(as_of_date=_d(2026, 5, 1), critical_power_w=265.0)
+    assert snap.critical_power_w == 265.0
+
+
+def test_snapshot_critical_power_defaults_to_none():
+    from datetime import date as _d
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+    snap = RunningCalibrationSnapshot(as_of_date=_d(2026, 5, 1))
+    assert snap.critical_power_w is None
+
+
+def test_estimate_running_calibration_includes_rhr_and_cp():
+    from datetime import date as _d
+    from stride_core.running_calibration.core import estimate_running_calibration
+    from stride_core.running_calibration.types import (
+        RunningActivity, RunningSample, RunningHealthRow,
+    )
+
+    # 20 days of valid RHR 41..60 → P10 (idx 2) = 43.0
+    health = tuple(
+        RunningHealthRow(date=_d(2026, 5, i), rhr=float(40 + i))
+        for i in range(1, 21)
+    )
+    history = (
+        RunningActivity(
+            label_id="run-1",
+            activity_date=_d(2026, 5, 5),
+            sport="run_outdoor",
+            avg_power_w=250.0,
+            samples=(RunningSample(elapsed_s=10.0, power_w=260.0),),
+        ),
+    )
+    snap = estimate_running_calibration(
+        history, as_of_date=_d(2026, 5, 25), health_rows=health,
+    )
+    assert snap.rhr_baseline == 43.0
+    assert snap.critical_power_w == 255.0  # median of [250, 260]
+
+
+def test_estimate_running_calibration_health_rows_optional():
+    from datetime import date as _d
+    from stride_core.running_calibration.core import estimate_running_calibration
+    snap = estimate_running_calibration((), as_of_date=_d(2026, 5, 25))
+    assert snap.rhr_baseline is None
+    assert snap.critical_power_w is None

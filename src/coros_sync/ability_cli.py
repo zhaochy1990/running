@@ -371,7 +371,10 @@ def _ability_for(profile: str, label_id: str) -> None:
             if activity is None:
                 console.print(f"[red]Activity {label_id} not found in local DB[/red]")
                 raise SystemExit(1)
-            l1_full = compute_l1_quality(activity, plan_target=None)
+            from stride_core.ability import _resolve_hr_max
+            from stride_core.timefmt import today_shanghai
+            hr_max = _resolve_hr_max(db, today_shanghai().isoformat())
+            l1_full = compute_l1_quality(activity, plan_target=None, hr_max=hr_max)
             l1 = {"total": l1_full.get("total"), "breakdown": l1_full.get("breakdown")}
 
             # Compute contribution: delta between snapshot-before and snapshot-with activity.

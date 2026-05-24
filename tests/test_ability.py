@@ -296,7 +296,7 @@ class TestL1Quality:
                 {"heart_rate": 145, "speed": 3.1} for _ in range(60)
             ],
         }
-        out = compute_l1_quality(act)
+        out = compute_l1_quality(act, hr_max=185)
         assert 0.0 <= out["total"] <= 100.0
         assert set(out["breakdown"]).issuperset({
             "pace_adherence", "hr_zone_adherence", "pace_stability",
@@ -317,7 +317,7 @@ class TestL1Quality:
             "zones": [],
             "timeseries": [],
         }
-        out = compute_l1_quality(act, plan_target={"pace_s_km": 255, "hr_lo": 160, "hr_hi": 172})
+        out = compute_l1_quality(act, plan_target={"pace_s_km": 255, "hr_lo": 160, "hr_hi": 172}, hr_max=185)
         # Perfect adherence on pace → adherence 100.
         assert out["breakdown"]["pace_adherence"] == pytest.approx(100.0, abs=0.5)
 
@@ -349,7 +349,7 @@ class TestL1Quality:
             "zones": [],
             "timeseries": [],
         }
-        out = compute_l1_quality(act)
+        out = compute_l1_quality(act, hr_max=185)
         assert out["breakdown"]["hr_decoupling_raw"] < 0, \
             "fixture must produce negative raw drift"
         assert out["breakdown"]["hr_decoupling"] >= 95.0, \
@@ -376,7 +376,7 @@ class TestL1Quality:
             "zones": [],
             "timeseries": first + second,
         }
-        out = compute_l1_quality(act)
+        out = compute_l1_quality(act, hr_max=185)
         raw = out["breakdown"]["hr_decoupling_raw"]
         score = out["breakdown"]["hr_decoupling"]
         assert raw > 0.10, f"fixture must produce positive raw drift, got {raw}"
@@ -422,7 +422,7 @@ class TestL1Quality:
             "zones": [],
             "timeseries": [],
         }
-        out = compute_l1_quality(act)
+        out = compute_l1_quality(act, hr_max=185)
         # Old formula (CV across work + rest) → pace_stability ~25-40.
         # New formula (work laps only, CV ≈ 0.006) → pace_stability ≥ 95.
         assert out["breakdown"]["pace_stability"] >= 90.0, \
@@ -468,7 +468,7 @@ class TestL1Quality:
         }
         # Pin the target so the test is robust to HR→pace heuristic changes.
         out = compute_l1_quality(
-            act, plan_target={"pace_s_km": 247, "hr_lo": 165, "hr_hi": 180}
+            act, plan_target={"pace_s_km": 247, "hr_lo": 165, "hr_hi": 180}, hr_max=185
         )
         # Sanity: contaminated path (using 299 vs 247) → err_frac=0.21 → score ~37.
         # Fixed path (work-lap median ≈ 247.5 vs 247) → err_frac<0.01 → score ~99.
@@ -510,7 +510,7 @@ class TestL1Quality:
             "zones": [],
             "timeseries": [],
         }
-        out = compute_l1_quality(act)
+        out = compute_l1_quality(act, hr_max=185)
         # type2-only (CV=0) → pace_stability=100. If both were counted, CV
         # explodes (~0.04) and stability falls below 95.
         assert out["breakdown"]["pace_stability"] >= 95.0, \
@@ -548,7 +548,7 @@ class TestL1Quality:
             "zones": [],
             "timeseries": [],
         }
-        out = compute_l1_quality(act)
+        out = compute_l1_quality(act, hr_max=185)
         # Without fragment: 3 paces at 250 → CV=0 → stability=100.
         # With fragment: paces [250,250,250,494] → CV~0.27 → stability~46.
         assert out["breakdown"]["pace_stability"] >= 95.0, \
@@ -603,7 +603,7 @@ class TestL1Quality:
             "zones": [],
             "timeseries": [],
         }
-        out = compute_l1_quality(act)
+        out = compute_l1_quality(act, hr_max=185)
         # After dedupe + outlier filter, only the 4 type2 paces (245,248,250,247)
         # remain. CV ≈ 0.008 → stability ≈ 98. Pre-fix, all 13 entries would be
         # in play including the 494 outlier → stability ≈ 41.
@@ -631,7 +631,7 @@ class TestL1Quality:
             "timeseries": [],
         }
         out = compute_l1_quality(
-            act_avg, plan_target={"pace_s_km": 320, "hr_lo": 138, "hr_hi": 152}
+            act_avg, plan_target={"pace_s_km": 320, "hr_lo": 138, "hr_hi": 152}, hr_max=185
         )
         # avg_pace == target → ~100; if branch wrongly used lap median (250) it
         # would drop to ~34.
@@ -659,7 +659,7 @@ class TestL1Quality:
             "zones": [],
             "timeseries": [],
         }
-        out = compute_l1_quality(act)  # no plan_target → HR heuristic
+        out = compute_l1_quality(act, hr_max=185)  # no plan_target → HR heuristic
         # Without clamp: ~0; with clamp at 200s/km lower bound: ~40 (still
         # low because frac=1.05 implies extreme effort, but bounded).
         assert out["breakdown"]["pace_adherence"] >= 30.0, \
@@ -1811,3 +1811,58 @@ class TestBoundary:
         snap = compute_ability_snapshot(db, "2026-04-23")
         assert snap["date"] == "2026-04-23"
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Task 12: hr_max baseline resolver tests.
+# ---------------------------------------------------------------------------
+
+class TestComputeAbilitySnapshotHrMaxResolver:
+    """compute_ability_snapshot should resolve hr_max from baseline reader."""
+
+    def test_compute_ability_snapshot_uses_baseline_hrmax(self, ability_db):
+        """compute_ability_snapshot resolves hr_max from
+        running_calibration_snapshot when the kwarg is not provided.
+        Previously hardcoded to 185.
+        """
+        from datetime import date
+        from stride_core.ability import compute_ability_snapshot
+        from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+        from stride_core.running_calibration.types import (
+            CalibrationConfidence, RunningCalibrationSnapshot,
+        )
+        # Seed a baseline with hrmax_estimate=200 (well above default 185)
+        repo = SQLiteRunningCalibrationRepository(ability_db)
+        repo.save_snapshot(RunningCalibrationSnapshot(
+            as_of_date=date(2026, 4, 23),
+            hrmax_estimate=200.0,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.MEDIUM,
+        ))
+        snap = compute_ability_snapshot(ability_db, "2026-04-23")
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 200
+
+    def test_compute_ability_snapshot_explicit_hr_max_overrides_baseline(self, ability_db):
+        from datetime import date
+        from stride_core.ability import compute_ability_snapshot
+        from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+        from stride_core.running_calibration.types import (
+            CalibrationConfidence, RunningCalibrationSnapshot,
+        )
+        repo = SQLiteRunningCalibrationRepository(ability_db)
+        repo.save_snapshot(RunningCalibrationSnapshot(
+            as_of_date=date(2026, 4, 23),
+            hrmax_estimate=200.0,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.MEDIUM,
+        ))
+        snap = compute_ability_snapshot(ability_db, "2026-04-23", hr_max=210)
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 210
+
+    def test_compute_ability_snapshot_falls_back_to_185(self, ability_db):
+        """When no baseline exists, the legacy 185 default is preserved."""
+        from stride_core.ability import compute_ability_snapshot
+        snap = compute_ability_snapshot(ability_db, "2026-04-23")
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 185

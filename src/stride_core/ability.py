@@ -23,6 +23,29 @@ from stride_core.models import RUN_SPORT_IDS, RUN_SPORT_SQL_LIST as _RUN_SPORT_S
 from stride_core.normalize import TrainKind, kind_from_legacy_train_type
 
 
+def _resolve_hr_max(db: Any, as_of_date_iso: str, fallback: int = 185) -> int:
+    """Look up hrmax_estimate from running_calibration_snapshot.
+
+    Falls back to `fallback` (default 185) when:
+      - the connector cannot be constructed (legacy DB / missing schema)
+      - no snapshot exists yet
+      - snapshot has no hrmax_estimate
+    See CLAUDE.md HARD rule "Athlete baseline metrics — single source".
+    """
+    try:
+        from datetime import date as _date
+        from stride_core.running_calibration.sqlite_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+        repo = SQLiteRunningCalibrationRepository(db)
+        snap = repo.fetch_latest(as_of_date=_date.fromisoformat(as_of_date_iso))
+    except Exception:  # noqa: BLE001
+        return fallback
+    if snap is None or snap.hrmax_estimate is None:
+        return fallback
+    return int(round(snap.hrmax_estimate))
+
+
 def _resolve_train_kind(activity: Any) -> str | None:
     """Return the activity's normalized ``train_kind`` value (str), or None.
 
@@ -730,7 +753,7 @@ def _get(obj: Any, key: str, default: Any = None) -> Any:
 def compute_l1_quality(
     activity: Any,
     plan_target: dict | None = None,
-    hr_max: int = 185,
+    hr_max: int | None = None,
 ) -> dict:
     """Compute L1 quality score (0-100) + 5 sub-scores for one activity.
 
@@ -743,6 +766,11 @@ def compute_l1_quality(
     """
     if activity is None:
         return {"total": 0.0, "breakdown": _empty_l1_breakdown(), "evidence": []}
+    if hr_max is None:
+        raise TypeError(
+            "hr_max is required for compute_l1_quality — pass a resolved value "
+            "via stride_core.ability._resolve_hr_max(db, today_iso)"
+        )
 
     train_kind = _resolve_train_kind(activity)
     avg_hr = _get(activity, "avg_hr")
@@ -1376,7 +1404,7 @@ def _extract_interval_reps(activity: Any) -> list[tuple[float, float]]:
 def compute_l3_vo2max(
     activities_56d: Sequence[Any],
     daily_health_7d: Sequence[Any] | None = None,
-    hr_max: int = 185,
+    hr_max: int | None = None,
     *,
     pbs: Sequence[Any] | None = None,
     today_iso: str | None = None,
@@ -1393,6 +1421,8 @@ def compute_l3_vo2max(
     no longer silently disappears — it decays at 0.5%/month and stops
     contributing entirely after 18 months.
     """
+    if hr_max is None:
+        raise TypeError("hr_max is required for compute_l3_vo2max")
     # ---- Primary: Daniels VDOT from best interval-set or best-effort race ----
     best_vdot = 0.0
     best_evidence: list[str] = []
@@ -1596,6 +1626,7 @@ def compute_l3_vo2max(
         "vo2max_used": round(used, 2) if used else None,
         "vo2max_used_vdot": round(used_vdot, 2) if used_vdot else None,
         "vo2max_source": source,
+        "hr_max_used": int(hr_max),
         # v7: surface eligibility flags + secondary quality so the dashboard
         # / debugging endpoints can explain why a given estimator did or
         # didn't participate.
@@ -2040,15 +2071,21 @@ def compute_contribution(
 def compute_ability_snapshot(
     db: Any,
     date: str,
-    hr_max: int = 185,
+    hr_max: int | None = None,
 ) -> dict:
     """Compute full snapshot {l1 (latest), l2, l3, l4, marathon_s} for `date`.
 
     `date` is an ISO YYYY-MM-DD string.  All date filtering uses Shanghai
     local time (UTC+8) as project memory requires.
+
+    `hr_max` defaults to the user's latest detected `hrmax_estimate` from
+    `running_calibration_snapshot`; falls back to 185 when no snapshot
+    exists. Explicit kwargs override.
     """
     if db is None:
         return _empty_snapshot(date)
+    if hr_max is None:
+        hr_max = _resolve_hr_max(db, date)
 
     try:
         conn = db._conn

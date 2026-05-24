@@ -469,28 +469,6 @@ def _fetch_latest_calibration(db: Any) -> CalibrationSnapshot | None:
     return _calibration_from_running_snapshot_row(row) if row is not None else None
 
 
-def _compute_rhr_baseline(db: Any, as_of_date: date, lookback_days: int = 90) -> float | None:
-    """Compute rhr_baseline as the p10 of daily RHR values in the lookback window.
-
-    This replicates the logic from the old estimate_calibration to keep
-    Banister-TRIMP computation (which requires rhr_baseline) working after the
-    pivot away from training_load_calibration.
-    """
-    start = as_of_date - timedelta(days=max(0, lookback_days))
-    rows = db.query("SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date")
-    values: list[float] = []
-    for row in rows:
-        d = _parse_date(row["date"])
-        if d is not None and start <= d <= as_of_date:
-            values.append(float(row["rhr"]))
-    if not values:
-        return None
-    # p10 of sorted values
-    sorted_vals = sorted(values)
-    index = max(0, min(len(sorted_vals) - 1, int(round((len(sorted_vals) - 1) * 0.1))))
-    return sorted_vals[index]
-
-
 def refresh_training_load_calibration(
     db: Any,
     *,
@@ -498,8 +476,12 @@ def refresh_training_load_calibration(
     lookback_days: int = 180,
     persist: bool = True,
 ) -> CalibrationSnapshot:
-    """Recompute thresholds via running_calibration module and persist to running_calibration_snapshot."""
-    from dataclasses import replace as dc_replace
+    """Recompute thresholds via running_calibration module and persist to running_calibration_snapshot.
+
+    `running_calibration.recompute_running_calibration` now computes
+    `rhr_baseline` (P10/90d) and `critical_power_w` natively via
+    `daily_health` + activity power. No manual augmentation needed.
+    """
     from stride_core.running_calibration import recompute_running_calibration
     from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
 
@@ -509,20 +491,9 @@ def refresh_training_load_calibration(
         repo,
         as_of_date=as_of,
         lookback_days=lookback_days,
-        persist=False,  # we'll save manually after augmenting with rhr_baseline
+        persist=persist,
     )
     snap = summary.snapshot
-
-    # Augment snapshot with rhr_baseline from daily_health (running_calibration
-    # doesn't compute RHR, but Banister TRIMP requires it).
-    rhr = _compute_rhr_baseline(db, as_of)
-    if rhr is not None:
-        snap = dc_replace(snap, rhr_baseline=rhr)
-
-    snapshot_id: int | None = None
-    if persist:
-        snapshot_id = repo.save_snapshot(snap)
-        snap = dc_replace(snap, id=snapshot_id)
 
     return CalibrationSnapshot(
         as_of_date=snap.as_of_date,
@@ -530,9 +501,9 @@ def refresh_training_load_calibration(
         hrmax_estimate=snap.hrmax_estimate,
         threshold_hr=snap.threshold_hr,
         threshold_speed_mps=snap.threshold_speed_mps,
-        critical_power_w=None,
+        critical_power_w=snap.critical_power_w,
         source=snap.source if isinstance(snap.source, dict) else {},
-        id=snapshot_id,
+        id=snap.id,
         algorithm_version=snap.algorithm_version,
     )
 
