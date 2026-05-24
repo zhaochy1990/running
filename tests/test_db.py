@@ -1,12 +1,14 @@
 """Tests for SQLite database layer."""
 
 import json
+from datetime import timedelta
 
 import pytest
 
 from stride_core.models import (
     ActivityDetail, DailyHealth, Dashboard, Lap, TimeseriesPoint, Zone,
 )
+from stride_core.timefmt import today_shanghai
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):
@@ -168,17 +170,21 @@ class TestWeeklyPlan:
 
 class TestAbility:
     def test_ability_snapshot_roundtrip(self, db):
+        # Use a date inside the 30-day fetch window relative to today so this
+        # test stays valid as time passes (originally hardcoded 2026-04-23,
+        # which silently fell out of the window once "today" advanced past it).
+        snap_date = (today_shanghai() - timedelta(days=5)).isoformat()
         db.upsert_ability_snapshot(
-            date="2026-04-23", level="L4", dimension="composite",
+            date=snap_date, level="L4", dimension="composite",
             value=67.5, evidence_activity_ids=["lbl_a", "lbl_b"],
         )
         db.upsert_ability_snapshot(
-            date="2026-04-23", level="L3", dimension="vo2max",
+            date=snap_date, level="L3", dimension="vo2max",
             value=58.2, evidence_activity_ids=["lbl_a"],
         )
         # Idempotent upsert — same key updates value
         db.upsert_ability_snapshot(
-            date="2026-04-23", level="L4", dimension="composite",
+            date=snap_date, level="L4", dimension="composite",
             value=68.0, evidence_activity_ids=["lbl_a", "lbl_b", "lbl_c"],
         )
         rows = db.fetch_ability_history(days=30)
