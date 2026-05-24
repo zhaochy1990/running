@@ -12,6 +12,6 @@ These are intentionally *not* wired into CI:
 
 ## Scripts
 
-_None currently._ `prod-health-check.mjs` was retired when the
+_None currently._ The previous prod smoke was retired when the
 `WatchExtrasSection` it validated was removed from `/health`. HRV trend
 verification is now covered by `frontend/src/pages/__tests__/HealthPage.test.tsx`.
