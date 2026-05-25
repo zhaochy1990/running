@@ -96,10 +96,7 @@ export default function BodyCompositionPage() {
 
           {!latest && (
             <div className="bg-bg-card border border-border-subtle rounded-2xl p-10 text-center text-text-muted">
-              暂无体测数据。本地通过{' '}
-              <code className="font-mono text-text-primary">coros-sync body-composition add</code> 录入，
-              然后{' '}
-              <code className="font-mono text-text-primary">coros-sync body-composition push</code> 同步至线上。
+              暂无体测数据，请点击右上角「+ 录入新数据」添加。
             </div>
           )}
 
