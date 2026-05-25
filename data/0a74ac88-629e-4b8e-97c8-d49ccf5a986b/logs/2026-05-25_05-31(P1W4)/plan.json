@@ -1,0 +1,180 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-05-25_05-31(P1W4)",
+  "sessions": [
+    {
+      "date": "2026-05-25",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "力量 A：下肢稳定 + 腘绳肌康复 + 踝周",
+      "spec": {
+        "name": "力量 A — 下肢稳定 + 腘绳肌康复 + 踝周",
+        "date": "2026-05-25",
+        "exercises": [
+          {"canonical_id": "T1317", "display_name": "蚌式", "sets": 2, "target_kind": "reps", "target_value": 15, "rest_seconds": 30, "note": "髋激活热身（每侧）", "provider_id": "T1317"},
+          {"canonical_id": "T1262", "display_name": "World's greatest stretch", "sets": 2, "target_kind": "reps", "target_value": 6, "rest_seconds": 30, "note": "全身动态（每侧）", "provider_id": "T1262"},
+          {"canonical_id": "T1219", "display_name": "单腿臀桥", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "note": "腘绳/臀大肌弱链（每侧）", "provider_id": "T1219"},
+          {"canonical_id": "T1305", "display_name": "哑铃罗马尼亚硬拉 10kg/侧", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 60, "note": "后链；慢离心 3s", "provider_id": "T1305"},
+          {"canonical_id": "T1301", "display_name": "高脚杯深蹲 8kg", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 60, "note": "双腿基础蹲", "provider_id": "T1301"},
+          {"canonical_id": "T1368", "display_name": "哥本哈根侧平板（屈腿版）", "sets": 3, "target_kind": "time_s", "target_value": 20, "rest_seconds": 45, "note": "内收肌（每侧）", "provider_id": "T1368"},
+          {"canonical_id": "T1275", "display_name": "单腿提踵（4s 慢离心）", "sets": 2, "target_kind": "reps", "target_value": 10, "rest_seconds": 60, "note": "跟腱预防（每侧）", "provider_id": "T1275"},
+          {"canonical_id": "T1243", "display_name": "Dead Bug", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 30, "note": "核心抗旋（每侧）", "provider_id": "T1243"},
+          {"canonical_id": "T1185", "display_name": "侧平板", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "侧链（每侧）", "provider_id": "T1185"},
+          {"canonical_id": "T1249", "display_name": "Bird Dog", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "note": "后链稳定（每侧）", "provider_id": "T1249"}
+        ],
+        "note": "腘绳肌动作任何疼痛立即停"
+      },
+      "total_duration_s": 3000
+    },
+    {
+      "date": "2026-05-25",
+      "session_index": 1,
+      "kind": "run",
+      "summary": "力量 A 后 5K Z1 拖腿 @ HR<138 / 5:30+",
+      "spec": {
+        "name": "Z1 拖腿 5K",
+        "date": "2026-05-25",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 5000}, "target": {"kind": "pace_s_km", "low": 330, "high": 380}, "note": "力量 A 后 30min 内完成；HR ≤138；腘绳肌扯着感 → 立即停步走完", "hr_cap_bpm": 138}
+            ]
+          }
+        ],
+        "note": "把整周低强度有氧体量拉回来；不替代轻松跑训练效应"
+      },
+      "total_distance_m": 5000
+    },
+    {
+      "date": "2026-05-26",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松 10 km @ HR<142 / 5:10-5:30",
+      "spec": {
+        "name": "Easy 10km",
+        "date": "2026-05-26",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 10000}, "target": {"kind": "pace_s_km", "low": 310, "high": 330}, "note": "HR ≤142", "hr_cap_bpm": 142}
+            ]
+          }
+        ]
+      },
+      "total_distance_m": 10000
+    },
+    {
+      "date": "2026-05-27",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "强度课 sharpening：20min 节奏 + 8×400m",
+      "spec": {
+        "name": "Tempo 20min + 8x400m",
+        "date": "2026-05-27",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 320, "high": 360}, "note": "热身含腘绳肌动员 + 4×100m strides"},
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 1200}, "target": {"kind": "pace_s_km", "low": 235, "high": 245}, "note": "节奏跑 20min @ 4:00/km LT @ HR 158-167", "hr_cap_bpm": 170},
+              {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 240}, "target": {"kind": "open"}, "note": "慢跑休息 4min"}
+            ]
+          },
+          {
+            "repeat": 8,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 400}, "target": {"kind": "pace_s_km", "low": 215, "high": 220}, "note": "400m @ 3:35-3:40 / 5K race pace", "hr_cap_bpm": 178},
+              {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 90}, "target": {"kind": "open"}, "note": "慢跑组间 90s"}
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "cooldown", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 330, "high": 360}, "note": "放松 2km"}
+            ]
+          }
+        ],
+        "note": "腘绳肌任何扯着感立即停 + 取消 5/30 测试"
+      },
+      "total_distance_m": 13000
+    },
+    {
+      "date": "2026-05-28",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复 8km @ HR<138 / 5:30+",
+      "spec": {
+        "name": "Recovery 8km",
+        "date": "2026-05-28",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 330, "high": 360}, "note": "HR ≤138", "hr_cap_bpm": 138}
+            ]
+          }
+        ]
+      },
+      "total_distance_m": 8000
+    },
+    {
+      "date": "2026-05-29",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "完全休息或 30min 骑行 + 全身静态拉伸",
+      "spec": null
+    },
+    {
+      "date": "2026-05-30",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "LSD 25K Z2 纪律课（禁加速）",
+      "spec": {
+        "name": "LSD 25km Z2",
+        "date": "2026-05-30",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 25000}, "target": {"kind": "pace_s_km", "low": 300, "high": 320}, "note": "前 5K 5:20-5:30 暖机；中 15K 5:00-5:15 稳态；末 5K 5:10-5:20 收尾；HR <145 全程；任意 5K HR 漂移 >8 bpm 立即降速；绝无加速段/末段冲刺；跑中 2 胶 @9K+@17K + 每 5K 100-150ml 水", "hr_cap_bpm": 148}
+            ]
+          }
+        ],
+        "note": "Phase 1 末段 marathon-specific endurance 主刺激；不做 10K 测试（W3 已有充分 VO2max 数据）。应急：5/30 晨 RHR ≥52 或腘绳肌≥3/10 → 砍 22K；T >27°C → 纯心率（HR<142），35°C+ 砍 18K。"
+      },
+      "total_distance_m": 25000
+    },
+    {
+      "date": "2026-05-31",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复跑 12K @ HR<138 / 5:30+",
+      "spec": {
+        "name": "Recovery 12km",
+        "date": "2026-05-31",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 12000}, "target": {"kind": "pace_s_km", "low": 330, "high": 380}, "note": "HR ≤138；禁加速段；纯有氧恢复，把整周低强度体量铺满；DOMS ≥5 → 改 8K @ HR<135 或纯走 30min", "hr_cap_bpm": 138}
+            ]
+          }
+        ],
+        "note": "Sat LSD 25K 后的恢复跑；不是 LSD，配速放慢，目的是清空 DOMS。"
+      },
+      "total_distance_m": 12000
+    }
+  ],
+  "nutrition": [
+    {"date": "2026-05-25", "kcal_target": 2300, "carbs_g": 315, "protein_g": 140, "notes_md": "力量日；缺口 -350"},
+    {"date": "2026-05-26", "kcal_target": 2500, "carbs_g": 395, "protein_g": 140, "notes_md": "轻松日；缺口 -200"},
+    {"date": "2026-05-27", "kcal_target": 2800, "carbs_g": 475, "protein_g": 140, "notes_md": "强度日；缺口 +100"},
+    {"date": "2026-05-28", "kcal_target": 2500, "carbs_g": 395, "protein_g": 140, "notes_md": "恢复日；缺口 -200"},
+    {"date": "2026-05-29", "kcal_target": 2700, "carbs_g": 475, "protein_g": 140, "notes_md": "测试前加载日；缺口 0"},
+    {"date": "2026-05-30", "kcal_target": 3100, "carbs_g": 555, "protein_g": 140, "notes_md": "LSD 25K 日；早 04:30 燕麦+香蕉+蛋白粉+咖啡；跑中 2 胶 @9K+@17K + 每 5K 100-150ml 水；跑后 30min 30g 乳清 + 80g 快碳"},
+    {"date": "2026-05-31", "kcal_target": 2600, "carbs_g": 395, "protein_g": 140, "notes_md": "恢复 12K 日；缺口 -100"}
+  ],
+  "notes_md": "P1W4 训练调度周。周量 73 km（5 拖腿 + 10 + 13 + 8 + 0 + 25 + 12），±10% 容差。10K 测试已删除（W3 已有充分 VO2max 数据），Sat 改 LSD 25K Z2 纪律课维持 marathon-specific endurance 刺激。强度课 1 次（5/27 sharpening）；养伤延续：腘绳肌动作疼痛阈值 ≤2/10。Mon 5/25 力量 A 后 5K Z1 拖腿 + Sun 12K 恢复跑补足整周低强度体量。"
+}

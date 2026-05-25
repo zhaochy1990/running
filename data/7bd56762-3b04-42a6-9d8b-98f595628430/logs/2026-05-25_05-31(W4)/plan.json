@@ -1,0 +1,345 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-05-25_05-31(W4)",
+  "notes_md": "Phase 1 W4/6. Quality session on Wednesday (20min Tempo + 10x400m). LSD 25K on Saturday (扩长 from default 18K). Thu Z2 easy 10K as aerobic buffer between Wed quality + Sat LSD. Fri complete rest. Weekly 70 km (= master 62 km + 8 km buffer; W3 actual 75 km, deload over-aggressive at 60 km would risk fitness loss for B target 2:47). Tempo @ 3:48-3:54/km (LT) HR ≤175; 400m @ 3:25-3:35/km (5K pace), 绝对红线 3:24/km。",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-25",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "力量 A — 下肢稳定（10kg）",
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "力量 A — 下肢稳定",
+        "date": "2026-05-25",
+        "note": "脚踝 + 髋稳定主场。10kg 哑铃维持。",
+        "exercises": [
+          {"canonical_id": "single_leg_eccentric_calf_raise", "display_name": "单腿离心提踵（台阶 3s 慢下）", "sets": 3, "target_kind": "reps", "target_value": 8, "rest_seconds": 45, "note": "跟腱+胫骨；左右各 8", "provider_id": null},
+          {"canonical_id": "bosu_single_leg_stand", "display_name": "BOSU/软垫单腿静站", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "左右各 30s", "provider_id": null},
+          {"canonical_id": "monster_walk_band", "display_name": "弹力带绕踝侧向行走", "sets": 3, "target_kind": "reps", "target_value": 20, "rest_seconds": 30, "note": "10 步×2 方向", "provider_id": null},
+          {"canonical_id": "bulgarian_split_squat_db", "display_name": "哑铃保加利亚分腿蹲（10kg/手）", "sets": 3, "target_kind": "reps", "target_value": 8, "rest_seconds": 60, "note": "左右各 8", "provider_id": null},
+          {"canonical_id": "single_leg_rdl_db", "display_name": "单侧 RDL（12kg/手）", "sets": 3, "target_kind": "reps", "target_value": 8, "rest_seconds": 60, "note": "左右各 8", "provider_id": null},
+          {"canonical_id": "clamshell_band", "display_name": "蚌式开合（弹力带）", "sets": 3, "target_kind": "reps", "target_value": 15, "rest_seconds": 30, "note": "左右各 15", "provider_id": null},
+          {"canonical_id": "single_leg_glute_bridge", "display_name": "单腿臀桥", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 30, "note": "左右各 12", "provider_id": null},
+          {"canonical_id": "plank_leg_raise", "display_name": "平板 + 交替抬腿", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "核心抗旋", "provider_id": null}
+        ]
+      },
+      "notes_md": "晚间 35-45min；本周一不再做 5K 拖腿，把里程换给周六 25K LSD。"
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-26",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "Z2 easy 11K",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "Z2 easy 11K",
+        "date": "2026-05-26",
+        "note": "HR ≤142，关闭配速显示",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 11000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 142},
+                "note": "5:00-5:20/km，HR ≤142 全程",
+                "hr_cap_bpm": 142
+              }
+            ]
+          }
+        ]
+      },
+      "total_distance_m": 11000
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-27",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "20min Tempo + 10×400m",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "20min Tempo + 10×400m",
+        "date": "2026-05-27",
+        "note": "WU 3K + 20min @ 3:48-3:54 + 4min jog + 10×(400m @ 3:25-3:35 / r90s) + CD 2K。绝对红线：任 1 rep 配速 ≤3:24 → abort。Rep 数按晨起状态决策：sleep ≥7.5h+RHR ≤44 → 10 reps；sleep <7h 或 RHR ≥48 → 8 reps + 关上限 3:30-3:35。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {"kind": "distance_m", "value": 3000},
+                "target": {"kind": "pace_s_km", "low": 300, "high": 270},
+                "note": "5:00→4:30，末 4×100m strides"
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "time_s", "value": 1200},
+                "target": {"kind": "pace_s_km", "low": 234, "high": 228},
+                "note": "20min Tempo @ 3:48-3:54；HR 目标 168-175，>178 持续 30s abort",
+                "hr_cap_bpm": 178
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 240},
+                "target": {"kind": "open"},
+                "note": "4min 站立或慢跑恢复"
+              }
+            ]
+          },
+          {
+            "repeat": 10,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 400},
+                "target": {"kind": "pace_s_km", "low": 215, "high": 205},
+                "note": "400m @ 3:25-3:35；前 3 reps 3:32-3:35，中 4 reps 3:28-3:32，末 3 reps 3:25-3:30。任 1 rep ≤3:24 → abort"
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 90},
+                "target": {"kind": "open"},
+                "note": "90s rest jog @ 6:00-6:30"
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {"kind": "distance_m", "value": 2000},
+                "target": {"kind": "pace_s_km", "low": 360, "high": 300},
+                "note": "CD 2K @ 5:20-6:00"
+              }
+            ]
+          }
+        ]
+      },
+      "total_distance_m": 14000
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-28",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "Z2 easy buffer 10K",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "Z2 easy buffer 10K",
+        "date": "2026-05-28",
+        "note": "Wed quality 与 Sat 25K LSD 之间的 aerobic buffer 日。HR ≤142；配速 5:00-5:20/km。腘绳肌/胫骨晨痛 ≥3 → 改 30min 椭圆机。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 10000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 142},
+                "note": "5:00-5:20/km，HR ≤142 全程",
+                "hr_cap_bpm": 142
+              }
+            ]
+          }
+        ]
+      },
+      "total_distance_m": 10000
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-29",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "完全休息",
+      "notes_md": "为 5/30 LSD 18K 储备；目标 ≥8h 睡眠。"
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-30",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "LSD 25K 纯 Z2",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "LSD 25K 纯 Z2",
+        "date": "2026-05-30",
+        "note": "Phase 1 marathon-specific endurance 主刺激。把单次长距离从 deload 默认 18K 拉到 25K（~2h05min）。HR 145 报警→立即减速或走步。前 8K 5:20→5:00，中 12K 5:00-5:10，末 5K 5:00→5:30。跑前 60min 60g 碳；跑中 2 胶 (@10K + @18K)；跑后 30min 80g 碳 + 30g 蛋。Abort: HR >150 持续 1min (非上坡) = 停下走 1min 再起跑；HR >155 持续 30s = 停跑改走；≥27°C 或 humidity ≥85% = 砍到 20K 或推到周日。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 8000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 145},
+                "note": "前 8K 5:20→5:00，HR ≤145",
+                "hr_cap_bpm": 145
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 12000},
+                "target": {"kind": "hr_bpm", "low": 135, "high": 145},
+                "note": "中 12K 5:00-5:10，HR ≤145",
+                "hr_cap_bpm": 145
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 145},
+                "note": "末 5K 5:00→5:30 cooldown，HR ≤145；漂出 cap → 减速到走/慢跑",
+                "hr_cap_bpm": 145
+              }
+            ]
+          }
+        ]
+      },
+      "total_distance_m": 25000
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-31",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "Z2 recovery 10K",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "Z2 recovery 10K",
+        "date": "2026-05-31",
+        "note": "HR ≤138；配速 5:30-6:00。如 5/30 后 RHR ≥47 或 DOMS ≥4/10 → 改 5K 走 + mobility 30min。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 10000},
+                "target": {"kind": "hr_bpm", "low": 120, "high": 138},
+                "note": "Z2 recovery",
+                "hr_cap_bpm": 138
+              }
+            ]
+          }
+        ]
+      },
+      "total_distance_m": 10000
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-05-31",
+      "session_index": 1,
+      "kind": "strength",
+      "summary": "力量 B — 核心 + 灵活",
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "力量 B — 核心 + 灵活",
+        "date": "2026-05-31",
+        "note": "跑后 30min 内完成；30-40 min。",
+        "exercises": [
+          {"canonical_id": "dead_bug", "display_name": "死虫 Dead Bug", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "note": "左右各 10", "provider_id": null},
+          {"canonical_id": "bird_dog", "display_name": "鸟狗（缓慢 3s 保持）", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "note": "左右各 10，3s hold", "provider_id": null},
+          {"canonical_id": "side_plank_leg_raise", "display_name": "侧平板（含抬腿）", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "左右各 30s", "provider_id": null},
+          {"canonical_id": "copenhagen_plank", "display_name": "哥本哈根侧平板", "sets": 3, "target_kind": "time_s", "target_value": 20, "rest_seconds": 30, "note": "左右各 20s", "provider_id": null},
+          {"canonical_id": "thoracic_rotation_cat_cow", "display_name": "胸椎旋转（猫狗+T）", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 20, "note": "左右各 10", "provider_id": null},
+          {"canonical_id": "hip_flexor_static_stretch", "display_name": "髋屈肌静态拉伸", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 15, "note": "左右各 30s", "provider_id": null},
+          {"canonical_id": "ninety_ninety_hip", "display_name": "90/90 髋开合", "sets": 3, "target_kind": "reps", "target_value": 8, "rest_seconds": 20, "note": "左右各 8", "provider_id": null},
+          {"canonical_id": "foam_roll_lower_leg", "display_name": "泡沫轴：胫骨前 + 腓肠肌 + 梨状肌", "sets": 1, "target_kind": "time_s", "target_value": 180, "rest_seconds": 0, "note": "各 60s", "provider_id": null}
+        ]
+      }
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-25",
+      "kcal_target": 2700,
+      "carbs_g": 306,
+      "protein_g": 115,
+      "fat_g": 68,
+      "water_ml": 2800,
+      "meals": [],
+      "notes_md": "力量 A 日（不跑）：4.5 g/kg 碳水。晨称重维持 68kg。力量后 30min 内 25g 蛋白。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-26",
+      "kcal_target": 2900,
+      "carbs_g": 375,
+      "protein_g": 115,
+      "fat_g": 68,
+      "water_ml": 2800,
+      "meals": [],
+      "notes_md": "Z2 easy 11K 日：5.5 g/kg 碳水。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-27",
+      "kcal_target": 3250,
+      "carbs_g": 475,
+      "protein_g": 120,
+      "fat_g": 68,
+      "water_ml": 3300,
+      "meals": [],
+      "notes_md": "节奏+400m 质量日：7 g/kg 碳水。跑前 60min 50g 碳；跑后 30min 70g 碳 + 30g 蛋。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-28",
+      "kcal_target": 2900,
+      "carbs_g": 375,
+      "protein_g": 115,
+      "fat_g": 68,
+      "water_ml": 2800,
+      "meals": [],
+      "notes_md": "Z2 easy buffer 日：5.5 g/kg 碳水。Wed quality 后 + Sat LSD 前的 aerobic recovery day。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-29",
+      "kcal_target": 2600,
+      "carbs_g": 270,
+      "protein_g": 110,
+      "fat_g": 68,
+      "water_ml": 2500,
+      "meals": [],
+      "notes_md": "完全休息日：4 g/kg 碳水。为 5/30 LSD 储备糖原，碳水可微升到 5 g/kg = 340g。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-30",
+      "kcal_target": 3350,
+      "carbs_g": 475,
+      "protein_g": 122,
+      "fat_g": 68,
+      "water_ml": 3500,
+      "meals": [],
+      "notes_md": "LSD 25K 日：7 g/kg 碳水。跑前 60min 60g 碳；跑中 2 胶（@10K + @18K）；跑后 30min 80g 碳 + 30g 蛋。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-05-31",
+      "kcal_target": 2900,
+      "carbs_g": 375,
+      "protein_g": 115,
+      "fat_g": 68,
+      "water_ml": 2800,
+      "meals": [],
+      "notes_md": "Recovery + 力量 B 日：5.5 g/kg 碳水。力量 B 后 30min 25g 蛋白。"
+    }
+  ]
+}
