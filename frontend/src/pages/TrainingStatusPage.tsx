@@ -58,6 +58,29 @@ function readinessGateLabel(gate: string | null): string {
   return gate ? (map[gate] ?? gate) : '—'
 }
 
+// 16-week activity heatmap (Task: 16-week heatmap). Bucket fixed thresholds
+// (dose-based): empty / light / mid / dark / deepest. Thresholds tuned to
+// the project's typical training-dose ranges — Z2 8km ≈ 35-45, Z4 interval
+// ≈ 60-90, marathon race ≥ 120.
+export function heatmapBucket(dose: number | null): 0 | 1 | 2 | 3 | 4 {
+  if (dose == null || dose <= 0) return 0
+  if (dose <= 40) return 1
+  if (dose <= 80) return 2
+  if (dose <= 120) return 3
+  return 4
+}
+
+// Orange gradient matching the existing Dose color (#e68a00) family —
+// Tailwind orange-200/300/400/700 give 4 visually distinct active levels
+// plus a neutral slate-100 for empty days.
+export const HEATMAP_COLORS = [
+  '#f0f1f4',  // 0 = empty / rest
+  '#fed7aa',  // 1 = light  (1–40)
+  '#fdba74',  // 2 = mid    (41–80)
+  '#fb923c',  // 3 = dark   (81–120)
+  '#c2410c',  // 4 = deepest (>120)
+] as const
+
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
   contentStyle: { background: '#ffffff', border: '1px solid #d8dae5', borderRadius: 8, fontFamily: 'JetBrains Mono', fontSize: 12, color: '#1a1c2e' },

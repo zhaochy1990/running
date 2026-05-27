@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 
 import * as api from '../../api'
 import { UserContext } from '../../UserContextValue'
-import TrainingStatusPage from '../TrainingStatusPage'
+import TrainingStatusPage, { heatmapBucket } from '../TrainingStatusPage'
 
 vi.mock('recharts', () => {
   const NullChartElement = () => null
@@ -182,5 +182,29 @@ describe('TrainingStatusPage', () => {
     await waitFor(() => expect(screen.getByText('训练状态')).toBeInTheDocument())
     // 99 should NOT appear — it's the COROS ATI/CTI/TSB value the page must not render
     expect(screen.queryByText('99')).not.toBeInTheDocument()
+  })
+})
+
+describe('heatmapBucket', () => {
+  it('returns 0 for null / 0 / negative', () => {
+    expect(heatmapBucket(null)).toBe(0)
+    expect(heatmapBucket(0)).toBe(0)
+    expect(heatmapBucket(-5)).toBe(0)
+  })
+  it('returns 1 for 1..40', () => {
+    expect(heatmapBucket(1)).toBe(1)
+    expect(heatmapBucket(40)).toBe(1)
+  })
+  it('returns 2 for 41..80', () => {
+    expect(heatmapBucket(41)).toBe(2)
+    expect(heatmapBucket(80)).toBe(2)
+  })
+  it('returns 3 for 81..120', () => {
+    expect(heatmapBucket(81)).toBe(3)
+    expect(heatmapBucket(120)).toBe(3)
+  })
+  it('returns 4 for >120', () => {
+    expect(heatmapBucket(121)).toBe(4)
+    expect(heatmapBucket(500)).toBe(4)
   })
 })
