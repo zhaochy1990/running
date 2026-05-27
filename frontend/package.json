@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:frontend:local": "cross-env VITE_DEV_API_PROXY=https://stride-running.cn vite --host",
     "api": "cd .. && cross-env PYTHONIOENCODING=utf-8 python -m uvicorn stride_server.main:app --reload --port 8080",
     "start": "concurrently \"npm run api\" \"npm run dev\"",
     "build": "tsc -b && vite build",

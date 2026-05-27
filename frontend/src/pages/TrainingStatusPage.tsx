@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ResponsiveContainer, Area, BarChart, Bar, Cell, ComposedChart,
   LineChart, Line,
-  XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine,
+  XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine, ReferenceArea,
 } from 'recharts'
 import {
   getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
@@ -15,13 +15,16 @@ import ViewHead from '../components/ViewHead'
 
 // Form color band matches HealthPage's STRIDE block originally — kept here as
 // the single source of truth after the chart relocated.
+// Form (Chronic − Acute) zone palette. Green anchors 正常训练 (the productive
+// stress band) per product intent; race-ready picks up teal, over-taper amber,
+// transition stays neutral grey, overload red.
 function formColor(v: number | null): string {
   if (v == null) return '#8888a0'
-  if (v >= 25) return '#ffab00'
-  if (v >= 10) return '#00a85a'
-  if (v >= -10) return '#8888a0'
-  if (v >= -30) return '#0097a7'
-  return '#d32f2f'
+  if (v >= 25) return '#ffab00'   // 减量过多
+  if (v >= 10) return '#0097a7'   // 比赛就绪
+  if (v >= -10) return '#8888a0'  // 过渡区
+  if (v >= -30) return '#00a85a'  // 正常训练
+  return '#d32f2f'                // 过度负荷
 }
 
 // Readiness gate is produced by `src/stride_core/training_load/core.py` as
@@ -282,10 +285,14 @@ function EmptyChart({ text }: { text: string }) {
 function TrendsRow({
   health, hrv, days,
 }: {
-  health: { health: HealthRecord[]; rhr_baseline: number | null } | null
+  health: { health: HealthRecord[]; rhr_baseline: number | null; hrv_snapshot: HRVSnapshot | null } | null
   hrv: { hrv: HrvDailyRecord[] } | null
   days: DaysWindow
 }) {
+  const rhrBaseline = health?.rhr_baseline ?? null
+  const hrvLow = health?.hrv_snapshot?.hrv_normal_low ?? null
+  const hrvHigh = health?.hrv_snapshot?.hrv_normal_high ?? null
+
   const rhrData = (health?.health ?? [])
     .slice()
     .reverse()
@@ -317,8 +324,23 @@ function TrendsRow({
             <LineChart data={rhrData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...GRID_STYLE} />
               <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
-              <YAxis tick={AXIS_TICK} domain={['dataMin - 2', 'dataMax + 2']} />
+              <YAxis
+                tick={AXIS_TICK}
+                domain={[
+                  (min: number) => Math.floor(Math.min(min, rhrBaseline ?? min) - 2),
+                  (max: number) => Math.ceil(Math.max(max, rhrBaseline ?? max) + 2),
+                ]}
+              />
               <Tooltip {...TOOLTIP_STYLE} />
+              {rhrBaseline != null && (
+                <ReferenceLine
+                  y={rhrBaseline}
+                  stroke="#0097a7"
+                  strokeDasharray="4 3"
+                  strokeOpacity={0.6}
+                  label={{ value: `基线 ${rhrBaseline}`, position: 'insideTopRight', fontSize: 9, fill: '#0097a7' }}
+                />
+              )}
               <Line type="monotone" dataKey="rhr" name="静息心率" stroke="#0097a7" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
             </LineChart>
           </ResponsiveContainer>
@@ -332,8 +354,23 @@ function TrendsRow({
             <LineChart data={hrvData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...GRID_STYLE} />
               <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
-              <YAxis tick={AXIS_TICK} domain={['dataMin - 5', 'dataMax + 5']} />
+              <YAxis
+                tick={AXIS_TICK}
+                domain={[
+                  (min: number) => Math.floor(Math.min(min, hrvLow ?? min) - 5),
+                  (max: number) => Math.ceil(Math.max(max, hrvHigh ?? max) + 5),
+                ]}
+              />
               <Tooltip {...TOOLTIP_STYLE} />
+              {hrvLow != null && hrvHigh != null && (
+                <ReferenceArea
+                  y1={hrvLow}
+                  y2={hrvHigh}
+                  fill="#7a4dd4"
+                  fillOpacity={0.1}
+                  label={{ value: `正常 ${hrvLow}–${hrvHigh}`, position: 'insideTopRight', fontSize: 9, fill: '#7a4dd4' }}
+                />
+              )}
               <Line type="monotone" dataKey="hrv" name="心率变异性" stroke="#7a4dd4" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#7a4dd4', stroke: '#fff', strokeWidth: 2 }} />
             </LineChart>
           </ResponsiveContainer>
@@ -580,7 +617,11 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
                     <YAxis tick={AXIS_TICK} />
                     <Tooltip
                       {...TOOLTIP_STYLE}
-                      formatter={(v: unknown) => [typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}` : `${v}`, '竞技状态']}
+                      formatter={(v: unknown) => {
+                        if (typeof v !== 'number') return [`${v}`, '竞技状态']
+                        const zone = v > 25 ? '减量过多' : v >= 10 ? '比赛就绪' : v >= -10 ? '过渡区' : v >= -30 ? '正常训练' : '过度负荷'
+                        return [`${v > 0 ? '+' : ''}${v.toFixed(1)} (${zone})`, '竞技状态']
+                      }}
                     />
                     <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
                     <Bar dataKey="form" name="竞技状态">
@@ -590,6 +631,20 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
+                <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 ml-1">
+                  {[
+                    { label: '比赛就绪 (10 ~ 25)', color: '#0097a7' },
+                    { label: '过渡区 (-10 ~ 10)', color: '#8888a0' },
+                    { label: '正常训练 (-30 ~ -10)', color: '#00a85a' },
+                    { label: '过度负荷 (< -30)', color: '#d32f2f' },
+                    { label: '减量过多 (> 25)', color: '#ffab00' },
+                  ].map(({ label, color }) => (
+                    <span key={label} className="flex items-center gap-1.5 text-xs font-mono text-text-secondary">
+                      <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: color }} />
+                      {label}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               <div className="mt-4">

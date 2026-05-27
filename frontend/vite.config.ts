@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const devAuthProxy = env.VITE_DEV_AUTH_PROXY || ''
+  const devApiProxy = env.VITE_DEV_API_PROXY || ''
 
   return {
     plugins: [react(), tailwindcss()],
@@ -19,7 +20,9 @@ export default defineConfig(({ mode }) => {
               },
             }
           : {}),
-        '/api': 'http://localhost:8080',
+        '/api': devApiProxy
+          ? { target: devApiProxy, changeOrigin: true, secure: true }
+          : 'http://localhost:8080',
       },
     },
   }
