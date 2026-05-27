@@ -36,6 +36,7 @@ vi.mock('../../api', async () => {
     getHrv: vi.fn(),
     getStrideZones: vi.fn(),
     getStrideTrainingLoad: vi.fn(),
+    getActivities: vi.fn(),
   }
 })
 
@@ -104,6 +105,9 @@ beforeEach(() => {
   })
   vi.mocked(api.getStrideZones).mockResolvedValue(happyZones)
   vi.mocked(api.getStrideTrainingLoad).mockResolvedValue(happyLoad)
+  vi.mocked(api.getActivities).mockResolvedValue({
+    total: 0, offset: 0, limit: 200, activities: [],
+  })
 })
 
 describe('TrainingStatusPage', () => {

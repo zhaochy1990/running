@@ -401,6 +401,27 @@ export interface WeekDetail {
   abandoned_scheduled_workouts?: AbandonedScheduledWorkout[]
 }
 
+export interface ActivitiesListResponse {
+  total: number
+  offset: number
+  limit: number
+  activities: Activity[]
+}
+
+export function getActivities(
+  user: string,
+  opts: { dateFrom?: string; dateTo?: string; limit?: number; offset?: number; sport?: string } = {},
+) {
+  const params = new URLSearchParams()
+  if (opts.dateFrom) params.set('date_from', opts.dateFrom)
+  if (opts.dateTo) params.set('date_to', opts.dateTo)
+  if (opts.limit != null) params.set('limit', String(opts.limit))
+  if (opts.offset != null) params.set('offset', String(opts.offset))
+  if (opts.sport) params.set('sport', opts.sport)
+  const qs = params.toString()
+  return fetchJSON<ActivitiesListResponse>(`/${user}/activities${qs ? `?${qs}` : ''}`)
+}
+
 export function triggerSync(user: string, full: boolean = false) {
   const qs = full ? '?full=true' : ''
   return fetch(`${BASE}/${user}/sync${qs}`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
