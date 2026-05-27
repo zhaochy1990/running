@@ -988,36 +988,43 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                 </div>
               </div>
 
-              <div className="mt-4">
-                <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">8 周负荷趋势 · 8-Week Load Trend (每周 Dose 累加)</p>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={weeklySeries} margin={{ top: 5, right: 10, bottom: 0, left: -5 }}>
-                    <CartesianGrid {...GRID_STYLE} />
-                    <XAxis dataKey="weekLabel" tick={AXIS_TICK} />
-                    <YAxis tick={AXIS_TICK} />
-                    <Tooltip
-                      {...TOOLTIP_STYLE}
-                      labelFormatter={(label: unknown, payload) => {
-                        const row = payload?.[0]?.payload as { weekStart?: string } | undefined
-                        return row?.weekStart ? `周一 ${row.weekStart}` : `${label}`
-                      }}
-                      formatter={(value: unknown, _name, ctx) => {
-                        const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload
-                        const dose = typeof value === 'number' ? value.toFixed(1) : `${value}`
-                        return [`${dose}（${row?.activeDays ?? 0} 天）`, '周剂量']
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="totalDose"
-                      name="周剂量"
-                      stroke="#e68a00"
-                      strokeWidth={2}
-                      dot={{ r: 3.5, fill: '#e68a00', stroke: '#fff', strokeWidth: 1.5 }}
-                      activeDot={{ r: 5, fill: '#e68a00', stroke: '#fff', strokeWidth: 2 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">8 周负荷趋势 · 8-Week Load Trend (每周 Dose 累加)</p>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={weeklySeries} margin={{ top: 5, right: 10, bottom: 0, left: -5 }}>
+                      <CartesianGrid {...GRID_STYLE} />
+                      <XAxis dataKey="weekLabel" tick={AXIS_TICK} />
+                      <YAxis tick={AXIS_TICK} />
+                      <Tooltip
+                        {...TOOLTIP_STYLE}
+                        labelFormatter={(label: unknown, payload) => {
+                          const row = payload?.[0]?.payload as { weekStart?: string } | undefined
+                          return row?.weekStart ? `周一 ${row.weekStart}` : `${label}`
+                        }}
+                        formatter={(value: unknown, _name, ctx) => {
+                          const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload
+                          const dose = typeof value === 'number' ? value.toFixed(1) : `${value}`
+                          return [`${dose}（${row?.activeDays ?? 0} 天）`, '周剂量']
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="totalDose"
+                        name="周剂量"
+                        stroke="#e68a00"
+                        strokeWidth={2}
+                        dot={{ r: 3.5, fill: '#e68a00', stroke: '#fff', strokeWidth: 1.5 }}
+                        activeDot={{ r: 5, fill: '#e68a00', stroke: '#fff', strokeWidth: 2 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <ActivityHeatmap
+                  weeks={16}
+                  series={rawSeries}
+                  activitiesByDate={activitiesByDate}
+                />
               </div>
             </>
           )}

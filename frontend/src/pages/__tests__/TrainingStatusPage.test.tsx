@@ -183,6 +183,16 @@ describe('TrainingStatusPage', () => {
     // 99 should NOT appear — it's the COROS ATI/CTI/TSB value the page must not render
     expect(screen.queryByText('99')).not.toBeInTheDocument()
   })
+
+  it('renders the 16-week heatmap alongside the 8-week trend', async () => {
+    const { container } = renderPage()
+    await waitFor(() => expect(screen.getByText('训练状态')).toBeInTheDocument())
+    // Heatmap title is present
+    expect(screen.getByText('16 周训练热力图 · 16-Week Activity Heatmap')).toBeInTheDocument()
+    // Heatmap renders 112 cells regardless of empty dose series
+    const cells = container.querySelectorAll('rect.heatmap-cell')
+    expect(cells.length).toBe(112)
+  })
 })
 
 describe('heatmapBucket', () => {
