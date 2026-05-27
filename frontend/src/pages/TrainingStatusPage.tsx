@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ResponsiveContainer, Area, BarChart, Bar, Cell, ComposedChart,
   LineChart, Line,
@@ -778,6 +779,9 @@ export function ActivityHeatmap({
                 stroke={stroke}
                 strokeWidth={c.isToday ? 1 : c.isFuture ? 1 : 0}
                 strokeDasharray={strokeDash}
+                onMouseEnter={c.isFuture ? undefined : (e) => {
+                  setHovered({ date: c.date, x: e.clientX, y: e.clientY })
+                }}
                 onMouseMove={c.isFuture ? undefined : (e) => {
                   setHovered({ date: c.date, x: e.clientX, y: e.clientY })
                 }}
@@ -787,7 +791,7 @@ export function ActivityHeatmap({
           })}
         </svg>
         {/* Legend */}
-        <div className="flex items-center justify-end gap-1.5 mt-2 text-[10px] font-mono text-text-muted">
+        <div className="flex items-center justify-start gap-1.5 mt-2 ml-1 text-[10px] font-mono text-text-muted">
           <span>少</span>
           {HEATMAP_COLORS.map((color, i) => (
             <span
@@ -797,11 +801,11 @@ export function ActivityHeatmap({
             />
           ))}
           <span>多</span>
-          <span className="ml-2">0 · 40 · 80 · 120</span>
         </div>
       </div>
-      {/* Tooltip: position:fixed, pointer-events:none */}
-      {hovered && (
+      {/* Tooltip rendered via Portal into document.body so it isn't trapped
+          by any ancestor transform / filter that would re-anchor position:fixed. */}
+      {hovered && createPortal(
         <div
           style={{
             position: 'fixed',
@@ -821,7 +825,8 @@ export function ActivityHeatmap({
             }]}
             activitiesByDate={activitiesByDate}
           />
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
