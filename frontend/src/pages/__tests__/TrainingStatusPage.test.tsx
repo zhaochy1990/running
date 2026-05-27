@@ -36,7 +36,7 @@ vi.mock('../../api', async () => {
     getHrv: vi.fn(),
     getStrideZones: vi.fn(),
     getStrideTrainingLoad: vi.fn(),
-    getActivities: vi.fn(),
+    getAllActivitiesInRange: vi.fn(),
   }
 })
 
@@ -105,9 +105,7 @@ beforeEach(() => {
   })
   vi.mocked(api.getStrideZones).mockResolvedValue(happyZones)
   vi.mocked(api.getStrideTrainingLoad).mockResolvedValue(happyLoad)
-  vi.mocked(api.getActivities).mockResolvedValue({
-    total: 0, offset: 0, limit: 200, activities: [],
-  })
+  vi.mocked(api.getAllActivitiesInRange).mockResolvedValue([])
 })
 
 describe('TrainingStatusPage', () => {
@@ -163,12 +161,15 @@ describe('TrainingStatusPage', () => {
 
   it('refetches training-load on time-range toggle', async () => {
     renderPage()
-    // Initial window is 30d, but the 8-week trend chart needs ≥ 56 days, so
-    // the fetch is clamped to max(window, 56).
-    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 56))
+    // Initial window is 30d, but the 16-week heatmap needs ≥ 112 days, so
+    // the fetch is clamped to max(window, 112).
+    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 112))
 
     fireEvent.click(screen.getByRole('button', { name: '90d' }))
-    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 90))
+    // 90 < 112 so the value stays 112; assert call count to prove a refetch
+    // actually fired (otherwise the second waitFor is satisfied by the first call).
+    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledTimes(2))
+    expect(api.getStrideTrainingLoad).toHaveBeenLastCalledWith(USER, 112)
   })
 
   it('does not display COROS pass-through fields from /health', async () => {

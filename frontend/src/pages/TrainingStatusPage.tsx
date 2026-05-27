@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine, ReferenceArea,
 } from 'recharts'
 import {
-  getActivities, getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
+  getAllActivitiesInRange, getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
   type Activity, type HealthRecord, type HRVSnapshot, type HrvDailyRecord,
   type StrideZonesResponse, type StrideTrainingLoadResponse,
 } from '../api'
@@ -88,11 +88,12 @@ export default function TrainingStatusPage() {
     let cancelled = false
     setLoaded(false)
     setError(null)
-    // The 8-week trend chart needs ≥ 56 days to fill all buckets, regardless
-    // of the user's chosen daily-chart window. Fetch the larger of the two.
-    const loadFetchDays = Math.max(days, 56)
+    // The 16-week activity heatmap needs 112 days; the 8-week trend chart
+    // needs ≥ 56. Fetch the larger of {window, 112}.
+    const loadFetchDays = Math.max(days, 112)
     // Fetch activities for the same window so the daily-dose tooltip can show
-    // the per-day training summary (distance / pace / HR).
+    // the per-day training summary (distance / pace / HR). Pages through the
+    // 200-cap server limit transparently.
     const today = new Date()
     const from = new Date(today.getTime() - loadFetchDays * 86400000)
     const dateFrom = from.toISOString().slice(0, 10)
@@ -101,7 +102,7 @@ export default function TrainingStatusPage() {
       getHrv(user, 90),
       getStrideZones(user),
       getStrideTrainingLoad(user, loadFetchDays),
-      getActivities(user, { dateFrom, limit: 200 }),
+      getAllActivitiesInRange(user, { dateFrom }),
     ])
       .then(([h, hv, z, ld, acts]) => {
         if (cancelled) return
@@ -109,7 +110,7 @@ export default function TrainingStatusPage() {
         setHrv({ hrv: hv.hrv })
         setZones(z)
         setLoad(ld)
-        setActivities(acts.activities)
+        setActivities(acts)
       })
       .catch((e) => {
         if (!cancelled) setError(String(e))
