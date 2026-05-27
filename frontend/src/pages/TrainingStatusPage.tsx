@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ResponsiveContainer, AreaChart, Area, BarChart, Bar, Cell, ComposedChart, Line, LineChart,
+  ResponsiveContainer, Area, BarChart, Bar, Cell, ComposedChart,
+  LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine,
 } from 'recharts'
 import {
@@ -313,13 +314,13 @@ function TrendsRow({
           <EmptyChart text="暂无 RHR 数据" />
         ) : (
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={rhrData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <LineChart data={rhrData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...GRID_STYLE} />
               <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
               <YAxis tick={AXIS_TICK} domain={['dataMin - 2', 'dataMax + 2']} />
               <Tooltip {...TOOLTIP_STYLE} />
-              <Area type="monotone" dataKey="rhr" stroke="#0097a7" fill="#0097a7" fillOpacity={0.15} />
-            </AreaChart>
+              <Line type="monotone" dataKey="rhr" name="静息心率" stroke="#0097a7" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+            </LineChart>
           </ResponsiveContainer>
         )}
       </ChartCard>
@@ -328,13 +329,13 @@ function TrendsRow({
           <EmptyChart text="暂无 HRV 数据" />
         ) : (
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={hrvData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <LineChart data={hrvData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
               <CartesianGrid {...GRID_STYLE} />
               <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
               <YAxis tick={AXIS_TICK} domain={['dataMin - 5', 'dataMax + 5']} />
               <Tooltip {...TOOLTIP_STYLE} />
-              <Area type="monotone" dataKey="hrv" stroke="#7a4dd4" fill="#7a4dd4" fillOpacity={0.15} />
-            </AreaChart>
+              <Line type="monotone" dataKey="hrv" name="心率变异性" stroke="#7a4dd4" strokeWidth={1.5} dot={false} activeDot={{ r: 3, fill: '#7a4dd4', stroke: '#fff', strokeWidth: 2 }} />
+            </LineChart>
           </ResponsiveContainer>
         )}
       </ChartCard>
@@ -538,29 +539,37 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
           </div>
           {series.length > 0 && (
             <>
-              <div className="text-[11px] font-mono text-text-muted mb-2 mt-1">STRIDE 客观负荷 · 训练负荷 (右轴) / 慢性负荷 / 急性负荷 (左轴)</div>
-              <ResponsiveContainer width="100%" height={220}>
-                <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gradTrainingLoadChronic" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#00a85a" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
+              <div className="text-[11px] font-mono text-text-muted mb-2 mt-1">每日训练负荷（Dose）</div>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid {...GRID_STYLE} />
                   <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
-                  {/* Left axis: Acute / Chronic EWMA (~10-80 typical) */}
-                  <YAxis yAxisId="load" tick={AXIS_TICK} />
-                  {/* Right axis: per-day Dose (~50-250 typical for hard sessions) — separated so a single
-                      race-week dose spike doesn't compress the Acute / Chronic curves into a flat ribbon. */}
-                  <YAxis yAxisId="dose" orientation="right" tick={AXIS_TICK} />
+                  <YAxis tick={AXIS_TICK} />
                   <Tooltip {...TOOLTIP_STYLE} />
-                  <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-                  <Bar yAxisId="dose" dataKey="training_dose" name="训练负荷" fill="#e68a00" fillOpacity={0.55} maxBarSize={14} />
-                  <Area yAxisId="load" type="monotone" dataKey="chronic_load" name="慢性负荷" stroke="#00a85a" strokeWidth={2} fill="url(#gradTrainingLoadChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
-                  <Line yAxisId="load" type="monotone" dataKey="acute_load" name="急性负荷" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
-                </ComposedChart>
+                  <Bar dataKey="training_dose" name="训练负荷" fill="#e68a00" fillOpacity={0.7} maxBarSize={14} />
+                </BarChart>
               </ResponsiveContainer>
+
+              <div className="mt-4">
+                <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">慢性负荷（42日 EWMA） vs 急性负荷（7日 EWMA）</p>
+                <ResponsiveContainer width="100%" height={180}>
+                  <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradTrainingLoadChronic" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#00a85a" stopOpacity={0.18} />
+                        <stop offset="95%" stopColor="#00a85a" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid {...GRID_STYLE} />
+                    <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
+                    <YAxis tick={AXIS_TICK} />
+                    <Tooltip {...TOOLTIP_STYLE} />
+                    <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'JetBrains Mono' }} />
+                    <Area type="monotone" dataKey="chronic_load" name="慢性负荷" stroke="#00a85a" strokeWidth={2} fill="url(#gradTrainingLoadChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
+                    <Line type="monotone" dataKey="acute_load" name="急性负荷" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
 
               <div className="mt-4">
                 <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">竞技状态 Form (慢性负荷 − 急性负荷)</p>
