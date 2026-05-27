@@ -37,9 +37,18 @@ function readinessColor(gate: string | null): string {
 
 function readinessLabel(gate: string | null): string {
   const map: Record<string, string> = {
-    green: '可上',
-    yellow: '注意',
-    red: '停训',
+    green: '可进行强度训练',
+    yellow: '注意，建议减量',
+    red: '建议停训恢复',
+  }
+  return gate ? (map[gate] ?? gate) : '—'
+}
+
+function readinessGateLabel(gate: string | null): string {
+  const map: Record<string, string> = {
+    green: '绿灯',
+    yellow: '黄灯',
+    red: '红灯',
   }
   return gate ? (map[gate] ?? gate) : '—'
 }
@@ -478,7 +487,7 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             <LoadStat
-              label="客观剂量(Dose)"
+              label="训练负荷(Dose)"
               value={cur.training_dose?.toFixed(0) ?? '—'}
               color="#e68a00"
               help={<><strong>当日 STRIDE 客观训练剂量</strong>。基于配速 × 心率区间累积的应激分。{'\n\n'}使用方法：{'\n'}• 是 Acute / Chronic 的输入；单日值高 = 当天硬课{'\n'}• 日累计 → 7 天平均 = Acute Load{'\n'}• 用于横向跨课次量化训练应激而非主观 RPE</>}
@@ -515,12 +524,12 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
             />
           </div>
           <div className="text-[11px] font-mono text-text-muted mb-2 flex items-center flex-wrap gap-x-1">
-            <span>Readiness:</span>
+            <span>训练就绪：</span>
             <span
               className="px-1.5 py-0.5 rounded font-semibold"
               style={{ color: readinessColor(cur.readiness_gate), backgroundColor: `${readinessColor(cur.readiness_gate)}15` }}
             >
-              {cur.readiness_gate ?? '—'}
+              {cur.readiness_gate ? readinessGateLabel(cur.readiness_gate) : '—'}
               {cur.readiness_gate && ` · ${readinessLabel(cur.readiness_gate)}`}
             </span>
             {cur.readiness_reasons.length > 0 && (
@@ -529,7 +538,7 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
           </div>
           {series.length > 0 && (
             <>
-              <div className="text-[11px] font-mono text-text-muted mb-2 mt-1">STRIDE 客观负荷 · Dose (右轴) / Chronic / Acute (左轴)</div>
+              <div className="text-[11px] font-mono text-text-muted mb-2 mt-1">STRIDE 客观负荷 · 训练负荷 (右轴) / 慢性负荷 / 急性负荷 (左轴)</div>
               <ResponsiveContainer width="100%" height={220}>
                 <ComposedChart data={series} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <defs>
@@ -547,14 +556,14 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
                   <YAxis yAxisId="dose" orientation="right" tick={AXIS_TICK} />
                   <Tooltip {...TOOLTIP_STYLE} />
                   <Legend wrapperStyle={{ fontSize: 10, fontFamily: 'JetBrains Mono' }} />
-                  <Bar yAxisId="dose" dataKey="training_dose" name="Dose" fill="#e68a00" fillOpacity={0.55} maxBarSize={14} />
-                  <Area yAxisId="load" type="monotone" dataKey="chronic_load" name="Chronic" stroke="#00a85a" strokeWidth={2} fill="url(#gradTrainingLoadChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
-                  <Line yAxisId="load" type="monotone" dataKey="acute_load" name="Acute" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
+                  <Bar yAxisId="dose" dataKey="training_dose" name="训练负荷" fill="#e68a00" fillOpacity={0.55} maxBarSize={14} />
+                  <Area yAxisId="load" type="monotone" dataKey="chronic_load" name="慢性负荷" stroke="#00a85a" strokeWidth={2} fill="url(#gradTrainingLoadChronic)" dot={false} activeDot={{ r: 3, fill: '#00a85a', stroke: '#fff', strokeWidth: 2 }} />
+                  <Line yAxisId="load" type="monotone" dataKey="acute_load" name="急性负荷" stroke="#0097a7" strokeWidth={1.5} strokeDasharray="4 3" dot={false} activeDot={{ r: 3, fill: '#0097a7', stroke: '#fff', strokeWidth: 2 }} />
                 </ComposedChart>
               </ResponsiveContainer>
 
               <div className="mt-4">
-                <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">竞技状态 Form (Chronic − Acute)</p>
+                <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">竞技状态 Form (慢性负荷 − 急性负荷)</p>
                 <ResponsiveContainer width="100%" height={160}>
                   <BarChart data={series} margin={{ top: 5, right: 5, bottom: 0, left: -5 }}>
                     <CartesianGrid {...GRID_STYLE} />
@@ -562,10 +571,10 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
                     <YAxis tick={AXIS_TICK} />
                     <Tooltip
                       {...TOOLTIP_STYLE}
-                      formatter={(v: unknown) => [typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}` : `${v}`, 'Form']}
+                      formatter={(v: unknown) => [typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}` : `${v}`, '竞技状态']}
                     />
                     <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
-                    <Bar dataKey="form" name="Form">
+                    <Bar dataKey="form" name="竞技状态">
                       {series.map((entry, idx) => (
                         <Cell key={idx} fill={formColor(entry.form)} fillOpacity={0.8} />
                       ))}

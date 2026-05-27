@@ -128,11 +128,11 @@ describe('TrainingStatusPage', () => {
     expect(screen.getByText('78.0')).toBeInTheDocument()
 
     // Dose stat (added in follow-up polish)
-    expect(screen.getByText('客观剂量(Dose)')).toBeInTheDocument()
+    expect(screen.getByText('训练负荷(Dose)')).toBeInTheDocument()
     expect(screen.getByText('75')).toBeInTheDocument() // training_dose 75.2 → toFixed(0)
 
     // Readiness gate is now color-pilled with Chinese label
-    expect(screen.getByText(/green · 可上/)).toBeInTheDocument()
+    expect(screen.getByText(/绿灯 · 可进行强度训练/)).toBeInTheDocument()
 
     // Footer contains calibration date
     expect(screen.getByText(/2026-05-15/)).toBeInTheDocument()
