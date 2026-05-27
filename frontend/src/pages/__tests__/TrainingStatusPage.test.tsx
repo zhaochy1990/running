@@ -1,10 +1,10 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
 import * as api from '../../api'
 import { UserContext } from '../../UserContextValue'
-import TrainingStatusPage from '../TrainingStatusPage'
+import TrainingStatusPage, { ActivityHeatmap, heatmapBucket } from '../TrainingStatusPage'
 
 vi.mock('recharts', () => {
   const NullChartElement = () => null
@@ -36,7 +36,7 @@ vi.mock('../../api', async () => {
     getHrv: vi.fn(),
     getStrideZones: vi.fn(),
     getStrideTrainingLoad: vi.fn(),
-    getActivities: vi.fn(),
+    getAllActivitiesInRange: vi.fn(),
   }
 })
 
@@ -105,9 +105,7 @@ beforeEach(() => {
   })
   vi.mocked(api.getStrideZones).mockResolvedValue(happyZones)
   vi.mocked(api.getStrideTrainingLoad).mockResolvedValue(happyLoad)
-  vi.mocked(api.getActivities).mockResolvedValue({
-    total: 0, offset: 0, limit: 200, activities: [],
-  })
+  vi.mocked(api.getAllActivitiesInRange).mockResolvedValue([])
 })
 
 describe('TrainingStatusPage', () => {
@@ -163,12 +161,15 @@ describe('TrainingStatusPage', () => {
 
   it('refetches training-load on time-range toggle', async () => {
     renderPage()
-    // Initial window is 30d, but the 8-week trend chart needs ≥ 56 days, so
-    // the fetch is clamped to max(window, 56).
-    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 56))
+    // Initial window is 30d, but the 16-week heatmap needs ≥ 112 days, so
+    // the fetch is clamped to max(window, 112).
+    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 112))
 
     fireEvent.click(screen.getByRole('button', { name: '90d' }))
-    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledWith(USER, 90))
+    // 90 < 112 so the value stays 112; assert call count to prove a refetch
+    // actually fired (otherwise the second waitFor is satisfied by the first call).
+    await waitFor(() => expect(api.getStrideTrainingLoad).toHaveBeenCalledTimes(2))
+    expect(api.getStrideTrainingLoad).toHaveBeenLastCalledWith(USER, 112)
   })
 
   it('does not display COROS pass-through fields from /health', async () => {
@@ -181,5 +182,121 @@ describe('TrainingStatusPage', () => {
     await waitFor(() => expect(screen.getByText('训练状态')).toBeInTheDocument())
     // 99 should NOT appear — it's the COROS ATI/CTI/TSB value the page must not render
     expect(screen.queryByText('99')).not.toBeInTheDocument()
+  })
+
+  it('renders the 16-week heatmap alongside the 8-week trend', async () => {
+    const { container } = renderPage()
+    await waitFor(() => expect(screen.getByText('训练状态')).toBeInTheDocument())
+    // Heatmap title is present
+    expect(screen.getByText('16 周训练热力图 · 16-Week Activity Heatmap')).toBeInTheDocument()
+    // Heatmap renders 112 cells regardless of empty dose series
+    const cells = container.querySelectorAll('rect.heatmap-cell')
+    expect(cells.length).toBe(112)
+  })
+})
+
+describe('heatmapBucket', () => {
+  it('returns 0 for null / 0 / negative', () => {
+    expect(heatmapBucket(null)).toBe(0)
+    expect(heatmapBucket(0)).toBe(0)
+    expect(heatmapBucket(-5)).toBe(0)
+  })
+  it('returns 1 for 1..40', () => {
+    expect(heatmapBucket(1)).toBe(1)
+    expect(heatmapBucket(40)).toBe(1)
+  })
+  it('returns 2 for 41..80', () => {
+    expect(heatmapBucket(41)).toBe(2)
+    expect(heatmapBucket(80)).toBe(2)
+  })
+  it('returns 3 for 81..120', () => {
+    expect(heatmapBucket(81)).toBe(3)
+    expect(heatmapBucket(120)).toBe(3)
+  })
+  it('returns 4 for >120', () => {
+    expect(heatmapBucket(121)).toBe(4)
+    expect(heatmapBucket(500)).toBe(4)
+  })
+})
+
+describe('ActivityHeatmap', () => {
+  // Stable today for deterministic rendering. The page itself uses
+  // shanghaiToday(), so we mock the system clock to a known Shanghai
+  // Wednesday (2026-05-27). Container's week-Monday = 2026-05-25,
+  // so cell column 15 spans 2026-05-25 .. 2026-05-31; today is column 15
+  // row 2 (Wed), and 2026-05-28 .. 2026-05-31 are future.
+  beforeEach(() => {
+    vi.useFakeTimers()
+    // 2026-05-27T08:00:00+08:00 = 2026-05-27T00:00:00Z (Shanghai Wed)
+    vi.setSystemTime(new Date('2026-05-27T00:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('renders 112 cell rects across 16 weeks × 7 days', () => {
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={[]}
+        activitiesByDate={new Map()}
+      />,
+    )
+    // Each <rect> with class 'heatmap-cell' is one day cell.
+    const cells = container.querySelectorAll('rect.heatmap-cell')
+    expect(cells.length).toBe(112)
+  })
+
+  it('colors cells by dose bucket', () => {
+    const series: any[] = [
+      { date: '2026-05-20', training_dose: 0,   algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-21', training_dose: 30,  algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-22', training_dose: 60,  algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-23', training_dose: 100, algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-24', training_dose: 150, algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+    ]
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={series}
+        activitiesByDate={new Map()}
+      />,
+    )
+    // Pull cells indexed by data-date attribute.
+    const cellAt = (date: string) =>
+      container.querySelector(`rect.heatmap-cell[data-date="${date}"]`)
+    expect(cellAt('2026-05-20')?.getAttribute('fill')).toBe('#f0f1f4')  // bucket 0
+    expect(cellAt('2026-05-21')?.getAttribute('fill')).toBe('#fed7aa')  // bucket 1
+    expect(cellAt('2026-05-22')?.getAttribute('fill')).toBe('#fdba74')  // bucket 2
+    expect(cellAt('2026-05-23')?.getAttribute('fill')).toBe('#fb923c')  // bucket 3
+    expect(cellAt('2026-05-24')?.getAttribute('fill')).toBe('#c2410c')  // bucket 4
+  })
+
+  it('marks future days with dashed stroke and transparent fill', () => {
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={[]}
+        activitiesByDate={new Map()}
+      />,
+    )
+    // 2026-05-28 is Thursday, the day after the fake "today" (2026-05-27 Wed).
+    const future = container.querySelector('rect.heatmap-cell[data-date="2026-05-28"]')
+    expect(future).not.toBeNull()
+    expect(future?.getAttribute('fill')).toBe('transparent')
+    expect(future?.getAttribute('stroke-dasharray')).toBe('2 2')
+  })
+
+  it('marks today with a dark stroke', () => {
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={[]}
+        activitiesByDate={new Map()}
+      />,
+    )
+    const today = container.querySelector('rect.heatmap-cell[data-date="2026-05-27"]')
+    expect(today).not.toBeNull()
+    expect(today?.getAttribute('stroke')).toBe('#1a1c2e')
   })
 })

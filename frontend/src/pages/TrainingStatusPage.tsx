@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ResponsiveContainer, Area, BarChart, Bar, Cell, ComposedChart,
   LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine, ReferenceArea,
 } from 'recharts'
 import {
-  getActivities, getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
+  getAllActivitiesInRange, getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
   type Activity, type HealthRecord, type HRVSnapshot, type HrvDailyRecord,
   type StrideZonesResponse, type StrideTrainingLoadResponse,
 } from '../api'
 import { useUser } from '../UserContextValue'
 import { aggregateWeeklyDose } from '../lib/weeklyLoad'
-import { shanghaiDate, shanghaiWeekday } from '../lib/shanghai'
+import { shanghaiDate, shanghaiToday, shanghaiWeekStart, shanghaiWeekday } from '../lib/shanghai'
 import ViewHead from '../components/ViewHead'
 
 // Form color band matches HealthPage's STRIDE block originally — kept here as
@@ -58,6 +59,29 @@ function readinessGateLabel(gate: string | null): string {
   return gate ? (map[gate] ?? gate) : '—'
 }
 
+// 16-week activity heatmap (Task: 16-week heatmap). Bucket fixed thresholds
+// (dose-based): empty / light / mid / dark / deepest. Thresholds tuned to
+// the project's typical training-dose ranges — Z2 8km ≈ 35-45, Z4 interval
+// ≈ 60-90, marathon race ≥ 120.
+export function heatmapBucket(dose: number | null): 0 | 1 | 2 | 3 | 4 {
+  if (dose == null || dose <= 0) return 0
+  if (dose <= 40) return 1
+  if (dose <= 80) return 2
+  if (dose <= 120) return 3
+  return 4
+}
+
+// Orange gradient matching the existing Dose color (#e68a00) family —
+// Tailwind orange-200/300/400/700 give 4 visually distinct active levels
+// plus a neutral slate-100 for empty days.
+export const HEATMAP_COLORS = [
+  '#f0f1f4',  // 0 = empty / rest
+  '#fed7aa',  // 1 = light  (1–40)
+  '#fdba74',  // 2 = mid    (41–80)
+  '#fb923c',  // 3 = dark   (81–120)
+  '#c2410c',  // 4 = deepest (>120)
+] as const
+
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
   contentStyle: { background: '#ffffff', border: '1px solid #d8dae5', borderRadius: 8, fontFamily: 'JetBrains Mono', fontSize: 12, color: '#1a1c2e' },
@@ -88,11 +112,12 @@ export default function TrainingStatusPage() {
     let cancelled = false
     setLoaded(false)
     setError(null)
-    // The 8-week trend chart needs ≥ 56 days to fill all buckets, regardless
-    // of the user's chosen daily-chart window. Fetch the larger of the two.
-    const loadFetchDays = Math.max(days, 56)
+    // The 16-week activity heatmap needs 112 days; the 8-week trend chart
+    // needs ≥ 56. Fetch the larger of {window, 112}.
+    const loadFetchDays = Math.max(days, 112)
     // Fetch activities for the same window so the daily-dose tooltip can show
-    // the per-day training summary (distance / pace / HR).
+    // the per-day training summary (distance / pace / HR). Pages through the
+    // 200-cap server limit transparently.
     const today = new Date()
     const from = new Date(today.getTime() - loadFetchDays * 86400000)
     const dateFrom = from.toISOString().slice(0, 10)
@@ -101,7 +126,7 @@ export default function TrainingStatusPage() {
       getHrv(user, 90),
       getStrideZones(user),
       getStrideTrainingLoad(user, loadFetchDays),
-      getActivities(user, { dateFrom, limit: 200 }),
+      getAllActivitiesInRange(user, { dateFrom }),
     ])
       .then(([h, hv, z, ld, acts]) => {
         if (cancelled) return
@@ -109,7 +134,7 @@ export default function TrainingStatusPage() {
         setHrv({ hrv: hv.hrv })
         setZones(z)
         setLoad(ld)
-        setActivities(acts.activities)
+        setActivities(acts)
       })
       .catch((e) => {
         if (!cancelled) setError(String(e))
@@ -601,6 +626,212 @@ function DailyDoseTooltip({
   )
 }
 
+// === 16-week training activity heatmap ===
+//
+// GitHub-style contribution graph: 16 columns × 7 rows. Each cell = one
+// Shanghai-local day. Color from STRIDE training_dose; future days render
+// as dashed outlines. Tooltip body reuses DailyDoseTooltip (mounted at the
+// cursor via position:fixed, since this isn't a Recharts chart).
+
+const HEATMAP_CELL = 18
+const HEATMAP_GAP = 3
+const HEATMAP_DAY_LABEL_W = 28
+const HEATMAP_MONTH_LABEL_H = 12
+const HEATMAP_STEP = HEATMAP_CELL + HEATMAP_GAP  // 21
+
+function addDays(isoDate: string, days: number): string {
+  // isoDate is YYYY-MM-DD (Shanghai-local day). Build the next instant by
+  // anchoring at Shanghai midnight (UTC-08 of the same wall date) and adding
+  // `days * 86400000` ms. Result is still YYYY-MM-DD via shanghaiDate().
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
+  if (!m) return ''
+  const utcAnchor = Date.UTC(+m[1], +m[2] - 1, +m[3]) - 8 * 3600 * 1000
+  return shanghaiDate(new Date(utcAnchor + days * 86400000).toISOString())
+}
+
+type HeatmapCell = {
+  date: string
+  weekIdx: number  // 0..weeks-1
+  dayIdx: number   // 0=Mon .. 6=Sun
+  dose: number | null
+  isFuture: boolean
+  isToday: boolean
+}
+
+export function ActivityHeatmap({
+  weeks,
+  series,
+  activitiesByDate,
+}: {
+  weeks: number
+  series: StrideTrainingLoadResponse['series']
+  activitiesByDate: Map<string, Activity[]>
+}) {
+  const [hovered, setHovered] = useState<{ date: string; x: number; y: number } | null>(null)
+
+  const seriesByDate = useMemo(
+    () => new Map(series.map((r) => [r.date, r])),
+    [series],
+  )
+
+  const cells: HeatmapCell[] = useMemo(() => {
+    const todayCN = shanghaiToday()
+    const thisMonday = shanghaiWeekStart(todayCN)
+    const firstMonday = addDays(thisMonday, -(weeks - 1) * 7)
+    const out: HeatmapCell[] = []
+    for (let w = 0; w < weeks; w++) {
+      for (let d = 0; d < 7; d++) {
+        const date = addDays(firstMonday, w * 7 + d)
+        out.push({
+          date,
+          weekIdx: w,
+          dayIdx: d,
+          dose: seriesByDate.get(date)?.training_dose ?? null,
+          isFuture: date > todayCN,
+          isToday: date === todayCN,
+        })
+      }
+    }
+    return out
+  }, [weeks, seriesByDate])
+
+  // Build month-label markers: for each column whose Monday's month differs
+  // from the previous column's Monday's month, label that column with the
+  // month number.
+  const monthLabels = useMemo(() => {
+    const out: Array<{ weekIdx: number; label: string }> = []
+    let lastMonth = ''
+    for (let w = 0; w < weeks; w++) {
+      const monday = cells[w * 7].date
+      const month = monday.slice(5, 7)
+      if (month !== lastMonth) {
+        out.push({ weekIdx: w, label: `${parseInt(month, 10)}月` })
+        lastMonth = month
+      }
+    }
+    return out
+  }, [weeks, cells])
+
+  const svgW = HEATMAP_DAY_LABEL_W + weeks * HEATMAP_STEP
+  const svgH = HEATMAP_MONTH_LABEL_H + 7 * HEATMAP_STEP
+
+  return (
+    <div>
+      <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">
+        16 周训练热力图 · 16-Week Activity Heatmap
+      </p>
+      <div style={{ height: 180 }}>
+        <svg
+          width="100%"
+          viewBox={`0 0 ${svgW} ${svgH}`}
+          preserveAspectRatio="xMinYMid meet"
+          style={{ maxHeight: '100%' }}
+        >
+          {/* Month labels */}
+          {monthLabels.map(({ weekIdx, label }) => (
+            <text
+              key={`m-${weekIdx}`}
+              x={HEATMAP_DAY_LABEL_W + weekIdx * HEATMAP_STEP}
+              y={HEATMAP_MONTH_LABEL_H - 2}
+              fontSize={10}
+              fontFamily="JetBrains Mono"
+              fill="#8888a0"
+            >
+              {label}
+            </text>
+          ))}
+          {/* Day-of-week labels: Mon (row 0), Wed (row 2), Fri (row 4) */}
+          {[
+            { y: 0, label: '周一' },
+            { y: 2, label: '周三' },
+            { y: 4, label: '周五' },
+          ].map(({ y, label }) => (
+            <text
+              key={`d-${y}`}
+              x={0}
+              y={HEATMAP_MONTH_LABEL_H + y * HEATMAP_STEP + HEATMAP_CELL - 4}
+              fontSize={10}
+              fontFamily="JetBrains Mono"
+              fill="#8888a0"
+            >
+              {label}
+            </text>
+          ))}
+          {/* Cells */}
+          {cells.map((c) => {
+            const x = HEATMAP_DAY_LABEL_W + c.weekIdx * HEATMAP_STEP
+            const y = HEATMAP_MONTH_LABEL_H + c.dayIdx * HEATMAP_STEP
+            const bucket = heatmapBucket(c.dose)
+            const fill = c.isFuture ? 'transparent' : HEATMAP_COLORS[bucket]
+            const stroke = c.isFuture ? '#e8eaf0' : c.isToday ? '#1a1c2e' : 'none'
+            const strokeDash = c.isFuture ? '2 2' : undefined
+            return (
+              <rect
+                key={c.date}
+                className="heatmap-cell"
+                data-date={c.date}
+                x={x}
+                y={y}
+                width={HEATMAP_CELL}
+                height={HEATMAP_CELL}
+                rx={3}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={c.isToday ? 1 : c.isFuture ? 1 : 0}
+                strokeDasharray={strokeDash}
+                onMouseEnter={c.isFuture ? undefined : (e) => {
+                  setHovered({ date: c.date, x: e.clientX, y: e.clientY })
+                }}
+                onMouseMove={c.isFuture ? undefined : (e) => {
+                  setHovered({ date: c.date, x: e.clientX, y: e.clientY })
+                }}
+                onMouseLeave={c.isFuture ? undefined : () => setHovered(null)}
+              />
+            )
+          })}
+        </svg>
+        {/* Legend */}
+        <div className="flex items-center justify-start gap-1.5 mt-2 ml-1 text-[10px] font-mono text-text-muted">
+          <span>少</span>
+          {HEATMAP_COLORS.map((color, i) => (
+            <span
+              key={i}
+              className="inline-block w-3 h-3 rounded-sm"
+              style={{ backgroundColor: color }}
+            />
+          ))}
+          <span>多</span>
+        </div>
+      </div>
+      {/* Tooltip rendered via Portal into document.body so it isn't trapped
+          by any ancestor transform / filter that would re-anchor position:fixed. */}
+      {hovered && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            left: hovered.x + 12,
+            top: hovered.y + 12,
+            zIndex: 50,
+            pointerEvents: 'none',
+          }}
+        >
+          <DailyDoseTooltip
+            active={true}
+            payload={[{
+              payload: {
+                date: hovered.date,
+                training_dose: seriesByDate.get(hovered.date)?.training_dose ?? null,
+              },
+            }]}
+            activitiesByDate={activitiesByDate}
+          />
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
 function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
   load: StrideTrainingLoadResponse | null
   dailyWindowDays: number
@@ -762,36 +993,43 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                 </div>
               </div>
 
-              <div className="mt-4">
-                <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">8 周负荷趋势 · 8-Week Load Trend (每周 Dose 累加)</p>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={weeklySeries} margin={{ top: 5, right: 10, bottom: 0, left: -5 }}>
-                    <CartesianGrid {...GRID_STYLE} />
-                    <XAxis dataKey="weekLabel" tick={AXIS_TICK} />
-                    <YAxis tick={AXIS_TICK} />
-                    <Tooltip
-                      {...TOOLTIP_STYLE}
-                      labelFormatter={(label: unknown, payload) => {
-                        const row = payload?.[0]?.payload as { weekStart?: string } | undefined
-                        return row?.weekStart ? `周一 ${row.weekStart}` : `${label}`
-                      }}
-                      formatter={(value: unknown, _name, ctx) => {
-                        const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload
-                        const dose = typeof value === 'number' ? value.toFixed(1) : `${value}`
-                        return [`${dose}（${row?.activeDays ?? 0} 天）`, '周剂量']
-                      }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="totalDose"
-                      name="周剂量"
-                      stroke="#e68a00"
-                      strokeWidth={2}
-                      dot={{ r: 3.5, fill: '#e68a00', stroke: '#fff', strokeWidth: 1.5 }}
-                      activeDot={{ r: 5, fill: '#e68a00', stroke: '#fff', strokeWidth: 2 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">8 周负荷趋势 · 8-Week Load Trend (每周 Dose 累加)</p>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <LineChart data={weeklySeries} margin={{ top: 5, right: 10, bottom: 0, left: -5 }}>
+                      <CartesianGrid {...GRID_STYLE} />
+                      <XAxis dataKey="weekLabel" tick={AXIS_TICK} />
+                      <YAxis tick={AXIS_TICK} />
+                      <Tooltip
+                        {...TOOLTIP_STYLE}
+                        labelFormatter={(label: unknown, payload) => {
+                          const row = payload?.[0]?.payload as { weekStart?: string } | undefined
+                          return row?.weekStart ? `周一 ${row.weekStart}` : `${label}`
+                        }}
+                        formatter={(value: unknown, _name, ctx) => {
+                          const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload
+                          const dose = typeof value === 'number' ? value.toFixed(1) : `${value}`
+                          return [`${dose}（${row?.activeDays ?? 0} 天）`, '周剂量']
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="totalDose"
+                        name="周剂量"
+                        stroke="#e68a00"
+                        strokeWidth={2}
+                        dot={{ r: 3.5, fill: '#e68a00', stroke: '#fff', strokeWidth: 1.5 }}
+                        activeDot={{ r: 5, fill: '#e68a00', stroke: '#fff', strokeWidth: 2 }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <ActivityHeatmap
+                  weeks={16}
+                  series={rawSeries}
+                  activitiesByDate={activitiesByDate}
+                />
               </div>
             </>
           )}

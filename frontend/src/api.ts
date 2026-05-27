@@ -422,6 +422,29 @@ export function getActivities(
   return fetchJSON<ActivitiesListResponse>(`/${user}/activities${qs ? `?${qs}` : ''}`)
 }
 
+/**
+ * Fetch all activities matching the given date range, walking the server's
+ * pagination automatically. The activities endpoint caps `limit` at 200
+ * (`src/stride_server/routes/activities.py`), so callers that need a longer
+ * window must paginate. Uses the API's `total` field as the termination
+ * signal.
+ */
+export async function getAllActivitiesInRange(
+  user: string,
+  opts: { dateFrom: string; dateTo?: string },
+): Promise<Activity[]> {
+  const PAGE = 200
+  const all: Activity[] = []
+  let offset = 0
+  while (true) {
+    const page = await getActivities(user, { ...opts, limit: PAGE, offset })
+    all.push(...page.activities)
+    if (page.activities.length === 0 || all.length >= page.total) break
+    offset = all.length
+  }
+  return all
+}
+
 export function triggerSync(user: string, full: boolean = false) {
   const qs = full ? '?full=true' : ''
   return fetch(`${BASE}/${user}/sync${qs}`, { method: 'POST', headers: authHeaders() }).then(r => r.json()) as Promise<{ success: boolean; output?: string; error?: string }>
