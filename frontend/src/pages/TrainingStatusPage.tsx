@@ -11,7 +11,7 @@ import {
 } from '../api'
 import { useUser } from '../UserContextValue'
 import { aggregateWeeklyDose } from '../lib/weeklyLoad'
-import { shanghaiDate, shanghaiWeekday } from '../lib/shanghai'
+import { shanghaiDate, shanghaiToday, shanghaiWeekStart, shanghaiWeekday } from '../lib/shanghai'
 import ViewHead from '../components/ViewHead'
 
 // Form color band matches HealthPage's STRIDE block originally — kept here as
@@ -620,6 +620,208 @@ function DailyDoseTooltip({
       })}
       {acts.length === 0 && (
         <div style={{ marginTop: 4, color: '#8888a0' }}>休息日</div>
+      )}
+    </div>
+  )
+}
+
+// === 16-week training activity heatmap ===
+//
+// GitHub-style contribution graph: 16 columns × 7 rows. Each cell = one
+// Shanghai-local day. Color from STRIDE training_dose; future days render
+// as dashed outlines. Tooltip body reuses DailyDoseTooltip (mounted at the
+// cursor via position:fixed, since this isn't a Recharts chart).
+
+const HEATMAP_CELL = 18
+const HEATMAP_GAP = 3
+const HEATMAP_DAY_LABEL_W = 28
+const HEATMAP_MONTH_LABEL_H = 12
+const HEATMAP_STEP = HEATMAP_CELL + HEATMAP_GAP  // 21
+
+function addDays(isoDate: string, days: number): string {
+  // isoDate is YYYY-MM-DD (Shanghai-local day). Build the next instant by
+  // anchoring at Shanghai midnight (UTC-08 of the same wall date) and adding
+  // `days * 86400000` ms. Result is still YYYY-MM-DD via shanghaiDate().
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate)
+  if (!m) return ''
+  const utcAnchor = Date.UTC(+m[1], +m[2] - 1, +m[3]) - 8 * 3600 * 1000
+  return shanghaiDate(new Date(utcAnchor + days * 86400000).toISOString())
+}
+
+type HeatmapCell = {
+  date: string
+  weekIdx: number  // 0..weeks-1
+  dayIdx: number   // 0=Mon .. 6=Sun
+  dose: number | null
+  isFuture: boolean
+  isToday: boolean
+}
+
+export function ActivityHeatmap({
+  weeks,
+  series,
+  activitiesByDate,
+}: {
+  weeks: number
+  series: StrideTrainingLoadResponse['series']
+  activitiesByDate: Map<string, Activity[]>
+}) {
+  const [hovered, setHovered] = useState<{ date: string; x: number; y: number } | null>(null)
+
+  const seriesByDate = useMemo(
+    () => new Map(series.map((r) => [r.date, r])),
+    [series],
+  )
+
+  const cells: HeatmapCell[] = useMemo(() => {
+    const todayCN = shanghaiToday()
+    const thisMonday = shanghaiWeekStart(todayCN)
+    const firstMonday = addDays(thisMonday, -(weeks - 1) * 7)
+    const out: HeatmapCell[] = []
+    for (let w = 0; w < weeks; w++) {
+      for (let d = 0; d < 7; d++) {
+        const date = addDays(firstMonday, w * 7 + d)
+        out.push({
+          date,
+          weekIdx: w,
+          dayIdx: d,
+          dose: seriesByDate.get(date)?.training_dose ?? null,
+          isFuture: date > todayCN,
+          isToday: date === todayCN,
+        })
+      }
+    }
+    return out
+  }, [weeks, seriesByDate])
+
+  // Build month-label markers: for each column whose Monday's month differs
+  // from the previous column's Monday's month, label that column with the
+  // month number.
+  const monthLabels = useMemo(() => {
+    const out: Array<{ weekIdx: number; label: string }> = []
+    let lastMonth = ''
+    for (let w = 0; w < weeks; w++) {
+      const monday = cells[w * 7].date
+      const month = monday.slice(5, 7)
+      if (month !== lastMonth) {
+        out.push({ weekIdx: w, label: `${parseInt(month, 10)}月` })
+        lastMonth = month
+      }
+    }
+    return out
+  }, [weeks, cells])
+
+  const svgW = HEATMAP_DAY_LABEL_W + weeks * HEATMAP_STEP
+  const svgH = HEATMAP_MONTH_LABEL_H + 7 * HEATMAP_STEP
+
+  return (
+    <div>
+      <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">
+        16 周训练热力图 · 16-Week Activity Heatmap
+      </p>
+      <div style={{ height: 180 }}>
+        <svg
+          width="100%"
+          viewBox={`0 0 ${svgW} ${svgH}`}
+          preserveAspectRatio="xMinYMid meet"
+          style={{ maxHeight: '100%' }}
+        >
+          {/* Month labels */}
+          {monthLabels.map(({ weekIdx, label }) => (
+            <text
+              key={`m-${weekIdx}`}
+              x={HEATMAP_DAY_LABEL_W + weekIdx * HEATMAP_STEP}
+              y={HEATMAP_MONTH_LABEL_H - 2}
+              fontSize={10}
+              fontFamily="JetBrains Mono"
+              fill="#8888a0"
+            >
+              {label}
+            </text>
+          ))}
+          {/* Day-of-week labels: Mon (row 0), Wed (row 2), Fri (row 4) */}
+          {[
+            { y: 0, label: '周一' },
+            { y: 2, label: '周三' },
+            { y: 4, label: '周五' },
+          ].map(({ y, label }) => (
+            <text
+              key={`d-${y}`}
+              x={0}
+              y={HEATMAP_MONTH_LABEL_H + y * HEATMAP_STEP + HEATMAP_CELL - 4}
+              fontSize={10}
+              fontFamily="JetBrains Mono"
+              fill="#8888a0"
+            >
+              {label}
+            </text>
+          ))}
+          {/* Cells */}
+          {cells.map((c) => {
+            const x = HEATMAP_DAY_LABEL_W + c.weekIdx * HEATMAP_STEP
+            const y = HEATMAP_MONTH_LABEL_H + c.dayIdx * HEATMAP_STEP
+            const bucket = heatmapBucket(c.dose)
+            const fill = c.isFuture ? 'transparent' : HEATMAP_COLORS[bucket]
+            const stroke = c.isFuture ? '#e8eaf0' : c.isToday ? '#1a1c2e' : 'none'
+            const strokeDash = c.isFuture ? '2 2' : undefined
+            return (
+              <rect
+                key={c.date}
+                className="heatmap-cell"
+                data-date={c.date}
+                x={x}
+                y={y}
+                width={HEATMAP_CELL}
+                height={HEATMAP_CELL}
+                rx={3}
+                fill={fill}
+                stroke={stroke}
+                strokeWidth={c.isToday ? 1 : c.isFuture ? 1 : 0}
+                strokeDasharray={strokeDash}
+                onMouseMove={c.isFuture ? undefined : (e) => {
+                  setHovered({ date: c.date, x: e.clientX, y: e.clientY })
+                }}
+                onMouseLeave={c.isFuture ? undefined : () => setHovered(null)}
+              />
+            )
+          })}
+        </svg>
+        {/* Legend */}
+        <div className="flex items-center justify-end gap-1.5 mt-2 text-[10px] font-mono text-text-muted">
+          <span>少</span>
+          {HEATMAP_COLORS.map((color, i) => (
+            <span
+              key={i}
+              className="inline-block w-3 h-3 rounded-sm"
+              style={{ backgroundColor: color }}
+            />
+          ))}
+          <span>多</span>
+          <span className="ml-2">0 · 40 · 80 · 120</span>
+        </div>
+      </div>
+      {/* Tooltip: position:fixed, pointer-events:none */}
+      {hovered && (
+        <div
+          style={{
+            position: 'fixed',
+            left: hovered.x + 12,
+            top: hovered.y + 12,
+            zIndex: 50,
+            pointerEvents: 'none',
+          }}
+        >
+          <DailyDoseTooltip
+            active={true}
+            payload={[{
+              payload: {
+                date: hovered.date,
+                training_dose: seriesByDate.get(hovered.date)?.training_dose ?? null,
+              },
+            }]}
+            activitiesByDate={activitiesByDate}
+          />
+        </div>
       )}
     </div>
   )

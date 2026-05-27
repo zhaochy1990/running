@@ -1,10 +1,10 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 
 import * as api from '../../api'
 import { UserContext } from '../../UserContextValue'
-import TrainingStatusPage, { heatmapBucket } from '../TrainingStatusPage'
+import TrainingStatusPage, { ActivityHeatmap, heatmapBucket } from '../TrainingStatusPage'
 
 vi.mock('recharts', () => {
   const NullChartElement = () => null
@@ -206,5 +206,87 @@ describe('heatmapBucket', () => {
   it('returns 4 for >120', () => {
     expect(heatmapBucket(121)).toBe(4)
     expect(heatmapBucket(500)).toBe(4)
+  })
+})
+
+describe('ActivityHeatmap', () => {
+  // Stable today for deterministic rendering. The page itself uses
+  // shanghaiToday(), so we mock the system clock to a known Shanghai
+  // Wednesday (2026-05-27). Container's week-Monday = 2026-05-25,
+  // so cell column 15 spans 2026-05-25 .. 2026-05-31; today is column 15
+  // row 2 (Wed), and 2026-05-28 .. 2026-05-31 are future.
+  beforeEach(() => {
+    vi.useFakeTimers()
+    // 2026-05-27T08:00:00+08:00 = 2026-05-27T00:00:00Z (Shanghai Wed)
+    vi.setSystemTime(new Date('2026-05-27T00:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('renders 112 cell rects across 16 weeks × 7 days', () => {
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={[]}
+        activitiesByDate={new Map()}
+      />,
+    )
+    // Each <rect> with class 'heatmap-cell' is one day cell.
+    const cells = container.querySelectorAll('rect.heatmap-cell')
+    expect(cells.length).toBe(112)
+  })
+
+  it('colors cells by dose bucket', () => {
+    const series: any[] = [
+      { date: '2026-05-20', training_dose: 0,   algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-21', training_dose: 30,  algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-22', training_dose: 60,  algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-23', training_dose: 100, algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-24', training_dose: 150, algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+    ]
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={series}
+        activitiesByDate={new Map()}
+      />,
+    )
+    // Pull cells indexed by data-date attribute.
+    const cellAt = (date: string) =>
+      container.querySelector(`rect.heatmap-cell[data-date="${date}"]`)
+    expect(cellAt('2026-05-20')?.getAttribute('fill')).toBe('#f0f1f4')  // bucket 0
+    expect(cellAt('2026-05-21')?.getAttribute('fill')).toBe('#fed7aa')  // bucket 1
+    expect(cellAt('2026-05-22')?.getAttribute('fill')).toBe('#fdba74')  // bucket 2
+    expect(cellAt('2026-05-23')?.getAttribute('fill')).toBe('#fb923c')  // bucket 3
+    expect(cellAt('2026-05-24')?.getAttribute('fill')).toBe('#c2410c')  // bucket 4
+  })
+
+  it('marks future days with dashed stroke and transparent fill', () => {
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={[]}
+        activitiesByDate={new Map()}
+      />,
+    )
+    // 2026-05-28 is Thursday, the day after the fake "today" (2026-05-27 Wed).
+    const future = container.querySelector('rect.heatmap-cell[data-date="2026-05-28"]')
+    expect(future).not.toBeNull()
+    expect(future?.getAttribute('fill')).toBe('transparent')
+    expect(future?.getAttribute('stroke-dasharray')).toBe('2 2')
+  })
+
+  it('marks today with a dark stroke', () => {
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={[]}
+        activitiesByDate={new Map()}
+      />,
+    )
+    const today = container.querySelector('rect.heatmap-cell[data-date="2026-05-27"]')
+    expect(today).not.toBeNull()
+    expect(today?.getAttribute('stroke')).toBe('#1a1c2e')
   })
 })
