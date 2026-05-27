@@ -24,6 +24,7 @@ vi.mock('recharts', () => {
     CartesianGrid: NullChartElement,
     Legend: NullChartElement,
     ReferenceLine: NullChartElement,
+    ReferenceArea: NullChartElement,
   }
 })
 

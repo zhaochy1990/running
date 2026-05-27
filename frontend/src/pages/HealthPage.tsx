@@ -436,11 +436,11 @@ export default function HealthPage() {
 
                     <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 ml-1">
                       {[
-                        { label: '比赛就绪 (10~25)', color: '#00a85a' },
-                        { label: '过渡区 (-10~10)', color: '#8888a0' },
-                        { label: '正常训练 (-30~-10)', color: '#0097a7' },
-                        { label: '过度负荷 (<-30)', color: '#d32f2f' },
-                        { label: '减量过多 (>25)', color: '#e68a00' },
+                        { label: '比赛就绪 (10 ~ 25)', color: '#00a85a' },
+                        { label: '过渡区 (-10 ~ 10)', color: '#8888a0' },
+                        { label: '正常训练 (-30 ~ -10)', color: '#0097a7' },
+                        { label: '过度负荷 (< -30)', color: '#d32f2f' },
+                        { label: '减量过多 (> 25)', color: '#e68a00' },
                       ].map(({ label, color }) => (
                         <span key={label} className="flex items-center gap-1.5 text-xs font-mono text-text-secondary">
                           <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: color }} />
