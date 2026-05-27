@@ -5,12 +5,13 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine, ReferenceArea,
 } from 'recharts'
 import {
-  getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
-  type HealthRecord, type HRVSnapshot, type HrvDailyRecord,
+  getActivities, getHealth, getHrv, getStrideZones, getStrideTrainingLoad,
+  type Activity, type HealthRecord, type HRVSnapshot, type HrvDailyRecord,
   type StrideZonesResponse, type StrideTrainingLoadResponse,
 } from '../api'
 import { useUser } from '../UserContextValue'
 import { aggregateWeeklyDose } from '../lib/weeklyLoad'
+import { shanghaiDate, shanghaiWeekday } from '../lib/shanghai'
 import ViewHead from '../components/ViewHead'
 
 // Form color band matches HealthPage's STRIDE block originally — kept here as
@@ -78,6 +79,7 @@ export default function TrainingStatusPage() {
   const [hrv, setHrv] = useState<{ hrv: HrvDailyRecord[] } | null>(null)
   const [zones, setZones] = useState<StrideZonesResponse | null>(null)
   const [load, setLoad] = useState<StrideTrainingLoadResponse | null>(null)
+  const [activities, setActivities] = useState<Activity[]>([])
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -89,18 +91,25 @@ export default function TrainingStatusPage() {
     // The 8-week trend chart needs ≥ 56 days to fill all buckets, regardless
     // of the user's chosen daily-chart window. Fetch the larger of the two.
     const loadFetchDays = Math.max(days, 56)
+    // Fetch activities for the same window so the daily-dose tooltip can show
+    // the per-day training summary (distance / pace / HR).
+    const today = new Date()
+    const from = new Date(today.getTime() - loadFetchDays * 86400000)
+    const dateFrom = from.toISOString().slice(0, 10)
     Promise.all([
       getHealth(user, 90),
       getHrv(user, 90),
       getStrideZones(user),
       getStrideTrainingLoad(user, loadFetchDays),
+      getActivities(user, { dateFrom, limit: 200 }),
     ])
-      .then(([h, hv, z, ld]) => {
+      .then(([h, hv, z, ld, acts]) => {
         if (cancelled) return
         setHealth({ health: h.health, rhr_baseline: h.rhr_baseline, hrv_snapshot: h.hrv ?? null })
         setHrv({ hrv: hv.hrv })
         setZones(z)
         setLoad(ld)
+        setActivities(acts.activities)
       })
       .catch((e) => {
         if (!cancelled) setError(String(e))
@@ -110,6 +119,20 @@ export default function TrainingStatusPage() {
       })
     return () => { cancelled = true }
   }, [user, days])
+
+  // Group activities by Shanghai-local day so the daily-dose tooltip can list
+  // each workout for the hovered date. Multiple activities per day (e.g. AM run
+  // + PM strength) all get rendered.
+  const activitiesByDate = useMemo(() => {
+    const m = new Map<string, Activity[]>()
+    for (const a of activities) {
+      const key = shanghaiDate(a.date)
+      const arr = m.get(key)
+      if (arr) arr.push(a)
+      else m.set(key, [a])
+    }
+    return m
+  }, [activities])
 
   if (!loaded) {
     return (
@@ -135,7 +158,7 @@ export default function TrainingStatusPage() {
       <MetricsRow health={health} hrv={hrv} zones={zones} />
       <TrendsRow health={health} hrv={hrv} days={days} />
       <ZonesRow zones={zones} />
-      <TrainingLoadSection load={load} dailyWindowDays={days} />
+      <TrainingLoadSection load={load} dailyWindowDays={days} activitiesByDate={activitiesByDate} />
       <DataStatusFooter zones={zones} load={load} />
     </div>
   )
@@ -487,9 +510,101 @@ function LoadStat({ label, value, color, help }: {
   )
 }
 
-function TrainingLoadSection({ load, dailyWindowDays }: {
+// Map COROS/Garmin English sport_name strings to Chinese display labels for
+// the tooltip. Substring matching is robust to variants ("Indoor Run", "Trail
+// Run", "Track Run" all collapse to 跑步).
+const SPORT_NAME_CN: Array<[RegExp, string]> = [
+  [/run|treadmill/i, '跑步'],
+  [/strength|gym/i, '力量训练'],
+  [/bike|cycling/i, '骑行'],
+  [/swim/i, '游泳'],
+  [/walk/i, '步行'],
+  [/hike/i, '徒步'],
+  [/ski|snowboard/i, '滑雪'],
+  [/hiit/i, 'HIIT'],
+  [/row/i, '划船'],
+  [/jump rope/i, '跳绳'],
+  [/cardio/i, '有氧'],
+]
+
+function chineseSportName(name: string | null | undefined): string {
+  const s = name ?? ''
+  for (const [re, cn] of SPORT_NAME_CN) {
+    if (re.test(s)) return cn
+  }
+  return s || '训练'
+}
+
+// Distance-based sports show distance + avg pace + avg HR; strength / HIIT /
+// gym etc. show duration + avg HR (pace is meaningless without distance).
+function isDistanceSport(name: string | null | undefined): boolean {
+  return /run|bike|cycling|swim|walk|hike|treadmill|row/i.test(name ?? '')
+}
+
+// Convert duration seconds into a compact "1h43min" / "43min" / "8h" form
+// (the user-requested shape — backend's HH:MM:SS reads as a stopwatch, not a
+// human summary).
+function formatDurationHuman(seconds: number | null | undefined): string {
+  if (!seconds || seconds <= 0) return '—'
+  const total = Math.round(seconds)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  if (h > 0 && m > 0) return `${h}h${m}min`
+  if (h > 0) return `${h}h`
+  return `${m}min`
+}
+
+// Custom tooltip for the daily Dose bar chart — shows STRIDE training_dose
+// plus a one-line summary per activity recorded on that day. Distance sports
+// render as "跑步 14.21km · 平均配速 4:50 · 平均心率 157"; non-distance sports
+// (力量训练 etc.) render as "力量训练 1h43min · 平均心率 145". Rest days
+// (no activity rows) show "休息日".
+function DailyDoseTooltip({
+  active, payload, activitiesByDate,
+}: {
+  active?: boolean
+  payload?: Array<{ payload: { date: string; training_dose: number | null } }>
+  label?: string
+  activitiesByDate: Map<string, Activity[]>
+}) {
+  if (!active || !payload || payload.length === 0) return null
+  const row = payload[0].payload
+  const acts = activitiesByDate.get(row.date) ?? []
+  const dayLabel = `${formatDateShort(row.date)} · ${shanghaiWeekday(row.date)}`
+  return (
+    <div style={{ ...TOOLTIP_STYLE.contentStyle, padding: '8px 10px', lineHeight: 1.4 }}>
+      <div style={{ color: '#8888a0', marginBottom: 4 }}>{dayLabel}</div>
+      <div style={{ color: '#e68a00', fontWeight: 600 }}>
+        训练负荷: {row.training_dose != null ? row.training_dose.toFixed(0) : '—'}
+      </div>
+      {acts.map((a) => {
+        const sport = chineseSportName(a.sport_name)
+        const hr = a.avg_hr ?? '—'
+        if (isDistanceSport(a.sport_name)) {
+          const pace = (a.pace_fmt || '—').replace('/km', '')
+          return (
+            <div key={a.label_id} style={{ marginTop: 4 }}>
+              {sport} {a.distance_km}km · 平均配速 {pace} · 平均心率 {hr}
+            </div>
+          )
+        }
+        return (
+          <div key={a.label_id} style={{ marginTop: 4 }}>
+            {sport} {formatDurationHuman(a.duration_s)} · 平均心率 {hr}
+          </div>
+        )
+      })}
+      {acts.length === 0 && (
+        <div style={{ marginTop: 4, color: '#8888a0' }}>休息日</div>
+      )}
+    </div>
+  )
+}
+
+function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
   load: StrideTrainingLoadResponse | null
   dailyWindowDays: number
+  activitiesByDate: Map<string, Activity[]>
 }) {
   const cur = load?.current
   // Daily chart respects the user's window; weekly chart always uses the
@@ -582,7 +697,7 @@ function TrainingLoadSection({ load, dailyWindowDays }: {
                   <CartesianGrid {...GRID_STYLE} />
                   <XAxis dataKey="dateLabel" tick={AXIS_TICK} />
                   <YAxis tick={AXIS_TICK} />
-                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Tooltip content={<DailyDoseTooltip activitiesByDate={activitiesByDate} />} />
                   <Bar dataKey="training_dose" name="训练负荷" fill="#e68a00" fillOpacity={0.7} maxBarSize={14} />
                 </BarChart>
               </ResponsiveContainer>
