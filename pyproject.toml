@@ -52,7 +52,6 @@ dev = [
 [project.scripts]
 coros-sync = "coros_sync.cli:cli"
 garmin-sync = "garmin_sync.cli:cli"
-stride-coach = "coach_agent.cli:cli"
 
 # `src/coach_eval` is deliberately NOT in `packages` — the offline evaluation
 # framework is dev-only and must not be installed into a production wheel.
@@ -62,7 +61,7 @@ stride-coach = "coach_agent.cli:cli"
 # direction statically; the Dockerfile strips the package at build time as
 # the runtime guard.
 [tool.hatch.build.targets.wheel]
-packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_server", "src/coach", "src/coach_agent", "src/plan_parser"]
+packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_server", "src/coach", "src/plan_parser"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

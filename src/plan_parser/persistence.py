@@ -9,6 +9,8 @@ from typing import Any, Literal
 from stride_core.db import Database
 from stride_core.plan_spec import WeeklyPlan
 
+from .model_identity import configured_generator_id
+
 
 _StructuredSource = Literal["fresh", "backfilled", "parse_failed", "authored"]
 
@@ -46,10 +48,7 @@ def apply_weekly_plan(
     db = Database(user=user)
     try:
         if generated_by is None:
-            # Lazy import keeps the LLM stack off the import path of callers
-            # that already know who wrote the row (the common case).
-            from coach_agent.model import get_generated_by
-            author = get_generated_by()
+            author = configured_generator_id()
         else:
             author = generated_by
         md_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()

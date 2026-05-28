@@ -225,9 +225,9 @@ def estimate_rhr_baseline(
 
     Returns None when fewer than `min_samples` valid rows fall inside the
     window. Mirrors the algorithm previously inlined in
-    `training_load.calibration.estimate_calibration`,
-    `routes/health.py::get_health`, and `coach_agent/context.py::_rhr_baseline`
-    — those three sites now read this single implementation.
+    `training_load.calibration.estimate_calibration` and
+    `routes/health.py::get_health`; those sites now read this single
+    implementation.
     """
     window_start = as_of_date - timedelta(days=lookback_days)
     values = sorted(

@@ -247,14 +247,6 @@ class TestAuthoredReparse:
         # NOTE: deliberately NOT calling _seed_db_md — DB row absent forces
         # the ``content_md = disk_md.content`` fallback to run.
         sentinel = _mock_run_agent(monkeypatch, structured=True)
-        # Stub get_generated_by because no DB row → no existing_generated_by →
-        # apply_weekly_plan falls through to live AOAI lookup which is unset
-        # in the test env. apply_weekly_plan (plan_parser.persistence) lazy-
-        # imports get_generated_by from coach_agent.model, so we patch the
-        # source module.
-        import coach_agent.model as model_mod
-        monkeypatch.setattr(model_mod, "get_generated_by", lambda: "test-author")
-
         resp = client.post(
             f"/internal/plan/reparse?user={USER_UUID}&folder={FIXTURE_WEEK}",
             headers={"X-Internal-Token": INTERNAL_TOKEN},

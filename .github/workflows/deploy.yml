@@ -9,7 +9,6 @@ on:
       - 'src/stride_core/**'
       - 'src/stride_server/**'
       - 'src/coach/**'
-      - 'src/coach_agent/**'
       - 'src/plan_parser/**'
       - 'frontend/**'
       - 'strength_illustrations/**'
