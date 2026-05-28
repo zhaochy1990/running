@@ -249,7 +249,7 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
 
         if ratio is None:
             rec["tsb_zone"] = "neutral"
-            rec["tsb_zone_label"] = "过渡区"
+            rec["tsb_zone_label"] = "维持期"
         elif ratio < 0.6:
             rec["tsb_zone"] = "overtaper"
             rec["tsb_zone_label"] = "减量过多"
@@ -258,10 +258,10 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
             rec["tsb_zone_label"] = "比赛就绪"
         elif ratio < 1.1:
             rec["tsb_zone"] = "neutral"
-            rec["tsb_zone_label"] = "过渡区"
+            rec["tsb_zone_label"] = "维持期"
         elif ratio < 1.3:
             rec["tsb_zone"] = "training"
-            rec["tsb_zone_label"] = "正常训练"
+            rec["tsb_zone_label"] = "提升期"
         else:
             rec["tsb_zone"] = "overreaching"
             rec["tsb_zone_label"] = "过度负荷"

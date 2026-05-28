@@ -53,8 +53,8 @@ def plot_pmc(df: pd.DataFrame) -> None:
     tsb = df["tsb"]
     ax2.axhspan(25, tsb.max() + 10, color="#ffab00", alpha=0.06, label="减量过多 (>25)")
     ax2.axhspan(10, 25, color="#00a85a", alpha=0.08, label="比赛就绪 (10~25)")
-    ax2.axhspan(-10, 10, color="#888888", alpha=0.04, label="过渡区 (-10~10)")
-    ax2.axhspan(-30, -10, color="#0097a7", alpha=0.06, label="正常训练 (-30~-10)")
+    ax2.axhspan(-10, 10, color="#888888", alpha=0.04, label="维持期 (-10~10)")
+    ax2.axhspan(-30, -10, color="#0097a7", alpha=0.06, label="提升期 (-30~-10)")
     ax2.axhspan(tsb.min() - 10, -30, color="#d32f2f", alpha=0.06, label="过度负荷 (<-30)")
 
     ax2.plot(dates, tsb, color="#5c6bc0", linewidth=2, label="TSB (状态)")

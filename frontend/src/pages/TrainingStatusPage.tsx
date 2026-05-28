@@ -15,18 +15,56 @@ import { aggregateWeeklyDose } from '../lib/weeklyLoad'
 import { shanghaiDate, shanghaiToday, shanghaiWeekStart, shanghaiWeekday } from '../lib/shanghai'
 import ViewHead from '../components/ViewHead'
 
-// Form color band matches HealthPage's STRIDE block originally — kept here as
-// the single source of truth after the chart relocated.
-// Form (Chronic − Acute) zone palette. Green anchors 正常训练 (the productive
-// stress band) per product intent; race-ready picks up teal, over-taper amber,
-// transition stays neutral grey, overload red.
-function formColor(v: number | null): string {
-  if (v == null) return '#8888a0'
-  if (v >= 25) return '#ffab00'   // 减量过多
-  if (v >= 10) return '#0097a7'   // 比赛就绪
-  if (v >= -10) return '#8888a0'  // 过渡区
-  if (v >= -30) return '#00a85a'  // 正常训练
-  return '#d32f2f'                // 过度负荷
+// Form (Chronic − Acute) zone palette. Green anchors 提升期 (the productive
+// stress band); race-ready teal, over-taper amber, 维持期 neutral grey,
+// overload red.
+//
+// Why CTL-proportional: STRIDE training_dose is TSS-scaled (1h at threshold =
+// 100), but absolute Form magnitudes scale with CTL — a runner at CTL 50
+// hitting Form -12 is in the same relative stress as a cyclist at CTL 100
+// hitting -24. The classic TrainingPeaks TSB fixed bands (+25/+10/-10/-30)
+// were calibrated for CTL 80-120 and leave amateur-runner Form values stuck
+// in 维持期 most of the time. We use the same ratios applied to each day's
+// CTL so the classification stays meaningful across fitness levels.
+//
+// Naming: 维持期 = acute≈chronic, holding fitness; 提升期 = acute > chronic,
+// productive overload that drives adaptation. PMC's classic English "Optimal"
+// for productive overload was translated 正常训练 originally, but that name
+// conflicts with the everyday meaning of "normal training" so we use 提升期
+// (clearer: this is the band where fitness goes up).
+const FORM_ZONE_COLOR = {
+  over_taper: '#ffab00',
+  race_ready: '#0097a7',
+  transition: '#8888a0',
+  productive: '#00a85a',
+  overload: '#d32f2f',
+} as const
+type FormZone = keyof typeof FORM_ZONE_COLOR
+
+const FORM_ZONE_LABEL: Record<FormZone, string> = {
+  over_taper: '减量过多',
+  race_ready: '比赛就绪',
+  transition: '维持期',
+  productive: '提升期',
+  overload: '过度负荷',
+}
+
+function classifyForm(
+  form: number | null | undefined,
+  chronic: number | null | undefined,
+): FormZone | null {
+  if (form == null || chronic == null || chronic <= 0) return null
+  const r = form / chronic
+  if (r > 0.25) return 'over_taper'
+  if (r >= 0.10) return 'race_ready'
+  if (r >= -0.10) return 'transition'
+  if (r >= -0.25) return 'productive'
+  return 'overload'
+}
+
+function formColor(form: number | null, chronic: number | null | undefined): string {
+  const zone = classifyForm(form, chronic)
+  return zone ? FORM_ZONE_COLOR[zone] : '#8888a0'
 }
 
 // Readiness gate is produced by `src/stride_core/training_load/core.py` as
@@ -857,8 +895,8 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
     const ratio = cur?.load_ratio
     if (ratio == null) return '—'
     if (ratio < 0.8) return '恢复期'
-    if (ratio < 1.0) return '正常训练'
-    if (ratio < 1.3) return '产出期'
+    if (ratio < 1.0) return '维持期'
+    if (ratio < 1.3) return '提升期'
     return '过度负荷'
   })()
 
@@ -891,8 +929,8 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
             <LoadStat
               label="竞技状态(Form)"
               value={cur.form != null ? (cur.form > 0 ? `+${cur.form.toFixed(1)}` : cur.form.toFixed(1)) : '—'}
-              color={cur.form != null && cur.form < -10 ? '#d32f2f' : '#00a85a'}
-              help={<><strong>Form = 慢性负荷 − 急性负荷</strong>。衡量已从近期训练中恢复多少。{'\n\n'}使用方法：{'\n'}• +10 ~ +25 = 比赛就绪甜区{'\n'}• −10 ~ +10 = 过渡区，维持或轻松日{'\n'}• −30 ~ −10 = 正常训练刺激{'\n'}• 低于 −30 = 过度负荷，必须减量{'\n'}• 高于 +25 = 减量过多，开始流失体能</>}
+              color={classifyForm(cur.form, cur.chronic_load) === 'overload' ? '#d32f2f' : '#00a85a'}
+              help={<><strong>Form = 慢性负荷 − 急性负荷</strong>。衡量已从近期训练中恢复多少。{'\n\n'}阈值按当日慢性负荷 (CTL) 比例划分：{'\n'}• +10% ~ +25% × CTL = 比赛就绪，竞技甜区{'\n'}• −10% ~ +10% × CTL = 维持期，acute ≈ chronic，体能持平{'\n'}• −25% ~ −10% × CTL = 提升期，acute &gt; chronic，驱动体能进步{'\n'}• 低于 −25% × CTL = 过度负荷，必须减量{'\n'}• 高于 +25% × CTL = 减量过多，开始流失体能{'\n\n'}（经典 TSB 固定阈值是为 CTL 80-120 校准的，跑者 CTL 通常 40-70，按比例缩放更贴合实际刺激）</>}
             />
             <LoadStat
               label="负荷比(Ratio)"
@@ -904,7 +942,7 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
               label="状态"
               value={stateLabel}
               color="#1a1c2e"
-              help={<><strong>由负荷比衍生的状态分类</strong>，给出今日训练决策参考。{'\n\n'}阈值：{'\n'}• 恢复期：ratio &lt; 0.8{'\n'}• 正常训练：0.8 – 1.0{'\n'}• 产出期：1.0 – 1.3{'\n'}• 过度负荷：&gt; 1.3</>}
+              help={<><strong>由负荷比衍生的状态分类</strong>，给出今日训练决策参考。{'\n\n'}阈值：{'\n'}• 恢复期：ratio &lt; 0.8{'\n'}• 维持期：0.8 – 1.0（持平）{'\n'}• 提升期：1.0 – 1.3（驱动进步）{'\n'}• 过度负荷：&gt; 1.3</>}
             />
           </div>
           <div className="text-[11px] font-mono text-text-muted mb-2 flex items-center flex-wrap gap-x-1">
@@ -963,34 +1001,41 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                     <YAxis tick={AXIS_TICK} />
                     <Tooltip
                       {...TOOLTIP_STYLE}
-                      formatter={(v: unknown) => {
+                      formatter={(v: unknown, _name, ctx) => {
                         if (typeof v !== 'number') return [`${v}`, '竞技状态']
-                        const zone = v > 25 ? '减量过多' : v >= 10 ? '比赛就绪' : v >= -10 ? '过渡区' : v >= -30 ? '正常训练' : '过度负荷'
-                        return [`${v > 0 ? '+' : ''}${v.toFixed(1)} (${zone})`, '竞技状态']
+                        const row = (ctx as { payload?: { chronic_load?: number | null } } | undefined)?.payload
+                        const zone = classifyForm(v, row?.chronic_load)
+                        const label = zone ? FORM_ZONE_LABEL[zone] : '—'
+                        return [`${v > 0 ? '+' : ''}${v.toFixed(1)} (${label})`, '竞技状态']
                       }}
                     />
                     <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
                     <Bar dataKey="form" name="竞技状态">
                       {series.map((entry, idx) => (
-                        <Cell key={idx} fill={formColor(entry.form)} fillOpacity={0.8} />
+                        <Cell key={idx} fill={formColor(entry.form, entry.chronic_load)} fillOpacity={0.8} />
                       ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
                 <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 ml-1">
-                  {[
-                    { label: '比赛就绪 (10 ~ 25)', color: '#0097a7' },
-                    { label: '过渡区 (-10 ~ 10)', color: '#8888a0' },
-                    { label: '正常训练 (-30 ~ -10)', color: '#00a85a' },
-                    { label: '过度负荷 (< -30)', color: '#d32f2f' },
-                    { label: '减量过多 (> 25)', color: '#ffab00' },
-                  ].map(({ label, color }) => (
-                    <span key={label} className="flex items-center gap-1.5 text-xs font-mono text-text-secondary">
-                      <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: color }} />
+                  {([
+                    ['race_ready', '比赛就绪 (+10% ~ +25% × CTL)'],
+                    ['transition', '维持期 (±10% × CTL)'],
+                    ['productive', '提升期 (−25% ~ −10% × CTL)'],
+                    ['overload', '过度负荷 (< −25% × CTL)'],
+                    ['over_taper', '减量过多 (> +25% × CTL)'],
+                  ] as const).map(([zone, label]) => (
+                    <span key={zone} className="flex items-center gap-1.5 text-xs font-mono text-text-secondary">
+                      <span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: FORM_ZONE_COLOR[zone] }} />
                       {label}
                     </span>
                   ))}
                 </div>
+                {cur.chronic_load != null && cur.chronic_load > 0 && (
+                  <div className="text-[10px] font-mono text-text-faint mt-2 ml-1">
+                    当前 CTL ≈ {cur.chronic_load.toFixed(0)} · 对应阈值 ±{(cur.chronic_load * 0.1).toFixed(0)} / ±{(cur.chronic_load * 0.25).toFixed(0)}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">

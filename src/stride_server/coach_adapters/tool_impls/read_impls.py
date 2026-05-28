@@ -77,9 +77,9 @@ def _tsb_zone(tsb: float) -> tuple[str, str]:
     if tsb >= 10:
         return "race_ready", "比赛就绪"
     if tsb >= -10:
-        return "neutral", "过渡区"
+        return "neutral", "维持期"
     if tsb >= -30:
-        return "training", "正常训练"
+        return "training", "提升期"
     return "overreaching", "过度负荷"
 
 
