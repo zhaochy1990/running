@@ -7,8 +7,8 @@ Per plan §5.4 tools MUST NOT raise: unexpected exceptions are caught by
 :func:`_tool_safe` and surfaced as ``ToolResult(ok=False, errors=[...])`` so
 the graph can stay deterministic.
 
-We migrate the loader logic from ``coach_agent/context.py`` here rather than
-calling the existing route handlers — those handlers expect FastAPI
+The loader logic lives here rather than calling the existing route handlers —
+those handlers expect FastAPI
 dependency injection (``payload: dict = Depends(require_bearer)``), which we
 can't satisfy from a coach tool context.
 """
@@ -59,8 +59,7 @@ def _open_db(user_id: str) -> Any:
 
 
 def _activity_payload(row: Any) -> dict[str, Any]:
-    """Mirror the shape :func:`coach_agent.context._activity_payload` produced
-    so we stay drop-in compatible with downstream prompts."""
+    """Return the compact activity shape consumed by coach prompts."""
     from stride_core.models import pace_str
     from stride_server.deps import format_duration
 

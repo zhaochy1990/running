@@ -346,8 +346,6 @@ class TestApplyWeeklyPlanRollback:
         partial rows landed in any of the three tables."""
         import stride_core.db as core_db
         monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
-        import coach_agent.model as model_mod
-        monkeypatch.setattr(model_mod, "get_generated_by", lambda: "test-model")
         from plan_parser import apply_weekly_plan
 
         wp = WeeklyPlan(
@@ -518,7 +516,6 @@ class TestSessionDateValidation:
         parse_error is set; downstream apply_weekly_plan would mark
         structured_status='parse_failed'."""
         from plan_parser import parse_plan_md
-        import coach_agent.model as model_mod
 
         plan = {
             "schema": "weekly-plan/v1",
@@ -548,7 +545,6 @@ class TestSessionDateValidation:
                 r.content = f"```json\n{json.dumps(plan)}\n```"
                 return r
 
-        monkeypatch.setattr(model_mod, "get_generated_by", lambda: "stub")
         result = parse_plan_md(
             folder=WEEK, md_text="# md", chat_model=FakeModel(),
         )

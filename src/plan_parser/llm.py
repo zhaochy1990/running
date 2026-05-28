@@ -12,6 +12,7 @@ from typing import Any
 
 from stride_core.plan_spec import WeeklyPlan
 
+from .model_identity import configured_generator_id
 from .parser import parse_structured
 from .prompts import PARSE_PROMPT, PARSE_SYSTEM_PROMPT, STRUCTURED_SCHEMA_HINT
 
@@ -42,6 +43,20 @@ def _message_content(response: Any) -> str:
     return str(content or "").strip()
 
 
+def _default_chat_model() -> Any:
+    from stride_server.coach_runtime import get_generator_llm
+
+    return get_generator_llm()
+
+
+def _model_id_for(chat_model: Any) -> str:
+    for attr in ("model_name", "model", "deployment_name", "azure_deployment", "deployment"):
+        value = getattr(chat_model, attr, None)
+        if isinstance(value, str) and value:
+            return value
+    return configured_generator_id()
+
+
 def parse_plan_md(
     *,
     folder: str,
@@ -56,8 +71,7 @@ def parse_plan_md(
             and passed to the model as context.
         md_text: The full markdown content to parse.
         chat_model: Optional pre-built chat model instance. When ``None`` the
-            default ``coach_agent.model.get_chat_model()`` factory is used —
-            same Azure OpenAI Responses configuration as the coach agent.
+            configured coach generator model is used.
 
     Returns:
         ``PlanParseResult`` with the validated ``WeeklyPlan`` or a parse error.
@@ -70,15 +84,8 @@ def parse_plan_md(
     if chat_model is None:
         # Lazy import — keeps non-LLM callers (e.g. parse_structured-only tests)
         # off the azure-identity / langchain import path.
-        from coach_agent.model import get_chat_model, get_generated_by
-        chat_model = get_chat_model()
-        model_id = get_generated_by()
-    else:
-        from coach_agent.model import get_generated_by
-        try:
-            model_id = get_generated_by()
-        except Exception:
-            model_id = "unknown"
+        chat_model = _default_chat_model()
+    model_id = _model_id_for(chat_model)
 
     messages = [
         ("system", PARSE_SYSTEM_PROMPT),
