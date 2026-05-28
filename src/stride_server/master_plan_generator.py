@@ -652,6 +652,22 @@ def _build_system_prompt(
 - 用户档案若含目标体重 / 体脂调整诉求，营养原则必须显式应对（如"build 期保持小幅热量盈余以支撑训练负荷而非追求减重"）
 - **不要**只写一条笼统的"注重营养"，必须按 phase 给具体数字
 
+**训练负荷分布（HARD）**：
+- STRIDE 用 **CTL 比例 Form 分类**（chronic−acute 除以 chronic，不是经典 TSB 固定阈值）：
+  - > +25% CTL = 减量过多 / +10~+25% = 比赛就绪 / ±10% = 维持期 / −25%~−10% = 提升期 / < −25% = 过度负荷
+- 每个 phase 的 `focus` 字段必须**显式声明 Form 期望分布**（按 phase 类型）：
+  - **Base（基础期）**：维持期 40-50% + 提升期 30-40% + 比赛就绪 10-20%；chronic 缓慢上行
+  - **Build（进展期）**：**提升期 50-60%** + 维持期 20-30% + 比赛就绪 10%；chronic 明显上行
+  - **Peak（赛前期）**：提升期 40% + 维持期 30% + 比赛就绪 30%；chronic 持平或微降
+  - **Taper（减量期）**：比赛就绪 60-70% + 维持期 20-30%；acute 主动下降
+  - **Recovery（恢复期）**：比赛就绪 70% + 维持期 30%；chronic 主动下行
+- 周量 ramp heuristic：每周 dose 目标 ≈ **chronic × 7**（维持）/ **chronic × 7.7+**（推进入提升期）
+- Anti-patterns（在 `training_principles` 中显式写明禁止）：
+  - 单日 long run dose **不得 > 35%** 周总 dose（"spike + flat"根因）
+  - 每周零 dose 天 **≤ 2**（典型布局：力量日 + 短 jog 30-40min 替代纯力量；mobility 日不计零 dose）
+  - 周一 / 周日相邻零日**禁止**（acute 会被连续清零 2-3 天）
+- 周计划生成时 `key_sessions` 必须能撑起 phase 的 Form 分布目标 —— 例如 build 周要让 ≥4 天有跑步 dose，而不是 2 个 spike + 4 个零日
+
 **Distance specificity（HARD）**：
 - 训练 / 备战的几乎一切（peak 周量、long_run 距离、taper 长度、间歇课比例）都要按 target_race.distance 调整。**不要**把 FM-style plan 套到 HM / 10K / 5K，反之亦然。
 - FM (full marathon)：peak 周量 65-80 km；peak long_run **≥ 28 km**（典型 28-35）；taper **2 周**；peak phase 3-4 周；race-specific 期重 marathon-pace long runs + tempo

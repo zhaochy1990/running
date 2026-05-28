@@ -233,9 +233,9 @@ def pmc_chart(db: Database) -> None:
         elif tsb >= 10:
             zone, zone_style = "比赛就绪", "bold green"
         elif tsb >= -10:
-            zone, zone_style = "过渡区", "dim"
+            zone, zone_style = "维持期", "dim"
         elif tsb >= -30:
-            zone, zone_style = "正常训练", "cyan"
+            zone, zone_style = "提升期", "cyan"
         else:
             zone, zone_style = "过度负荷", "bold red"
 
