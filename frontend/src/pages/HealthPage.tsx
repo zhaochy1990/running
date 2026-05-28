@@ -73,8 +73,8 @@ function tsbColor(v: number | null): string {
 
 function tsbZoneLabel(zone: string | null): string {
   const map: Record<string, string> = {
-    overtaper: '减量过多', race_ready: '比赛就绪', neutral: '过渡区',
-    training: '正常训练', overreaching: '过度负荷',
+    overtaper: '减量过多', race_ready: '比赛就绪', neutral: '维持期',
+    training: '提升期', overreaching: '过度负荷',
   }
   return zone ? (map[zone] || zone) : '—'
 }
@@ -354,14 +354,14 @@ export default function HealthPage() {
                       value={pmcSummary.current_tsb != null ? `${pmcSummary.current_tsb > 0 ? '+' : ''}${pmcSummary.current_tsb}` : '—'} unit=""
                       color={tsbColor(pmcSummary.current_tsb)}
                       detail={tsbZoneLabel(pmcSummary.current_tsb_zone)}
-                      help={<><strong>训练应激平衡 = CTI − ATI</strong>。衡量已从近期训练中恢复多少、是否适合比赛。{'\n\n'}使用方法：{'\n'}• +10~+25 比赛就绪甜区{'\n'}• -10~+10 过渡区{'\n'}• -30~-10 正常训练刺激{'\n'}• 低于 -30 过度负荷，必减量{'\n'}• 高于 +25 减量过多，流失体能</>}
+                      help={<><strong>训练应激平衡 = CTI − ATI</strong>。衡量已从近期训练中恢复多少、是否适合比赛。{'\n\n'}使用方法：{'\n'}• +10~+25 比赛就绪甜区{'\n'}• -10~+10 维持期（acute ≈ chronic）{'\n'}• -30~-10 提升期（驱动体能进步）{'\n'}• 低于 -30 过度负荷，必减量{'\n'}• 高于 +25 减量过多，流失体能</>}
                     />
                     <MetricCard
                       label="状态区间" sublabel="TSB Zone"
                       value={pmcSummary.current_tsb_zone_label || '—'} unit=""
                       color={tsbZoneColor(pmcSummary.current_tsb_zone)}
                       detail={`疲劳 ${pmcSummary.current_fatigue ?? '—'}`}
-                      help={<><strong>TSB 的分类标签</strong>，综合给出今日训练决策参考。{'\n\n'}使用方法：{'\n'}• 比赛就绪 → 可上高质量或比赛{'\n'}• 过渡区 → 维持或轻松日{'\n'}• 正常训练 → 有效刺激期{'\n'}• 过度负荷 → 红灯，必须减量{'\n'}• 减量过多 → 该加量了</>}
+                      help={<><strong>TSB 的分类标签</strong>，综合给出今日训练决策参考。{'\n\n'}使用方法：{'\n'}• 比赛就绪 → 可上高质量或比赛{'\n'}• 维持期 → 维持或轻松日{'\n'}• 提升期 → 有效刺激期{'\n'}• 过度负荷 → 红灯，必须减量{'\n'}• 减量过多 → 该加量了</>}
                     />
                     <MetricCard
                       label="CTL周增量" sublabel="Ramp Rate"
@@ -419,7 +419,7 @@ export default function HealthPage() {
                           <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
                           <Tooltip {...TOOLTIP_STYLE} formatter={(v: unknown) => {
                             const n = Number(v)
-                            const zone = n > 25 ? '减量过多' : n >= 10 ? '比赛就绪' : n >= -10 ? '过渡区' : n >= -30 ? '正常训练' : '过度负荷'
+                            const zone = n > 25 ? '减量过多' : n >= 10 ? '比赛就绪' : n >= -10 ? '维持期' : n >= -30 ? '提升期' : '过度负荷'
                             return [`${n > 0 ? '+' : ''}${n} (${zone})`, 'TSB']
                           }} />
                           <ReferenceLine y={0} stroke="#8888a0" strokeWidth={1} />
@@ -437,8 +437,8 @@ export default function HealthPage() {
                     <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-3 ml-1">
                       {[
                         { label: '比赛就绪 (10 ~ 25)', color: '#00a85a' },
-                        { label: '过渡区 (-10 ~ 10)', color: '#8888a0' },
-                        { label: '正常训练 (-30 ~ -10)', color: '#0097a7' },
+                        { label: '维持期 (-10 ~ 10)', color: '#8888a0' },
+                        { label: '提升期 (-30 ~ -10)', color: '#0097a7' },
                         { label: '过度负荷 (< -30)', color: '#d32f2f' },
                         { label: '减量过多 (> 25)', color: '#e68a00' },
                       ].map(({ label, color }) => (
