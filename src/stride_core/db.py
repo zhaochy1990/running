@@ -1156,6 +1156,49 @@ class Database:
                 """)
                 self._conn.commit()
 
+    def _migrate_vo2max_pb_to_v2(self) -> None:
+        """Migrate ``vo2max_pb`` from v1 (race_type PRIMARY KEY) to v2
+        (autoinc ``id`` + UNIQUE(race_type, label_id) + index on vdot DESC).
+
+        Idempotent: detects v2 via presence of the ``id`` column.
+        Atomic: full table rebuild inside a single transaction.
+        """
+        cols = [r[1] for r in self._conn.execute("PRAGMA table_info(vo2max_pb)")]
+        if not cols:
+            return  # table doesn't exist yet; the SCHEMA CREATE will produce v2
+        if "id" in cols:
+            return  # already v2
+
+        with self._conn:
+            self._conn.execute(
+                """CREATE TABLE vo2max_pb_new (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    race_type    TEXT NOT NULL,
+                    distance_m   REAL NOT NULL,
+                    duration_s   REAL NOT NULL,
+                    vdot         REAL NOT NULL,
+                    pb_date      TEXT NOT NULL,
+                    label_id     TEXT NOT NULL,
+                    even_paced   INTEGER NOT NULL DEFAULT 1,
+                    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(race_type, label_id)
+                )"""
+            )
+            self._conn.execute(
+                """INSERT INTO vo2max_pb_new
+                   (race_type, distance_m, duration_s, vdot, pb_date,
+                    label_id, even_paced, updated_at)
+                   SELECT race_type, distance_m, duration_s, vdot, pb_date,
+                          label_id, even_paced, updated_at
+                   FROM vo2max_pb"""
+            )
+            self._conn.execute("DROP TABLE vo2max_pb")
+            self._conn.execute("ALTER TABLE vo2max_pb_new RENAME TO vo2max_pb")
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vo2max_pb_vdot "
+                "ON vo2max_pb(race_type, vdot DESC)"
+            )
+
     def close(self) -> None:
         self._conn.close()
 
