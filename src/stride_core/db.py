@@ -290,22 +290,22 @@ CREATE TABLE IF NOT EXISTS activity_ability (
     computed_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- v7 PB-memory channel for VO2max. Single row per race-distance class
--- ('5K' / '10K' / 'half' / 'full'); upserts keep the highest VDOT seen.
--- Read by stride_core.ability when computing the L3 VO2max dimension —
--- the decayed PB VDOT (0.5%/month, 18-month max age) acts as a floor on
--- the rolling-window estimate so a 14-month-old marathon PB no longer
--- silently disappears from the metric.
+-- v7 PB-memory channel for VO2max. One row per (race_type x source
+-- activity); current PB per race_type is MAX(vdot). Read by
+-- stride_core.ability when computing the L3 VO2max dimension.
 CREATE TABLE IF NOT EXISTS vo2max_pb (
-    race_type       TEXT PRIMARY KEY,             -- '5K' | '10K' | 'half' | 'full'
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_type       TEXT NOT NULL,
     distance_m      REAL NOT NULL,
     duration_s      REAL NOT NULL,
     vdot            REAL NOT NULL,
-    pb_date         TEXT NOT NULL,                 -- ISO YYYY-MM-DD
+    pb_date         TEXT NOT NULL,
     label_id        TEXT NOT NULL,
-    even_paced      INTEGER NOT NULL DEFAULT 1,    -- 1 if Step 2 well-paced gate accepted
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    even_paced      INTEGER NOT NULL DEFAULT 1,
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(race_type, label_id)
 );
+CREATE INDEX IF NOT EXISTS idx_vo2max_pb_vdot ON vo2max_pb(race_type, vdot DESC);
 
 -- Phase 3: per-day HRV detail (separate table because the row is heavier
 -- than daily_health and not all providers populate it). Composite PK so
@@ -1155,6 +1155,11 @@ class Database:
                     ALTER TABLE daily_hrv_new RENAME TO daily_hrv;
                 """)
                 self._conn.commit()
+
+        # Rebuild vo2max_pb from v1 (race_type PRIMARY KEY) to v2 (autoinc id
+        # + UNIQUE(race_type, label_id)) so we can keep a row per source
+        # activity instead of clobbering on race_type.
+        self._migrate_vo2max_pb_to_v2()
 
     def _migrate_vo2max_pb_to_v2(self) -> None:
         """Migrate ``vo2max_pb`` from v1 (race_type PRIMARY KEY) to v2
