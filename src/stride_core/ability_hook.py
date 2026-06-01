@@ -200,14 +200,29 @@ def _normalize_ts_units(rows) -> list[tuple[float, float]]:
     in cm. We divide both by 100 and rebase t to the first surviving row
     so segment scanning works in activity-relative seconds.
 
-    Skips rows where either field is None.
+    Two filters applied in order:
+      1. Drop rows where `timestamp` or `distance` is None.
+      2. Drop rows whose distance is strictly less than the previous
+         surviving distance — guards against COROS's synthetic distance=0
+         reset on pause-resume (which is NOT recorded in `activities.pauses`)
+         and against minor GPS backsteps that would inflate sliding-window
+         speed.
     """
     filtered = [(r["timestamp"], r["distance"]) for r in rows
                 if r["timestamp"] is not None and r["distance"] is not None]
     if not filtered:
         return []
-    t0 = filtered[0][0]
-    return [((ts - t0) / 100.0, dist / 100.0) for ts, dist in filtered]
+    monotonic: list[tuple[float, float]] = []
+    last_dist = -float("inf")
+    for ts, dist in filtered:
+        if dist < last_dist:
+            continue
+        monotonic.append((ts, dist))
+        last_dist = dist
+    if not monotonic:
+        return []
+    t0 = monotonic[0][0]
+    return [((ts - t0) / 100.0, dist / 100.0) for ts, dist in monotonic]
 
 
 def _parse_pauses(raw, t0: float) -> list[tuple[float, float]]:

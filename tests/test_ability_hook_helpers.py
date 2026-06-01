@@ -65,3 +65,45 @@ def test_parse_pauses_missing_keys_returns_empty():
     raw = '[{"foo": 1}]'
     out = _parse_pauses(raw, t0=0)
     assert out == []
+
+
+def test_normalize_ts_units_drops_distance_regression():
+    """COROS sometimes emits a synthetic distance=0 sample at pause resume
+    without recording the pause in activities.pauses. The reset sample is
+    non-monotonic vs the previous accumulated distance; drop it so the
+    segment scanner doesn't compute impossibly fast windows."""
+    # COROS units: timestamp /100 → seconds, distance /100 → meters
+    rows = [
+        _row(100, 0),         # t=0,  d=0
+        _row(200, 500_000),   # t=1,  d=5000m
+        _row(300, 0),         # synthetic reset — DROP THIS
+        _row(400, 505_000),   # t=3,  d=5050m (resumes)
+        _row(500, 510_000),   # t=4,  d=5100m
+    ]
+    out = _normalize_ts_units(rows)
+    # Reset sample (300, 0) dropped; remaining 4 points monotonic
+    assert len(out) == 4
+    distances = [d for _, d in out]
+    assert distances == [0.0, 5000.0, 5050.0, 5100.0]
+
+
+def test_normalize_ts_units_drops_minor_gps_regression():
+    """Tiny GPS noise like 5000→4998→5001: drop the 4998 backward step
+    but keep the next forward sample. Cumulative monotonicity preserved."""
+    rows = [
+        _row(100, 0),
+        _row(200, 500_000),    # 5000
+        _row(300, 499_800),    # 4998 — drop
+        _row(400, 500_100),    # 5001 — keep, still forward vs the last KEPT 5000
+    ]
+    out = _normalize_ts_units(rows)
+    assert len(out) == 3
+    assert [d for _, d in out] == [0.0, 5000.0, 5001.0]
+
+
+def test_normalize_ts_units_equal_distance_kept():
+    """Equal-distance samples (idle / very slow) should NOT be dropped.
+    The filter rule is strict regression (< previous), not <=."""
+    rows = [_row(100, 0), _row(200, 1000), _row(300, 1000), _row(400, 2000)]
+    out = _normalize_ts_units(rows)
+    assert len(out) == 4
