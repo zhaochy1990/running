@@ -1,0 +1,393 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-06-01_06-07(W6过渡-Phase1到Phase2桥接)",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-01",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "力量 A — 下肢（8 kg 维持，35 min）",
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量 A 下肢 W6",
+        "date": "2026-06-01",
+        "note": "W3-W5 连缺 3 周 → 本周不上 10 kg，仍 8 kg 验证；任何动作腰酸/膝痛立即降回 5 kg 或停",
+        "exercises": [
+          {"canonical_id": "T1301", "display_name": "哑铃高脚杯深蹲（8 kg）", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 60, "note": "哑铃贴胸，全蹲到底", "provider_id": "T1301"},
+          {"canonical_id": "T1305", "display_name": "罗马尼亚硬拉（8 kg/手）", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 60, "note": "臀主导，腰不圆", "provider_id": "T1305"},
+          {"canonical_id": "T1306", "display_name": "分腿蹲 Bulgarian split squat", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 45, "note": "每侧；后腿膝盖轻触地", "provider_id": "T1306"},
+          {"canonical_id": "T1275", "display_name": "单腿提踵（扶墙）", "sets": 3, "target_kind": "reps", "target_value": 15, "rest_seconds": 30, "note": "每侧；慢上快下", "provider_id": "T1275"},
+          {"canonical_id": "T1010", "display_name": "平板支撑", "sets": 3, "target_kind": "time_s", "target_value": 60, "rest_seconds": 30, "note": "维持 60s", "provider_id": "T1010"},
+          {"canonical_id": "T1219", "display_name": "单腿臀桥", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 30, "note": "每侧；顶峰挤臀 1s", "provider_id": "T1219"}
+        ]
+      },
+      "notes_md": "早 6:30 或 晚 19:00 完成；连缺 3 周必做",
+      "total_distance_m": null,
+      "total_duration_s": 2100,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-02",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 8 km @ HR <148（强度课前一天，全程 Z1）",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 轻松跑 8K W6",
+        "date": "2026-06-02",
+        "note": "早 5:30-6:30；HR <148，配速 6:00-6:30/km，强度课前一天全程 Z1",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 8000},
+                "target": {"kind": "pace_s_km", "low": 390, "high": 360},
+                "note": "HR <148，配速 6:00-6:30/km",
+                "hr_cap_bpm": 152
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": null,
+      "total_distance_m": 8000,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-03",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "⭐ 强度课：800m × 8 + 400m × 8 交替（本周关键课）",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 800m×8 + 400m×8 交替 W6",
+        "date": "2026-06-03",
+        "note": "早 5:30-7:00 硬性；800m @ 4:20-4:35/km 5K-pace 稳压（目标 4:22-4:28），地板 4:40；400m @ 5:30-5:50/km 慢恢复；HR cap 178",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {"kind": "distance_m", "value": 2000},
+                "target": {"kind": "pace_s_km", "low": 420, "high": 390},
+                "note": "HR <140，约 13 min",
+                "hr_cap_bpm": null
+              }
+            ]
+          },
+          {
+            "repeat": 4,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 80},
+                "target": {"kind": "open"},
+                "note": "Stride 神经激活，自由配速",
+                "hr_cap_bpm": null
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 60},
+                "target": {"kind": "open"},
+                "note": "走回",
+                "hr_cap_bpm": null
+              }
+            ]
+          },
+          {
+            "repeat": 8,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 800},
+                "target": {"kind": "pace_s_km", "low": 275, "high": 260},
+                "note": "800m 快段 @ 4:20-4:35/km（5K-pace，目标 4:22-4:28 稳压）；地板 4:40（280）—— 慢于 4:40 当组结束即收尾；HR 持续 >178 当组结束",
+                "hr_cap_bpm": 178
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "distance_m", "value": 400},
+                "target": {"kind": "pace_s_km", "low": 350, "high": 330},
+                "note": "400m 慢恢复 @ 5:30-5:50/km；active recovery jog，不停，HR 应回 160-170",
+                "hr_cap_bpm": null
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {"kind": "distance_m", "value": 1500},
+                "target": {"kind": "pace_s_km", "low": 420, "high": 390},
+                "note": "HR <140 极慢冷身",
+                "hr_cap_bpm": null
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "硬规则：连续 2 组 HR >178 当下结束；任意 1 组 800m 慢于 4:40 即收尾；AnE >3.5 不再加组。天气降级：>25°C 800m 放到 4:30-4:35；>28°C 改纯心率 170-178 减到 6 组；>30°C 推迟到 6/5。",
+      "total_distance_m": 13100,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-04",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松 4K shake-out @ HR <145（保 acute 不清零）",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 4K shake-out W6",
+        "date": "2026-06-04",
+        "note": "早 6:00 慢跑；HR <145，配速 7:00/km 左右；避免 acute 清零",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 4000},
+                "target": {"kind": "pace_s_km", "low": 450, "high": 400},
+                "note": "HR <145；shake-out 节奏",
+                "hr_cap_bpm": 148
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "强度课次日；shake-out 不要省 —— W5 三个零 dose 日把 acute 反复清零，本周改为最多 2 个零 dose 日",
+      "total_distance_m": 4000,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-04",
+      "session_index": 1,
+      "kind": "strength",
+      "summary": "力量 B — 核心 / 稳定（30 min，晚 19:00）",
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量 B 核心 W6",
+        "date": "2026-06-04",
+        "note": "shake-out 之后；强度课次日纯核心 + 髋稳定",
+        "exercises": [
+          {"canonical_id": "T1243", "display_name": "Dead Bug", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "note": "每侧；腰不离地", "provider_id": "T1243"},
+          {"canonical_id": "T1150", "display_name": "Bird Dog", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "note": "每侧；同侧稳定", "provider_id": "T1150"},
+          {"canonical_id": "T1185", "display_name": "侧平板", "sets": 3, "target_kind": "time_s", "target_value": 40, "rest_seconds": 30, "note": "每侧；髋不下沉", "provider_id": "T1185"},
+          {"canonical_id": "T1219", "display_name": "单腿臀桥", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 30, "note": "每侧；顶峰挤臀", "provider_id": "T1219"},
+          {"canonical_id": "T1041", "display_name": "反向卷腹", "sets": 3, "target_kind": "reps", "target_value": 15, "rest_seconds": 30, "note": "控制下放", "provider_id": "T1041"},
+          {"canonical_id": "T1317", "display_name": "蚌式", "sets": 3, "target_kind": "reps", "target_value": 15, "rest_seconds": 30, "note": "每侧；臀中肌（ITB 预防）", "provider_id": "T1317"}
+        ]
+      },
+      "notes_md": null,
+      "total_distance_m": null,
+      "total_duration_s": 1800,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-05",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 6 km + 4×80m strides（神经激活）",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 轻松+strides W6",
+        "date": "2026-06-05",
+        "note": "早 5:30-6:30；HR <148，配速 6:00-6:30/km；strides 自由配速",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 6000},
+                "target": {"kind": "pace_s_km", "low": 390, "high": 360},
+                "note": "HR <148，配速 6:00-6:30/km",
+                "hr_cap_bpm": 152
+              }
+            ]
+          },
+          {
+            "repeat": 4,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 80},
+                "target": {"kind": "open"},
+                "note": "Stride 自由配速，神经激活",
+                "hr_cap_bpm": null
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 60},
+                "target": {"kind": "open"},
+                "note": "走回",
+                "hr_cap_bpm": null
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": null,
+      "total_distance_m": 6320,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-06",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "休 / 30 min 散步（长距离前储备）",
+      "spec": null,
+      "notes_md": "长距离前夜碳水 6 g/kg ≈ 450 g（米饭 2.5 碗 + 主食为主）",
+      "total_distance_m": null,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-07",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "⭐ 20 km 渐进跑（pan-tier 保守版，5:30 起步 → 4:45 收尾）",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 20K 渐进跑 W6",
+        "date": "2026-06-07",
+        "note": "早 5:30-7:00 硬性；4 段渐进：5K @ 5:25-5:35 → 5K @ 5:10-5:20 → 5K @ 4:55-5:05 → 5K @ 4:40-4:50；天花板 4:40/km 不可跑进（pan LT 配速）",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "pace_s_km", "low": 335, "high": 325},
+                "note": "段 1: km 0-5 @ 5:25-5:35/km（目标 5:30），HR 上限 150",
+                "hr_cap_bpm": 150
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "pace_s_km", "low": 320, "high": 310},
+                "note": "段 2: km 5-10 @ 5:10-5:20/km（目标 5:15），HR 上限 155",
+                "hr_cap_bpm": 155
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "pace_s_km", "low": 305, "high": 295},
+                "note": "段 3: km 10-15 @ 4:55-5:05/km（目标 5:00），HR 上限 160",
+                "hr_cap_bpm": 160
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "pace_s_km", "low": 290, "high": 280},
+                "note": "段 4: km 15-20 @ 4:40-4:50/km（目标 4:45），不贴 4:40 pan LT；HR 上限 165",
+                "hr_cap_bpm": 165
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "硬规则：起步 5K HR >155 → 维持 5:30 不进阶，跑成 20K Z2；任 1 km HR 持续 >165 超 1 km → 当段维持不再加；末段 5K HR 漂移 >8 bpm → 不再加速；HR 持续 >170 → 当段退到上一档；任 1 km 慢于目标 +20 s/km 且未热 → abort 加速回 Z2。补给：4:45 起，5:00 香蕉 + 100 ml 黑咖啡，1 瓶水 + km 10 + km 15 各 1 胶。天气：>28°C 末段不加速；>30°C 减到 16K @ 5:30-5:00 全程 Z2。",
+      "total_distance_m": 20000,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-01",
+      "kcal_target": 2300,
+      "carbs_g": 300,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "meals": [],
+      "notes_md": "力量日；力量后 30 min 30g 蛋白 + 30g 碳水"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-02",
+      "kcal_target": 2400,
+      "carbs_g": 340,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "meals": [],
+      "notes_md": "轻松跑日；强度课前一天"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-03",
+      "kcal_target": 2750,
+      "carbs_g": 450,
+      "protein_g": 140,
+      "fat_g": 65,
+      "water_ml": 3000,
+      "meals": [],
+      "notes_md": "强度课日；4:45 起 5:00 香蕉 + 100ml 黑咖啡；跑后 30 min 30g 蛋白 + 60-70g 快碳 + 500ml 电解质（13K 强度量大于 W5）"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-04",
+      "kcal_target": 2400,
+      "carbs_g": 340,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "meals": [],
+      "notes_md": "力量+shake-out 日；力量后 30 min 30g 蛋白 + 30g 碳水"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-05",
+      "kcal_target": 2400,
+      "carbs_g": 340,
+      "protein_g": 135,
+      "fat_g": 70,
+      "water_ml": 2500,
+      "meals": [],
+      "notes_md": "轻松跑+strides 日"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-06",
+      "kcal_target": 2500,
+      "carbs_g": 450,
+      "protein_g": 135,
+      "fat_g": 65,
+      "water_ml": 2500,
+      "meals": [],
+      "notes_md": "休息日；长距离前夜碳水 6 g/kg ≈ 450 g（米饭 2.5 碗 + 主食为主）"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-07",
+      "kcal_target": 2800,
+      "carbs_g": 460,
+      "protein_g": 140,
+      "fat_g": 65,
+      "water_ml": 3000,
+      "meals": [],
+      "notes_md": "长距离日；4:45 起 5:00 香蕉 + 黑咖啡；km 10 + km 15 各 1 胶；跑后 30 min 35g 蛋白 + 80g 快碳"
+    }
+  ],
+  "notes_md": "W6 Phase 1→2 桥接周；距 8/30 上海马拉松 13 周。Form 分布目标：提升期 50% + 维持期 30% + 比赛就绪 20%。周量目标 ~52 km 跑 + 2 力量。本周关键课：6/3 800m×8+400m×8 决定 W7 强度课起点；6/7 20K 渐进决定 W7 长跑距离。"
+}

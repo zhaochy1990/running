@@ -1,0 +1,362 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-06-01_06-07(P1W6)",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-01",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "力量 A 降级版（25 min，mobility + 髋/踝激活，禁下肢耐力）",
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "力量 A 降级版（mobility + 髋踝激活）",
+        "date": "2026-06-01",
+        "note": "RHR 53 + HRV 26 UNBALANCED → 仅做 mobility + 髋/踝激活，禁单腿耐力动作。如 6/2 晨 RHR ≥52 → 整段取消改 20 min 纯泡沫轴 + 拉伸。",
+        "exercises": [
+          {
+            "canonical_id": "T1248",
+            "display_name": "胸椎旋转",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "note": "每侧 10 次",
+            "provider_id": "T1248"
+          },
+          {
+            "canonical_id": "T1244",
+            "display_name": "髋拉伸",
+            "sets": 4,
+            "target_kind": "time_s",
+            "target_value": 30,
+            "rest_seconds": 15,
+            "note": "每侧 30s，髋激活",
+            "provider_id": "T1244"
+          },
+          {
+            "canonical_id": "T1317",
+            "display_name": "蚌式",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 45,
+            "note": "每侧 15 次，ITB 预防（轻量）",
+            "provider_id": "T1317"
+          },
+          {
+            "canonical_id": "T1326",
+            "display_name": "弹力带踝内翻",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "每侧 12 次，左踝弱",
+            "provider_id": "T1326"
+          },
+          {
+            "canonical_id": "T1327",
+            "display_name": "弹力带踝外翻",
+            "sets": 2,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "每侧 12 次，左踝弱",
+            "provider_id": "T1327"
+          }
+        ]
+      },
+      "notes_md": "21:30 前完成。降级原因：长距 + 强度课急性负荷未完全恢复。禁本周一动作：单腿靠墙静蹲、单腿臀桥、平板支撑、Dead Bug、单腿离心提踵 — 移到周二轻松跑后做。",
+      "total_distance_m": null,
+      "total_duration_s": 1500,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-02",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复跑 11 km @ HR 130-138 / 5:30-5:45",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "恢复跑 11 km",
+        "date": "2026-06-02",
+        "note": "关闭配速 + HR 138 报警必须开。W5 5/26 全程 149 → 本周必须守。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 11000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 138},
+                "note": "HR 138 报警必须开；配速参考 5:30-5:45",
+                "hr_cap_bpm": 138
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "露天 easy 必须 HR 报警硬执行。HR 报警响 = 立即减速。",
+      "total_distance_m": 11000,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-03",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "强度课：800m × 8 fast + 400m × 8 slow（交替），主段 9.6K / 总 13-14 km",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "强度课 800/400 alternating × 8",
+        "date": "2026-06-03",
+        "note": "AnE 目标 <3.0（W5 4.4 → 强制回归）。800m 配速地板 4:05 / 天花板 3:50；400m slow 段维持 jog 不可走停。HR ≥185 持续 >20s = 结束当组。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {"kind": "distance_m", "value": 2000},
+                "target": {"kind": "pace_s_km", "low": 340, "high": 320},
+                "note": "慢跑 + 动态拉伸",
+                "hr_cap_bpm": 150
+              },
+              {
+                "step_kind": "warmup",
+                "duration": {"kind": "distance_m", "value": 400},
+                "target": {"kind": "open"},
+                "note": "4 × 100m strides @ 80%",
+                "hr_cap_bpm": null
+              }
+            ]
+          },
+          {
+            "repeat": 8,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 800},
+                "target": {"kind": "pace_s_km", "low": 245, "high": 230},
+                "note": "800m fast: 配速地板 4:05 / 天花板 3:50；HR 165-175 / RPE 7-8；步频 ≥182",
+                "hr_cap_bpm": 185
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "distance_m", "value": 400},
+                "target": {"kind": "pace_s_km", "low": 305, "high": 290},
+                "note": "400m slow active jog: 4:50-5:05 维持节奏不可走停；HR 150-160 可对话；步频 ≥176",
+                "hr_cap_bpm": 165
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {"kind": "distance_m", "value": 1800},
+                "target": {"kind": "hr_bpm", "low": 120, "high": 140},
+                "note": "慢跑放松 1.5-2 km，HR <140",
+                "hr_cap_bpm": 140
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "Abort 任一即终止：800m 任 1 rep >4:05 / 连 2 rep <3:50 / AnE 实时 >3.5 / 课后 >3.0 / AE 实时 >4.5 / RPE >9 / 跟腱晨起痛升 1 级。目标 metrics: AE 3.5-4.5 / AnE 2.5-3.0 / 800m HR avg 168-173 / 400m HR avg 152-158。降级：RHR ≥52 或 HRV <29 → 6 组；跟腱痛 ≥1/10 → 5 组；≥2/10 → 改 11K 轻松；T >25°C → 4:00-4:05；T >28°C → 改纯心率（800m HR 170-178 / 400m HR <155）。",
+      "total_distance_m": 13400,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-04",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "Mobility-only（20 min，胸椎 + 髋 + 踝；不跑）",
+      "spec": null,
+      "notes_md": "不跑步。胸椎 + 髋 + 踝 mobility 20 min。归类为 rest（无跑量、无 push 内容）。如想转 strength 推送，可在执行时自行录入 T1248/T1244/T1326/T1327。",
+      "total_distance_m": 0,
+      "total_duration_s": 1200,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-05",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 12 km @ HR 138-148 / 4:50-5:05",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "轻松跑 12 km",
+        "date": "2026-06-05",
+        "note": "HR 148 报警必须开；为周六让腿。露天 easy HR 145 红线全程守。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 12000},
+                "target": {"kind": "hr_bpm", "low": 138, "high": 148},
+                "note": "HR 148 报警必须开；配速 4:50-5:05 参考",
+                "hr_cap_bpm": 148
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "周二/五 strides 可加 4×100m ≈ 1K（温度允许 + RHR 绿灯时）",
+      "total_distance_m": 12000,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-06",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "核心课：20 km progression（4:50 → 4:45 → 4:40 → 4:30 / HR ≤166）",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "20K progression（4:50→4:30）",
+        "date": "2026-06-06",
+        "note": "起始 4:50 严守，前 5K 任 1 km <4:45 = 减速 4:55 找回；任何时段任 1 km <4:25 = 减速 10s；全程 HR cap 166（LT）；末段 5K HR 漂移 >5 bpm 相对 km 10-15 avg = 维持配速不再加。首选 6:30 前晨跑；T <22°C 18:30 后亦可。",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "pace_s_km", "low": 295, "high": 285},
+                "note": "段 1 km 0-5：目标 4:50 / HR 140-150；前 5K 不可跑进 4:45",
+                "hr_cap_bpm": 166
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "pace_s_km", "low": 290, "high": 280},
+                "note": "段 2 km 5-10：目标 4:45 / HR 145-155；-5s 升档",
+                "hr_cap_bpm": 166
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "pace_s_km", "low": 285, "high": 275},
+                "note": "段 3 km 10-15：目标 4:40 / HR 150-160；-5s 升档",
+                "hr_cap_bpm": 166
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 5000},
+                "target": {"kind": "pace_s_km", "low": 275, "high": 265},
+                "note": "段 4 km 15-20：目标 4:30 / HR 155-165（不超 166 LT）；任何时段不跑进 4:25",
+                "hr_cap_bpm": 166
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "20K 路线能量胶 2 个 @ 35/70 min；每 5K 100-150ml 水；T >22°C 加电解质。降级：黄灯 → 18K progression（4:50→4:35）；红灯 → 15K easy @ 5:00-5:15；双红 → 12K easy 或交叉训练。晨跑流程：周五 18:00 碳水 5-6 g/kg + 低纤维 → 21:30 上床 → 5:00 起 → 5:15 早餐 60g 碳水 → 6:00 起跑 → 7:40 完成 → 30 min 内 30g 蛋白 + 60g 快碳。",
+      "total_distance_m": 20000,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-06-07",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "完全休息（mobility + 泡沫轴）",
+      "spec": null,
+      "notes_md": "W3-W5 守 3/3，W6 不破。完全不跑步。",
+      "total_distance_m": 0,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    }
+  ],
+  "nutrition": [
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-01",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": 130,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "力量日：碳水 4-4.5 g/kg，缺口 -350 kcal。蛋白 1.8 g/kg ≈ 130g。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-02",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": 130,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "轻松跑日：碳水 4-4.5 g/kg，缺口 -300 kcal。蛋白 1.8 g/kg ≈ 130g。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-03",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": 130,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "间歇日：碳水 5-6 g/kg，缺口 0。蛋白 1.8 g/kg ≈ 130g。跑后 30 min 30g 蛋白 + 30-60g 快碳。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-04",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": 130,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "休息日：碳水 3.5 g/kg，缺口 -500 kcal。蛋白 1.8 g/kg ≈ 130g。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-05",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": 130,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "长距离前夜：碳水 5-6 g/kg（低纤维加载），缺口 -100 kcal。18:00 碳水 5-6 g/kg + 低纤维。蛋白 1.8 g/kg ≈ 130g。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-06",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": 130,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "长距离 progression 日：碳水 6-7 g/kg，缺口 0。5:15 早餐 60g 碳水；途中能量胶 2 个 @ 35/70 min；跑后 30 min 30g 蛋白 + 60g 快碳。蛋白 1.8 g/kg ≈ 130g。"
+    },
+    {
+      "schema": "plan-nutrition/v1",
+      "date": "2026-06-07",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": 130,
+      "fat_g": null,
+      "water_ml": null,
+      "meals": [],
+      "notes_md": "休息日：碳水 3.5 g/kg，缺口 -500 kcal。蛋白 1.8 g/kg ≈ 130g。"
+    }
+  ],
+  "notes_md": "P1W6 基础建设期 第 6 周。周量 60 km（容差 58-65）。Phase: base（HRV 红 → 不强推 build）。期望 form 分布：维持期 50% + 提升期 30% + 比赛就绪 20%。营养周平均 -280 kcal/天。"
+}
