@@ -21,8 +21,14 @@ from datetime import datetime, timedelta, timezone
 
 from stride_core.db import Database
 from stride_core.models import RUN_SPORT_IDS
+from stride_core.running_calibration.segments import best_distance_candidates
 
 logger = logging.getLogger(__name__)
+
+
+CANONICAL_RACE_DISTANCES = {
+    "5K": 5000.0, "10K": 10000.0, "half": 21097.5, "full": 42195.0,
+}
 
 
 def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
@@ -33,7 +39,6 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
             L4_WEIGHTS,
             compute_ability_snapshot,
             compute_l1_quality,
-            compute_pb_vdot_for_activity,
         )
     except Exception as e:  # pragma: no cover
         logger.debug("ability module unavailable: %s", e)
@@ -59,29 +64,38 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                     l1_breakdown=l1.get("breakdown"),
                     contribution=None,
                 )
-                # v7 Step 3: enroll the activity as a PB if it lands in
-                # one of the canonical race-distance bands AND (for
-                # marathons) passes the Step 2 well-paced gate. PB upsert
-                # only writes when the new VDOT exceeds the existing one,
-                # so re-syncing the same activity is idempotent.
+                # v8: segment-scan PB enrollment. Each (race_type, source_activity)
+                # yields its own row; the L3 reader picks current best per race_type.
                 try:
-                    pb = compute_pb_vdot_for_activity(activity)
-                    if pb is not None:
-                        race_type, vdot = pb
-                        pb_date = _activity_iso_date(activity, today_iso)
-                        db.upsert_vo2max_pb(
-                            race_type=race_type,
-                            distance_m=float(activity.get("distance_m") or 0),
-                            duration_s=float(activity.get("duration_s") or 0),
-                            vdot=float(vdot),
-                            pb_date=pb_date,
-                            label_id=str(lid),
-                            even_paced=True,
-                        )
+                    from stride_core.ability import compute_pb_vdot_for_segment
+
+                    ts_rows = db.fetch_timeseries(lid)
+                    if ts_rows and len(ts_rows) >= 2:
+                        ts_norm = _normalize_ts_units(ts_rows)
+                        if ts_norm and len(ts_norm) >= 2:
+                            t0_tick = ts_rows[0]["timestamp"]
+                            pauses_s = _parse_pauses(activity.get("pauses"), t0=t0_tick)
+                            candidates = best_distance_candidates(
+                                ts_norm, pauses_s, CANONICAL_RACE_DISTANCES,
+                            )
+                            pb_date = _activity_iso_date(activity, today_iso)
+                            for race_type, cand in candidates.items():
+                                vdot = compute_pb_vdot_for_segment(
+                                    race_type, cand.distance_m, cand.duration_s,
+                                )
+                                if vdot is None:
+                                    continue
+                                db.upsert_vo2max_pb(
+                                    race_type=race_type,
+                                    distance_m=cand.distance_m,
+                                    duration_s=cand.duration_s,
+                                    vdot=vdot,
+                                    pb_date=pb_date,
+                                    label_id=str(lid),
+                                    even_paced=True,
+                                )
                 except Exception:
-                    logger.warning(
-                        "ability PB upsert failed for %s", lid, exc_info=True
-                    )
+                    logger.warning("segment PB scan failed for %s", lid, exc_info=True)
             except Exception:
                 logger.warning(
                     "ability L1 compute failed for %s", lid, exc_info=True
