@@ -15,6 +15,7 @@ the sync pipeline (sync rolls forward; ability is best-effort).
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -176,6 +177,57 @@ def _activity_iso_date(activity: dict, fallback_iso: str) -> str:
     ):
         return candidate
     return fallback_iso
+
+
+def _normalize_ts_units(rows) -> list[tuple[float, float]]:
+    """Convert raw timeseries rows to (t_s, dist_m) tuples.
+
+    COROS storage: `timestamp` in 0.01s ticks (centi-seconds), `distance`
+    in cm. We divide both by 100 and rebase t to the first surviving row
+    so segment scanning works in activity-relative seconds.
+
+    Skips rows where either field is None.
+    """
+    filtered = [(r["timestamp"], r["distance"]) for r in rows
+                if r["timestamp"] is not None and r["distance"] is not None]
+    if not filtered:
+        return []
+    t0 = filtered[0][0]
+    return [((ts - t0) / 100.0, dist / 100.0) for ts, dist in filtered]
+
+
+def _parse_pauses(raw, t0: float) -> list[tuple[float, float]]:
+    """Parse the `activities.pauses` JSON string into activity-relative
+    seconds tuples.
+
+    COROS stores `start_ts` / `end_ts` as absolute centi-second ticks in
+    the same base as `timeseries.timestamp`. We subtract t0 (the first
+    surviving timeseries timestamp) and divide by 100. Inverted intervals
+    (end < start) and malformed entries are dropped silently; whole-JSON
+    parse failures log a warning and return [].
+    """
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        logger.warning("could not parse pauses JSON: %r", raw[:80])
+        return []
+    out: list[tuple[float, float]] = []
+    for entry in data:
+        try:
+            start_abs = entry["start_ts"]
+            end_abs = entry["end_ts"]
+        except (KeyError, TypeError):
+            continue
+        if start_abs is None or end_abs is None:
+            continue
+        start_s = (start_abs - t0) / 100.0
+        end_s = (end_abs - t0) / 100.0
+        if end_s <= start_s:
+            continue
+        out.append((start_s, end_s))
+    return out
 
 
 def _fetch_latest_l4_and_marathon(db: Database) -> tuple[float | None, int | None]:
