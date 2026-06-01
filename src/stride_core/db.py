@@ -1747,27 +1747,24 @@ class Database:
         label_id: str,
         even_paced: bool = True,
     ) -> bool:
-        """Conditionally write a PB row.
+        """Insert or update a per-activity PB row.
 
-        Atomic monotonic upsert: writes only when ``vdot`` strictly exceeds
-        the stored value. The check-and-write happens inside a single
-        ``INSERT … ON CONFLICT … WHERE`` statement so two concurrent
-        connections (sync hook + backfill, or two Container App revisions
-        racing on the same Azure Files SMB-mounted DB) cannot interleave a
-        read with each other's write and demote the PB. Returns True iff a
-        row was actually inserted or updated.
+        Keyed on (race_type, label_id) — multiple activities yield multiple
+        rows per race_type, forming PB history. On conflict, updates only if
+        the incoming vdot strictly exceeds the stored value (e.g., algorithm
+        recomputed and got higher), otherwise no-ops. Returns True iff a row
+        was inserted or updated.
         """
         cursor = self._conn.execute(
             """INSERT INTO vo2max_pb
                (race_type, distance_m, duration_s, vdot, pb_date, label_id,
                 even_paced, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-               ON CONFLICT(race_type) DO UPDATE SET
+               ON CONFLICT(race_type, label_id) DO UPDATE SET
                  distance_m = excluded.distance_m,
                  duration_s = excluded.duration_s,
                  vdot = excluded.vdot,
                  pb_date = excluded.pb_date,
-                 label_id = excluded.label_id,
                  even_paced = excluded.even_paced,
                  updated_at = datetime('now')
                WHERE excluded.vdot > vo2max_pb.vdot""",
@@ -1777,9 +1774,6 @@ class Database:
             ),
         )
         self._conn.commit()
-        # rowcount == 1 when either INSERT happened (no conflict) or
-        # UPDATE happened (conflict + WHERE passed). 0 when conflict's
-        # WHERE clause rejected — i.e. existing.vdot >= incoming.vdot.
         return cursor.rowcount > 0
 
     def fetch_vo2max_pbs(self) -> list[sqlite3.Row]:
