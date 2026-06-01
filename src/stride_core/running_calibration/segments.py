@@ -52,18 +52,61 @@ def best_distance_candidates(
     """For each race_type, find the fastest continuous segment of the given
     target distance whose [start, end] does NOT overlap any pause interval.
 
-    Returns a dict keyed by race_type. Missing key = no qualifying segment
-    (either total distance < target, or every candidate overlaps a pause).
+    Two-pointer sliding window on the cumulative-distance series.
+    Linear interpolation gives sub-tick precision on segment endpoints.
     """
     if len(timeseries) < 2:
         return {}
     total_dist = timeseries[-1][1] - timeseries[0][1]
     out: dict[str, DistanceCandidate] = {}
+
     for race_type, target in canonical_distances.items():
         if total_dist < target:
             continue
-        # Placeholder — Task 2 implements the sliding window.
+        best: tuple[float, float, float] | None = None  # (duration, start_t, end_t)
+        j = 0
+        for i in range(len(timeseries)):
+            t_i, d_i = timeseries[i]
+            while j < len(timeseries) and timeseries[j][1] - d_i < target:
+                j += 1
+            if j == len(timeseries):
+                break
+
+            a_t, a_d = timeseries[j - 1]
+            b_t, b_d = timeseries[j]
+            if b_d == a_d:
+                end_t = b_t
+            else:
+                end_t = a_t + (d_i + target - a_d) / (b_d - a_d) * (b_t - a_t)
+
+            if _overlaps_any_pause(t_i, end_t, pauses_s):
+                continue
+
+            seg_dur = end_t - t_i
+            if best is None or seg_dur < best[0]:
+                best = (seg_dur, t_i, end_t)
+
+        if best is not None:
+            out[race_type] = DistanceCandidate(
+                race_type=race_type,
+                distance_m=target,
+                duration_s=best[0],
+                start_s=best[1],
+                end_s=best[2],
+            )
     return out
+
+
+def _overlaps_any_pause(
+    seg_start_s: float, seg_end_s: float, pauses_s: Sequence[tuple[float, float]]
+) -> bool:
+    """Half-open intersection: pause ending exactly at seg_start (or pause
+    starting exactly at seg_end) is NOT an overlap — boundary pauses don't
+    disqualify."""
+    for ps, pe in pauses_s:
+        if pe > seg_start_s and ps < seg_end_s:
+            return True
+    return False
 
 
 @dataclass(frozen=True)
