@@ -29,6 +29,44 @@ class SpeedCandidate:
 
 
 @dataclass(frozen=True)
+class DistanceCandidate:
+    """A continuous segment of an activity that covered a target distance.
+
+    Times are in seconds relative to the activity's first timeseries point.
+    `distance_m` is the canonical target distance (not the actual cumulative
+    distance traveled in the segment, which equals the target by definition).
+    """
+
+    race_type: str
+    distance_m: float
+    duration_s: float
+    start_t_s: float
+    end_t_s: float
+
+
+def best_distance_candidates(
+    timeseries: Sequence[tuple[float, float]],
+    pauses_s: Sequence[tuple[float, float]],
+    canonical_distances: dict[str, float],
+) -> dict[str, DistanceCandidate]:
+    """For each race_type, find the fastest continuous segment of the given
+    target distance whose [start, end] does NOT overlap any pause interval.
+
+    Returns a dict keyed by race_type. Missing key = no qualifying segment
+    (either total distance < target, or every candidate overlaps a pause).
+    """
+    if len(timeseries) < 2:
+        return {}
+    total_dist = timeseries[-1][1] - timeseries[0][1]
+    out: dict[str, DistanceCandidate] = {}
+    for race_type, target in canonical_distances.items():
+        if total_dist < target:
+            continue
+        # Placeholder — Task 2 implements the sliding window.
+    return out
+
+
+@dataclass(frozen=True)
 class ThresholdHrCandidate:
     activity: RunningActivity
     start_s: float
