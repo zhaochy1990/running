@@ -2181,8 +2181,18 @@ def compute_ability_snapshot(
     pb_rows: list[Any] = []
     try:
         pb_rows = list(conn.execute(
-            "SELECT race_type, distance_m, duration_s, vdot, pb_date, "
-            "label_id, even_paced FROM vo2max_pb"
+            """
+            SELECT race_type, distance_m, duration_s, vdot, pb_date, label_id, even_paced
+            FROM (
+                SELECT race_type, distance_m, duration_s, vdot, pb_date, label_id, even_paced,
+                       ROW_NUMBER() OVER (
+                         PARTITION BY race_type
+                         ORDER BY vdot DESC, pb_date DESC
+                       ) AS rn
+                FROM vo2max_pb
+            )
+            WHERE rn = 1
+            """
         ).fetchall())
     except Exception:
         pb_rows = []
