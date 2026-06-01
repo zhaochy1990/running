@@ -65,3 +65,27 @@ def test_different_race_types_same_activity_both_persist(db):
     assert _upsert(db, race_type="10K", label_id="A", vdot=51.0, distance_m=10000.0)
     rows = list(db._conn.execute("SELECT race_type FROM vo2max_pb WHERE label_id='A'"))
     assert sorted(r["race_type"] for r in rows) == ["10K", "5K"]
+
+
+def test_v2_upsert_atomic_under_concurrent_connections(tmp_path):
+    """Two connections racing on the same (race_type, label_id) — the
+    second commit must not demote a higher-vdot first commit."""
+    import sqlite3
+    db_path = tmp_path / "coros.db"
+    db_a = Database(db_path=db_path)
+    db_b = Database(db_path=db_path)
+
+    db_a.upsert_vo2max_pb(
+        race_type="5K", distance_m=5000, duration_s=1170, vdot=51.0,
+        pb_date="2026-05-27", label_id="A", even_paced=True,
+    )
+    # Attempt to demote
+    written = db_b.upsert_vo2max_pb(
+        race_type="5K", distance_m=5000, duration_s=1200, vdot=49.0,
+        pb_date="2026-05-27", label_id="A", even_paced=True,
+    )
+    assert written is False
+    row = db_a._conn.execute(
+        "SELECT vdot FROM vo2max_pb WHERE race_type='5K' AND label_id='A'"
+    ).fetchone()
+    assert row["vdot"] == pytest.approx(51.0)

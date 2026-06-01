@@ -232,22 +232,12 @@ VDOT_CLAMP_MAX = 85.0
 UTH_SORENSEN_CORRECTION = 0.93
 
 # ---------------------------------------------------------------------------
-# PB-memory channel (v7 Step 3).
-# Race-distance bands for classifying an activity as a candidate PB. The
-# bands are intentionally tighter than the race-like / marathon admission
-# windows above — a "5K PB" should be 5 km ± a few hundred meters, not any
-# 4.8–21.5 km effort. Only well-executed (Step 2 even-pacing gate) races
-# enroll as PBs, so the table reflects the athlete's demonstrated ceiling
-# at each canonical distance.
+# PB-memory channel (v8).
+# Per-race-type PB rows are written by the segment-scan path
+# (see ``running_calibration.segments.best_distance_candidates`` +
+# ``compute_pb_vdot_for_segment``). The L3 reader picks the highest
+# vdot per race_type across the activity's segment hits.
 # ---------------------------------------------------------------------------
-
-# (race_type, lower bound m, upper bound m)
-RACE_TYPE_BANDS: tuple[tuple[str, float, float], ...] = (
-    ("5K", 4800.0, 5500.0),
-    ("10K", 9500.0, 10500.0),
-    ("half", 20500.0, 21500.0),
-    ("full", 41000.0, 43500.0),
-)
 
 # Linear monthly decay of stored PBs. Mujika & Padilla's de-training
 # literature reports VO2max decline of ~0.5–1%/month in moderately-trained
@@ -1296,53 +1286,6 @@ def compute_l3_lt(
     return round(score, 2), evidence, {"best_pace_s_km": round(best_overall, 1)}
 
 
-# Even-pacing threshold for the marathon table reverse-lookup gate (v7).
-# A well-executed marathon's second-half avg pace is typically within 3-7%
-# of the first half (positive split convention). 1.15 = 15% positive split
-# is a generous bar that still rejects walk-jog finishes (e.g. cramp at
-# 30K → switch to 5:30/km from a 4:00/km opening), without false-rejecting
-# a 4:00 → 4:25 fade that's still within "well-paced race" interpretation.
-MARATHON_DNF_PACE_RATIO = 1.15
-
-
-def _is_well_paced_marathon(activity: Any) -> bool:
-    """Return True if the marathon's pacing supports a table-reverse VDOT.
-
-    Daniels's table assumes a *race-quality* effort — an even-pacing
-    sustained attempt at the distance. A walk-jog completion (cramp,
-    bonk, weather collapse) covers the same 42 km but reflects something
-    other than aerobic capacity, and feeding its total time into the
-    inverse table understates VDOT for the same athlete in race shape.
-
-    Heuristic: average pace of the second half ÷ average pace of the
-    first half must be < ``MARATHON_DNF_PACE_RATIO``. Pace stored in
-    seconds-per-km, so a higher second-half value is *slower*.
-
-    If lap data is too sparse to compute the split (<4 laps), return
-    True — the gate intentionally errs toward admission to avoid
-    false-rejecting providers that don't emit per-km splits.
-    """
-    laps = _get(activity, "laps") or []
-    if len(laps) < 4:
-        return True
-    half = len(laps) // 2
-    first_paces = [
-        _get(lp, "avg_pace") for lp in laps[:half]
-        if _get(lp, "avg_pace") is not None and _get(lp, "avg_pace") > 0
-    ]
-    second_paces = [
-        _get(lp, "avg_pace") for lp in laps[half:]
-        if _get(lp, "avg_pace") is not None and _get(lp, "avg_pace") > 0
-    ]
-    if not first_paces or not second_paces:
-        return True
-    p1 = sum(first_paces) / len(first_paces)
-    p2 = sum(second_paces) / len(second_paces)
-    if p1 <= 0:
-        return True
-    return (p2 / p1) < MARATHON_DNF_PACE_RATIO
-
-
 def _marathon_time_to_vdot_table(time_s: float) -> float | None:
     """Inverse lookup of DANIELS_VDOT_TO_MARATHON_S.
 
@@ -1500,34 +1443,13 @@ def compute_l3_vo2max(
                 lid = _get(a, "label_id")
                 best_evidence = [str(lid)] if lid else []
 
-    # Marathon race correction: Daniels's formula underestimates %VO2max for 3+ hour
-    # efforts. For full marathons, use the empirical table inverse (Daniels's published
-    # race-equivalence values) instead of the formula, then take max with best formula VDOT.
-    #
-    # v7 Step 2: gate the table reverse-lookup behind an even-pacing check.
-    # A walk-jog/cramp completion of 42 km reflects something other than
-    # aerobic capacity, and feeding its total time into the inverse table
-    # understates VDOT — a 3:45 DNF-style finish maps to VDOT ~50 even
-    # though the same athlete may have race-fit VDOT ~63. The guard rejects
-    # marathons whose second-half avg pace is ≥15% slower than the first
-    # half (see ``_is_well_paced_marathon``). Sparse-lap activities are
-    # admitted by default since the only signal we have is the headline
-    # time.
-    for a in activities_56d:
-        if not _is_running(a):
-            continue
-        dist = _get(a, "distance_m") or 0
-        dist_m = _distance_to_meters(dist, _get(a, "sport_type"))
-        dur_s = _get(a, "duration_s") or 0
-        # Full marathon ± 1.3km, duration 2-6h
-        if 41000 <= dist_m <= 43500 and 7200 <= dur_s <= 21600:
-            if not _is_well_paced_marathon(a):
-                continue
-            table_vdot = _marathon_time_to_vdot_table(float(dur_s))
-            if table_vdot is not None and table_vdot > best_vdot:
-                best_vdot = float(table_vdot)
-                lid = _get(a, "label_id")
-                best_evidence = [str(lid)] if lid else []
+    # v8: marathon table reverse-lookup moved into the segment-PB pipeline.
+    # ``compute_pb_vdot_for_segment`` calls ``_marathon_time_to_vdot_table``
+    # for full-marathon segment hits and writes the result to ``vo2max_pb``;
+    # the PB-memory channel below then surfaces it. The inline
+    # well-paced gate + table-reverse loop that used to live here have been
+    # removed — they double-counted marathon evidence and could not be
+    # reconciled with the segment scan's gate semantics.
 
     vo2max_primary = best_vdot if best_vdot > 0 else 0.0
 
@@ -1575,9 +1497,8 @@ def compute_l3_vo2max(
     floor_eligible = vo2max_floor > 0 and floor_rhr_days >= FLOOR_MIN_RHR_DAYS
 
     # Primary's upstream gate already rejects mixed-intensity sessions
-    # (race-like guard) and DNF-style marathons (Step 2 well-paced guard).
-    # Anything that produced ``vo2max_primary > 0`` is treated as
-    # race-quality evidence and wins outright.
+    # (race-like guard). Anything that produced ``vo2max_primary > 0`` is
+    # treated as race-quality evidence and wins outright.
     primary_eligible = vo2max_primary > 0
 
     # Cascade: race-derived primary is the authoritative VDOT signal —
@@ -1718,67 +1639,6 @@ def _vo2max_to_vdot_approx(vo2: float) -> float:
     # Empirical rule-of-thumb: VDOT ≈ VO2max − 2 to VO2max, because VDOT is a
     # race-performance derivative (higher than pure lab VO2max by a touch).
     return vo2
-
-
-def classify_race_type(distance_m: float) -> str | None:
-    """Return the canonical race_type label for ``distance_m``, or None.
-
-    Uses the v7 RACE_TYPE_BANDS — tighter than the race-like admission
-    window so an 8 km "long tempo" doesn't accidentally enroll as a 5K /
-    10K PB. Bounds are inclusive of the canonical distance ± realistic
-    GPS / course-error tolerance.
-    """
-    if distance_m is None or distance_m <= 0:
-        return None
-    for race_type, lo, hi in RACE_TYPE_BANDS:
-        if lo <= float(distance_m) <= hi:
-            return race_type
-    return None
-
-
-def compute_pb_vdot_for_activity(
-    activity: Any, *, sport_type: Any = None,
-) -> tuple[str, float] | None:
-    """Score a single activity as a PB candidate.
-
-    Returns ``(race_type, vdot)`` if the activity:
-      - is a running activity
-      - falls inside one of the RACE_TYPE_BANDS
-      - passes the Step 2 even-pacing gate when it's a marathon (other
-        distances skip the gate — Daniels formula doesn't suffer the
-        same long-duration bias for shorter races, so the table-reverse
-        path isn't used)
-
-    For the full marathon class, VDOT comes from
-    ``_marathon_time_to_vdot_table`` (race-equivalence inverse — the
-    only place where Daniels's table is more reliable than the
-    formula). For 5K/10K/half, VDOT comes from ``daniels_vdot``.
-
-    Returns None if the activity isn't a PB candidate.
-    """
-    if not _is_running(activity):
-        return None
-    sport_type = sport_type if sport_type is not None else _get(activity, "sport_type")
-    dist_raw = _get(activity, "distance_m") or 0
-    dur_s = _get(activity, "duration_s") or 0
-    if dist_raw <= 0 or dur_s <= 0:
-        return None
-    dist_m = _distance_to_meters(dist_raw, sport_type)
-    race_type = classify_race_type(dist_m)
-    if race_type is None:
-        return None
-    if race_type == "full":
-        if not _is_well_paced_marathon(activity):
-            return None
-        vdot = _marathon_time_to_vdot_table(float(dur_s))
-        if vdot is None:
-            return None
-        return race_type, float(vdot)
-    # 5K / 10K / half — Daniels formula.
-    vdot = daniels_vdot(dist_m, float(dur_s))
-    if vdot <= 0:
-        return None
-    return race_type, float(vdot)
 
 
 def _months_between(earlier_iso: str, later_iso: str) -> float:
