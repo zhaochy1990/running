@@ -1,8 +1,6 @@
 """Tests for distance-based segment scan in running_calibration.segments."""
 from __future__ import annotations
 
-import pytest
-
 from stride_core.running_calibration.segments import (
     DistanceCandidate,
     best_distance_candidates,

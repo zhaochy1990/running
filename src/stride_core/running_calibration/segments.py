@@ -40,8 +40,8 @@ class DistanceCandidate:
     race_type: str
     distance_m: float
     duration_s: float
-    start_t_s: float
-    end_t_s: float
+    start_s: float
+    end_s: float
 
 
 def best_distance_candidates(
