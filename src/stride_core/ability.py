@@ -201,7 +201,10 @@ AEROBIC_MAX_PEAK_HR_ABOVE_TARGET = 25  # reject if max_hr > target_hr + 25 (e.g.
 #     marathon table reverse-lookup + PB-memory channel with monthly decay.
 #     Persisted v6 snapshots are now stale (the dimension surface adds new
 #     keys in `details`).
-ABILITY_MODEL_VERSION = 7
+# v8: L3 vo2max reader switched to window-function dedupe with per-
+#     (race_type, source-activity) PB-history rows. Persisted v7 L3 values
+#     may be stale; force recompute on next read.
+ABILITY_MODEL_VERSION = 8
 
 # ---------------------------------------------------------------------------
 # Triangulation gates for compute_l3_vo2max (v7).
