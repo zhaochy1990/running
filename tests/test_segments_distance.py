@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 
+from stride_core.ability import compute_pb_vdot_for_segment
 from stride_core.running_calibration.segments import (
     DistanceCandidate,
     best_distance_candidates,
@@ -147,3 +148,29 @@ def test_multiple_race_types_one_pass():
     )
     assert "5K" in out and "10K" in out
     assert "half" not in out  # 13 km < 21097.5 m
+
+
+def test_vdot_for_segment_5k_known_pace():
+    """19:30 over 5000 m via Daniels — VDOT in mid-50s ballpark."""
+    vdot = compute_pb_vdot_for_segment("5K", 5000.0, 1170.0)
+    assert vdot is not None
+    assert 48.0 < vdot < 55.0
+
+
+def test_vdot_for_segment_marathon_uses_table():
+    """2:59:22 marathon — goes via the table, not Daniels formula."""
+    vdot = compute_pb_vdot_for_segment("full", 42195.0, 10762.0)
+    assert vdot is not None
+    assert 50.0 < vdot < 60.0
+
+
+def test_vdot_for_segment_invalid_distance_or_time_is_none():
+    assert compute_pb_vdot_for_segment("5K", 0.0, 1170.0) is None
+    assert compute_pb_vdot_for_segment("5K", 5000.0, 0.0) is None
+    assert compute_pb_vdot_for_segment("5K", -1.0, 1170.0) is None
+
+
+def test_vdot_for_segment_marathon_time_out_of_table_returns_none():
+    """An impossibly fast marathon (60 minutes) returns None from the table."""
+    vdot = compute_pb_vdot_for_segment("full", 42195.0, 3600.0)
+    assert vdot is None

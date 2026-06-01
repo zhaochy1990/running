@@ -531,6 +531,38 @@ def daniels_vdot(distance_m: float, time_s: float) -> float:
     return vo2_req / pct
 
 
+def compute_pb_vdot_for_segment(
+    race_type: str, distance_m: float, duration_s: float
+) -> float | None:
+    """Compute VDOT for a continuous race-distance segment.
+
+    Used by the segment-scan PB path. For 5K/10K/half this uses the Daniels
+    formula directly; for `full` it uses the table reverse-lookup, which is
+    more reliable than the formula for marathon-scale durations.
+
+    Returns None on degenerate input or when a marathon time falls outside
+    the calibrated VDOT 30-85 table range.
+    """
+    if distance_m <= 0 or duration_s <= 0:
+        return None
+    if race_type == "full":
+        # Reject times outside the canonical Daniels marathon table — the
+        # underlying helper clamps, but for the segment-PB path we'd rather
+        # surface "out of range" as None than emit a clamped VDOT=85.
+        fastest = min(DANIELS_VDOT_TO_MARATHON_S.values())
+        slowest = max(DANIELS_VDOT_TO_MARATHON_S.values())
+        if duration_s < fastest or duration_s > slowest:
+            return None
+        vdot = _marathon_time_to_vdot_table(float(duration_s))
+        if vdot is None:
+            return None
+        return float(vdot)
+    vdot = daniels_vdot(float(distance_m), float(duration_s))
+    if vdot <= 0:
+        return None
+    return float(vdot)
+
+
 def acsm_running_vo2(pace_s_km: float) -> float:
     """ACSM horizontal running VO2 (ml/kg/min) at the given pace.
 
