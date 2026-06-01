@@ -202,7 +202,7 @@ def _load_activity_for_l1(db: Database, label_id: str) -> dict | None:
         conn = db._conn
         row = conn.execute(
             "SELECT label_id, sport_type, train_type, train_kind, avg_hr, max_hr, "
-            "avg_pace_s_km, distance_m, duration_s, avg_cadence, date "
+            "avg_pace_s_km, distance_m, duration_s, avg_cadence, date, pauses "
             "FROM activities WHERE label_id = ?",
             (label_id,),
         ).fetchone()

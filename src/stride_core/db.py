@@ -1788,6 +1788,21 @@ class Database:
         self._conn.execute("DELETE FROM vo2max_pb")
         self._conn.commit()
 
+    def fetch_timeseries(self, label_id: str) -> list[sqlite3.Row]:
+        """Read (timestamp, distance) rows for one activity, ordered by
+        timestamp ASC, skipping NULL distance rows. Returns [] for unknown
+        label_id or activity with no timeseries.
+
+        Units are NOT normalized here — see `ability_hook._normalize_ts_units`
+        for the COROS centi-second / centimeter conversion.
+        """
+        return list(self._conn.execute(
+            "SELECT timestamp, distance FROM timeseries "
+            "WHERE label_id = ? AND distance IS NOT NULL "
+            "ORDER BY timestamp ASC",
+            (str(label_id),),
+        ))
+
     # --- Scheduled workouts (provider-agnostic structured calendar) ---
     #
     # Authored locally as `NormalizedRunWorkout` / `NormalizedStrengthWorkout`,
