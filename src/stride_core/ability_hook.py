@@ -15,13 +15,20 @@ the sync pipeline (sync rolls forward; ability is best-effort).
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
 from stride_core.db import Database
 from stride_core.models import RUN_SPORT_IDS
+from stride_core.running_calibration.segments import best_distance_candidates
 
 logger = logging.getLogger(__name__)
+
+
+CANONICAL_RACE_DISTANCES = {
+    "5K": 5000.0, "10K": 10000.0, "half": 21097.5, "full": 42195.0,
+}
 
 
 def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
@@ -32,7 +39,6 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
             L4_WEIGHTS,
             compute_ability_snapshot,
             compute_l1_quality,
-            compute_pb_vdot_for_activity,
         )
     except Exception as e:  # pragma: no cover
         logger.debug("ability module unavailable: %s", e)
@@ -58,29 +64,38 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                     l1_breakdown=l1.get("breakdown"),
                     contribution=None,
                 )
-                # v7 Step 3: enroll the activity as a PB if it lands in
-                # one of the canonical race-distance bands AND (for
-                # marathons) passes the Step 2 well-paced gate. PB upsert
-                # only writes when the new VDOT exceeds the existing one,
-                # so re-syncing the same activity is idempotent.
+                # v8: segment-scan PB enrollment. Each (race_type, source_activity)
+                # yields its own row; the L3 reader picks current best per race_type.
                 try:
-                    pb = compute_pb_vdot_for_activity(activity)
-                    if pb is not None:
-                        race_type, vdot = pb
-                        pb_date = _activity_iso_date(activity, today_iso)
-                        db.upsert_vo2max_pb(
-                            race_type=race_type,
-                            distance_m=float(activity.get("distance_m") or 0),
-                            duration_s=float(activity.get("duration_s") or 0),
-                            vdot=float(vdot),
-                            pb_date=pb_date,
-                            label_id=str(lid),
-                            even_paced=True,
-                        )
+                    from stride_core.ability import compute_pb_vdot_for_segment
+
+                    ts_rows = db.fetch_timeseries(lid)
+                    if ts_rows and len(ts_rows) >= 2:
+                        ts_norm = _normalize_ts_units(ts_rows)
+                        if ts_norm and len(ts_norm) >= 2:
+                            t0_tick = ts_rows[0]["timestamp"]
+                            pauses_s = _parse_pauses(activity.get("pauses"), t0=t0_tick)
+                            candidates = best_distance_candidates(
+                                ts_norm, pauses_s, CANONICAL_RACE_DISTANCES,
+                            )
+                            pb_date = _activity_iso_date(activity, today_iso)
+                            for race_type, cand in candidates.items():
+                                vdot = compute_pb_vdot_for_segment(
+                                    race_type, cand.distance_m, cand.duration_s,
+                                )
+                                if vdot is None:
+                                    continue
+                                db.upsert_vo2max_pb(
+                                    race_type=race_type,
+                                    distance_m=cand.distance_m,
+                                    duration_s=cand.duration_s,
+                                    vdot=vdot,
+                                    pb_date=pb_date,
+                                    label_id=str(lid),
+                                    even_paced=True,
+                                )
                 except Exception:
-                    logger.warning(
-                        "ability PB upsert failed for %s", lid, exc_info=True
-                    )
+                    logger.warning("segment PB scan failed for %s", lid, exc_info=True)
             except Exception:
                 logger.warning(
                     "ability L1 compute failed for %s", lid, exc_info=True
@@ -178,6 +193,72 @@ def _activity_iso_date(activity: dict, fallback_iso: str) -> str:
     return fallback_iso
 
 
+def _normalize_ts_units(rows) -> list[tuple[float, float]]:
+    """Convert raw timeseries rows to (t_s, dist_m) tuples.
+
+    COROS storage: `timestamp` in 0.01s ticks (centi-seconds), `distance`
+    in cm. We divide both by 100 and rebase t to the first surviving row
+    so segment scanning works in activity-relative seconds.
+
+    Two filters applied in order:
+      1. Drop rows where `timestamp` or `distance` is None.
+      2. Drop rows whose distance is strictly less than the previous
+         surviving distance — guards against COROS's synthetic distance=0
+         reset on pause-resume (which is NOT recorded in `activities.pauses`)
+         and against minor GPS backsteps that would inflate sliding-window
+         speed.
+    """
+    filtered = [(r["timestamp"], r["distance"]) for r in rows
+                if r["timestamp"] is not None and r["distance"] is not None]
+    if not filtered:
+        return []
+    monotonic: list[tuple[float, float]] = []
+    last_dist = -float("inf")
+    for ts, dist in filtered:
+        if dist < last_dist:
+            continue
+        monotonic.append((ts, dist))
+        last_dist = dist
+    if not monotonic:
+        return []
+    t0 = monotonic[0][0]
+    return [((ts - t0) / 100.0, dist / 100.0) for ts, dist in monotonic]
+
+
+def _parse_pauses(raw, t0: float) -> list[tuple[float, float]]:
+    """Parse the `activities.pauses` JSON string into activity-relative
+    seconds tuples.
+
+    COROS stores `start_ts` / `end_ts` as absolute centi-second ticks in
+    the same base as `timeseries.timestamp`. We subtract t0 (the first
+    surviving timeseries timestamp) and divide by 100. Inverted intervals
+    (end < start) and malformed entries are dropped silently; whole-JSON
+    parse failures log a warning and return [].
+    """
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        logger.warning("could not parse pauses JSON: %r", raw[:80])
+        return []
+    out: list[tuple[float, float]] = []
+    for entry in data:
+        try:
+            start_abs = entry["start_ts"]
+            end_abs = entry["end_ts"]
+        except (KeyError, TypeError):
+            continue
+        if start_abs is None or end_abs is None:
+            continue
+        start_s = (start_abs - t0) / 100.0
+        end_s = (end_abs - t0) / 100.0
+        if end_s <= start_s:
+            continue
+        out.append((start_s, end_s))
+    return out
+
+
 def _fetch_latest_l4_and_marathon(db: Database) -> tuple[float | None, int | None]:
     try:
         row_comp = db._conn.execute(
@@ -202,7 +283,7 @@ def _load_activity_for_l1(db: Database, label_id: str) -> dict | None:
         conn = db._conn
         row = conn.execute(
             "SELECT label_id, sport_type, train_type, train_kind, avg_hr, max_hr, "
-            "avg_pace_s_km, distance_m, duration_s, avg_cadence, date "
+            "avg_pace_s_km, distance_m, duration_s, avg_cadence, date, pauses "
             "FROM activities WHERE label_id = ?",
             (label_id,),
         ).fetchone()

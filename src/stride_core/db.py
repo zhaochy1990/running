@@ -290,22 +290,22 @@ CREATE TABLE IF NOT EXISTS activity_ability (
     computed_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- v7 PB-memory channel for VO2max. Single row per race-distance class
--- ('5K' / '10K' / 'half' / 'full'); upserts keep the highest VDOT seen.
--- Read by stride_core.ability when computing the L3 VO2max dimension —
--- the decayed PB VDOT (0.5%/month, 18-month max age) acts as a floor on
--- the rolling-window estimate so a 14-month-old marathon PB no longer
--- silently disappears from the metric.
+-- v7 PB-memory channel for VO2max. One row per (race_type x source
+-- activity); current PB per race_type is MAX(vdot). Read by
+-- stride_core.ability when computing the L3 VO2max dimension.
 CREATE TABLE IF NOT EXISTS vo2max_pb (
-    race_type       TEXT PRIMARY KEY,             -- '5K' | '10K' | 'half' | 'full'
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_type       TEXT NOT NULL,
     distance_m      REAL NOT NULL,
     duration_s      REAL NOT NULL,
     vdot            REAL NOT NULL,
-    pb_date         TEXT NOT NULL,                 -- ISO YYYY-MM-DD
+    pb_date         TEXT NOT NULL,
     label_id        TEXT NOT NULL,
-    even_paced      INTEGER NOT NULL DEFAULT 1,    -- 1 if Step 2 well-paced gate accepted
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    even_paced      INTEGER NOT NULL DEFAULT 1,
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(race_type, label_id)
 );
+CREATE INDEX IF NOT EXISTS idx_vo2max_pb_vdot ON vo2max_pb(race_type, vdot DESC);
 
 -- Phase 3: per-day HRV detail (separate table because the row is heavier
 -- than daily_health and not all providers populate it). Composite PK so
@@ -1156,6 +1156,54 @@ class Database:
                 """)
                 self._conn.commit()
 
+        # Rebuild vo2max_pb from v1 (race_type PRIMARY KEY) to v2 (autoinc id
+        # + UNIQUE(race_type, label_id)) so we can keep a row per source
+        # activity instead of clobbering on race_type.
+        self._migrate_vo2max_pb_to_v2()
+
+    def _migrate_vo2max_pb_to_v2(self) -> None:
+        """Migrate ``vo2max_pb`` from v1 (race_type PRIMARY KEY) to v2
+        (autoinc ``id`` + UNIQUE(race_type, label_id) + index on vdot DESC).
+
+        Idempotent: detects v2 via presence of the ``id`` column.
+        Atomic: full table rebuild inside a single transaction.
+        """
+        cols = [r[1] for r in self._conn.execute("PRAGMA table_info(vo2max_pb)")]
+        if not cols:
+            return  # table doesn't exist yet; the SCHEMA CREATE will produce v2
+        if "id" in cols:
+            return  # already v2
+
+        with self._conn:
+            self._conn.execute(
+                """CREATE TABLE vo2max_pb_new (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    race_type    TEXT NOT NULL,
+                    distance_m   REAL NOT NULL,
+                    duration_s   REAL NOT NULL,
+                    vdot         REAL NOT NULL,
+                    pb_date      TEXT NOT NULL,
+                    label_id     TEXT NOT NULL,
+                    even_paced   INTEGER NOT NULL DEFAULT 1,
+                    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+                    UNIQUE(race_type, label_id)
+                )"""
+            )
+            self._conn.execute(
+                """INSERT INTO vo2max_pb_new
+                   (race_type, distance_m, duration_s, vdot, pb_date,
+                    label_id, even_paced, updated_at)
+                   SELECT race_type, distance_m, duration_s, vdot, pb_date,
+                          label_id, even_paced, updated_at
+                   FROM vo2max_pb"""
+            )
+            self._conn.execute("DROP TABLE vo2max_pb")
+            self._conn.execute("ALTER TABLE vo2max_pb_new RENAME TO vo2max_pb")
+            self._conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vo2max_pb_vdot "
+                "ON vo2max_pb(race_type, vdot DESC)"
+            )
+
     def close(self) -> None:
         self._conn.close()
 
@@ -1699,27 +1747,24 @@ class Database:
         label_id: str,
         even_paced: bool = True,
     ) -> bool:
-        """Conditionally write a PB row.
+        """Insert or update a per-activity PB row.
 
-        Atomic monotonic upsert: writes only when ``vdot`` strictly exceeds
-        the stored value. The check-and-write happens inside a single
-        ``INSERT … ON CONFLICT … WHERE`` statement so two concurrent
-        connections (sync hook + backfill, or two Container App revisions
-        racing on the same Azure Files SMB-mounted DB) cannot interleave a
-        read with each other's write and demote the PB. Returns True iff a
-        row was actually inserted or updated.
+        Keyed on (race_type, label_id) — multiple activities yield multiple
+        rows per race_type, forming PB history. On conflict, updates only if
+        the incoming vdot strictly exceeds the stored value (e.g., algorithm
+        recomputed and got higher), otherwise no-ops. Returns True iff a row
+        was inserted or updated.
         """
         cursor = self._conn.execute(
             """INSERT INTO vo2max_pb
                (race_type, distance_m, duration_s, vdot, pb_date, label_id,
                 even_paced, updated_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-               ON CONFLICT(race_type) DO UPDATE SET
+               ON CONFLICT(race_type, label_id) DO UPDATE SET
                  distance_m = excluded.distance_m,
                  duration_s = excluded.duration_s,
                  vdot = excluded.vdot,
                  pb_date = excluded.pb_date,
-                 label_id = excluded.label_id,
                  even_paced = excluded.even_paced,
                  updated_at = datetime('now')
                WHERE excluded.vdot > vo2max_pb.vdot""",
@@ -1729,9 +1774,6 @@ class Database:
             ),
         )
         self._conn.commit()
-        # rowcount == 1 when either INSERT happened (no conflict) or
-        # UPDATE happened (conflict + WHERE passed). 0 when conflict's
-        # WHERE clause rejected — i.e. existing.vdot >= incoming.vdot.
         return cursor.rowcount > 0
 
     def fetch_vo2max_pbs(self) -> list[sqlite3.Row]:
@@ -1745,6 +1787,21 @@ class Database:
         """Test/backfill helper — wipe the PB table."""
         self._conn.execute("DELETE FROM vo2max_pb")
         self._conn.commit()
+
+    def fetch_timeseries(self, label_id: str) -> list[sqlite3.Row]:
+        """Read (timestamp, distance) rows for one activity, ordered by
+        timestamp ASC, skipping NULL distance rows. Returns [] for unknown
+        label_id or activity with no timeseries.
+
+        Units are NOT normalized here — see `ability_hook._normalize_ts_units`
+        for the COROS centi-second / centimeter conversion.
+        """
+        return list(self._conn.execute(
+            "SELECT timestamp, distance FROM timeseries "
+            "WHERE label_id = ? AND distance IS NOT NULL "
+            "ORDER BY timestamp ASC",
+            (str(label_id),),
+        ))
 
     # --- Scheduled workouts (provider-agnostic structured calendar) ---
     #
