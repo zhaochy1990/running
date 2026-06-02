@@ -151,13 +151,16 @@ def test_mileage_returns_ranked_members(app_client, monkeypatch):
     client, token_a, _, tmp_path = app_client
 
     # Seed 3 members with distinct mileage in the current month.
+    # Use first_of_month as Alice's second activity so the test stays valid on
+    # day 1/2 of the month — `today - 2d` would fall into the prior month and
+    # be excluded by the `period=month` window.
     today = datetime.now(SHANGHAI)
     first_of_month = today.replace(day=1, hour=12, minute=0, second=0, microsecond=0)
     iso_today = today.astimezone(timezone.utc).isoformat()
-    iso_two_days_ago = (today - timedelta(days=2)).astimezone(timezone.utc).isoformat()
+    iso_first_of_month = first_of_month.astimezone(timezone.utc).isoformat()
 
     _seed_activity(tmp_path, USER_A, "a1", iso_today, 12.5)
-    _seed_activity(tmp_path, USER_A, "a2", iso_two_days_ago, 8.0)
+    _seed_activity(tmp_path, USER_A, "a2", iso_first_of_month, 8.0)
     _seed_activity(tmp_path, USER_B, "b1", iso_today, 21.1)
     # USER_C: nothing in current month.
 
