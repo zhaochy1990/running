@@ -1,61 +1,85 @@
 import { create } from 'zustand'
+import { getNotificationReadState, markNotificationRead } from '../api'
 import { NOTIFICATIONS, type AppNotification, getNotificationsNewestFirst } from '../data/notifications'
 
-const STORAGE_KEY = 'stride.dismissedNotifications'
+type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 
-function loadDismissed(): Set<string> {
-  if (typeof localStorage === 'undefined') return new Set()
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return new Set()
-    const arr = JSON.parse(raw)
-    if (!Array.isArray(arr)) return new Set()
-    return new Set(arr.filter((x): x is string => typeof x === 'string'))
-  } catch {
-    return new Set()
-  }
-}
-
-function saveDismissed(ids: Set<string>) {
-  if (typeof localStorage === 'undefined') return
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([...ids]))
-  } catch { /* quota / disabled */ }
-}
+let hydratePromise: Promise<void> | null = null
 
 interface NotificationsState {
-  dismissed: Set<string>
-  dismiss: (id: string) => void
-  isDismissed: (id: string) => boolean
-  // The first message that hasn't been dismissed (newest-first); shown in popup.
+  readIds: Set<string>
+  loadState: LoadState
+  error: string | null
+  hydrate: () => Promise<void>
+  markRead: (id: string) => Promise<void>
+  isRead: (id: string) => boolean
+  // The first message that hasn't been read (newest-first); shown in popup.
   pendingPopup: () => AppNotification | undefined
-  // Number of unread (= not-dismissed) messages, for the bell badge.
+  // Number of unread (= not-read) messages, for the bell badge.
   unreadCount: () => number
 }
 
-export const useNotificationsStore = create<NotificationsState>((set, get) => ({
-  dismissed: loadDismissed(),
+function normalizeReadIds(ids: unknown): Set<string> {
+  if (!Array.isArray(ids)) return new Set()
+  return new Set(ids.filter((item): item is string => typeof item === 'string'))
+}
 
-  dismiss: (id: string) => {
-    const next = new Set(get().dismissed)
-    next.add(id)
-    saveDismissed(next)
-    set({ dismissed: next })
+export const useNotificationsStore = create<NotificationsState>((set, get) => ({
+  readIds: new Set(),
+  loadState: 'idle',
+  error: null,
+
+  hydrate: async () => {
+    const state = get()
+    if (state.loadState === 'ready') return
+    if (hydratePromise) return hydratePromise
+
+    hydratePromise = getNotificationReadState()
+      .then(({ read_ids }) => {
+        set({ readIds: normalizeReadIds(read_ids), loadState: 'ready', error: null })
+      })
+      .catch((err) => {
+        set({ loadState: 'error', error: err instanceof Error ? err.message : String(err) })
+      })
+      .finally(() => {
+        hydratePromise = null
+      })
+
+    set({ loadState: 'loading', error: null })
+    return hydratePromise
   },
 
-  isDismissed: (id: string) => get().dismissed.has(id),
+  markRead: async (id: string) => {
+    if (get().loadState !== 'ready') {
+      await get().hydrate()
+    }
+
+    const previous = get().readIds
+    const optimistic = new Set(previous)
+    optimistic.add(id)
+    set({ readIds: optimistic, error: null })
+
+    try {
+      const { read_ids } = await markNotificationRead(id)
+      set({ readIds: normalizeReadIds(read_ids), loadState: 'ready', error: null })
+    } catch (err) {
+      set({ readIds: previous, error: err instanceof Error ? err.message : String(err) })
+      throw err
+    }
+  },
+
+  isRead: (id: string) => get().readIds.has(id),
 
   pendingPopup: () => {
-    // Only the single newest notification is shown as a popup. Older undismissed
-    // messages live in the message center to avoid chaining popups on first login.
-    const dismissed = get().dismissed
+    if (get().loadState !== 'ready') return undefined
+    const readIds = get().readIds
     const latest = getNotificationsNewestFirst()[0]
     if (!latest) return undefined
-    return dismissed.has(latest.id) ? undefined : latest
+    return readIds.has(latest.id) ? undefined : latest
   },
 
   unreadCount: () => {
-    const dismissed = get().dismissed
-    return NOTIFICATIONS.reduce((acc, n) => acc + (dismissed.has(n.id) ? 0 : 1), 0)
+    const readIds = get().readIds
+    return NOTIFICATIONS.reduce((acc, notification) => acc + (readIds.has(notification.id) ? 0 : 1), 0)
   },
 }))

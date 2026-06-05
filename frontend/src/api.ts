@@ -264,6 +264,21 @@ export function getSyncStatus() {
   return fetchJSON<SyncStatus>('/users/me/sync-status')
 }
 
+export interface NotificationReadState {
+  read_ids: string[]
+}
+
+export function getNotificationReadState() {
+  return fetchJSON<NotificationReadState>('/users/me/notifications/read-state')
+}
+
+export async function markNotificationRead(notificationId: string) {
+  const encoded = encodeURIComponent(notificationId)
+  const res = await postJSON<NotificationReadState>(`/users/me/notifications/${encoded}/read`)
+  if (!res.ok) throw new Error(`mark notification read failed: HTTP ${res.status}`)
+  return res.data
+}
+
 // ─── Full sync (training plan setup) ──────────────────────────────────────
 
 export function postFullSync() {

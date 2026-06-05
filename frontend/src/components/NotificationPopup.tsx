@@ -15,15 +15,20 @@ const SEVERITY_DOT: Record<string, string> = {
 }
 
 export default function NotificationPopup() {
+  const hydrate = useNotificationsStore((s) => s.hydrate)
   const pendingPopup = useNotificationsStore((s) => s.pendingPopup)
-  const dismiss = useNotificationsStore((s) => s.dismiss)
-  // Subscribe to dismissed so re-renders happen when state changes.
-  useNotificationsStore((s) => s.dismissed)
+  const markRead = useNotificationsStore((s) => s.markRead)
+  // Subscribe to readIds so re-renders happen when state changes.
+  useNotificationsStore((s) => s.readIds)
 
   const [visible, setVisible] = useState(false)
   const message = pendingPopup()
 
   const messageId = message?.id
+
+  useEffect(() => {
+    void hydrate()
+  }, [hydrate])
 
   useEffect(() => {
     if (!messageId) return
@@ -39,7 +44,7 @@ export default function NotificationPopup() {
 
   const close = () => {
     setVisible(false)
-    setTimeout(() => dismiss(message.id), 180)
+    setTimeout(() => void markRead(message.id), 180)
   }
 
   return (

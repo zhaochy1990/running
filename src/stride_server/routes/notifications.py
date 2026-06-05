@@ -24,6 +24,7 @@ router = APIRouter()
 
 _REG_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{8,200}$")
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_NOTIFICATION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,127}$")
 
 
 def _caller_id(claims: dict) -> str:
@@ -110,3 +111,27 @@ def patch_prefs(
         plan_reminder_enabled=body.plan_reminder_enabled,
         plan_reminder_time=body.plan_reminder_time,
     )
+
+
+# ── Product-message read state ─────────────────────────────────────────────
+
+
+@router.get("/api/users/me/notifications/read-state")
+def get_read_state(claims: dict = Depends(require_bearer)):
+    user_id = _caller_id(claims)
+    return {"read_ids": nstore.get_read_notification_ids(user_id)}
+
+
+@router.post("/api/users/me/notifications/{notification_id}/read")
+def mark_notification_read(
+    notification_id: str,
+    claims: dict = Depends(require_bearer),
+):
+    if not _NOTIFICATION_ID_RE.match(notification_id):
+        raise HTTPException(status_code=422, detail="invalid notification_id")
+    user_id = _caller_id(claims)
+    try:
+        read_ids = nstore.mark_notification_read(user_id, notification_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"read_ids": read_ids}
