@@ -22,6 +22,21 @@ describe('ViewHead', () => {
     expect(screen.getByRole('button', { name: '新建' })).toBeInTheDocument()
   })
 
+  it('allows page-specific lede width overrides', () => {
+    render(
+      <ViewHead
+        title="活动列表"
+        lede="来自 COROS / Garmin 自动同步并匹配课次。点击任意活动查看完整详情、分段与教练点评。"
+        ledeClassName="max-w-none lg:whitespace-nowrap"
+      />,
+    )
+
+    const lede = screen.getByText('来自 COROS / Garmin 自动同步并匹配课次。点击任意活动查看完整详情、分段与教练点评。')
+    expect(lede).toHaveClass('max-w-none')
+    expect(lede).toHaveClass('lg:whitespace-nowrap')
+    expect(lede).not.toHaveClass('max-w-[520px]')
+  })
+
   it('omits eyebrow paragraph when eyebrow prop is undefined', () => {
     render(<ViewHead title="Solo" />)
     expect(screen.queryByText('训练计划 · 23 周')).not.toBeInTheDocument()

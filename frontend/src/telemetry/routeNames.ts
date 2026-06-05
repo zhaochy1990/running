@@ -7,6 +7,7 @@ const RULES: readonly RouteRule[] = [
   ['/health', 'Health'],
   ['/body-composition', 'BodyComposition'],
   ['/plan', 'Training Plan'],
+  ['/activities', 'Activity List'],
   ['/ability', 'Ability'],
   ['/status', 'Status'],
   ['/login', 'Login'],
