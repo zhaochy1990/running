@@ -429,9 +429,9 @@ export function getActivities(
  * window must paginate. Uses the API's `total` field as the termination
  * signal.
  */
-export async function getAllActivitiesInRange(
+export async function getAllActivities(
   user: string,
-  opts: { dateFrom: string; dateTo?: string },
+  opts: { dateFrom?: string; dateTo?: string } = {},
 ): Promise<Activity[]> {
   const PAGE = 200
   const all: Activity[] = []
@@ -443,6 +443,13 @@ export async function getAllActivitiesInRange(
     offset = all.length
   }
   return all
+}
+
+export async function getAllActivitiesInRange(
+  user: string,
+  opts: { dateFrom: string; dateTo?: string },
+): Promise<Activity[]> {
+  return getAllActivities(user, opts)
 }
 
 export function triggerSync(user: string, full: boolean = false) {
