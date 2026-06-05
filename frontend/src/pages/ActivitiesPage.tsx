@@ -3,23 +3,26 @@ import { Link } from 'react-router-dom'
 
 import {
   formatDateShort,
+  getActivities,
   getAllActivities,
   sportNameCN,
+  type ActivitiesListResponse,
   type Activity,
 } from '../api'
 import ViewHead from '../components/ViewHead'
 import { shanghaiToday } from '../lib/shanghai'
 import { useUser } from '../UserContextValue'
 import {
+  ACTIVITY_PAGE_SIZE,
+  ACTIVITY_PAGE_SIZE_OPTIONS,
   activityIconLabel,
-  filterActivities,
   formatHoursMinutes,
   formatPaceSeconds,
   groupActivitiesByMonth,
   monthRangeFromShanghaiToday,
-  paginateActivities,
   summarizeActivities,
   type ActivitySportFilter,
+  visiblePageItems,
 } from './activitiesPageModel'
 
 type LoadState = 'idle' | 'loading' | 'error' | 'ready'
@@ -27,7 +30,12 @@ type LoadState = 'idle' | 'loading' | 'error' | 'ready'
 export default function ActivitiesPage() {
   const { user } = useUser()
   const monthRange = useMemo(() => monthRangeFromShanghaiToday(shanghaiToday()), [])
-  const [activities, setActivities] = useState<Activity[]>([])
+  const [activityPage, setActivityPage] = useState<ActivitiesListResponse>({
+    total: 0,
+    offset: 0,
+    limit: ACTIVITY_PAGE_SIZE,
+    activities: [],
+  })
   const [monthActivities, setMonthActivities] = useState<Activity[]>([])
   const [loadState, setLoadState] = useState<LoadState>('idle')
   const [error, setError] = useState('')
@@ -37,6 +45,7 @@ export default function ActivitiesPage() {
   const [draftTo, setDraftTo] = useState('')
   const [appliedRange, setAppliedRange] = useState<{ dateFrom?: string; dateTo?: string }>({})
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(ACTIVITY_PAGE_SIZE)
 
   useEffect(() => {
     if (!user) return
@@ -45,12 +54,18 @@ export default function ActivitiesPage() {
     setError('')
 
     Promise.all([
-      getAllActivities(user, appliedRange),
+      getActivities(user, {
+        ...appliedRange,
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+        ...(sportFilter !== 'all' ? { sportCategory: sportFilter } : {}),
+        ...(minDistanceKm > 0 ? { minDistanceKm } : {}),
+      }),
       getAllActivities(user, { dateFrom: monthRange.dateFrom, dateTo: monthRange.dateTo }),
     ])
-      .then(([allActivities, currentMonthActivities]) => {
+      .then(([currentActivityPage, currentMonthActivities]) => {
         if (cancelled) return
-        setActivities(allActivities)
+        setActivityPage(currentActivityPage)
         setMonthActivities(currentMonthActivities)
         setLoadState('ready')
       })
@@ -63,24 +78,36 @@ export default function ActivitiesPage() {
     return () => {
       cancelled = true
     }
-  }, [appliedRange, monthRange.dateFrom, monthRange.dateTo, user])
+  }, [appliedRange, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, sportFilter, user])
 
-  useEffect(() => {
-    setPage(1)
-  }, [appliedRange, minDistanceKm, sportFilter])
-
-  const filteredActivities = useMemo(
-    () => filterActivities(activities, { sport: sportFilter, minDistanceKm }),
-    [activities, minDistanceKm, sportFilter],
-  )
   const summary = useMemo(() => summarizeActivities(monthActivities), [monthActivities])
-  const pageData = useMemo(() => paginateActivities(filteredActivities, page), [filteredActivities, page])
-  const monthGroups = useMemo(() => groupActivitiesByMonth(pageData.items), [pageData.items])
+  const monthGroups = useMemo(() => groupActivitiesByMonth(activityPage.activities), [activityPage.activities])
+  const totalPages = Math.max(1, Math.ceil(activityPage.total / (activityPage.limit || ACTIVITY_PAGE_SIZE)))
+  const currentPage = Math.min(
+    Math.max(1, Math.floor(activityPage.offset / (activityPage.limit || ACTIVITY_PAGE_SIZE)) + 1),
+    totalPages,
+  )
   const loading = loadState === 'idle' || loadState === 'loading'
+
+  const updateSportFilter = (nextSportFilter: ActivitySportFilter) => {
+    setPage(1)
+    setSportFilter(nextSportFilter)
+  }
+
+  const updateMinDistanceKm = (nextMinDistanceKm: number) => {
+    setPage(1)
+    setMinDistanceKm(nextMinDistanceKm)
+  }
+
+  const updatePageSize = (nextPageSize: number) => {
+    setPage(1)
+    setPageSize(nextPageSize)
+  }
 
   const applyDateRange = () => {
     const from = draftFrom.trim()
     const to = draftTo.trim()
+    setPage(1)
     if (from && to && from > to) {
       setDraftFrom(to)
       setDraftTo(from)
@@ -96,6 +123,7 @@ export default function ActivitiesPage() {
   const resetDateRange = () => {
     setDraftFrom('')
     setDraftTo('')
+    setPage(1)
     setAppliedRange({})
   }
 
@@ -105,6 +133,7 @@ export default function ActivitiesPage() {
         eyebrow="活动记录 · 全部"
         title="活动列表"
         lede="来自 COROS / Garmin 自动同步并匹配课次。点击任意活动查看完整详情、分段与教练点评。"
+        ledeClassName="max-w-none lg:whitespace-nowrap"
       />
 
       <section className="mb-5">
@@ -127,7 +156,7 @@ export default function ActivitiesPage() {
           id="activity-sport-filter"
           aria-label="活动类型"
           value={sportFilter}
-          onChange={(event) => setSportFilter(event.target.value as ActivitySportFilter)}
+          onChange={(event) => updateSportFilter(event.target.value as ActivitySportFilter)}
           className="h-9 rounded-[7px] border border-border bg-bg-primary px-3 pr-8 font-mono text-xs font-medium text-text-primary outline-none transition-colors hover:border-text-muted focus:border-accent-green"
         >
           <option value="all">类型 · 全部</option>
@@ -140,7 +169,7 @@ export default function ActivitiesPage() {
           id="activity-distance-filter"
           aria-label="距离下限"
           value={minDistanceKm}
-          onChange={(event) => setMinDistanceKm(Number(event.target.value) || 0)}
+          onChange={(event) => updateMinDistanceKm(Number(event.target.value) || 0)}
           className="h-9 rounded-[7px] border border-border bg-bg-primary px-3 pr-8 font-mono text-xs font-medium text-text-primary outline-none transition-colors hover:border-text-muted focus:border-accent-green"
         >
           {[0, 5, 10, 15, 20, 25, 30, 35, 40].map((distance) => (
@@ -200,13 +229,13 @@ export default function ActivitiesPage() {
         </div>
       )}
 
-      {!loading && loadState !== 'error' && filteredActivities.length === 0 && (
+      {!loading && loadState !== 'error' && activityPage.activities.length === 0 && (
         <div className="rounded-[11px] border border-dashed border-border-subtle px-7 py-8 text-center text-xs text-text-muted">
           该范围暂无活动记录。
         </div>
       )}
 
-      {!loading && loadState !== 'error' && filteredActivities.length > 0 && (
+      {!loading && loadState !== 'error' && activityPage.activities.length > 0 && (
         <>
           <div className="space-y-4">
             {monthGroups.map((group) => (
@@ -214,12 +243,14 @@ export default function ActivitiesPage() {
             ))}
           </div>
           <Pager
-            page={pageData.page}
-            totalPages={pageData.totalPages}
-            total={filteredActivities.length}
-            start={pageData.start}
-            shown={pageData.items.length}
+            page={currentPage}
+            totalPages={totalPages}
+            total={activityPage.total}
+            start={activityPage.offset}
+            shown={activityPage.activities.length}
+            pageSize={pageSize}
             onPageChange={setPage}
+            onPageSizeChange={updatePageSize}
           />
         </>
       )}
@@ -309,22 +340,41 @@ function Pager({
   total,
   start,
   shown,
+  pageSize,
   onPageChange,
+  onPageSizeChange,
 }: {
   page: number
   totalPages: number
   total: number
   start: number
   shown: number
+  pageSize: number
   onPageChange: (page: number) => void
+  onPageSizeChange: (pageSize: number) => void
 }) {
   if (totalPages <= 1) return null
-  const pages = Array.from({ length: totalPages }, (_, index) => index + 1)
+  const pageItems = visiblePageItems(page, totalPages)
 
   return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-      <div className="font-mono text-[11px] tracking-[0.04em] text-text-muted">
-        显示 {start + 1}-{start + shown} / {total}
+    <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 font-mono text-[11px] tracking-[0.04em] text-text-muted">
+          <span>每页显示</span>
+          <select
+            aria-label="每页显示"
+            value={pageSize}
+            onChange={(event) => onPageSizeChange(Number(event.target.value) || ACTIVITY_PAGE_SIZE)}
+            className="h-8 rounded-[7px] border border-border-subtle bg-bg-card px-2.5 pr-7 font-mono text-xs font-medium text-text-primary outline-none transition-colors hover:border-border focus:border-accent-green"
+          >
+            {ACTIVITY_PAGE_SIZE_OPTIONS.map((option) => (
+              <option key={option} value={option}>{option}</option>
+            ))}
+          </select>
+        </label>
+        <div className="font-mono text-[11px] tracking-[0.04em] text-text-muted">
+          显示 {start + 1}-{start + shown} / {total}
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <button
@@ -335,20 +385,30 @@ function Pager({
         >
           上一页
         </button>
-        {pages.map((pageNumber) => (
-          <button
-            key={pageNumber}
-            type="button"
-            onClick={() => onPageChange(pageNumber)}
-            className={`min-w-8 rounded-[7px] border px-2.5 py-1.5 font-mono text-xs font-medium transition-colors ${
-              pageNumber === page
-                ? 'border-text-primary bg-text-primary text-bg-card'
-                : 'border-border-subtle bg-bg-card text-text-secondary hover:border-border hover:text-text-primary'
-            }`}
-          >
-            {pageNumber}
-          </button>
-        ))}
+        {pageItems.map((pageItem) => {
+          if (typeof pageItem !== 'number') {
+            return (
+              <span key={pageItem} className="grid h-8 min-w-8 place-items-center font-mono text-xs text-text-muted">
+                ...
+              </span>
+            )
+          }
+
+          return (
+            <button
+              key={pageItem}
+              type="button"
+              onClick={() => onPageChange(pageItem)}
+              className={`min-w-8 rounded-[7px] border px-2.5 py-1.5 font-mono text-xs font-medium transition-colors ${
+                pageItem === page
+                  ? 'border-text-primary bg-text-primary text-bg-card'
+                  : 'border-border-subtle bg-bg-card text-text-secondary hover:border-border hover:text-text-primary'
+              }`}
+            >
+              {pageItem}
+            </button>
+          )
+        })}
         <button
           type="button"
           disabled={page === totalPages}

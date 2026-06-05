@@ -1,7 +1,8 @@
 import type { Activity } from '../api'
 import { shanghaiDate } from '../lib/shanghai'
 
-export const ACTIVITY_PAGE_SIZE = 12
+export const ACTIVITY_PAGE_SIZE = 25
+export const ACTIVITY_PAGE_SIZE_OPTIONS = [25, 50, 75, 100] as const
 
 export type ActivitySportFilter = 'all' | 'run' | 'strength'
 
@@ -24,6 +25,8 @@ export interface ActivityMonthGroup {
   label: string
   activities: Activity[]
 }
+
+export type PageItem = number | 'ellipsis-left' | 'ellipsis-right'
 
 export function isRunActivity(activity: Activity): boolean {
   return /run|treadmill|trail|track/i.test(activity.sport_name)
@@ -117,6 +120,26 @@ export function paginateActivities(
     start,
     items: activities.slice(start, start + ACTIVITY_PAGE_SIZE),
   }
+}
+
+export function visiblePageItems(currentPage: number, totalPages: number): PageItem[] {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1)
+
+  const current = Math.min(Math.max(1, currentPage), totalPages)
+  if (current <= 4) return [1, 2, 3, 4, 5, 'ellipsis-right', totalPages]
+  if (current >= totalPages - 3) {
+    return [
+      1,
+      'ellipsis-left',
+      totalPages - 4,
+      totalPages - 3,
+      totalPages - 2,
+      totalPages - 1,
+      totalPages,
+    ]
+  }
+
+  return [1, 'ellipsis-left', current - 1, current, current + 1, 'ellipsis-right', totalPages]
 }
 
 export function monthRangeFromShanghaiToday(today: string): { label: string; dateFrom: string; dateTo: string } {

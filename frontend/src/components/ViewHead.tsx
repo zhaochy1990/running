@@ -4,11 +4,12 @@ export interface ViewHeadProps {
   eyebrow?: string
   title: string
   lede?: string
+  ledeClassName?: string
   actions?: ReactNode
   className?: string
 }
 
-export default function ViewHead({ eyebrow, title, lede, actions, className }: ViewHeadProps) {
+export default function ViewHead({ eyebrow, title, lede, ledeClassName, actions, className }: ViewHeadProps) {
   return (
     <div className={`mb-6 grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3 sm:gap-5 items-start sm:items-end ${className ?? ''}`}>
       <div className="min-w-0">
@@ -21,7 +22,7 @@ export default function ViewHead({ eyebrow, title, lede, actions, className }: V
           {title}
         </h1>
         {lede && (
-          <p className="text-[13px] text-text-secondary mt-1.5 max-w-[520px]">
+          <p className={`text-[13px] text-text-secondary mt-1.5 ${ledeClassName ?? 'max-w-[520px]'}`}>
             {lede}
           </p>
         )}

@@ -410,7 +410,15 @@ export interface ActivitiesListResponse {
 
 export function getActivities(
   user: string,
-  opts: { dateFrom?: string; dateTo?: string; limit?: number; offset?: number; sport?: string } = {},
+  opts: {
+    dateFrom?: string
+    dateTo?: string
+    limit?: number
+    offset?: number
+    sport?: string
+    sportCategory?: 'run' | 'strength'
+    minDistanceKm?: number
+  } = {},
 ) {
   const params = new URLSearchParams()
   if (opts.dateFrom) params.set('date_from', opts.dateFrom)
@@ -418,6 +426,8 @@ export function getActivities(
   if (opts.limit != null) params.set('limit', String(opts.limit))
   if (opts.offset != null) params.set('offset', String(opts.offset))
   if (opts.sport) params.set('sport', opts.sport)
+  if (opts.sportCategory) params.set('sport_category', opts.sportCategory)
+  if (opts.minDistanceKm != null && opts.minDistanceKm > 0) params.set('min_distance_km', String(opts.minDistanceKm))
   const qs = params.toString()
   return fetchJSON<ActivitiesListResponse>(`/${user}/activities${qs ? `?${qs}` : ''}`)
 }

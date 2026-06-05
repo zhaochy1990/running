@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import logging
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
-from stride_core.models import EXERCISE_TYPES, pace_str
+from stride_core.models import EXERCISE_TYPES, RUN_SPORT_SQL_LIST, pace_str
 from stride_core.post_sync import run_post_sync_for_labels
 from stride_core.source import DataSource
 from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
@@ -25,6 +26,21 @@ from ..deps import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+_RUNNING_SPORT_VALUES = (
+    "run_outdoor",
+    "run_indoor",
+    "run_trail",
+    "run_track",
+    "run_treadmill",
+)
+_RUNNING_SPORT_NAMES = (
+    "run",
+    "indoor run",
+    "trail run",
+    "track run",
+    "treadmill",
+)
 
 
 def _json_list(value) -> list[str]:
@@ -68,6 +84,8 @@ def list_activities(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     sport: str | None = None,
+    sport_category: Literal["run", "strength"] | None = None,
+    min_distance_km: float | None = Query(None, ge=0),
     date_from: str | None = None,
     date_to: str | None = None,
 ):
@@ -78,6 +96,26 @@ def list_activities(
     if sport:
         conditions.append("sport_name = ?")
         params.append(sport)
+    if sport_category == "run":
+        sport_value_placeholders = ",".join("?" for _ in _RUNNING_SPORT_VALUES)
+        sport_name_placeholders = ",".join("?" for _ in _RUNNING_SPORT_NAMES)
+        conditions.append(
+            f"""(sport_type IN ({RUN_SPORT_SQL_LIST})
+                 OR sport IN ({sport_value_placeholders})
+                 OR lower(coalesce(sport_name, '')) IN ({sport_name_placeholders}))"""
+        )
+        params.extend(_RUNNING_SPORT_VALUES)
+        params.extend(_RUNNING_SPORT_NAMES)
+    elif sport_category == "strength":
+        conditions.append(
+            "(sport_type IN (402, 800) OR sport = ? OR lower(coalesce(sport_name, '')) LIKE ?)"
+        )
+        params.extend(["strength", "%strength%"])
+    if min_distance_km is not None and min_distance_km > 0:
+        # The legacy column is named distance_m, but synced activity rows store
+        # kilometers here. The API's distance_km field preserves that contract.
+        conditions.append("coalesce(distance_m, 0) >= ?")
+        params.append(min_distance_km)
     # date_from / date_to are Shanghai-local YYYY-MM-DD; activities.date is
     # UTC ISO. Compare via SHANGHAI_DAY_SQL so a workout that starts at
     # 00:30 Shanghai (16:30 UTC the previous day) classifies into the

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
-import { getAllActivities, type Activity } from '../../api'
+import { getActivities, getAllActivities, type Activity } from '../../api'
 import { UserContext } from '../../UserContextValue'
 import ActivitiesPage from '../ActivitiesPage'
 
@@ -10,6 +10,7 @@ vi.mock('../../api', async () => {
   const actual = await vi.importActual<typeof import('../../api')>('../../api')
   return {
     ...actual,
+    getActivities: vi.fn(),
     getAllActivities: vi.fn(),
     formatDateShort: (value: string) => value.slice(5, 10),
     sportNameCN: (value: string) => value,
@@ -92,6 +93,22 @@ function renderActivitiesPage(path = '/activities') {
 describe('ActivitiesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getActivities).mockImplementation((_user, opts) => {
+      let activities = [...defaultActivities]
+      if (opts?.dateFrom) activities = activities.filter(activity => activity.date.slice(0, 10) >= opts.dateFrom!)
+      if (opts?.dateTo) activities = activities.filter(activity => activity.date.slice(0, 10) <= opts.dateTo!)
+      if (opts?.sportCategory === 'run') activities = activities.filter(activity => activity.sport_name.includes('Run'))
+      if (opts?.sportCategory === 'strength') activities = activities.filter(activity => activity.sport_name.includes('Strength'))
+      if (opts?.minDistanceKm) activities = activities.filter(activity => activity.distance_km >= opts.minDistanceKm!)
+      const offset = opts?.offset ?? 0
+      const limit = opts?.limit ?? 12
+      return Promise.resolve({
+        total: activities.length,
+        offset,
+        limit,
+        activities: activities.slice(offset, offset + limit),
+      })
+    })
     vi.mocked(getAllActivities).mockImplementation((_user, opts) => {
       if (opts?.dateFrom === '2026-05-01' && opts.dateTo === '2026-05-31') {
         return Promise.resolve(defaultActivities.filter(activity => activity.date.startsWith('2026-05')))
@@ -110,22 +127,35 @@ describe('ActivitiesPage', () => {
     expect(screen.getByText('距离 · 全部')).toBeInTheDocument()
     expect(screen.getAllByText('2026 年 5 月').length).toBeGreaterThan(0)
     expect(screen.getByText('2026 年 4 月')).toBeInTheDocument()
+    expect(getActivities).toHaveBeenCalledWith('user-1', { limit: 25, offset: 0 })
+    expect(getAllActivities).toHaveBeenCalledWith('user-1', {
+      dateFrom: '2026-05-01',
+      dateTo: '2026-05-31',
+    })
   })
 
-  it('filters by sport and distance on the frontend only', async () => {
+  it('requests sport and distance filters from the activity endpoint', async () => {
     renderActivitiesPage()
 
     expect(await screen.findByText('Morning Run 10K')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('活动类型'), { target: { value: 'strength' } })
-    expect(screen.getByText('Strength A')).toBeInTheDocument()
-    expect(screen.queryByText('Morning Run 10K')).not.toBeInTheDocument()
+    await waitFor(() => expect(getActivities).toHaveBeenCalledWith('user-1', {
+      limit: 25,
+      offset: 0,
+      sportCategory: 'strength',
+    }))
+    expect(await screen.findByText('Strength A')).toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('活动类型'), { target: { value: 'run' } })
     fireEvent.change(screen.getByLabelText('距离下限'), { target: { value: '10' } })
-    expect(screen.getByText('Morning Run 10K')).toBeInTheDocument()
-    expect(screen.queryByText('Easy Run 5K')).not.toBeInTheDocument()
-    expect(getAllActivities).not.toHaveBeenCalledWith('user-1', expect.objectContaining({ sport: 'run' }))
+    await waitFor(() => expect(getActivities).toHaveBeenCalledWith('user-1', {
+      limit: 25,
+      offset: 0,
+      sportCategory: 'run',
+      minDistanceKm: 10,
+    }))
+    expect(await screen.findByText('Morning Run 10K')).toBeInTheDocument()
   })
 
   it('applies a custom date range through the API helper', async () => {
@@ -136,33 +166,86 @@ describe('ActivitiesPage', () => {
     fireEvent.change(screen.getByLabelText('结束日期'), { target: { value: '2026-04-30' } })
     fireEvent.click(screen.getByRole('button', { name: '应用' }))
 
-    await waitFor(() => expect(getAllActivities).toHaveBeenCalledWith('user-1', {
+    await waitFor(() => expect(getActivities).toHaveBeenCalledWith('user-1', {
       dateFrom: '2026-04-01',
       dateTo: '2026-04-30',
+      limit: 25,
+      offset: 0,
     }))
   })
 
-  it('paginates activities and links rows to activity detail', async () => {
-    vi.mocked(getAllActivities).mockResolvedValue(Array.from({ length: 13 }, (_, index) => (
+  it('requests pages from the server with compact pagination and links rows to activity detail', async () => {
+    const activities = Array.from({ length: 2050 }, (_, index) => (
       makeActivity({ label_id: `run-${index}`, name: `Run ${index}`, date: '2026-05-08T06:00:00+08:00' })
-    )))
+    ))
+    vi.mocked(getActivities).mockImplementation((_user, opts) => {
+      const offset = opts?.offset ?? 0
+      const limit = opts?.limit ?? 25
+      return Promise.resolve({
+        total: activities.length,
+        offset,
+        limit,
+        activities: activities.slice(offset, offset + limit),
+      })
+    })
+    vi.mocked(getAllActivities).mockResolvedValue(activities.slice(0, 25))
 
     renderActivitiesPage()
 
     expect(await screen.findByText('Run 0')).toBeInTheDocument()
-    expect(screen.queryByText('Run 12')).not.toBeInTheDocument()
+    expect(screen.queryByText('Run 25')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '82' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '40' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '下一页' }))
-    expect(screen.getByText('Run 12')).toBeInTheDocument()
-    fireEvent.click(screen.getByText('Run 12'))
+    await waitFor(() => expect(getActivities).toHaveBeenCalledWith('user-1', { limit: 25, offset: 25 }))
+    expect(await screen.findByText('Run 25')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Run 25'))
     expect(screen.getByText('Activity detail route')).toBeInTheDocument()
   })
 
-  it('shows an empty state when filters remove all activities', async () => {
+  it('lets users change rows per page and requests the new server limit', async () => {
+    const activities = Array.from({ length: 60 }, (_, index) => (
+      makeActivity({ label_id: `run-${index}`, name: `Run ${index}`, date: '2026-05-08T06:00:00+08:00' })
+    ))
+    vi.mocked(getActivities).mockImplementation((_user, opts) => {
+      const offset = opts?.offset ?? 0
+      const limit = opts?.limit ?? 25
+      return Promise.resolve({
+        total: activities.length,
+        offset,
+        limit,
+        activities: activities.slice(offset, offset + limit),
+      })
+    })
+    vi.mocked(getAllActivities).mockResolvedValue(activities.slice(0, 25))
+
+    renderActivitiesPage()
+
+    expect(await screen.findByText('Run 0')).toBeInTheDocument()
+    expect(screen.getByLabelText('每页显示')).toHaveValue('25')
+    expect(screen.getByRole('option', { name: '25' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '50' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '75' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '100' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: '12' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('每页显示'), { target: { value: '50' } })
+
+    await waitFor(() => expect(getActivities).toHaveBeenCalledWith('user-1', { limit: 50, offset: 0 }))
+    expect(await screen.findByText('显示 1-50 / 60')).toBeInTheDocument()
+    expect(screen.getByLabelText('每页显示')).toHaveValue('50')
+  })
+
+  it('shows an empty state when the server returns no matching activities', async () => {
     renderActivitiesPage()
 
     expect(await screen.findByText('Morning Run 10K')).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('距离下限'), { target: { value: '40' } })
 
-    expect(screen.getByText('该范围暂无活动记录。')).toBeInTheDocument()
+    await waitFor(() => expect(getActivities).toHaveBeenCalledWith('user-1', {
+      limit: 25,
+      offset: 0,
+      minDistanceKm: 40,
+    }))
+    expect(await screen.findByText('该范围暂无活动记录。')).toBeInTheDocument()
   })
 })

@@ -9,6 +9,7 @@ import {
   monthRangeFromShanghaiToday,
   paginateActivities,
   summarizeActivities,
+  visiblePageItems,
 } from '../activitiesPageModel'
 
 function makeActivity(overrides: Partial<Activity> = {}): Activity {
@@ -104,7 +105,13 @@ describe('activitiesPageModel', () => {
   })
 
   it('paginates activities with a fixed page size', () => {
-    expect(paginateActivities(Array.from({ length: 13 }, (_, index) => makeActivity({ label_id: String(index) })), 2).items).toHaveLength(1)
+    expect(paginateActivities(Array.from({ length: 26 }, (_, index) => makeActivity({ label_id: String(index) })), 2).items).toHaveLength(1)
+  })
+
+  it('returns compact visible page items for large page counts', () => {
+    expect(visiblePageItems(40, 82)).toEqual([1, 'ellipsis-left', 39, 40, 41, 'ellipsis-right', 82])
+    expect(visiblePageItems(2, 82)).toEqual([1, 2, 3, 4, 5, 'ellipsis-right', 82])
+    expect(visiblePageItems(81, 82)).toEqual([1, 'ellipsis-left', 78, 79, 80, 81, 82])
   })
 
   it('returns the current Shanghai month date range', () => {

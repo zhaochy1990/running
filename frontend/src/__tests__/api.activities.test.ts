@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getAllActivities, type Activity } from '../api'
+import { getActivities, getAllActivities, type Activity } from '../api'
 
 function makeActivity(index: number): Activity {
   return {
@@ -69,6 +69,28 @@ describe('getAllActivities', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/api/user-1/activities?date_from=2026-05-01&date_to=2026-05-31&limit=200&offset=200',
+      { headers: {} },
+    )
+  })
+
+  it('passes server-side pagination and filter parameters to the activity endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      total: 1,
+      offset: 12,
+      limit: 12,
+      activities: [makeActivity(1)],
+    })))
+
+    const result = await getActivities('user-1', {
+      limit: 12,
+      offset: 12,
+      sportCategory: 'run',
+      minDistanceKm: 10,
+    })
+
+    expect(result.total).toBe(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/user-1/activities?limit=12&offset=12&sport_category=run&min_distance_km=10',
       { headers: {} },
     )
   })
