@@ -103,6 +103,7 @@ export default function AppLayout() {
                 text="本周训练"
               />
               <NavItem to="/plan" collapsed={collapsed} icon={<DocIcon />} text="训练计划" />
+              <NavItem to="/activities" collapsed={collapsed} icon={<ActivityIcon />} text="活动列表" />
             </NavSection>
 
             <NavSection label="数据 / 分析" collapsed={collapsed}>
@@ -198,6 +199,14 @@ function TargetIcon() {
 }
 
 function PulseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+    </svg>
+  )
+}
+
+function ActivityIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
       <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
