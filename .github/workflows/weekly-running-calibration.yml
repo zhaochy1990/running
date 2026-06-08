@@ -68,8 +68,12 @@ jobs:
           # refresh = light snapshot-only update; backfill = also re-derive
           # daily/activity training-load rows with the new calibration (heavier;
           # use after schema migrations or first rollout of the new algorithm).
+          # TIMEOUT is per-request curl --max-time. refresh used to be 60s, but
+          # a cold-started container + a 180d recompute can exceed that on the
+          # first call, so the whole batch died with curl exit 28. 240s gives
+          # headroom; the retry below absorbs cold starts.
           case "$MODE" in
-            refresh)  ENDPOINT="/internal/training-load/calibration/refresh"; TIMEOUT=60 ;;
+            refresh)  ENDPOINT="/internal/training-load/calibration/refresh"; TIMEOUT=240 ;;
             backfill) ENDPOINT="/internal/training-load/backfill?load_lookback_days=365"; TIMEOUT=300 ;;
             *) echo "::error::unknown mode $MODE"; exit 1 ;;
           esac
@@ -87,17 +91,36 @@ jobs:
           echo "| user | http | response |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|------|----------|" >> "$GITHUB_STEP_SUMMARY"
 
+          # POST once and echo the HTTP status. On a curl-level failure (e.g.
+          # timeout exit 28, DNS, connection refused) curl returns non-zero;
+          # the `|| code="000"` guard turns that into a sentinel status AND
+          # makes the function exit 0, so one user's failure never aborts the
+          # whole batch under GitHub Actions' default `bash -e`.
+          attempt_post() {
+            local code
+            code=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
+              --max-time "$TIMEOUT" \
+              -X POST \
+              -H "X-Internal-Token: $INTERNAL_TOKEN" \
+              "$1") || code="000"
+            echo "$code"
+          }
+
           fail=0
           ok=0
           while read -r user; do
             [ -z "$user" ] && continue
             url="$STRIDE_PROD_URL$ENDPOINT${USER_SEP}user=$user"
             echo "==> POST $url"
-            http=$(curl -s -o /tmp/resp.json -w "%{http_code}" \
-              --max-time "$TIMEOUT" \
-              -X POST \
-              -H "X-Internal-Token: $INTERNAL_TOKEN" \
-              "$url")
+            http=$(attempt_post "$url")
+            # One retry on any transient failure (cold start / timeout / 5xx).
+            # Cold-start of the scaled-to-zero container takes ~15s, so wait
+            # long enough for it to be up before the second attempt.
+            if [ "$http" != "200" ] && [ "$http" != "204" ]; then
+              echo "  ↻ retrying $user (first attempt HTTP $http)"
+              sleep 15
+              http=$(attempt_post "$url")
+            fi
             body=$(head -c 500 /tmp/resp.json | tr '\n' ' ')
             if [ "$http" = "200" ] || [ "$http" = "204" ]; then
               ok=$((ok+1))
