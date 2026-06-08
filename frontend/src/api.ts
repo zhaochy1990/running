@@ -9,131 +9,70 @@ import type {
 
 const BASE = '/api'
 
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+
 function authHeaders(): HeadersInit {
   const token = sessionStorage.getItem('access_token')
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-async function fetchJSON<T>(path: string): Promise<T> {
-  let res = await fetch(`${BASE}${path}`, { headers: authHeaders() })
-
-  // Auto-refresh on 401
+/**
+ * Single HTTP entrypoint. Handles auth header injection, 401 → refresh →
+ * retry (once), and the "refresh failed → boot to /login" tear-down. All
+ * higher-level wrappers (fetchJSON / postJSON / putJSON / patchJSON /
+ * deleteJSON) are thin shells over this — change request-id, abort,
+ * telemetry, or error-normalization here once, not in 5 places.
+ */
+async function apiFetch(
+  method: HttpMethod,
+  path: string,
+  body?: unknown,
+): Promise<Response> {
+  // POST/PUT/PATCH historically always set Content-Type, even when the
+  // caller passes no body (e.g. postOnboardingComplete). Preserved.
+  const setsJsonHeader = method === 'POST' || method === 'PUT' || method === 'PATCH'
+  // Rebuilt on each attempt because `authHeaders()` reads the *current*
+  // access_token from sessionStorage, which refreshAccessToken mutates.
+  const buildInit = (): RequestInit => ({
+    method,
+    headers: { ...authHeaders(), ...(setsJsonHeader ? { 'Content-Type': 'application/json' } : {}) },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  let res = await fetch(`${BASE}${path}`, buildInit())
   if (res.status === 401) {
     try {
       await refreshAccessToken()
-      res = await fetch(`${BASE}${path}`, { headers: authHeaders() })
+      res = await fetch(`${BASE}${path}`, buildInit())
     } catch {
       sessionStorage.clear()
       window.location.href = '/login'
       throw new Error('Session expired')
     }
   }
+  return res
+}
 
+async function fetchJSON<T>(path: string): Promise<T> {
+  const res = await apiFetch('GET', path)
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json()
 }
 
-async function postJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: T }> {
-  let res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
+type JsonResult<T> = { ok: boolean; status: number; data: T }
 
-  if (res.status === 401) {
-    try {
-      await refreshAccessToken()
-      res = await fetch(`${BASE}${path}`, {
-        method: 'POST',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      })
-    } catch {
-      sessionStorage.clear()
-      window.location.href = '/login'
-      throw new Error('Session expired')
-    }
-  }
-
+async function bodyResult<T>(res: Response): Promise<JsonResult<T>> {
   const data = await res.json().catch(() => ({} as T))
   return { ok: res.ok, status: res.status, data: data as T }
 }
 
-async function putJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: T }> {
-  let res = await fetch(`${BASE}${path}`, {
-    method: 'PUT',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-
-  if (res.status === 401) {
-    try {
-      await refreshAccessToken()
-      res = await fetch(`${BASE}${path}`, {
-        method: 'PUT',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      })
-    } catch {
-      sessionStorage.clear()
-      window.location.href = '/login'
-      throw new Error('Session expired')
-    }
-  }
-
-  const data = await res.json().catch(() => ({} as T))
-  return { ok: res.ok, status: res.status, data: data as T }
-}
-
-async function patchJSON<T>(path: string, body?: unknown): Promise<{ ok: boolean; status: number; data: T }> {
-  let res = await fetch(`${BASE}${path}`, {
-    method: 'PATCH',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  })
-
-  if (res.status === 401) {
-    try {
-      await refreshAccessToken()
-      res = await fetch(`${BASE}${path}`, {
-        method: 'PATCH',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      })
-    } catch {
-      sessionStorage.clear()
-      window.location.href = '/login'
-      throw new Error('Session expired')
-    }
-  }
-
-  const data = await res.json().catch(() => ({} as T))
-  return { ok: res.ok, status: res.status, data: data as T }
-}
-
-async function deleteJSON<T>(path: string): Promise<{ ok: boolean; status: number; data: T }> {
-  let res = await fetch(`${BASE}${path}`, {
-    method: 'DELETE',
-    headers: authHeaders(),
-  })
-
-  if (res.status === 401) {
-    try {
-      await refreshAccessToken()
-      res = await fetch(`${BASE}${path}`, {
-        method: 'DELETE',
-        headers: authHeaders(),
-      })
-    } catch {
-      sessionStorage.clear()
-      window.location.href = '/login'
-      throw new Error('Session expired')
-    }
-  }
-
-  const data = await res.json().catch(() => ({} as T))
-  return { ok: res.ok, status: res.status, data: data as T }
-}
+const postJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('POST', path, body))
+const putJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('PUT', path, body))
+const patchJSON = async <T>(path: string, body?: unknown): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('PATCH', path, body))
+const deleteJSON = async <T>(path: string): Promise<JsonResult<T>> =>
+  bodyResult<T>(await apiFetch('DELETE', path))
 
 export function getUsers() {
   return fetchJSON<{ users: string[] }>('/users')
