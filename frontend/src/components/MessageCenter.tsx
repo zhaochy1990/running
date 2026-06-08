@@ -10,17 +10,23 @@ const SEVERITY_DOT: Record<string, string> = {
 }
 
 export default function MessageCenter() {
-  const dismiss = useNotificationsStore((s) => s.dismiss)
-  const isDismissed = useNotificationsStore((s) => s.isDismissed)
+  const hydrate = useNotificationsStore((s) => s.hydrate)
+  const markRead = useNotificationsStore((s) => s.markRead)
+  const isRead = useNotificationsStore((s) => s.isRead)
   const unreadCount = useNotificationsStore((s) => s.unreadCount)
-  // Subscribe to dismissed so the panel re-renders.
-  useNotificationsStore((s) => s.dismissed)
+  const loadState = useNotificationsStore((s) => s.loadState)
+  // Subscribe to readIds so the panel re-renders when server-backed state changes.
+  useNotificationsStore((s) => s.readIds)
 
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const messages = getNotificationsNewestFirst()
-  const unread = unreadCount()
+  const unread = loadState === 'loading' || loadState === 'idle' ? 0 : unreadCount()
+
+  useEffect(() => {
+    void hydrate()
+  }, [hydrate])
 
   useEffect(() => {
     if (!open) return
@@ -87,7 +93,7 @@ export default function MessageCenter() {
             ) : (
               <ul>
                 {messages.map((m) => {
-                  const read = isDismissed(m.id)
+                  const read = isRead(m.id)
                   const dot = SEVERITY_DOT[m.severity ?? 'info'] ?? SEVERITY_DOT.info
                   return (
                     <li
@@ -118,7 +124,7 @@ export default function MessageCenter() {
                           {!read && (
                             <button
                               type="button"
-                              onClick={() => dismiss(m.id)}
+                              onClick={() => void markRead(m.id)}
                               className="mt-2 text-[11px] font-mono text-accent-green hover:underline cursor-pointer"
                             >
                               标记为已读

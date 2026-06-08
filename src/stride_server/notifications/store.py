@@ -1,4 +1,4 @@
-"""Notification storage backend — devices + preferences.
+"""Notification storage backend — devices + preferences + read state.
 
 Per the SQLite scope rule (CLAUDE.md): notification data does NOT come from
 a watch sync, so it lives in **Azure Table Storage**, not SQLite. Mirrors
@@ -10,7 +10,7 @@ Two logical tables, one PartitionKey scheme:
 
     Table:     stridedevices         strideprefs
     PK:        user_id               user_id
-    RK:        registration_id       "prefs"   (singleton)
+    RK:        registration_id       "prefs" / "notification-read-state"
 
 Env vars (shared with likes_store on the same storage account):
     STRIDE_NOTIFICATIONS_TABLE_ACCOUNT_URL
@@ -50,11 +50,13 @@ DEFAULT_DEVICES_TABLE = "stridedevices"
 DEFAULT_PREFS_TABLE = "strideprefs"
 
 PREFS_ROW_KEY = "prefs"
+READ_STATE_ROW_KEY = "notification-read-state"
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 )
 _REG_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{8,200}$")
+_NOTIFICATION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:\-]{0,127}$")
 
 
 def _validate_user_id(user_id: str) -> str:
@@ -67,6 +69,12 @@ def _validate_registration_id(reg_id: str) -> str:
     if not isinstance(reg_id, str) or not _REG_ID_RE.match(reg_id):
         raise ValueError(f"invalid registration_id: {reg_id!r}")
     return reg_id
+
+
+def _validate_notification_id(notification_id: str) -> str:
+    if not isinstance(notification_id, str) or not _NOTIFICATION_ID_RE.match(notification_id):
+        raise ValueError(f"invalid notification_id: {notification_id!r}")
+    return notification_id
 
 
 _DEFAULT_PREFS: dict[str, Any] = {
@@ -97,6 +105,8 @@ class _Backend:
     def list_devices(self, user_id: str) -> list[DeviceEntity]: ...
     def get_prefs(self, user_id: str) -> dict[str, Any]: ...
     def set_prefs(self, user_id: str, prefs: dict[str, Any]) -> dict[str, Any]: ...
+    def get_read_notification_ids(self, user_id: str) -> list[str]: ...
+    def set_read_notification_ids(self, user_id: str, notification_ids: list[str]) -> list[str]: ...
     def list_users_with_prefs(self) -> list[str]:
         """Used by the plan-reminder cron job to enumerate users."""
         ...
@@ -117,7 +127,8 @@ class _FileBackend(_Backend):
     Schema:
         {
           "devices": { "<user_id>": { "<registration_id>": { ... } } },
-          "prefs":   { "<user_id>": { "likes_enabled": bool, ... } }
+          "prefs":      { "<user_id>": { "likes_enabled": bool, ... } },
+          "read_state": { "<user_id>": { "read_ids": [str], ... } }
         }
     """
 
@@ -127,13 +138,14 @@ class _FileBackend(_Backend):
     def _read(self) -> dict[str, dict]:
         path = _file_path()
         if not path.exists():
-            return {"devices": {}, "prefs": {}}
+            return {"devices": {}, "prefs": {}, "read_state": {}}
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return {"devices": {}, "prefs": {}}
+            return {"devices": {}, "prefs": {}, "read_state": {}}
         data.setdefault("devices", {})
         data.setdefault("prefs", {})
+        data.setdefault("read_state", {})
         return data
 
     def _write(self, data: dict[str, dict]) -> None:
@@ -210,6 +222,24 @@ class _FileBackend(_Backend):
             }
             self._write(data)
         return self.get_prefs(user_id)
+
+    def get_read_notification_ids(self, user_id: str) -> list[str]:
+        data = self._read()
+        rec = data["read_state"].get(user_id, {})
+        ids = rec.get("read_ids", [])
+        if not isinstance(ids, list):
+            return []
+        return [item for item in ids if isinstance(item, str)]
+
+    def set_read_notification_ids(self, user_id: str, notification_ids: list[str]) -> list[str]:
+        with self._lock:
+            data = self._read()
+            data["read_state"][user_id] = {
+                "read_ids": notification_ids,
+                "updated_at": _now_iso(),
+            }
+            self._write(data)
+        return self.get_read_notification_ids(user_id)
 
     def list_users_with_prefs(self) -> list[str]:
         return list(self._read()["prefs"].keys())
@@ -326,6 +356,23 @@ class _AzureTableBackend(_Backend):
             "updated_at": row.get("updated_at"),
         }
 
+    def get_read_notification_ids(self, user_id: str) -> list[str]:
+        from azure.core.exceptions import ResourceNotFoundError
+        try:
+            row = self._prefs().get_entity(
+                partition_key=user_id, row_key=READ_STATE_ROW_KEY,
+            )
+        except ResourceNotFoundError:
+            return []
+        raw = row.get("read_ids_json", "[]")
+        try:
+            ids = json.loads(raw)
+        except (TypeError, ValueError):
+            return []
+        if not isinstance(ids, list):
+            return []
+        return [item for item in ids if isinstance(item, str)]
+
     def set_prefs(self, user_id: str, prefs: dict[str, Any]) -> dict[str, Any]:
         from azure.data.tables import UpdateMode
         record = {
@@ -340,6 +387,17 @@ class _AzureTableBackend(_Backend):
         }
         self._prefs().upsert_entity(record, mode=UpdateMode.REPLACE)
         return self.get_prefs(user_id)
+
+    def set_read_notification_ids(self, user_id: str, notification_ids: list[str]) -> list[str]:
+        from azure.data.tables import UpdateMode
+        record = {
+            "PartitionKey": user_id,
+            "RowKey": READ_STATE_ROW_KEY,
+            "read_ids_json": json.dumps(notification_ids, ensure_ascii=False),
+            "updated_at": _now_iso(),
+        }
+        self._prefs().upsert_entity(record, mode=UpdateMode.REPLACE)
+        return self.get_read_notification_ids(user_id)
 
     def list_users_with_prefs(self) -> list[str]:
         # Each user has exactly one prefs row (RowKey="prefs"), so we can
@@ -461,6 +519,20 @@ def list_device_ids(user_id: str) -> list[str]:
 def get_prefs(user_id: str) -> dict[str, Any]:
     _validate_user_id(user_id)
     return _get_backend().get_prefs(user_id)
+
+
+def get_read_notification_ids(user_id: str) -> list[str]:
+    _validate_user_id(user_id)
+    return _get_backend().get_read_notification_ids(user_id)
+
+
+def mark_notification_read(user_id: str, notification_id: str) -> list[str]:
+    _validate_user_id(user_id)
+    notification_id = _validate_notification_id(notification_id)
+    current = _get_backend().get_read_notification_ids(user_id)
+    if notification_id in current:
+        return current
+    return _get_backend().set_read_notification_ids(user_id, [*current, notification_id])
 
 
 def update_prefs(
