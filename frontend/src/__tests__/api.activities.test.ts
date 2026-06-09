@@ -1,6 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getActivities, getAllActivities, type Activity } from '../api'
+import {
+  applyMasterPlanAdjustDiff,
+  getActivities,
+  getAllActivities,
+  getCurrentMasterPlan,
+  sendMasterPlanAdjustMessage,
+  type Activity,
+} from '../api'
 
 function makeActivity(index: number): Activity {
   return {
@@ -64,12 +71,12 @@ describe('getAllActivities', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       '/api/user-1/activities?date_from=2026-05-01&date_to=2026-05-31&limit=200&offset=0',
-      { headers: {} },
+      { method: 'GET', headers: {}, body: undefined },
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/api/user-1/activities?date_from=2026-05-01&date_to=2026-05-31&limit=200&offset=200',
-      { headers: {} },
+      { method: 'GET', headers: {}, body: undefined },
     )
   })
 
@@ -91,7 +98,67 @@ describe('getAllActivities', () => {
     expect(result.total).toBe(1)
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/user-1/activities?limit=12&offset=12&sport_category=run&min_distance_km=10',
-      { headers: {} },
+      { method: 'GET', headers: {}, body: undefined },
     )
+  })
+})
+
+describe('master plan API clients', () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('returns null when the current master plan endpoint has no active plan', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: 'not found' }), { status: 404 }))
+
+    await expect(getCurrentMasterPlan()).resolves.toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/master-plan/current', { method: 'GET', headers: {}, body: undefined })
+  })
+
+  it('posts adjust messages with history to the active master plan endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      ai_response: '已调整',
+      diff: null,
+    })))
+
+    const response = await sendMasterPlanAdjustMessage('plan-1', '减量一周', [
+      { role: 'assistant', content: '当前计划正常' },
+    ])
+
+    expect(response.data.ai_response).toBe('已调整')
+    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/master-plan/plan-1/adjust/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: '减量一周',
+        history: [{ role: 'assistant', content: '当前计划正常' }],
+      }),
+    })
+  })
+
+  it('posts accepted adjust diff operation ids to the apply endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
+      plan_id: 'plan-1',
+      version: 3,
+      updated_at: '2026-06-08T00:00:00Z',
+      applied: 2,
+      affected_weeks: [{ folder: '2026-06-08_06-14', reason: 'plan_adjusted' }],
+    })))
+
+    const response = await applyMasterPlanAdjustDiff('plan-1', 'diff-1', ['op-1', 'op-2'], '调整训练负荷')
+
+    expect(response.data.applied).toBe(2)
+    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/master-plan/plan-1/adjust/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        diff_id: 'diff-1',
+        accepted_op_ids: ['op-1', 'op-2'],
+        change_reason: '调整训练负荷',
+      }),
+    })
   })
 })

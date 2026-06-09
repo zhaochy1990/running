@@ -24,6 +24,10 @@ export function resolveBreadcrumb(pathname: string, ctx?: BreadcrumbCtx): Breadc
     return { section: '训练', current: '训练计划' }
   }
 
+  if (pathname === '/plan/adjust') {
+    return { section: '训练计划', current: '调整 / 重新生成' }
+  }
+
   if (pathname === '/activities') {
     return { section: '训练', current: '活动列表' }
   }

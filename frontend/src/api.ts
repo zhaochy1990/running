@@ -452,6 +452,146 @@ export function getTrainingPlan(user: string) {
   return fetchJSON<TrainingPlan>(`/${user}/training-plan`)
 }
 
+// ---------------------------------------------------------------------------
+// Master Plan — active long-term plan adjustment
+// ---------------------------------------------------------------------------
+
+export interface MasterPlanMilestone {
+  id: string
+  type: string
+  date: string
+  phase_id: string
+  target: string
+  completed_actual: string | null
+}
+
+export interface MasterPlanPhase {
+  id: string
+  name: string
+  start_date: string
+  end_date: string
+  focus: string
+  weekly_distance_km_low: number
+  weekly_distance_km_high: number
+  key_session_types: string[]
+  milestone_ids: string[]
+}
+
+export interface MasterPlanNextMilestone {
+  id: string
+  date: string
+  target: string
+  days_until: number
+}
+
+export interface MasterPlan {
+  plan_id: string
+  user_id: string
+  status: string
+  goal_id: string
+  start_date: string
+  end_date: string
+  phases: MasterPlanPhase[]
+  milestones: MasterPlanMilestone[]
+  training_principles: string[]
+  generated_by: string
+  version: number
+  created_at: string
+  updated_at: string
+  current_phase_id: string | null
+  current_week_number: number | null
+  total_weeks: number | null
+  next_milestone: MasterPlanNextMilestone | null
+}
+
+export interface MasterPlanDiffOp {
+  id: string
+  op: string
+  phase_id: string | null
+  milestone_id: string | null
+  old_value: Record<string, unknown> | null
+  new_value: Record<string, unknown> | null
+  spec_patch: Record<string, unknown> | null
+  accepted: boolean | null
+}
+
+export interface MasterPlanDiff {
+  diff_id: string
+  plan_id: string
+  ops: MasterPlanDiffOp[]
+  ai_explanation: string
+  created_at: string
+}
+
+export interface MasterPlanAdjustMessage {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface MasterPlanAdjustMessageResponse {
+  ai_response: string
+  diff: MasterPlanDiff | null
+}
+
+export interface MasterPlanAffectedWeek {
+  folder: string
+  reason: string
+}
+
+export interface MasterPlanAdjustApplyResponse {
+  plan_id: string
+  version: number
+  updated_at: string
+  applied: number
+  affected_weeks: MasterPlanAffectedWeek[]
+}
+
+export async function getCurrentMasterPlan(): Promise<MasterPlan | null> {
+  let res = await fetch(`${BASE}/users/me/master-plan/current`, { headers: authHeaders() })
+
+  if (res.status === 401) {
+    try {
+      await refreshAccessToken()
+      res = await fetch(`${BASE}/users/me/master-plan/current`, { headers: authHeaders() })
+    } catch {
+      sessionStorage.clear()
+      window.location.href = '/login'
+      throw new Error('Session expired')
+    }
+  }
+
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export function sendMasterPlanAdjustMessage(
+  planId: string,
+  message: string,
+  history: MasterPlanAdjustMessage[] = [],
+) {
+  return postJSON<MasterPlanAdjustMessageResponse>(
+    `/users/me/master-plan/${encodeURIComponent(planId)}/adjust/messages`,
+    { message, history },
+  )
+}
+
+export function applyMasterPlanAdjustDiff(
+  planId: string,
+  diffId: string,
+  acceptedOpIds: string[],
+  changeReason: string,
+) {
+  return postJSON<MasterPlanAdjustApplyResponse>(
+    `/users/me/master-plan/${encodeURIComponent(planId)}/adjust/apply`,
+    {
+      diff_id: diffId,
+      accepted_op_ids: acceptedOpIds,
+      change_reason: changeReason,
+    },
+  )
+}
+
 export interface HealthRecord {
   date: string
   ati: number | null

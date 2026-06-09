@@ -8,6 +8,7 @@ import ActivityDetailPage from './pages/ActivityDetailPage'
 import HealthPage from './pages/HealthPage'
 import BodyCompositionPage from './pages/BodyCompositionPage'
 import TrainingPlanPage from './pages/TrainingPlanPage'
+import TrainingPlanAdjustPage from './pages/TrainingPlanAdjustPage'
 import ActivitiesPage from './pages/ActivitiesPage'
 import AbilityPage from './pages/AbilityPage'
 import TrainingStatusPage from './pages/TrainingStatusPage'
@@ -92,6 +93,7 @@ function App() {
                     <Route path="/health" element={<HealthPage />} />
                     <Route path="/body-composition" element={<BodyCompositionPage />} />
                     <Route path="/plan" element={<TrainingPlanPage />} />
+                    <Route path="/plan/adjust" element={<TrainingPlanAdjustPage />} />
                     <Route path="/activities" element={<ActivitiesPage />} />
                     <Route path="/ability" element={<AbilityPage />} />
                     <Route path="/training-status" element={<TrainingStatusPage />} />
