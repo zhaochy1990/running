@@ -635,27 +635,3 @@ def regenerate_and_save(
     finally:
         if owned:
             db.close()
-
-
-def maybe_generate_for_new_activity(user: str, label_id: str) -> None:
-    """Fire-and-forget path called from sync.py.
-
-    Skip silently if: AOAI disabled, commentary already exists, any error.
-    Does not raise. Logs failures.
-    """
-    if not is_enabled():
-        return
-    try:
-        db = Database(user=user)
-        try:
-            if db.activity_commentary_exists(label_id):
-                logger.debug("commentary already exists for %s, skipping auto-gen", label_id)
-                return
-            regenerate_and_save(user, label_id, db=db)
-            logger.info("AOAI auto-generated commentary for %s (user=%s)", label_id, user)
-        finally:
-            db.close()
-    except CoachLLMUnavailable as e:
-        logger.info("LLM unavailable, skipping auto-gen for %s: %s", label_id, e)
-    except Exception:
-        logger.exception("LLM commentary auto-gen failed for %s (user=%s)", label_id, user)
