@@ -192,6 +192,7 @@ def test_canonical_config_file_loads(tmp_path: Path, monkeypatch) -> None:
     assert cfg.commentary.deployment == "gpt-4.1"
     assert cfg.commentary.api_kind == "chat-completions"
     assert cfg.commentary.endpoint == "https://word-learner-llm.cognitiveservices.azure.com"
+    assert cfg.commentary.api_key_env == "AZURE_OPENAI_API_KEY"
     assert not cfg.commentary.is_placeholder()
 
 
