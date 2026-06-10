@@ -85,10 +85,12 @@ def _resolve_path(path: str | Path | None) -> Path:
         return Path(env_override).resolve()
     repo_root = _find_repo_root()
     if repo_root is not None:
+        prod_candidate = repo_root / CONFIG_FILENAME
+        if os.environ.get("STRIDE_CONFIG_ENV", "").lower() == "prod" and prod_candidate.exists():
+            return prod_candidate.resolve()
         local_candidate = repo_root / LOCAL_CONFIG_FILENAME
         if local_candidate.exists():
             return local_candidate.resolve()
-        prod_candidate = repo_root / CONFIG_FILENAME
         if prod_candidate.exists():
             return prod_candidate.resolve()
     cwd_candidate = Path.cwd() / CONFIG_FILENAME
