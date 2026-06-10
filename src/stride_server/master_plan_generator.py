@@ -92,8 +92,15 @@ def _build_master_plan(
     parsed: dict,
     user_id: str,
     goal_id: str,
+    generated_by: str = "unknown",
 ) -> MasterPlan:
     """Map LLM output JSON -> MasterPlan instance.
+
+    ``generated_by`` is the audit stamp recording which model produced the
+    plan. The generator adapter passes the configured generator model id
+    (from ``config/coach.toml`` ``[generator].model``) so this reflects the
+    real model rather than a hardcoded literal; the ``"unknown"`` default
+    only applies to direct callers that don't supply it.
 
     Raises ValueError if schema is invalid or required fields are missing.
     """
@@ -212,7 +219,7 @@ def _build_master_plan(
         milestones=milestones,
         weekly_key_sessions=weekly_key_sessions,
         training_principles=plan_data.get("training_principles", []),
-        generated_by="gpt-4.1",
+        generated_by=generated_by,
         version=1,
         created_at=now_iso,
         updated_at=now_iso,
@@ -254,17 +261,30 @@ def _query_history(user_id: str) -> dict[str, Any]:
     }
     try:
         from stride_core.db import Database
+        from stride_core.models import RUN_SPORT_SQL_LIST
 
         db = Database(user=user_id)
         conn = db._conn
 
-        # Monthly running km (last 36 months) — sport_type 1=running
+        # Running activities are matched against the canonical RUN_SPORT_IDS set
+        # (COROS 100-104/600-601 + Garmin-synced 8001-8005), NOT a literal
+        # ``sport_type = 1`` — ``1`` is not a stored running code, so the old
+        # filter silently matched zero rows (especially for Garmin-synced
+        # users). RUN_SPORT_SQL_LIST is the same single-source fragment
+        # ability.py uses; keep them in sync.
+
+        # Monthly running km (last 36 months). NOTE: activities.distance_m is
+        # misnamed — it stores KILOMETERS (magnitude < 500), with legacy rows
+        # in meters (>= 500). Normalise per-row with the same heuristic as
+        # stride_core.ability._distance_to_km; a plain ``/1000`` would be
+        # ~1000x too small for the common km-valued rows.
+        _KM_EXPR = "SUM(CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END)"
         rows = conn.execute(
-            """
+            f"""
             SELECT strftime('%Y-%m', date) AS month,
-                   SUM(distance_m) / 1000.0 AS km
+                   {_KM_EXPR} AS km
             FROM activities
-            WHERE sport_type = 1
+            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
               AND date >= date('now', '-36 months')
             GROUP BY month
             ORDER BY month
@@ -274,13 +294,13 @@ def _query_history(user_id: str) -> dict[str, Any]:
 
         # Max single-week km (approximate: 7-day windows using SQLite strftime week)
         row = conn.execute(
-            """
+            f"""
             SELECT MAX(week_km)
             FROM (
                 SELECT strftime('%Y-%W', date) AS wk,
-                       SUM(distance_m) / 1000.0 AS week_km
+                       {_KM_EXPR} AS week_km
                 FROM activities
-                WHERE sport_type = 1
+                WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
                   AND date >= date('now', '-36 months')
                 GROUP BY wk
             )
@@ -290,7 +310,7 @@ def _query_history(user_id: str) -> dict[str, Any]:
 
         # Total running activities
         row = conn.execute(
-            "SELECT COUNT(*) FROM activities WHERE sport_type = 1"
+            f"SELECT COUNT(*) FROM activities WHERE sport_type IN ({RUN_SPORT_SQL_LIST})"
         ).fetchone()
         result["total_activities"] = row[0] or 0
 

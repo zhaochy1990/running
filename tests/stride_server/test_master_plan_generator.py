@@ -282,7 +282,9 @@ class TestBuildMasterPlan:
         assert plan.goal_id == GOAL_ID
         assert plan.status == MasterPlanStatus.DRAFT
         assert plan.version == 1
-        assert plan.generated_by == "gpt-4.1"
+        # generated_by defaults to "unknown" when the caller doesn't supply it;
+        # the generator adapter passes the configured model id in production.
+        assert plan.generated_by == "unknown"
         # 3 phases: 基础期 + 进展期 + 赛前期 (the 赛前期 added so the fixture
         # satisfies the new master_rule_filter; without it phase_count_min fails).
         assert len(plan.phases) == 3

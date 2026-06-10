@@ -128,6 +128,24 @@ def set_generator_llm_for_tests(llm: Any) -> None:
         _GENERATOR_LLM = llm
 
 
+def get_generator_model() -> str:
+    """Return the configured generator model id (``config/coach.toml``
+    ``[generator].model``) for use as a ``generated_by`` audit stamp.
+
+    Reads the same config the generator LLM is built from, so the stamp
+    reflects the real model rather than a hardcoded literal. Returns
+    ``"unknown"`` if the config can't be read (the LLM call itself would
+    have already failed in that case, so this is only a defensive fallback).
+    """
+    try:
+        from coach.runtime.config import load_config
+
+        return load_config().generator.model
+    except Exception:  # noqa: BLE001 — stamp must never break generation
+        logger.warning("get_generator_model: failed to read coach config", exc_info=True)
+        return "unknown"
+
+
 def get_reviewer_llm() -> Any:
     """Return a process-wide singleton reviewer (Reviewer Agent)."""
     global _REVIEWER_LLM
