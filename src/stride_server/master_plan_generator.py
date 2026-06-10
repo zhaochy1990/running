@@ -335,11 +335,25 @@ def _query_history(user_id: str) -> dict[str, Any]:
     return result
 
 
-def _query_fitness_state(user_id: str) -> dict[str, Any]:
-    """Query daily_health for the most recent 90-day fitness snapshot.
+def _ensure_training_load_current(db, as_of=None) -> None:
+    """Ensure daily_training_load is backfilled far enough that the 42-day
+    chronic EWMA has converged at ``as_of``. The EWMA has ~42-day memory, so a
+    365-day warmup window (>> 3x42) yields a converged chronic regardless of how
+    few rows existed before. Idempotent; safe to call every generation."""
+    from stride_core.training_load import backfill_training_load
+    try:
+        backfill_training_load(db, as_of_date=as_of, load_lookback_days=365,
+                               calibration_lookback_days=365, persist=True)
+    except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
+        logger.warning("_ensure_training_load_current failed: %s", exc)
 
-    Returns the latest CTL/ATL/TSB/fatigue/RHR row plus a human-readable
-    summary string.
+
+def _query_fitness_state(user_id: str) -> dict[str, Any]:
+    """Query STRIDE daily_training_load for the most recent fitness snapshot.
+
+    Returns the latest CTL/ATL/form from the canonical STRIDE PMC table (not
+    the COROS vendor ati/cti fields which use a different scale). RHR is still
+    read from daily_health as a raw measurement.
     """
     result: dict[str, Any] = {
         "ctl": None,
@@ -352,41 +366,44 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
     }
     try:
         from stride_core.db import Database
+        from stride_core.timefmt import today_shanghai
 
         db = Database(user=user_id)
         conn = db._conn
 
+        _ensure_training_load_current(db, as_of=today_shanghai())
+
         row = conn.execute(
-            """
-            SELECT ati, cti, fatigue, rhr, training_load_ratio, training_load_state
-            FROM daily_health
-            WHERE date >= date('now', '-90 days')
-            ORDER BY date DESC
-            LIMIT 1
-            """
+            "SELECT date, acute_load, chronic_load, form FROM daily_training_load "
+            "ORDER BY date DESC LIMIT 1"
         ).fetchone()
+        rhr_row = conn.execute(
+            "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+        rhr = rhr_row[0] if rhr_row else None
+
         if row:
-            atl, ctl, fatigue, rhr, ratio, state = row
-            tsb = round((ctl or 0) - (atl or 0), 1) if ctl and atl else None
-            result.update(
-                {
-                    "ctl": round(ctl, 1) if ctl else None,
-                    "atl": round(atl, 1) if atl else None,
-                    "tsb": tsb,
-                    "fatigue": round(fatigue, 1) if fatigue else None,
-                    "rhr": rhr,
-                    "training_load_state": state,
-                }
-            )
-            # Human-readable summary
-            ctl_str = f"CTL {ctl:.0f}" if ctl else "CTL 未知"
-            atl_str = f"ATL {atl:.0f}" if atl else "ATL 未知"
-            tsb_str = f"TSB {tsb:+.0f}" if tsb is not None else "TSB 未知"
-            fat_str = f"疲劳 {fatigue:.0f}" if fatigue else ""
-            rhr_str = f"RHR {rhr}bpm" if rhr else ""
-            state_str = f"负荷状态: {state}" if state else ""
-            parts = [s for s in [ctl_str, atl_str, tsb_str, fat_str, rhr_str, state_str] if s]
-            result["summary"] = "，".join(parts)
+            _date, atl, ctl, form = row
+            ratio = round(atl / ctl, 2) if ctl else None
+            result.update({
+                "ctl": round(ctl, 1) if ctl is not None else None,
+                "atl": round(atl, 1) if atl is not None else None,
+                "tsb": round(form, 1) if form is not None else None,
+                "rhr": rhr,
+                "training_load_ratio": ratio,
+            })
+            parts = []
+            if ctl is not None:
+                parts.append(f"CTL {ctl:.0f}")
+            if atl is not None:
+                parts.append(f"ATL {atl:.0f}")
+            if form is not None:
+                parts.append(f"Form {form:+.0f}")
+            if ratio is not None:
+                parts.append(f"acute/chronic {ratio}")
+            if rhr is not None:
+                parts.append(f"RHR {rhr}bpm")
+            result["summary"] = "，".join(parts) if parts else "体能数据暂无"
 
     except Exception as exc:  # noqa: BLE001
         logger.warning("_query_fitness_state failed for user %s: %s", user_id, exc)
