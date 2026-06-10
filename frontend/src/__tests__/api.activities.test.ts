@@ -64,12 +64,12 @@ describe('getAllActivities', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       '/api/user-1/activities?date_from=2026-05-01&date_to=2026-05-31&limit=200&offset=0',
-      { headers: {} },
+      { method: 'GET', headers: {}, body: undefined },
     )
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
       '/api/user-1/activities?date_from=2026-05-01&date_to=2026-05-31&limit=200&offset=200',
-      { headers: {} },
+      { method: 'GET', headers: {}, body: undefined },
     )
   })
 
@@ -91,7 +91,7 @@ describe('getAllActivities', () => {
     expect(result.total).toBe(1)
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/user-1/activities?limit=12&offset=12&sport_category=run&min_distance_km=10',
-      { headers: {} },
+      { method: 'GET', headers: {}, body: undefined },
     )
   })
 })
