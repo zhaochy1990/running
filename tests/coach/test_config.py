@@ -330,6 +330,32 @@ def test_resolver_prefers_coach_local_toml_when_present(
     assert resolved.name == "coach.local.toml"
 
 
+def test_resolver_prefers_coach_toml_in_prod_even_when_local_present(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The Docker image copies ``coach.prod.toml`` to ``coach.toml`` but
+    also contains the repo's committed ``coach.local.toml``. In prod, the
+    runtime must use ``coach.toml`` so local dev deployments cannot shadow
+    production model/auth settings.
+    """
+    from coach.runtime.config import _resolve_path
+
+    monkeypatch.delenv("STRIDE_COACH_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "coach.local.toml").write_text("# local\n", encoding="utf-8")
+    (config_dir / "coach.toml").write_text("# prod\n", encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text("", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "coach.runtime.config._find_repo_root", lambda: tmp_path
+    )
+    resolved = _resolve_path(None)
+    assert resolved.name == "coach.toml"
+
+
 def test_resolver_falls_back_to_coach_toml_when_local_absent(
     tmp_path: Path, monkeypatch
 ) -> None:
