@@ -165,6 +165,7 @@ def apply_master_plan_diff(
         "updated_at": now_iso,
     }
     if phase_affecting_applied:
+        update["weeks"] = []
         update["weekly_key_sessions"] = []
     updated_plan = plan.model_copy(update=update)
     store.save_plan(updated_plan)

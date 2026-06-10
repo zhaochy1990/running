@@ -24,7 +24,16 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from stride_core.master_plan import MasterPlan, MasterPlanStatus, Milestone, MilestoneType, Phase
+from stride_core.master_plan import (
+    KeySession,
+    MasterPlan,
+    MasterPlanGoal,
+    MasterPlanStatus,
+    MasterPlanWeek,
+    Milestone,
+    MilestoneType,
+    Phase,
+)
 from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOp, MasterPlanDiffOpKind
 from stride_server.master_plan_store import FileMasterPlanStore, reset_master_plan_store_cache
 import stride_server.routes.master_plan as mp_mod
@@ -735,6 +744,8 @@ class TestCurrentMasterPlan:
         assert data["plan_id"] == plan.plan_id
         assert data["status"] == "active"
         assert "phases" in data
+        assert "goal" in data
+        assert "weeks" in data
         assert "milestones" in data
         assert "current_phase_id" in data
         assert "current_week_number" in data
@@ -742,6 +753,81 @@ class TestCurrentMasterPlan:
         assert "next_milestone" in data
         assert isinstance(data["total_weeks"], int)
         assert data["total_weeks"] > 0
+        assert data["phases"][0]["key_session_types"] == ["长距离", "有氧"]
+        assert data["milestones"][0]["type"] == "test_run"
+        assert "completed_actual" in data["milestones"][0]
+
+    def test_current_returns_canonical_goal_and_weeks(self, app_client):
+        """/current returns the canonical MasterPlan contract plus derived position."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+
+        today = datetime.now(timezone.utc).date()
+        phase_id = str(uuid4())
+        goal_id = str(uuid4())
+        phase = Phase(
+            id=phase_id,
+            name="测试期",
+            start_date=today.isoformat(),
+            end_date=(today + timedelta(days=6)).isoformat(),
+            focus="测试结构化响应",
+            weekly_distance_km_low=30.0,
+            weekly_distance_km_high=40.0,
+            key_session_types=["长距离"],
+            milestone_ids=[],
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        plan = MasterPlan(
+            plan_id=str(uuid4()),
+            user_id=USER_UUID,
+            status=MasterPlanStatus.ACTIVE,
+            goal_id=goal_id,
+            goal=MasterPlanGoal(
+                goal_id=goal_id,
+                race_name="Shanghai Marathon",
+                distance="FM",
+                race_date=(today + timedelta(days=30)).isoformat(),
+                target_time="3:30:00",
+            ),
+            start_date=today.isoformat(),
+            end_date=(today + timedelta(days=6)).isoformat(),
+            total_weeks=1,
+            phases=[phase],
+            milestones=[],
+            weeks=[
+                MasterPlanWeek(
+                    week_index=1,
+                    week_start=today.isoformat(),
+                    phase_id=phase_id,
+                    target_weekly_km_low=30.0,
+                    target_weekly_km_high=40.0,
+                    key_sessions=[KeySession(type="long_run", distance_km=18.0)],
+                )
+            ],
+            training_principles=[],
+            generated_by="gpt-4.1",
+            version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        store.save_plan(plan)
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["goal"]["goal_id"] == goal_id
+        assert data["goal"]["target_time"] == "3:30:00"
+        assert data["goal"]["timezone"] == "Asia/Shanghai"
+        assert data["goal_id"] == goal_id
+        assert data["total_weeks"] == 1
+        assert data["weeks"][0]["week_index"] == 1
+        assert data["weeks"][0]["key_sessions"][0]["type"] == "long_run"
+        assert data["current_week_number"] == 1
+        assert data["current_phase_id"] == phase_id
 
     def test_current_phase_id_correct(self, app_client):
         """current_phase_id is set when today falls within a phase."""
