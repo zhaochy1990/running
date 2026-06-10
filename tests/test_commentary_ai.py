@@ -32,6 +32,7 @@ def _load_commentary_ai():
     module = importlib.util.module_from_spec(spec)
     sys.modules["stride_server.commentary_ai"] = module
     spec.loader.exec_module(module)
+    setattr(pkg, "commentary_ai", module)
     return module
 
 

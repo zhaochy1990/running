@@ -78,7 +78,7 @@ def test_ability_module_uses_this_query():
     from pathlib import Path
     import re
     src = Path(__file__).parent.parent / "src" / "stride_core" / "ability.py"
-    text = src.read_text()
+    text = src.read_text(encoding="utf-8")
     pattern = re.compile(
         r"ROW_NUMBER\(\)\s+OVER\s*\(\s*PARTITION\s+BY\s+race_type\s+"
         r"ORDER\s+BY\s+vdot\s+DESC", re.IGNORECASE

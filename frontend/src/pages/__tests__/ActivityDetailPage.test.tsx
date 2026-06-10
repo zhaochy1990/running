@@ -159,4 +159,31 @@ describe('ActivityDetailPage', () => {
     expect(screen.queryByTestId('plan-vs-actual-card')).not.toBeInTheDocument()
     expect(screen.queryByText('训练计划对照')).not.toBeInTheDocument()
   })
+
+  it('shows the regenerate commentary action when commentary is missing', async () => {
+    vi.mocked(getActivity).mockResolvedValue({
+      activity: {
+        ...activity,
+        sport_type: 100,
+        sport_name: 'Run',
+        distance_m: 10,
+        distance_km: 10,
+        avg_pace_s_km: 300,
+        pace_fmt: '5:00/km',
+      },
+      laps: [],
+      segments: [],
+      zones: [],
+      timeseries: [],
+      linked_scheduled_workout: null,
+      stride_training_load: null,
+    } as unknown as Awaited<ReturnType<typeof getActivity>>)
+    vi.mocked(fetchActivityAbility).mockRejectedValue(new Error('not computed'))
+
+    renderActivityDetail()
+
+    expect(await screen.findByText('教练简评')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重新生成' })).toBeInTheDocument()
+    expect(screen.getByText('（暂无点评 — 点击"重新生成"让 AI 写一条）')).toBeInTheDocument()
+  })
 })
