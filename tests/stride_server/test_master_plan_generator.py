@@ -277,7 +277,7 @@ class TestParseLlmOutput:
 
 class TestBuildMasterPlan:
     def test_happy_path(self):
-        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL_ID)
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL)
         assert plan.user_id == USER_ID
         assert plan.goal_id == GOAL_ID
         assert plan.goal.goal_id == GOAL_ID
@@ -291,14 +291,14 @@ class TestBuildMasterPlan:
         assert len(plan.training_principles) == 3
 
     def test_milestone_types_parsed(self):
-        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL_ID)
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL)
         types = {m.type for m in plan.milestones}
         assert MilestoneType.LONG_RUN in types
         assert MilestoneType.TEST_RUN in types
         assert MilestoneType.RACE in types
 
     def test_phase_milestone_ids_populated(self):
-        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL_ID)
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL)
         # 基础期 should own 2 milestones (long_run + test_run)
         base_phase = next(p for p in plan.phases if p.name == "基础期")
         assert len(base_phase.milestone_ids) == 2
@@ -307,11 +307,11 @@ class TestBuildMasterPlan:
         bad = dict(_VALID_PLAN_DICT)
         bad["schema"] = "wrong/v99"
         with pytest.raises(ValueError, match="unexpected schema"):
-            _build_master_plan(bad, USER_ID, GOAL_ID)
+            _build_master_plan(bad, USER_ID, GOAL)
 
     def test_missing_plan_key_raises(self):
         with pytest.raises(ValueError, match="missing or invalid 'plan'"):
-            _build_master_plan({"schema": "weekly-plan/master/v1"}, USER_ID, GOAL_ID)
+            _build_master_plan({"schema": "weekly-plan/master/v1"}, USER_ID, GOAL)
 
     def test_empty_phases_allowed(self):
         data = {
@@ -324,14 +324,14 @@ class TestBuildMasterPlan:
                 "training_principles": ["原则1"],
             },
         }
-        plan = _build_master_plan(data, USER_ID, GOAL_ID)
+        plan = _build_master_plan(data, USER_ID, GOAL)
         assert plan.phases == []
         assert plan.milestones == []
 
     def test_unknown_milestone_type_defaults_to_long_run(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["milestones"][0]["type"] = "unknown_type_xyz"
-        plan = _build_master_plan(data, USER_ID, GOAL_ID)
+        plan = _build_master_plan(data, USER_ID, GOAL)
         assert plan.milestones[0].type == MilestoneType.LONG_RUN
 
     def test_builds_embedded_goal_from_training_goal_dict(self):

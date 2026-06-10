@@ -237,6 +237,15 @@ def test_master_plan_legacy_weekly_key_sessions_populates_weeks():
     assert plan.weekly_key_sessions[0].week_index == 1
 
 
+def test_master_plan_rejects_divergent_goal_id_mirror():
+    data = {
+        **CANONICAL_MASTER_PLAN_DICT,
+        "goal_id": "different-goal-id",
+    }
+    with pytest.raises(ValidationError, match="goal_id must match goal.goal_id"):
+        MasterPlan.model_validate(data)
+
+
 def test_master_plan_json_round_trip():
     plan = MasterPlan.model_validate(MASTER_PLAN_DICT)
     json_str = plan.model_dump_json()

@@ -31,6 +31,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    _compute_total_weeks,
 )
 
 from .job_runner import JobStage, JobStatus, update_job
@@ -92,7 +93,7 @@ def _parse_llm_output(raw: str) -> dict | None:
 def _build_master_plan(
     parsed: dict,
     user_id: str,
-    goal: dict | str,
+    goal: dict,
 ) -> MasterPlan:
     """Map LLM output JSON -> MasterPlan instance.
 
@@ -212,7 +213,7 @@ def _build_master_plan(
         goal=goal_snapshot,
         start_date=start_date,
         end_date=end_date,
-        total_weeks=_compute_total_weeks_from_plan(start_date, end_date, weeks),
+        total_weeks=len(weeks) if weeks else _compute_total_weeks(start_date, end_date),
         phases=phases,
         milestones=milestones,
         weeks=weeks,
@@ -226,38 +227,29 @@ def _build_master_plan(
 
 
 def _build_goal_snapshot(
-    goal: dict | str,
+    goal: dict,
     plan_data: dict,
     fallback_race_date: str,
 ) -> MasterPlanGoal:
     """Build the embedded MasterPlan.goal snapshot from TrainingGoal input."""
-    if isinstance(goal, str):
-        return MasterPlanGoal(
-            goal_id=goal,
-            race_date=fallback_race_date,
-            target_time="",
-        )
-
     goal_id = str(goal.get("goal_id") or goal.get("id") or uuid4())
     target_time = goal.get("target_time") or goal.get("target_finish_time")
     if not target_time:
         raise ValueError("goal.target_time is required for master-plan generation")
 
+    raw_distance = goal.get("distance") or goal.get("race_distance") or plan_data.get("distance")
     race_name = (
         goal.get("race_name")
         or goal.get("race")
         or goal.get("name")
-        or _default_race_name(goal.get("race_distance") or goal.get("distance"))
-    )
-    distance = _canonical_master_goal_distance(
-        goal.get("distance") or goal.get("race_distance") or plan_data.get("distance")
+        or _default_race_name(raw_distance)
     )
     race_date = goal.get("race_date") or plan_data.get("race_date") or fallback_race_date
 
     return MasterPlanGoal(
         goal_id=goal_id,
         race_name=str(race_name or ""),
-        distance=distance,
+        distance=raw_distance or "FM",
         race_date=str(race_date or fallback_race_date),
         target_time=str(target_time),
         timezone=str(goal.get("timezone") or "Asia/Shanghai"),
@@ -266,7 +258,12 @@ def _build_goal_snapshot(
 
 
 def _default_race_name(distance: Any) -> str:
-    dist = _canonical_master_goal_distance(distance)
+    dist = MasterPlanGoal(
+        goal_id="__preview__",
+        distance=distance or "FM",
+        race_date="",
+        target_time="__preview__",
+    ).distance.value
     names = {
         "5K": "5K 目标赛",
         "10K": "10K 目标赛",
@@ -277,26 +274,6 @@ def _default_race_name(distance: Any) -> str:
     return names.get(dist, "目标赛事")
 
 
-def _canonical_master_goal_distance(value: Any) -> str:
-    if not isinstance(value, str):
-        return "FM"
-    token = value.strip()
-    lookup = {
-        "5k": "5K",
-        "10k": "10K",
-        "hm": "HM",
-        "half marathon": "HM",
-        "half_marathon": "HM",
-        "fm": "FM",
-        "marathon": "FM",
-        "full marathon": "FM",
-        "full_marathon": "FM",
-        "trail": "trail",
-        "ultra": "trail",
-    }
-    return lookup.get(token.lower(), token)
-
-
 def _iter_plan_weeks(plan_data: dict) -> list:
     weeks = plan_data.get("weeks")
     if isinstance(weeks, list):
@@ -305,23 +282,6 @@ def _iter_plan_weeks(plan_data: dict) -> list:
     if isinstance(legacy, list):
         return legacy
     return []
-
-
-def _compute_total_weeks_from_plan(
-    start_date: str,
-    end_date: str,
-    weeks: list[MasterPlanWeek],
-) -> int:
-    if weeks:
-        return len(weeks)
-    try:
-        start = datetime.fromisoformat(start_date).date()
-        end = datetime.fromisoformat(end_date).date()
-    except (TypeError, ValueError):
-        return 0
-    if end < start:
-        return 0
-    return (end - start).days // 7 + 1
 
 
 def _to_optional_float(value: Any) -> float | None:

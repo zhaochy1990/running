@@ -753,6 +753,9 @@ class TestCurrentMasterPlan:
         assert "next_milestone" in data
         assert isinstance(data["total_weeks"], int)
         assert data["total_weeks"] > 0
+        assert data["phases"][0]["key_session_types"] == ["长距离", "有氧"]
+        assert data["milestones"][0]["type"] == "test_run"
+        assert "completed_actual" in data["milestones"][0]
 
     def test_current_returns_canonical_goal_and_weeks(self, app_client):
         """/current returns the canonical MasterPlan contract plus derived position."""
