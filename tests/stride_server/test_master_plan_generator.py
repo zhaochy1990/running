@@ -280,6 +280,7 @@ class TestBuildMasterPlan:
         plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL_ID)
         assert plan.user_id == USER_ID
         assert plan.goal_id == GOAL_ID
+        assert plan.goal.goal_id == GOAL_ID
         assert plan.status == MasterPlanStatus.DRAFT
         assert plan.version == 1
         assert plan.generated_by == "gpt-4.1"
@@ -332,6 +333,80 @@ class TestBuildMasterPlan:
         data["plan"]["milestones"][0]["type"] = "unknown_type_xyz"
         plan = _build_master_plan(data, USER_ID, GOAL_ID)
         assert plan.milestones[0].type == MilestoneType.LONG_RUN
+
+    def test_builds_embedded_goal_from_training_goal_dict(self):
+        goal = {
+            "goal_id": GOAL_ID,
+            "type": "race",
+            "race_name": "Shanghai Marathon",
+            "race_date": "2026-11-01",
+            "race_distance": "FM",
+            "target_finish_time": "3:25:00",
+            "timezone": "Asia/Shanghai",
+            "location": "Shanghai",
+        }
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
+
+        assert plan.goal.goal_id == GOAL_ID
+        assert plan.goal_id == GOAL_ID
+        assert plan.goal.race_name == "Shanghai Marathon"
+        assert plan.goal.distance == "FM"
+        assert plan.goal.race_date == "2026-11-01"
+        assert plan.goal.target_time == "3:25:00"
+        assert plan.goal.timezone == "Asia/Shanghai"
+        assert plan.goal.location == "Shanghai"
+
+    def test_builds_canonical_weeks_from_llm_weeks(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-05-11",
+                "phase_name": "基础期",
+                "target_weekly_km_low": 40,
+                "target_weekly_km_high": 48,
+                "key_sessions": [
+                    {
+                        "type": "long_run",
+                        "distance_km": 20,
+                        "intensity": "z2",
+                        "purpose": "建立有氧耐力",
+                    }
+                ],
+            }
+        ]
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert len(plan.weeks) == 1
+        assert plan.weeks[0].week_index == 1
+        assert plan.weeks[0].phase_id == plan.phases[0].id
+        assert plan.weeks[0].key_sessions[0].type == "long_run"
+        assert plan.weekly_key_sessions[0].week_start == "2026-05-11"
+
+    def test_legacy_weekly_key_sessions_maps_to_canonical_weeks(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["weekly_key_sessions"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-05-11",
+                "phase_name": "基础期",
+                "target_weekly_km_low": 40,
+                "target_weekly_km_high": 48,
+                "key_sessions": [{"type": "long_run", "distance_km": 20}],
+            }
+        ]
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert len(plan.weeks) == 1
+        assert plan.weeks[0].target_weekly_km_high == 48
+        assert plan.weekly_key_sessions[0].week_index == 1
+
+    def test_goal_target_time_required_for_generated_plan(self):
+        goal = {k: v for k, v in GOAL.items() if k != "target_finish_time"}
+        with pytest.raises(ValueError, match="target_time"):
+            _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
 
 
 # ---------------------------------------------------------------------------
@@ -691,10 +766,13 @@ class TestPromptRegression:
             today="2026-05-19",
         )
 
-    def test_prompt_includes_weekly_key_sessions_schema(self):
-        """LLM must see `weekly_key_sessions` field in the example block."""
+    def test_prompt_includes_canonical_weeks_schema(self):
+        """LLM must see canonical `goal` and `weeks` fields in the example block."""
         prompt = self._build()
-        assert "weekly_key_sessions" in prompt
+        assert '"goal"' in prompt
+        assert '"target_time"' in prompt
+        assert '"weeks"' in prompt
+        assert '"weekly_key_sessions"' not in prompt
         # Must call out the canonical session-type tokens
         for t in ("long_run", "threshold", "race_pace"):
             assert t in prompt

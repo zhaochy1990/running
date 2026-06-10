@@ -25,8 +25,6 @@ from __future__ import annotations
 
 import logging
 
-from uuid import uuid4
-
 from coach.graphs.generation.state import GenState
 from coach.schemas import ReviewReport
 from stride_core.timefmt import today_shanghai
@@ -169,9 +167,8 @@ def generate_master_plan(state: GenState) -> dict:
             raise err
         raw = raw_retry  # for downstream logging consistency
 
-    goal_id = goal.get("id") or goal.get("goal_id") or str(uuid4())
     try:
-        plan = _build_master_plan(parsed, user_id, goal_id)
+        plan = _build_master_plan(parsed, user_id, goal)
     except ValueError as exc:
         # Re-raise with bad_schema prefix so caller can distinguish from
         # parse_failed (both are ValueError historically).

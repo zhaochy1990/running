@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import time
 import threading
 from datetime import date as date_cls, datetime, timezone, timedelta
@@ -648,21 +647,8 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         except (ValueError, TypeError):
             pass
 
-    # current_week_number: weeks elapsed since plan start (1-based)
-    try:
-        plan_start = date_cls.fromisoformat(plan.start_date)
-        days_elapsed = (today - plan_start).days
-        current_week_number = math.ceil((days_elapsed + 1) / 7) if days_elapsed >= 0 else 1
-    except (ValueError, TypeError):
-        current_week_number = 1
-
-    # total_weeks
-    try:
-        plan_end = date_cls.fromisoformat(plan.end_date)
-        plan_start = date_cls.fromisoformat(plan.start_date)
-        total_weeks = (plan_end - plan_start).days // 7 + 1
-    except (ValueError, TypeError):
-        total_weeks = 0
+    current_week_number = _current_week_number(plan, today)
+    total_weeks = int(getattr(plan, "total_weeks", 0) or len(getattr(plan, "weeks", [])))
 
     # next_milestone: first incomplete milestone by date
     next_milestone: dict | None = None
@@ -689,10 +675,13 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         "user_id": plan.user_id,
         "status": plan.status.value,
         "goal_id": plan.goal_id,
+        "goal": plan.goal.model_dump(mode="json"),
         "start_date": plan.start_date,
         "end_date": plan.end_date,
+        "total_weeks": total_weeks,
         "phases": [p.model_dump() for p in plan.phases],
         "milestones": [m.model_dump() for m in plan.milestones],
+        "weeks": [w.model_dump() for w in plan.weeks],
         "training_principles": plan.training_principles,
         "generated_by": plan.generated_by,
         "version": plan.version,
@@ -700,9 +689,29 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         "updated_at": plan.updated_at,
         "current_phase_id": current_phase_id,
         "current_week_number": current_week_number,
-        "total_weeks": total_weeks,
         "next_milestone": next_milestone,
     }
+
+
+def _current_week_number(plan: Any, today: date_cls) -> int | None:
+    """Return the current canonical week number, or None outside plan range."""
+    weeks = list(getattr(plan, "weeks", []) or [])
+    for week in weeks:
+        try:
+            week_start = date_cls.fromisoformat(week.week_start)
+        except (ValueError, TypeError):
+            continue
+        if week_start <= today <= week_start + timedelta(days=6):
+            return week.week_index
+
+    try:
+        plan_start = date_cls.fromisoformat(plan.start_date)
+        plan_end = date_cls.fromisoformat(plan.end_date)
+    except (ValueError, TypeError):
+        return None
+    if today < plan_start or today > plan_end:
+        return None
+    return ((today - plan_start).days // 7) + 1
 
 
 # NOTE: /current must be registered BEFORE /{plan_id} so FastAPI doesn't

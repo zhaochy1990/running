@@ -16,9 +16,11 @@ Design notes:
 
 from __future__ import annotations
 
+from datetime import date as _date
 from enum import Enum
+from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -37,6 +39,14 @@ class MilestoneType(str, Enum):
     TEST_RUN      = "test_run"
     LONG_RUN      = "long_run"
     STRENGTH_TEST = "strength_test"
+
+
+class TargetDistance(str, Enum):
+    FIVE_K = "5K"
+    TEN_K  = "10K"
+    HM     = "HM"
+    FM     = "FM"
+    TRAIL  = "trail"
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +131,50 @@ class WeeklyKeySessions(BaseModel):
     is_taper_week: bool = False
 
 
+# Canonical public name for the weekly skeleton. ``WeeklyKeySessions`` stays
+# as a compatibility alias because the existing S1 rule filter and stored
+# snapshots still use that field name.
+MasterPlanWeek = WeeklyKeySessions
+
+
+class MasterPlanGoal(BaseModel):
+    """Embedded race goal snapshot for a generated master plan.
+
+    ``target_time`` is intentionally required for new structured S1 output.
+    Legacy plans without an embedded goal are normalised by ``MasterPlan`` with
+    an empty target time so old snapshots remain readable.
+    """
+
+    goal_id: str
+    race_name: str = ""
+    distance: TargetDistance = TargetDistance.FM
+    race_date: str = ""
+    target_time: str
+    timezone: str = "Asia/Shanghai"
+    location: str | None = None
+
+    @field_validator("distance", mode="before")
+    @classmethod
+    def _normalise_distance(cls, value: Any) -> Any:
+        if not isinstance(value, str):
+            return value
+        token = value.strip()
+        lookup = {
+            "5k": TargetDistance.FIVE_K.value,
+            "10k": TargetDistance.TEN_K.value,
+            "hm": TargetDistance.HM.value,
+            "half marathon": TargetDistance.HM.value,
+            "half_marathon": TargetDistance.HM.value,
+            "fm": TargetDistance.FM.value,
+            "marathon": TargetDistance.FM.value,
+            "full marathon": TargetDistance.FM.value,
+            "full_marathon": TargetDistance.FM.value,
+            "trail": TargetDistance.TRAIL.value,
+            "ultra": TargetDistance.TRAIL.value,
+        }
+        return lookup.get(token.lower(), token)
+
+
 # ---------------------------------------------------------------------------
 # Top-level plan models
 # ---------------------------------------------------------------------------
@@ -131,10 +185,13 @@ class MasterPlan(BaseModel):
     user_id: str                   # JWT sub UUID
     status: MasterPlanStatus
     goal_id: str                   # 关联的 training-goal id
+    goal: MasterPlanGoal           # embedded goal snapshot for runtime reads
     start_date: str                # 总纲开始日期 ISO YYYY-MM-DD
     end_date: str                  # 总纲结束日期 ISO YYYY-MM-DD
+    total_weeks: int               # canonical plan length in weeks
     phases: list[Phase]
     milestones: list[Milestone]
+    weeks: list[MasterPlanWeek] = Field(default_factory=list)
     # Weekly key-session skeleton — list ordered by week_index. Default empty
     # so plans authored before Batch B (existing fixtures, test stubs, legacy
     # MasterPlanVersion snapshots) still validate. New plans MUST populate it
@@ -142,12 +199,74 @@ class MasterPlan(BaseModel):
     # weekly_volume_ramp / taper_volume_drop / target_distance_long_run /
     # key_session_density / hard_session_spacing) to do anything; empty list
     # → those rules silently no-op for backwards compatibility.
-    weekly_key_sessions: list[WeeklyKeySessions] = Field(default_factory=list)
+    weekly_key_sessions: list[MasterPlanWeek] = Field(default_factory=list)
     training_principles: list[str]  # 训练原则，3-5 条
     generated_by: str              # "gpt-4.1" 等
     version: int                   # 从 1 开始，每次 adjust 递增
     created_at: str                # ISO UTC datetime string
     updated_at: str                # ISO UTC datetime string
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_legacy_shape(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        values = dict(data)
+
+        goal = values.get("goal")
+        goal_id = values.get("goal_id")
+        if goal is None and goal_id:
+            values["goal"] = {
+                "goal_id": goal_id,
+                "race_date": values.get("end_date", ""),
+                "target_time": "",
+                "timezone": "Asia/Shanghai",
+            }
+        elif goal is not None:
+            goal_dict = goal.model_dump() if isinstance(goal, BaseModel) else dict(goal)
+            if "goal_id" not in goal_dict and goal_id:
+                goal_dict["goal_id"] = goal_id
+            if "timezone" not in goal_dict or not goal_dict.get("timezone"):
+                goal_dict["timezone"] = "Asia/Shanghai"
+            values["goal"] = goal_dict
+            if not goal_id and goal_dict.get("goal_id"):
+                values["goal_id"] = goal_dict["goal_id"]
+
+        if "weeks" not in values and "weekly_key_sessions" in values:
+            values["weeks"] = values.get("weekly_key_sessions") or []
+        if "weekly_key_sessions" not in values and "weeks" in values:
+            values["weekly_key_sessions"] = values.get("weeks") or []
+
+        if "total_weeks" not in values:
+            weeks = values.get("weeks") or []
+            if weeks:
+                values["total_weeks"] = len(weeks)
+            else:
+                values["total_weeks"] = _compute_total_weeks(
+                    values.get("start_date"), values.get("end_date")
+                )
+
+        return values
+
+    @model_validator(mode="after")
+    def _sync_week_aliases(self) -> "MasterPlan":
+        if self.weeks and not self.weekly_key_sessions:
+            self.weekly_key_sessions = list(self.weeks)
+        elif self.weekly_key_sessions and not self.weeks:
+            self.weeks = list(self.weekly_key_sessions)
+        return self
+
+
+def _compute_total_weeks(start_date: Any, end_date: Any) -> int:
+    try:
+        start = _date.fromisoformat(str(start_date))
+        end = _date.fromisoformat(str(end_date))
+    except (TypeError, ValueError):
+        return 0
+    if end < start:
+        return 0
+    return (end - start).days // 7 + 1
 
 
 class MasterPlanVersion(BaseModel):
@@ -310,5 +429,6 @@ def _apply_review_diff(
         # See "Phase-affecting ops invalidate..." comment above. Caller (the
         # review-chat /apply route) is responsible for triggering a fresh
         # skeleton generation before the plan is /confirmed.
+        update["weeks"] = []
         update["weekly_key_sessions"] = []
     return plan.model_copy(update=update)
