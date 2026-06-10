@@ -1793,8 +1793,9 @@ class Database:
         timestamp ASC, skipping NULL distance rows. Returns [] for unknown
         label_id or activity with no timeseries.
 
-        Units are NOT normalized here — see `ability_hook._normalize_ts_units`
-        for the COROS centi-second / centimeter conversion.
+        Units are NOT normalized here — see
+        `stride_core.pb_records.normalize_timeseries_units` for the PB segment
+        scanner's provider-tolerant conversion.
         """
         return list(self._conn.execute(
             "SELECT timestamp, distance FROM timeseries "
