@@ -734,7 +734,11 @@ class TestCurrentMasterPlan:
         data = resp.json()
         assert data["plan_id"] == plan.plan_id
         assert data["status"] == "active"
+        assert "goal_id" not in data
+        assert data["goal"]["goal_id"] == plan.goal_id
+        assert data["goal"]["timezone"] == "Asia/Shanghai"
         assert "phases" in data
+        assert "weeks" in data
         assert "milestones" in data
         assert "current_phase_id" in data
         assert "current_week_number" in data

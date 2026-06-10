@@ -211,10 +211,12 @@ def test_master_plan_missing_status_raises():
         MasterPlan.model_validate(d)
 
 
-def test_master_plan_missing_goal_id_raises():
+def test_master_plan_missing_goal_id_backfills_legacy_goal():
     d = {k: v for k, v in MASTER_PLAN_DICT.items() if k != "goal_id"}
-    with pytest.raises(ValidationError):
-        MasterPlan.model_validate(d)
+    plan = MasterPlan.model_validate(d)
+    assert plan.goal.goal_id == "legacy-goal"
+    assert plan.goal.target_time == "00:00:00"
+    assert plan.goal.timezone == "Asia/Shanghai"
 
 
 def test_master_plan_invalid_status_raises():
@@ -229,10 +231,11 @@ def test_phase_missing_id_raises():
         Phase.model_validate(d)
 
 
-def test_milestone_missing_type_raises():
+def test_milestone_missing_type_allowed_for_canonical_schema():
     d = {k: v for k, v in MILESTONE_DICT.items() if k != "type"}
-    with pytest.raises(ValidationError):
-        Milestone.model_validate(d)
+    ms = Milestone.model_validate(d)
+    assert ms.type is None
+    assert ms.name == "30K 节奏跑 4'45/km"
 
 
 def test_milestone_invalid_type_raises():

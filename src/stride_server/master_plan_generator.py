@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date as date_cls, datetime, timezone
 
 from stride_core.timefmt import today_shanghai
 from typing import Any
@@ -25,10 +25,13 @@ from uuid import uuid4
 from stride_core.master_plan import (
     KeySession,
     MasterPlan,
+    MasterPlanGoal,
     MasterPlanStatus,
+    MasterPlanWeek,
     Milestone,
     MilestoneType,
     Phase,
+    TargetDistance,
     WeeklyKeySessions,
 )
 
@@ -92,6 +95,7 @@ def _build_master_plan(
     parsed: dict,
     user_id: str,
     goal_id: str,
+    source_goal: dict | None = None,
 ) -> MasterPlan:
     """Map LLM output JSON -> MasterPlan instance.
 
@@ -110,6 +114,8 @@ def _build_master_plan(
     if not start_date or not end_date:
         raise ValueError("plan missing start_date or end_date")
 
+    goal = _build_goal_snapshot(goal_id, plan_data, source_goal)
+
     # Build phases first (need ids before milestones)
     phases: list[Phase] = []
     phase_name_to_id: dict[str, str] = {}
@@ -126,7 +132,7 @@ def _build_master_plan(
                 focus=p.get("focus", ""),
                 weekly_distance_km_low=float(p.get("weekly_distance_km_low", 0)),
                 weekly_distance_km_high=float(p.get("weekly_distance_km_high", 0)),
-                key_session_types=p.get("key_session_types", []),
+                key_workout_types=p.get("key_workout_types") or p.get("key_session_types", []),
                 milestone_ids=[],
             )
         )
@@ -152,9 +158,11 @@ def _build_master_plan(
         milestones.append(
             Milestone(
                 id=milestone_id,
+                name=m.get("name") or m.get("target", "") or raw_type,
                 type=milestone_type,
                 date=m.get("date", start_date),
                 phase_id=phase_id,
+                week_number=m.get("week_number"),
                 target=m.get("target", ""),
                 completed_actual=None,
             )
@@ -170,13 +178,20 @@ def _build_master_plan(
     # Plans authored before Batch B simply omit the field → empty list, which
     # makes the new Batch B L1 rules silent no-ops for backwards compatibility.
     weekly_key_sessions: list[WeeklyKeySessions] = []
-    for w in plan_data.get("weekly_key_sessions", []) or []:
+    weeks: list[MasterPlanWeek] = []
+    weekly_source = plan_data.get("weekly_key_sessions")
+    if not weekly_source:
+        weekly_source = _legacy_weekly_key_sessions_from_weeks(plan_data.get("weeks", []) or [])
+    for w in weekly_source or []:
         if not isinstance(w, dict):
             continue
         wk_phase_id = phase_name_to_id.get(w.get("phase_name", ""), fallback_phase_id)
+        if w.get("phase_id"):
+            wk_phase_id = w["phase_id"]
         sessions: list[KeySession] = []
         for ks in w.get("key_sessions", []) or []:
             if not isinstance(ks, dict):
+                sessions.append(KeySession(type=str(ks)))
                 continue
             sessions.append(
                 KeySession(
@@ -187,16 +202,39 @@ def _build_master_plan(
                     purpose=ks.get("purpose"),
                 )
             )
-        weekly_key_sessions.append(
-            WeeklyKeySessions(
-                week_index=int(w.get("week_index", 0) or 0),
-                week_start=str(w.get("week_start", start_date)),
-                phase_id=wk_phase_id,
-                target_weekly_km_low=float(w.get("target_weekly_km_low", 0)),
-                target_weekly_km_high=float(w.get("target_weekly_km_high", 0)),
-                key_sessions=sessions,
-                is_recovery_week=bool(w.get("is_recovery_week", False)),
-                is_taper_week=bool(w.get("is_taper_week", False)),
+        legacy_week = WeeklyKeySessions(
+            week_index=int(w.get("week_index") or w.get("week_number") or 0),
+            week_start=str(w.get("week_start") or w.get("start_date") or start_date),
+            phase_id=wk_phase_id,
+            target_weekly_km_low=float(
+                w.get("target_weekly_km_low")
+                or w.get("weekly_distance_km_low")
+                or 0
+            ),
+            target_weekly_km_high=float(
+                w.get("target_weekly_km_high")
+                or w.get("weekly_distance_km_high")
+                or 0
+            ),
+            key_sessions=sessions,
+            is_recovery_week=bool(w.get("is_recovery_week") or w.get("is_deload", False)),
+            is_taper_week=bool(w.get("is_taper_week", False)),
+        )
+        weekly_key_sessions.append(legacy_week)
+        weeks.append(
+            MasterPlanWeek.model_validate(
+                {
+                    "week_number": legacy_week.week_index,
+                    "start_date": legacy_week.week_start,
+                    "phase_id": legacy_week.phase_id,
+                    "weekly_distance_km_low": legacy_week.target_weekly_km_low,
+                    "weekly_distance_km_high": legacy_week.target_weekly_km_high,
+                    "key_sessions": [ks.model_dump() for ks in sessions],
+                    "is_deload": legacy_week.is_recovery_week or legacy_week.is_taper_week,
+                    "is_race_week": any(ks.type == "race" for ks in sessions),
+                    "notes": w.get("notes"),
+                    "is_taper_week": legacy_week.is_taper_week,
+                }
             )
         )
 
@@ -205,10 +243,12 @@ def _build_master_plan(
         plan_id=str(uuid4()),
         user_id=user_id,
         status=MasterPlanStatus.DRAFT,
-        goal_id=goal_id,
+        goal=goal,
         start_date=start_date,
         end_date=end_date,
+        total_weeks=len(weeks) or _infer_total_weeks(start_date, end_date),
         phases=phases,
+        weeks=weeks,
         milestones=milestones,
         weekly_key_sessions=weekly_key_sessions,
         training_principles=plan_data.get("training_principles", []),
@@ -227,6 +267,131 @@ def _to_optional_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _infer_total_weeks(start_date: str, end_date: str) -> int:
+    try:
+        start = date_cls.fromisoformat(start_date)
+        end = date_cls.fromisoformat(end_date)
+    except ValueError:
+        return 0
+    if end < start:
+        return 0
+    return ((end - start).days // 7) + 1
+
+
+def _normalise_target_distance(value: Any) -> TargetDistance:
+    raw = str(value or "FM").strip()
+    low = raw.lower().replace(" ", "").replace("_", "")
+    mapping = {
+        "5k": TargetDistance.FIVE_K,
+        "5000m": TargetDistance.FIVE_K,
+        "10k": TargetDistance.TEN_K,
+        "10000m": TargetDistance.TEN_K,
+        "hm": TargetDistance.HM,
+        "half": TargetDistance.HM,
+        "halfmarathon": TargetDistance.HM,
+        "fm": TargetDistance.FM,
+        "marathon": TargetDistance.FM,
+        "fullmarathon": TargetDistance.FM,
+        "trail": TargetDistance.FM,
+        "ultra": TargetDistance.FM,
+    }
+    if raw in {item.value for item in TargetDistance}:
+        return TargetDistance(raw)
+    return mapping.get(low, TargetDistance.FM)
+
+
+def _build_goal_snapshot(
+    goal_id: str,
+    plan_data: dict[str, Any],
+    source_goal: dict | None,
+) -> MasterPlanGoal:
+    source = source_goal or {}
+    goal_data = plan_data.get("goal") if isinstance(plan_data.get("goal"), dict) else {}
+    distance = (
+        goal_data.get("distance")
+        or source.get("race_distance")
+        or source.get("distance")
+        or "FM"
+    )
+    race_date = (
+        goal_data.get("race_date")
+        or source.get("race_date")
+        or plan_data.get("end_date")
+    )
+    target_time = (
+        goal_data.get("target_time")
+        or source.get("target_finish_time")
+        or source.get("target_time")
+        or "00:00:00"
+    )
+    race_name = (
+        goal_data.get("race_name")
+        or source.get("race_name")
+        or source.get("name")
+        or f"{_normalise_target_distance(distance).value} goal"
+    )
+    return MasterPlanGoal(
+        goal_id=goal_data.get("goal_id") or source.get("goal_id") or source.get("id") or goal_id,
+        race_name=race_name,
+        distance=_normalise_target_distance(distance),
+        race_date=race_date,
+        target_time=target_time,
+        timezone=goal_data.get("timezone") or source.get("timezone") or "Asia/Shanghai",
+        location=goal_data.get("location") or source.get("location"),
+    )
+
+
+def _legacy_weekly_key_sessions_from_weeks(weeks: list[Any]) -> list[dict[str, Any]]:
+    """Accept the canonical weeks shape and feed the legacy S1 rule skeleton."""
+    result: list[dict[str, Any]] = []
+    for week in weeks:
+        if not isinstance(week, dict):
+            continue
+        sessions: list[dict[str, Any]] = []
+        for raw in week.get("key_sessions", []) or []:
+            if isinstance(raw, dict):
+                sessions.append(raw)
+            else:
+                sessions.append(_key_session_dict_from_summary(str(raw)))
+        result.append(
+            {
+                "week_index": week.get("week_number") or week.get("week_index"),
+                "week_start": week.get("start_date") or week.get("week_start"),
+                "phase_id": week.get("phase_id"),
+                "target_weekly_km_low": (
+                    week.get("weekly_distance_km_low")
+                    or week.get("target_weekly_km_low")
+                    or 0
+                ),
+                "target_weekly_km_high": (
+                    week.get("weekly_distance_km_high")
+                    or week.get("target_weekly_km_high")
+                    or 0
+                ),
+                "key_sessions": sessions,
+                "is_recovery_week": bool(week.get("is_deload")),
+                "is_taper_week": bool(week.get("is_taper_week")),
+                "notes": week.get("notes"),
+            }
+        )
+    return result
+
+
+def _key_session_dict_from_summary(summary: str) -> dict[str, Any]:
+    text = summary.strip()
+    token = (text.split() or ["key_session"])[0]
+    session: dict[str, Any] = {"type": token}
+    km_match = re.search(r"(\d+(?:\.\d+)?)\s*km\b", text, re.IGNORECASE)
+    if km_match:
+        session["distance_km"] = float(km_match.group(1))
+    min_match = re.search(r"(\d+(?:\.\d+)?)\s*min\b", text, re.IGNORECASE)
+    if min_match:
+        session["duration_min"] = float(min_match.group(1))
+    if len(text.split()) > 1:
+        session["purpose"] = text
+    return session
 
 
 # ---------------------------------------------------------------------------
@@ -596,6 +761,7 @@ def _build_system_prompt(
 {{"schema":"weekly-plan/master/v1","plan":{{
   "start_date": "YYYY-MM-DD",
   "end_date": "YYYY-MM-DD",
+  "goal": {{"race_name":"目标比赛","distance":"5K|10K|HM|FM","race_date":"YYYY-MM-DD","target_time":"HH:MM:SS","timezone":"Asia/Shanghai","location":null}},
   "training_principles": ["原则1","原则2"],
   "phases": [
     {{"name":"基础期","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
@@ -604,6 +770,10 @@ def _build_system_prompt(
   "milestones": [
     {{"type":"race|test_run|long_run|strength_test","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述"}},
     ...
+  ],
+  "weeks": [
+   {{"week_number":1,"start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","phase_id":null,"weekly_distance_km_low":45,"weekly_distance_km_high":52,"key_sessions":["long_run 24km z2 建立马拉松专项耐力","threshold 35min z4 提高乳酸阈值"],"is_deload":false,"is_race_week":false,"notes":null}},
+   ...
   ],
   "weekly_key_sessions": [
     {{"week_index":1,"week_start":"YYYY-MM-DD","phase_name":"<对应阶段>","target_weekly_km_low":45,"target_weekly_km_high":52,"is_recovery_week":false,"is_taper_week":false,"key_sessions":[
@@ -625,6 +795,9 @@ def _build_system_prompt(
 - 用户跑龄短 / 周量低时阶段周量更保守
 - 周末日期作为 long_run 里程碑日期
 - 输出**仅 JSON 块**，无额外解释文字
+- `goal` 是当前目标的不可变快照；缺少 race_name/location 时用 null 或通用目标名，timezone 默认 Asia/Shanghai
+- `weeks` 是未来 API 的 canonical 周结构；必须逐周覆盖 start_date 到 end_date，weekly_distance_km_low/high 始终写成范围
+- `weekly_key_sessions` 是机器校验用的详细 key-session skeleton；内容必须与 `weeks` 一一对应（同 week_index/week_number、同周量范围）
 
 **Weekly key-session skeleton（HARD）**：
 - `weekly_key_sessions` 必须**逐周**列出 plan.start_date 到 plan.end_date 之间的每一周（按 week_index 从 1 顺序递增，week_start 写该周周一的 ISO 日期）

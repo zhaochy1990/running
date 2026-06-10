@@ -302,6 +302,68 @@ class TestBuildMasterPlan:
         base_phase = next(p for p in plan.phases if p.name == "基础期")
         assert len(base_phase.milestone_ids) == 2
 
+    def test_structured_goal_and_weeks_populated(self):
+        data = {
+            "schema": "weekly-plan/master/v1",
+            "plan": {
+                "start_date": "2026-05-18",
+                "end_date": "2026-05-31",
+                "goal": {
+                    "race_name": "上海马拉松",
+                    "distance": "FM",
+                    "race_date": "2026-11-01",
+                    "target_time": "3:30:00",
+                    "timezone": "Asia/Shanghai",
+                },
+                "training_principles": ["原则1"],
+                "phases": [
+                    {
+                        "name": "基础期",
+                        "start_date": "2026-05-18",
+                        "end_date": "2026-05-31",
+                        "focus": "建立有氧基础",
+                        "weekly_distance_km_low": 40,
+                        "weekly_distance_km_high": 50,
+                        "key_workout_types": ["long_run"],
+                    }
+                ],
+                "milestones": [],
+                "weekly_key_sessions": [
+                    {
+                        "week_index": 1,
+                        "week_start": "2026-05-18",
+                        "phase_name": "基础期",
+                        "target_weekly_km_low": 40,
+                        "target_weekly_km_high": 45,
+                        "key_sessions": [
+                            {"type": "long_run", "distance_km": 24, "intensity": "z2"}
+                        ],
+                    },
+                    {
+                        "week_index": 2,
+                        "week_start": "2026-05-25",
+                        "phase_name": "基础期",
+                        "target_weekly_km_low": 42,
+                        "target_weekly_km_high": 48,
+                        "key_sessions": [
+                            {"type": "threshold", "duration_min": 30, "intensity": "z4"}
+                        ],
+                    },
+                ],
+            },
+        }
+
+        plan = _build_master_plan(data, USER_ID, GOAL_ID, GOAL)
+
+        assert plan.goal.goal_id == GOAL_ID
+        assert plan.goal.race_name == "上海马拉松"
+        assert plan.goal.target_time == "3:30:00"
+        assert plan.total_weeks == 2
+        assert len(plan.weeks) == 2
+        assert plan.weeks[0].weekly_distance_km_low == 40
+        assert plan.weeks[0].key_sessions == ["long_run 24km z2"]
+        assert plan.weeks[0].key_session_details[0].distance_km == 24
+
     def test_wrong_schema_raises(self):
         bad = dict(_VALID_PLAN_DICT)
         bad["schema"] = "wrong/v99"
@@ -694,12 +756,13 @@ class TestPromptRegression:
     def test_prompt_includes_weekly_key_sessions_schema(self):
         """LLM must see `weekly_key_sessions` field in the example block."""
         prompt = self._build()
+        assert "weeks" in prompt
         assert "weekly_key_sessions" in prompt
         # Must call out the canonical session-type tokens
         for t in ("long_run", "threshold", "race_pace"):
             assert t in prompt
         # Per-week structure
-        for f in ("week_index", "week_start", "target_weekly_km_high",
+        for f in ("week_number", "weekly_distance_km_high", "week_index", "week_start", "target_weekly_km_high",
                   "is_recovery_week", "is_taper_week"):
             assert f in prompt
 

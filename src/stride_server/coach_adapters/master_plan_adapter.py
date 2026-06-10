@@ -171,7 +171,7 @@ def generate_master_plan(state: GenState) -> dict:
 
     goal_id = goal.get("id") or goal.get("goal_id") or str(uuid4())
     try:
-        plan = _build_master_plan(parsed, user_id, goal_id)
+        plan = _build_master_plan(parsed, user_id, goal_id, goal)
     except ValueError as exc:
         # Re-raise with bad_schema prefix so caller can distinguish from
         # parse_failed (both are ValueError historically).

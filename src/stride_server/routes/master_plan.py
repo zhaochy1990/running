@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import time
 import threading
 from datetime import date as date_cls, datetime, timezone, timedelta
@@ -29,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from stride_core.master_plan import MasterPlanStatus, _apply_review_diff
+from stride_core.timefmt import today_shanghai
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
@@ -314,8 +314,9 @@ def _build_plan_summary(plan: Any) -> str:
     lines.append("")
     lines.append("里程碑：")
     for ms in plan.milestones:
+        milestone_label = ms.name or (ms.type.value if ms.type else "milestone")
         lines.append(
-            f"  [{ms.id[:8]}] {ms.type.value}  {ms.date}  {ms.target}"
+            f"  [{ms.id[:8]}] {milestone_label}  {ms.date}  {ms.target}"
         )
     lines.append("")
     if plan.training_principles:
@@ -634,7 +635,7 @@ def confirm_master_plan(
 
 def _build_current_response(plan: Any) -> dict[str, Any]:
     """Build the enriched response dict for the current-plan endpoint."""
-    today = datetime.now(timezone.utc).date()
+    today = today_shanghai()
 
     # current_phase_id: find which phase contains today
     current_phase_id: str | None = None
@@ -648,21 +649,27 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         except (ValueError, TypeError):
             pass
 
-    # current_week_number: weeks elapsed since plan start (1-based)
-    try:
-        plan_start = date_cls.fromisoformat(plan.start_date)
-        days_elapsed = (today - plan_start).days
-        current_week_number = math.ceil((days_elapsed + 1) / 7) if days_elapsed >= 0 else 1
-    except (ValueError, TypeError):
-        current_week_number = 1
+    # current_week_number: prefer the stored canonical week ranges.
+    current_week_number: int | None = None
+    for week in getattr(plan, "weeks", []) or []:
+        try:
+            week_start = date_cls.fromisoformat(week.start_date)
+            week_end = date_cls.fromisoformat(week.end_date)
+            if week_start <= today <= week_end:
+                current_week_number = week.week_number
+                break
+        except (ValueError, TypeError):
+            pass
+    if current_week_number is None:
+        try:
+            plan_start = date_cls.fromisoformat(plan.start_date)
+            plan_end = date_cls.fromisoformat(plan.end_date)
+            if plan_start <= today <= plan_end:
+                current_week_number = ((today - plan_start).days // 7) + 1
+        except (ValueError, TypeError):
+            pass
 
-    # total_weeks
-    try:
-        plan_end = date_cls.fromisoformat(plan.end_date)
-        plan_start = date_cls.fromisoformat(plan.start_date)
-        total_weeks = (plan_end - plan_start).days // 7 + 1
-    except (ValueError, TypeError):
-        total_weeks = 0
+    total_weeks = int(getattr(plan, "total_weeks", 0) or 0)
 
     # next_milestone: first incomplete milestone by date
     next_milestone: dict | None = None
@@ -684,25 +691,25 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         except (ValueError, TypeError):
             pass
 
-    return {
-        "plan_id": plan.plan_id,
-        "user_id": plan.user_id,
-        "status": plan.status.value,
-        "goal_id": plan.goal_id,
-        "start_date": plan.start_date,
-        "end_date": plan.end_date,
-        "phases": [p.model_dump() for p in plan.phases],
-        "milestones": [m.model_dump() for m in plan.milestones],
-        "training_principles": plan.training_principles,
-        "generated_by": plan.generated_by,
-        "version": plan.version,
-        "created_at": plan.created_at,
-        "updated_at": plan.updated_at,
-        "current_phase_id": current_phase_id,
-        "current_week_number": current_week_number,
-        "total_weeks": total_weeks,
-        "next_milestone": next_milestone,
-    }
+    response = plan.model_dump(
+        mode="json",
+        exclude={
+            "weekly_key_sessions": True,
+            "weeks": {"__all__": {"key_session_details": True, "is_taper_week": True}},
+            "milestones": {"__all__": {"type": True, "completed_actual": True}},
+        },
+    )
+    response.update(
+        {
+            "current_phase_id": current_phase_id,
+            "current_week_number": current_week_number,
+            "total_weeks": total_weeks,
+            # Back-compat for existing frontend/tests. Progress-specific APIs can
+            # replace this derived convenience field later.
+            "next_milestone": next_milestone,
+        }
+    )
+    return response
 
 
 # NOTE: /current must be registered BEFORE /{plan_id} so FastAPI doesn't

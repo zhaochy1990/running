@@ -192,8 +192,14 @@ def check_peak_before_race(
     * **No taper window** — peak ends too few / too many days before race
       for the race's distance.
     """
-    race_milestones = [m for m in plan.milestones if m.type == MilestoneType.RACE]
-    if not race_milestones:
+    race_targets = [
+        (m.date, m.id)
+        for m in plan.milestones
+        if m.type == MilestoneType.RACE or m.date == plan.goal.race_date
+    ]
+    if not race_targets and plan.goal.race_date:
+        race_targets = [(plan.goal.race_date, "goal")]
+    if not race_targets:
         return []
 
     distance = ""
@@ -202,9 +208,9 @@ def check_peak_before_race(
     min_days, max_days = _PEAK_TAPER_WINDOW.get(distance, _PEAK_TAPER_WINDOW_DEFAULT)
 
     violations: list[RuleViolation] = []
-    for race in race_milestones:
+    for race_date_raw, race_milestone_id in race_targets:
         try:
-            race_date = _date.fromisoformat(race.date)
+            race_date = _date.fromisoformat(race_date_raw)
         except (ValueError, TypeError):
             continue  # malformed milestone date — schema rule should have caught
 
@@ -226,10 +232,13 @@ def check_peak_before_race(
                     rule="peak_before_race",
                     severity="error",
                     message=(
-                        f"race {race.date} has no preceding phase ending before it "
+                        f"race {race_date_raw} has no preceding phase ending before it "
                         f"(peak phase scheduled after race —灾难)"
                     ),
-                    details={"race_date": race.date, "race_milestone_id": race.id},
+                    details={
+                        "race_date": race_date_raw,
+                        "race_milestone_id": race_milestone_id,
+                    },
                 )
             )
             continue
@@ -244,11 +253,11 @@ def check_peak_before_race(
                     severity="error",
                     message=(
                         f"peak phase ({latest_phase.name!r}) ends {days_to_race} day(s) "
-                        f"before race {race.date}; expected {min_days}-{max_days} days "
+                        f"before race {race_date_raw}; expected {min_days}-{max_days} days "
                         f"for {distance or 'unknown'} race taper window"
                     ),
                     details={
-                        "race_date": race.date,
+                        "race_date": race_date_raw,
                         "race_distance": distance or None,
                         "peak_phase_id": latest_phase.id,
                         "peak_phase_end": latest_phase.end_date,

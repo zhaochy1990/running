@@ -195,6 +195,9 @@ class AzureTableMasterPlanStore:
         kind         = "plan"
         status       = plan.status value
         version      = plan.version (int)
+        start_date   = plan.start_date
+        end_date     = plan.end_date
+        total_weeks  = plan.total_weeks
         plan_json    = plan.model_dump_json()
         created_at   = plan.created_at
         updated_at   = plan.updated_at
@@ -265,6 +268,9 @@ class AzureTableMasterPlanStore:
             "kind": "plan",
             "status": plan.status.value,
             "version": plan.version,
+            "start_date": plan.start_date,
+            "end_date": plan.end_date,
+            "total_weeks": plan.total_weeks,
             "plan_json": plan.model_dump_json(),
             "created_at": plan.created_at,
             "updated_at": plan.updated_at,
@@ -322,6 +328,9 @@ class AzureTableMasterPlanStore:
                     "kind": "plan",
                     "status": MasterPlanStatus.ARCHIVED.value,
                     "version": plan.version,
+                    "start_date": plan.start_date,
+                    "end_date": plan.end_date,
+                    "total_weeks": plan.total_weeks,
                     "plan_json": archived.model_dump_json(),
                     "created_at": plan.created_at,
                     "updated_at": plan.updated_at,

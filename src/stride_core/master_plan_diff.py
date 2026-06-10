@@ -166,6 +166,7 @@ def apply_master_plan_diff(
     }
     if phase_affecting_applied:
         update["weekly_key_sessions"] = []
+        update["weeks"] = []
     updated_plan = plan.model_copy(update=update)
     store.save_plan(updated_plan)
     return updated_plan
@@ -193,7 +194,10 @@ def _apply_op(
             focus=patch.get("focus", ""),
             weekly_distance_km_low=float(patch.get("weekly_distance_km_low", 0)),
             weekly_distance_km_high=float(patch.get("weekly_distance_km_high", 0)),
-            key_session_types=list(patch.get("key_session_types", [])),
+            key_workout_types=list(
+                patch.get("key_workout_types")
+                or patch.get("key_session_types", [])
+            ),
             milestone_ids=list(patch.get("milestone_ids", [])),
         )
         phases[new_phase.id] = new_phase
@@ -250,9 +254,11 @@ def _apply_op(
         from .master_plan import MilestoneType
         new_ms = Milestone(
             id=patch["id"],
-            type=MilestoneType(patch["type"]),
+            name=patch.get("name", patch.get("target", "")),
+            type=MilestoneType(patch["type"]) if patch.get("type") else None,
             date=patch["date"],
             phase_id=patch["phase_id"],
+            week_number=patch.get("week_number"),
             target=patch.get("target", ""),
             completed_actual=patch.get("completed_actual"),
         )
