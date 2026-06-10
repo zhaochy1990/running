@@ -34,6 +34,7 @@ import stride_server.coach_adapters.master_plan_adapter as adapter_mod
 from stride_server.master_plan_generator import (
     _build_master_plan,
     _parse_llm_output,
+    _query_history,
     run_generate_job,
 )
 from stride_core.master_plan import MasterPlan, MasterPlanStatus, MilestoneType
@@ -727,3 +728,57 @@ class TestPromptRegression:
         # the JSON block in the prompt should carry our canonical keys
         assert "\"distance\": \"fm\"" in prompt
         assert "\"goal_time_s\": 12000" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Real-DB regression tests for _query_history
+# Locks the already-applied fix for:
+#   1. sport_type filter uses RUN_SPORT_SQL_LIST (not the wrong literal "= 1")
+#   2. distance_m is km-valued for magnitude < 500, meters for >= 500 —
+#      normalised via CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END
+# ---------------------------------------------------------------------------
+
+
+class TestQueryHistoryRealDB:
+    def _seed(self, tmp_path):
+        from stride_core.db import Database
+
+        db = Database(db_path=tmp_path / "coros.db")
+        c = db._conn
+        # Running: COROS sport_type 100, distance in km (21.1 km)
+        c.execute(
+            "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
+            "VALUES ('a1', 100, '2026-05-01T08:00:00+00:00', 21.1, 5400)"
+        )
+        # Running: Garmin sport_type 8001, distance in km (10.0 km)
+        c.execute(
+            "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
+            "VALUES ('a2', 8001, '2026-05-08T08:00:00+00:00', 10.0, 2550)"
+        )
+        # Running: COROS sport_type 101, legacy meters row (15000 m → 15 km)
+        c.execute(
+            "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
+            "VALUES ('a3', 101, '2026-05-15T08:00:00+00:00', 15000, 4000)"
+        )
+        # Non-running: strength (sport_type 4) — must be excluded
+        c.execute(
+            "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
+            "VALUES ('a4', 4, '2026-05-16T08:00:00+00:00', 0, 1800)"
+        )
+        c.commit()
+        return db
+
+    def test_counts_running_across_sport_codes_excludes_strength(self, tmp_path, monkeypatch):
+        """total_activities counts sport_type 100, 8001, 101 — excludes sport_type 4."""
+        db = self._seed(tmp_path)
+        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        result = _query_history("anyuser")
+        assert result["total_activities"] == 3
+
+    def test_distance_normalized_to_km(self, tmp_path, monkeypatch):
+        """Monthly km for 2026-05: 21.1 + 10.0 + 15000→15.0 = 46.1 km."""
+        db = self._seed(tmp_path)
+        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        result = _query_history("anyuser")
+        may = next(m for m in result["monthly_km"] if m["month"] == "2026-05")
+        assert abs(may["km"] - 46.1) < 0.2
