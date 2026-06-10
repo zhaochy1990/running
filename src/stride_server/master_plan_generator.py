@@ -31,7 +31,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
-    _compute_total_weeks,
+    compute_total_weeks,
 )
 
 from .job_runner import JobStage, JobStatus, update_job
@@ -213,7 +213,7 @@ def _build_master_plan(
         goal=goal_snapshot,
         start_date=start_date,
         end_date=end_date,
-        total_weeks=len(weeks) if weeks else _compute_total_weeks(start_date, end_date),
+        total_weeks=len(weeks) if weeks else compute_total_weeks(start_date, end_date),
         phases=phases,
         milestones=milestones,
         weeks=weeks,
@@ -258,12 +258,8 @@ def _build_goal_snapshot(
 
 
 def _default_race_name(distance: Any) -> str:
-    dist = MasterPlanGoal(
-        goal_id="__preview__",
-        distance=distance or "FM",
-        race_date="",
-        target_time="__preview__",
-    ).distance.value
+    normalised = MasterPlanGoal.normalise_distance(distance or "FM")
+    dist = normalised.value if hasattr(normalised, "value") else str(normalised)
     names = {
         "5K": "5K 目标赛",
         "10K": "10K 目标赛",

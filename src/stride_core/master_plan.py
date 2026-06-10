@@ -153,9 +153,8 @@ class MasterPlanGoal(BaseModel):
     timezone: str = "Asia/Shanghai"
     location: str | None = None
 
-    @field_validator("distance", mode="before")
-    @classmethod
-    def _normalise_distance(cls, value: Any) -> Any:
+    @staticmethod
+    def normalise_distance(value: Any) -> Any:
         if not isinstance(value, str):
             return value
         token = value.strip()
@@ -173,6 +172,11 @@ class MasterPlanGoal(BaseModel):
             "ultra": TargetDistance.TRAIL.value,
         }
         return lookup.get(token.lower(), token)
+
+    @field_validator("distance", mode="before")
+    @classmethod
+    def _normalise_distance(cls, value: Any) -> Any:
+        return cls.normalise_distance(value)
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +249,7 @@ class MasterPlan(BaseModel):
             if weeks:
                 values["total_weeks"] = len(weeks)
             else:
-                values["total_weeks"] = _compute_total_weeks(
+                values["total_weeks"] = compute_total_weeks(
                     values.get("start_date"), values.get("end_date")
                 )
 
@@ -266,7 +270,7 @@ class MasterPlan(BaseModel):
         return self
 
 
-def _compute_total_weeks(start_date: Any, end_date: Any) -> int:
+def compute_total_weeks(start_date: Any, end_date: Any) -> int:
     try:
         start = _date.fromisoformat(str(start_date))
         end = _date.fromisoformat(str(end_date))
