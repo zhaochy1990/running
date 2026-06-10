@@ -621,12 +621,17 @@ def _build_system_prompt(
     if continuity is not None:
         c = continuity
         inj = "、".join(c.injuries) if c.injuries else "无"
+        days = f"{c.days_since_last_race} 天" if c.days_since_last_race is not None else "无近期比赛"
+        longest = f"{c.recent_longest_run_km} km" if c.recent_longest_run_km is not None else "暂无"
+        ctl = c.current_chronic_load if c.current_chronic_load is not None else "暂无"
+        zone = c.current_form_zone or "暂无"
+        season = f"；{c.season_context}" if c.season_context else ""
         continuity_block = f"""
 延续性信号（确定性，来自训练数据/结构化 profile）：
-- macro_cycle: {c.macro_cycle}；{c.season_context}
-- 距上场比赛: {c.days_since_last_race} 天；赛后状态: {c.post_race_recovery_status}
-- 近期有氧周数: {c.recent_aerobic_weeks}；周量趋势: {c.recent_volume_trend}；最近最长跑: {c.recent_longest_run_km} km
-- 当前 STRIDE CTL(chronic): {c.current_chronic_load}；form 区: {c.current_form_zone}
+- macro_cycle: {c.macro_cycle}{season}
+- 距上场比赛: {days}；赛后状态: {c.post_race_recovery_status}
+- 近期有氧周数: {c.recent_aerobic_weeks}；周量趋势: {c.recent_volume_trend}；最近最长跑: {longest}
+- 当前 STRIDE CTL(chronic): {ctl}；form 区: {zone}
 - 断训回归: {c.return_from_layoff}
 - 伤病（软约束，自行权衡，勿机械禁课）: {inj}
 

@@ -758,6 +758,18 @@ class TestPromptIncludesContinuity:
         assert "summer" in prompt or "夏训" in prompt
         assert "recovered" in prompt or "已恢复" in prompt
 
+    def test_partial_signals_no_raw_none_tokens(self):
+        from stride_server.master_plan_generator import _build_system_prompt
+        from coach.schemas import ContinuitySignals
+        prompt = _build_system_prompt(
+            goal={"race_distance": "FM", "race_date": "2026-10-18"},
+            profile=None, history_summary="h", fitness_state={"summary": "s"},
+            today="2026-06-10", continuity=ContinuitySignals(),
+        )
+        assert "None 天" not in prompt
+        assert "None km" not in prompt
+        assert "form 区: None" not in prompt
+
 
 # ---------------------------------------------------------------------------
 # Real-DB regression tests for _query_history
