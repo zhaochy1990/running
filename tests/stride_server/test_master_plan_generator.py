@@ -195,6 +195,14 @@ def patch_history(monkeypatch):
         "training_load_state": None,
         "summary": "体能数据暂无",
     })
+    # load_master_context now calls analyze_continuity with Database(user=...),
+    # which for the test USER_ID would open/create a real (empty) DB as a side
+    # effect. Stub it on the ADAPTER module (where the name is used) so the
+    # flow tests stay hermetic. Patch the binding the code actually calls —
+    # the adapter imports analyze_continuity at module load, so patch
+    # adapter_mod.analyze_continuity, not the analyzer module's name.
+    import stride_server.coach_adapters.master_plan_adapter as adapter_mod
+    monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
 
 
 def _make_fake_llm(response: str):
@@ -728,6 +736,27 @@ class TestPromptRegression:
         # the JSON block in the prompt should carry our canonical keys
         assert "\"distance\": \"fm\"" in prompt
         assert "\"goal_time_s\": 12000" in prompt
+
+
+# ---------------------------------------------------------------------------
+# Continuity signals injected into the system prompt (Task 5)
+# ---------------------------------------------------------------------------
+
+
+class TestPromptIncludesContinuity:
+    def test_system_prompt_mentions_continuity_and_injuries(self):
+        from stride_server.master_plan_generator import _build_system_prompt
+        from coach.schemas import ContinuitySignals
+        sig = ContinuitySignals(macro_cycle="summer", current_chronic_load=64.1,
+                                post_race_recovery_status="recovered", injuries=["achilles"])
+        prompt = _build_system_prompt(
+            goal={"race_distance": "FM", "race_date": "2026-10-18"},
+            profile=None, history_summary="hist", fitness_state={"summary": "CTL 64"},
+            today="2026-06-10", continuity=sig,
+        )
+        assert "achilles" in prompt
+        assert "summer" in prompt or "夏训" in prompt
+        assert "recovered" in prompt or "已恢复" in prompt
 
 
 # ---------------------------------------------------------------------------

@@ -31,6 +31,7 @@ from coach.graphs.generation.state import GenState
 from coach.schemas import ReviewReport
 from stride_core.timefmt import today_shanghai
 
+from .continuity_analyzer import analyze_continuity
 from ..job_runner import JobStage, update_job
 from ..llm_client import LLMClient
 from ..master_plan_generator import (
@@ -74,10 +75,22 @@ def load_master_context(state: GenState) -> dict:
         fitness_state.get("summary"),
     )
 
+    payload = state.get("input_payload") or {}
+    goal = payload.get("goal") or {}
+    profile = payload.get("profile")
+    continuity = None
+    try:
+        from stride_core.db import Database
+        db = Database(user=user_id)
+        continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=today_shanghai())
+    except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
+        logger.warning("load_master_context: continuity failed: %s", exc)
+
     return {
         "history": history,
         "history_summary": history_summary,
         "fitness_state": fitness_state,
+        "continuity": continuity.model_dump() if continuity is not None else None,
     }
 
 
@@ -113,9 +126,15 @@ def generate_master_plan(state: GenState) -> dict:
     if job_id:
         update_job(job_id, stage=JobStage.PLANNING_PHASES, progress=60)
 
+    continuity_raw = ctx.get("continuity")
+    continuity = None
+    if continuity_raw:
+        from coach.schemas import ContinuitySignals
+        continuity = ContinuitySignals.model_validate(continuity_raw)
+
     today = today_shanghai().isoformat()
     system_prompt = _build_system_prompt(
-        goal, profile, history_summary, fitness_state, today
+        goal, profile, history_summary, fitness_state, today, continuity=continuity
     )
 
     user_text = "请基于上述信息生成训练总纲"

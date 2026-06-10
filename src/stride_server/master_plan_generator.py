@@ -19,8 +19,11 @@ import re
 from datetime import datetime, timezone
 
 from stride_core.timefmt import today_shanghai
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from coach.schemas import ContinuitySignals
 
 from stride_core.master_plan import (
     KeySession,
@@ -601,6 +604,7 @@ def _build_system_prompt(
     history_summary: str,
     fitness_state: dict[str, Any],
     today: str,
+    continuity: "ContinuitySignals | None" = None,
 ) -> str:
     # Normalise prod-route field names before serialising into the prompt.
     # Without this, prod payloads carry ``target_finish_time`` / ``pbs`` and
@@ -612,6 +616,22 @@ def _build_system_prompt(
     profile_json = json.dumps(profile, ensure_ascii=False, indent=2) if profile else "未填写"
     fitness_summary = fitness_state.get("summary", "体能数据暂无")
     race_date = goal.get("race_date") or "未指定"
+
+    continuity_block = ""
+    if continuity is not None:
+        c = continuity
+        inj = "、".join(c.injuries) if c.injuries else "无"
+        continuity_block = f"""
+延续性信号（确定性，来自训练数据/结构化 profile）：
+- macro_cycle: {c.macro_cycle}；{c.season_context}
+- 距上场比赛: {c.days_since_last_race} 天；赛后状态: {c.post_race_recovery_status}
+- 近期有氧周数: {c.recent_aerobic_weeks}；周量趋势: {c.recent_volume_trend}；最近最长跑: {c.recent_longest_run_km} km
+- 当前 STRIDE CTL(chronic): {c.current_chronic_load}；form 区: {c.current_form_zone}
+- 断训回归: {c.return_from_layoff}
+- 伤病（软约束，自行权衡，勿机械禁课）: {inj}
+
+请据此调整周期结构：已恢复且距赛久则不排开头恢复期；已有多周有氧则缩短 base；断训回归则延长 base、放缓 ramp；夏训块可插速度周期。
+"""
 
     return f"""你是专业马拉松训练教练。根据以下信息生成训练总纲 JSON。
 
@@ -651,7 +671,7 @@ def _build_system_prompt(
   ]
 }}}}
 ---END_MASTER_PLAN---
-
+{continuity_block}
 规则：
 - start_date 用今日（{today}），end_date 不晚于比赛日（{race_date}）
 - 阶段顺序：基础期 → 进展期 → 赛前期 → 比赛 →（如有）恢复期
