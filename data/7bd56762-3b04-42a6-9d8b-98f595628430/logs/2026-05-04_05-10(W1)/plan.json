@@ -187,7 +187,7 @@
               {
                 "step_kind": "work",
                 "duration": {"kind": "distance_m", "value": 6000},
-                "target": {"kind": "pace_s_km", "low": 238, "high": 242},
+                "target": {"kind": "pace_s_km", "low": 242, "high": 238},
                 "note": "MP 段 3:58-4:02/km；HR 160-168（末 1km 可漂到 168-170）；HR>170 持续 1min 立即停。RHR≥48 时仅做 4000m。末 1-2km 配速 >4:05 接受降速到 4:05-4:10 完成"
               }
             ]

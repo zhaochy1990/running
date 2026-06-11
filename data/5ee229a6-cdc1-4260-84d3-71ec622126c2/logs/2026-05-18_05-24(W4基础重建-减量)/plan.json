@@ -25,7 +25,7 @@
               {
                 "step_kind": "work",
                 "duration": {"kind": "distance_m", "value": 8000},
-                "target": {"kind": "pace_s_km", "low": 360, "high": 390},
+                "target": {"kind": "pace_s_km", "low": 390, "high": 360},
                 "hr_cap_bpm": 148,
                 "note": "唯一工作日跑；早 6:00 或 晚 19:00 任选"
               }
@@ -77,7 +77,7 @@
               {
                 "step_kind": "work",
                 "duration": {"kind": "distance_m", "value": 6000},
-                "target": {"kind": "pace_s_km", "low": 360, "high": 390},
+                "target": {"kind": "pace_s_km", "low": 390, "high": 360},
                 "hr_cap_bpm": 148,
                 "note": "主段轻松跑"
               }
@@ -137,20 +137,20 @@
               {
                 "step_kind": "warmup",
                 "duration": {"kind": "distance_m", "value": 8000},
-                "target": {"kind": "pace_s_km", "low": 360, "high": 375},
+                "target": {"kind": "pace_s_km", "low": 375, "high": 360},
                 "hr_cap_bpm": 152,
                 "note": "Z2 长距离热身，HR 145-152"
               },
               {
                 "step_kind": "recovery",
                 "duration": {"kind": "distance_m", "value": 1000},
-                "target": {"kind": "pace_s_km", "low": 390, "high": 420},
+                "target": {"kind": "pace_s_km", "low": 420, "high": 390},
                 "note": "降速到 6:30，HR 回到 140 准备测试"
               },
               {
                 "step_kind": "work",
                 "duration": {"kind": "distance_m", "value": 5000},
-                "target": {"kind": "pace_s_km", "low": 270, "high": 300},
+                "target": {"kind": "pace_s_km", "low": 300, "high": 270},
                 "note": "5 km 现场测试全力，配速目标 ≤5:00/km，HR 不设上限"
               }
             ]

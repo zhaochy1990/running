@@ -161,7 +161,7 @@
         "blocks": [
           {"repeat": 1, "steps": [{"step_kind": "work", "duration": {"kind": "distance_m", "value": 6000}, "target": {"kind": "hr_bpm", "low": 120, "high": 140}, "note": "稳态 5:10-5:40/km"}]},
           {"repeat": 4, "steps": [
-            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 100}, "target": {"kind": "pace_s_km", "low": 210, "high": 220}, "note": "Stride：3:30-3:40/km，接近 5K 配速但不全力"},
+            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 100}, "target": {"kind": "pace_s_km", "low": 220, "high": 210}, "note": "Stride：3:30-3:40/km，接近 5K 配速但不全力"},
             {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 60}, "target": {"kind": "open"}, "note": "走回 60s 完全恢复"}
           ]}
         ]
