@@ -39,6 +39,17 @@ class MilestoneType(str, Enum):
     STRENGTH_TEST = "strength_test"
 
 
+class PhaseType(str, Enum):
+    """Closed set of phase types = the Stage-2 specialist registry keys.
+    Stage-1 may only emit these; each maps to one specialist (see spec §6)."""
+    BASE     = "base"
+    BUILD    = "build"
+    SPEED    = "speed"
+    PEAK     = "peak"
+    TAPER    = "taper"
+    RECOVERY = "recovery"
+
+
 # ---------------------------------------------------------------------------
 # Component models
 # ---------------------------------------------------------------------------
@@ -63,6 +74,7 @@ class Phase(BaseModel):
     weekly_distance_km_high: float
     key_session_types: list[str]   # 如 ["长距离","有氧","力量"]
     milestone_ids: list[str]
+    phase_type: PhaseType | None = None  # Stage-1↔Stage-2 routing key; optional for backcompat
 
 
 # ---------------------------------------------------------------------------

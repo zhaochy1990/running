@@ -245,3 +245,15 @@ def test_master_plan_version_missing_snapshot_json_raises():
     d = {k: v for k, v in MASTER_PLAN_VERSION_DICT.items() if k != "snapshot_json"}
     with pytest.raises(ValidationError):
         MasterPlanVersion.model_validate(d)
+
+
+def test_phase_type_optional_and_roundtrips():
+    from stride_core.master_plan import Phase, PhaseType
+    p_old = Phase(id="p1", name="基础期", start_date="2026-06-11", end_date="2026-07-12",
+                  focus="f", weekly_distance_km_low=50, weekly_distance_km_high=64,
+                  key_session_types=["长距离"], milestone_ids=[])
+    assert p_old.phase_type is None
+    p_new = p_old.model_copy(update={"phase_type": PhaseType.BASE})
+    assert p_new.phase_type == PhaseType.BASE
+    assert Phase.model_validate(p_new.model_dump()).phase_type == PhaseType.BASE
+    assert {pt.value for pt in PhaseType} == {"base", "build", "speed", "peak", "taper", "recovery"}
