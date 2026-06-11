@@ -345,6 +345,58 @@ class TestBuildMasterPlan:
         assert plan.milestones[0].type == MilestoneType.LONG_RUN
 
 
+class TestBuildMapsNewFields:
+    def test_phase_type_and_structured_milestone_mapped(self):
+        from stride_server.master_plan_generator import _build_master_plan
+        from stride_core.master_plan import PhaseType
+        data = {
+            "schema": "weekly-plan/master/v1",
+            "plan": {
+                "start_date": "2026-06-11", "end_date": "2026-10-18",
+                "training_principles": ["p"],
+                "phases": [{"name": "基础期", "phase_type": "base",
+                            "start_date": "2026-06-11", "end_date": "2026-07-12",
+                            "focus": "f", "weekly_distance_km_low": 50,
+                            "weekly_distance_km_high": 64, "key_session_types": ["长距离"]}],
+                "milestones": [{"type": "test_run", "date": "2026-08-09",
+                                "phase_name": "基础期", "target": "5k sub-19",
+                                "metric": "race_time_s_5k", "target_value": 1140,
+                                "comparator": "<="}],
+            },
+        }
+        plan = _build_master_plan(data, "u", "g")
+        assert plan.phases[0].phase_type == PhaseType.BASE
+        assert plan.milestones[0].metric == "race_time_s_5k"
+        assert plan.milestones[0].target_value == 1140.0
+        assert plan.milestones[0].comparator == "<="
+
+    def test_missing_new_fields_still_builds(self):
+        from stride_server.master_plan_generator import _build_master_plan
+        data = {"schema": "weekly-plan/master/v1", "plan": {
+            "start_date": "2026-06-11", "end_date": "2026-10-18",
+            "training_principles": ["p"],
+            "phases": [{"name": "基础期", "start_date": "2026-06-11", "end_date": "2026-07-12",
+                        "focus": "f", "weekly_distance_km_low": 50, "weekly_distance_km_high": 64,
+                        "key_session_types": ["长距离"]}],
+            "milestones": [{"type": "long_run", "date": "2026-06-28", "phase_name": "基础期",
+                            "target": "22km"}]}}
+        plan = _build_master_plan(data, "u", "g")
+        assert plan.phases[0].phase_type is None
+        assert plan.milestones[0].metric is None
+
+    def test_unknown_phase_type_defaults_none(self):
+        from stride_server.master_plan_generator import _build_master_plan
+        data = {"schema": "weekly-plan/master/v1", "plan": {
+            "start_date": "2026-06-11", "end_date": "2026-10-18", "training_principles": ["p"],
+            "phases": [{"name": "x", "phase_type": "bogus_type",
+                        "start_date": "2026-06-11", "end_date": "2026-07-12", "focus": "f",
+                        "weekly_distance_km_low": 50, "weekly_distance_km_high": 64,
+                        "key_session_types": []}],
+            "milestones": []}}
+        plan = _build_master_plan(data, "u", "g")
+        assert plan.phases[0].phase_type is None
+
+
 # ---------------------------------------------------------------------------
 # Integration: run_generate_job
 # ---------------------------------------------------------------------------

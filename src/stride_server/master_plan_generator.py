@@ -32,6 +32,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    PhaseType,
     WeeklyKeySessions,
 )
 
@@ -127,6 +128,15 @@ def _build_master_plan(
         phase_id = str(uuid4())
         phase_name = p.get("name", "")
         phase_name_to_id[phase_name] = phase_id
+
+        # Parse optional phase_type — unknown strings degrade to None (backcompat)
+        raw_pt = p.get("phase_type")
+        try:
+            phase_type = PhaseType(raw_pt) if raw_pt else None
+        except ValueError:
+            logger.warning("unknown phase_type %r; leaving None", raw_pt)
+            phase_type = None
+
         phases.append(
             Phase(
                 id=phase_id,
@@ -138,6 +148,7 @@ def _build_master_plan(
                 weekly_distance_km_high=float(p.get("weekly_distance_km_high", 0)),
                 key_session_types=p.get("key_session_types", []),
                 milestone_ids=[],
+                phase_type=phase_type,
             )
         )
 
@@ -167,6 +178,9 @@ def _build_master_plan(
                 phase_id=phase_id,
                 target=m.get("target", ""),
                 completed_actual=None,
+                metric=m.get("metric"),
+                target_value=_to_optional_float(m.get("target_value")),
+                comparator=m.get("comparator"),
             )
         )
 
@@ -674,11 +688,11 @@ def _build_system_prompt(
   "end_date": "YYYY-MM-DD",
   "training_principles": ["原则1","原则2"],
   "phases": [
-    {{"name":"基础期","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
+    {{"name":"基础期","phase_type":"base|build|speed|peak|taper|recovery","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
     ...
   ],
   "milestones": [
-    {{"type":"race|test_run|long_run|strength_test","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述"}},
+    {{"type":"race|test_run|long_run|strength_test","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述","metric":"race_time_s_5k","target_value":1140,"comparator":"<=|>=|=="}},
     ...
   ],
   "weekly_key_sessions": [
@@ -696,6 +710,7 @@ def _build_system_prompt(
 - 阶段顺序：基础期 → 进展期 → 赛前期 → 比赛 →（如有）恢复期
 - 每个阶段至少 2 周
 - weekly_distance_km_low / high 应反映该阶段周量目标
+- 每个 phase 必须标注 phase_type（base|build|speed|peak|taper|recovery）；milestone 尽量给结构化出口目标（metric+target_value+comparator）
 - 里程碑应贯穿训练周期（每 2-4 周一个）
 - 训练原则 6-10 条（含下方营养、recovery week、目标现实性三项强制要求）
 - 用户跑龄短 / 周量低时阶段周量更保守
