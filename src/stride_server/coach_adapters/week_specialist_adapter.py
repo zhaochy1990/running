@@ -49,11 +49,13 @@ import logging
 from datetime import date as date_cls
 from typing import Any
 
+from coach.graphs.generation.rule_filter import _total_run_distance_m
 from coach.graphs.generation.state import GenState
+from coach.graphs.generation.week_graph import build_week_specialist_graph
 from coach.graphs.generation.weekly_prompt import WeekMeta, build_weekly_system_prompt
-from coach.schemas import PaceTargets, VolumeTargets
+from coach.schemas import PaceTargets, ReviewReport, VolumeTargets
 from stride_core.db import Database
-from stride_core.master_plan import PhaseType
+from stride_core.master_plan import Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
 from stride_core.timefmt import today_shanghai
 
@@ -256,3 +258,220 @@ def generate_specialist_week(state: GenState) -> dict:
         raise ValueError(f"bad_schema: {exc}") from exc
 
     return {"current_draft": plan.to_dict()}
+
+
+# ---------------------------------------------------------------------------
+# Stage-3a stub reviewer (mirrors master_plan_adapter.master_reviewer)
+# ---------------------------------------------------------------------------
+
+
+def _week_stub_reviewer(state: GenState) -> ReviewReport:
+    """v1 stub per-week reviewer — always passes.
+
+    The real per-phase reviewer (週 judge axes) is deferred to Plan 3b; for
+    Stage-3a the only gate that can block a week is the deterministic
+    ``rule_filter`` upstream. Mirrors
+    ``master_plan_adapter.master_reviewer``.
+    """
+    return ReviewReport(
+        verdict="pass",
+        reviewer_model="stub-v1",
+        iteration=int(state.get("iteration") or 0),
+        issues=[],
+        suggested_patches=[],
+        commentary_md="(stub week reviewer — pass-through; 3b judge wiring pending)",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Per-phase loop (Stage-3a Task 6)
+# ---------------------------------------------------------------------------
+
+
+def _coerce_week_meta(week: Any) -> WeekMeta:
+    """Accept a dict descriptor (or a WeekMeta) → WeekMeta.
+
+    The ``weeks`` descriptor contract (one entry per week, ordered):
+
+        {
+          "week_index": 2,                       # 0-based position in the phase
+          "week_folder": "2026-06-15_06-21(W3)", # ISO week folder
+          "phase_position": "build week 3/7",    # human framing
+          "target_weekly_km": 80.0               # planned volume (within band)
+        }
+    """
+    if isinstance(week, WeekMeta):
+        return week
+    return WeekMeta(
+        phase_position=str(week.get("phase_position", "")),
+        week_folder=str(week.get("week_folder", "")),
+        target_weekly_km=float(week.get("target_weekly_km") or 0.0),
+    )
+
+
+def _summarize_prior_week_tail(plan_dict: dict, *, max_sessions: int = 2) -> str:
+    """Short tail summary (last 1-2 sessions) to feed the next week's prompt.
+
+    Reads the just-generated week's session summaries — date-ordered — and
+    joins the trailing ``max_sessions`` into a one-line string the weekly
+    composer renders under 【上周尾段】.
+    """
+    sessions = plan_dict.get("sessions") or []
+    # Order by (date, session_index) so "tail" means chronologically last.
+    ordered = sorted(
+        sessions,
+        key=lambda s: (str(s.get("date") or ""), int(s.get("session_index") or 0)),
+    )
+    tail = ordered[-max_sessions:] if max_sessions > 0 else ordered
+    parts = []
+    for s in tail:
+        summ = (s.get("summary") or "").strip()
+        if summ:
+            parts.append(summ)
+    if not parts:
+        return ""
+    total_km = sum((s.get("total_distance_m") or 0) for s in sessions) / 1000.0
+    return f"上周完成约 {total_km:.0f}km；尾段课次：" + "；".join(parts)
+
+
+def generate_phase_weeks(
+    phase: Phase,
+    weeks: list[dict],
+    context: dict,
+    injuries: list[str] | None = None,
+) -> list[dict]:
+    """Walk a phase's weeks sequentially → one ``WeeklyPlan`` dict per success.
+
+    For each week descriptor (in order) this builds the per-week generation
+    graph (Task 5) wired with the per-week generator (``generate_specialist_week``,
+    Task 4) and the Stage-3a stub reviewer, invokes it, and threads week-to-week
+    continuity into the next iteration.
+
+    Args:
+        phase: the ``stride_core.master_plan.Phase`` this loop fills. Used for
+            ``phase_type`` (specialist routing) and as a sanity reference; the
+            per-week volume comes from each descriptor's ``target_weekly_km``,
+            not the phase band directly.
+        weeks: ordered per-week meta descriptors. Each carries ``week_index``,
+            ``week_folder``, ``phase_position`` and ``target_weekly_km`` — see
+            :func:`_coerce_week_meta`. The Plan-3b orchestrator builds these
+            from the phase; Task 6 just consumes them.
+        context: shared per-phase context. Must carry ``user_id``, ``goal``
+            (dict, for MP derivation), ``level`` (athlete-level signal for the
+            volume budget); may carry ``continuity`` (ContinuitySignals dict).
+        injuries: optional list of injury flags, forwarded to both the prompt
+            context block and the rule_filter ``injury_conflict`` check.
+
+    Returns:
+        A list of validated ``WeeklyPlan`` dicts — one per **successfully**
+        generated week. A week whose graph returns ``final_verdict == "block"``
+        (rule_filter unsatisfiable within max_iterations, or reviewer blocked)
+        produces no plan and is omitted; the loop logs a warning and continues.
+
+    Blocked-week threading decision: when a week is blocked we keep the last
+    **successful** week's ``prev_week_km`` / ``prior_week_tail`` for the next
+    iteration (rather than threading the blocked draft's numbers, which were
+    rejected, or resetting to None). Rationale: the next week should progress
+    from the last plan we actually trust, not from a draft we refused to ship.
+    """
+    phase_type = phase.phase_type or PhaseType.BASE
+    user_id = str(context.get("user_id") or "")
+    goal = context.get("goal") or {}
+    level = float(context.get("level") or 0.0)
+    continuity = context.get("continuity")
+    injuries = list(injuries or [])
+
+    results: list[dict] = []
+    # Continuity threaded from the last *successful* week (None before week 1).
+    prev_week_km: float | None = None
+    prior_week_tail: str = ""
+
+    # One DB handle per phase loop for the deterministic pace/volume context.
+    db = Database(user=user_id)
+
+    for week in weeks:
+        week_meta = _coerce_week_meta(week)
+
+        # 1. Per-week input_payload — Task 4's documented generator contract.
+        input_payload = {
+            "phase_type": phase_type.value,
+            "week_meta": {
+                "phase_position": week_meta.phase_position,
+                "week_folder": week_meta.week_folder,
+                "target_weekly_km": week_meta.target_weekly_km,
+            },
+            "goal": goal,
+            "level": level,
+            "injuries": injuries,
+        }
+
+        # 2. rule_filter inputs — incl. the Task-0 athlete-relative Z4-Z5
+        #    threshold = pace_targets.threshold_pace_s_km. Deterministic, so it
+        #    matches the pace table generate_specialist_week recomputes internally.
+        pace_t, _volume_t = build_specialist_context(
+            db, goal=goal, phase_type=phase_type, week_meta=week_meta, level=level
+        )
+        rule_filter_kwargs: dict[str, Any] = {
+            "prev_week_km": prev_week_km,
+            "injuries": injuries or None,
+            "z45_pace_threshold_s_km": pace_t.threshold_pace_s_km,
+        }
+
+        # 3. Build the per-week graph (generator + stub reviewer + rules).
+        #    Override the graph's default no-op context loader with one that
+        #    *preserves* the threaded continuity context — the no-op loader
+        #    would otherwise overwrite state["context"] with {} before the
+        #    generator runs, dropping prior_week_tail / continuity.
+        graph = build_week_specialist_graph(
+            generator=generate_specialist_week,
+            reviewer=_week_stub_reviewer,
+            rule_filter_kwargs=rule_filter_kwargs,
+            load_context=lambda s: dict(s.get("context") or {}),
+        )
+
+        # 4. Invoke with the per-week state (continuity threaded in context).
+        state: GenState = {
+            "user_id": user_id,
+            "plan_type": "week",
+            "input_payload": input_payload,
+            "context": {
+                "continuity": continuity,
+                "prior_week_tail": prior_week_tail,
+            },
+        }
+        final = graph.invoke(state)
+
+        # 5. Handle the verdict.
+        verdict = final.get("final_verdict")
+        artifact = final.get("final_artifact")
+        if verdict == "block" or not artifact:
+            logger.warning(
+                "generate_phase_weeks: week %s (%s) blocked (verdict=%s) — "
+                "excluded from results; keeping prior week's continuity",
+                week_meta.week_folder,
+                week_meta.phase_position,
+                verdict,
+            )
+            # Keep prior successful week's prev_week_km / prior_week_tail.
+            continue
+
+        results.append(artifact)
+
+        # 6. Thread continuity to the next week from this successful plan.
+        try:
+            plan = WeeklyPlan.from_dict(artifact)
+            prev_week_km = _total_run_distance_m(plan) / 1000.0
+        except (ValueError, KeyError, TypeError):
+            # Should not happen (the graph already validated), but never let
+            # threading crash the loop — fall back to a dict-level sum.
+            prev_week_km = (
+                sum(
+                    (s.get("total_distance_m") or 0)
+                    for s in (artifact.get("sessions") or [])
+                    if s.get("kind") == "run"
+                )
+                / 1000.0
+            )
+        prior_week_tail = _summarize_prior_week_tail(artifact)
+
+    return results
