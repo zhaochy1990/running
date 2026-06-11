@@ -38,7 +38,7 @@
           {
             "repeat": 1,
             "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 5000}, "target": {"kind": "pace_s_km", "low": 330, "high": 380}, "note": "力量 A 后 30min 内完成；HR ≤138；腘绳肌扯着感 → 立即停步走完", "hr_cap_bpm": 138}
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 5000}, "target": {"kind": "pace_s_km", "low": 380, "high": 330}, "note": "力量 A 后 30min 内完成；HR ≤138；腘绳肌扯着感 → 立即停步走完", "hr_cap_bpm": 138}
             ]
           }
         ],
@@ -58,7 +58,7 @@
           {
             "repeat": 1,
             "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 10000}, "target": {"kind": "pace_s_km", "low": 310, "high": 330}, "note": "HR ≤142", "hr_cap_bpm": 142}
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 10000}, "target": {"kind": "pace_s_km", "low": 330, "high": 310}, "note": "HR ≤142", "hr_cap_bpm": 142}
             ]
           }
         ]
@@ -77,22 +77,22 @@
           {
             "repeat": 1,
             "steps": [
-              {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 320, "high": 360}, "note": "热身含腘绳肌动员 + 4×100m strides"},
-              {"step_kind": "work", "duration": {"kind": "time_s", "value": 1200}, "target": {"kind": "pace_s_km", "low": 235, "high": 245}, "note": "节奏跑 20min @ 4:00/km LT @ HR 158-167", "hr_cap_bpm": 170},
+              {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 360, "high": 320}, "note": "热身含腘绳肌动员 + 4×100m strides"},
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 1200}, "target": {"kind": "pace_s_km", "low": 245, "high": 235}, "note": "节奏跑 20min @ 4:00/km LT @ HR 158-167", "hr_cap_bpm": 170},
               {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 240}, "target": {"kind": "open"}, "note": "慢跑休息 4min"}
             ]
           },
           {
             "repeat": 8,
             "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 400}, "target": {"kind": "pace_s_km", "low": 215, "high": 220}, "note": "400m @ 3:35-3:40 / 5K race pace", "hr_cap_bpm": 178},
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 400}, "target": {"kind": "pace_s_km", "low": 220, "high": 215}, "note": "400m @ 3:35-3:40 / 5K race pace", "hr_cap_bpm": 178},
               {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 90}, "target": {"kind": "open"}, "note": "慢跑组间 90s"}
             ]
           },
           {
             "repeat": 1,
             "steps": [
-              {"step_kind": "cooldown", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 330, "high": 360}, "note": "放松 2km"}
+              {"step_kind": "cooldown", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 360, "high": 330}, "note": "放松 2km"}
             ]
           }
         ],
@@ -112,7 +112,7 @@
           {
             "repeat": 1,
             "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 330, "high": 360}, "note": "HR ≤138", "hr_cap_bpm": 138}
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 360, "high": 330}, "note": "HR ≤138", "hr_cap_bpm": 138}
             ]
           }
         ]
@@ -138,7 +138,7 @@
           {
             "repeat": 1,
             "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 25000}, "target": {"kind": "pace_s_km", "low": 300, "high": 320}, "note": "前 5K 5:20-5:30 暖机；中 15K 5:00-5:15 稳态；末 5K 5:10-5:20 收尾；HR <145 全程；任意 5K HR 漂移 >8 bpm 立即降速；绝无加速段/末段冲刺；跑中 2 胶 @9K+@17K + 每 5K 100-150ml 水", "hr_cap_bpm": 148}
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 25000}, "target": {"kind": "pace_s_km", "low": 320, "high": 300}, "note": "前 5K 5:20-5:30 暖机；中 15K 5:00-5:15 稳态；末 5K 5:10-5:20 收尾；HR <145 全程；任意 5K HR 漂移 >8 bpm 立即降速；绝无加速段/末段冲刺；跑中 2 胶 @9K+@17K + 每 5K 100-150ml 水", "hr_cap_bpm": 148}
             ]
           }
         ],
@@ -158,7 +158,7 @@
           {
             "repeat": 1,
             "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 12000}, "target": {"kind": "pace_s_km", "low": 330, "high": 380}, "note": "HR ≤138；禁加速段；纯有氧恢复，把整周低强度体量铺满；DOMS ≥5 → 改 8K @ HR<135 或纯走 30min", "hr_cap_bpm": 138}
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 12000}, "target": {"kind": "pace_s_km", "low": 380, "high": 330}, "note": "HR ≤138；禁加速段；纯有氧恢复，把整周低强度体量铺满；DOMS ≥5 → 改 8K @ HR<135 或纯走 30min", "hr_cap_bpm": 138}
             ]
           }
         ],

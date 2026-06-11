@@ -55,7 +55,7 @@
               {
                 "step_kind": "work",
                 "duration": {"kind": "distance_m", "value": 800},
-                "target": {"kind": "pace_s_km", "low": 212, "high": 215},
+                "target": {"kind": "pace_s_km", "low": 215, "high": 212},
                 "note": "前 4 reps（1-4）：3:32-3:35/km（地板，建立稳态）"
               },
               {
@@ -72,7 +72,7 @@
               {
                 "step_kind": "work",
                 "duration": {"kind": "distance_m", "value": 800},
-                "target": {"kind": "pace_s_km", "low": 208, "high": 212},
+                "target": {"kind": "pace_s_km", "low": 212, "high": 208},
                 "note": "中 4 reps（5-8）：3:28-3:32/km（锁定 VO2max 工作区）"
               },
               {
@@ -89,7 +89,7 @@
               {
                 "step_kind": "work",
                 "duration": {"kind": "distance_m", "value": 800},
-                "target": {"kind": "pace_s_km", "low": 205, "high": 210},
+                "target": {"kind": "pace_s_km", "low": 210, "high": 205},
                 "note": "末 3 reps（9-11）：3:25-3:30/km；不快于 3:22 = race-effort 红线"
               },
               {

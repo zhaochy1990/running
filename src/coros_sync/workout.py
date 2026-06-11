@@ -104,15 +104,22 @@ def _make_exercise(
     }
 
     if pace_low and pace_high:
+        # COROS renders `intensityValue` first, so it must hold the FASTER
+        # bound (smaller ms/km) for the watch to show "4:20-4:30", not the
+        # reversed "4:30-4:20". Normalize by numeric value rather than trusting
+        # caller ordering — authored plan.json has been inconsistent about
+        # which of low/high is the faster bound.
+        ms_a, ms_b = pace_to_ms(pace_low), pace_to_ms(pace_high)
+        fast_ms, slow_ms = min(ms_a, ms_b), max(ms_a, ms_b)
         exercise["intensityType"] = 3
-        exercise["intensityValue"] = pace_to_ms(pace_low)
-        exercise["intensityValueExtend"] = pace_to_ms(pace_high)
+        exercise["intensityValue"] = fast_ms
+        exercise["intensityValueExtend"] = slow_ms
         exercise["intensityDisplayUnit"] = "1"
         exercise["intensityMultiplier"] = 1000
         # intensityPercent is derived from pace relative to threshold
         # Approximate: pace_ms / threshold_pace_ms * 100 * 1000
-        exercise["intensityPercent"] = exercise["intensityValue"] // 5
-        exercise["intensityPercentExtend"] = exercise["intensityValueExtend"] // 5
+        exercise["intensityPercent"] = fast_ms // 5
+        exercise["intensityPercentExtend"] = slow_ms // 5
 
     return exercise
 

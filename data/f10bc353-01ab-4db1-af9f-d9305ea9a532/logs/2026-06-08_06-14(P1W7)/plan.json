@@ -148,8 +148,8 @@
         },
         "target": {
          "kind": "pace_s_km",
-         "low": 320,
-         "high": 340
+         "low": 340,
+         "high": 320
         },
         "note": "慢跑+动态拉伸+4 strides"
        }
@@ -203,8 +203,8 @@
         },
         "target": {
          "kind": "pace_s_km",
-         "low": 222,
-         "high": 235
+         "low": 235,
+         "high": 222
         },
         "note": "400m地板3:55天花板3:42，5K-10K effort",
         "hr_cap_bpm": 185
@@ -235,8 +235,8 @@
         },
         "target": {
          "kind": "pace_s_km",
-         "low": 330,
-         "high": 360
+         "low": 360,
+         "high": 330
         },
         "note": "放松HR<140"
        }
@@ -381,8 +381,8 @@
         },
         "target": {
          "kind": "pace_s_km",
-         "low": 287,
-         "high": 293
+         "low": 293,
+         "high": 287
         },
         "note": "段1 4:50/km（前6K宁慢不抢）",
         "hr_cap_bpm": 156
@@ -395,8 +395,8 @@
         },
         "target": {
          "kind": "pace_s_km",
-         "low": 277,
-         "high": 283
+         "low": 283,
+         "high": 277
         },
         "note": "段2 4:40/km",
         "hr_cap_bpm": 160
@@ -409,8 +409,8 @@
         },
         "target": {
          "kind": "pace_s_km",
-         "low": 267,
-         "high": 273
+         "low": 273,
+         "high": 267
         },
         "note": "段3 4:30/km",
         "hr_cap_bpm": 164
@@ -423,8 +423,8 @@
         },
         "target": {
          "kind": "pace_s_km",
-         "low": 257,
-         "high": 263
+         "low": 263,
+         "high": 257
         },
         "note": "段4 4:20/km",
         "hr_cap_bpm": 168
@@ -437,8 +437,8 @@
         },
         "target": {
          "kind": "pace_s_km",
-         "low": 247,
-         "high": 253
+         "low": 253,
+         "high": 247
         },
         "note": "段5 4:10/km",
         "hr_cap_bpm": 170

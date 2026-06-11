@@ -54,15 +54,15 @@
           {
             "repeat": 1,
             "steps": [
-              {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 330, "high": 350}, "note": "末段 4×80m 大步跑"},
-              {"step_kind": "work", "duration": {"kind": "time_s", "value": 1200}, "target": {"kind": "pace_s_km", "low": 258, "high": 262}, "note": "20 min T 段 4:18-4:22 / HR 162-168", "hr_cap_bpm": 172},
+              {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 350, "high": 330}, "note": "末段 4×80m 大步跑"},
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 1200}, "target": {"kind": "pace_s_km", "low": 262, "high": 258}, "note": "20 min T 段 4:18-4:22 / HR 162-168", "hr_cap_bpm": 172},
               {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 240}, "target": {"kind": "hr_bpm", "low": 120, "high": 150}, "note": "4 min 慢走+jog；HR 回 <150 再进间歇"}
             ]
           },
           {
             "repeat": 8,
             "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 400}, "target": {"kind": "pace_s_km", "low": 220, "high": 230}, "note": "1:28-1:32 / RPE 8-9"},
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 400}, "target": {"kind": "pace_s_km", "low": 230, "high": 220}, "note": "1:28-1:32 / RPE 8-9"},
               {"step_kind": "rest", "duration": {"kind": "time_s", "value": 90}, "target": {"kind": "open"}, "note": "慢跑/走，HR 回 <155"}
             ]
           },
@@ -172,7 +172,7 @@
           {
             "repeat": 4,
             "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 100}, "target": {"kind": "pace_s_km", "low": 210, "high": 220}, "note": "3:30-3:40 大步跑"},
+              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 100}, "target": {"kind": "pace_s_km", "low": 220, "high": 210}, "note": "3:30-3:40 大步跑"},
               {"step_kind": "rest", "duration": {"kind": "time_s", "value": 60}, "target": {"kind": "open"}, "note": "走回恢复"}
             ]
           }
