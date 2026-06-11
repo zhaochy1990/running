@@ -370,6 +370,59 @@ class TestBuildMapsNewFields:
         assert plan.milestones[0].target_value == 1140.0
         assert plan.milestones[0].comparator == "<="
 
+    def test_performance_and_body_comp_milestones_roundtrip(self):
+        """End-to-end structured path (Stage-3a P3): a phase carrying BOTH a
+        performance milestone (race_time_s_5k) AND a body_composition milestone
+        (body_fat_pct) must survive into the MasterPlan with the correct
+        MilestoneType / metric / target_value / comparator, each attached to the
+        right phase."""
+        from stride_server.master_plan_generator import _build_master_plan
+        data = {
+            "schema": "weekly-plan/master/v1",
+            "plan": {
+                "start_date": "2026-06-11", "end_date": "2026-10-18",
+                "training_principles": ["p"],
+                "phases": [
+                    {"name": "基础期", "phase_type": "base",
+                     "start_date": "2026-06-11", "end_date": "2026-07-26",
+                     "focus": "f", "weekly_distance_km_low": 50,
+                     "weekly_distance_km_high": 64, "key_session_types": ["长距离"]},
+                    {"name": "速度周期", "phase_type": "speed",
+                     "start_date": "2026-07-27", "end_date": "2026-09-06",
+                     "focus": "f", "weekly_distance_km_low": 50,
+                     "weekly_distance_km_high": 60, "key_session_types": ["间歇"]},
+                ],
+                "milestones": [
+                    {"type": "body_composition", "date": "2026-07-26",
+                     "phase_name": "基础期", "target": "基础期末体脂 ≤ 12%",
+                     "metric": "body_fat_pct", "target_value": 12.0,
+                     "comparator": "<="},
+                    {"type": "test_run", "date": "2026-09-06",
+                     "phase_name": "速度周期", "target": "5k sub-19",
+                     "metric": "race_time_s_5k", "target_value": 1140,
+                     "comparator": "<="},
+                ],
+            },
+        }
+        plan = _build_master_plan(data, "u", "g")
+        by_metric = {m.metric: m for m in plan.milestones}
+
+        bc = by_metric["body_fat_pct"]
+        assert bc.type == MilestoneType.BODY_COMPOSITION
+        assert bc.target_value == 12.0
+        assert bc.comparator == "<="
+
+        perf = by_metric["race_time_s_5k"]
+        assert perf.type == MilestoneType.TEST_RUN
+        assert perf.target_value == 1140.0
+        assert perf.comparator == "<="
+
+        # Each milestone is attached to the correct phase's milestone_ids.
+        base_phase = next(p for p in plan.phases if p.name == "基础期")
+        speed_phase = next(p for p in plan.phases if p.name == "速度周期")
+        assert bc.id in base_phase.milestone_ids
+        assert perf.id in speed_phase.milestone_ids
+
     def test_missing_new_fields_still_builds(self):
         from stride_server.master_plan_generator import _build_master_plan
         data = {"schema": "weekly-plan/master/v1", "plan": {
@@ -844,6 +897,75 @@ class TestMacroCycleGuidance:
     def test_unknown_no_macro_block(self):
         p = self._prompt("unknown")
         assert "夏训块周期化指导" not in p
+
+
+# ---------------------------------------------------------------------------
+# Per-phase quantifiable milestones grounded in baselines (Stage-3a P3)
+# ---------------------------------------------------------------------------
+
+
+class TestPromptPerPhaseMilestones:
+    _BODY_COMP = {
+        "scan_date": "2026-06-01", "weight_kg": 68.0, "body_fat_pct": 15.0,
+        "smm_kg": 31.0, "fat_mass_kg": 10.2, "bmr_kcal": 1550, "bmi": 22.1,
+    }
+    _BODY_COMP_SUMMARY = "最新体测（2026-06-01）— 体重 68.0kg，体脂 15.0%，骨骼肌 31.0kg，BMI 22.1"
+
+    def _build(self, *, body_composition=None, body_composition_summary=None):
+        from stride_server.master_plan_generator import _build_system_prompt
+        return _build_system_prompt(
+            goal={"distance": "fm", "race_date": "2026-10-19", "goal_time_s": 12000},
+            profile={"prs": {"fm_s": 13200, "best_5k_s": 1200}, "weekly_run_days_max": 5},
+            history_summary="最好成绩：5k 20:00；FM 3:40",
+            fitness_state={"summary": "CTL 60"},
+            today="2026-05-19",
+            body_composition=body_composition,
+            body_composition_summary=body_composition_summary,
+        )
+
+    def test_body_comp_block_injected_when_present(self):
+        prompt = self._build(
+            body_composition=self._BODY_COMP,
+            body_composition_summary=self._BODY_COMP_SUMMARY,
+        )
+        # Labeled baseline block present (distinct header, not the instruction text)
+        assert "体测基线（最新体测" in prompt
+        # Concrete baseline numbers reach the prompt
+        assert "68.0" in prompt
+        assert "15.0" in prompt
+
+    def test_body_comp_milestone_type_and_metrics_in_schema(self):
+        prompt = self._build(
+            body_composition=self._BODY_COMP,
+            body_composition_summary=self._BODY_COMP_SUMMARY,
+        )
+        # New milestone type added to the schema enum
+        assert "body_composition" in prompt
+        # Body-comp metrics advertised to the LLM
+        assert "weight_kg" in prompt
+        assert "body_fat_pct" in prompt
+
+    def test_per_phase_quantifiable_milestone_instruction(self):
+        prompt = self._build(
+            body_composition=self._BODY_COMP,
+            body_composition_summary=self._BODY_COMP_SUMMARY,
+        )
+        # Stable anchor for the per-phase quantifiable-milestone instruction
+        assert "Per-phase 可量化 milestone" in prompt
+        # Improvement-rate guidance: speed phase 5k upper bound
+        assert "race_time_s_5k" in prompt
+        assert "5-8%" in prompt or "5–8%" in prompt
+        # Performance milestone anchored to PB baseline
+        assert "最好成绩" in prompt
+
+    def test_body_comp_block_omitted_when_none(self):
+        prompt = self._build(body_composition=None, body_composition_summary=None)
+        # No body-comp baseline block / numbers (header + baseline figures absent)
+        assert "体测基线（最新体测" not in prompt
+        assert "68.0" not in prompt
+        # But performance per-phase milestone instruction still present
+        assert "Per-phase 可量化 milestone" in prompt
+        assert "race_time_s_5k" in prompt
 
 
 # ---------------------------------------------------------------------------

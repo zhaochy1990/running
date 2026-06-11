@@ -612,6 +612,19 @@ def _normalize_for_prompt(
 # ---------------------------------------------------------------------------
 
 
+def _format_body_comp_fallback(bc: dict[str, Any]) -> str:
+    """Minimal one-line body-comp summary used only when the caller did not
+    supply a pre-formatted ``body_composition_summary`` (defence-in-depth so the
+    prompt never carries a raw dict)."""
+    parts = []
+    if bc.get("weight_kg") is not None:
+        parts.append(f"体重 {bc['weight_kg']}kg")
+    if bc.get("body_fat_pct") is not None:
+        parts.append(f"体脂 {bc['body_fat_pct']}%")
+    scan = bc.get("scan_date", "?")
+    return f"最新体测（{scan}）— " + "，".join(parts) if parts else f"最新体测（{scan}）"
+
+
 def _build_system_prompt(
     goal: dict,
     profile: dict | None,
@@ -619,6 +632,8 @@ def _build_system_prompt(
     fitness_state: dict[str, Any],
     today: str,
     continuity: "ContinuitySignals | None" = None,
+    body_composition: dict[str, Any] | None = None,
+    body_composition_summary: str | None = None,
 ) -> str:
     # Normalise prod-route field names before serialising into the prompt.
     # Without this, prod payloads carry ``target_finish_time`` / ``pbs`` and
@@ -666,6 +681,21 @@ def _build_system_prompt(
 - base 偏长、尽快进专项；速度训练融进 build 而非单独成块。
 """
 
+    body_comp_block = ""
+    if body_composition:
+        bc = body_composition
+
+        def _fmt(key: str, unit: str = "") -> str:
+            v = bc.get(key)
+            return f"{v}{unit}" if v is not None else "暂无"
+
+        summary_line = body_composition_summary or _format_body_comp_fallback(bc)
+        body_comp_block = f"""
+体测基线（最新体测，可作为体重 / 体脂 milestone 锚点）：
+- {summary_line}
+- 体重: {_fmt('weight_kg', 'kg')}；体脂率: {_fmt('body_fat_pct', '%')}；骨骼肌: {_fmt('smm_kg', 'kg')}；脂肪量: {_fmt('fat_mass_kg', 'kg')}；BMR: {_fmt('bmr_kcal', 'kcal')}；BMI: {_fmt('bmi')}
+"""
+
     return f"""你是专业马拉松训练教练。根据以下信息生成训练总纲 JSON。
 
 用户目标：
@@ -692,7 +722,7 @@ def _build_system_prompt(
     ...
   ],
   "milestones": [
-    {{"type":"race|test_run|long_run|strength_test","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述","metric":"race_time_s_5k","target_value":1140,"comparator":"<=|>=|=="}},
+    {{"type":"race|test_run|long_run|strength_test|body_composition","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述","metric":"race_time_s_5k|race_time_s_10k|weight_kg|body_fat_pct","target_value":1140,"comparator":"<=|>=|=="}},
     ...
   ],
   "weekly_key_sessions": [
@@ -704,7 +734,7 @@ def _build_system_prompt(
   ]
 }}}}
 ---END_MASTER_PLAN---
-{continuity_block}{macro_block}
+{continuity_block}{macro_block}{body_comp_block}
 规则：
 - start_date 用今日（{today}），end_date 不晚于比赛日（{race_date}）
 - 阶段顺序：基础期 → 进展期 → 赛前期 → 比赛 →（如有）恢复期
@@ -777,7 +807,16 @@ def _build_system_prompt(
   - training_principles 第 1 条必须显式 push back，例如："用户 FM PB 3:45 → goal 2:50 单周期改善 24%（> 10% 上限），不现实。本周期建议目标 3:25-3:30（10-12% 改善），下个周期再冲击 sub-3:00"
   - 训练强度按建议的现实 target_time 排，**不能**按用户原 goal 配速排训练
   - race milestone 的 target 字段写本周期建议成绩 + 远期 A 目标，例如："本周期目标 3:30；2:50 为下一周期 A 目标"
-- 如果 goal 改善幅度在阈值内：正常排训练，建议给出 A / B / C 目标分层（A 目标条件 / B 目标 / 保底）"""
+- 如果 goal 改善幅度在阈值内：正常排训练，建议给出 A / B / C 目标分层（A 目标条件 / B 目标 / 保底）
+
+**Per-phase 可量化 milestone（HARD）**：
+- 每个 phase 在 `milestone_ids` 上**尽量挂至少 1 个可量化出口目标**（`metric`+`target_value`+`comparator`），并**锚定上方实际注入的基线数字**（历史摘要里的"最好成绩" PB；若有则用"体测基线"的体重 / 体脂），**不要**写脱离基线的泛化目标。
+- 目标值的改善速率必须落在生理上限内（用上方「单周期改善上限阈值」推算，且单个 phase 通常只占整周期的一部分，改善幅度更小）：
+  - **speed 期**：5k 提速目标 `metric:"race_time_s_5k"`（或 `race_time_s_10k`），`comparator:"<="`。一个 ~6 周 speed cycle 的 5k 改善 **≤ ~5-8%** 是上限而非下限——按基线 PB × (1 − 改善率) 给 target_value，不设幻想值。
+  - **base 期**：以有氧 / 长距离能力为出口（`type:"long_run"` 的距离目标，或—若有体测基线—体重 milestone `metric:"weight_kg"`,`comparator:"<="`，按健康减重速率 ~0.25-0.5 kg/周 推算，不开极端赤字）。
+  - **build / 专项期**：MP 耐力 / 阈值出口（如目标比赛配速 long_run 距离，或 `metric:"race_time_s_10k"`,`comparator:"<="`）；若有体测基线，可设体脂目标 `metric:"body_fat_pct"`,`comparator:"<="`（同样按健康速率）。
+  - **peak / taper 期**：以比赛就绪为出口（`type:"race"` 或目标距离 time-trial 的 race_time milestone）。
+- **体测 milestone 只在「有体测基线」时设**；无体测基线时仅设性能 / 距离类 milestone，不要编造体重 / 体脂数字。"""
 
 
 # ---------------------------------------------------------------------------

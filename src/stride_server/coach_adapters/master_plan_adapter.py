@@ -203,7 +203,10 @@ def generate_master_plan(state: GenState) -> dict:
 
     today = today_shanghai().isoformat()
     system_prompt = _build_system_prompt(
-        goal, profile, history_summary, fitness_state, today, continuity=continuity
+        goal, profile, history_summary, fitness_state, today,
+        continuity=continuity,
+        body_composition=ctx.get("body_composition"),
+        body_composition_summary=ctx.get("body_composition_summary"),
     )
 
     user_text = "请基于上述信息生成训练总纲"
