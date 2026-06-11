@@ -923,3 +923,129 @@ class TestQueryFitnessStateStride:
         assert state["atl"] == 69.9      # acute_load, NOT ati=136
         assert state["rhr"] == 48        # rhr still from daily_health
         assert "64" in state["summary"]
+
+
+# ---------------------------------------------------------------------------
+# load_master_context double baseline (Stage-3a P2)
+# Performance baseline (race_predictions, already wired via _query_history) +
+# body-composition baseline (body_composition_scan, added here). Graceful
+# degrade when there's no body-comp scan.
+# ---------------------------------------------------------------------------
+
+
+class TestLoadMasterContextDoubleBaseline:
+    def _seed_db(self, tmp_path, *, with_body_comp: bool):
+        from stride_core.db import Database
+
+        db = Database(db_path=tmp_path / "coros.db")
+        c = db._conn
+        # Performance baseline: race_predictions (canonical PB read path that
+        # _query_history maps to best_*_s).
+        for race_type, dur in (
+            ("5K", 1200.0),       # 20:00
+            ("10K", 2520.0),      # 42:00
+            ("Half Marathon", 5700.0),  # 1:35:00
+            ("Marathon", 12000.0),      # 3:20:00
+        ):
+            c.execute(
+                "INSERT INTO race_predictions (race_type, duration_s, avg_pace) "
+                "VALUES (?, ?, NULL)",
+                (race_type, dur),
+            )
+        if with_body_comp:
+            c.execute(
+                "INSERT INTO body_composition_scan "
+                "(scan_date, weight_kg, body_fat_pct, smm_kg, fat_mass_kg, "
+                " visceral_fat_level, bmr_kcal) "
+                "VALUES ('2026-06-01', 70.0, 14.0, 33.0, 9.8, 6, 1600)"
+            )
+            # Older scan — latest_body_composition_scan must pick 2026-06-01.
+            c.execute(
+                "INSERT INTO body_composition_scan "
+                "(scan_date, weight_kg, body_fat_pct, smm_kg, fat_mass_kg, "
+                " visceral_fat_level, bmr_kcal) "
+                "VALUES ('2026-01-01', 75.0, 18.0, 31.0, 13.5, 8, 1550)"
+            )
+        c.commit()
+        return db
+
+    def _patch_db_and_load(self, db, monkeypatch, *, profile):
+        # All three readers (history, fitness, body-comp) open Database(user=...);
+        # route every one at the single seeded handle.
+        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        from stride_server import master_plan_generator as mod
+        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
+        # Keep continuity hermetic — not the subject under test here.
+        monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
+        state = {
+            "user_id": USER_ID,
+            "job_id": "",
+            "input_payload": {"goal": GOAL, "profile": profile},
+        }
+        return adapter_mod.load_master_context(state)
+
+    def test_both_baselines_present(self, tmp_path, monkeypatch):
+        """Seeded race_predictions + body_composition_scan → context carries
+        the performance baseline (history.best_*_s) AND a body_composition
+        block with weight/body_fat/smm + BMI (height from profile)."""
+        db = self._seed_db(tmp_path, with_body_comp=True)
+        ctx = self._patch_db_and_load(
+            db, monkeypatch, profile={"height_cm": 175.0}
+        )
+
+        # Performance baseline — reused from _query_history (race_predictions),
+        # NOT recomputed here.
+        hist = ctx["history"]
+        assert hist["best_5k_s"] == 1200
+        assert hist["best_10k_s"] == 2520
+        assert hist["best_hm_s"] == 5700
+        assert hist["best_fm_s"] == 12000
+
+        # Body-composition baseline — latest scan (2026-06-01, not the older one).
+        bc = ctx["body_composition"]
+        assert bc is not None
+        assert bc["scan_date"] == "2026-06-01"
+        assert bc["weight_kg"] == 70.0
+        assert bc["body_fat_pct"] == 14.0
+        assert bc["smm_kg"] == 33.0
+        # BMI = 70 / 1.75^2 = 22.86
+        assert bc["bmi"] is not None
+        assert abs(bc["bmi"] - 22.86) < 0.05
+
+        # Human-visible prose line carries body-comp too.
+        assert "body_composition_summary" in ctx
+        assert "70" in ctx["body_composition_summary"]
+
+    def test_bmi_none_when_no_height(self, tmp_path, monkeypatch):
+        """No height in profile → body-comp block still present (weight/fat/smm)
+        but bmi is None (don't fabricate a height)."""
+        db = self._seed_db(tmp_path, with_body_comp=True)
+        ctx = self._patch_db_and_load(db, monkeypatch, profile=None)
+
+        bc = ctx["body_composition"]
+        assert bc is not None
+        assert bc["weight_kg"] == 70.0
+        assert bc["bmi"] is None
+
+    def test_graceful_degrade_no_body_comp(self, tmp_path, monkeypatch):
+        """No body_composition_scan → load_master_context succeeds, body_composition
+        is None, performance baseline still present (so only-perf milestones
+        remain possible)."""
+        db = self._seed_db(tmp_path, with_body_comp=False)
+        ctx = self._patch_db_and_load(
+            db, monkeypatch, profile={"height_cm": 175.0}
+        )
+
+        # Degrades, never raises.
+        assert ctx["body_composition"] is None
+        # Performance baseline survives.
+        assert ctx["history"]["best_fm_s"] == 12000
+
+    def test_bmi_math(self):
+        """BMI helper on a known weight+height: 60kg @ 1.70m → 20.76."""
+        from stride_server.coach_adapters.master_plan_adapter import _compute_bmi
+
+        assert _compute_bmi(60.0, 170.0) == pytest.approx(20.76, abs=0.01)
+        assert _compute_bmi(70.0, None) is None
+        assert _compute_bmi(None, 175.0) is None
+        assert _compute_bmi(70.0, 0) is None

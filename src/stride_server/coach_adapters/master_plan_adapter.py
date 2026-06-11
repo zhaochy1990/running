@@ -46,6 +46,62 @@ from ..master_plan_generator import (
 logger = logging.getLogger(__name__)
 
 
+def _compute_bmi(weight_kg: float | None, height_cm: float | None) -> float | None:
+    """BMI = weight_kg / height_m². Returns ``None`` when either input is
+    missing or non-positive (never fabricate a height)."""
+    if not weight_kg or not height_cm or height_cm <= 0:
+        return None
+    height_m = height_cm / 100.0
+    return round(weight_kg / (height_m * height_m), 2)
+
+
+def _load_body_composition(db, profile: dict | None) -> dict | None:
+    """Read the latest body-composition scan via the canonical Database reader
+    (no inline SQL) and assemble the planner baseline block.
+
+    Height for BMI comes from the onboarding/profile payload (``height_cm``);
+    when it's absent BMI is ``None`` and the block carries weight/fat/smm only,
+    so the planner can still set body-comp-aware milestones without a fabricated
+    height. ``scan_date`` is a Shanghai-local calendar date (YYYY-MM-DD) and is
+    passed through unchanged — consistent with the rest of the codebase, which
+    never UTC-converts this column.
+
+    Returns ``None`` when there is no scan (graceful degrade — performance-only
+    milestones remain possible).
+    """
+    row = db.latest_body_composition_scan()
+    if row is None:
+        return None
+    weight_kg = row["weight_kg"]
+    height_cm = None
+    if profile and isinstance(profile, dict):
+        raw_h = profile.get("height_cm")
+        if isinstance(raw_h, (int, float)) and raw_h > 0:
+            height_cm = float(raw_h)
+    return {
+        "scan_date": row["scan_date"],
+        "weight_kg": weight_kg,
+        "body_fat_pct": row["body_fat_pct"],
+        "smm_kg": row["smm_kg"],
+        "fat_mass_kg": row["fat_mass_kg"],
+        "bmr_kcal": row["bmr_kcal"],
+        "bmi": _compute_bmi(weight_kg, height_cm),
+    }
+
+
+def _format_body_composition_summary(bc: dict) -> str:
+    """One-line human-visible prose for the body-comp baseline (sits next to
+    ``history_summary`` in the context)."""
+    parts = [f"体重 {bc['weight_kg']}kg"]
+    if bc.get("body_fat_pct") is not None:
+        parts.append(f"体脂 {bc['body_fat_pct']}%")
+    if bc.get("smm_kg") is not None:
+        parts.append(f"骨骼肌 {bc['smm_kg']}kg")
+    if bc.get("bmi") is not None:
+        parts.append(f"BMI {bc['bmi']}")
+    return f"最新体测（{bc.get('scan_date', '?')}）— " + "，".join(parts)
+
+
 def load_master_context(state: GenState) -> dict:
     """Query DB for training history + fitness state, return as context dict.
 
@@ -79,10 +135,17 @@ def load_master_context(state: GenState) -> dict:
     goal = payload.get("goal") or {}
     profile = payload.get("profile")
     continuity = None
+    body_composition: dict | None = None
     try:
         from stride_core.db import Database
         db = Database(user=user_id)
         continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=today_shanghai())
+        # Body-composition baseline (the performance baseline is already loaded
+        # above via _query_history → race_predictions). Reuse the same db handle.
+        try:
+            body_composition = _load_body_composition(db, profile)
+        except Exception as exc:  # noqa: BLE001 — degrade to perf-only milestones
+            logger.warning("load_master_context: body_composition failed: %s", exc)
     except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
         logger.warning("load_master_context: continuity failed: %s", exc)
 
@@ -91,6 +154,12 @@ def load_master_context(state: GenState) -> dict:
         "history_summary": history_summary,
         "fitness_state": fitness_state,
         "continuity": continuity.model_dump() if continuity is not None else None,
+        "body_composition": body_composition,
+        "body_composition_summary": (
+            _format_body_composition_summary(body_composition)
+            if body_composition is not None
+            else None
+        ),
     }
 
 
