@@ -27,6 +27,53 @@ def _minimal_run_session(date: str, distance_m: int = 8000, duration_s: int = 27
     }
 
 
+def _pace_work_block(pace_low_s_km: int, distance_m: int, repeat: int = 1):
+    """A single-step work block targeting a pace range.
+
+    ``pace_low_s_km`` is the slower (numerically larger) bound; we set the
+    faster bound 5 s/km quicker so the range is well-formed. Only the slow
+    bound (``low``) drives the Z4-Z5 classifier.
+    """
+    return {
+        "repeat": repeat,
+        "steps": [
+            {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": distance_m},
+                "target": {
+                    "kind": "pace_s_km",
+                    "low": float(pace_low_s_km),
+                    "high": float(pace_low_s_km - 5),
+                },
+                "note": None,
+                "hr_cap_bpm": None,
+            }
+        ],
+    }
+
+
+def _structured_run_session(
+    date: str, blocks: list, *, distance_m: int, duration_s: int
+):
+    """A run session carrying a real NormalizedRunWorkout spec."""
+    return {
+        "date": date,
+        "session_index": 0,
+        "kind": "run",
+        "summary": "structured run",
+        "spec": {
+            "schema": "run-workout/v1",
+            "name": "structured run",
+            "date": date,
+            "note": None,
+            "blocks": blocks,
+        },
+        "notes_md": None,
+        "total_distance_m": distance_m,
+        "total_duration_s": duration_s,
+    }
+
+
 def _rest_session(date: str):
     return {
         "date": date,
@@ -164,3 +211,78 @@ def test_no_prev_week_km_skips_progression_rule():
     report = run_rule_filter(plan, prev_week_km=None)
     # Progression rule doesn't fire because we have no baseline
     assert not any(v.rule == "weekly_progression" for v in report.errors())
+
+
+# ---------------------------------------------------------------------------
+# Athlete-relative Z4-Z5 threshold (Stage-3a Task 0)
+# ---------------------------------------------------------------------------
+
+
+def test_fast_runner_mp_week_passes_with_athlete_threshold():
+    """2:50-runner build week with ~25% MP work.
+
+    MP steps run at ~242 s/km (4:02/km) are Z3 for this athlete, whose
+    threshold pace is ~228 s/km (3:48/km). With an athlete-relative
+    threshold the MP work is NOT counted as Z4-Z5, so the 80/20 rule passes.
+    """
+    # 12 km of MP @ 242 s/km = 2904 s of "tempo" work.
+    mp_session = _structured_run_session(
+        "2026-05-12",
+        [_pace_work_block(pace_low_s_km=242, distance_m=12000)],
+        distance_m=14000,
+        duration_s=3600,
+    )
+    plan = _plan_dict(
+        [
+            _minimal_run_session("2026-05-11", 10000, 4000),  # easy
+            mp_session,
+            _minimal_run_session("2026-05-13", 10000, 4000),  # easy
+            _rest_session("2026-05-14"),
+            _rest_session("2026-05-15"),
+            _rest_session("2026-05-16"),
+            _rest_session("2026-05-17"),
+        ]
+    )
+    # Total planned seconds = 3600 + 4000 + 4000 = 11600. MP work 2904 = 25%.
+
+    # With the athlete threshold (228), MP@242 is slower-than-threshold → Z3,
+    # not hot → 80/20 rule passes.
+    report = run_rule_filter(plan, z45_pace_threshold_s_km=228.0)
+    assert not any(v.rule == "intensity_distribution" for v in report.errors()), [
+        v.message for v in report.errors()
+    ]
+
+    # Contrast: under the legacy 270 constant (no kwarg), the same MP work is
+    # miscounted as Z4-Z5 and trips the cap — proving the fix bites.
+    legacy = run_rule_filter(plan)
+    assert any(v.rule == "intensity_distribution" for v in legacy.errors())
+
+
+def test_vo2max_heavy_week_still_trips_with_athlete_threshold():
+    """A genuine VO2max week still violates the 80/20 cap.
+
+    Reps at ~215 s/km (3:35/km) are faster than the athlete's 228 s/km
+    threshold → genuinely Z4-Z5 → counted as hot regardless of the relaxed
+    threshold.
+    """
+    # 8 × 1000m @ 215 s/km = 8 * 215 = 1720 s of hot work.
+    vo2_session = _structured_run_session(
+        "2026-05-12",
+        [_pace_work_block(pace_low_s_km=215, distance_m=1000, repeat=8)],
+        distance_m=10000,
+        duration_s=3000,
+    )
+    plan = _plan_dict(
+        [
+            _minimal_run_session("2026-05-11", 8000, 2000),  # easy
+            vo2_session,
+            _minimal_run_session("2026-05-13", 8000, 2000),  # easy
+            _rest_session("2026-05-14"),
+            _rest_session("2026-05-15"),
+            _rest_session("2026-05-16"),
+            _rest_session("2026-05-17"),
+        ]
+    )
+    # Total planned seconds = 3000 + 2000 + 2000 = 7000. Hot 1720 = 24.6% > 20%.
+    report = run_rule_filter(plan, z45_pace_threshold_s_km=228.0)
+    assert any(v.rule == "intensity_distribution" for v in report.errors())
