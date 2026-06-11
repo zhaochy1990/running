@@ -13,7 +13,10 @@ Assembles the single-week generation system prompt from four parts:
 Pure string/schema composition — no DB, no LLM, no network. ``coach.*`` core
 boundary: only ``stride_core.master_plan`` (PhaseType) is imported for typing;
 the contract text mirrors ``stride_core.plan_spec`` field names but does not
-import it at runtime (kept as a TYPE_CHECKING-only reference for documentation).
+import it at runtime. The field names are mirrored only in a prose comment
+(see the ``# Field names below mirror …`` note pointing to ``plan_spec.py``);
+there is no import guard or ``TYPE_CHECKING`` block. The contract/plan_spec
+sync is instead enforced by a drift-guard test in ``tests/coach``.
 """
 
 from __future__ import annotations
