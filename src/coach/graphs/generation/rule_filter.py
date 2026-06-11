@@ -17,6 +17,17 @@ from typing import Any
 
 from stride_core.plan_spec import WeeklyPlan
 
+# Canonical injury → contraindicated-exercise keyword map. Single-source for any
+# code that needs to filter strength moves against logged injuries (e.g. the
+# adapter ``specialist_tools.strength_library`` pull tool). Keys are lowercase
+# injury flags; values are substrings matched (case-insensitive) against an
+# exercise's display name. Do NOT duplicate this map elsewhere — import it.
+INJURY_CONTRAINDICATION_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "knee": ("squat", "深蹲", "lunge", "弓步"),
+    "back": ("deadlift", "硬拉"),
+    "ankle": ("plyo", "跳跃"),
+}
+
 
 @dataclass(frozen=True)
 class RuleViolation:
@@ -252,11 +263,7 @@ def check_injury_conflict(
     if not injuries:
         return []
     inj_lower = {i.lower() for i in injuries}
-    rules = {
-        "knee": ("squat", "深蹲", "lunge", "弓步"),
-        "back": ("deadlift", "硬拉"),
-        "ankle": ("plyo", "跳跃"),
-    }
+    rules = INJURY_CONTRAINDICATION_KEYWORDS
     violations: list[RuleViolation] = []
     for sess in plan.sessions:
         if sess.kind != "strength" or sess.spec is None:
