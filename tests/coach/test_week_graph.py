@@ -181,11 +181,13 @@ def test_rule_filter_kwargs_forwarded():
 
 
 # ---------------------------------------------------------------------------
-# Default no-op loader: building without load_context works.
+# Default passthrough loader: building without load_context works AND the
+# default loader is a true no-op — it preserves pre-injected state["context"]
+# instead of wiping it to {}.
 # ---------------------------------------------------------------------------
 
 
-def test_default_noop_loader():
+def test_default_loader_empty_when_no_context_injected():
     seen = {}
 
     def generator(state):
@@ -197,9 +199,34 @@ def test_default_noop_loader():
             verdict="pass", reviewer_model="fake", iteration=state["iteration"]
         )
 
-    # No load_context kwarg → default returns {} → graph still runs.
+    # No load_context kwarg + no pre-injected context → generator sees {}.
     graph = build_week_specialist_graph(generator=generator, reviewer=reviewer)
     out = graph.invoke(_base_state())
 
     assert out["final_verdict"] == "pass"
     assert seen["context"] == {}
+
+
+def test_default_loader_preserves_injected_context():
+    seen = {}
+
+    def generator(state):
+        seen["context"] = state.get("context")
+        return {"current_draft": _multi_run_week()}
+
+    def reviewer(state):
+        return ReviewReport(
+            verdict="pass", reviewer_model="fake", iteration=state["iteration"]
+        )
+
+    # No load_context kwarg, but the invocation state pre-populates context.
+    # The default loader must PRESERVE it (not wipe it to {}) so the generator
+    # sees the threaded context — this locks the per-phase loop's reliance on
+    # the core default.
+    graph = build_week_specialist_graph(generator=generator, reviewer=reviewer)
+    state = _base_state()
+    state["context"] = {"foo": "bar"}
+    out = graph.invoke(state)
+
+    assert out["final_verdict"] == "pass"
+    assert seen["context"] == {"foo": "bar"}

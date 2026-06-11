@@ -31,14 +31,17 @@ from .rule_filter import run_rule_filter
 from .state import GenState
 
 
-def _noop_loader(_state: GenState) -> dict:
-    """Default context loader for the weekly case.
+def _passthrough_context_loader(_state: GenState) -> dict:
+    """Default context loader for the weekly case — a true no-op.
 
-    The per-week ``generate_specialist_week`` computes its own context from
-    ``state``, so the graph's ``load_ctx_node`` just needs *a* callable —
-    return an empty dict and let the generator do the work.
+    ``load_ctx_node`` OVERWRITES ``state["context"]`` with whatever the loader
+    returns, so a loader returning ``{}`` would silently wipe any context the
+    caller pre-injected into the invocation state (e.g. the per-phase loop
+    threading ``continuity`` + ``prior_week_tail``). The per-week generator
+    reads ``state["context"]``, so the no-op default must *preserve* it: return
+    the existing context unchanged rather than blanking it.
     """
-    return {}
+    return dict(_state.get("context") or {})
 
 
 def build_week_specialist_graph(
@@ -62,13 +65,16 @@ def build_week_specialist_graph(
     * ``rule_filter_kwargs`` — forwarded verbatim to
       ``run_rule_filter(draft, **kwargs)`` (``prev_week_km`` / ``injuries`` /
       ``prev_ctl`` / ``z45_pace_threshold_s_km``).
-    * ``load_context`` — defaults to a no-op returning ``{}`` when omitted.
+    * ``load_context`` — defaults to a context-preserving no-op when omitted:
+      it returns ``state["context"]`` unchanged, so any context the caller
+      pre-injected into the invocation state survives intact for the
+      generator (it is NOT blanked to ``{}``).
 
     An ``error``-severity rule violation routes back to the generator (up to
     ``max_iterations``, then ``fallback`` with verdict ``block``).
     """
     return build_generation_graph(
-        load_context=load_context or _noop_loader,
+        load_context=load_context or _passthrough_context_loader,
         generator=generator,
         reviewer=reviewer,
         rule_filter=run_rule_filter,

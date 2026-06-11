@@ -418,15 +418,14 @@ def generate_phase_weeks(
         }
 
         # 3. Build the per-week graph (generator + stub reviewer + rules).
-        #    Override the graph's default no-op context loader with one that
-        #    *preserves* the threaded continuity context — the no-op loader
-        #    would otherwise overwrite state["context"] with {} before the
-        #    generator runs, dropping prior_week_tail / continuity.
+        #    The core default context loader is context-preserving, so the
+        #    threaded continuity context (prior_week_tail / continuity) we
+        #    inject into state["context"] survives to the generator without
+        #    needing an explicit load_context override.
         graph = build_week_specialist_graph(
             generator=generate_specialist_week,
             reviewer=_week_stub_reviewer,
             rule_filter_kwargs=rule_filter_kwargs,
-            load_context=lambda s: dict(s.get("context") or {}),
         )
 
         # 4. Invoke with the per-week state (continuity threaded in context).
