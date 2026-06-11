@@ -294,7 +294,11 @@ def _coerce_week_meta(week: Any) -> WeekMeta:
     The ``weeks`` descriptor contract (one entry per week, ordered):
 
         {
-          "week_index": 2,                       # 0-based position in the phase
+          "week_index": 2,                       # advisory only — for the
+                                                 # Plan-3b orchestrator's
+                                                 # benefit; NOT read here
+                                                 # (sequencing relies on list
+                                                 # order; WeekMeta has no index)
           "week_folder": "2026-06-15_06-21(W3)", # ISO week folder
           "phase_position": "build week 3/7",    # human framing
           "target_weekly_km": 80.0               # planned volume (within band)
@@ -330,7 +334,18 @@ def _summarize_prior_week_tail(plan_dict: dict, *, max_sessions: int = 2) -> str
             parts.append(summ)
     if not parts:
         return ""
-    total_km = sum((s.get("total_distance_m") or 0) for s in sessions) / 1000.0
+    # Run-only km, matching ``prev_week_km`` (``_total_run_distance_m`` →
+    # ``_run_sessions`` = ``kind == "run"``). A strength/cross session carrying
+    # distance must not inflate the human-readable total vs. the number
+    # rule_filter actually used.
+    total_km = (
+        sum(
+            (s.get("total_distance_m") or 0)
+            for s in sessions
+            if s.get("kind") == "run"
+        )
+        / 1000.0
+    )
     return f"上周完成约 {total_km:.0f}km；尾段课次：" + "；".join(parts)
 
 
