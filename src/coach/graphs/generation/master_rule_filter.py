@@ -1,6 +1,6 @@
 """Master plan rule filter — see ``docs/coach-eval_S1.md`` § S1 L1 Rules.
 
-Implements 12 S1 L1 rules. Empty ``MasterPlan.weekly_key_sessions`` makes
+Implements 13 S1 L1 rules. Empty ``MasterPlan.weekly_key_sessions`` makes
 all Batch B rules silent no-ops so legacy plans / fixtures don't trip on
 the new structure.
 
@@ -35,6 +35,9 @@ Weekly-skeleton (no kwargs but require ``weekly_key_sessions`` populated):
   drops ≥ 25% vs the immediately preceding peak week (error).
 * ``hard_session_spacing``: same-week threshold / tempo / interval /
   vo2max / hill / race_pace count ≤ 2 (error).
+* ``long_run_distance_share``: non-deload week's longest ``long_run``
+  distance_km ≤ 35% of that week's ``target_weekly_km_high`` (warning;
+  volume-capped runners may justify exceeding it).
 
 LLM-free: no langchain / anthropic imports.
 """
