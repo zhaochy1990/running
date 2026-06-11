@@ -34,10 +34,14 @@ class MasterPlanStatus(str, Enum):
 
 
 class MilestoneType(str, Enum):
-    RACE          = "race"
-    TEST_RUN      = "test_run"
-    LONG_RUN      = "long_run"
-    STRENGTH_TEST = "strength_test"
+    RACE             = "race"
+    TEST_RUN         = "test_run"
+    LONG_RUN         = "long_run"
+    STRENGTH_TEST    = "strength_test"
+    # Body-composition phase exit-target (additive — diff/legacy snapshots
+    # treat it as an opaque value). e.g. metric="body_fat_pct",
+    # target_value=12.0, comparator="<=" → "基础期末体脂 ≤ 12%".
+    BODY_COMPOSITION = "body_composition"
 
 
 class PhaseType(str, Enum):

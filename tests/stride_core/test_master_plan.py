@@ -92,16 +92,22 @@ def test_master_plan_status_values():
 
 
 def test_milestone_type_values():
-    assert MilestoneType.RACE          == "race"
-    assert MilestoneType.TEST_RUN      == "test_run"
-    assert MilestoneType.LONG_RUN      == "long_run"
-    assert MilestoneType.STRENGTH_TEST == "strength_test"
+    assert MilestoneType.RACE             == "race"
+    assert MilestoneType.TEST_RUN         == "test_run"
+    assert MilestoneType.LONG_RUN         == "long_run"
+    assert MilestoneType.STRENGTH_TEST    == "strength_test"
+    assert MilestoneType.BODY_COMPOSITION == "body_composition"
     assert set(MilestoneType) == {
         MilestoneType.RACE,
         MilestoneType.TEST_RUN,
         MilestoneType.LONG_RUN,
         MilestoneType.STRENGTH_TEST,
+        MilestoneType.BODY_COMPOSITION,
     }
+
+
+def test_body_composition_milestone_value():
+    assert MilestoneType.BODY_COMPOSITION.value == "body_composition"
 
 
 # ---------------------------------------------------------------------------
@@ -270,3 +276,46 @@ def test_milestone_structured_fields_optional():
     dumped = m_new.model_dump()
     assert Milestone.model_validate(dumped).target_value == 1140.0
     assert m_new.comparator == "<="
+
+
+def test_body_composition_milestone_constructs_and_round_trips():
+    """A quantifiable body-composition milestone constructs and survives a
+    JSON round-trip (str-Enum value preserved both ways)."""
+    ms = Milestone(
+        id="ms-bc-1",
+        type=MilestoneType.BODY_COMPOSITION,
+        date="2026-07-31",
+        phase_id="phase-1",
+        target="基础期末体脂 ≤ 12%",
+        metric="body_fat_pct",
+        target_value=12.0,
+        comparator="<=",
+    )
+    assert ms.type == MilestoneType.BODY_COMPOSITION
+    assert ms.metric == "body_fat_pct"
+
+    dumped = ms.model_dump(mode="json")
+    assert dumped["type"] == "body_composition"
+    assert Milestone.model_validate(dumped) == ms
+
+
+def test_master_plan_round_trip_with_body_composition_milestone():
+    """Embedding a BODY_COMPOSITION milestone in a full plan still round-trips
+    cleanly — proves the new enum value is inert for the legacy snapshot
+    machinery (model_dump_json → model_validate_json)."""
+    bc_milestone = {
+        "id": "ms-bc-1",
+        "type": "body_composition",
+        "date": "2026-07-31",
+        "phase_id": "phase-1",
+        "target": "基础期末体脂 ≤ 12%",
+        "metric": "body_fat_pct",
+        "target_value": 12.0,
+        "comparator": "<=",
+    }
+    d = {**MASTER_PLAN_DICT, "milestones": [MILESTONE_DICT, bc_milestone]}
+    plan = MasterPlan.model_validate(d)
+    assert plan.milestones[1].type == MilestoneType.BODY_COMPOSITION
+
+    plan2 = MasterPlan.model_validate_json(plan.model_dump_json())
+    assert plan == plan2
