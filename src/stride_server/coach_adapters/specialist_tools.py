@@ -32,7 +32,7 @@ from stride_core.running_calibration.sqlite_connector import (
     SQLiteRunningCalibrationRepository,
 )
 from stride_core.running_calibration.zones import compute_training_zones
-from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai
 
 logger = logging.getLogger(__name__)
 
@@ -335,18 +335,34 @@ def recent_training(
         db: a Database handle (or anything exposing ``_conn``).
         weeks: how many weeks back from ``as_of`` to include.
         as_of: the reference date (defaults to today, Shanghai).
-        filter: optional row filter — ``"long_run"`` keeps only the longest
-            run per week's distance signal, ``"quality"`` is reserved (currently
-            a no-op passthrough until a per-activity intensity marker is
-            confirmed — see continuity_analyzer's quality_sessions note).
+        filter: optional row filter — must be one of ``None`` (default),
+            ``"long_run"``, or ``"quality"``. An unrecognized value raises
+            ``ValueError`` so a caller typo cannot silently return unfiltered
+            data. ``"long_run"`` narrows each row to the week's longest-run
+            distance signal; ``"quality"`` is a reserved documented no-op
+            passthrough (behaves like ``None`` until a per-activity intensity
+            marker is confirmed — see continuity_analyzer's quality_sessions note).
 
-    Each summary row: ``{week, total_km, session_count, longest_km}``. Only
-    running sport-types are counted (``RUN_SPORT_SQL_LIST``); ``distance_m`` is
-    km-normalized. Weeks are bucketed by Shanghai-local day (``SHANGHAI_DAY_SQL``)
-    so the 00:00–07:59 Shanghai window is not silently misfiled into the wrong
-    UTC week.
+    Row shape differs by filter mode (return logic is intentionally not unified):
+      * ``None`` / ``"quality"``: ``{week, total_km, session_count, longest_km}``
+      * ``"long_run"``: ``{week, longest_km}`` only (the other keys are dropped)
+
+    Only running sport-types are counted (``RUN_SPORT_SQL_LIST``); ``distance_m``
+    is km-normalized. Weeks are bucketed by Shanghai-local day
+    (``SHANGHAI_DAY_SQL``) so the 00:00–07:59 Shanghai window is not silently
+    misfiled into the wrong UTC week.
+
+    Boundary buckets may be partial weeks: the GROUP BY uses ``%W``
+    (Monday-start ISO-ish weeks) while the lookback is a rolling N×7-day window
+    anchored on ``as_of``, so the first and/or last returned bucket can cover
+    fewer than 7 days. Do not read an edge week's ``total_km`` as a full-week
+    volume.
     """
-    from stride_core.timefmt import today_shanghai
+    if filter not in (None, "long_run", "quality"):
+        raise ValueError(
+            f"recent_training: unrecognized filter {filter!r}; "
+            "expected one of None, 'long_run', 'quality'"
+        )
 
     conn = getattr(db, "_conn", db)
     ref = as_of or today_shanghai()

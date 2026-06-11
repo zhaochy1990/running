@@ -206,3 +206,9 @@ def test_recent_training_aggregates_running_rows(db: Database):
 def test_recent_training_empty_db(db: Database):
     summary = recent_training(db, weeks=4, as_of=date(2026, 6, 1))
     assert summary == []
+
+
+def test_recent_training_unknown_filter_raises(db: Database):
+    # A typo'd filter must raise, not silently return unfiltered data.
+    with pytest.raises(ValueError):
+        recent_training(db, weeks=4, as_of=date(2026, 6, 1), filter="longrun")
