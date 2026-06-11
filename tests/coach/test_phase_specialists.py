@@ -133,8 +133,12 @@ def test_base_signature():
 
 def test_build_signature():
     g = get_specialist(PhaseType.BUILD).guidance
-    assert "MP" in g
-    assert "巡航" in g or "tempo" in g
+    # Tokens unique to _BUILD_GUIDANCE — absent from _SHARED_DOCTRINE and every
+    # other phase's guidance — so this fails if build's doctrine is replaced by
+    # a generic blurb. ("MP"/"tempo" live in the shared block, so they're not
+    # discriminating.)
+    assert "巡航" in g  # 阈值巡航间歇 — build-only cruise-interval doctrine
+    assert "1k * (10-12)" in g  # CV reps prescription — build-only
 
 
 def test_speed_signature():
