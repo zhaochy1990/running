@@ -172,6 +172,8 @@ SeasonPlanBundle { master_plan: MasterPlan, weekly_plans: list[WeeklyPlan] }
 
 > 单周 filter 看不到跨周，故必须有第三层赛季聚合。**伤病不进任何 rule_filter**（仅注入信号）。
 
+**设计考量 #1 — long-run 占周量比例（dose vs distance）**：现有 `hard_session_spacing` / 单日 dose 规则查的是 **dose** 比例；但实测（2026-06-11 带伤病生成）发现 z2 长跑 dose/km 低，导致 28-32km 长跑在 74-80km 周量下占**距离** 37-40%，突破"单日 ≤35% 周量"红线却仍 pass。L1-赛季聚合需新增 `long_run_distance_share` 规则：peak 期最长 `long_run.distance_km` / `target_weekly_km_high` > 0.35 → warning。**但对 volume-capped 跑者（伤病/历史峰值限制周量）需有显式例外**：当 chronic/历史峰值限制周量、而 target distance 又要求 ≥28km 长跑时，distance-share 必然偏高——此时规则应降级为 warning 并要求 plan 在 principles 里显式说明 trade-off（"周量受 Achilles 限制在 80km，长跑占比偏高是 FM 专项耐力的必要代价"），而不是 hard block。structure_planner 也应在 macro_cycle 提示里意识到这个张力（要么在伤病允许时抬高 peak 周量，要么接受并说明）。
+
 ### 8.2 reviewer 放置（选项 A）
 - **结构 reviewer**（1 call）：生成 19 周前先审周期化（S1 axes：season_structure / peak_timing / goal_realism / continuity_respect）。
 - **per-phase reviewer**（~4 call）：每 phase 的周成组审，查是否达成本 phase milestone。
