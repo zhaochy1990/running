@@ -967,6 +967,20 @@ class TestPromptPerPhaseMilestones:
         assert "Per-phase 可量化 milestone" in prompt
         assert "race_time_s_5k" in prompt
 
+    def test_body_comp_fallback_used_when_summary_none(self):
+        # Generator called directly (no pre-built adapter summary): the
+        # _format_body_comp_fallback branch must still produce the baseline block.
+        prompt = self._build(
+            body_composition=self._BODY_COMP,
+            body_composition_summary=None,
+        )
+        # Labeled baseline block present
+        assert "体测基线（最新体测" in prompt
+        # Fallback formatter emitted its own summary line ("最新体测（...）")
+        assert "最新体测" in prompt
+        # Concrete weight number from _BODY_COMP reaches the prompt via the fallback
+        assert "68.0" in prompt
+
 
 # ---------------------------------------------------------------------------
 # Real-DB regression tests for _query_history
