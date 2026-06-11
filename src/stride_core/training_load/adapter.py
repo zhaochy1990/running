@@ -363,6 +363,18 @@ _K_ACUTE = 1.0 - math.exp(-1.0 / 7.0)
 _K_CHRONIC = 1.0 - math.exp(-1.0 / 42.0)
 
 
+def _last_persisted_daily_date(db: Any, *, before: date) -> date | None:
+    """Date of the most recent persisted daily_training_load row strictly
+    before ``before`` (None when none exists)."""
+    rows = db.query(
+        "SELECT date FROM daily_training_load WHERE date < ? ORDER BY date DESC LIMIT 1",
+        (before.isoformat(),),
+    )
+    if not rows:
+        return None
+    return _parse_date(rows[0]["date"])
+
+
 def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
     """Read the last persisted daily_training_load row before series_start
     and decay its ATL/CTL through any rest-day gap.
@@ -575,6 +587,24 @@ def recompute_training_load(
 
     series_start = start_date or min(a.activity_date for a in activity_inputs)
     series_end = end_date or max(a.activity_date for a in activity_inputs)
+
+    # Gap-fill: when an explicit window begins more than one day after the last
+    # persisted daily row, extend the window back to the day after that row so
+    # the intervening rest days are written as zero-dose rows. Post-sync calls
+    # recompute with start=end=<synced day>; a rest day that falls between two
+    # sync batches is otherwise never inside any window and its daily row is
+    # never written, leaving holes the charts skip (Dose/ATL-CTL/Form all gap).
+    # Re-fetch over the widened window so any activity on the gap days is picked
+    # up too, not just the originally-requested ones.
+    if prior_state is None and start_date is not None:
+        prior_date = _last_persisted_daily_date(db, before=series_start)
+        if prior_date is not None and series_start - prior_date > timedelta(days=1):
+            series_start = prior_date + timedelta(days=1)
+            activity_rows = _fetch_activity_rows(db, start=series_start, end=series_end, label_ids=None)
+            activity_inputs = [
+                a for row in activity_rows if (a := _build_activity_input(db, row)) is not None
+            ]
+
     as_of = series_end
     calibration = calibration_override or _fetch_latest_calibration(db) or CalibrationSnapshot(
         as_of_date=as_of,
