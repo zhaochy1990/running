@@ -21,6 +21,7 @@ from .conversation import (
 from .continuity import ContinuitySignals
 from .job import CoachJob, JobStage, JobStatus, JobType
 from .review import ReviewClass, ReviewIssue, ReviewReport, Severity, Verdict
+from .specialist_context import PaceTargets, VolumeTargets, fmt_pace_s_km
 from .tool_result import ToolResult
 
 __all__ = [
@@ -43,5 +44,8 @@ __all__ = [
     "ReviewReport",
     "Severity",
     "Verdict",
+    "PaceTargets",
+    "VolumeTargets",
+    "fmt_pace_s_km",
     "ToolResult",
 ]
