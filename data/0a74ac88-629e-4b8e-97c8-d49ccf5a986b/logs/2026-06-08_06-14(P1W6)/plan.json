@@ -1,255 +1,713 @@
 {
-  "schema": "weekly-plan/v1",
-  "week_folder": "2026-06-08_06-14(P1W6)",
-  "sessions": [
+ "schema": "weekly-plan/v1",
+ "week_folder": "2026-06-08_06-14(P1W6)",
+ "sessions": [
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-08",
+   "session_index": 0,
+   "kind": "strength",
+   "summary": "力量 A（下肢稳定 + 跟腱预防）",
+   "spec": {
+    "schema": "strength-workout/v1",
+    "name": "力量 A",
+    "date": "2026-06-08",
+    "note": "P1W5 同款，周末双长后不递增。Cool-down：腘绳肌/髋屈肌/小腿/ITB-TFL/臀大肌 静态各 30s×2。",
+    "exercises": [
+     {
+      "canonical_id": "T1317",
+      "display_name": "蚌式",
+      "sets": 2,
+      "target_kind": "reps",
+      "target_value": 15,
+      "rest_seconds": 45,
+      "note": "髋激活，每侧 15 次",
+      "provider_id": "T1317"
+     },
+     {
+      "canonical_id": "T1262",
+      "display_name": "greatest stretch",
+      "sets": 2,
+      "target_kind": "reps",
+      "target_value": 6,
+      "rest_seconds": 30,
+      "note": "全身动态，每侧 6 次",
+      "provider_id": "T1262"
+     },
+     {
+      "canonical_id": "T1219",
+      "display_name": "单腿臀桥",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 12,
+      "rest_seconds": 60,
+      "note": "腘绳/臀大肌弱链，每侧 12 次",
+      "provider_id": "T1219"
+     },
+     {
+      "canonical_id": "T1305",
+      "display_name": "RDL（10kg/侧）",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 10,
+      "rest_seconds": 90,
+      "note": "慢离心 3s，每侧 10 次",
+      "provider_id": "T1305"
+     },
+     {
+      "canonical_id": "T1301",
+      "display_name": "高脚杯深蹲（8kg）",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 10,
+      "rest_seconds": 90,
+      "note": "双腿基础",
+      "provider_id": "T1301"
+     },
+     {
+      "canonical_id": "T1368",
+      "display_name": "哥本哈根侧平板（屈腿）",
+      "sets": 3,
+      "target_kind": "time_s",
+      "target_value": 20,
+      "rest_seconds": 45,
+      "note": "内收肌，每侧 20s",
+      "provider_id": "T1368"
+     },
+     {
+      "canonical_id": "T1275",
+      "display_name": "单腿提踵（4s 慢离心）",
+      "sets": 2,
+      "target_kind": "reps",
+      "target_value": 10,
+      "rest_seconds": 45,
+      "note": "跟腱预防，每侧 10 次",
+      "provider_id": "T1275"
+     },
+     {
+      "canonical_id": "T1243",
+      "display_name": "Dead Bug",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 12,
+      "rest_seconds": 45,
+      "note": "核心抗旋，每侧 12 次",
+      "provider_id": "T1243"
+     },
+     {
+      "canonical_id": "T1185",
+      "display_name": "侧平板",
+      "sets": 3,
+      "target_kind": "time_s",
+      "target_value": 30,
+      "rest_seconds": 45,
+      "note": "侧链，每侧 30s",
+      "provider_id": "T1185"
+     },
+     {
+      "canonical_id": "T1249",
+      "display_name": "Bird Dog",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 10,
+      "rest_seconds": 45,
+      "note": "后链，每侧 10 次",
+      "provider_id": "T1249"
+     }
+    ]
+   },
+   "notes_md": "约 50 min。跑前 leg_swings T1222 + greatest_stretch T1262。",
+   "total_distance_m": null,
+   "total_duration_s": 3000,
+   "scheduled_workout_id": null
+  },
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-08",
+   "session_index": 1,
+   "kind": "run",
+   "summary": "跑后 5K Z1 拖腿 @ HR<138",
+   "spec": {
+    "schema": "run-workout/v1",
+    "name": "力量后 5K 拖腿",
+    "date": "2026-06-08",
+    "note": "力量后 30min 内，HR<138 / 5:30+。周末双长后让腿。",
+    "blocks": [
+     {
+      "repeat": 1,
+      "steps": [
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 5000
+        },
+        "target": {
+         "kind": "hr_bpm",
+         "low": 110,
+         "high": 138
+        },
+        "note": "Z1 拖腿，配速 5:30+",
+        "hr_cap_bpm": 138
+       }
+      ]
+     }
+    ]
+   },
+   "notes_md": null,
+   "total_distance_m": 5000,
+   "total_duration_s": null,
+   "scheduled_workout_id": null
+  },
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-09",
+   "session_index": 0,
+   "kind": "run",
+   "summary": "轻松跑 11K @ 5:00-5:20 / HR<145",
+   "spec": {
+    "schema": "run-workout/v1",
+    "name": "轻松 11K",
+    "date": "2026-06-09",
+    "note": "HR 优先。HR>148 立即降速。",
+    "blocks": [
+     {
+      "repeat": 1,
+      "steps": [
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 11000
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 320,
+         "high": 300
+        },
+        "note": "5:00-5:20/km，HR 优先",
+        "hr_cap_bpm": 145
+       }
+      ]
+     }
+    ]
+   },
+   "notes_md": null,
+   "total_distance_m": 11000,
+   "total_duration_s": null,
+   "scheduled_workout_id": null
+  },
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-10",
+   "session_index": 0,
+   "kind": "run",
+   "summary": "强度课：20min tempo + 4min rest + 400m × 10 @ 3:35-3:45",
+   "spec": {
+    "schema": "run-workout/v1",
+    "name": "20min tempo + 400m × 10",
+    "date": "2026-06-10",
+    "note": "硬规则：tempo 地板 4:10/km（跑不进 → 保 HR 158-167 不强求配速）；400m 地板 3:50 / 天花板 3:30（任 1 rep 越界 → 当组结束）；HR≥182 持续>20s → 当组结束 jog 至<150；AnE 课后>3.2 → 收尾结束。T>25°C → tempo 4:00-4:10、400m 3:40-3:45；T>28°C → 纯心率。HRV 连续≥2 天 UNBALANCED → 400m reps 10→6 + 纯心率。",
+    "blocks": [
+     {
+      "repeat": 1,
+      "steps": [
+       {
+        "step_kind": "warmup",
+        "duration": {
+         "kind": "distance_m",
+         "value": 2000
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 320,
+         "high": 240
+        },
+        "note": "2 km 慢 + 动态 + 4×100m strides",
+        "hr_cap_bpm": 150
+       }
+      ]
+     },
+     {
+      "repeat": 1,
+      "steps": [
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "time_s",
+         "value": 1200
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 245,
+         "high": 235
+        },
+        "note": "tempo 20min @ 3:55-4:05/km，HR 158-167",
+        "hr_cap_bpm": 167
+       },
+       {
+        "step_kind": "recovery",
+        "duration": {
+         "kind": "time_s",
+         "value": 240
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 360,
+         "high": 330
+        },
+        "note": "4min jog rest，HR 回 <150",
+        "hr_cap_bpm": 150
+       }
+      ]
+     },
+     {
+      "repeat": 10,
+      "steps": [
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 400
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 225,
+         "high": 215
+        },
+        "note": "400m fast @ 3:35-3:45/km",
+        "hr_cap_bpm": 182
+       },
+       {
+        "step_kind": "recovery",
+        "duration": {
+         "kind": "time_s",
+         "value": 90
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 330,
+         "high": 300
+        },
+        "note": "90s jog rest，连续 jog 不站住，HR 回 150-160",
+        "hr_cap_bpm": 165
+       }
+      ]
+     },
+     {
+      "repeat": 1,
+      "steps": [
+       {
+        "step_kind": "cooldown",
+        "duration": {
+         "kind": "distance_m",
+         "value": 1500
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 360,
+         "high": 330
+        },
+        "note": "1.5 km 放松 5:30+",
+        "hr_cap_bpm": 140
+       }
+      ]
+     }
+    ]
+   },
+   "notes_md": "总距约 13.5 km：2 km 热身 + ~5 km tempo + 4min rest + 4 km(400m×10) + 1.5 km 放松。配速锚：tempo=LT 3:55-4:05；400m=5K~稍快 3:35-3:45。清晨 5:30 前出发。",
+   "total_distance_m": 13500,
+   "total_duration_s": null,
+   "scheduled_workout_id": null
+  },
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-11",
+   "session_index": 0,
+   "kind": "run",
+   "summary": "恢复跑 8K @ 5:30+ / HR<138",
+   "spec": {
+    "schema": "run-workout/v1",
+    "name": "恢复 8K",
+    "date": "2026-06-11",
+    "note": "HR 优先，配速 5:30+。",
+    "blocks": [
+     {
+      "repeat": 1,
+      "steps": [
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 8000
+        },
+        "target": {
+         "kind": "hr_bpm",
+         "low": 110,
+         "high": 138
+        },
+        "note": "恢复跑",
+        "hr_cap_bpm": 138
+       }
+      ]
+     }
+    ]
+   },
+   "notes_md": null,
+   "total_distance_m": 8000,
+   "total_duration_s": null,
+   "scheduled_workout_id": null
+  },
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-12",
+   "session_index": 0,
+   "kind": "rest",
+   "summary": "完休 或 30min 骑行 + 拉伸",
+   "spec": null,
+   "notes_md": "可选 30min 骑行 + 拉伸；长距前夜碳水加载（米饭 1.5 碗 + 鸡胸 150g + 蔬菜 + 香蕉 + 蜂蜜）。睡前 8h+。",
+   "total_distance_m": null,
+   "total_duration_s": null,
+   "scheduled_workout_id": null
+  },
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-13",
+   "session_index": 0,
+   "kind": "run",
+   "summary": "25K 渐加速团练 4:50→4:10（每5K −10s），HR≤169",
+   "spec": {
+    "schema": "run-workout/v1",
+    "name": "25K 渐加速团练",
+    "date": "2026-06-13",
+    "note": "周末团练 group long run：全员同起跑、统一分段配速（每5K一档：4:50/4:40/4:30/4:20/4:10），全程25K。硬纪律：跟住分段配速的前提是 HR 不超本人分段 cap；某档持续>cap 或末段 HR 漂移过大 → 停在当前可持续配速、不强追4:10（团练允许末段各自拉开）。前6K宁慢不抢。补给：能量胶@8/15/21K + 每5K补水。 个体须知：末段4:10≈你MP(4:12)。ratio偏高(~2.5)且6/6刚做过20K progression→末5K HR cap 169，顶不住就维持4:20，不必追4:10。",
+    "blocks": [
+     {
+      "repeat": 1,
+      "steps": [
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 5000
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 287,
+         "high": 293
+        },
+        "note": "段1 4:50/km（前6K宁慢不抢）",
+        "hr_cap_bpm": 157
+       },
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 5000
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 277,
+         "high": 283
+        },
+        "note": "段2 4:40/km",
+        "hr_cap_bpm": 161
+       },
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 5000
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 267,
+         "high": 273
+        },
+        "note": "段3 4:30/km",
+        "hr_cap_bpm": 165
+       },
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 5000
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 257,
+         "high": 263
+        },
+        "note": "段4 4:20/km",
+        "hr_cap_bpm": 169
+       },
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 5000
+        },
+        "target": {
+         "kind": "pace_s_km",
+         "low": 247,
+         "high": 253
+        },
+        "note": "段5 4:10/km",
+        "hr_cap_bpm": 169
+       }
+      ]
+     }
+    ]
+   },
+   "notes_md": "清晨 5:30 前出发，世博/徐汇滨江平坦路线，自带补水 + 4 胶。Phase 1 收官长距，进 Phase 2 前最后一次基础拉长。",
+   "total_distance_m": 25000,
+   "total_duration_s": null,
+   "scheduled_workout_id": null
+  },
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-14",
+   "session_index": 0,
+   "kind": "run",
+   "summary": "恢复跑 8K @ 5:30+ / HR<138",
+   "spec": {
+    "schema": "run-workout/v1",
+    "name": "恢复 8K",
+    "date": "2026-06-14",
+    "note": "HR 优先，配速 5:30+。长距次日，腿沉则改 6K 或完休。",
+    "blocks": [
+     {
+      "repeat": 1,
+      "steps": [
+       {
+        "step_kind": "work",
+        "duration": {
+         "kind": "distance_m",
+         "value": 8000
+        },
+        "target": {
+         "kind": "hr_bpm",
+         "low": 110,
+         "high": 138
+        },
+        "note": "恢复跑",
+        "hr_cap_bpm": 138
+       }
+      ]
+     }
+    ]
+   },
+   "notes_md": null,
+   "total_distance_m": 8000,
+   "total_duration_s": null,
+   "scheduled_workout_id": null
+  },
+  {
+   "schema": "plan-session/v1",
+   "date": "2026-06-14",
+   "session_index": 1,
+   "kind": "strength",
+   "summary": "力量 B（核心 + 灵活，长距后激活）",
+   "spec": {
+    "schema": "strength-workout/v1",
+    "name": "力量 B",
+    "date": "2026-06-14",
+    "note": "长距次日核心 + 灵活激活，非加重。",
+    "exercises": [
+     {
+      "canonical_id": "T1248",
+      "display_name": "胸椎旋转",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 10,
+      "rest_seconds": 30,
+      "note": "改善摆臂，每侧 10 次",
+      "provider_id": "T1248"
+     },
+     {
+      "canonical_id": "T1234",
+      "display_name": "猫牛式",
+      "sets": 3,
+      "target_kind": "time_s",
+      "target_value": 30,
+      "rest_seconds": 30,
+      "note": "脊柱灵活",
+      "provider_id": "T1234"
+     },
+     {
+      "canonical_id": "T1243",
+      "display_name": "Dead Bug",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 12,
+      "rest_seconds": 45,
+      "note": "核心抗旋，每侧 12 次",
+      "provider_id": "T1243"
+     },
+     {
+      "canonical_id": "T1368",
+      "display_name": "哥本哈根侧平板（屈腿）",
+      "sets": 3,
+      "target_kind": "time_s",
+      "target_value": 20,
+      "rest_seconds": 45,
+      "note": "内收肌，每侧 20s",
+      "provider_id": "T1368"
+     },
+     {
+      "canonical_id": "T1249",
+      "display_name": "Bird Dog",
+      "sets": 3,
+      "target_kind": "reps",
+      "target_value": 12,
+      "rest_seconds": 45,
+      "note": "后链，每侧 12 次",
+      "provider_id": "T1249"
+     },
+     {
+      "canonical_id": "T1274",
+      "display_name": "髋屈肌弓步拉伸",
+      "sets": 3,
+      "target_kind": "time_s",
+      "target_value": 30,
+      "rest_seconds": 30,
+      "note": "久坐补偿，每侧 30s",
+      "provider_id": "T1274"
+     },
+     {
+      "canonical_id": "T1222",
+      "display_name": "腿摆（前后）",
+      "sets": 3,
+      "target_kind": "time_s",
+      "target_value": 30,
+      "rest_seconds": 30,
+      "note": "髋灵活，每侧 30s",
+      "provider_id": "T1222"
+     }
+    ]
+   },
+   "notes_md": "约 35 min。",
+   "total_distance_m": null,
+   "total_duration_s": 2100,
+   "scheduled_workout_id": null
+  }
+ ],
+ "nutrition": [
+  {
+   "schema": "plan-nutrition/v1",
+   "date": "2026-06-08",
+   "kcal_target": null,
+   "carbs_g": 356,
+   "protein_g": 140,
+   "fat_g": null,
+   "water_ml": null,
+   "meals": [],
+   "notes_md": "力量 + 5K 拖腿。碳水 4.5 g/kg × 79 kg = 356 g。-250 kcal。蛋白分配：早 30 + 午 40 + 训练后 30 + 晚 40g。"
+  },
+  {
+   "schema": "plan-nutrition/v1",
+   "date": "2026-06-09",
+   "kcal_target": null,
+   "carbs_g": 395,
+   "protein_g": 140,
+   "fat_g": null,
+   "water_ml": null,
+   "meals": [],
+   "notes_md": "轻松 11K。碳水 5 g/kg = 395 g。-200 kcal。"
+  },
+  {
+   "schema": "plan-nutrition/v1",
+   "date": "2026-06-10",
+   "kcal_target": null,
+   "carbs_g": 474,
+   "protein_g": 140,
+   "fat_g": null,
+   "water_ml": null,
+   "meals": [],
+   "notes_md": "⚡ 强度 13.5K。碳水 6 g/kg = 474 g。0 kcal。训练前 60min 30-50g 快碳。"
+  },
+  {
+   "schema": "plan-nutrition/v1",
+   "date": "2026-06-11",
+   "kcal_target": null,
+   "carbs_g": 395,
+   "protein_g": 140,
+   "fat_g": null,
+   "water_ml": null,
+   "meals": [],
+   "notes_md": "恢复 8K。碳水 5 g/kg = 395 g。-200 kcal。"
+  },
+  {
+   "schema": "plan-nutrition/v1",
+   "date": "2026-06-12",
+   "kcal_target": null,
+   "carbs_g": 474,
+   "protein_g": 140,
+   "fat_g": null,
+   "water_ml": null,
+   "meals": [
     {
-      "schema": "plan-session/v1",
-      "date": "2026-06-08",
-      "session_index": 0,
-      "kind": "strength",
-      "summary": "力量 A（下肢稳定 + 跟腱预防）",
-      "spec": {
-        "schema": "strength-workout/v1",
-        "name": "力量 A",
-        "date": "2026-06-08",
-        "note": "P1W5 同款，周末双长后不递增。Cool-down：腘绳肌/髋屈肌/小腿/ITB-TFL/臀大肌 静态各 30s×2。",
-        "exercises": [
-          {"canonical_id": "T1317", "display_name": "蚌式", "sets": 2, "target_kind": "reps", "target_value": 15, "rest_seconds": 45, "note": "髋激活，每侧 15 次", "provider_id": "T1317"},
-          {"canonical_id": "T1262", "display_name": "greatest stretch", "sets": 2, "target_kind": "reps", "target_value": 6, "rest_seconds": 30, "note": "全身动态，每侧 6 次", "provider_id": "T1262"},
-          {"canonical_id": "T1219", "display_name": "单腿臀桥", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 60, "note": "腘绳/臀大肌弱链，每侧 12 次", "provider_id": "T1219"},
-          {"canonical_id": "T1305", "display_name": "RDL（10kg/侧）", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 90, "note": "慢离心 3s，每侧 10 次", "provider_id": "T1305"},
-          {"canonical_id": "T1301", "display_name": "高脚杯深蹲（8kg）", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 90, "note": "双腿基础", "provider_id": "T1301"},
-          {"canonical_id": "T1368", "display_name": "哥本哈根侧平板（屈腿）", "sets": 3, "target_kind": "time_s", "target_value": 20, "rest_seconds": 45, "note": "内收肌，每侧 20s", "provider_id": "T1368"},
-          {"canonical_id": "T1275", "display_name": "单腿提踵（4s 慢离心）", "sets": 2, "target_kind": "reps", "target_value": 10, "rest_seconds": 45, "note": "跟腱预防，每侧 10 次", "provider_id": "T1275"},
-          {"canonical_id": "T1243", "display_name": "Dead Bug", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "note": "核心抗旋，每侧 12 次", "provider_id": "T1243"},
-          {"canonical_id": "T1185", "display_name": "侧平板", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 45, "note": "侧链，每侧 30s", "provider_id": "T1185"},
-          {"canonical_id": "T1249", "display_name": "Bird Dog", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 45, "note": "后链，每侧 10 次", "provider_id": "T1249"}
-        ]
-      },
-      "notes_md": "约 50 min。跑前 leg_swings T1222 + greatest_stretch T1262。",
-      "total_distance_m": null,
-      "total_duration_s": 3000,
-      "scheduled_workout_id": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-06-08",
-      "session_index": 1,
-      "kind": "run",
-      "summary": "跑后 5K Z1 拖腿 @ HR<138",
-      "spec": {
-        "schema": "run-workout/v1",
-        "name": "力量后 5K 拖腿",
-        "date": "2026-06-08",
-        "note": "力量后 30min 内，HR<138 / 5:30+。周末双长后让腿。",
-        "blocks": [
-          {
-            "repeat": 1,
-            "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 5000}, "target": {"kind": "hr_bpm", "low": 110, "high": 138}, "note": "Z1 拖腿，配速 5:30+", "hr_cap_bpm": 138}
-            ]
-          }
-        ]
-      },
-      "notes_md": null,
-      "total_distance_m": 5000,
-      "total_duration_s": null,
-      "scheduled_workout_id": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-06-09",
-      "session_index": 0,
-      "kind": "run",
-      "summary": "轻松跑 11K @ 5:00-5:20 / HR<145",
-      "spec": {
-        "schema": "run-workout/v1",
-        "name": "轻松 11K",
-        "date": "2026-06-09",
-        "note": "HR 优先。HR>148 立即降速。",
-        "blocks": [
-          {
-            "repeat": 1,
-            "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 11000}, "target": {"kind": "pace_s_km", "low": 320, "high": 300}, "note": "5:00-5:20/km，HR 优先", "hr_cap_bpm": 145}
-            ]
-          }
-        ]
-      },
-      "notes_md": null,
-      "total_distance_m": 11000,
-      "total_duration_s": null,
-      "scheduled_workout_id": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-06-10",
-      "session_index": 0,
-      "kind": "run",
-      "summary": "强度课：20min tempo + 4min rest + 400m × 10 @ 3:35-3:45",
-      "spec": {
-        "schema": "run-workout/v1",
-        "name": "20min tempo + 400m × 10",
-        "date": "2026-06-10",
-        "note": "硬规则：tempo 地板 4:10/km（跑不进 → 保 HR 158-167 不强求配速）；400m 地板 3:50 / 天花板 3:30（任 1 rep 越界 → 当组结束）；HR≥182 持续>20s → 当组结束 jog 至<150；AnE 课后>3.2 → 收尾结束。T>25°C → tempo 4:00-4:10、400m 3:40-3:45；T>28°C → 纯心率。HRV 连续≥2 天 UNBALANCED → 400m reps 10→6 + 纯心率。",
-        "blocks": [
-          {
-            "repeat": 1,
-            "steps": [
-              {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 320, "high": 240}, "note": "2 km 慢 + 动态 + 4×100m strides", "hr_cap_bpm": 150}
-            ]
-          },
-          {
-            "repeat": 1,
-            "steps": [
-              {"step_kind": "work", "duration": {"kind": "time_s", "value": 1200}, "target": {"kind": "pace_s_km", "low": 245, "high": 235}, "note": "tempo 20min @ 3:55-4:05/km，HR 158-167", "hr_cap_bpm": 167},
-              {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 240}, "target": {"kind": "pace_s_km", "low": 360, "high": 330}, "note": "4min jog rest，HR 回 <150", "hr_cap_bpm": 150}
-            ]
-          },
-          {
-            "repeat": 10,
-            "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 400}, "target": {"kind": "pace_s_km", "low": 225, "high": 215}, "note": "400m fast @ 3:35-3:45/km", "hr_cap_bpm": 182},
-              {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 90}, "target": {"kind": "pace_s_km", "low": 330, "high": 300}, "note": "90s jog rest，连续 jog 不站住，HR 回 150-160", "hr_cap_bpm": 165}
-            ]
-          },
-          {
-            "repeat": 1,
-            "steps": [
-              {"step_kind": "cooldown", "duration": {"kind": "distance_m", "value": 1500}, "target": {"kind": "pace_s_km", "low": 360, "high": 330}, "note": "1.5 km 放松 5:30+", "hr_cap_bpm": 140}
-            ]
-          }
-        ]
-      },
-      "notes_md": "总距约 13.5 km：2 km 热身 + ~5 km tempo + 4min rest + 4 km(400m×10) + 1.5 km 放松。配速锚：tempo=LT 3:55-4:05；400m=5K~稍快 3:35-3:45。清晨 5:30 前出发。",
-      "total_distance_m": 13500,
-      "total_duration_s": null,
-      "scheduled_workout_id": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-06-11",
-      "session_index": 0,
-      "kind": "run",
-      "summary": "恢复跑 8K @ 5:30+ / HR<138",
-      "spec": {
-        "schema": "run-workout/v1",
-        "name": "恢复 8K",
-        "date": "2026-06-11",
-        "note": "HR 优先，配速 5:30+。",
-        "blocks": [
-          {
-            "repeat": 1,
-            "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "hr_bpm", "low": 110, "high": 138}, "note": "恢复跑", "hr_cap_bpm": 138}
-            ]
-          }
-        ]
-      },
-      "notes_md": null,
-      "total_distance_m": 8000,
-      "total_duration_s": null,
-      "scheduled_workout_id": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-06-12",
-      "session_index": 0,
-      "kind": "rest",
-      "summary": "完休 或 30min 骑行 + 拉伸",
-      "spec": null,
-      "notes_md": "可选 30min 骑行 + 拉伸；长距前夜碳水加载（米饭 1.5 碗 + 鸡胸 150g + 蔬菜 + 香蕉 + 蜂蜜）。睡前 8h+。",
-      "total_distance_m": null,
-      "total_duration_s": null,
-      "scheduled_workout_id": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-06-13",
-      "session_index": 0,
-      "kind": "run",
-      "summary": "长距 26K LSD（末 6K @ 4:30 MP）",
-      "spec": {
-        "schema": "run-workout/v1",
-        "name": "26K LSD 末 6K @ MP",
-        "date": "2026-06-13",
-        "note": "硬规则：km 0-8 严守 5:00-4:50（前段宁慢）；MP 段天花板 4:25/km（跑进 → 降回 4:30）；HR cap 165（任何 km 持续>1 km 在 165+ → 当段降 10 s/km）；末段 6K HR 漂移>6 bpm（vs km 8-20）→ 维持配速不再加；步频跌破 176 → 主动放慢。补给：4 胶 @8K/14K/20K/24K + 每 5K 100-150ml 水。应急降级：睡眠<7h 或 RHR≥55 或 HRV 连续 3 天 UNBALANCED → 砍 22K @ 5:00-4:45 不加 MP；腘绳肌/小腿痛≥3/10 → 砍 18K @ HR<145；T>27°C → 全程 5:00-4:45；T>32°C 砍 18K。",
-        "blocks": [
-          {
-            "repeat": 1,
-            "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 300, "high": 290}, "note": "km 0-8 @ 5:00-4:50/km", "hr_cap_bpm": 150},
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 12000}, "target": {"kind": "pace_s_km", "low": 290, "high": 280}, "note": "km 8-20 @ 4:50-4:40/km", "hr_cap_bpm": 158},
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 6000}, "target": {"kind": "pace_s_km", "low": 275, "high": 270}, "note": "km 20-26 @ 4:35→4:30/km（MP work）", "hr_cap_bpm": 165}
-            ]
-          }
-        ]
-      },
-      "notes_md": "清晨 5:30 前出发，世博/徐汇滨江平坦路线，自带补水 + 4 胶。Phase 1 收官长距，进 Phase 2 前最后一次基础拉长。",
-      "total_distance_m": 26000,
-      "total_duration_s": null,
-      "scheduled_workout_id": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-06-14",
-      "session_index": 0,
-      "kind": "run",
-      "summary": "恢复跑 8K @ 5:30+ / HR<138",
-      "spec": {
-        "schema": "run-workout/v1",
-        "name": "恢复 8K",
-        "date": "2026-06-14",
-        "note": "HR 优先，配速 5:30+。长距次日，腿沉则改 6K 或完休。",
-        "blocks": [
-          {
-            "repeat": 1,
-            "steps": [
-              {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "hr_bpm", "low": 110, "high": 138}, "note": "恢复跑", "hr_cap_bpm": 138}
-            ]
-          }
-        ]
-      },
-      "notes_md": null,
-      "total_distance_m": 8000,
-      "total_duration_s": null,
-      "scheduled_workout_id": null
-    },
-    {
-      "schema": "plan-session/v1",
-      "date": "2026-06-14",
-      "session_index": 1,
-      "kind": "strength",
-      "summary": "力量 B（核心 + 灵活，长距后激活）",
-      "spec": {
-        "schema": "strength-workout/v1",
-        "name": "力量 B",
-        "date": "2026-06-14",
-        "note": "长距次日核心 + 灵活激活，非加重。",
-        "exercises": [
-          {"canonical_id": "T1248", "display_name": "胸椎旋转", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "note": "改善摆臂，每侧 10 次", "provider_id": "T1248"},
-          {"canonical_id": "T1234", "display_name": "猫牛式", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "脊柱灵活", "provider_id": "T1234"},
-          {"canonical_id": "T1243", "display_name": "Dead Bug", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "note": "核心抗旋，每侧 12 次", "provider_id": "T1243"},
-          {"canonical_id": "T1368", "display_name": "哥本哈根侧平板（屈腿）", "sets": 3, "target_kind": "time_s", "target_value": 20, "rest_seconds": 45, "note": "内收肌，每侧 20s", "provider_id": "T1368"},
-          {"canonical_id": "T1249", "display_name": "Bird Dog", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "note": "后链，每侧 12 次", "provider_id": "T1249"},
-          {"canonical_id": "T1274", "display_name": "髋屈肌弓步拉伸", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "久坐补偿，每侧 30s", "provider_id": "T1274"},
-          {"canonical_id": "T1222", "display_name": "腿摆（前后）", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "髋灵活，每侧 30s", "provider_id": "T1222"}
-        ]
-      },
-      "notes_md": "约 35 min。",
-      "total_distance_m": null,
-      "total_duration_s": 2100,
-      "scheduled_workout_id": null
+     "name": "长距前夜晚餐",
+     "time_hint": "19:00",
+     "kcal": null,
+     "carbs_g": null,
+     "protein_g": null,
+     "fat_g": null,
+     "items_md": "米饭 1.5 碗 + 鸡胸 150g + 蔬菜（减纤维/减油）+ 香蕉 1 + 蜂蜜。睡前 8h+。"
     }
-  ],
-  "nutrition": [
-    {"schema": "plan-nutrition/v1", "date": "2026-06-08", "kcal_target": null, "carbs_g": 356, "protein_g": 140, "fat_g": null, "water_ml": null, "meals": [], "notes_md": "力量 + 5K 拖腿。碳水 4.5 g/kg × 79 kg = 356 g。-250 kcal。蛋白分配：早 30 + 午 40 + 训练后 30 + 晚 40g。"},
-    {"schema": "plan-nutrition/v1", "date": "2026-06-09", "kcal_target": null, "carbs_g": 395, "protein_g": 140, "fat_g": null, "water_ml": null, "meals": [], "notes_md": "轻松 11K。碳水 5 g/kg = 395 g。-200 kcal。"},
-    {"schema": "plan-nutrition/v1", "date": "2026-06-10", "kcal_target": null, "carbs_g": 474, "protein_g": 140, "fat_g": null, "water_ml": null, "meals": [], "notes_md": "⚡ 强度 13.5K。碳水 6 g/kg = 474 g。0 kcal。训练前 60min 30-50g 快碳。"},
-    {"schema": "plan-nutrition/v1", "date": "2026-06-11", "kcal_target": null, "carbs_g": 395, "protein_g": 140, "fat_g": null, "water_ml": null, "meals": [], "notes_md": "恢复 8K。碳水 5 g/kg = 395 g。-200 kcal。"},
-    {"schema": "plan-nutrition/v1", "date": "2026-06-12", "kcal_target": null, "carbs_g": 474, "protein_g": 140, "fat_g": null, "water_ml": null, "meals": [{"name": "长距前夜晚餐", "time_hint": "19:00", "kcal": null, "carbs_g": null, "protein_g": null, "fat_g": null, "items_md": "米饭 1.5 碗 + 鸡胸 150g + 蔬菜（减纤维/减油）+ 香蕉 1 + 蜂蜜。睡前 8h+。"}], "notes_md": "休/骑行。长距前碳水加载 6 g/kg = 474 g。0 kcal。"},
-    {"schema": "plan-nutrition/v1", "date": "2026-06-13", "kcal_target": null, "carbs_g": 514, "protein_g": 140, "fat_g": null, "water_ml": null, "meals": [{"name": "训练前早餐", "time_hint": "04:30", "kcal": null, "carbs_g": null, "protein_g": null, "fat_g": null, "items_md": "燕麦 60g + 香蕉 1 + 蜂蜜 + 30g 蛋白粉 + 黑咖啡。起跑前 30min 1 胶 + 100ml。"}, {"name": "跑中补给", "time_hint": "运行中", "kcal": null, "carbs_g": null, "protein_g": null, "fat_g": null, "items_md": "4 胶 @8K/14K/20K/24K + 每 5K 100-150ml 水。T>20°C 加电解质。"}, {"name": "训练后", "time_hint": "跑后 30min", "kcal": null, "carbs_g": null, "protein_g": null, "fat_g": null, "items_md": "30g 乳清 + 80g 快碳 + 500-700ml 电解质水。"}], "notes_md": "⭐ 长距 26K（末 6K MP work）。碳水 6.5 g/kg = 514 g。+100 kcal。"},
-    {"schema": "plan-nutrition/v1", "date": "2026-06-14", "kcal_target": null, "carbs_g": 395, "protein_g": 140, "fat_g": null, "water_ml": null, "meals": [], "notes_md": "恢复 8K + 力量 B。碳水 5 g/kg = 395 g。-200 kcal。"}
-  ],
-  "notes_md": "P1W6：Phase 1 收官周。base 阶段 维持期 45% + 提升期 40% + 比赛就绪 15%。周量目标 70-80 km。两大核心：6/10 强度课（20min tempo + 400m×10）+ 6/13 长距 26K LSD（末 6K @ MP 4:30）。其余 5 天随体感调整，不追疲劳感，恢复也是训练。零 dose 天仅 6/12。HRV 6/3 起已恢复 BALANCED，autonomic 正常。下周（6/15）进 Phase 2 专项期。"
+   ],
+   "notes_md": "休/骑行。长距前碳水加载 6 g/kg = 474 g。0 kcal。"
+  },
+  {
+   "schema": "plan-nutrition/v1",
+   "date": "2026-06-13",
+   "kcal_target": null,
+   "carbs_g": 514,
+   "protein_g": 140,
+   "fat_g": null,
+   "water_ml": null,
+   "meals": [
+    {
+     "name": "训练前早餐",
+     "time_hint": "04:30",
+     "kcal": null,
+     "carbs_g": null,
+     "protein_g": null,
+     "fat_g": null,
+     "items_md": "燕麦 60g + 香蕉 1 + 蜂蜜 + 30g 蛋白粉 + 黑咖啡。起跑前 30min 1 胶 + 100ml。"
+    },
+    {
+     "name": "跑中补给",
+     "time_hint": "运行中",
+     "kcal": null,
+     "carbs_g": null,
+     "protein_g": null,
+     "fat_g": null,
+     "items_md": "4 胶 @8K/14K/20K/24K + 每 5K 100-150ml 水。T>20°C 加电解质。"
+    },
+    {
+     "name": "训练后",
+     "time_hint": "跑后 30min",
+     "kcal": null,
+     "carbs_g": null,
+     "protein_g": null,
+     "fat_g": null,
+     "items_md": "30g 乳清 + 80g 快碳 + 500-700ml 电解质水。"
+    }
+   ],
+   "notes_md": "⭐ 长距 26K（末 6K MP work）。碳水 6.5 g/kg = 514 g。+100 kcal。"
+  },
+  {
+   "schema": "plan-nutrition/v1",
+   "date": "2026-06-14",
+   "kcal_target": null,
+   "carbs_g": 395,
+   "protein_g": 140,
+   "fat_g": null,
+   "water_ml": null,
+   "meals": [],
+   "notes_md": "恢复 8K + 力量 B。碳水 5 g/kg = 395 g。-200 kcal。"
+  }
+ ],
+ "notes_md": "P1W6：Phase 1 收官周。base 阶段 维持期 45% + 提升期 40% + 比赛就绪 15%。周量目标 70-80 km。两大核心：6/10 强度课（20min tempo + 400m×10）+ 6/13 长距 26K LSD（末 6K @ MP 4:30）。其余 5 天随体感调整，不追疲劳感，恢复也是训练。零 dose 天仅 6/12。HRV 6/3 起已恢复 BALANCED，autonomic 正常。下周（6/15）进 Phase 2 专项期。"
 }
