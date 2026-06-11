@@ -323,6 +323,58 @@ def test_parse_failed_first_attempt_recovers_on_retry(db, monkeypatch, fake_llm)
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# missing calibration → pace_targets ValueError propagates un-prefixed
+# ---------------------------------------------------------------------------
+
+
+def test_missing_calibration_propagates_pace_targets_error(db, monkeypatch, fake_llm):
+    """No seeded calibration snapshot → pace_targets raises ValueError whose
+    message references ``pace_targets``, and it must surface *un-prefixed* —
+    NOT re-wrapped as ``bad_schema`` / ``parse_failed``. This locks the
+    documented precondition contract for Task 5/6: a missing-calibration
+    precondition is a distinct, propagated error, not a swallowed one.
+    """
+    # Deliberately do NOT call _seed_calibration(db) — the snapshot is absent.
+    monkeypatch.setattr(adapter_mod, "Database", lambda **kw: db)
+    # A valid LLM reply is irrelevant: the error fires before any LLM use.
+    fake_llm.replies = [json.dumps(_valid_plan_dict(), ensure_ascii=False)]
+
+    with pytest.raises(ValueError, match="pace_targets") as exc:
+        generate_specialist_week(_make_state())
+    msg = str(exc.value)
+    # Distinct error — not swallowed and not re-prefixed by the generator.
+    assert not msg.startswith("bad_schema")
+    assert not msg.startswith("parse_failed")
+    # The LLM was never reached (precondition failed first).
+    assert fake_llm.captured == []
+
+
+# ---------------------------------------------------------------------------
+# unknown phase_type → bad_schema (via _coerce_phase_type)
+# ---------------------------------------------------------------------------
+
+
+def test_unknown_phase_type_raises_bad_schema(db, monkeypatch, fake_llm):
+    """A bogus ``phase_type`` is rejected by ``_coerce_phase_type`` with a
+    ``bad_schema``-prefixed ValueError, before the DB is opened or the LLM is
+    called. Calibration is seeded to prove the failure is the phase coercion
+    (not a missing-snapshot side effect).
+    """
+    _seed_calibration(db)
+    monkeypatch.setattr(adapter_mod, "Database", lambda **kw: db)
+    fake_llm.replies = [json.dumps(_valid_plan_dict(), ensure_ascii=False)]
+
+    payload = _make_input_payload()
+    payload["phase_type"] = "nonsense"
+
+    with pytest.raises(ValueError, match="bad_schema") as exc:
+        generate_specialist_week(_make_state(payload))
+    assert str(exc.value).startswith("bad_schema")
+    # Coercion happens before any LLM call.
+    assert fake_llm.captured == []
+
+
 def test_rule_violation_feedback_postscript(db, monkeypatch, fake_llm):
     _seed_calibration(db)
     monkeypatch.setattr(adapter_mod, "Database", lambda **kw: db)
