@@ -257,3 +257,16 @@ def test_phase_type_optional_and_roundtrips():
     assert p_new.phase_type == PhaseType.BASE
     assert Phase.model_validate(p_new.model_dump()).phase_type == PhaseType.BASE
     assert {pt.value for pt in PhaseType} == {"base", "build", "speed", "peak", "taper", "recovery"}
+
+
+def test_milestone_structured_fields_optional():
+    from stride_core.master_plan import Milestone, MilestoneType
+    m_old = Milestone(id="m1", type=MilestoneType.RACE, date="2026-10-18",
+                      phase_id="p1", target="A 2:50")
+    assert m_old.metric is None and m_old.target_value is None and m_old.comparator is None
+    m_new = Milestone(id="m2", type=MilestoneType.TEST_RUN, date="2026-08-09",
+                      phase_id="p2", target="速度周期末 5k 跑进 19:00",
+                      metric="race_time_s_5k", target_value=1140.0, comparator="<=")
+    dumped = m_new.model_dump()
+    assert Milestone.model_validate(dumped).target_value == 1140.0
+    assert m_new.comparator == "<="

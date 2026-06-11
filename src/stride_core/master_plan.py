@@ -17,6 +17,7 @@ Design notes:
 from __future__ import annotations
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -62,6 +63,12 @@ class Milestone(BaseModel):
     phase_id: str
     target: str                    # 自然语言目标描述，如 "30K 节奏跑 4'45/km"
     completed_actual: str | None = None  # 实际完成情况，如 "4'52/km 完成"
+    # Quantifiable phase exit-target (optional; additive so the diff machinery
+    # and legacy snapshots keep working). e.g. metric="race_time_s_5k",
+    # target_value=1140, comparator="<=" → "5k sub-19:00 by end of phase".
+    metric: str | None = None
+    target_value: float | None = None
+    comparator: Literal["<=", ">=", "=="] | None = None
 
 
 class Phase(BaseModel):
