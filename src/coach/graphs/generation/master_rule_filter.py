@@ -912,6 +912,51 @@ def check_target_distance_long_run(
     return []
 
 
+_LONG_RUN_MAX_WEEK_SHARE: float = 0.35
+
+
+def check_long_run_distance_share(plan: MasterPlan) -> list[RuleViolation]:
+    """Warn when a non-deload week's longest long_run distance exceeds 35% of
+    that week's target_weekly_km_high (the spike anti-pattern by DISTANCE; the
+    dose-based rules miss easy long runs). Warning, not error: volume-capped
+    runners legitimately exceed it for FM-specific endurance — the plan should
+    explain the trade-off in its principles (spec §8 design-consideration #1)."""
+    if not plan.weekly_key_sessions:
+        return []
+    violations: list[RuleViolation] = []
+    for week in plan.weekly_key_sessions:
+        if _week_is_deload(week):
+            continue
+        if not week.target_weekly_km_high or week.target_weekly_km_high <= 0:
+            continue
+        longest = max(
+            (s.distance_km for s in week.key_sessions
+             if s.type == "long_run" and s.distance_km is not None),
+            default=0.0,
+        )
+        if longest <= 0:
+            continue
+        share = longest / week.target_weekly_km_high
+        if share > _LONG_RUN_MAX_WEEK_SHARE:
+            violations.append(RuleViolation(
+                rule="long_run_distance_share",
+                severity="warning",
+                message=(
+                    f"week {week.week_index} long_run {longest:.0f}km is "
+                    f"{share * 100:.0f}% of weekly {week.target_weekly_km_high:.0f}km "
+                    f"(> {_LONG_RUN_MAX_WEEK_SHARE * 100:.0f}%); for a volume-capped "
+                    f"runner this can be acceptable but the plan must justify it"
+                ),
+                details={
+                    "week_index": week.week_index,
+                    "long_run_km": longest,
+                    "weekly_km_high": week.target_weekly_km_high,
+                    "share_pct": round(share * 100, 1),
+                },
+            ))
+    return violations
+
+
 def check_key_session_density(
     plan: MasterPlan, *, weekly_run_days_max: int | None
 ) -> list[RuleViolation]:
@@ -1119,4 +1164,5 @@ def run_master_rule_filter(
         )
     )
     violations.extend(check_hard_session_spacing(plan))
+    violations.extend(check_long_run_distance_share(plan))
     return RuleFilterReport(violations=violations)

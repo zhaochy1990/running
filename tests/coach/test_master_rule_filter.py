@@ -22,6 +22,7 @@ from coach.graphs.generation.master_rule_filter import (
     check_goal_realism,
     check_hard_session_spacing,
     check_key_session_density,
+    check_long_run_distance_share,
     check_phase_duration_balance,
     check_season_window_fits,
     check_target_distance_long_run,
@@ -1254,6 +1255,47 @@ def test_target_distance_long_run_with_bare_比赛_phase():
     violations = check_target_distance_long_run(plan, target_race={"distance": "fm"})
     # Peak phase is 赛前期 (ph_prep), long_run there is 30km > 28km threshold
     assert violations == []
+
+
+# ---------------------------------------------------------------------------
+# long_run_distance_share (Stage-1 Task 3)
+# ---------------------------------------------------------------------------
+
+
+def _peak_plan(long_km, week_high):
+    return MasterPlan.model_validate({
+        "plan_id": "x", "user_id": "u", "status": "draft", "goal_id": "g",
+        "start_date": "2026-06-11", "end_date": "2026-10-18",
+        "phases": [{"id": "peak1", "name": "赛前期", "start_date": "2026-09-07",
+                    "end_date": "2026-10-04", "focus": "peak",
+                    "weekly_distance_km_low": 70, "weekly_distance_km_high": week_high,
+                    "key_session_types": ["长距离"], "milestone_ids": []}],
+        "milestones": [],
+        "weekly_key_sessions": [{
+            "week_index": 1, "week_start": "2026-09-21", "phase_id": "peak1",
+            "target_weekly_km_low": week_high - 4, "target_weekly_km_high": week_high,
+            "key_sessions": [{"type": "long_run", "distance_km": long_km, "intensity": "z2"}],
+            "is_recovery_week": False, "is_taper_week": False,
+        }],
+        "training_principles": [], "generated_by": "t", "version": 1,
+        "created_at": "t", "updated_at": "t",
+    })
+
+
+def test_long_run_share_over_35pct_warns():
+    v = check_long_run_distance_share(_peak_plan(long_km=32, week_high=80))  # 40%
+    assert len(v) == 1
+    assert v[0].rule == "long_run_distance_share"
+    assert v[0].severity == "warning"
+
+
+def test_long_run_share_under_35pct_ok():
+    assert check_long_run_distance_share(_peak_plan(long_km=27, week_high=80)) == []  # 33.75%
+
+
+def test_long_run_share_empty_skeleton_noop():
+    plan = _peak_plan(long_km=32, week_high=80).model_copy(update={"weekly_key_sessions": []})
+    assert check_long_run_distance_share(plan) == []
 
 
 def test_orchestrator_back_compat_empty_weekly_key_sessions():
