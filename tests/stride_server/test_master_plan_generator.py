@@ -771,6 +771,29 @@ class TestPromptIncludesContinuity:
         assert "form 区: None" not in prompt
 
 
+class TestMacroCycleGuidance:
+    def _prompt(self, mc):
+        from stride_server.master_plan_generator import _build_system_prompt
+        from coach.schemas import ContinuitySignals
+        return _build_system_prompt(
+            goal={"race_distance": "FM", "race_date": "2026-10-18"}, profile=None,
+            history_summary="h", fitness_state={"summary": "s"}, today="2026-06-11",
+            continuity=ContinuitySignals(macro_cycle=mc),
+        )
+
+    def test_summer_guidance(self):
+        p = self._prompt("summer")
+        assert "夏训" in p and ("速度周期" in p or "speed" in p.lower())
+
+    def test_winter_guidance(self):
+        p = self._prompt("winter")
+        assert "冬训" in p and "有氧" in p
+
+    def test_unknown_no_macro_block(self):
+        p = self._prompt("unknown")
+        assert "夏训块周期化指导" not in p
+
+
 # ---------------------------------------------------------------------------
 # Real-DB regression tests for _query_history
 # Locks the already-applied fix for:

@@ -638,6 +638,20 @@ def _build_system_prompt(
 请据此调整周期结构：已恢复且距赛久则不排开头恢复期；已有多周有氧则缩短 base；断训回归则延长 base、放缓 ramp；夏训块可插速度周期。
 """
 
+    macro_block = ""
+    if continuity is not None and continuity.macro_cycle == "summer":
+        macro_block = """
+夏训块周期化指导（macro_cycle=summer）：长块（赛季备战 ~7-8 个月感），气温高、适合发展速度。
+- phase 序列倾向：基础期 → 速度周期(speed) → 进展期(build) → 赛前期(peak) → taper；中段排一个独立速度周期。
+- 长课避开正午高温，质量课优先清晨/傍晚；base 可铺得开。
+"""
+    elif continuity is not None and continuity.macro_cycle == "winter":
+        macro_block = """
+冬训块周期化指导（macro_cycle=winter）：压缩块（~4-5 个月），低温、消耗小、适合堆大量有氧。
+- phase 序列倾向：基础期(长、堆有氧) → 进展期(build，速度并入) → 赛前期(peak) → taper；不排独立速度周期。
+- base 偏长、尽快进专项；速度训练融进 build 而非单独成块。
+"""
+
     return f"""你是专业马拉松训练教练。根据以下信息生成训练总纲 JSON。
 
 用户目标：
@@ -676,7 +690,7 @@ def _build_system_prompt(
   ]
 }}}}
 ---END_MASTER_PLAN---
-{continuity_block}
+{continuity_block}{macro_block}
 规则：
 - start_date 用今日（{today}），end_date 不晚于比赛日（{race_date}）
 - 阶段顺序：基础期 → 进展期 → 赛前期 → 比赛 →（如有）恢复期
