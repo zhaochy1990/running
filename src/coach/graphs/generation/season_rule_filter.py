@@ -142,7 +142,7 @@ def _phase_week_kms(phase: PhaseWeeks) -> list[float]:
     return out
 
 
-def _phase_working_km(phase: PhaseWeeks) -> float | None:
+def _phase_working_km(kms: list[float]) -> float | None:
     """The phase's *established working load* — the MAX present per-week run km
     (Stage-3b I1), or ``None`` when the phase has no present weeks.
 
@@ -151,10 +151,11 @@ def _phase_working_km(phase: PhaseWeeks) -> float | None:
     deloads, so comparing the next phase's opening week against the prior phase's
     deload-trough LAST week would falsely flag a safe, planned resumption as a
     boundary spike. Mirrors ``week_schedule.representative_working_km`` (the same
-    ``max``-of-present-weeks signal the orchestrator threads forward) but reuses
-    the already-summed ``_phase_week_kms`` so the km source stays single.
+    ``max``-of-present-weeks signal the orchestrator threads forward).
+
+    Takes the already-summed ``_phase_week_kms`` list (caller computes it once)
+    so the km source stays single and there is no double-walk of the phase weeks.
     """
-    kms = _phase_week_kms(phase)
     return max(kms) if kms else None
 
 
@@ -339,7 +340,7 @@ def check_phase_transition(bundle: SeasonPlanBundle) -> list[SeasonRuleViolation
                     )
                 )
         prev_phase = phase
-        prev_working_km = max(kms)
+        prev_working_km = _phase_working_km(kms)
     return violations
 
 
