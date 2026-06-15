@@ -314,6 +314,79 @@ def test_garbage_raises_parse_failed_after_retry(patch_db, monkeypatch):
     assert len(model.captured) == 2
 
 
+def test_n_mismatch_short_raises_parse_failed_after_retry(patch_db, monkeypatch):
+    # Requested N=3, LLM returns only 2 weeks on BOTH attempts → parse_failed,
+    # retried exactly once (mirrors test_garbage_raises_parse_failed_after_retry).
+    metas = _week_metas([70.0, 80.0, 90.0])
+    folders = [m.week_folder for m in metas]
+    short = _batch(folders[:2])  # 2 weeks for an N=3 request
+    model = FakeBindableLLM([ai_text(short)])  # last reply reused on retry
+    _install_model(monkeypatch, model)
+
+    with pytest.raises(ValueError) as exc:
+        generate_specialist_phase(_build_phase(), metas, _context())
+    assert str(exc.value).startswith("parse_failed")
+    # count check participates in the retry → two passes captured
+    assert len(model.captured) == 2
+
+
+def test_n_mismatch_over_raises_parse_failed(patch_db, monkeypatch):
+    # Requested N=2, LLM returns 3 weeks → parse_failed (silently-carried guard).
+    metas = _week_metas([70.0, 80.0])
+    over = _batch(["w1", "w2", "w3"])  # 3 weeks for an N=2 request
+    model = FakeBindableLLM([ai_text(over)])
+    _install_model(monkeypatch, model)
+
+    with pytest.raises(ValueError) as exc:
+        generate_specialist_phase(_build_phase(), metas, _context())
+    assert str(exc.value).startswith("parse_failed")
+    assert len(model.captured) == 2
+
+
+def test_empty_weeks_for_nonzero_n_raises_parse_failed(patch_db, monkeypatch):
+    # {"weeks": []} for N>0 must NOT look like a clean empty success.
+    metas = _week_metas([70.0, 80.0])
+    empty = json.dumps({"schema": "phase-weeks/v1", "weeks": []}, ensure_ascii=False)
+    model = FakeBindableLLM([ai_text(empty)])
+    _install_model(monkeypatch, model)
+
+    with pytest.raises(ValueError) as exc:
+        generate_specialist_phase(_build_phase(), metas, _context())
+    assert str(exc.value).startswith("parse_failed")
+    assert len(model.captured) == 2
+
+
+def test_n_mismatch_recovers_on_retry(patch_db, monkeypatch):
+    # Wrong count on attempt 1, correct N on attempt 2 → succeeds with N weeks.
+    # Proves the count check participates in the retry (not a hard fail).
+    metas = _week_metas([70.0, 80.0, 90.0])
+    folders = [m.week_folder for m in metas]
+    wrong = _batch(folders[:2])  # 2 weeks (wrong)
+    good = _batch(folders)  # 3 weeks (correct)
+    model = FakeBindableLLM([ai_text(wrong), ai_text(good)])
+    _install_model(monkeypatch, model)
+
+    out = generate_specialist_phase(_build_phase(), metas, _context())
+    assert len(out) == 3
+    assert len(model.captured) == 2  # one regen consumed
+
+
+def test_empty_week_metas_raises_without_parse_failed_prefix(patch_db):
+    # Caller precondition (empty week_metas) — fires before any LLM output, so it
+    # must be a plain ValueError WITHOUT the parse_failed sentinel.
+    with pytest.raises(ValueError) as exc:
+        build_phase_week_specs(
+            patch_db,
+            goal=_fm_goal(),
+            phase_type=PhaseType.BUILD,
+            week_metas=[],
+            level=65.0,
+            as_of=_AS_OF,
+        )
+    assert not str(exc.value).startswith("parse_failed")
+    assert "empty week_metas" in str(exc.value)
+
+
 def test_bad_schema_when_a_week_invalid(patch_db, monkeypatch):
     metas = _week_metas([70.0, 80.0])
     folders = [m.week_folder for m in metas]

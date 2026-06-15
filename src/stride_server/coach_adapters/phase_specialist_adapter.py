@@ -148,9 +148,12 @@ def build_phase_week_specs(
         prev_km = this_km
 
     if pace is None:
-        # No weeks → no pace table can be derived; the caller should not have
-        # gotten here, but guard rather than return a half-built tuple.
-        raise ValueError("parse_failed: empty week_metas — nothing to generate")
+        # No weeks → no pace table can be derived. This is a CALLER precondition
+        # failure (empty week_metas was passed in) — it fires BEFORE any LLM
+        # output exists, so it must NOT carry the ``parse_failed`` sentinel
+        # (which is reserved for unparseable LLM responses and is caught +
+        # retried by ``generate_specialist_phase``).
+        raise ValueError("empty week_metas — nothing to generate")
     return pace, specs
 
 
@@ -223,12 +226,17 @@ def generate_specialist_phase(
             issues) → threaded into ``build_phase_system_prompt(feedback=...)``.
 
     Returns:
-        A list of validated ``WeeklyPlan`` dicts — one per week the LLM emitted
-        (should be N). Does NOT run rule_filter (PA-T4).
+        A list of exactly ``len(week_metas)`` validated ``WeeklyPlan`` dicts —
+        the week count is asserted (a mismatch is a retryable ``parse_failed``).
+        Does NOT run rule_filter (PA-T4).
 
     Raises:
         ValueError starting with ``"parse_failed"``: the batch envelope could
-            not be parsed (after one retry).
+            not be parsed, OR the batch returned a week count other than
+            ``len(week_metas)`` — both after one retry. (A wrong count is a
+            retryable generator fault, not a silent success: too few weeks would
+            otherwise be mislabeled "blocked" downstream; zero weeks would look
+            like a clean empty success.)
         ValueError starting with ``"bad_schema"``: a week in the batch is not a
             valid ``WeeklyPlan`` (or ``phase_type`` is unknown).
         LLMUnavailable / LLMError: propagated from the LLM client.
@@ -294,11 +302,31 @@ def generate_specialist_phase(
         except BaseException as exc:  # noqa: BLE001 — LLM/tool boundary
             raise _map_exception(exc) from exc
 
-    # 5. Tool-loop pass + batch parse + one retry on parse failure (mirror the
-    #    per-week adapter's parse_failed / one-retry semantics).
+    expected_n = len(week_specs)
+
+    def _parse_and_count(raw_text: str) -> list[dict]:
+        """Parse the batch envelope AND assert it carries exactly ``expected_n``
+        weeks. A wrong count is raised as a ``parse_failed`` ``ValueError`` so it
+        flows through the SAME one-retry loop a garbage / unparseable response
+        takes — a phase-at-once generator that returns too few weeks (the
+        missing weeks would otherwise be silently mislabeled "blocked" by the
+        orchestrator) or too many (silently carried) gets one regen before we
+        fail, instead of returning a quietly wrong batch."""
+        week_dicts = parse_phase_batch(raw_text)
+        if len(week_dicts) != expected_n:
+            raise ValueError(
+                f"parse_failed: batch returned {len(week_dicts)} weeks, "
+                f"expected {expected_n}"
+            )
+        return week_dicts
+
+    # 5. Tool-loop pass + batch parse + length check + one retry on failure
+    #    (mirror the per-week adapter's parse_failed / one-retry semantics). The
+    #    week-count assertion lives INSIDE _parse_and_count so a count mismatch
+    #    participates in the retry exactly like an unparseable response.
     raw = _run_one_pass()
     try:
-        week_dicts = parse_phase_batch(raw)
+        week_dicts = _parse_and_count(raw)
     except ValueError:
         logger.warning(
             "generate_specialist_phase: parse_failed on first attempt "
@@ -307,10 +335,10 @@ def generate_specialist_phase(
         )
         raw_retry = _run_one_pass()
         try:
-            week_dicts = parse_phase_batch(raw_retry)
+            week_dicts = _parse_and_count(raw_retry)
         except ValueError as exc:
             err = ValueError(
-                f"parse_failed: batch envelope unparseable twice "
+                f"parse_failed: batch envelope unparseable or wrong-count twice "
                 f"(raw1 len={len(raw)}, raw2 len={len(raw_retry)}): {exc}"
             )
             err.raw_output = raw_retry[:2000]  # type: ignore[attr-defined]
