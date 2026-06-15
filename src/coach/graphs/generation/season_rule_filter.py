@@ -75,7 +75,6 @@ _TAPER_NEW_STIMULUS_KEYWORDS = (
     "max effort",
     "all-out",
     "time trial",
-    "tt",
     "hill repeat",
     "新",
     "测试",
@@ -323,9 +322,9 @@ def check_milestone_coverage(
     ("phase X has a 5k milestone but no visible speed work"), never an error.
     """
     violations: list[SeasonRuleViolation] = []
-    phase_by_id = {p.phase_id: p for p in bundle.phases}
 
-    for phase_id, phase in phase_by_id.items():
+    for phase in bundle.phases:
+        phase_id = phase.phase_id
         milestones = _quantifiable_milestones_for_phase(phase_id, master_plan)
         if not milestones:
             continue
@@ -356,9 +355,7 @@ def check_milestone_coverage(
     return violations
 
 
-def check_taper_peak_sanity(
-    bundle: SeasonPlanBundle, master_plan: MasterPlan
-) -> list[SeasonRuleViolation]:
+def check_taper_peak_sanity(bundle: SeasonPlanBundle) -> list[SeasonRuleViolation]:
     """Taper volume must drop vs the preceding peak (error); no new taper stimulus (warning).
 
     Hard part: total run km of a TAPER phase must be strictly below the
@@ -486,6 +483,6 @@ def run_season_rule_filter(
     violations.extend(check_volume_arc(bundle))
     violations.extend(check_phase_transition(bundle))
     violations.extend(check_milestone_coverage(bundle, master_plan))
-    violations.extend(check_taper_peak_sanity(bundle, master_plan))
+    violations.extend(check_taper_peak_sanity(bundle))
     violations.extend(check_blocked_week_budget(bundle))
     return SeasonRuleReport(violations=violations)

@@ -472,6 +472,59 @@ def test_empty_bundle_does_not_crash():
     assert report.ok
 
 
+def test_malformed_week_degrades_without_crashing():
+    # A structurally-broken week (sessions is a str, fails WeeklyPlan.from_dict)
+    # must be treated as absent: the season pass does NOT crash and the broken
+    # week's km is excluded from the volume_arc series. Here a clean 40km→44km
+    # ramp brackets the broken week; if the broken week leaked into the series
+    # (or raised), the run would crash or misbehave.
+    broken_week = {
+        "schema": "weekly-plan/v1",
+        "week_folder": "wbroken",
+        "sessions": "not-a-list",  # wrong type → WeeklyPlan.from_dict raises
+        "nutrition": [],
+    }
+    bundle = _bundle(
+        [
+            _phase(
+                "p1",
+                PhaseType.BASE,
+                [
+                    _week("2026-05-04", 40, folder="w1"),
+                    broken_week,
+                    _week("2026-05-11", 44, folder="w2"),
+                ],
+            ),
+        ]
+    )
+    mp = _master_plan([_mp_phase("p1", PhaseType.BASE)], [])
+    report = run_season_rule_filter(bundle, mp)
+    assert isinstance(report, SeasonRuleReport)
+    # 40 → 44 is a 1.10x step (at cap), broken week excluded → no spike error.
+    assert not any(v.rule == "volume_arc" for v in report.errors())
+
+
+def test_volume_arc_at_cap_boundary_passes():
+    # Exactly 1.10x (40km → 44km) must PASS: the cap check is `> 1.10`, not `>=`.
+    bundle = _bundle(
+        [
+            _phase(
+                "p1",
+                PhaseType.BASE,
+                [
+                    _week("2026-05-04", 40, folder="w1"),
+                    _week("2026-05-11", 44, folder="w2"),
+                ],
+            ),
+        ]
+    )
+    mp = _master_plan([_mp_phase("p1", PhaseType.BASE)], [])
+    report = run_season_rule_filter(bundle, mp)
+    assert not any(v.rule == "volume_arc" for v in report.errors()), [
+        v.message for v in report.errors()
+    ]
+
+
 def test_phase_with_no_weeks_does_not_crash():
     bundle = _bundle(
         [
