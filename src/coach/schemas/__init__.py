@@ -21,6 +21,7 @@ from .conversation import (
 from .continuity import ContinuitySignals
 from .job import CoachJob, JobStage, JobStatus, JobType
 from .review import ReviewClass, ReviewIssue, ReviewReport, Severity, Verdict
+from .season_bundle import PhaseReview, PhaseWeeks, SeasonPlanBundle
 from .specialist_context import PaceTargets, VolumeTargets, fmt_pace_s_km
 from .tool_result import ToolResult
 
@@ -44,6 +45,9 @@ __all__ = [
     "ReviewReport",
     "Severity",
     "Verdict",
+    "PhaseReview",
+    "PhaseWeeks",
+    "SeasonPlanBundle",
     "PaceTargets",
     "VolumeTargets",
     "fmt_pace_s_km",
