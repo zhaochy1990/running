@@ -160,7 +160,15 @@ def review_phase(
         )
 
     try:
-        return parse_phase_review(raw)
+        review = parse_phase_review(raw)
+        logger.info(
+            "review_phase: phase %s (%s) doctrine review → verdict=%s (%d issue(s))",
+            phase.id,
+            phase_type,
+            review.verdict,
+            len(review.issues or []),
+        )
+        return review
     except Exception as exc:  # noqa: BLE001 — parse failure must not crash the season
         logger.warning(
             "review_phase: parse failed for phase %s (%s) — degrading to revise: %s",

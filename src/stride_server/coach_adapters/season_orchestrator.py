@@ -294,10 +294,24 @@ def generate_season(
     milestones = list(master_plan.milestones or [])
 
     # --- Pass 1: inline per-phase generation with review-driven regen. -------
+    n_phases = len(master_plan.phases)
+    logger.info(
+        "season: starting — %d phases, %d milestones, max_phase_attempts=%d",
+        n_phases,
+        len(milestones),
+        max_phase_attempts,
+    )
     phase_results: list[PhaseWeeks] = []
     prev_exit_km: float | None = None
-    for phase in master_plan.phases:
+    for i, phase in enumerate(master_plan.phases):
         owned = _phase_milestones(phase, milestones)
+        logger.info(
+            "season: ▶ phase %d/%d %s — generating (prev_working=%s)",
+            i + 1,
+            n_phases,
+            phase.phase_type.value if phase.phase_type else "base",
+            f"{prev_exit_km:.0f}km" if prev_exit_km is not None else "—",
+        )
         pw = _best_phase_attempt(
             phase,
             prev_phase_end_km=prev_exit_km,
@@ -307,6 +321,15 @@ def generate_season(
             max_phase_attempts=max_phase_attempts,
         )
         phase_results.append(pw)
+        logger.info(
+            "season: ✓ phase %d/%d %s — %d weeks, %d blocked, review=%s",
+            i + 1,
+            n_phases,
+            phase.phase_type.value if phase.phase_type else "base",
+            len(pw.weeks),
+            pw.blocked_week_count,
+            pw.review.verdict if pw.review else "—",
+        )
         # Thread the working volume forward (I1): the next phase derives from
         # what this phase actually trained at (its max week), not its last
         # (possibly deload-trough) week. If this phase produced zero weeks (all
@@ -325,9 +348,20 @@ def generate_season(
     season_rounds = max(1, int(max_phase_attempts))
     final_report: SeasonRuleReport | None = None
     for _round in range(season_rounds):
+        logger.info(
+            "season: ◆ validating cross-phase rules (round %d/%d)",
+            _round + 1,
+            season_rounds,
+        )
         bundle = _assemble(master_plan, phase_results, generated_by)
         report = run_season_rule_filter(bundle, master_plan)
         final_report = report
+        logger.info(
+            "season: season rules %s — %d error(s), %d warning(s)",
+            "OK" if report.ok else "FAILED",
+            len(report.errors()),
+            len(report.warnings()),
+        )
         if report.ok:
             break
         targets = _attributed_phase_ids(report)
@@ -380,6 +414,19 @@ def generate_season(
         )
     for w in (final_report.warnings() if final_report is not None else []):
         logger.info("season warning: %s", w.message)
+    total_weeks = sum(len(p.weeks) for p in bundle.phases)
+    total_blocked = sum(p.blocked_week_count for p in bundle.phases)
+    n_pass = sum(1 for p in bundle.phases if p.review and p.review.verdict == "pass")
+    logger.info(
+        "season: ✅ complete — %d weeks across %d phases (%d blocked), "
+        "%d/%d phases review=pass, season rules %s",
+        total_weeks,
+        len(bundle.phases),
+        total_blocked,
+        n_pass,
+        len(bundle.phases),
+        "OK" if (final_report is None or final_report.ok) else "FAILED",
+    )
     return bundle
 
 

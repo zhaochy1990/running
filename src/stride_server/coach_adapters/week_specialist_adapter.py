@@ -522,8 +522,17 @@ def generate_phase_weeks(
     # One DB handle per phase loop for the deterministic pace/volume context.
     db = Database(user=user_id)
 
-    for week in weeks:
+    total_weeks = len(weeks)
+    for idx, week in enumerate(weeks):
         week_meta = _coerce_week_meta(week)
+        logger.info(
+            "phase %s: generating week %d/%d %s (target %.0fkm)",
+            phase_type.value,
+            idx + 1,
+            total_weeks,
+            week_meta.week_folder,
+            week_meta.target_weekly_km,
+        )
 
         # 1. Per-week input_payload — Task 4's documented generator contract.
         input_payload = {
@@ -605,5 +614,12 @@ def generate_phase_weeks(
                 / 1000.0
             )
         prior_week_tail = _summarize_prior_week_tail(artifact)
+        logger.info(
+            "phase %s: week %d/%d ok — %.1fkm",
+            phase_type.value,
+            idx + 1,
+            total_weeks,
+            prev_week_km,
+        )
 
     return results
