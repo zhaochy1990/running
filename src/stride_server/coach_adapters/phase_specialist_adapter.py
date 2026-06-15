@@ -50,6 +50,7 @@ from coach.graphs.generation.phase_prompt import (
     PhaseWeekSpec,
     build_phase_system_prompt,
 )
+from coach.graphs.generation.rule_filter import run_rule_filter
 from coach.graphs.generation.weekly_prompt import WeekMeta
 from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.tool_loop import run_tool_loop
@@ -65,6 +66,7 @@ from ..master_plan_generator import _parse_llm_output
 from .week_specialist_adapter import (
     _build_specialist_tools,
     _coerce_phase_type,
+    _coerce_week_meta,
     _render_context_block,
     build_specialist_context,
 )
@@ -357,3 +359,202 @@ def generate_specialist_phase(
         validated.append(plan.to_dict())
 
     return validated
+
+
+# ---------------------------------------------------------------------------
+# Phase rule_filter + feedback-regeneration loop (phase-at-once PA-T4)
+# ---------------------------------------------------------------------------
+
+
+def _format_rule_feedback(
+    per_week_errors: list[tuple[int, list]],
+) -> str:
+    """Render the per-week rule violations into a regen feedback string.
+
+    ``per_week_errors`` is a list of ``(week_index_0based, [RuleViolation…])``.
+    Each violation becomes one line naming the **1-based** week + the rule +
+    its message, e.g.::
+
+        第 3 周违反 long_run_share：longest run is 41% of weekly volume (limit 35%)
+
+    The next regen threads this back through
+    ``generate_specialist_phase(feedback=…)`` so the LLM fixes the SPECIFIC
+    week + rule instead of blindly regenerating the whole phase (the old waste).
+    """
+    lines: list[str] = []
+    for week_idx, errors in per_week_errors:
+        for v in errors:
+            lines.append(
+                f"第 {week_idx + 1} 周违反 {v.rule}：{v.message}"
+            )
+    header = (
+        "上一次生成违反了以下硬性规则（rule_filter），请在本次重新生成时"
+        "**逐条修复**对应周次的问题，不要重复同样的错误："
+    )
+    return header + "\n" + "\n".join(lines)
+
+
+def generate_phase(
+    phase: Phase,
+    week_metas: list[dict | WeekMeta],
+    context: dict,
+    injuries: list[str] | None = None,
+    *,
+    feedback: str | None = None,
+    max_attempts: int = 3,
+) -> list[dict]:
+    """Generate a whole phase, rule-gate each week, regen-with-feedback, drop strays.
+
+    The phase-at-once replacement for the per-week ``generate_phase_weeks`` loop.
+    It generates the entire phase in one LLM call (``generate_specialist_phase``,
+    PA-T3), runs the deterministic ``run_rule_filter`` on each week, and — when a
+    week violates a HARD rule — regenerates the phase **with the specific
+    violations fed back** (bounded by ``max_attempts``). Persistently-violating
+    weeks are dropped; only rule-clean weeks are returned.
+
+    **prev_week_km = deterministic target (not generated km).** For week ``i``
+    the progression check uses ``week_metas[i-1].target_weekly_km`` — the
+    DETERMINISTIC week target the generator aims at — NOT the prior generated
+    km. This makes each week's check **independent** of whether its predecessor
+    was kept or dropped (which is what lets phase-at-once work: a dropped week
+    never perturbs its successor's gate). Week 0 has no within-phase predecessor
+    so ``prev_week_km=None``; the cross-phase boundary is checked separately by
+    ``run_season_rule_filter`` (not here).
+
+    Args:
+        phase: the ``Phase`` to fill (routes the specialist doctrine + tools).
+        week_metas: ordered per-week descriptors (dict or ``WeekMeta``). Coerced
+            via ``_coerce_week_meta``; ``len(week_metas)`` is the requested week
+            count N.
+        context: shared per-phase context — ``user_id``, ``goal`` (dict),
+            ``level``; may carry ``continuity`` / ``prior_week_tail``.
+        injuries: optional injury flags — fed to the prompt AND to the
+            rule_filter ``injury_conflict`` check.
+        feedback: optional EXTERNAL feedback (the reviewer's issues from the
+            orchestrator, PA-T5 — ``None`` for a fresh generation). Used on the
+            FIRST attempt only; later attempts carry the rule-violation feedback
+            from the prior attempt instead.
+        max_attempts: hard bound on generation attempts (default 3). EVERY loop
+            here is bounded by it — a persistently-failing phase never spins.
+
+    Returns:
+        The list of rule-clean ``WeeklyPlan`` dicts (length ≤ ``len(week_metas)``;
+        the caller computes ``blocked_week_count`` from the difference). Returns
+        ``[]`` if ``generate_specialist_phase`` persistently fails to parse /
+        validate (whole-phase degrade — the caller then marks every week blocked).
+
+    Never raises: a ``parse_failed`` / ``bad_schema`` that survives PA-T3's own
+    retry is caught here and degraded to ``[]`` (the orchestrator contract wants
+    fewer/zero weeks, never an exception out of ``generate_phase``).
+    """
+    metas: list[WeekMeta] = [_coerce_week_meta(w) for w in week_metas]
+    if not metas:
+        return []
+
+    user_id = str(context.get("user_id") or "")
+    goal = context.get("goal") or {}
+    level = float(context.get("level") or 0.0)
+    injuries = list(injuries or [])
+    phase_type = _coerce_phase_type(phase.phase_type or PhaseType.BASE)
+
+    # 1. Compute the deterministic, athlete-level rule_filter inputs ONCE. The
+    #    Z4-Z5 threshold = pace_targets.threshold_pace_s_km comes from the SAME
+    #    build_specialist_context call PA-T3 makes (single-sourced — never a
+    #    divergent recompute). One DB handle for the whole loop.
+    db = Database(user=user_id)
+    pace_targets, _vt = build_specialist_context(
+        db, goal=goal, phase_type=phase_type, week_meta=metas[0], level=level
+    )
+    z45_threshold = pace_targets.threshold_pace_s_km
+
+    # prev_week_km per week i = the DETERMINISTIC target of week i-1 (week 0 →
+    # None). Computed up front from the metas (independent of generation).
+    prev_km_for: list[float | None] = [None] + [
+        float(m.target_weekly_km) for m in metas[:-1]
+    ]
+
+    # 2. Bounded attempt loop. First attempt carries the EXTERNAL feedback (the
+    #    reviewer's issues, or None); later attempts carry the prior attempt's
+    #    rule violations.
+    current_feedback: str | None = feedback
+    last_clean: list[dict] = []
+    for attempt in range(1, max_attempts + 1):
+        try:
+            weeks = generate_specialist_phase(
+                phase, metas, context, injuries, feedback=current_feedback
+            )
+        except (LLMUnavailable, LLMError):
+            # Real LLM-infra failure — not a content fault we can regen our way
+            # out of. Degrade the whole phase (contract: never raise).
+            logger.warning(
+                "generate_phase: phase %s LLM unavailable/error on attempt %d/%d "
+                "— degrading to 0 weeks",
+                phase_type.value,
+                attempt,
+                max_attempts,
+                exc_info=True,
+            )
+            return []
+        except ValueError as exc:
+            # parse_failed / bad_schema survived PA-T3's own retry → whole phase
+            # failed to generate. Degrade to [] (caller marks all weeks blocked).
+            logger.warning(
+                "generate_phase: phase %s generation failed on attempt %d/%d "
+                "(%s) — degrading to 0 weeks",
+                phase_type.value,
+                attempt,
+                max_attempts,
+                str(exc)[:200],
+            )
+            return []
+
+        # 3. Run rule_filter on each week with the target-based prev_week_km.
+        per_week_errors: list[tuple[int, list]] = []
+        for i, wk in enumerate(weeks):
+            report = run_rule_filter(
+                wk,
+                prev_week_km=prev_km_for[i],
+                injuries=injuries or None,
+                z45_pace_threshold_s_km=z45_threshold,
+            )
+            errs = report.errors()
+            if errs:
+                per_week_errors.append((i, errs))
+
+        # 4. No errors anywhere → the whole phase is clean, return it.
+        if not per_week_errors:
+            return weeks
+
+        last_clean = [
+            wk
+            for i, wk in enumerate(weeks)
+            if i not in {idx for idx, _ in per_week_errors}
+        ]
+
+        # 5. Attempts remain → build the rule-violation feedback and regen.
+        if attempt < max_attempts:
+            current_feedback = _format_rule_feedback(per_week_errors)
+            logger.info(
+                "generate_phase: phase %s attempt %d/%d had %d violating week(s) "
+                "— regenerating with rule feedback",
+                phase_type.value,
+                attempt,
+                max_attempts,
+                len(per_week_errors),
+            )
+
+    # 6. Attempts exhausted with violations remaining → keep the rule-clean
+    #    weeks, DROP the persistently-violating ones (log a warning per drop).
+    #    last_clean was set on the final attempt above.
+    for i, errs in per_week_errors:
+        rules = ", ".join(sorted({v.rule for v in errs}))
+        logger.warning(
+            "generate_phase: phase %s week %s (index %d) persistently violates "
+            "[%s] after %d attempts — DROPPING it",
+            phase_type.value,
+            metas[i].week_folder,
+            i,
+            rules,
+            max_attempts,
+        )
+    return last_clean
