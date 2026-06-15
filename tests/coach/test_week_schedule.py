@@ -304,6 +304,59 @@ def test_recovery_is_low_and_decreasing():
     assert all(kms[i] <= kms[i - 1] for i in range(1, len(kms))), kms
 
 
+def test_recovery_clamps_to_high_when_prev_above_band():
+    # prev exit 90 sits ABOVE this recovery phase's high band (55). The early
+    # recovery weeks must NOT come out above the band ceiling — a "recovery"
+    # phase running above its own high is semantically wrong.
+    high = 55.0
+    weeks = derive_phase_weeks(
+        _phase(
+            start=_SIX_WEEK_START,
+            end=_SIX_WEEK_END,  # 6 weeks
+            low=30,
+            high=high,
+            phase_type=PhaseType.RECOVERY,
+            name="恢复周",
+        ),
+        prev_phase_end_km=90.0,
+    )
+    kms = [w.target_weekly_km for w in weeks]
+    # Clamped to the band high.
+    assert all(km <= high + 1e-6 for km in kms), kms
+    # Still trends down.
+    assert all(kms[i] <= kms[i - 1] for i in range(1, len(kms))), kms
+    # HARD ≤1.10× continuity cap on week 1 (clamping down can't break it).
+    assert kms[0] <= 90.0 * 1.10 + 1e-6, kms
+    for prev, cur in zip(kms, kms[1:]):
+        assert cur <= prev * 1.10 + 1e-6, (prev, cur, kms)
+
+
+def test_taper_clamps_to_high_when_prev_above_band():
+    # prev exit 90 sits ABOVE this taper phase's high band (55). The early
+    # taper weeks must NOT come out above the band ceiling.
+    high = 55.0
+    weeks = derive_phase_weeks(
+        _phase(
+            start=_SIX_WEEK_START,
+            end=_SIX_WEEK_END,  # 6 weeks
+            low=30,
+            high=high,
+            phase_type=PhaseType.TAPER,
+            name="减量周",
+        ),
+        prev_phase_end_km=90.0,
+    )
+    kms = [w.target_weekly_km for w in weeks]
+    # Clamped to the band high.
+    assert all(km <= high + 1e-6 for km in kms), kms
+    # Still trends down (monotone non-increasing).
+    assert all(kms[i] <= kms[i - 1] for i in range(1, len(kms))), kms
+    # HARD ≤1.10× continuity cap on week 1 (clamping down can't break it).
+    assert kms[0] <= 90.0 * 1.10 + 1e-6, kms
+    for prev, cur in zip(kms, kms[1:]):
+        assert cur <= prev * 1.10 + 1e-6, (prev, cur, kms)
+
+
 # ---------------------------------------------------------------------------
 # continuity — start from prev_phase_end_km, not the band floor
 # ---------------------------------------------------------------------------

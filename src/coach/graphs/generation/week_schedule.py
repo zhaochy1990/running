@@ -176,27 +176,31 @@ def _peak_volumes(n: int, *, high: float, start_km: float) -> list[float]:
     return vols
 
 
-def _taper_volumes(n: int, *, start_km: float) -> list[float]:
+def _taper_volumes(n: int, *, low: float, high: float, start_km: float) -> list[float]:
     """Taper: step down across the phase from the peak-entry volume —
-    ~−25% on the first taper week, deepening to ~−45% on the final week."""
+    ~−25% on the first taper week, deepening to ~−45% on the final week.
+    Each week is clamped into ``[low, high]`` so a high prior-phase exit can't
+    leave the early taper weeks above this phase's own ceiling."""
     if n == 1:
-        return [start_km * _TAPER_LAST_CUT]
+        return [min(max(start_km * _TAPER_LAST_CUT, low), high)]
     vols: list[float] = []
     for i in range(n):
         frac = i / (n - 1)  # 0 … 1
         cut = _TAPER_FIRST_CUT + (_TAPER_LAST_CUT - _TAPER_FIRST_CUT) * frac
-        vols.append(start_km * cut)
+        vols.append(min(max(start_km * cut, low), high))
     return vols
 
 
-def _recovery_volumes(n: int, *, low: float, start_km: float) -> list[float]:
+def _recovery_volumes(n: int, *, low: float, high: float, start_km: float) -> list[float]:
     """Recovery: cut from entry, then a gentle further step down each week.
-    Chronic intentionally drops; floor at the band low."""
+    Chronic intentionally drops; each week is clamped into ``[low, high]`` —
+    floor at the band low, and ceiling at the band high so a high prior-phase
+    exit can't leave the early recovery weeks above this phase's own ceiling."""
     vols: list[float] = []
     prev = start_km
     for i in range(n):
         cur = start_km * _RECOVERY_FIRST_CUT if i == 0 else prev * _RECOVERY_STEP
-        cur = max(cur, low)
+        cur = min(max(cur, low), high)
         vols.append(cur)
         prev = cur
     return vols
@@ -233,9 +237,13 @@ def derive_phase_weeks(
 
     # --- Starting volume (continuity vs band floor) --------------------------
     if prev_phase_end_km is not None and prev_phase_end_km > 0:
-        # Continuity: start from the prior exit volume, clamped into a sane
-        # relation to this phase's band (don't start absurdly above the high
-        # band nor below a recovery floor).
+        # Continuity: thread the prior phase's exit volume in as the raw start.
+        # It is NOT band-clamped here — each phase branch below clamps it into a
+        # sane relation to this phase's band where appropriate: ramp-up / peak
+        # clamp the anchor into ``[low, high]`` inline (``min(max(start_km, low),
+        # high)``); taper / recovery clamp every emitted week into ``[low, high]``
+        # inside ``_taper_volumes`` / ``_recovery_volumes``. So a prior exit far
+        # above this phase's high band never leaks an above-ceiling week through.
         start_km = float(prev_phase_end_km)
     else:
         start_km = low
@@ -272,10 +280,10 @@ def derive_phase_weeks(
         # Step down off the peak-entry volume (the prior exit, else the high
         # band as the implicit peak).
         entry = start_km if (prev_phase_end_km and prev_phase_end_km > 0) else high
-        vols = _taper_volumes(n, start_km=entry)
+        vols = _taper_volumes(n, low=low, high=high, start_km=entry)
     elif pt is PhaseType.RECOVERY:
         entry = start_km if (prev_phase_end_km and prev_phase_end_km > 0) else high
-        vols = _recovery_volumes(n, low=low, start_km=entry)
+        vols = _recovery_volumes(n, low=low, high=high, start_km=entry)
     else:  # pragma: no cover — PhaseType is a closed enum; defensive only.
         anchor = min(max(start_km, low), high)
         if first_week_cap is not None:
