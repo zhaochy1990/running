@@ -20,12 +20,14 @@ Single-source discipline (CLAUDE.md HARD):
 
 from __future__ import annotations
 
+import functools
 import logging
+from collections.abc import Callable
 from datetime import date as date_cls
 from typing import Any
 
 from coach.graphs.generation.rule_filter import INJURY_CONTRAINDICATION_KEYWORDS
-from coach.schemas import PaceTargets, VolumeTargets
+from coach.schemas import PaceTargets, ToolResult, VolumeTargets
 from stride_core.master_plan import PhaseType
 from stride_core.models import RUN_SPORT_SQL_LIST
 from stride_core.running_calibration.sqlite_connector import (
@@ -400,3 +402,104 @@ def recent_training(
             row = {"week": r["wk"], "longest_km": round(longest_km, 1)}
         summary.append(row)
     return summary
+
+
+# ---------------------------------------------------------------------------
+# LLM-facing tool wrappers (Stage-3a Task 8 Part B)
+#
+# The pure ``strength_library`` / ``recent_training`` functions above stay
+# intact — ``generate_phase_weeks`` and Task-3 tests call them deterministically.
+# These wrapper classes adapt them to the langchain tool-calling surface:
+#   * a clean LLM-facing signature (no ``db`` arg — the wrapper opens its own),
+#   * a ``ToolResult`` envelope (``{ok, data, errors}``),
+#   * ``_tool_safe`` so a failure returns ``ToolResult(ok=False)`` not a raise.
+#
+# Wired into the per-week generator via ``week_specialist_adapter`` (Part C).
+# Descriptions tell the LLM what each does + when to call it.
+# ---------------------------------------------------------------------------
+
+
+def _tool_safe(func: Callable[..., ToolResult]) -> Callable[..., ToolResult]:
+    """Convert any uncaught exception to ``ToolResult(ok=False, errors=[...])``.
+
+    Mirrors ``coach_adapters.tool_impls.read_impls._tool_safe`` (kept a local
+    copy here so this module does not depend on the read-tool package's import
+    side effects). Tools that surface *known* failures should construct the
+    ``ok=False`` result themselves; this only handles the *unexpected* path."""
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> ToolResult:
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — tool-safety boundary
+            logger.exception("specialist tool %s raised", func.__qualname__)
+            return ToolResult(ok=False, errors=[f"{type(exc).__name__}: {exc}"])
+
+    return wrapper
+
+
+# Tool descriptions surfaced to the LLM (used by the langchain StructuredTool
+# wrapping in week_specialist_adapter).
+STRENGTH_LIBRARY_TOOL_DESCRIPTION = (
+    "查询经过校验的 COROS 内置力量/核心动作库（带 T-code），按目标肌群返回"
+    "可直接写进计划的动作（含组×次 + 中文备注）。targets 用肌群关键字，可多选："
+    "calf_eccentric（小腿/跟腱离心）、glute_med（臀中肌）、hip_stability（髋稳定/后链）、"
+    "core（核心抗旋/抗伸展）、thoracic_mobility（胸椎活动度）。当本周需要安排力量/核心/"
+    "稳定性课次时调用本工具拿真实 T-code，不要凭空编造动作或编号。可传 injuries 让工具"
+    "过滤掉与伤病冲突的动作（如 knee 过滤深蹲/弓步、back 过滤硬拉、ankle 过滤跳跃）。"
+)
+RECENT_TRAINING_TOOL_DESCRIPTION = (
+    "返回该跑者最近 weeks 周（默认 4 周）按周聚合的真实跑步负荷："
+    "每周总公里、课次数、最长单次距离（仅计跑步运动类型，上海周边界）。"
+    "当你需要参考跑者近期实际训练量来设定本周量/长跑距离的合理增幅时调用。"
+    "可选 filter='long_run' 只看每周最长跑；filter='quality' 为预留透传（行为同默认）。"
+)
+
+
+class StrengthLibraryTool:
+    """LLM-facing wrapper over the pure ``strength_library`` catalog lookup.
+
+    Bound to a ``user_id`` for symmetry with the read-tool impls (and so the
+    bound context can default ``injuries`` from the generation payload), though
+    the curated catalog itself needs no DB.
+    """
+
+    def __init__(self, user_id: str, *, default_injuries: list[str] | None = None) -> None:
+        self._user_id = user_id
+        # The generator binds the week's logged injuries here so the LLM can
+        # omit the arg and still get injury-safe filtering; an explicit
+        # ``injuries`` kwarg from the model overrides this default.
+        self._default_injuries = list(default_injuries or [])
+
+    @_tool_safe
+    def __call__(
+        self,
+        *,
+        targets: list[str],
+        injuries: list[str] | None = None,
+    ) -> ToolResult:
+        inj = injuries if injuries is not None else self._default_injuries
+        exercises = strength_library(targets, inj)
+        return ToolResult(ok=True, data={"exercises": exercises})
+
+
+class RecentTrainingTool:
+    """LLM-facing wrapper over the pure ``recent_training`` aggregation.
+
+    Opens a short-lived ``Database(user=user_id)`` internally so the LLM-facing
+    signature carries no ``db`` arg (mirrors the read-tool impls' DB-per-call
+    pattern)."""
+
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+
+    @_tool_safe
+    def __call__(self, *, weeks: int = 4, filter: str | None = None) -> ToolResult:
+        from stride_core.db import Database
+
+        db = Database(user=self._user_id)
+        try:
+            summary = recent_training(db, int(weeks), filter=filter)
+        finally:
+            db.close()
+        return ToolResult(ok=True, data={"weeks": summary})

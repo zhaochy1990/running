@@ -39,8 +39,12 @@ Per-week ``input_payload`` contract (documented for the graph wiring task):
 
 This is the **adapter** layer: it touches the DB (running calibration via
 ``Database(user=...)``) and the LLM — neither of which ``coach.*`` core may.
-Shared helpers (``_parse_llm_output`` 3-tier parse, ``LLMClient``) are reused,
-not reimplemented.
+Shared helpers (``_parse_llm_output`` 3-tier parse) are reused, not
+reimplemented. The LLM is now driven through a langchain tool-calling loop
+(``coach.runtime.tool_loop.run_tool_loop``) bound to the process-wide generator
+model (``get_generator_llm``) so the specialist's declared pull-tools
+(``strength_library`` / ``recent_training``) are actually invokable — the plain
+``LLMClient().chat_sync`` text-only path it replaced could not deliver them.
 """
 
 from __future__ import annotations
@@ -49,19 +53,34 @@ import logging
 from datetime import date as date_cls
 from typing import Any
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import StructuredTool
+
+from coach.graphs.conversation.tool_bridge import _build_args_schema, _serialize_result
+from coach.graphs.generation.phase_specialists import get_specialist
 from coach.graphs.generation.rule_filter import _total_run_distance_m
 from coach.graphs.generation.state import GenState
 from coach.graphs.generation.week_graph import build_week_specialist_graph
 from coach.graphs.generation.weekly_prompt import WeekMeta, build_weekly_system_prompt
-from coach.schemas import PaceTargets, ReviewReport, VolumeTargets
+from coach.runtime.tool_loop import run_tool_loop
+from coach.schemas import PaceTargets, ReviewReport, ToolResult, VolumeTargets
 from stride_core.db import Database
 from stride_core.master_plan import Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
 from stride_core.timefmt import today_shanghai
 
-from ..llm_client import LLMClient
+from ..coach_runtime import get_generator_llm
+from ..llm_client import LLMError, LLMUnavailable, _map_exception
 from ..master_plan_generator import _parse_llm_output
-from .specialist_tools import pace_targets, volume_targets
+from coach.runtime.llm_factory import CoachLLMUnavailable
+from .specialist_tools import (
+    RECENT_TRAINING_TOOL_DESCRIPTION,
+    STRENGTH_LIBRARY_TOOL_DESCRIPTION,
+    RecentTrainingTool,
+    StrengthLibraryTool,
+    pace_targets,
+    volume_targets,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +173,77 @@ def _render_context_block(
 
 
 # ---------------------------------------------------------------------------
+# Tool wiring (Task 8) — turn the specialist's declared pull-tools into the
+# langchain StructuredTools the tool loop drives.
+# ---------------------------------------------------------------------------
+
+# Map a declared specialist tool name → (callable factory, description). Only
+# the wired tools live here; an undeclared/unwired name is silently skipped so
+# the prompt never promises a tool the runtime can't deliver.
+_WIRED_TOOL_DESCRIPTIONS = {
+    "strength_library": STRENGTH_LIBRARY_TOOL_DESCRIPTION,
+    "recent_training": RECENT_TRAINING_TOOL_DESCRIPTION,
+}
+
+
+def _wrap_specialist_tool(name: str, impl: Any) -> StructuredTool:
+    """Wrap a ToolResult-returning callable as a langchain StructuredTool.
+
+    Reuses ``tool_bridge``'s generic ``_build_args_schema`` (derives the args
+    schema from the impl's ``__call__`` signature) + ``_serialize_result``
+    (``ToolResult`` → JSON string). The description is the specialist-tool one,
+    not the conversation ``_TOOL_DESCRIPTIONS`` dict.
+    """
+    description = _WIRED_TOOL_DESCRIPTIONS.get(name, f"Tool {name}")
+
+    def wrapper(**kwargs: Any) -> str:
+        kwargs.pop("_no_args", None)
+        result: ToolResult = impl(**kwargs)
+        return _serialize_result(result)
+
+    wrapper.__name__ = name
+    wrapper.__doc__ = description
+
+    return StructuredTool.from_function(
+        wrapper,
+        name=name,
+        description=description,
+        args_schema=_build_args_schema(name, impl),
+    )
+
+
+def _build_specialist_tools(
+    phase_type: PhaseType,
+    *,
+    user_id: str,
+    injuries: list[str],
+) -> list[StructuredTool]:
+    """Build StructuredTools for the tools this specialist is allowed to use.
+
+    The allow-list comes from ``get_specialist(phase_type).tools`` (Task 1).
+    Only the wired tools (``strength_library`` / ``recent_training``) are built;
+    an empty tuple (e.g. taper) yields no tools, so the loop degrades to a plain
+    invoke. ``injuries`` is bound into ``StrengthLibraryTool`` so the LLM gets
+    injury-safe T-codes even if it omits the arg.
+    """
+    declared = get_specialist(phase_type).tools
+    tools: list[StructuredTool] = []
+    for name in declared:
+        if name == "strength_library":
+            impl = StrengthLibraryTool(user_id, default_injuries=injuries)
+        elif name == "recent_training":
+            impl = RecentTrainingTool(user_id)
+        else:
+            # Declared but not yet wired — skip (don't promise an unbindable tool).
+            logger.debug(
+                "specialist %s declares unwired tool %r — skipping", phase_type, name
+            )
+            continue
+        tools.append(_wrap_specialist_tool(name, impl))
+    return tools
+
+
+# ---------------------------------------------------------------------------
 # Per-week generator
 # ---------------------------------------------------------------------------
 
@@ -226,11 +316,39 @@ def generate_specialist_week(state: GenState) -> dict:
             "**显式修复**这些问题，不要重复同样的错误：\n"
             f"{violations_text}"
         )
-    user_message = [{"role": "user", "content": user_text}]
+    # 5. Build the tool surface this specialist is allowed to use, bind it to
+    #    the generator model, and run the langchain tool loop. The specialist
+    #    prompts instruct the LLM to call strength_library / recent_training;
+    #    with the loop those calls are now actually invokable (previously the
+    #    prompt promised tools the runtime couldn't deliver). injuries are bound
+    #    into StrengthLibraryTool so the LLM gets injury-safe COROS T-codes.
+    structured_tools = _build_specialist_tools(
+        phase_type, user_id=user_id, injuries=list(injuries)
+    )
 
-    # 5. LLM call + 3-tier parse + one retry (mirror the master-plan adapter).
-    client = LLMClient()
-    raw = client.chat_sync(system_prompt, user_message)
+    def _run_one_pass() -> str:
+        """One full tool-loop pass → final assistant text. Errors mapped to the
+        same LLMError / LLMUnavailable semantics the old chat_sync path raised."""
+        try:
+            llm = get_generator_llm()
+        except CoachLLMUnavailable as exc:
+            raise LLMUnavailable(str(exc)) from exc
+
+        llm_with_tools = llm.bind_tools(structured_tools) if structured_tools else llm
+        tool_map = {t.name: t for t in structured_tools}
+        # Fresh message list per pass (the loop appends AIMessage/ToolMessages).
+        messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_text)]
+        try:
+            return run_tool_loop(llm_with_tools, messages, tool_map)
+        except CoachLLMUnavailable as exc:
+            raise LLMUnavailable(str(exc)) from exc
+        except (LLMError, LLMUnavailable):
+            raise
+        except BaseException as exc:  # noqa: BLE001 — LLM/tool boundary
+            raise _map_exception(exc) from exc
+
+    # 6. Tool-loop pass + 3-tier parse + one retry (mirror the master-plan adapter).
+    raw = _run_one_pass()
     parsed = _parse_llm_output(raw)
     if parsed is None:
         logger.warning(
@@ -238,7 +356,7 @@ def generate_specialist_week(state: GenState) -> dict:
             "(raw_len=%d) — retrying once",
             len(raw),
         )
-        raw_retry = client.chat_sync(system_prompt, user_message)
+        raw_retry = _run_one_pass()
         parsed = _parse_llm_output(raw_retry)
         if parsed is None:
             err = ValueError(
@@ -248,7 +366,7 @@ def generate_specialist_week(state: GenState) -> dict:
             err.raw_output = raw_retry[:2000]  # type: ignore[attr-defined]
             raise err
 
-    # 6. Validate as a WeeklyPlan. Return the dict that round-trips through
+    # 7. Validate as a WeeklyPlan. Return the dict that round-trips through
     #    from_dict so the graph's rule_filter (which re-parses current_draft
     #    via WeeklyPlan.from_dict) succeeds. Stage-3a sessions are aspirational
     #    (spec=None) — we do not invent structured specs.
