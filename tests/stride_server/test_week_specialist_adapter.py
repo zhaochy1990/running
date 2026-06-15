@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import Any
 
 import pytest
 
@@ -168,36 +167,42 @@ def _make_state(
     }
 
 
-class _FakeLLM:
-    """Fake LLMClient capturing the system prompt and returning a canned reply.
+from tests.stride_server._fake_bindable_llm import FakeBindableLLM, ai_text
 
-    ``replies`` is a list returned one per ``chat_sync`` call (the last one is
-    reused if calls exceed the list). Captures every ``(system, messages)``.
+
+class _FakeLLMHandle:
+    """Adapts the old ``replies: list[str]`` fake-LLM surface to the new
+    bindable-model path. Each string reply becomes an ``AIMessage`` whose
+    content is the canned plan JSON; the tool loop (no tool_calls) returns it
+    verbatim. ``captured`` mirrors the old ``[(system, messages), ...]`` shape
+    so existing assertions keep working — but ``messages`` are now langchain
+    BaseMessages, not OpenAI dicts.
     """
 
-    captured: list[tuple[str, list]] = []
-    replies: list[str] = []
-    _idx = 0
-
     def __init__(self) -> None:
-        pass
+        self.replies: list[str] = []
+        self._model: FakeBindableLLM | None = None
 
-    def chat_sync(self, system: str, messages: list, *args: Any, **kwargs: Any) -> str:
-        _FakeLLM.captured.append((system, messages))
-        i = min(_FakeLLM._idx, len(_FakeLLM.replies) - 1)
-        _FakeLLM._idx += 1
-        return _FakeLLM.replies[i]
+    def _build_model(self) -> FakeBindableLLM:
+        # Defer until first get_generator_llm() so replies set in the test body
+        # are captured. The singleton is rebuilt each call (the adapter calls
+        # get_generator_llm per pass) but shares one captured/idx via closure.
+        if self._model is None:
+            self._model = FakeBindableLLM([ai_text(r) for r in self.replies])
+        return self._model
+
+    @property
+    def captured(self) -> list:
+        return self._model.captured if self._model is not None else []
 
 
 @pytest.fixture
 def fake_llm(monkeypatch):
-    _FakeLLM.captured = []
-    _FakeLLM.replies = []
-    _FakeLLM._idx = 0
-    monkeypatch.setattr(adapter_mod, "LLMClient", _FakeLLM)
+    handle = _FakeLLMHandle()
+    monkeypatch.setattr(adapter_mod, "get_generator_llm", handle._build_model)
     # Pin a deterministic "today" so pace_targets snapshot lookups are stable.
     monkeypatch.setattr(adapter_mod, "today_shanghai", lambda: _AS_OF)
-    return _FakeLLM
+    return handle
 
 
 # ---------------------------------------------------------------------------
@@ -387,7 +392,75 @@ def test_rule_violation_feedback_postscript(db, monkeypatch, fake_llm):
         ],
     )
     generate_specialist_week(state)
-    # the corrective postscript should appear in the user message
+    # the corrective postscript should appear in the user (Human) message
     user_messages = fake_llm.captured[0][1]
-    user_text = " ".join(m.get("content", "") for m in user_messages)
+    user_text = " ".join(
+        (m.content if isinstance(m.content, str) else str(m.content))
+        for m in user_messages
+    )
     assert "long_run_share_max" in user_text
+
+
+# ---------------------------------------------------------------------------
+# tool-calling actually fires: a base-phase specialist calls strength_library,
+# the wrapper is invoked, its result flows back, and the final plan still parses
+# ---------------------------------------------------------------------------
+
+
+def _base_payload() -> dict:
+    """A base-phase payload — base declares ('strength_library','recent_training')."""
+    p = _make_input_payload()
+    p["phase_type"] = "base"
+    p["week_meta"]["phase_position"] = "base week 1/4"
+    p["injuries"] = ["knee"]
+    return p
+
+
+def test_strength_library_tool_is_invoked_in_generation(db, monkeypatch):
+    """A base specialist that asks for strength_library triggers the wrapper;
+    its ToolResult flows back as a ToolMessage and the final plan still parses.
+    This proves strength_library now *executes in the generation path* (injury
+    filtering finally runs) — the headline payoff of Task 8.
+    """
+    from tests.stride_server._fake_bindable_llm import (
+        FakeBindableLLM,
+        ai_text,
+        ai_tool_call,
+    )
+
+    _seed_calibration(db)
+    monkeypatch.setattr(adapter_mod, "Database", lambda **kw: db)
+    monkeypatch.setattr(adapter_mod, "today_shanghai", lambda: _AS_OF)
+
+    plan_json = json.dumps(_valid_plan_dict(), ensure_ascii=False)
+    # Round 1: ask for strength_library (glute_med). Round 2: emit the plan.
+    model = FakeBindableLLM(
+        [
+            ai_tool_call("strength_library", {"targets": ["glute_med"]}, tc_id="c1"),
+            ai_text(plan_json),
+        ]
+    )
+    monkeypatch.setattr(adapter_mod, "get_generator_llm", lambda: model)
+
+    out = generate_specialist_week(_make_state(_base_payload()))
+    assert "current_draft" in out
+    WeeklyPlan.from_dict(out["current_draft"])  # round-trips
+
+    # The tool was actually bound (base declares strength_library + recent_training).
+    bound_names = {getattr(t, "name", None) for t in model.bound_tools}
+    assert "strength_library" in bound_names
+    assert "recent_training" in bound_names
+
+    # Round 2's messages must carry the ToolMessage with the strength_library
+    # result — i.e. the wrapper executed and its data flowed back to the model.
+    from langchain_core.messages import ToolMessage
+
+    second_round = model.invocations[1]
+    tool_msgs = [m for m in second_round if isinstance(m, ToolMessage)]
+    assert len(tool_msgs) == 1
+    assert tool_msgs[0].tool_call_id == "c1"
+    # The bound injuries=['knee'] filtered out the squat move (single leg squats);
+    # clamshell (a non-squat glute_med move) survived — proving injury filtering
+    # ran inside the generation path.
+    assert "clamshell" in tool_msgs[0].content
+    assert "single leg squats" not in tool_msgs[0].content

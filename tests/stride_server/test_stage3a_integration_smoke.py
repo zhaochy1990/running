@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import Any
 
 import pytest
 
@@ -238,27 +237,47 @@ def _run_total_km(plan_dict: dict) -> float:
 # ---------------------------------------------------------------------------
 
 
+from langchain_core.messages import AIMessage, SystemMessage
+
+
 class _FakeLLM:
-    """Fake LLMClient: returns a distinct clean week per call, scaled so the
-    threaded ``prev_week_km`` rises ≤ 1.08× week-over-week (stays under the
-    rule_filter's 1.10× progression cap). Captures every system prompt.
+    """Fake bindable generator model: returns a distinct clean week per invoke,
+    scaled so the threaded ``prev_week_km`` rises ≤ 1.08× week-over-week (under
+    the rule_filter's 1.10× progression cap). Captures every system prompt.
+
+    The per-week generator now drives the LLM through the langchain tool loop
+    bound to ``get_generator_llm()``; this fake satisfies that surface
+    (``bind_tools`` → self, ``invoke`` → an ``AIMessage`` with the plan JSON and
+    no tool_calls, so the loop returns it verbatim).
     """
 
     captured: list[tuple[str, list]] = []
     week_folders: list[str] = []
+    bound_tools: list = []
     _idx = 0
 
     def __init__(self) -> None:
         pass
 
-    def chat_sync(self, system: str, messages: list, *args: Any, **kwargs: Any) -> str:
-        _FakeLLM.captured.append((system, messages))
+    def bind_tools(self, tools, **_kw):  # type: ignore[no-untyped-def]
+        _FakeLLM.bound_tools = list(tools)
+        return self
+
+    def invoke(self, messages: list) -> AIMessage:
+        sys_text = ""
+        for m in messages:
+            if isinstance(m, SystemMessage):
+                sys_text = m.content if isinstance(m.content, str) else str(m.content)
+                break
+        _FakeLLM.captured.append((sys_text, list(messages)))
         i = min(_FakeLLM._idx, len(_FakeLLM.week_folders) - 1)
         _FakeLLM._idx += 1
         folder = _FakeLLM.week_folders[i]
         total_km = round(_BASE_WEEKLY_KM * (_PROGRESSION ** i), 1)
-        return json.dumps(
-            _clean_week_plan(folder, total_km=total_km), ensure_ascii=False
+        return AIMessage(
+            content=json.dumps(
+                _clean_week_plan(folder, total_km=total_km), ensure_ascii=False
+            )
         )
 
 
@@ -266,8 +285,10 @@ class _FakeLLM:
 def fake_llm(monkeypatch):
     _FakeLLM.captured = []
     _FakeLLM.week_folders = []
+    _FakeLLM.bound_tools = []
     _FakeLLM._idx = 0
-    monkeypatch.setattr(adapter_mod, "LLMClient", _FakeLLM)
+    model = _FakeLLM()
+    monkeypatch.setattr(adapter_mod, "get_generator_llm", lambda: model)
     # Pin a deterministic "today" so pace_targets snapshot lookups are stable.
     monkeypatch.setattr(adapter_mod, "today_shanghai", lambda: _AS_OF)
     return _FakeLLM

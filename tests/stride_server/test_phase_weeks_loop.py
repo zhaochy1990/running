@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import Any
 
 import pytest
 
@@ -192,29 +191,35 @@ def _no_rest_day_plan(week_folder: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-class _FakeLLM:
-    captured: list[tuple[str, list]] = []
-    replies: list[str] = []
-    _idx = 0
+from tests.stride_server._fake_bindable_llm import FakeBindableLLM, ai_text
+
+
+class _FakeLLMHandle:
+    """Adapt the old ``replies: list[str]`` fake-LLM surface to the bindable
+    model path. Each reply → an ``AIMessage`` (no tool_calls) the tool loop
+    returns verbatim. The single model instance persists across the loop's weeks
+    so the reply index advances week-to-week (last reply reused if exhausted)."""
 
     def __init__(self) -> None:
-        pass
+        self.replies: list[str] = []
+        self._model: FakeBindableLLM | None = None
 
-    def chat_sync(self, system: str, messages: list, *args: Any, **kwargs: Any) -> str:
-        _FakeLLM.captured.append((system, messages))
-        i = min(_FakeLLM._idx, len(_FakeLLM.replies) - 1)
-        _FakeLLM._idx += 1
-        return _FakeLLM.replies[i]
+    def _build_model(self) -> FakeBindableLLM:
+        if self._model is None:
+            self._model = FakeBindableLLM([ai_text(r) for r in self.replies])
+        return self._model
+
+    @property
+    def captured(self) -> list:
+        return self._model.captured if self._model is not None else []
 
 
 @pytest.fixture
 def fake_llm(monkeypatch):
-    _FakeLLM.captured = []
-    _FakeLLM.replies = []
-    _FakeLLM._idx = 0
-    monkeypatch.setattr(adapter_mod, "LLMClient", _FakeLLM)
+    handle = _FakeLLMHandle()
+    monkeypatch.setattr(adapter_mod, "get_generator_llm", handle._build_model)
     monkeypatch.setattr(adapter_mod, "today_shanghai", lambda: _AS_OF)
-    return _FakeLLM
+    return handle
 
 
 @pytest.fixture

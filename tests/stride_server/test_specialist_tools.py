@@ -23,6 +23,8 @@ from stride_core.running_calibration.types import (
     RunningCalibrationSnapshot,
 )
 from stride_server.coach_adapters.specialist_tools import (
+    RecentTrainingTool,
+    StrengthLibraryTool,
     pace_targets,
     recent_training,
     strength_library,
@@ -212,3 +214,80 @@ def test_recent_training_unknown_filter_raises(db: Database):
     # A typo'd filter must raise, not silently return unfiltered data.
     with pytest.raises(ValueError):
         recent_training(db, weeks=4, as_of=date(2026, 6, 1), filter="longrun")
+
+
+# ---------------------------------------------------------------------------
+# LLM-facing tool wrappers (Task 8 Part B): ToolResult envelope + _tool_safe
+# ---------------------------------------------------------------------------
+
+
+def test_strength_library_tool_wraps_result():
+    tool = StrengthLibraryTool("user-1")
+    res = tool(targets=["core"])
+    assert res.ok is True
+    assert "exercises" in res.data
+    assert res.data["exercises"]  # core group is non-empty
+    assert all("code" in ex for ex in res.data["exercises"])
+
+
+def test_strength_library_tool_filters_injuries():
+    # knee → contraindicates "squat" → drops "single leg squats" from glute_med.
+    tool = StrengthLibraryTool("user-1")
+    res = tool(targets=["glute_med"], injuries=["knee"])
+    assert res.ok is True
+    names = {ex["name"] for ex in res.data["exercises"]}
+    assert "single leg squats" not in names
+    # the non-squat glute_med moves survive
+    assert "clamshell" in names
+
+
+def test_strength_library_tool_defaults_injuries_from_bound_context():
+    # The generator binds the week's injuries; the LLM may omit the arg.
+    tool = StrengthLibraryTool("user-1", default_injuries=["knee"])
+    res = tool(targets=["glute_med"])
+    names = {ex["name"] for ex in res.data["exercises"]}
+    assert "single leg squats" not in names
+    # An explicit empty list from the model overrides the bound default.
+    res2 = tool(targets=["glute_med"], injuries=[])
+    names2 = {ex["name"] for ex in res2.data["exercises"]}
+    assert "single leg squats" in names2
+
+
+def test_recent_training_tool_opens_db_and_wraps(db: Database, monkeypatch):
+    _insert_activity(db, "r1", sport_type=100, date_iso="2026-05-26T01:00:00Z", distance_m=10.0)
+    import stride_core.db as db_mod
+
+    monkeypatch.setattr(db_mod, "Database", lambda **kw: db)
+    # The tool wrapper imports Database lazily inside __call__.
+    monkeypatch.setattr(
+        "stride_core.db.Database", lambda **kw: db, raising=True
+    )
+    # today_shanghai default would use the real today; pass weeks large enough
+    # to cover the seeded date via the pure function's as_of=today default —
+    # instead seed a row close to "today" is fragile, so patch today.
+    import stride_server.coach_adapters.specialist_tools as st_mod
+
+    monkeypatch.setattr(st_mod, "today_shanghai", lambda: date(2026, 6, 1))
+    # Prevent the wrapper from closing the shared test db.
+    monkeypatch.setattr(db, "close", lambda: None)
+
+    tool = RecentTrainingTool("user-1")
+    res = tool(weeks=4)
+    assert res.ok is True
+    assert "weeks" in res.data
+    assert sum(w["total_km"] for w in res.data["weeks"]) == pytest.approx(10.0, abs=0.1)
+
+
+def test_recent_training_tool_error_is_caught(monkeypatch):
+    # If opening the DB blows up, _tool_safe turns it into ok=False, not a raise.
+    import stride_server.coach_adapters.specialist_tools as st_mod
+
+    def _boom(**_kw):
+        raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr("stride_core.db.Database", _boom, raising=True)
+    tool = RecentTrainingTool("user-1")
+    res = tool(weeks=4)
+    assert res.ok is False
+    assert res.errors
+    assert "db unavailable" in res.errors[0]
