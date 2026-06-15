@@ -62,7 +62,6 @@ adapters it calls). Per-week run-km is single-sourced by reusing
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from coach.graphs.generation.rule_filter import _total_run_distance_m
 from coach.graphs.generation.season_rule_filter import (
@@ -184,7 +183,8 @@ def _fallback_phase_type(phase: Phase):
     """``PhaseWeeks.phase_type`` is required (non-optional) but ``Phase.phase_type``
     is optional for backcompat. Default a typeless phase to BASE — the same
     fallback ``generate_phase_weeks`` uses for specialist routing — so the
-    bundle schema is always satisfiable."""
+    bundle schema is always satisfiable. ``phase`` is reserved (unused) — kept
+    for call-site symmetry and future per-phase fallback logic."""
     from stride_core.master_plan import PhaseType
 
     return PhaseType.BASE
