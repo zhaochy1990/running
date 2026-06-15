@@ -188,12 +188,30 @@ def test_canonical_config_file_loads(tmp_path: Path, monkeypatch) -> None:
     assert cfg.generator.temperature == 0.4
     assert cfg.reviewer.temperature == 0.0
 
+    # Phase-at-once generator emits an entire phase's weeks in one LLM call,
+    # so its output ceiling is raised to 512k. Reviewer stays small.
+    assert cfg.generator.max_tokens == 524288
+    assert cfg.reviewer.max_tokens == 4096
+
     # Commentary on gpt-4.1 via chat/completions.
     assert cfg.commentary.deployment == "gpt-4.1"
     assert cfg.commentary.api_kind == "chat-completions"
     assert cfg.commentary.endpoint == "https://word-learner-llm.cognitiveservices.azure.com"
     assert cfg.commentary.api_key_env == "AZURE_OPENAI_API_KEY"
     assert not cfg.commentary.is_placeholder()
+
+
+def test_local_config_generator_max_tokens_is_512k(monkeypatch) -> None:
+    """The repo-shipped developer ``config/coach.local.toml`` must load with
+    the generator's max_tokens raised to 512k for the phase-at-once generator
+    (one LLM call emits an entire phase's weeks). Other roles stay small."""
+    repo_root = Path(__file__).resolve().parents[2]
+    local_config_path = repo_root / "config" / "coach.local.toml"
+    monkeypatch.setenv(PATH_ENV, str(local_config_path))
+    cfg = load_config()
+    assert cfg.generator.max_tokens == 524288
+    assert cfg.reviewer.max_tokens == 4096
+    assert cfg.commentary.max_tokens == 2048
 
 
 def test_endpoint_must_be_http_url(tmp_path: Path) -> None:
