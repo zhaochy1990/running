@@ -6,17 +6,18 @@ master-plan phase into a ``SeasonPlanBundle``:
 
     per phase →
       derive_phase_weeks (T2, deterministic ramp)
-      → generate_phase_weeks (Stage-3a T6, real generator + fake LLM + DB)
+      → generate_phase_validated (phase-at-once PA-T4, real generator + fake LLM
+        + DB; one {"weeks":[…×N]} batch per phase, rule-gated per week)
       → review_phase (T4, real reviewer + fake reviewer LLM)
     → thread exit volume into the next phase
     → run_season_rule_filter (T3)
-    → bounded regeneration of offending phases
+    → bounded regeneration of offending phases (PA-T5: carries reviewer feedback)
     → assemble SeasonPlanBundle
 
 All LLM calls are faked (no network); the user DB is seeded so the real
 ``pace_targets`` / ``volume_targets`` calculators run end-to-end. The
-fake-bindable-LLM + seeded-DB patterns mirror ``test_phase_weeks_loop.py`` /
-``test_stage3a_integration_smoke.py``; the reviewer fake mirrors
+batch-fake-LLM + seeded-DB patterns mirror ``test_phase_specialist_adapter.py``
+/ ``test_generate_phase.py``; the reviewer fake mirrors
 ``test_phase_review_adapter.py``.
 """
 
@@ -45,6 +46,7 @@ from stride_core.running_calibration.types import (
 )
 
 import stride_server.coach_adapters.week_specialist_adapter as week_mod
+import stride_server.coach_adapters.phase_specialist_adapter as phase_mod
 import stride_server.coach_adapters.phase_review_adapter as review_mod
 import stride_server.coach_adapters.season_orchestrator as orch_mod
 from stride_server.coach_adapters.season_orchestrator import generate_season
@@ -228,7 +230,9 @@ def _clean_week_plan(week_folder: str, *, total_km: float) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Fake generator LLM — returns a clean week tracking the descriptor target_km.
+# Fake generator LLM — returns a {"weeks":[…×N]} batch for the whole phase,
+# each week tracking the per-week descriptor target_km parsed out of the
+# phase-at-once system prompt (one row per week).
 # ---------------------------------------------------------------------------
 
 
@@ -236,10 +240,11 @@ from langchain_core.messages import AIMessage, SystemMessage
 
 
 class _FakeGenLLM:
-    """Fake bindable generator: reads the per-week ``target_weekly_km`` out of
-    the system prompt it is handed and returns a clean week summing to it, so the
-    generated season's volume arc follows the deterministic derive ramp (and the
-    season rule filter sees coherent week-over-week volume).
+    """Fake bindable generator for the PHASE-AT-ONCE path. The phase prompt
+    lists every week of the phase (one row per week carrying its
+    ``week_folder`` + ``目标周量``); this fake parses all rows and returns a
+    ``{"weeks":[…×N]}`` batch, each week summing to its row's target km so the
+    generated season's volume arc follows the deterministic derive ramp.
     """
 
     def __init__(self) -> None:
@@ -248,49 +253,46 @@ class _FakeGenLLM:
     def bind_tools(self, tools, **_kw):  # type: ignore[no-untyped-def]
         return self
 
-    def invoke(self, messages: list) -> AIMessage:
-        sys_text = ""
+    def _system_text(self, messages: list) -> str:
         for m in messages:
             if isinstance(m, SystemMessage):
-                sys_text = m.content if isinstance(m.content, str) else str(m.content)
-                break
+                return m.content if isinstance(m.content, str) else str(m.content)
+        return ""
+
+    def _weeks_for(self, folder: str, total_km: float) -> dict:
+        """Per-week hook subclasses override (e.g. taper inflation)."""
+        return _clean_week_plan(folder, total_km=total_km)
+
+    def invoke(self, messages: list) -> AIMessage:
+        sys_text = self._system_text(messages)
         self.captured.append(sys_text)
-        folder = _extract_week_folder(sys_text)
-        total_km = _extract_target_km(sys_text)
+        rows = _extract_week_rows(sys_text)
+        weeks = [self._weeks_for(folder, km) for folder, km in rows]
         return AIMessage(
             content=json.dumps(
-                _clean_week_plan(folder, total_km=total_km), ensure_ascii=False
+                {"schema": "phase-weeks/v1", "weeks": weeks}, ensure_ascii=False
             )
         )
 
 
-def _extract_week_folder(prompt: str) -> str:
-    """Pull the ``YYYY-MM-DD_MM-DD(Wn)`` folder token out of the composed prompt.
+def _extract_week_rows(prompt: str) -> list[tuple[str, float]]:
+    """Parse the phase prompt's per-week table into ``(week_folder, target_km)``.
 
-    The weekly composer renders ``week_meta.week_folder`` verbatim; we grep it
-    so the returned plan's ``week_folder`` matches what the loop expects.
+    The phase composer renders one row per week:
+    ``… week_folder（原样回填）: <folder> | 目标周量: NN.N …``. We pair each
+    folder token with the target km on the SAME row so the returned batch has
+    one correctly-sized week per requested week. Falls back to a single default
+    row if no rows match (keeps the fake robust to composer wording changes).
     """
     import re
 
-    m = re.search(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\(W\d+\)", prompt)
-    return m.group(0) if m else "2026-06-08_06-14(W1)"
-
-
-def _extract_target_km(prompt: str) -> float:
-    """Pull the planned weekly km the volume budget rendered into the prompt.
-
-    Falls back to 55.0 if the marker isn't found (keeps the fake robust to
-    composer wording changes — the volume-arc assertions tolerate ±).
-    """
-    import re
-
-    # The weekly composer renders an unambiguous "目标周量: NN.N km" line from
-    # week_meta.target_weekly_km — anchor on it (the doctrine body also contains
-    # bare "周量" tokens like "周量 × 25-33%" that must not be matched).
-    m = re.search(r"目标周量[:：]\s*(\d+(?:\.\d+)?)", prompt)
-    if m:
-        return float(m.group(1))
-    return 55.0
+    rows = re.findall(
+        r"week_folder（原样回填）:\s*(\S+?)\s*\|\s*目标周量[:：]\s*(\d+(?:\.\d+)?)",
+        prompt,
+    )
+    if rows:
+        return [(folder, float(km)) for folder, km in rows]
+    return [("2026-06-08_06-14(W1)", 55.0)]
 
 
 # ---------------------------------------------------------------------------
@@ -306,9 +308,12 @@ class _FakeReply:
 class _FakeReviewerLLM:
     """Reviewer-role fake. ``verdicts`` is a list consumed per invoke (last
     reused once exhausted), so a phase regenerated N times can see N distinct
-    verdicts (e.g. block then pass)."""
+    verdicts (e.g. block then pass). Each entry is either a bare verdict string
+    (commentary defaults to ``fake <verdict>``) or a ``(verdict, commentary)``
+    tuple (a distinctive commentary so a test can prove it was threaded into the
+    next regeneration prompt)."""
 
-    def __init__(self, verdicts: list[str]) -> None:
+    def __init__(self, verdicts: list) -> None:
         self._verdicts = list(verdicts)
         self._idx = 0
         self.calls = 0
@@ -317,10 +322,14 @@ class _FakeReviewerLLM:
         self.calls += 1
         i = min(self._idx, len(self._verdicts) - 1)
         self._idx += 1
-        verdict = self._verdicts[i] if self._verdicts else "pass"
+        entry = self._verdicts[i] if self._verdicts else "pass"
+        if isinstance(entry, tuple):
+            verdict, commentary = entry
+        else:
+            verdict, commentary = entry, f"fake {entry}"
         return _FakeReply(
             f"<review><verdict>{verdict}</verdict>"
-            f"<commentary>fake {verdict}</commentary></review>"
+            f"<commentary>{commentary}</commentary></review>"
         )
 
 
@@ -332,9 +341,13 @@ class _FakeReviewerLLM:
 
 def _wire(monkeypatch, db, *, reviewer: _FakeReviewerLLM, gen: _FakeGenLLM | None = None):
     gen = gen or _FakeGenLLM()
-    monkeypatch.setattr(week_mod, "get_generator_llm", lambda: gen)
+    # Phase-at-once generation lives in phase_specialist_adapter: patch its own
+    # generator LLM + Database there. build_specialist_context (imported from
+    # week_specialist_adapter) reads today_shanghai out of week_mod, so patch
+    # that one on week_mod.
+    monkeypatch.setattr(phase_mod, "get_generator_llm", lambda: gen)
+    monkeypatch.setattr(phase_mod, "Database", lambda **kw: db)
     monkeypatch.setattr(week_mod, "today_shanghai", lambda: _AS_OF)
-    monkeypatch.setattr(week_mod, "Database", lambda **kw: db)
     monkeypatch.setattr(review_mod, "get_reviewer_llm", lambda: reviewer)
     # generated_by stamp: avoid reading real coach config.
     monkeypatch.setattr(orch_mod, "get_generator_model", lambda: "test-gen-model")
@@ -411,13 +424,23 @@ def test_exit_volume_threaded_no_boundary_spike(db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_review_driven_regen_block_then_pass(db, monkeypatch):
+def test_review_driven_regen_carries_feedback(db, monkeypatch):
+    """PA-T5 headline: a block→pass regen now THREADS the reviewer's critique
+    into the regeneration prompt (the old blind regen carried nothing)."""
     _seed_calibration(db)
     # First review of the build phase blocks; the regen attempt passes.
     # base passes first; build: block (attempt 1) then pass (attempt 2); taper passes.
     # Sequence is consumed across phases AND regen attempts in call order.
-    reviewer = _FakeReviewerLLM(["pass", "block", "pass", "pass"])
-    _wire(monkeypatch, db, reviewer=reviewer)
+    # A distinctive commentary lets us prove it was threaded into the regen.
+    reviewer = _FakeReviewerLLM(
+        [
+            "pass",
+            ("block", "BUILD-PHASE-NEEDS-MORE-THRESHOLD"),
+            "pass",
+            "pass",
+        ]
+    )
+    gen = _wire(monkeypatch, db, reviewer=reviewer)
 
     mp = _master_plan()
     bundle = generate_season(mp, _context(), injuries=[], max_phase_attempts=2)
@@ -426,6 +449,17 @@ def test_review_driven_regen_block_then_pass(db, monkeypatch):
     for pw in bundle.phases:
         assert pw.review is not None
         assert pw.review.verdict == "pass", f"{pw.phase_id} verdict {pw.review.verdict}"
+
+    # THE HEADLINE: the build phase's regeneration prompt carries the reviewer's
+    # block commentary as feedback (productive regen, not a blind re-run). The
+    # first generation prompt (and the base/taper prompts) must NOT carry it.
+    fed_prompts = [p for p in gen.captured if "BUILD-PHASE-NEEDS-MORE-THRESHOLD" in p]
+    assert fed_prompts, (
+        "review-driven regen did not thread the reviewer's commentary into any "
+        "generation prompt — the regen is not carrying feedback (PA-T5 regression)"
+    )
+    # the feedback header marks it as a review-driven regen
+    assert any("上一轮阶段评审意见" in p for p in fed_prompts)
 
     # bounded: build phase reviewed at most max_phase_attempts (2) times for the
     # review-driven loop → total reviewer calls is small, never unbounded.
@@ -472,7 +506,8 @@ class _TaperSpikeGenLLM(_FakeGenLLM):
     regen resolves the season error. Non-taper weeks always use the honest path.
 
     "Taper week" is detected by the folder month/day window of the master plan's
-    taper phase (2026-07-06 … 2026-07-19).
+    taper phase (2026-07-06 … 2026-07-19). Inflation is per-week inside the
+    batch (the phase generates all taper weeks in one call).
     """
 
     _TAPER_FOLDER_PREFIXES = ("2026-07-06", "2026-07-13")
@@ -481,26 +516,14 @@ class _TaperSpikeGenLLM(_FakeGenLLM):
         super().__init__()
         self._seen_taper: set[str] = set()
 
-    def invoke(self, messages: list) -> AIMessage:
-        sys_text = ""
-        for m in messages:
-            if isinstance(m, SystemMessage):
-                sys_text = m.content if isinstance(m.content, str) else str(m.content)
-                break
-        self.captured.append(sys_text)
-        folder = _extract_week_folder(sys_text)
-        total_km = _extract_target_km(sys_text)
+    def _weeks_for(self, folder: str, total_km: float) -> dict:
         is_taper = folder[:10] in self._TAPER_FOLDER_PREFIXES
         if is_taper and folder not in self._seen_taper:
             # First sighting of this taper week → inflate above the build phase
             # so the season filter flags the taper-doesn't-drop error.
             self._seen_taper.add(folder)
             total_km = 95.0
-        return AIMessage(
-            content=json.dumps(
-                _clean_week_plan(folder, total_km=total_km), ensure_ascii=False
-            )
-        )
+        return _clean_week_plan(folder, total_km=total_km)
 
 
 def test_season_rule_driven_regen(db, monkeypatch):

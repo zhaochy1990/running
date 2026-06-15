@@ -7,8 +7,9 @@ the top-level adapter that ties together all prior 3b tasks:
     per phase, in master_plan.phases order →
       derive_phase_weeks (T2, deterministic ramp; threads the prior phase exit
         volume in for cross-phase continuity)
-      → generate_phase_weeks (Stage-3a T6, real generator + LLM + DB; blocked
-        weeks excluded)
+      → generate_phase_validated (phase-at-once PA-T4, real generator + LLM + DB;
+        whole phase in one call, rule-gated per week, regen-with-feedback,
+        persistently-violating weeks dropped)
       → review_phase (T4, the per-phase doctrine reviewer; safe-degrades to
         ``revise``)
     → thread the phase's exit volume into the next phase
@@ -56,10 +57,11 @@ resolved explicitly here):
 A persistent failure (reviewer always blocks, a season rule we can't satisfy by
 regen) degrades into a returned bundle with the issues visible (the phase's
 ``review.verdict`` + the season report logged) — never an exception, never an
-infinite loop. Generation/review failures inside ``generate_phase_weeks`` /
-``review_phase`` are already swallowed by those callees (blocked weeks excluded;
-review safe-degrades to ``revise``); this orchestrator additionally guards its
-own per-phase work in a try/except so one bad phase cannot crash the season.
+infinite loop. Generation/review failures inside ``generate_phase_validated`` /
+``review_phase`` are already swallowed by those callees (violating weeks dropped
+or whole-phase degraded to []; review safe-degrades to ``revise``); this
+orchestrator additionally guards its own per-phase work in a try/except so one
+bad phase cannot crash the season.
 
 This is the **adapter** layer: it touches the LLM + DB (via the Stage-3a/3b
 adapters it calls). Per-phase volume is single-sourced by reusing
@@ -84,7 +86,7 @@ from stride_core.master_plan import MasterPlan, Milestone, Phase
 
 from ..coach_runtime import get_generator_model
 from .phase_review_adapter import review_phase
-from .week_specialist_adapter import generate_phase_weeks
+from .phase_specialist_adapter import generate_phase_validated
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +137,42 @@ def _phase_exit_km(weeks: list[dict]) -> float | None:
     return representative_working_km(weeks)
 
 
+def _review_feedback(review: PhaseReview | None) -> str | None:
+    """Render a prior attempt's ``PhaseReview`` into a regen feedback string.
+
+    Threaded into ``generate_phase_validated(feedback=…)`` on attempt ≥2 so the
+    whole-phase regeneration actually addresses the reviewer's critique instead
+    of blindly re-running with identical inputs (the old no-op regen, fixed in
+    PA-T5). Renders the verdict-driving ``commentary_md`` plus one bullet per
+    ``ReviewIssue`` (``review_class`` + ``severity`` + ``message``, with the
+    optional ``suggested_action`` appended).
+
+    Returns ``None`` when there is nothing actionable to feed back (no review,
+    or an empty commentary + no issues) so attempt-1-style fresh generation is
+    preserved rather than threading an empty header.
+    """
+    if review is None:
+        return None
+    commentary = (review.commentary_md or "").strip()
+    issues = review.issues or []
+    if not commentary and not issues:
+        return None
+    lines: list[str] = [
+        "上一轮阶段评审意见（verdict="
+        + review.verdict
+        + "，请逐条改进，不要重复同样的问题）："
+    ]
+    if commentary:
+        lines.append(commentary)
+    for iss in issues:
+        bullet = f"- [{iss.review_class}/{iss.severity}] {iss.message}"
+        action = (iss.suggested_action or "").strip()
+        if action:
+            bullet += f"（建议：{action}）"
+        lines.append(bullet)
+    return "\n".join(lines)
+
+
 def _generate_one_phase(
     phase: Phase,
     *,
@@ -142,8 +180,14 @@ def _generate_one_phase(
     context: dict,
     injuries: list[str],
     milestones: list[Milestone],
+    feedback: str | None = None,
 ) -> PhaseWeeks:
     """One ``derive → generate → review`` pass for a single phase → ``PhaseWeeks``.
+
+    ``feedback`` (the prior attempt's reviewer critique, rendered by
+    :func:`_review_feedback`) is threaded into the phase-at-once generator's
+    FIRST generation so a review-driven regen is productive (PA-T5); ``None`` on
+    the fresh first attempt.
 
     Guards the whole pass: any unexpected error degrades to an empty-weeks
     PhaseWeeks with a safe-degrade ``revise`` review, so one bad phase never
@@ -152,16 +196,13 @@ def _generate_one_phase(
     """
     try:
         week_metas = derive_phase_weeks(phase, prev_phase_end_km=prev_phase_end_km)
-        # WeekMeta → the dict descriptor contract generate_phase_weeks consumes.
-        week_dicts = [
-            {
-                "phase_position": wm.phase_position,
-                "week_folder": wm.week_folder,
-                "target_weekly_km": wm.target_weekly_km,
-            }
-            for wm in week_metas
-        ]
-        plans = generate_phase_weeks(phase, week_dicts, context, injuries)
+        # Phase-at-once generation: one LLM call for the whole phase, rule-gated
+        # per week, regen-with-rule-feedback, strays dropped. Takes WeekMeta
+        # objects directly (no dict conversion). ``feedback`` threads the prior
+        # attempt's reviewer critique into the first generation (PA-T5).
+        plans = generate_phase_validated(
+            phase, week_metas, context, injuries, feedback=feedback
+        )
         review = review_phase(phase, plans, milestones=milestones)
         blocked = max(0, len(week_metas) - len(plans))
     except Exception as exc:  # noqa: BLE001 — one phase must not crash the season
@@ -192,7 +233,7 @@ def _generate_one_phase(
 def _fallback_phase_type(phase: Phase):
     """``PhaseWeeks.phase_type`` is required (non-optional) but ``Phase.phase_type``
     is optional for backcompat. Default a typeless phase to BASE — the same
-    fallback ``generate_phase_weeks`` uses for specialist routing — so the
+    fallback the phase-at-once generator uses for specialist routing — so the
     bundle schema is always satisfiable. ``phase`` is reserved (unused) — kept
     for call-site symmetry and future per-phase fallback logic."""
     from stride_core.master_plan import PhaseType
@@ -214,17 +255,35 @@ def _best_phase_attempt(
     Up to ``max_phase_attempts`` ``derive → generate → review`` passes. Accept
     the first ``pass``; otherwise keep the best-ranked attempt. Every loop is
     bounded by ``max_phase_attempts`` — never spins.
+
+    **Productive regen (PA-T5):** attempt 1 generates fresh (``feedback=None``);
+    each subsequent attempt threads the PRIOR attempt's reviewer critique
+    (rendered via :func:`_review_feedback`) into ``generate_phase_validated`` so
+    the whole-phase regeneration actually addresses the critique — replacing the
+    old blind re-run with identical inputs that changed nothing.
     """
     attempts = max(1, int(max_phase_attempts))
     best: PhaseWeeks | None = None
+    prev_review: PhaseReview | None = None
     for attempt in range(attempts):
+        # attempt 0 → no feedback (fresh); later → the prior attempt's critique.
+        feedback = _review_feedback(prev_review) if attempt > 0 else None
+        if attempt > 0 and feedback:
+            logger.info(
+                "season: phase %s regenerating attempt %d/%d WITH reviewer feedback",
+                phase.id,
+                attempt + 1,
+                attempts,
+            )
         pw = _generate_one_phase(
             phase,
             prev_phase_end_km=prev_phase_end_km,
             context=context,
             injuries=injuries,
             milestones=milestones,
+            feedback=feedback,
         )
+        prev_review = pw.review
         verdict = pw.review.verdict if pw.review is not None else "revise"
         if best is None or _VERDICT_RANK.get(verdict, 0) > _VERDICT_RANK.get(
             best.review.verdict if best.review is not None else "revise", 0
@@ -273,7 +332,7 @@ def generate_season(
 
     Args:
         master_plan: the confirmed ``MasterPlan`` whose phases drive generation.
-        context: shared per-phase context for ``generate_phase_weeks`` — must
+        context: shared per-phase context for ``generate_phase_validated`` — must
             carry ``user_id``, ``goal`` (dict), ``level``; may carry
             ``continuity``. Passed through unchanged per phase.
         injuries: optional injury flags, forwarded to every phase's generator +

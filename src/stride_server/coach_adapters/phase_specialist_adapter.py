@@ -488,7 +488,16 @@ def generate_phase_validated(
     # the post-loop drop code with both bound (== []) instead of a NameError —
     # this is what makes the documented "never raises" contract hold.
     per_week_errors: list[tuple[int, list[RuleViolation]]] = []
+    n_weeks = len(metas)
     for attempt in range(1, max_attempts + 1):
+        logger.info(
+            "phase %s: generating %d weeks in one call (attempt %d/%d%s)",
+            phase_type.value,
+            n_weeks,
+            attempt,
+            max_attempts,
+            ", with feedback" if current_feedback else "",
+        )
         try:
             weeks = generate_specialist_phase(
                 phase, metas, context, injuries, feedback=current_feedback
@@ -533,6 +542,12 @@ def generate_phase_validated(
 
         # 4. No errors anywhere → the whole phase is clean, return it.
         if not per_week_errors:
+            logger.info(
+                "phase %s: %d/%d weeks rule-clean (0 dropped)",
+                phase_type.value,
+                n_weeks,
+                n_weeks,
+            )
             return weeks
 
         last_clean = [
@@ -567,4 +582,11 @@ def generate_phase_validated(
             rules,
             max_attempts,
         )
+    logger.info(
+        "phase %s: %d/%d weeks rule-clean (%d dropped)",
+        phase_type.value,
+        len(last_clean),
+        n_weeks,
+        len(per_week_errors),
+    )
     return last_clean
