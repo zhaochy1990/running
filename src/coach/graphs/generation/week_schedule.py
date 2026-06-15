@@ -42,7 +42,9 @@ import math
 from datetime import date, timedelta
 
 from stride_core.master_plan import Phase, PhaseType
+from stride_core.plan_spec import WeeklyPlan
 
+from .rule_filter import MAX_WEEKLY_RAMP_RATIO, _total_run_distance_m
 from .weekly_prompt import WeekMeta
 
 # Shanghai weeks are Monday→Sunday (matches ``WeeklyKeySessions.week_start``
@@ -72,7 +74,41 @@ _RECOVERY_FIRST_CUT = 0.80
 _RECOVERY_STEP = 0.92
 
 # Hard cap the Stage-3a rule filter enforces on consecutive load weeks.
-_MAX_RAMP_RATIO = 1.10
+# Single-sourced from the per-week ``rule_filter`` gate (M1, Stage-3b I1) so the
+# derive ramp can never drift from the gate it must satisfy.
+_MAX_RAMP_RATIO = MAX_WEEKLY_RAMP_RATIO
+
+
+def representative_working_km(week_dicts: list[dict]) -> float | None:
+    """The phase's *established working load* — the MAX per-week run km across
+    its generated weeks (Stage-3b I1).
+
+    The working peak is the right inter-phase continuity signal: a phase's LAST
+    week is frequently a planned deload trough (or a still-climbing sub-band
+    week), so threading it forward anchors the next phase from a trough and the
+    ≤1.10× ramp cap then suppresses volume that compounds across phases — the
+    season never reaches its prescribed bands. ``max`` naturally ignores deload
+    troughs and returns what the athlete actually trained at. Resuming a
+    previously-tolerated working volume after a planned deload is physiologically
+    safe (NOT a dangerous progression), so it is the correct baseline for both
+    forward threading (``derive_phase_weeks``) and the cross-phase boundary check
+    (``season_rule_filter.check_phase_transition``).
+
+    Per-week run km is single-sourced via ``rule_filter._total_run_distance_m``
+    on each parsed ``WeeklyPlan`` (no hand-rolled summation). An unparseable week
+    is skipped. Returns ``None`` for an empty / all-unparseable phase so callers
+    can fall back to the carried prior value rather than resetting.
+    """
+    kms: list[float] = []
+    for wd in week_dicts:
+        try:
+            plan = WeeklyPlan.from_dict(wd)
+        except Exception:  # noqa: BLE001 — parse boundary, skip the broken week
+            continue
+        kms.append(_total_run_distance_m(plan) / 1000.0)
+    if not kms:
+        return None
+    return max(kms)
 
 
 def _floor_1dp(x: float) -> float:
@@ -165,12 +201,40 @@ def _rampup_volumes(
     return vols
 
 
-def _peak_volumes(n: int, *, high: float, start_km: float) -> list[float]:
-    """Peak: hold near the top of the band with a tiny week-to-week drift."""
+def _peak_volumes(
+    n: int, *, low: float, high: float, start_km: float
+) -> list[float]:
+    """Peak volume arc.
+
+    Two regimes, picked by where the (continuity-capped) entry volume lands:
+
+    * **At/above the band low** (the normal case — the prior build phase
+      established a working load already in the peak band): hold near the top of
+      the band with a tiny week-to-week micro-drift down (chronic plateaus).
+    * **Below the band low** (Stage-3b I1 — the working volume threaded in still
+      sits under the peak floor because volume was suppressed upstream): the peak
+      must *climb* into its band under the same ≤1.10× cap rather than holding
+      sub-floor forever. Each week steps up ~6% (clamped to ``high`` and to
+      ≤1.10× of the prior week) until it reaches the band, then the band ceiling
+      caps it. This is what lets a peak phase actually reach its prescribed band
+      after a deloaded build (see the I1 fix); holding at a sub-floor entry would
+      defeat the whole point of the working-volume threading.
+
+    Either way every up-step honors the ≤1.10× invariant and no week exceeds
+    ``high``; ``low`` is used only to pick the regime (it is never a hard floor —
+    the HARD continuity cap on week 1 still wins, exactly as for ramp-up phases).
+    """
     vols: list[float] = []
     prev = min(start_km, high)
+    climbing = prev < low  # entered below the band → ramp up toward it
     for i in range(n):
-        cur = prev if i == 0 else min(prev * _PEAK_STEP, high)
+        if i == 0:
+            cur = prev
+        elif climbing:
+            cur = min(prev * _RAMPUP_STEP, high)
+            cur = min(cur, prev * _MAX_RAMP_RATIO)
+        else:
+            cur = min(prev * _PEAK_STEP, high)
         vols.append(cur)
         prev = cur
     return vols
@@ -274,8 +338,14 @@ def derive_phase_weeks(
             n, low=low, high=high, start_km=anchor, first_week_cap=first_week_cap
         )
     elif pt is PhaseType.PEAK:
-        anchor = min(max(start_km, low), high)
-        vols = _peak_volumes(n, high=high, start_km=anchor)
+        # Do NOT lift the anchor to ``low`` here: when the threaded working volume
+        # sits below the peak floor, the HARD ≤1.10× continuity cap must win
+        # (lifting to ``low`` would re-introduce a boundary spike). Keep the raw
+        # (capped) entry and let ``_peak_volumes`` climb into the band.
+        anchor = min(start_km, high)
+        if first_week_cap is not None:
+            anchor = min(anchor, first_week_cap)
+        vols = _peak_volumes(n, low=low, high=high, start_km=anchor)
     elif pt is PhaseType.TAPER:
         # Step down off the peak-entry volume (the prior exit, else the high
         # band as the implicit peak).

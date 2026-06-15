@@ -10,6 +10,8 @@ Plan-dict builders mirror ``tests/coach/test_rule_filter.py`` /
 
 from __future__ import annotations
 
+import pytest
+
 from coach.graphs.generation.season_rule_filter import (
     SeasonRuleReport,
     SeasonRuleViolation,
@@ -255,6 +257,89 @@ def test_phase_transition_boundary_spike_names_transition():
     # reports which transition spiked
     assert trans[0].details.get("from_phase_id") == "p1"
     assert trans[0].details.get("to_phase_id") == "p2"
+
+
+# --- I1: transition baseline is the prior phase's WORKING volume (max week), --
+# --- not its last (possibly deload-trough) week. ------------------------------
+
+
+def test_phase_transition_resuming_working_volume_after_deload_does_not_trip():
+    """The load-bearing I1 test: a phase that ENDS on a deload week, followed by
+    a phase that resumes the prior phase's established WORKING volume, must NOT
+    trip phase_transition — comparing against the deload trough would falsely
+    flag a planned, physiologically-safe resumption as a boundary spike.
+
+    Phase 1 working volume = 60km (week 2), last week = 45km (deload trough).
+    Phase 2 opens at 62km = 1.03x the working volume (safe) but 1.38x the
+    trough. Baseline must be the working volume → no error.
+    """
+    bundle = _bundle(
+        [
+            _phase(
+                "p-build",
+                PhaseType.BUILD,
+                [
+                    _week("2026-05-04", 55, folder="w1"),
+                    _week("2026-05-11", 60, folder="w2"),  # working peak
+                    _week("2026-05-18", 45, folder="w3"),  # deload trough (last)
+                ],
+            ),
+            _phase(
+                "p-peak",
+                PhaseType.PEAK,
+                [
+                    _week("2026-05-25", 62, folder="w4"),  # resumes working load
+                ],
+            ),
+        ]
+    )
+    mp = _master_plan(
+        [_mp_phase("p-build", PhaseType.BUILD), _mp_phase("p-peak", PhaseType.PEAK)],
+        [],
+    )
+    report = run_season_rule_filter(bundle, mp)
+    trans = [v for v in report.errors() if v.rule == "phase_transition"]
+    assert not trans, [v.message for v in trans]
+
+
+def test_phase_transition_spike_above_working_volume_still_trips():
+    """The complement: a genuine spike — the new phase opening >1.10x the prior
+    phase's WORKING volume — must STILL trip phase_transition.
+
+    Phase 1 working volume = 60km. Phase 2 opens at 70km = 1.17x the working
+    volume → a real boundary spike, must error.
+    """
+    bundle = _bundle(
+        [
+            _phase(
+                "p-build",
+                PhaseType.BUILD,
+                [
+                    _week("2026-05-04", 55, folder="w1"),
+                    _week("2026-05-11", 60, folder="w2"),  # working peak
+                    _week("2026-05-18", 45, folder="w3"),  # deload trough (last)
+                ],
+            ),
+            _phase(
+                "p-peak",
+                PhaseType.PEAK,
+                [
+                    _week("2026-05-25", 70, folder="w4"),  # 1.17x working → spike
+                ],
+            ),
+        ]
+    )
+    mp = _master_plan(
+        [_mp_phase("p-build", PhaseType.BUILD), _mp_phase("p-peak", PhaseType.PEAK)],
+        [],
+    )
+    report = run_season_rule_filter(bundle, mp)
+    trans = [v for v in report.errors() if v.rule == "phase_transition"]
+    assert trans, "spike above the prior phase's WORKING volume must trip"
+    assert trans[0].details.get("from_phase_id") == "p-build"
+    assert trans[0].details.get("to_phase_id") == "p-peak"
+    # The reported baseline is the working volume (60), not the trough (45).
+    assert trans[0].details.get("from_working_km") == pytest.approx(60.0)
 
 
 # ---------------------------------------------------------------------------

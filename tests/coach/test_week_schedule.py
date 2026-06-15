@@ -15,7 +15,10 @@ import pytest
 
 from stride_core.master_plan import Phase, PhaseType
 
-from coach.graphs.generation.week_schedule import derive_phase_weeks
+from coach.graphs.generation.week_schedule import (
+    derive_phase_weeks,
+    representative_working_km,
+)
 from coach.graphs.generation.weekly_prompt import WeekMeta
 
 
@@ -421,3 +424,94 @@ def test_two_week_phase_no_spike():
     assert len(kms) == 2
     assert kms[1] <= kms[0] * 1.10 + 1e-6
     assert kms[0] <= 55.0 * 1.10 + 1e-6
+
+
+# ---------------------------------------------------------------------------
+# representative_working_km (Stage-3b I1) — the max per-week run km of a phase
+# ---------------------------------------------------------------------------
+
+
+def _week_dict(folder: str, total_km: float) -> dict:
+    """A minimal one-run-session WeeklyPlan dict whose run km == ``total_km``."""
+    start = folder[:10]
+    return {
+        "schema": "weekly-plan/v1",
+        "week_folder": folder,
+        "sessions": [
+            {
+                "date": start,
+                "session_index": 0,
+                "kind": "run",
+                "summary": "easy run",
+                "spec": None,
+                "notes_md": None,
+                "total_distance_m": total_km * 1000.0,
+                "total_duration_s": 2700,
+            }
+        ],
+        "nutrition": [],
+    }
+
+
+def test_representative_working_km_is_the_max_not_the_last_week():
+    # A phase that climbs then deloads on its last week: working volume is the
+    # pre-deload peak (62.0), NOT the deload-trough last week (47.0).
+    weeks = [
+        _week_dict("2026-05-04_05-10(W1)", 55.0),
+        _week_dict("2026-05-11_05-17(W2)", 58.0),
+        _week_dict("2026-05-18_05-24(W3)", 62.0),
+        _week_dict("2026-05-25_05-31(W4)", 47.0),  # deload trough (last week)
+    ]
+    assert representative_working_km(weeks) == pytest.approx(62.0)
+
+
+def test_representative_working_km_none_for_empty():
+    assert representative_working_km([]) is None
+
+
+def test_representative_working_km_skips_unparseable_weeks():
+    broken = {"schema": "weekly-plan/v1", "week_folder": "wbad", "sessions": "nope"}
+    weeks = [_week_dict("2026-05-04_05-10(W1)", 50.0), broken]
+    # The broken week is ignored; the one parseable week is the working volume.
+    assert representative_working_km(weeks) == pytest.approx(50.0)
+
+
+def test_representative_working_km_none_when_all_unparseable():
+    broken = {"schema": "weekly-plan/v1", "week_folder": "wbad", "sessions": "nope"}
+    assert representative_working_km([broken]) is None
+
+
+# ---------------------------------------------------------------------------
+# Band-reaching under working-volume threading (Stage-3b I1) — the headline.
+# ---------------------------------------------------------------------------
+
+
+def test_peak_reaches_band_when_threaded_with_working_volume_not_deload_trough():
+    """A peak phase [70,85] threaded from the prior phase's WORKING volume
+    (~62.5) reaches its band (≥70) within the phase — whereas threading the
+    prior phase's deload-trough last week (~47) leaves it stranded below.
+
+    This is the I1 fix's core payoff: phases reach their prescribed bands.
+    """
+    peak = _phase(
+        start="2026-09-07",
+        end="2026-09-27",  # 3 weeks
+        low=70,
+        high=85,
+        phase_type=PhaseType.PEAK,
+        name="赛前巅峰期",
+    )
+    # Threaded from the WORKING volume (max week of the prior build phase).
+    working = derive_phase_weeks(peak, prev_phase_end_km=62.5)
+    working_kms = [w.target_weekly_km for w in working]
+    assert any(km >= 70.0 - 1e-6 for km in working_kms), working_kms
+    # ≤1.10× weekly progression still holds while climbing into the band.
+    for prev, cur in zip(working_kms, working_kms[1:]):
+        assert cur <= prev * 1.10 + 1e-6, (prev, cur, working_kms)
+    # First week respects the boundary continuity cap vs the working volume.
+    assert working_kms[0] <= 62.5 * 1.10 + 1e-6, working_kms
+
+    # Contrast: threaded from the deload-trough last week (~47) it never reaches.
+    trough = derive_phase_weeks(peak, prev_phase_end_km=47.0)
+    trough_kms = [w.target_weekly_km for w in trough]
+    assert not any(km >= 70.0 - 1e-6 for km in trough_kms), trough_kms

@@ -23,7 +23,14 @@ the top-level adapter that ties together all prior 3b tasks:
    the first attempt whose review verdict is ``pass``; otherwise we keep the
    *best* attempt seen (``pass`` > ``auto_fix`` > ``revise`` > ``block``) and
    move on. This handles "review verdict drives a retry before moving on". The
-   exit volume threaded forward is the accepted attempt's last-week run km.
+   volume threaded forward is the accepted attempt's *representative working
+   volume* (its MAX week, via ``representative_working_km``), NOT its last week
+   — a phase often ENDS on a planned deload trough, and threading that trough
+   would anchor the next phase low and compound volume suppression across the
+   season so phases never reach their prescribed bands (Stage-3b I1). Resuming
+   the prior phase's established working load after a deload is physiologically
+   safe, and ``check_phase_transition`` uses the same working-volume baseline so
+   the resumption never reads as a boundary spike.
 
 2. *Final season-rule pass with one bounded targeted-regen round per offending
    phase.* After all phases are assembled into a bundle we run
@@ -55,23 +62,25 @@ review safe-degrades to ``revise``); this orchestrator additionally guards its
 own per-phase work in a try/except so one bad phase cannot crash the season.
 
 This is the **adapter** layer: it touches the LLM + DB (via the Stage-3a/3b
-adapters it calls). Per-week run-km is single-sourced by reusing
-``coach.graphs.generation.rule_filter._total_run_distance_m`` — never hand-rolled.
+adapters it calls). Per-phase volume is single-sourced by reusing
+``coach.graphs.generation.week_schedule.representative_working_km`` (which in
+turn derives km via ``rule_filter._total_run_distance_m``) — never hand-rolled.
 """
 
 from __future__ import annotations
 
 import logging
 
-from coach.graphs.generation.rule_filter import _total_run_distance_m
 from coach.graphs.generation.season_rule_filter import (
     SeasonRuleReport,
     run_season_rule_filter,
 )
-from coach.graphs.generation.week_schedule import derive_phase_weeks
+from coach.graphs.generation.week_schedule import (
+    derive_phase_weeks,
+    representative_working_km,
+)
 from coach.schemas import PhaseReview, PhaseWeeks, SeasonPlanBundle
 from stride_core.master_plan import MasterPlan, Milestone, Phase
-from stride_core.plan_spec import WeeklyPlan
 
 from ..coach_runtime import get_generator_model
 from .phase_review_adapter import review_phase
@@ -105,24 +114,25 @@ def _phase_milestones(
     return [m for m in milestones if m.phase_id == phase.id or m.id in owned_ids]
 
 
-def _last_week_exit_km(weeks: list[dict]) -> float | None:
-    """Run km of the last generated week, single-sourced via ``_total_run_distance_m``.
+def _phase_exit_km(weeks: list[dict]) -> float | None:
+    """The volume to thread into the NEXT phase (Stage-3b I1).
 
-    Returns ``None`` when there are no weeks (all blocked) so the caller can
-    carry the prior phase's exit volume forward rather than resetting.
+    This is the phase's *representative working volume* — the MAX per-week run km
+    across its generated weeks — NOT the literal last week. The last week is
+    frequently a planned deload trough (or a still-climbing sub-band week);
+    threading it forward would anchor the next phase from that trough, and the
+    HARD ≤1.10× ramp cap would then suppress volume that compounds across phases
+    so the season never reaches its prescribed bands. The working volume is what
+    the athlete actually trained at — resuming it after a planned deload is
+    physiologically safe, and ``check_phase_transition`` uses the same
+    working-volume baseline so the resumption never trips a false boundary spike.
+
+    Single-sourced via ``week_schedule.representative_working_km`` (km derived by
+    ``rule_filter._total_run_distance_m``). Returns ``None`` when there are no
+    weeks (all blocked) so the caller carries the prior phase's volume forward
+    rather than resetting.
     """
-    if not weeks:
-        return None
-    last = weeks[-1]
-    try:
-        plan = WeeklyPlan.from_dict(last)
-    except (ValueError, KeyError, TypeError):
-        logger.warning(
-            "season: last week of a phase failed to parse for exit-volume "
-            "threading — treating exit volume as unknown"
-        )
-        return None
-    return _total_run_distance_m(plan) / 1000.0
+    return representative_working_km(weeks)
 
 
 def _generate_one_phase(
@@ -297,10 +307,12 @@ def generate_season(
             max_phase_attempts=max_phase_attempts,
         )
         phase_results.append(pw)
-        # Thread the exit volume forward. If this phase produced zero weeks
-        # (all blocked), CARRY the prior exit volume rather than resetting —
-        # the next phase should still continue from the last real volume.
-        exit_km = _last_week_exit_km(pw.weeks)
+        # Thread the working volume forward (I1): the next phase derives from
+        # what this phase actually trained at (its max week), not its last
+        # (possibly deload-trough) week. If this phase produced zero weeks (all
+        # blocked), CARRY the prior volume rather than resetting — the next phase
+        # should still continue from the last real working volume.
+        exit_km = _phase_exit_km(pw.weeks)
         if exit_km is not None:
             prev_exit_km = exit_km
 
@@ -374,11 +386,13 @@ def generate_season(
 def _upstream_exit_km(
     phase_results: list[PhaseWeeks], idx: int
 ) -> float | None:
-    """Exit km threaded INTO the phase at ``idx`` — the nearest prior phase that
-    has present weeks (carry-forward past all-blocked phases). ``None`` for the
-    first phase / when no upstream phase has weeks."""
+    """Working volume threaded INTO the phase at ``idx`` (I1) — the nearest prior
+    phase that has present weeks (carry-forward past all-blocked phases). Uses
+    the prior phase's representative working volume (max week), matching the
+    pass-1 forward thread and ``check_phase_transition``'s baseline. ``None`` for
+    the first phase / when no upstream phase has weeks."""
     for j in range(idx - 1, -1, -1):
-        km = _last_week_exit_km(phase_results[j].weeks)
+        km = _phase_exit_km(phase_results[j].weeks)
         if km is not None:
             return km
     return None

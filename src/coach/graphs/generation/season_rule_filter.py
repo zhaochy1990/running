@@ -28,15 +28,17 @@ from stride_core.plan_spec import WeeklyPlan
 
 from coach.schemas import PhaseWeeks, SeasonPlanBundle
 
-from .rule_filter import _total_run_distance_m
+from .rule_filter import MAX_WEEKLY_RAMP_RATIO, _total_run_distance_m
 
 # ---------------------------------------------------------------------------
 # Tunable constants (named so thresholds are reviewable in one place)
 # ---------------------------------------------------------------------------
 
 #: Max allowed week-over-week UP-step in run km (deload/taper down-steps are
-#: always fine). Same 1.10x cap the per-week ``check_weekly_progression`` uses.
-UP_STEP_RATIO_CAP = 1.10
+#: always fine). Single-sourced from the per-week ``check_weekly_progression``
+#: gate (M1, Stage-3b I1) — this aggregate check must not drift from the gate it
+#: re-validates at the season level.
+UP_STEP_RATIO_CAP = MAX_WEEKLY_RAMP_RATIO
 
 #: Blocked-week budget thresholds (fraction of total planned weeks excluded).
 BLOCKED_WARN_FRACTION = 0.15
@@ -138,6 +140,22 @@ def _phase_week_kms(phase: PhaseWeeks) -> list[float]:
         if km is not None:
             out.append(km)
     return out
+
+
+def _phase_working_km(phase: PhaseWeeks) -> float | None:
+    """The phase's *established working load* — the MAX present per-week run km
+    (Stage-3b I1), or ``None`` when the phase has no present weeks.
+
+    This is the correct cross-phase continuity baseline: a phase legitimately
+    resumes the prior phase's working load after that phase's own planned
+    deloads, so comparing the next phase's opening week against the prior phase's
+    deload-trough LAST week would falsely flag a safe, planned resumption as a
+    boundary spike. Mirrors ``week_schedule.representative_working_km`` (the same
+    ``max``-of-present-weeks signal the orchestrator threads forward) but reuses
+    the already-summed ``_phase_week_kms`` so the km source stays single.
+    """
+    kms = _phase_week_kms(phase)
+    return max(kms) if kms else None
 
 
 def _phase_session_texts(phase: PhaseWeeks) -> list[str]:
@@ -266,17 +284,30 @@ def check_volume_arc(bundle: SeasonPlanBundle) -> list[SeasonRuleViolation]:
 
 
 def check_phase_transition(bundle: SeasonPlanBundle) -> list[SeasonRuleViolation]:
-    """First present week of phase N+1 vs last present week of phase N.
+    """First present week of phase N+1 vs phase N's WORKING volume (Stage-3b I1).
+
+    The baseline is the prior phase's *representative working volume* (its MAX
+    present week), NOT its last present week. Rationale: a new phase legitimately
+    resumes the prior phase's established working load after that phase's own
+    planned deloads. The prior phase frequently ENDS on a deload trough, so
+    comparing the next phase's opening week against that trough would falsely
+    flag a planned, physiologically-safe resumption of a previously-tolerated
+    volume as a boundary spike — and (with the working-volume threading in the
+    orchestrator) would make every band-reaching season fail this gate. The
+    transition is "dangerous" only when the new phase's opening volume exceeds
+    the prior phase's WORKING volume by more than the cap, not when it exceeds a
+    deload trough.
 
     An increase above the cap is an error reported *with phase context* (which
     transition spiked). A down-step (planned deload / taper drop) is fine. When
     the prior phase has no present weeks (all blocked) there is no baseline, so
     the transition is skipped — that gap is the blocked-week budget rule's job,
-    not a manufactured spike here.
+    not a manufactured spike here. (Within-phase weekly progression safety is
+    unchanged — that remains :func:`check_volume_arc`'s job, ≤1.10× consecutive.)
     """
     violations: list[SeasonRuleViolation] = []
     prev_phase: PhaseWeeks | None = None
-    prev_last_km: float | None = None
+    prev_working_km: float | None = None
 
     for phase in bundle.phases:
         kms = _phase_week_kms(phase)
@@ -285,8 +316,8 @@ def check_phase_transition(bundle: SeasonPlanBundle) -> list[SeasonRuleViolation
             # it shouldn't reset the baseline either (treat as a gap).
             continue
         first_km = kms[0]
-        if prev_phase is not None and prev_last_km is not None and prev_last_km > 0:
-            ratio = first_km / prev_last_km
+        if prev_phase is not None and prev_working_km is not None and prev_working_km > 0:
+            ratio = first_km / prev_working_km
             if ratio > UP_STEP_RATIO_CAP:
                 violations.append(
                     SeasonRuleViolation(
@@ -295,20 +326,20 @@ def check_phase_transition(bundle: SeasonPlanBundle) -> list[SeasonRuleViolation
                         message=(
                             f"phase transition {prev_phase.phase_id!r} → "
                             f"{phase.phase_id!r}: first week {first_km:.1f}km is "
-                            f"{ratio:.2f}x the prior phase's last week "
-                            f"{prev_last_km:.1f}km (cap {UP_STEP_RATIO_CAP:.2f}x)"
+                            f"{ratio:.2f}x the prior phase's working volume "
+                            f"{prev_working_km:.1f}km (cap {UP_STEP_RATIO_CAP:.2f}x)"
                         ),
                         details={
                             "from_phase_id": prev_phase.phase_id,
                             "to_phase_id": phase.phase_id,
-                            "from_last_km": prev_last_km,
+                            "from_working_km": prev_working_km,
                             "to_first_km": first_km,
                             "ratio": ratio,
                         },
                     )
                 )
         prev_phase = phase
-        prev_last_km = kms[-1]
+        prev_working_km = max(kms)
     return violations
 
 
@@ -385,6 +416,14 @@ def check_taper_peak_sanity(bundle: SeasonPlanBundle) -> list[SeasonRuleViolatio
                 prev_id = cand.phase_id
                 break
 
+        # M2 (Stage-3b I1): this error attributes to the TAPER phase, but the
+        # taper is deterministic — regenerating it yields the same volumes, so a
+        # taper≥peak failure is almost never the taper's fault. The real cause is
+        # usually a volume-SUPPRESSED peak (the peak never climbed into its band,
+        # so its total fell to/under the deterministic taper). The I1
+        # working-volume threading mitigates exactly that suppression; we don't
+        # re-architect the attribution here (the orchestrator still regenerates
+        # the named taper phase), just document why a regen may not move it.
         if prev_total is not None and prev_total > 0 and taper_total >= prev_total:
             violations.append(
                 SeasonRuleViolation(

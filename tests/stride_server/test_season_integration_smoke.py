@@ -25,7 +25,10 @@ The headline contract (load-bearing assertions):
     genuinely rule-clean, not merely un-blocked.
   * ``run_season_rule_filter(bundle, master_plan).ok`` is True — no cross-phase
     errors (volume arc, phase transitions, taper<peak), and no boundary spike
-    between phases (phase N+1 week 1 ≤ 1.10× phase N's last week).
+    between phases (phase N+1 week 1 ≤ 1.10× phase N's representative WORKING
+    volume — its max week, not its deload-trough last week; Stage-3b I1).
+  * The build and peak phases REACH their prescribed per-phase volume bands
+    (at least one in-band week) — the I1 working-volume threading payoff.
   * The REAL reviewer is genuinely in the loop: every ``PhaseWeeks.review`` is
     populated with ``verdict=="pass"`` (proving ``review_phase`` actually ran).
   * ``blocked_week_count`` is 0 for every phase (all weeks rule-clean).
@@ -367,16 +370,18 @@ def _week_run_km(week_dict: dict) -> float:
 
 
 def _expected_total_weeks(mp: MasterPlan) -> int:
-    """Sum of derive_phase_weeks lengths, threading exit volume exactly like the
-    orchestrator does (so the count matches what generate_season actually
-    produced — derive is deterministic on the threaded entry volume)."""
+    """Sum of derive_phase_weeks lengths, threading the volume exactly like the
+    orchestrator does — the prior phase's representative WORKING volume (its max
+    week), not its last week (Stage-3b I1) — so the count matches what
+    generate_season actually produced (derive is deterministic on the threaded
+    entry volume)."""
     total = 0
     prev: float | None = None
     for phase in mp.phases:
         metas = derive_phase_weeks(phase, prev_phase_end_km=prev)
         total += len(metas)
         if metas:
-            prev = metas[-1].target_weekly_km
+            prev = max(m.target_weekly_km for m in metas)
     return total
 
 
@@ -439,13 +444,23 @@ def test_season_integration_all_weeks_rule_clean(db, monkeypatch):
     )
 
     # === HEADLINE: every week across ALL phases independently passes ==========
-    # run_rule_filter, re-run with the correctly threaded prev_week_km (the last
-    # successful week's run total), and the real athlete-relative Z4-Z5 threshold
-    # from the seeded calibration snapshot. This proves the assembled artifacts
-    # are genuinely rule-clean, not merely un-blocked by the loop.
-    prev_km: float | None = None
+    # run_rule_filter, re-run with the correctly threaded prev_week_km, and the
+    # real athlete-relative Z4-Z5 threshold from the seeded calibration snapshot.
+    # This proves the assembled artifacts are genuinely rule-clean, not merely
+    # un-blocked by the loop.
+    #
+    # IMPORTANT: prev_week_km RESETS at each phase boundary — mirroring exactly
+    # how the real generator threads it (``generate_phase_weeks`` starts each
+    # phase with ``prev_week_km=None``; see its per-phase loop). The per-week
+    # ``check_weekly_progression`` gate is WITHIN-phase only; the CROSS-phase
+    # boundary is owned by the season-level ``check_phase_transition`` (against
+    # the prior phase's WORKING volume, Stage-3b I1), asserted separately below.
+    # Threading prev_week_km flat across a boundary would re-impose the
+    # deload-trough-relative cap the I1 fix deliberately removed, contradicting
+    # how the season is actually generated.
     checked = 0
     for pw in bundle.phases:
+        prev_km: float | None = None  # reset per phase — matches the generator
         for week in pw.weeks:
             report = run_rule_filter(
                 week,
@@ -466,17 +481,40 @@ def test_season_integration_all_weeks_rule_clean(db, monkeypatch):
     report = run_season_rule_filter(bundle, mp)
     assert report.ok, [v.rule + ": " + v.message for v in report.errors()]
 
-    # --- No boundary spike between phases (phase N+1 wk1 ≤ 1.10× phase N last).
+    # --- No boundary spike between phases: phase N+1 week1 ≤ 1.10× phase N's
+    # representative WORKING volume (its max week), NOT its last week (Stage-3b
+    # I1). The prior phase often ENDS on a planned deload trough; the next phase
+    # legitimately resumes the prior phase's established working load, which is
+    # the baseline the season transition rule now uses. Comparing against the
+    # trough would be both physiologically wrong (a planned resumption is safe)
+    # and inconsistent with check_phase_transition.
     for prev_pw, next_pw in zip(bundle.phases, bundle.phases[1:]):
-        prev_last = _week_run_km(prev_pw.weeks[-1])
+        prev_working = max(_week_run_km(w) for w in prev_pw.weeks)
         next_first = _week_run_km(next_pw.weeks[0])
-        assert next_first <= prev_last * 1.10 + 1e-6, (
+        assert next_first <= prev_working * 1.10 + 1e-6, (
             f"phase boundary spike {prev_pw.phase_id!r} → {next_pw.phase_id!r}: "
-            f"first {next_first:.1f}km > 1.10 * last {prev_last:.1f}km"
+            f"first {next_first:.1f}km > 1.10 * working {prev_working:.1f}km"
         )
     # and the season transition rule independently agrees there's no spike.
     transition_errors = [v for v in report.errors() if v.rule == "phase_transition"]
     assert not transition_errors, [v.message for v in transition_errors]
+
+    # --- Band-reaching (Stage-3b I1 payoff): with working-volume threading the
+    # build and peak phases now actually REACH their prescribed per-phase volume
+    # bands — at least one week lands in-band. Under the old last-week (deload-
+    # trough) threading the ≤1.10× cap anchored each phase from a trough and
+    # suppression compounded, leaving these phases chronically below their bands.
+    build_phase = mp.phases[1]
+    peak_phase = mp.phases[2]
+    build_kms = [_week_run_km(w) for w in bundle.phases[1].weeks]
+    peak_kms = [_week_run_km(w) for w in bundle.phases[2].weeks]
+    assert any(
+        build_phase.weekly_distance_km_low - 1e-6 <= km <= build_phase.weekly_distance_km_high + 1e-6
+        for km in build_kms
+    ), f"build phase never reached its band [{build_phase.weekly_distance_km_low}, {build_phase.weekly_distance_km_high}]: {build_kms}"
+    assert any(
+        km >= peak_phase.weekly_distance_km_low - 1e-6 for km in peak_kms
+    ), f"peak phase never reached its band low {peak_phase.weekly_distance_km_low}: {peak_kms}"
 
     # --- Taper volume actually drops below the peak (taper_peak_sanity clean). -
     def _phase_total(pw) -> float:

@@ -17,6 +17,14 @@ from typing import Any
 
 from stride_core.plan_spec import WeeklyPlan
 
+#: Canonical week-over-week UP-step cap. The per-week ``check_weekly_progression``
+#: gate is the authority every other module must satisfy, so this constant is
+#: single-sourced HERE and imported by ``week_schedule`` (the derive ramp that
+#: must emit ≤-cap descriptors) and ``season_rule_filter`` (the cross-phase
+#: aggregate that re-checks the same boundary) — see M1 in the Stage-3b I1 fix.
+#: They cannot drift from the gate they exist to satisfy.
+MAX_WEEKLY_RAMP_RATIO = 1.10
+
 # Canonical injury → contraindicated-exercise keyword map. Single-source for any
 # code that needs to filter strength moves against logged injuries (e.g. the
 # adapter ``specialist_tools.strength_library`` pull tool). Keys are lowercase
@@ -137,14 +145,15 @@ def check_weekly_progression(
         return []
     cur_km = _total_run_distance_m(plan) / 1000.0
     ratio = cur_km / prev_week_km
-    if ratio > 1.10:
+    if ratio > MAX_WEEKLY_RAMP_RATIO:
         return [
             RuleViolation(
                 rule="weekly_progression",
                 severity="error",
                 message=(
                     f"weekly mileage jumped {ratio:.2f}x (current {cur_km:.1f}km, "
-                    f"previous {prev_week_km:.1f}km); cap is 1.10x"
+                    f"previous {prev_week_km:.1f}km); cap is "
+                    f"{MAX_WEEKLY_RAMP_RATIO:.2f}x"
                 ),
                 details={"current_km": cur_km, "previous_km": prev_week_km, "ratio": ratio},
             )
