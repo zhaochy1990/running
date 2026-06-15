@@ -2,8 +2,9 @@
 
 Turns one master-plan :class:`~stride_core.master_plan.Phase` into the ordered
 list of per-week descriptors (:class:`~coach.graphs.generation.weekly_prompt.WeekMeta`)
-that the Stage-3a per-phase generator (``generate_phase_weeks``) consumes. This
-is the periodization volume-arc the Stage-3a loop assumed but nobody built.
+that the phase-at-once generator (``generate_specialist_phase`` /
+``generate_phase_validated``) consumes. This is the periodization volume-arc the
+phase generator fills.
 
 **Pure / core**: no DB, no LLM, no network. Only ``stride_core.{master_plan,
 timefmt}`` + ``coach.*`` imports (``.importlinter`` coach-core-isolation).

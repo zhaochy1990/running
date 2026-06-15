@@ -1,16 +1,16 @@
-"""Stage-3b season integration smoke (Task 3b-T6) — the FINAL Stage-3b proof.
+"""Season integration smoke — the FINAL phase-at-once proof.
 
-This is the end-to-end smoke proving the whole Stage-3b stack assembles a
+This is the end-to-end smoke proving the whole season stack assembles a
 realistic, multi-phase full season wired together, with ONLY the two LLMs
 (generator + reviewer) and the user DB as test doubles. Everything between is
 the real code path:
 
     generate_season
       → derive_phase_weeks            (T2, real deterministic ramp)
-        → generate_phase_weeks        (Stage-3a, real per-week graph)
+        → generate_phase_validated    (phase-at-once PA-T4, real generator path)
             → build_specialist_context (real pace/volume/recent-training calc)
-            → fake generator LLM
-            → run_rule_filter         (real per-week gate)
+            → fake generator LLM       (returns a {"weeks":[…×N]} batch per phase)
+            → run_rule_filter         (real per-week gate, applied per batch week)
       → review_phase                  (T4, real per-phase reviewer + fake LLM)
       → run_season_rule_filter        (T3, real cross-phase aggregate rules)
     → SeasonPlanBundle assembled
@@ -37,8 +37,8 @@ The headline contract (load-bearing assertions):
 
 All LLM calls are faked (no network); the user DB is seeded so the real
 ``pace_targets`` / ``volume_targets`` / ``recent_training`` calculators run
-end-to-end. The fakes + seed helpers mirror ``test_season_orchestrator.py`` (T5)
-and ``test_stage3a_integration_smoke.py`` (Stage-3a smoke).
+end-to-end. The batch-fake generator + seed helpers mirror
+``test_season_orchestrator.py`` (T5) / ``test_phase_specialist_adapter.py``.
 """
 
 from __future__ import annotations
@@ -71,6 +71,7 @@ from stride_core.running_calibration.types import (
 )
 
 import stride_server.coach_adapters.phase_review_adapter as review_mod
+import stride_server.coach_adapters.phase_specialist_adapter as phase_mod
 import stride_server.coach_adapters.season_orchestrator as orch_mod
 import stride_server.coach_adapters.week_specialist_adapter as week_mod
 from stride_server.coach_adapters.season_orchestrator import generate_season
@@ -275,29 +276,36 @@ def _clean_week_plan(week_folder: str, *, total_km: float) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Fake generator LLM — reads the per-week ``目标周量: NN.N`` the volume budget
-# rendered into the system prompt and returns a clean week summing to it, so the
-# generated season's volume arc follows the deterministic derive ramp.
+# Fake generator LLM — PHASE-AT-ONCE: the phase prompt lists every week of the
+# phase (one row per week carrying its ``week_folder`` + ``目标周量``). This fake
+# parses every row and returns a ``{"weeks":[…×N]}`` batch, each week summing to
+# its row's target km so the generated season's volume arc follows the
+# deterministic derive ramp. Mirrors test_season_orchestrator.py's batch fake.
 # ---------------------------------------------------------------------------
 
 
-def _extract_week_folder(prompt: str) -> str:
-    m = re.search(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}\(W\d+\)", prompt)
-    return m.group(0) if m else "2026-06-08_06-14(W1)"
+def _extract_week_rows(prompt: str) -> list[tuple[str, float]]:
+    """Parse the phase prompt's per-week table into ``(week_folder, target_km)``.
 
-
-def _extract_target_km(prompt: str) -> float:
-    m = re.search(r"目标周量[:：]\s*(\d+(?:\.\d+)?)", prompt)
-    if m:
-        return float(m.group(1))
-    return 50.0
+    The phase composer renders one row per week:
+    ``… week_folder（原样回填）: <folder> | 目标周量: NN.N …``. Pair each folder
+    with the target km on the SAME row so the batch has one correctly-sized week
+    per requested week. Falls back to a single default row if nothing matches."""
+    rows = re.findall(
+        r"week_folder（原样回填）:\s*(\S+?)\s*\|\s*目标周量[:：]\s*(\d+(?:\.\d+)?)",
+        prompt,
+    )
+    if rows:
+        return [(folder, float(km)) for folder, km in rows]
+    return [("2026-06-08_06-14(W1)", 50.0)]
 
 
 class _FakeGenLLM:
-    """Fake bindable generator: returns a clean week tracking the prompt's
-    injected ``目标周量``. Satisfies the langchain tool-loop surface
-    (``bind_tools`` → self, ``invoke`` → AIMessage with the plan JSON, no
-    tool_calls so the loop returns it verbatim). Captures every system prompt."""
+    """Fake bindable generator for the PHASE-AT-ONCE path: returns a
+    ``{"weeks":[…×N]}`` batch, each week tracking its prompt row's ``目标周量``.
+    Satisfies the langchain tool-loop surface (``bind_tools`` → self, ``invoke``
+    → AIMessage with the batch JSON, no tool_calls so the loop returns it
+    verbatim). Captures every system prompt."""
 
     def __init__(self) -> None:
         self.captured: list[str] = []
@@ -312,11 +320,11 @@ class _FakeGenLLM:
                 sys_text = m.content if isinstance(m.content, str) else str(m.content)
                 break
         self.captured.append(sys_text)
-        folder = _extract_week_folder(sys_text)
-        total_km = _extract_target_km(sys_text)
+        rows = _extract_week_rows(sys_text)
+        weeks = [_clean_week_plan(folder, total_km=km) for folder, km in rows]
         return AIMessage(
             content=json.dumps(
-                _clean_week_plan(folder, total_km=total_km), ensure_ascii=False
+                {"schema": "phase-weeks/v1", "weeks": weeks}, ensure_ascii=False
             )
         )
 
@@ -347,15 +355,18 @@ class _FakeReviewerLLM:
 
 
 # ---------------------------------------------------------------------------
-# Wiring — patch generator LLM + DB + today on the week adapter; reviewer LLM on
-# the review adapter; stub the provenance model so we don't read real config.
+# Wiring — phase-at-once generation lives in phase_specialist_adapter: patch its
+# generator LLM + Database there. ``build_specialist_context`` (imported from
+# week_specialist_adapter) reads ``today_shanghai`` out of week_mod, so patch
+# that one on week_mod. Reviewer LLM on the review adapter; stub the provenance
+# model so we don't read real config.
 # ---------------------------------------------------------------------------
 
 
 def _wire(monkeypatch, db, *, gen: _FakeGenLLM, reviewer: _FakeReviewerLLM) -> None:
-    monkeypatch.setattr(week_mod, "get_generator_llm", lambda: gen)
+    monkeypatch.setattr(phase_mod, "get_generator_llm", lambda: gen)
+    monkeypatch.setattr(phase_mod, "Database", lambda **kw: db)
     monkeypatch.setattr(week_mod, "today_shanghai", lambda: _AS_OF)
-    monkeypatch.setattr(week_mod, "Database", lambda **kw: db)
     monkeypatch.setattr(review_mod, "get_reviewer_llm", lambda: reviewer)
     monkeypatch.setattr(orch_mod, "get_generator_model", lambda: "test-gen-model")
 
@@ -450,8 +461,9 @@ def test_season_integration_all_weeks_rule_clean(db, monkeypatch):
     # un-blocked by the loop.
     #
     # IMPORTANT: prev_week_km RESETS at each phase boundary — mirroring exactly
-    # how the real generator threads it (``generate_phase_weeks`` starts each
-    # phase with ``prev_week_km=None``; see its per-phase loop). The per-week
+    # how the real generator gates it (``generate_phase_validated`` computes each
+    # week's prev_week_km from the DETERMINISTIC per-week targets, with week 0 of
+    # every phase having ``prev_week_km=None``). The per-week
     # ``check_weekly_progression`` gate is WITHIN-phase only; the CROSS-phase
     # boundary is owned by the season-level ``check_phase_transition`` (against
     # the prior phase's WORKING volume, Stage-3b I1), asserted separately below.
