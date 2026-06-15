@@ -156,8 +156,8 @@ def test_max_tool_iters_cap_respected():
 
     out = run_tool_loop(llm, _start_messages(), {"recent_training": tool}, max_tool_iters=3)
 
-    # The tool was invoked at most max_tool_iters times (one per tool round).
-    assert len(tool.invoked_with) <= 3
+    # The tool was invoked exactly max_tool_iters times (one per tool round).
+    assert len(tool.invoked_with) == 3
     # After the cap the loop does one final invoke (no further tool execution)
     # and returns its text.
     assert out == "forced final"
