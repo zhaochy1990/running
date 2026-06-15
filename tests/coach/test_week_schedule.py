@@ -170,6 +170,73 @@ def test_first_week_respects_continuity_cap(pt):
     assert weeks[0].target_weekly_km <= prev_end * 1.10 + 1e-6, (pt, weeks[0])
 
 
+@pytest.mark.parametrize("pt", list(PhaseType) + [None])
+def test_first_week_cap_holds_when_prev_below_band_floor(pt):
+    # CRITICAL invariant: when the prior phase exit volume sits BELOW (or near)
+    # this phase's band floor, the HARD ≤1.10× continuity cap must still win —
+    # the band floor / peak floor / recovery floor must NOT lift the first week
+    # above prev*1.10. Previously PEAK and RECOVERY applied no continuity cap at
+    # all, and a big detraining gap let the ramp-up band floor override the cap.
+    prev_end = 20.0  # well below the band floor of 50
+    weeks = derive_phase_weeks(
+        _phase(start=_SIX_WEEK_START, end=_SIX_WEEK_END, low=50, high=80, phase_type=pt),
+        prev_phase_end_km=prev_end,
+    )
+    kms = [w.target_weekly_km for w in weeks]
+    # First week honors the HARD ≤1.10× rule even though it opens BELOW the band
+    # floor (band floor is a soft target; ≤1.10× is HARD and wins).
+    assert kms[0] <= prev_end * 1.10 + 1e-6, (pt, kms)
+    # Subsequent weeks ramp from the (sub-floor) first week WITHOUT themselves
+    # violating ≤1.10× — they climb toward the band, they don't snap into it.
+    for prev, cur in zip(kms, kms[1:]):
+        assert cur <= prev * 1.10 + 1e-6, (pt, prev, cur, kms)
+
+
+def test_first_week_cap_specific_violation_cases():
+    # The exact cases from the spec review that previously violated ≤1.10×.
+    # PEAK, prev=45, band [50,70]: floor lifted week 1 to 50 > 45*1.10=49.5.
+    peak = derive_phase_weeks(
+        _phase(
+            start=_SIX_WEEK_START,
+            end=_SIX_WEEK_END,
+            low=50,
+            high=70,
+            phase_type=PhaseType.PEAK,
+        ),
+        prev_phase_end_km=45.0,
+    )
+    assert peak[0].target_weekly_km <= 45.0 * 1.10 + 1e-6, peak[0]
+
+    # RECOVERY, prev=45, band [50,70]: 0.80*45=36 floored to low 50 > 49.5.
+    recovery = derive_phase_weeks(
+        _phase(
+            start=_SIX_WEEK_START,
+            end=_SIX_WEEK_END,
+            low=50,
+            high=70,
+            phase_type=PhaseType.RECOVERY,
+        ),
+        prev_phase_end_km=45.0,
+    )
+    assert recovery[0].target_weekly_km <= 45.0 * 1.10 + 1e-6, recovery[0]
+
+    # BASE, prev=20, band [50,80]: band-floor clamp overrode the continuity cap.
+    base = derive_phase_weeks(
+        _phase(
+            start=_SIX_WEEK_START,
+            end=_SIX_WEEK_END,
+            low=50,
+            high=80,
+            phase_type=PhaseType.BASE,
+        ),
+        prev_phase_end_km=20.0,
+    )
+    base_kms = [w.target_weekly_km for w in base]
+    assert base_kms[0] <= 20.0 * 1.10 + 1e-6, base_kms
+    for prev, cur in zip(base_kms, base_kms[1:]):
+        assert cur <= prev * 1.10 + 1e-6, (prev, cur, base_kms)
+
+
 # ---------------------------------------------------------------------------
 # 3:1 deload (base/build, ≥4 weeks)
 # ---------------------------------------------------------------------------

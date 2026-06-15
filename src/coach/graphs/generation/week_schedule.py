@@ -38,6 +38,7 @@ every phase length.
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 
 from stride_core.master_plan import Phase, PhaseType
@@ -72,6 +73,13 @@ _RECOVERY_STEP = 0.92
 
 # Hard cap the Stage-3a rule filter enforces on consecutive load weeks.
 _MAX_RAMP_RATIO = 1.10
+
+
+def _floor_1dp(x: float) -> float:
+    """Round ``x`` DOWN to 1 decimal place. Used to clamp an emitted week to a
+    value whose 1-decimal representation is guaranteed ≤ the cap (plain
+    ``round`` could round up across the ≤1.10× boundary)."""
+    return math.floor(x * 10) / 10
 
 
 def _parse(d: str) -> date:
@@ -122,10 +130,17 @@ def _rampup_volumes(
     low: float,
     high: float,
     start_km: float,
+    first_week_cap: float | None = None,
 ) -> list[float]:
     """Base/build/speed/None ramp: climb ~6%/week toward ``high`` with a 3:1
     deload every 4th week. Each up-step is clamped to ``high`` and to the
-    ≤1.10× cap relative to the prior week; deload weeks step down (safe)."""
+    ≤1.10× cap relative to the prior week; deload weeks step down (safe).
+
+    ``first_week_cap`` (continuity ≤1.10× of the prior phase exit) is a HARD
+    ceiling on week 1 that WINS over the band floor — see ``derive_phase_weeks``
+    for the precedence rationale. Subsequent weeks then ramp from that
+    (possibly sub-floor) first week under the same 1.10× cap, climbing back
+    toward the band rather than jumping into it."""
     vols: list[float] = []
     prev = start_km
     for i in range(n):
@@ -140,8 +155,11 @@ def _rampup_volumes(
             cur = min(cur, high)
             # Belt-and-braces: never let a climb exceed the 1.10× cap.
             cur = min(cur, prev * _MAX_RAMP_RATIO)
-        # Keep volumes sane relative to the band (deload may dip below low).
+        # Keep volumes sane relative to the band (deload may dip below low) —
+        # but the HARD ≤1.10× first-week cap (below) overrides this soft floor.
         cur = max(cur, low * 0.65)
+        if i == 0 and first_week_cap is not None:
+            cur = min(cur, first_week_cap)
         vols.append(cur)
         prev = cur
     return vols
@@ -222,13 +240,31 @@ def derive_phase_weeks(
     else:
         start_km = low
 
+    # HARD continuity cap on the FIRST emitted week: when the prior phase's
+    # exit volume is known, no phase may open >1.10× of it — that's exactly
+    # what Stage-3a's ``run_rule_filter.check_weekly_progression`` enforces
+    # week-over-week, so a boundary spike here would pre-fail. This cap is HARD
+    # and OVERRIDES the band floor (a soft target): when ``prev_phase_end_km <
+    # low``, honoring ≤1.10× means the first week may open BELOW the band floor
+    # (or below a peak/recovery floor) and ramp toward the band over the
+    # following weeks — you can't safely jump volume in one step. Subsequent
+    # weeks then climb from that (possibly sub-floor) first week under the same
+    # 1.10× cap. Computed once here and applied uniformly across all branches.
+    first_week_cap: float | None = None
+    if prev_phase_end_km is not None and prev_phase_end_km > 0:
+        first_week_cap = float(prev_phase_end_km) * _MAX_RAMP_RATIO
+
     if pt in (PhaseType.BASE, PhaseType.BUILD, PhaseType.SPEED, None):
         # Ramp-up: clamp the anchor into [low, high] so we climb within band.
         anchor = min(max(start_km, low), high)
         # Continuity cap: never start the phase >1.10× the prior exit volume.
-        if prev_phase_end_km is not None and prev_phase_end_km > 0:
-            anchor = min(anchor, float(prev_phase_end_km) * _MAX_RAMP_RATIO)
-        vols = _rampup_volumes(n, low=low, high=high, start_km=anchor)
+        if first_week_cap is not None:
+            anchor = min(anchor, first_week_cap)
+        # ``first_week_cap`` also threads into the ramp so its band floor can't
+        # push week 1 back above the cap; weeks 2+ ramp from the capped week 1.
+        vols = _rampup_volumes(
+            n, low=low, high=high, start_km=anchor, first_week_cap=first_week_cap
+        )
     elif pt is PhaseType.PEAK:
         anchor = min(max(start_km, low), high)
         vols = _peak_volumes(n, high=high, start_km=anchor)
@@ -242,7 +278,40 @@ def derive_phase_weeks(
         vols = _recovery_volumes(n, low=low, start_km=entry)
     else:  # pragma: no cover — PhaseType is a closed enum; defensive only.
         anchor = min(max(start_km, low), high)
-        vols = _rampup_volumes(n, low=low, high=high, start_km=anchor)
+        if first_week_cap is not None:
+            anchor = min(anchor, first_week_cap)
+        vols = _rampup_volumes(
+            n, low=low, high=high, start_km=anchor, first_week_cap=first_week_cap
+        )
+
+    # Uniform last-step HARD ≤1.10× enforcement across ALL phase types. Two
+    # things can leave a residual violation after the per-phase shaping above:
+    #   1. A floor (band ``low*0.65`` for ramp-up, band ``low`` for recovery,
+    #      ``low``-clamped anchor for peak) lifting week 1 above the continuity
+    #      cap — fixed by clamping ``vols[0]`` to ``first_week_cap``.
+    #   2. The SAME floor lifting a LATER week so it jumps >1.10× off a
+    #      sub-floor predecessor: when ``prev_phase_end_km`` sits far below the
+    #      band, week 1 opens sub-floor (HARD ≤1.10× wins over the soft band
+    #      floor), and the next week's floor would otherwise snap volume
+    #      straight up into the band — a >1.10× step. We instead let it climb
+    #      under the cap, week by week, toward the band.
+    # This forward pass only ever LOWERS values, so it never disturbs the
+    # intended down-steps (deload / taper / recovery) and guarantees the HARD
+    # invariant that ``run_rule_filter.check_weekly_progression`` checks.
+    #
+    # The cap is enforced on the ROUNDED (1-decimal) values that are actually
+    # emitted as ``target_weekly_km`` — and that the rule filter sees — not on
+    # full-precision intermediates. Rounding the larger of a ≤1.10× pair UP can
+    # otherwise push the emitted ratio just over 1.10× (e.g. 26.6 → 29.3 =
+    # 1.1015×). We therefore round first, then clamp each up-week to a value
+    # whose 1-decimal rounding is guaranteed ≤1.10× of the prior emitted week.
+    emitted: list[float] = [round(v, 1) for v in vols]
+    if emitted:
+        if first_week_cap is not None:
+            emitted[0] = min(emitted[0], _floor_1dp(first_week_cap))
+        for i in range(1, len(emitted)):
+            ceiling = _floor_1dp(emitted[i - 1] * _MAX_RAMP_RATIO)
+            emitted[i] = min(emitted[i], ceiling)
 
     label = _phase_label(phase)
     out: list[WeekMeta] = []
@@ -251,7 +320,7 @@ def derive_phase_weeks(
             WeekMeta(
                 phase_position=f"{label} week {i + 1}/{n}",
                 week_folder=_week_folder(mon, sun, i + 1),
-                target_weekly_km=round(vols[i], 1),
+                target_weekly_km=emitted[i],
             )
         )
     return out
