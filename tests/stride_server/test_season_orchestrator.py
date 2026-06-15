@@ -557,6 +557,32 @@ def test_season_rule_driven_regen(db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# OPT-B: owned milestone threaded into the generation prompt
+# ---------------------------------------------------------------------------
+
+
+def test_owned_milestone_threaded_into_generation_prompt(db, monkeypatch):
+    """The build phase owns ``ms-build`` (target "30K 节奏跑 4:45/km"); the
+    orchestrator must thread it into that phase's generation prompt so the
+    generator designs toward the SAME milestone the reviewer judges against."""
+    _seed_calibration(db)
+    reviewer = _FakeReviewerLLM(["pass"])
+    gen = _wire(monkeypatch, db, reviewer=reviewer)
+
+    mp = _master_plan()
+    generate_season(mp, _context(), injuries=[])
+
+    # at least one captured generation prompt (the build phase's) carries the
+    # owned milestone block + the milestone's natural-language target.
+    milestone_prompts = [p for p in gen.captured if "本阶段 milestone" in p]
+    assert milestone_prompts, "no generation prompt carried the milestone block"
+    assert any("30K 节奏跑 4:45/km" in p for p in milestone_prompts)
+    # base + taper own no milestone → their prompts must NOT carry the block.
+    no_ms = [p for p in gen.captured if "本阶段 milestone（生成时必须朝它设计）" not in p]
+    assert no_ms, "expected base/taper prompts without a milestone block"
+
+
+# ---------------------------------------------------------------------------
 # generated_by override
 # ---------------------------------------------------------------------------
 

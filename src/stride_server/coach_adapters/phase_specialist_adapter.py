@@ -56,13 +56,14 @@ from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.tool_loop import run_tool_loop
 from coach.schemas import PaceTargets
 from stride_core.db import Database
-from stride_core.master_plan import Phase, PhaseType
+from stride_core.master_plan import Milestone, Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
 from stride_core.timefmt import today_shanghai
 
 from ..coach_runtime import get_generator_llm
 from ..llm_client import LLMError, LLMUnavailable, _map_exception
 from ..master_plan_generator import _parse_llm_output
+from .phase_review_adapter import _render_milestone_summary
 from .week_specialist_adapter import (
     _build_specialist_tools,
     _coerce_phase_type,
@@ -205,6 +206,7 @@ def generate_specialist_phase(
     context: dict,
     injuries: list[str] | None = None,
     *,
+    milestones: list[Milestone] | None = None,
     feedback: str | None = None,
 ) -> list[dict]:
     """Generate ALL weeks of one phase in a single LLM call.
@@ -224,6 +226,12 @@ def generate_specialist_phase(
         injuries: optional injury flags — fed to the prompt context block AND
             bound into the strength_library tool so the LLM gets injury-safe
             T-codes.
+        milestones: optional — the phase's OWNED ``Milestone`` list. Rendered to
+            a one-line summary via the reviewer's ``_render_milestone_summary``
+            (single source — the generator and reviewer see the SAME milestone
+            framing) and injected into the generation prompt so the generator
+            designs the phase (long-run progression, deload placement) toward the
+            milestone on the FIRST try. ``None`` / empty → no milestone block.
         feedback: optional regen feedback (rule_filter violations / reviewer
             issues) → threaded into ``build_phase_system_prompt(feedback=...)``.
 
@@ -263,12 +271,17 @@ def generate_specialist_phase(
     )
 
     # 3. Compose the phase-at-once system prompt (one shared pace table, N week
-    #    specs, optional regen feedback).
+    #    specs, the phase's milestone target, optional regen feedback). The
+    #    milestone is rendered by the SAME helper the reviewer uses
+    #    (_render_milestone_summary) so the generator designs toward, and the
+    #    reviewer judges against, identical milestone framing — single source.
+    milestone_summary = _render_milestone_summary(list(milestones or []))
     system_prompt = build_phase_system_prompt(
         phase_type=phase_type,
         week_specs=week_specs,
         pace_targets=pace_targets,
         context_block=context_block,
+        milestone_summary=milestone_summary,
         feedback=feedback,
     )
 
@@ -400,6 +413,7 @@ def generate_phase_validated(
     context: dict,
     injuries: list[str] | None = None,
     *,
+    milestones: list[Milestone] | None = None,
     feedback: str | None = None,
     max_attempts: int = 3,
 ) -> list[dict]:
@@ -435,6 +449,10 @@ def generate_phase_validated(
             ``level``; may carry ``continuity`` / ``prior_week_tail``.
         injuries: optional injury flags — fed to the prompt AND to the
             rule_filter ``injury_conflict`` check.
+        milestones: optional — the phase's OWNED ``Milestone`` list, threaded
+            into every ``generate_specialist_phase`` call so the generator
+            designs toward the SAME milestone the reviewer judges against
+            (OPT-B). ``None`` / empty → no milestone block.
         feedback: optional EXTERNAL feedback (the reviewer's issues from the
             orchestrator, PA-T5 — ``None`` for a fresh generation). Used on the
             FIRST attempt only; later attempts carry the rule-violation feedback
@@ -500,7 +518,12 @@ def generate_phase_validated(
         )
         try:
             weeks = generate_specialist_phase(
-                phase, metas, context, injuries, feedback=current_feedback
+                phase,
+                metas,
+                context,
+                injuries,
+                milestones=milestones,
+                feedback=current_feedback,
             )
         except (LLMUnavailable, LLMError):
             # Real LLM-infra failure — not a content fault we can regen our way

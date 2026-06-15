@@ -23,7 +23,7 @@ from datetime import date
 import pytest
 
 from stride_core.db import Database
-from stride_core.master_plan import Phase, PhaseType
+from stride_core.master_plan import Milestone, MilestoneType, Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
 from stride_core.running_calibration.sqlite_connector import (
     SQLiteRunningCalibrationRepository,
@@ -417,6 +417,76 @@ def test_feedback_carried_in_prompt(patch_db, monkeypatch):
     system_prompt = model.captured[0][0]
     assert "第3周缺少MP课" in system_prompt
     assert "本次重生成必须逐条修复" in system_prompt
+
+
+# ---------------------------------------------------------------------------
+# OPT-B: phase milestone flows into the generation prompt (single-source render)
+# ---------------------------------------------------------------------------
+
+
+def _build_milestone() -> Milestone:
+    return Milestone(
+        id="m1",
+        type=MilestoneType.TEST_RUN,
+        date="2026-07-12",
+        phase_id="ph1",
+        target="30K 节奏跑 4:45/km",
+        metric="race_time_s_fm",
+        target_value=12600.0,
+        comparator="<=",
+    )
+
+
+def test_milestone_carried_in_generation_prompt(patch_db, monkeypatch):
+    metas = _week_metas([70.0, 80.0])
+    folders = [m.week_folder for m in metas]
+    model = FakeBindableLLM([ai_text(_batch(folders))])
+    _install_model(monkeypatch, model)
+
+    ms = _build_milestone()
+    generate_specialist_phase(
+        _build_phase(), metas, _context(), milestones=[ms]
+    )
+    system_prompt = model.captured[0][0]
+    # the milestone block label appears
+    assert "本阶段 milestone" in system_prompt
+    # the rendered milestone (natural-language target + quantified metric) appears
+    assert "30K 节奏跑 4:45/km" in system_prompt
+    assert "race_time_s_fm <= 12600" in system_prompt
+
+
+def test_generator_milestone_render_matches_reviewer(patch_db, monkeypatch):
+    """The generator's milestone text MUST equal what the reviewer would render —
+    proving ``_render_milestone_summary`` is the single source (no divergence)."""
+    from stride_server.coach_adapters.phase_review_adapter import (
+        _render_milestone_summary,
+    )
+
+    metas = _week_metas([70.0, 80.0])
+    folders = [m.week_folder for m in metas]
+    model = FakeBindableLLM([ai_text(_batch(folders))])
+    _install_model(monkeypatch, model)
+
+    ms = _build_milestone()
+    generate_specialist_phase(
+        _build_phase(), metas, _context(), milestones=[ms]
+    )
+    system_prompt = model.captured[0][0]
+    reviewer_render = _render_milestone_summary([ms])
+    assert reviewer_render is not None
+    # the exact reviewer render is the string injected into the generation prompt
+    assert reviewer_render in system_prompt
+
+
+def test_no_milestone_block_when_none(patch_db, monkeypatch):
+    metas = _week_metas([70.0, 80.0])
+    folders = [m.week_folder for m in metas]
+    model = FakeBindableLLM([ai_text(_batch(folders))])
+    _install_model(monkeypatch, model)
+
+    generate_specialist_phase(_build_phase(), metas, _context())
+    system_prompt = model.captured[0][0]
+    assert "本阶段 milestone（生成时必须朝它设计）" not in system_prompt
 
 
 # ---------------------------------------------------------------------------

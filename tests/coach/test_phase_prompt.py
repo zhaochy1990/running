@@ -283,6 +283,74 @@ def test_phase_prompt_hard_rules_ramp_matches_gate():
 
 
 # ---------------------------------------------------------------------------
+# OPT-B: phase milestone injected into the GENERATION prompt
+# ---------------------------------------------------------------------------
+
+
+def test_phase_prompt_carries_milestone_block_when_present():
+    """With ``milestone_summary`` the prompt must carry the 【本阶段 milestone】
+    block + the milestone string, AND the holistic long-run instruction must
+    reference the injected milestone concretely (not the vague "见 doctrine").
+    """
+    ms = "长跑达 21km（含 MP 段）"
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.BUILD,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+        milestone_summary=ms,
+    )
+    # the milestone block label + the milestone string both appear
+    assert "本阶段 milestone" in prompt
+    assert ms in prompt
+    # the concrete long-run instruction references the injected milestone block,
+    # not the old vague pointer to the doctrine.
+    assert "达到上方【本阶段 milestone】给出的目标" in prompt
+    assert "朝本阶段 milestone 目标距离推进（见 doctrine）" not in prompt
+
+
+def test_phase_prompt_omits_milestone_block_when_absent():
+    """``milestone_summary=None`` → no 【本阶段 milestone】 block, no dangling
+    label. The holistic block's milestone-free fallback wording still appears.
+    """
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.BUILD,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+        milestone_summary=None,
+    )
+    assert "本阶段 milestone（生成时必须朝它设计）" not in prompt
+    # the holistic block still mentions the milestone-free fallback path
+    assert "没有 milestone 时" in prompt
+
+
+@pytest.mark.parametrize("phase", list(PhaseType))
+def test_phase_prompt_milestone_block_composes_for_all_phases(phase: PhaseType):
+    """The milestone block injects cleanly for every PhaseType (all 6 compose)."""
+    prompt = build_phase_system_prompt(
+        phase_type=phase,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+        milestone_summary="阶段末 5k sub-19:00（race_time_s_5k <= 1140）",
+    )
+    assert "本阶段 milestone" in prompt
+    assert "race_time_s_5k <= 1140" in prompt
+
+
+def test_phase_prompt_deload_quality_removal_is_emphatic():
+    """The deload quality-removal line must read as a hard requirement."""
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.BUILD,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+    )
+    assert "必须删除质量课" in prompt
+
+
+# ---------------------------------------------------------------------------
 # Contract drift-guard
 # ---------------------------------------------------------------------------
 

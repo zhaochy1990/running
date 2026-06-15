@@ -201,7 +201,12 @@ def _generate_one_phase(
         # objects directly (no dict conversion). ``feedback`` threads the prior
         # attempt's reviewer critique into the first generation (PA-T5).
         plans = generate_phase_validated(
-            phase, week_metas, context, injuries, feedback=feedback
+            phase,
+            week_metas,
+            context,
+            injuries,
+            milestones=milestones,
+            feedback=feedback,
         )
         review = review_phase(phase, plans, milestones=milestones)
         blocked = max(0, len(week_metas) - len(plans))

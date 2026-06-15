@@ -128,6 +128,28 @@ def _render_week_table(week_specs: list[PhaseWeekSpec]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Milestone block (the phase's owned milestone(s) — generator design target)
+# ---------------------------------------------------------------------------
+
+
+def _render_milestone_block(milestone_summary: str) -> str:
+    """Render the phase's milestone target the generator MUST design toward.
+
+    The reviewer already checks the phase against this same milestone summary;
+    injecting it here (it was previously ONLY in the reviewer prompt) tells the
+    generator the target on the FIRST try, so it designs the phase's long-run
+    progression / deload placement toward the milestone instead of learning it
+    via a review-driven regen.
+    """
+    return f"""\
+【本阶段 milestone（生成时必须朝它设计）】
+本阶段需要达成的阶段末目标（reviewer 会用它评审，请直接对齐它生成）：
+{milestone_summary}
+长跑距离、质量课进度、减量周安放都要朝这个目标推进——阶段末必须命中它。
+"""
+
+
+# ---------------------------------------------------------------------------
 # Feedback (regen) block
 # ---------------------------------------------------------------------------
 
@@ -152,6 +174,7 @@ def build_phase_system_prompt(
     week_specs: list[PhaseWeekSpec],
     pace_targets: PaceTargets,
     context_block: str,
+    milestone_summary: str | None = None,
     feedback: str | None = None,
 ) -> str:
     """Compose the phase-at-once generation system prompt.
@@ -164,6 +187,13 @@ def build_phase_system_prompt(
             rendered once. Required (keyword-only, no default).
         context_block: pre-rendered continuity + prior-phase tail + injuries
             string supplied by the caller; pass ``""`` if empty.
+        milestone_summary: optional one-line summary of the phase's owned
+            milestone target(s) — the SAME render the reviewer uses (single
+            source via the adapter's ``_render_milestone_summary``). When
+            present, the prompt injects a 【本阶段 milestone】 block and the
+            holistic long-run instruction references it concretely so the
+            generator designs toward the target on the first try. Omitted
+            cleanly (no dangling label) when ``None``.
         feedback: optional (regen only) — a string block listing what to FIX in
             the regenerated phase. When present, the prompt instructs the LLM to
             explicitly address each item; when absent, no feedback section.
@@ -171,6 +201,9 @@ def build_phase_system_prompt(
     specialist = get_specialist(phase_type)
     n_weeks = len(week_specs)
 
+    milestone_block = (
+        _render_milestone_block(milestone_summary) if milestone_summary else ""
+    )
     feedback_block = _render_feedback(feedback) if feedback else ""
 
     return f"""\
@@ -181,9 +214,10 @@ def build_phase_system_prompt(
 
 {specialist.guidance}
 
+{milestone_block}\
 【阶段整体设计要求（phase-at-once 的核心——逐周贪心生成做不到的）】
-- 跨周推进长跑：把长跑距离沿各周渐进，朝本阶段 milestone 目标距离推进（见 doctrine）。
-- 按 is_deload 标记安放减量周：在标记为 DELOAD 的周**删除质量课**，仅保留 easy + mobility/力量维护。
+- 跨周推进长跑：把长跑距离沿各周渐进，到阶段末**达到上方【本阶段 milestone】给出的目标**（如长跑达 21km / 30km 含 MP 段）；没有 milestone 时按 doctrine 自然递进。
+- 按 is_deload 标记安放减量周：在标记为 DELOAD 的周**必须删除质量课**（这是硬性要求，不是建议），仅保留 easy + mobility/力量维护。
 - 保持 doctrine 规定的强度分布（三区占比），不要把质量集中到单周 spike。
 - 用逐周表注入的 volume_targets 预算命中每周目标周量；绝不自行编配速 / 里程。
 
