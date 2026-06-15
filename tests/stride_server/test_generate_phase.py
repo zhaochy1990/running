@@ -1,7 +1,7 @@
-"""Tests for coach_adapters.phase_specialist_adapter.generate_phase (PA-T4).
+"""Tests for coach_adapters.phase_specialist_adapter.generate_phase_validated (PA-T4).
 
-``generate_phase(phase, week_metas, context, injuries=None, *, feedback=None,
-max_attempts=3)`` is the phase-at-once replacement for the per-week
+``generate_phase_validated(phase, week_metas, context, injuries=None, *,
+feedback=None, max_attempts=3)`` is the phase-at-once replacement for the per-week
 ``generate_phase_weeks`` loop. It:
 
   * computes the rule_filter inputs once (the athlete-relative Z4-Z5 threshold
@@ -36,7 +36,9 @@ from stride_core.running_calibration.types import (
     RunningCalibrationSnapshot,
 )
 import stride_server.coach_adapters.phase_specialist_adapter as adapter_mod
-from stride_server.coach_adapters.phase_specialist_adapter import generate_phase
+from stride_server.coach_adapters.phase_specialist_adapter import (
+    generate_phase_validated,
+)
 
 from tests.stride_server._fake_bindable_llm import FakeBindableLLM, ai_text
 
@@ -198,7 +200,7 @@ def test_clean_phase_returns_all_no_regen(patch_db, monkeypatch):
     model = FakeBindableLLM([ai_text(batch)])
     _install_model(monkeypatch, model)
 
-    out = generate_phase(_build_phase(), metas, _context())
+    out = generate_phase_validated(_build_phase(), metas, _context())
     assert len(out) == 3
     for wk in out:
         WeeklyPlan.from_dict(wk)  # round-trips
@@ -235,7 +237,7 @@ def test_violation_then_feedback_regen_then_clean(patch_db, monkeypatch):
     model = FakeBindableLLM(response_fn=response_fn)
     _install_model(monkeypatch, model)
 
-    out = generate_phase(_build_phase(), metas, _context())
+    out = generate_phase_validated(_build_phase(), metas, _context())
     assert len(out) == 3  # all clean after regen
 
     # 2nd attempt's system prompt must carry the rule-violation feedback naming
@@ -268,7 +270,7 @@ def test_persistent_violation_drops_week(patch_db, monkeypatch, caplog):
     import logging
 
     with caplog.at_level(logging.WARNING):
-        out = generate_phase(_build_phase(), metas, _context(), max_attempts=3)
+        out = generate_phase_validated(_build_phase(), metas, _context(), max_attempts=3)
 
     assert len(out) == 2  # the violating week dropped
     surviving_folders = {wk["week_folder"] for wk in out}
@@ -290,7 +292,7 @@ def test_parse_failed_degrades_to_empty(patch_db, monkeypatch):
     model = FakeBindableLLM([ai_text("完全无法解析，没有 JSON。")])
     _install_model(monkeypatch, model)
 
-    out = generate_phase(_build_phase(), metas, _context())
+    out = generate_phase_validated(_build_phase(), metas, _context())
     assert out == []  # degraded, no raise
 
 
@@ -305,7 +307,7 @@ def test_prev_week_km_uses_target_not_generated_km(patch_db, monkeypatch):
     Targets are flat at 40km. The generated km DRIFTS: week 1 = 20km,
     week 2 = 40km. A *generated-km* progression check would see 40/20 = 2.0x
     and trip the 1.10x cap. The *target-based* check sees 40/40 = 1.0x and
-    passes. So generate_phase must return BOTH weeks (no false violation).
+    passes. So generate_phase_validated must return BOTH weeks (no false violation).
     """
     metas = _week_metas([40.0, 40.0])
     folders = [m.week_folder for m in metas]
@@ -326,8 +328,55 @@ def test_prev_week_km_uses_target_not_generated_km(patch_db, monkeypatch):
     model = FakeBindableLLM([ai_text(_batch([week1, week2]))])
     _install_model(monkeypatch, model)
 
-    out = generate_phase(_build_phase(), metas, _context())
+    out = generate_phase_validated(_build_phase(), metas, _context())
     # If prev_week_km used the generated 20km, week2 (40km) = 2.0x → dropped.
     # Target-based (40/40 = 1.0x) → both survive.
     assert len(out) == 2
     assert len(model.captured) == 1  # no regen (no false violation)
+
+
+# ---------------------------------------------------------------------------
+# max_attempts boundary: 1 = drop-without-regen, 0 = [] without raising
+# ---------------------------------------------------------------------------
+
+
+def test_max_attempts_one_drops_without_regen(patch_db, monkeypatch):
+    """max_attempts=1 → a persistently-violating week is dropped after EXACTLY
+    one LLM pass (no regeneration), keeping the clean weeks."""
+    metas = _week_metas([40.0, 40.0, 40.0])
+    folders = [m.week_folder for m in metas]
+
+    # Week 3 (index 2) violates long_run_share. With max_attempts=1 there is no
+    # second attempt → it is dropped on the single pass.
+    batch = _batch(
+        [
+            _clean_plan_dict(folders[0]),
+            _clean_plan_dict(folders[1]),
+            _long_run_violation_plan_dict(folders[2]),
+        ]
+    )
+    model = FakeBindableLLM([ai_text(batch)])
+    _install_model(monkeypatch, model)
+
+    out = generate_phase_validated(_build_phase(), metas, _context(), max_attempts=1)
+
+    assert len(out) == 2  # violating week dropped, clean ones kept
+    surviving_folders = {wk["week_folder"] for wk in out}
+    assert folders[2] not in surviving_folders
+    assert len(model.captured) == 1  # exactly one LLM pass, no regen
+
+
+def test_max_attempts_zero_returns_empty_without_raising(patch_db, monkeypatch):
+    """max_attempts=0 → empty attempt loop must degrade to [] (locks the M1 fix:
+    per_week_errors is hoisted, so the post-loop drop code never hits a
+    NameError)."""
+    metas = _week_metas([40.0, 40.0])
+    folders = [m.week_folder for m in metas]
+    # The model should never be invoked (empty loop) — but install one anyway so
+    # an accidental call would surface rather than error on a missing model.
+    model = FakeBindableLLM([ai_text(_batch([_clean_plan_dict(f) for f in folders]))])
+    _install_model(monkeypatch, model)
+
+    out = generate_phase_validated(_build_phase(), metas, _context(), max_attempts=0)
+    assert out == []  # never raises, no LLM pass
+    assert len(model.captured) == 0

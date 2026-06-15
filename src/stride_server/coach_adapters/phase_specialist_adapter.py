@@ -50,7 +50,7 @@ from coach.graphs.generation.phase_prompt import (
     PhaseWeekSpec,
     build_phase_system_prompt,
 )
-from coach.graphs.generation.rule_filter import run_rule_filter
+from coach.graphs.generation.rule_filter import RuleViolation, run_rule_filter
 from coach.graphs.generation.weekly_prompt import WeekMeta
 from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.tool_loop import run_tool_loop
@@ -367,7 +367,7 @@ def generate_specialist_phase(
 
 
 def _format_rule_feedback(
-    per_week_errors: list[tuple[int, list]],
+    per_week_errors: list[tuple[int, list[RuleViolation]]],
 ) -> str:
     """Render the per-week rule violations into a regen feedback string.
 
@@ -377,8 +377,8 @@ def _format_rule_feedback(
 
         第 3 周违反 long_run_share：longest run is 41% of weekly volume (limit 35%)
 
-    The next regen threads this back through
-    ``generate_specialist_phase(feedback=…)`` so the LLM fixes the SPECIFIC
+    The next regen (inside ``generate_phase_validated``) threads this back
+    through ``generate_specialist_phase(feedback=…)`` so the LLM fixes the SPECIFIC
     week + rule instead of blindly regenerating the whole phase (the old waste).
     """
     lines: list[str] = []
@@ -394,7 +394,7 @@ def _format_rule_feedback(
     return header + "\n" + "\n".join(lines)
 
 
-def generate_phase(
+def generate_phase_validated(
     phase: Phase,
     week_metas: list[dict | WeekMeta],
     context: dict,
@@ -404,6 +404,11 @@ def generate_phase(
     max_attempts: int = 3,
 ) -> list[dict]:
     """Generate a whole phase, rule-gate each week, regen-with-feedback, drop strays.
+
+    The name signals the value-add over the inner ``generate_specialist_phase``
+    (one UN-gated generation pass): this wrapper returns only **rule-validated**
+    weeks. A caller wanting the rule_filter safety gate must call THIS, not the
+    inner generator — calling the wrong one would silently skip the gate.
 
     The phase-at-once replacement for the per-week ``generate_phase_weeks`` loop.
     It generates the entire phase in one LLM call (``generate_specialist_phase``,
@@ -445,7 +450,8 @@ def generate_phase(
 
     Never raises: a ``parse_failed`` / ``bad_schema`` that survives PA-T3's own
     retry is caught here and degraded to ``[]`` (the orchestrator contract wants
-    fewer/zero weeks, never an exception out of ``generate_phase``).
+    fewer/zero weeks, never an exception out of ``generate_phase_validated``).
+    A ``max_attempts <= 0`` (empty loop) degrades to ``[]`` rather than raising.
     """
     metas: list[WeekMeta] = [_coerce_week_meta(w) for w in week_metas]
     if not metas:
@@ -478,6 +484,10 @@ def generate_phase(
     #    rule violations.
     current_feedback: str | None = feedback
     last_clean: list[dict] = []
+    # Hoisted out of the loop so an empty loop (max_attempts <= 0) degrades to
+    # the post-loop drop code with both bound (== []) instead of a NameError —
+    # this is what makes the documented "never raises" contract hold.
+    per_week_errors: list[tuple[int, list[RuleViolation]]] = []
     for attempt in range(1, max_attempts + 1):
         try:
             weeks = generate_specialist_phase(
@@ -487,7 +497,7 @@ def generate_phase(
             # Real LLM-infra failure — not a content fault we can regen our way
             # out of. Degrade the whole phase (contract: never raise).
             logger.warning(
-                "generate_phase: phase %s LLM unavailable/error on attempt %d/%d "
+                "generate_phase_validated: phase %s LLM unavailable/error on attempt %d/%d "
                 "— degrading to 0 weeks",
                 phase_type.value,
                 attempt,
@@ -499,7 +509,7 @@ def generate_phase(
             # parse_failed / bad_schema survived PA-T3's own retry → whole phase
             # failed to generate. Degrade to [] (caller marks all weeks blocked).
             logger.warning(
-                "generate_phase: phase %s generation failed on attempt %d/%d "
+                "generate_phase_validated: phase %s generation failed on attempt %d/%d "
                 "(%s) — degrading to 0 weeks",
                 phase_type.value,
                 attempt,
@@ -509,7 +519,7 @@ def generate_phase(
             return []
 
         # 3. Run rule_filter on each week with the target-based prev_week_km.
-        per_week_errors: list[tuple[int, list]] = []
+        per_week_errors = []
         for i, wk in enumerate(weeks):
             report = run_rule_filter(
                 wk,
@@ -535,7 +545,7 @@ def generate_phase(
         if attempt < max_attempts:
             current_feedback = _format_rule_feedback(per_week_errors)
             logger.info(
-                "generate_phase: phase %s attempt %d/%d had %d violating week(s) "
+                "generate_phase_validated: phase %s attempt %d/%d had %d violating week(s) "
                 "— regenerating with rule feedback",
                 phase_type.value,
                 attempt,
@@ -549,7 +559,7 @@ def generate_phase(
     for i, errs in per_week_errors:
         rules = ", ".join(sorted({v.rule for v in errs}))
         logger.warning(
-            "generate_phase: phase %s week %s (index %d) persistently violates "
+            "generate_phase_validated: phase %s week %s (index %d) persistently violates "
             "[%s] after %d attempts — DROPPING it",
             phase_type.value,
             metas[i].week_folder,
