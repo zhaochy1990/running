@@ -16,6 +16,34 @@ allowed to import plan_spec) rather than an import here.
 
 from __future__ import annotations
 
+from .rule_filter import MAX_WEEKLY_RAMP_RATIO
+
+
+# OPT-A: the deterministic ``run_rule_filter`` HARD rules, stated up-front in the
+# generation prompt so the generator emits rule-clean output on the FIRST try
+# instead of learning each threshold via an expensive rule_filter→feedback→regen
+# loop. These mirror the 5 enforced HARD rules in
+# ``coach.graphs.generation.rule_filter`` (weekly_progression / long_run_share /
+# intensity_distribution / rest_days / injury_conflict). The week-over-week ramp
+# cap is sourced from ``MAX_WEEKLY_RAMP_RATIO`` so the prompt can't drift from the
+# gate it must satisfy — a drift-guard test asserts the two stay equal.
+WEEKLY_HARD_RULES = f"""\
+【每周安全硬约束——违反的周会被 rule_filter 自动拒绝、触发整阶段重做，务必一次满足】
+1. 周量渐进（weekly_progression）：每周跑步总里程 ≤ 上一周的 {MAX_WEEKLY_RAMP_RATIO:.2f} 倍\
+（即每周环比涨幅 ≤ {(MAX_WEEKLY_RAMP_RATIO - 1) * 100:.0f}%）。减量/恢复周往下走永远合规。\
+满足方式：按逐周表 target km 渐进，绝不单周跳涨。
+2. 长跑占比（long_run_share）：当周最长一次跑 ≤ 当周跑步总里程的 35%（当周有 ≥2 次跑步时强制）。\
+满足方式：长跑里程不超过周量的 1/3，其余里程拆到 easy/质量日。
+3. 强度分布（intensity_distribution，80/20 极化）：高强度（Z4-Z5：VO2max/间歇，配速快于阈值）的\
+总时间 ≤ 周跑步总时间的 20%。满足方式：每周至多 1-2 次质量课，其余全部 easy/long/MP，\
+质量课的快段时长加总控制在 20% 以内。
+4. 休息日（rest_days）：每周至少 1 个完整休息日（该天无任何 run/strength/cross 课）。\
+满足方式：7 天里留出 ≥1 天彻底不排训练。
+5. 伤病禁忌（injury_conflict）：不得安排与已记录伤病冲突的力量动作\
+（膝 ↔ 深蹲/弓步/squat/lunge；腰背 ↔ 硬拉/deadlift；踝 ↔ 跳跃/plyo）。\
+满足方式：若上下文列出伤病，避开对应动作，换非冲突的替代动作。
+"""
+
 
 # The WeeklyPlan field-shape body — the inner contract both composers share.
 # Single curly braces (this is NOT an f-string): callers may embed it directly.

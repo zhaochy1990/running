@@ -37,7 +37,7 @@ from stride_core.master_plan import PhaseType
 from coach.schemas.specialist_context import PaceTargets, VolumeTargets
 
 from .phase_specialists import get_specialist
-from .weekly_plan_contract import WEEKLY_PLAN_FIELDS_CONTRACT
+from .weekly_plan_contract import WEEKLY_HARD_RULES, WEEKLY_PLAN_FIELDS_CONTRACT
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +187,7 @@ def build_phase_system_prompt(
 - 保持 doctrine 规定的强度分布（三区占比），不要把质量集中到单周 spike。
 - 用逐周表注入的 volume_targets 预算命中每周目标周量；绝不自行编配速 / 里程。
 
+{WEEKLY_HARD_RULES}
 【必传上下文——本运动员真实数据，必须使用，不得编造】
 配速表（pace_targets，s/km，全阶段共用，用这些数字）：{pace_targets.render()}
 

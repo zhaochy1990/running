@@ -220,6 +220,69 @@ def test_phase_prompt_all_phases_carry_doctrine(phase: PhaseType):
 
 
 # ---------------------------------------------------------------------------
+# OPT-A: run_rule_filter HARD-rules block injected into the generation prompt
+# ---------------------------------------------------------------------------
+
+
+def test_phase_prompt_carries_weekly_hard_rules_block():
+    """The composed phase prompt must state the 5 run_rule_filter HARD rules
+    with their exact thresholds, so the generator produces rule-clean output on
+    the FIRST try (OPT-A) instead of learning them via feedback regens.
+    """
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.BUILD,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+    )
+    # the block's framing header
+    assert "rule_filter" in prompt
+    # 1. weekly_progression — 1.10x cap
+    assert "1.10" in prompt
+    # 2. long_run_share — 35%
+    assert "35%" in prompt
+    # 3. intensity_distribution — 20% (80/20)
+    assert "20%" in prompt
+    # 4. rest_days — at least one full rest day
+    assert "休息日" in prompt
+    # 5. injury_conflict — injury-contraindicated strength
+    assert "伤病" in prompt
+
+
+@pytest.mark.parametrize("phase", list(PhaseType))
+def test_phase_prompt_hard_rules_block_present_for_all_phases(phase: PhaseType):
+    """The HARD-rules block is phase-independent and must appear for every
+    PhaseType (it composes without error for all 6)."""
+    from coach.graphs.generation.weekly_plan_contract import WEEKLY_HARD_RULES
+
+    prompt = build_phase_system_prompt(
+        phase_type=phase,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+    )
+    assert WEEKLY_HARD_RULES in prompt
+
+
+def test_phase_prompt_hard_rules_ramp_matches_gate():
+    """Drift-guard: the 1.10 ramp threshold stated in the prompt MUST equal the
+    actual gate constant ``rule_filter.MAX_WEEKLY_RAMP_RATIO``. If the gate
+    changes, this test fails so the prompt can't silently diverge.
+    """
+    from coach.graphs.generation.rule_filter import MAX_WEEKLY_RAMP_RATIO
+
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.BUILD,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+    )
+    # the constant rendered to 2dp must literally appear in the prompt
+    assert f"{MAX_WEEKLY_RAMP_RATIO:.2f}" in prompt
+    assert MAX_WEEKLY_RAMP_RATIO == 1.10
+
+
+# ---------------------------------------------------------------------------
 # Contract drift-guard
 # ---------------------------------------------------------------------------
 
