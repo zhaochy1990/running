@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>STRIDE Plan Viewer</title>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#14171c; --panel2:#1b1f26;
+    --line:#262b33; --text:#e7ebf0; --muted:#8b94a3; --faint:#5b6472;
+    --accent:#34d399; --accent-dim:#0f3d30;
+    --run:#34d399; --strength:#f59e0b; --rest:#5b6472; --cross:#60a5fa; --note:#a78bfa;
+    --base:#60a5fa; --build:#34d399; --speed:#f472b6; --peak:#f59e0b; --taper:#a78bfa; --recovery:#94a3b8;
+    --pass:#34d399; --revise:#f59e0b; --block:#ef4444; --autofix:#60a5fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;}
+  code,.mono{font-family:"SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace;}
+  a{color:var(--accent)}
+  header.top{position:sticky;top:0;z-index:10;background:rgba(11,13,16,.92);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  header.top h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
+  header.top h1 .dot{color:var(--accent)}
+  .spacer{flex:1}
+  .drop{border:1px dashed var(--line);border-radius:8px;padding:6px 14px;color:var(--muted);cursor:pointer;
+    transition:.15s;font-size:13px}
+  .drop:hover,.drop.over{border-color:var(--accent);color:var(--text);background:var(--accent-dim)}
+  .drop input{display:none}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px 20px 80px}
+  .empty{text-align:center;color:var(--muted);padding:80px 20px}
+  .empty .big{font-size:46px;margin-bottom:8px;opacity:.5}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:11.5px;
+    font-weight:600;letter-spacing:.3px;border:1px solid transparent;white-space:nowrap}
+  .summary-bar{display:flex;gap:24px;flex-wrap:wrap;padding:16px 18px;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;margin-bottom:22px}
+  .summary-bar .k{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+  .summary-bar .v{font-size:18px;font-weight:600;margin-top:2px}
+  .phase{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:16px;overflow:hidden}
+  .phase>.head{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;flex-wrap:wrap}
+  .phase>.head:hover{background:#171b21}
+  .phase .ptype{font-size:15px;font-weight:700}
+  .phase .meta{color:var(--muted);font-size:12.5px}
+  .phase .chev{color:var(--faint);transition:.15s;margin-left:auto}
+  .phase.open .chev{transform:rotate(90deg)}
+  .phase .body{display:none;border-top:1px solid var(--line)}
+  .phase.open .body{display:block}
+  .ramp{display:flex;align-items:flex-end;gap:3px;height:38px;padding:0 2px}
+  .ramp .bar{flex:1;min-width:5px;background:var(--accent-dim);border-radius:2px 2px 0 0;position:relative}
+  .ramp .bar.inband{background:var(--accent)}
+  .ramp .bar span{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);font-size:9px;color:var(--muted);
+    white-space:nowrap;margin-bottom:2px}
+  .review-note{padding:10px 14px;margin:0 18px 4px;background:#11151a;border-left:3px solid var(--line);
+    border-radius:4px;color:var(--muted);font-size:12.5px}
+  .review-note.revise{border-color:var(--revise)} .review-note.block{border-color:var(--block)}
+  .review-note.pass{border-color:var(--pass)}
+  .week{border-top:1px solid var(--line);padding:0}
+  .week:first-child{border-top:none}
+  .week>.whead{display:flex;align-items:center;gap:12px;padding:10px 18px;cursor:pointer}
+  .week>.whead:hover{background:#171b21}
+  .week .wf{font-weight:600;font-size:13px}
+  .week .wkm{color:var(--accent);font-weight:600;font-size:13px}
+  .week .wcount{color:var(--faint);font-size:12px;margin-left:auto}
+  .week .wbody{display:none;padding:4px 18px 14px}
+  .week.open .wbody{display:block}
+  .sess{display:grid;grid-template-columns:64px 26px 1fr auto;gap:10px;align-items:baseline;
+    padding:7px 0;border-top:1px dashed var(--line)}
+  .sess:first-child{border-top:none}
+  .sess .sd{color:var(--faint);font-size:11.5px;font-family:ui-monospace,monospace}
+  .sess .si{font-size:15px;text-align:center}
+  .sess .ss{font-weight:500}
+  .sess .smetrics{color:var(--muted);font-size:12px;text-align:right;white-space:nowrap;font-family:ui-monospace,monospace}
+  .sess .snote{grid-column:3/5;color:var(--muted);font-size:12px;margin-top:2px;line-height:1.5}
+  .sess .spec{grid-column:3/5;margin-top:5px;background:#11151a;border:1px solid var(--line);border-radius:6px;padding:8px 10px}
+  .sess .spec .exr{display:flex;justify-content:space-between;gap:10px;padding:3px 0;font-size:12px;border-top:1px dashed var(--line)}
+  .sess .spec .exr:first-child{border-top:none}
+  .sess .spec .exr .xn{font-weight:500} .sess .spec .exr .xv{color:var(--muted);font-family:ui-monospace,monospace;white-space:nowrap}
+  .sess .spec .xc{color:var(--faint)}
+  .nutri{margin-top:10px;padding:10px 14px;background:#11151a;border:1px solid var(--line);border-radius:8px}
+  .nutri .nt{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint);margin-bottom:6px}
+  .nutri .macros{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;font-family:ui-monospace,monospace}
+  .nutri .macros b{color:var(--accent);font-weight:600}
+  .wnote{color:var(--muted);font-size:12px;padding:6px 0 2px;line-height:1.55;white-space:pre-wrap}
+  /* master plan */
+  .mphase{display:grid;grid-template-columns:120px 1fr;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
+  .mphase:first-child{border-top:none}
+  .mphase .pl{color:var(--muted);font-size:12px;font-family:ui-monospace,monospace}
+  .mphase .focus{color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.6}
+  .ms{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px dashed var(--line);font-size:13px}
+  .ms:first-child{border-top:none}
+  .ms .mtgt{flex:1} .ms .mq{font-family:ui-monospace,monospace;color:var(--accent);font-size:12px;white-space:nowrap}
+  .ms .md{color:var(--faint);font-size:11.5px;font-family:ui-monospace,monospace}
+  .princ{padding-left:18px;margin:0;color:var(--muted);font-size:13px;line-height:1.7}
+  h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);margin:26px 0 12px;font-weight:600}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 18px}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>STRIDE <span class="dot">●</span> Plan Viewer</h1>
+  <span id="typeBadge"></span>
+  <span class="spacer"></span>
+  <label class="drop" id="drop">📂 选择 / 拖入 JSON<input type="file" id="file" accept=".json,application/json"></label>
+</header>
+<div class="wrap">
+  <div id="root">
+    <div class="empty">
+      <div class="big">📋</div>
+      <div>拖入或选择一个 plan JSON 文件</div>
+      <div style="margin-top:8px;color:var(--faint);font-size:12.5px">
+        支持 SeasonPlanBundle · MasterPlan · WeeklyPlan<br>
+        （如 <code>season_bundle_draft.json</code> / <code>master_plan_draft.json</code> / <code>plan.json</code>）
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const $ = (h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
+const esc = (s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const PT_LABEL={base:'基础期',build:'专项期',speed:'速度周期',peak:'巅峰期',taper:'减量期',recovery:'恢复期'};
+const KIND_ICON={run:'🏃',strength:'🏋️',rest:'😴',cross:'🚴',note:'📝'};
+
+// activities.distance_m is misnamed: stores km when <500, legacy meters otherwise.
+function toKm(m){if(m==null)return 0;return m<500?m:m/1000;}
+function fmtDur(s){if(!s)return '';const h=Math.floor(s/3600),m=Math.round((s%3600)/60);return h?`${h}h${String(m).padStart(2,'0')}`:`${m}min`;}
+function pace(m,s){const km=toKm(m);if(!km||!s)return '';const p=s/km;return `${Math.floor(p/60)}:${String(Math.round(p%60)).padStart(2,'0')}/km`;}
+function weekKm(w){return (w.sessions||[]).filter(s=>s.kind==='run').reduce((a,s)=>a+toKm(s.total_distance_m),0);}
+
+function badge(text,color){return `<span class="badge" style="color:${color};border-color:${color}55;background:${color}1a">${esc(text)}</span>`;}
+function ptBadge(t){const c=`var(--${t||'base'})`;return badge(PT_LABEL[t]||t||'?',c);}
+function verdictBadge(v){if(!v)return '';const c=`var(--${v==='auto_fix'?'autofix':v})`;return badge('review: '+v,c);}
+
+function detect(d){
+  if(d&&Array.isArray(d.phases)&&d.phases[0]&&Array.isArray(d.phases[0].weeks))return 'bundle';
+  if(d&&Array.isArray(d.milestones)&&Array.isArray(d.phases))return 'master';
+  if(d&&Array.isArray(d.sessions)&&d.week_folder!==undefined)return 'week';
+  if(d&&Array.isArray(d.phases))return 'master';
+  return 'unknown';
+}
+
+function renderSession(s){
+  const icon=KIND_ICON[s.kind]||'•';
+  const km=toKm(s.total_distance_m);
+  const metrics=[km?km.toFixed(1)+'km':'',fmtDur(s.total_duration_s),pace(s.total_distance_m,s.total_duration_s)].filter(Boolean).join('  ');
+  let spec='';
+  const sp=s.spec;
+  if(sp&&Array.isArray(sp.exercises)){
+    spec='<div class="spec">'+sp.exercises.map(e=>{
+      const v=[e.sets?e.sets+'组':'',e.target_value!=null?(e.target_kind==='time_s'?e.target_value+'s':e.target_kind==='reps'?e.target_value+'次':e.target_value):'',e.rest_seconds?'休'+e.rest_seconds+'s':''].filter(Boolean).join(' × ').replace(' × 休',' / 休');
+      return `<div class="exr"><span class="xn">${esc(e.display_name||e.canonical_id||'')}${e.provider_id?` <span class="xc">${esc(e.provider_id)}</span>`:''}</span><span class="xv">${esc(v)}</span></div>`;
+    }).join('')+'</div>';
+  } else if(sp&&Array.isArray(sp.blocks)){
+    spec='<div class="spec">'+sp.blocks.map(b=>{
+      const steps=(b.steps||[]).map(st=>esc(st.label||st.step_kind||'')).join(' · ');
+      return `<div class="exr"><span class="xn">${esc(b.label||('×'+(b.repeat||1)))}</span><span class="xv">${steps}</span></div>`;
+    }).join('')+'</div>';
+  }
+  return `<div class="sess">
+    <span class="sd">${esc((s.date||'').slice(5))}</span>
+    <span class="si">${icon}</span>
+    <span class="ss">${esc(s.summary||'')}</span>
+    <span class="smetrics">${esc(metrics)}</span>
+    ${s.notes_md?`<div class="snote">${esc(s.notes_md)}</div>`:''}
+    ${spec}
+  </div>`;
+}
+
+function renderNutrition(nuts){
+  if(!nuts||!nuts.length)return '';
+  return nuts.map(n=>{
+    const macros=[n.kcal_target!=null?`热量 <b>${n.kcal_target}</b>kcal`:'',n.carbs_g!=null?`碳 <b>${n.carbs_g}</b>g`:'',n.protein_g!=null?`蛋 <b>${n.protein_g}</b>g`:'',n.fat_g!=null?`脂 <b>${n.fat_g}</b>g`:'',n.water_ml!=null?`水 <b>${n.water_ml}</b>ml`:''].filter(Boolean).join('');
+    const meals=(n.meals||[]).map(m=>`<div class="exr" style="border-top:1px dashed var(--line);padding:3px 0;font-size:12px;display:flex;justify-content:space-between"><span>${esc(m.name||'')}${m.time_hint?` <span class="xc">${esc(m.time_hint)}</span>`:''}</span><span class="xv">${m.kcal!=null?m.kcal+'kcal':''}</span></div>`).join('');
+    return `<div class="nutri"><div class="nt">营养${n.date?' · '+esc(n.date.slice(5)):''}</div><div class="macros">${macros}</div>${meals}</div>`;
+  }).join('');
+}
+
+function renderWeek(w){
+  const km=weekKm(w);
+  const sessions=[...(w.sessions||[])].sort((a,b)=>(a.date||'').localeCompare(b.date||'')||(a.session_index||0)-(b.session_index||0));
+  const node=$(`<div class="week">
+    <div class="whead"><span class="wf">${esc(w.week_folder||'week')}</span><span class="wkm">${km.toFixed(1)} km</span><span class="wcount">${sessions.length} sessions</span></div>
+    <div class="wbody">
+      ${w.notes_md?`<div class="wnote">${esc(w.notes_md)}</div>`:''}
+      ${sessions.map(renderSession).join('')}
+      ${renderNutrition(w.nutrition)}
+    </div>
+  </div>`);
+  node.querySelector('.whead').onclick=()=>node.classList.toggle('open');
+  return node;
+}
+
+function renderBundle(d){
+  const root=document.createElement('div');
+  const totalWeeks=d.phases.reduce((a,p)=>a+(p.weeks||[]).length,0);
+  const reviews=d.phases.map(p=>p.review&&p.review.verdict).filter(Boolean);
+  root.appendChild($(`<div class="summary-bar">
+    <div><div class="k">类型</div><div class="v">赛季周计划 Season</div></div>
+    <div><div class="k">阶段</div><div class="v">${d.phases.length}</div></div>
+    <div><div class="k">总周数</div><div class="v">${totalWeeks}</div></div>
+    <div><div class="k">Review</div><div class="v">${reviews.filter(v=>v==='pass').length}/${reviews.length} pass</div></div>
+    <div><div class="k">生成模型</div><div class="v mono" style="font-size:14px">${esc(d.generated_by||'?')}</div></div>
+  </div>`));
+  d.phases.forEach(p=>{
+    const weeks=(p.weeks||[]);
+    const kms=weeks.map(weekKm);
+    const mx=Math.max(1,...kms);
+    const ramp=kms.map(k=>`<div class="bar" style="height:${Math.max(8,k/mx*100)}%"><span>${k.toFixed(0)}</span></div>`).join('');
+    const ph=$(`<div class="phase">
+      <div class="head">
+        ${ptBadge(p.phase_type)}
+        <span class="ptype">${esc(PT_LABEL[p.phase_type]||p.phase_type||'')}</span>
+        <span class="meta">${weeks.length} 周${p.blocked_week_count?` · <span style="color:var(--block)">${p.blocked_week_count} blocked</span>`:''}</span>
+        ${verdictBadge(p.review&&p.review.verdict)}
+        <span class="chev">▶</span>
+      </div>
+      <div class="body">
+        <div style="padding:18px 18px 10px"><div class="ramp">${ramp}</div></div>
+        ${p.review&&p.review.commentary_md?`<div class="review-note ${p.review.verdict}">${esc(p.review.commentary_md)}</div>`:''}
+      </div>
+    </div>`);
+    const body=ph.querySelector('.body');
+    weeks.forEach(w=>body.appendChild(renderWeek(w)));
+    ph.querySelector('.head').onclick=()=>ph.classList.toggle('open');
+    root.appendChild(ph);
+  });
+  if(d.phases.length)root.querySelector('.phase').classList.add('open');
+  return root;
+}
+
+function renderMaster(d){
+  const root=document.createElement('div');
+  root.appendChild($(`<div class="summary-bar">
+    <div><div class="k">类型</div><div class="v">赛季总纲 MasterPlan</div></div>
+    <div><div class="k">阶段</div><div class="v">${(d.phases||[]).length}</div></div>
+    <div><div class="k">里程碑</div><div class="v">${(d.milestones||[]).length}</div></div>
+    <div><div class="k">周期</div><div class="v mono" style="font-size:14px">${esc(d.start_date||'')} → ${esc(d.end_date||'')}</div></div>
+    <div><div class="k">生成模型</div><div class="v mono" style="font-size:14px">${esc(d.generated_by||'?')}</div></div>
+  </div>`));
+  root.appendChild($('<h2 class="sec">阶段 Phases</h2>'));
+  const pc=$('<div class="card"></div>');
+  (d.phases||[]).forEach(p=>{
+    pc.appendChild($(`<div class="mphase">
+      <div><div>${ptBadge(p.phase_type)}</div><div class="pl" style="margin-top:6px">${esc(p.start_date||'')}<br>→ ${esc(p.end_date||'')}</div>
+        <div class="pl" style="margin-top:6px;color:var(--accent)">${p.weekly_distance_km_low}–${p.weekly_distance_km_high} km/wk</div></div>
+      <div><div style="font-weight:600">${esc(p.name||'')}</div>
+        ${(p.key_session_types||[]).map(k=>badge(k,'var(--faint)')).join(' ')}
+        <div class="focus">${esc(p.focus||'')}</div></div>
+    </div>`));
+  });
+  root.appendChild(pc);
+
+  if((d.milestones||[]).length){
+    root.appendChild($('<h2 class="sec">里程碑 Milestones</h2>'));
+    const mc=$('<div class="card"></div>');
+    const phName={}; (d.phases||[]).forEach(p=>phName[p.id]=PT_LABEL[p.phase_type]||p.name||'');
+    [...d.milestones].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(m=>{
+      const q=m.metric?`${m.metric} ${m.comparator||''} ${m.target_value}`:'';
+      mc.appendChild($(`<div class="ms"><span class="md">${esc((m.date||'').slice(0))}</span>${badge(m.type,'var(--faint)')}
+        <span class="mtgt">${esc(m.target||'')}${phName[m.phase_id]?` <span class="md">@${esc(phName[m.phase_id])}</span>`:''}</span>
+        ${q?`<span class="mq">${esc(q)}</span>`:''}</div>`));
+    });
+    root.appendChild(mc);
+  }
+  if((d.training_principles||[]).length){
+    root.appendChild($('<h2 class="sec">训练原则</h2>'));
+    root.appendChild($(`<div class="card" style="padding:14px 18px"><ol class="princ">${d.training_principles.map(p=>`<li>${esc(p)}</li>`).join('')}</ol></div>`));
+  }
+  return root;
+}
+
+function render(d){
+  const root=document.getElementById('root');
+  const type=detect(d);
+  const tb=document.getElementById('typeBadge');
+  root.innerHTML='';
+  if(type==='bundle'){tb.innerHTML=badge('SeasonPlanBundle','var(--accent)');root.appendChild(renderBundle(d));}
+  else if(type==='master'){tb.innerHTML=badge('MasterPlan','var(--base)');root.appendChild(renderMaster(d));}
+  else if(type==='week'){tb.innerHTML=badge('WeeklyPlan','var(--run)');
+    const c=$('<div class="card" style="padding:0"></div>');c.appendChild(renderWeek(d));root.appendChild(c);
+    c.querySelector('.week').classList.add('open');}
+  else{tb.innerHTML='';root.innerHTML=`<div class="empty"><div class="big">⚠️</div>无法识别的 JSON 结构<div style="margin-top:8px;color:var(--faint)">期望 SeasonPlanBundle / MasterPlan / WeeklyPlan</div></div>`;}
+}
+
+function load(file){
+  const r=new FileReader();
+  r.onload=()=>{try{render(JSON.parse(r.result));}catch(e){document.getElementById('root').innerHTML=`<div class="empty"><div class="big">❌</div>JSON 解析失败<div style="margin-top:8px;color:var(--faint)">${esc(e.message)}</div></div>`;}};
+  r.readAsText(file,'utf-8');
+}
+const drop=document.getElementById('drop');
+document.getElementById('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
+['dragover','dragenter'].forEach(ev=>document.body.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>document.body.addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'&&e.dataTransfer.files[0])load(e.dataTransfer.files[0]);drop.classList.remove('over');}));
+</script>
+</body>
+</html>
