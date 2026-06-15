@@ -205,6 +205,13 @@ def parse_phase_review(raw: str) -> PhaseReview:
       LLM formatting hiccup. (A genuine LLM ``<verdict>block</verdict>`` is
       preserved as ``block``; only the parser's fallback is softened, and only
       when the raw carried no recognisable ``<verdict>`` tag.)
+    * A **present-but-invalid** verdict value (e.g. ``<verdict>foo</verdict>``)
+      is intentionally left as ``block`` — a model that emitted a verdict tag
+      with garbage content is treated as a real regenerate signal, not a
+      formatting hiccup. Only a *wholly-absent* ``<verdict>`` tag is softened to
+      ``revise``; a present tag (even with an unrecognised value) means the
+      model spoke, so we honour the worst-case ``block`` ``parse_reviewer_xml``
+      assigned it.
     """
     report: ReviewReport = parse_reviewer_xml(raw)
     verdict = report.verdict

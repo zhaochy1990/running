@@ -80,9 +80,22 @@ def test_prompt_carries_doctrine_focus_milestone_and_weeks():
         milestone_summary="5k sub-19:00（race_time_s_5k <= 1140）",
         weeks=_speed_weeks(),
     )
-    # specialist doctrine signature (name + a distinctive doctrine token)
-    assert "速度周期" in prompt
+    # specialist doctrine signature: assert tokens that appear ONLY in the SPEED
+    # specialist's *injected guidance body*, so the assertion actually proves the
+    # speed doctrine routed. NOTE: "速度周期" is just the specialist name (also in
+    # BASE guidance "先插速度周期"), and "两极化"/"金字塔" are useless here because
+    # the reviewer prompt TEMPLATE itself lists every phase's character
+    # ("base 金字塔 / build 偏阈值 / speed 两极化高区" — phase_reviewer.py:147),
+    # so both appear regardless of which specialist routed. "polarized" and
+    # "跑步经济性" live only in the speed guidance body (phase_specialists.py:167,
+    # :155) and nowhere in the template, so they discriminate routing.
+    assert "polarized" in prompt
+    assert "跑步经济性" in prompt
     assert "VO2max" in prompt
+    # negative guard: "金字塔型" is base-only (phase_specialists.py:101; build
+    # uses "金字塔偏阈值", and the template uses bare "金字塔" not "金字塔型"), so
+    # its absence confirms the BASE specialist was NOT injected by mistake.
+    assert "金字塔型" not in prompt
     # the phase focus string
     assert "发展 VO2max 与速度储备" in prompt
     # the milestone summary
@@ -183,6 +196,14 @@ def test_parse_auto_fix_softened_to_pass():
     # issues are preserved even though the verdict softened
     assert len(review.issues) == 1
     assert review.issues[0].severity == "warning"
+
+
+def test_parse_present_but_invalid_verdict_stays_block():
+    """A present-but-garbage verdict value (a verdict tag WAS emitted, just with
+    an unrecognised value) is treated as a real ``block`` regenerate signal — not
+    softened. Only a wholly-absent verdict tag softens to ``revise``."""
+    review = parse_phase_review("<review><verdict>foo</verdict></review>")
+    assert review.verdict == "block"
 
 
 def test_parse_malformed_softens_block_to_revise():

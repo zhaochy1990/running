@@ -12,9 +12,11 @@ It:
    when present, else the natural-language target),
 3. assembles the reviewer system prompt via the core
    :func:`coach.graphs.generation.phase_reviewer.build_phase_review_prompt`,
-4. calls the LLM via ``LLMClient().chat_sync`` (plain chat — the reviewer needs
-   NO tools, so the tool-loop machinery the week generator uses is unnecessary
-   here), and
+4. calls the **reviewer-role** LLM via ``get_reviewer_llm()`` (the ``[reviewer]``
+   deployment from ``config/coach.toml`` — NOT the generator), plain
+   single-shot chat: the reviewer needs NO tools, so the tool-loop machinery the
+   week generator uses is unnecessary here. Using the reviewer role keeps the
+   per-phase judge independent of the model that generated the weeks.
 5. parses the XML via core :func:`parse_phase_review`.
 
 **Safe-degrade contract**: a review failure must NOT crash the season. On any
@@ -38,10 +40,12 @@ from coach.graphs.generation.phase_reviewer import (
     build_phase_review_prompt,
     parse_phase_review,
 )
+from coach.runtime.messages import extract_text
 from coach.schemas import PhaseReview
+from langchain_core.messages import HumanMessage, SystemMessage
 from stride_core.master_plan import Milestone, Phase
 
-from ..llm_client import LLMClient
+from ..coach_runtime import get_reviewer_llm
 
 logger = logging.getLogger(__name__)
 
@@ -130,13 +134,19 @@ def review_phase(
         milestone_summary=milestone_summary,
         weeks=weeks,
     )
-    user_message = [
-        {"role": "user", "content": "请评审本阶段已生成的周计划，并按规定 XML 格式输出。"}
+    # The per-phase reviewer judges weeks with the reviewer-role deployment, not
+    # the generator that produced them, so the review stays model-independent.
+    # Plain single-shot langchain invoke (no tools): build the messages directly
+    # rather than going through LLMClient (which is hardwired to the generator).
+    lc_messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content="请评审本阶段已生成的周计划，并按规定 XML 格式输出。"),
     ]
 
     try:
-        raw = LLMClient().chat_sync(system_prompt, user_message)
-    except Exception as exc:  # noqa: BLE001 — review failure must not crash the season
+        resp = get_reviewer_llm().invoke(lc_messages)
+        raw = extract_text(getattr(resp, "content", resp)).strip()
+    except Exception as exc:  # noqa: BLE001 — review failure (construct/call) must not crash the season
         logger.warning(
             "review_phase: LLM call failed for phase %s (%s) — degrading to revise: %s",
             phase.id,
