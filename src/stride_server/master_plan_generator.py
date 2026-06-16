@@ -19,8 +19,11 @@ import re
 from datetime import datetime, timezone
 
 from stride_core.timefmt import today_shanghai
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from coach.schemas import ContinuitySignals
 
 from stride_core.master_plan import (
     KeySession,
@@ -31,6 +34,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    PhaseType,
     compute_total_weeks,
 )
 
@@ -94,8 +98,15 @@ def _build_master_plan(
     parsed: dict,
     user_id: str,
     goal: dict,
+    generated_by: str = "unknown",
 ) -> MasterPlan:
     """Map LLM output JSON -> MasterPlan instance.
+
+    ``generated_by`` is the audit stamp recording which model produced the
+    plan. The generator adapter passes the configured generator model id
+    (from ``config/coach.toml`` ``[generator].model``) so this reflects the
+    real model rather than a hardcoded literal; the ``"unknown"`` default
+    only applies to direct callers that don't supply it.
 
     Raises ValueError if schema is invalid or required fields are missing.
     """
@@ -121,6 +132,15 @@ def _build_master_plan(
         phase_id = str(uuid4())
         phase_name = p.get("name", "")
         phase_name_to_id[phase_name] = phase_id
+
+        # Parse optional phase_type — unknown strings degrade to None (backcompat)
+        raw_pt = p.get("phase_type")
+        try:
+            phase_type = PhaseType(raw_pt) if raw_pt else None
+        except ValueError:
+            logger.warning("unknown phase_type %r; leaving None", raw_pt)
+            phase_type = None
+
         phases.append(
             Phase(
                 id=phase_id,
@@ -132,6 +152,7 @@ def _build_master_plan(
                 weekly_distance_km_high=float(p.get("weekly_distance_km_high", 0)),
                 key_session_types=p.get("key_session_types", []),
                 milestone_ids=[],
+                phase_type=phase_type,
             )
         )
 
@@ -161,6 +182,9 @@ def _build_master_plan(
                 phase_id=phase_id,
                 target=m.get("target", ""),
                 completed_actual=None,
+                metric=m.get("metric"),
+                target_value=_to_optional_float(m.get("target_value")),
+                comparator=m.get("comparator"),
             )
         )
 
@@ -219,7 +243,7 @@ def _build_master_plan(
         weeks=weeks,
         weekly_key_sessions=weeks,
         training_principles=plan_data.get("training_principles", []),
-        generated_by="gpt-4.1",
+        generated_by=generated_by,
         version=1,
         created_at=now_iso,
         updated_at=now_iso,
@@ -315,17 +339,30 @@ def _query_history(user_id: str) -> dict[str, Any]:
     }
     try:
         from stride_core.db import Database
+        from stride_core.models import RUN_SPORT_SQL_LIST
 
         db = Database(user=user_id)
         conn = db._conn
 
-        # Monthly running km (last 36 months) — sport_type 1=running
+        # Running activities are matched against the canonical RUN_SPORT_IDS set
+        # (COROS 100-104/600-601 + Garmin-synced 8001-8005), NOT a literal
+        # ``sport_type = 1`` — ``1`` is not a stored running code, so the old
+        # filter silently matched zero rows (especially for Garmin-synced
+        # users). RUN_SPORT_SQL_LIST is the same single-source fragment
+        # ability.py uses; keep them in sync.
+
+        # Monthly running km (last 36 months). NOTE: activities.distance_m is
+        # misnamed — it stores KILOMETERS (magnitude < 500), with legacy rows
+        # in meters (>= 500). Normalise per-row with the same heuristic as
+        # stride_core.ability._distance_to_km; a plain ``/1000`` would be
+        # ~1000x too small for the common km-valued rows.
+        _KM_EXPR = "SUM(CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END)"
         rows = conn.execute(
-            """
+            f"""
             SELECT strftime('%Y-%m', date) AS month,
-                   SUM(distance_m) / 1000.0 AS km
+                   {_KM_EXPR} AS km
             FROM activities
-            WHERE sport_type = 1
+            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
               AND date >= date('now', '-36 months')
             GROUP BY month
             ORDER BY month
@@ -335,13 +372,13 @@ def _query_history(user_id: str) -> dict[str, Any]:
 
         # Max single-week km (approximate: 7-day windows using SQLite strftime week)
         row = conn.execute(
-            """
+            f"""
             SELECT MAX(week_km)
             FROM (
                 SELECT strftime('%Y-%W', date) AS wk,
-                       SUM(distance_m) / 1000.0 AS week_km
+                       {_KM_EXPR} AS week_km
                 FROM activities
-                WHERE sport_type = 1
+                WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
                   AND date >= date('now', '-36 months')
                 GROUP BY wk
             )
@@ -351,7 +388,7 @@ def _query_history(user_id: str) -> dict[str, Any]:
 
         # Total running activities
         row = conn.execute(
-            "SELECT COUNT(*) FROM activities WHERE sport_type = 1"
+            f"SELECT COUNT(*) FROM activities WHERE sport_type IN ({RUN_SPORT_SQL_LIST})"
         ).fetchone()
         result["total_activities"] = row[0] or 0
 
@@ -376,11 +413,25 @@ def _query_history(user_id: str) -> dict[str, Any]:
     return result
 
 
-def _query_fitness_state(user_id: str) -> dict[str, Any]:
-    """Query daily_health for the most recent 90-day fitness snapshot.
+def _ensure_training_load_current(db, as_of=None) -> None:
+    """Ensure daily_training_load is backfilled far enough that the 42-day
+    chronic EWMA has converged at ``as_of``. The EWMA has ~42-day memory, so a
+    365-day warmup window (>> 3x42) yields a converged chronic regardless of how
+    few rows existed before. Idempotent; safe to call every generation."""
+    from stride_core.training_load import backfill_training_load
+    try:
+        backfill_training_load(db, as_of_date=as_of, load_lookback_days=365,
+                               calibration_lookback_days=365, persist=True)
+    except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
+        logger.warning("_ensure_training_load_current failed: %s", exc)
 
-    Returns the latest CTL/ATL/TSB/fatigue/RHR row plus a human-readable
-    summary string.
+
+def _query_fitness_state(user_id: str) -> dict[str, Any]:
+    """Query STRIDE daily_training_load for the most recent fitness snapshot.
+
+    Returns the latest CTL/ATL/form from the canonical STRIDE PMC table (not
+    the COROS vendor ati/cti fields which use a different scale). RHR is still
+    read from daily_health as a raw measurement.
     """
     result: dict[str, Any] = {
         "ctl": None,
@@ -393,41 +444,44 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
     }
     try:
         from stride_core.db import Database
+        from stride_core.timefmt import today_shanghai
 
         db = Database(user=user_id)
         conn = db._conn
 
+        _ensure_training_load_current(db, as_of=today_shanghai())
+
         row = conn.execute(
-            """
-            SELECT ati, cti, fatigue, rhr, training_load_ratio, training_load_state
-            FROM daily_health
-            WHERE date >= date('now', '-90 days')
-            ORDER BY date DESC
-            LIMIT 1
-            """
+            "SELECT date, acute_load, chronic_load, form FROM daily_training_load "
+            "ORDER BY date DESC LIMIT 1"
         ).fetchone()
+        rhr_row = conn.execute(
+            "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+        rhr = rhr_row[0] if rhr_row else None
+
         if row:
-            atl, ctl, fatigue, rhr, ratio, state = row
-            tsb = round((ctl or 0) - (atl or 0), 1) if ctl and atl else None
-            result.update(
-                {
-                    "ctl": round(ctl, 1) if ctl else None,
-                    "atl": round(atl, 1) if atl else None,
-                    "tsb": tsb,
-                    "fatigue": round(fatigue, 1) if fatigue else None,
-                    "rhr": rhr,
-                    "training_load_state": state,
-                }
-            )
-            # Human-readable summary
-            ctl_str = f"CTL {ctl:.0f}" if ctl else "CTL 未知"
-            atl_str = f"ATL {atl:.0f}" if atl else "ATL 未知"
-            tsb_str = f"TSB {tsb:+.0f}" if tsb is not None else "TSB 未知"
-            fat_str = f"疲劳 {fatigue:.0f}" if fatigue else ""
-            rhr_str = f"RHR {rhr}bpm" if rhr else ""
-            state_str = f"负荷状态: {state}" if state else ""
-            parts = [s for s in [ctl_str, atl_str, tsb_str, fat_str, rhr_str, state_str] if s]
-            result["summary"] = "，".join(parts)
+            _date, atl, ctl, form = row
+            ratio = round(atl / ctl, 2) if ctl else None
+            result.update({
+                "ctl": round(ctl, 1) if ctl is not None else None,
+                "atl": round(atl, 1) if atl is not None else None,
+                "tsb": round(form, 1) if form is not None else None,
+                "rhr": rhr,
+                "training_load_ratio": ratio,
+            })
+            parts = []
+            if ctl is not None:
+                parts.append(f"CTL {ctl:.0f}")
+            if atl is not None:
+                parts.append(f"ATL {atl:.0f}")
+            if form is not None:
+                parts.append(f"Form {form:+.0f}")
+            if ratio is not None:
+                parts.append(f"acute/chronic {ratio}")
+            if rhr is not None:
+                parts.append(f"RHR {rhr}bpm")
+            result["summary"] = "，".join(parts) if parts else "体能数据暂无"
 
     except Exception as exc:  # noqa: BLE001
         logger.warning("_query_fitness_state failed for user %s: %s", user_id, exc)
@@ -619,12 +673,28 @@ def _normalize_for_prompt(
 # ---------------------------------------------------------------------------
 
 
+def _format_body_comp_fallback(bc: dict[str, Any]) -> str:
+    """Minimal one-line body-comp summary used only when the caller did not
+    supply a pre-formatted ``body_composition_summary`` (defence-in-depth so the
+    prompt never carries a raw dict)."""
+    parts = []
+    if bc.get("weight_kg") is not None:
+        parts.append(f"体重 {bc['weight_kg']}kg")
+    if bc.get("body_fat_pct") is not None:
+        parts.append(f"体脂 {bc['body_fat_pct']}%")
+    scan = bc.get("scan_date", "?")
+    return f"最新体测（{scan}）— " + "，".join(parts) if parts else f"最新体测（{scan}）"
+
+
 def _build_system_prompt(
     goal: dict,
     profile: dict | None,
     history_summary: str,
     fitness_state: dict[str, Any],
     today: str,
+    continuity: "ContinuitySignals | None" = None,
+    body_composition: dict[str, Any] | None = None,
+    body_composition_summary: str | None = None,
 ) -> str:
     # Normalise prod-route field names before serialising into the prompt.
     # Without this, prod payloads carry ``target_finish_time`` / ``pbs`` and
@@ -636,6 +706,56 @@ def _build_system_prompt(
     profile_json = json.dumps(profile, ensure_ascii=False, indent=2) if profile else "未填写"
     fitness_summary = fitness_state.get("summary", "体能数据暂无")
     race_date = goal.get("race_date") or "未指定"
+
+    continuity_block = ""
+    if continuity is not None:
+        c = continuity
+        inj = "、".join(c.injuries) if c.injuries else "无"
+        days = f"{c.days_since_last_race} 天" if c.days_since_last_race is not None else "无近期比赛"
+        longest = f"{c.recent_longest_run_km} km" if c.recent_longest_run_km is not None else "暂无"
+        ctl = c.current_chronic_load if c.current_chronic_load is not None else "暂无"
+        zone = c.current_form_zone or "暂无"
+        season = f"；{c.season_context}" if c.season_context else ""
+        continuity_block = f"""
+延续性信号（确定性，来自训练数据/结构化 profile）：
+- macro_cycle: {c.macro_cycle}{season}
+- 距上场比赛: {days}；赛后状态: {c.post_race_recovery_status}
+- 近期有氧周数: {c.recent_aerobic_weeks}；周量趋势: {c.recent_volume_trend}；最近最长跑: {longest}
+- 当前 STRIDE CTL(chronic): {ctl}；form 区: {zone}
+- 断训回归: {c.return_from_layoff}
+- 伤病（软约束，自行权衡，勿机械禁课）: {inj}
+
+请据此调整周期结构：已恢复且距赛久则不排开头恢复期；已有多周有氧则缩短 base；断训回归则延长 base、放缓 ramp；夏训块可插速度周期。
+"""
+
+    macro_block = ""
+    if continuity is not None and continuity.macro_cycle == "summer":
+        macro_block = """
+夏训块周期化指导（macro_cycle=summer）：长块（赛季备战 ~7-8 个月感），气温高、适合发展速度。
+- phase 序列倾向：基础期 → 速度周期(speed) → 进展期(build) → 赛前期(peak) → taper；中段排一个独立速度周期。
+- 长课避开正午高温，质量课优先清晨/傍晚；base 可铺得开。
+"""
+    elif continuity is not None and continuity.macro_cycle == "winter":
+        macro_block = """
+冬训块周期化指导（macro_cycle=winter）：压缩块（~4-5 个月），低温、消耗小、适合堆大量有氧。
+- phase 序列倾向：基础期(长、堆有氧) → 进展期(build，速度并入) → 赛前期(peak) → taper；不排独立速度周期。
+- base 偏长、尽快进专项；速度训练融进 build 而非单独成块。
+"""
+
+    body_comp_block = ""
+    if body_composition:
+        bc = body_composition
+
+        def _fmt(key: str, unit: str = "") -> str:
+            v = bc.get(key)
+            return f"{v}{unit}" if v is not None else "暂无"
+
+        summary_line = body_composition_summary or _format_body_comp_fallback(bc)
+        body_comp_block = f"""
+体测基线（最新体测，可作为体重 / 体脂 milestone 锚点）：
+- {summary_line}
+- 体重: {_fmt('weight_kg', 'kg')}；体脂率: {_fmt('body_fat_pct', '%')}；骨骼肌: {_fmt('smm_kg', 'kg')}；脂肪量: {_fmt('fat_mass_kg', 'kg')}；BMR: {_fmt('bmr_kcal', 'kcal')}；BMI: {_fmt('bmi')}
+"""
 
     return f"""你是专业马拉松训练教练。根据以下信息生成训练总纲 JSON。
 
@@ -661,11 +781,11 @@ def _build_system_prompt(
   "total_weeks": 16,
   "training_principles": ["原则1","原则2"],
   "phases": [
-    {{"name":"基础期","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
+    {{"name":"基础期","phase_type":"base|build|speed|peak|taper|recovery","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
     ...
   ],
   "milestones": [
-    {{"type":"race|test_run|long_run|strength_test","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述"}},
+    {{"type":"race|test_run|long_run|strength_test|body_composition","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述","metric":"race_time_s_5k|race_time_s_10k|weight_kg|body_fat_pct","target_value":1140,"comparator":"<=|>=|=="}},
     ...
   ],
   "weeks": [
@@ -677,12 +797,13 @@ def _build_system_prompt(
   ]
 }}}}
 ---END_MASTER_PLAN---
-
+{continuity_block}{macro_block}{body_comp_block}
 规则：
 - start_date 用今日（{today}），end_date 不晚于比赛日（{race_date}）
 - 阶段顺序：基础期 → 进展期 → 赛前期 → 比赛 →（如有）恢复期
 - 每个阶段至少 2 周
 - weekly_distance_km_low / high 应反映该阶段周量目标
+- 每个 phase 必须标注 phase_type（base|build|speed|peak|taper|recovery）；milestone 尽量给结构化出口目标（metric+target_value+comparator）
 - 里程碑应贯穿训练周期（每 2-4 周一个）
 - 训练原则 6-10 条（含下方营养、recovery week、目标现实性三项强制要求）
 - 用户跑龄短 / 周量低时阶段周量更保守
@@ -749,7 +870,16 @@ def _build_system_prompt(
   - training_principles 第 1 条必须显式 push back，例如："用户 FM PB 3:45 → goal 2:50 单周期改善 24%（> 10% 上限），不现实。本周期建议目标 3:25-3:30（10-12% 改善），下个周期再冲击 sub-3:00"
   - 训练强度按建议的现实 target_time 排，**不能**按用户原 goal 配速排训练
   - race milestone 的 target 字段写本周期建议成绩 + 远期 A 目标，例如："本周期目标 3:30；2:50 为下一周期 A 目标"
-- 如果 goal 改善幅度在阈值内：正常排训练，建议给出 A / B / C 目标分层（A 目标条件 / B 目标 / 保底）"""
+- 如果 goal 改善幅度在阈值内：正常排训练，建议给出 A / B / C 目标分层（A 目标条件 / B 目标 / 保底）
+
+**Per-phase 可量化 milestone（HARD）**：
+- 每个 phase 在 `milestone_ids` 上**尽量挂至少 1 个可量化出口目标**（`metric`+`target_value`+`comparator`），并**锚定上方实际注入的基线数字**（历史摘要里的"最好成绩" PB；若有则用"体测基线"的体重 / 体脂），**不要**写脱离基线的泛化目标。
+- 目标值的改善速率必须落在生理上限内（用上方「单周期改善上限阈值」推算，且单个 phase 通常只占整周期的一部分，改善幅度更小）：
+  - **speed 期**：5k 提速目标 `metric:"race_time_s_5k"`（或 `race_time_s_10k`），`comparator:"<="`。一个 ~6 周 speed cycle 的 5k 改善 **≤ ~5-8%** 是上限而非下限——按基线 PB × (1 − 改善率) 给 target_value，不设幻想值。
+  - **base 期**：以有氧 / 长距离能力为出口（`type:"long_run"` 的距离目标，或—若有体测基线—体重 milestone `metric:"weight_kg"`,`comparator:"<="`，按健康减重速率 ~0.25-0.5 kg/周 推算，不开极端赤字）。
+  - **build / 专项期**：MP 耐力 / 阈值出口（如目标比赛配速 long_run 距离，或 `metric:"race_time_s_10k"`,`comparator:"<="`）；若有体测基线，可设体脂目标 `metric:"body_fat_pct"`,`comparator:"<="`（同样按健康速率）。
+  - **peak / taper 期**：以比赛就绪为出口（`type:"race"` 或目标距离 time-trial 的 race_time milestone）。
+- **体测 milestone 只在「有体测基线」时设**；无体测基线时仅设性能 / 距离类 milestone，不要编造体重 / 体脂数字。"""
 
 
 # ---------------------------------------------------------------------------

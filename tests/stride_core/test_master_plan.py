@@ -130,16 +130,22 @@ def test_master_plan_status_values():
 
 
 def test_milestone_type_values():
-    assert MilestoneType.RACE          == "race"
-    assert MilestoneType.TEST_RUN      == "test_run"
-    assert MilestoneType.LONG_RUN      == "long_run"
-    assert MilestoneType.STRENGTH_TEST == "strength_test"
+    assert MilestoneType.RACE             == "race"
+    assert MilestoneType.TEST_RUN         == "test_run"
+    assert MilestoneType.LONG_RUN         == "long_run"
+    assert MilestoneType.STRENGTH_TEST    == "strength_test"
+    assert MilestoneType.BODY_COMPOSITION == "body_composition"
     assert set(MilestoneType) == {
         MilestoneType.RACE,
         MilestoneType.TEST_RUN,
         MilestoneType.LONG_RUN,
         MilestoneType.STRENGTH_TEST,
+        MilestoneType.BODY_COMPOSITION,
     }
+
+
+def test_body_composition_milestone_value():
+    assert MilestoneType.BODY_COMPOSITION.value == "body_composition"
 
 
 # ---------------------------------------------------------------------------
@@ -333,3 +339,71 @@ def test_master_plan_version_missing_snapshot_json_raises():
     d = {k: v for k, v in MASTER_PLAN_VERSION_DICT.items() if k != "snapshot_json"}
     with pytest.raises(ValidationError):
         MasterPlanVersion.model_validate(d)
+
+
+def test_phase_type_optional_and_roundtrips():
+    from stride_core.master_plan import Phase, PhaseType
+    p_old = Phase(id="p1", name="基础期", start_date="2026-06-11", end_date="2026-07-12",
+                  focus="f", weekly_distance_km_low=50, weekly_distance_km_high=64,
+                  key_session_types=["长距离"], milestone_ids=[])
+    assert p_old.phase_type is None
+    p_new = p_old.model_copy(update={"phase_type": PhaseType.BASE})
+    assert p_new.phase_type == PhaseType.BASE
+    assert Phase.model_validate(p_new.model_dump()).phase_type == PhaseType.BASE
+    assert {pt.value for pt in PhaseType} == {"base", "build", "speed", "peak", "taper", "recovery"}
+
+
+def test_milestone_structured_fields_optional():
+    from stride_core.master_plan import Milestone, MilestoneType
+    m_old = Milestone(id="m1", type=MilestoneType.RACE, date="2026-10-18",
+                      phase_id="p1", target="A 2:50")
+    assert m_old.metric is None and m_old.target_value is None and m_old.comparator is None
+    m_new = Milestone(id="m2", type=MilestoneType.TEST_RUN, date="2026-08-09",
+                      phase_id="p2", target="速度周期末 5k 跑进 19:00",
+                      metric="race_time_s_5k", target_value=1140.0, comparator="<=")
+    dumped = m_new.model_dump()
+    assert Milestone.model_validate(dumped).target_value == 1140.0
+    assert m_new.comparator == "<="
+
+
+def test_body_composition_milestone_constructs_and_round_trips():
+    """A quantifiable body-composition milestone constructs and survives a
+    JSON round-trip (str-Enum value preserved both ways)."""
+    ms = Milestone(
+        id="ms-bc-1",
+        type=MilestoneType.BODY_COMPOSITION,
+        date="2026-07-31",
+        phase_id="phase-1",
+        target="基础期末体脂 ≤ 12%",
+        metric="body_fat_pct",
+        target_value=12.0,
+        comparator="<=",
+    )
+    assert ms.type == MilestoneType.BODY_COMPOSITION
+    assert ms.metric == "body_fat_pct"
+
+    dumped = ms.model_dump(mode="json")
+    assert dumped["type"] == "body_composition"
+    assert Milestone.model_validate(dumped) == ms
+
+
+def test_master_plan_round_trip_with_body_composition_milestone():
+    """Embedding a BODY_COMPOSITION milestone in a full plan still round-trips
+    cleanly — proves the new enum value is inert for the legacy snapshot
+    machinery (model_dump_json → model_validate_json)."""
+    bc_milestone = {
+        "id": "ms-bc-1",
+        "type": "body_composition",
+        "date": "2026-07-31",
+        "phase_id": "phase-1",
+        "target": "基础期末体脂 ≤ 12%",
+        "metric": "body_fat_pct",
+        "target_value": 12.0,
+        "comparator": "<=",
+    }
+    d = {**MASTER_PLAN_DICT, "milestones": [MILESTONE_DICT, bc_milestone]}
+    plan = MasterPlan.model_validate(d)
+    assert plan.milestones[1].type == MilestoneType.BODY_COMPOSITION
+
+    plan2 = MasterPlan.model_validate_json(plan.model_dump_json())
+    assert plan == plan2

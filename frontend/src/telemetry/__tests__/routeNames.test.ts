@@ -10,6 +10,7 @@ describe('routeNameFor', () => {
     ['/health', 'Health'],
     ['/body-composition', 'BodyComposition'],
     ['/plan', 'Training Plan'],
+    ['/plan/adjust', 'Training Plan Adjust'],
     ['/activities', 'Activity List'],
     ['/ability', 'Ability'],
     ['/status', 'Status'],

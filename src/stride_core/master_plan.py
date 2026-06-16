@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import date as _date
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -35,10 +35,25 @@ class MasterPlanStatus(str, Enum):
 
 
 class MilestoneType(str, Enum):
-    RACE          = "race"
-    TEST_RUN      = "test_run"
-    LONG_RUN      = "long_run"
-    STRENGTH_TEST = "strength_test"
+    RACE             = "race"
+    TEST_RUN         = "test_run"
+    LONG_RUN         = "long_run"
+    STRENGTH_TEST    = "strength_test"
+    # Body-composition phase exit-target (additive — diff/legacy snapshots
+    # treat it as an opaque value). e.g. metric="body_fat_pct",
+    # target_value=12.0, comparator="<=" → "基础期末体脂 ≤ 12%".
+    BODY_COMPOSITION = "body_composition"
+
+
+class PhaseType(str, Enum):
+    """Closed set of phase types = the Stage-2 specialist registry keys.
+    Stage-1 may only emit these; each maps to one specialist (see spec §6)."""
+    BASE     = "base"
+    BUILD    = "build"
+    SPEED    = "speed"
+    PEAK     = "peak"
+    TAPER    = "taper"
+    RECOVERY = "recovery"
 
 
 class TargetDistance(str, Enum):
@@ -61,6 +76,12 @@ class Milestone(BaseModel):
     phase_id: str
     target: str                    # 自然语言目标描述，如 "30K 节奏跑 4'45/km"
     completed_actual: str | None = None  # 实际完成情况，如 "4'52/km 完成"
+    # Quantifiable phase exit-target (optional; additive so the diff machinery
+    # and legacy snapshots keep working). e.g. metric="race_time_s_5k",
+    # target_value=1140, comparator="<=" → "5k sub-19:00 by end of phase".
+    metric: str | None = None
+    target_value: float | None = None
+    comparator: Literal["<=", ">=", "=="] | None = None
 
 
 class Phase(BaseModel):
@@ -73,6 +94,7 @@ class Phase(BaseModel):
     weekly_distance_km_high: float
     key_session_types: list[str]   # 如 ["长距离","有氧","力量"]
     milestone_ids: list[str]
+    phase_type: PhaseType | None = None  # Stage-1↔Stage-2 routing key; optional for backcompat
 
 
 # ---------------------------------------------------------------------------

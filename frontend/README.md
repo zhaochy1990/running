@@ -9,11 +9,33 @@ Frontend env vars live in `frontend/.env.local` (git-ignored). Copy
 |---|---|---|
 | `VITE_AUTH_BASE_URL` | yes | Auth-service FQDN (used by `authStore.ts`) |
 | `VITE_AUTH_CLIENT_ID` | yes | Client id in the auth service |
+| `VITE_DEV_AUTH_PROXY` | local dev | Optional override for the Vite `/api/auth/*` proxy. When omitted, local dev uses `VITE_AUTH_BASE_URL` as the proxy target to avoid browser CORS on login. |
+| `VITE_DEV_API_PROXY` | local dev | Optional API proxy target for `/api/*` during frontend-only local testing. |
 | `VITE_APPLICATIONINSIGHTS_CONNECTION_STRING` | no | Application Insights connection string. Telemetry stays disabled when this is empty. The SDK is loaded via dynamic `import()` so the bundle stays small in that case. |
 
 In CI, all three values are repository-level GitHub Actions Variables (not
 Secrets — they are public-by-design and need to be inlined into the browser
 bundle at build time).
+
+## Local browser smoke
+
+For frontend changes, run a real local login and data-page smoke before
+calling the work done:
+
+```bash
+npm run dev:frontend:local
+```
+
+In another terminal:
+
+```bash
+npm run smoke:local
+```
+
+`smoke:local` reads the real test credentials from repository-root
+`.credentials.local` and does not print the email, password, or tokens. It
+verifies login, `/activities`, and one `/activity/:id` detail page. If Vite is
+not on `http://127.0.0.1:5173`, set `STRIDE_LOCAL_URL` to the actual local URL.
 
 ## Telemetry caveats
 
