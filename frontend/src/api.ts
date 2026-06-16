@@ -547,19 +547,10 @@ export interface MasterPlanAdjustApplyResponse {
 }
 
 export async function getCurrentMasterPlan(): Promise<MasterPlan | null> {
-  let res = await fetch(`${BASE}/users/me/master-plan/current`, { headers: authHeaders() })
-
-  if (res.status === 401) {
-    try {
-      await refreshAccessToken()
-      res = await fetch(`${BASE}/users/me/master-plan/current`, { headers: authHeaders() })
-    } catch {
-      sessionStorage.clear()
-      window.location.href = '/login'
-      throw new Error('Session expired')
-    }
-  }
-
+  // Route through apiFetch so the 401→refresh→retry path + header/init shape
+  // match every other GET client (and the api.activities test contract).
+  // 404 means "no active plan" → null (not an error); other !ok still throws.
+  const res = await apiFetch('GET', '/users/me/master-plan/current')
   if (res.status === 404) return null
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json()
