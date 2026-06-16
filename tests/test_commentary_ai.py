@@ -32,6 +32,7 @@ def _load_commentary_ai():
     module = importlib.util.module_from_spec(spec)
     sys.modules["stride_server.commentary_ai"] = module
     spec.loader.exec_module(module)
+    setattr(pkg, "commentary_ai", module)
     return module
 
 
@@ -43,6 +44,13 @@ def commentary_ai():
 def test_downsample_timeseries_short_passes_through(commentary_ai):
     points = [{"heart_rate": h} for h in [100, 110, 120]]
     assert commentary_ai.downsample_timeseries(points, target=10) == [100, 110, 120]
+
+
+def test_system_prompt_handles_plan_deviation_without_scolding(commentary_ai):
+    prompt = commentary_ai.SYSTEM_PROMPT
+    assert "先客观衡量本次训练本身" in prompt
+    assert "不要因为偏离计划而苛责用户" in prompt
+    assert "只需要提醒用户本次训练与计划不一致" in prompt
 
 
 def test_downsample_timeseries_reduces_to_target(commentary_ai):

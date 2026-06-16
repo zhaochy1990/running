@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import time
 
 from stride_core.models import ActivityDetail, TimeseriesPoint
 
@@ -226,12 +225,7 @@ def test_activity_commentary_handler_persists_missing_rows_before_return(db, mon
         db.upsert_activity_commentary(label_id, "draft", generated_by="test")
         return {"commentary": "draft"}
 
-    def old_thread_path(_user: str, _label_id: str):
-        # Current broken behavior returns before this path can finish.
-        time.sleep(0.2)
-
     monkeypatch.setattr("stride_server.commentary_ai.regenerate_and_save", fake_regenerate)
-    monkeypatch.setattr("stride_server.commentary_ai.maybe_generate_for_new_activity", old_thread_path)
     context = PostSyncContext(
         user="u",
         provider="garmin",

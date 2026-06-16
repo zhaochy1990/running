@@ -34,7 +34,11 @@ describe('notificationsStore server-backed read state', () => {
 
     await useNotificationsStore.getState().hydrate()
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/notifications/read-state', { headers: {} })
+    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/notifications/read-state', {
+      method: 'GET',
+      headers: {},
+      body: undefined,
+    })
     expect(useNotificationsStore.getState().isRead(oldestNotificationId)).toBe(true)
     expect(useNotificationsStore.getState().unreadCount()).toBe(NOTIFICATIONS.length - 1)
   })
@@ -79,7 +83,11 @@ describe('notificationsStore server-backed read state', () => {
 
     await useNotificationsStore.getState().markRead(secondNotificationId)
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/users/me/notifications/read-state', { headers: {} })
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/users/me/notifications/read-state', {
+      method: 'GET',
+      headers: {},
+      body: undefined,
+    })
     expect(fetchMock).toHaveBeenNthCalledWith(2, `/api/users/me/notifications/${secondNotificationId}/read`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

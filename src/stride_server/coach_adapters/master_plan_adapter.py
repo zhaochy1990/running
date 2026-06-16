@@ -25,8 +25,6 @@ from __future__ import annotations
 
 import logging
 
-from uuid import uuid4
-
 from coach.graphs.generation.state import GenState
 from coach.schemas import ReviewReport
 from stride_core.timefmt import today_shanghai
@@ -260,15 +258,15 @@ def generate_master_plan(state: GenState) -> dict:
             raise err
         raw = raw_retry  # for downstream logging consistency
 
-    goal_id = goal.get("id") or goal.get("goal_id") or str(uuid4())
     # Stamp the actual configured generator model (config/coach.toml
     # [generator].model) rather than a hardcoded literal, so generated_by
-    # tracks the real model across config changes.
+    # tracks the real model across config changes. The structured goal dict
+    # is passed through so _build_goal_snapshot can embed the full goal.
     from ..coach_runtime import get_generator_model
 
     generated_by = get_generator_model()
     try:
-        plan = _build_master_plan(parsed, user_id, goal_id, generated_by=generated_by)
+        plan = _build_master_plan(parsed, user_id, goal, generated_by=generated_by)
     except ValueError as exc:
         # Re-raise with bad_schema prefix so caller can distinguish from
         # parse_failed (both are ValueError historically).

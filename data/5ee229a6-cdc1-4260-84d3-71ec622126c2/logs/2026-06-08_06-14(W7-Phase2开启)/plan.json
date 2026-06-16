@@ -32,7 +32,7 @@
         "date": "2026-06-09",
         "blocks": [
           {"repeat": 1, "steps": [
-            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 10000}, "target": {"kind": "pace_s_km", "low": 360, "high": 390}, "hr_cap_bpm": 148, "note": "全程 Z1，强度课前一天"}
+            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 10000}, "target": {"kind": "pace_s_km", "low": 390, "high": 360}, "hr_cap_bpm": 148, "note": "全程 Z1，强度课前一天"}
           ]}
         ]
       }
@@ -48,20 +48,20 @@
         "date": "2026-06-10",
         "blocks": [
           {"repeat": 1, "steps": [
-            {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 390, "high": 420}, "note": "热身 HR <140"}
+            {"step_kind": "warmup", "duration": {"kind": "distance_m", "value": 2000}, "target": {"kind": "pace_s_km", "low": 420, "high": 390}, "note": "热身 HR <140"}
           ]},
           {"repeat": 1, "steps": [
-            {"step_kind": "work", "duration": {"kind": "time_s", "value": 1200}, "target": {"kind": "pace_s_km", "low": 290, "high": 305}, "hr_cap_bpm": 175, "note": "20min 节奏，阈值区 HR 162-170"}
+            {"step_kind": "work", "duration": {"kind": "time_s", "value": 1200}, "target": {"kind": "pace_s_km", "low": 305, "high": 290}, "hr_cap_bpm": 175, "note": "20min 节奏，阈值区 HR 162-170"}
           ]},
           {"repeat": 1, "steps": [
             {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 240}, "target": {"kind": "pace_s_km", "low": 390, "high": 390}, "note": "4min 慢跑，HR 回落 <150"}
           ]},
           {"repeat": 8, "steps": [
-            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 400}, "target": {"kind": "pace_s_km", "low": 260, "high": 275}, "hr_cap_bpm": 178, "note": "400m @ 5K 配速"},
-            {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 90}, "target": {"kind": "pace_s_km", "low": 330, "high": 360}, "note": "90s 慢跑恢复，不停"}
+            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 400}, "target": {"kind": "pace_s_km", "low": 275, "high": 260}, "hr_cap_bpm": 178, "note": "400m @ 5K 配速"},
+            {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 90}, "target": {"kind": "pace_s_km", "low": 360, "high": 330}, "note": "90s 慢跑恢复，不停"}
           ]},
           {"repeat": 1, "steps": [
-            {"step_kind": "cooldown", "duration": {"kind": "distance_m", "value": 1500}, "target": {"kind": "pace_s_km", "low": 390, "high": 420}, "note": "冷身 HR <140"}
+            {"step_kind": "cooldown", "duration": {"kind": "distance_m", "value": 1500}, "target": {"kind": "pace_s_km", "low": 420, "high": 390}, "note": "冷身 HR <140"}
           ]}
         ]
       }
@@ -77,7 +77,7 @@
         "date": "2026-06-11",
         "blocks": [
           {"repeat": 1, "steps": [
-            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 4000}, "target": {"kind": "pace_s_km", "low": 410, "high": 430}, "hr_cap_bpm": 145, "note": "防 acute 清零，力量前慢跑"}
+            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 4000}, "target": {"kind": "pace_s_km", "low": 430, "high": 410}, "hr_cap_bpm": 145, "note": "防 acute 清零，力量前慢跑"}
           ]}
         ]
       }
@@ -110,7 +110,7 @@
         "date": "2026-06-12",
         "blocks": [
           {"repeat": 1, "steps": [
-            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 360, "high": 390}, "hr_cap_bpm": 148, "note": "Z1 轻松"}
+            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 390, "high": 360}, "hr_cap_bpm": 148, "note": "Z1 轻松"}
           ]},
           {"repeat": 4, "steps": [
             {"step_kind": "work", "duration": {"kind": "distance_m", "value": 80}, "target": {"kind": "open"}, "note": "strides 80m 神经激活，组间走回"}
@@ -129,9 +129,9 @@
         "date": "2026-06-13",
         "blocks": [
           {"repeat": 1, "steps": [
-            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 360, "high": 375}, "hr_cap_bpm": 148, "note": "km0-8 Z1 暖身"},
-            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 330, "high": 345}, "hr_cap_bpm": 156, "note": "km8-16 长距有氧"},
-            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 6000}, "target": {"kind": "pace_s_km", "low": 314, "high": 320}, "hr_cap_bpm": 162, "note": "km16-22 MP 5:14 预演"}
+            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 375, "high": 360}, "hr_cap_bpm": 148, "note": "km0-8 Z1 暖身"},
+            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 8000}, "target": {"kind": "pace_s_km", "low": 345, "high": 330}, "hr_cap_bpm": 156, "note": "km8-16 长距有氧"},
+            {"step_kind": "work", "duration": {"kind": "distance_m", "value": 6000}, "target": {"kind": "pace_s_km", "low": 320, "high": 314}, "hr_cap_bpm": 162, "note": "km16-22 MP 5:14 预演"}
           ]}
         ]
       }

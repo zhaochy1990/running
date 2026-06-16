@@ -25,6 +25,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    _apply_review_diff,
 )
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
@@ -525,7 +526,7 @@ def _plan_with_skeleton() -> MasterPlan:
         ),
     ]
     return _make_plan(phases=[phase]).model_copy(
-        update={"weekly_key_sessions": skeleton}
+        update={"weeks": skeleton, "weekly_key_sessions": skeleton}
     )
 
 
@@ -543,6 +544,7 @@ def test_apply_diff_resize_phase_clears_weekly_key_sessions():
     result = apply_master_plan_diff(
         store, "plan-test", diff, [op.id], "resize"
     )
+    assert result.weeks == []
     assert result.weekly_key_sessions == []
 
 
@@ -554,6 +556,7 @@ def test_apply_diff_remove_phase_clears_weekly_key_sessions():
     result = apply_master_plan_diff(
         store, "plan-test", diff, [op.id], "remove"
     )
+    assert result.weeks == []
     assert result.weekly_key_sessions == []
 
 
@@ -578,6 +581,7 @@ def test_apply_diff_add_phase_clears_weekly_key_sessions():
     result = apply_master_plan_diff(
         store, "plan-test", diff, [op.id], "add"
     )
+    assert result.weeks == []
     assert result.weekly_key_sessions == []
 
 
@@ -593,6 +597,7 @@ def test_apply_diff_replace_weekly_range_clears_weekly_key_sessions():
     result = apply_master_plan_diff(
         store, "plan-test", diff, [op.id], "ranges"
     )
+    assert result.weeks == []
     assert result.weekly_key_sessions == []
 
 
@@ -609,6 +614,7 @@ def test_apply_diff_focus_change_keeps_weekly_key_sessions():
     result = apply_master_plan_diff(
         store, "plan-test", diff, [op.id], "focus"
     )
+    assert len(result.weeks) == 1
     assert len(result.weekly_key_sessions) == 1
 
 
@@ -622,14 +628,16 @@ def test_apply_diff_milestone_change_keeps_weekly_key_sessions():
     )
     plan_base = _make_plan(phases=[phase], milestones=[ms])
     from stride_core.master_plan import KeySession, WeeklyKeySessions
+    skeleton = [
+        WeeklyKeySessions(
+            week_index=1, week_start="2026-06-01", phase_id="phase-1",
+            target_weekly_km_low=40.0, target_weekly_km_high=50.0,
+            key_sessions=[KeySession(type="long_run", distance_km=18.0)],
+        ),
+    ]
     plan = plan_base.model_copy(update={
-        "weekly_key_sessions": [
-            WeeklyKeySessions(
-                week_index=1, week_start="2026-06-01", phase_id="phase-1",
-                target_weekly_km_low=40.0, target_weekly_km_high=50.0,
-                key_sessions=[KeySession(type="long_run", distance_km=18.0)],
-            ),
-        ],
+        "weeks": skeleton,
+        "weekly_key_sessions": skeleton,
     })
     store = InMemoryStore(plan)
     op = _op(
@@ -641,4 +649,21 @@ def test_apply_diff_milestone_change_keeps_weekly_key_sessions():
     result = apply_master_plan_diff(
         store, "plan-test", diff, [op.id], "ms-date"
     )
+    assert len(result.weeks) == 1
     assert len(result.weekly_key_sessions) == 1
+
+
+def test_apply_review_diff_resize_phase_clears_weeks_and_weekly_key_sessions():
+    """Draft review apply uses a separate helper; it must clear both aliases."""
+    plan = _plan_with_skeleton()
+    op = _op(
+        MasterPlanDiffOpKind.RESIZE_PHASE,
+        phase_id="phase-1",
+        spec_patch={"end_date": "2026-08-15"},
+    )
+    diff = _make_diff([op])
+
+    result = _apply_review_diff(plan, diff, [op.id])
+
+    assert result.weeks == []
+    assert result.weekly_key_sessions == []

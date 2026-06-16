@@ -659,6 +659,57 @@ def test_partial_window_recompute_decays_through_rest_day_gap(db):
     assert partial_day6["chronic_load"] == pytest.approx(full_day6["chronic_load"], abs=1e-3)
 
 
+def test_partial_window_recompute_backfills_rest_day_gap_rows(db):
+    """Sequential post-sync recomputes must leave no holes in the daily series.
+
+    Post-sync calls recompute with start=end=<synced activity's date>. A rest
+    day that falls between two sync batches (e.g. a training day, a rest day,
+    then another training day synced separately) is never inside any window, so
+    its daily_training_load row was never written — the charts then skip that
+    day entirely (Dose / ATL-CTL / Form all gap). recompute must extend the
+    window back to the last persisted day so the intervening rest days are
+    persisted as zero-dose rows.
+    """
+    db.upsert_activity(
+        _make_activity(
+            "d1",
+            "2026-05-01T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+    db.upsert_activity(
+        _make_activity(
+            "d3",
+            "2026-05-03T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+
+    # Ground truth: a single contiguous recompute writes all three days.
+    recompute_training_load(db, start="2026-05-01", end="2026-05-03")
+    full = {r["date"]: dict(r) for r in db.fetch_daily_training_load("2026-05-01", "2026-05-03")}
+    assert set(full) == {"2026-05-01", "2026-05-02", "2026-05-03"}
+
+    # Reproduce the post-sync path: wipe, then recompute each batch's own day.
+    db.query("DELETE FROM daily_training_load")
+    recompute_training_load(db, start="2026-05-01", end="2026-05-01")  # batch 1
+    recompute_training_load(db, start="2026-05-03", end="2026-05-03")  # batch 2 (5/2 rested)
+
+    rows = db.fetch_daily_training_load("2026-05-01", "2026-05-03")
+    dates = [r["date"] for r in rows]
+    assert dates == ["2026-05-01", "2026-05-02", "2026-05-03"], "rest-day 2026-05-02 must be persisted"
+
+    gap_row = {r["date"]: dict(r) for r in rows}["2026-05-02"]
+    assert gap_row["training_dose"] == 0
+    # The gap row must match what a contiguous recompute produces.
+    assert gap_row["acute_load"] == pytest.approx(full["2026-05-02"]["acute_load"], abs=1e-3)
+    assert gap_row["chronic_load"] == pytest.approx(full["2026-05-02"]["chronic_load"], abs=1e-3)
+
+
 def test_fetch_health_rows_handles_compact_yyyymmdd_dates(db):
     """`daily_health.date` is stored as Shanghai-local YYYYMMDD on some
     providers and ISO YYYY-MM-DD on others. Bounded fetches must include

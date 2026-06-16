@@ -15,11 +15,14 @@ from pydantic import ValidationError
 
 from stride_core.master_plan import (
     MasterPlan,
+    MasterPlanGoal,
     MasterPlanStatus,
     MasterPlanVersion,
+    MasterPlanWeek,
     Milestone,
     MilestoneType,
     Phase,
+    TargetDistance,
 )
 
 
@@ -62,6 +65,41 @@ MASTER_PLAN_DICT = {
     "version": 1,
     "created_at": "2026-05-12T08:00:00+00:00",
     "updated_at": "2026-05-12T08:00:00+00:00",
+}
+
+GOAL_DICT = {
+    "goal_id": "goal-xyz",
+    "race_name": "Shanghai Marathon",
+    "distance": "FM",
+    "race_date": "2026-11-15",
+    "target_time": "3:30:00",
+    "timezone": "Asia/Shanghai",
+    "location": "Shanghai",
+}
+
+WEEK_DICT = {
+    "week_index": 1,
+    "week_start": "2026-06-01",
+    "phase_id": "phase-1",
+    "target_weekly_km_low": 50.0,
+    "target_weekly_km_high": 60.0,
+    "key_sessions": [
+        {
+            "type": "long_run",
+            "distance_km": 24.0,
+            "intensity": "z2",
+            "purpose": "建立马拉松专项耐力",
+        }
+    ],
+    "is_recovery_week": False,
+    "is_taper_week": False,
+}
+
+CANONICAL_MASTER_PLAN_DICT = {
+    **{k: v for k, v in MASTER_PLAN_DICT.items() if k != "goal_id"},
+    "goal": GOAL_DICT,
+    "total_weeks": 24,
+    "weeks": [WEEK_DICT],
 }
 
 MASTER_PLAN_VERSION_DICT = {
@@ -158,10 +196,60 @@ def test_master_plan_round_trip():
     assert len(plan.milestones) == 1
     assert plan.version == 1
     assert plan.generated_by == "gpt-4.1"
+    assert plan.goal.goal_id == "goal-xyz"
+    assert plan.total_weeks > 0
 
     dumped = plan.model_dump()
     plan2 = MasterPlan.model_validate(dumped)
     assert plan == plan2
+
+
+def test_master_plan_accepts_embedded_goal_and_weeks():
+    plan = MasterPlan.model_validate(CANONICAL_MASTER_PLAN_DICT)
+
+    assert plan.goal.goal_id == "goal-xyz"
+    assert plan.goal_id == "goal-xyz"
+    assert plan.goal.distance == TargetDistance.FM
+    assert plan.goal.target_time == "3:30:00"
+    assert plan.total_weeks == 24
+    assert len(plan.weeks) == 1
+    assert plan.weeks[0].week_index == 1
+    assert plan.weekly_key_sessions[0].week_start == "2026-06-01"
+
+    dumped = plan.model_dump(mode="json")
+    assert dumped["goal"]["target_time"] == "3:30:00"
+    assert dumped["weeks"][0]["target_weekly_km_high"] == 60.0
+
+
+def test_master_plan_goal_requires_target_time_when_goal_is_provided():
+    goal = {k: v for k, v in GOAL_DICT.items() if k != "target_time"}
+    with pytest.raises(ValidationError):
+        MasterPlanGoal.model_validate(goal)
+
+
+def test_master_plan_goal_timezone_defaults_to_shanghai():
+    goal = {k: v for k, v in GOAL_DICT.items() if k != "timezone"}
+    parsed = MasterPlanGoal.model_validate(goal)
+    assert parsed.timezone == "Asia/Shanghai"
+
+
+def test_master_plan_legacy_weekly_key_sessions_populates_weeks():
+    data = {**MASTER_PLAN_DICT, "weekly_key_sessions": [WEEK_DICT]}
+    plan = MasterPlan.model_validate(data)
+
+    assert len(plan.weeks) == 1
+    assert isinstance(plan.weeks[0], MasterPlanWeek)
+    assert plan.weeks[0].week_index == 1
+    assert plan.weekly_key_sessions[0].week_index == 1
+
+
+def test_master_plan_rejects_divergent_goal_id_mirror():
+    data = {
+        **CANONICAL_MASTER_PLAN_DICT,
+        "goal_id": "different-goal-id",
+    }
+    with pytest.raises(ValidationError, match="goal_id must match goal.goal_id"):
+        MasterPlan.model_validate(data)
 
 
 def test_master_plan_json_round_trip():

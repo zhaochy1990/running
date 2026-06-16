@@ -18,6 +18,7 @@ migration commit has a target.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from typing import Any
 
@@ -177,11 +178,23 @@ def get_commentary_llm() -> Any:
     if _COMMENTARY_LLM is None:
         with _COMMENTARY_LLM_LOCK:
             if _COMMENTARY_LLM is None:
+                from coach.runtime.config import load_config
                 from coach.runtime.llm_factory import build_commentary_llm
 
-                _COMMENTARY_LLM = build_commentary_llm(
-                    credentials=_build_azure_credentials(),
-                )
+                cfg = load_config()
+                api_key = None
+                if cfg.commentary.api_key_env:
+                    api_key = os.environ.get(cfg.commentary.api_key_env)
+                if api_key:
+                    _COMMENTARY_LLM = build_commentary_llm(
+                        api_key=api_key,
+                        config=cfg,
+                    )
+                else:
+                    _COMMENTARY_LLM = build_commentary_llm(
+                        credentials=_build_azure_credentials(),
+                        config=cfg,
+                    )
     return _COMMENTARY_LLM
 
 

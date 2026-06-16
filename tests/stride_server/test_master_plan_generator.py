@@ -286,9 +286,10 @@ class TestParseLlmOutput:
 
 class TestBuildMasterPlan:
     def test_happy_path(self):
-        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL_ID)
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL)
         assert plan.user_id == USER_ID
         assert plan.goal_id == GOAL_ID
+        assert plan.goal.goal_id == GOAL_ID
         assert plan.status == MasterPlanStatus.DRAFT
         assert plan.version == 1
         # generated_by defaults to "unknown" when the caller doesn't supply it;
@@ -301,14 +302,14 @@ class TestBuildMasterPlan:
         assert len(plan.training_principles) == 3
 
     def test_milestone_types_parsed(self):
-        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL_ID)
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL)
         types = {m.type for m in plan.milestones}
         assert MilestoneType.LONG_RUN in types
         assert MilestoneType.TEST_RUN in types
         assert MilestoneType.RACE in types
 
     def test_phase_milestone_ids_populated(self):
-        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL_ID)
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL)
         # 基础期 should own 2 milestones (long_run + test_run)
         base_phase = next(p for p in plan.phases if p.name == "基础期")
         assert len(base_phase.milestone_ids) == 2
@@ -317,11 +318,11 @@ class TestBuildMasterPlan:
         bad = dict(_VALID_PLAN_DICT)
         bad["schema"] = "wrong/v99"
         with pytest.raises(ValueError, match="unexpected schema"):
-            _build_master_plan(bad, USER_ID, GOAL_ID)
+            _build_master_plan(bad, USER_ID, GOAL)
 
     def test_missing_plan_key_raises(self):
         with pytest.raises(ValueError, match="missing or invalid 'plan'"):
-            _build_master_plan({"schema": "weekly-plan/master/v1"}, USER_ID, GOAL_ID)
+            _build_master_plan({"schema": "weekly-plan/master/v1"}, USER_ID, GOAL)
 
     def test_empty_phases_allowed(self):
         data = {
@@ -334,15 +335,89 @@ class TestBuildMasterPlan:
                 "training_principles": ["原则1"],
             },
         }
-        plan = _build_master_plan(data, USER_ID, GOAL_ID)
+        plan = _build_master_plan(data, USER_ID, GOAL)
         assert plan.phases == []
         assert plan.milestones == []
 
     def test_unknown_milestone_type_defaults_to_long_run(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["milestones"][0]["type"] = "unknown_type_xyz"
-        plan = _build_master_plan(data, USER_ID, GOAL_ID)
+        plan = _build_master_plan(data, USER_ID, GOAL)
         assert plan.milestones[0].type == MilestoneType.LONG_RUN
+
+    def test_builds_embedded_goal_from_training_goal_dict(self):
+        goal = {
+            "goal_id": GOAL_ID,
+            "type": "race",
+            "race_name": "Shanghai Marathon",
+            "race_date": "2026-11-01",
+            "race_distance": "FM",
+            "target_finish_time": "3:25:00",
+            "timezone": "Asia/Shanghai",
+            "location": "Shanghai",
+        }
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
+
+        assert plan.goal.goal_id == GOAL_ID
+        assert plan.goal_id == GOAL_ID
+        assert plan.goal.race_name == "Shanghai Marathon"
+        assert plan.goal.distance == "FM"
+        assert plan.goal.race_date == "2026-11-01"
+        assert plan.goal.target_time == "3:25:00"
+        assert plan.goal.timezone == "Asia/Shanghai"
+        assert plan.goal.location == "Shanghai"
+
+    def test_builds_canonical_weeks_from_llm_weeks(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-05-11",
+                "phase_name": "基础期",
+                "target_weekly_km_low": 40,
+                "target_weekly_km_high": 48,
+                "key_sessions": [
+                    {
+                        "type": "long_run",
+                        "distance_km": 20,
+                        "intensity": "z2",
+                        "purpose": "建立有氧耐力",
+                    }
+                ],
+            }
+        ]
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert len(plan.weeks) == 1
+        assert plan.weeks[0].week_index == 1
+        assert plan.weeks[0].phase_id == plan.phases[0].id
+        assert plan.weeks[0].key_sessions[0].type == "long_run"
+        assert plan.weekly_key_sessions[0].week_start == "2026-05-11"
+
+    def test_legacy_weekly_key_sessions_maps_to_canonical_weeks(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["weekly_key_sessions"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-05-11",
+                "phase_name": "基础期",
+                "target_weekly_km_low": 40,
+                "target_weekly_km_high": 48,
+                "key_sessions": [{"type": "long_run", "distance_km": 20}],
+            }
+        ]
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert len(plan.weeks) == 1
+        assert plan.weeks[0].target_weekly_km_high == 48
+        assert plan.weekly_key_sessions[0].week_index == 1
+
+    def test_goal_target_time_required_for_generated_plan(self):
+        goal = {k: v for k, v in GOAL.items() if k != "target_finish_time"}
+        with pytest.raises(ValueError, match="target_time"):
+            _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
 
 
 class TestBuildMapsNewFields:
@@ -364,7 +439,7 @@ class TestBuildMapsNewFields:
                                 "comparator": "<="}],
             },
         }
-        plan = _build_master_plan(data, "u", "g")
+        plan = _build_master_plan(data, "u", GOAL)
         assert plan.phases[0].phase_type == PhaseType.BASE
         assert plan.milestones[0].metric == "race_time_s_5k"
         assert plan.milestones[0].target_value == 1140.0
@@ -404,7 +479,7 @@ class TestBuildMapsNewFields:
                 ],
             },
         }
-        plan = _build_master_plan(data, "u", "g")
+        plan = _build_master_plan(data, "u", GOAL)
         by_metric = {m.metric: m for m in plan.milestones}
 
         bc = by_metric["body_fat_pct"]
@@ -433,7 +508,7 @@ class TestBuildMapsNewFields:
                         "key_session_types": ["长距离"]}],
             "milestones": [{"type": "long_run", "date": "2026-06-28", "phase_name": "基础期",
                             "target": "22km"}]}}
-        plan = _build_master_plan(data, "u", "g")
+        plan = _build_master_plan(data, "u", GOAL)
         assert plan.phases[0].phase_type is None
         assert plan.milestones[0].metric is None
 
@@ -446,7 +521,7 @@ class TestBuildMapsNewFields:
                         "weekly_distance_km_low": 50, "weekly_distance_km_high": 64,
                         "key_session_types": []}],
             "milestones": []}}
-        plan = _build_master_plan(data, "u", "g")
+        plan = _build_master_plan(data, "u", GOAL)
         assert plan.phases[0].phase_type is None
 
 
@@ -807,10 +882,13 @@ class TestPromptRegression:
             today="2026-05-19",
         )
 
-    def test_prompt_includes_weekly_key_sessions_schema(self):
-        """LLM must see `weekly_key_sessions` field in the example block."""
+    def test_prompt_includes_canonical_weeks_schema(self):
+        """LLM must see canonical `goal` and `weeks` fields in the example block."""
         prompt = self._build()
-        assert "weekly_key_sessions" in prompt
+        assert '"goal"' in prompt
+        assert '"target_time"' in prompt
+        assert '"weeks"' in prompt
+        assert '"weekly_key_sessions"' not in prompt
         # Must call out the canonical session-type tokens
         for t in ("long_run", "threshold", "race_pace"):
             assert t in prompt

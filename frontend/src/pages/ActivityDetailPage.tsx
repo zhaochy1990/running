@@ -127,6 +127,7 @@ export default function ActivityDetailPage() {
   // Show map only for outdoor activities with enough GPS samples. Indoor /
   // treadmill / strength activities skip the card entirely (no SDK load).
   const hasGpsTrack = !isStrength && timeseries.some((p) => p.gps_lat != null && p.gps_lon != null)
+  const showCommentaryCard = !isTeamView || Boolean(activity.commentary || activity.commentary_generated_by)
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 sm:px-8 sm:py-8 animate-fade-in">
@@ -339,7 +340,7 @@ export default function ActivityDetailPage() {
       )}
 
       {/* Coach commentary */}
-      {(activity.commentary || activity.commentary_generated_by) && (
+      {showCommentaryCard && (
         <div className="bg-bg-card border border-border-subtle rounded-2xl p-5 mb-6 animate-fade-in stagger-5 opacity-0" style={{ animationFillMode: 'forwards' }}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
