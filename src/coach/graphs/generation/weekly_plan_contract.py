@@ -42,6 +42,11 @@ WEEKLY_HARD_RULES = f"""\
 5. 伤病禁忌（injury_conflict）：不得安排与已记录伤病冲突的力量动作\
 （膝 ↔ 深蹲/弓步/squat/lunge；腰背 ↔ 硬拉/deadlift；踝 ↔ 跳跃/plyo）。\
 满足方式：若上下文列出伤病，避开对应动作，换非冲突的替代动作。
+6. 跨阶段衔接安全（phase_transition，SEASON 级 run_season_rule_filter 校验）：\
+每周实际跑量必须**贴近、绝不超过**逐周表对应行的 `目标周量`；**第 1 周尤其不得超过**\
+逐周表第 1 行的 target——该值已按上一阶段工作量×{MAX_WEEKLY_RAMP_RATIO:.2f} 算好，\
+超过会触发跨阶段 boundary 拒绝、整阶段重做。\
+满足方式：各周里程命中各自 target、不要上探超过；第 1 周宁可略低也不要踩着 target 上限往上凑。
 """
 
 

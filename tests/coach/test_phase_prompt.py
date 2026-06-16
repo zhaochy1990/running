@@ -283,6 +283,47 @@ def test_phase_prompt_hard_rules_ramp_matches_gate():
 
 
 # ---------------------------------------------------------------------------
+# OPT-C: cross-phase week-1 boundary (no-overshoot) injected into the prompt
+# ---------------------------------------------------------------------------
+
+
+def test_phase_prompt_carries_cross_phase_week1_boundary():
+    """The composed phase prompt must state the cross-phase boundary / no-overshoot
+    rule: each week must NOT exceed its injected target_weekly_km, and week 1
+    ESPECIALLY must not exceed its target (the value already encodes the ≤1.10×
+    cross-phase continuity cap; exceeding it trips a SEASON-level
+    ``run_season_rule_filter`` boundary rejection that redoes the whole phase).
+    OPT-C: teach the generator to respect the deterministic target up front.
+    """
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.PEAK,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+    )
+    # the no-overshoot anchor
+    assert "不得超过" in prompt
+    # the week-1 emphasis (boundary-critical)
+    assert "第 1 周" in prompt
+    # the cross-phase framing (this is a SEASON-level rule, not per-week)
+    assert "跨阶段" in prompt
+
+
+@pytest.mark.parametrize("phase", list(PhaseType))
+def test_phase_prompt_cross_phase_boundary_present_for_all_phases(phase: PhaseType):
+    """The cross-phase week-1 boundary instruction is phase-independent and must
+    appear for every PhaseType (it composes without error for all 6)."""
+    prompt = build_phase_system_prompt(
+        phase_type=phase,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+    )
+    assert "不得超过" in prompt
+    assert "跨阶段" in prompt
+
+
+# ---------------------------------------------------------------------------
 # OPT-B: phase milestone injected into the GENERATION prompt
 # ---------------------------------------------------------------------------
 
