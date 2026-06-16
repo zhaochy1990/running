@@ -294,28 +294,16 @@ class GetPbsImpl:
 
     @_tool_safe
     def __call__(self) -> ToolResult:
-        # Reuse the existing PB detection logic from routes/pbs.py so the
-        # coach tool returns the same shape the dashboard already trusts.
-        from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
-        from stride_server.routes.pbs import _DISTANCE_ORDER, _detect_pbs
+        from stride_core.pb_records import DISTANCE_ORDER, detect_personal_bests
 
         db = _open_db(self._user_id)
         try:
-            rows = db.query(
-                f"""SELECT label_id, date, distance_m, duration_s
-                FROM activities
-                WHERE sport_type IN ({_RUN_SPORT_SQL})
-                  AND distance_m IS NOT NULL
-                  AND duration_s IS NOT NULL
-                  AND duration_s > 0
-                ORDER BY date ASC, label_id ASC"""
-            )
-            pb_map = _detect_pbs(rows)
+            pb_map = detect_personal_bests(db)
         finally:
             db.close()
         pbs = [
-            {**pb_map[dist], "distance": dist}
-            for dist in _DISTANCE_ORDER
+            pb_map[dist]
+            for dist in DISTANCE_ORDER
             if dist in pb_map
         ]
         return ToolResult(

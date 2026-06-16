@@ -24,6 +24,16 @@ def test_normalize_ts_units_converts_centi_seconds_and_centimeters():
     assert out[2] == (10.0, 40.0)
 
 
+def test_normalize_ts_units_keeps_meter_distances_when_activity_total_matches():
+    """Garmin stores timestamp as centiseconds but distance as meters.
+    When the activity total is also around 5km, the distance must not be
+    divided by 100 or a real 5K segment disappears.
+    """
+    rows = [_row(0, 0.0), _row(60_000, 3000.0), _row(100_000, 5000.0)]
+    out = _normalize_ts_units(rows, activity_distance_m=5000.0)
+    assert out == [(0.0, 0.0), (600.0, 3000.0), (1000.0, 5000.0)]
+
+
 def test_normalize_ts_units_filters_nulls():
     rows = [_row(100, 0), _row(None, 50), _row(200, None), _row(300, 100)]
     out = _normalize_ts_units(rows)

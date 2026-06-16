@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 
 import jwt
 import pytest
@@ -13,6 +15,12 @@ from fastapi.testclient import TestClient
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 OTHER_UUID = "b1b2c3d4-e5f6-4aaa-89ab-123456789012"
+SEGMENT_FIXTURE = (
+    Path(__file__).parents[1]
+    / "fixtures"
+    / "segment_pb"
+    / "activity_477783793625760045.json"
+)
 
 
 # ── Shared fixtures (mirrors test_home.py pattern) ────────────────────────────
@@ -127,6 +135,42 @@ def test_pbs_multiple_distances(app_client):
     # No HM or FM seeded → absent from list
     assert "HM" not in pb_map
     assert "FM" not in pb_map
+
+
+def test_pbs_uses_fastest_continuous_segment_when_activity_is_longer(app_client):
+    """A 13.36 km workout with an embedded 5K in ~19:30 should count as
+    the 5K best effort. This keeps /pbs aligned with the VO2max PB channel.
+    """
+    client, token, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    data = json.loads(SEGMENT_FIXTURE.read_text())
+    activity = data["activity"]
+    db._conn.execute(
+        """INSERT INTO activities
+           (label_id, sport_type, date, distance_m, duration_s, avg_hr,
+            max_hr, train_kind, train_type, pauses, provider)
+           VALUES (:label_id, :sport_type, :date, :distance_m, :duration_s,
+                   :avg_hr, :max_hr, :train_kind, :train_type, :pauses,
+                   :provider)""",
+        activity,
+    )
+    for point in data["timeseries"]:
+        db._conn.execute(
+            "INSERT INTO timeseries (label_id, timestamp, distance) VALUES (?, ?, ?)",
+            (activity["label_id"], point["timestamp"], point["distance"]),
+        )
+    db._conn.commit()
+    db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/pbs", headers=_auth(token))
+    assert resp.status_code == 200, resp.text
+    pb_map = {p["distance"]: p for p in resp.json()["pbs"]}
+
+    assert "5K" in pb_map
+    assert pb_map["5K"]["pb_time_sec"] == pytest.approx(1170, abs=5)
+    assert pb_map["5K"]["label_id"] == activity["label_id"]
+    assert pb_map["5K"]["achieved_at"] == "2026-05-27"
+    assert pb_map["5K"]["history"][-1]["best_so_far_sec"] == pytest.approx(1170, abs=5)
 
 
 def test_pbs_missing_distance_absent(app_client):
