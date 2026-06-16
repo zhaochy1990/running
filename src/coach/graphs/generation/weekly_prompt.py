@@ -11,12 +11,11 @@ Assembles the single-week generation system prompt from four parts:
 4. the week framing from ``week_meta``.
 
 Pure string/schema composition — no DB, no LLM, no network. ``coach.*`` core
-boundary: only ``stride_core.master_plan`` (PhaseType) is imported for typing;
-the contract text mirrors ``stride_core.plan_spec`` field names but does not
-import it at runtime. The field names are mirrored only in a prose comment
-(see the ``# Field names below mirror …`` note pointing to ``plan_spec.py``);
-there is no import guard or ``TYPE_CHECKING`` block. The contract/plan_spec
-sync is instead enforced by a drift-guard test in ``tests/coach``.
+boundary: only ``stride_core.master_plan`` (PhaseType) is imported for typing.
+The shared WeeklyPlan field-shape body lives in ``weekly_plan_contract`` (also
+reused by the phase-at-once composer); its field names mirror
+``stride_core.plan_spec`` but it does not import it at runtime. The
+contract/plan_spec sync is enforced by a drift-guard test in ``tests/coach``.
 """
 
 from __future__ import annotations
@@ -28,6 +27,7 @@ from stride_core.master_plan import PhaseType
 from coach.schemas.specialist_context import PaceTargets, VolumeTargets
 
 from .phase_specialists import get_specialist
+from .weekly_plan_contract import WEEKLY_PLAN_FIELDS_CONTRACT
 
 
 # ---------------------------------------------------------------------------
@@ -57,58 +57,15 @@ class WeekMeta:
 WEEKLY_PLAN_JSON_CONTRACT_SENTINEL = "WEEKLY_PLAN_JSON_CONTRACT/v1"
 
 
-# Field names below mirror ``stride_core.plan_spec`` (WeeklyPlan /
-# PlannedSession / PlannedNutrition / Meal). Keep in sync if that schema moves.
+# The shared WeeklyPlan field-shape body lives in ``weekly_plan_contract``
+# (reused by the phase-at-once composer). This single-week contract wraps it in
+# this composer's sentinel + the "emit exactly one object, JSON only" envelope.
 _WEEKLY_PLAN_JSON_CONTRACT = f"""\
 === {WEEKLY_PLAN_JSON_CONTRACT_SENTINEL} ===
 你必须**只**输出一个合法的 JSON 对象（无 markdown 代码围栏、无解释文字、无前后缀），
-该对象将被 `WeeklyPlan.from_dict` 直接解析。结构如下：
+该对象将被 `WeeklyPlan.from_dict` 直接解析。
 
-{{
-  "schema": "weekly-plan/v1",
-  "week_folder": "<本周文件夹名，原样回填，见下方周框架>",
-  "sessions": [ <PlannedSession>, ... ],
-  "nutrition": [ <PlannedNutrition>, ... ],
-  "notes_md": "<本周整体说明 markdown，可选>"
-}}
-
-PlannedSession（每个训练日一条；同日双练用 session_index 0/1 区分）：
-{{
-  "schema": "plan-session/v1",
-  "date": "YYYY-MM-DD",            // ISO 日期，必填
-  "session_index": 0,               // 同日第一节为 0，依次递增
-  "kind": "run|strength|rest|cross|note",
-  "summary": "<简短用户可见标签，如 '专项长跑 32km（后 16km @ MP）'>",
-  "spec": null,                     // 【硬约束】本阶段课程为 aspirational，spec 必须为 null（不推手表结构化课）
-  "notes_md": "<该课的配速/心率/组数/理由，markdown，可选>",
-  "total_distance_m": 32000,        // 跑步课填米；非跑步可为 null
-  "total_duration_s": null,         // 预计时长（秒），可为 null
-  "scheduled_workout_id": null      // 始终 null（推手表后才回填）
-}}
-
-PlannedNutrition（每个有营养安排的日期一条；本周营养以 nutrition 列表承载）：
-{{
-  "schema": "plan-nutrition/v1",
-  "date": "YYYY-MM-DD",
-  "kcal_target": 2600,              // 可为 null
-  "carbs_g": 360, "protein_g": 130, "fat_g": 70, "water_ml": 2500,  // 均可为 null
-  "meals": [
-    {{
-      "name": "早餐",               // 早餐/午餐/晚餐/加餐
-      "time_hint": "7:30",          // 可为 null
-      "kcal": 600, "carbs_g": 90, "protein_g": 25, "fat_g": 12,     // 均可为 null
-      "items_md": "燕麦 80g + 鸡蛋 2 个 + 香蕉 1 根"                  // 自由文本，可为 null
-    }}
-  ],
-  "notes_md": "<当日营养说明，可选>"
-}}
-
-【硬约束】
-- 所有 session 的 `spec` 必须为 `null`（aspirational 计划，不生成可推手表的结构化课）。
-- 跑步日的配速/心率/组数写进 `summary` / `notes_md` 文字，**用下方注入的 pace_targets**，
-  绝不自行编配速；里程在下方 volume_targets 预算内分配。
-- `week_folder` 原样回填周框架里给出的字符串。
-- 日期落在周框架给出的 7 天窗口内。
+{WEEKLY_PLAN_FIELDS_CONTRACT}
 - 输出**仅** JSON，无任何其他文字。
 === END {WEEKLY_PLAN_JSON_CONTRACT_SENTINEL} ===
 """

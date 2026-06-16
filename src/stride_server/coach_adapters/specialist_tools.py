@@ -408,7 +408,7 @@ def recent_training(
 # LLM-facing tool wrappers (Stage-3a Task 8 Part B)
 #
 # The pure ``strength_library`` / ``recent_training`` functions above stay
-# intact — ``generate_phase_weeks`` and Task-3 tests call them deterministically.
+# intact — the phase-at-once generator and Task-3 tests call them deterministically.
 # These wrapper classes adapt them to the langchain tool-calling surface:
 #   * a clean LLM-facing signature (no ``db`` arg — the wrapper opens its own),
 #   * a ``ToolResult`` envelope (``{ok, data, errors}``),

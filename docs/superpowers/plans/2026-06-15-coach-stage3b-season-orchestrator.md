@@ -144,3 +144,28 @@ Lower aspirational `spec=None` sessions → structured `NormalizedRunWorkout` (w
 6. **Integration smoke** (fake LLM): a realistic multi-phase master plan → `generate_season` → every week `run_rule_filter`-clean, `run_season_rule_filter` passes, the real reviewer is in the loop. (§7)
 
 **Layering:** new core modules + one new adapter module; reuse Stage-3a `generate_phase_weeks` + `build_week_specialist_graph` unchanged (just inject the real reviewer instead of the stub). `lint-imports` after each task.
+
+---
+
+## 13. Execution status (DONE 2026-06-15)
+
+3b-1 + 3b-2 executed via subagent-driven-development (TDD per task; each passed spec + code-quality review + a final holistic integration review). **Full suite 863 passed; `lint-imports` 0 broken.** All six tasks committed on `feat/coach-stage3b-orchestrator`.
+
+| Task | Module | Status |
+|---|---|---|
+| T1 | `coach/schemas/season_bundle.py` | ✅ |
+| T2 | `coach/graphs/generation/week_schedule.py` | ✅ (≤1.10× continuity cap verified across a 2730-pt grid; recovery/taper high-clamp) |
+| T3 | `coach/graphs/generation/season_rule_filter.py` | ✅ |
+| T4 | `coach/graphs/generation/phase_reviewer.py` + `coach_adapters/phase_review_adapter.py` | ✅ (uses reviewer-role LLM) |
+| T5 | `coach_adapters/season_orchestrator.py` | ✅ (two-pass bounded regen; degrade-not-crash) |
+| T6 | `tests/stride_server/test_season_integration_smoke.py` | ✅ (mutation-verified non-vacuous) |
+
+### Tracked follow-ups (non-blocking; surfaced by the holistic review)
+
+- **[I1 — periodization realism]** Exit-volume threading uses the literal last generated week's km, which is often a **deload trough** or a still-sub-band climbing week. Combined with the HARD ≤1.10× cap, this compounds across phases so a short **peak phase cannot reach its prescribed band** (smoke plan: peak band [70-85] derives to ~[52, 57, 62]). This is a **modeling conservatism, NOT a wiring bug** — every week stays rule-clean/safe; the season is just volume-conservative. **Fix:** thread a *representative working volume* (the phase's max non-deload week, or a clamp toward band-midpoint) into the next phase's `prev_phase_end_km` instead of `weeks[-1]`. Natural home: **3b-4** (season eval can measure "phases reach their bands"), or a dedicated tuning pass.
+- **[M1 — cap drift]** The ≤1.10× cap is a local constant in T2 (`_MAX_RAMP_RATIO`), T3 (`UP_STEP_RATIO_CAP`), and the Stage-3a `rule_filter` (bare literal). Each is documented as deliberately matching the per-week gate, but they could drift. Optional: import the cap from `rule_filter` (the canonical per-week authority).
+- **[M2 — non-self-healing attribution]** `taper_peak_sanity` errors attribute to the taper phase, but the taper is deterministic (steps down from entry) so its regen yields the identical result; the real cause is usually a volume-suppressed peak (see I1). Reconsider attributing to the upstream loaded phase, or comment the limitation.
+- **[bundle report]** The final `SeasonRuleReport` is logged, not attached to `SeasonPlanBundle` (T1 schema has no field). `blocked_week_budget` season errors are season-wide (no owning phase) and thus log-only. If a future API/UI needs post-hoc season diagnostics, add an optional `season_report` field to the bundle.
+
+### Still deferred (per §11 decisions, genuinely not gaps)
+3b-3 push-to-watch lowering; 3b-4 season eval; persistence/endpoints for the bundle.

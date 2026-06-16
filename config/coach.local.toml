@@ -28,19 +28,17 @@ api_kind     = "responses"
 # rejects the parameter (400 "Unsupported parameter"). llm_factory skips
 # the kwarg when ModelSpec.temperature is None. Re-add this line only if
 # you point the role at a non-reasoning model.
-# max_tokens=131072 — gpt-5.5 supports a 1M-token context window total
-# (input + reasoning + visible output) with up to ~128k of that
-# reservable for the visible output. S1 master plan with 14-22 week
-# weekly_key_sessions skeleton needs 5-9k chars of visible output
-# (≈ 2-3k tokens), but reasoning tokens are billed against the same
-# budget and can consume 14-20k tokens at default reasoning_effort.
-# Setting the ceiling at 131072 (128k) removes max_tokens entirely as
-# a bottleneck — the model only consumes what it needs, and smaller
-# LLM calls (week generation, chat) simply use less. If output is
-# still truncating at this setting, the bottleneck is the Azure
-# deployment's max_response_tokens (set at deployment create time, NOT
-# this config) — raise it in the Azure portal to unlock.
-max_tokens   = 131072
+# max_tokens=524288 — the phase-at-once generator now emits an entire
+# phase's weeks in one LLM call, so the output budget is raised to 512k.
+# gpt-5.5 supports a 1M-token context window total (input + reasoning +
+# visible output); the model's actual visible-output cap may be lower
+# (gpt-5 family ~128k), but a phase of aspirational (spec=null) weeks
+# stays well under that, so 524288 (512k) simply removes max_tokens as a
+# bottleneck — the model only consumes what it needs, and smaller LLM
+# calls (week generation, chat) use less. If output still truncates, the
+# bottleneck is the Azure deployment's max_response_tokens (set at
+# deployment create time, NOT this config) — raise it in the Azure portal.
+max_tokens   = 524288
 # reasoning_effort intentionally NOT set — defaults to model's medium,
 # which is what S1 strategic reasoning (phase ordering, goal realism,
 # injury safety, distance specificity) needs. Lowering it to "low" or
