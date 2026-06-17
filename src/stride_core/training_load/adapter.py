@@ -586,7 +586,7 @@ def recompute_training_load(
         return TrainingLoadRunSummary(0, 0, 0, None, start_date, end_date, persist)
 
     series_start = start_date or min(a.activity_date for a in activity_inputs)
-    series_end = end_date or max(a.activity_date for a in activity_inputs)
+    series_end = end_date or today_shanghai()
 
     # Gap-fill: when an explicit window begins more than one day after the last
     # persisted daily row, extend the window back to the day after that row so
