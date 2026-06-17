@@ -23,7 +23,7 @@ export function useCountUp(
   opts: { suffix?: string; decimals?: number; start?: boolean } = {},
 ) {
   const { suffix = '', decimals = target % 1 !== 0 ? 1 : 0, start = true } = opts
-  const [text, setText] = useState(`0${suffix}`)
+  const [text, setText] = useState(() => `${(0).toFixed(decimals)}${suffix}`)
   useEffect(() => {
     if (!start) return
     let raf = 0
