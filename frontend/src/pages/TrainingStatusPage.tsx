@@ -1040,7 +1040,7 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
                 <div>
-                  <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">8 周负荷趋势 · 8-Week Load Trend (每周 Dose 累加)</p>
+                  <p className="text-[11px] font-mono text-text-muted mb-2 ml-1">8 周负荷趋势</p>
                   <ResponsiveContainer width="100%" height={180}>
                     <LineChart data={weeklySeries} margin={{ top: 5, right: 10, bottom: 0, left: -5 }}>
                       <CartesianGrid {...GRID_STYLE} />
