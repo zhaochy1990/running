@@ -25,8 +25,8 @@ export default function LandingFooter({ onLogin }: { onLogin: () => void }) {
           </div>
           <div className="foot-col">
             <h4>账户</h4>
-            <button type="button" className="foot-col-btn" onClick={onLogin} style={{ display: 'block', fontSize: '13px', color: '#aeb3c4', marginBottom: '10px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>登录</button>
-            <button type="button" className="foot-col-btn" onClick={onLogin} style={{ display: 'block', fontSize: '13px', color: '#aeb3c4', marginBottom: '10px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>创建档案</button>
+            <button type="button" onClick={onLogin} style={{ display: 'block', fontSize: '13px', color: '#aeb3c4', marginBottom: '10px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>登录</button>
+            <button type="button" onClick={onLogin} style={{ display: 'block', fontSize: '13px', color: '#aeb3c4', marginBottom: '10px', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left' }}>创建档案</button>
             <a href="#">订阅方案</a>
             <a href="#">联系我们</a>
           </div>

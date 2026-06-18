@@ -386,6 +386,7 @@
 #loginOverlay .lg-field .lg-row { display: flex; justify-content: space-between; align-items: baseline }
 #loginOverlay .lg-field .lg-row a { font-size: 11px; color: var(--green-dim); font-weight: 600 }
 #loginOverlay .lg-field .lg-row a:hover { text-decoration: underline }
+#loginOverlay .lg-error { font-size: 13px; color: var(--accent-red, #d32f2f); background: rgba(211,47,47,.08); border: 1px solid rgba(211,47,47,.2); border-radius: 8px; padding: 8px 11px; margin-bottom: 14px }
 #loginOverlay .lg-submit { width: 100%; height: 44px; border: 0; border-radius: 9px; background: var(--green); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 6px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background .15s }
 #loginOverlay .lg-submit:hover { background: var(--green-dim) }
 #loginOverlay .lg-submit svg { width: 15px; height: 15px }

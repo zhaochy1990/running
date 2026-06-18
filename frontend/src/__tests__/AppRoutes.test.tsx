@@ -11,7 +11,6 @@ vi.mock('../store/authStore', () => ({
 }))
 // 把已登录子树替换成占位,避免拉起真实 dashboard / api
 vi.mock('../pages/WeekLayout', () => ({ default: () => <div>DASHBOARD_HOME</div> }))
-vi.mock('../App', async (orig) => orig()) // 防循环;AppRoutes 独立文件无需
 
 // jsdom does not implement IntersectionObserver — provide a minimal stub
 beforeEach(() => {
