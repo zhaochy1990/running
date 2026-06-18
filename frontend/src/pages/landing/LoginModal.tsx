@@ -62,7 +62,7 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="lg-bp-mid">
-            <div className="lg-bp-eyebrow">EVERY STRIDE, MEASURED</div>
+            <div className="lg-bp-eyebrow">EVERY STRIDE, MEASURED · EVERY PLAN, YOURS</div>
             <p className="lg-bp-quote">
               每一步都<em>有数据</em>,<br />
               每一份计划都<em>属于你</em>。
