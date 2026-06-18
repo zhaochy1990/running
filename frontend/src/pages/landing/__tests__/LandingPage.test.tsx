@@ -12,10 +12,11 @@ beforeEach(() => {
   vi.stubGlobal(
     'IntersectionObserver',
     class {
+      cb: IntersectionObserverCallback
       observe = vi.fn()
       unobserve = vi.fn()
       disconnect = vi.fn()
-      constructor(public cb: IntersectionObserverCallback) {}
+      constructor(cb: IntersectionObserverCallback) { this.cb = cb }
     } as unknown as typeof IntersectionObserver,
   )
 })
