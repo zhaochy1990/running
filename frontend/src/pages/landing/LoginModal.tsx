@@ -37,7 +37,7 @@ export default function LoginModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="login-overlay"
+      className="login-overlay open"
       id="loginOverlay"
       role="dialog"
       aria-modal="true"

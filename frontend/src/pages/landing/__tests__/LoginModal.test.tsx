@@ -44,6 +44,14 @@ describe('LoginModal', () => {
     expect(mocks.navigate).not.toHaveBeenCalled()
   })
 
+  it('renders the overlay with the "open" class so it is visible when mounted', () => {
+    // The .login-overlay CSS rule is display:none until the "open" class is added.
+    // React mounts the modal conditionally, so it must always carry "open" — otherwise
+    // the modal is in the DOM but invisible (caught by the browser smoke, missed by jsdom).
+    renderModal()
+    expect(screen.getByRole('dialog', { name: '登录 STRIDE' })).toHaveClass('open')
+  })
+
   it('does not render OAuth or forgot-password entries', () => {
     renderModal()
     expect(screen.queryByText(/Google 继续/)).not.toBeInTheDocument()
