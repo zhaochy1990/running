@@ -33,7 +33,7 @@ export default function DataShowcase() {
         <div className="sec-head reveal" ref={secHeadRef}>
           <div className="eyebrow">训练数据 · 成果展示</div>
           <h2>你的训练,一屏看懂</h2>
-          <p>这是 STRIDE 仪表盘里的真实视图——里程、配速、负荷、分段,全都用同一套语言说话。</p>
+          <p>这是 STRIDE 仪表盘的示例视图——里程、配速、负荷、分段,全都用同一套语言说话。</p>
         </div>
 
         <div className="show-grid">
