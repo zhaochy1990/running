@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import LandingPage from '../LandingPage'
@@ -40,5 +40,19 @@ describe('LandingPage', () => {
   it('does not open the login modal by default', () => {
     renderLanding(false)
     expect(screen.queryByRole('dialog', { name: /登录 STRIDE/ })).not.toBeInTheDocument()
+  })
+
+  it('renders the login modal when initialLoginOpen is true', () => {
+    renderLanding(true)
+    expect(screen.getByRole('dialog', { name: /登录 STRIDE/ })).toBeInTheDocument()
+  })
+
+  it('opens the login modal when a nav login trigger is clicked', () => {
+    renderLanding(false)
+    // LandingNav and Hero both get onLogin; find a button that triggers it
+    const loginButtons = screen.getAllByRole('button', { name: /开始训练|登录/i })
+    expect(loginButtons.length).toBeGreaterThan(0)
+    fireEvent.click(loginButtons[0])
+    expect(screen.getByRole('dialog', { name: /登录 STRIDE/ })).toBeInTheDocument()
   })
 })

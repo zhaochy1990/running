@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import './landing.css'
 import LandingNav from './LandingNav'
+import LoginModal from './LoginModal'
 import Hero from './sections/Hero'
 import ReversePlan from './sections/ReversePlan'
 import Pillars from './sections/Pillars'
@@ -33,9 +34,7 @@ export default function LandingPage({ initialLoginOpen = false }: { initialLogin
       <Closer onLogin={openLogin} />
       <LandingFooter onLogin={openLogin} />
 
-      {/* LoginModal 在 Task 4 接入：{loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />} */}
-      {/* loginOpen state is managed here; Task 4 will mount LoginModal here */}
-      {loginOpen && null}
+      {loginOpen && <LoginModal onClose={() => setLoginOpen(false)} />}
     </div>
   )
 }
