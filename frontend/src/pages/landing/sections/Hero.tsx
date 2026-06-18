@@ -19,7 +19,7 @@ export default function Hero({ onLogin }: { onLogin: () => void }) {
             <button type="button" className="big-cta" onClick={onLogin}>免费开始训练
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
             </button>
-            <a className="ghost-cta" href="#reverse">看看怎么倒推 ↓</a>
+            <a className="ghost-cta" href="#reverse">往下看怎么练 ↓</a>
           </div>
         </div>
 
