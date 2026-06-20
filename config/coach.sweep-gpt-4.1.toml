@@ -19,11 +19,12 @@
 [generator]
 # Coach Agent — generates weekly + master plans, drives chat with tools
 provider     = "azure-openai"
-model        = "gpt-5.5"
-deployment   = "gpt-5.5"
+model        = "gpt-4.1"
+deployment   = "gpt-4.1"
 endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
 api_version  = "2025-04-01-preview"
-api_kind     = "responses"
+api_kind     = "chat-completions"
+temperature  = 0.4
 
 
 # ── Alternative generator models — verified reachable 2026-06-16 on the
@@ -67,7 +68,7 @@ api_kind     = "responses"
 # use) without risking truncation. If a phase ever does truncate, the
 # bottleneck is the Azure deployment's max_response_tokens (set at
 # deployment create time, NOT this config) — raise it in the Azure portal.
-max_tokens   = 131072
+max_tokens   = 16384
 # reasoning_effort intentionally NOT set — defaults to model's medium,
 # which is what S1 strategic reasoning (phase ordering, goal realism,
 # injury safety, distance specificity) needs. Lowering it to "low" or

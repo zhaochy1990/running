@@ -97,7 +97,7 @@ PROFILE: dict | None = None
 # ---------------------------------------------------------------------------
 
 DEBUG = os.environ.get("COACH_DEBUG") == "1"
-
+DEBUG = True  # <-- toggle this for quick on/off without env var
 
 class _LLMTap(BaseCallbackHandler):
     """Clean framed view of each LLM request + response as the graph runs."""
@@ -248,7 +248,12 @@ def main() -> int:
     # Round-trip validate + reconstruct the typed instance (safety net).
     plan = MasterPlan.model_validate(parsed)
 
-    out_path = _REPO_ROOT / "data" / USER_ID / "master_plan_draft.json"
+    # MASTER_PLAN_OUT env override lets a parallel model-sweep write each run to
+    # its own suffixed file (e.g. .../testing/master_plan_gpt-4.1.json) instead
+    # of clobbering the shared draft. Falls back to the canonical draft path.
+    _out_env = os.environ.get("MASTER_PLAN_OUT")
+    out_path = Path(_out_env) if _out_env else (_REPO_ROOT / "data" / USER_ID / "master_plan_draft.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(plan.model_dump(mode="json"), ensure_ascii=False, indent=2),
         encoding="utf-8",
