@@ -85,6 +85,7 @@
   .mphase{display:grid;grid-template-columns:120px 1fr;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
   .mphase:first-child{border-top:none}
   .mphase .pl{color:var(--muted);font-size:12px;font-family:ui-monospace,monospace}
+  .mphase .pweeks{margin-left:8px;font-size:13px;font-weight:600;color:var(--text)}
   .mphase .focus{color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.6}
   .ms{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px dashed var(--line);font-size:13px}
   .ms:first-child{border-top:none}
@@ -93,26 +94,25 @@
   .princ{padding-left:18px;margin:0;color:var(--muted);font-size:13px;line-height:1.7}
   h2.sec{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);margin:26px 0 12px;font-weight:600}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:6px 18px}
+  header.top select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;
+    padding:6px 10px;font-size:13px;max-width:260px}
+  header.top select:hover{border-color:var(--accent)}
+  .iconbtn{border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:8px;
+    padding:6px 11px;cursor:pointer;font-size:13px;transition:.15s}
+  .iconbtn:hover{border-color:var(--block);color:var(--block)}
 </style>
 </head>
 <body>
 <header class="top">
   <h1>STRIDE <span class="dot">●</span> Plan Viewer</h1>
   <span id="typeBadge"></span>
+  <select id="recSel" style="display:none" title="切换已存 plan"></select>
+  <button id="delRec" class="iconbtn" style="display:none" title="删除当前已存 plan">🗑</button>
   <span class="spacer"></span>
   <label class="drop" id="drop">📂 选择 / 拖入 JSON<input type="file" id="file" accept=".json,application/json"></label>
 </header>
 <div class="wrap">
-  <div id="root">
-    <div class="empty">
-      <div class="big">📋</div>
-      <div>拖入或选择一个 plan JSON 文件</div>
-      <div style="margin-top:8px;color:var(--faint);font-size:12.5px">
-        支持 SeasonPlanBundle · MasterPlan · WeeklyPlan<br>
-        （如 <code>season_bundle_draft.json</code> / <code>master_plan_draft.json</code> / <code>plan.json</code>）
-      </div>
-    </div>
-  </div>
+  <div id="root"></div>
 </div>
 <script>
 const $ = (h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
@@ -125,6 +125,18 @@ function toKm(m){if(m==null)return 0;return m<500?m:m/1000;}
 function fmtDur(s){if(!s)return '';const h=Math.floor(s/3600),m=Math.round((s%3600)/60);return h?`${h}h${String(m).padStart(2,'0')}`:`${m}min`;}
 function pace(m,s){const km=toKm(m);if(!km||!s)return '';const p=s/km;return `${Math.floor(p/60)}:${String(Math.round(p%60)).padStart(2,'0')}/km`;}
 function weekKm(w){return (w.sessions||[]).filter(s=>s.kind==='run').reduce((a,s)=>a+toKm(s.total_distance_m),0);}
+// Prefer the real per-week skeleton: count weekly_key_sessions assigned to this
+// phase (phase_id match). Accurate even when phase start/end don't sit on the
+// 7-day grid. Falls back to the date-span formula (stride_core
+// compute_total_weeks: (end-start).days//7+1) only when there's no skeleton —
+// that formula OVERCOUNTS by 1 when a phase boundary is off the week grid
+// (e.g. a 2-week taper 10-04→10-18 spans 14d → 3 by formula, but is 2 weeks).
+function phaseWeeks(p,plan){
+  const wk=(plan&&plan.weekly_key_sessions)||[];
+  const n=wk.filter(w=>w.phase_id===p.id).length;
+  if(n>0)return n;
+  const s=p.start_date,e=p.end_date;if(!s||!e)return 0;const a=new Date(s),b=new Date(e);if(isNaN(a)||isNaN(b)||b<a)return 0;return Math.floor((b-a)/864e5/7)+1;
+}
 
 function badge(text,color){return `<span class="badge" style="color:${color};border-color:${color}55;background:${color}1a">${esc(text)}</span>`;}
 function ptBadge(t){const c=`var(--${t||'base'})`;return badge(PT_LABEL[t]||t||'?',c);}
@@ -232,6 +244,7 @@ function renderMaster(d){
   root.appendChild($(`<div class="summary-bar">
     <div><div class="k">类型</div><div class="v">赛季总纲 MasterPlan</div></div>
     <div><div class="k">阶段</div><div class="v">${(d.phases||[]).length}</div></div>
+    <div><div class="k">总周数</div><div class="v">${(d.phases||[]).reduce((a,p)=>a+phaseWeeks(p,d),0)}</div></div>
     <div><div class="k">里程碑</div><div class="v">${(d.milestones||[]).length}</div></div>
     <div><div class="k">周期</div><div class="v mono" style="font-size:14px">${esc(d.start_date||'')} → ${esc(d.end_date||'')}</div></div>
     <div><div class="k">生成模型</div><div class="v mono" style="font-size:14px">${esc(d.generated_by||'?')}</div></div>
@@ -240,7 +253,7 @@ function renderMaster(d){
   const pc=$('<div class="card"></div>');
   (d.phases||[]).forEach(p=>{
     pc.appendChild($(`<div class="mphase">
-      <div><div>${ptBadge(p.phase_type)}</div><div class="pl" style="margin-top:6px">${esc(p.start_date||'')}<br>→ ${esc(p.end_date||'')}</div>
+      <div><div>${ptBadge(p.phase_type)}<span class="pweeks">${phaseWeeks(p,d)} 周</span></div><div class="pl" style="margin-top:6px">${esc(p.start_date||'')}<br>→ ${esc(p.end_date||'')}</div>
         <div class="pl" style="margin-top:6px;color:var(--accent)">${p.weekly_distance_km_low}–${p.weekly_distance_km_high} km/wk</div></div>
       <div><div style="font-weight:600">${esc(p.name||'')}</div>
         ${(p.key_session_types||[]).map(k=>badge(k,'var(--faint)')).join(' ')}
@@ -268,6 +281,17 @@ function renderMaster(d){
   return root;
 }
 
+const EMPTY_HTML=`<div class="empty">
+  <div class="big">📋</div>
+  <div>拖入或选择一个 plan JSON 文件</div>
+  <div style="margin-top:8px;color:var(--faint);font-size:12.5px">
+    支持 SeasonPlanBundle · MasterPlan · WeeklyPlan<br>
+    （如 <code>season_bundle_draft.json</code> / <code>master_plan_draft.json</code> / <code>plan.json</code>）<br>
+    加载后会记住到本机，可用上方下拉切换之前的 plan
+  </div>
+</div>`;
+function resetEmpty(){document.getElementById('root').innerHTML=EMPTY_HTML;document.getElementById('typeBadge').innerHTML='';}
+
 function render(d){
   const root=document.getElementById('root');
   const type=detect(d);
@@ -281,15 +305,64 @@ function render(d){
   else{tb.innerHTML='';root.innerHTML=`<div class="empty"><div class="big">⚠️</div>无法识别的 JSON 结构<div style="margin-top:8px;color:var(--faint)">期望 SeasonPlanBundle / MasterPlan / WeeklyPlan</div></div>`;}
 }
 
+// ---- saved-plan records (localStorage) ----
+const LS_KEY='stride_pv_records_v1';
+function loadStore(){try{return JSON.parse(localStorage.getItem(LS_KEY))||{records:[],last:null};}catch(e){return {records:[],last:null};}}
+function saveStore(s){try{localStorage.setItem(LS_KEY,JSON.stringify(s));}catch(e){alert('保存到本机失败（localStorage 可能已满）：\n'+e.message);}}
+function refreshSelect(){
+  const s=loadStore(),sel=document.getElementById('recSel'),del=document.getElementById('delRec');
+  const recs=[...s.records].sort((a,b)=>(a.label||'').localeCompare(b.label||''));
+  sel.innerHTML='<option value="">— 切换 plan —</option>'+recs.map(r=>`<option value="${esc(r.id)}"${r.id===s.last?' selected':''}>${esc(r.label)}</option>`).join('');
+  const has=recs.length>0;
+  sel.style.display=has?'':'none'; del.style.display=has?'':'none';
+}
+function renderRecord(id){
+  const s=loadStore(),rec=s.records.find(x=>x.id===id);
+  if(!rec){resetEmpty();return;}
+  s.last=id;saveStore(s);render(rec.json);
+}
+
 function load(file){
   const r=new FileReader();
-  r.onload=()=>{try{render(JSON.parse(r.result));}catch(e){document.getElementById('root').innerHTML=`<div class="empty"><div class="big">❌</div>JSON 解析失败<div style="margin-top:8px;color:var(--faint)">${esc(e.message)}</div></div>`;}};
+  r.onload=()=>{
+    let d;
+    try{d=JSON.parse(r.result);}
+    catch(e){document.getElementById('root').innerHTML=`<div class="empty"><div class="big">❌</div>JSON 解析失败<div style="margin-top:8px;color:var(--faint)">${esc(e.message)}</div></div>`;return;}
+    const type=detect(d);
+    if(type==='unknown'){render(d);return;}
+    // use the local file name (sans .json) as the dropdown label + key
+    const name=(file.name||'plan').replace(/\.(json)$/i,'').trim()||(file.name||'plan');
+    const s=loadStore();
+    const rec={id:name,name,type,label:name,ts:Date.now(),json:d};
+    s.records=s.records.filter(x=>x.id!==name);
+    s.records.push(rec);
+    s.last=name;
+    saveStore(s);refreshSelect();
+    render(d);
+  };
   r.readAsText(file,'utf-8');
 }
+
 const drop=document.getElementById('drop');
 document.getElementById('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
+document.getElementById('recSel').onchange=e=>{e.target.value?renderRecord(e.target.value):resetEmpty();};
+document.getElementById('delRec').onclick=()=>{
+  const id=document.getElementById('recSel').value;
+  const s=loadStore();
+  if(!id){alert('先在下拉里选一个要删除的 plan');return;}
+  const rec=s.records.find(x=>x.id===id);
+  if(!confirm('删除已存 plan：'+(rec?rec.label:id)+'？（仅删除本机记录，不动磁盘文件）'))return;
+  s.records=s.records.filter(x=>x.id!==id);
+  s.last=s.records.length?s.records[s.records.length-1].id:null;
+  saveStore(s);refreshSelect();
+  s.last?renderRecord(s.last):resetEmpty();
+};
 ['dragover','dragenter'].forEach(ev=>document.body.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
 ['dragleave','drop'].forEach(ev=>document.body.addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'&&e.dataTransfer.files[0])load(e.dataTransfer.files[0]);drop.classList.remove('over');}));
+
+// ---- init: restore last viewed record ----
+refreshSelect();
+(function(){const s=loadStore();s.last&&s.records.some(x=>x.id===s.last)?renderRecord(s.last):resetEmpty();})();
 </script>
 </body>
 </html>
