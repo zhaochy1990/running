@@ -137,12 +137,9 @@ def test_pbs_multiple_distances(app_client):
     assert "FM" not in pb_map
 
 
-def test_pbs_uses_fastest_continuous_segment_when_activity_is_longer(app_client):
-    """A 13.36 km workout with an embedded 5K in ~19:30 should count as
-    the 5K best effort. This keeps /pbs aligned with the VO2max PB channel.
-    """
-    client, token, tmp_path, _ = app_client
-    db = _make_db(tmp_path)
+def _seed_segment_fixture(db) -> dict:
+    """Insert the 13.36 km segment-PB fixture activity + timeseries. Returns the
+    activity dict. The run is long enough to contain 1K/3K/5K best efforts."""
     data = json.loads(SEGMENT_FIXTURE.read_text())
     activity = data["activity"]
     db._conn.execute(
@@ -160,6 +157,16 @@ def test_pbs_uses_fastest_continuous_segment_when_activity_is_longer(app_client)
             (activity["label_id"], point["timestamp"], point["distance"]),
         )
     db._conn.commit()
+    return activity
+
+
+def test_pbs_uses_fastest_continuous_segment_when_activity_is_longer(app_client):
+    """A 13.36 km workout with an embedded 5K in ~19:30 should count as
+    the 5K best effort. This keeps /pbs aligned with the VO2max PB channel.
+    """
+    client, token, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    activity = _seed_segment_fixture(db)
     db.close()
 
     resp = client.get(f"/api/{USER_UUID}/pbs", headers=_auth(token))
@@ -308,29 +315,6 @@ def test_pbs_empty_db(app_client):
     data = resp.json()
     assert data["pbs"] == []
     assert data["user_id"] == USER_UUID
-
-
-def _seed_segment_fixture(db) -> dict:
-    """Insert the 13.36 km segment-PB fixture activity + timeseries. Returns the
-    activity dict. The run is long enough to contain 1K/3K/5K best efforts."""
-    data = json.loads(SEGMENT_FIXTURE.read_text())
-    activity = data["activity"]
-    db._conn.execute(
-        """INSERT INTO activities
-           (label_id, sport_type, date, distance_m, duration_s, avg_hr,
-            max_hr, train_kind, train_type, pauses, provider)
-           VALUES (:label_id, :sport_type, :date, :distance_m, :duration_s,
-                   :avg_hr, :max_hr, :train_kind, :train_type, :pauses,
-                   :provider)""",
-        activity,
-    )
-    for point in data["timeseries"]:
-        db._conn.execute(
-            "INSERT INTO timeseries (label_id, timestamp, distance) VALUES (?, ?, ?)",
-            (activity["label_id"], point["timestamp"], point["distance"]),
-        )
-    db._conn.commit()
-    return activity
 
 
 def test_pbs_includes_1k_and_3k_segments(app_client):
