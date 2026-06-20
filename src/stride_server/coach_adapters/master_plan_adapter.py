@@ -24,12 +24,14 @@ duplication; they are pure functions with no shared mutable state.
 from __future__ import annotations
 
 import logging
+import time
 
 from coach.graphs.generation.state import GenState
 from coach.schemas import ReviewReport
 from stride_core.timefmt import today_shanghai
 
 from .continuity_analyzer import analyze_continuity
+from .phase_detector import detect_current_phase
 from ..job_runner import JobStage, update_job
 from ..llm_client import LLMClient
 from ..master_plan_generator import (
@@ -134,10 +136,21 @@ def load_master_context(state: GenState) -> dict:
     profile = payload.get("profile")
     continuity = None
     body_composition: dict | None = None
+    current_phase = None
     try:
         from stride_core.db import Database
         db = Database(user=user_id)
-        continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=today_shanghai())
+        as_of = today_shanghai()
+        continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)
+        # Authoritative current-phase position (deterministic + LLM cross-val);
+        # reuse the continuity we just computed to avoid a second DB pass.
+        try:
+            current_phase = detect_current_phase(
+                db, user_id=user_id, goal=goal, profile=profile,
+                as_of=as_of, continuity=continuity,
+            )
+        except Exception as exc:  # noqa: BLE001 — detection must not hard-fail gen
+            logger.warning("load_master_context: phase detection failed: %s", exc)
         # Body-composition baseline (the performance baseline is already loaded
         # above via _query_history → race_predictions). Reuse the same db handle.
         try:
@@ -152,6 +165,7 @@ def load_master_context(state: GenState) -> dict:
         "history_summary": history_summary,
         "fitness_state": fitness_state,
         "continuity": continuity.model_dump() if continuity is not None else None,
+        "current_phase": current_phase.model_dump() if current_phase is not None else None,
         "body_composition": body_composition,
         "body_composition_summary": (
             _format_body_composition_summary(body_composition)
@@ -199,12 +213,19 @@ def generate_master_plan(state: GenState) -> dict:
         from coach.schemas import ContinuitySignals
         continuity = ContinuitySignals.model_validate(continuity_raw)
 
+    current_phase_raw = ctx.get("current_phase")
+    current_phase = None
+    if current_phase_raw:
+        from coach.schemas import CurrentPhaseContext
+        current_phase = CurrentPhaseContext.model_validate(current_phase_raw)
+
     today = today_shanghai().isoformat()
     system_prompt = _build_system_prompt(
         goal, profile, history_summary, fitness_state, today,
         continuity=continuity,
         body_composition=ctx.get("body_composition"),
         body_composition_summary=ctx.get("body_composition_summary"),
+        current_phase=current_phase,
     )
 
     user_text = "请基于上述信息生成训练总纲"
@@ -233,7 +254,19 @@ def generate_master_plan(state: GenState) -> dict:
     # Passing None here means "use the construction-time defaults"; this
     # keeps the budget tunable from the config file alone — no code edit
     # required to bump output size for S1 master plan generation.
+    logger.info(
+        "generate_master_plan: LLM call starting (iteration=%d, prompt=%d chars%s)",
+        iteration,
+        len(system_prompt),
+        ", with rule-violation feedback" if (iteration > 0 and violations) else "",
+    )
+    _t0 = time.monotonic()
     raw = client.chat_sync(system_prompt, user_message)
+    logger.info(
+        "generate_master_plan: LLM call returned in %.1fs (raw=%d chars)",
+        time.monotonic() - _t0,
+        len(raw),
+    )
 
     parsed = _parse_llm_output(raw)
     if parsed is None:

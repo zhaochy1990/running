@@ -19,6 +19,7 @@ from .conversation import (
     assistant_parts_from_message,
 )
 from .continuity import ContinuitySignals
+from .current_phase import CurrentPhaseContext
 from .job import CoachJob, JobStage, JobStatus, JobType
 from .review import ReviewClass, ReviewIssue, ReviewReport, Severity, Verdict
 from .season_bundle import PhaseReview, PhaseWeeks, SeasonPlanBundle
@@ -36,6 +37,7 @@ __all__ = [
     "ToolCall",
     "assistant_parts_from_message",
     "ContinuitySignals",
+    "CurrentPhaseContext",
     "CoachJob",
     "JobStage",
     "JobStatus",
