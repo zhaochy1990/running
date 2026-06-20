@@ -366,3 +366,38 @@ def test_detect_personal_bests_default_excludes_1k_3k(app_client):
 
     # Guard: the display set is the canonical four plus 1K/3K.
     assert set(PB_DISPLAY_DISTANCES) == set(CANONICAL_RACE_DISTANCES) | {"1K", "3K"}
+
+
+def test_pbs_1k_3k_activity_level_fallback(app_client):
+    """Short GPS-less runs (no timeseries) are matched by the activity-level
+    fallback for 1K/3K. Guards the ``PB_DISPLAY_DISTANCES[race_type]`` lookup in
+    ``_activity_level_candidates``: using ``CANONICAL_RACE_DISTANCES`` there
+    would KeyError on 1K/3K, breaking /pbs for short standalone runs. The
+    segment-based tests don't exercise this path."""
+    client, token, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    # No timeseries rows → forces the activity-level distance-match path.
+    db._conn.executemany(
+        "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [
+            ("track_1k", 100, "2025-04-01", 1000.0, 200.0),  # 3:20 — within 1K tolerance
+            ("track_3k", 100, "2025-04-02", 3000.0, 720.0),  # 12:00 — within 3K tolerance
+        ],
+    )
+    db._conn.commit()
+    db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/pbs", headers=_auth(token))
+    assert resp.status_code == 200, resp.text
+    pb_map = {p["distance"]: p for p in resp.json()["pbs"]}
+
+    assert "1K" in pb_map
+    assert pb_map["1K"]["pb_time_sec"] == 200.0
+    assert pb_map["1K"]["label_id"] == "track_1k"
+    assert pb_map["1K"]["source"] == "activity"
+
+    assert "3K" in pb_map
+    assert pb_map["3K"]["pb_time_sec"] == 720.0
+    assert pb_map["3K"]["label_id"] == "track_3k"
+    assert pb_map["3K"]["source"] == "activity"
