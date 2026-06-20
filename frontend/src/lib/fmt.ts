@@ -38,3 +38,15 @@ export function fmtPace(totalSeconds: number | null | undefined, distanceKm: num
   const s = total % 60
   return `${m}:${String(s).padStart(2, '0')}/km`
 }
+
+/** Clock format: M:SS under an hour, H:MM:SS at/over an hour. '—' when empty. */
+export function fmtClock(seconds: number | null | undefined): string {
+  if (seconds == null || !isFinite(seconds) || seconds <= 0) return '—'
+  const total = Math.round(seconds)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const ss = String(s).padStart(2, '0')
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${ss}`
+  return `${m}:${ss}`
+}

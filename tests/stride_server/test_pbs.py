@@ -137,12 +137,9 @@ def test_pbs_multiple_distances(app_client):
     assert "FM" not in pb_map
 
 
-def test_pbs_uses_fastest_continuous_segment_when_activity_is_longer(app_client):
-    """A 13.36 km workout with an embedded 5K in ~19:30 should count as
-    the 5K best effort. This keeps /pbs aligned with the VO2max PB channel.
-    """
-    client, token, tmp_path, _ = app_client
-    db = _make_db(tmp_path)
+def _seed_segment_fixture(db) -> dict:
+    """Insert the 13.36 km segment-PB fixture activity + timeseries. Returns the
+    activity dict. The run is long enough to contain 1K/3K/5K best efforts."""
     data = json.loads(SEGMENT_FIXTURE.read_text())
     activity = data["activity"]
     db._conn.execute(
@@ -160,6 +157,16 @@ def test_pbs_uses_fastest_continuous_segment_when_activity_is_longer(app_client)
             (activity["label_id"], point["timestamp"], point["distance"]),
         )
     db._conn.commit()
+    return activity
+
+
+def test_pbs_uses_fastest_continuous_segment_when_activity_is_longer(app_client):
+    """A 13.36 km workout with an embedded 5K in ~19:30 should count as
+    the 5K best effort. This keeps /pbs aligned with the VO2max PB channel.
+    """
+    client, token, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    activity = _seed_segment_fixture(db)
     db.close()
 
     resp = client.get(f"/api/{USER_UUID}/pbs", headers=_auth(token))
@@ -308,3 +315,89 @@ def test_pbs_empty_db(app_client):
     data = resp.json()
     assert data["pbs"] == []
     assert data["user_id"] == USER_UUID
+
+
+def test_pbs_includes_1k_and_3k_segments(app_client):
+    """The /pbs route uses the wide display set, so a long run yields 1K and 3K
+    best efforts ordered before 5K, with strictly increasing times."""
+    client, token, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    _seed_segment_fixture(db)
+    db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/pbs", headers=_auth(token))
+    assert resp.status_code == 200, resp.text
+    pbs = resp.json()["pbs"]
+    pb_map = {p["distance"]: p for p in pbs}
+
+    assert "1K" in pb_map
+    assert "3K" in pb_map
+    assert "5K" in pb_map
+    # Absolute fastest-segment durations must increase with distance.
+    assert pb_map["1K"]["pb_time_sec"] < pb_map["3K"]["pb_time_sec"]
+    assert pb_map["3K"]["pb_time_sec"] < pb_map["5K"]["pb_time_sec"]
+    # Response order follows DISTANCE_ORDER: 1K, 3K come before 5K.
+    order = [p["distance"] for p in pbs]
+    assert order.index("1K") < order.index("3K") < order.index("5K")
+
+
+def test_detect_personal_bests_default_excludes_1k_3k(app_client):
+    """The default (narrow) detector must NOT emit 1K/3K — this is what the
+    ability/VDOT model and coach tool consume. The wide set opts in explicitly."""
+    from stride_core.pb_records import (
+        CANONICAL_RACE_DISTANCES,
+        PB_DISPLAY_DISTANCES,
+        detect_personal_bests,
+    )
+
+    _, _, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    _seed_segment_fixture(db)
+
+    narrow = detect_personal_bests(db)  # default
+    assert "1K" not in narrow
+    assert "3K" not in narrow
+    assert set(narrow).issubset({"5K", "10K", "HM", "FM"})
+
+    wide = detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES)
+    assert "1K" in wide
+    assert "3K" in wide
+    db.close()
+
+    # Guard: the display set is the canonical four plus 1K/3K.
+    assert set(PB_DISPLAY_DISTANCES) == set(CANONICAL_RACE_DISTANCES) | {"1K", "3K"}
+
+
+def test_pbs_1k_3k_activity_level_fallback(app_client):
+    """Short GPS-less runs (no timeseries) are matched by the activity-level
+    fallback for 1K/3K. Guards the ``PB_DISPLAY_DISTANCES[race_type]`` lookup in
+    ``_activity_level_candidates``: using ``CANONICAL_RACE_DISTANCES`` there
+    would KeyError on 1K/3K, breaking /pbs for short standalone runs. The
+    segment-based tests don't exercise this path."""
+    client, token, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    # No timeseries rows → forces the activity-level distance-match path.
+    db._conn.executemany(
+        "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [
+            ("track_1k", 100, "2025-04-01", 1000.0, 200.0),  # 3:20 — within 1K tolerance
+            ("track_3k", 100, "2025-04-02", 3000.0, 720.0),  # 12:00 — within 3K tolerance
+        ],
+    )
+    db._conn.commit()
+    db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/pbs", headers=_auth(token))
+    assert resp.status_code == 200, resp.text
+    pb_map = {p["distance"]: p for p in resp.json()["pbs"]}
+
+    assert "1K" in pb_map
+    assert pb_map["1K"]["pb_time_sec"] == 200.0
+    assert pb_map["1K"]["label_id"] == "track_1k"
+    assert pb_map["1K"]["source"] == "activity"
+
+    assert "3K" in pb_map
+    assert pb_map["3K"]["pb_time_sec"] == 720.0
+    assert pb_map["3K"]["label_id"] == "track_3k"
+    assert pb_map["3K"]["source"] == "activity"

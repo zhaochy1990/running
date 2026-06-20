@@ -917,6 +917,37 @@ export interface AbilityWeights {
   l4_weights: Record<string, number>
 }
 
+export interface PBHistoryPoint {
+  date: string
+  best_so_far_sec: number
+  label_id: string | null
+  source: string | null
+  segment_start_s: number | null
+  segment_end_s: number | null
+}
+
+export interface PBEntry {
+  distance: string            // "1K" | "3K" | "5K" | "10K" | "HM" | "FM"
+  race_type: string | null
+  pb_time_sec: number
+  achieved_at: string         // Shanghai YYYY-MM-DD
+  label_id: string
+  source: string | null
+  segment_start_s: number | null
+  segment_end_s: number | null
+  history: PBHistoryPoint[]
+}
+
+export interface PBsResponse {
+  user_id: string
+  computed_at: string
+  pbs: PBEntry[]
+}
+
+export function fetchPbs(user: string) {
+  return fetchJSON<PBsResponse>(`/${user}/pbs`)
+}
+
 export function fetchAbilityCurrent(user: string, refresh = false) {
   const qs = refresh ? '?refresh=1' : ''
   return fetchJSON<AbilityCurrent>(`/${user}/ability/current${qs}`)

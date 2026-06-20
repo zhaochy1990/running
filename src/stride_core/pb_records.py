@@ -23,9 +23,21 @@ CANONICAL_RACE_DISTANCES: dict[str, float] = {
     "full": 42195.0,
 }
 
-DISTANCE_ORDER = ["5K", "10K", "HM", "FM"]
+# Display-only superset used by the /pbs route. 1K/3K are intentionally NOT in
+# CANONICAL_RACE_DISTANCES: the Daniels VDOT formula has no short-distance guard
+# (see compute_pb_vdot_for_segment), so feeding 1K/3K into the ability model
+# would inflate VO2max. Keep them on the display path only.
+PB_DISPLAY_DISTANCES: dict[str, float] = {
+    "1K": 1000.0,
+    "3K": 3000.0,
+    **CANONICAL_RACE_DISTANCES,
+}
+
+DISTANCE_ORDER = ["1K", "3K", "5K", "10K", "HM", "FM"]
 
 _DISPLAY_DISTANCE_BY_RACE_TYPE = {
+    "1K": "1K",
+    "3K": "3K",
     "5K": "5K",
     "10K": "10K",
     "half": "HM",
@@ -37,6 +49,8 @@ _RACE_TYPE_BY_DISPLAY_DISTANCE = {
 }
 
 ACTIVITY_DISTANCE_TOLERANCE_M: dict[str, tuple[float, float]] = {
+    "1K": (950.0, 1050.0),
+    "3K": (2900.0, 3100.0),
     "5K": (4800.0, 5200.0),
     "10K": (9800.0, 10200.0),
     "HM": (20800.0, 21300.0),
@@ -86,7 +100,9 @@ class BestEffortCandidate:
         return entry
 
 
-def detect_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
+def detect_personal_bests(
+    db: Any, *, distances: dict[str, float] = CANONICAL_RACE_DISTANCES,
+) -> dict[str, dict[str, Any]]:
     """Return best-effort PBs keyed by display distance.
 
     Rows are scanned chronologically so each entry includes a best-so-far
@@ -109,7 +125,7 @@ def detect_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
     history_by_distance: dict[str, list[dict[str, Any]]] = {}
 
     for row in rows:
-        candidates = best_effort_candidates_for_activity(db, row)
+        candidates = best_effort_candidates_for_activity(db, row, distances=distances)
         for candidate in sorted(candidates, key=lambda c: DISTANCE_ORDER.index(c.distance)):
             previous = best_by_distance.get(candidate.distance)
             if previous is not None and candidate.duration_s >= previous:
@@ -127,6 +143,7 @@ def best_effort_candidates_for_activity(
     activity: Mapping[str, Any],
     *,
     include_activity_fallback: bool = True,
+    distances: dict[str, float] = CANONICAL_RACE_DISTANCES,
 ) -> list[BestEffortCandidate]:
     label_id = str(_get(activity, "label_id") or "")
     if not label_id:
@@ -148,7 +165,7 @@ def best_effort_candidates_for_activity(
         if len(ts_norm) >= 2:
             pauses = parse_pauses(_get(activity, "pauses"), t0=ts_rows[0]["timestamp"])
             for race_type, segment in best_distance_candidates(
-                ts_norm, pauses, CANONICAL_RACE_DISTANCES,
+                ts_norm, pauses, distances,
             ).items():
                 out.append(BestEffortCandidate(
                     distance=_DISPLAY_DISTANCE_BY_RACE_TYPE[race_type],
@@ -163,7 +180,8 @@ def best_effort_candidates_for_activity(
                 ))
 
     if include_activity_fallback:
-        out.extend(_activity_level_candidates(activity, date_disp, label_id))
+        allowed = {_DISPLAY_DISTANCE_BY_RACE_TYPE[rt] for rt in distances}
+        out.extend(_activity_level_candidates(activity, date_disp, label_id, allowed))
 
     best: dict[str, BestEffortCandidate] = {}
     for candidate in out:
@@ -246,6 +264,7 @@ def _activity_level_candidates(
     activity: Mapping[str, Any],
     date_disp: str,
     label_id: str,
+    allowed_display: set[str],
 ) -> list[BestEffortCandidate]:
     distance_raw = _get(activity, "distance_m") or 0.0
     duration_s = _get(activity, "duration_s") or 0.0
@@ -254,13 +273,15 @@ def _activity_level_candidates(
     distance_m = _activity_distance_to_meters(float(distance_raw))
     out: list[BestEffortCandidate] = []
     for display, (low, high) in ACTIVITY_DISTANCE_TOLERANCE_M.items():
+        if display not in allowed_display:
+            continue
         if not (low <= distance_m <= high):
             continue
         race_type = _RACE_TYPE_BY_DISPLAY_DISTANCE[display]
         out.append(BestEffortCandidate(
             distance=display,
             race_type=race_type,
-            distance_m=CANONICAL_RACE_DISTANCES[race_type],
+            distance_m=PB_DISPLAY_DISTANCES[race_type],
             duration_s=float(duration_s),
             achieved_at=date_disp,
             label_id=label_id,
@@ -300,6 +321,7 @@ __all__ = [
     "BestEffortCandidate",
     "ACTIVITY_DISTANCE_TOLERANCE_M",
     "CANONICAL_RACE_DISTANCES",
+    "PB_DISPLAY_DISTANCES",
     "DISTANCE_ORDER",
     "best_effort_candidates_for_activity",
     "detect_personal_bests",
