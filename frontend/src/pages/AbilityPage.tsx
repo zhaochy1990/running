@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useUser } from '../UserContextValue'
 import {
-  fetchAbilityCurrent, fetchAbilityHistory, fetchAbilityWeights,
+  fetchAbilityCurrent, fetchAbilityHistory, fetchAbilityWeights, fetchPbs,
   triggerAbilityBackfill,
-  type AbilityCurrent, type AbilityHistoryPoint, type RaceEstimates,
+  type AbilityCurrent, type AbilityHistoryPoint, type PBEntry, type RaceEstimates,
 } from '../api'
 import AbilityHero from '../components/AbilityHero'
 import AbilityTriptych from '../components/AbilityTriptych'
 import AbilityRadar from '../components/AbilityRadar'
 import AbilityHistoryChart from '../components/AbilityHistoryChart'
+import AbilityPBTable from '../components/AbilityPBTable'
 import Vo2maxPanel from '../components/Vo2maxPanel'
 import ViewHead from '../components/ViewHead'
 
@@ -18,6 +19,7 @@ export default function AbilityPage() {
   const { user } = useUser()
   const [current, setCurrent] = useState<AbilityCurrent | null>(null)
   const [history, setHistory] = useState<AbilityHistoryPoint[]>([])
+  const [pbs, setPbs] = useState<PBEntry[]>([])
   const [weights, setWeights] = useState<Record<string, number> | null>(null)
   const [days, setDays] = useState(90)
   const [loading, setLoading] = useState(true)
@@ -46,10 +48,12 @@ export default function AbilityPage() {
       fetchAbilityCurrent(user),
       fetchAbilityHistory(user, days),
       fetchAbilityWeights(user).catch(() => null),
+      fetchPbs(user).catch(() => ({ pbs: [] as PBEntry[] })),
     ])
-      .then(async ([cur, hist, w]) => {
+      .then(async ([cur, hist, w, pbResp]) => {
         setCurrent(cur)
         setWeights(w?.l4_weights ?? null)
+        setPbs(pbResp.pbs)
         // Auto-trigger 180d backfill if the history table is empty (first visit).
         if (hist.length === 0) {
           setBackfilling(true)
@@ -143,6 +147,10 @@ export default function AbilityPage() {
             ) : (
               <AbilityHistoryChart history={history} days={days} onDaysChange={setDays} />
             )}
+          </div>
+
+          <div className="mb-6">
+            <AbilityPBTable pbs={pbs} />
           </div>
         </div>
       ) : null}
