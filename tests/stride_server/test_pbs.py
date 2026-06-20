@@ -308,3 +308,77 @@ def test_pbs_empty_db(app_client):
     data = resp.json()
     assert data["pbs"] == []
     assert data["user_id"] == USER_UUID
+
+
+def _seed_segment_fixture(db) -> dict:
+    """Insert the 13.36 km segment-PB fixture activity + timeseries. Returns the
+    activity dict. The run is long enough to contain 1K/3K/5K best efforts."""
+    data = json.loads(SEGMENT_FIXTURE.read_text())
+    activity = data["activity"]
+    db._conn.execute(
+        """INSERT INTO activities
+           (label_id, sport_type, date, distance_m, duration_s, avg_hr,
+            max_hr, train_kind, train_type, pauses, provider)
+           VALUES (:label_id, :sport_type, :date, :distance_m, :duration_s,
+                   :avg_hr, :max_hr, :train_kind, :train_type, :pauses,
+                   :provider)""",
+        activity,
+    )
+    for point in data["timeseries"]:
+        db._conn.execute(
+            "INSERT INTO timeseries (label_id, timestamp, distance) VALUES (?, ?, ?)",
+            (activity["label_id"], point["timestamp"], point["distance"]),
+        )
+    db._conn.commit()
+    return activity
+
+
+def test_pbs_includes_1k_and_3k_segments(app_client):
+    """The /pbs route uses the wide display set, so a long run yields 1K and 3K
+    best efforts ordered before 5K, with strictly increasing times."""
+    client, token, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    _seed_segment_fixture(db)
+    db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/pbs", headers=_auth(token))
+    assert resp.status_code == 200, resp.text
+    pbs = resp.json()["pbs"]
+    pb_map = {p["distance"]: p for p in pbs}
+
+    assert "1K" in pb_map
+    assert "3K" in pb_map
+    assert "5K" in pb_map
+    # Absolute fastest-segment durations must increase with distance.
+    assert pb_map["1K"]["pb_time_sec"] < pb_map["3K"]["pb_time_sec"]
+    assert pb_map["3K"]["pb_time_sec"] < pb_map["5K"]["pb_time_sec"]
+    # Response order follows DISTANCE_ORDER: 1K, 3K come before 5K.
+    order = [p["distance"] for p in pbs]
+    assert order.index("1K") < order.index("3K") < order.index("5K")
+
+
+def test_detect_personal_bests_default_excludes_1k_3k(app_client):
+    """The default (narrow) detector must NOT emit 1K/3K — this is what the
+    ability/VDOT model and coach tool consume. The wide set opts in explicitly."""
+    from stride_core.pb_records import (
+        CANONICAL_RACE_DISTANCES,
+        PB_DISPLAY_DISTANCES,
+        detect_personal_bests,
+    )
+
+    _, _, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    _seed_segment_fixture(db)
+
+    narrow = detect_personal_bests(db)  # default
+    assert "1K" not in narrow
+    assert "3K" not in narrow
+    assert set(narrow).issubset({"5K", "10K", "HM", "FM"})
+
+    wide = detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES)
+    assert "1K" in wide
+    assert "3K" in wide
+    db.close()
+
+    # Guard: the display set is the canonical four plus 1K/3K.
+    assert set(PB_DISPLAY_DISTANCES) == set(CANONICAL_RACE_DISTANCES) | {"1K", "3K"}
