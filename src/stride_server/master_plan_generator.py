@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 if TYPE_CHECKING:
-    from coach.schemas import ContinuitySignals
+    from coach.schemas import ContinuitySignals, CurrentPhaseContext
 
 from stride_core.master_plan import (
     KeySession,
@@ -323,7 +323,9 @@ def _query_history(user_id: str) -> dict[str, Any]:
     """Query activities DB for a 3-year training history summary.
 
     Returns a dict with keys: monthly_km, max_weekly_km, total_activities,
-    best_5k_s, best_10k_s, best_hm_s, best_fm_s.
+    best_*_s (REAL personal bests — actual achieved efforts), and pred_*_s
+    (COROS fitness-based race predictions — current-fitness ceilings, NOT
+    achieved results; kept separate so milestones anchor to real PBs).
 
     All failures are silently absorbed — returns zeros / empty lists rather
     than blocking the generation flow.
@@ -336,6 +338,10 @@ def _query_history(user_id: str) -> dict[str, Any]:
         "best_10k_s": None,
         "best_hm_s": None,
         "best_fm_s": None,
+        "pred_5k_s": None,
+        "pred_10k_s": None,
+        "pred_hm_s": None,
+        "pred_fm_s": None,
     }
     try:
         from stride_core.db import Database
@@ -392,18 +398,44 @@ def _query_history(user_id: str) -> dict[str, Any]:
         ).fetchone()
         result["total_activities"] = row[0] or 0
 
-        # Best race times from race_predictions table
+        # Real personal bests — actual achieved efforts from the activity
+        # history via the canonical single-source detector (segment-matched,
+        # whole-activity fallback). This is DISTINCT from the COROS
+        # race_predictions below, which are fitness-based ESTIMATES (optimistic
+        # ceilings), not results. Conflating them anchored milestones to paces
+        # the athlete has never actually run (e.g. a "PB 38:38" 10K when the real
+        # best is 40:06). Reuses the same detector as routes/pbs + ability +
+        # the coach get_pbs tool (athlete-baseline single-source rule).
+        try:
+            from stride_core.pb_records import detect_personal_bests
+            pb_map = detect_personal_bests(db)
+            pb_key = {
+                "5K": "best_5k_s",
+                "10K": "best_10k_s",
+                "HM": "best_hm_s",
+                "FM": "best_fm_s",
+            }
+            for disp, key in pb_key.items():
+                entry = pb_map.get(disp)
+                if entry and entry.get("pb_time_sec"):
+                    result[key] = round(entry["pb_time_sec"])
+        except Exception as exc:  # noqa: BLE001 — PB detection must not block gen
+            logger.warning("_query_history: PB detection failed for %s: %s", user_id, exc)
+
+        # COROS fitness-based race predictions — current-fitness ceilings, NOT
+        # achieved results. Kept as a SEPARATE signal (pred_*_s) so the planner
+        # sees what current fitness projects without mistaking it for a PB.
         preds = conn.execute(
             "SELECT race_type, duration_s FROM race_predictions"
         ).fetchall()
-        type_map = {
-            "5K": "best_5k_s",
-            "10K": "best_10k_s",
-            "Half Marathon": "best_hm_s",
-            "Marathon": "best_fm_s",
+        pred_map = {
+            "5K": "pred_5k_s",
+            "10K": "pred_10k_s",
+            "Half Marathon": "pred_hm_s",
+            "Marathon": "pred_fm_s",
         }
         for race_type, duration_s in preds:
-            key = type_map.get(race_type)
+            key = pred_map.get(race_type)
             if key and duration_s:
                 result[key] = round(duration_s)
 
@@ -523,11 +555,23 @@ def _format_history_summary(history: dict[str, Any]) -> str:
         return f"{h}:{m2:02d}:{s:02d}" if h else f"{m2}:{s:02d}"
 
     lines.append(
-        f"最好成绩 — 5K: {fmt_time(history.get('best_5k_s'))}  "
+        f"实际最好成绩（PB，历史真实跑出，里程碑锚定用这一行）— "
+        f"5K: {fmt_time(history.get('best_5k_s'))}  "
         f"10K: {fmt_time(history.get('best_10k_s'))}  "
         f"半马: {fmt_time(history.get('best_hm_s'))}  "
         f"全马: {fmt_time(history.get('best_fm_s'))}"
     )
+    # COROS fitness predictions are current-fitness ceilings, NOT achieved
+    # results (typically faster than real PB). Surfaced separately + explicitly
+    # so the planner does NOT anchor milestones to a pace never actually run.
+    if any(history.get(k) for k in ("pred_5k_s", "pred_10k_s", "pred_hm_s", "pred_fm_s")):
+        lines.append(
+            f"COROS 体能预测（当前体能上限，非实际成绩，**勿**直接作为里程碑基线）— "
+            f"5K: {fmt_time(history.get('pred_5k_s'))}  "
+            f"10K: {fmt_time(history.get('pred_10k_s'))}  "
+            f"半马: {fmt_time(history.get('pred_hm_s'))}  "
+            f"全马: {fmt_time(history.get('pred_fm_s'))}"
+        )
 
     return "\n".join(lines)
 
@@ -695,6 +739,7 @@ def _build_system_prompt(
     continuity: "ContinuitySignals | None" = None,
     body_composition: dict[str, Any] | None = None,
     body_composition_summary: str | None = None,
+    current_phase: "CurrentPhaseContext | None" = None,
 ) -> str:
     # Normalise prod-route field names before serialising into the prompt.
     # Without this, prod payloads carry ``target_finish_time`` / ``pbs`` and
@@ -707,40 +752,63 @@ def _build_system_prompt(
     fitness_summary = fitness_state.get("summary", "体能数据暂无")
     race_date = goal.get("race_date") or "未指定"
 
+    # Natural-week alignment: anchor the plan start to the UPCOMING Monday so
+    # every phase/week is a clean Mon→Sun block (today if today is a Monday).
+    # LLMs are unreliable at day-of-week arithmetic, so compute it here and
+    # inject the concrete date rather than asking the model to round.
+    from datetime import date as _date_cls, timedelta as _timedelta
+    try:
+        _t = _date_cls.fromisoformat(today)
+        plan_start = (_t + _timedelta(days=(7 - _t.weekday()) % 7)).isoformat()
+    except (ValueError, TypeError):
+        plan_start = today
+
+    # Dynamic context blocks: data-presence conditionals + value computation stay
+    # here (data logic), but the English prose lives in markdown fragments under
+    # coach/skills/shared/blocks/ — rendered via render_fragment. Each non-empty
+    # block is wrapped in newlines so they self-separate when concatenated in the
+    # SKILL.md template (${current_phase_block}${continuity_block}...).
+    from coach.skills import render_fragment
+
     continuity_block = ""
     if continuity is not None:
         c = continuity
-        inj = "、".join(c.injuries) if c.injuries else "无"
-        days = f"{c.days_since_last_race} 天" if c.days_since_last_race is not None else "无近期比赛"
-        longest = f"{c.recent_longest_run_km} km" if c.recent_longest_run_km is not None else "暂无"
-        ctl = c.current_chronic_load if c.current_chronic_load is not None else "暂无"
-        zone = c.current_form_zone or "暂无"
-        season = f"；{c.season_context}" if c.season_context else ""
-        continuity_block = f"""
-延续性信号（确定性，来自训练数据/结构化 profile）：
-- macro_cycle: {c.macro_cycle}{season}
-- 距上场比赛: {days}；赛后状态: {c.post_race_recovery_status}
-- 近期有氧周数: {c.recent_aerobic_weeks}；周量趋势: {c.recent_volume_trend}；最近最长跑: {longest}
-- 当前 STRIDE CTL(chronic): {ctl}；form 区: {zone}
-- 断训回归: {c.return_from_layoff}
-- 伤病（软约束，自行权衡，勿机械禁课）: {inj}
+        inj = "、".join(c.injuries) if c.injuries else "none"
+        days = f"{c.days_since_last_race} days" if c.days_since_last_race is not None else "no recent race"
+        longest = f"{c.recent_longest_run_km} km" if c.recent_longest_run_km is not None else "n/a"
+        ctl = c.current_chronic_load if c.current_chronic_load is not None else "n/a"
+        zone = c.current_form_zone or "n/a"
+        season = f"; {c.season_context}" if c.season_context else ""
+        continuity_block = "\n" + render_fragment("shared/blocks/continuity.md", {
+            "macro_cycle": c.macro_cycle, "season": season, "days": days,
+            "post_race_recovery_status": c.post_race_recovery_status,
+            "recent_aerobic_weeks": c.recent_aerobic_weeks,
+            "recent_volume_trend": c.recent_volume_trend, "longest": longest,
+            "ctl": ctl, "form_zone": zone, "return_from_layoff": c.return_from_layoff,
+            "injuries": inj, "plan_start": plan_start,
+        }) + "\n"
 
-请据此调整周期结构：已恢复且距赛久则不排开头恢复期；已有多周有氧则缩短 base；断训回归则延长 base、放缓 ramp；夏训块可插速度周期。
-"""
+    # Authoritative current-phase block (deterministic pre-generation): the planner
+    # MUST begin at recommended_entry_phase and must not re-prescribe completed phases.
+    current_phase_block = ""
+    if current_phase is not None and current_phase.recommended_entry_phase is not None:
+        cp = current_phase
+        cur = cp.current_phase_type.value if cp.current_phase_type else "unknown"
+        entry = cp.recommended_entry_phase.value
+        wip = f"~{cp.weeks_in_phase} weeks" if cp.weeks_in_phase is not None else "unknown"
+        src = {"existing_plan": "read prior training plan",
+               "inferred": "inferred from recent activity records"}.get(cp.source, cp.source)
+        current_phase_block = "\n" + render_fragment("shared/blocks/current_phase.md", {
+            "src": src, "cur": cur, "wip": wip,
+            "completed_aerobic_weeks": cp.completed_aerobic_weeks,
+            "entry": entry, "confidence": cp.confidence, "rationale": cp.rationale,
+        }) + "\n"
 
     macro_block = ""
     if continuity is not None and continuity.macro_cycle == "summer":
-        macro_block = """
-夏训块周期化指导（macro_cycle=summer）：长块（赛季备战 ~7-8 个月感），气温高、适合发展速度。
-- phase 序列倾向：基础期 → 速度周期(speed) → 进展期(build) → 赛前期(peak) → taper；中段排一个独立速度周期。
-- 长课避开正午高温，质量课优先清晨/傍晚；base 可铺得开。
-"""
+        macro_block = "\n" + render_fragment("shared/blocks/macro_summer.md", {}) + "\n"
     elif continuity is not None and continuity.macro_cycle == "winter":
-        macro_block = """
-冬训块周期化指导（macro_cycle=winter）：压缩块（~4-5 个月），低温、消耗小、适合堆大量有氧。
-- phase 序列倾向：基础期(长、堆有氧) → 进展期(build，速度并入) → 赛前期(peak) → taper；不排独立速度周期。
-- base 偏长、尽快进专项；速度训练融进 build 而非单独成块。
-"""
+        macro_block = "\n" + render_fragment("shared/blocks/macro_winter.md", {}) + "\n"
 
     body_comp_block = ""
     if body_composition:
@@ -748,138 +816,32 @@ def _build_system_prompt(
 
         def _fmt(key: str, unit: str = "") -> str:
             v = bc.get(key)
-            return f"{v}{unit}" if v is not None else "暂无"
+            return f"{v}{unit}" if v is not None else "n/a"
 
         summary_line = body_composition_summary or _format_body_comp_fallback(bc)
-        body_comp_block = f"""
-体测基线（最新体测，可作为体重 / 体脂 milestone 锚点）：
-- {summary_line}
-- 体重: {_fmt('weight_kg', 'kg')}；体脂率: {_fmt('body_fat_pct', '%')}；骨骼肌: {_fmt('smm_kg', 'kg')}；脂肪量: {_fmt('fat_mass_kg', 'kg')}；BMR: {_fmt('bmr_kcal', 'kcal')}；BMI: {_fmt('bmi')}
-"""
+        body_comp_block = "\n" + render_fragment("shared/blocks/body_composition.md", {
+            "summary_line": summary_line,
+            "weight": _fmt("weight_kg", "kg"), "body_fat": _fmt("body_fat_pct", "%"),
+            "smm": _fmt("smm_kg", "kg"), "fat_mass": _fmt("fat_mass_kg", "kg"),
+            "bmr": _fmt("bmr_kcal", "kcal"), "bmi": _fmt("bmi"),
+        }) + "\n"
 
-    return f"""你是专业马拉松训练教练。根据以下信息生成训练总纲 JSON。
-
-用户目标：
-{goal_json}
-
-跑步背景：
-{profile_json}
-
-历史训练摘要：
-{history_summary}
-
-当前体能状态：
-{fitness_summary}
-
-输出必须是以下格式的严格 JSON（用 ---BEGIN_MASTER_PLAN--- 和 ---END_MASTER_PLAN--- 包裹）：
-
----BEGIN_MASTER_PLAN---
-{{"schema":"weekly-plan/master/v1","plan":{{
-  "goal": {{"goal_id":"<source goal_id>","race_name":"目标赛事名","distance":"5K|10K|HM|FM|trail","race_date":"YYYY-MM-DD","target_time":"H:MM:SS","timezone":"Asia/Shanghai","location":"城市或 null"}},
-  "start_date": "YYYY-MM-DD",
-  "end_date": "YYYY-MM-DD",
-  "total_weeks": 16,
-  "training_principles": ["原则1","原则2"],
-  "phases": [
-    {{"name":"基础期","phase_type":"base|build|speed|peak|taper|recovery","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]}},
-    ...
-  ],
-  "milestones": [
-    {{"type":"race|test_run|long_run|strength_test|body_composition","date":"YYYY-MM-DD","phase_name":"<对应阶段>","target":"自然语言描述","metric":"race_time_s_5k|race_time_s_10k|weight_kg|body_fat_pct","target_value":1140,"comparator":"<=|>=|=="}},
-    ...
-  ],
-  "weeks": [
-    {{"week_index":1,"week_start":"YYYY-MM-DD","phase_name":"<对应阶段>","target_weekly_km_low":45,"target_weekly_km_high":52,"is_recovery_week":false,"is_taper_week":false,"key_sessions":[
-      {{"type":"long_run","distance_km":24,"intensity":"z2","purpose":"建立马拉松专项耐力"}},
-      {{"type":"threshold","duration_min":35,"intensity":"z4","purpose":"提高乳酸阈值"}}
-    ]}},
-    ...
-  ]
-}}}}
----END_MASTER_PLAN---
-{continuity_block}{macro_block}{body_comp_block}
-规则：
-- start_date 用今日（{today}），end_date 不晚于比赛日（{race_date}）
-- 阶段顺序：基础期 → 进展期 → 赛前期 → 比赛 →（如有）恢复期
-- 每个阶段至少 2 周
-- weekly_distance_km_low / high 应反映该阶段周量目标
-- 每个 phase 必须标注 phase_type（base|build|speed|peak|taper|recovery）；milestone 尽量给结构化出口目标（metric+target_value+comparator）
-- 里程碑应贯穿训练周期（每 2-4 周一个）
-- 训练原则 6-10 条（含下方营养、recovery week、目标现实性三项强制要求）
-- 用户跑龄短 / 周量低时阶段周量更保守
-- 周末日期作为 long_run 里程碑日期
-- 输出**仅 JSON 块**，无额外解释文字
-
-**Weekly key-session skeleton（HARD）**：
-- `weeks` 必须**逐周**列出 plan.start_date 到 plan.end_date 之间的每一周（按 week_index 从 1 顺序递增，week_start 写该周周一的 ISO 日期）
-- 每个 entry 关联到对应 phase 的 `phase_name`，并写明该周的 `target_weekly_km_low` / `target_weekly_km_high`（应落在该 phase 的周量区间内，recovery week 取 phase 下限的 70-80%）
-- `key_sessions[]` **仅**列驱动训练适应或负载的重点课（long_run / threshold / tempo / interval / vo2max / hill / race_pace / time_trial / tune_up_race / race / strength_key），普通 easy / aerobic / recovery / commute run **不要**列入
-- 每个非 recovery / taper 周必须有 **1-3 个**重点课；race 周可只列一个 `race` 类型；recovery week 允许 0-1 个
-- 距离锚定的课（long_run / race_pace / tune_up_race / race）写 `distance_km`；时间锚定的课（threshold / interval / tempo）写 `duration_min`
-- 同一周内 threshold / tempo / interval / vo2max / hill / race_pace 等高负荷课**不得超过 2 个**
-- 当 `profile.weekly_run_days_max <= 3` 时，每周重点课**不得超过 2 个**；否则不超过 3 个
-- 在 race 前 1-2 周必须将 `is_taper_week=true`，且 `target_weekly_km_high` 相比 peak 周下降 ≥ 25%
-- 每 4 周一次 recovery week 时 `is_recovery_week=true`，对应 `target_weekly_km_*` 取 phase 下限的 70-80%
-- peak 阶段最长 `long_run.distance_km` 必须匹配目标比赛距离：fm ≥ 28km，hm ≥ 18km，10k ≥ 10km，5k ≥ 6km
-
-**Recovery week 节奏（HARD）**：
-- 任何 ≥ 4 周的非 base 阶段（进展期 / 赛前期）必须采用 3:1 周期化：连续 3 周渐进负荷 + 1 周降量到该阶段周量下限的 70-80%
-- 必须在对应 phase.focus 字段中显式写明 recovery week 安排，例如："3:1 周期，每 4 周降量 1 周至 W3 周量的 70%；recovery week 取消所有质量课"
-- 阶段不足 4 周时可省略 recovery week，但 focus 必须说明"不足 4 周，无 recovery week"
-
-**营养策略（HARD）**：
-- training_principles 必须包含至少 3 条独立的营养原则，整体覆盖以下维度：
-  - 基础期：维持热量平衡，蛋白质 1.4-1.6 g/kg/天，训后 30 min 补 carbs+protein 3:1
-  - 进展期 / 赛前期：增加碳水至 5-7 g/kg/天，长课前 30-60 min 补碳 30-60 g，长课中每小时 30-60 g
-  - 比赛减量期（taper）：维持糖原储备，赛前 3 天 carb-loading 8-10 g/kg/天
-  - 比赛后恢复期：增蛋白至 1.8-2.0 g/kg/天促修复，补水 + 电解质
-- 用户档案若含目标体重 / 体脂调整诉求，营养原则必须显式应对（如"build 期保持小幅热量盈余以支撑训练负荷而非追求减重"）
-- **不要**只写一条笼统的"注重营养"，必须按 phase 给具体数字
-
-**训练负荷分布（HARD）**：
-- STRIDE 用 **CTL 比例 Form 分类**（chronic−acute 除以 chronic，不是经典 TSB 固定阈值）：
-  - > +25% CTL = 减量过多 / +10~+25% = 比赛就绪 / ±10% = 维持期 / −25%~−10% = 提升期 / < −25% = 过度负荷
-- 每个 phase 的 `focus` 字段必须**显式声明 Form 期望分布**（按 phase 类型）：
-  - **Base（基础期）**：维持期 40-50% + 提升期 30-40% + 比赛就绪 10-20%；chronic 缓慢上行
-  - **Build（进展期）**：**提升期 50-60%** + 维持期 20-30% + 比赛就绪 10%；chronic 明显上行
-  - **Peak（赛前期）**：提升期 40% + 维持期 30% + 比赛就绪 30%；chronic 持平或微降
-  - **Taper（减量期）**：比赛就绪 60-70% + 维持期 20-30%；acute 主动下降
-  - **Recovery（恢复期）**：比赛就绪 70% + 维持期 30%；chronic 主动下行
-- 周量 ramp heuristic：每周 dose 目标 ≈ **chronic × 7**（维持）/ **chronic × 7.7+**（推进入提升期）
-- Anti-patterns（在 `training_principles` 中显式写明禁止）：
-  - 单日 long run dose **不得 > 35%** 周总 dose（"spike + flat"根因）
-  - 每周零 dose 天 **≤ 2**（典型布局：力量日 + 短 jog 30-40min 替代纯力量；mobility 日不计零 dose）
-  - 周一 / 周日相邻零日**禁止**（acute 会被连续清零 2-3 天）
-- 周计划生成时 `key_sessions` 必须能撑起 phase 的 Form 分布目标 —— 例如 build 周要让 ≥4 天有跑步 dose，而不是 2 个 spike + 4 个零日
-
-**Distance specificity（HARD）**：
-- 训练 / 备战的几乎一切（peak 周量、long_run 距离、taper 长度、间歇课比例）都要按 target_race.distance 调整。**不要**把 FM-style plan 套到 HM / 10K / 5K，反之亦然。
-- FM (full marathon)：peak 周量 65-80 km；peak long_run **≥ 28 km**（典型 28-35）；taper **2 周**；peak phase 3-4 周；race-specific 期重 marathon-pace long runs + tempo
-- HM (half marathon)：peak 周量 55-72 km；peak long_run **18-22 km**（不超过 25 km）；taper **1 周**；peak phase 2-3 周
-- 10K：peak 周量 45-65 km；peak long_run **14-16 km**（不超过 18 km）；taper **3-7 天**；peak phase 1-2 周；key_sessions 重 interval / vo2max / threshold（远多于 long_run / race_pace）
-- 5K：peak 周量 40-55 km；peak long_run **8-12 km**（不超过 14 km）；taper **3-5 天**；peak phase 1-2 周；key_sessions 重 vo2max / 短间歇（200m-1k 重复）+ 速度
-- 把上述硬指标显式反映到 `weeks[].target_weekly_km_high` / `key_sessions[].distance_km`。
-
-**Goal realism 与 pushback（HARD）**：
-- 收到 goal_time_s 后，必须对照用户近期 PB（profile.prs 或 history_summary 里的"最好成绩"）计算改善幅度
-- 单周期改善上限阈值（超过即视为不现实）：
-  - 全马 (fm_s)：> 10%
-  - 半马 (hm_s)：> 12%
-  - 10K (10k_s)：> 15%
-- 如果 goal 改善幅度 **超过**阈值（典型例子：FM PB 3:45 → goal 2:50 是 24% 提升）：
-  - training_principles 第 1 条必须显式 push back，例如："用户 FM PB 3:45 → goal 2:50 单周期改善 24%（> 10% 上限），不现实。本周期建议目标 3:25-3:30（10-12% 改善），下个周期再冲击 sub-3:00"
-  - 训练强度按建议的现实 target_time 排，**不能**按用户原 goal 配速排训练
-  - race milestone 的 target 字段写本周期建议成绩 + 远期 A 目标，例如："本周期目标 3:30；2:50 为下一周期 A 目标"
-- 如果 goal 改善幅度在阈值内：正常排训练，建议给出 A / B / C 目标分层（A 目标条件 / B 目标 / 保底）
-
-**Per-phase 可量化 milestone（HARD）**：
-- 每个 phase 在 `milestone_ids` 上**尽量挂至少 1 个可量化出口目标**（`metric`+`target_value`+`comparator`），并**锚定上方实际注入的基线数字**（历史摘要里的"最好成绩" PB；若有则用"体测基线"的体重 / 体脂），**不要**写脱离基线的泛化目标。
-- 目标值的改善速率必须落在生理上限内（用上方「单周期改善上限阈值」推算，且单个 phase 通常只占整周期的一部分，改善幅度更小）：
-  - **speed 期**：5k 提速目标 `metric:"race_time_s_5k"`（或 `race_time_s_10k`），`comparator:"<="`。一个 ~6 周 speed cycle 的 5k 改善 **≤ ~5-8%** 是上限而非下限——按基线 PB × (1 − 改善率) 给 target_value，不设幻想值。
-  - **base 期**：以有氧 / 长距离能力为出口（`type:"long_run"` 的距离目标，或—若有体测基线—体重 milestone `metric:"weight_kg"`,`comparator:"<="`，按健康减重速率 ~0.25-0.5 kg/周 推算，不开极端赤字）。
-  - **build / 专项期**：MP 耐力 / 阈值出口（如目标比赛配速 long_run 距离，或 `metric:"race_time_s_10k"`,`comparator:"<="`）；若有体测基线，可设体脂目标 `metric:"body_fat_pct"`,`comparator:"<="`（同样按健康速率）。
-  - **peak / taper 期**：以比赛就绪为出口（`type:"race"` 或目标距离 time-trial 的 race_time milestone）。
-- **体测 milestone 只在「有体测基线」时设**；无体测基线时仅设性能 / 距离类 milestone，不要编造体重 / 体脂数字。"""
+    # Prompt content lives in the markdown skill src/coach/skills/master_plan_planner/
+    # (SKILL.md + shared/ + references/), loaded + rendered here. The dynamic
+    # blocks + input strings computed above are the runtime ${context}.
+    from coach.skills import render_skill
+    return render_skill("master_plan_planner", {
+        "goal_json": goal_json,
+        "profile_json": profile_json,
+        "history_summary": history_summary,
+        "fitness_summary": fitness_summary,
+        "plan_start": plan_start,
+        "race_date": race_date,
+        "current_phase_block": current_phase_block,
+        "continuity_block": continuity_block,
+        "macro_block": macro_block,
+        "body_comp_block": body_comp_block,
+    })
 
 
 # ---------------------------------------------------------------------------

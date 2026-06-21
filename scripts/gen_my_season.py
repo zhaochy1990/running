@@ -88,7 +88,7 @@ PROFILE: dict | None = None
 INJURIES: list[str] = []
 
 MASTER_PLAN_PATH = _REPO_ROOT / "data" / USER_ID / "master_plan_draft.json"
-OUTPUT_PATH = _REPO_ROOT / "data" / USER_ID / "season_bundle_draft.json"
+OUTPUT_PATH = _REPO_ROOT / "data" / USER_ID / "testing" / "season_bundle_draft.json"
 
 DEBUG = os.environ.get("COACH_DEBUG") == "1"
 DEBUG = True
@@ -195,6 +195,7 @@ def main() -> int:
 
     _print_summary(bundle, master_plan)
 
+    OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT_PATH.write_text(
         json.dumps(bundle.model_dump(mode="json"), ensure_ascii=False, indent=2),
         encoding="utf-8",

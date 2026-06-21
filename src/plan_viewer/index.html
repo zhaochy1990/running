@@ -14,12 +14,13 @@
     --pass:#34d399; --revise:#f59e0b; --block:#ef4444; --autofix:#60a5fa;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--text);display:flex;flex-direction:column;height:100vh;overflow:hidden;
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;}
   code,.mono{font-family:"SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace;}
   a{color:var(--accent)}
-  header.top{position:sticky;top:0;z-index:10;background:rgba(11,13,16,.92);backdrop-filter:blur(8px);
-    border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  header.top{position:static;background:rgba(11,13,16,.92);
+    border-bottom:1px solid var(--line);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex:0 0 auto}
   header.top h1{font-size:15px;margin:0;font-weight:600;letter-spacing:.3px}
   header.top h1 .dot{color:var(--accent)}
   .spacer{flex:1}
@@ -27,6 +28,42 @@
     transition:.15s;font-size:13px}
   .drop:hover,.drop.over{border-color:var(--accent);color:var(--text);background:var(--accent-dim)}
   .drop input{display:none}
+  /* ---- layout: header / [sidebar | main] ---- */
+  .layout{flex:1 1 auto;display:flex;min-height:0}
+  .sidebar{flex:0 0 290px;display:flex;flex-direction:column;min-height:0;background:var(--panel);border-right:1px solid var(--line)}
+  .sidebar.collapsed{display:none}
+  .main{flex:1 1 auto;overflow:auto;min-width:0}
+  .sb-toggle{border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:8px;padding:5px 11px;cursor:pointer;font-size:14px;transition:.15s}
+  .sb-toggle:hover{border-color:var(--accent);color:var(--text)}
+  .sb-head{display:flex;gap:6px;padding:10px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .sb-head .fbtn{flex:1;display:flex;gap:6px;align-items:center;border:1px solid var(--line);background:var(--panel2);
+    color:var(--text);border-radius:8px;padding:7px 10px;cursor:pointer;font-size:13px;overflow:hidden;white-space:nowrap}
+  .sb-head .fbtn:hover{border-color:var(--accent)}
+  .sb-head .fbtn #sbFolder{overflow:hidden;text-overflow:ellipsis}
+  .iconbtn2{border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:8px;padding:6px 9px;cursor:pointer;font-size:13px;transition:.15s}
+  .iconbtn2:hover{border-color:var(--accent);color:var(--text)}
+  .sb-sub{padding:7px 12px;color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;
+    display:flex;align-items:center;flex:0 0 auto}
+  .sb-tree{flex:1 1 auto;overflow:auto;padding:2px 0 10px}
+  .tnode>.tchildren{display:none}
+  .tnode.open>.tchildren{display:block}
+  .trow{display:flex;align-items:center;gap:5px;padding:3px 12px 3px 0;cursor:pointer;font-size:13px;
+    white-space:nowrap;border-left:2px solid transparent}
+  .trow:hover{background:#171b21}
+  .trow.active{background:var(--accent-dim);border-left-color:var(--accent)}
+  .trow .tw{width:12px;flex:0 0 12px;text-align:center;color:var(--faint);font-size:9px;transition:.12s}
+  .tnode.open>.trow .tw{transform:rotate(90deg)}
+  .trow .ti{flex:0 0 18px;text-align:center}
+  .trow .tn{overflow:hidden;text-overflow:ellipsis}
+  .trow .tt{margin-left:auto;font-size:9.5px;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+  .sb-empty{padding:14px 12px;color:var(--faint);font-size:12px;line-height:1.6}
+  .rec-item{display:flex;align-items:center;gap:5px;padding:4px 10px 4px 12px;cursor:pointer;font-size:13px;white-space:nowrap}
+  .rec-item:hover{background:#171b21}
+  .rec-item.active{background:var(--accent-dim)}
+  .rec-item .ti{flex:0 0 18px;text-align:center}
+  .rec-item .tn{overflow:hidden;text-overflow:ellipsis;flex:1}
+  .rec-item .recdel{border:none;background:none;color:var(--faint);cursor:pointer;font-size:12px;padding:2px 4px;border-radius:4px}
+  .rec-item .recdel:hover{color:var(--block)}
   .wrap{max-width:1100px;margin:0 auto;padding:24px 20px 80px}
   .empty{text-align:center;color:var(--muted);padding:80px 20px}
   .empty .big{font-size:46px;margin-bottom:8px;opacity:.5}
@@ -85,6 +122,7 @@
   .mphase{display:grid;grid-template-columns:120px 1fr;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
   .mphase:first-child{border-top:none}
   .mphase .pl{color:var(--muted);font-size:12px;font-family:ui-monospace,monospace}
+  .mphase .pweeks{margin-left:8px;font-size:13px;font-weight:600;color:var(--text)}
   .mphase .focus{color:var(--muted);font-size:12.5px;margin-top:6px;line-height:1.6}
   .ms{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-top:1px dashed var(--line);font-size:13px}
   .ms:first-child{border-top:none}
@@ -97,22 +135,27 @@
 </head>
 <body>
 <header class="top">
+  <button class="sb-toggle" id="sbToggle" title="折叠 / 展开侧栏">☰</button>
   <h1>STRIDE <span class="dot">●</span> Plan Viewer</h1>
   <span id="typeBadge"></span>
   <span class="spacer"></span>
   <label class="drop" id="drop">📂 选择 / 拖入 JSON<input type="file" id="file" accept=".json,application/json"></label>
 </header>
-<div class="wrap">
-  <div id="root">
-    <div class="empty">
-      <div class="big">📋</div>
-      <div>拖入或选择一个 plan JSON 文件</div>
-      <div style="margin-top:8px;color:var(--faint);font-size:12.5px">
-        支持 SeasonPlanBundle · MasterPlan · WeeklyPlan<br>
-        （如 <code>season_bundle_draft.json</code> / <code>master_plan_draft.json</code> / <code>plan.json</code>）
-      </div>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sb-head">
+      <button class="fbtn" id="openDir" title="打开本地文件夹（自动检测 plan JSON）">📁 <span id="sbFolder">打开文件夹</span></button>
+      <button class="iconbtn2" id="refreshDir" title="重新扫描当前文件夹">↻</button>
     </div>
-  </div>
+    <div class="sb-sub">文件</div>
+    <div class="sb-tree" id="sbTree"><div class="sb-empty">点击「📁 打开文件夹」选择一个包含 plan JSON 的本地目录，左侧会列出可切换的文件。</div></div>
+    <div class="sb-sub" style="border-top:1px solid var(--line)">最近拖入</div>
+    <div id="sbRecents" style="overflow:auto;max-height:30vh;padding-bottom:8px"></div>
+    <input type="file" id="dirInput" webkitdirectory directory multiple style="display:none">
+  </aside>
+  <main class="main" id="main">
+    <div class="wrap"><div id="root"></div></div>
+  </main>
 </div>
 <script>
 const $ = (h)=>{const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstChild;};
@@ -125,6 +168,18 @@ function toKm(m){if(m==null)return 0;return m<500?m:m/1000;}
 function fmtDur(s){if(!s)return '';const h=Math.floor(s/3600),m=Math.round((s%3600)/60);return h?`${h}h${String(m).padStart(2,'0')}`:`${m}min`;}
 function pace(m,s){const km=toKm(m);if(!km||!s)return '';const p=s/km;return `${Math.floor(p/60)}:${String(Math.round(p%60)).padStart(2,'0')}/km`;}
 function weekKm(w){return (w.sessions||[]).filter(s=>s.kind==='run').reduce((a,s)=>a+toKm(s.total_distance_m),0);}
+// Prefer the real per-week skeleton: count weekly_key_sessions assigned to this
+// phase (phase_id match). Accurate even when phase start/end don't sit on the
+// 7-day grid. Falls back to the date-span formula (stride_core
+// compute_total_weeks: (end-start).days//7+1) only when there's no skeleton —
+// that formula OVERCOUNTS by 1 when a phase boundary is off the week grid
+// (e.g. a 2-week taper 10-04→10-18 spans 14d → 3 by formula, but is 2 weeks).
+function phaseWeeks(p,plan){
+  const wk=(plan&&plan.weekly_key_sessions)||[];
+  const n=wk.filter(w=>w.phase_id===p.id).length;
+  if(n>0)return n;
+  const s=p.start_date,e=p.end_date;if(!s||!e)return 0;const a=new Date(s),b=new Date(e);if(isNaN(a)||isNaN(b)||b<a)return 0;return Math.floor((b-a)/864e5/7)+1;
+}
 
 function badge(text,color){return `<span class="badge" style="color:${color};border-color:${color}55;background:${color}1a">${esc(text)}</span>`;}
 function ptBadge(t){const c=`var(--${t||'base'})`;return badge(PT_LABEL[t]||t||'?',c);}
@@ -232,6 +287,7 @@ function renderMaster(d){
   root.appendChild($(`<div class="summary-bar">
     <div><div class="k">类型</div><div class="v">赛季总纲 MasterPlan</div></div>
     <div><div class="k">阶段</div><div class="v">${(d.phases||[]).length}</div></div>
+    <div><div class="k">总周数</div><div class="v">${(d.phases||[]).reduce((a,p)=>a+phaseWeeks(p,d),0)}</div></div>
     <div><div class="k">里程碑</div><div class="v">${(d.milestones||[]).length}</div></div>
     <div><div class="k">周期</div><div class="v mono" style="font-size:14px">${esc(d.start_date||'')} → ${esc(d.end_date||'')}</div></div>
     <div><div class="k">生成模型</div><div class="v mono" style="font-size:14px">${esc(d.generated_by||'?')}</div></div>
@@ -240,7 +296,7 @@ function renderMaster(d){
   const pc=$('<div class="card"></div>');
   (d.phases||[]).forEach(p=>{
     pc.appendChild($(`<div class="mphase">
-      <div><div>${ptBadge(p.phase_type)}</div><div class="pl" style="margin-top:6px">${esc(p.start_date||'')}<br>→ ${esc(p.end_date||'')}</div>
+      <div><div>${ptBadge(p.phase_type)}<span class="pweeks">${phaseWeeks(p,d)} 周</span></div><div class="pl" style="margin-top:6px">${esc(p.start_date||'')}<br>→ ${esc(p.end_date||'')}</div>
         <div class="pl" style="margin-top:6px;color:var(--accent)">${p.weekly_distance_km_low}–${p.weekly_distance_km_high} km/wk</div></div>
       <div><div style="font-weight:600">${esc(p.name||'')}</div>
         ${(p.key_session_types||[]).map(k=>badge(k,'var(--faint)')).join(' ')}
@@ -268,6 +324,17 @@ function renderMaster(d){
   return root;
 }
 
+const EMPTY_HTML=`<div class="empty">
+  <div class="big">📋</div>
+  <div>从左侧「📁 打开文件夹」选择本地目录，或拖入 / 选择单个 plan JSON</div>
+  <div style="margin-top:8px;color:var(--faint);font-size:12.5px">
+    支持 SeasonPlanBundle · MasterPlan · WeeklyPlan<br>
+    （如 <code>season_bundle_draft.json</code> / <code>master_plan_draft.json</code> / <code>plan.json</code>）<br>
+    打开文件夹后会记住，下次刷新自动恢复（需授权）
+  </div>
+</div>`;
+function resetEmpty(){document.getElementById('root').innerHTML=EMPTY_HTML;document.getElementById('typeBadge').innerHTML='';}
+
 function render(d){
   const root=document.getElementById('root');
   const type=detect(d);
@@ -279,17 +346,218 @@ function render(d){
     const c=$('<div class="card" style="padding:0"></div>');c.appendChild(renderWeek(d));root.appendChild(c);
     c.querySelector('.week').classList.add('open');}
   else{tb.innerHTML='';root.innerHTML=`<div class="empty"><div class="big">⚠️</div>无法识别的 JSON 结构<div style="margin-top:8px;color:var(--faint)">期望 SeasonPlanBundle / MasterPlan / WeeklyPlan</div></div>`;}
+  document.getElementById('main').scrollTop=0;
+}
+
+// ======================================================================
+// Sidebar: local-directory file tree (File System Access API + fallback)
+// ======================================================================
+const LS_KEY='stride_pv_records_v1';      // drag/drop recents
+const LS_ACTIVE='stride_pv_active_v1';     // last opened tree-file path
+let dirHandle=null, activePath=null;
+
+// ---- IndexedDB (persist the picked directory handle across reloads) ----
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open('stride_pv',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function idbSet(k,v){const db=await idb();return new Promise((res,rej)=>{const t=db.transaction('kv','readwrite');
+  t.objectStore('kv').put(v,k);t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
+async function idbGet(k){const db=await idb();return new Promise((res,rej)=>{const t=db.transaction('kv','readonly');
+  const rq=t.objectStore('kv').get(k);rq.onsuccess=()=>res(rq.result);rq.onerror=()=>rej(rq.error);});}
+
+function fileTag(name){
+  if(/master_plan/i.test(name))return 'M';
+  if(/season_bundle/i.test(name))return 'S';
+  if(/^plan\.json$/i.test(name)||/week/i.test(name))return 'W';
+  return '';
+}
+function sortNode(node){
+  node.children.sort((a,b)=>{
+    if(a.type!==b.type)return a.type==='dir'?-1:1;
+    return a.name.localeCompare(b.name);
+  });
+  node.children.forEach(c=>c.type==='dir'&&sortNode(c));
+}
+
+// File System Access API: recurse a directory handle into a tree of json files.
+async function scanFSDir(handle,path){
+  const node={type:'dir',name:handle.name,path,children:[]};
+  for await(const [name,h] of handle.entries()){
+    if(name.startsWith('.')||name==='node_modules')continue;
+    if(h.kind==='directory'){
+      const sub=await scanFSDir(h,path+'/'+name);
+      if(sub.children.length)node.children.push(sub);   // prune empty dirs
+    }else if(name.toLowerCase().endsWith('.json')){
+      node.children.push({type:'file',name,path:path+'/'+name,read:()=>h.getFile().then(f=>f.text())});
+    }
+  }
+  sortNode(node);
+  return node;
+}
+
+// <input webkitdirectory> fallback: build the tree from a flat FileList.
+function buildTreeFromFileList(files){
+  const list=[...files].filter(f=>f.name.toLowerCase().endsWith('.json'));
+  const rootName=(list[0]&&list[0].webkitRelativePath.split('/')[0])||'folder';
+  const root={type:'dir',name:rootName,path:'',children:[]};
+  for(const f of list){
+    const parts=f.webkitRelativePath.split('/');  // [rootName, ...dirs, fileName]
+    let cur=root;
+    for(let i=1;i<parts.length-1;i++){
+      const seg=parts[i];
+      let child=cur.children.find(c=>c.type==='dir'&&c.name===seg);
+      if(!child){child={type:'dir',name:seg,path:cur.path+'/'+seg,children:[]};cur.children.push(child);}
+      cur=child;
+    }
+    cur.children.push({type:'file',name:f.name,path:f.webkitRelativePath,read:()=>f.text()});
+  }
+  sortNode(root);
+  return root;
+}
+
+function treeNode(node,depth){
+  const pad=12+depth*14;
+  if(node.type==='dir'){
+    const el=$(`<div class="tnode open"></div>`);
+    const row=$(`<div class="trow" style="padding-left:${pad}px"><span class="tw">▶</span><span class="ti">📁</span><span class="tn">${esc(node.name)}</span></div>`);
+    const kids=$(`<div class="tchildren"></div>`);
+    node.children.forEach(c=>kids.appendChild(treeNode(c,depth+1)));
+    row.onclick=()=>el.classList.toggle('open');
+    el.appendChild(row);el.appendChild(kids);
+    return el;
+  }
+  const tag=fileTag(node.name);
+  const row=$(`<div class="trow tfile" data-path="${esc(node.path)}" style="padding-left:${pad}px"><span class="tw"></span><span class="ti">📄</span><span class="tn">${esc(node.name)}</span>${tag?`<span class="tt">${tag}</span>`:''}</div>`);
+  row.onclick=()=>openFile(node);
+  return row;
+}
+function highlightActive(){
+  document.querySelectorAll('.trow.tfile').forEach(r=>r.classList.toggle('active',r.getAttribute('data-path')===activePath));
+}
+function renderTree(root){
+  const host=document.getElementById('sbTree');
+  document.getElementById('sbFolder').textContent=root&&root.name?root.name:'打开文件夹';
+  host.innerHTML='';
+  if(!root||!root.children.length){host.innerHTML='<div class="sb-empty">该目录下没有 .json plan 文件</div>';return;}
+  root.children.forEach(c=>host.appendChild(treeNode(c,0)));
+  highlightActive();
+}
+async function openFile(node){
+  let text;
+  try{text=await node.read();}
+  catch(e){alert('读取文件失败：'+e.message);return;}
+  let d;
+  try{d=JSON.parse(text);}
+  catch(e){document.getElementById('root').innerHTML=`<div class="empty"><div class="big">❌</div>JSON 解析失败<div style="margin-top:8px;color:var(--faint)">${esc(node.name)}: ${esc(e.message)}</div></div>`;return;}
+  activePath=node.path;
+  try{localStorage.setItem(LS_ACTIVE,activePath);}catch(e){}
+  document.querySelectorAll('.rec-item.active').forEach(r=>r.classList.remove('active'));
+  highlightActive();
+  render(d);
+}
+
+async function pickDir(){
+  if(window.showDirectoryPicker){
+    let handle;
+    try{handle=await window.showDirectoryPicker();}
+    catch(e){if(e&&e.name==='AbortError')return;console.warn('showDirectoryPicker failed, falling back',e);}
+    if(handle){
+      dirHandle=handle;
+      try{await idbSet('lastDir',handle);}catch(e){console.warn('persist dir failed',e);}
+      renderTree(await scanFSDir(handle,''));
+      return;
+    }
+  }
+  document.getElementById('dirInput').click();   // fallback
+}
+async function refreshDir(){
+  if(dirHandle){renderTree(await scanFSDir(dirHandle,''));highlightActive();}
+}
+
+// ---- drag/drop recents (localStorage) ----
+function loadStore(){try{return JSON.parse(localStorage.getItem(LS_KEY))||{records:[],last:null};}catch(e){return {records:[],last:null};}}
+function saveStore(s){try{localStorage.setItem(LS_KEY,JSON.stringify(s));}catch(e){alert('保存到本机失败（localStorage 可能已满）：\n'+e.message);}}
+function renderRecord(id){
+  const s=loadStore(),rec=s.records.find(x=>x.id===id);
+  if(!rec){resetEmpty();return;}
+  s.last=id;saveStore(s);render(rec.json);
+}
+function renderRecents(){
+  const s=loadStore(),host=document.getElementById('sbRecents');
+  const recs=[...s.records].sort((a,b)=>(b.ts||0)-(a.ts||0));
+  if(!recs.length){host.innerHTML='<div class="sb-empty">拖入 / 选择的单个 JSON 会出现在这里</div>';return;}
+  host.innerHTML='';
+  recs.forEach(r=>{
+    const row=$(`<div class="rec-item" data-id="${esc(r.id)}"><span class="ti">📄</span><span class="tn" title="${esc(r.label)}">${esc(r.label)}</span><button class="recdel" title="删除本机记录（不动磁盘文件）">🗑</button></div>`);
+    const open=()=>{activePath=null;document.querySelectorAll('.trow.tfile.active').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.rec-item.active').forEach(x=>x.classList.remove('active'));row.classList.add('active');renderRecord(r.id);};
+    row.querySelector('.tn').onclick=open;row.querySelector('.ti').onclick=open;
+    row.querySelector('.recdel').onclick=(ev)=>{ev.stopPropagation();
+      if(!confirm('删除本机记录：'+r.label+'？（不动磁盘文件）'))return;
+      const st=loadStore();st.records=st.records.filter(x=>x.id!==r.id);saveStore(st);renderRecents();};
+    host.appendChild(row);
+  });
 }
 
 function load(file){
   const r=new FileReader();
-  r.onload=()=>{try{render(JSON.parse(r.result));}catch(e){document.getElementById('root').innerHTML=`<div class="empty"><div class="big">❌</div>JSON 解析失败<div style="margin-top:8px;color:var(--faint)">${esc(e.message)}</div></div>`;}};
+  r.onload=()=>{
+    let d;
+    try{d=JSON.parse(r.result);}
+    catch(e){document.getElementById('root').innerHTML=`<div class="empty"><div class="big">❌</div>JSON 解析失败<div style="margin-top:8px;color:var(--faint)">${esc(e.message)}</div></div>`;return;}
+    const type=detect(d);
+    if(type==='unknown'){render(d);return;}
+    const name=(file.name||'plan').replace(/\.(json)$/i,'').trim()||(file.name||'plan');
+    const s=loadStore();
+    const rec={id:name,name,type,label:name,ts:Date.now(),json:d};
+    s.records=s.records.filter(x=>x.id!==name);
+    s.records.push(rec);
+    s.last=name;
+    saveStore(s);
+    activePath=null;document.querySelectorAll('.trow.tfile.active').forEach(x=>x.classList.remove('active'));
+    renderRecents();
+    render(d);
+  };
   r.readAsText(file,'utf-8');
 }
+
+// ---- wiring ----
 const drop=document.getElementById('drop');
 document.getElementById('file').onchange=e=>e.target.files[0]&&load(e.target.files[0]);
+document.getElementById('openDir').onclick=pickDir;
+document.getElementById('refreshDir').onclick=refreshDir;
+document.getElementById('sbToggle').onclick=()=>document.getElementById('sidebar').classList.toggle('collapsed');
+document.getElementById('dirInput').onchange=e=>{const f=[...e.target.files];if(f.length)renderTree(buildTreeFromFileList(f));};
 ['dragover','dragenter'].forEach(ev=>document.body.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
 ['dragleave','drop'].forEach(ev=>document.body.addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'&&e.dataTransfer.files[0])load(e.dataTransfer.files[0]);drop.classList.remove('over');}));
+
+// ---- init: restore last directory (if permission still granted) + recents ----
+function showRestore(h){
+  const host=document.getElementById('sbTree');
+  host.innerHTML='';
+  const b=$(`<button class="fbtn" style="margin:10px 12px">↻ 恢复上次文件夹：${esc(h.name)}</button>`);
+  b.onclick=async()=>{
+    try{const p=await h.requestPermission({mode:'read'});if(p!=='granted')return;}
+    catch(e){console.warn(e);return;}
+    dirHandle=h;activePath=localStorage.getItem(LS_ACTIVE);renderTree(await scanFSDir(h,''));
+  };
+  host.appendChild(b);
+}
+(async function(){
+  renderRecents();
+  try{
+    const h=await idbGet('lastDir');
+    if(h){
+      const perm=await h.queryPermission({mode:'read'});
+      if(perm==='granted'){dirHandle=h;activePath=localStorage.getItem(LS_ACTIVE);renderTree(await scanFSDir(h,''));}
+      else{showRestore(h);}
+    }
+  }catch(e){console.warn('restore dir failed',e);}
+  const s=loadStore();
+  if(!activePath){
+    if(s.last&&s.records.some(x=>x.id===s.last))renderRecord(s.last);
+    else resetEmpty();
+  }
+})();
 </script>
 </body>
 </html>

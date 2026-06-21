@@ -19,8 +19,8 @@
 [generator]
 # Coach Agent — generates weekly + master plans, drives chat with tools
 provider     = "azure-openai"
-model        = "gpt-5.5"
-deployment   = "gpt-5.5"
+model        = "gpt-5.4"
+deployment   = "gpt-5.4"
 endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
 api_version  = "2025-04-01-preview"
 api_kind     = "responses"

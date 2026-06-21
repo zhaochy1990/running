@@ -954,6 +954,39 @@ class TestPromptIncludesContinuity:
         assert "form 区: None" not in prompt
 
 
+class TestPromptIncludesCurrentPhase:
+    def test_entry_phase_block_present_and_authoritative(self):
+        from stride_server.master_plan_generator import _build_system_prompt
+        from coach.schemas import CurrentPhaseContext
+        from stride_core.master_plan import PhaseType
+        cp = CurrentPhaseContext(
+            source="inferred",
+            current_phase_type=PhaseType.SPEED,
+            recommended_entry_phase=PhaseType.SPEED,
+            completed_aerobic_weeks=8,
+            confidence="high",
+            rationale="基础已满 (8 周) + 近期质量课 → 进入 speed",
+        )
+        prompt = _build_system_prompt(
+            goal={"race_distance": "FM", "race_date": "2026-10-18"},
+            profile=None, history_summary="h", fitness_state={"summary": "s"},
+            today="2026-06-16", current_phase=cp,
+        )
+        assert "Recommended start phase: speed" in prompt
+        assert "must NOT be re-scheduled" in prompt
+        assert "8" in prompt  # completed aerobic weeks surfaced
+
+    def test_no_block_when_entry_phase_unknown(self):
+        from stride_server.master_plan_generator import _build_system_prompt
+        from coach.schemas import CurrentPhaseContext
+        prompt = _build_system_prompt(
+            goal={"race_distance": "FM", "race_date": "2026-10-18"},
+            profile=None, history_summary="h", fitness_state={"summary": "s"},
+            today="2026-06-16", current_phase=CurrentPhaseContext(source="unknown"),
+        )
+        assert "Recommended start phase" not in prompt
+
+
 class TestMacroCycleGuidance:
     def _prompt(self, mc):
         from stride_server.master_plan_generator import _build_system_prompt
@@ -966,15 +999,16 @@ class TestMacroCycleGuidance:
 
     def test_summer_guidance(self):
         p = self._prompt("summer")
-        assert "夏训" in p and ("速度周期" in p or "speed" in p.lower())
+        assert "Summer-block periodization guidance" in p and "speed" in p.lower()
 
     def test_winter_guidance(self):
         p = self._prompt("winter")
-        assert "冬训" in p and "有氧" in p
+        assert "Winter-block periodization guidance" in p and "aerobic" in p.lower()
 
     def test_unknown_no_macro_block(self):
         p = self._prompt("unknown")
-        assert "夏训块周期化指导" not in p
+        assert "Summer-block periodization guidance" not in p
+        assert "Winter-block periodization guidance" not in p
 
 
 # ---------------------------------------------------------------------------
@@ -1007,7 +1041,7 @@ class TestPromptPerPhaseMilestones:
             body_composition_summary=self._BODY_COMP_SUMMARY,
         )
         # Labeled baseline block present (distinct header, not the instruction text)
-        assert "体测基线（最新体测" in prompt
+        assert "Body-composition baseline" in prompt
         # Concrete baseline numbers reach the prompt
         assert "68.0" in prompt
         assert "15.0" in prompt
@@ -1029,20 +1063,20 @@ class TestPromptPerPhaseMilestones:
             body_composition_summary=self._BODY_COMP_SUMMARY,
         )
         # Stable anchor for the per-phase quantifiable-milestone instruction
-        assert "Per-phase 可量化 milestone" in prompt
+        assert "Per-phase quantifiable milestone" in prompt
         # Improvement-rate guidance: speed phase 5k upper bound
         assert "race_time_s_5k" in prompt
         assert "5-8%" in prompt or "5–8%" in prompt
-        # Performance milestone anchored to PB baseline
-        assert "最好成绩" in prompt
+        # Performance milestone anchored to the actual-PB baseline line
+        assert "actual personal best (PB)" in prompt
 
     def test_body_comp_block_omitted_when_none(self):
         prompt = self._build(body_composition=None, body_composition_summary=None)
         # No body-comp baseline block / numbers (header + baseline figures absent)
-        assert "体测基线（最新体测" not in prompt
+        assert "Body-composition baseline" not in prompt
         assert "68.0" not in prompt
         # But performance per-phase milestone instruction still present
-        assert "Per-phase 可量化 milestone" in prompt
+        assert "Per-phase quantifiable milestone" in prompt
         assert "race_time_s_5k" in prompt
 
     def test_body_comp_fallback_used_when_summary_none(self):
@@ -1053,7 +1087,7 @@ class TestPromptPerPhaseMilestones:
             body_composition_summary=None,
         )
         # Labeled baseline block present
-        assert "体测基线（最新体测" in prompt
+        assert "Body-composition baseline" in prompt
         # Fallback formatter emitted its own summary line ("最新体测（...）")
         assert "最新体测" in prompt
         # Concrete weight number from _BODY_COMP reaches the prompt via the fallback
@@ -1153,8 +1187,9 @@ class TestLoadMasterContextDoubleBaseline:
 
         db = Database(db_path=tmp_path / "coros.db")
         c = db._conn
-        # Performance baseline: race_predictions (canonical PB read path that
-        # _query_history maps to best_*_s).
+        # Fitness-prediction baseline: race_predictions are COROS estimates, NOT
+        # achieved PBs — _query_history now maps them to pred_*_s (real PBs come
+        # from detect_personal_bests over activities, none seeded here).
         for race_type, dur in (
             ("5K", 1200.0),       # 20:00
             ("10K", 2520.0),      # 42:00
@@ -1207,13 +1242,15 @@ class TestLoadMasterContextDoubleBaseline:
             db, monkeypatch, profile={"height_cm": 175.0}
         )
 
-        # Performance baseline — reused from _query_history (race_predictions),
-        # NOT recomputed here.
+        # Fitness predictions flow to pred_*_s (NOT mislabeled as PB). Real PBs
+        # (best_*_s) come from detect_personal_bests over activities — none
+        # seeded here, so they stay None.
         hist = ctx["history"]
-        assert hist["best_5k_s"] == 1200
-        assert hist["best_10k_s"] == 2520
-        assert hist["best_hm_s"] == 5700
-        assert hist["best_fm_s"] == 12000
+        assert hist["pred_5k_s"] == 1200
+        assert hist["pred_10k_s"] == 2520
+        assert hist["pred_hm_s"] == 5700
+        assert hist["pred_fm_s"] == 12000
+        assert hist["best_fm_s"] is None
 
         # Body-composition baseline — latest scan (2026-06-01, not the older one).
         bc = ctx["body_composition"]
@@ -1252,8 +1289,8 @@ class TestLoadMasterContextDoubleBaseline:
 
         # Degrades, never raises.
         assert ctx["body_composition"] is None
-        # Performance baseline survives.
-        assert ctx["history"]["best_fm_s"] == 12000
+        # Fitness-prediction baseline survives (real PB needs activities).
+        assert ctx["history"]["pred_fm_s"] == 12000
 
     def test_bmi_math(self):
         """BMI helper on a known weight+height: 60kg @ 1.70m → 20.76."""

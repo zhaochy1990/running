@@ -20,14 +20,14 @@ endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
 api_version  = "2025-04-01-preview"
 api_kind     = "responses"
 temperature  = 0.4
-# max_tokens=524288 — the phase-at-once generator now emits an entire
-# phase's weeks in one LLM call, so the output budget is raised to 512k.
-# The model's actual visible-output cap may be lower (gpt-5 family
-# ~128k), but a phase of aspirational (spec=null) weeks stays well under
-# that, so 524288 (512k) simply removes max_tokens as a bottleneck; the
-# model only emits what it needs. If output still truncates, the Azure
-# deployment's max_response_tokens needs to be raised in the portal.
-max_tokens   = 524288
+# max_tokens=131072 (128k) — the phase-at-once generator emits an entire
+# phase's weeks in one LLM call. 128k matches the gpt-5 family's actual
+# visible-output cap, and a phase of aspirational (spec=null) weeks stays
+# comfortably under it (the 512k experiment only consumed a fraction).
+# Capping at the real ceiling trims per-call latency without risking
+# truncation. If a phase ever does truncate, the Azure deployment's
+# max_response_tokens needs to be raised in the portal (NOT this config).
+max_tokens   = 131072
 # timeout_s=300 — S1 master plan with reasoning_effort=medium and
 # 128k output budget can take 2-4 min for 22-week plans. 5 min cap.
 timeout_s    = 300

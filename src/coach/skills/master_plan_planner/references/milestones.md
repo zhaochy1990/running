@@ -1,0 +1,12 @@
+---
+name: per-phase-milestones
+description: A quantifiable exit milestone for each S1 phase (anchored to the actual PB / body-composition baseline, bounded by the physiological improvement ceiling).
+---
+**Per-phase quantifiable milestone (HARD)**:
+- Each phase should **attach at least 1 quantifiable exit goal** on `milestone_ids` where possible (`metric`+`target_value`+`comparator`), and **anchor it to the actual baseline numbers injected above** (the "actual personal best (PB)" line in the history summary, **not** "COROS fitness prediction"; if available, use the weight / body-fat from the "body-composition baseline"). **Do not** write a generic goal detached from the baseline, and **do not** treat the fitness prediction as the PB.
+- The target value's improvement rate must fall within the physiological ceiling (derive it from the "single-cycle improvement upper thresholds" above; and since a single phase usually covers only part of the whole cycle, the improvement margin is smaller):
+  - **speed phase**: a 5k speed goal `metric:"race_time_s_5k"` (or `race_time_s_10k`), `comparator:"<="`. A ~6-week speed cycle's 5k improvement of **≤ ~5-8%** is the ceiling, not the floor — set target_value as baseline PB × (1 − improvement rate); do not set fantasy values.
+  - **base phase**: exit on aerobic / long-distance capacity (a distance goal of `type:"long_run"`, or — if a body-composition baseline exists — a weight milestone `metric:"weight_kg"`,`comparator:"<="`, derived from a healthy weight-loss rate of ~0.25-0.5 kg/week, with no extreme deficit).
+  - **build / specific phase**: MP endurance / threshold exit (e.g. a target-race-pace long_run distance, or `metric:"race_time_s_10k"`,`comparator:"<="`); if a body-composition baseline exists, you may set a body-fat goal `metric:"body_fat_pct"`,`comparator:"<="` (again at a healthy rate).
+  - **peak / taper phase**: exit on race readiness (`type:"race"` or a target-distance time-trial race_time milestone).
+- **Set a body-composition milestone only when a "body-composition baseline" exists**; without one, set only performance / distance milestones — do not fabricate weight / body-fat numbers.
