@@ -23,6 +23,7 @@ from coach.graphs.generation.master_rule_filter import (
     check_hard_session_spacing,
     check_key_session_density,
     check_long_run_distance_share,
+    check_marathon_pace_specificity,
     check_phase_duration_balance,
     check_season_window_fits,
     check_strength_durability_track,
@@ -177,6 +178,82 @@ def test_run_only_plan_warns():
     report = run_master_rule_filter(plan_dict_full, **_kwargs_full())
     assert report.ok
     assert any(v.rule == "strength_durability_track" for v in report.violations)
+
+
+# ---------------------------------------------------------------------------
+# marathon_pace_specificity
+# ---------------------------------------------------------------------------
+
+_FM_3H20 = {"distance": "fm", "goal_time_s": 12000}   # 3:20 — not sub-3
+_FM_SUB3 = {"distance": "fm", "goal_time_s": 10200}   # 2:50 — sub-3
+
+
+def test_mp_specificity_noop_without_target_or_weeks():
+    plan = MasterPlan.model_validate(_base_plan_dict())  # no weekly_key_sessions
+    assert check_marathon_pace_specificity(plan, target_race=_FM_3H20) == []
+    plan2 = MasterPlan.model_validate(_plan_with_weeks([
+        _week(week_index=1, week_start="2026-05-19")]))
+    assert check_marathon_pace_specificity(plan2, target_race=None) == []
+
+
+def test_mp_specificity_noop_for_short_distance():
+    plan = MasterPlan.model_validate(_plan_with_weeks([
+        _week(week_index=1, week_start="2026-05-19")]))
+    assert check_marathon_pace_specificity(
+        plan, target_race={"distance": "10k", "goal_time_s": 2400}) == []
+
+
+def test_mp_specificity_satisfied_by_race_pace_session():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 30, "intensity": "z2"},
+        {"type": "race_pace", "distance_km": 18},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_marathon_pace_specificity(plan, target_race=_FM_3H20) == []
+
+
+def test_mp_specificity_satisfied_by_goal_pace_milestone():
+    plan_dict = _plan_with_weeks([_week(week_index=1, week_start="2026-05-19",
+        sessions=[{"type": "long_run", "distance_km": 32, "intensity": "z2"}])])
+    plan_dict["milestones"] = [{
+        "id": "mp1", "type": "long_run", "date": "2026-08-01", "phase_id": "ph3",
+        "target": "32km长距，内含22km马拉松目标配速",
+    }]
+    plan = MasterPlan.model_validate(plan_dict)
+    assert check_marathon_pace_specificity(plan, target_race=_FM_3H20) == []
+
+
+def test_mp_specificity_run_only_fm_warns():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 30, "intensity": "z2"},
+        {"type": "threshold", "duration_min": 40},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))  # milestones cleared
+    v = check_marathon_pace_specificity(plan, target_race=_FM_3H20)
+    assert len(v) == 1
+    assert v[0].rule == "marathon_pace_specificity"
+    assert v[0].severity == "warning"
+
+
+def test_mp_specificity_sub3_short_long_run_warns():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 30, "intensity": "z2"},
+        {"type": "race_pace", "distance_km": 20},  # specificity satisfied
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    v = check_marathon_pace_specificity(plan, target_race=_FM_SUB3)
+    # specificity OK (race_pace present) but 30km < 32km for sub-3 → one warning
+    assert [x.details.get("peak_long_run_km") for x in v] == [30.0]
+    assert all(x.severity == "warning" for x in v)
+
+
+def test_mp_specificity_sub3_deep_long_run_ok():
+    weeks = [_week(week_index=1, week_start="2026-05-19", sessions=[
+        {"type": "long_run", "distance_km": 33, "intensity": "z2"},
+        {"type": "race_pace", "distance_km": 22},
+    ])]
+    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
+    assert check_marathon_pace_specificity(plan, target_race=_FM_SUB3) == []
 
 
 # ---------------------------------------------------------------------------
