@@ -197,9 +197,31 @@ class ActivityCommentaryHandler:
                 )
 
 
+class PersonalBestsHandler:
+    name = "personal_bests"
+
+    def applies_to(self, context: PostSyncContext) -> bool:
+        return bool(context.activity_label_ids)
+
+    def run(self, context: PostSyncContext) -> None:
+        if not _unique_labels(context.activity_label_ids):
+            return
+        _emit(
+            context.progress,
+            phase="personal_bests",
+            message="正在更新历史最好成绩 (PB)",
+        )
+        # A new/changed activity may set a fresh PB at any distance, so recompute
+        # the whole best-effort scan and cache it into the personal_bests table.
+        from stride_core.pb_records import persist_personal_bests
+
+        persist_personal_bests(context.db)
+
+
 DEFAULT_POST_SYNC_HANDLERS: tuple[PostSyncHandler, ...] = (
     StrideTrainingLoadHandler(),
     AbilityHandler(),
+    PersonalBestsHandler(),
     ActivityCommentaryHandler(),
 )
 

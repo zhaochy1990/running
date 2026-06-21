@@ -1140,12 +1140,32 @@ class TestQueryHistoryRealDB:
         assert result["total_activities"] == 3
 
     def test_distance_normalized_to_km(self, tmp_path, monkeypatch):
-        """Monthly km for 2026-05: 21.1 + 10.0 + 15000→15.0 = 46.1 km."""
+        """Monthly km for 2026-05: 21.1 + 10.0 + 15000→15.0 = 46.1 km;
+        hours from duration_s: (5400 + 2550 + 4000) / 3600 = 3.32 h
+        (strength row excluded)."""
         db = self._seed(tmp_path)
         monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
         result = _query_history("anyuser")
         may = next(m for m in result["monthly_km"] if m["month"] == "2026-05")
         assert abs(may["km"] - 46.1) < 0.2
+        assert abs(may["hours"] - 3.32) < 0.05
+
+    def test_pbs_self_heal_then_read_from_table(self, tmp_path, monkeypatch):
+        """personal_bests starts empty → _query_history self-heals (persists) and
+        reads it. a1 (21.1km/5400s) → HM PB; a2 (10km/2550s) → 10K PB. After the
+        first call the table is populated for cheap subsequent reads."""
+        from stride_core.pb_records import fetch_personal_bests
+
+        db = self._seed(tmp_path)
+        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        assert fetch_personal_bests(db) == {}  # nothing persisted yet
+
+        result = _query_history("anyuser")
+        assert result["best_10k_s"] == 2550
+        assert result["best_hm_s"] == 5400
+
+        # The self-heal persisted the rows, so the table now serves them directly.
+        assert "10K" in fetch_personal_bests(db)
 
 
 # ---------------------------------------------------------------------------
@@ -1175,8 +1195,9 @@ class TestQueryFitnessStateStride:
 
 # ---------------------------------------------------------------------------
 # load_master_context double baseline (Stage-3a P2)
-# Performance baseline (race_predictions, already wired via _query_history) +
-# body-composition baseline (body_composition_scan, added here). Graceful
+# Performance baseline (real PBs via _query_history → load_personal_bests) +
+# body-composition baseline (body_composition_scan, added here). COROS
+# race_predictions are deliberately NOT surfaced into the context. Graceful
 # degrade when there's no body-comp scan.
 # ---------------------------------------------------------------------------
 
@@ -1187,9 +1208,10 @@ class TestLoadMasterContextDoubleBaseline:
 
         db = Database(db_path=tmp_path / "coros.db")
         c = db._conn
-        # Fitness-prediction baseline: race_predictions are COROS estimates, NOT
-        # achieved PBs — _query_history now maps them to pred_*_s (real PBs come
-        # from detect_personal_bests over activities, none seeded here).
+        # Seed COROS race_predictions to prove they are NOT surfaced into the
+        # context: _query_history anchors milestones to real PBs only (from
+        # detect_personal_bests over activities, none seeded here), so these
+        # prediction rows must never leak into history.
         for race_type, dur in (
             ("5K", 1200.0),       # 20:00
             ("10K", 2520.0),      # 42:00
@@ -1234,22 +1256,20 @@ class TestLoadMasterContextDoubleBaseline:
         return adapter_mod.load_master_context(state)
 
     def test_both_baselines_present(self, tmp_path, monkeypatch):
-        """Seeded race_predictions + body_composition_scan → context carries
-        the performance baseline (history.best_*_s) AND a body_composition
-        block with weight/body_fat/smm + BMI (height from profile)."""
+        """Seeded body_composition_scan → context carries a body_composition
+        block with weight/body_fat/smm + BMI (height from profile). Seeded COROS
+        race_predictions must NOT leak into history — the planner anchors to real
+        PBs only."""
         db = self._seed_db(tmp_path, with_body_comp=True)
         ctx = self._patch_db_and_load(
             db, monkeypatch, profile={"height_cm": 175.0}
         )
 
-        # Fitness predictions flow to pred_*_s (NOT mislabeled as PB). Real PBs
-        # (best_*_s) come from detect_personal_bests over activities — none
-        # seeded here, so they stay None.
+        # COROS race_predictions are NOT surfaced. Real PBs (best_*_s) come from
+        # detect_personal_bests over activities — none seeded here, so None.
         hist = ctx["history"]
-        assert hist["pred_5k_s"] == 1200
-        assert hist["pred_10k_s"] == 2520
-        assert hist["pred_hm_s"] == 5700
-        assert hist["pred_fm_s"] == 12000
+        assert "pred_5k_s" not in hist
+        assert "pred_fm_s" not in hist
         assert hist["best_fm_s"] is None
 
         # Body-composition baseline — latest scan (2026-06-01, not the older one).
@@ -1280,8 +1300,8 @@ class TestLoadMasterContextDoubleBaseline:
 
     def test_graceful_degrade_no_body_comp(self, tmp_path, monkeypatch):
         """No body_composition_scan → load_master_context succeeds, body_composition
-        is None, performance baseline still present (so only-perf milestones
-        remain possible)."""
+        is None, history still present (PB-only anchor; predictions never
+        surfaced)."""
         db = self._seed_db(tmp_path, with_body_comp=False)
         ctx = self._patch_db_and_load(
             db, monkeypatch, profile={"height_cm": 175.0}
@@ -1289,8 +1309,9 @@ class TestLoadMasterContextDoubleBaseline:
 
         # Degrades, never raises.
         assert ctx["body_composition"] is None
-        # Fitness-prediction baseline survives (real PB needs activities).
-        assert ctx["history"]["pred_fm_s"] == 12000
+        # History present but carries no fitness-prediction baseline.
+        assert "pred_fm_s" not in ctx["history"]
+        assert ctx["history"]["best_fm_s"] is None
 
     def test_bmi_math(self):
         """BMI helper on a known weight+height: 60kg @ 1.70m → 20.76."""
@@ -1300,3 +1321,50 @@ class TestLoadMasterContextDoubleBaseline:
         assert _compute_bmi(70.0, None) is None
         assert _compute_bmi(None, 175.0) is None
         assert _compute_bmi(70.0, 0) is None
+
+
+# ---------------------------------------------------------------------------
+# _format_history_summary — half-month weighting, hours, MTD, English prose
+# ---------------------------------------------------------------------------
+
+
+class TestFormatHistorySummary:
+    @staticmethod
+    def _history(months):
+        return {
+            "total_activities": 100,
+            "max_weekly_km": 80.0,
+            "monthly_km": [{"month": m, "km": 100.0, "hours": 10.0} for m in months],
+            "best_5k_s": 1170, "best_10k_s": 2405, "best_hm_s": None, "best_fm_s": None,
+        }
+
+    def _summary(self, monkeypatch, history, today):
+        from stride_server import master_plan_generator as mod
+        monkeypatch.setattr("stride_core.timefmt.today_shanghai", lambda: today)
+        return mod._format_history_summary(history)
+
+    def test_current_month_weighted_half(self, monkeypatch):
+        # 6 months, last == current Shanghai month → month_equiv = 5.5, so
+        # avg = 600 / 5.5 = 109 km/mo, 60 / 5.5 = 10.9 h/mo; current month gets MTD.
+        months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
+        out = self._summary(monkeypatch, self._history(months), date(2026, 6, 15))
+        assert "109 km/mo" in out
+        assert "10.9 h/mo" in out
+        assert "(MTD)" in out
+        assert "current month weighted as half" in out
+        # English prose + time included
+        assert "Average monthly volume" in out
+        assert "distance/time" in out
+
+    def test_no_current_month_full_denominator(self, monkeypatch):
+        # None of the 6 months is the current month → month_equiv = 6.0, avg = 100.
+        months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
+        out = self._summary(monkeypatch, self._history(months), date(2026, 7, 15))
+        assert "100 km/mo" in out
+        assert "(MTD)" not in out
+
+    def test_no_volume_data(self, monkeypatch):
+        out = self._summary(monkeypatch, self._history([]), date(2026, 6, 15))
+        assert "No historical volume data" in out
+        # PB line still rendered (English).
+        assert "Actual personal bests (PB" in out

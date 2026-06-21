@@ -260,6 +260,112 @@ def test_ability_handler_forwards_label_ids(db, monkeypatch):
     assert calls == [(db, ["a", "b"])]
 
 
+def test_personal_bests_handler_registered_and_persists(db):
+    from stride_core.post_sync import (
+        DEFAULT_POST_SYNC_HANDLERS,
+        PersonalBestsHandler,
+        PostSyncContext,
+    )
+    from stride_core.pb_records import fetch_personal_bests
+
+    assert any(h.name == "personal_bests" for h in DEFAULT_POST_SYNC_HANDLERS)
+
+    db.upsert_activity(_make_run("run1", "2026-05-01T08:00:00+00:00"), provider="coros")
+    # Table starts empty; the handler must populate it from the activity scan.
+    assert fetch_personal_bests(db) == {}
+
+    context = PostSyncContext(
+        user="u", provider="coros", operation="sync", db=db, activity_label_ids=("run1",),
+    )
+    PersonalBestsHandler().run(context)
+
+    pbs = fetch_personal_bests(db)
+    assert "5K" in pbs and pbs["5K"]["pb_time_sec"]
+
+
+def test_pb_candidates_drop_impossible_speed():
+    """A GPS teleport (≈16.7 m/s 1K) must be dropped; a real 1K (3.3 m/s) kept.
+    Guards the bogus-1K regression (e.g. 997 m credited in 31 s ≈ 32 m/s)."""
+    from stride_core.pb_records import (
+        MAX_PLAUSIBLE_SPEED_MPS,
+        PB_DISPLAY_DISTANCES,
+        best_effort_candidates_for_activity,
+    )
+
+    class _NoTimeseriesDb:
+        def fetch_timeseries(self, _label_id):
+            return []
+
+    # distance_m=1.0 → 1000 m (the <500 = km convention).
+    glitch = {"label_id": "g", "date": "2026-05-01T08:00:00+00:00",
+              "distance_m": 1.0, "duration_s": 60.0}    # 16.7 m/s
+    cands = best_effort_candidates_for_activity(
+        _NoTimeseriesDb(), glitch, distances=PB_DISPLAY_DISTANCES
+    )
+    assert all(c.distance_m / c.duration_s <= MAX_PLAUSIBLE_SPEED_MPS for c in cands)
+    assert "1K" not in {c.distance for c in cands}
+
+    real = {"label_id": "r", "date": "2026-05-01T08:00:00+00:00",
+            "distance_m": 1.0, "duration_s": 300.0}     # 3.3 m/s
+    cands2 = best_effort_candidates_for_activity(
+        _NoTimeseriesDb(), real, distances=PB_DISPLAY_DISTANCES
+    )
+    assert "1K" in {c.distance for c in cands2}
+
+
+def test_persist_personal_bests_roundtrip_and_upsert(db):
+    from stride_core.pb_records import (
+        PB_DISPLAY_DISTANCES,
+        detect_personal_bests,
+        fetch_personal_bests,
+        persist_personal_bests,
+    )
+
+    db.upsert_activity(_make_run("r1", "2026-05-01T08:00:00+00:00"), provider="coros")
+
+    persisted = persist_personal_bests(db)
+    fetched = fetch_personal_bests(db)
+    # Table mirrors the live detector over the full DISPLAY superset (1K/3K/5K/
+    # 10K/HM/FM), so /pbs + master-plan can share this one table.
+    assert set(fetched) == set(detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES))
+    assert fetched["5K"]["pb_time_sec"] == persisted["5K"]["pb_time_sec"]
+    # The nested entry (not just the scalar) survives the JSON round-trip: the
+    # best-so-far history list reaches /pbs intact.
+    hist = fetched["5K"]["history"]
+    assert isinstance(hist, list) and hist
+    assert "best_so_far_sec" in hist[0]
+
+    # ON CONFLICT(distance) overwrites a stale row on the next persist.
+    db._conn.execute("UPDATE personal_bests SET pb_time_sec = 99999 WHERE distance = '5K'")
+    db._conn.commit()
+    persist_personal_bests(db)
+    assert fetch_personal_bests(db)["5K"]["pb_time_sec"] == persisted["5K"]["pb_time_sec"]
+
+
+def test_load_personal_bests_no_rescan_for_pb_less_user(db, monkeypatch):
+    """A user with zero qualifying activities is recorded as scanned, so
+    load_personal_bests does NOT re-run the ~7s scan on every call."""
+    import stride_core.pb_records as pb
+    from stride_core.pb_records import load_personal_bests, personal_bests_scanned
+
+    calls = {"n": 0}
+    real_detect = pb.detect_personal_bests
+
+    def counting_detect(*a, **k):
+        calls["n"] += 1
+        return real_detect(*a, **k)
+
+    monkeypatch.setattr(pb, "detect_personal_bests", counting_detect)
+
+    # Empty DB (no activities) → first load scans once, finds nothing, marks scanned.
+    assert load_personal_bests(db) == {}
+    assert personal_bests_scanned(db) is True
+    assert calls["n"] == 1
+    # Second load must read the (empty) marker, NOT re-scan.
+    assert load_personal_bests(db) == {}
+    assert calls["n"] == 1
+
+
 def test_new_provider_only_needs_sync_result_label_ids_for_runner(db):
     from stride_core.post_sync import PostSyncContext, run_post_sync_events
     from stride_core.source import SyncResult

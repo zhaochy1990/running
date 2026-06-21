@@ -11,9 +11,8 @@ from pydantic import BaseModel
 from stride_core.pb_records import (
     ACTIVITY_DISTANCE_TOLERANCE_M,
     DISTANCE_ORDER,
-    PB_DISPLAY_DISTANCES,
     best_effort_candidates_for_activity,
-    detect_personal_bests,
+    load_personal_bests,
 )
 from stride_core.pb_records import _normalise_date as _core_normalise_date
 
@@ -67,7 +66,7 @@ def _detect_pbs(
 ) -> dict[str, dict]:
     """Compatibility wrapper for old row-only callers.
 
-    Route and coach code use ``detect_personal_bests(db)`` so they can scan
+    Route and coach code use ``load_personal_bests(db)`` so they can scan
     activity timeseries. This wrapper keeps legacy tests/imports working with
     activity-level fallback only.
     """
@@ -104,10 +103,16 @@ def _normalise_date(raw: str) -> str:
 
 @router.get("/api/{user}/pbs", response_model=PBsResponse)
 def get_pbs(user: str) -> PBsResponse:
-    """Return best-effort PBs for 1K, 3K, 5K, 10K, HM, and FM."""
+    """Return best-effort PBs for 1K, 3K, 5K, 10K, HM, and FM.
+
+    Reads the persisted ``personal_bests`` table (populated post-sync) instead of
+    recomputing the ~7s best-effort scan per request. ``load_personal_bests``
+    self-heals when the table was never scanned (idempotent; not guarded
+    in-process), and records PB-less users so they aren't re-scanned every call.
+    """
     db = get_db(user)
     try:
-        pb_map = detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES)
+        pb_map = load_personal_bests(db)
     finally:
         db.close()
 
