@@ -323,9 +323,8 @@ def _query_history(user_id: str) -> dict[str, Any]:
     """Query activities DB for a 3-year training history summary.
 
     Returns a dict with keys: monthly_km, max_weekly_km, total_activities,
-    best_*_s (REAL personal bests — actual achieved efforts), and pred_*_s
-    (COROS fitness-based race predictions — current-fitness ceilings, NOT
-    achieved results; kept separate so milestones anchor to real PBs).
+    and best_*_s (REAL personal bests — actual achieved efforts; the single
+    race-time anchor for milestone baselines).
 
     All failures are silently absorbed — returns zeros / empty lists rather
     than blocking the generation flow.
@@ -338,10 +337,6 @@ def _query_history(user_id: str) -> dict[str, Any]:
         "best_10k_s": None,
         "best_hm_s": None,
         "best_fm_s": None,
-        "pred_5k_s": None,
-        "pred_10k_s": None,
-        "pred_hm_s": None,
-        "pred_fm_s": None,
     }
     try:
         from stride_core.db import Database
@@ -363,10 +358,12 @@ def _query_history(user_id: str) -> dict[str, Any]:
         # stride_core.ability._distance_to_km; a plain ``/1000`` would be
         # ~1000x too small for the common km-valued rows.
         _KM_EXPR = "SUM(CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END)"
+        _HR_EXPR = "SUM(COALESCE(duration_s, 0)) / 3600.0"
         rows = conn.execute(
             f"""
             SELECT strftime('%Y-%m', date) AS month,
-                   {_KM_EXPR} AS km
+                   {_KM_EXPR} AS km,
+                   {_HR_EXPR} AS hours
             FROM activities
             WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
               AND date >= date('now', '-36 months')
@@ -374,7 +371,10 @@ def _query_history(user_id: str) -> dict[str, Any]:
             ORDER BY month
             """
         ).fetchall()
-        result["monthly_km"] = [{"month": r[0], "km": round(r[1], 1)} for r in rows]
+        result["monthly_km"] = [
+            {"month": r[0], "km": round(r[1], 1), "hours": round(r[2] or 0.0, 1)}
+            for r in rows
+        ]
 
         # Max single-week km (approximate: 7-day windows using SQLite strftime week)
         row = conn.execute(
@@ -398,17 +398,20 @@ def _query_history(user_id: str) -> dict[str, Any]:
         ).fetchone()
         result["total_activities"] = row[0] or 0
 
-        # Real personal bests — actual achieved efforts from the activity
-        # history via the canonical single-source detector (segment-matched,
-        # whole-activity fallback). This is DISTINCT from the COROS
-        # race_predictions below, which are fitness-based ESTIMATES (optimistic
-        # ceilings), not results. Conflating them anchored milestones to paces
-        # the athlete has never actually run (e.g. a "PB 38:38" 10K when the real
-        # best is 40:06). Reuses the same detector as routes/pbs + ability +
-        # the coach get_pbs tool (athlete-baseline single-source rule).
+        # Real personal bests — actual achieved efforts. Read from the persisted
+        # personal_bests table (populated post-sync by persist_personal_bests),
+        # so generation no longer pays the ~7s chronological best-effort scan. If
+        # the table is empty (DB synced before this feature shipped), self-heal by
+        # computing + persisting once. These are the ONLY race-time anchor fed to
+        # the planner: COROS race_predictions (fitness-based optimistic ceilings)
+        # are deliberately NOT surfaced, since conflating them anchored milestones
+        # to paces the athlete has never actually run (e.g. a "PB 38:38" 10K when
+        # the real best is 40:06).
         try:
-            from stride_core.pb_records import detect_personal_bests
-            pb_map = detect_personal_bests(db)
+            from stride_core.pb_records import fetch_personal_bests, persist_personal_bests
+            pb_map = fetch_personal_bests(db)
+            if not pb_map:
+                pb_map = persist_personal_bests(db)
             pb_key = {
                 "5K": "best_5k_s",
                 "10K": "best_10k_s",
@@ -419,25 +422,8 @@ def _query_history(user_id: str) -> dict[str, Any]:
                 entry = pb_map.get(disp)
                 if entry and entry.get("pb_time_sec"):
                     result[key] = round(entry["pb_time_sec"])
-        except Exception as exc:  # noqa: BLE001 — PB detection must not block gen
-            logger.warning("_query_history: PB detection failed for %s: %s", user_id, exc)
-
-        # COROS fitness-based race predictions — current-fitness ceilings, NOT
-        # achieved results. Kept as a SEPARATE signal (pred_*_s) so the planner
-        # sees what current fitness projects without mistaking it for a PB.
-        preds = conn.execute(
-            "SELECT race_type, duration_s FROM race_predictions"
-        ).fetchall()
-        pred_map = {
-            "5K": "pred_5k_s",
-            "10K": "pred_10k_s",
-            "Half Marathon": "pred_hm_s",
-            "Marathon": "pred_fm_s",
-        }
-        for race_type, duration_s in preds:
-            key = pred_map.get(race_type)
-            if key and duration_s:
-                result[key] = round(duration_s)
+        except Exception as exc:  # noqa: BLE001 — PB read must not block gen
+            logger.warning("_query_history: PB read failed for %s: %s", user_id, exc)
 
     except Exception as exc:  # noqa: BLE001
         logger.warning("_query_history failed for user %s: %s", user_id, exc)
@@ -527,51 +513,63 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
 
 
 def _format_history_summary(history: dict[str, Any]) -> str:
-    """Convert raw history dict into a readable summary string for the prompt."""
+    """Convert raw history dict into a readable (English) summary for the prompt.
+
+    Volume is reported as both distance and time. The in-progress current
+    calendar month is only partially elapsed, so it is weighted as HALF a month
+    in the average-volume denominator (its distance/time still count in full) —
+    otherwise a fresh month deflates the per-month average.
+    """
+    from stride_core.timefmt import today_shanghai
+
     lines: list[str] = []
 
     total = history.get("total_activities", 0)
     max_wk = history.get("max_weekly_km", 0)
     monthly = history.get("monthly_km", [])
 
-    lines.append(f"历史跑步活动总数：{total} 次")
-    lines.append(f"历史最大单周里程：{max_wk} km")
+    lines.append(f"Running activities (history total): {total}")
+    lines.append(f"Max single-week distance (history): {max_wk} km")
 
     if monthly:
         recent = monthly[-6:]  # last 6 months
-        monthly_str = "、".join(f"{m['month']} {m['km']}km" for m in recent)
-        lines.append(f"近 6 个月月跑量：{monthly_str}")
-        avg_km = sum(m["km"] for m in recent) / len(recent)
-        lines.append(f"近 6 个月平均月跑量：{avg_km:.0f} km（约 {avg_km/4:.0f} km/周）")
-    else:
-        lines.append("暂无历史跑量数据")
+        cur_ym = today_shanghai().strftime("%Y-%m")
+        monthly_str = ", ".join(
+            f"{m['month']} {m['km']:.0f}km/{m.get('hours', 0):.0f}h"
+            + ("(MTD)" if m["month"] == cur_ym else "")
+            for m in recent
+        )
+        lines.append(f"Last 6 months (distance/time): {monthly_str}")
 
-    # Best times
+        total_km = sum(m["km"] for m in recent)
+        total_hours = sum(m.get("hours", 0) for m in recent)
+        # The in-progress current month counts as half a month so a partial
+        # month doesn't deflate the per-month average (distance/time count full).
+        month_equiv = sum(0.5 if m["month"] == cur_ym else 1.0 for m in recent)
+        avg_km = total_km / month_equiv if month_equiv else 0.0
+        avg_hours = total_hours / month_equiv if month_equiv else 0.0
+        lines.append(
+            f"Average monthly volume: {avg_km:.0f} km/mo "
+            f"(~{avg_km / 4.345:.0f} km/wk), {avg_hours:.1f} h/mo "
+            f"(current month weighted as half)"
+        )
+    else:
+        lines.append("No historical volume data")
+
     def fmt_time(sec: int | None) -> str:
         if sec is None:
-            return "未知"
+            return "n/a"
         h, rem = divmod(sec, 3600)
         m2, s = divmod(rem, 60)
         return f"{h}:{m2:02d}:{s:02d}" if h else f"{m2}:{s:02d}"
 
     lines.append(
-        f"实际最好成绩（PB，历史真实跑出，里程碑锚定用这一行）— "
-        f"5K: {fmt_time(history.get('best_5k_s'))}  "
+        f"Actual personal bests (PB — really run in history; anchor milestones "
+        f"to this line) — 5K: {fmt_time(history.get('best_5k_s'))}  "
         f"10K: {fmt_time(history.get('best_10k_s'))}  "
-        f"半马: {fmt_time(history.get('best_hm_s'))}  "
-        f"全马: {fmt_time(history.get('best_fm_s'))}"
+        f"HM: {fmt_time(history.get('best_hm_s'))}  "
+        f"FM: {fmt_time(history.get('best_fm_s'))}"
     )
-    # COROS fitness predictions are current-fitness ceilings, NOT achieved
-    # results (typically faster than real PB). Surfaced separately + explicitly
-    # so the planner does NOT anchor milestones to a pace never actually run.
-    if any(history.get(k) for k in ("pred_5k_s", "pred_10k_s", "pred_hm_s", "pred_fm_s")):
-        lines.append(
-            f"COROS 体能预测（当前体能上限，非实际成绩，**勿**直接作为里程碑基线）— "
-            f"5K: {fmt_time(history.get('pred_5k_s'))}  "
-            f"10K: {fmt_time(history.get('pred_10k_s'))}  "
-            f"半马: {fmt_time(history.get('pred_hm_s'))}  "
-            f"全马: {fmt_time(history.get('pred_fm_s'))}"
-        )
 
     return "\n".join(lines)
 

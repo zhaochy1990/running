@@ -11,9 +11,9 @@ from pydantic import BaseModel
 from stride_core.pb_records import (
     ACTIVITY_DISTANCE_TOLERANCE_M,
     DISTANCE_ORDER,
-    PB_DISPLAY_DISTANCES,
     best_effort_candidates_for_activity,
-    detect_personal_bests,
+    fetch_personal_bests,
+    persist_personal_bests,
 )
 from stride_core.pb_records import _normalise_date as _core_normalise_date
 
@@ -104,10 +104,15 @@ def _normalise_date(raw: str) -> str:
 
 @router.get("/api/{user}/pbs", response_model=PBsResponse)
 def get_pbs(user: str) -> PBsResponse:
-    """Return best-effort PBs for 1K, 3K, 5K, 10K, HM, and FM."""
+    """Return best-effort PBs for 1K, 3K, 5K, 10K, HM, and FM.
+
+    Reads the persisted ``personal_bests`` table (populated post-sync) instead of
+    recomputing the ~7s best-effort scan per request. Self-heals by computing +
+    persisting once if the table is empty (DB synced before this feature).
+    """
     db = get_db(user)
     try:
-        pb_map = detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES)
+        pb_map = fetch_personal_bests(db) or persist_personal_bests(db)
     finally:
         db.close()
 

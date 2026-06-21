@@ -138,6 +138,66 @@ def detect_personal_bests(
     return current_entry
 
 
+def persist_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
+    """Recompute PBs via detect_personal_bests and upsert into ``personal_bests``.
+
+    Called from the post-sync pipeline so the expensive chronological best-effort
+    scan runs once per sync, not on every read. Stores the full display superset
+    (1K/3K/5K/10K/HM/FM via PB_DISPLAY_DISTANCES) so the same table backs the
+    /pbs route, the coach get_pbs tool, AND the master-plan generator. Returns the
+    freshly-detected dict (same shape as ``detect_personal_bests``). Rows for
+    distances that no longer have a PB are left untouched (a PB never disappears).
+    """
+    pbs = detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES)
+    conn = db._conn
+    for distance, entry in pbs.items():
+        conn.execute(
+            """INSERT INTO personal_bests
+                   (distance, pb_time_sec, achieved_at, source, entry_json, updated_at)
+               VALUES (?, ?, ?, ?, ?, datetime('now'))
+               ON CONFLICT(distance) DO UPDATE SET
+                   pb_time_sec = excluded.pb_time_sec,
+                   achieved_at = excluded.achieved_at,
+                   source      = excluded.source,
+                   entry_json  = excluded.entry_json,
+                   updated_at  = excluded.updated_at""",
+            (
+                distance,
+                float(entry.get("pb_time_sec")) if entry.get("pb_time_sec") is not None else None,
+                entry.get("achieved_at"),
+                entry.get("source"),
+                json.dumps(entry, ensure_ascii=False),
+            ),
+        )
+    conn.commit()
+    return pbs
+
+
+def fetch_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
+    """Read persisted PBs from ``personal_bests`` keyed by display distance.
+
+    Returns the SAME shape as ``detect_personal_bests`` (the full entry incl.
+    history + segment offsets, reconstructed from ``entry_json``), so the /pbs
+    route, coach get_pbs tool, and master-plan generator can swap a live scan for
+    this cheap indexed read (≤6 rows). Empty dict when the table has never been
+    populated — callers that need a guaranteed value should fall back to
+    ``persist_personal_bests`` once to seed it.
+    """
+    try:
+        rows = db._conn.execute(
+            "SELECT distance, entry_json FROM personal_bests"
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — table may not exist on a very old DB
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        try:
+            out[r["distance"]] = json.loads(r["entry_json"])
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
 def best_effort_candidates_for_activity(
     db: Any,
     activity: Mapping[str, Any],
@@ -325,6 +385,8 @@ __all__ = [
     "DISTANCE_ORDER",
     "best_effort_candidates_for_activity",
     "detect_personal_bests",
+    "fetch_personal_bests",
     "normalize_timeseries_units",
     "parse_pauses",
+    "persist_personal_bests",
 ]

@@ -260,6 +260,53 @@ def test_ability_handler_forwards_label_ids(db, monkeypatch):
     assert calls == [(db, ["a", "b"])]
 
 
+def test_personal_bests_handler_registered_and_persists(db):
+    from stride_core.post_sync import (
+        DEFAULT_POST_SYNC_HANDLERS,
+        PersonalBestsHandler,
+        PostSyncContext,
+    )
+    from stride_core.pb_records import fetch_personal_bests
+
+    assert any(h.name == "personal_bests" for h in DEFAULT_POST_SYNC_HANDLERS)
+
+    db.upsert_activity(_make_run("run1", "2026-05-01T08:00:00+00:00"), provider="coros")
+    # Table starts empty; the handler must populate it from the activity scan.
+    assert fetch_personal_bests(db) == {}
+
+    context = PostSyncContext(
+        user="u", provider="coros", operation="sync", db=db, activity_label_ids=("run1",),
+    )
+    PersonalBestsHandler().run(context)
+
+    pbs = fetch_personal_bests(db)
+    assert "5K" in pbs and pbs["5K"]["pb_time_sec"]
+
+
+def test_persist_personal_bests_roundtrip_and_upsert(db):
+    from stride_core.pb_records import (
+        PB_DISPLAY_DISTANCES,
+        detect_personal_bests,
+        fetch_personal_bests,
+        persist_personal_bests,
+    )
+
+    db.upsert_activity(_make_run("r1", "2026-05-01T08:00:00+00:00"), provider="coros")
+
+    persisted = persist_personal_bests(db)
+    fetched = fetch_personal_bests(db)
+    # Table mirrors the live detector over the full DISPLAY superset (1K/3K/5K/
+    # 10K/HM/FM), so /pbs + master-plan can share this one table.
+    assert set(fetched) == set(detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES))
+    assert fetched["5K"]["pb_time_sec"] == persisted["5K"]["pb_time_sec"]
+
+    # ON CONFLICT(distance) overwrites a stale row on the next persist.
+    db._conn.execute("UPDATE personal_bests SET pb_time_sec = 99999 WHERE distance = '5K'")
+    db._conn.commit()
+    persist_personal_bests(db)
+    assert fetch_personal_bests(db)["5K"]["pb_time_sec"] == persisted["5K"]["pb_time_sec"]
+
+
 def test_new_provider_only_needs_sync_result_label_ids_for_runner(db):
     from stride_core.post_sync import PostSyncContext, run_post_sync_events
     from stride_core.source import SyncResult

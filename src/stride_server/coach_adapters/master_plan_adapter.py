@@ -121,6 +121,7 @@ def load_master_context(state: GenState) -> dict:
         user_id,
         history.get("total_activities", 0),
     )
+    logger.debug("load_master_context: user=%s history_summary=%r", user_id, history_summary)
 
     if job_id:
         update_job(job_id, stage=JobStage.EVALUATING, progress=30)
@@ -152,7 +153,7 @@ def load_master_context(state: GenState) -> dict:
         except Exception as exc:  # noqa: BLE001 — detection must not hard-fail gen
             logger.warning("load_master_context: phase detection failed: %s", exc)
         # Body-composition baseline (the performance baseline is already loaded
-        # above via _query_history → race_predictions). Reuse the same db handle.
+        # above via _query_history → real PBs). Reuse the same db handle.
         try:
             body_composition = _load_body_composition(db, profile)
         except Exception as exc:  # noqa: BLE001 — degrade to perf-only milestones
@@ -226,6 +227,12 @@ def generate_master_plan(state: GenState) -> dict:
         body_composition=ctx.get("body_composition"),
         body_composition_summary=ctx.get("body_composition_summary"),
         current_phase=current_phase,
+    )
+    logger.debug(
+        "generate_master_plan: system_prompt length:%d chars, goal=%r, profile=%r",
+        len(system_prompt),
+        goal,
+        profile,
     )
 
     user_text = "请基于上述信息生成训练总纲"

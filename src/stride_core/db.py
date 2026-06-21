@@ -307,6 +307,24 @@ CREATE TABLE IF NOT EXISTS vo2max_pb (
 );
 CREATE INDEX IF NOT EXISTS idx_vo2max_pb_vdot ON vo2max_pb(race_type, vdot DESC);
 
+-- Persisted segment-matched personal bests — one row per display distance
+-- (1K/3K/5K/10K/HM/FM). Populated post-sync by
+-- stride_core.pb_records.persist_personal_bests, which caches the expensive
+-- detect_personal_bests chronological scan. The SINGLE source read by the /pbs
+-- route, the coach get_pbs tool, AND the master-plan generator so none of them
+-- recompute ~7s of best-effort matching per call. ``entry_json`` holds the full
+-- detector entry (history progression + segment offsets) so fetch returns a
+-- byte-identical shape to a live scan; the scalar columns stay queryable.
+-- Distinct from vo2max_pb (COROS VDOT memory) — this is the achieved-time PB.
+CREATE TABLE IF NOT EXISTS personal_bests (
+    distance     TEXT PRIMARY KEY,   -- '1K'|'3K'|'5K'|'10K'|'HM'|'FM'
+    pb_time_sec  REAL NOT NULL,
+    achieved_at  TEXT,               -- Shanghai YYYY-MM-DD the PB was run
+    source       TEXT,               -- 'segment' | 'activity'
+    entry_json   TEXT NOT NULL,      -- full detect_personal_bests entry (JSON)
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Phase 3: per-day HRV detail (separate table because the row is heavier
 -- than daily_health and not all providers populate it). Composite PK so
 -- a dual-watch user (e.g. COROS night + Garmin night for the same date)
