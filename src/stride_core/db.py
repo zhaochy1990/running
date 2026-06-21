@@ -314,7 +314,8 @@ CREATE INDEX IF NOT EXISTS idx_vo2max_pb_vdot ON vo2max_pb(race_type, vdot DESC)
 -- route, the coach get_pbs tool, AND the master-plan generator so none of them
 -- recompute ~7s of best-effort matching per call. ``entry_json`` holds the full
 -- detector entry (history progression + segment offsets) so fetch returns a
--- byte-identical shape to a live scan; the scalar columns stay queryable.
+-- shape semantically equal to a live scan (the JSON round-trip coerces
+-- float/tuple->list); the scalar columns stay queryable.
 -- Distinct from vo2max_pb (COROS VDOT memory) — this is the achieved-time PB.
 CREATE TABLE IF NOT EXISTS personal_bests (
     distance     TEXT PRIMARY KEY,   -- '1K'|'3K'|'5K'|'10K'|'HM'|'FM'

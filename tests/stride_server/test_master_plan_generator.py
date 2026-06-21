@@ -1195,7 +1195,7 @@ class TestQueryFitnessStateStride:
 
 # ---------------------------------------------------------------------------
 # load_master_context double baseline (Stage-3a P2)
-# Performance baseline (real PBs via _query_history → detect_personal_bests) +
+# Performance baseline (real PBs via _query_history → load_personal_bests) +
 # body-composition baseline (body_composition_scan, added here). COROS
 # race_predictions are deliberately NOT surfaced into the context. Graceful
 # degrade when there's no body-comp scan.
@@ -1321,3 +1321,50 @@ class TestLoadMasterContextDoubleBaseline:
         assert _compute_bmi(70.0, None) is None
         assert _compute_bmi(None, 175.0) is None
         assert _compute_bmi(70.0, 0) is None
+
+
+# ---------------------------------------------------------------------------
+# _format_history_summary — half-month weighting, hours, MTD, English prose
+# ---------------------------------------------------------------------------
+
+
+class TestFormatHistorySummary:
+    @staticmethod
+    def _history(months):
+        return {
+            "total_activities": 100,
+            "max_weekly_km": 80.0,
+            "monthly_km": [{"month": m, "km": 100.0, "hours": 10.0} for m in months],
+            "best_5k_s": 1170, "best_10k_s": 2405, "best_hm_s": None, "best_fm_s": None,
+        }
+
+    def _summary(self, monkeypatch, history, today):
+        from stride_server import master_plan_generator as mod
+        monkeypatch.setattr("stride_core.timefmt.today_shanghai", lambda: today)
+        return mod._format_history_summary(history)
+
+    def test_current_month_weighted_half(self, monkeypatch):
+        # 6 months, last == current Shanghai month → month_equiv = 5.5, so
+        # avg = 600 / 5.5 = 109 km/mo, 60 / 5.5 = 10.9 h/mo; current month gets MTD.
+        months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
+        out = self._summary(monkeypatch, self._history(months), date(2026, 6, 15))
+        assert "109 km/mo" in out
+        assert "10.9 h/mo" in out
+        assert "(MTD)" in out
+        assert "current month weighted as half" in out
+        # English prose + time included
+        assert "Average monthly volume" in out
+        assert "distance/time" in out
+
+    def test_no_current_month_full_denominator(self, monkeypatch):
+        # None of the 6 months is the current month → month_equiv = 6.0, avg = 100.
+        months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
+        out = self._summary(monkeypatch, self._history(months), date(2026, 7, 15))
+        assert "100 km/mo" in out
+        assert "(MTD)" not in out
+
+    def test_no_volume_data(self, monkeypatch):
+        out = self._summary(monkeypatch, self._history([]), date(2026, 6, 15))
+        assert "No historical volume data" in out
+        # PB line still rendered (English).
+        assert "Actual personal bests (PB" in out

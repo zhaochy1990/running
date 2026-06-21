@@ -8,12 +8,22 @@ rows or providers without usable timeseries.
 from __future__ import annotations
 
 import json
+import logging
+import sqlite3
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from stride_core.models import RUN_SPORT_IDS
 from stride_core.running_calibration.segments import best_distance_candidates
 from stride_core.timefmt import utc_iso_to_shanghai_iso
+
+logger = logging.getLogger(__name__)
+
+# sync_meta key recording that a PB scan has run for this DB (even when it found
+# zero qualifying activities). Lets load_personal_bests distinguish "never
+# scanned" from "scanned, genuinely empty" so a PB-less user isn't re-scanned
+# (~7s) on every read.
+_PB_SCAN_META_KEY = "personal_bests_scanned"
 
 
 CANONICAL_RACE_DISTANCES: dict[str, float] = {
@@ -153,8 +163,10 @@ def persist_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
     scan runs once per sync, not on every read. Stores the full display superset
     (1K/3K/5K/10K/HM/FM via PB_DISPLAY_DISTANCES) so the same table backs the
     /pbs route, the coach get_pbs tool, AND the master-plan generator. Returns the
-    freshly-detected dict (same shape as ``detect_personal_bests``). Rows for
-    distances that no longer have a PB are left untouched (a PB never disappears).
+    freshly-detected dict (semantically equal to ``detect_personal_bests``; the
+    JSON round-trip coerces float/tuple→list). The UPSERT writes exactly today's
+    full scan, so a deleted activity legitimately recomputes a row lower — only
+    the best-so-far *within* the current activity set is kept.
     """
     pbs = detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES)
     conn = db._conn
@@ -178,24 +190,56 @@ def persist_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
             ),
         )
     conn.commit()
+    # Record the scan ran (even with zero PBs) so load_personal_bests doesn't
+    # re-scan a PB-less user on every read. Best-effort: the marker is an
+    # optimization, never worth failing a successful persist over.
+    try:
+        db.set_meta(_PB_SCAN_META_KEY, str(len(pbs)))
+    except Exception:  # noqa: BLE001
+        logger.warning("persist_personal_bests: scan marker write failed", exc_info=True)
     return pbs
+
+
+def personal_bests_scanned(db: Any) -> bool:
+    """True if a PB scan has been recorded for this DB (see _PB_SCAN_META_KEY)."""
+    try:
+        return db.get_meta(_PB_SCAN_META_KEY) is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def load_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
+    """Read persisted PBs, self-healing ONCE if the table was never scanned.
+
+    The canonical reader for the /pbs route, coach get_pbs tool, and master-plan
+    generator. Unlike a bare ``fetch or persist``, a user with genuinely zero
+    qualifying activities is recorded as scanned, so this does NOT re-run the ~7s
+    chronological scan on every call.
+    """
+    pbs = fetch_personal_bests(db)
+    if pbs or personal_bests_scanned(db):
+        return pbs
+    return persist_personal_bests(db)
 
 
 def fetch_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
     """Read persisted PBs from ``personal_bests`` keyed by display distance.
 
-    Returns the SAME shape as ``detect_personal_bests`` (the full entry incl.
+    Returns the same shape as ``detect_personal_bests`` (the full entry incl.
     history + segment offsets, reconstructed from ``entry_json``), so the /pbs
     route, coach get_pbs tool, and master-plan generator can swap a live scan for
-    this cheap indexed read (≤6 rows). Empty dict when the table has never been
-    populated — callers that need a guaranteed value should fall back to
-    ``persist_personal_bests`` once to seed it.
+    this cheap indexed read (≤6 rows). Empty dict when the table is absent or
+    empty — prefer ``load_personal_bests`` when a value should be seeded on first
+    read.
     """
     try:
         rows = db._conn.execute(
             "SELECT distance, entry_json FROM personal_bests"
         ).fetchall()
-    except Exception:  # noqa: BLE001 — table may not exist on a very old DB
+    except sqlite3.OperationalError:
+        return {}  # table absent on a pre-migration DB — expected, silent
+    except Exception:  # noqa: BLE001 — corruption / locked / closed conn: surface it
+        logger.warning("fetch_personal_bests: unexpected DB error", exc_info=True)
         return {}
     out: dict[str, dict[str, Any]] = {}
     for r in rows:
@@ -403,6 +447,8 @@ __all__ = [
     "best_effort_candidates_for_activity",
     "detect_personal_bests",
     "fetch_personal_bests",
+    "load_personal_bests",
+    "personal_bests_scanned",
     "normalize_timeseries_units",
     "parse_pauses",
     "persist_personal_bests",

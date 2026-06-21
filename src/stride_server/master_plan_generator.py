@@ -359,9 +359,14 @@ def _query_history(user_id: str) -> dict[str, Any]:
         # ~1000x too small for the common km-valued rows.
         _KM_EXPR = "SUM(CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END)"
         _HR_EXPR = "SUM(COALESCE(duration_s, 0)) / 3600.0"
+        # Bucket by Shanghai calendar (UTC+8), per the Timezone discipline HARD
+        # rule: a run finishing 23:30 UTC on the 31st is 07:30 CST the next day
+        # and must land in the next month/week, not the UTC one.
+        _SH_MONTH = "strftime('%Y-%m', datetime(date, '+8 hours'))"
+        _SH_WEEK = "strftime('%Y-%W', datetime(date, '+8 hours'))"
         rows = conn.execute(
             f"""
-            SELECT strftime('%Y-%m', date) AS month,
+            SELECT {_SH_MONTH} AS month,
                    {_KM_EXPR} AS km,
                    {_HR_EXPR} AS hours
             FROM activities
@@ -376,12 +381,12 @@ def _query_history(user_id: str) -> dict[str, Any]:
             for r in rows
         ]
 
-        # Max single-week km (approximate: 7-day windows using SQLite strftime week)
+        # Max single-week km (approximate: 7-day Shanghai-week windows)
         row = conn.execute(
             f"""
             SELECT MAX(week_km)
             FROM (
-                SELECT strftime('%Y-%W', date) AS wk,
+                SELECT {_SH_WEEK} AS wk,
                        {_KM_EXPR} AS week_km
                 FROM activities
                 WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
@@ -399,19 +404,17 @@ def _query_history(user_id: str) -> dict[str, Any]:
         result["total_activities"] = row[0] or 0
 
         # Real personal bests — actual achieved efforts. Read from the persisted
-        # personal_bests table (populated post-sync by persist_personal_bests),
-        # so generation no longer pays the ~7s chronological best-effort scan. If
-        # the table is empty (DB synced before this feature shipped), self-heal by
-        # computing + persisting once. These are the ONLY race-time anchor fed to
-        # the planner: COROS race_predictions (fitness-based optimistic ceilings)
-        # are deliberately NOT surfaced, since conflating them anchored milestones
-        # to paces the athlete has never actually run (e.g. a "PB 38:38" 10K when
-        # the real best is 40:06).
+        # personal_bests table (populated post-sync), so generation no longer pays
+        # the ~7s chronological best-effort scan. load_personal_bests self-heals
+        # when the table was never scanned and records PB-less users so it doesn't
+        # re-scan every run. These are the ONLY race-time anchor fed to the
+        # planner: COROS race_predictions (fitness-based optimistic ceilings) are
+        # deliberately NOT surfaced, since conflating them anchored milestones to
+        # paces the athlete has never actually run (e.g. a "PB 38:38" 10K when the
+        # real best is 40:06).
         try:
-            from stride_core.pb_records import fetch_personal_bests, persist_personal_bests
-            pb_map = fetch_personal_bests(db)
-            if not pb_map:
-                pb_map = persist_personal_bests(db)
+            from stride_core.pb_records import load_personal_bests
+            pb_map = load_personal_bests(db)
             pb_key = {
                 "5K": "best_5k_s",
                 "10K": "best_10k_s",
@@ -422,8 +425,8 @@ def _query_history(user_id: str) -> dict[str, Any]:
                 entry = pb_map.get(disp)
                 if entry and entry.get("pb_time_sec"):
                     result[key] = round(entry["pb_time_sec"])
-        except Exception as exc:  # noqa: BLE001 — PB read must not block gen
-            logger.warning("_query_history: PB read failed for %s: %s", user_id, exc)
+        except Exception:  # noqa: BLE001 — PB read must not block gen
+            logger.warning("_query_history: PB read failed for %s", user_id, exc_info=True)
 
     except Exception as exc:  # noqa: BLE001
         logger.warning("_query_history failed for user %s: %s", user_id, exc)

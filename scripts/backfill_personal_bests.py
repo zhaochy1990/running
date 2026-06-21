@@ -53,8 +53,8 @@ def _resolve_profile(profile: str) -> str:
             aliases = json.loads(aliases_file.read_text(encoding="utf-8"))
             if profile in aliases:
                 return aliases[profile]
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARN: could not parse {aliases_file}: {exc}", file=sys.stderr)
     return profile
 
 
@@ -66,8 +66,8 @@ def _all_user_ids() -> list[str]:
     if af.exists():
         try:
             ids.update(json.loads(af.read_text(encoding="utf-8")).values())
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARN: could not parse {af}: {exc}", file=sys.stderr)
     if USER_DATA_DIR.exists():
         for entry in USER_DATA_DIR.iterdir():
             if entry.is_dir() and _UUID4_RE.match(entry.name) and (entry / "coros.db").exists():
@@ -109,14 +109,19 @@ def main() -> int:
 
     total_users = 0
     total_pbs = 0
+    failed: list[str] = []
     for user_id in user_ids:
         try:
             total_pbs += _backfill_one(user_id)
             total_users += 1
         except Exception as exc:  # noqa: BLE001 — never let one user abort the sweep
             print(f"  [{user_id}] FAILED: {exc}", file=sys.stderr)
+            failed.append(user_id)
 
     print(f"\nDone: {total_pbs} PB rows across {total_users} user(s).")
+    if failed:
+        print(f"FAILED for {len(failed)} user(s): {', '.join(failed)}", file=sys.stderr)
+        return 1
     return 0
 
 

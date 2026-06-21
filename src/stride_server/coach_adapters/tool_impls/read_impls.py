@@ -294,17 +294,14 @@ class GetPbsImpl:
 
     @_tool_safe
     def __call__(self) -> ToolResult:
-        from stride_core.pb_records import (
-            DISTANCE_ORDER,
-            fetch_personal_bests,
-            persist_personal_bests,
-        )
+        from stride_core.pb_records import DISTANCE_ORDER, load_personal_bests
 
         db = _open_db(self._user_id)
         try:
             # Single source: read the persisted personal_bests table (populated
-            # post-sync), self-healing once if empty — no ~7s live scan per call.
-            pb_map = fetch_personal_bests(db) or persist_personal_bests(db)
+            # post-sync). load_personal_bests self-heals when never scanned and
+            # records PB-less users so there's no ~7s re-scan per call.
+            pb_map = load_personal_bests(db)
         finally:
             db.close()
         pbs = [

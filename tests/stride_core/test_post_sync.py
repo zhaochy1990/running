@@ -329,12 +329,41 @@ def test_persist_personal_bests_roundtrip_and_upsert(db):
     # 10K/HM/FM), so /pbs + master-plan can share this one table.
     assert set(fetched) == set(detect_personal_bests(db, distances=PB_DISPLAY_DISTANCES))
     assert fetched["5K"]["pb_time_sec"] == persisted["5K"]["pb_time_sec"]
+    # The nested entry (not just the scalar) survives the JSON round-trip: the
+    # best-so-far history list reaches /pbs intact.
+    hist = fetched["5K"]["history"]
+    assert isinstance(hist, list) and hist
+    assert "best_so_far_sec" in hist[0]
 
     # ON CONFLICT(distance) overwrites a stale row on the next persist.
     db._conn.execute("UPDATE personal_bests SET pb_time_sec = 99999 WHERE distance = '5K'")
     db._conn.commit()
     persist_personal_bests(db)
     assert fetch_personal_bests(db)["5K"]["pb_time_sec"] == persisted["5K"]["pb_time_sec"]
+
+
+def test_load_personal_bests_no_rescan_for_pb_less_user(db, monkeypatch):
+    """A user with zero qualifying activities is recorded as scanned, so
+    load_personal_bests does NOT re-run the ~7s scan on every call."""
+    import stride_core.pb_records as pb
+    from stride_core.pb_records import load_personal_bests, personal_bests_scanned
+
+    calls = {"n": 0}
+    real_detect = pb.detect_personal_bests
+
+    def counting_detect(*a, **k):
+        calls["n"] += 1
+        return real_detect(*a, **k)
+
+    monkeypatch.setattr(pb, "detect_personal_bests", counting_detect)
+
+    # Empty DB (no activities) → first load scans once, finds nothing, marks scanned.
+    assert load_personal_bests(db) == {}
+    assert personal_bests_scanned(db) is True
+    assert calls["n"] == 1
+    # Second load must read the (empty) marker, NOT re-scan.
+    assert load_personal_bests(db) == {}
+    assert calls["n"] == 1
 
 
 def test_new_provider_only_needs_sync_result_label_ids_for_runner(db):
