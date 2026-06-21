@@ -43,6 +43,20 @@ from stride_core.master_plan import MasterPlan, MasterPlanStatus, MilestoneType
 # Constants / helpers
 # ---------------------------------------------------------------------------
 
+
+def _full_prompt(**kwargs) -> str:
+    """system + user prompts concatenated.
+
+    Most content-regression tests only care that the LLM sees a token
+    *somewhere* across the two turns, not which turn carries it. The
+    split itself (athlete data in user, doctrine in system) is asserted
+    separately in :class:`TestPromptRoleSplit`.
+    """
+    from stride_server.master_plan_generator import build_master_prompts
+    system, user = build_master_prompts(**kwargs)
+    return system + "\n" + user
+
+
 USER_ID = "a1b2c3d4-e5f6-4aaa-89ab-000000000001"
 GOAL_ID = "goal-0001"
 
@@ -873,8 +887,7 @@ class TestNormalizeForPrompt:
 
 class TestPromptRegression:
     def _build(self) -> str:
-        from stride_server.master_plan_generator import _build_system_prompt
-        return _build_system_prompt(
+        return _full_prompt(
             goal={"distance": "fm", "race_date": "2026-10-19", "goal_time_s": 12000},
             profile={"prs": {"fm_s": 13200}, "weekly_run_days_max": 5},
             history_summary="(test summary)",
@@ -928,11 +941,10 @@ class TestPromptRegression:
 
 class TestPromptIncludesContinuity:
     def test_system_prompt_mentions_continuity_and_injuries(self):
-        from stride_server.master_plan_generator import _build_system_prompt
         from coach.schemas import ContinuitySignals
         sig = ContinuitySignals(macro_cycle="summer", current_chronic_load=64.1,
                                 post_race_recovery_status="recovered", injuries=["achilles"])
-        prompt = _build_system_prompt(
+        prompt = _full_prompt(
             goal={"race_distance": "FM", "race_date": "2026-10-18"},
             profile=None, history_summary="hist", fitness_state={"summary": "CTL 64"},
             today="2026-06-10", continuity=sig,
@@ -942,9 +954,8 @@ class TestPromptIncludesContinuity:
         assert "recovered" in prompt or "已恢复" in prompt
 
     def test_partial_signals_no_raw_none_tokens(self):
-        from stride_server.master_plan_generator import _build_system_prompt
         from coach.schemas import ContinuitySignals
-        prompt = _build_system_prompt(
+        prompt = _full_prompt(
             goal={"race_distance": "FM", "race_date": "2026-10-18"},
             profile=None, history_summary="h", fitness_state={"summary": "s"},
             today="2026-06-10", continuity=ContinuitySignals(),
@@ -956,7 +967,6 @@ class TestPromptIncludesContinuity:
 
 class TestPromptIncludesCurrentPhase:
     def test_entry_phase_block_present_and_authoritative(self):
-        from stride_server.master_plan_generator import _build_system_prompt
         from coach.schemas import CurrentPhaseContext
         from stride_core.master_plan import PhaseType
         cp = CurrentPhaseContext(
@@ -967,7 +977,7 @@ class TestPromptIncludesCurrentPhase:
             confidence="high",
             rationale="基础已满 (8 周) + 近期质量课 → 进入 speed",
         )
-        prompt = _build_system_prompt(
+        prompt = _full_prompt(
             goal={"race_distance": "FM", "race_date": "2026-10-18"},
             profile=None, history_summary="h", fitness_state={"summary": "s"},
             today="2026-06-16", current_phase=cp,
@@ -977,9 +987,8 @@ class TestPromptIncludesCurrentPhase:
         assert "8" in prompt  # completed aerobic weeks surfaced
 
     def test_no_block_when_entry_phase_unknown(self):
-        from stride_server.master_plan_generator import _build_system_prompt
         from coach.schemas import CurrentPhaseContext
-        prompt = _build_system_prompt(
+        prompt = _full_prompt(
             goal={"race_distance": "FM", "race_date": "2026-10-18"},
             profile=None, history_summary="h", fitness_state={"summary": "s"},
             today="2026-06-16", current_phase=CurrentPhaseContext(source="unknown"),
@@ -989,9 +998,8 @@ class TestPromptIncludesCurrentPhase:
 
 class TestMacroCycleGuidance:
     def _prompt(self, mc):
-        from stride_server.master_plan_generator import _build_system_prompt
         from coach.schemas import ContinuitySignals
-        return _build_system_prompt(
+        return _full_prompt(
             goal={"race_distance": "FM", "race_date": "2026-10-18"}, profile=None,
             history_summary="h", fitness_state={"summary": "s"}, today="2026-06-11",
             continuity=ContinuitySignals(macro_cycle=mc),
@@ -1012,6 +1020,66 @@ class TestMacroCycleGuidance:
 
 
 # ---------------------------------------------------------------------------
+# Prompt role discipline (refactor invariant): athlete data + per-call values
+# live in the USER turn; the doctrine (persona + schema + rules) is the SYSTEM
+# turn and carries no per-call value, so it is a stable, cacheable prefix.
+# ---------------------------------------------------------------------------
+
+
+class TestPromptRoleSplit:
+    def _split(self):
+        from coach.schemas import ContinuitySignals
+        from stride_server.master_plan_generator import build_master_prompts
+        return build_master_prompts(
+            goal={"distance": "fm", "race_date": "2026-10-19", "goal_time_s": 12000},
+            profile={"prs": {"fm_s": 13200}, "weekly_run_days_max": 5},
+            history_summary="HIST_MARKER_42km",
+            fitness_state={"summary": "FITNESS_MARKER CTL 60"},
+            today="2026-05-19",
+            continuity=ContinuitySignals(macro_cycle="summer", injuries=["achilles"]),
+        )
+
+    def test_system_is_static_doctrine_only(self):
+        """System carries the rules/schema but NONE of this call's athlete data
+        or computed dates — that is what makes it a byte-stable cache prefix."""
+        system, _user = self._split()
+        # doctrine present
+        assert '"weeks"' in system
+        assert "Distance specificity" in system
+        # per-call / per-athlete data absent
+        assert "HIST_MARKER_42km" not in system
+        assert "FITNESS_MARKER" not in system
+        assert "achilles" not in system
+        assert "2026-10-19" not in system  # race_date
+        assert '"goal_time_s"' not in system
+        # no unrendered runtime placeholders leaked into the static prefix
+        assert "${" not in system
+
+    def test_system_is_call_invariant(self):
+        """Two different athletes/goals must yield the identical system prompt."""
+        from stride_server.master_plan_generator import build_master_prompts
+        s1, _ = build_master_prompts(
+            goal={"distance": "fm", "race_date": "2026-10-19"}, profile=None,
+            history_summary="a", fitness_state={"summary": "x"}, today="2026-05-19",
+        )
+        s2, _ = build_master_prompts(
+            goal={"distance": "hm", "race_date": "2027-03-01"}, profile={"prs": {"hm_s": 5400}},
+            history_summary="totally different", fitness_state={"summary": "y"},
+            today="2026-09-01",
+        )
+        assert s1 == s2
+
+    def test_user_carries_athlete_data_and_dates(self):
+        _system, user = self._split()
+        assert "HIST_MARKER_42km" in user
+        assert "FITNESS_MARKER" in user
+        assert "achilles" in user
+        assert "2026-10-19" in user  # race_date surfaced to the user turn
+        # plan_start = upcoming Monday after 2026-05-19 (a Tuesday) → 2026-05-25
+        assert "2026-05-25" in user
+
+
+# ---------------------------------------------------------------------------
 # Per-phase quantifiable milestones grounded in baselines (Stage-3a P3)
 # ---------------------------------------------------------------------------
 
@@ -1024,8 +1092,7 @@ class TestPromptPerPhaseMilestones:
     _BODY_COMP_SUMMARY = "最新体测（2026-06-01）— 体重 68.0kg，体脂 15.0%，骨骼肌 31.0kg，BMI 22.1"
 
     def _build(self, *, body_composition=None, body_composition_summary=None):
-        from stride_server.master_plan_generator import _build_system_prompt
-        return _build_system_prompt(
+        return _full_prompt(
             goal={"distance": "fm", "race_date": "2026-10-19", "goal_time_s": 12000},
             profile={"prs": {"fm_s": 13200, "best_5k_s": 1200}, "weekly_run_days_max": 5},
             history_summary="最好成绩：5k 20:00；FM 3:40",
@@ -1166,6 +1233,184 @@ class TestQueryHistoryRealDB:
 
         # The self-heal persisted the rows, so the table now serves them directly.
         assert "10K" in fetch_personal_bests(db)
+
+
+# ---------------------------------------------------------------------------
+# _query_weekly_profile — 16-week cross-source weekly athlete profile
+# ---------------------------------------------------------------------------
+
+
+class TestWeeklyProfile:
+    """Cross-source week alignment, Shanghai boundary, snapshot-vs-sum, and
+    run-type classification for the 16-week weekly profile.
+
+    The four source tables store ``date`` differently; all must collapse to the
+    SAME Monday ``week_start`` for a given Shanghai calendar week.
+    """
+
+    def _db(self, tmp_path):
+        from stride_core.db import Database
+        return Database(db_path=tmp_path / "coros.db")
+
+    def _add_run(self, c, label, date_iso, *, km, dur_s, avg_hr=None,
+                 train_kind=None, name=None, sport_type=100):
+        c.execute(
+            "INSERT INTO activities (label_id, sport_type, date, distance_m, "
+            "duration_s, avg_hr, train_kind, name) VALUES (?,?,?,?,?,?,?,?)",
+            (label, sport_type, date_iso, km, dur_s, avg_hr, train_kind, name),
+        )
+
+    def _profile(self, db, **kw):
+        from stride_server.master_plan_generator import _query_weekly_profile
+        return _query_weekly_profile(db._conn, **kw)
+
+    def test_cross_source_week_alignment(self, tmp_path):
+        """An activity (UTC ISO), dtl (YYYY-MM-DD), health (YYYYMMDD), and hrv
+        (YYYY-MM-DD) all in the same Shanghai week merge into ONE entry keyed by
+        that week's Monday, with every metric populated."""
+        db = self._db(tmp_path)
+        c = db._conn
+        # 2026-06-17 is a Wednesday → Monday of week = 2026-06-15.
+        # Activity at 08:00 UTC on the 17th = 16:00 CST 17th → still 06-17.
+        self._add_run(c, "a1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=3000,
+                      avg_hr=150)
+        c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
+                  "training_dose, acute_load, chronic_load, form) "
+                  "VALUES ('2026-06-17', 1, 70, 65.0, 60.0, -5.0)")
+        c.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260617', 48)")
+        c.execute("INSERT INTO daily_hrv (date, last_night_avg) "
+                  "VALUES ('2026-06-17', 35)")
+        c.commit()
+
+        prof = self._profile(db)
+        assert len(prof) == 1
+        w = prof[0]
+        assert w["week_start"] == "2026-06-15"  # Monday
+        assert abs(w["distance_km"] - 10.0) < 1e-6
+        assert abs(w["hours"] - (3000 / 3600.0)) < 1e-6
+        assert abs(w["avg_hr"] - 150) < 1e-6
+        assert w["ctl"] == 60.0
+        assert w["atl"] == 65.0
+        assert w["form"] == -5.0
+        assert w["dose"] == 70
+        assert w["rhr"] == 48
+        assert w["hrv"] == 35
+        assert w["n_runs"] == 1
+
+    def test_shanghai_boundary_pushes_to_next_week(self, tmp_path):
+        """A run finishing 23:30 UTC Sunday = 07:30 CST Monday → lands in the
+        NEXT Shanghai week, not the UTC one."""
+        db = self._db(tmp_path)
+        c = db._conn
+        # 2026-06-14 is a Sunday. 23:30 UTC → 2026-06-15 07:30 CST (Monday).
+        self._add_run(c, "a1", "2026-06-14T23:30:00+00:00", km=8.0, dur_s=2400)
+        c.commit()
+        prof = self._profile(db)
+        assert len(prof) == 1
+        # Shanghai date is Monday 06-15 → its own week Monday is 06-15,
+        # NOT the UTC-Sunday week (Monday 06-08).
+        assert prof[0]["week_start"] == "2026-06-15"
+
+    def test_ctl_atl_form_end_of_week_snapshot_dose_sum(self, tmp_path):
+        """ctl/atl/form = value on the LATEST day in the week; dose = sum."""
+        db = self._db(tmp_path)
+        c = db._conn
+        # Week of 2026-06-15 (Mon) .. 2026-06-21 (Sun).
+        rows = [
+            ("2026-06-15", 50, 40.0, 55.0, 15.0),
+            ("2026-06-17", 60, 48.0, 56.0, 8.0),
+            ("2026-06-20", 80, 70.0, 58.0, -12.0),  # latest day → snapshot
+        ]
+        for d, dose, atl, ctl, form in rows:
+            c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
+                      "training_dose, acute_load, chronic_load, form) "
+                      "VALUES (?, 1, ?, ?, ?, ?)", (d, dose, atl, ctl, form))
+        c.commit()
+        w = self._profile(db)[0]
+        assert w["week_start"] == "2026-06-15"
+        assert w["ctl"] == 58.0   # latest day snapshot, NOT summed
+        assert w["atl"] == 70.0
+        assert w["form"] == -12.0
+        assert w["dose"] == 50 + 60 + 80  # additive
+
+    def test_n_long_and_pace_and_hr_weighting(self, tmp_path):
+        """n_long counts runs >= 20km (incl. legacy meters heuristic).
+        avg_pace = total_s/total_km; avg_hr is duration-weighted."""
+        db = self._db(tmp_path)
+        c = db._conn
+        # Same week (Mon 2026-06-15). Run1: 21.1km/5400s, HR 140.
+        # Run2: legacy 15000m → 15km/4000s, HR 160. Run3: 5km/1500s, no HR.
+        self._add_run(c, "a1", "2026-06-15T08:00:00+00:00", km=21.1, dur_s=5400,
+                      avg_hr=140)
+        self._add_run(c, "a2", "2026-06-16T08:00:00+00:00", km=15000, dur_s=4000,
+                      avg_hr=160)
+        self._add_run(c, "a3", "2026-06-17T08:00:00+00:00", km=5.0, dur_s=1500)
+        c.commit()
+        w = self._profile(db)[0]
+        assert w["n_runs"] == 3
+        assert w["n_long"] == 1  # only the 21.1km run >= 20
+        total_km = 21.1 + 15.0 + 5.0
+        total_s = 5400 + 4000 + 1500
+        assert abs(w["avg_pace_s_km"] - total_s / total_km) < 1e-6
+        # duration-weighted over the two runs WITH hr only.
+        exp_hr = (140 * 5400 + 160 * 4000) / (5400 + 4000)
+        assert abs(w["avg_hr"] - exp_hr) < 1e-6
+
+    def test_n_speed_train_kind_and_pace_fallback(self, tmp_path):
+        """Speed = explicit hard train_kind; for NULL train_kind, fall back to
+        pace (run avg speed >= threshold). ``base`` is NOT speed."""
+        db = self._db(tmp_path)
+        c = db._conn
+        # threshold_speed_mps = 4.0 m/s (= 250 s/km).
+        # interval → speed. base → NOT speed. NULL + fast (5.0 m/s) → speed.
+        # NULL + slow (3.0 m/s) → not speed.
+        self._add_run(c, "i1", "2026-06-15T08:00:00+00:00", km=10.0, dur_s=2500,
+                      train_kind="interval")
+        self._add_run(c, "b1", "2026-06-16T08:00:00+00:00", km=10.0, dur_s=2500,
+                      train_kind="base")
+        # 10km in 2000s → 5.0 m/s ≥ 4.0 → speed (NULL train_kind)
+        self._add_run(c, "f1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=2000)
+        # 10km in 3334s → 3.0 m/s < 4.0 → not speed
+        self._add_run(c, "s1", "2026-06-18T08:00:00+00:00", km=10.0, dur_s=3334)
+        c.commit()
+        w = self._profile(db, threshold_speed_mps=4.0)[0]
+        assert w["n_runs"] == 4
+        assert w["n_speed"] == 2  # interval + fast-NULL
+
+        # Fallback disabled when threshold is None → only the explicit one.
+        w2 = self._profile(db, threshold_speed_mps=None)[0]
+        assert w2["n_speed"] == 1  # only 'interval'
+
+    def test_race_name_heuristic(self, tmp_path):
+        db = self._db(tmp_path)
+        c = db._conn
+        self._add_run(c, "r1", "2026-06-15T08:00:00+00:00", km=42.2, dur_s=12000,
+                      name="上海马拉松")
+        self._add_run(c, "r2", "2026-06-16T08:00:00+00:00", km=10.0, dur_s=2500,
+                      name="Morning easy run")
+        c.commit()
+        w = self._profile(db)[0]
+        assert w["n_race"] == 1
+
+    def test_trims_to_most_recent_16_weeks(self, tmp_path):
+        """More than 16 weeks present → only the 16 most recent, oldest-first."""
+        db = self._db(tmp_path)
+        c = db._conn
+        # 20 distinct weeks, one run each (Mondays 2026-01-05 .. spaced 7d).
+        from datetime import date as _date, timedelta as _td
+        start = _date(2026, 1, 5)  # a Monday
+        for i in range(20):
+            d = start + _td(days=7 * i)
+            iso = f"{d.isoformat()}T08:00:00+00:00"
+            self._add_run(c, f"w{i}", iso, km=10.0, dur_s=3000)
+        c.commit()
+        prof = self._profile(db, weeks=16)
+        assert len(prof) == 16
+        # oldest-first; first kept = week index 4 (20 - 16).
+        weeks_kept = [w["week_start"] for w in prof]
+        assert weeks_kept == sorted(weeks_kept)
+        assert weeks_kept[0] == (start + _td(days=7 * 4)).isoformat()
+        assert weeks_kept[-1] == (start + _td(days=7 * 19)).isoformat()
 
 
 # ---------------------------------------------------------------------------
@@ -1324,47 +1569,68 @@ class TestLoadMasterContextDoubleBaseline:
 
 
 # ---------------------------------------------------------------------------
-# _format_history_summary — half-month weighting, hours, MTD, English prose
+# _format_history_summary — now renders the 16-week weekly profile block
+# (the former monthly-volume / "Last 6 months" block was replaced).
 # ---------------------------------------------------------------------------
 
 
 class TestFormatHistorySummary:
     @staticmethod
-    def _history(months):
+    def _history(weekly_profile):
         return {
             "total_activities": 100,
             "max_weekly_km": 80.0,
-            "monthly_km": [{"month": m, "km": 100.0, "hours": 10.0} for m in months],
+            "monthly_km": [{"month": "2026-05", "km": 100.0, "hours": 10.0}],
+            "weekly_profile": weekly_profile,
             "best_5k_s": 1170, "best_10k_s": 2405, "best_hm_s": None, "best_fm_s": None,
         }
 
-    def _summary(self, monkeypatch, history, today):
+    @staticmethod
+    def _week(week_start, **over):
+        base = {
+            "week_start": week_start, "distance_km": 42.1, "hours": 3.8,
+            "avg_pace_s_km": 321.0, "avg_hr": 148.0, "ctl": 58.0, "atl": 64.0,
+            "form": -6.0, "dose": 412.0, "rhr": 49.0, "hrv": 31.0,
+            "n_runs": 5, "n_long": 1, "n_speed": 1, "n_race": 0,
+        }
+        base.update(over)
+        return base
+
+    def _summary(self, history):
         from stride_server import master_plan_generator as mod
-        monkeypatch.setattr("stride_core.timefmt.today_shanghai", lambda: today)
         return mod._format_history_summary(history)
 
-    def test_current_month_weighted_half(self, monkeypatch):
-        # 6 months, last == current Shanghai month → month_equiv = 5.5, so
-        # avg = 600 / 5.5 = 109 km/mo, 60 / 5.5 = 10.9 h/mo; current month gets MTD.
-        months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
-        out = self._summary(monkeypatch, self._history(months), date(2026, 6, 15))
-        assert "109 km/mo" in out
-        assert "10.9 h/mo" in out
-        assert "(MTD)" in out
-        assert "current month weighted as half" in out
-        # English prose + time included
-        assert "Average monthly volume" in out
-        assert "distance/time" in out
+    def test_renders_weekly_block_not_monthly(self):
+        out = self._summary(self._history([self._week("2026-02-23")]))
+        # New 16-week block header present; old monthly line gone.
+        assert "16-week weekly profile (most recent last):" in out
+        assert "Last 6 months" not in out
+        assert "Average monthly volume" not in out
+        # Dense tokens for the seeded week.
+        assert "42.1km 3.8h" in out
+        assert "5:21/km" in out          # 321s → 5:21/km
+        assert "HR 148" in out
+        assert "CTL 58 ATL 64 form -6 dose 412" in out
+        assert "RHR 49 HRV 31" in out
+        assert "5 runs (1 long, 1 speed)" in out
+        assert "Totals (1wk):" in out
+        # PB anchor line still rendered.
+        assert "Actual personal bests (PB" in out
 
-    def test_no_current_month_full_denominator(self, monkeypatch):
-        # None of the 6 months is the current month → month_equiv = 6.0, avg = 100.
-        months = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"]
-        out = self._summary(monkeypatch, self._history(months), date(2026, 7, 15))
-        assert "100 km/mo" in out
-        assert "(MTD)" not in out
+    def test_tolerates_none_metrics(self):
+        wk = self._week(
+            "2026-02-23", avg_pace_s_km=None, avg_hr=None, ctl=None, atl=None,
+            form=None, dose=0.0, rhr=None, hrv=None, n_long=0, n_speed=0,
+        )
+        out = self._summary(self._history([wk]))
+        # None tokens omitted gracefully, no crash, no "None" leaked.
+        assert "None" not in out
+        assert "HR " not in out
+        assert "RHR" not in out
+        assert "HRV" not in out
+        assert "5 runs" in out  # count still shown
 
-    def test_no_volume_data(self, monkeypatch):
-        out = self._summary(monkeypatch, self._history([]), date(2026, 6, 15))
-        assert "No historical volume data" in out
-        # PB line still rendered (English).
+    def test_empty_profile_message(self):
+        out = self._summary(self._history([]))
+        assert "no recent weekly data" in out
         assert "Actual personal bests (PB" in out

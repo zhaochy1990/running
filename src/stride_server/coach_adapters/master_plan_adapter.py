@@ -16,7 +16,7 @@ All side effects (DB / LLM / job state mutation) happen here, **not** in
 ``.importlinter`` Contract 1).
 
 Shared helpers (``_query_history`` / ``_query_fitness_state`` /
-``_format_history_summary`` / ``_build_system_prompt`` / ``_parse_llm_output``)
+``_format_history_summary`` / ``build_master_prompts`` / ``_parse_llm_output``)
 are imported from :mod:`stride_server.master_plan_generator` to avoid code
 duplication; they are pure functions with no shared mutable state.
 """
@@ -36,11 +36,11 @@ from ..job_runner import JobStage, update_job
 from ..llm_client import LLMClient
 from ..master_plan_generator import (
     _build_master_plan,
-    _build_system_prompt,
     _format_history_summary,
     _parse_llm_output,
     _query_fitness_state,
     _query_history,
+    build_master_prompts,
 )
 
 logger = logging.getLogger(__name__)
@@ -221,7 +221,10 @@ def generate_master_plan(state: GenState) -> dict:
         current_phase = CurrentPhaseContext.model_validate(current_phase_raw)
 
     today = today_shanghai().isoformat()
-    system_prompt = _build_system_prompt(
+    # System = static doctrine (cacheable prefix); user = this athlete's data +
+    # task. See master_plan_generator.build_master_prompts / CLAUDE.md
+    # "Prompt role discipline".
+    system_prompt, user_text = build_master_prompts(
         goal, profile, history_summary, fitness_state, today,
         continuity=continuity,
         body_composition=ctx.get("body_composition"),
@@ -229,18 +232,19 @@ def generate_master_plan(state: GenState) -> dict:
         current_phase=current_phase,
     )
     logger.debug(
-        "generate_master_plan: system_prompt length:%d chars, goal=%r, profile=%r",
+        "generate_master_plan: system_prompt=%d chars, user_prompt=%d chars, goal=%r, profile=%r",
         len(system_prompt),
+        len(user_text),
         goal,
         profile,
     )
 
-    user_text = "请基于上述信息生成训练总纲"
     # If rule_filter blocked a previous iteration's draft, the graph routes
     # back here with `state.rule_violations` populated. Without feeding them
     # to the next prompt we'd retry with identical input — wasted tokens on
-    # deterministic L1 failures. Inject a corrective postscript so the LLM
-    # can fix the specific issues (e.g. add a 赛前期 phase, push race date
+    # deterministic L1 failures. Inject a corrective postscript into the *user*
+    # turn (the athlete-data turn — the system doctrine stays invariant) so the
+    # LLM can fix the specific issues (e.g. add a 赛前期 phase, push race date
     # forward, etc.). iteration > 0 guards against the first call.
     violations = state.get("rule_violations") or []
     iteration = int(state.get("iteration") or 0)
@@ -262,9 +266,10 @@ def generate_master_plan(state: GenState) -> dict:
     # keeps the budget tunable from the config file alone — no code edit
     # required to bump output size for S1 master plan generation.
     logger.info(
-        "generate_master_plan: LLM call starting (iteration=%d, prompt=%d chars%s)",
+        "generate_master_plan: LLM call starting (iteration=%d, system=%d chars, user=%d chars%s)",
         iteration,
         len(system_prompt),
+        len(user_text),
         ", with rule-violation feedback" if (iteration > 0 and violations) else "",
     )
     _t0 = time.monotonic()

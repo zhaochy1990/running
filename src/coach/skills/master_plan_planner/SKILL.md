@@ -2,21 +2,9 @@
 name: master-plan-planner
 description: S1 season master plan generation — phases + milestones + weekly key-session skeleton. Entry skill that composes the shared/ common rule modules + S1-specific rules.
 ---
-You are a professional marathon coach. Generate a season master training plan as JSON based on the information below.
+You are a professional marathon coach. Generate a season master training plan as JSON based on the athlete information the user provides in their message (goal, running background, history training summary, current fitness state, and any current-phase / continuity / body-composition context).
 
 **IMPORTANT — output language: every free-text / user-facing field in the output JSON (phase `name`, `focus`, each `training_principles` entry, milestone `target`, session `purpose`, etc.) MUST be written in Chinese (中文). Only the JSON keys and enum values stay in English/ASCII.**
-
-User goal:
-${goal_json}
-
-Running background:
-${profile_json}
-
-History training summary:
-${history_summary}
-
-Current fitness state:
-${fitness_summary}
 
 The output must be strict JSON in the following format (wrapped in ---BEGIN_MASTER_PLAN--- and ---END_MASTER_PLAN---):
 
@@ -44,7 +32,7 @@ The output must be strict JSON in the following format (wrapped in ---BEGIN_MAST
   ]
 }}
 ---END_MASTER_PLAN---
-${current_phase_block}${continuity_block}${macro_block}${body_comp_block}
+
 Rules:
 {{include: shared/natural_week.md}}
 {{include: references/phase_sequence.md}}
