@@ -57,6 +57,14 @@ ACTIVITY_DISTANCE_TOLERANCE_M: dict[str, tuple[float, float]] = {
     "FM": (41800.0, 42400.0),
 }
 
+# Physiological speed ceiling for PB candidates. A GPS dropout-and-reacquire can
+# teleport the distance track (e.g. 997 m credited in 31 s ≈ 32 m/s), producing
+# an absurdly fast "segment" that is NOT bounded by a watch pause. The men's 1K
+# world record is ~7.58 m/s, so any candidate averaging faster than this over a
+# canonical distance (≥1 km) is a tracking glitch, not a run — drop it. The
+# margin above WR guarantees no real human effort is ever rejected.
+MAX_PLAUSIBLE_SPEED_MPS = 8.0
+
 
 @dataclass(frozen=True)
 class BestEffortCandidate:
@@ -242,6 +250,15 @@ def best_effort_candidates_for_activity(
     if include_activity_fallback:
         allowed = {_DISPLAY_DISTANCE_BY_RACE_TYPE[rt] for rt in distances}
         out.extend(_activity_level_candidates(activity, date_disp, label_id, allowed))
+
+    # Drop physically-impossible candidates: a GPS teleport (distance dropout +
+    # reacquire) can credit ~1 km in a few seconds, yielding a sub-human "PB" that
+    # no pause bounds. Anything faster than MAX_PLAUSIBLE_SPEED_MPS over a
+    # canonical distance is a tracking glitch, not a run.
+    out = [
+        c for c in out
+        if c.duration_s > 0 and (c.distance_m / c.duration_s) <= MAX_PLAUSIBLE_SPEED_MPS
+    ]
 
     best: dict[str, BestEffortCandidate] = {}
     for candidate in out:

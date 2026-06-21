@@ -283,6 +283,36 @@ def test_personal_bests_handler_registered_and_persists(db):
     assert "5K" in pbs and pbs["5K"]["pb_time_sec"]
 
 
+def test_pb_candidates_drop_impossible_speed():
+    """A GPS teleport (≈16.7 m/s 1K) must be dropped; a real 1K (3.3 m/s) kept.
+    Guards the bogus-1K regression (e.g. 997 m credited in 31 s ≈ 32 m/s)."""
+    from stride_core.pb_records import (
+        MAX_PLAUSIBLE_SPEED_MPS,
+        PB_DISPLAY_DISTANCES,
+        best_effort_candidates_for_activity,
+    )
+
+    class _NoTimeseriesDb:
+        def fetch_timeseries(self, _label_id):
+            return []
+
+    # distance_m=1.0 → 1000 m (the <500 = km convention).
+    glitch = {"label_id": "g", "date": "2026-05-01T08:00:00+00:00",
+              "distance_m": 1.0, "duration_s": 60.0}    # 16.7 m/s
+    cands = best_effort_candidates_for_activity(
+        _NoTimeseriesDb(), glitch, distances=PB_DISPLAY_DISTANCES
+    )
+    assert all(c.distance_m / c.duration_s <= MAX_PLAUSIBLE_SPEED_MPS for c in cands)
+    assert "1K" not in {c.distance for c in cands}
+
+    real = {"label_id": "r", "date": "2026-05-01T08:00:00+00:00",
+            "distance_m": 1.0, "duration_s": 300.0}     # 3.3 m/s
+    cands2 = best_effort_candidates_for_activity(
+        _NoTimeseriesDb(), real, distances=PB_DISPLAY_DISTANCES
+    )
+    assert "1K" in {c.distance for c in cands2}
+
+
 def test_persist_personal_bests_roundtrip_and_upsert(db):
     from stride_core.pb_records import (
         PB_DISPLAY_DISTANCES,
