@@ -1,8 +1,12 @@
 """Master plan rule filter — see ``docs/coach-eval_S1.md`` § S1 L1 Rules.
 
-Implements 13 S1 L1 rules. Empty ``MasterPlan.weekly_key_sessions`` makes
+Implements 14 S1 L1 rules. Empty ``MasterPlan.weekly_key_sessions`` makes
 all Batch B rules silent no-ops so legacy plans / fixtures don't trip on
 the new structure.
+
+* ``strength_durability_track``: plan must program a strength & durability
+  track — a strength_test milestone, a strength entry in some phase's
+  key_session_types, or a durability line in training_principles (warning).
 
 Schema-only (no kwargs):
 
@@ -1107,6 +1111,58 @@ def check_hard_session_spacing(plan: MasterPlan) -> list[RuleViolation]:
     return violations
 
 
+def check_strength_durability_track(plan: MasterPlan) -> list[RuleViolation]:
+    """A plan must program a strength & durability track — never run-only.
+
+    Severity ``warning`` (advisory, non-blocking): the project rule is that
+    every plan covers Strength & Conditioning, and for endurance athletes the
+    late-race fade is often a structural (posterior-chain / hip / ankle /
+    tendon) failure rather than an aerobic one, so a run-only plan both
+    under-addresses the goal-limiting weakness and raises injury/dropout risk.
+    The durability track is tracked at the phase / principles / milestone level
+    (it is non-running, exempt from the weekly key-session caps), so this rule
+    accepts ANY of those signals as evidence the track exists:
+
+    * a ``strength_test`` milestone, or
+    * a phase whose ``key_session_types`` names a strength/durability entry, or
+    * a ``training_principles`` entry mentioning strength / durability.
+
+    Kept as a warning (not error) so it surfaces the gap for review without
+    blocking generation or hard-failing legacy fixtures that predate the
+    strength-track doctrine.
+    """
+    has_milestone = any(
+        m.type == MilestoneType.STRENGTH_TEST for m in plan.milestones
+    )
+    has_phase_type = any(
+        any("strength" in str(t).lower() or "durab" in str(t).lower()
+            for t in (ph.key_session_types or []))
+        for ph in plan.phases
+    )
+    _KW = ("strength", "durab", "力量", "耐久", "稳定", "跟腱", "偏心")
+    principles = getattr(plan, "training_principles", None) or []
+    has_principle = any(
+        any(kw in str(p).lower() if kw.isascii() else kw in str(p) for kw in _KW)
+        for p in principles
+    )
+    if has_milestone or has_phase_type or has_principle:
+        return []
+    return [
+        RuleViolation(
+            rule="strength_durability_track",
+            severity="warning",
+            message=(
+                "plan is run-only — no strength & durability track found "
+                "(no strength_test milestone, no strength entry in any phase's "
+                "key_session_types, no durability line in training_principles). "
+                "Every plan should program S&C; for injury-prone / late-fade "
+                "athletes durability is a goal prerequisite."
+            ),
+            details={},
+        )
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
@@ -1168,4 +1224,5 @@ def run_master_rule_filter(
     )
     violations.extend(check_hard_session_spacing(plan))
     violations.extend(check_long_run_distance_share(plan))
+    violations.extend(check_strength_durability_track(plan))
     return RuleFilterReport(violations=violations)

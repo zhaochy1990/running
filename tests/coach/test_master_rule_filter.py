@@ -25,6 +25,7 @@ from coach.graphs.generation.master_rule_filter import (
     check_long_run_distance_share,
     check_phase_duration_balance,
     check_season_window_fits,
+    check_strength_durability_track,
     check_target_distance_long_run,
     check_taper_volume_drop,
     check_weekly_key_sessions_present,
@@ -91,7 +92,7 @@ def _base_plan_dict() -> dict:
                 "phase_id": "ph4", "target": "sub-3:30",
             },
         ],
-        "training_principles": ["80/20"],
+        "training_principles": ["80/20", "力量与耐久训练每周2次（臀/核心/踝稳定）"],
         "generated_by": "test",
         "version": 1,
         "created_at": "2026-05-19T00:00:00Z",
@@ -129,6 +130,53 @@ def test_no_kwargs_skips_input_aware_rules():
     assert report.ok
     assert not any(v.rule == "season_window_fits" for v in report.violations)
     assert not any(v.rule == "goal_realism" for v in report.violations)
+
+
+# ---------------------------------------------------------------------------
+# strength_durability_track
+# ---------------------------------------------------------------------------
+
+
+def test_strength_track_satisfied_by_training_principle():
+    """A durability line in training_principles satisfies the rule (no warning)."""
+    plan = MasterPlan.model_validate(_base_plan_dict())  # base has a 力量 principle
+    assert check_strength_durability_track(plan) == []
+
+
+def test_strength_track_satisfied_by_strength_test_milestone():
+    plan_dict = _base_plan_dict()
+    plan_dict["training_principles"] = ["80/20"]  # strip the durability principle
+    plan_dict["milestones"].append({
+        "id": "m_str", "type": "strength_test", "date": "2026-08-01",
+        "phase_id": "ph2", "target": "单腿提踵每侧25次，左右差<10%",
+    })
+    plan = MasterPlan.model_validate(plan_dict)
+    assert check_strength_durability_track(plan) == []
+
+
+def test_strength_track_satisfied_by_phase_key_session_type():
+    plan_dict = _base_plan_dict()
+    plan_dict["training_principles"] = ["80/20"]
+    plan_dict["phases"][1]["key_session_types"] = ["threshold", "strength_key"]
+    plan = MasterPlan.model_validate(plan_dict)
+    assert check_strength_durability_track(plan) == []
+
+
+def test_run_only_plan_warns():
+    """A plan with no strength signal anywhere emits a single warning (not error)."""
+    plan_dict = _base_plan_dict()
+    plan_dict["training_principles"] = ["80/20"]  # no durability keyword
+    plan = MasterPlan.model_validate(plan_dict)  # base phases/milestones are run-only
+    violations = check_strength_durability_track(plan)
+    assert len(violations) == 1
+    assert violations[0].rule == "strength_durability_track"
+    assert violations[0].severity == "warning"
+    # warning must not flip the report to not-ok (non-blocking)
+    plan_dict_full = _base_plan_dict()
+    plan_dict_full["training_principles"] = ["80/20"]
+    report = run_master_rule_filter(plan_dict_full, **_kwargs_full())
+    assert report.ok
+    assert any(v.rule == "strength_durability_track" for v in report.violations)
 
 
 # ---------------------------------------------------------------------------
