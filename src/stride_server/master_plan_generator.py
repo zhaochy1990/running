@@ -654,14 +654,51 @@ def _query_history(user_id: str) -> dict[str, Any]:
 
 
 def _ensure_training_load_current(db, as_of=None) -> None:
-    """Ensure daily_training_load is backfilled far enough that the 42-day
-    chronic EWMA has converged at ``as_of``. The EWMA has ~42-day memory, so a
-    365-day warmup window (>> 3x42) yields a converged chronic regardless of how
-    few rows existed before. Idempotent; safe to call every generation."""
+    """Ensure daily_training_load reaches ``as_of`` — computing INCREMENTALLY.
+
+    daily_training_load (and the calibration snapshot) are maintained at sync
+    time by the post-sync TrainingLoadHandler, so on the common path (DB freshly
+    synced before a generation) the table already reaches ``as_of`` and we skip
+    the recompute entirely — just read the latest row. This is the fix for a
+    ~47s stall: the old code re-derived the full 365-day PMC on every generation,
+    and the dominant cost was the threshold calibration recompute (~35s over
+    180-365 days of activities), even though nothing had changed since the sync.
+
+    When the table IS stale we recompute only the missing tail: CTL/ATL are
+    EWMAs, so each day needs only the prior day's value as a seed —
+    ``recompute_training_load`` loads the last persisted row and seeds from it,
+    so a load lookback covering just the gap suffices. The full 365-day warmup is
+    reserved for a cold start (empty table), where the chronic EWMA needs
+    ~3x42 days of history to converge.
+    """
+    from datetime import date as _date
+
+    from stride_core.timefmt import today_shanghai
     from stride_core.training_load import backfill_training_load
+
+    as_of = as_of or today_shanghai()
     try:
-        backfill_training_load(db, as_of_date=as_of, load_lookback_days=365,
-                               calibration_lookback_days=365, persist=True)
+        row = db._conn.execute(
+            "SELECT MAX(date) FROM daily_training_load"
+        ).fetchone()
+        last = row[0] if row and row[0] else None
+        if last and last >= as_of.isoformat():
+            return  # already current — the post-sync handler computed it
+
+        if last:
+            # Incremental: only the gap since the last persisted day (+ a small
+            # buffer). The EWMA seeds from the persisted row, so this is exact.
+            gap_days = (as_of - _date.fromisoformat(last)).days
+            load_lookback = max(1, gap_days) + 2
+            calib_lookback = 180  # only reached on the rare stale-DB path
+        else:
+            # Cold start (no persisted rows) — full warmup for EWMA convergence.
+            load_lookback = 365
+            calib_lookback = 365
+
+        backfill_training_load(db, as_of_date=as_of,
+                               load_lookback_days=load_lookback,
+                               calibration_lookback_days=calib_lookback, persist=True)
     except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
         logger.warning("_ensure_training_load_current failed: %s", exc)
 
@@ -689,6 +726,13 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
         db = Database(user=user_id)
         conn = db._conn
 
+        # daily_training_load is maintained at sync time by the post-sync
+        # TrainingLoadHandler, so this call is now a cheap freshness check
+        # (~0.01s) on the common path — it returns immediately when the table
+        # already reaches today, and only computes the missing tail incrementally
+        # (seeded from the last persisted EWMA) when the DB is stale. It is NOT
+        # the old ~47s full 365-day recompute. Kept as a safety net so a
+        # generation against an un-synced DB still gets a current fitness state.
         _ensure_training_load_current(db, as_of=today_shanghai())
 
         row = conn.execute(
