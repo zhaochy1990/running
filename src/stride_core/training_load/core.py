@@ -8,6 +8,13 @@ from datetime import date, timedelta
 from statistics import median
 from typing import Iterable, Sequence
 
+from ..workout_spec import (
+    DurationKind,
+    NormalizedRunWorkout,
+    StepKind,
+    TargetKind,
+    WorkoutStep,
+)
 from .types import (
     ActivityLoadInput,
     ActivityLoadResult,
@@ -330,6 +337,134 @@ def compute_activity_load(
         excluded_from_pmc=training_dose is None,
         reasons=compact_reasons,
     )
+
+
+# Default intensity factors for steps whose target is OPEN (no pace/HR given),
+# keyed by step role. Values mirror the midpoints of
+# running_calibration.zones.PACE_ZONE_SPEED_RATIOS — easy=(0.72,0.84)→0.78,
+# marathon=(0.84,0.97)→~0.90 — so the open-target fallback stays on the same
+# zone scale rather than using a magic number.
+_OPEN_TARGET_DEFAULT_IF: dict[StepKind, float] = {
+    StepKind.WARMUP: 0.78,
+    StepKind.COOLDOWN: 0.78,
+    StepKind.WORK: 0.90,
+}
+
+# Steps excluded from a planned-load estimate: active recovery between interval
+# reps and passive rest. Their low/zero intensity is intentionally dropped so a
+# session's planned dose reflects the work, not the float between efforts.
+_SKIPPED_PLANNED_STEPS = {StepKind.RECOVERY, StepKind.REST}
+
+
+def _planned_step_intensity(
+    step: WorkoutStep,
+    threshold_speed_mps: float | None,
+    threshold_hr: float | None,
+    rhr: float | None,
+) -> float | None:
+    """Intensity factor (fraction of threshold speed) for one planned step.
+
+    Pace target is preferred; an HR target is the fallback; an OPEN target uses
+    a role-based default. Returns None when the target needs calibration that is
+    absent (e.g. a pace target with no threshold speed) — that step is skipped.
+    """
+    target = step.target
+
+    if target.kind == TargetKind.PACE_S_KM:
+        if (
+            threshold_speed_mps
+            and threshold_speed_mps > 0
+            and target.low is not None
+            and target.high is not None
+        ):
+            pace_mid = (float(target.low) + float(target.high)) / 2.0
+            if pace_mid > 0:
+                return _clamp((1000.0 / pace_mid) / float(threshold_speed_mps), 0.3, 2.0)
+        return None
+
+    if target.kind == TargetKind.HR_BPM:
+        if (
+            threshold_hr
+            and rhr is not None
+            and float(threshold_hr) > float(rhr)
+            and target.low is not None
+            and target.high is not None
+        ):
+            hr_mid = (float(target.low) + float(target.high)) / 2.0
+            # IF = HRR / threshold_HRR; hrmax cancels, leaving (hr-rhr)/(lthr-rhr).
+            return _clamp((hr_mid - float(rhr)) / (float(threshold_hr) - float(rhr)), 0.3, 2.0)
+        return None
+
+    if target.kind == TargetKind.POWER_W:
+        # Planned power estimation is not supported yet; fall through to default.
+        pass
+
+    default = _OPEN_TARGET_DEFAULT_IF.get(step.step_kind)
+    return None if default is None else _clamp(default, 0.3, 2.0)
+
+
+def _planned_step_minutes(
+    step: WorkoutStep, intensity: float, threshold_speed_mps: float | None
+) -> float | None:
+    """Duration of one planned step in minutes, or None if it can't be derived.
+
+    Distance steps need a speed: `threshold_speed * intensity` reproduces the
+    target pace exactly for pace steps and estimates it for HR/default steps.
+    Open-duration steps return None (skipped).
+    """
+    duration = step.duration
+    if duration.kind == DurationKind.TIME_S and duration.value and duration.value > 0:
+        return float(duration.value) / 60.0
+    if duration.kind == DurationKind.DISTANCE_M and duration.value and duration.value > 0:
+        if threshold_speed_mps and threshold_speed_mps > 0:
+            speed = float(threshold_speed_mps) * intensity
+            if speed > 0:
+                return (float(duration.value) / speed) / 60.0
+    return None
+
+
+def estimate_planned_run_load(
+    workout: NormalizedRunWorkout,
+    *,
+    threshold_speed_mps: float | None = None,
+    threshold_hr: float | None = None,
+    rhr: float | None = None,
+) -> float | None:
+    """Estimate STRIDE training_dose for a *planned* run workout.
+
+    The estimate is on the same TSS-like scale as the actual load
+    (`_compute_external_tss`): per countable step,
+    ``dose += (minutes / 60) * IF**2 * 100`` where ``IF`` is the step's
+    intensity relative to threshold. A steady run reproduces the measured
+    external TSS exactly; this is the single source of the scale definition.
+
+    Intensity per step prefers a pace target (``speed / threshold_speed``),
+    falls back to an HR target (``(hr - rhr) / (lthr - rhr)``, an IF² proxy for
+    Banister TRIMP — adequate for the easy runs that carry HR-only targets),
+    then to a role-based default for OPEN targets. RECOVERY/REST steps and
+    open-duration steps contribute nothing, so interval sessions read slightly
+    conservative versus their measured normalized-IF dose — the safe direction
+    for load budgeting.
+
+    Returns None when no step is computable (e.g. neither threshold speed nor
+    HR calibration is available).
+    """
+    total = 0.0
+    counted = False
+    for block in workout.blocks:
+        for _rep in range(block.repeat):
+            for step in block.steps:
+                if step.step_kind in _SKIPPED_PLANNED_STEPS:
+                    continue
+                intensity = _planned_step_intensity(step, threshold_speed_mps, threshold_hr, rhr)
+                if intensity is None:
+                    continue
+                minutes = _planned_step_minutes(step, intensity, threshold_speed_mps)
+                if minutes is None or minutes <= 0:
+                    continue
+                total += (minutes / 60.0) * intensity ** 2 * 100.0
+                counted = True
+    return _round(total) if counted else None
 
 
 def _daterange(start: date, end: date) -> Iterable[date]:
