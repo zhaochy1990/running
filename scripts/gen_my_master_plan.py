@@ -42,6 +42,8 @@ import json
 import logging
 import os
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 # Allow running as `python scripts/gen_my_master_plan.py` (no -m): inject src/.
@@ -53,7 +55,9 @@ if str(_SRC) not in sys.path:
 from langchain_core.callbacks import BaseCallbackHandler
 from coach.graphs.generation.graph import build_generation_graph
 from coach.graphs.generation.master_rule_filter import run_master_rule_filter
+from coach.graphs.generation.state import GenState
 from stride_core.master_plan import MasterPlan
+from stride_core.timefmt import SHANGHAI_TZ
 from stride_server.coach_adapters.master_plan_adapter import (
     apply_master_patches,
     generate_master_plan,
@@ -97,7 +101,6 @@ PROFILE: dict | None = None
 # ---------------------------------------------------------------------------
 
 DEBUG = os.environ.get("COACH_DEBUG") == "1"
-DEBUG = True  # <-- toggle this for quick on/off without env var
 
 class _LLMTap(BaseCallbackHandler):
     """Clean framed view of each LLM request + response as the graph runs."""
@@ -137,7 +140,7 @@ def _enable_debug() -> list:
     """
     logging.basicConfig(
         level=logging.DEBUG,
-        format="%(levelname)s %(name)s: %(message)s",
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         force=True,
     )
     # Quiet the loggers we don't care about; keep the ones that matter at DEBUG.
@@ -173,12 +176,29 @@ def _build_rule_filter_kwargs(goal: dict, profile: dict | None) -> dict:
     return rfk
 
 
+def _timestamp() -> str:
+    return datetime.now(tz=SHANGHAI_TZ).isoformat(timespec="seconds")
+
+
+
 def main() -> int:
     print(f"Generating master plan for user={USER_ID!r} ...")
     print(f"  goal: {json.dumps(GOAL, ensure_ascii=False)}")
 
     callbacks = _enable_debug() if DEBUG else []
     config: dict | None = {"callbacks": callbacks} if callbacks else None
+    # Empty job_id → the adapter's `if job_id:` stage-update calls are skipped,
+    # so no job_runner row is created or mutated.
+    # Empty job_id → the adapter's `if job_id:` stage-update calls are skipped,
+    # so no job_runner row is created or mutated.
+    state: dict = {
+        "job_id": "",
+        "user_id": USER_ID,
+        "plan_type": "master",
+        "input_payload": {"goal": GOAL, "profile": PROFILE},
+    }
+    print(f"[gen] start {_timestamp()}", flush=True)
+    _t0 = time.perf_counter()
 
     graph = build_generation_graph(
         load_context=load_master_context,
@@ -189,14 +209,7 @@ def main() -> int:
         rule_filter_kwargs=_build_rule_filter_kwargs(GOAL, PROFILE),
     )
 
-    # Empty job_id → the adapter's `if job_id:` stage-update calls are skipped,
-    # so no job_runner row is created or mutated.
-    initial_state: dict = {
-        "job_id": "",
-        "user_id": USER_ID,
-        "plan_type": "master",
-        "input_payload": {"goal": GOAL, "profile": PROFILE},
-    }
+    
 
     try:
         print("Invoking generation graph ...")
@@ -206,7 +219,7 @@ def main() -> int:
             # "values"  = full accumulated state (last one = final_state).
             final_state: dict = {}
             for mode, chunk in graph.stream(
-                initial_state, stream_mode=["updates", "values"], config=config
+                state, stream_mode=["updates", "values"], config=config
             ):
                 if mode == "updates":
                     for node, delta in (chunk or {}).items():
@@ -215,7 +228,7 @@ def main() -> int:
                 else:  # values
                     final_state = chunk
         else:
-            final_state = graph.invoke(initial_state)
+            final_state = graph.invoke(state)
     except LLMUnavailable as exc:
         print(f"\n  LLM unavailable: {exc}")
         print("  → run `az login`; check config/coach.local.toml")
@@ -252,16 +265,24 @@ def main() -> int:
     # its own suffixed file (e.g. .../testing/master_plan_gpt-4.1.json) instead
     # of clobbering the shared draft. Falls back to the canonical draft path.
     _out_env = os.environ.get("MASTER_PLAN_OUT")
-    out_path = Path(_out_env) if _out_env else (_REPO_ROOT / "data" / USER_ID / "master_plan_draft.json")
+    # Resolve to absolute so a relative MASTER_PLAN_OUT (e.g. a sweep writing to
+    # data/.../testing/runs/...) still works and the success print below can
+    # take relative_to(_REPO_ROOT) without raising.
+    out_path = (Path(_out_env).resolve() if _out_env
+                else (_REPO_ROOT / "data" / USER_ID / "master_plan_draft.json"))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(plan.model_dump(mode="json"), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
+    try:
+        _shown = out_path.relative_to(_REPO_ROOT)
+    except ValueError:
+        _shown = out_path
     print(f"\n  verdict: {verdict}")
     print(f"  generated_by: {plan.generated_by}")
-    print(f"  Wrote draft → {out_path.relative_to(_REPO_ROOT)}")
+    print(f"  Wrote draft → {_shown}")
     print(f"  {plan.start_date} ~ {plan.end_date} | "
           f"{len(plan.phases)} phases, {len(plan.milestones)} milestones, "
           f"{len(plan.weekly_key_sessions)} weekly skeletons")

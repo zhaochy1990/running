@@ -319,6 +319,199 @@ def _to_optional_float(value: Any) -> float | None:
 # ---------------------------------------------------------------------------
 
 
+# Monday-of-week for a ``YYYY-MM-DD`` date expression ``D``. ``%w`` is
+# 0=Sun..6=Sat; ``(%w+6)%7`` = days elapsed since Monday, so subtracting that
+# many days snaps any date back to its ISO-week Monday. Year-boundary safe
+# because SQLite's ``date(..., '-N days')`` does real calendar arithmetic.
+# ``date_expr`` is interpolated twice, so callers MUST pass a deterministic,
+# side-effect-free expression (a column or a pure transform of one) — never
+# anything containing ``random()`` / ``now`` without an explicit anchor.
+def _monday_expr(date_expr: str) -> str:
+    return f"date({date_expr}, '-' || ((strftime('%w', {date_expr}) + 6) % 7) || ' days')"
+
+
+# Per-run km from the misnamed ``distance_m`` column (stores km when < 500,
+# meters when >= 500) — the per-row form of ``_KM_EXPR``.
+_PER_RUN_KM = "CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END"
+
+# train_kind values that are unambiguously hard/speed work. ``base`` (= easy)
+# and ``aerobic`` are deliberately excluded. NULL train_kind falls through to
+# the pace heuristic in _query_weekly_profile.
+_SPEED_TRAIN_KINDS = ("interval", "threshold", "vo2max", "anaerobic")
+
+# Coarse name-keyword race heuristic (see _query_weekly_profile docstring).
+# Keywords overlap by design (``%赛%`` ⊃ ``%比赛%``); n_race is COUNT-per-row so
+# the overlap is harmless, but ``%赛%`` is broad and will also match names like
+# "备赛长距" — n_race is a soft signal, not an authoritative race flag.
+_RACE_NAME_KEYWORDS = ("%马拉松%", "%marathon%", "%比赛%", "%race%", "%赛%")
+
+
+def _query_weekly_profile(
+    conn: Any,
+    *,
+    weeks: int = 16,
+    threshold_speed_mps: float | None = None,
+) -> list[dict[str, Any]]:
+    """Build a per-Shanghai-week athlete profile, oldest → newest.
+
+    Merges four heterogeneously-dated source tables on a common Monday-of-week
+    key (``week_start``), then returns the ``weeks`` most-recent buckets.
+
+    The four sources store ``date`` differently and MUST be normalised to the
+    same Shanghai calendar week before bucketing:
+      * ``activities.date``      — UTC ISO 8601; shift +8h first, then Monday.
+      * ``daily_training_load``  — already Shanghai ``YYYY-MM-DD``; Monday direct.
+      * ``daily_health.date``    — Shanghai compact ``YYYYMMDD``; reformat first.
+      * ``daily_hrv.date``       — Shanghai ``YYYY-MM-DD``; Monday direct.
+
+    EWMA states (ctl/atl/form) are END-OF-WEEK SNAPSHOTS (value on the latest
+    daily_training_load date in the week) — they are NOT summable. ``dose`` IS
+    per-day additive, so it's summed.
+
+    Race detection is a COARSE name-keyword heuristic (matches 马拉松/marathon/
+    比赛/race/赛 in ``activities.name``) — NOT an authoritative race flag, which
+    the schema lacks. It will over-count (e.g. a "race-pace" workout named so)
+    and under-count unnamed races; treat ``n_race`` as a soft signal only.
+    """
+    from stride_core.models import RUN_SPORT_SQL_LIST
+
+    buckets: dict[str, dict[str, Any]] = {}
+
+    def _bucket(week_start: str) -> dict[str, Any]:
+        b = buckets.get(week_start)
+        if b is None:
+            b = {
+                "week_start": week_start,
+                "distance_km": 0.0,
+                "hours": 0.0,
+                "avg_pace_s_km": None,
+                "avg_hr": None,
+                "ctl": None,
+                "atl": None,
+                "form": None,
+                "dose": 0.0,
+                "rhr": None,
+                "hrv": None,
+                "n_runs": 0,
+                "n_long": 0,
+                "n_speed": 0,
+                "n_race": 0,
+            }
+            buckets[week_start] = b
+        return b
+
+    # --- activities: distance / time / pace / hr / run counts ---------------
+    act_monday = _monday_expr("datetime(date, '+8 hours')")
+    speed_in = ", ".join(f"'{k}'" for k in _SPEED_TRAIN_KINDS)
+    race_like = " OR ".join(f"name LIKE '{kw}'" for kw in _RACE_NAME_KEYWORDS)
+    # pace fallback bound: a run whose true avg speed >= threshold is "hard".
+    # avg speed = total_km*1000 / total_s; compare to threshold_speed_mps.
+    pace_speed_clause = "0"
+    if threshold_speed_mps is not None and threshold_speed_mps > 0:
+        pace_speed_clause = (
+            f"(duration_s > 0 AND ({_PER_RUN_KM}) * 1000.0 / duration_s >= {threshold_speed_mps})"
+        )
+    rows = conn.execute(
+        f"""
+        SELECT {act_monday} AS wk,
+               SUM({_PER_RUN_KM}) AS km,
+               SUM(COALESCE(duration_s, 0)) AS dur_s,
+               SUM(CASE WHEN avg_hr IS NOT NULL
+                        THEN avg_hr * COALESCE(duration_s, 0) ELSE 0 END) AS hr_wsum,
+               SUM(CASE WHEN avg_hr IS NOT NULL
+                        THEN COALESCE(duration_s, 0) ELSE 0 END) AS hr_wden,
+               COUNT(*) AS n_runs,
+               SUM(CASE WHEN ({_PER_RUN_KM}) >= 20 THEN 1 ELSE 0 END) AS n_long,
+               SUM(CASE WHEN train_kind IN ({speed_in})
+                          OR (train_kind IS NULL AND {pace_speed_clause})
+                        THEN 1 ELSE 0 END) AS n_speed,
+               SUM(CASE WHEN {race_like} THEN 1 ELSE 0 END) AS n_race
+        FROM activities
+        WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
+        GROUP BY wk
+        """
+    ).fetchall()
+    for r in rows:
+        wk = r[0]
+        if wk is None:
+            continue
+        b = _bucket(wk)
+        km = r[1] or 0.0
+        dur_s = r[2] or 0.0
+        b["distance_km"] = km
+        b["hours"] = dur_s / 3600.0
+        b["avg_pace_s_km"] = (dur_s / km) if km else None
+        b["avg_hr"] = (r[3] / r[4]) if r[4] else None
+        b["n_runs"] = r[5] or 0
+        b["n_long"] = r[6] or 0
+        b["n_speed"] = r[7] or 0
+        b["n_race"] = r[8] or 0
+
+    # --- daily_training_load: dose (sum) + ctl/atl/form (end-of-week) --------
+    # NOTE: column order here is chronic_load (CTL) FIRST, intentionally NOT
+    # matching _query_fitness_state which selects acute_load first. The explicit
+    # r[3]=chronic→ctl / r[4]=acute→atl mapping below is the anchor; don't copy
+    # the column list from the other function or the two will silently swap.
+    dtl_monday = _monday_expr("date")
+    rows = conn.execute(
+        f"""
+        SELECT {dtl_monday} AS wk, date, training_dose, chronic_load, acute_load, form
+        FROM daily_training_load
+        ORDER BY date ASC
+        """
+    ).fetchall()
+    dose_acc: dict[str, float] = {}
+    for r in rows:
+        wk = r[0]
+        if wk is None:
+            continue
+        b = _bucket(wk)
+        dose_acc[wk] = dose_acc.get(wk, 0.0) + (r[2] or 0.0)
+        # rows ascend by date, so the last write per week is the latest day.
+        b["ctl"] = r[3]  # chronic_load (CTL, 42-day EWMA)
+        b["atl"] = r[4]  # acute_load (ATL, 7-day EWMA)
+        b["form"] = r[5]
+    for wk, total in dose_acc.items():
+        buckets[wk]["dose"] = total
+
+    # --- daily_health: rhr (avg) --------------------------------------------
+    health_norm = "(substr(date,1,4)||'-'||substr(date,5,2)||'-'||substr(date,7,2))"
+    health_monday = _monday_expr(health_norm)
+    rows = conn.execute(
+        f"""
+        SELECT {health_monday} AS wk, AVG(rhr) AS rhr
+        FROM daily_health
+        WHERE rhr IS NOT NULL
+        GROUP BY wk
+        """
+    ).fetchall()
+    for r in rows:
+        wk = r[0]
+        if wk is None:
+            continue
+        _bucket(wk)["rhr"] = r[1]
+
+    # --- daily_hrv: last_night_avg (avg) ------------------------------------
+    hrv_monday = _monday_expr("date")
+    rows = conn.execute(
+        f"""
+        SELECT {hrv_monday} AS wk, AVG(last_night_avg) AS hrv
+        FROM daily_hrv
+        WHERE last_night_avg IS NOT NULL
+        GROUP BY wk
+        """
+    ).fetchall()
+    for r in rows:
+        wk = r[0]
+        if wk is None:
+            continue
+        _bucket(wk)["hrv"] = r[1]
+
+    # Most-recent ``weeks`` buckets, returned oldest → newest.
+    ordered = sorted(buckets.values(), key=lambda b: b["week_start"])
+    return ordered[-weeks:]
+
+
 def _query_history(user_id: str) -> dict[str, Any]:
     """Query activities DB for a 3-year training history summary.
 
@@ -337,6 +530,7 @@ def _query_history(user_id: str) -> dict[str, Any]:
         "best_10k_s": None,
         "best_hm_s": None,
         "best_fm_s": None,
+        "weekly_profile": [],
     }
     try:
         from stride_core.db import Database
@@ -428,6 +622,31 @@ def _query_history(user_id: str) -> dict[str, Any]:
         except Exception:  # noqa: BLE001 — PB read must not block gen
             logger.warning("_query_history: PB read failed for %s", user_id, exc_info=True)
 
+        # 16-week weekly athlete profile. The threshold speed (for the NULL-
+        # train_kind pace fallback in speed classification) is read from the
+        # canonical running-calibration reader — never inline-computed (repo
+        # HARD rule). If it's unavailable, the fallback is simply disabled.
+        try:
+            from stride_core.running_calibration.sqlite_connector import (
+                SQLiteRunningCalibrationRepository,
+            )
+            threshold_speed_mps: float | None = None
+            try:
+                snap = SQLiteRunningCalibrationRepository(db).fetch_latest(today_shanghai())
+                if snap is not None:
+                    threshold_speed_mps = snap.threshold_speed_mps
+            except Exception:  # noqa: BLE001 — calibration read must not block
+                logger.warning(
+                    "_query_history: threshold_speed read failed for %s", user_id, exc_info=True
+                )
+            result["weekly_profile"] = _query_weekly_profile(
+                conn, weeks=16, threshold_speed_mps=threshold_speed_mps
+            )
+        except Exception:  # noqa: BLE001 — weekly profile must not block gen
+            logger.warning(
+                "_query_history: weekly_profile build failed for %s", user_id, exc_info=True
+            )
+
     except Exception as exc:  # noqa: BLE001
         logger.warning("_query_history failed for user %s: %s", user_id, exc)
 
@@ -515,49 +734,101 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
+def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
+    """Render the 16-week weekly profile as dense English lines (for the LLM).
+
+    One line per week (oldest → newest), each metric token omitted gracefully
+    when None, plus a trailing totals line.
+    """
+    if not profile:
+        return ["16-week weekly profile: no recent weekly data"]
+
+    def pace(s: float | None) -> str | None:
+        # None = no distance that week; <= 0 is physically impossible — drop both.
+        if s is None or s <= 0:
+            return None
+        m, sec = divmod(int(round(s)), 60)
+        return f"{m}:{sec:02d}/km"
+
+    def iso_week(week_start: str) -> str:
+        try:
+            d = datetime.strptime(week_start, "%Y-%m-%d").date()
+            iy, iw, _ = d.isocalendar()
+            return f"{iy}-W{iw:02d}"
+        except (ValueError, TypeError):
+            return week_start
+
+    lines: list[str] = ["16-week weekly profile (most recent last):"]
+    for w in profile:
+        tokens: list[str] = [f"  {iso_week(w['week_start'])}"]
+        tokens.append(f"{w['distance_km']:.1f}km {w['hours']:.1f}h")
+        p = pace(w.get("avg_pace_s_km"))
+        if p:
+            tokens.append(p)
+        if w.get("avg_hr") is not None:
+            tokens.append(f"HR {w['avg_hr']:.0f}")
+        load_bits: list[str] = []
+        if w.get("ctl") is not None:
+            load_bits.append(f"CTL {w['ctl']:.0f}")
+        if w.get("atl") is not None:
+            load_bits.append(f"ATL {w['atl']:.0f}")
+        if w.get("form") is not None:
+            load_bits.append(f"form {w['form']:+.0f}")
+        if w.get("dose"):
+            load_bits.append(f"dose {w['dose']:.0f}")
+        if load_bits:
+            tokens.append(" ".join(load_bits))
+        recov_bits: list[str] = []
+        if w.get("rhr") is not None:
+            recov_bits.append(f"RHR {w['rhr']:.0f}")
+        if w.get("hrv") is not None:
+            recov_bits.append(f"HRV {w['hrv']:.0f}")
+        if recov_bits:
+            tokens.append(" ".join(recov_bits))
+        n_runs = w.get("n_runs", 0)
+        run_bits = [f"{n_runs} runs"]
+        extra = []
+        if w.get("n_long"):
+            extra.append(f"{w['n_long']} long")
+        if w.get("n_speed"):
+            extra.append(f"{w['n_speed']} speed")
+        if w.get("n_race"):
+            extra.append(f"{w['n_race']} race")
+        if extra:
+            run_bits.append("(" + ", ".join(extra) + ")")
+        tokens.append(" ".join(run_bits))
+        lines.append(" | ".join(tokens))
+
+    active = [w for w in profile if w.get("n_runs", 0) > 0]
+    n_total = sum(w.get("n_runs", 0) for w in profile)
+    long_total = sum(w.get("n_long", 0) for w in profile)
+    speed_total = sum(w.get("n_speed", 0) for w in profile)
+    race_total = sum(w.get("n_race", 0) for w in profile)
+    avg_runs = (n_total / len(active)) if active else 0.0
+    lines.append(
+        f"Totals ({len(profile)}wk): {n_total} runs, {long_total} long, "
+        f"{speed_total} speed, {race_total} race, "
+        f"{avg_runs:.1f} runs/active-week"
+    )
+    return lines
+
+
 def _format_history_summary(history: dict[str, Any]) -> str:
     """Convert raw history dict into a readable (English) summary for the prompt.
 
-    Volume is reported as both distance and time. The in-progress current
-    calendar month is only partially elapsed, so it is weighted as HALF a month
-    in the average-volume denominator (its distance/time still count in full) —
-    otherwise a fresh month deflates the per-month average.
+    Volume is now reported as a 16-week weekly athlete profile (distance/time/
+    pace/HR/CTL-ATL-form/dose/RHR/HRV + run-type counts per week), replacing the
+    former monthly-volume block. Total / max-week / real-PB anchor lines are kept.
     """
-    from stride_core.timefmt import today_shanghai
-
     lines: list[str] = []
 
     total = history.get("total_activities", 0)
     max_wk = history.get("max_weekly_km", 0)
-    monthly = history.get("monthly_km", [])
 
     lines.append(f"Running activities (history total): {total}")
     lines.append(f"Max single-week distance (history): {max_wk} km")
 
-    if monthly:
-        recent = monthly[-6:]  # last 6 months
-        cur_ym = today_shanghai().strftime("%Y-%m")
-        monthly_str = ", ".join(
-            f"{m['month']} {m['km']:.0f}km/{m.get('hours', 0):.0f}h"
-            + ("(MTD)" if m["month"] == cur_ym else "")
-            for m in recent
-        )
-        lines.append(f"Last 6 months (distance/time): {monthly_str}")
-
-        total_km = sum(m["km"] for m in recent)
-        total_hours = sum(m.get("hours", 0) for m in recent)
-        # The in-progress current month counts as half a month so a partial
-        # month doesn't deflate the per-month average (distance/time count full).
-        month_equiv = sum(0.5 if m["month"] == cur_ym else 1.0 for m in recent)
-        avg_km = total_km / month_equiv if month_equiv else 0.0
-        avg_hours = total_hours / month_equiv if month_equiv else 0.0
-        lines.append(
-            f"Average monthly volume: {avg_km:.0f} km/mo "
-            f"(~{avg_km / 4.345:.0f} km/wk), {avg_hours:.1f} h/mo "
-            f"(current month weighted as half)"
-        )
-    else:
-        lines.append("No historical volume data")
+    lines.extend(_format_weekly_profile(history.get("weekly_profile", [])))
 
     def fmt_time(sec: int | None) -> str:
         if sec is None:
@@ -731,7 +1002,7 @@ def _format_body_comp_fallback(bc: dict[str, Any]) -> str:
     return f"最新体测（{scan}）— " + "，".join(parts) if parts else f"最新体测（{scan}）"
 
 
-def _build_system_prompt(
+def build_master_prompts(
     goal: dict,
     profile: dict | None,
     history_summary: str,
@@ -741,7 +1012,24 @@ def _build_system_prompt(
     body_composition: dict[str, Any] | None = None,
     body_composition_summary: str | None = None,
     current_phase: "CurrentPhaseContext | None" = None,
-) -> str:
+) -> tuple[str, str]:
+    """Build the ``(system_prompt, user_prompt)`` pair for S1 generation.
+
+    Prompt role discipline (see CLAUDE.md "Prompt role discipline"):
+
+    * **system** — the invariant doctrine: coach persona, output-language rule,
+      the output JSON schema, and all the HARD rules. It carries **no**
+      per-athlete or per-call value, so it is byte-identical across every user
+      and every call — a stable prompt-cache prefix.
+    * **user** — *this turn's* task + input data: the athlete's goal / profile /
+      history / fitness, the computed ``plan_start`` & ``race_date``, the
+      conditional current-phase / continuity / macro / body-composition context
+      blocks, and the final "generate the plan" instruction.
+
+    Keeping the per-athlete data in the user turn is what lets the large static
+    doctrine cache-hit across generations; it also matches the plain semantics
+    of the two roles (system = who you are + the rules; user = the request).
+    """
     # Normalise prod-route field names before serialising into the prompt.
     # Without this, prod payloads carry ``target_finish_time`` / ``pbs`` and
     # the goal-realism HARD pushback rule (which references ``goal_time_s`` /
@@ -828,21 +1116,28 @@ def _build_system_prompt(
         }) + "\n"
 
     # Prompt content lives in the markdown skill src/coach/skills/master_plan_planner/
-    # (SKILL.md + shared/ + references/), loaded + rendered here. The dynamic
-    # blocks + input strings computed above are the runtime ${context}.
-    from coach.skills import render_skill
-    return render_skill("master_plan_planner", {
+    # (SKILL.md + shared/ + references/), loaded + rendered here.
+    #
+    # SKILL.md is the *system* prompt: persona + output schema + HARD rules,
+    # with no runtime placeholders — rendered with an empty context it is a
+    # stable, cacheable prefix. user_prompt.md is the *user* turn: every
+    # per-athlete / per-call value computed above is injected there.
+    from coach.skills import render_fragment, render_skill
+    system_prompt = render_skill("master_plan_planner", {})
+    user_prompt = render_fragment("master_plan_planner/user_prompt.md", {
+        "today": today,
+        "plan_start": plan_start,
+        "race_date": race_date,
         "goal_json": goal_json,
         "profile_json": profile_json,
         "history_summary": history_summary,
         "fitness_summary": fitness_summary,
-        "plan_start": plan_start,
-        "race_date": race_date,
         "current_phase_block": current_phase_block,
         "continuity_block": continuity_block,
         "macro_block": macro_block,
         "body_comp_block": body_comp_block,
     })
+    return system_prompt, user_prompt
 
 
 # ---------------------------------------------------------------------------

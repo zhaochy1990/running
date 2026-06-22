@@ -1,8 +1,15 @@
 """Master plan rule filter — see ``docs/coach-eval_S1.md`` § S1 L1 Rules.
 
-Implements 13 S1 L1 rules. Empty ``MasterPlan.weekly_key_sessions`` makes
+Implements 15 S1 L1 rules. Empty ``MasterPlan.weekly_key_sessions`` makes
 all Batch B rules silent no-ops so legacy plans / fixtures don't trip on
 the new structure.
+
+* ``strength_durability_track``: plan must program a strength & durability
+  track — a strength_test milestone, a strength entry in some phase's
+  key_session_types, or a durability line in training_principles (warning).
+* ``marathon_pace_specificity``: fm/hm plans must carry goal-pace work
+  (a race_pace session or a goal-pace milestone); sub-3:00 fm needs the
+  longest long_run ≥ 32km (warning).
 
 Schema-only (no kwargs):
 
@@ -1107,6 +1114,144 @@ def check_hard_session_spacing(plan: MasterPlan) -> list[RuleViolation]:
     return violations
 
 
+def check_strength_durability_track(plan: MasterPlan) -> list[RuleViolation]:
+    """A plan must program a strength & durability track — never run-only.
+
+    Severity ``warning`` (advisory, non-blocking): the project rule is that
+    every plan covers Strength & Conditioning, and for endurance athletes the
+    late-race fade is often a structural (posterior-chain / hip / ankle /
+    tendon) failure rather than an aerobic one, so a run-only plan both
+    under-addresses the goal-limiting weakness and raises injury/dropout risk.
+    The durability track is tracked at the phase / principles / milestone level
+    (it is non-running, exempt from the weekly key-session caps), so this rule
+    accepts ANY of those signals as evidence the track exists:
+
+    * a ``strength_test`` milestone, or
+    * a phase whose ``key_session_types`` names a strength/durability entry, or
+    * a ``training_principles`` entry mentioning strength / durability.
+
+    Kept as a warning (not error) so it surfaces the gap for review without
+    blocking generation or hard-failing legacy fixtures that predate the
+    strength-track doctrine.
+    """
+    has_milestone = any(
+        m.type == MilestoneType.STRENGTH_TEST for m in plan.milestones
+    )
+    has_phase_type = any(
+        any("strength" in str(t).lower() or "durab" in str(t).lower()
+            for t in (ph.key_session_types or []))
+        for ph in plan.phases
+    )
+    _KW = ("strength", "durab", "力量", "耐久", "稳定", "跟腱", "偏心")
+    principles = getattr(plan, "training_principles", None) or []
+    has_principle = any(
+        any(kw in str(p).lower() if kw.isascii() else kw in str(p) for kw in _KW)
+        for p in principles
+    )
+    if has_milestone or has_phase_type or has_principle:
+        return []
+    return [
+        RuleViolation(
+            rule="strength_durability_track",
+            severity="warning",
+            message=(
+                "plan is run-only — no strength & durability track found "
+                "(no strength_test milestone, no strength entry in any phase's "
+                "key_session_types, no durability line in training_principles). "
+                "Every plan should program S&C; for injury-prone / late-fade "
+                "athletes durability is a goal prerequisite."
+            ),
+            details={},
+        )
+    ]
+
+
+# Goal-pace volume inside long runs is what builds race-specific endurance for
+# the longer goals; a sub-3:00 marathon needs the longest specific run to clear
+# the 30km fade point. ``_SUB3_FM_S`` is the 3:00:00 cutoff in seconds.
+_SUB3_FM_S: int = 3 * 3600
+_MP_KEYWORDS: tuple[str, ...] = (
+    "配速", "marathon pace", "race pace", "race-pace", "goal pace", "目标配速",
+)
+
+
+def check_marathon_pace_specificity(
+    plan: MasterPlan, *, target_race: dict | None = None
+) -> list[RuleViolation]:
+    """fm/hm plans must carry goal-pace-specific work; sub-3 fm needs a ≥32km
+    long run (both ``warning`` — advisory, non-blocking).
+
+    Two advisory checks, only for fm/hm goals (no-op otherwise, and no-op when
+    ``target_race`` / ``weekly_key_sessions`` are absent so legacy callers and
+    early-pipeline plans don't trip):
+
+    1. **Goal-pace specificity** — an all-easy plan does not build race-specific
+       endurance. Accept EITHER a ``race_pace`` key session OR a milestone whose
+       target text references goal/marathon pace (the low-day representation
+       embeds the goal-pace block inside the long_run and names it in the
+       milestone instead of a separate race_pace session). Warn if neither.
+    2. **sub-3:00 fm long-run depth** — when the fm goal is sub-3:00, the longest
+       ``long_run`` should reach ≥ 32km to rehearse goal pace past the 30km fade
+       (a refinement of the ≥28km ``target_distance_long_run`` error rule).
+    """
+    if not target_race or not plan.weekly_key_sessions:
+        return []
+    distance = str(target_race.get("distance") or "").lower()
+    if distance not in ("fm", "hm"):
+        return []
+
+    violations: list[RuleViolation] = []
+
+    has_race_pace = any(
+        ks.type == "race_pace"
+        for w in plan.weekly_key_sessions
+        for ks in (w.key_sessions or [])
+    )
+    has_mp_milestone = any(
+        any(kw in str(m.target).lower() if kw.isascii() else kw in str(m.target)
+            for kw in _MP_KEYWORDS)
+        for m in plan.milestones
+    )
+    if not has_race_pace and not has_mp_milestone:
+        violations.append(
+            RuleViolation(
+                rule="marathon_pace_specificity",
+                severity="warning",
+                message=(
+                    f"{distance} plan has no goal-pace-specific work — no "
+                    "race_pace key session and no goal-pace milestone. Easy "
+                    "long runs alone don't build race-specific endurance; embed "
+                    "a progressive goal-pace block in the long runs."
+                ),
+                details={"distance": distance},
+            )
+        )
+
+    goal_time_s = target_race.get("goal_time_s")
+    if distance == "fm" and isinstance(goal_time_s, (int, float)) and goal_time_s < _SUB3_FM_S:
+        long_runs = [
+            ks.distance_km
+            for w in plan.weekly_key_sessions
+            for ks in (w.key_sessions or [])
+            if ks.type == "long_run" and ks.distance_km
+        ]
+        peak_lr = max(long_runs) if long_runs else 0.0
+        if peak_lr < 32.0:
+            violations.append(
+                RuleViolation(
+                    rule="marathon_pace_specificity",
+                    severity="warning",
+                    message=(
+                        f"sub-3:00 fm goal but longest long_run is {peak_lr:.0f}km "
+                        "(< 32km) — push the peak long run to ≥32km to rehearse "
+                        "goal pace past the 30km fade point."
+                    ),
+                    details={"peak_long_run_km": peak_lr, "goal_time_s": goal_time_s},
+                )
+            )
+    return violations
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
@@ -1168,4 +1313,8 @@ def run_master_rule_filter(
     )
     violations.extend(check_hard_session_spacing(plan))
     violations.extend(check_long_run_distance_share(plan))
+    violations.extend(check_strength_durability_track(plan))
+    violations.extend(
+        check_marathon_pace_specificity(plan, target_race=target_race)
+    )
     return RuleFilterReport(violations=violations)
