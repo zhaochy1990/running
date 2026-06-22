@@ -1,0 +1,316 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-06-22_06-28(P1W8)",
+  "sessions": [
+    {
+      "date": "2026-06-22",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 11km + 4×100m strides",
+      "total_distance_m": 11000,
+      "spec": {
+        "name": "[STRIDE] 轻松跑 + strides",
+        "date": "2026-06-22",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 11000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 145}
+              }
+            ]
+          },
+          {
+            "repeat": 4,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 100},
+                "target": {"kind": "open", "low": null, "high": null},
+                "note": "strides，控制不冲刺"
+              }
+            ]
+          }
+        ],
+        "note": "HR<145，5:00-5:20/km"
+      }
+    },
+    {
+      "date": "2026-06-23",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复跑 8km",
+      "total_distance_m": 8000,
+      "spec": {
+        "name": "[STRIDE] 恢复跑",
+        "date": "2026-06-23",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 8000},
+                "target": {"kind": "hr_bpm", "low": 120, "high": 138}
+              }
+            ]
+          }
+        ],
+        "note": "恢复 HR<138，5:30+/km"
+      }
+    },
+    {
+      "date": "2026-06-23",
+      "session_index": 1,
+      "kind": "strength",
+      "summary": "力量 A — 下肢稳定 + 跟腱预防",
+      "spec": {
+        "name": "[STRIDE] 力量 A",
+        "date": "2026-06-23",
+        "exercises": [
+          {"canonical_id": "T1317", "display_name": "蚌式", "sets": 2, "target_kind": "reps", "target_value": 15, "rest_seconds": 45, "note": "髋激活，每侧", "provider_id": "T1317"},
+          {"canonical_id": "T1262", "display_name": "greatest stretch", "sets": 2, "target_kind": "reps", "target_value": 6, "rest_seconds": 30, "note": "全身动态，每侧", "provider_id": "T1262"},
+          {"canonical_id": "T1219", "display_name": "单腿臀桥", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 60, "note": "腘绳/臀大肌弱链，每侧", "provider_id": "T1219"},
+          {"canonical_id": "T1305", "display_name": "RDL（10kg/侧）", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 90, "note": "慢离心 3s，每侧", "provider_id": "T1305"},
+          {"canonical_id": "T1301", "display_name": "高脚杯深蹲（8kg）", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 90, "note": "双腿基础", "provider_id": "T1301"},
+          {"canonical_id": "T1368", "display_name": "哥本哈根侧平板（屈腿）", "sets": 3, "target_kind": "time_s", "target_value": 20, "rest_seconds": 45, "note": "内收肌，每侧", "provider_id": "T1368"},
+          {"canonical_id": "T1275", "display_name": "单腿提踵（4s 慢离心）", "sets": 2, "target_kind": "reps", "target_value": 10, "rest_seconds": 45, "note": "跟腱预防，每侧", "provider_id": "T1275"},
+          {"canonical_id": "T1243", "display_name": "Dead Bug", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "note": "核心抗旋，每侧", "provider_id": "T1243"},
+          {"canonical_id": "T1185", "display_name": "侧平板", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "侧链，每侧", "provider_id": "T1185"},
+          {"canonical_id": "T1249", "display_name": "Bird Dog", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 45, "note": "后链，每侧", "provider_id": "T1249"}
+        ]
+      }
+    },
+    {
+      "date": "2026-06-24",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "半马配速复合课：4K HM + 2×2K + 5×400m",
+      "total_distance_m": 16500,
+      "spec": {
+        "name": "[STRIDE] 4K HM + 2×2K + 5×400m",
+        "date": "2026-06-24",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {"kind": "distance_m", "value": 2500},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 150},
+                "note": "含 4×100m strides"
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 4000},
+                "target": {"kind": "pace_s_km", "low": 240, "high": 246},
+                "hr_cap_bpm": 168,
+                "note": "4K @ HM 配速 4:03，HR 162-167（高温 HR 优先）"
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 300},
+                "target": {"kind": "pace_s_km", "low": 330, "high": 360},
+                "note": "5min 过渡慢跑，HR 回落<150"
+              }
+            ]
+          },
+          {
+            "repeat": 2,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 2000},
+                "target": {"kind": "pace_s_km", "low": 233, "high": 238},
+                "hr_cap_bpm": 172,
+                "note": "2K @ HM-5~10s（3:53-3:58），HR 165-170"
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 180},
+                "target": {"kind": "pace_s_km", "low": 300, "high": 330},
+                "note": "组间 3min 慢跑，HR 回落<150"
+              }
+            ]
+          },
+          {
+            "repeat": 5,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 400},
+                "target": {"kind": "pace_s_km", "low": 218, "high": 228},
+                "note": "400m @ 88-90s（3:40-3:45），跑高不设逐 rep cap"
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {"kind": "time_s", "value": 60},
+                "target": {"kind": "pace_s_km", "low": 300, "high": 330},
+                "note": "组间 60s 慢跑不站立"
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {"kind": "distance_m", "value": 2000},
+                "target": {"kind": "hr_bpm", "low": 0, "high": 140}
+              }
+            ]
+          }
+        ],
+        "note": "三段递进 阈值→LT上沿→VO2。HR 锚>配速，高温心率优先。400m 无逐 rep HR cap；安全 HR≥182>20s 当组结束。T>25°C 降级、腿沉降级见 plan.md。"
+      }
+    },
+    {
+      "date": "2026-06-25",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 12km",
+      "total_distance_m": 12000,
+      "spec": {
+        "name": "[STRIDE] 轻松跑",
+        "date": "2026-06-25",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 12000},
+                "target": {"kind": "hr_bpm", "low": 130, "high": 145}
+              }
+            ]
+          }
+        ],
+        "note": "HR<145，5:00-5:20/km"
+      }
+    },
+    {
+      "date": "2026-06-26",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 10km（长距前蓄力）",
+      "total_distance_m": 10000,
+      "spec": {
+        "name": "[STRIDE] 轻松跑（长距前）",
+        "date": "2026-06-26",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 10000},
+                "target": {"kind": "hr_bpm", "low": 125, "high": 142}
+              }
+            ]
+          }
+        ],
+        "note": "宁短勿长，HR<142，5:00-5:20/km"
+      }
+    },
+    {
+      "date": "2026-06-27",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "长距 28K 含末 8K @ MP 努力",
+      "total_distance_m": 28000,
+      "spec": {
+        "name": "[STRIDE] 28K 含末8K MP",
+        "date": "2026-06-27",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 20000},
+                "target": {"kind": "pace_s_km", "low": 290, "high": 300},
+                "hr_cap_bpm": 150,
+                "note": "段1 有氧 4:50-5:00，HR<150"
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 4000},
+                "target": {"kind": "pace_s_km", "low": 252, "high": 260},
+                "hr_cap_bpm": 158,
+                "note": "段2 MP 渐进 4:20→4:12"
+              },
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 4000},
+                "target": {"kind": "pace_s_km", "low": 248, "high": 252},
+                "hr_cap_bpm": 160,
+                "note": "段3 MP 努力 4:12-4:08，HR 优先"
+              }
+            ]
+          }
+        ],
+        "note": "末 8K 为 MP 努力非死配速，HR 顶 160 即保当前配速。补给 4 胶 @8/14/20/24K。"
+      }
+    },
+    {
+      "date": "2026-06-28",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复跑 7km",
+      "total_distance_m": 7000,
+      "spec": {
+        "name": "[STRIDE] 恢复跑",
+        "date": "2026-06-28",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {"kind": "distance_m", "value": 7000},
+                "target": {"kind": "hr_bpm", "low": 115, "high": 138}
+              }
+            ]
+          }
+        ],
+        "note": "长距后恢复 HR<138，5:30+/km"
+      }
+    },
+    {
+      "date": "2026-06-28",
+      "session_index": 1,
+      "kind": "strength",
+      "summary": "力量 B — 核心 + 灵活",
+      "spec": {
+        "name": "[STRIDE] 力量 B",
+        "date": "2026-06-28",
+        "exercises": [
+          {"canonical_id": "T1248", "display_name": "胸椎旋转", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "note": "改善摆臂，每侧", "provider_id": "T1248"},
+          {"canonical_id": "T1234", "display_name": "猫牛式", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "脊柱灵活", "provider_id": "T1234"},
+          {"canonical_id": "T1243", "display_name": "Dead Bug", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "note": "核心抗旋，每侧", "provider_id": "T1243"},
+          {"canonical_id": "T1368", "display_name": "哥本哈根侧平板（屈腿）", "sets": 3, "target_kind": "time_s", "target_value": 20, "rest_seconds": 45, "note": "内收肌，每侧", "provider_id": "T1368"},
+          {"canonical_id": "T1249", "display_name": "Bird Dog", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "note": "后链，每侧", "provider_id": "T1249"},
+          {"canonical_id": "T1274", "display_name": "髋屈肌弓步拉伸", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "久坐补偿，每侧", "provider_id": "T1274"},
+          {"canonical_id": "T1222", "display_name": "腿摆（前后）", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "note": "髋灵活，每侧", "provider_id": "T1222"}
+        ]
+      }
+    }
+  ],
+  "nutrition": [
+    {"date": "2026-06-22", "kcal_target": null, "carbs_g": 395, "protein_g": 140, "notes_md": "轻松日，-200 kcal"},
+    {"date": "2026-06-23", "carbs_g": 395, "protein_g": 140, "notes_md": "恢复+力量，-200 kcal"},
+    {"date": "2026-06-24", "carbs_g": 474, "protein_g": 140, "notes_md": "强度课日，热量平衡"},
+    {"date": "2026-06-25", "carbs_g": 395, "protein_g": 140, "notes_md": "轻松日，-200 kcal"},
+    {"date": "2026-06-26", "carbs_g": 435, "protein_g": 140, "notes_md": "长距前加载，-100 kcal"},
+    {"date": "2026-06-27", "carbs_g": 553, "protein_g": 140, "notes_md": "长距 28K，+150 kcal。跑中 4 胶 @8/14/20/24K"},
+    {"date": "2026-06-28", "carbs_g": 395, "protein_g": 140, "notes_md": "恢复+力量B，-200 kcal"}
+  ],
+  "notes_md": "Phase 2 第2周。重点=周三强度课（20min节奏+400m×8）+周六28K长距离。补回连续两周缺席的长距离，止住 chronic 下滑。"
+}
