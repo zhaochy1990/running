@@ -85,6 +85,7 @@ class BestEffortCandidate:
     achieved_at: str
     label_id: str
     source: str
+    name: str | None = None
     segment_start_s: float | None = None
     segment_end_s: float | None = None
 
@@ -109,6 +110,7 @@ class BestEffortCandidate:
             "achieved_at": self.achieved_at,
             "label_id": self.label_id,
             "source": self.source,
+            "name": self.name,
             "history": history,
         }
         if self.segment_start_s is not None:
@@ -287,6 +289,7 @@ def best_effort_candidates_for_activity(
                     achieved_at=date_disp,
                     label_id=label_id,
                     source="segment",
+                    name=_get(activity, "name"),
                     segment_start_s=float(segment.start_s),
                     segment_end_s=float(segment.end_s),
                 ))
@@ -407,6 +410,7 @@ def _activity_level_candidates(
             achieved_at=date_disp,
             label_id=label_id,
             source="activity",
+            name=_get(activity, "name"),
         ))
     return out
 

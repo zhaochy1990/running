@@ -932,6 +932,7 @@ export interface PBEntry {
   pb_time_sec: number
   achieved_at: string         // Shanghai YYYY-MM-DD
   label_id: string
+  name: string | null
   source: string | null
   segment_start_s: number | null
   segment_end_s: number | null

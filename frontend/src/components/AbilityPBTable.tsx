@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import type { PBEntry } from '../api'
 import { fmtClock, fmtPace } from '../lib/fmt'
 
@@ -29,6 +30,7 @@ export default function AbilityPBTable({ pbs }: { pbs: PBEntry[] }) {
                 <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">成绩</th>
                 <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">配速</th>
                 <th className="text-right py-2 px-3 text-xs font-mono text-text-muted tracking-wider">日期</th>
+                <th className="text-left py-2 px-3 text-xs font-mono text-text-muted tracking-wider">运动</th>
               </tr>
             </thead>
             <tbody>
@@ -48,6 +50,19 @@ export default function AbilityPBTable({ pbs }: { pbs: PBEntry[] }) {
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono text-text-muted text-xs">
                       {entry ? entry.achieved_at : '—'}
+                    </td>
+                    <td className="py-2.5 px-3 font-mono text-xs">
+                      {entry ? (
+                        <Link
+                          to={`/activity/${entry.label_id}`}
+                          title={entry.name ?? undefined}
+                          className="text-accent-green hover:opacity-75 transition-opacity"
+                        >
+                          {entry.name || '查看'}
+                        </Link>
+                      ) : (
+                        <span className="text-text-muted">—</span>
+                      )}
                     </td>
                   </tr>
                 )

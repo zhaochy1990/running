@@ -47,6 +47,7 @@ class PBEntry(BaseModel):
     achieved_at: str
     label_id: str
     source: str | None = None
+    name: str | None = None
     segment_start_s: float | None = None
     segment_end_s: float | None = None
     history: list[PBHistoryPoint]

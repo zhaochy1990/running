@@ -333,6 +333,7 @@ def test_pbs_includes_1k_and_3k_segments(app_client):
     assert "1K" in pb_map
     assert "3K" in pb_map
     assert "5K" in pb_map
+    assert "name" in pb_map["5K"]  # segment path threads name through (None for this fixture)
     # Absolute fastest-segment durations must increase with distance.
     assert pb_map["1K"]["pb_time_sec"] < pb_map["3K"]["pb_time_sec"]
     assert pb_map["3K"]["pb_time_sec"] < pb_map["5K"]["pb_time_sec"]
@@ -401,3 +402,30 @@ def test_pbs_1k_3k_activity_level_fallback(app_client):
     assert pb_map["3K"]["pb_time_sec"] == 720.0
     assert pb_map["3K"]["label_id"] == "track_3k"
     assert pb_map["3K"]["source"] == "activity"
+
+
+def test_pbs_includes_activity_name(app_client):
+    """Each PB carries the source activity's name; a nameless activity → name=None.
+    Exercises the activity-level fallback path (no timeseries)."""
+    client, token, tmp_path, _ = app_client
+    db = _make_db(tmp_path)
+    db._conn.execute(
+        "INSERT INTO activities (label_id, name, sport_type, date, distance_m, duration_s) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        ("named_5k", "晨跑 5公里", 100, "2025-05-01", 5000.0, 1300.0),
+    )
+    db._conn.execute(
+        "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("unnamed_10k", 100, "2025-05-02", 10000.0, 2600.0),
+    )
+    db._conn.commit()
+    db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/pbs", headers=_auth(token))
+    assert resp.status_code == 200, resp.text
+    pb_map = {p["distance"]: p for p in resp.json()["pbs"]}
+
+    assert pb_map["5K"]["name"] == "晨跑 5公里"
+    assert pb_map["5K"]["label_id"] == "named_5k"
+    assert pb_map["10K"]["name"] is None
