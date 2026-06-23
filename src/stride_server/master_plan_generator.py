@@ -664,17 +664,26 @@ def _ensure_training_load_current(db, as_of=None) -> None:
     and the dominant cost was the threshold calibration recompute (~35s over
     180-365 days of activities), even though nothing had changed since the sync.
 
-    When the table IS stale we recompute only the missing tail: CTL/ATL are
-    EWMAs, so each day needs only the prior day's value as a seed —
-    ``recompute_training_load`` loads the last persisted row and seeds from it,
-    so a load lookback covering just the gap suffices. The full 365-day warmup is
-    reserved for a cold start (empty table), where the chronic EWMA needs
-    ~3x42 days of history to converge.
+    When the table IS stale (e.g. synced yesterday, generating today) we extend
+    only the missing CTL/ATL tail and **reuse the persisted calibration** rather
+    than refitting it. The athlete calibration (threshold_hr/speed, hrmax, rhr)
+    is a slow-moving baseline already computed at sync time + a weekly job and
+    persisted in ``running_calibration_snapshot``; refitting it over 180 days was
+    the ~35s cost that dominated this call even though the snapshot was already
+    current. ``recompute_training_load`` reads the latest persisted snapshot via
+    ``_fetch_latest_calibration`` when no ``calibration_override`` is passed, then
+    extends just the gap (CTL/ATL are EWMAs seeded from the last persisted row),
+    dropping a stale-by-a-day generation from ~40s to ~1s. The full 365-day
+    warmup + calibration refit is reserved for a cold start (empty table), where
+    no snapshot may exist yet and the chronic EWMA needs ~3x42 days to converge.
     """
-    from datetime import date as _date
+    from datetime import date as _date, timedelta as _timedelta
 
     from stride_core.timefmt import today_shanghai
-    from stride_core.training_load import backfill_training_load
+    from stride_core.training_load import (
+        backfill_training_load,
+        recompute_training_load,
+    )
 
     as_of = as_of or today_shanghai()
     try:
@@ -686,19 +695,20 @@ def _ensure_training_load_current(db, as_of=None) -> None:
             return  # already current — the post-sync handler computed it
 
         if last:
-            # Incremental: only the gap since the last persisted day (+ a small
-            # buffer). The EWMA seeds from the persisted row, so this is exact.
+            # Incremental EWMA-only tail: recompute from a small buffer before
+            # the last persisted day (prior_state seeds the EWMA from the row
+            # before the window). No calibration_override → recompute reads the
+            # already-current persisted snapshot instead of the ~35s 180-day
+            # refit.
             gap_days = (as_of - _date.fromisoformat(last)).days
-            load_lookback = max(1, gap_days) + 2
-            calib_lookback = 180  # only reached on the rare stale-DB path
+            load_start = as_of - _timedelta(days=max(1, gap_days) + 2)
+            recompute_training_load(db, start=load_start, end=as_of, persist=True)
         else:
-            # Cold start (no persisted rows) — full warmup for EWMA convergence.
-            load_lookback = 365
-            calib_lookback = 365
-
-        backfill_training_load(db, as_of_date=as_of,
-                               load_lookback_days=load_lookback,
-                               calibration_lookback_days=calib_lookback, persist=True)
+            # Cold start (no persisted rows) — full warmup for EWMA convergence
+            # plus a calibration refit, since no snapshot may exist yet.
+            backfill_training_load(db, as_of_date=as_of,
+                                   load_lookback_days=365,
+                                   calibration_lookback_days=365, persist=True)
     except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
         logger.warning("_ensure_training_load_current failed: %s", exc)
 
