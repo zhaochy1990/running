@@ -6,7 +6,7 @@ interface Props {
 }
 
 export default function CorosStep({ onSuccess }: Props) {
-  const [email, setEmail] = useState('')
+  const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -16,12 +16,12 @@ export default function CorosStep({ onSuccess }: Props) {
     setError('')
     setLoading(true)
     try {
-      const { ok, data } = await postCorosLogin(email, password)
+      const { ok, data } = await postCorosLogin(account.trim(), password)
       if (ok) {
         onSuccess()
       } else {
         const msg = (data as { error?: string; detail?: unknown }).error
-        setError(msg || 'COROS 账号验证失败，请检查邮箱和密码')
+        setError(msg || 'COROS 账号验证失败，请检查账号和密码')
       }
     } catch {
       setError('请求失败，请重试')
@@ -34,7 +34,7 @@ export default function CorosStep({ onSuccess }: Props) {
     <div className="space-y-6">
       <div>
         <h2 className="text-lg font-bold text-text-primary">连接 COROS 账号</h2>
-        <p className="text-sm text-text-muted mt-1">输入你的 COROS 账号用于同步训练数据</p>
+        <p className="text-sm text-text-muted mt-1">输入你的 COROS 账号（邮箱或手机号）用于同步训练数据</p>
       </div>
 
       {error && (
@@ -45,12 +45,15 @@ export default function CorosStep({ onSuccess }: Props) {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-1">COROS 邮箱</label>
+          <label className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-1">COROS 账号</label>
           <input
-            type="email"
+            type="text"
+            inputMode="email"
+            autoComplete="username"
+            placeholder="邮箱或手机号"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            value={account}
+            onChange={(e) => setAccount(e.target.value)}
             className="w-full rounded-lg border border-border-subtle bg-bg-base px-3 py-2 text-sm text-text-primary focus:border-accent-green focus:outline-none focus:ring-1 focus:ring-accent-green"
           />
         </div>
