@@ -779,20 +779,26 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
 
 
 def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
-    """Render the 16-week weekly profile as dense English lines (for the LLM).
+    """Render the 16-week weekly profile as a markdown table (for the LLM).
 
-    One line per week (oldest → newest), each metric token omitted gracefully
-    when None, plus a trailing totals line.
+    One row per week (oldest → newest). Missing metrics render as ``n/a`` rather
+    than being silently dropped, so the model can tell "no data that week" apart
+    from a genuine low value. A trailing totals line follows the table.
     """
     if not profile:
         return ["16-week weekly profile: no recent weekly data"]
 
-    def pace(s: float | None) -> str | None:
-        # None = no distance that week; <= 0 is physically impossible — drop both.
+    NA = "n/a"
+
+    def pace(s: float | None) -> str:
+        # None = no distance that week; <= 0 is physically impossible — both n/a.
         if s is None or s <= 0:
-            return None
+            return NA
         m, sec = divmod(int(round(s)), 60)
         return f"{m}:{sec:02d}/km"
+
+    def num(v: float | None, fmt: str) -> str:
+        return format(v, fmt) if v is not None else NA
 
     def iso_week(week_start: str) -> str:
         try:
@@ -802,46 +808,38 @@ def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
         except (ValueError, TypeError):
             return week_start
 
-    lines: list[str] = ["16-week weekly profile (most recent last):"]
+    header = (
+        "| Week | Dist | Time | Pace | HR | CTL | ATL | Form | Dose "
+        "| RHR | HRV | Runs | Long | Speed | Race |"
+    )
+    sep = (
+        "|------|------|------|------|----|-----|-----|------|------"
+        "|-----|-----|------|------|-------|------|"
+    )
+    lines: list[str] = [
+        "16-week weekly profile (most recent last); n/a = no data that week:",
+        header,
+        sep,
+    ]
     for w in profile:
-        tokens: list[str] = [f"  {iso_week(w['week_start'])}"]
-        tokens.append(f"{w['distance_km']:.1f}km {w['hours']:.1f}h")
-        p = pace(w.get("avg_pace_s_km"))
-        if p:
-            tokens.append(p)
-        if w.get("avg_hr") is not None:
-            tokens.append(f"HR {w['avg_hr']:.0f}")
-        load_bits: list[str] = []
-        if w.get("ctl") is not None:
-            load_bits.append(f"CTL {w['ctl']:.0f}")
-        if w.get("atl") is not None:
-            load_bits.append(f"ATL {w['atl']:.0f}")
-        if w.get("form") is not None:
-            load_bits.append(f"form {w['form']:+.0f}")
-        if w.get("dose"):
-            load_bits.append(f"dose {w['dose']:.0f}")
-        if load_bits:
-            tokens.append(" ".join(load_bits))
-        recov_bits: list[str] = []
-        if w.get("rhr") is not None:
-            recov_bits.append(f"RHR {w['rhr']:.0f}")
-        if w.get("hrv") is not None:
-            recov_bits.append(f"HRV {w['hrv']:.0f}")
-        if recov_bits:
-            tokens.append(" ".join(recov_bits))
-        n_runs = w.get("n_runs", 0)
-        run_bits = [f"{n_runs} runs"]
-        extra = []
-        if w.get("n_long"):
-            extra.append(f"{w['n_long']} long")
-        if w.get("n_speed"):
-            extra.append(f"{w['n_speed']} speed")
-        if w.get("n_race"):
-            extra.append(f"{w['n_race']} race")
-        if extra:
-            run_bits.append("(" + ", ".join(extra) + ")")
-        tokens.append(" ".join(run_bits))
-        lines.append(" | ".join(tokens))
+        cells = [
+            iso_week(w["week_start"]),
+            num(w.get("distance_km"), ".1f"),
+            num(w.get("hours"), ".1f"),
+            pace(w.get("avg_pace_s_km")),
+            num(w.get("avg_hr"), ".0f"),
+            num(w.get("ctl"), ".0f"),
+            num(w.get("atl"), ".0f"),
+            num(w.get("form"), "+.0f"),
+            num(w.get("dose"), ".0f"),
+            num(w.get("rhr"), ".0f"),
+            num(w.get("hrv"), ".0f"),
+            str(w.get("n_runs", 0)),
+            str(w.get("n_long", 0)),
+            str(w.get("n_speed", 0)),
+            str(w.get("n_race", 0)),
+        ]
+        lines.append("| " + " | ".join(cells) + " |")
 
     active = [w for w in profile if w.get("n_runs", 0) > 0]
     n_total = sum(w.get("n_runs", 0) for w in profile)

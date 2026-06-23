@@ -1602,17 +1602,20 @@ class TestFormatHistorySummary:
 
     def test_renders_weekly_block_not_monthly(self):
         out = self._summary(self._history([self._week("2026-02-23")]))
-        # New 16-week block header present; old monthly line gone.
-        assert "16-week weekly profile (most recent last):" in out
+        # New 16-week markdown-table block present; old monthly line gone.
+        assert "16-week weekly profile (most recent last)" in out
         assert "Last 6 months" not in out
         assert "Average monthly volume" not in out
-        # Dense tokens for the seeded week.
-        assert "42.1km 3.8h" in out
-        assert "5:21/km" in out          # 321s → 5:21/km
-        assert "HR 148" in out
-        assert "CTL 58 ATL 64 form -6 dose 412" in out
-        assert "RHR 49 HRV 31" in out
-        assert "5 runs (1 long, 1 speed)" in out
+        # Table header + separator.
+        assert (
+            "| Week | Dist | Time | Pace | HR | CTL | ATL | Form | Dose "
+            "| RHR | HRV | Runs | Long | Speed | Race |"
+        ) in out
+        # The seeded week's data row (week-number prefix omitted to stay robust).
+        assert (
+            "| 42.1 | 3.8 | 5:21/km | 148 | 58 | 64 | -6 | 412 | 49 | 31 "
+            "| 5 | 1 | 1 | 0 |"
+        ) in out
         assert "Totals (1wk):" in out
         # PB anchor line still rendered.
         assert "Actual personal bests (PB" in out
@@ -1623,12 +1626,14 @@ class TestFormatHistorySummary:
             form=None, dose=0.0, rhr=None, hrv=None, n_long=0, n_speed=0,
         )
         out = self._summary(self._history([wk]))
-        # None tokens omitted gracefully, no crash, no "None" leaked.
+        # Missing metrics render as explicit n/a — no crash, no "None" leaked.
         assert "None" not in out
-        assert "HR " not in out
-        assert "RHR" not in out
-        assert "HRV" not in out
-        assert "5 runs" in out  # count still shown
+        assert "n/a" in out
+        # dose 0.0 → "0" (a real zero, not missing); n_runs still shown.
+        assert (
+            "| 42.1 | 3.8 | n/a | n/a | n/a | n/a | n/a | 0 | n/a | n/a "
+            "| 5 | 0 | 0 | 0 |"
+        ) in out
 
     def test_empty_profile_message(self):
         out = self._summary(self._history([]))
