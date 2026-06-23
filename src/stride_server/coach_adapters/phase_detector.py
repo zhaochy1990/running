@@ -239,6 +239,7 @@ def detect_current_phase(
     profile: dict | None,
     as_of: date_cls,
     continuity: ContinuitySignals | None = None,
+    cross_validate_with_llm: bool = True,
 ) -> CurrentPhaseContext:
     """Determine the athlete's current phase + recommended entry phase.
 
@@ -249,6 +250,15 @@ def detect_current_phase(
         as_of: Shanghai-local "today".
         continuity: optional pre-computed signals (reused when the caller already
             ran ``analyze_continuity`` — avoids a second DB pass).
+        cross_validate_with_llm: when ``True`` (default) the deterministic
+            classification is cross-checked against a reviewer-LLM call (which
+            only adjusts the confidence label — the deterministic verdict always
+            wins). That LLM round-trip dominates latency (a gpt-5.5 reasoning
+            call for a trivial classification), so latency-sensitive callers
+            (e.g. the master-plan generation path) pass ``False`` to take the
+            instant, fully-deterministic result with confidence capped at
+            ``medium``. Has no effect on the existing-plan path (always
+            deterministic).
 
     Returns:
         A :class:`CurrentPhaseContext`. Never raises — store/DB/LLM failures
@@ -279,7 +289,7 @@ def detect_current_phase(
             features.recent_threshold_or_mp,
             features.weeks_to_race,
         )
-        llm = _llm_classify(features, continuity)
+        llm = _llm_classify(features, continuity) if cross_validate_with_llm else None
         result = _reconcile(det, llm, continuity)
         _log_result(result)
         return result
