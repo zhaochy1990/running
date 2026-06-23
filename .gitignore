@@ -11,7 +11,11 @@ venv/
 htmlcov/
 .claude/*
 !.claude/commands/
+.codex/
+.composer/
+.superpowers/
 .omc/
+.tmp/
 *.un~
 *~
 # Anchored: only ignore a top-level `profile` directory (e.g. local
@@ -19,6 +23,9 @@ htmlcov/
 # mobile/lib/features/profile/.
 /profile
 *.db
+*.db-wal
+*.db-shm
+*.db-journal
 data/*/config.json
 data/*/auth.json
 data/*/garmin_auth.json
@@ -37,8 +44,10 @@ tests/e2e/.shots/
 /snapshot-*.yml
 # Local migration backups produced by scripts/migrate_profile_to_english_keys.py
 *.json.bak
+*.json.bak.*
 frontend/.env.local
 frontend/.env.*.local
+frontend/test-results/
 # Anchored: only ignore a top-level `evaluation/` directory (local scratch).
 # Without the leading `/`, this rule eats `src/coach/graphs/evaluation/` and
 # any other nested `evaluation/` package — same bug pattern as `/profile` above.
@@ -46,3 +55,4 @@ frontend/.env.*.local
 node_modules/
 .worktrees/
 
+data/*/testing/**
