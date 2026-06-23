@@ -101,6 +101,8 @@ PROFILE: dict | None = None
 # ---------------------------------------------------------------------------
 
 DEBUG = os.environ.get("COACH_DEBUG") == "1"
+DEBUG = True  # hardcoded on for now since the graph + rule filter are still being iterated on; set to False to test the final flow without all the debug prints
+logger = logging.getLogger(__name__)
 
 class _LLMTap(BaseCallbackHandler):
     """Clean framed view of each LLM request + response as the graph runs."""
@@ -176,14 +178,10 @@ def _build_rule_filter_kwargs(goal: dict, profile: dict | None) -> dict:
     return rfk
 
 
-def _timestamp() -> str:
-    return datetime.now(tz=SHANGHAI_TZ).isoformat(timespec="seconds")
-
-
-
 def main() -> int:
     print(f"Generating master plan for user={USER_ID!r} ...")
-    print(f"  goal: {json.dumps(GOAL, ensure_ascii=False)}")
+    print(f"  goal: {json.dumps(GOAL, ensure_ascii=False)}\n------------------------------")
+    
 
     callbacks = _enable_debug() if DEBUG else []
     config: dict | None = {"callbacks": callbacks} if callbacks else None
@@ -197,8 +195,19 @@ def main() -> int:
         "plan_type": "master",
         "input_payload": {"goal": GOAL, "profile": PROFILE},
     }
-    print(f"[gen] start {_timestamp()}", flush=True)
     _t0 = time.perf_counter()
+    print(f"[gen] starting generation graph at {datetime.now(tz=SHANGHAI_TZ).isoformat(timespec='seconds')}", flush=True)
+    
+    # ctx = load_master_context(state)
+    # _t1 = time.perf_counter()
+    # print(f"[gen] loaded context in {_t1 - _t0:.1f}s", flush=True)
+    
+    # state["context"] = ctx
+    # master_plan = generate_master_plan(state)
+    # _t2 = time.perf_counter()
+    # print(f"[gen] generated master plan in {_t2 - _t1:.1f}s", flush=True)
+    # print(f"[gen] master plan draft: {json.dumps(master_plan, ensure_ascii=False, indent=2)}", flush=True)
+    # return 0  # early exit to skip the graph and rule filter for now
 
     graph = build_generation_graph(
         load_context=load_master_context,
@@ -208,8 +217,6 @@ def main() -> int:
         rule_filter=run_master_rule_filter,
         rule_filter_kwargs=_build_rule_filter_kwargs(GOAL, PROFILE),
     )
-
-    
 
     try:
         print("Invoking generation graph ...")

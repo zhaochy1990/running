@@ -29,6 +29,16 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 | Docker / CI/CD / reparse webhook | [`docs/deployment.md`](docs/deployment.md) |
 | Frontend pages / API 路由清单 | [`docs/frontend.md`](docs/frontend.md) |
 
+## Frontend local verification (HARD)
+
+改 `frontend/` 且影响页面、路由、auth、API 请求或用户工作流时，收尾必须跑真实本地浏览器 smoke，不能只跑 unit test / build：
+
+1. 启动：`cd frontend && npm run dev:frontend:local`。
+2. 用 Playwright 跑：`cd frontend && npm run smoke:local`。
+3. 如果 Vite 不在默认 `http://127.0.0.1:5173`，设置 `STRIDE_LOCAL_URL` 为实际地址。
+
+`smoke:local` 从仓库根目录 `.credentials.local` 读取真实账号，但不能把 email / password / token 打到回复或日志里。它必须完成登录、打开 `/activities`、并点进一个 `/activity/:id` 详情页确认数据可见。若登录失败，先查浏览器 console/network；本地 auth 必须经 `VITE_DEV_AUTH_PROXY` 走 Vite `/api/auth/*` 代理，避免浏览器 CORS。
+
 ---
 
 ## Storage scope rule (HARD)
@@ -247,12 +257,27 @@ STRIDE coach 是 LangGraph-based agent，处理 S1（master-plan）/ S2（weekly
 
 | Layer | Path | 允许的 deps |
 |-------|------|-------------|
-| Core | `src/coach/` | `pydantic`, `langgraph`, `langchain-*`, `stride_core.{plan_spec,workout_spec,plan_diff,master_plan,master_plan_diff}` only |
+| Core | `src/coach/` | `pydantic`, `langgraph`, `langchain-*`, `stride_core` 域原语（`plan_spec` / `workout_spec` / `plan_diff` / `master_plan` / `master_plan_diff`）+ **纯公式层**（`training_load.{core,calibration,types}`、`running_calibration.{core,segments,types,zones,repository}`）|
 | Adapters | `src/stride_server/coach_adapters/` | Core + `stride_core.db` + `coros_sync` + `azure.*` + `fastapi` |
 
 `coach.*` **必须不** import `stride_server.*`、`coros_sync.*`、`garmin_sync.*`、`azure.*`、`fastapi.*` 或 `stride_core.db`。CI 经 `lint-imports` 强制（跑 `PYTHONPATH=src lint-imports`）。
 
+**enforced 的是黑名单**：`.importlinter` Contract 1 是 `forbidden` 型，只禁上面 6 个 infra 模块——不是 allowlist。所以任何 **infra-free 的 `stride_core` 纯模块** coach core 都可依赖（如负荷预估 helper `training_load.core::estimate_planned_run_load`，Contract 3 已保证 `training_load.{core,calibration,types}` 自身不碰 db/server/sync/azure/fastapi）。表里"允许的 deps"是**推荐最小面**；要新依赖一个纯模块时，跑 `lint-imports` 确认 4 contract 全 KEPT 即可，不必新建并行实现。
+
 三 LLM role 配置、persistence、Pattern X/Y/A/P、generation pipeline、endpoints → [`docs/coach-agent.md`](docs/coach-agent.md)。
+
+### Prompt role discipline（HARD）
+
+任何 coach LLM 调用，**system 与 user prompt 按职责切分**，不要把两类内容混在一条消息里：
+
+| Turn | 装什么 | 性质 |
+|------|--------|------|
+| **System** | 人设 + 不变规则 + 输出 schema/格式契约（"你是谁 / 按什么规矩办 / 输出长什么样"）| 跨用户、跨调用**逐字节相同** |
+| **User** | 本轮任务 + 输入数据（这名 athlete 的 goal / profile / history / fitness、本轮算出的 plan_start / race_date、conditional context blocks、以及"开始生成"的指令）| 每轮变 |
+
+**为什么是 HARD**：把 per-athlete 数据塞进 system 会让那一大块静态 doctrine 前缀每次都不同 → **prompt cache 永远命中不了**，白烧 input token。规则文本若需引用本轮值（如 `plan_start`），在 system 里**引用 user message 里的字段名**（"the `plan_start` given in the user message"），**不要**把具体值插值进 system。
+
+**Canonical 实现**：`stride_server/master_plan_generator.py::build_master_prompts(...) -> (system, user)` —— S1 master-plan 的参考实现。system 由 `coach/skills/master_plan_planner/SKILL.md`（无运行时 `${...}` 占位符）渲染；user 由同目录 `user_prompt.md` 渲染。加新 LLM 调用（S2/S3）或改 prompt 时复用这个划分，别回退到"全塞 system"。回归不变量见 `tests/stride_server/test_master_plan_generator.py::TestPromptRoleSplit`。
 
 ---
 
