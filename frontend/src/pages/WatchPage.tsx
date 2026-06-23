@@ -282,8 +282,10 @@ export default function WatchPage({ embedded }: WatchPageProps = {}) {
               </div>
 
               <input
-                type="email"
-                placeholder="邮箱"
+                type="text"
+                inputMode="email"
+                autoComplete="username"
+                placeholder={connectProvider === 'coros' ? '邮箱或手机号' : '邮箱'}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className={inputCls}
