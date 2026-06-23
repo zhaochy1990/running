@@ -128,6 +128,67 @@ def test_delete_account_finishes_local_cleanup_when_auth_account_is_already_gone
     assert not user_dir.exists()
 
 
+def test_delete_account_retries_rmtree_then_succeeds(app_client, monkeypatch):
+    """A transient OSError from rmtree (SMB delayed-close) is ridden out."""
+    client, token, tmp_path = app_client
+    user_dir = tmp_path / USER_UUID
+    user_dir.mkdir()
+    (user_dir / "coros.db").write_text("sqlite")
+
+    import stride_server.auth_service_client as ac
+    import stride_server.routes.account as account_mod
+
+    async def fake_delete_my_account(_bearer):
+        return None
+
+    monkeypatch.setattr(ac, "delete_my_account", fake_delete_my_account)
+    monkeypatch.setattr(account_mod, "_RMTREE_BACKOFF_S", 0)
+
+    real_rmtree = account_mod.shutil.rmtree
+    calls = {"n": 0}
+
+    def flaky_rmtree(path):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise OSError("device or resource busy")
+        real_rmtree(path)
+
+    monkeypatch.setattr(account_mod.shutil, "rmtree", flaky_rmtree)
+
+    resp = client.delete("/api/users/me", headers=_auth(token))
+
+    assert resp.status_code == 204
+    assert calls["n"] == 3
+    assert not user_dir.exists()
+
+
+def test_delete_account_returns_500_when_rmtree_keeps_failing(app_client, monkeypatch):
+    """A persistent rmtree failure surfaces as 500 (no silent residue)."""
+    client, token, tmp_path = app_client
+    user_dir = tmp_path / USER_UUID
+    user_dir.mkdir()
+    (user_dir / "coros.db").write_text("sqlite")
+
+    import stride_server.auth_service_client as ac
+    import stride_server.routes.account as account_mod
+
+    async def fake_delete_my_account(_bearer):
+        return None
+
+    monkeypatch.setattr(ac, "delete_my_account", fake_delete_my_account)
+    monkeypatch.setattr(account_mod, "_RMTREE_BACKOFF_S", 0)
+
+    def always_busy(_path):
+        raise OSError("device or resource busy")
+
+    monkeypatch.setattr(account_mod.shutil, "rmtree", always_busy)
+
+    resp = client.delete("/api/users/me", headers=_auth(token))
+
+    assert resp.status_code == 500
+    assert user_dir.exists()
+
+
 def test_delete_account_no_auth_returns_401(app_client):
     client, _, _ = app_client
     resp = client.delete("/api/users/me")
