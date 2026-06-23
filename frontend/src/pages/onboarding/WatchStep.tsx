@@ -57,15 +57,15 @@ export default function WatchStep({ onSuccess }: Props) {
     try {
       const result =
         provider === 'coros'
-          ? await postCorosLogin(email, password)
-          : await postGarminLogin(email, password, region)
+          ? await postCorosLogin(email.trim(), password)
+          : await postGarminLogin(email.trim(), password, region)
       if (result.ok) {
         onSuccess()
       } else {
         const msg = (result.data as { error?: string; detail?: unknown }).error
         const fallback =
           provider === 'coros'
-            ? 'COROS 账号验证失败，请检查邮箱和密码'
+            ? 'COROS 账号验证失败，请检查账号和密码'
             : '佳明账号验证失败，请检查邮箱、密码和区域'
         setError(msg || fallback)
       }
@@ -145,10 +145,13 @@ export default function WatchStep({ onSuccess }: Props) {
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-1">
-            {meta!.caption} 邮箱
+            {provider === 'coros' ? `${meta!.caption} 账号` : `${meta!.caption} 邮箱`}
           </label>
           <input
-            type="email"
+            type={provider === 'coros' ? 'text' : 'email'}
+            inputMode="email"
+            autoComplete="username"
+            placeholder={provider === 'coros' ? '邮箱或手机号' : undefined}
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
