@@ -475,6 +475,16 @@ export interface MasterPlanPhase {
   weekly_distance_km_high: number
   key_session_types: string[]
   milestone_ids: string[]
+  // Phase type (base / build / peak / taper / race / recovery), used for the
+  // overview color band + short-name mapping. Optional — older plans may omit.
+  phase_type?: string
+  // Editorial fields rendered on the S1 season overview for the selected
+  // phase. Backend now ships these on every phase; treat as optional so
+  // legacy plans that predate them still type-check.
+  rhythm?: string                  // 阶段节奏
+  key_workouts?: string            // 关键课型
+  monitoring_triggers?: string[]   // 监控触发
+  coach_note?: string              // 教练引言 (blockquote)
 }
 
 export interface MasterPlanNextMilestone {
@@ -580,6 +590,99 @@ export function applyMasterPlanAdjustDiff(
       accepted_op_ids: acceptedOpIds,
       change_reason: changeReason,
     },
+  )
+}
+
+// ---------------------------------------------------------------------------
+// S1 season-plan generation — training goal → generate → poll → confirm
+// ---------------------------------------------------------------------------
+
+export type RaceDistance = '5K' | '10K' | 'HM' | 'FM' | 'trail'
+export type WeeklyTrainingDays = 3 | 4 | 5 | 6
+
+export interface TrainingGoalInput {
+  type: 'race'
+  race_distance: RaceDistance
+  race_name: string
+  race_date: string                       // YYYY-MM-DD
+  // null = 仅完赛即可 (finish-only). Omit string fields the backend marked
+  // optional (available_time_slots / strength_willingness).
+  target_finish_time?: string | null
+  weekly_training_days: WeeklyTrainingDays
+}
+
+export interface TrainingGoal extends TrainingGoalInput {
+  id?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export function createTrainingGoal(goal: TrainingGoalInput) {
+  return postJSON<TrainingGoal & { error?: string; detail?: unknown }>(
+    '/users/me/training-goal',
+    goal,
+  )
+}
+
+/** Current training goal, or null when none is set (404). */
+export async function getTrainingGoal(): Promise<TrainingGoal | null> {
+  const res = await apiFetch('GET', '/users/me/training-goal')
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export interface GenerateMasterPlanResponse {
+  job_id: string
+  status: string
+  eta_seconds: number
+}
+
+export function generateMasterPlan(goalId?: string) {
+  return postJSON<GenerateMasterPlanResponse & { error?: string; detail?: unknown }>(
+    '/users/me/master-plan/generate',
+    goalId ? { goal_id: goalId } : {},
+  )
+}
+
+export type MasterPlanJobStatus = 'queued' | 'running' | 'done' | 'failed'
+export type MasterPlanJobStage =
+  | 'reading_history'
+  | 'evaluating'
+  | 'planning_phases'
+  | 'rule_filter'
+  | 'outputting'
+
+export interface MasterPlanJobContext {
+  avg_weekly_km?: number
+  max_weekly_km?: number
+  weeks_to_race?: number
+  chronic_load?: number
+  acute_load?: number
+  form?: number
+  fitness_summary?: string
+}
+
+export interface MasterPlanJob {
+  status: MasterPlanJobStatus
+  stage: MasterPlanJobStage | null
+  progress: number                        // 0-100
+  stage_label: string
+  context: MasterPlanJobContext | null
+  result_plan_id: string | null
+  error: string | null
+}
+
+export function getMasterPlanJob(jobId: string) {
+  return fetchJSON<MasterPlanJob>(
+    `/users/me/master-plan/jobs/${encodeURIComponent(jobId)}`,
+  )
+}
+
+/** Promote a DRAFT plan to ACTIVE; returns the promoted plan. */
+export function confirmMasterPlan(planId: string) {
+  return postJSON<MasterPlan & { error?: string; detail?: unknown }>(
+    `/users/me/master-plan/${encodeURIComponent(planId)}/confirm`,
   )
 }
 
