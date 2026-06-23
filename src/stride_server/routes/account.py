@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import gc
 import logging
 import re
 import shutil
+import sqlite3
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
@@ -17,6 +20,13 @@ from ..bearer import current_user_id, require_bearer
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# rmtree on the prod Azure Files SMB mount can transiently fail right after a
+# sync: the just-closed coros.db (or its -wal/-shm sidecars) may still hold an
+# SMB delayed-close handle, surfacing as OSError "device or resource busy".
+# Retry with exponential backoff so a single delete request rides it out.
+_RMTREE_ATTEMPTS = 5
+_RMTREE_BACKOFF_S = 0.5
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -48,6 +58,40 @@ def _user_data_path(user_id: str) -> Path:
     return path
 
 
+def _release_user_db(db_path: Path) -> None:
+    """Collapse WAL sidecars and release any lingering handle before rmtree.
+
+    Best-effort: on the prod Azure Files SMB mount an open coros.db (or its
+    -wal/-shm sidecars) blocks directory removal. Opening the DB and running a
+    TRUNCATE checkpoint merges the WAL back into the main file and drops the
+    sidecars; closing it releases the handle. A `gc.collect()` reaps any
+    Database objects a prior request opened and never explicitly closed. Any
+    failure here is non-fatal — the rmtree retry loop is the real guarantee.
+    """
+    if db_path.exists():
+        try:
+            conn = sqlite3.connect(str(db_path))
+            try:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            logger.warning("wal checkpoint before delete failed for %s", db_path, exc_info=True)
+    gc.collect()
+
+
+def _rmtree_resilient(path: Path) -> None:
+    """rmtree with bounded exponential backoff for SMB delayed-close races."""
+    for attempt in range(_RMTREE_ATTEMPTS):
+        try:
+            shutil.rmtree(path)
+            return
+        except OSError:
+            if attempt == _RMTREE_ATTEMPTS - 1:
+                raise
+            time.sleep(_RMTREE_BACKOFF_S * (2 ** attempt))
+
+
 def _delete_local_user_data(user_id: str) -> None:
     path = _user_data_path(user_id)
     if not path.exists():
@@ -57,7 +101,8 @@ def _delete_local_user_data(user_id: str) -> None:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="User data path is not a directory",
         )
-    shutil.rmtree(path)
+    _release_user_db(path / "coros.db")
+    _rmtree_resilient(path)
 
 
 @router.delete("/api/users/me", status_code=status.HTTP_204_NO_CONTENT)
