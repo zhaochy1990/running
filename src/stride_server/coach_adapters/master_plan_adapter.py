@@ -125,6 +125,7 @@ def load_master_context(state: GenState) -> dict:
 
     if job_id:
         update_job(job_id, stage=JobStage.EVALUATING, progress=30)
+    logger.debug("load_master_context: user=%s querying fitness state...", user_id)
     fitness_state = _query_fitness_state(user_id)
     logger.debug(
         "load_master_context: user=%s fitness_summary=%r",
@@ -143,12 +144,17 @@ def load_master_context(state: GenState) -> dict:
         db = Database(user=user_id)
         as_of = today_shanghai()
         continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)
-        # Authoritative current-phase position (deterministic + LLM cross-val);
-        # reuse the continuity we just computed to avoid a second DB pass.
+        # Authoritative current-phase position. Deterministic-only here
+        # (cross_validate_with_llm=False): the LLM cross-check is a reviewer
+        # gpt-5.5 round-trip that dominates context-load latency yet never
+        # changes the verdict (deterministic always wins), so the generation
+        # path skips it. Reuse the continuity we just computed to avoid a second
+        # DB pass.
         try:
             current_phase = detect_current_phase(
                 db, user_id=user_id, goal=goal, profile=profile,
                 as_of=as_of, continuity=continuity,
+                cross_validate_with_llm=False,
             )
         except Exception as exc:  # noqa: BLE001 — detection must not hard-fail gen
             logger.warning("load_master_context: phase detection failed: %s", exc)
