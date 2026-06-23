@@ -95,6 +95,13 @@ class Phase(BaseModel):
     key_session_types: list[str]   # 如 ["长距离","有氧","力量"]
     milestone_ids: list[str]
     phase_type: PhaseType | None = None  # Stage-1↔Stage-2 routing key; optional for backcompat
+    # Editorial narrative for the season-overview UI (screen-3 per-phase
+    # article). All optional/defaulted so pre-existing plans and eval fixtures
+    # that omit them stay valid; the planner fills them on new generations.
+    rhythm: str = ""                       # 「阶段节奏」: weekly cadence prose
+    key_workouts: str = ""                 # 「关键课型」: prose on the quality sessions
+    monitoring_triggers: list[str] = Field(default_factory=list)  # 「监控触发」: RHR/HRV/pain thresholds
+    coach_note: str = ""                   # 教练引言: 1-2 sentence blockquote
 
 
 # ---------------------------------------------------------------------------

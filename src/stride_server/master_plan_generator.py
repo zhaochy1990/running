@@ -153,6 +153,12 @@ def _build_master_plan(
                 key_session_types=p.get("key_session_types", []),
                 milestone_ids=[],
                 phase_type=phase_type,
+                rhythm=str(p.get("rhythm", "") or ""),
+                key_workouts=str(p.get("key_workouts", "") or ""),
+                monitoring_triggers=[
+                    str(t) for t in (p.get("monitoring_triggers") or []) if t
+                ],
+                coach_note=str(p.get("coach_note", "") or ""),
             )
         )
 
@@ -257,9 +263,11 @@ def _build_goal_snapshot(
 ) -> MasterPlanGoal:
     """Build the embedded MasterPlan.goal snapshot from TrainingGoal input."""
     goal_id = str(goal.get("goal_id") or goal.get("id") or uuid4())
-    target_time = goal.get("target_time") or goal.get("target_finish_time")
-    if not target_time:
-        raise ValueError("goal.target_time is required for master-plan generation")
+    # Finish-only goals (「仅完赛即可」) carry no target time. That's allowed:
+    # the plan targets completion rather than a finish time, and the
+    # goal-realism prompt rule no-ops when no target time is present. We store
+    # an empty string rather than raising so generation proceeds.
+    target_time = goal.get("target_time") or goal.get("target_finish_time") or ""
 
     raw_distance = goal.get("distance") or goal.get("race_distance") or plan_data.get("distance")
     race_name = (

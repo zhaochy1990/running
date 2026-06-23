@@ -242,6 +242,9 @@ def get_job_status(
         "raw_output": raw_output,
         "created_at": job.created_at_iso,
         "elapsed_seconds": elapsed_seconds,
+        # Live-data snippets for the generating UI (avg/max weekly km,
+        # weeks-to-race, CTL/ATL/form); null until context load populates them.
+        "context": job.context_snippets,
     }
 
 

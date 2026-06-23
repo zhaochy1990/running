@@ -25,6 +25,7 @@ class JobStage(str, Enum):
     READING_HISTORY  = "reading_history"
     EVALUATING       = "evaluating"
     PLANNING_PHASES  = "planning_phases"
+    RULE_FILTER      = "rule_filter"
     OUTPUTTING       = "outputting"
 
 
@@ -43,6 +44,7 @@ STAGE_PROGRESS_MAP: dict[JobStage, int] = {
     JobStage.READING_HISTORY:  10,
     JobStage.EVALUATING:       30,
     JobStage.PLANNING_PHASES:  60,
+    JobStage.RULE_FILTER:      75,
     JobStage.OUTPUTTING:       85,
 }
 
@@ -50,6 +52,7 @@ STAGE_LABEL_MAP: dict[JobStage, str] = {
     JobStage.READING_HISTORY:  "正在读取历史训练数据…",
     JobStage.EVALUATING:       "评估当前体能水平…",
     JobStage.PLANNING_PHASES:  "结合目标规划训练阶段…",
+    JobStage.RULE_FILTER:      "校验训练计划安全性…",
     JobStage.OUTPUTTING:       "输出训练总纲…",
 }
 
@@ -71,6 +74,10 @@ class Job:
     created_at: float               # time.monotonic() — for elapsed calculation
     updated_at: float               # time.monotonic()
     created_at_iso: str             # datetime.now(UTC).isoformat() — for response
+    # Live data context surfaced to the generating UI (screen-2 snippets):
+    # avg/max weekly km, weeks-to-race, CTL/ATL/form. Populated by the
+    # context-load adapter once history + fitness are read. ``None`` until then.
+    context_snippets: Optional[dict] = None
 
 
 # ---------------------------------------------------------------------------
