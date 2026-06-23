@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import { getMyProfile, type ProfileIn } from '../api'
+import { useAuthStore } from '../store/authStore'
 import ProfileStep from './onboarding/ProfileStep'
 import SubmitStep from './onboarding/SubmitStep'
 import WatchStep from './onboarding/WatchStep'
@@ -26,6 +27,20 @@ function reconstructProfile(p: Record<string, unknown> | null): ProfileIn | null
 export default function OnboardingWizard() {
   const [step, setStep] = useState<Step>('loading')
   const [profileData, setProfileData] = useState<ProfileIn | null>(null)
+  const navigate = useNavigate()
+  const logout = useAuthStore((s) => s.logout)
+  const [signingOut, setSigningOut] = useState(false)
+
+  // Escape hatch so a user can never get permanently stuck in onboarding —
+  // logs out (clears the session) and returns to the login screen.
+  const handleLogout = async () => {
+    setSigningOut(true)
+    try {
+      await logout()
+    } finally {
+      navigate('/login', { replace: true })
+    }
+  }
 
   useEffect(() => {
     getMyProfile()
@@ -63,6 +78,15 @@ export default function OnboardingWizard() {
         <div className="text-center mb-8">
           <h1 className="text-xl font-bold text-text-primary tracking-tight">STRIDE 初始化</h1>
           <p className="text-sm text-text-muted mt-1">完成设置以开始使用你的训练仪表盘</p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={signingOut}
+            data-testid="onboarding-logout"
+            className="mt-3 text-xs text-text-muted underline underline-offset-2 hover:text-text-primary disabled:opacity-50 transition-colors cursor-pointer"
+          >
+            {signingOut ? '登出中...' : '登出 / 切换账号'}
+          </button>
         </div>
 
         {/* Progress dots */}
