@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date as date_cls
 
 from coach.graphs.generation.state import GenState
 from coach.schemas import ReviewReport
@@ -102,6 +103,42 @@ def _format_body_composition_summary(bc: dict) -> str:
     return f"最新体测（{bc.get('scan_date', '?')}）— " + "，".join(parts)
 
 
+def _build_context_snippets(
+    history: dict, fitness_state: dict, goal: dict
+) -> dict[str, Any]:
+    """Assemble the live-data snippets shown on the generating screen (screen-2):
+    avg/max weekly km, weeks-to-race, CTL/ATL/form. Best-effort — every field is
+    optional and silently omitted when its source data is absent, so this never
+    blocks generation."""
+    snippets: dict[str, Any] = {}
+    race_date = (goal or {}).get("race_date")
+    if race_date:
+        try:
+            snippets["weeks_to_race"] = max(
+                0, (date_cls.fromisoformat(race_date) - today_shanghai()).days // 7
+            )
+        except (ValueError, TypeError):
+            pass
+    if history:
+        if history.get("max_weekly_km") is not None:
+            snippets["max_weekly_km"] = round(float(history["max_weekly_km"]), 1)
+        active = [
+            w.get("distance_km")
+            for w in (history.get("weekly_profile") or [])
+            if isinstance(w, dict) and w.get("distance_km")
+        ]
+        if active:
+            snippets["avg_weekly_km"] = round(sum(active) / len(active), 1)
+    for key in ("chronic_load", "acute_load", "form"):
+        val = (fitness_state or {}).get(key)
+        if isinstance(val, (int, float)):
+            snippets[key] = round(float(val), 1)
+    summary = (fitness_state or {}).get("summary")
+    if summary:
+        snippets["fitness_summary"] = summary
+    return snippets
+
+
 def load_master_context(state: GenState) -> dict:
     """Query DB for training history + fitness state, return as context dict.
 
@@ -166,6 +203,17 @@ def load_master_context(state: GenState) -> dict:
             logger.warning("load_master_context: body_composition failed: %s", exc)
     except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
         logger.warning("load_master_context: continuity failed: %s", exc)
+
+    # Surface live-data snippets to the generating UI (screen-2). Best-effort:
+    # a failure here must never block context load.
+    if job_id:
+        try:
+            update_job(
+                job_id,
+                context_snippets=_build_context_snippets(history, fitness_state, goal),
+            )
+        except Exception as exc:  # noqa: BLE001 — snippets are cosmetic
+            logger.warning("load_master_context: snippet stash failed: %s", exc)
 
     return {
         "history": history,
@@ -323,6 +371,11 @@ def generate_master_plan(state: GenState) -> dict:
         # parse_failed (both are ValueError historically).
         new_err = ValueError(f"bad_schema: {exc}")
         raise new_err from exc
+
+    # Draft is built; the graph's rule_filter node runs next. Surface it as a
+    # job stage so the generating UI shows the 校验安全规则 step (screen-2).
+    if job_id:
+        update_job(job_id, stage=JobStage.RULE_FILTER, progress=75)
 
     return {"current_draft": plan.model_dump(mode="json")}
 

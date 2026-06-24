@@ -11,7 +11,7 @@ from stride_core.timefmt import today_shanghai
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from ..bearer import require_bearer
 from ..content_store import read_json, write_json
@@ -71,10 +71,17 @@ class TrainingGoal(BaseModel):
     type: Literal["race", "pb", "fat_loss", "health", "maintain"]
     race_date: str | None = None          # YYYY-MM-DD, required when type=race
     race_distance: Literal["5K", "10K", "HM", "FM", "trail"] | None = None  # required when type=race
-    target_finish_time: str | None = None  # H:MM:SS, optional when type=race
+    race_name: str | None = None          # 目标赛事名称, e.g. "2026 上海马拉松"; optional
+    target_finish_time: str | None = None  # H:MM:SS; None = 仅完赛即可 (finish-only)
     weekly_training_days: int             # 3-6
-    available_time_slots: list[Literal["morning", "noon", "evening"]]
-    strength_willingness: Literal["yes", "no", "conditional"]
+    # Optional: the S1 season-plan setup form does not collect these (the
+    # generator degrades gracefully when absent). The richer onboarding flow
+    # still supplies them. ``available_time_slots`` defaults to empty rather
+    # than being required-non-empty so the S1 POST does not 422.
+    available_time_slots: list[Literal["morning", "noon", "evening"]] = Field(
+        default_factory=list
+    )
+    strength_willingness: Literal["yes", "no", "conditional"] | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -95,9 +102,6 @@ class TrainingGoal(BaseModel):
 
         if not (3 <= self.weekly_training_days <= 6):
             raise ValueError("weekly_training_days must be between 3 and 6")
-
-        if not self.available_time_slots:
-            raise ValueError("available_time_slots must not be empty")
 
         return self
 

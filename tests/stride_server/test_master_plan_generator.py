@@ -428,10 +428,12 @@ class TestBuildMasterPlan:
         assert plan.weeks[0].target_weekly_km_high == 48
         assert plan.weekly_key_sessions[0].week_index == 1
 
-    def test_goal_target_time_required_for_generated_plan(self):
+    def test_finish_only_goal_generates_with_empty_target_time(self):
+        # 「仅完赛即可」: a goal with no target_finish_time must NOT raise — the
+        # plan targets completion and carries an empty target_time.
         goal = {k: v for k, v in GOAL.items() if k != "target_finish_time"}
-        with pytest.raises(ValueError, match="target_time"):
-            _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
+        assert plan.goal.target_time == ""
 
 
 class TestBuildMapsNewFields:
@@ -458,6 +460,52 @@ class TestBuildMapsNewFields:
         assert plan.milestones[0].metric == "race_time_s_5k"
         assert plan.milestones[0].target_value == 1140.0
         assert plan.milestones[0].comparator == "<="
+
+    def test_phase_editorial_fields_mapped(self):
+        # screen-3 per-phase narrative: rhythm / key_workouts /
+        # monitoring_triggers / coach_note flow LLM JSON -> Phase.
+        from stride_server.master_plan_generator import _build_master_plan
+        data = {
+            "schema": "weekly-plan/master/v1",
+            "plan": {
+                "start_date": "2026-06-11", "end_date": "2026-10-18",
+                "training_principles": ["p"],
+                "phases": [{
+                    "name": "基础期", "phase_type": "base",
+                    "start_date": "2026-06-11", "end_date": "2026-07-12",
+                    "focus": "f", "weekly_distance_km_low": 50,
+                    "weekly_distance_km_high": 64, "key_session_types": ["长距离"],
+                    "rhythm": "每周 5-6 课", "key_workouts": "短间歇为主",
+                    "monitoring_triggers": ["RHR +7 减量", ""],
+                    "coach_note": "前 4 周宁可慢",
+                }],
+                "milestones": [],
+            },
+        }
+        ph = _build_master_plan(data, "u", GOAL).phases[0]
+        assert ph.rhythm == "每周 5-6 课"
+        assert ph.key_workouts == "短间歇为主"
+        assert ph.monitoring_triggers == ["RHR +7 减量"]  # empty entry dropped
+        assert ph.coach_note == "前 4 周宁可慢"
+
+    def test_phase_editorial_fields_default_empty_when_absent(self):
+        # Backward-compat: plans that omit the editorial fields stay valid.
+        from stride_server.master_plan_generator import _build_master_plan
+        data = {
+            "schema": "weekly-plan/master/v1",
+            "plan": {
+                "start_date": "2026-06-11", "end_date": "2026-10-18",
+                "training_principles": ["p"],
+                "phases": [{"name": "基础期", "phase_type": "base",
+                            "start_date": "2026-06-11", "end_date": "2026-07-12",
+                            "focus": "f", "weekly_distance_km_low": 50,
+                            "weekly_distance_km_high": 64, "key_session_types": ["长距离"]}],
+                "milestones": [],
+            },
+        }
+        ph = _build_master_plan(data, "u", GOAL).phases[0]
+        assert ph.rhythm == "" and ph.key_workouts == "" and ph.coach_note == ""
+        assert ph.monitoring_triggers == []
 
     def test_performance_and_body_comp_milestones_roundtrip(self):
         """End-to-end structured path (Stage-3a P3): a phase carrying BOTH a

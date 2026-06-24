@@ -203,13 +203,16 @@ def test_weekly_training_days_too_high_returns_422(app_client):
     assert resp.status_code == 422, resp.text
 
 
-# ── validation: available_time_slots empty → 422 ─────────────────────────────
+# ── available_time_slots is optional (S1 setup form omits it) ────────────────
 
-def test_empty_available_time_slots_returns_422(app_client):
+def test_empty_available_time_slots_allowed(app_client):
+    # The S1 season-plan setup form does not collect time slots; an empty list
+    # must be accepted (the generator degrades gracefully) rather than 422.
     client, token, _, _ = app_client
     body = _goal({"available_time_slots": []})
     resp = client.post("/api/users/me/training-goal", json=body, headers=_auth(token))
-    assert resp.status_code == 422, resp.text
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["available_time_slots"] == []
 
 
 # ── history is preserved on overwrite ────────────────────────────────────────

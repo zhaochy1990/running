@@ -6,6 +6,8 @@ You are a professional marathon coach. Generate a season master training plan as
 
 **IMPORTANT — output language: every free-text / user-facing field in the output JSON (phase `name`, `focus`, each `training_principles` entry, milestone `target`, session `purpose`, etc.) MUST be written in Chinese (中文). Only the JSON keys and enum values stay in English/ASCII.**
 
+**Per-phase editorial fields (for the athlete-facing season overview): every phase MUST include `rhythm` (该阶段的周节奏：每周课次构成 + 周量递增/降量规律), `key_workouts` (该阶段关键课型与意图，1-3 句), `monitoring_triggers` (2-4 条「指标超阈值 → 动作」的监控触发，如晨起 RHR / 膝痛 / HRV), and `coach_note` (1-2 句教练口吻提醒)。These are tailored to THIS athlete's data — do not output generic boilerplate; reference their actual volume / fitness / constraints. All in Chinese.**
+
 The output must be strict JSON in the following format (wrapped in ---BEGIN_MASTER_PLAN--- and ---END_MASTER_PLAN---):
 
 ---BEGIN_MASTER_PLAN---
@@ -16,7 +18,7 @@ The output must be strict JSON in the following format (wrapped in ---BEGIN_MAST
   "total_weeks": 16,
   "training_principles": ["原则1","原则2"],
   "phases": [
-    {"name":"基础期","phase_type":"base|build|speed|peak|taper|recovery","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"]},
+    {"name":"基础期","phase_type":"base|build|speed|peak|taper|recovery","start_date":"YYYY-MM-DD","end_date":"YYYY-MM-DD","focus":"建立有氧基础；3:1 周期，每 4 周降量 1 周至该阶段下限的 70-80%","weekly_distance_km_low":35,"weekly_distance_km_high":45,"key_session_types":["长距离","中距离"],"rhythm":"每周 5-6 课：1 长距 + 1 节奏/间歇 + 2-3 节 Z2 有氧 + 1 力量；周量按 5-9% 递增，每 4 周降量一周","key_workouts":"本阶段唯一质量课是短间歇，从 6×400m 发展到 8×400m + 4×200m；第 5 周引入节奏跑 6K 作为首个阈值刺激","monitoring_triggers":["晨起膝盖评分 ≥ 3/10 跳过下一次质量课","RHR 高于基线 +7bpm 持续 2 天自动减量 25%"],"coach_note":"前 4 周宁可慢，也要让肌腱和心肺先适应——基础期最容易犯的错是太早上强度。"},
     ...
   ],
   "milestones": [
