@@ -109,12 +109,14 @@ function loadConfig() {
   // Admin identity mints invite codes. Prefer a dedicated admin account
   // (flat auth_email/auth_password or an "Auth admin" section), else fall back
   // to the STRIDE account.
-  const adminEmail = flat.auth_email || (sections.admin || {}).email || (sections.stride || {}).email || ''
-  const adminPassword = flat.auth_password || (sections.admin || {}).password || (sections.stride || {}).password || ''
+  // Each credential falls back to an env var so CI can inject GitHub secrets
+  // without writing a .credentials.local file onto the runner.
+  const adminEmail = flat.auth_email || (sections.admin || {}).email || (sections.stride || {}).email || process.env.STRIDE_SMOKE_ADMIN_EMAIL || ''
+  const adminPassword = flat.auth_password || (sections.admin || {}).password || (sections.stride || {}).password || process.env.STRIDE_SMOKE_ADMIN_PASSWORD || ''
   // Coros identity drives the watch-login step. Accept flat coros_* keys or a
   // "Coros account" section with bare email/password.
-  const corosEmail = flat.coros_email || (sections.coros || {}).email || ''
-  const corosPassword = flat.coros_password || (sections.coros || {}).password || ''
+  const corosEmail = flat.coros_email || (sections.coros || {}).email || process.env.STRIDE_SMOKE_COROS_EMAIL || ''
+  const corosPassword = flat.coros_password || (sections.coros || {}).password || process.env.STRIDE_SMOKE_COROS_PASSWORD || ''
 
   // In .env.local the absolute auth URL is usually blank (the dev server proxies
   // /api/auth), so the real host lives in VITE_DEV_AUTH_PROXY — fall back to it.
@@ -271,6 +273,7 @@ async function main() {
   const issues = []
   let throwaway = null
   let browser = null
+  let page = null
 
   try {
     const inviteCode = cfg.inviteCode || (await mintInviteCode(cfg))
@@ -287,7 +290,7 @@ async function main() {
       },
       [throwaway.accessToken, throwaway.refreshToken],
     )
-    const page = await context.newPage()
+    page = await context.newPage()
     page.on('console', (msg) => {
       if (msg.type() === 'error') issues.push(`console error: ${msg.text().slice(0, 300)}`)
     })
@@ -296,11 +299,13 @@ async function main() {
     await page.goto(`${appUrl}/onboarding`, { waitUntil: 'domcontentloaded' })
     await page.getByText('选择你的手表').waitFor({ timeout: 30_000 })
     await runWizard(page, cfg, issues)
-
-    const screenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-onboarding-smoke.png')
-    await page.screenshot({ path: screenshotPath, fullPage: false })
-    console.log(`Screenshot: ${screenshotPath}`)
   } finally {
+    if (page) {
+      // Best-effort screenshot on success AND failure (useful as a CI artifact).
+      const screenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-onboarding-smoke.png')
+      await page.screenshot({ path: screenshotPath, fullPage: false }).catch(() => {})
+      console.log(`Screenshot: ${screenshotPath}`)
+    }
     if (browser) await browser.close().catch(() => {})
     if (throwaway) {
       const status = await deleteThrowaway(throwaway.accessToken).catch(() => 'error')

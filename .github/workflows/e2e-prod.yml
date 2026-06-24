@@ -1,0 +1,66 @@
+name: E2E (prod)
+
+# Real-browser, zero-mock end-to-end test against production. Registers a
+# throwaway user, drives the onboarding wizard in headless Chromium (real COROS
+# watch login + real health sync), asserts the dashboard renders, then deletes
+# the user. See frontend/scripts/onboarding-smoke.cjs.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 19 * * *' # 03:00 Asia/Shanghai, daily
+  workflow_run:
+    workflows: ["Deploy"] # post-deploy verification
+    types: [completed]
+
+# One prod E2E at a time — each run creates+deletes a real prod user.
+concurrency:
+  group: e2e-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  onboarding-smoke:
+    name: Onboarding smoke (real browser, no mocks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # When triggered by Deploy, only run if that deploy succeeded.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    env:
+      STRIDE_SMOKE_TARGET: prod
+      STRIDE_SMOKE_ADMIN_EMAIL: ${{ secrets.STRIDE_SMOKE_ADMIN_EMAIL }}
+      STRIDE_SMOKE_ADMIN_PASSWORD: ${{ secrets.STRIDE_SMOKE_ADMIN_PASSWORD }}
+      STRIDE_SMOKE_COROS_EMAIL: ${{ secrets.STRIDE_SMOKE_COROS_EMAIL }}
+      STRIDE_SMOKE_COROS_PASSWORD: ${{ secrets.STRIDE_SMOKE_COROS_PASSWORD }}
+      VITE_AUTH_CLIENT_ID: ${{ secrets.VITE_AUTH_CLIENT_ID }}
+      VITE_AUTH_BASE_URL: ${{ vars.VITE_AUTH_BASE_URL || 'https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run onboarding smoke (prod)
+        working-directory: frontend
+        run: node scripts/onboarding-smoke.cjs
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onboarding-smoke-screenshot
+          path: stride-onboarding-smoke.png
+          if-no-files-found: ignore
