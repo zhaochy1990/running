@@ -1,5 +1,10 @@
 __pycache__/
 *.pyc
+
+# Generated BP artifacts (regenerate via spec/_build_*.py)
+spec/*.pdf
+spec/*.pptx
+spec/STRIDE_COACH_PRODUCT_VISION.html
 *.egg-info/
 dist/
 build/
