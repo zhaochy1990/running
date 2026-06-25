@@ -1,0 +1,1103 @@
+{
+  "user_id": "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+  "plan": {
+    "plan_id": "4c03855b-8a34-44b1-81e6-899fe967cc6b",
+    "user_id": "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+    "status": "active",
+    "goal_id": "06ffda81-1703-4730-9498-9f795a28d525",
+    "goal": {
+      "goal_id": "06ffda81-1703-4730-9498-9f795a28d525",
+      "race_name": "2026 西安马拉松",
+      "distance": "FM",
+      "race_date": "2026-10-18",
+      "target_time": "2:50:00",
+      "timezone": "Asia/Shanghai",
+      "location": null
+    },
+    "start_date": "2026-06-29",
+    "end_date": "2026-10-18",
+    "total_weeks": 16,
+    "phases": [
+      {
+        "id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "name": "速度衔接期",
+        "start_date": "2026-06-29",
+        "end_date": "2026-07-26",
+        "focus": "从已完成的 8 周有氧基础进入速度衔接；3:1 周期，第 4 周降量至本阶段下限的 70-80%，取消质量课；目标 Form 分布为维护 40-50% + 建设 30-40% + 比赛就绪 10-20%，慢慢把 chronic 从 62 附近抬升而不在高温中透支。",
+        "weekly_distance_km_low": 50.0,
+        "weekly_distance_km_high": 72.0,
+        "key_session_types": [
+          "间歇跑",
+          "坡冲",
+          "5公里测试",
+          "长距离",
+          "strength_key"
+        ],
+        "milestone_ids": [
+          "0ce41faf-0e0d-458b-af98-606662301ffd",
+          "5e65e84e-7a48-4b3d-be1a-88449b9b50e8"
+        ],
+        "phase_type": "speed",
+        "rhythm": "每周 5 跑为主：1 次 VO2max/短间歇 + 1 次坡冲或节奏跑 + 1 次周末长距离 + 2 次 Z2 有氧；前 3 周周量从约 60km 推到 70km 出头，第 4 周降到约 38-40km。",
+        "key_workouts": "核心是 400-1000m 间歇、短坡冲和一次 5km 测试，用来把 19:30 的 5km PB 向 18:45-19:00 推近。长跑只维持 22-25km，不在速度期过早堆马拉松专项疲劳。",
+        "monitoring_triggers": [
+          "晨起 RHR 连续 2 天 ≥ 56bpm，下一次间歇改为 40 分钟 Z2 慢跑",
+          "HRV 低于近期 32-34 基线 15% 且主观疲劳 ≥ 7/10，当周质量课减少一半组数",
+          "高温日体感温度 ≥ 32℃，间歇必须改到清晨或傍晚，并按心率而非配速执行",
+          "小腿或跟腱紧张评分 ≥ 3/10，取消坡冲并增加离心提踵和踝关节活动"
+        ],
+        "coach_note": "你现在 Form 偏比赛就绪，说明不缺恢复，缺的是把速度重新点亮。速度期别贪周量，先把动作效率和神经速度做出来。"
+      },
+      {
+        "id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "name": "马拉松专项建设期",
+        "start_date": "2026-07-27",
+        "end_date": "2026-09-13",
+        "focus": "把速度转化为 2:50 全马所需的马配耐力；3:1 cycle，第 4 周降量到本阶段下限的 70-80%，恢复周取消所有质量课；目标 Form 分布为建设 50-60% + 维护 20-30% + 比赛就绪约 10%，weekly dose 以 chronic×7.7+ 推入建设区。",
+        "weekly_distance_km_low": 58.0,
+        "weekly_distance_km_high": 90.0,
+        "key_session_types": [
+          "马拉松配速长跑",
+          "阈值跑",
+          "半马热身赛",
+          "长距离",
+          "strength_key"
+        ],
+        "milestone_ids": [
+          "d8866f18-3c8d-48da-ab56-d31034796f4e",
+          "380a713e-5cdd-4ae5-b2ae-040c2cab1931",
+          "f0d29e0c-80e5-4ed4-a005-f800951c41cb",
+          "84fc7422-16e5-46b6-a6f9-b070d6bd7468"
+        ],
+        "phase_type": "build",
+        "rhythm": "每周 5 跑：1 个长跑内嵌马配块 + 1 个阈值/稳定节奏 + 2-3 次 Z2 有氧；第 5-7 周递增，第 8 周降量，第 9-11 周再推进并用半马热身赛验收。",
+        "key_workouts": "长跑从 26km 含 6km 马配，逐步推进到 31km 含 14km 马配；第 11 周用半马热身赛检验 2:50 目标是否仍然成立。阈值跑保留但不与马配长跑抢恢复。",
+        "monitoring_triggers": [
+          "长跑后 24 小时内静息心率仍高于 49bpm 基线 +7bpm，下一周阈值跑取消",
+          "马配段心率漂移超过 5% 或后半程配速掉速超过 10秒/km，下一次马配总量不增加",
+          "连续 2 周睡眠不足 6.5 小时且腿部沉重，当周总量下调 20%",
+          "足底、髂胫束或膝痛 ≥ 3/10，停止下坡和快节奏跑，保留无痛 Z2"
+        ],
+        "coach_note": "这一段决定你能不能把 4:02/km 变成 42 公里的能力。长跑里的马配块是主菜，其他质量课都要为它让路。"
+      },
+      {
+        "id": "d0587f7b-3d7a-42b5-8a4a-257dbc47e304",
+        "name": "马拉松峰值专项期",
+        "start_date": "2026-09-14",
+        "end_date": "2026-10-04",
+        "focus": "完成最高专项负荷，峰值长跑达到 32km 且内嵌 22-24km 马拉松配速；短于 4 周，无恢复周；目标 Form 分布为建设 40% + 维护 30% + 比赛就绪 30%，chronic 保持平台或轻微下降，避免把疲劳带进减量。",
+        "weekly_distance_km_low": 70.0,
+        "weekly_distance_km_high": 92.0,
+        "key_session_types": [
+          "马拉松配速长跑",
+          "阈值维持",
+          "长距离",
+          "strength_key"
+        ],
+        "milestone_ids": [
+          "7a2be4c7-d932-4bed-8e1b-b848d4903a1e"
+        ],
+        "phase_type": "peak",
+        "rhythm": "每周 5 跑：1 个马配长跑主课 + 1 个短阈值维持或完全省略 + 其余 Z2；周量维持 88-92km，高度专项但不再追求新周量纪录。",
+        "key_workouts": "峰值关键课为 30-32km 长跑内嵌 18→22→24km 马配，模拟 30km 后仍能维持 4:02/km。若任何一周马配段质量明显崩盘，下一周不再加码。",
+        "monitoring_triggers": [
+          "峰值长跑后晨脉 ≥ 56bpm 或 HRV 明显低于 32，48 小时内只允许恢复跑",
+          "马配 20km 后步频下降明显且左右落地不稳，下一次力量课改为臀中肌和单腿稳定激活",
+          "连续 3 天主观疲劳 ≥ 7/10，周量立即降到 75km 左右并取消阈值维持课",
+          "出现任何锐痛或改变跑姿的疼痛，停止质量课并保留交叉训练"
+        ],
+        "coach_note": "峰值期不是证明你能训练得多狠，而是证明你能在疲劳下稳定跑目标配速。完成 32km 含 24km 马配后，就要相信减量。"
+      },
+      {
+        "id": "dc38ae06-6159-47ea-9a25-714fbf7b3176",
+        "name": "赛前减量与比赛期",
+        "start_date": "2026-10-05",
+        "end_date": "2026-10-18",
+        "focus": "2 周减量，急性负荷主动下降，保留少量马配和短促唤醒；短于 4 周，无恢复周；目标 Form 分布为比赛就绪 60-70% + 维护 20-30%，让 ATL 下降而不让速度感消失。",
+        "weekly_distance_km_low": 35.0,
+        "weekly_distance_km_high": 69.0,
+        "key_session_types": [
+          "马拉松配速唤醒",
+          "短间歇唤醒",
+          "比赛",
+          "strength_key"
+        ],
+        "milestone_ids": [
+          "2ccb2718-1617-4423-8587-ef0eec314fbe"
+        ],
+        "phase_type": "taper",
+        "rhythm": "第 15 周降至峰值周高值约 75%，保留 24km 含 8km 马配；比赛周只做短慢跑、加速跑和比赛，周量主要由 42.195km 比赛构成。",
+        "key_workouts": "减量期不再制造适应，只维持节奏感和糖原储备。比赛周的唯一关键课就是西安马拉松，前 3 天保证碳水加载和睡眠。",
+        "monitoring_triggers": [
+          "赛前 10 天若 RHR 高于 56bpm，取消短间歇，只做 30-40 分钟轻松跑",
+          "赛前 7 天出现咽痛、发热或异常乏力，立即减少跑量 50% 并优先恢复",
+          "赛前 3 天胃肠不适，停止尝试新补给，只使用已在长跑中验证的胶和饮料",
+          "比赛日前一晚睡眠差不补训练，按原计划热身并把前 5km 配速放慢 3-5秒/km"
+        ],
+        "coach_note": "最后两周的任务是变新鲜，不是变更强。你已经通过峰值长跑拿到资格，比赛日只需要冷静执行。"
+      }
+    ],
+    "milestones": [
+      {
+        "id": "0ce41faf-0e0d-458b-af98-606662301ffd",
+        "type": "test_run",
+        "date": "2026-07-18",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target": "5公里测试跑控制在 18:45 以内；以实际 PB 19:30 为基准，约提升 3.8%，用于校准后续阈值配速。",
+        "completed_actual": null,
+        "metric": "race_time_s_5k",
+        "target_value": 1125.0,
+        "comparator": "<="
+      },
+      {
+        "id": "5e65e84e-7a48-4b3d-be1a-88449b9b50e8",
+        "type": "strength_test",
+        "date": "2026-07-26",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target": "无痛完成单腿提踵 25次/侧、单腿臀桥 20次/侧，左右耐力差控制在 10%以内，为后续马配长跑做结构准备。",
+        "completed_actual": null,
+        "metric": "single_leg_strength_asymmetry_pct",
+        "target_value": 10.0,
+        "comparator": "<="
+      },
+      {
+        "id": "d8866f18-3c8d-48da-ab56-d31034796f4e",
+        "type": "long_run",
+        "date": "2026-08-16",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target": "完成 29km 长跑，内含 10km 马拉松目标配速，长跑后 24 小时内无异常疲劳。",
+        "completed_actual": null,
+        "metric": "race_pace_km",
+        "target_value": 10.0,
+        "comparator": ">="
+      },
+      {
+        "id": "380a713e-5cdd-4ae5-b2ae-040c2cab1931",
+        "type": "strength_test",
+        "date": "2026-08-23",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target": "在降量周完成耐久力量检查：分腿蹲 12次/侧、罗马尼亚硬拉动作稳定、侧桥 45秒/侧，无膝踝代偿。",
+        "completed_actual": null,
+        "metric": "durability_hold_s",
+        "target_value": 45.0,
+        "comparator": ">="
+      },
+      {
+        "id": "f0d29e0c-80e5-4ed4-a005-f800951c41cb",
+        "type": "long_run",
+        "date": "2026-08-30",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target": "完成 30km 长跑，内含 12km 马拉松目标配速；马配段后半程掉速不超过 10秒/km。",
+        "completed_actual": null,
+        "metric": "race_pace_km",
+        "target_value": 12.0,
+        "comparator": ">="
+      },
+      {
+        "id": "84fc7422-16e5-46b6-a6f9-b070d6bd7468",
+        "type": "long_run",
+        "date": "2026-09-13",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target": "半马热身赛跑进 1:24:00；以实际 HM PB 1:26:38 为基准，约提升 3%，用于判断 2:50 全马目标的可执行性。",
+        "completed_actual": null,
+        "metric": "race_time_s_hm",
+        "target_value": 5040.0,
+        "comparator": "<="
+      },
+      {
+        "id": "7a2be4c7-d932-4bed-8e1b-b848d4903a1e",
+        "type": "long_run",
+        "date": "2026-10-04",
+        "phase_id": "d0587f7b-3d7a-42b5-8a4a-257dbc47e304",
+        "target": "完成 32km 峰值长跑，内含 24km 马拉松目标配速；这是赛前最重要的专项耐力验收。",
+        "completed_actual": null,
+        "metric": "race_pace_km",
+        "target_value": 24.0,
+        "comparator": ">="
+      },
+      {
+        "id": "2ccb2718-1617-4423-8587-ef0eec314fbe",
+        "type": "race",
+        "date": "2026-10-18",
+        "phase_id": "dc38ae06-6159-47ea-9a25-714fbf7b3176",
+        "target": "2026 西安马拉松 A 目标 2:50:00，B 目标 2:53:00，C 目标刷新实际 PB 2:57:11。",
+        "completed_actual": null,
+        "metric": "race_time_s_fm",
+        "target_value": 10200.0,
+        "comparator": "<="
+      }
+    ],
+    "weeks": [
+      {
+        "week_index": 1,
+        "week_start": "2026-06-29",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target_weekly_km_low": 58.0,
+        "target_weekly_km_high": 64.0,
+        "key_sessions": [
+          {
+            "type": "interval",
+            "distance_km": null,
+            "duration_min": 32.0,
+            "intensity": "z5",
+            "purpose": "用 400-800m 间歇重新激活速度和跑步经济性，不追求堆疲劳。"
+          },
+          {
+            "type": "hill",
+            "distance_km": null,
+            "duration_min": 20.0,
+            "intensity": "z5",
+            "purpose": "短坡冲强化髋伸展、踝足刚性和后链发力，适应夏训速度块。"
+          },
+          {
+            "type": "long_run",
+            "distance_km": 22.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "在上周零跑后温和恢复长距离节奏，避免单次负荷超过周量 35%。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 2,
+        "week_start": "2026-07-06",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target_weekly_km_low": 62.0,
+        "target_weekly_km_high": 68.0,
+        "key_sessions": [
+          {
+            "type": "interval",
+            "distance_km": null,
+            "duration_min": 36.0,
+            "intensity": "z5",
+            "purpose": "提高 5km-10km 速度储备，为后续 4:02/km 马配降低相对强度。"
+          },
+          {
+            "type": "tempo",
+            "distance_km": null,
+            "duration_min": 25.0,
+            "intensity": "z3-z4",
+            "purpose": "在高温窗口中用受控节奏维持阈值，不把心率推到失控。"
+          },
+          {
+            "type": "long_run",
+            "distance_km": 23.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "维持全马基础耐力，同时保留速度课恢复空间。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 3,
+        "week_start": "2026-07-13",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target_weekly_km_low": 66.0,
+        "target_weekly_km_high": 72.0,
+        "key_sessions": [
+          {
+            "type": "time_trial",
+            "distance_km": null,
+            "duration_min": 20.0,
+            "intensity": "z5",
+            "purpose": "完成 5km 测试，检验 19:30 PB 后的速度进步并校准阈值配速。"
+          },
+          {
+            "type": "long_run",
+            "distance_km": 25.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "把长跑维持在安全比例内，为下阶段马配长跑做衔接。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 4,
+        "week_start": "2026-07-20",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target_weekly_km_low": 38.0,
+        "target_weekly_km_high": 40.0,
+        "key_sessions": [],
+        "is_recovery_week": true,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 5,
+        "week_start": "2026-07-27",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 70.0,
+        "target_weekly_km_high": 76.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 26.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "进入马拉松专项长跑，总距离受控，承接速度期后的第一周专项负荷。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 6.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "在长跑中内嵌 6km 目标马配，开始把速度转化为全马耐力。"
+          },
+          {
+            "type": "threshold",
+            "distance_km": null,
+            "duration_min": 30.0,
+            "intensity": "z4",
+            "purpose": "维持乳酸阈值，使 4:02/km 马配的代谢压力下降。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 6,
+        "week_start": "2026-08-03",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 74.0,
+        "target_weekly_km_high": 80.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 28.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "回到近期最长跑水平，建立稳定的马拉松专项耐力。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 8.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "长跑后半段加入 8km 马配，训练疲劳下的配速控制。"
+          },
+          {
+            "type": "tempo",
+            "distance_km": null,
+            "duration_min": 35.0,
+            "intensity": "z3-z4",
+            "purpose": "用中等节奏跑补充有氧强度，但不压垮周末长课。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 7,
+        "week_start": "2026-08-10",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 80.0,
+        "target_weekly_km_high": 86.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 29.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "将长跑推进到接近 30km，同时仍控制在周量安全比例内。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 10.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "把马配嵌入长跑中段到后段，建立 2:50 目标的专项耐受。"
+          },
+          {
+            "type": "threshold",
+            "distance_km": null,
+            "duration_min": 35.0,
+            "intensity": "z4",
+            "purpose": "维持阈值能力，避免专项长跑期间速度储备下降。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 8,
+        "week_start": "2026-08-17",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 42.0,
+        "target_weekly_km_high": 46.0,
+        "key_sessions": [],
+        "is_recovery_week": true,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 9,
+        "week_start": "2026-08-24",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 82.0,
+        "target_weekly_km_high": 88.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 30.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "降量周后恢复专项长跑，进入 30km 平台。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 12.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "长跑内马配提升到 12km，观察心率漂移和补给耐受。"
+          },
+          {
+            "type": "threshold",
+            "distance_km": null,
+            "duration_min": 40.0,
+            "intensity": "z4",
+            "purpose": "强化半马到全马之间的阈值支撑，为热身赛做准备。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 10,
+        "week_start": "2026-08-31",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 84.0,
+        "target_weekly_km_high": 90.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 31.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "进一步延长专项长跑，但不超过历史周量可承受边界。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 14.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "在长跑中完成 14km 马配，建立比赛中段的节奏稳定性。"
+          },
+          {
+            "type": "tempo",
+            "distance_km": null,
+            "duration_min": 40.0,
+            "intensity": "z3-z4",
+            "purpose": "以可控强度维持耐力速度，避免热身赛前过度刺激。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 11,
+        "week_start": "2026-09-07",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 76.0,
+        "target_weekly_km_high": 82.0,
+        "key_sessions": [
+          {
+            "type": "tune_up_race",
+            "distance_km": 21.1,
+            "duration_min": null,
+            "intensity": "hm_effort",
+            "purpose": "用半马热身赛检验阈值、补给、比赛节奏和 2:50 全马目标的现实性。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 12,
+        "week_start": "2026-09-14",
+        "phase_id": "d0587f7b-3d7a-42b5-8a4a-257dbc47e304",
+        "target_weekly_km_low": 82.0,
+        "target_weekly_km_high": 88.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 30.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "峰值期第一周控制总距离，让身体从半马热身赛过渡回全马专项。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 18.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "长跑内完成 18km 马配，开始模拟比赛后半程的配速维持。"
+          },
+          {
+            "type": "threshold",
+            "distance_km": null,
+            "duration_min": 30.0,
+            "intensity": "z4",
+            "purpose": "短阈值维持速度感，但总量受控，避免影响马配长跑。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 13,
+        "week_start": "2026-09-21",
+        "phase_id": "d0587f7b-3d7a-42b5-8a4a-257dbc47e304",
+        "target_weekly_km_low": 86.0,
+        "target_weekly_km_high": 92.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 32.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "达到 sub-3 目标所需的 32km 峰值长跑，训练 30km 后的结构耐力。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 22.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "在 32km 长跑中完成 22km 马配，推动疲劳下目标配速的稳定性。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 14,
+        "week_start": "2026-09-28",
+        "phase_id": "d0587f7b-3d7a-42b5-8a4a-257dbc47e304",
+        "target_weekly_km_low": 86.0,
+        "target_weekly_km_high": 92.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 32.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "赛前最后一次峰值专项长跑，确认补给、鞋袜和马配执行流程。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 24.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "在 32km 中完成 24km 马配，作为 2:50 目标最关键的专项验收。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 15,
+        "week_start": "2026-10-05",
+        "phase_id": "dc38ae06-6159-47ea-9a25-714fbf7b3176",
+        "target_weekly_km_low": 62.0,
+        "target_weekly_km_high": 69.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 24.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "减量第一周保留长跑触感，但总量较峰值周下降约 25%。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 8.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "少量马配唤醒节奏，不再制造新的疲劳。"
+          },
+          {
+            "type": "interval",
+            "distance_km": null,
+            "duration_min": 18.0,
+            "intensity": "z5",
+            "purpose": "短促加速维持神经速度，组间充分恢复。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": true
+      },
+      {
+        "week_index": 16,
+        "week_start": "2026-10-12",
+        "phase_id": "dc38ae06-6159-47ea-9a25-714fbf7b3176",
+        "target_weekly_km_low": 42.0,
+        "target_weekly_km_high": 45.0,
+        "key_sessions": [
+          {
+            "type": "race",
+            "distance_km": 42.195,
+            "duration_min": null,
+            "intensity": "race_effort",
+            "purpose": "执行西安马拉松比赛计划：前 5km 稳住，10-32km 锁定目标马配，32km 后按体感争取 2:50。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": true
+      }
+    ],
+    "weekly_key_sessions": [
+      {
+        "week_index": 1,
+        "week_start": "2026-06-29",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target_weekly_km_low": 58.0,
+        "target_weekly_km_high": 64.0,
+        "key_sessions": [
+          {
+            "type": "interval",
+            "distance_km": null,
+            "duration_min": 32.0,
+            "intensity": "z5",
+            "purpose": "用 400-800m 间歇重新激活速度和跑步经济性，不追求堆疲劳。"
+          },
+          {
+            "type": "hill",
+            "distance_km": null,
+            "duration_min": 20.0,
+            "intensity": "z5",
+            "purpose": "短坡冲强化髋伸展、踝足刚性和后链发力，适应夏训速度块。"
+          },
+          {
+            "type": "long_run",
+            "distance_km": 22.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "在上周零跑后温和恢复长距离节奏，避免单次负荷超过周量 35%。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 2,
+        "week_start": "2026-07-06",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target_weekly_km_low": 62.0,
+        "target_weekly_km_high": 68.0,
+        "key_sessions": [
+          {
+            "type": "interval",
+            "distance_km": null,
+            "duration_min": 36.0,
+            "intensity": "z5",
+            "purpose": "提高 5km-10km 速度储备，为后续 4:02/km 马配降低相对强度。"
+          },
+          {
+            "type": "tempo",
+            "distance_km": null,
+            "duration_min": 25.0,
+            "intensity": "z3-z4",
+            "purpose": "在高温窗口中用受控节奏维持阈值，不把心率推到失控。"
+          },
+          {
+            "type": "long_run",
+            "distance_km": 23.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "维持全马基础耐力，同时保留速度课恢复空间。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 3,
+        "week_start": "2026-07-13",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target_weekly_km_low": 66.0,
+        "target_weekly_km_high": 72.0,
+        "key_sessions": [
+          {
+            "type": "time_trial",
+            "distance_km": null,
+            "duration_min": 20.0,
+            "intensity": "z5",
+            "purpose": "完成 5km 测试，检验 19:30 PB 后的速度进步并校准阈值配速。"
+          },
+          {
+            "type": "long_run",
+            "distance_km": 25.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "把长跑维持在安全比例内，为下阶段马配长跑做衔接。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 4,
+        "week_start": "2026-07-20",
+        "phase_id": "224b8b73-97ce-4f66-b01b-5539fdf560f1",
+        "target_weekly_km_low": 38.0,
+        "target_weekly_km_high": 40.0,
+        "key_sessions": [],
+        "is_recovery_week": true,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 5,
+        "week_start": "2026-07-27",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 70.0,
+        "target_weekly_km_high": 76.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 26.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "进入马拉松专项长跑，总距离受控，承接速度期后的第一周专项负荷。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 6.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "在长跑中内嵌 6km 目标马配，开始把速度转化为全马耐力。"
+          },
+          {
+            "type": "threshold",
+            "distance_km": null,
+            "duration_min": 30.0,
+            "intensity": "z4",
+            "purpose": "维持乳酸阈值，使 4:02/km 马配的代谢压力下降。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 6,
+        "week_start": "2026-08-03",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 74.0,
+        "target_weekly_km_high": 80.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 28.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "回到近期最长跑水平，建立稳定的马拉松专项耐力。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 8.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "长跑后半段加入 8km 马配，训练疲劳下的配速控制。"
+          },
+          {
+            "type": "tempo",
+            "distance_km": null,
+            "duration_min": 35.0,
+            "intensity": "z3-z4",
+            "purpose": "用中等节奏跑补充有氧强度，但不压垮周末长课。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 7,
+        "week_start": "2026-08-10",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 80.0,
+        "target_weekly_km_high": 86.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 29.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "将长跑推进到接近 30km，同时仍控制在周量安全比例内。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 10.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "把马配嵌入长跑中段到后段，建立 2:50 目标的专项耐受。"
+          },
+          {
+            "type": "threshold",
+            "distance_km": null,
+            "duration_min": 35.0,
+            "intensity": "z4",
+            "purpose": "维持阈值能力，避免专项长跑期间速度储备下降。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 8,
+        "week_start": "2026-08-17",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 42.0,
+        "target_weekly_km_high": 46.0,
+        "key_sessions": [],
+        "is_recovery_week": true,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 9,
+        "week_start": "2026-08-24",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 82.0,
+        "target_weekly_km_high": 88.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 30.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "降量周后恢复专项长跑，进入 30km 平台。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 12.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "长跑内马配提升到 12km，观察心率漂移和补给耐受。"
+          },
+          {
+            "type": "threshold",
+            "distance_km": null,
+            "duration_min": 40.0,
+            "intensity": "z4",
+            "purpose": "强化半马到全马之间的阈值支撑，为热身赛做准备。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 10,
+        "week_start": "2026-08-31",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 84.0,
+        "target_weekly_km_high": 90.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 31.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "进一步延长专项长跑，但不超过历史周量可承受边界。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 14.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "在长跑中完成 14km 马配，建立比赛中段的节奏稳定性。"
+          },
+          {
+            "type": "tempo",
+            "distance_km": null,
+            "duration_min": 40.0,
+            "intensity": "z3-z4",
+            "purpose": "以可控强度维持耐力速度，避免热身赛前过度刺激。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 11,
+        "week_start": "2026-09-07",
+        "phase_id": "563c1c34-c08a-45de-8016-746e00c4be66",
+        "target_weekly_km_low": 76.0,
+        "target_weekly_km_high": 82.0,
+        "key_sessions": [
+          {
+            "type": "tune_up_race",
+            "distance_km": 21.1,
+            "duration_min": null,
+            "intensity": "hm_effort",
+            "purpose": "用半马热身赛检验阈值、补给、比赛节奏和 2:50 全马目标的现实性。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 12,
+        "week_start": "2026-09-14",
+        "phase_id": "d0587f7b-3d7a-42b5-8a4a-257dbc47e304",
+        "target_weekly_km_low": 82.0,
+        "target_weekly_km_high": 88.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 30.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "峰值期第一周控制总距离，让身体从半马热身赛过渡回全马专项。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 18.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "长跑内完成 18km 马配，开始模拟比赛后半程的配速维持。"
+          },
+          {
+            "type": "threshold",
+            "distance_km": null,
+            "duration_min": 30.0,
+            "intensity": "z4",
+            "purpose": "短阈值维持速度感，但总量受控，避免影响马配长跑。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 13,
+        "week_start": "2026-09-21",
+        "phase_id": "d0587f7b-3d7a-42b5-8a4a-257dbc47e304",
+        "target_weekly_km_low": 86.0,
+        "target_weekly_km_high": 92.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 32.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "达到 sub-3 目标所需的 32km 峰值长跑，训练 30km 后的结构耐力。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 22.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "在 32km 长跑中完成 22km 马配，推动疲劳下目标配速的稳定性。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 14,
+        "week_start": "2026-09-28",
+        "phase_id": "d0587f7b-3d7a-42b5-8a4a-257dbc47e304",
+        "target_weekly_km_low": 86.0,
+        "target_weekly_km_high": 92.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 32.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "赛前最后一次峰值专项长跑，确认补给、鞋袜和马配执行流程。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 24.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "在 32km 中完成 24km 马配，作为 2:50 目标最关键的专项验收。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": false
+      },
+      {
+        "week_index": 15,
+        "week_start": "2026-10-05",
+        "phase_id": "dc38ae06-6159-47ea-9a25-714fbf7b3176",
+        "target_weekly_km_low": 62.0,
+        "target_weekly_km_high": 69.0,
+        "key_sessions": [
+          {
+            "type": "long_run",
+            "distance_km": 24.0,
+            "duration_min": null,
+            "intensity": "z2",
+            "purpose": "减量第一周保留长跑触感，但总量较峰值周下降约 25%。"
+          },
+          {
+            "type": "race_pace",
+            "distance_km": 8.0,
+            "duration_min": null,
+            "intensity": "marathon_pace",
+            "purpose": "少量马配唤醒节奏，不再制造新的疲劳。"
+          },
+          {
+            "type": "interval",
+            "distance_km": null,
+            "duration_min": 18.0,
+            "intensity": "z5",
+            "purpose": "短促加速维持神经速度，组间充分恢复。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": true
+      },
+      {
+        "week_index": 16,
+        "week_start": "2026-10-12",
+        "phase_id": "dc38ae06-6159-47ea-9a25-714fbf7b3176",
+        "target_weekly_km_low": 42.0,
+        "target_weekly_km_high": 45.0,
+        "key_sessions": [
+          {
+            "type": "race",
+            "distance_km": 42.195,
+            "duration_min": null,
+            "intensity": "race_effort",
+            "purpose": "执行西安马拉松比赛计划：前 5km 稳住，10-32km 锁定目标马配，32km 后按体感争取 2:50。"
+          }
+        ],
+        "is_recovery_week": false,
+        "is_taper_week": true
+      }
+    ],
+    "training_principles": [
+      "目标现实性：你的实际全马 PB 为 2:57:11，目标 2:50:00 约提升 4.1%，低于全马单周期 10% 上限；本周期按 2:50 配速训练，比赛分层目标为 A 目标 2:50、B 目标 2:53、C 目标刷新 PB。",
+      "从当前 speed 阶段继续，不重排已完成的 8 周有氧基础；前 4 周用夏训速度刺激提升跑步经济性，随后转入马拉松专项耐力。",
+      "周量以近期 CTL 62 和历史最高周量 86.7km 为边界参考，负荷周之间周高值递增不超过 10%；峰值周最高控制在约 92km，属于略高于历史峰值但通过恢复周承接。",
+      "恢复周规则：speed 第 4 周、build 第 4 周执行降量，周量降至该阶段下限的 70-80%，取消质量课；恢复周不是停练，而是用低强度跑和灵活性维持节奏。",
+      "耐久力量轨道：speed/build 每周 2 次力量，重点为臀中肌、腘绳肌、比目鱼肌、踝足刚性和单腿稳定；peak 降为每周 1-2 次维持，taper 仅做激活，不追求酸痛。",
+      "基础与速度期营养：保持热量平衡，不在高温夏训中主动制造大赤字；蛋白质 1.4-1.6g/kg/天，质量课或长跑后 30 分钟内补充碳水:蛋白约 3:1。",
+      "build/peak 营养：专项长课和马配长跑日前后把碳水提高到 5-7g/kg/天；长课前 30-60 分钟摄入 30-60g 碳水，长课中每小时 30-60g 碳水并配合电解质。",
+      "比赛减量营养：赛前 3 天以糖原储备为核心，碳水提高到 8-10g/kg/天，减少陌生高纤维食物；赛后 1 周蛋白提高到 1.8-2.0g/kg/天，并优先补水和电解质。",
+      "负荷分布红线：单次长跑距离不得超过当周总量的 35%，每周零剂量日不超过 2 天，禁止周日和周一连续完全休息；用短慢跑或力量后 30-40 分钟轻松跑替代“尖峰加空白”的结构。"
+    ],
+    "generated_by": "gpt-5.5",
+    "version": 1,
+    "created_at": "2026-06-24T08:23:19.065584+00:00",
+    "updated_at": "2026-06-24T08:23:19.106835+00:00"
+  },
+  "goal_store": {
+    "current": {
+      "type": "race",
+      "race_date": "2026-10-18",
+      "race_distance": "FM",
+      "race_name": "2026 西安马拉松",
+      "target_finish_time": "2:50:00",
+      "weekly_training_days": 5,
+      "available_time_slots": [],
+      "goal_id": "06ffda81-1703-4730-9498-9f795a28d525",
+      "created_at": "2026-06-24T08:17:28.703305+00:00",
+      "updated_at": "2026-06-24T08:17:28.703326+00:00"
+    },
+    "history": []
+  }
+}

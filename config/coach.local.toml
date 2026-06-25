@@ -77,7 +77,9 @@ max_tokens   = 131072
 # token ceiling, the model can spend a lot of compute on reasoning for
 # longer S1 plans (22-week dingchentao etc). 120s was too tight; 5 min
 # accommodates the reasoning latency without hanging callers indefinitely.
-timeout_s    = 300
+# Bumped 300->600 for local migration runs: dev resource + home network is
+# slower than prod, and a full FM season plan can exceed 5 min end-to-end.
+timeout_s    = 600
 
 [reviewer]
 # Reviewer Agent — same model for now (no separate Claude Opus deployment on
