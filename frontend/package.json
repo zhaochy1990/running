@@ -13,6 +13,7 @@
     "preview": "vite preview",
     "smoke:local": "node scripts/local-smoke.cjs",
     "smoke:onboarding": "node scripts/onboarding-smoke.cjs",
+    "smoke:onboarding-negatives": "node scripts/onboarding-negatives.cjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

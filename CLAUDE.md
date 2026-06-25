@@ -27,6 +27,7 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 | 改 S3 每日问答评估（fixture / metric_traceability / S3 judge axes） | [`docs/coach-eval_S3.md`](docs/coach-eval_S3.md) |
 | Auth wiring / Bearer / 401 排障 | [`docs/auth-wiring.md`](docs/auth-wiring.md) |
 | Docker / CI/CD / reparse webhook | [`docs/deployment.md`](docs/deployment.md) |
+| 接支付 / 支付宝 / 微信 / 订阅付费（调研 + 大陆主体接入方案，未开工）| [`docs/payment-china.md`](docs/payment-china.md) |
 | Frontend pages / API 路由清单 | [`docs/frontend.md`](docs/frontend.md) |
 
 ## Frontend local verification (HARD)

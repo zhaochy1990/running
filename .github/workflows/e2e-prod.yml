@@ -1,9 +1,8 @@
 name: E2E (prod)
 
-# Real-browser, zero-mock end-to-end test against production. Registers a
-# throwaway user, drives the onboarding wizard in headless Chromium (real COROS
-# watch login + real health sync), asserts the dashboard renders, then deletes
-# the user. See frontend/scripts/onboarding-smoke.cjs.
+# Real-browser, zero-mock end-to-end tests against production. Each job registers
+# a throwaway user, drives the app in headless Chromium, asserts behavior, then
+# deletes the user. See frontend/scripts/onboarding-*.cjs.
 
 on:
   workflow_dispatch:
@@ -13,7 +12,7 @@ on:
     workflows: ["Deploy"] # post-deploy verification
     types: [completed]
 
-# One prod E2E at a time — each run creates+deletes a real prod user.
+# One prod E2E run at a time — each run creates+deletes real prod users.
 concurrency:
   group: e2e-prod
   cancel-in-progress: false
@@ -21,49 +20,73 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  STRIDE_SMOKE_TARGET: prod
+  STRIDE_SMOKE_ADMIN_EMAIL: ${{ secrets.STRIDE_SMOKE_ADMIN_EMAIL }}
+  STRIDE_SMOKE_ADMIN_PASSWORD: ${{ secrets.STRIDE_SMOKE_ADMIN_PASSWORD }}
+  STRIDE_SMOKE_COROS_EMAIL: ${{ secrets.STRIDE_SMOKE_COROS_EMAIL }}
+  STRIDE_SMOKE_COROS_PASSWORD: ${{ secrets.STRIDE_SMOKE_COROS_PASSWORD }}
+  VITE_AUTH_CLIENT_ID: ${{ secrets.VITE_AUTH_CLIENT_ID }}
+  VITE_AUTH_BASE_URL: ${{ vars.VITE_AUTH_BASE_URL || 'https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io' }}
+
 jobs:
   onboarding-smoke:
-    name: Onboarding smoke (real browser, no mocks)
+    name: Onboarding smoke (happy path)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # When triggered by Deploy, only run if that deploy succeeded.
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
-    env:
-      STRIDE_SMOKE_TARGET: prod
-      STRIDE_SMOKE_ADMIN_EMAIL: ${{ secrets.STRIDE_SMOKE_ADMIN_EMAIL }}
-      STRIDE_SMOKE_ADMIN_PASSWORD: ${{ secrets.STRIDE_SMOKE_ADMIN_PASSWORD }}
-      STRIDE_SMOKE_COROS_EMAIL: ${{ secrets.STRIDE_SMOKE_COROS_EMAIL }}
-      STRIDE_SMOKE_COROS_PASSWORD: ${{ secrets.STRIDE_SMOKE_COROS_PASSWORD }}
-      VITE_AUTH_CLIENT_ID: ${{ secrets.VITE_AUTH_CLIENT_ID }}
-      VITE_AUTH_BASE_URL: ${{ vars.VITE_AUTH_BASE_URL || 'https://auth-backend.delightfulwave-240938c0.southeastasia.azurecontainerapps.io' }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
       # `npm install` (not `npm ci`), matching ci.yml — the committed lock file
-      # carries platform-specific optional deps (@emnapi/*) that `npm ci` rejects
-      # on Linux runners.
+      # carries platform-specific optional deps (@emnapi/*) that `npm ci` rejects.
       - name: Install dependencies
         working-directory: frontend
         run: npm install --no-audit --no-fund
-
       - name: Install Playwright Chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium
-
       - name: Run onboarding smoke (prod)
         working-directory: frontend
         run: node scripts/onboarding-smoke.cjs
-
       - name: Upload screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: onboarding-smoke-screenshot
           path: stride-onboarding-smoke.png
+          if-no-files-found: ignore
+
+  onboarding-negatives:
+    name: Onboarding negatives (invalid creds + logout)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run onboarding negatives (prod)
+        working-directory: frontend
+        run: node scripts/onboarding-negatives.cjs
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onboarding-negatives-screenshot
+          path: stride-onboarding-negatives.png
           if-no-files-found: ignore
