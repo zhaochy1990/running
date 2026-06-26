@@ -134,9 +134,68 @@ class SpecialistResult(BaseModel):
 
 ### 4.1 ① Resolver（意图 + 目标解析）
 
-- **LLM 出结构化 intent**：`{intents: [{specialist_id, confidence}], is_compound, ambiguous}`，受 SpecialistCard 全集约束。
-- **确定性解析 active_target**：从会话状态推当前 plan/week/session；缺失或多义 → 触发 clarify（不猜）。
-- 输出喂给 Supervisor。
+Resolver 干两件性质不同的事——**意图识别（理解题，LLM）** + **目标解析（状态题，确定性）**——合成**一次 LLM 调用 + 确定性后处理**，不多花 LLM 跳。
+
+**内部流程**：
+
+```
+入参: utterance + conversation_window(近几轮) + 上一轮 active_target(session 带来) + SpecialistRegistry(全部 Card)
+  │
+  ▼ ① 一次 LLM, structured output, specialist_id 受 Card 全集 enum 约束
+  ResolverDraft {
+    intents: [{specialist_id, confidence}],        # 锁在已注册专家里，不能瞎编
+    is_compound: bool,                             # 一句话多诉求
+    target_hint: {kind, ref_phrase, is_anaphora},  # "第3周" / "明天那节间歇" / "它"
+    self_ambiguity: bool
+  }
+  │
+  ▼ ② 确定性: target_hint → TargetRef
+     is_anaphora("它/这个")  → 复用上一轮 active_target
+     显式("第3周")           → 查 active plan 的 week 索引解析成 plan_id/date
+     缺省                    → 当前周 / active master
+  │
+  ▼ ③ 确定性: 仲裁是否 clarify（不猜）
+     intent 置信度低 / 平票        → clarify(intent)
+     target 多义 且 本轮含写       → clarify(target)
+     target 多义 但只读           → 默认最近 + 继续（不反问）
+  │
+  ▼ 出 ResolverOutput → Supervisor   (或短路: clarify 直接回用户，下一轮续上)
+```
+
+**设计要点**：
+
+- **意图识别只能 LLM，但锁死 Card enum**：`specialist_id` 约束在 `SpecialistRegistry` 全集（constrained decoding / 校验重试），不能编不存在的专家。Card 的 `description/tags/examples` 即路由菜单 → **加新专家=加张 Card，Resolver 一行不改**。
+- **target 是状态题非理解题 → 确定性**：LLM 只抽**指代短语**（`target_hint`），把短语解析成具体 `TargetRef` 是确定性代码（查会话状态 + DB 索引）。指代消解靠上一轮提升来的 `active_target`（§5.4）。
+- **compound 由 Resolver 识别、Supervisor 排序**：Resolver 只标 `is_compound` + 列意图；**串/并、谁先谁后**是 Supervisor 的活（§4.2）。
+- **clarify 只在"歧义会改变结果"时触发**：只读 QA 的 target 不清就默认最近直接答；**写操作**的 target 不清才必须澄清——否则每句都反问很烦。
+
+**Prompt 角色分离（HARD）**：
+
+| Turn | 装什么 | 缓存 |
+|---|---|---|
+| **System** | 分类器人设 + 输出 schema + **Card catalog**(id/description/tags/examples) + 决策规则(置信度阈值 / 何时 clarify / compound 上限) | catalog 跨用户跨轮**字节稳定**(仅加专家时变) → 命中缓存 |
+| **User** | 本轮 utterance + conversation_window | 每轮变 |
+
+**输出契约**（`coach.contracts` 内）：
+
+```python
+class IntentHit(BaseModel):
+    specialist_id: str           # 锁在 Registry 全集
+    confidence: float
+
+class Ambiguity(BaseModel):
+    kind: Literal["intent", "target"]
+    clarification: str           # 反问什么
+
+class ResolverOutput(BaseModel):
+    intents: list[IntentHit]
+    is_compound: bool
+    active_target: TargetRef | None
+    ambiguity: Ambiguity | None  # 非 None → 短路 clarify，不派发专家
+    resolved_from: str           # 留痕: "anaphora" | "explicit" | "default"
+```
+
+**硬化**：非法 `specialist_id` → 校验重试 / 兜底 `status_insight`；彻底跑题（无 Card 过阈值）→ 简短礼貌拒答，不硬塞专家；幻觉式 compound → intent 数上限 + 置信度地板。首批 Card 直接从现有 qa/week/master 三 scope 派生（`specialist_id` ≈ 现 `scope`）。
 
 ### 4.2 ② Supervisor（编排规划）
 
@@ -147,7 +206,7 @@ class SpecialistResult(BaseModel):
 ### 4.3 ③ Specialists（领域专家，subgraph）
 
 - 复用现有 conversation 图的 scope 设计，**每个 scope 降为一个 subgraph 专家**：
-  - `master_plan`（S1 调整）· `weekly_plan`（S2 调整）· `status_insight`（S3 问答/诊断）· `plan_generation`（S1 建计划，包现有 `master_plan_generator`）· `injury_safety`（安全道）。
+  - `master_plan`（S1 调整）· `weekly_plan`（S2 调整）· `status_insight`（S3 问答/诊断）· `plan_generation`（S1 建计划，包现有 `master_plan_generator`）。（`injury_safety` 安全道本期不做，见 §1 非目标）
 - 每个专家 = 自己的 scoped prompt + 自己那撮工具（read 子集 + draft 子集）。
 - **委派调用**：dispatcher 调 subgraph，专家返回 `SpecialistResult`，控制权回编排脑。
 
