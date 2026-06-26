@@ -199,9 +199,61 @@ class ResolverOutput(BaseModel):
 
 ### 4.2 ② Supervisor（编排规划）
 
-- **LLM 产出结构化 call plan**：`[{specialist_id, task: SpecialistTask, depends_on: [...]}]`。
-- **默认串行**（尤其涉及写）；**只读专家可并行**。
-- plan 是数据，由确定性 dispatcher 执行（不让 LLM inline 调专家）。
+Supervisor 把 ResolverOutput 变成一份 **CallPlan**（有序/DAG 的专家调用 + 每个调用的富简报 `SpecialistTask`），交确定性 dispatcher 执行。核心是**为每个专家合成富简报**（Anthropic 实证：瘦任务必致重复劳动）+ **排依赖**。
+
+**内部流程**：
+
+```
+入参: ResolverOutput(intents, is_compound, active_target) + utterance + conversation_window + Registry(Cards)
+  │
+  ▼ 单意图快路径（无 LLM）: is_compound=False 且单一高置信 intent
+  │     → 确定性模板构建 1 个 SpecialistTask，CallPlan=[单调用]，跳过规划 LLM
+  │
+  ▼ 复合慢路径（一次 LLM, structured output）: is_compound=True
+  │   CallPlan_draft = [ {specialist_id, objective, depends_on:[...]} ]
+  │     - 把用户总目标拆成每专家的 objective
+  │     - 标依赖（read→write 顺序、上游结果喂下游）
+  │
+  ▼ 确定性: 为每个调用补全 SpecialistTask
+  │     active_target(Resolver) + 按 Card.data_needs 预取 scoped context
+  │     + boundaries(从规划派生: "只诊断不改课") + conversation_window(过滤)
+  │
+  ▼ 确定性: 校验 + 加固 DAG
+  │     specialist_id 合法 / 无环 / 调用数上限
+  │     **硬约束覆盖 LLM**: 同 target 写串行(diff 冲突)、写默认串行、只读可并行
+  │
+  ▼ 出 CallPlan → dispatcher 执行
+```
+
+**设计要点**：
+
+- **单意图快路径省 LLM**：大多数轮是单意图，不该为"排一个调用"烧规划 LLM → 模板化直出富简报；规划 LLM **只为 compound**。
+- **LLM 只出逻辑 plan，串并行硬规则归 dispatcher**：即便 LLM 说并行，**写操作 dispatcher 强制串行**（安全网）。对齐 agentic 边界"派发=确定性"——LLM 不 inline 调专家。
+- **富简报由 Supervisor 合成**：每专家拿到"你这轮达成 X + 这点 scoped 数据 + 边界"，不是一句话目标。scoped context 按 Card.`data_needs` 预取，不灌全量 history。
+- **专家间数据流**：上游 read 的 `SpecialistResult` 注入下游 write 的 `Task.context`（"先看状态→若疲劳降强度"）。**条件分支由下游专家自身判定**（不满足就返回 no-op proposal），不另起 guard LLM。
+- **迭代/停**：MVP 单轮派发；任一专家 `needs_clarification` → 短路 Aggregator 反问；`handoff_hint` → 透传，下一轮处理。**有界 re-plan（看结果再补一轮）后置**——Supervisor 独占该决策权但本期不开。
+
+**Prompt 角色分离（HARD）**（仅 compound 慢路径走 LLM）：
+
+| Turn | 装什么 | 缓存 |
+|---|---|---|
+| **System** | 规划器人设 + CallPlan schema + 拆解规则 + 串并行/依赖约束 + **Card catalog**(能力 + `data_needs`) | 字节稳定 → 命中缓存 |
+| **User** | ResolverOutput + utterance + conversation_window | 每轮变 |
+
+**输出契约**：
+
+```python
+class SpecialistCall(BaseModel):
+    specialist_id: str
+    task: SpecialistTask      # Supervisor 合成的富简报
+    depends_on: list[int]     # 索引依赖，构成 DAG
+
+class CallPlan(BaseModel):
+    calls: list[SpecialistCall]
+    # 执行由 dispatcher 按 DAG + 硬约束跑（写串行 / 只读并行）
+```
+
+**硬化**：调用数上限（防 runaway compound）；DAG 无环校验；写串行硬覆盖 LLM；规划失败 → 退化为按 Resolver intents 顺序**串行**执行。
 
 ### 4.3 ③ Specialists（领域专家，subgraph）
 
