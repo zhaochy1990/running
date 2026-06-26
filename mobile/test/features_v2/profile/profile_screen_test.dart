@@ -25,12 +25,11 @@ const _testHomeData = HomeData(
   userId: 'user-123',
   date: '2026-05-12',
   statusRing: StatusRing(
-    fatigue: 42,
-    fatigueBand: 'normal',
     tsb: -8.5,
     tsbBand: 'productive',
     loadRatio: 0.95,
-    loadState: 'Optimal',
+    chronicLoad: 55.0,
+    acuteLoad: 52.0,
   ),
   recentActivities: [],
   weeklyStats: WeeklyStats(
@@ -39,10 +38,7 @@ const _testHomeData = HomeData(
     totalDurationSec: 18000,
     sessionCount: 4,
   ),
-  lifetimeStats: LifetimeStats(
-    totalDistanceKm: 1234.5,
-    totalActivities: 87,
-  ),
+  lifetimeStats: LifetimeStats(totalDistanceKm: 1234.5, totalActivities: 87),
   planState: 'none',
   watch: WatchInfo(brand: 'coros'),
 );
@@ -57,16 +53,10 @@ Future<void> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        currentUserProvider.overrideWith(
-          (_) => Future.value(profile),
-        ),
-        homeProvider.overrideWith(
-          (_) => Future.value(homeData),
-        ),
+        currentUserProvider.overrideWith((_) => Future.value(profile)),
+        homeProvider.overrideWith((_) => Future.value(homeData)),
       ],
-      child: const MaterialApp(
-        home: ProfileScreen(),
-      ),
+      child: const MaterialApp(home: ProfileScreen()),
     ),
   );
   await tester.pump();
@@ -133,7 +123,9 @@ void main() {
     expect(find.text('退出'), findsOneWidget);
   });
 
-  testWidgets('cancel on logout dialog dismisses without action', (tester) async {
+  testWidgets('cancel on logout dialog dismisses without action', (
+    tester,
+  ) async {
     await _pump(tester, profile: _testProfile, homeData: _testHomeData);
 
     await tester.scrollUntilVisible(

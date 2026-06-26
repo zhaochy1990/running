@@ -17,6 +17,7 @@ class StrideNavTab extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.accentWhenIdle = false,
   });
 
   final IconData icon;
@@ -24,9 +25,15 @@ class StrideNavTab extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// When true, the icon (not the label) keeps the accent color even when
+  /// unselected — used for the "教练" tab to read as the intelligent core.
+  final bool accentWhenIdle;
+
   @override
   Widget build(BuildContext context) {
     final color = selected ? StrideTokens.accent : StrideTokens.muted;
+    final iconColor =
+        selected ? StrideTokens.accent : (accentWhenIdle ? StrideTokens.accent : StrideTokens.muted);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -42,7 +49,7 @@ class StrideNavTab extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          Icon(icon, size: 22, color: color),
+          Icon(icon, size: 22, color: iconColor),
           const SizedBox(height: 2),
           Text(
             label,

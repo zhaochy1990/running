@@ -16,8 +16,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
-import '../_shared/widgets/top_bar.dart';
-import '../auth/start_screen.dart' show StrideAuthPrimaryButton;
+import '../_shared/widgets/onboarding_scaffold.dart';
 import 'providers/coros_link_provider.dart';
 
 class CorosLinkScreen extends ConsumerStatefulWidget {
@@ -73,7 +72,9 @@ class _CorosLinkScreenState extends ConsumerState<CorosLinkScreen> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
-    await ref.read(corosLinkProvider.notifier).bind(
+    await ref
+        .read(corosLinkProvider.notifier)
+        .bind(
           email: _emailCtrl.text.trim(),
           password: _passwordCtrl.text,
           region: _region,
@@ -91,72 +92,60 @@ class _CorosLinkScreenState extends ConsumerState<CorosLinkScreen> {
       }
     });
 
-    return Scaffold(
-      backgroundColor: StrideTokens.bg,
-      appBar: StrideTopBar(
-        title: '绑定 COROS',
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          padding: EdgeInsets.zero,
-          onPressed: () => context.go(RoutesV2.onboardingBrand),
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(StrideTokens.spaceLg),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const _TrustCard(),
-              const SizedBox(height: StrideTokens.space2xl),
-              const _Label('邮箱'),
-              const SizedBox(height: StrideTokens.spaceSm),
-              TextField(
-                controller: _emailCtrl,
-                keyboardType: TextInputType.emailAddress,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: _inputDecoration(hint: 'name@example.com'),
-              ),
-              const SizedBox(height: StrideTokens.spaceLg),
-              const _Label('密码'),
-              const SizedBox(height: StrideTokens.spaceSm),
-              TextField(
-                controller: _passwordCtrl,
-                obscureText: true,
-                decoration: _inputDecoration(hint: 'COROS 账号密码'),
-              ),
-              const SizedBox(height: StrideTokens.spaceLg),
-              const _Label('区域'),
-              const SizedBox(height: StrideTokens.spaceSm),
-              _RegionPicker(
-                value: _region,
-                onChanged: (v) => setState(() => _region = v),
-              ),
-              if (state.error != null) ...[
-                const SizedBox(height: StrideTokens.spaceLg),
-                _ErrorText(state.error!),
-              ],
-              const SizedBox(height: StrideTokens.space2xl),
-              StrideAuthPrimaryButton(
-                label: '绑定',
-                loading: state.loading,
-                onPressed: _canSubmit ? _submit : null,
-              ),
-              const SizedBox(height: StrideTokens.spaceMd),
-              const Text(
-                '我们仅将凭据用于通过 COROS 接口拉取你的训练数据，'
-                '不会用于其他用途。',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs12,
-                  color: StrideTokens.muted,
-                  height: 1.5,
-                ),
-              ),
-            ],
+    return OnboardingScaffold(
+      stepIndex: 1,
+      stepName: '绑定 COROS',
+      title: '绑定 COROS 账号',
+      lede: '输入 COROS Training Hub 账号，仅用于拉取你的训练数据。',
+      onBack: () => context.go(RoutesV2.onboardingBrand),
+      ctaLabel: '绑定',
+      ctaLoading: state.loading,
+      onCta: _canSubmit ? _submit : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _TrustCard(),
+          const SizedBox(height: StrideTokens.space2xl),
+          const _Label('邮箱'),
+          const SizedBox(height: StrideTokens.spaceSm),
+          TextField(
+            controller: _emailCtrl,
+            keyboardType: TextInputType.emailAddress,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: _inputDecoration(hint: 'name@example.com'),
           ),
-        ),
+          const SizedBox(height: StrideTokens.spaceLg),
+          const _Label('密码'),
+          const SizedBox(height: StrideTokens.spaceSm),
+          TextField(
+            controller: _passwordCtrl,
+            obscureText: true,
+            decoration: _inputDecoration(hint: 'COROS 账号密码'),
+          ),
+          const SizedBox(height: StrideTokens.spaceLg),
+          const _Label('区域'),
+          const SizedBox(height: StrideTokens.spaceSm),
+          _RegionPicker(
+            value: _region,
+            onChanged: (v) => setState(() => _region = v),
+          ),
+          if (state.error != null) ...[
+            const SizedBox(height: StrideTokens.spaceLg),
+            _ErrorText(state.error!),
+          ],
+          const SizedBox(height: StrideTokens.spaceLg),
+          const Text(
+            '我们仅将凭据用于通过 COROS 接口拉取你的训练数据，'
+            '不会用于其他用途。',
+            style: TextStyle(
+              fontFamily: AppTypography.fontSans,
+              fontSize: StrideTokens.fs12,
+              color: StrideTokens.muted,
+              height: 1.5,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -194,15 +183,15 @@ class _Label extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Text(
-        text,
-        style: const TextStyle(
-          fontFamily: AppTypography.fontSans,
-          fontSize: StrideTokens.fs12,
-          fontWeight: FontWeight.w600,
-          color: StrideTokens.fgSoft,
-          letterSpacing: 0.5,
-        ),
-      );
+    text,
+    style: const TextStyle(
+      fontFamily: AppTypography.fontSans,
+      fontSize: StrideTokens.fs12,
+      fontWeight: FontWeight.w600,
+      color: StrideTokens.fgSoft,
+      letterSpacing: 0.5,
+    ),
+  );
 }
 
 class _TrustCard extends StatelessWidget {

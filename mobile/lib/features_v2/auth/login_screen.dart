@@ -43,7 +43,10 @@ class _AuthLoginScreenState extends ConsumerState<AuthLoginScreen> {
   }
 
   void _onEdit() {
-    if (_error != null) setState(() => _error = null);
+    // Rebuild on every keystroke so the submit button re-evaluates
+    // [_canSubmit] — not only when there's an error to clear. Without the
+    // unconditional setState the 登录 button never enables as the user types.
+    setState(() => _error = null);
   }
 
   bool get _canSubmit =>

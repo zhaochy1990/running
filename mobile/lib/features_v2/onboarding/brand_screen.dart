@@ -11,52 +11,36 @@ import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
+import '../_shared/widgets/onboarding_scaffold.dart';
 import '../_shared/widgets/pill.dart';
-import '../_shared/widgets/top_bar.dart';
 
 class BrandScreen extends StatelessWidget {
   const BrandScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(title: '选择你的手表'),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(StrideTokens.spaceXl),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: StrideTokens.spaceLg),
-              const Text(
-                '我们仅读取训练数据，不会修改手表设置',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs13,
-                  color: StrideTokens.muted,
-                ),
-              ),
-              const SizedBox(height: StrideTokens.space2xl),
-              _BrandCard(
-                brand: 'COROS',
-                badge: const StridePill(text: '主推', variant: PillVariant.green),
-                enabled: true,
-                onTap: () => context.go(RoutesV2.onboardingCoros),
-              ),
-              const SizedBox(height: StrideTokens.spaceLg),
-              const _BrandCard(
-                brand: 'Garmin',
-                badge: StridePill(
-                  text: 'v1.1 即将支持',
-                  variant: PillVariant.muted,
-                ),
-                enabled: false,
-                onTap: null,
-              ),
-            ],
+    return OnboardingScaffold(
+      stepIndex: 0,
+      stepName: '选择手表',
+      title: '选择你的手表',
+      lede: '我们仅读取训练数据，不会修改手表设置。',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _BrandCard(
+            brand: 'COROS',
+            badge: const StridePill(text: '主推', variant: PillVariant.green),
+            enabled: true,
+            onTap: () => context.go(RoutesV2.onboardingCoros),
           ),
-        ),
+          const SizedBox(height: StrideTokens.spaceLg),
+          const _BrandCard(
+            brand: 'Garmin',
+            badge: StridePill(text: 'v1.1 即将支持', variant: PillVariant.muted),
+            enabled: false,
+            onTap: null,
+          ),
+        ],
       ),
     );
   }

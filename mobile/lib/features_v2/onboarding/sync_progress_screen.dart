@@ -36,9 +36,12 @@ class SyncProgressScreen extends ConsumerWidget {
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(
-                horizontal: StrideTokens.space2xl),
+              horizontal: StrideTokens.space2xl,
+            ),
             child: Column(
               children: [
+                const SizedBox(height: StrideTokens.spaceMd),
+                const _SyncStepHeader(),
                 const Spacer(flex: 2),
                 if (state.phase == SyncPhase.error)
                   _ErrorBlock(message: state.error ?? '同步失败，请重试')
@@ -59,6 +62,55 @@ class SyncProgressScreen extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SyncStepHeader extends StatelessWidget {
+  const _SyncStepHeader();
+
+  static const _stepIndex = 2;
+  static const _totalSteps = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < _totalSteps; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Container(
+                width: i == _stepIndex ? 9 : 7,
+                height: i == _stepIndex ? 9 : 7,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: i < _stepIndex
+                      ? StrideTokens.accent
+                      : StrideTokens.surface,
+                  border: Border.all(
+                    color: i <= _stepIndex
+                        ? StrideTokens.accent
+                        : StrideTokens.border,
+                    width: i == _stepIndex ? 2 : 1,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+        const SizedBox(height: StrideTokens.spaceMd),
+        const Text(
+          '引导 · 3 / 4 · 同步数据',
+          style: TextStyle(
+            fontFamily: AppTypography.fontMono,
+            fontSize: StrideTokens.fs11,
+            color: StrideTokens.muted,
+            letterSpacing: 1.2,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -136,8 +188,7 @@ class _ErrorBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const Icon(Icons.error_outline,
-            size: 56, color: StrideTokens.danger),
+        const Icon(Icons.error_outline, size: 56, color: StrideTokens.danger),
         const SizedBox(height: StrideTokens.space2xl),
         Text(
           message,
@@ -177,9 +228,7 @@ class _StatsCard extends StatelessWidget {
       child: Row(
         children: [
           Expanded(child: _stat('活动', acts.toString())),
-          Container(
-            width: 1, height: 32, color: StrideTokens.border2,
-          ),
+          Container(width: 1, height: 32, color: StrideTokens.border2),
           Expanded(child: _stat('健康记录', health.toString())),
         ],
       ),

@@ -10,6 +10,10 @@ import '../../features_v2/health/pb_records_screen.dart';
 import '../../features_v2/health/pmc_screen.dart';
 import '../../features_v2/health/predictions_screen.dart';
 import '../../features_v2/health/trends_screen.dart';
+import '../../features/profile/notification_rationale_screen.dart';
+import '../../features/profile/notification_settings_screen.dart';
+import '../../features_v2/coach/coach_chat_screen.dart';
+import '../../features_v2/discover/discover_screen.dart';
 import '../../features_v2/home/home_screen.dart';
 import '../../features_v2/profile/profile_screen.dart';
 import '../../features_v2/auth/login_screen.dart';
@@ -278,6 +282,26 @@ final appRouterV2Provider = Provider<GoRouter>((ref) {
         path: RoutesV2.nutritionMeals,
         builder: (_, _) => const MealLogScreen(),
       ),
+      // Notification screens (carried over from the legacy router; pushed by
+      // the post-login bootstrap and the account drawer / profile page).
+      GoRoute(
+        path: '/notifications/rationale',
+        builder: (_, _) => const NotificationRationaleScreen(),
+      ),
+      GoRoute(
+        path: '/notifications/settings',
+        builder: (_, _) => const NotificationSettingsScreen(),
+      ),
+      // Non-tab full-page destinations (no bottom bar).
+      GoRoute(
+        path: RoutesV2.train,
+        builder: (_, _) => const WeekListScreen(),
+      ),
+      GoRoute(
+        path: RoutesV2.me,
+        builder: (_, _) => const ProfileScreen(),
+      ),
+      // 4 flat tabs: 跑者 / 发现 / 数据 / 教练.
       ShellRoute(
         builder: (_, _, child) => MainShellV2(child: child),
         routes: [
@@ -286,16 +310,16 @@ final appRouterV2Provider = Provider<GoRouter>((ref) {
             builder: (_, _) => const HomeScreen(),
           ),
           GoRoute(
-            path: RoutesV2.train,
-            builder: (_, _) => const WeekListScreen(),
+            path: RoutesV2.discover,
+            builder: (_, _) => const DiscoverScreen(),
           ),
           GoRoute(
             path: RoutesV2.data,
             builder: (_, _) => const HealthOverviewScreen(),
           ),
           GoRoute(
-            path: RoutesV2.me,
-            builder: (_, _) => const ProfileScreen(),
+            path: RoutesV2.coach,
+            builder: (_, _) => const CoachChatScreen(),
           ),
         ],
       ),

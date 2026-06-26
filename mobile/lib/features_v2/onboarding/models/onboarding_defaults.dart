@@ -11,7 +11,6 @@
 /// }
 /// ```
 class OnboardingDefaults {
-
   factory OnboardingDefaults.fromJson(Map<String, dynamic> json) {
     return OnboardingDefaults(
       suggestedRhr: (json['suggested_rhr'] as num?)?.toInt(),

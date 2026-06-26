@@ -737,6 +737,65 @@ class StrideApi {
     return _post<Map<String, dynamic>>('/api/$user/nutrition/meals', body: body);
   }
 
+  // ── Coach S3 daily Q&A ─────────────────────────────────────────────────
+  /// Send a daily Q&A message to the Coach Agent.
+  /// `POST /api/users/me/coach/conversations/qa/messages` — the server derives
+  /// the thread_id from user_id + today (Shanghai), so the client never sends
+  /// one. Returns (threadId, assistant text, iteration).
+  Future<({String threadId, String text, int iteration})> postCoachQaMessage(
+    String message,
+  ) async {
+    final r = await _post<Map<String, dynamic>>(
+      '/api/users/me/coach/conversations/qa/messages',
+      body: {'message': message},
+    );
+    return (
+      threadId: r['thread_id'] as String? ?? '',
+      text: _textFromParts(r['parts']),
+      iteration: (r['iteration'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Fetch the persisted history for a coach thread.
+  /// `GET /api/users/me/coach/threads/{threadId}/messages`. Returns a flat list
+  /// of (role, text) — assistant turns flatten their renderable text parts.
+  Future<List<({String role, String text})>> getCoachThread(
+    String threadId,
+  ) async {
+    final r = await _get<Map<String, dynamic>>(
+      '/api/users/me/coach/threads/$threadId/messages',
+    );
+    final raw = (r['messages'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    final out = <({String role, String text})>[];
+    for (final m in raw) {
+      final role = m['role'] as String? ?? 'assistant';
+      // Skip tool turns — not user-facing in the chat transcript.
+      if (role == 'tool') continue;
+      final content = (m['content'] as String?) ?? '';
+      final text = content.isNotEmpty ? content : _textFromParts(m['parts']);
+      if (text.trim().isEmpty) continue;
+      out.add((role: role, text: text));
+    }
+    return out;
+  }
+
+  /// Extract renderable text from a list of AssistantPart maps. Each part is
+  /// `{kind: text|reasoning|refusal|tool_meta, text?: ...}`; we keep `text` and
+  /// `refusal` kinds and join them. Reasoning / tool_meta are dropped.
+  static String _textFromParts(Object? parts) {
+    if (parts is! List) return '';
+    final buf = <String>[];
+    for (final p in parts) {
+      if (p is! Map) continue;
+      final kind = p['kind'] as String?;
+      if (kind == 'reasoning' || kind == 'tool_meta') continue;
+      final t = (p['text'] as String?) ?? (p['content'] as String?);
+      if (t != null && t.trim().isNotEmpty) buf.add(t);
+    }
+    return buf.join('\n\n');
+  }
+
   // ── Internals ──────────────────────────────────────────────────────────
   Future<T> _get<T>(String path, {Map<String, dynamic>? query}) async {
     final res = await _dio.get<T>(path, queryParameters: query);

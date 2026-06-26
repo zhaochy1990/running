@@ -10,6 +10,6 @@ import '../models/onboarding_defaults.dart';
 /// to fully blank inputs.
 final onboardingDefaultsProvider =
     FutureProvider.autoDispose<OnboardingDefaults>((ref) async {
-  final api = ref.watch(strideApiProvider);
-  return api.getOnboardingDefaults();
-});
+      final api = ref.watch(strideApiProvider);
+      return api.getOnboardingDefaults();
+    });
