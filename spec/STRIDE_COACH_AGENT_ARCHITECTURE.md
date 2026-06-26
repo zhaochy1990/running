@@ -18,7 +18,7 @@
 **非目标（本期不做）**
 
 - 主动教练 push（需触发设施，后置）。
-- **Safety Gate 安全闸 + `injury_safety` 专家**（§4.0 预留闸位，本期靠 Pattern Y 确认 + 专家 prompt 保守条款兜底）。
+- **Safety Gate 安全闸 + `injury_safety` 专家**（pipeline 预留闸位；本期靠 Pattern Y 逐条确认 + 专家 prompt 保守条款 + Memory Writer 持久化伤病兜底）。
 - 伤病**医学知识库**全量、营养/恢复/装备/比赛/酒店**导购**（P2–P4）。
 - 跨 agent 的远程 A2A 互操作（本期全在进程内；契约设计为**可日后投影到 A2A** 而不重定义）。
 - 长期记忆的**自动主题归类 / 多会话自动合并**（本期会话由用户显式新建；记忆是 athlete-global，不做 per-topic 分桶）。
@@ -53,7 +53,7 @@
   ▼
 状态更新：session 追加 + active_target + 待确认 diff + 长期记忆 upsert
 
-（预留闸位：安全预筛 Safety Gate 横切闸 —— **本期不做**，见 §4.0；本期安全底线 = Pattern Y 逐条确认 + 专家 prompt 保守条款）
+（预留闸位：安全预筛 Safety Gate 横切闸 —— **本期不做**，见 §1 非目标；本期安全底线 = Pattern Y 逐条确认 + 专家 prompt 保守条款）
 ```
 
 **agentic 边界（混合）**：LLM 只产出**结构化决策**（intent / plan / 文案），所有**执行 / 路由 / 安全 / 派发**是确定性代码。
@@ -130,22 +130,7 @@ class SpecialistResult(BaseModel):
 
 ## 4. 编排脑节点详解
 
-### 4.0 安全预筛 Safety Gate（横切闸）—— ⚠️ 本期不做（预留）
-
-> **决策（本期）**：不实现 Safety Gate 节点、不建 `injury_safety` 专家。原因：它是 guardrail 非核心价值，省一个 LLM 跳 + 整套触发词工程。
-
-设计意图（日后插回时按此实现，pipeline 已留闸位 ⓪ 与 ① 之间）：
-
-- **不是与"改课"并列的意图，而是优先级最高、能否决写操作的闸。**
-- 确定性关键词/正则 + 小模型分类：识别伤病、医疗、情绪危机 → 走安全道、`safety_locked=True` 锁掉本轮所有 proposal。
-
-**本期安全底线（无 Gate 时靠什么兜）**：
-
-1. **Pattern Y 逐条确认**：任何改课都是 proposal，用户确认才落地 → 无"AI 自动加量"的硬伤害路径。
-2. **专家 prompt 保守条款**：`status_insight` / `weekly_plan` / `master_plan` 的 system prompt 内置"用户提到伤病/疼痛/医疗时，给保守建议、不主动加量、必要时建议线下就医"。
-3. **Memory Writer 仍持久化伤病**（§4.5）：即便本轮无硬闸，伤病仍进长期记忆，后续规划注入规避。
-
-这是"human-in-the-loop 确认"级别的底线，对早期 MVP 够用；规模化或开放陌生用户前再把硬 Gate 插回 ⓪/① 之间。
+> Safety Gate 安全闸本期不做，pipeline 预留闸位（⓪ 与 ① 之间）；本期安全底线见 §1 非目标 / §7。
 
 ### 4.1 ① Resolver（意图 + 目标解析）
 
@@ -178,7 +163,7 @@ class SpecialistResult(BaseModel):
 - **LLM 结构化抽取**：扫本轮对话，产出 `MemoryWrite[]`（add/update/resolve），受 `AthleteMemory` schema 约束。
 - **确定性去重 / 合并**：与现有 active 记忆比对，重复不写、矛盾走 update（如"跟腱已恢复"→ 把旧伤 `status=resolved`）。
 - **透明回执**：写入伤病/约束类记忆时，Aggregator 在回复尾部带一句"已记住：…，后续计划会据此调整"，用户可纠正（下一轮"删掉这条"→ resolve）。
-- **本期是伤病的主要承接点**：Safety Gate 本期不做（§4.0），所以伤病信息主要靠 Writer 持久化 + 专家 prompt 保守条款兜底，而非硬闸。
+- **本期是伤病的主要承接点**：Safety Gate 本期不做（§1 非目标），所以伤病信息主要靠 Writer 持久化 + 专家 prompt 保守条款兜底，而非硬闸。
 
 ---
 
@@ -303,7 +288,7 @@ class AthleteMemory(BaseModel):
 | 多会话 + history 窗口化 | — | 🔴 每-scope 线程 | 地基改造（session 分线程）|
 | **长期记忆**（写萃取 + 读注入） | Memory Writer + Store | 🔴 无 | **新建**（Azure Table，注入 QA + 规划）|
 
-**MVP 推迟**：**Safety Gate 安全闸 + `injury_safety` 专家**（§4.0，本期靠 Pattern Y 确认 + 专家 prompt 保守条款兜底）· 伤病医学知识库（全量）· 营养/恢复/装备/比赛/酒店导购 · 主动 push · 社区 · 远程 A2A · 长期记忆的自动主题分桶/多会话合并。
+**MVP 推迟**：**Safety Gate 安全闸 + `injury_safety` 专家**（本期靠 Pattern Y 确认 + 专家 prompt 保守条款兜底）· 伤病医学知识库（全量）· 营养/恢复/装备/比赛/酒店导购 · 主动 push · 社区 · 远程 A2A · 长期记忆的自动主题分桶/多会话合并。
 
 ---
 
@@ -313,7 +298,7 @@ class AthleteMemory(BaseModel):
 
 - `src/coach/contracts/specialist.py` — `SpecialistCard` / `SpecialistTask` / `SpecialistResult` / `TargetRef`（core 层，纯 pydantic）。
 - `src/coach/contracts/memory.py` — `AthleteMemory` / `MemoryWrite`（core 层，纯 pydantic）。
-- `src/coach/graphs/orchestrator/` — 编排图：`memory_load.py` · `resolver.py` · `supervisor.py` · `aggregator.py` · `memory_writer.py` · `dispatcher.py` · `registry.py`。（`safety_gate.py` 本期不建，§4.0）
+- `src/coach/graphs/orchestrator/` — 编排图：`memory_load.py` · `resolver.py` · `supervisor.py` · `aggregator.py` · `memory_writer.py` · `dispatcher.py` · `registry.py`。（`safety_gate.py` 本期不建）
 - `src/coach/graphs/orchestrator/prompts/` — 各节点 system/user 分离 prompt（遵守 prompt role discipline）。
 - `src/stride_server/coach_adapters/athlete_memory_store.py` — 长期记忆 two-backend store（dev JSON / prod Azure Table，复用 `likes_store.py` pattern），adapters 层。
 - 新 endpoint `POST /api/users/me/coach/conversations/{session_id}/messages`（统一入口）+ 会话列表 endpoint 于 `routes/coach.py`。
@@ -339,7 +324,7 @@ class AthleteMemory(BaseModel):
 - **A2 周计划专家**：`weekly_plan` 接契约 + 补 2 占位工具；**删 plan_chat**。
 - **A3 赛季专家**：`plan_generation`（建）+ `master_plan`（改，实现 6 工具）。
 - **A4 长期记忆**：Memory Writer + `AthleteMemoryStore` + 注入规划（S1/S2 user prompt）+ 透明回执。
-- **（后置，非本期）安全道**：Safety Gate 横切闸 + `injury_safety` 专家 + 全链路写锁验证（§4.0）。
+- **（后置，非本期）安全道**：Safety Gate 横切闸 + `injury_safety` 专家 + 全链路写锁验证（见 §1 非目标）。
 
 每阶段以"端到端对话可跑 + 回归不变量通过"为完成线。
 
