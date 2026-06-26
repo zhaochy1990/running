@@ -246,7 +246,7 @@ class AthleteMemory(BaseModel):
     expires_at: str | None       # 软约束类记忆可设过期
 ```
 
-**写路径**：§4.6 Memory Writer 萃取 → 去重/合并 → `AthleteMemoryStore.upsert`。透明回执让用户可纠正。
+**写路径**：§4.5 Memory Writer 萃取 → 去重/合并 → `AthleteMemoryStore.upsert`。透明回执让用户可纠正。
 
 **读路径（注入）**——两个消费点，都进 **user prompt**（prompt-role-discipline：per-athlete 数据不进 system，否则毁缓存）：
 
@@ -255,10 +255,29 @@ class AthleteMemory(BaseModel):
 
 **与现有 `constraints` 的关系**：长期记忆是 `ConversationState.constraints` 的持久化上位来源；现有 inline constraints 收敛为"从 store 注入"，不再各处临时拼。
 
-### 5.4 状态分离（model-visible vs out-of-band）
+### 5.4 状态分离 & Turn 工作记忆生命周期
 
-- **model-visible**：对话 messages（喂 LLM）。
-- **out-of-band typed context**（不进 LLM 消息流）：`active_target`、`session_id`、`user_id`、预取数据、注入的 `AthleteMemory`、`SpecialistResult.artifacts`。对齐 OpenAI `RunContextWrapper[T]` / LangGraph 私有 channel。
+**两类状态（按是否喂给 LLM 分）**：
+
+- **model-visible**：对话 messages（喂 LLM）—— 即 session 会话记忆的自然语言轮次。
+- **out-of-band typed context**（结构化、节点间传、**不进 LLM 消息流**）：`active_target`、`session_id`、`user_id`、预取数据、注入的 `AthleteMemory`、各 `SpecialistResult`、`safety_locked`、正在攒的 `pending_proposals`。对齐 OpenAI `RunContextWrapper[T]` / LangGraph graph State / 私有 channel。
+
+**为什么分**：① 系统句柄（`user_id`/`plan_id`）是给代码用的，不污染 prompt；结构化数据走 typed channel 不 stringify。② out-of-band 不在 message history 里 → §5.2 摘要**永远碰不到它**，`active_target` 这类零损失（这是"摘要可 lossy"成立的一半，另一半是事实进了长期记忆）。
+
+**Turn 工作记忆生命周期**：Turn 工作记忆 = 处理"这一条用户消息"时的草稿台，生命周期 = 一次 pipeline（⓪→⑤）。**大部分临时、用完即弃；少数字段 turn 末提升进 session（`ConversationState`）带往下一轮。**
+
+| 字段 | turn 末 | 理由 |
+|---|---|---|
+| `active_target` | **提升** | 下一轮"它/这个"指代消解要用（指代消解） |
+| `pending_proposals` | **提升** | 用户下一轮才确认/拒；横跨多轮 |
+| `injected_memories`（本轮注入的记忆 id） | **提升** | 留痕/可追溯（这条建议依据哪些记忆） |
+| `safety_locked` | **提升**（按需） | 安全态可能需续到澄清完成 |
+| 预取的 read-tool 数据 | 丢弃 | 下一轮按需重取；缓存在 toolkit 层 |
+| 各 `SpecialistResult`（reply_fragment/中间过程） | 丢弃 | 已被 Aggregator 合进 model-visible 回复 |
+| `SpecialistResult.artifacts` 大数据 | 丢弃（引用） | 重数据走外部引用，不进会话状态 |
+| 本轮 intent / call plan | 丢弃 | 派生量，下一轮重算 |
+
+口诀：**工作记忆是本轮的全部临时杂物，收尾只挑"下一轮还要用的"塞进 session，其余清空。**
 
 ---
 
