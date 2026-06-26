@@ -13,12 +13,11 @@ import 'package:stride/features_v2/home/providers/home_provider.dart';
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
 const _ring = StatusRing(
-  fatigue: 42,
-  fatigueBand: 'normal',
   tsb: -8.5,
   tsbBand: 'productive',
   loadRatio: 0.95,
-  loadState: 'Optimal',
+  chronicLoad: 55.0,
+  acuteLoad: 52.0,
 );
 
 const _weeklyStats = WeeklyStats(
@@ -68,12 +67,7 @@ Future<void> _pump(
   String? currentUserId = 'user-001',
 }) async {
   final router = GoRouter(
-    routes: [
-      GoRoute(
-        path: '/',
-        builder: (_, _) => const HomeScreen(),
-      ),
-    ],
+    routes: [GoRoute(path: '/', builder: (_, _) => const HomeScreen())],
   );
 
   await tester.pumpWidget(
@@ -92,8 +86,10 @@ Future<void> _pump(
 Future<HomeData> _resolve(AsyncValue<HomeData> state) {
   return switch (state) {
     AsyncData(:final value) => Future.value(value),
-    AsyncError(:final error, :final stackTrace) =>
-      Future.error(error, stackTrace),
+    AsyncError(:final error, :final stackTrace) => Future.error(
+      error,
+      stackTrace,
+    ),
     _ => Completer<HomeData>().future, // stays loading — never completes
   };
 }
@@ -104,10 +100,10 @@ void main() {
   testWidgets('renders status ring card', (tester) async {
     await _pump(tester, AsyncData(_makeHomeData()));
 
-    // Ring labels
-    expect(find.text('疲劳'), findsOneWidget);
+    // Ring labels — STRIDE form / chronic load / load ratio (no fatigue).
     expect(find.text('TSB'), findsOneWidget);
-    expect(find.text('负荷'), findsOneWidget);
+    expect(find.text('长期负荷'), findsOneWidget);
+    expect(find.text('负荷比'), findsOneWidget);
   });
 
   testWidgets('renders weekly stats section', (tester) async {
@@ -142,22 +138,19 @@ void main() {
     // Use a router that also registers the goal route so GoRouter doesn't throw.
     final router = GoRouter(
       routes: [
-        GoRoute(
-          path: '/',
-          builder: (_, _) => const HomeScreen(),
-        ),
+        GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
         GoRoute(
           path: '/v2/training-plan/goal',
-          builder: (_, _) =>
-              const Scaffold(body: Text('goal screen')),
+          builder: (_, _) => const Scaffold(body: Text('goal screen')),
         ),
       ],
     );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          homeProvider
-              .overrideWith((_) => Future.value(_makeHomeData(planState: 'none'))),
+          homeProvider.overrideWith(
+            (_) => Future.value(_makeHomeData(planState: 'none')),
+          ),
           currentUserIdProvider.overrideWithValue('user-001'),
         ],
         child: MaterialApp.router(routerConfig: router),
@@ -180,16 +173,12 @@ void main() {
   testWidgets('loading state shows CircularProgressIndicator', (tester) async {
     // Use pump (not pumpAndSettle) so loading spinner stays
     final router = GoRouter(
-      routes: [
-        GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
-      ],
+      routes: [GoRoute(path: '/', builder: (_, _) => const HomeScreen())],
     );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          homeProvider.overrideWith(
-            (_) => Completer<HomeData>().future,
-          ),
+          homeProvider.overrideWith((_) => Completer<HomeData>().future),
           currentUserIdProvider.overrideWithValue('user-001'),
         ],
         child: MaterialApp.router(routerConfig: router),
@@ -213,10 +202,7 @@ void main() {
     String? navigatedTo;
     final router = GoRouter(
       routes: [
-        GoRoute(
-          path: '/',
-          builder: (_, _) => const HomeScreen(),
-        ),
+        GoRoute(path: '/', builder: (_, _) => const HomeScreen()),
         GoRoute(
           path: '/v2/activity/:id',
           builder: (_, state) {

@@ -1,12 +1,13 @@
 /// E1 — 健康概览 (Health Overview).
 ///
-/// Displays 4 metric cards in a 2×2 grid (RHR, HRV, Fatigue, Load),
-/// a sleep mini-bar-chart, and a static AI-interpretation card.
+/// Displays 3 metric cards (RHR, HRV — universal sensor data — and a STRIDE
+/// training-load card) and a static AI-interpretation card. No
+/// vendor-proprietary fatigue / load-state scores.
 ///
-/// Data from `GET /api/{user}/health?days=14` via [healthOverviewProvider].
+/// Data from `GET /api/{user}/health?days=14` + `/pmc` via
+/// [healthOverviewProvider].
 library;
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -44,8 +45,7 @@ class HealthOverviewScreen extends ConsumerWidget {
             ),
             Expanded(
               child: async.when(
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => _ErrorView(message: e.toString()),
                 data: (overview) => _OverviewBody(overview: overview),
               ),
@@ -73,8 +73,6 @@ class _OverviewBody extends StatelessWidget {
         children: [
           _MetricGrid(overview: overview),
           const SizedBox(height: StrideTokens.spaceLg),
-          _SleepCard(overview: overview),
-          const SizedBox(height: StrideTokens.spaceLg),
           _AiInterpretCard(overview: overview),
           const SizedBox(height: StrideTokens.spaceXl),
           const _DetailEntries(),
@@ -99,8 +97,9 @@ class _MetricGrid extends StatelessWidget {
     final rhrPillVariant = _rhrPillVariant(overview.rhrBaselineDiff);
     final rhrPillText = _rhrPillText(overview.rhrBaselineDiff);
 
-    final hrvValue =
-        overview.hrv != null ? overview.hrv!.toStringAsFixed(0) : '—';
+    final hrvValue = overview.hrv != null
+        ? overview.hrv!.toStringAsFixed(0)
+        : '—';
     final hrvUnit = overview.hrv != null ? 'ms' : null;
     final String? hrvSubtitle;
     if (overview.hrvLow != null && overview.hrvHigh != null) {
@@ -110,15 +109,18 @@ class _MetricGrid extends StatelessWidget {
       hrvSubtitle = null;
     }
 
-    final fatigueValue =
-        overview.fatigue != null ? overview.fatigue!.toStringAsFixed(0) : '—';
-    final fatiguePill = overview.fatigueBand.label;
-    final fatiguePillVariant = _fatiguePillVariant(overview.fatigueBand);
-
+    // STRIDE training load — acute/chronic ratio (ACWR), with form pill and
+    // ATL/CTL subtitle. All values computed by STRIDE, not COROS.
     final loadValue = overview.loadRatio != null
         ? overview.loadRatio!.toStringAsFixed(2)
         : '—';
-    final loadStateText = overview.loadState;
+    final loadPillText = _loadRatioPillText(overview.loadRatio);
+    final loadPillVariant = _loadRatioPillVariant(overview.loadRatio);
+    final String? loadSubtitle = _loadSubtitle(
+      overview.acuteLoad,
+      overview.chronicLoad,
+      overview.form,
+    );
 
     return GridView(
       shrinkWrap: true,
@@ -130,7 +132,7 @@ class _MetricGrid extends StatelessWidget {
         childAspectRatio: 1.1,
       ),
       children: [
-        // Card 1 — RHR
+        // Card 1 — RHR (universal sensor)
         MetricCard(
           title: '静息心率',
           value: rhrValue,
@@ -140,32 +142,62 @@ class _MetricGrid extends StatelessWidget {
           delta: overview.rhrBaselineDiff,
           deltaPositiveIsBad: true,
         ),
-        // Card 2 — HRV
+        // Card 2 — HRV (universal sensor)
         MetricCard(
           title: '睡眠 HRV',
           value: hrvValue,
           unit: hrvUnit,
           subtitle: hrvSubtitle,
           pill: _hrvPillText(overview.hrv, overview.hrvLow, overview.hrvHigh),
-          pillVariant:
-              _hrvPillVariant(overview.hrv, overview.hrvLow, overview.hrvHigh),
+          pillVariant: _hrvPillVariant(
+            overview.hrv,
+            overview.hrvLow,
+            overview.hrvHigh,
+          ),
         ),
-        // Card 3 — Fatigue
-        MetricCard(
-          title: '疲劳值',
-          value: fatigueValue,
-          pill: fatiguePill,
-          pillVariant: fatiguePillVariant,
-        ),
-        // Card 4 — Training load
+        // Card 3 — Training load (STRIDE-computed)
         MetricCard(
           title: '训练负荷',
           value: loadValue,
           unit: 'ACWR',
-          subtitle: loadStateText,
+          subtitle: loadSubtitle,
+          pill: loadPillText,
+          pillVariant: loadPillVariant,
         ),
       ],
     );
+  }
+
+  static String? _loadSubtitle(double? acute, double? chronic, double? form) {
+    if (acute != null && chronic != null) {
+      final parts =
+          'ATL ${acute.toStringAsFixed(0)} · CTL ${chronic.toStringAsFixed(0)}';
+      if (form != null) {
+        final sign = form >= 0 ? '+' : '';
+        return '$parts · Form $sign${form.toStringAsFixed(0)}';
+      }
+      return parts;
+    }
+    if (form != null) {
+      final sign = form >= 0 ? '+' : '';
+      return 'Form $sign${form.toStringAsFixed(0)}';
+    }
+    return null;
+  }
+
+  // ACWR (STRIDE acute/chronic) → display band. Sweet spot 0.8–1.3.
+  static String? _loadRatioPillText(double? ratio) {
+    if (ratio == null) return null;
+    if (ratio < 0.8) return '减量';
+    if (ratio <= 1.3) return '适宜';
+    return '偏高';
+  }
+
+  static PillVariant _loadRatioPillVariant(double? ratio) {
+    if (ratio == null) return PillVariant.muted;
+    if (ratio < 0.8) return PillVariant.warn;
+    if (ratio <= 1.3) return PillVariant.green;
+    return PillVariant.danger;
   }
 
   static PillVariant _rhrPillVariant(int? diff) {
@@ -182,19 +214,6 @@ class _MetricGrid extends StatelessWidget {
     return '偏高';
   }
 
-  static PillVariant _fatiguePillVariant(FatigueBand band) {
-    switch (band) {
-      case FatigueBand.recovered:
-        return PillVariant.green;
-      case FatigueBand.normal:
-        return PillVariant.muted;
-      case FatigueBand.fatigued:
-        return PillVariant.warn;
-      case FatigueBand.high:
-        return PillVariant.danger;
-    }
-  }
-
   static String? _hrvPillText(double? hrv, double? low, double? high) {
     if (hrv == null) return null;
     if (low != null && hrv < low) return '偏低';
@@ -202,156 +221,11 @@ class _MetricGrid extends StatelessWidget {
     return '区间内';
   }
 
-  static PillVariant _hrvPillVariant(
-      double? hrv, double? low, double? high) {
+  static PillVariant _hrvPillVariant(double? hrv, double? low, double? high) {
     if (hrv == null) return PillVariant.muted;
     if (low != null && hrv < low) return PillVariant.warn;
     if (high != null && hrv > high) return PillVariant.warn;
     return PillVariant.green;
-  }
-}
-
-// ── Sleep card ────────────────────────────────────────────────────────────────
-
-class _SleepCard extends StatelessWidget {
-  const _SleepCard({required this.overview});
-
-  final HealthOverview overview;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(StrideTokens.spaceLg),
-      decoration: BoxDecoration(
-        color: StrideTokens.surface,
-        borderRadius: BorderRadius.circular(StrideTokens.radiusMd),
-        border: Border.all(color: StrideTokens.border2),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Text(
-                '睡眠时长',
-                style: TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs14,
-                  fontWeight: FontWeight.w500,
-                  color: StrideTokens.fg,
-                ),
-              ),
-              Spacer(),
-              StridePill(
-                text: '近 7 天',
-                variant: PillVariant.muted,
-                dense: true,
-              ),
-            ],
-          ),
-          const SizedBox(height: StrideTokens.spaceMd),
-          if (overview.sleepHistory == null || overview.sleepHistory!.isEmpty)
-            _SleepPlaceholder()
-          else
-            _SleepBarChart(sleepHistory: overview.sleepHistory!),
-        ],
-      ),
-    );
-  }
-}
-
-class _SleepPlaceholder extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 80,
-      decoration: BoxDecoration(
-        color: StrideTokens.bg,
-        borderRadius: BorderRadius.circular(StrideTokens.radiusSm),
-      ),
-      child: const Center(
-        child: Text(
-          'v1.x 即将支持睡眠时长趋势',
-          style: TextStyle(
-            fontFamily: AppTypography.fontSans,
-            fontSize: StrideTokens.fs12,
-            color: StrideTokens.muted,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SleepBarChart extends StatelessWidget {
-  const _SleepBarChart({required this.sleepHistory});
-
-  final List<double> sleepHistory;
-
-  @override
-  Widget build(BuildContext context) {
-    // Convert seconds to hours for display.
-    final hoursData = sleepHistory.map((s) => s / 3600.0).toList();
-    final maxVal = hoursData.reduce((a, b) => a > b ? a : b);
-    final displayMax = maxVal > 0 ? (maxVal * 1.2).clamp(4.0, 12.0) : 8.0;
-
-    return SizedBox(
-      height: 100,
-      child: BarChart(
-        BarChartData(
-          maxY: displayMax,
-          minY: 0,
-          gridData: const FlGridData(show: false),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            leftTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  final labels = ['一', '二', '三', '四', '五', '六', '日'];
-                  final idx = value.toInt();
-                  if (idx < 0 || idx >= labels.length) return const SizedBox();
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      labels[idx],
-                      style: const TextStyle(
-                        fontFamily: AppTypography.fontSans,
-                        fontSize: StrideTokens.fs10,
-                        color: StrideTokens.muted,
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          barGroups: List.generate(hoursData.length, (i) {
-            return BarChartGroupData(
-              x: i,
-              barRods: [
-                BarChartRodData(
-                  toY: hoursData[i],
-                  width: 18,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(4),
-                  ),
-                  color: hoursData[i] < 6
-                      ? StrideTokens.warn.withAlpha(204)
-                      : StrideTokens.accent.withAlpha(204),
-                ),
-              ],
-            );
-          }),
-        ),
-      ),
-    );
   }
 }
 
@@ -362,17 +236,20 @@ class _AiInterpretCard extends StatelessWidget {
 
   final HealthOverview overview;
 
+  // Interpretation driven by STRIDE's acute/chronic load ratio (ACWR),
+  // not vendor fatigue scores.
   String get _interpretation {
-    switch (overview.fatigueBand) {
-      case FatigueBand.recovered:
-        return '状态良好，当前疲劳水平低，可按计划正常训练。注意保持睡眠质量，维持良好状态。';
-      case FatigueBand.normal:
-        return '状态正常，疲劳处于合理范围。可继续执行计划，注意训练后的恢复和营养补充。';
-      case FatigueBand.fatigued:
-        return '疲劳有所积累，建议适当降低本周训练量（10-20%），并增加睡眠时间和蛋白质摄入。';
-      case FatigueBand.high:
-        return '疲劳较高，建议主动恢复（低强度跑或完全休息），避免高强度训练，优先保证每晚 7-9 小时睡眠。';
+    final ratio = overview.loadRatio;
+    if (ratio == null) {
+      return '完成更多训练后，将根据近期训练负荷给出个性化解读。注意保持睡眠质量与恢复。';
     }
+    if (ratio < 0.8) {
+      return '近期负荷低于慢性基线，处于减量/恢复区间。状态回升，可按计划逐步恢复训练量。';
+    }
+    if (ratio <= 1.3) {
+      return '急性与慢性负荷比处于适宜区间，训练压力可控、体能正在积累。确保每晚充足睡眠与蛋白质摄入。';
+    }
+    return '急性负荷明显高于慢性基线，负荷偏高有受伤风险。建议适当降低本周训练量（10-20%），增加恢复与睡眠。';
   }
 
   @override
@@ -389,11 +266,7 @@ class _AiInterpretCard extends StatelessWidget {
         children: [
           const Row(
             children: [
-              Icon(
-                Icons.auto_awesome,
-                size: 16,
-                color: StrideTokens.accent,
-              ),
+              Icon(Icons.auto_awesome, size: 16, color: StrideTokens.accent),
               SizedBox(width: StrideTokens.spaceXs),
               Text(
                 'AI 解读',
@@ -443,8 +316,11 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline,
-                size: 40, color: StrideTokens.muted),
+            const Icon(
+              Icons.error_outline,
+              size: 40,
+              color: StrideTokens.muted,
+            ),
             const SizedBox(height: StrideTokens.spaceMd),
             const Text(
               '加载失败',
@@ -489,7 +365,7 @@ class _DetailEntries extends StatelessWidget {
       const _EntryItem(
         icon: Icons.ssid_chart,
         title: '趋势详情',
-        subtitle: '疲劳 / HRV / RHR / 睡眠 / 负荷',
+        subtitle: 'HRV / RHR / 睡眠 / 负荷',
         route: RoutesV2.dataTrends,
       ),
       const _EntryItem(
@@ -596,7 +472,11 @@ class _EntryTile extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: StrideTokens.muted),
+            const Icon(
+              Icons.chevron_right,
+              size: 18,
+              color: StrideTokens.muted,
+            ),
           ],
         ),
       ),

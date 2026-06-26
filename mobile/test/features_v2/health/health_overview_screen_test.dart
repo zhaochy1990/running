@@ -15,9 +15,7 @@ Future<void> _pump(
 ) async {
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [
-        healthOverviewProvider.overrideWith((_) => _resolve(state)),
-      ],
+      overrides: [healthOverviewProvider.overrideWith((_) => _resolve(state))],
       child: const MaterialApp(home: HealthOverviewScreen()),
     ),
   );
@@ -28,8 +26,10 @@ Future<void> _pump(
 Future<HealthOverview> _resolve(AsyncValue<HealthOverview> state) {
   return switch (state) {
     AsyncData(:final value) => Future.value(value),
-    AsyncError(:final error, :final stackTrace) =>
-      Future.error(error, stackTrace),
+    AsyncError(:final error, :final stackTrace) => Future.error(
+      error,
+      stackTrace,
+    ),
     // AsyncLoading — never completes so the screen stays in loading state.
     _ => Completer<HealthOverview>().future,
   };
@@ -41,51 +41,50 @@ const _fullOverview = HealthOverview(
   hrv: 48.0,
   hrvLow: 40.0,
   hrvHigh: 65.0,
-  fatigue: 42.0,
-  fatigueBand: FatigueBand.normal,
-  loadState: 'Optimal',
+  form: -3.0,
   loadRatio: 0.95,
-  sleepHistory: [7.0 * 3600, 6.5 * 3600, 8.0 * 3600, 7.5 * 3600, 7.0 * 3600, 6.0 * 3600, 7.2 * 3600],
+  acuteLoad: 52.0,
+  chronicLoad: 55.0,
   dataDate: '20260512',
 );
 
 void main() {
-  testWidgets('renders 4 metric card titles from full data', (tester) async {
+  testWidgets('renders 3 metric card titles from full data', (tester) async {
     await _pump(tester, const AsyncData(_fullOverview));
 
     expect(find.text('静息心率'), findsOneWidget);
     expect(find.text('睡眠 HRV'), findsOneWidget);
-    expect(find.text('疲劳值'), findsOneWidget);
+    // STRIDE training-load card; no vendor 疲劳值 card.
     expect(find.text('训练负荷'), findsOneWidget);
+    expect(find.text('疲劳值'), findsNothing);
   });
 
   testWidgets('renders metric values from full data', (tester) async {
     await _pump(tester, const AsyncData(_fullOverview));
 
-    expect(find.text('52'), findsOneWidget);  // RHR
-    expect(find.text('48'), findsOneWidget);  // HRV
-    expect(find.text('42'), findsOneWidget);  // Fatigue
-    expect(find.text('0.95'), findsOneWidget); // Load ratio
+    expect(find.text('52'), findsOneWidget); // RHR
+    expect(find.text('48'), findsOneWidget); // HRV
+    expect(find.text('0.95'), findsOneWidget); // STRIDE load ratio (ACWR)
   });
 
-  testWidgets('fatigue=65 shows 高疲劳 pill', (tester) async {
+  testWidgets('STRIDE load card shows ATL/CTL subtitle', (tester) async {
+    await _pump(tester, const AsyncData(_fullOverview));
+
+    // STRIDE acute/chronic load surfaced in the subtitle.
+    expect(find.textContaining('ATL 52'), findsOneWidget);
+    expect(find.textContaining('CTL 55'), findsOneWidget);
+  });
+
+  testWidgets('high load ratio shows 偏高 pill', (tester) async {
     const overview = HealthOverview(
-      fatigue: 65.0,
-      fatigueBand: FatigueBand.high,
+      loadRatio: 1.5,
+      acuteLoad: 75.0,
+      chronicLoad: 50.0,
+      form: -25.0,
     );
     await _pump(tester, const AsyncData(overview));
 
-    expect(find.text('高疲劳'), findsOneWidget);
-  });
-
-  testWidgets('fatigue < 40 shows 已恢复 pill', (tester) async {
-    const overview = HealthOverview(
-      fatigue: 35.0,
-      fatigueBand: FatigueBand.recovered,
-    );
-    await _pump(tester, const AsyncData(overview));
-
-    expect(find.text('已恢复'), findsOneWidget);
+    expect(find.text('偏高'), findsOneWidget);
   });
 
   testWidgets('loading state shows CircularProgressIndicator', (tester) async {
@@ -116,22 +115,6 @@ void main() {
     await tester.pump();
 
     expect(find.text('加载失败'), findsOneWidget);
-  });
-
-  testWidgets('no sleep data shows placeholder text', (tester) async {
-    const overview = HealthOverview(
-      fatigueBand: FatigueBand.normal,
-      sleepHistory: null,
-    );
-    await _pump(tester, const AsyncData(overview));
-
-    // Cards may be below the fold in a 600px test viewport — scroll down.
-    await tester.scrollUntilVisible(
-      find.textContaining('v1.x 即将支持'),
-      200.0,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(find.textContaining('v1.x 即将支持'), findsOneWidget);
   });
 
   testWidgets('AI interpret card visible', (tester) async {

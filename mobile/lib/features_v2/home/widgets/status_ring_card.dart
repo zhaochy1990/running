@@ -29,14 +29,7 @@ class StatusRingCard extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _RingItem(
-            label: '疲劳',
-            value: ring.fatigue.toString(),
-            fraction: (ring.fatigue / 100).clamp(0.0, 1.0),
-            color: _fatigueColor(ring.fatigueBand),
-            pillText: _fatigueBandLabel(ring.fatigueBand),
-            pillVariant: _fatiguePillVariant(ring.fatigueBand),
-          ),
+          // STRIDE form (chronic − acute).
           _RingItem(
             label: 'TSB',
             value: ring.tsb.toStringAsFixed(1),
@@ -45,13 +38,24 @@ class StatusRingCard extends StatelessWidget {
             pillText: _tsbBandLabel(ring.tsbBand),
             pillVariant: _tsbPillVariant(ring.tsbBand),
           ),
+          // STRIDE chronic load (CTL).
+          if (ring.chronicLoad != null)
+            _RingItem(
+              label: '长期负荷',
+              value: ring.chronicLoad!.toStringAsFixed(0),
+              fraction: (ring.chronicLoad! / 100).clamp(0.0, 1.0),
+              color: StrideTokens.accent,
+              pillText: 'CTL',
+              pillVariant: PillVariant.muted,
+            ),
+          // STRIDE acute/chronic ratio.
           _RingItem(
-            label: '负荷',
+            label: '负荷比',
             value: ring.loadRatio.toStringAsFixed(2),
             fraction: (ring.loadRatio / 1.5).clamp(0.0, 1.0),
-            color: _loadColor(ring.loadState),
-            pillText: ring.loadState,
-            pillVariant: _loadPillVariant(ring.loadState),
+            color: _tsbColor(ring.tsbBand),
+            pillText: _tsbBandLabel(ring.tsbBand),
+            pillVariant: _tsbPillVariant(ring.tsbBand),
           ),
         ],
       ),
@@ -63,19 +67,6 @@ class StatusRingCard extends StatelessWidget {
   double _tsbFraction(double tsb) {
     // Map tsb range [-40, +30] → [0, 1]
     return ((tsb + 40) / 70).clamp(0.0, 1.0);
-  }
-
-  Color _fatigueColor(String band) {
-    switch (band) {
-      case 'recovered':
-        return StrideTokens.accent;
-      case 'fatigued':
-        return StrideTokens.warn;
-      case 'high':
-        return StrideTokens.danger;
-      default:
-        return StrideTokens.muted2;
-    }
   }
 
   Color _tsbColor(String band) {
@@ -90,34 +81,6 @@ class StatusRingCard extends StatelessWidget {
         return StrideTokens.warn;
       default:
         return StrideTokens.muted2;
-    }
-  }
-
-  Color _loadColor(String state) {
-    switch (state.toLowerCase()) {
-      case 'optimal':
-        return StrideTokens.accent;
-      case 'high':
-        return StrideTokens.warn;
-      case 'very high':
-        return StrideTokens.danger;
-      default:
-        return StrideTokens.muted2;
-    }
-  }
-
-  String _fatigueBandLabel(String band) {
-    switch (band) {
-      case 'recovered':
-        return '已恢复';
-      case 'normal':
-        return '正常';
-      case 'fatigued':
-        return '疲劳';
-      case 'high':
-        return '高疲劳';
-      default:
-        return band;
     }
   }
 
@@ -138,19 +101,6 @@ class StatusRingCard extends StatelessWidget {
     }
   }
 
-  PillVariant _fatiguePillVariant(String band) {
-    switch (band) {
-      case 'recovered':
-        return PillVariant.green;
-      case 'fatigued':
-        return PillVariant.warn;
-      case 'high':
-        return PillVariant.danger;
-      default:
-        return PillVariant.muted;
-    }
-  }
-
   PillVariant _tsbPillVariant(String band) {
     switch (band) {
       case 'race_ready':
@@ -165,18 +115,6 @@ class StatusRingCard extends StatelessWidget {
     }
   }
 
-  PillVariant _loadPillVariant(String state) {
-    switch (state.toLowerCase()) {
-      case 'optimal':
-        return PillVariant.green;
-      case 'high':
-        return PillVariant.warn;
-      case 'very high':
-        return PillVariant.danger;
-      default:
-        return PillVariant.muted;
-    }
-  }
 }
 
 class _RingItem extends StatelessWidget {

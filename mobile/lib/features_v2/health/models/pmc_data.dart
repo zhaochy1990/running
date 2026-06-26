@@ -8,14 +8,17 @@ library;
 import '../../../data/models/health.dart';
 
 /// One data-point on the PMC chart.
+///
+/// ATL/CTL are STRIDE-computed acute/chronic load (from `daily_training_load`),
+/// NOT COROS `ati/cti`. TSB (form) = CTL − ATL, also STRIDE-derived.
 class PmcPoint {
-
-  factory PmcPoint.fromRecord(PMCRecord r) => PmcPoint(
-        date: r.date,
-        atl: r.ati?.toDouble() ?? 0.0,
-        ctl: r.cti?.toDouble() ?? 0.0,
-        tsb: r.tsb.toDouble(),
-      );
+  factory PmcPoint.fromStride(PMCStrideRecord r) {
+    final atl = r.acuteLoad?.toDouble() ?? 0.0;
+    final ctl = r.chronicLoad?.toDouble() ?? 0.0;
+    // Prefer the stored STRIDE form; fall back to chronic − acute.
+    final tsb = r.form?.toDouble() ?? (ctl - atl);
+    return PmcPoint(date: r.date, atl: atl, ctl: ctl, tsb: tsb);
+  }
   const PmcPoint({
     required this.date,
     required this.atl,
@@ -26,23 +29,23 @@ class PmcPoint {
   /// ISO date string, e.g. "2026-05-12".
   final String date;
 
-  /// Acute Training Load (ATI).
+  /// STRIDE acute load (ATL).
   final double atl;
 
-  /// Chronic Training Index (CTL).
+  /// STRIDE chronic load (CTL).
   final double ctl;
 
-  /// Training Stress Balance = CTL - ATL.
+  /// STRIDE form (Training Stress Balance) = CTL − ATL.
   final double tsb;
 }
 
 /// TSB zone classification for display.
 enum TsbZone {
-  raceReady,    // TSB  10 ..  25
+  raceReady, // TSB  10 ..  25
   transitional, // TSB -10 ..  10
-  productive,   // TSB -30 .. -10
-  overload,     // TSB      < -30
-  detraining;   // TSB       > 25
+  productive, // TSB -30 .. -10
+  overload, // TSB      < -30
+  detraining; // TSB       > 25
 
   static TsbZone from(double tsb) {
     if (tsb > 25) return TsbZone.detraining;
@@ -85,12 +88,17 @@ enum TsbZone {
 
 /// Aggregated summary for the current state.
 class PmcSummary {
-
-  factory PmcSummary.fromBackend(PMCSummary s) {
-    final tsb = s.currentTsb?.toDouble();
+  /// Build the summary from STRIDE-computed values (`stride_summary`).
+  /// TSB/form, ATL, CTL all come from STRIDE — not COROS ati/cti.
+  factory PmcSummary.fromStride(PMCStrideSummary s) {
+    final atl = s.currentAcuteLoad?.toDouble();
+    final ctl = s.currentChronicLoad?.toDouble();
+    final tsb =
+        s.currentForm?.toDouble() ??
+        ((atl != null && ctl != null) ? ctl - atl : null);
     return PmcSummary(
-      currentAtl: s.currentAti?.toDouble(),
-      currentCtl: s.currentCti?.toDouble(),
+      currentAtl: atl,
+      currentCtl: ctl,
       currentTsb: tsb,
       tsbZone: tsb != null ? TsbZone.from(tsb) : null,
     );

@@ -1,6 +1,9 @@
 /// E3 — 趋势详情屏幕 (Health Trends).
 ///
-/// Supports 5 dimensions (疲劳/HRV/RHR/睡眠/负荷) × 3 time ranges (7/30/90天).
+/// Supports 2 universal-sensor dimensions (HRV/RHR) × 3 time ranges
+/// (7/30/90天). Vendor-proprietary fatigue and COROS training_load_ratio
+/// series are intentionally excluded. (COROS does not expose sleep duration
+/// via its API, so no 睡眠 dimension.)
 /// Data from `GET /api/{user}/health?days=N` via [trendsProvider].
 library;
 
@@ -21,70 +24,42 @@ import 'providers/trends_provider.dart';
 // ── Dimension config ──────────────────────────────────────────────────────────
 
 enum _TrendDim {
-  fatigue,
   hrv,
-  rhr,
-  sleep,
-  load;
+  rhr;
 
   String get label {
     switch (this) {
-      case _TrendDim.fatigue:
-        return '疲劳';
       case _TrendDim.hrv:
         return 'HRV';
       case _TrendDim.rhr:
         return 'RHR';
-      case _TrendDim.sleep:
-        return '睡眠';
-      case _TrendDim.load:
-        return '负荷';
     }
   }
 
   String get unit {
     switch (this) {
-      case _TrendDim.fatigue:
-        return '分';
       case _TrendDim.hrv:
         return 'ms';
       case _TrendDim.rhr:
         return 'bpm';
-      case _TrendDim.sleep:
-        return 'h';
-      case _TrendDim.load:
-        return 'ACWR';
     }
   }
 
   double? extract(HealthRecord r) {
     switch (this) {
-      case _TrendDim.fatigue:
-        return r.fatigue?.toDouble();
       case _TrendDim.hrv:
         return null; // hrv is in snapshot, not per-record; skip
       case _TrendDim.rhr:
         return r.rhr?.toDouble();
-      case _TrendDim.sleep:
-        final s = r.sleepTotalS?.toDouble();
-        return s != null ? s / 3600.0 : null;
-      case _TrendDim.load:
-        return r.trainingLoadRatio?.toDouble();
     }
   }
 
   String format(double v) {
     switch (this) {
-      case _TrendDim.fatigue:
-        return v.toStringAsFixed(0);
       case _TrendDim.hrv:
         return v.toStringAsFixed(0);
       case _TrendDim.rhr:
         return v.toStringAsFixed(0);
-      case _TrendDim.sleep:
-        return v.toStringAsFixed(1);
-      case _TrendDim.load:
-        return v.toStringAsFixed(2);
     }
   }
 }
@@ -115,10 +90,7 @@ class _TrendsScreenState extends ConsumerState<TrendsScreen> {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      appBar: const StrideTopBar(
-        title: '趋势详情',
-        actions: [SyncIconButton()],
-      ),
+      appBar: const StrideTopBar(title: '趋势详情', actions: [SyncIconButton()]),
       body: Column(
         children: [
           // ── Dimension seg ─────────────────────────────────────────────────
@@ -138,7 +110,9 @@ class _TrendsScreenState extends ConsumerState<TrendsScreen> {
           const SizedBox(height: StrideTokens.spaceSm),
           // ── Range seg ─────────────────────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: StrideTokens.spaceLg),
+            padding: const EdgeInsets.symmetric(
+              horizontal: StrideTokens.spaceLg,
+            ),
             child: StrideSegControl(
               options: _kRangeLabels,
               selectedIndex: _rangeIndex,
@@ -185,9 +159,9 @@ class _TrendsBody extends StatelessWidget {
     // Compute stats.
     final nonNull = values.whereType<double>().toList();
     final current = nonNull.isNotEmpty ? nonNull.last : null;
-    final avg7 = _avg(values.length > 7
-        ? values.sublist(values.length - 7)
-        : values);
+    final avg7 = _avg(
+      values.length > 7 ? values.sublist(values.length - 7) : values,
+    );
     final trend = _trendArrow(values);
 
     return StrideRefreshable<List<HealthRecord>>(
@@ -215,8 +189,9 @@ class _TrendsBody extends StatelessWidget {
     if (nonNull.length < 3) return '—';
     final recent = nonNull.sublist(nonNull.length - 3);
     final older = nonNull.sublist(
-        nonNull.length - (nonNull.length >= 7 ? 7 : nonNull.length),
-        nonNull.length - 3);
+      nonNull.length - (nonNull.length >= 7 ? 7 : nonNull.length),
+      nonNull.length - 3,
+    );
     if (older.isEmpty) return '—';
     final avgRecent = recent.reduce((a, b) => a + b) / recent.length;
     final avgOlder = older.reduce((a, b) => a + b) / older.length;
@@ -356,12 +331,15 @@ class _TrendsLineChart extends StatelessWidget {
               ),
             ),
           ),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          topTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
+          bottomTitles: const AxisTitles(
+            sideTitles: SideTitles(showTitles: false),
+          ),
         ),
         lineTouchData: LineTouchData(
           touchTooltipData: LineTouchTooltipData(
@@ -443,10 +421,7 @@ class _StatsCard extends StatelessWidget {
             value: avg7 != null ? dim.format(avg7!) : '—',
             unit: dim.unit,
           ),
-          StatItem(
-            label: '趋势',
-            value: trend,
-          ),
+          StatItem(label: '趋势', value: trend),
         ],
       ),
     );
@@ -468,7 +443,11 @@ class _ErrorView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 40, color: StrideTokens.muted),
+            const Icon(
+              Icons.error_outline,
+              size: 40,
+              color: StrideTokens.muted,
+            ),
             const SizedBox(height: StrideTokens.spaceMd),
             const Text(
               '加载失败',

@@ -191,15 +191,83 @@ class PMCSummary {
   Map<String, dynamic> toJson() => _$PMCSummaryToJson(this);
 }
 
+/// One STRIDE-computed PMC record (from `daily_training_load`, not COROS).
+@JsonSerializable()
+class PMCStrideRecord {
+  const PMCStrideRecord({
+    required this.date,
+    this.acuteLoad,
+    this.chronicLoad,
+    this.form,
+    this.loadRatio,
+    this.trainingDose,
+  });
+
+  factory PMCStrideRecord.fromJson(Map<String, dynamic> json) =>
+      _$PMCStrideRecordFromJson(json);
+
+  final String date;
+  @JsonKey(name: 'acute_load')
+  final num? acuteLoad;
+  @JsonKey(name: 'chronic_load')
+  final num? chronicLoad;
+  final num? form;
+  @JsonKey(name: 'load_ratio')
+  final num? loadRatio;
+  @JsonKey(name: 'training_dose')
+  final num? trainingDose;
+
+  Map<String, dynamic> toJson() => _$PMCStrideRecordToJson(this);
+}
+
+/// STRIDE-computed PMC summary (acute/chronic/form/ratio from STRIDE).
+@JsonSerializable()
+class PMCStrideSummary {
+  const PMCStrideSummary({
+    this.date,
+    this.currentAcuteLoad,
+    this.currentChronicLoad,
+    this.currentForm,
+    this.currentLoadRatio,
+    this.chronicLoadRamp,
+  });
+
+  factory PMCStrideSummary.fromJson(Map<String, dynamic> json) =>
+      _$PMCStrideSummaryFromJson(json);
+
+  final String? date;
+  @JsonKey(name: 'current_acute_load')
+  final num? currentAcuteLoad;
+  @JsonKey(name: 'current_chronic_load')
+  final num? currentChronicLoad;
+  @JsonKey(name: 'current_form')
+  final num? currentForm;
+  @JsonKey(name: 'current_load_ratio')
+  final num? currentLoadRatio;
+  @JsonKey(name: 'chronic_load_ramp')
+  final num? chronicLoadRamp;
+
+  Map<String, dynamic> toJson() => _$PMCStrideSummaryToJson(this);
+}
+
 @JsonSerializable()
 class PMCResponse {
-  const PMCResponse({required this.pmc, required this.summary});
+  const PMCResponse({
+    required this.pmc,
+    required this.summary,
+    this.stridePmc = const [],
+    this.strideSummary,
+  });
 
   factory PMCResponse.fromJson(Map<String, dynamic> json) =>
       _$PMCResponseFromJson(json);
 
   final List<PMCRecord> pmc;
   final PMCSummary summary;
+  @JsonKey(name: 'stride_pmc')
+  final List<PMCStrideRecord> stridePmc;
+  @JsonKey(name: 'stride_summary')
+  final PMCStrideSummary? strideSummary;
 
   Map<String, dynamic> toJson() => _$PMCResponseToJson(this);
 }
