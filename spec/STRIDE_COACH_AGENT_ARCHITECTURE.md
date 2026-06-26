@@ -208,11 +208,38 @@ class SpecialistResult(BaseModel):
 
 **Session 管理**：session 由用户显式新建（前端"新会话"）。MVP 仅需 `session_id` 入参 + 一个会话列表 endpoint；不做自动主题切分/合并。
 
-### 5.2 History 窗口化（per session）
+### 5.2 History 窗口化（per session · summarization buffer）
 
-- 单会话只增不减 → **近 N 轮全文 + 更早压缩成滚动摘要**，按 session 维护。
-- checkpointer（`AzureTableCheckpointSaver`）keying 含 `session_id`（PartitionKey=user_id，RowKey 含 session）。
-- 摘要触发：turn 数 / token 阈值；摘要本身是一次受控 LLM 调用（system=摘要规则，user=待压缩轮次）。
+单会话只增不减 → **滚动摘要缓冲**：`[会话滚动摘要] + [近 N 轮全文] + [本轮]`，按 session 维护。复用 LangGraph 既有件（`langmem.SummarizationNode` / `trim_messages`），不自造。
+
+```
+[会话滚动摘要]  ← 更早轮次，压成一段（主题线 / 未决问题 / 用户口吻偏好）
+[近 N 轮全文]   ← 最近对话，逐字保留
+[本轮 user]
+```
+
+**约束 1 — 批量摘要保缓存（HARD）**：摘要与 prompt caching 直接冲突——缓存命中靠前缀逐字节相同，**逐轮重摘**会让会话前缀每轮变 → 缓存全 miss，省的被烧的抵消。因此**批量摘要、不逐轮**：
+
+- 近 N 轮窗口内只 append、前缀不动 → 这 N 轮持续命中缓存。
+- 触阈值才**一次性**把最老一批压进摘要 → 前缀仅那一刻变一次，之后又稳定 N 轮。
+
+**约束 2 — 摘要可 lossy（因为事实另有可靠归宿）**：STRIDE 比通用 chatbot 好压，重要信息不靠 history 扛：
+
+| 信息 | 归宿 | 压缩时 |
+|---|---|---|
+| `active_target` / `pending_proposals` / `safety_locked` | out-of-band typed state（§5.4） | 不进 message history，**零损失不用压** |
+| 伤病/约束/偏好等持久事实 | 已被 Memory Writer 抽进**长期记忆**（§5.3） | 摘要**可 lossy** —— 丢了 store 里还在 |
+
+→ 摘要只需保"对话语义脉络"，不需无损保事实 → 能用**更激进、更便宜**的摘要。
+
+**推荐参数**：
+
+- **窗口**：近 ~12–16 轮全文（覆盖一次完整"提案→确认→追问"）。
+- **触发**：窗口外累计 token > ~6–8k 时压最老一批（按 token，非按轮数硬切）。
+- **摘要模型**：廉价档（如 gpt-4.1-mini）；system=摘要规则，user=待压缩轮次。
+- **摘要只留**：主题线 / 未决问题 / 用户偏好口吻；**不留**可被长期记忆或结构化 state 覆盖的内容。
+
+checkpointer（`AzureTableCheckpointSaver`）keying 含 `session_id`（PartitionKey=user_id，RowKey 含 session）。
 
 ### 5.3 长期记忆系统（Athlete Memory）
 
@@ -331,7 +358,7 @@ class AthleteMemory(BaseModel):
 ## 11. 开放问题
 
 1. Resolver 与 Safety Gate 能否合并成一次 LLM 调用（省一跳延迟），还是安全必须独立确定性先行？
-2. History 摘要的粒度与触发阈值（轮数 vs token）。
+2. ~~History 摘要的粒度与触发阈值~~ → **已定**（§5.2）：summarization buffer，批量摘要保缓存，按 token(~6–8k)触发，窗口近 12–16 轮，摘要可 lossy（事实已被长期记忆/结构化 state 接走）。剩余可调：N 与阈值的实测标定。
 3. `active_target` 多义时的 disambiguation UX（反问 vs 默认最近）。
 4. 并行只读专家的结果合并顺序对 Aggregator 文案的影响。
 5. SpecialistResult.artifacts 的存储后端（复用 checkpointer vs 独立）。
