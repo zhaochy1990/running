@@ -12,7 +12,8 @@
 - **对话即入口、多会话并存**：用户表达任意跑步诉求，系统识别意图、动态路由；一个会话内上下文跨意图连续，用户可另开新会话聊不同话题。
 - **三层记忆**：turn 工作记忆（本轮）/ session 会话记忆（追问、上下文连续）/ **athlete 长期记忆**（伤病/约束/偏好跨会话持久，注入后续规划）。
 - **能撑到 11 个能力域不返工**：加"装备专家""营养专家"是插一个模块，不是改编排脑。
-- **安全可控、可观测、可调试**：安全敏感意图（伤病）有横切闸，写操作先提案后确认。
+- **non-compound 优先（低延迟主路）**：专家**自给**——自读行动前提，把"诊断→行动"塌缩成单专家调用；真 compound 仅留给**多个独立写 / 跨不相关域**。大多数轮 = Resolver（便宜）+ 1 专家，延迟最低。
+- **安全可控、可观测、可调试**：写操作先提案后确认（Pattern Y）；安全敏感意图（伤病）的横切闸预留、本期不做（§1 非目标）。
 - **省 token**：专家 context 隔离、只回压缩结果、prompt 角色分离命中缓存。
 
 **非目标（本期不做）**
@@ -166,7 +167,7 @@ Resolver 干两件性质不同的事——**意图识别（理解题，LLM）** 
 
 - **意图识别只能 LLM，但锁死 Card enum**：`specialist_id` 约束在 `SpecialistRegistry` 全集（constrained decoding / 校验重试），不能编不存在的专家。Card 的 `description/tags/examples` 即路由菜单 → **加新专家=加张 Card，Resolver 一行不改**。
 - **target 是状态题非理解题 → 确定性**：LLM 只抽**指代短语**（`target_hint`），把短语解析成具体 `TargetRef` 是确定性代码（查会话状态 + DB 索引）。指代消解靠上一轮提升来的 `active_target`（§5.4）。
-- **compound 由 Resolver 识别、Supervisor 排序**：Resolver 只标 `is_compound` + 列意图；**串/并、谁先谁后**是 Supervisor 的活（§4.2）。
+- **compound 判定收紧（non-compound 优先）**：`is_compound` **仅当多个独立意图**——主要是**多个不同写 target**（如周计划+赛季计划）或**跨不相关域**。单个行动即便需要先读数据，**不是 compound**：路由到那一个写专家，由它自读前提（§4.3 专家自给）。**"诊断→行动"不拆。** Resolver 只标记 + 列意图，串/并由 Supervisor 排（§4.2）。
 - **clarify 只在"歧义会改变结果"时触发**：只读 QA 的 target 不清就默认最近直接答；**写操作**的 target 不清才必须澄清——否则每句都反问很烦。
 
 **Prompt 角色分离（HARD）**：
@@ -261,6 +262,7 @@ class CallPlan(BaseModel):
   - `season_plan`（S1 赛季计划，**generate / amend 两种 typed 操作**）· `weekly_plan`（S2 调整）· `status_insight`（S3 问答/诊断）。（`injury_safety` 安全道本期不做，见 §1 非目标）
 - **`season_plan` 合二为一**：建/改是同一能力的两种操作（CRUD-split 反模式规避），Resolver 路由到这一个专家，专家拿全上下文内部判定 generate（无计划/用户要重做）vs amend（局部改）。`regenerate` **委派到同一条生成 pipeline，不复制**（单源，CLAUDE.md 不重复造轮子）。其 `SpecialistResult.proposal` 支持两种形态：全量计划草稿 OR `MasterPlanDiff`。
 - 每个专家 = 自己的 scoped prompt + 自己那撮工具（read 子集 + draft 子集）。
+- **专家自给（non-compound 优先，latency 关键）**：每个专家——尤其写专家——拿**慷慨的只读工具 scope**，能自取行动前提（疲劳/负荷/预测/完成情况）。这把绝大多数"诊断→行动"塌缩成**单专家调用**，避开 `status_insight`→`weekly_plan` 的链 → 快路径命中、延迟最低。真 compound 仅多个独立写/跨域。读工具复用 `StrideToolkit`，与 `status_insight` 共享——**区别在输出意图（答 vs 改），不在能不能读**。
 - **委派调用**：dispatcher 调 subgraph，专家返回 `SpecialistResult`，控制权回编排脑。
 
 ### 4.4 ④ Aggregator（汇总应答）
