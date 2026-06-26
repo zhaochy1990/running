@@ -97,10 +97,14 @@ def _seed(tmp_path, *, with_data: bool = True, with_provider: str | None = "coro
             "VALUES (?, ?, ?)",
             ("L1", "Great session today.\nMore detail.", "gpt-4.1"),
         )
+        # StatusRing now reads STRIDE-computed load from daily_training_load
+        # (NOT COROS daily_health ati/cti/fatigue). acute=50, chronic=60 →
+        # load_ratio 0.83 (race_ready), form=10.
         db._conn.execute(
-            "INSERT INTO daily_health (date, ati, cti, training_load_ratio, "
-            "training_load_state, fatigue) VALUES (?, ?, ?, ?, ?, ?)",
-            ("2026-05-10", 50.0, 60.0, 0.83, "Optimal", 42.0),
+            "INSERT INTO daily_training_load (date, algorithm_version, "
+            "training_dose, acute_load, chronic_load, form, load_ratio) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            ("2026-05-10", 1, 80.0, 50.0, 60.0, 10.0, 0.83),
         )
         db._conn.execute(
             "INSERT OR REPLACE INTO sync_meta (key, value) VALUES "
@@ -121,9 +125,13 @@ def test_home_normal_user(app_client):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["plan_state"] == "none"
-    assert data["status_ring"]["fatigue"] == 42.0
-    assert data["status_ring"]["fatigue_band"] == "normal"
+    # STRIDE-computed load (no vendor fatigue / load-state).
+    assert data["status_ring"]["tsb"] == 10.0  # form = chronic − acute
+    assert data["status_ring"]["acute_load"] == 50.0
+    assert data["status_ring"]["chronic_load"] == 60.0
+    assert data["status_ring"]["load_ratio"] == 0.83
     assert data["status_ring"]["tsb_band"] == "race_ready"  # ratio 0.83 < 0.85
+    assert "fatigue" not in data["status_ring"]
     assert len(data["recent_activities"]) == 1
     a0 = data["recent_activities"][0]
     assert a0["label_id"] == "L1"
@@ -142,7 +150,8 @@ def test_home_new_user_no_activities(app_client):
     data = resp.json()
     assert data["recent_activities"] == []
     assert data["lifetime_stats"]["total_activities"] == 0
-    assert data["status_ring"]["fatigue"] is None
+    assert data["status_ring"]["tsb"] is None
+    assert data["status_ring"]["acute_load"] is None
     assert data["weekly_stats"]["session_count"] == 0
 
 
