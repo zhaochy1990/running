@@ -206,7 +206,8 @@ class ResolverOutput(BaseModel):
 ### 4.3 ③ Specialists（领域专家，subgraph）
 
 - 复用现有 conversation 图的 scope 设计，**每个 scope 降为一个 subgraph 专家**：
-  - `master_plan`（S1 调整）· `weekly_plan`（S2 调整）· `status_insight`（S3 问答/诊断）· `plan_generation`（S1 建计划，包现有 `master_plan_generator`）。（`injury_safety` 安全道本期不做，见 §1 非目标）
+  - `season_plan`（S1 赛季计划，**generate / amend 两种 typed 操作**）· `weekly_plan`（S2 调整）· `status_insight`（S3 问答/诊断）。（`injury_safety` 安全道本期不做，见 §1 非目标）
+- **`season_plan` 合二为一**：建/改是同一能力的两种操作（CRUD-split 反模式规避），Resolver 路由到这一个专家，专家拿全上下文内部判定 generate（无计划/用户要重做）vs amend（局部改）。`regenerate` **委派到同一条生成 pipeline，不复制**（单源，CLAUDE.md 不重复造轮子）。其 `SpecialistResult.proposal` 支持两种形态：全量计划草稿 OR `MasterPlanDiff`。
 - 每个专家 = 自己的 scoped prompt + 自己那撮工具（read 子集 + draft 子集）。
 - **委派调用**：dispatcher 调 subgraph，专家返回 `SpecialistResult`，控制权回编排脑。
 
@@ -361,8 +362,7 @@ class AthleteMemory(BaseModel):
 | 🧠 编排脑（安全/Resolver/Supervisor/Aggregator） | — | 🔴 无 | **新建（核心增量）** |
 | 状态查询/诊断 | `status_insight` | ✅ LIVE（qa） | 降为专家接契约 |
 | 周计划调整 | `weekly_plan` | ⚠️ 80%（5/7 工具，无 endpoint）| 接契约 + 补 2 占位工具 |
-| 建赛季计划 | `plan_generation` | ✅ LIVE（generator）| 对话触发 |
-| **改赛季计划** | `master_plan` | 🔴 6 工具全占位 | **实现 6 个 master draft 工具**（US-009）|
+| 赛季计划（建+改） | `season_plan` | 建 ✅ LIVE（generator）/ 改 🔴 6 工具全占位 | 合二为一接契约（generate/amend）+ **实现 6 个 master draft 工具**（US-009）；regenerate 委派生成 pipeline |
 | 多会话 + history 窗口化 | — | 🔴 每-scope 线程 | 地基改造（session 分线程）|
 | **长期记忆**（写萃取 + 读注入） | Memory Writer + Store | 🔴 无 | **新建**（Azure Table，注入 QA + 规划）|
 
@@ -370,37 +370,12 @@ class AthleteMemory(BaseModel):
 
 ---
 
-## 8. 改动清单（文件级）
-
-**新增**
-
-- `src/coach/contracts/specialist.py` — `SpecialistCard` / `SpecialistTask` / `SpecialistResult` / `TargetRef`（core 层，纯 pydantic）。
-- `src/coach/contracts/memory.py` — `AthleteMemory` / `MemoryWrite`（core 层，纯 pydantic）。
-- `src/coach/graphs/orchestrator/` — 编排图：`memory_load.py` · `resolver.py` · `supervisor.py` · `aggregator.py` · `memory_writer.py` · `dispatcher.py` · `registry.py`。（`safety_gate.py` 本期不建）
-- `src/coach/graphs/orchestrator/prompts/` — 各节点 system/user 分离 prompt（遵守 prompt role discipline）。
-- `src/stride_server/coach_adapters/athlete_memory_store.py` — 长期记忆 two-backend store（dev JSON / prod Azure Table，复用 `likes_store.py` pattern），adapters 层。
-- 新 endpoint `POST /api/users/me/coach/conversations/{session_id}/messages`（统一入口）+ 会话列表 endpoint 于 `routes/coach.py`。
-
-**修改**
-
-- `src/coach/graphs/conversation/` — 现有 scope 图降为专家 subgraph，接 `SpecialistContract`。
-- `ConversationState`（`schemas/conversation.py`）— 加 `session_id` / `active_target` / `turn_scope` / `pending_proposals` / `safety_locked` / `injected_memories`；thread_id 改 `{user}:coach:{session_id}`。
-- `persistence/checkpointer.py` — session 维度 keying；加 history 窗口化/摘要。
-- `master_plan_generator.py` + S2 planner — user prompt 注入 `AthleteMemoryStore.fetch_active()` 的"已知约束"段（伤病/约束 → 训练规避）。
-- 实现占位工具：week 的 `change_pace_target` / `regenerate_week`（US-007）；master 的 6 个（US-009）。
-
-**删除**
-
-- `src/stride_server/routes/plan_chat.py` + 其路由注册（与 `weekly_plan` 专家功能重复，收敛到 LangGraph 专家）。
-
----
-
-## 9. 分阶段落地
+## 8. 分阶段落地
 
 - **A0 地基**：session 分线程会话 + history 窗口化 + `SpecialistContract`/`AthleteMemory` 类型 + Registry 脚手架。
 - **A1 编排脑**：Memory Load + Resolver + Supervisor + Aggregator + dispatcher；接入 `status_insight`（已 LIVE，最易验证端到端）。新 endpoint 上线。
 - **A2 周计划专家**：`weekly_plan` 接契约 + 补 2 占位工具；**删 plan_chat**。
-- **A3 赛季专家**：`plan_generation`（建）+ `master_plan`（改，实现 6 工具）。
+- **A3 赛季专家**：`season_plan`（generate 接现有 generator + amend 实现 6 工具；regenerate 委派生成 pipeline）。
 - **A4 长期记忆**：Memory Writer + `AthleteMemoryStore` + 注入规划（S1/S2 user prompt）+ 透明回执。
 - **（后置，非本期）安全道**：Safety Gate 横切闸 + `injury_safety` 专家 + 全链路写锁验证（见 §1 非目标）。
 
@@ -408,7 +383,7 @@ class AthleteMemory(BaseModel):
 
 ---
 
-## 10. 与现有架构约束的关系
+## 9. 与现有架构约束的关系
 
 - **两层架构（`.importlinter`）**：契约类型、编排图、专家图放 `coach.*` core（纯 pydantic/langgraph/stride_core 纯模块）；碰 DB/sync/azure 的专家 impl 放 `coach_adapters`。
 - **Pattern X/Y**：专家 `proposal` 是 diff、永不落地；服务端无状态，diff 随回包，`/apply` 确认后落。
@@ -418,7 +393,7 @@ class AthleteMemory(BaseModel):
 
 ---
 
-## 11. 开放问题
+## 10. 开放问题
 
 1. Resolver 与 Safety Gate 能否合并成一次 LLM 调用（省一跳延迟），还是安全必须独立确定性先行？
 2. ~~History 摘要的粒度与触发阈值~~ → **已定**（§5.2）：summarization buffer，批量摘要保缓存，按 token(~6–8k)触发，窗口近 12–16 轮，摘要可 lossy（事实已被长期记忆/结构化 state 接走）。剩余可调：N 与阈值的实测标定。
