@@ -485,6 +485,10 @@ export interface MasterPlanPhase {
   key_workouts?: string            // 关键课型
   monitoring_triggers?: string[]   // 监控触发
   coach_note?: string              // 教练引言 (blockquote)
+  // True for an already-completed leading phase (e.g. a finished base block
+  // carried over from the prior plan). Kept on the timeline for continuity,
+  // rendered dimmed + 「已完成」. Optional/false for every other phase.
+  is_completed?: boolean
 }
 
 export interface MasterPlanNextMilestone {

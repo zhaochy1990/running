@@ -316,6 +316,7 @@ function SeasonOverview({
             <div className="flex flex-wrap gap-2">
               {phases.map((phase, i) => {
                 const isActive = phase.id === activePhase?.id
+                const isCompleted = phase.is_completed === true
                 const color = phaseColor(phase, i)
                 const weeks = weeksBetween(phase.start_date, phase.end_date)
                 return (
@@ -324,14 +325,17 @@ function SeasonOverview({
                     type="button"
                     onClick={() => onSelectPhase(phase.id)}
                     className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                      isCompleted ? 'opacity-55' : ''
+                    } ${
                       isActive
                         ? 'border-transparent text-text-primary font-semibold'
                         : 'border-border-subtle bg-bg-card text-text-secondary hover:text-text-primary'
                     }`}
                     style={isActive ? { backgroundColor: color + '20' } : undefined}
+                    title={isCompleted ? '已完成阶段' : undefined}
                   >
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
-                    {shortPhaseName(phase, i)} · {weeks} 周
+                    {shortPhaseName(phase, i)} · {isCompleted ? `${weeks} 周 ✓` : `${weeks} 周`}
                   </button>
                 )
               })}
@@ -370,7 +374,14 @@ function PhaseDetail({ phase, index }: { phase: MasterPlanPhase; index: number }
               {formatShort(phase.start_date)} — {formatShort(phase.end_date)} · {weeks} 周 · {band}
             </span>
           </div>
-          <h3 className="text-lg font-semibold text-text-primary">{phase.name}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-text-primary">{phase.name}</h3>
+            {phase.is_completed && (
+              <span className="inline-flex items-center rounded-full bg-bg-elevated border border-border-subtle px-2 py-0.5 text-[10px] font-mono text-text-muted uppercase tracking-wider">
+                已完成
+              </span>
+            )}
+          </div>
           {phase.focus && <p className="text-sm text-text-secondary mt-1.5 leading-relaxed">{phase.focus}</p>}
         </div>
 
