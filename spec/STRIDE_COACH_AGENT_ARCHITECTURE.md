@@ -265,16 +265,64 @@ class CallPlan(BaseModel):
 
 ### 4.4 ④ Aggregator（汇总应答）
 
-- **LLM** 把多个 `SpecialistResult.reply_fragment` 合成一条连贯回复。
-- 收集所有 `proposal` → 组装提案卡（前端确认 UI）。
-- 若任一专家 `needs_clarification` → 优先把反问透传用户。
+Aggregator 把派发回来的 `list[SpecialistResult]` 收成**本轮的最终应答**：一条连贯回复 + 组装好的提案卡 + clarification 处理 + 响应信封（diff 随回包，Pattern Y）。
+
+**内部流程（按优先级短路）**：
+
+```
+入参: list[SpecialistResult] + ResolverOutput(active_target, ambiguity) + utterance
+  │
+  ▼ 优先级 1: clarification 短路
+  │   Resolver.ambiguity 或 任一 Result.needs_clarification
+  │   → 本轮=澄清轮，输出反问；写 proposal 暂挂（下一轮续）
+  │
+  ▼ 优先级 2: 失败兜底
+  │   全部 failed/rejected → 诚实失败文案，不伪造成功
+  │
+  ▼ 单结果快路径（无 LLM）: 1 个 Result 且 fragment 已 user-ready
+  │   → 直接透传 fragment + 挂 proposal 卡
+  │
+  ▼ 多结果慢路径（一次 LLM）: 合成多 fragment → 一条连贯回复
+  │   不丢任何专家发现 / 不编数据 / 中文教练口吻 / 先诊断后动作
+  │
+  ▼ 确定性: 组装 proposal 卡（收集所有 proposal，随回包）
+  │
+  ▼ 出 TurnResponse   （记忆回执由 ⑤ Memory Writer 追加为确定性后缀）
+```
+
+**设计要点**：
+
+- **单结果快路径省 LLM**：单个专家且 fragment 已可读 → 直接透传，不烧合成 LLM（同 Supervisor 思路）。合成 LLM **只为多 fragment 合并**。
+- **只合成/改写，不计算不取数**：Aggregator **绝不编造 fragment 里没有的数字**——数据由专家算好放进 fragment，它只组织语言（防幻觉的关键）。
+- **Pattern Y**：收集所有 `proposal` 组卡，随 HTTP 回包，确认走 `/apply`，**Aggregator 永不落地**。同 target 不会有冲突 proposal（Supervisor 已串行化写）。
+- **clarification 最高优先**：澄清轮挂起写提案，先问清；已完成的只读结果可一并展示。
+- **记忆回执不在 Aggregator 拼**：由 ⑤ Memory Writer 在本节点输出后**确定性追加固定后缀**（"已记住：…"），解决 ④→⑤ 顺序——回执是模板文案，不进 Aggregator LLM。
+
+**Prompt 角色分离（HARD）**（仅多结果慢路径走 LLM）：
+
+| Turn | 装什么 | 缓存 |
+|---|---|---|
+| **System** | 文案合成器人设 + 风格/语气 + 输出格式 + 不变量（不丢专家发现 / 不编数据 / 教练口吻） | 字节稳定 → 命中缓存 |
+| **User** | 各 `reply_fragment` + 用户原问 + active_target | 每轮变 |
+
+**输出契约**：
+
+```python
+class TurnResponse(BaseModel):
+    reply: str                       # 合成的 NL 回复 body（记忆回执由 ⑤ 追加）
+    proposals: list[ProposalCard]    # Pattern Y，随回包，确认走 /apply
+    clarification: str | None        # 非 None → 本轮是澄清轮
+    active_target: TargetRef | None  # 回显，前端高亮当前对象
+```
+
+**硬化**：不丢任一 fragment 的实质；不编造数据；全败时诚实失败、不伪造成功；**reply 与 proposal 一致**（不说"已降强度"而 proposal 为空）；精简教练口吻。
 
 ### 4.5 ⑤ Memory Writer（长期记忆萃取，post-turn）
 
 - 回复已生成后运行，**best-effort 不阻塞用户应答**（失败只丢日志，不影响本轮）。
 - **LLM 结构化抽取**：扫本轮对话，产出 `MemoryWrite[]`（add/update/resolve），受 `AthleteMemory` schema 约束。
 - **确定性去重 / 合并**：与现有 active 记忆比对，重复不写、矛盾走 update（如"跟腱已恢复"→ 把旧伤 `status=resolved`）。
-- **透明回执**：写入伤病/约束类记忆时，Aggregator 在回复尾部带一句"已记住：…，后续计划会据此调整"，用户可纠正（下一轮"删掉这条"→ resolve）。
+- **透明回执**：写入伤病/约束类记忆时，在 Aggregator 回复 body 尾部**确定性追加**一句"已记住：…，后续计划会据此调整"（模板后缀，不进 Aggregator LLM），用户可纠正（下一轮"删掉这条"→ resolve）。
 - **本期是伤病的主要承接点**：Safety Gate 本期不做（§1 非目标），所以伤病信息主要靠 Writer 持久化 + 专家 prompt 保守条款兜底，而非硬闸。
 
 ---
