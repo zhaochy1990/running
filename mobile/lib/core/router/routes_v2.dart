@@ -17,11 +17,15 @@ class RoutesV2 {
   static const onboardingBasicInfo = '/v2/onboarding/basic-info';
   static const onboardingBlocked = '/v2/onboarding/blocked';
 
-  // Main tabs (inside shell)
+  // Main tabs (inside shell) — 4 flat tabs: 跑者 / 发现 / 数据 / 教练
   static const home = '/v2/home';
-  static const train = '/v2/train';
+  static const discover = '/v2/discover';
   static const data = '/v2/data';
-  static const me = '/v2/me';
+  static const coach = '/v2/coach';
+
+  // Non-tab destinations (pushable, no longer in the bottom bar)
+  static const train = '/v2/train'; // 周计划列表（从「跑者」进入）
+  static const me = '/v2/me'; // 个人中心全页（≡ 抽屉「账号资料」）
 
   // Detail
   static const activityDetailPattern = '/v2/activity/:id';

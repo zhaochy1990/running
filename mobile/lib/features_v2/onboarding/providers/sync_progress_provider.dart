@@ -126,8 +126,7 @@ class SyncProgressController extends StateNotifier<SyncProgress>
   Future<void> _tick() async {
     if (_disposed) return;
     try {
-      final json =
-          await _ref.read(strideApiProvider).getOnboardingSyncStatus();
+      final json = await _ref.read(strideApiProvider).getOnboardingSyncStatus();
       _applyStatus(json);
     } on ApiException catch (e) {
       state = state.copyWith(phase: SyncPhase.error, error: _mapError(e));
@@ -189,7 +188,7 @@ class SyncProgressController extends StateNotifier<SyncProgress>
   }
 }
 
-final syncProgressProvider = StateNotifierProvider.autoDispose<
-    SyncProgressController, SyncProgress>(
-  (ref) => SyncProgressController(ref),
-);
+final syncProgressProvider =
+    StateNotifierProvider.autoDispose<SyncProgressController, SyncProgress>(
+      (ref) => SyncProgressController(ref),
+    );

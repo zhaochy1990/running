@@ -31,14 +31,16 @@ router = APIRouter()
 
 
 class StatusRing(BaseModel):
-    fatigue: float | None
-    fatigue_band: Literal["recovered", "normal", "fatigued", "high"] | None
+    # STRIDE-computed training load only — no vendor (COROS/Garmin) fatigue or
+    # load-state scores. `tsb` is STRIDE form (chronic − acute); `load_ratio`
+    # is STRIDE acute/chronic. See routes/health.py `/pmc` for the same source.
     tsb: float | None
     tsb_band: Literal[
         "race_ready", "transitional", "productive", "overload", "detraining"
     ] | None
     load_ratio: float | None
-    load_state: str | None
+    chronic_load: float | None
+    acute_load: float | None
 
 
 class RecentActivity(BaseModel):
@@ -116,20 +118,6 @@ def _clear_cache() -> None:
 # ── Band helpers ───────────────────────────────────────────────────────────
 
 
-def _fatigue_band(
-    fatigue: float | None,
-) -> Literal["recovered", "normal", "fatigued", "high"] | None:
-    if fatigue is None:
-        return None
-    if fatigue < 40:
-        return "recovered"
-    if fatigue < 50:
-        return "normal"
-    if fatigue < 60:
-        return "fatigued"
-    return "high"
-
-
 def _tsb_band(
     ratio: float | None,
 ) -> Literal["race_ready", "transitional", "productive", "overload", "detraining"] | None:
@@ -155,29 +143,37 @@ def _tsb_band(
 
 
 def _build_status_ring(db) -> StatusRing:
+    # STRIDE-computed load from `daily_training_load` (NOT COROS ati/cti). Same
+    # table the `/pmc` endpoint reads; pick the latest row of the active
+    # algorithm version. `form` = chronic − acute; `load_ratio` = acute/chronic.
     rows = db.query(
-        "SELECT ati, cti, training_load_ratio, training_load_state, fatigue "
-        "FROM daily_health ORDER BY date DESC LIMIT 1"
+        """SELECT acute_load, chronic_load, form, load_ratio
+           FROM daily_training_load
+           WHERE algorithm_version = (
+               SELECT MAX(algorithm_version) FROM daily_training_load
+           )
+           ORDER BY date DESC LIMIT 1"""
     )
     if not rows:
         return StatusRing(
-            fatigue=None, fatigue_band=None, tsb=None, tsb_band=None,
-            load_ratio=None, load_state=None,
+            tsb=None, tsb_band=None, load_ratio=None,
+            chronic_load=None, acute_load=None,
         )
     r = dict(rows[0])
-    ati = r.get("ati") or 0
-    cti = r.get("cti") or 0
-    tsb = round(cti - ati, 1) if (r.get("ati") is not None and r.get("cti") is not None) else None
-    ratio = r.get("training_load_ratio")
-    if ratio is None and cti > 0:
-        ratio = ati / cti
+    chronic = r.get("chronic_load")
+    acute = r.get("acute_load")
+    form = r.get("form")
+    if form is None and chronic is not None and acute is not None:
+        form = round(chronic - acute, 1)
+    ratio = r.get("load_ratio")
+    if ratio is None and chronic:
+        ratio = acute / chronic if acute is not None else None
     return StatusRing(
-        fatigue=r.get("fatigue"),
-        fatigue_band=_fatigue_band(r.get("fatigue")),
-        tsb=tsb,
+        tsb=form,
         tsb_band=_tsb_band(ratio),
         load_ratio=ratio,
-        load_state=r.get("training_load_state"),
+        chronic_load=round(chronic, 1) if chronic is not None else None,
+        acute_load=round(acute, 1) if acute is not None else None,
     )
 
 

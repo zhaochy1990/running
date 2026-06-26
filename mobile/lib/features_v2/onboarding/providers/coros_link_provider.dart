@@ -45,11 +45,9 @@ class CorosLinkController extends StateNotifier<CorosLinkState> {
   }) async {
     state = const CorosLinkState(loading: true);
     try {
-      await _ref.read(strideApiProvider).linkCoros(
-            email: email,
-            password: password,
-            region: region,
-          );
+      await _ref
+          .read(strideApiProvider)
+          .linkCoros(email: email, password: password, region: region);
       // Refresh profile so the router guard sees coros_ready=true.
       _ref.invalidate(currentUserProvider);
       state = const CorosLinkState(success: true);
@@ -88,5 +86,5 @@ class CorosLinkController extends StateNotifier<CorosLinkState> {
 
 final corosLinkProvider =
     StateNotifierProvider.autoDispose<CorosLinkController, CorosLinkState>(
-  (ref) => CorosLinkController(ref),
-);
+      (ref) => CorosLinkController(ref),
+    );

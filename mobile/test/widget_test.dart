@@ -7,7 +7,8 @@ import 'package:stride/core/auth/auth_models.dart';
 import 'package:stride/core/auth/current_user.dart';
 
 void main() {
-  testWidgets('Unauthenticated user lands on login screen', (tester) async {
+  testWidgets('Unauthenticated user lands on the auth start screen',
+      (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -22,13 +23,14 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    // Login screen has 邮箱 / 密码 fields
-    expect(find.text('邮箱'), findsOneWidget);
-    expect(find.text('密码'), findsOneWidget);
-    expect(find.text('马拉松训练数据 · 跑团社区'), findsOneWidget);
+    // A1 — auth start screen: wordmark + slogan + login / register buttons.
+    expect(find.text('STRIDE'), findsOneWidget);
+    expect(find.text('马拉松跑步应用'), findsOneWidget);
+    expect(find.text('登录'), findsOneWidget);
+    expect(find.text('注册'), findsOneWidget);
   });
 
-  testWidgets('Authenticated user boots into Today tab', (tester) async {
+  testWidgets('Authenticated user boots into the 4-tab shell', (tester) async {
     final fakeTokens = TokenSet(
       accessToken: 'fake-access',
       refreshToken: 'fake-refresh',
@@ -43,20 +45,21 @@ void main() {
               AuthAuthenticated(fakeTokens),
             ),
           ),
-          // Suppress network call to /api/users/me/profile in tests.
+          // Suppress the network call to /api/users/me/profile in tests.
           currentUserProvider.overrideWith((_) async => null),
         ],
         child: const StrideApp(),
       ),
     );
-    // Pump frames without settling (StreamBuilders never resolve in tests).
+    // Pump frames without settling (home body shows a loading spinner that
+    // never resolves without a network stub).
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.text('今日'), findsWidgets);
-    expect(find.text('体能'), findsOneWidget);
-    expect(find.text('跑团'), findsOneWidget);
-    expect(find.text('计划'), findsOneWidget);
-    expect(find.text('我的'), findsOneWidget);
+    // The shell always renders the 4 flat tabs regardless of body state.
+    expect(find.text('跑者'), findsOneWidget);
+    expect(find.text('发现'), findsOneWidget);
+    expect(find.text('数据'), findsOneWidget);
+    expect(find.text('教练'), findsOneWidget);
   });
 }
 

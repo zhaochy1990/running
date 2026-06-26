@@ -112,4 +112,5 @@ class BasicInfoController extends StateNotifier<BasicInfoForm> {
 
 final basicInfoControllerProvider =
     StateNotifierProvider.autoDispose<BasicInfoController, BasicInfoForm>(
-        (ref) => BasicInfoController(ref));
+      (ref) => BasicInfoController(ref),
+    );

@@ -54,8 +54,7 @@ class BlockedScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 32),
                 ElevatedButton(
-                  onPressed: () =>
-                      context.go(RoutesV2.onboardingBrand),
+                  onPressed: () => context.go(RoutesV2.onboardingBrand),
                   child: const Text('立即绑定'),
                 ),
               ],
