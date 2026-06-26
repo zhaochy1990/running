@@ -159,6 +159,7 @@ def _build_master_plan(
                     str(t) for t in (p.get("monitoring_triggers") or []) if t
                 ],
                 coach_note=str(p.get("coach_note", "") or ""),
+                is_completed=bool(p.get("is_completed", False)),
             )
         )
 
