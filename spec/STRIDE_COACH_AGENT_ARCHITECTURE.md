@@ -332,6 +332,7 @@ class TurnResponse(BaseModel):
 
 ### 4.5 ⑤ Memory Writer（长期记忆萃取，post-turn）
 
+- **deterministic 预筛先行（延迟关键）**：先用关键词/规则判本轮是否**可能**含持久事实（伤病/约束/偏好/目标）；未命中 → **跳过萃取 LLM**（多数轮 ⑤ 是 0 调用）。命中才跑萃取。
 - **两段，时序分清**：①**萃取决定**（add/update 判定 + 回执模板拼接）在返回前**同步**完成——回执要追加进本轮 reply，必须同步；②记忆**持久化写入 store** 是 **best-effort 异步**（失败只丢日志，不影响本轮、不阻塞应答）。
 - **LLM 结构化抽取**：扫本轮对话，产出 `MemoryWrite[]`（add/update/resolve），受 `AthleteMemory` schema 约束。
 - **确定性去重 / 合并**：与现有 active 记忆比对，重复不写、矛盾走 update（如"跟腱已恢复"→ 把旧伤 `status=resolved`）。
@@ -342,6 +343,40 @@ class TurnResponse(BaseModel):
 
 - **dispatcher**：按 CallPlan 的 DAG 执行——无依赖只读调用并行（asyncio），写调用 / 同 target 调用**串行**（硬覆盖 LLM 的并行建议）；上游 `SpecialistResult` 注入下游 `Task.context`；中途 `needs_clarification` → 挂起其传递性下游、放行独立在飞分支、转澄清（§4.4），挂起态存 `pending_clarification`；单个专家 failed 不拖垮全 plan，Aggregator 据 `status` 兜底。
 - **SpecialistRegistry**：装全部 Card，给 Resolver 的 constrained-decoding enum、给 dispatcher 按 `id` 取 subgraph。加专家 = 注册 Card，routing 自动派生（§6）。
+
+### 4.7 LLM 调用与延迟预算
+
+每节点 LLM 用量（non-compound 优先的延迟兑现）：
+
+| 节点 | 简单轮（单意图） | 复合轮 | 模型档 | 阻塞回复? |
+|---|---|---|---|---|
+| ⓪ Memory Load | 0 | 0 | —（确定性） | 是（快） |
+| ① Resolver | 1 | 1 | 小/快 | 是 |
+| ② Supervisor | **0**（快路径） | 1 | 小/快 | 是 |
+| ③ Specialists | 1–2 | 2–4（×N，只读并行） | **强** | 是 |
+| ④ Aggregator | **0**（快路径） | 1 | 中 | 是 |
+| ⑤ Memory Writer | **0**（预筛未命中）/ 1（命中） | 0–1 | 小/快 | 萃取同步出回执时计入；持久化异步不计 |
+| ⑥ dispatcher / Registry | 0 | 0 | — | 是 |
+
+**关键路径 LLM 次数**：
+
+- **简单轮（占 ~80%，无可记事实）**：Resolver(1) + Specialist(1–2) = **2–3 次**，仅 1 次强模型。
+- **简单轮 + 有可记事实**：+ Memory Writer 萃取(1，同步出回执) = **3–4 次**。
+- **复合轮（罕见）**：1+1+(2–4 串行)+1 = **5–7 次**。
+
+**延迟估算（配合下列杠杆）**：简单轮体感 ~2–5s；复合轮 ~8–20s。
+
+**省时杠杆（均已在设计内）**：
+
+1. **模型分档（最大杠杆）**：编排（Resolver/Supervisor/Aggregator/Memory Writer）全用便宜快模型，**强模型只给专家推理**。
+2. **Memory Writer 预筛**：deterministic 关键词预筛，多数轮无可记事实 → ⑤ 直接 0 LLM（§4.5）。
+3. **快路径跳 LLM**：单意图 → Supervisor 0 + Aggregator 0。
+4. **prompt caching**：各节点 system 字节稳定，命中缓存省首 token。
+5. **预取消化专家内循环**：Supervisor 按 `data_needs` 预取 → 专家 1 次出结果而非多次 tool-call 往返。
+6. **流式输出**：体感延迟 = 首 token，非总时长。
+7. **只读专家并行**：墙钟 = 最慢，非求和。
+
+**结论**：低延迟主路 = "non-compound 优先 + 模型分档 + 预取 + 流式"——简单轮 ≈ 1 次便宜分类 + 1 次强模型回答，与裸 chatbot 相当；复合轮慢但罕见，有并行/流式兜底。
 
 ---
 
