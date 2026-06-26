@@ -18,7 +18,8 @@
 **非目标（本期不做）**
 
 - 主动教练 push（需触发设施，后置）。
-- 伤病**医学知识库**全量、营养/恢复/装备/比赛/酒店**导购**（P2–P4，本期仅安全兜底）。
+- **Safety Gate 安全闸 + `injury_safety` 专家**（§4.0 预留闸位，本期靠 Pattern Y 确认 + 专家 prompt 保守条款兜底）。
+- 伤病**医学知识库**全量、营养/恢复/装备/比赛/酒店**导购**（P2–P4）。
 - 跨 agent 的远程 A2A 互操作（本期全在进程内；契约设计为**可日后投影到 A2A** 而不重定义）。
 - 长期记忆的**自动主题归类 / 多会话自动合并**（本期会话由用户显式新建；记忆是 athlete-global，不做 per-topic 分桶）。
 
@@ -32,36 +33,34 @@
 用户一句话（某个 session 线程）
   │
   ▼
-⓪ 载入记忆 Memory Load        [确定性] session history（窗口化）+ athlete 长期记忆（active，按相关度预算注入）
+⓪ 载入记忆 Memory Load        [确定性] session history（窗口化）+ athlete 长期记忆（active，预算内注入）
   │
   ▼
-① 安全预筛 Safety Gate        [确定性 + 小模型] 伤病/医疗/情绪危机 → 安全道，锁写操作
+① 意图+目标解析 Resolver      [LLM 出结构化 intent] + [确定性解析 active_target]；不明确→clarify
   │
   ▼
-② 意图+目标解析 Resolver      [LLM 出结构化 intent] + [确定性解析 active_target]；不明确→clarify
+② 编排规划 Supervisor         [LLM 出结构化 call plan] 复合意图拆成有序专家调用
   │
   ▼
-③ 编排规划 Supervisor         [LLM 出结构化 call plan] 复合意图拆成有序专家调用
-  │
-  ▼
-④ 领域专家 Specialists        [subgraph，委派调用] 各自 scoped prompt + 工具子集，返回 SpecialistResult
+③ 领域专家 Specialists        [subgraph，委派调用] 各自 scoped prompt + 工具子集，返回 SpecialistResult
   │     S1 master · S2 week · S3 qa · (后续 +装备/营养/比赛…)
   ▼
-⑤ 汇总应答 Aggregator         [LLM] 多专家结果合成一条连贯回复 + 提案卡
+④ 汇总应答 Aggregator         [LLM] 多专家结果合成一条连贯回复 + 提案卡
   │
   ▼
-⑥ 记忆萃取 Memory Writer      [LLM 结构化抽取，best-effort] 萃取持久事实（伤病/约束/偏好）→ 长期记忆 + 透明回执
+⑤ 记忆萃取 Memory Writer      [LLM 结构化抽取，best-effort] 萃取持久事实（伤病/约束/偏好）→ 长期记忆 + 透明回执
   │
   ▼
 状态更新：session 追加 + active_target + 待确认 diff + 长期记忆 upsert
+
+（预留闸位：安全预筛 Safety Gate 横切闸 —— **本期不做**，见 §4.0；本期安全底线 = Pattern Y 逐条确认 + 专家 prompt 保守条款）
 ```
 
 **agentic 边界（混合）**：LLM 只产出**结构化决策**（intent / plan / 文案），所有**执行 / 路由 / 安全 / 派发**是确定性代码。
 
 | 环节 | 谁做 | 理由 |
 |---|---|---|
-| 记忆载入 / 注入 | 确定性（按 salience+相关度排序取 active 记忆） | 注入预算与排序是策略题，非理解题 |
-| 安全预筛 | 确定性规则 + 小模型 | 安全不赌 LLM，可强制、可观测 |
+| 记忆载入 / 注入 | 确定性（按 salience 取 active 记忆） | 注入预算与排序是策略题，非理解题 |
 | 意图识别 | **LLM**（约束成 intent schema） | NLU 只能靠 LLM，但输出受 schema 约束 |
 | active_target 解析 | 确定性（从会话状态推） | "哪周/哪个计划"是状态题非理解题 |
 | 复合拆解 → call plan | **LLM** 产出结构化 plan | plan 是数据，由确定性 dispatcher 执行 |
@@ -131,45 +130,55 @@ class SpecialistResult(BaseModel):
 
 ## 4. 编排脑节点详解
 
-### 4.1 ① 安全预筛 Safety Gate（横切闸）
+### 4.0 安全预筛 Safety Gate（横切闸）—— ⚠️ 本期不做（预留）
+
+> **决策（本期）**：不实现 Safety Gate 节点、不建 `injury_safety` 专家。原因：它是 guardrail 非核心价值，省一个 LLM 跳 + 整套触发词工程。
+
+设计意图（日后插回时按此实现，pipeline 已留闸位 ⓪ 与 ① 之间）：
 
 - **不是与"改课"并列的意图，而是优先级最高、能否决写操作的闸。**
-- 确定性关键词/正则 + 小模型分类：识别伤病、医疗、情绪危机。
-- 命中 → 走**安全道**（路由到 `injury_safety` 专家或 qa + 安全 prompt），**锁掉本轮所有写操作**（不允许任何 proposal 落地），只给保守建议（愿景不变量 #2）。
-- 本期不做医学知识库，安全道 = "保守建议 + 不改计划 + 必要时建议线下就医"。
+- 确定性关键词/正则 + 小模型分类：识别伤病、医疗、情绪危机 → 走安全道、`safety_locked=True` 锁掉本轮所有 proposal。
 
-### 4.2 ② Resolver（意图 + 目标解析）
+**本期安全底线（无 Gate 时靠什么兜）**：
+
+1. **Pattern Y 逐条确认**：任何改课都是 proposal，用户确认才落地 → 无"AI 自动加量"的硬伤害路径。
+2. **专家 prompt 保守条款**：`status_insight` / `weekly_plan` / `master_plan` 的 system prompt 内置"用户提到伤病/疼痛/医疗时，给保守建议、不主动加量、必要时建议线下就医"。
+3. **Memory Writer 仍持久化伤病**（§4.5）：即便本轮无硬闸，伤病仍进长期记忆，后续规划注入规避。
+
+这是"human-in-the-loop 确认"级别的底线，对早期 MVP 够用；规模化或开放陌生用户前再把硬 Gate 插回 ⓪/① 之间。
+
+### 4.1 ① Resolver（意图 + 目标解析）
 
 - **LLM 出结构化 intent**：`{intents: [{specialist_id, confidence}], is_compound, ambiguous}`，受 SpecialistCard 全集约束。
 - **确定性解析 active_target**：从会话状态推当前 plan/week/session；缺失或多义 → 触发 clarify（不猜）。
 - 输出喂给 Supervisor。
 
-### 4.3 ③ Supervisor（编排规划）
+### 4.2 ② Supervisor（编排规划）
 
 - **LLM 产出结构化 call plan**：`[{specialist_id, task: SpecialistTask, depends_on: [...]}]`。
 - **默认串行**（尤其涉及写）；**只读专家可并行**。
 - plan 是数据，由确定性 dispatcher 执行（不让 LLM inline 调专家）。
 
-### 4.4 ④ Specialists（领域专家，subgraph）
+### 4.3 ③ Specialists（领域专家，subgraph）
 
 - 复用现有 conversation 图的 scope 设计，**每个 scope 降为一个 subgraph 专家**：
   - `master_plan`（S1 调整）· `weekly_plan`（S2 调整）· `status_insight`（S3 问答/诊断）· `plan_generation`（S1 建计划，包现有 `master_plan_generator`）· `injury_safety`（安全道）。
 - 每个专家 = 自己的 scoped prompt + 自己那撮工具（read 子集 + draft 子集）。
 - **委派调用**：dispatcher 调 subgraph，专家返回 `SpecialistResult`，控制权回编排脑。
 
-### 4.5 ⑤ Aggregator（汇总应答）
+### 4.4 ④ Aggregator（汇总应答）
 
 - **LLM** 把多个 `SpecialistResult.reply_fragment` 合成一条连贯回复。
 - 收集所有 `proposal` → 组装提案卡（前端确认 UI）。
 - 若任一专家 `needs_clarification` → 优先把反问透传用户。
 
-### 4.6 ⑥ Memory Writer（长期记忆萃取，post-turn）
+### 4.5 ⑤ Memory Writer（长期记忆萃取，post-turn）
 
 - 回复已生成后运行，**best-effort 不阻塞用户应答**（失败只丢日志，不影响本轮）。
 - **LLM 结构化抽取**：扫本轮对话，产出 `MemoryWrite[]`（add/update/resolve），受 `AthleteMemory` schema 约束。
 - **确定性去重 / 合并**：与现有 active 记忆比对，重复不写、矛盾走 update（如"跟腱已恢复"→ 把旧伤 `status=resolved`）。
 - **透明回执**：写入伤病/约束类记忆时，Aggregator 在回复尾部带一句"已记住：…，后续计划会据此调整"，用户可纠正（下一轮"删掉这条"→ resolve）。
-- **与 Safety Gate 分工**：Safety 管**本轮即时**保守反应；Memory Writer 管**跨会话持久**记录。即便 Writer 异步/漏写，安全不受损（gate 已兜本轮）。
+- **本期是伤病的主要承接点**：Safety Gate 本期不做（§4.0），所以伤病信息主要靠 Writer 持久化 + 专家 prompt 保守条款兜底，而非硬闸。
 
 ---
 
@@ -181,7 +190,7 @@ class SpecialistResult(BaseModel):
 |---|---|---|---|
 | **Turn 工作记忆** | 1 个 request | out-of-band typed channel（内存） | `active_target` / `safety_locked` / 预取数据 / 本轮 `SpecialistResult` |
 | **Session 会话记忆**（短期） | 1 个会话线程 | checkpointer thread `{user}:coach:{session_id}` | 追问、上下文跨意图连续；history 窗口化 |
-| **Athlete 长期记忆** | 跨会话永久 | **Azure Table（dev JSON）** | 伤病/约束/偏好/目标 → 注入 QA context + 规划（S1/S2）+ 安全 seed |
+| **Athlete 长期记忆** | 跨会话永久 | **Azure Table（dev JSON）** | 伤病/约束/偏好/目标 → 注入 QA context + 规划（S1/S2） |
 
 ### 5.1 多会话（修正"单线程"）
 
@@ -264,11 +273,10 @@ class AthleteMemory(BaseModel):
 | 周计划调整 | `weekly_plan` | ⚠️ 80%（5/7 工具，无 endpoint）| 接契约 + 补 2 占位工具 |
 | 建赛季计划 | `plan_generation` | ✅ LIVE（generator）| 对话触发 |
 | **改赛季计划** | `master_plan` | 🔴 6 工具全占位 | **实现 6 个 master draft 工具**（US-009）|
-| 安全兜底 | `injury_safety` | 🔴 无 | 新建（保守建议，不接知识库）|
 | 多会话 + history 窗口化 | — | 🔴 每-scope 线程 | 地基改造（session 分线程）|
 | **长期记忆**（写萃取 + 读注入） | Memory Writer + Store | 🔴 无 | **新建**（Azure Table，注入 QA + 规划）|
 
-**MVP 推迟**：伤病医学知识库（全量）· 营养/恢复/装备/比赛/酒店导购 · 主动 push · 社区 · 远程 A2A · 长期记忆的自动主题分桶/多会话合并。
+**MVP 推迟**：**Safety Gate 安全闸 + `injury_safety` 专家**（§4.0，本期靠 Pattern Y 确认 + 专家 prompt 保守条款兜底）· 伤病医学知识库（全量）· 营养/恢复/装备/比赛/酒店导购 · 主动 push · 社区 · 远程 A2A · 长期记忆的自动主题分桶/多会话合并。
 
 ---
 
@@ -278,11 +286,10 @@ class AthleteMemory(BaseModel):
 
 - `src/coach/contracts/specialist.py` — `SpecialistCard` / `SpecialistTask` / `SpecialistResult` / `TargetRef`（core 层，纯 pydantic）。
 - `src/coach/contracts/memory.py` — `AthleteMemory` / `MemoryWrite`（core 层，纯 pydantic）。
-- `src/coach/graphs/orchestrator/` — 编排图：`memory_load.py` · `safety_gate.py` · `resolver.py` · `supervisor.py` · `aggregator.py` · `memory_writer.py` · `dispatcher.py` · `registry.py`。
+- `src/coach/graphs/orchestrator/` — 编排图：`memory_load.py` · `resolver.py` · `supervisor.py` · `aggregator.py` · `memory_writer.py` · `dispatcher.py` · `registry.py`。（`safety_gate.py` 本期不建，§4.0）
 - `src/coach/graphs/orchestrator/prompts/` — 各节点 system/user 分离 prompt（遵守 prompt role discipline）。
 - `src/stride_server/coach_adapters/athlete_memory_store.py` — 长期记忆 two-backend store（dev JSON / prod Azure Table，复用 `likes_store.py` pattern），adapters 层。
 - 新 endpoint `POST /api/users/me/coach/conversations/{session_id}/messages`（统一入口）+ 会话列表 endpoint 于 `routes/coach.py`。
-- `injury_safety` 专家 + 安全道 prompt。
 
 **修改**
 
@@ -301,11 +308,11 @@ class AthleteMemory(BaseModel):
 ## 9. 分阶段落地
 
 - **A0 地基**：session 分线程会话 + history 窗口化 + `SpecialistContract`/`AthleteMemory` 类型 + Registry 脚手架。
-- **A1 编排脑**：Memory Load + Safety Gate + Resolver + Supervisor + Aggregator + dispatcher；接入 `status_insight`（已 LIVE，最易验证端到端）。新 endpoint 上线。
+- **A1 编排脑**：Memory Load + Resolver + Supervisor + Aggregator + dispatcher；接入 `status_insight`（已 LIVE，最易验证端到端）。新 endpoint 上线。
 - **A2 周计划专家**：`weekly_plan` 接契约 + 补 2 占位工具；**删 plan_chat**。
 - **A3 赛季专家**：`plan_generation`（建）+ `master_plan`（改，实现 6 工具）。
 - **A4 长期记忆**：Memory Writer + `AthleteMemoryStore` + 注入规划（S1/S2 user prompt）+ 透明回执。
-- **A5 安全道**：`injury_safety` 专家 + 全链路写锁验证（与长期记忆的伤病 seed 联动）。
+- **（后置，非本期）安全道**：Safety Gate 横切闸 + `injury_safety` 专家 + 全链路写锁验证（§4.0）。
 
 每阶段以"端到端对话可跑 + 回归不变量通过"为完成线。
 
