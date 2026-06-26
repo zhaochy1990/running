@@ -123,6 +123,22 @@ def build_reviewer_llm(
     return build_chat_model(cfg.reviewer, credentials=credentials, api_key=api_key)
 
 
+def build_orchestrator_llm(
+    *,
+    credentials: AzureCredentials | None = None,
+    api_key: str | None = None,
+    config: CoachConfig | None = None,
+) -> Any:
+    """Cheap/fast model for the orchestrator brain (§4.7).
+
+    Powers Resolver / Supervisor / Aggregator / Memory Writer — small
+    structured decisions, not deep reasoning. Falls back to the reviewer spec
+    when no ``[orchestrator]`` section is configured (see ``CoachConfig``).
+    """
+    cfg = config or load_config()
+    return build_chat_model(cfg.for_role("orchestrator"), credentials=credentials, api_key=api_key)
+
+
 def build_commentary_llm(
     *,
     credentials: AzureCredentials | None = None,

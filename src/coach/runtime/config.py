@@ -37,6 +37,13 @@ class CoachConfig:
     reviewer: ModelSpec
     commentary: ModelSpec
     auth_mode: AuthMode
+    # Optional cheap/fast model for the orchestrator brain (Resolver /
+    # Supervisor / Aggregator / Memory Writer). Absent ``[orchestrator]``
+    # section → falls back to ``reviewer`` so existing configs keep working
+    # without an edit (the orchestration nodes still run, just on the reviewer
+    # model). Point this at a cheap deployment (gpt-4.1-mini) to realise the
+    # low-latency main path (§4.7).
+    orchestrator: ModelSpec | None = None
 
     def for_role(self, role: Role) -> ModelSpec:
         if role == "generator":
@@ -45,6 +52,8 @@ class CoachConfig:
             return self.reviewer
         if role == "commentary":
             return self.commentary
+        if role == "orchestrator":
+            return self.orchestrator or self.reviewer
         raise ValueError(f"unknown role {role!r}")
 
 
@@ -185,9 +194,19 @@ def load_config(path: str | Path | None = None) -> CoachConfig:
             f"[auth] unknown mode {auth_mode!r}; valid: {sorted(_VALID_AUTH_MODES)}"
         )
 
+    # ``[orchestrator]`` is optional — absent → for_role("orchestrator") falls
+    # back to the reviewer spec, so the 11 existing config files (and the
+    # eval-sweep variants) keep loading without an edit.
+    orchestrator = (
+        _build_spec("orchestrator", raw["orchestrator"])
+        if "orchestrator" in raw
+        else None
+    )
+
     return CoachConfig(
         generator=_build_spec("generator", raw["generator"]),
         reviewer=_build_spec("reviewer", raw["reviewer"]),
         commentary=_build_spec("commentary", raw["commentary"]),
         auth_mode=auth_mode,  # type: ignore[arg-type]
+        orchestrator=orchestrator,
     )

@@ -29,6 +29,8 @@ _CHECKPOINTER_LOCK = threading.Lock()
 _CHECKPOINTER: Any = None
 _GENERATOR_LLM_LOCK = threading.Lock()
 _GENERATOR_LLM: Any = None
+_ORCHESTRATOR_LLM_LOCK = threading.Lock()
+_ORCHESTRATOR_LLM: Any = None
 _REVIEWER_LLM_LOCK = threading.Lock()
 _REVIEWER_LLM: Any = None
 _COMMENTARY_LLM_LOCK = threading.Lock()
@@ -57,10 +59,17 @@ def get_checkpointer() -> Any:
 
 def reset_for_tests() -> None:
     """Clear cached LLMs + checkpointer (test-only)."""
-    global _CHECKPOINTER, _GENERATOR_LLM, _REVIEWER_LLM, _COMMENTARY_LLM
-    with _CHECKPOINTER_LOCK, _GENERATOR_LLM_LOCK, _REVIEWER_LLM_LOCK, _COMMENTARY_LLM_LOCK:
+    global _CHECKPOINTER, _GENERATOR_LLM, _ORCHESTRATOR_LLM, _REVIEWER_LLM, _COMMENTARY_LLM
+    with (
+        _CHECKPOINTER_LOCK,
+        _GENERATOR_LLM_LOCK,
+        _ORCHESTRATOR_LLM_LOCK,
+        _REVIEWER_LLM_LOCK,
+        _COMMENTARY_LLM_LOCK,
+    ):
         _CHECKPOINTER = None
         _GENERATOR_LLM = None
+        _ORCHESTRATOR_LLM = None
         _REVIEWER_LLM = None
         _COMMENTARY_LLM = None
 
@@ -145,6 +154,31 @@ def get_generator_model() -> str:
     except Exception:  # noqa: BLE001 — stamp must never break generation
         logger.warning("get_generator_model: failed to read coach config", exc_info=True)
         return "unknown"
+
+
+def get_orchestrator_llm() -> Any:
+    """Return a process-wide singleton orchestrator LLM (cheap/fast brain).
+
+    Powers the Resolver / Supervisor / Aggregator. Built from the optional
+    ``[orchestrator]`` config role, which falls back to ``[reviewer]`` when
+    unset (see ``coach.runtime.config.CoachConfig``)."""
+    global _ORCHESTRATOR_LLM
+    if _ORCHESTRATOR_LLM is None:
+        with _ORCHESTRATOR_LLM_LOCK:
+            if _ORCHESTRATOR_LLM is None:
+                from coach.runtime.llm_factory import build_orchestrator_llm
+
+                _ORCHESTRATOR_LLM = build_orchestrator_llm(
+                    credentials=_build_azure_credentials(),
+                )
+    return _ORCHESTRATOR_LLM
+
+
+def set_orchestrator_llm_for_tests(llm: Any) -> None:
+    """Inject a test orchestrator LLM (must support with_structured_output)."""
+    global _ORCHESTRATOR_LLM
+    with _ORCHESTRATOR_LLM_LOCK:
+        _ORCHESTRATOR_LLM = llm
 
 
 def get_reviewer_llm() -> Any:

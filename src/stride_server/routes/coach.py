@@ -17,6 +17,7 @@ Plan-versions endpoints (US-007) land in a follow-up commit.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -27,7 +28,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from coach.schemas import AssistantPart, assistant_parts_from_message
 
@@ -36,6 +37,9 @@ from ..coach_adapters.persistence.weekly_version_store import (
     WeeklyPlanVersion,
     weekly_version_store_from_env,
 )
+from coach.orchestrator import coach_thread_id
+
+from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import build_conversation_graph_for_user, get_checkpointer
 
 logger = logging.getLogger(__name__)
@@ -68,6 +72,54 @@ class QAMessageResponse(BaseModel):
     # the proposed change — wired in a follow-up commit).
     parts: list[AssistantPart]
     iteration: int
+
+
+# Length is enforced by the Field constraint; fullmatch() anchors both ends, so
+# the pattern only needs the allowed character class.
+_SESSION_ID_RE = re.compile(r"[A-Za-z0-9_-]+")
+
+
+class ChatRequest(BaseModel):
+    """Body for POST /coach/chat — the orchestrator-brain entry point.
+
+    ``session_id`` is the user's explicit conversation thread (§5.1). The
+    checkpointer key is derived server-side as ``{user}:coach:{session_id}``;
+    no client-supplied thread_id is ever honoured.
+
+    ``session_id`` is constrained to ``[A-Za-z0-9_-]`` so a client cannot embed
+    ``:`` and manufacture a thread_id that collides with another user's thread
+    (the thread id format is colon-delimited). This mirrors the qa endpoint,
+    whose thread_id is fully server-generated from colon-free UUIDs/dates.
+    """
+
+    session_id: str = Field(min_length=1, max_length=128)
+    message: str = Field(min_length=1)
+    model_config = {"extra": "ignore"}
+
+    @field_validator("session_id")
+    @classmethod
+    def _session_id_is_opaque_token(cls, value: str) -> str:
+        if not _SESSION_ID_RE.fullmatch(value):
+            raise ValueError(
+                "session_id must be 1–128 chars of [A-Za-z0-9_-] (no ':' allowed)"
+            )
+        return value
+
+
+class ChatResponse(BaseModel):
+    """Response for POST /coach/chat — one orchestrated turn (§4.4 TurnResponse).
+
+    ``proposals`` are Pattern-Y write proposals (typed diffs) that ride the
+    response and are landed only on a later ``/apply`` confirmation. A clarify
+    turn carries ``clarification`` and an empty ``proposals`` list.
+    """
+
+    session_id: str
+    thread_id: str
+    reply: str
+    clarification: str | None = None
+    active_target: dict | None = None
+    proposals: list[dict] = Field(default_factory=list)
 
 
 class ChatMessage(BaseModel):
@@ -190,11 +242,13 @@ def post_qa_message(
     }
     try:
         state = graph.invoke(state_in, config=config)
-    except Exception as exc:  # noqa: BLE001 — coach endpoint boundary
+    except Exception:  # noqa: BLE001 — coach endpoint boundary
+        # Full exception stays in the log; the client gets a generic message so
+        # internal service URLs / resource names don't leak in the 503 detail.
         logger.exception("coach qa graph invocation failed")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"AI coach unavailable: {exc}",
+            detail="AI coach temporarily unavailable. Please try again.",
         )
 
     history = state.get("history") or []
@@ -206,6 +260,47 @@ def post_qa_message(
         thread_id=thread_id,
         parts=parts,
         iteration=int(state.get("iteration") or 0),
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/users/me/coach/chat  (orchestrator brain — §4, §8 A1)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/users/me/coach/chat", response_model=ChatResponse)
+def post_chat_message(
+    body: ChatRequest,
+    payload: dict = Depends(require_bearer),
+) -> ChatResponse:
+    """Session-threaded coach chat: intent-routed through the orchestrator brain.
+
+    Unlike the per-scope qa endpoint, this drives the full pipeline
+    (Resolver → Supervisor → specialists → Aggregator) so one session carries
+    context across intents (§5.1). The thread is keyed ``{user}:coach:{session}``.
+    """
+    user_id: str = payload["sub"]
+    thread_id = coach_thread_id(user_id, body.session_id)
+    try:
+        turn = run_coach_turn(
+            user_id=user_id, session_id=body.session_id, message=body.message
+        )
+    except Exception:  # noqa: BLE001 — coach endpoint boundary
+        # Full exception (may carry internal URLs / resource names) goes to the
+        # log only; the client gets a generic message.
+        logger.exception("coach chat turn failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI coach temporarily unavailable. Please try again.",
+        )
+
+    return ChatResponse(
+        session_id=body.session_id,
+        thread_id=thread_id,
+        reply=turn.reply,
+        clarification=turn.clarification,
+        active_target=turn.active_target.model_dump() if turn.active_target else None,
+        proposals=[card.model_dump() for card in turn.proposals],
     )
 
 
