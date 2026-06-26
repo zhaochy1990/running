@@ -37,6 +37,9 @@
 ⓪ 载入记忆 Memory Load        [确定性] session history（窗口化）+ athlete 长期记忆（active，预算内注入）
   │
   ▼
+✗ 安全预筛 Safety Gate         [本期不做·预留闸位] 见 §1 非目标；底线 = Pattern Y 确认 + 专家 prompt 保守条款
+  │
+  ▼
 ① 意图+目标解析 Resolver      [LLM 出结构化 intent] + [确定性解析 active_target]；不明确→clarify
   │
   ▼
@@ -52,9 +55,7 @@
 ⑤ 记忆萃取 Memory Writer      [LLM 结构化抽取，best-effort] 萃取持久事实（伤病/约束/偏好）→ 长期记忆 + 透明回执
   │
   ▼
-状态更新：session 追加 + active_target + 待确认 diff + 长期记忆 upsert
-
-（预留闸位：安全预筛 Safety Gate 横切闸 —— **本期不做**，见 §1 非目标；本期安全底线 = Pattern Y 逐条确认 + 专家 prompt 保守条款）
+状态更新：session 追加 + active_target + 待确认 diff/clarification + 长期记忆 upsert
 ```
 
 **agentic 边界（混合）**：LLM 只产出**结构化决策**（intent / plan / 文案），所有**执行 / 路由 / 安全 / 派发**是确定性代码。
@@ -79,14 +80,14 @@
 
 ```python
 class SpecialistCard(BaseModel):
-    id: str                       # 稳定路由句柄: "weekly_plan" / "status_insight" / "injury_safety"
+    id: str                       # 稳定路由句柄: "weekly_plan" / "status_insight" / "season_plan"
     description: str              # 「何时路由到我」—— router 读，≠ 执行 prompt
     tags: list[str]              # 意图关键词
     examples: list[str]          # 样例 utterance，锚定路由判断（A2A/ADK 共识：examples 提升路由准确度）
     input_schema: type[BaseModel]   # 该专家的 SpecialistTask 子类型
     output_schema: type[BaseModel]  # 该专家的 SpecialistResult 子类型
     writes: bool                 # 是否产出 proposal/diff —— 安全/权限闸据此判断
-    data_needs: list[str]        # 消费哪些 read-tool（编排可预取，省往返）
+    data_needs: list[str]        # 预取的数据域，如 ["fatigue","load","prediction","completion"]；映射到 StrideToolkit read 调用，编排预取省往返
 ```
 
 **路由 = router 只读 Card（description + tags + examples），不调用专家。** 加新专家 = 注册一个 Card，supervisor 的 routing tool 从 Card 自动派生，**不改编排脑一行**。
@@ -131,7 +132,15 @@ class SpecialistResult(BaseModel):
 
 ## 4. 编排脑节点详解
 
-> Safety Gate 安全闸本期不做，pipeline 预留闸位（⓪ 与 ① 之间）；本期安全底线见 §1 非目标 / §7。
+> Safety Gate 安全闸本期不做，pipeline 预留闸位（⓪ 与 ① 之间）；本期安全底线见 §1 非目标 / §4.5。
+
+### 4.0 ⓪ Memory Load（载入记忆，确定性·无 LLM）
+
+pipeline 第一个节点，把两层记忆备齐喂下游：
+
+- **session 记忆**：按 `thread_id` 恢复 checkpointer，取近 N 轮全文 + 滚动摘要（§5.2）。
+- **athlete 长期记忆**：`AthleteMemoryStore.fetch_active()` → 过滤 active/未过期 → 按 `salience` 排序 → 预算内 top-K → 注入 user context（§5.3；intent 精排后置）。
+- **澄清续接 guard**：若 session 有 `pending_clarification`，本轮按"澄清答复"处理——把答案塞回等待的专家、恢复挂起 CallPlan，跳过新 intent 分类；用户若改话题则新意图 supersede，丢弃挂起。
 
 ### 4.1 ① Resolver（意图 + 目标解析）
 
@@ -317,15 +326,22 @@ class TurnResponse(BaseModel):
     active_target: TargetRef | None  # 回显，前端高亮当前对象
 ```
 
-**硬化**：不丢任一 fragment 的实质；不编造数据；全败时诚实失败、不伪造成功；**reply 与 proposal 一致**（不说"已降强度"而 proposal 为空）；精简教练口吻。
+**不变量 / 硬化**：不丢任一 fragment 的实质；不编造数据；全败时诚实失败、不伪造成功；**reply 与 proposal 一致**（不说"已降强度"而 proposal 为空）；**`clarification≠None ⟹ proposals 为空`**（澄清轮不出提案）；精简教练口吻。
+
+> **最终 reply 归属**：④ 出的 `TurnResponse.reply` 是 body；⑤ Memory Writer 若有回执，**产出带后缀的新 reply 值**（非原地 mutate ④ 的对象），最终 `TurnResponse` 在 ⑤ 后定型。无回执时 ④ 即终值。
 
 ### 4.5 ⑤ Memory Writer（长期记忆萃取，post-turn）
 
-- 回复已生成后运行，**best-effort 不阻塞用户应答**（失败只丢日志，不影响本轮）。
+- **两段，时序分清**：①**萃取决定**（add/update 判定 + 回执模板拼接）在返回前**同步**完成——回执要追加进本轮 reply，必须同步；②记忆**持久化写入 store** 是 **best-effort 异步**（失败只丢日志，不影响本轮、不阻塞应答）。
 - **LLM 结构化抽取**：扫本轮对话，产出 `MemoryWrite[]`（add/update/resolve），受 `AthleteMemory` schema 约束。
 - **确定性去重 / 合并**：与现有 active 记忆比对，重复不写、矛盾走 update（如"跟腱已恢复"→ 把旧伤 `status=resolved`）。
 - **透明回执**：写入伤病/约束类记忆时，在 Aggregator 回复 body 尾部**确定性追加**一句"已记住：…，后续计划会据此调整"（模板后缀，不进 Aggregator LLM），用户可纠正（下一轮"删掉这条"→ resolve）。
 - **本期是伤病的主要承接点**：Safety Gate 本期不做（§1 非目标），所以伤病信息主要靠 Writer 持久化 + 专家 prompt 保守条款兜底，而非硬闸。
+
+### 4.6 dispatcher + SpecialistRegistry（确定性 plumbing，无 LLM）
+
+- **dispatcher**：按 CallPlan 的 DAG 执行——无依赖只读调用并行（asyncio），写调用 / 同 target 调用**串行**（硬覆盖 LLM 的并行建议）；上游 `SpecialistResult` 注入下游 `Task.context`；中途 `needs_clarification` → 挂起其传递性下游、放行独立在飞分支、转澄清（§4.4），挂起态存 `pending_clarification`；单个专家 failed 不拖垮全 plan，Aggregator 据 `status` 兜底。
+- **SpecialistRegistry**：装全部 Card，给 Resolver 的 constrained-decoding enum、给 dispatcher 按 `id` 取 subgraph。加专家 = 注册 Card，routing 自动派生（§6）。
 
 ---
 
@@ -335,7 +351,7 @@ class TurnResponse(BaseModel):
 
 | 层 | 生命周期 | 存储 | 用途 |
 |---|---|---|---|
-| **Turn 工作记忆** | 1 个 request | out-of-band typed channel（内存） | `active_target` / `safety_locked` / 预取数据 / 本轮 `SpecialistResult` |
+| **Turn 工作记忆** | 1 个 request | out-of-band typed channel（内存） | `active_target` / 预取数据 / 本轮 `SpecialistResult` |
 | **Session 会话记忆**（短期） | 1 个会话线程 | checkpointer thread `{user}:coach:{session_id}` | 追问、上下文跨意图连续；history 窗口化 |
 | **Athlete 长期记忆** | 跨会话永久 | **Azure Table（dev JSON）** | 伤病/约束/偏好/目标 → 注入 QA context + 规划（S1/S2） |
 
@@ -346,12 +362,12 @@ class TurnResponse(BaseModel):
 | 现在 | 改成 |
 |---|---|
 | `thread_id = {user}:{scope}:{key}`（每 scope/每天一条线程）| `thread_id = {user}:coach:{session_id}`（按用户显式新建的会话分线程）|
-| `scope` 是线程键一部分（绑死）| `scope` 降为 **turn 级字段**，Resolver 每轮设 → **会话内**跨意图连续 |
+| `scope` 是线程键一部分（绑死）| 路由产物（旧称 `scope`）统一为 `specialist_id`，降为 **turn 级**，Resolver 每轮设 → **会话内**跨意图连续 |
 | qa 每天新开线程 | 同一 session 内 qa/week/master 共用线程；新话题用户**另开 session** |
 | active target 藏线程键 | `active_target` 升为**会话状态显式字段**，随对话切换 |
 | 跨会话无记忆 | **长期记忆**承载跨会话的伤病/约束/偏好/目标 |
 
-`ConversationState` 新增/调整字段：`session_id`、`active_target: TargetRef`、`turn_scope`（本轮路由结果）、`pending_proposals`、`safety_locked: bool`、`injected_memories: list[str]`（本轮注入的记忆 id，便于追溯）。
+`ConversationState` 新增/调整字段：`session_id`、`active_target: TargetRef`、`turn_specialist_ids: list[str]`（本轮路由结果，compound 时多个）、`pending_proposals`、`pending_clarification`（澄清续接：上轮在等哪个专家答什么 + 挂起的 CallPlan，见 §4.4/§4.6）、`injected_memories: list[str]`（本轮注入的记忆 id，便于追溯）。（`safety_locked` 随 Safety Gate 一并后置，本期不设。）
 
 **Session 管理**：session 由用户显式新建（前端"新会话"）。MVP 仅需 `session_id` 入参 + 一个会话列表 endpoint；不做自动主题切分/合并。
 
@@ -374,7 +390,7 @@ class TurnResponse(BaseModel):
 
 | 信息 | 归宿 | 压缩时 |
 |---|---|---|
-| `active_target` / `pending_proposals` / `safety_locked` | out-of-band typed state（§5.4） | 不进 message history，**零损失不用压** |
+| `active_target` / `pending_proposals` / `pending_clarification` | out-of-band typed state（§5.4） | 不进 message history，**零损失不用压** |
 | 伤病/约束/偏好等持久事实 | 已被 Memory Writer 抽进**长期记忆**（§5.3） | 摘要**可 lossy** —— 丢了 store 里还在 |
 
 → 摘要只需保"对话语义脉络"，不需无损保事实 → 能用**更激进、更便宜**的摘要。
@@ -412,7 +428,7 @@ class AthleteMemory(BaseModel):
 
 **读路径（注入）**——两个消费点，都进 **user prompt**（prompt-role-discipline：per-athlete 数据不进 system，否则毁缓存）：
 
-1. **对话**：Memory Load（⓪）按 `salience` × 与本轮 intent 相关度排序，预算内注入 Resolver/专家的 user context。
+1. **对话**：Memory Load（⓪）按 `salience` 排序、预算内注入 Resolver/专家的 user context（intent 精排是后置优化，见 §10）。
 2. **规划**：S1/S2 生成时，`AthleteMemoryStore.fetch_active()` 的伤病/约束注入 planner user prompt 的"已知约束"段 → **训练自动规避**（兑现"跟腱受伤 → 后续计划针对性调整"）。这是 chat 记忆 → 训练适配的桥。
 
 **与现有 `constraints` 的关系**：长期记忆是 `ConversationState.constraints` 的持久化上位来源；现有 inline constraints 收敛为"从 store 注入"，不再各处临时拼。
@@ -422,7 +438,7 @@ class AthleteMemory(BaseModel):
 **两类状态（按是否喂给 LLM 分）**：
 
 - **model-visible**：对话 messages（喂 LLM）—— 即 session 会话记忆的自然语言轮次。
-- **out-of-band typed context**（结构化、节点间传、**不进 LLM 消息流**）：`active_target`、`session_id`、`user_id`、预取数据、注入的 `AthleteMemory`、各 `SpecialistResult`、`safety_locked`、正在攒的 `pending_proposals`。对齐 OpenAI `RunContextWrapper[T]` / LangGraph graph State / 私有 channel。
+- **out-of-band typed context**（结构化、节点间传、**不进 LLM 消息流**）：`active_target`、`session_id`、`user_id`、预取数据、注入的 `AthleteMemory`、各 `SpecialistResult`、正在攒的 `pending_proposals`、`pending_clarification`。对齐 OpenAI `RunContextWrapper[T]` / LangGraph graph State / 私有 channel。
 
 **为什么分**：① 系统句柄（`user_id`/`plan_id`）是给代码用的，不污染 prompt；结构化数据走 typed channel 不 stringify。② out-of-band 不在 message history 里 → §5.2 摘要**永远碰不到它**，`active_target` 这类零损失（这是"摘要可 lossy"成立的一半，另一半是事实进了长期记忆）。
 
@@ -433,7 +449,7 @@ class AthleteMemory(BaseModel):
 | `active_target` | **提升** | 下一轮"它/这个"指代消解要用（指代消解） |
 | `pending_proposals` | **提升** | 用户下一轮才确认/拒；横跨多轮 |
 | `injected_memories`（本轮注入的记忆 id） | **提升** | 留痕/可追溯（这条建议依据哪些记忆） |
-| `safety_locked` | **提升**（按需） | 安全态可能需续到澄清完成 |
+| `pending_clarification` | **提升** | 澄清轮跨轮续接：记下在等哪个专家答什么 + 挂起的 CallPlan（§4.4/§4.6）|
 | 预取的 read-tool 数据 | 丢弃 | 下一轮按需重取；缓存在 toolkit 层 |
 | 各 `SpecialistResult`（reply_fragment/中间过程） | 丢弃 | 已被 Aggregator 合进 model-visible 回复 |
 | `SpecialistResult.artifacts` 大数据 | 丢弃（引用） | 重数据走外部引用，不进会话状态 |
@@ -497,7 +513,7 @@ class AthleteMemory(BaseModel):
 
 ## 10. 开放问题
 
-1. Resolver 与 Safety Gate 能否合并成一次 LLM 调用（省一跳延迟），还是安全必须独立确定性先行？
+1. ~~Resolver 与 Safety Gate 能否合并成一次 LLM 调用~~ →（Safety Gate 本期不做，此问题随安全道一并后置）。
 2. ~~History 摘要的粒度与触发阈值~~ → **已定**（§5.2）：summarization buffer，批量摘要保缓存，按 token(~6–8k)触发，窗口近 12–16 轮，摘要可 lossy（事实已被长期记忆/结构化 state 接走）。剩余可调：N 与阈值的实测标定。
 3. `active_target` 多义时的 disambiguation UX（反问 vs 默认最近）。
 4. 并行只读专家的结果合并顺序对 Aggregator 文案的影响。
