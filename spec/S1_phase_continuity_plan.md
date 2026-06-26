@@ -97,7 +97,34 @@ S1 master plan 生成时，`build_master_prompts` 注入的 `current_phase` bloc
 - `current_week_number` 现在指向 entry phase 中的实际周，需确认前端「当前周」
   指示一致。
 
+## Step 4 实测诊断（2026-06-26，重新生成 zhaochaoyi）
+
+Step 1-3 完成后用改后的 prompt 重新生成，**核心方向已验证**：generator 正确
+输出了 `is_completed` 的 base phase（触发的全是 completed-phase 相关 violation，
+证明 prompt 生效）。但 `verdict=block`，3 轮迭代未过，4 个 L1 rule 误报：
+
+| rule | 位置 | 误报原因（推断）| 修复方向 |
+|---|---|---|---|
+| `weekly_key_sessions_present` | `master_rule_filter.py:591` | completed base phase 无 weeks → 被当成「缺周课表」 | check 时跳过 `is_completed` phase |
+| `taper_volume_drop` | `:754` | weeks 从 W9 起（base 占 W1-8），按 weeks_sorted 索引算 taper 可能错位 | 用 `is_taper_week` 而非绝对 index |
+| `long_run_distance_share` ×4 | `:928` | 同上，week 编号偏移影响 deload/long-run 判定 | 按 week 内容判定，跳过 completed phase 的 week |
+
+入口：`run_master_rule_filter`（`:1260`）。`_is_deload_week`（`:588`）是现成的
+recovery/taper 豁免 helper，可参考扩展 completed 豁免。
+
+**Step 4 待办**：
+1. 读 591/754/928/1260 实现，定位各自如何遍历 weeks/phases。
+2. 让它们跳过 `is_completed` phase 覆盖的 weeks。最干净：在 `run_master_rule_filter`
+   入口把 completed phase 的 weeks 过滤掉再喂 Batch B rules，或每个 check 加豁免。
+3. 重新生成直到 verdict=pass，确认 plan 含 base(W1-8)+speed 从 W9 起+current 指 speed。
+4. 加含 completed phase 的 fixture，跑 S1 eval 回归。
+5. 导出 bundle → `push_master_plan_to_prod.py --execute` 覆盖 prod。
+
+**注意 tenant**：本地 LLM(`azureai4identity`) 在公司 tenant `72f988bf`
+(`COSMIC AKS PlayGround`)；prod 存储 `authstorage2026` 在个人 tenant `fb507597`
+(`zhaochy_2015@hotmail.com`)。重新生成前 `az account set` 切公司，push 前切回个人。
+
 ## 分支
 
-从 `origin/master` 新建（如 `feat/s1-completed-phase-continuity`）。本计划文档
-随该分支携带。
+从 `origin/master` 新建（如 `feat/s1-completed-phase-continuity`）。当前进度：
+Step 1-3 committed（schema+prompt、test fix、前端），Step 4-5 待续。
