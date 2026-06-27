@@ -38,6 +38,18 @@ class StrideScreenHero extends StatelessWidget {
     VoidCallback? onBack,
   }) : leading = _BackButton(onPressed: onBack);
 
+  /// Convenience constructor for primary tab screens that open the global
+  /// account drawer from a top-left ≡ button. [onMenu] is wired by the caller
+  /// to `shellScaffoldKey.currentState?.openDrawer()` (the shell owns the key).
+  StrideScreenHero.withMenu({
+    super.key,
+    required this.eyebrow,
+    required this.title,
+    this.deck,
+    this.trailing,
+    required VoidCallback onMenu,
+  }) : leading = _MenuButton(onPressed: onMenu);
+
   final String eyebrow;
   final String title;
   final String? deck;
@@ -130,6 +142,22 @@ class _BackButton extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
       icon: const Icon(Icons.arrow_back, size: 20),
       onPressed: onPressed ?? () => Navigator.of(context).maybePop(),
+    );
+  }
+}
+
+class _MenuButton extends StatelessWidget {
+  const _MenuButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+      icon: const Icon(Icons.menu, size: 20),
+      tooltip: '菜单',
+      onPressed: onPressed,
     );
   }
 }
