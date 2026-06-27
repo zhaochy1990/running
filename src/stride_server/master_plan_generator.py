@@ -236,15 +236,29 @@ def _build_master_plan(
         )
 
     now_iso = datetime.now(timezone.utc).isoformat()
+    # Plan-level start_date / total_weeks span the WHOLE season, including any
+    # already-completed leading phase (is_completed). The weekly skeleton only
+    # covers the active portion (e.g. weeks W9-24 when a base phase took W1-8),
+    # so total_weeks is the continuous season length = max(week_index), NOT
+    # len(weeks). start_date is the earliest phase start. With no completed
+    # lead-in these reduce to the old values (max == len, earliest == start),
+    # so existing plans are unaffected.
+    phase_starts = [p.start_date for p in phases if p.start_date]
+    plan_start = min(phase_starts) if phase_starts else start_date
+    plan_total_weeks = (
+        max(w.week_index for w in weeks)
+        if weeks
+        else compute_total_weeks(plan_start, end_date)
+    )
     return MasterPlan(
         plan_id=str(uuid4()),
         user_id=user_id,
         status=MasterPlanStatus.DRAFT,
         goal_id=goal_snapshot.goal_id,
         goal=goal_snapshot,
-        start_date=start_date,
+        start_date=plan_start,
         end_date=end_date,
-        total_weeks=len(weeks) if weeks else compute_total_weeks(start_date, end_date),
+        total_weeks=plan_total_weeks,
         phases=phases,
         milestones=milestones,
         weeks=weeks,
