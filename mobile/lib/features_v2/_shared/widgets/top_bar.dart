@@ -28,44 +28,51 @@ class StrideTopBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: preferredSize.height,
-      padding: const EdgeInsets.symmetric(horizontal: StrideTokens.spaceLg),
-      decoration: const BoxDecoration(
-        color: StrideTokens.surface,
-        border: Border(bottom: BorderSide(color: StrideTokens.border2)),
-      ),
-      child: Row(
-        children: [
-          if (leading != null) ...[
-            IconTheme(
-              data: const IconThemeData(size: 20, color: StrideTokens.fgSoft),
-              child: leading!,
-            ),
-            const SizedBox(width: StrideTokens.spaceSm),
-          ],
-          if (title != null)
-            Expanded(
-              child: Text(
-                title!,
-                style: const TextStyle(
-                  fontFamily: AppTypography.fontSans,
-                  fontSize: StrideTokens.fs14,
-                  fontWeight: FontWeight.w500,
-                  color: StrideTokens.fg,
-                ),
+    // Used as Scaffold.appBar: Scaffold (primary, default true) allocates
+    // preferredSize.height + status-bar height for the appBar slot, so wrapping
+    // in SafeArea(bottom:false) pushes the bar below the status bar without
+    // overflow. Without this the ≡/title overlap the system status bar.
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        height: preferredSize.height,
+        padding: const EdgeInsets.symmetric(horizontal: StrideTokens.spaceLg),
+        decoration: const BoxDecoration(
+          color: StrideTokens.surface,
+          border: Border(bottom: BorderSide(color: StrideTokens.border2)),
+        ),
+        child: Row(
+          children: [
+            if (leading != null) ...[
+              IconTheme(
+                data: const IconThemeData(size: 20, color: StrideTokens.fgSoft),
+                child: leading!,
               ),
-            )
-          else
-            const Spacer(),
-          for (int i = 0; i < actions.length; i++) ...[
-            if (i > 0) const SizedBox(width: StrideTokens.spaceSm),
-            IconTheme(
-              data: const IconThemeData(size: 20, color: StrideTokens.fgSoft),
-              child: actions[i],
-            ),
+              const SizedBox(width: StrideTokens.spaceSm),
+            ],
+            if (title != null)
+              Expanded(
+                child: Text(
+                  title!,
+                  style: const TextStyle(
+                    fontFamily: AppTypography.fontSans,
+                    fontSize: StrideTokens.fs14,
+                    fontWeight: FontWeight.w500,
+                    color: StrideTokens.fg,
+                  ),
+                ),
+              )
+            else
+              const Spacer(),
+            for (int i = 0; i < actions.length; i++) ...[
+              if (i > 0) const SizedBox(width: StrideTokens.spaceSm),
+              IconTheme(
+                data: const IconThemeData(size: 20, color: StrideTokens.fgSoft),
+                child: actions[i],
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
