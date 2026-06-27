@@ -1072,6 +1072,7 @@ def build_master_prompts(
     body_composition: dict[str, Any] | None = None,
     body_composition_summary: str | None = None,
     current_phase: "CurrentPhaseContext | None" = None,
+    athlete_memories: "list | None" = None,
 ) -> tuple[str, str]:
     """Build the ``(system_prompt, user_prompt)`` pair for S1 generation.
 
@@ -1182,6 +1183,20 @@ def build_master_prompts(
     # with no runtime placeholders — rendered with an empty context it is a
     # stable, cacheable prefix. user_prompt.md is the *user* turn: every
     # per-athlete / per-call value computed above is injected there.
+    # Known athlete facts from long-term memory (A4) — soft constraints so future
+    # plans auto-adapt (e.g. relocation to altitude). Injected in the *user* turn.
+    known_constraints_block = ""
+    active_mems = [m for m in (athlete_memories or []) if getattr(m, "status", "active") == "active"]
+    if active_mems:
+        mem_lines = "\n".join(
+            f"- [{m.kind}] {m.content}"
+            + (f"（影响：{', '.join(m.affects)}）" if getattr(m, "affects", None) else "")
+            for m in active_mems
+        )
+        known_constraints_block = "\n" + render_fragment(
+            "shared/blocks/known_constraints.md", {"memories": mem_lines}
+        ) + "\n"
+
     from coach.skills import render_fragment, render_skill
     system_prompt = render_skill("master_plan_planner", {})
     user_prompt = render_fragment("master_plan_planner/user_prompt.md", {
@@ -1194,6 +1209,7 @@ def build_master_prompts(
         "fitness_summary": fitness_summary,
         "current_phase_block": current_phase_block,
         "continuity_block": continuity_block,
+        "known_constraints_block": known_constraints_block,
         "macro_block": macro_block,
         "body_comp_block": body_comp_block,
     })
