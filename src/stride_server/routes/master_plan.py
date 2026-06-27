@@ -638,9 +638,19 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
     """Build the enriched response dict for the current-plan endpoint."""
     today = datetime.now(timezone.utc).date()
 
-    # current_phase_id: find which phase contains today
+    # current_phase_id: the phase the athlete is actively in. Already-completed
+    # leading phases (is_completed — a continuity plan's carried-over base) are
+    # NOT "current" even when today still falls inside their date range (e.g.
+    # the last day of a base block): they're done by definition. So skip them
+    # and, if today sits in a completed phase's tail, fall back to the first
+    # not-yet-completed phase (the entry phase the plan actually starts from).
     current_phase_id: str | None = None
+    first_active_id: str | None = None
     for phase in plan.phases:
+        if getattr(phase, "is_completed", False):
+            continue
+        if first_active_id is None:
+            first_active_id = phase.id
         try:
             phase_start = date_cls.fromisoformat(phase.start_date)
             phase_end = date_cls.fromisoformat(phase.end_date)
@@ -649,6 +659,8 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
                 break
         except (ValueError, TypeError):
             pass
+    if current_phase_id is None:
+        current_phase_id = first_active_id
 
     current_week_number = _current_week_number(plan, today)
     total_weeks = int(getattr(plan, "total_weeks", 0) or len(getattr(plan, "weeks", [])))
