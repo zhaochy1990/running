@@ -160,17 +160,50 @@ class GetHealthSnapshotImpl:
                 if rhr_rows:
                     latest["rhr"] = dict(rhr_rows[0]).get("rhr")
 
+            # Dashboard keeps raw signals (HRV) + vendor readiness; threshold
+            # HR/pace are NOT taken from here — those are STRIDE-calibrated below.
             dash_rows = db.query(
                 """SELECT avg_sleep_hrv, hrv_normal_low, hrv_normal_high, recovery_pct,
-                    running_level, aerobic_score, threshold_hr, threshold_pace_s_km
+                    running_level, aerobic_score
                 FROM dashboard WHERE id = 1"""
             )
             dashboard = dict(dash_rows[0]) if dash_rows else {}
+
+            # STRIDE self-computed threshold (LTHR + threshold pace) — single
+            # source per CLAUDE.md (RunningCalibrationRepository), NOT the COROS
+            # dashboard threshold. Supplementary, so a failure degrades to None
+            # rather than failing the whole snapshot.
+            calibration = None
+            try:
+                from stride_core.running_calibration.sqlite_connector import (
+                    SQLiteRunningCalibrationRepository,
+                )
+                from stride_core.timefmt import today_shanghai
+
+                snap = SQLiteRunningCalibrationRepository(db).fetch_latest(
+                    as_of_date=today_shanghai()
+                )
+                if snap is not None:
+                    thr_pace = (
+                        round(1000.0 / snap.threshold_speed_mps)
+                        if snap.threshold_speed_mps
+                        else None
+                    )
+                    conf = snap.threshold_hr_confidence
+                    calibration = {
+                        "threshold_hr": snap.threshold_hr,
+                        "threshold_pace_s_km": thr_pace,
+                        "threshold_hr_confidence": getattr(conf, "value", str(conf)),
+                    }
+            except Exception:  # noqa: BLE001 — calibration is supplementary
+                logging.getLogger(__name__).warning(
+                    "get_health_snapshot: STRIDE calibration fetch failed", exc_info=True
+                )
         finally:
             db.close()
         return ToolResult(
             ok=True,
-            data={"latest": latest, "dashboard": dashboard},
+            data={"latest": latest, "dashboard": dashboard, "calibration": calibration},
         )
 
 

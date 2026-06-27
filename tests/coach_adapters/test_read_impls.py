@@ -92,7 +92,7 @@ def test_recent_activities_empty(patched_db) -> None:
 def test_health_snapshot_empty(patched_db) -> None:
     res = read_impls.GetHealthSnapshotImpl("uid")()
     assert res.ok
-    assert res.data == {"latest": None, "dashboard": {}}
+    assert res.data == {"latest": None, "dashboard": {}, "calibration": None}
 
 
 def test_pmc_series_empty(patched_db) -> None:
@@ -195,6 +195,30 @@ def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
     # No vendor-computed load fields leak to the LLM.
     for vendor in ("ati", "cti", "tsb", "fatigue", "training_load_state"):
         assert vendor not in latest
+
+
+def test_health_snapshot_threshold_from_stride_calibration(patched_db) -> None:
+    from datetime import date
+
+    from stride_core.running_calibration.sqlite_connector import (
+        SQLiteRunningCalibrationRepository,
+    )
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+
+    SQLiteRunningCalibrationRepository(patched_db).save_snapshot(
+        RunningCalibrationSnapshot(
+            as_of_date=date(2026, 5, 13), threshold_hr=169.0, threshold_speed_mps=4.0
+        )
+    )
+    res = read_impls.GetHealthSnapshotImpl("uid")()
+    assert res.ok
+    cal = res.data["calibration"]
+    assert cal is not None
+    assert cal["threshold_hr"] == 169.0
+    assert cal["threshold_pace_s_km"] == 250  # 1000 / 4.0 m/s
+    # The COROS dashboard threshold must NOT be surfaced.
+    assert "threshold_hr" not in res.data["dashboard"]
+    assert "threshold_pace_s_km" not in res.data["dashboard"]
 
 
 def test_pmc_series_uses_stride_load(patched_db) -> None:
