@@ -102,6 +102,12 @@ class Phase(BaseModel):
     key_workouts: str = ""                 # 「关键课型」: prose on the quality sessions
     monitoring_triggers: list[str] = Field(default_factory=list)  # 「监控触发」: RHR/HRV/pain thresholds
     coach_note: str = ""                   # 教练引言: 1-2 sentence blockquote
+    # Already-completed leading phase (e.g. a finished base block carried over
+    # from the prior plan). True ⇒ the season overview keeps it on the timeline
+    # as 「已完成」 for continuity, but the planner does NOT re-prescribe its
+    # weekly key sessions. Default False keeps every existing plan / fixture —
+    # and any plan with no completed lead-in — unchanged (backward compatible).
+    is_completed: bool = False
 
 
 # ---------------------------------------------------------------------------

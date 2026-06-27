@@ -588,6 +588,43 @@ def _week_is_deload(week: Any) -> bool:
     return bool(getattr(week, "is_recovery_week", False) or getattr(week, "is_taper_week", False))
 
 
+def _active_plan_view(plan: MasterPlan) -> MasterPlan:
+    """Weekly-skeleton view that re-bases an already-completed lead-in to week 1.
+
+    Continuity plans (see the season-continuity prompt) carry completed leading
+    phases (``Phase.is_completed``) on the timeline with NO weeks, and number the
+    emitted weeks continuously from the season start (e.g. base = W1-8 → speed
+    starts at W9). The Batch-B weekly rules, however, assume a plan that runs
+    from week 1: they assert ``week_index == 1..N`` and derive the expected
+    week-count from ``plan.start_date``. Feeding them the raw continuity plan
+    mis-fires (sequential-index + coverage failures, plus knock-on taper /
+    long-run-share errors).
+
+    This subtracts the completed-week offset so the emitted weeks read 1..N and
+    shifts ``start_date`` to the first active week — exactly the from-week-1
+    shape the weekly rules expect. Phases are left intact (phase-level rules run
+    on the full plan separately). No completed phase, or no offset → returns the
+    plan unchanged (backward compatible).
+    """
+    if not any(getattr(p, "is_completed", False) for p in plan.phases):
+        return plan
+    weeks = sorted(plan.weekly_key_sessions, key=lambda w: w.week_index)
+    if not weeks:
+        return plan
+    offset = weeks[0].week_index - 1
+    if offset <= 0:
+        return plan
+    remapped = [
+        w.model_copy(update={"week_index": w.week_index - offset}) for w in weeks
+    ]
+    return plan.model_copy(update={
+        "start_date": remapped[0].week_start or plan.start_date,
+        "weekly_key_sessions": remapped,
+        "weeks": remapped,
+        "total_weeks": len(remapped),
+    })
+
+
 def check_weekly_key_sessions_present(plan: MasterPlan) -> list[RuleViolation]:
     """Every non-recovery / non-taper week must have 1-3 key sessions.
 
@@ -1288,6 +1325,13 @@ def run_master_rule_filter(
         # Schema failure — downstream checks need a parsed MasterPlan; bail.
         return RuleFilterReport(violations=violations)
     plan = MasterPlan.model_validate(plan_dict)
+    # Weekly-skeleton (Batch B) rules run on the active view, re-based to week 1,
+    # so a continuity plan's already-completed lead-in (is_completed phases with
+    # no weeks, weeks numbered from W9 etc.) doesn't trip the index / coverage
+    # checks. Phase-level rules keep using the full plan (they need the complete
+    # phase sequence, including the completed phases). No completed phase →
+    # _active_plan_view returns plan unchanged, so existing plans are unaffected.
+    active = _active_plan_view(plan)
     violations.extend(check_phase_count_min(plan))
     violations.extend(check_peak_before_race(plan, target_race=target_race))
     violations.extend(check_phase_duration_balance(plan))
@@ -1299,22 +1343,22 @@ def run_master_rule_filter(
     violations.extend(
         check_goal_realism(plan, target_race=target_race, prs=prs)
     )
-    # Batch B — weekly-skeleton rules
-    violations.extend(check_weekly_key_sessions_present(plan))
-    violations.extend(check_weekly_volume_ramp(plan))
-    violations.extend(check_taper_volume_drop(plan))
+    # Batch B — weekly-skeleton rules (active view)
+    violations.extend(check_weekly_key_sessions_present(active))
+    violations.extend(check_weekly_volume_ramp(active))
+    violations.extend(check_taper_volume_drop(active))
     violations.extend(
-        check_target_distance_long_run(plan, target_race=target_race)
+        check_target_distance_long_run(active, target_race=target_race)
     )
     violations.extend(
         check_key_session_density(
-            plan, weekly_run_days_max=weekly_run_days_max
+            active, weekly_run_days_max=weekly_run_days_max
         )
     )
-    violations.extend(check_hard_session_spacing(plan))
-    violations.extend(check_long_run_distance_share(plan))
-    violations.extend(check_strength_durability_track(plan))
+    violations.extend(check_hard_session_spacing(active))
+    violations.extend(check_long_run_distance_share(active))
+    violations.extend(check_strength_durability_track(active))
     violations.extend(
-        check_marathon_pace_specificity(plan, target_race=target_race)
+        check_marathon_pace_specificity(active, target_race=target_race)
     )
     return RuleFilterReport(violations=violations)

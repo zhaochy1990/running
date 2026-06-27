@@ -1031,7 +1031,10 @@ class TestPromptIncludesCurrentPhase:
             today="2026-06-16", current_phase=cp,
         )
         assert "Recommended start phase: speed" in prompt
-        assert "must NOT be re-scheduled" in prompt
+        # Season-continuity: completed leading phases are now KEPT as
+        # is_completed phases (not dropped), with continuous week numbering.
+        assert "is_completed" in prompt
+        assert "周期延续性" in prompt
         assert "8" in prompt  # completed aerobic weeks surfaced
 
     def test_no_block_when_entry_phase_unknown(self):
