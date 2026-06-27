@@ -62,6 +62,32 @@ temperature  = 0.6
 max_tokens   = 2048
 timeout_s    = 90
 
+[orchestrator]
+# Orchestrator brain (Resolver / Supervisor / Aggregator / Memory Load+Writer)
+# — the §4.7 low-latency lever: a cheap/fast classifier+planner for intent
+# resolution and memory extraction, NOT deep reasoning. Without this section,
+# for_role("orchestrator") falls back to [reviewer] (gpt-5.4): correct, but
+# needlessly slow + expensive for every Resolver call and memory write.
+#
+# gpt-4.1 is the cheapest model CONFIRMED deployed + reachable on this prod
+# resource (the [commentary] role already runs on it). Non-reasoning, fast,
+# supports structured output via chat-completions. Auth mirrors [commentary]:
+# the AOAI API key, because gpt-4.1 here sits in a different tenant than the
+# ACA managed identity (gpt-5.4 generator/reviewer use MI; gpt-4.1 uses the
+# key). If a gpt-4.1-mini / gpt-5.4-nano deployment is ever added to
+# word-learner-llm, switch model/deployment/api_kind here (one block) for an
+# even cheaper brain — no code change needed.
+provider     = "azure-openai"
+model        = "gpt-4.1"
+deployment   = "gpt-4.1"
+endpoint     = "https://word-learner-llm.cognitiveservices.azure.com"
+api_version  = "2025-01-01-preview"
+api_kind     = "chat-completions"
+api_key_env  = "AZURE_OPENAI_API_KEY"
+temperature  = 0.0
+max_tokens   = 2048
+timeout_s    = 60
+
 [auth]
 # Managed Identity is the only supported auth mode for prod. For local dev
 # / unit tests, inject a fake LLM via coach_runtime.set_*_for_tests instead
