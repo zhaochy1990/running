@@ -92,7 +92,7 @@ def test_recent_activities_empty(patched_db) -> None:
 def test_health_snapshot_empty(patched_db) -> None:
     res = read_impls.GetHealthSnapshotImpl("uid")()
     assert res.ok
-    assert res.data == {"latest": None, "dashboard": {}}
+    assert res.data == {"latest": None, "dashboard": {}, "calibration": None}
 
 
 def test_pmc_series_empty(patched_db) -> None:
@@ -170,19 +170,181 @@ def test_recent_activities_populated(patched_db) -> None:
     assert a["pace_fmt"] == "5:00/km"
 
 
-def test_health_snapshot_with_tsb(patched_db) -> None:
+def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
+    # STRIDE self-computed PMC (acute/chronic/form), NOT COROS ati/cti.
     patched_db._conn.execute(
-        """INSERT INTO daily_health (date, ati, cti, rhr, training_load_state, fatigue)
+        """INSERT INTO daily_training_load
+           (date, algorithm_version, acute_load, chronic_load, form, load_ratio)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        ("20260513", 40.0, 55.0, 52, "Optimal", 45),
+        ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
+    )
+    patched_db._conn.execute(
+        "INSERT INTO daily_health (date, rhr) VALUES (?, ?)", ("20260513", 52)
     )
     patched_db._conn.commit()
     res = read_impls.GetHealthSnapshotImpl("uid")()
     assert res.ok
     latest = res.data["latest"]
     assert latest is not None
-    assert latest["tsb"] == 15.0  # cti - ati = 55 - 40
-    assert latest["tsb_zone"] == "race_ready"
+    assert latest["chronic_load"] == 62.0
+    assert latest["acute_load"] == 50.0
+    assert latest["form"] == 12.0
+    # form/chronic = 12/62 = 0.19 → 比赛就绪 (ratio-based, not fixed TSB threshold)
+    assert latest["form_zone"] == "race_ready"
+    assert latest["rhr"] == 52  # raw signal still surfaced
+    # No vendor-computed load fields leak to the LLM.
+    for vendor in ("ati", "cti", "tsb", "fatigue", "training_load_state"):
+        assert vendor not in latest
+
+
+def test_health_snapshot_threshold_from_stride_calibration(patched_db) -> None:
+    from datetime import date
+
+    from stride_core.running_calibration.sqlite_connector import (
+        SQLiteRunningCalibrationRepository,
+    )
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+
+    SQLiteRunningCalibrationRepository(patched_db).save_snapshot(
+        RunningCalibrationSnapshot(
+            as_of_date=date(2026, 5, 13), threshold_hr=169.0, threshold_speed_mps=4.0
+        )
+    )
+    res = read_impls.GetHealthSnapshotImpl("uid")()
+    assert res.ok
+    cal = res.data["calibration"]
+    assert cal is not None
+    assert cal["threshold_hr"] == 169.0
+    assert cal["threshold_pace_s_km"] == 250  # 1000 / 4.0 m/s
+    # The COROS dashboard threshold must NOT be surfaced.
+    assert "threshold_hr" not in res.data["dashboard"]
+    assert "threshold_pace_s_km" not in res.data["dashboard"]
+
+
+def test_pmc_series_uses_stride_load(patched_db) -> None:
+    patched_db._conn.execute(
+        """INSERT INTO daily_training_load
+           (date, algorithm_version, acute_load, chronic_load, form, load_ratio)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
+    )
+    patched_db._conn.commit()
+    res = read_impls.GetPmcSeriesImpl("uid")(days=14)
+    assert res.ok
+    series = res.data["series"]
+    assert len(series) == 1
+    assert series[0]["chronic_load"] == 62.0
+    assert series[0]["form"] == 12.0
+    assert "ati" not in series[0] and "cti" not in series[0]
+
+
+def test_recent_activities_drops_vendor_training_load(patched_db) -> None:
+    patched_db._conn.execute(
+        """INSERT INTO activities
+           (label_id, name, sport_type, sport_name, date, distance_m, duration_s, training_load)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("a1", "run", 100, "Run", "2026-05-13T08:00:00+00:00", 10000, 3000, 400),
+    )
+    patched_db._conn.commit()
+    res = read_impls.GetRecentActivitiesImpl("uid")(limit=5)
+    assert res.ok
+    # The vendor per-activity load must not reach the coach context.
+    assert "training_load" not in res.data["activities"][0]
+
+
+def test_training_environment_detects_altitude(patched_db, monkeypatch) -> None:
+    from datetime import date
+
+    import stride_core.timefmt as timefmt
+    from stride_core.running_calibration.sqlite_connector import (
+        SQLiteRunningCalibrationRepository,
+    )
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+
+    monkeypatch.setattr(timefmt, "today_shanghai", lambda: date(2026, 6, 27))
+    conn = patched_db._conn
+    conn.executemany(
+        "INSERT INTO activities (label_id, name, sport_type, sport_name, date) VALUES (?,?,?,?,?)",
+        [
+            ("s1", "run", 100, "Run", "2026-06-24T02:00:00+00:00"),  # Shanghai
+            ("k1", "run", 100, "Run", "2026-06-27T02:00:00+00:00"),  # Kunming
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO timeseries (label_id, timestamp, altitude) VALUES (?,?,?)",
+        [("s1", 1, 2.0), ("s1", 2, 3.0), ("k1", 1, 1930.0), ("k1", 2, 1932.0)],
+    )
+    conn.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260627', 55)")
+    conn.execute("INSERT INTO daily_hrv (date, last_night_avg) VALUES ('2026-06-27', 27)")
+    conn.commit()
+    SQLiteRunningCalibrationRepository(patched_db).save_snapshot(
+        RunningCalibrationSnapshot(as_of_date=date(2026, 6, 1), rhr_baseline=48.0)
+    )
+
+    res = read_impls.GetTrainingEnvironmentImpl("uid")()
+    assert res.ok, res.errors
+    env = res.data["environment"]
+    assert env is not None
+    assert env["at_altitude"] is True
+    assert env["altitude_band"] == "moderate"
+    assert 1900 <= env["current_altitude_m"] <= 1935
+    acc = env["acclimatization"]
+    assert acc is not None
+    assert acc["from_altitude_m"] < 100 and acc["to_altitude_m"] > 1900
+    assert acc["status"] == "disturbed"  # RHR 55 vs baseline 48 → +7 bpm
+    assert env["weather"] is None
+
+
+def test_training_environment_dedups_dual_provider_hrv(patched_db, monkeypatch) -> None:
+    """A dual-watch user (garmin + coros same night) must not double-count HRV.
+
+    Regression: the env HRV query read ``daily_hrv`` directly, so a user with two
+    providers got two rows per date and the median skewed — flipping the
+    acclimatization status. Reading through ``HRV_PREFERRED_PER_DATE_SQL`` picks
+    one provider (garmin) per night.
+    """
+    from datetime import date
+
+    import stride_core.timefmt as timefmt
+    from stride_core.running_calibration.sqlite_connector import (
+        SQLiteRunningCalibrationRepository,
+    )
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+
+    monkeypatch.setattr(timefmt, "today_shanghai", lambda: date(2026, 6, 27))
+    conn = patched_db._conn
+    conn.executemany(
+        "INSERT INTO activities (label_id, name, sport_type, sport_name, date) VALUES (?,?,?,?,?)",
+        [
+            ("s1", "run", 100, "Run", "2026-06-24T02:00:00+00:00"),  # Shanghai
+            ("k1", "run", 100, "Run", "2026-06-27T02:00:00+00:00"),  # Kunming
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO timeseries (label_id, timestamp, altitude) VALUES (?,?,?)",
+        [("s1", 1, 2.0), ("k1", 1, 1931.0)],
+    )
+    conn.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260627', 49)")
+    # HRV baseline (pre-change-point) = 40, garmin only.
+    conn.executemany(
+        "INSERT INTO daily_hrv (date, last_night_avg, provider) VALUES (?,?,?)",
+        [
+            ("2026-06-10", 40, "garmin"),
+            ("2026-06-15", 40, "garmin"),
+            # Recent night: garmin (preferred) = 40, coros = 10. Counting both
+            # → median 25 → −37.5% → 'disturbed'. Deduped → 40 → ~0% → not.
+            ("2026-06-27", 40, "garmin"),
+            ("2026-06-27", 10, "coros"),
+        ],
+    )
+    conn.commit()
+    SQLiteRunningCalibrationRepository(patched_db).save_snapshot(
+        RunningCalibrationSnapshot(as_of_date=date(2026, 6, 1), rhr_baseline=48.0)
+    )
+
+    acc = read_impls.GetTrainingEnvironmentImpl("uid")().data["environment"]["acclimatization"]
+    assert acc["hrv_current"] == 40.0  # garmin, not median(40, 10)=25
+    assert acc["status"] != "disturbed"
 
 
 def test_pbs_detects_10k_pb(patched_db) -> None:

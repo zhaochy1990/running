@@ -110,6 +110,23 @@ api_kind     = "responses"
 max_tokens   = 2048
 timeout_s    = 90
 
+[orchestrator]
+# Orchestrator brain (Resolver / Supervisor / Aggregator / Memory Writer) —
+# cheap + fast classifier/planner model, NOT a deep-reasoning model. gpt-4.1-mini
+# (non-reasoning, fast) verified reachable 2026-06-16 on this resource. This is
+# the §4.7 low-latency lever: orchestration runs on a cheap model, strong models
+# are reserved for the specialists. Optional — if this section is removed,
+# for_role("orchestrator") falls back to [reviewer] (gpt-5.5).
+provider     = "azure-openai"
+model        = "gpt-4.1-mini"
+deployment   = "gpt-4.1-mini"
+endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
+api_version  = "2025-04-01-preview"
+api_kind     = "chat-completions"
+temperature  = 0.0
+max_tokens   = 2048
+timeout_s    = 60
+
 [auth]
 # DefaultAzureCredential — picks up Azure CLI token after `az login`.
 # Same enum value as prod (managed-identity) because the credential chain is

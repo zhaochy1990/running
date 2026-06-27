@@ -38,6 +38,7 @@ from .tool_impls.read_impls import (
     GetPmcSeriesImpl,
     GetRacePredictionsImpl,
     GetRecentActivitiesImpl,
+    GetTrainingEnvironmentImpl,
     GetWeekPlanImpl,
 )
 
@@ -58,6 +59,7 @@ class StrideToolkit:
     get_master_plan_versions: GetMasterPlanVersionsImpl
     get_week_plan: GetWeekPlanImpl
     get_activity_detail: GetActivityDetailImpl
+    get_training_environment: GetTrainingEnvironmentImpl
 
     # week-scope draft (7) — placeholders until US-007
     swap_sessions: SwapSessionsImpl
@@ -93,6 +95,7 @@ def build_stride_toolkit(user_id: str) -> Toolkit:
         get_master_plan_versions=GetMasterPlanVersionsImpl(user_id),
         get_week_plan=GetWeekPlanImpl(user_id),
         get_activity_detail=GetActivityDetailImpl(user_id),
+        get_training_environment=GetTrainingEnvironmentImpl(user_id),
         swap_sessions=SwapSessionsImpl(user_id),
         shift_session=ShiftSessionImpl(user_id),
         reduce_intensity=ReduceIntensityImpl(user_id),

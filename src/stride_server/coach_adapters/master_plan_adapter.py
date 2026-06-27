@@ -275,6 +275,16 @@ def generate_master_plan(state: GenState) -> dict:
         current_phase = CurrentPhaseContext.model_validate(current_phase_raw)
 
     today = today_shanghai().isoformat()
+    # Long-term athlete memory (A4): user-stated facts (injuries / relocation to
+    # altitude / preferences …) injected as soft constraints so the plan adapts.
+    athlete_memories: list = []
+    if user_id:
+        try:
+            from stride_server.coach_runtime import get_athlete_memory_store
+
+            athlete_memories = get_athlete_memory_store().fetch_active(user_id)
+        except Exception:  # noqa: BLE001 — memory is supplementary, never block generation
+            logger.warning("master_plan: athlete-memory fetch failed", exc_info=True)
     # System = static doctrine (cacheable prefix); user = this athlete's data +
     # task. See master_plan_generator.build_master_prompts / CLAUDE.md
     # "Prompt role discipline".
@@ -284,6 +294,7 @@ def generate_master_plan(state: GenState) -> dict:
         body_composition=ctx.get("body_composition"),
         body_composition_summary=ctx.get("body_composition_summary"),
         current_phase=current_phase,
+        athlete_memories=athlete_memories,
     )
     logger.debug(
         "generate_master_plan: system_prompt=%d chars, user_prompt=%d chars, goal=%r, profile=%r",

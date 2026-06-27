@@ -29,8 +29,8 @@ def _serialize_result(result: ToolResult) -> str:
 _TOOL_DESCRIPTIONS: dict[str, str] = {
     # read
     "get_recent_activities": "List the most recent training activities. Use 'limit' (default 14) to bound rows.",
-    "get_health_snapshot": "Return latest daily_health row (ati/cti/tsb/rhr/fatigue) plus dashboard (HRV/recovery_pct/threshold_pace).",
-    "get_pmc_series": "Daily PMC series over the last `days` (default 42). ati, cti, training_load_ratio, fatigue per day.",
+    "get_health_snapshot": "Latest STRIDE training-load snapshot (acute_load/chronic_load/form/load_ratio + form_zone, rhr), dashboard (HRV/recovery_pct), and STRIDE calibration (threshold_hr/threshold_pace_s_km). Threshold is STRIDE self-computed (running_calibration), NOT the COROS dashboard value.",
+    "get_pmc_series": "Daily STRIDE PMC series over the last `days` (default 42): acute_load, chronic_load, form, load_ratio per day (STRIDE self-computed, not COROS ati/cti).",
     "get_body_composition_latest": "Latest body-composition scan + delta from prior scan (weight_kg/body_fat_pct/smm_kg).",
     "get_ability_snapshot": "Latest ability_snapshot rows by dimension (e.g. endurance, speed).",
     "get_race_predictions": "Race time predictions from the dashboard (5K/10K/HM/FM).",
@@ -39,6 +39,7 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_master_plan_versions": "Version history of a master plan id.",
     "get_week_plan": "This week's plan.md, feedback.md, planned_session and planned_nutrition rows.",
     "get_activity_detail": "Full activity detail by label_id — laps, zones, segments, AI commentary.",
+    "get_training_environment": "Training environment: STRIDE-detected current altitude + band, whether at altitude, and signal-informed acclimatization status (disturbed/recovering/stabilized from RHR/HRV vs baseline) after a recent altitude gain. Consult when assessing status; if a recent gain looks unconfirmed, ask the user to confirm the environment change. (weather TBD).",
     # week-scope draft
     "swap_sessions": "Propose swapping the run scheduled on date_a with the one on date_b (PlanDiff).",
     "shift_session": "Propose moving a single session from `date` to `to_date` (PlanDiff).",
@@ -130,6 +131,7 @@ READ_TOOL_NAMES = (
     "get_master_plan_versions",
     "get_week_plan",
     "get_activity_detail",
+    "get_training_environment",
 )
 
 WEEK_DRAFT_TOOL_NAMES = (

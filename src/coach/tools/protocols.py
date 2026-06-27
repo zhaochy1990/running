@@ -85,6 +85,11 @@ class GetActivityDetail(Protocol):
     def __call__(self, *, label_id: str) -> ToolResult: ...
 
 
+@runtime_checkable
+class GetTrainingEnvironment(Protocol):
+    def __call__(self, *, days: int = 120) -> ToolResult: ...
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Week-scope draft tools (7) — ToolResult.data = PlanDiff.model_dump()
 # ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +182,7 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "get_master_plan_versions",
     "get_week_plan",
     "get_activity_detail",
+    "get_training_environment",
 )
 
 WEEK_DRAFT_TOOL_NAMES: tuple[str, ...] = (

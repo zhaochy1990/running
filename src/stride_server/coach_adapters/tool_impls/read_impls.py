@@ -70,15 +70,25 @@ def _activity_payload(row: Any) -> dict[str, Any]:
     return d
 
 
-def _tsb_zone(tsb: float) -> tuple[str, str]:
-    if tsb >= 25:
-        return "overtaper", "减量过多"
-    if tsb >= 10:
+def _form_zone(form: float | None, chronic: float | None) -> tuple[str, str]:
+    """Classify form by CTL ratio (``form / chronic``), per CLAUDE.md doctrine.
+
+    NOT the classic fixed TSB thresholds — those are calibrated for cyclist
+    CTL 80-120; runners run CTL 40-70, so the same absolute TSB means a very
+    different state. ``form = chronic - acute`` (both STRIDE-computed). Mirrors
+    ``frontend/src/pages/TrainingStatusPage.tsx::classifyForm``.
+    """
+    if form is None or not chronic or chronic <= 0:
+        return "unknown", "数据不足"
+    ratio = form / chronic
+    if ratio > 0.25:
+        return "detraining", "减量过多"
+    if ratio >= 0.10:
         return "race_ready", "比赛就绪"
-    if tsb >= -10:
+    if ratio >= -0.10:
         return "neutral", "维持期"
-    if tsb >= -30:
-        return "training", "提升期"
+    if ratio >= -0.25:
+        return "building", "提升期"
     return "overreaching", "过度负荷"
 
 
@@ -98,7 +108,7 @@ class GetRecentActivitiesImpl:
             rows = db.query(
                 """SELECT label_id, name, sport_type, sport_name, date,
                     distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
-                    avg_cadence, calories_kcal, training_load, vo2max, train_type,
+                    avg_cadence, calories_kcal, vo2max, train_type,
                     feel_type, sport_note
                 FROM activities
                 ORDER BY date DESC, label_id DESC
@@ -126,32 +136,74 @@ class GetHealthSnapshotImpl:
     def __call__(self) -> ToolResult:
         db = _open_db(self._user_id)
         try:
+            # STRIDE self-computed training load (vendor-agnostic) — NOT COROS
+            # ati/cti. Lets the coach reason on one scale across watch brands.
             rows = db.query(
-                """SELECT date, ati, cti, rhr, distance_m, duration_s,
-                    training_load_ratio, training_load_state, fatigue
-                FROM daily_health
+                """SELECT date, acute_load, chronic_load, form, load_ratio
+                FROM daily_training_load
+                WHERE algorithm_version = (
+                    SELECT MAX(algorithm_version) FROM daily_training_load
+                )
                 ORDER BY date DESC
                 LIMIT 1"""
             )
             latest = dict(rows[0]) if rows else None
-            if latest is not None and latest.get("ati") is not None and latest.get("cti") is not None:
-                tsb = round(latest["cti"] - latest["ati"], 1)
-                zone, label = _tsb_zone(tsb)
-                latest["tsb"] = tsb
-                latest["tsb_zone"] = zone
-                latest["tsb_zone_label"] = label
+            if latest is not None:
+                zone, label = _form_zone(latest.get("form"), latest.get("chronic_load"))
+                latest["form_zone"] = zone
+                latest["form_zone_label"] = label
+                # Resting HR is a measured signal (not a vendor-computed load
+                # metric), so it stays — sourced from daily_health.
+                rhr_rows = db.query(
+                    "SELECT rhr FROM daily_health ORDER BY date DESC LIMIT 1"
+                )
+                if rhr_rows:
+                    latest["rhr"] = dict(rhr_rows[0]).get("rhr")
 
+            # Dashboard keeps raw signals (HRV) + vendor readiness; threshold
+            # HR/pace are NOT taken from here — those are STRIDE-calibrated below.
             dash_rows = db.query(
                 """SELECT avg_sleep_hrv, hrv_normal_low, hrv_normal_high, recovery_pct,
-                    running_level, aerobic_score, threshold_hr, threshold_pace_s_km
+                    running_level, aerobic_score
                 FROM dashboard WHERE id = 1"""
             )
             dashboard = dict(dash_rows[0]) if dash_rows else {}
+
+            # STRIDE self-computed threshold (LTHR + threshold pace) — single
+            # source per CLAUDE.md (RunningCalibrationRepository), NOT the COROS
+            # dashboard threshold. Supplementary, so a failure degrades to None
+            # rather than failing the whole snapshot.
+            calibration = None
+            try:
+                from stride_core.running_calibration.sqlite_connector import (
+                    SQLiteRunningCalibrationRepository,
+                )
+                from stride_core.timefmt import today_shanghai
+
+                snap = SQLiteRunningCalibrationRepository(db).fetch_latest(
+                    as_of_date=today_shanghai()
+                )
+                if snap is not None:
+                    thr_pace = (
+                        round(1000.0 / snap.threshold_speed_mps)
+                        if snap.threshold_speed_mps
+                        else None
+                    )
+                    conf = snap.threshold_hr_confidence
+                    calibration = {
+                        "threshold_hr": snap.threshold_hr,
+                        "threshold_pace_s_km": thr_pace,
+                        "threshold_hr_confidence": getattr(conf, "value", str(conf)),
+                    }
+            except Exception:  # noqa: BLE001 — calibration is supplementary
+                logging.getLogger(__name__).warning(
+                    "get_health_snapshot: STRIDE calibration fetch failed", exc_info=True
+                )
         finally:
             db.close()
         return ToolResult(
             ok=True,
-            data={"latest": latest, "dashboard": dashboard},
+            data={"latest": latest, "dashboard": dashboard, "calibration": calibration},
         )
 
 
@@ -173,21 +225,114 @@ class GetPmcSeriesImpl:
             )
         db = _open_db(self._user_id)
         try:
+            # STRIDE self-computed PMC (acute/chronic/form/load_ratio), NOT COROS
+            # ati/cti — ``form`` is already ``chronic - acute``, no recompute.
             rows = db.query(
-                """SELECT date, ati, cti, training_load_ratio, training_load_state, fatigue
-                FROM daily_health ORDER BY date DESC LIMIT ?""",
+                """SELECT date, acute_load, chronic_load, form, load_ratio
+                FROM daily_training_load
+                WHERE algorithm_version = (
+                    SELECT MAX(algorithm_version) FROM daily_training_load
+                )
+                ORDER BY date DESC LIMIT ?""",
                 (max(1, int(days)),),
             )
             records = [dict(r) for r in rows]
-            for rec in records:
-                if rec.get("ati") is not None and rec.get("cti") is not None:
-                    rec["tsb"] = round(rec["cti"] - rec["ati"], 1)
         finally:
             db.close()
         return ToolResult(
             ok=True,
             data={"granularity": granularity, "days": days, "series": records},
         )
+
+
+def _norm_day(value: object) -> str:
+    """Normalise a stored date to ISO ``YYYY-MM-DD`` (daily_health uses YYYYMMDD)."""
+    s = str(value)
+    if len(s) == 8 and s.isdigit():
+        return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+    return s[:10]
+
+
+class GetTrainingEnvironmentImpl:
+    """Training environment: altitude band + signal-informed acclimatization.
+
+    Surfaces *where* the athlete trains (STRIDE-detected altitude, vendor-agnostic)
+    and how far along an acute acclimatization episode they are (RHR/HRV trajectory
+    vs the running_calibration baseline). ``weather`` is reserved for a later
+    signal. Pure detection lives in ``coach.environment``; this only gathers data.
+    """
+
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+
+    @_tool_safe
+    def __call__(self, *, days: int = 120) -> ToolResult:
+        from datetime import timedelta
+
+        from coach.environment import build_training_environment
+        from stride_core.timefmt import today_shanghai, utc_iso_to_shanghai_iso
+
+        db = _open_db(self._user_id)
+        try:
+            as_of = today_shanghai()
+            cutoff = (as_of - timedelta(days=max(7, int(days)))).isoformat()
+            # Per-run representative altitude (recent runs only — timeseries is large).
+            alt_rows = db.query(
+                """SELECT a.date AS udate, AVG(t.altitude) AS alt
+                FROM activities a JOIN timeseries t ON t.label_id = a.label_id
+                WHERE t.altitude IS NOT NULL
+                  AND date(datetime(a.date, '+8 hours')) >= ?
+                GROUP BY a.label_id
+                ORDER BY a.date""",
+                (cutoff,),
+            )
+            altitude_series = [
+                (utc_iso_to_shanghai_iso(r["udate"])[:10], float(r["alt"]))
+                for r in alt_rows
+                if r["alt"] is not None
+            ]
+            rhr_rows = db.query(
+                "SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date"
+            )
+            rhr_series = [(_norm_day(r["date"]), float(r["rhr"])) for r in rhr_rows]
+            # daily_hrv PK is (date, provider): a dual-watch user has two rows
+            # per night. Read through the canonical per-date provider picker so
+            # the series isn't double-counted (skews the acclimatization median).
+            from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
+
+            hrv_rows = db.query(
+                f"SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
+                "WHERE last_night_avg IS NOT NULL ORDER BY date"
+            )
+            hrv_series = [(_norm_day(r["date"]), float(r["last_night_avg"])) for r in hrv_rows]
+
+            rhr_baseline = None
+            try:
+                from stride_core.running_calibration.sqlite_connector import (
+                    SQLiteRunningCalibrationRepository,
+                )
+
+                snap = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of_date=as_of)
+                if snap is not None:
+                    rhr_baseline = snap.rhr_baseline
+            except Exception:  # noqa: BLE001 — baseline is supplementary
+                logging.getLogger(__name__).warning(
+                    "get_training_environment: calibration fetch failed", exc_info=True
+                )
+        finally:
+            db.close()
+
+        if not altitude_series:
+            return ToolResult(ok=True, data={"environment": None})
+
+        env = build_training_environment(
+            altitude_series=altitude_series,
+            rhr_series=rhr_series,
+            hrv_series=hrv_series,
+            rhr_baseline=rhr_baseline,
+            as_of=as_of,
+        )
+        return ToolResult(ok=True, data={"environment": env.model_dump()})
 
 
 # ---------------------------------------------------------------------------

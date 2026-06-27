@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
-Role = Literal["generator", "reviewer", "commentary"]
+Role = Literal["generator", "reviewer", "commentary", "orchestrator"]
 Provider = Literal["azure-openai", "azure-ai-inference"]
 AuthMode = Literal["managed-identity", "api-key"]
 ApiKind = Literal["chat-completions", "responses"]

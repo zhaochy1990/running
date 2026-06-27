@@ -75,6 +75,34 @@ PROFILE = {
     "pb_marathon": "3:45:00",
 }
 
+
+def test_athlete_memory_injected_into_user_prompt_only():
+    """A4: long-term facts feed planning as soft constraints, in the USER turn."""
+    from coach.contracts import AthleteMemory
+    from stride_server.master_plan_generator import build_master_prompts
+
+    system, user = build_master_prompts(
+        GOAL, PROFILE, "history", {}, "2026-05-09",
+        athlete_memories=[
+            AthleteMemory(
+                id="m1", kind="life_event", content="现迁昆明高原训练，海拔~1900m",
+                affects=["pace_target", "training_load"],
+            )
+        ],
+    )
+    assert "现迁昆明高原训练" in user
+    assert "pace_target" in user
+    assert "Known athlete facts" in user
+    # Prompt-role discipline: per-athlete data must not pollute the cacheable system.
+    assert "现迁昆明高原训练" not in system
+
+
+def test_no_athlete_memories_no_block():
+    from stride_server.master_plan_generator import build_master_prompts
+
+    _, user = build_master_prompts(GOAL, PROFILE, "history", {}, "2026-05-09", athlete_memories=[])
+    assert "Known athlete facts" not in user
+
 _VALID_PLAN_DICT = {
     "schema": "weekly-plan/master/v1",
     "plan": {

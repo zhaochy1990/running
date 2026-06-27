@@ -27,8 +27,12 @@ logger = logging.getLogger(__name__)
 
 _CHECKPOINTER_LOCK = threading.Lock()
 _CHECKPOINTER: Any = None
+_ATHLETE_MEMORY_STORE_LOCK = threading.Lock()
+_ATHLETE_MEMORY_STORE: Any = None
 _GENERATOR_LLM_LOCK = threading.Lock()
 _GENERATOR_LLM: Any = None
+_ORCHESTRATOR_LLM_LOCK = threading.Lock()
+_ORCHESTRATOR_LLM: Any = None
 _REVIEWER_LLM_LOCK = threading.Lock()
 _REVIEWER_LLM: Any = None
 _COMMENTARY_LLM_LOCK = threading.Lock()
@@ -55,14 +59,51 @@ def get_checkpointer() -> Any:
     return _CHECKPOINTER
 
 
+def get_athlete_memory_store() -> Any:
+    """Process-wide singleton ``AthleteMemoryStore`` (long-term memory, §5.3).
+
+    Azure Table in prod (reuses the coach-persistence account url), local JSON
+    file in dev — both via ``backend_from_config``."""
+    global _ATHLETE_MEMORY_STORE
+    if _ATHLETE_MEMORY_STORE is None:
+        with _ATHLETE_MEMORY_STORE_LOCK:
+            if _ATHLETE_MEMORY_STORE is None:
+                from .athlete_memory_store import AthleteMemoryStore, backend_from_config
+
+                url = ""
+                try:
+                    from .config import load_server_config
+
+                    url = load_server_config().coach_persistence.table_account_url or ""
+                except Exception:  # noqa: BLE001 — dev / no server config → file backend
+                    url = ""
+                _ATHLETE_MEMORY_STORE = AthleteMemoryStore(backend_from_config(url))
+    return _ATHLETE_MEMORY_STORE
+
+
+def set_athlete_memory_store_for_tests(store: Any) -> None:
+    global _ATHLETE_MEMORY_STORE
+    with _ATHLETE_MEMORY_STORE_LOCK:
+        _ATHLETE_MEMORY_STORE = store
+
+
 def reset_for_tests() -> None:
     """Clear cached LLMs + checkpointer (test-only)."""
-    global _CHECKPOINTER, _GENERATOR_LLM, _REVIEWER_LLM, _COMMENTARY_LLM
-    with _CHECKPOINTER_LOCK, _GENERATOR_LLM_LOCK, _REVIEWER_LLM_LOCK, _COMMENTARY_LLM_LOCK:
+    global _CHECKPOINTER, _GENERATOR_LLM, _ORCHESTRATOR_LLM, _REVIEWER_LLM, _COMMENTARY_LLM
+    global _ATHLETE_MEMORY_STORE
+    with (
+        _CHECKPOINTER_LOCK,
+        _GENERATOR_LLM_LOCK,
+        _ORCHESTRATOR_LLM_LOCK,
+        _REVIEWER_LLM_LOCK,
+        _COMMENTARY_LLM_LOCK,
+    ):
         _CHECKPOINTER = None
         _GENERATOR_LLM = None
+        _ORCHESTRATOR_LLM = None
         _REVIEWER_LLM = None
         _COMMENTARY_LLM = None
+        _ATHLETE_MEMORY_STORE = None
 
 
 def set_checkpointer_for_tests(checkpointer: Any) -> None:
@@ -145,6 +186,31 @@ def get_generator_model() -> str:
     except Exception:  # noqa: BLE001 — stamp must never break generation
         logger.warning("get_generator_model: failed to read coach config", exc_info=True)
         return "unknown"
+
+
+def get_orchestrator_llm() -> Any:
+    """Return a process-wide singleton orchestrator LLM (cheap/fast brain).
+
+    Powers the Resolver / Supervisor / Aggregator. Built from the optional
+    ``[orchestrator]`` config role, which falls back to ``[reviewer]`` when
+    unset (see ``coach.runtime.config.CoachConfig``)."""
+    global _ORCHESTRATOR_LLM
+    if _ORCHESTRATOR_LLM is None:
+        with _ORCHESTRATOR_LLM_LOCK:
+            if _ORCHESTRATOR_LLM is None:
+                from coach.runtime.llm_factory import build_orchestrator_llm
+
+                _ORCHESTRATOR_LLM = build_orchestrator_llm(
+                    credentials=_build_azure_credentials(),
+                )
+    return _ORCHESTRATOR_LLM
+
+
+def set_orchestrator_llm_for_tests(llm: Any) -> None:
+    """Inject a test orchestrator LLM (must support with_structured_output)."""
+    global _ORCHESTRATOR_LLM
+    with _ORCHESTRATOR_LLM_LOCK:
+        _ORCHESTRATOR_LLM = llm
 
 
 def get_reviewer_llm() -> Any:
