@@ -252,6 +252,49 @@ def test_recent_activities_drops_vendor_training_load(patched_db) -> None:
     assert "training_load" not in res.data["activities"][0]
 
 
+def test_training_environment_detects_altitude(patched_db, monkeypatch) -> None:
+    from datetime import date
+
+    import stride_core.timefmt as timefmt
+    from stride_core.running_calibration.sqlite_connector import (
+        SQLiteRunningCalibrationRepository,
+    )
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+
+    monkeypatch.setattr(timefmt, "today_shanghai", lambda: date(2026, 6, 27))
+    conn = patched_db._conn
+    conn.executemany(
+        "INSERT INTO activities (label_id, name, sport_type, sport_name, date) VALUES (?,?,?,?,?)",
+        [
+            ("s1", "run", 100, "Run", "2026-06-24T02:00:00+00:00"),  # Shanghai
+            ("k1", "run", 100, "Run", "2026-06-27T02:00:00+00:00"),  # Kunming
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO timeseries (label_id, timestamp, altitude) VALUES (?,?,?)",
+        [("s1", 1, 2.0), ("s1", 2, 3.0), ("k1", 1, 1930.0), ("k1", 2, 1932.0)],
+    )
+    conn.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260627', 55)")
+    conn.execute("INSERT INTO daily_hrv (date, last_night_avg) VALUES ('2026-06-27', 27)")
+    conn.commit()
+    SQLiteRunningCalibrationRepository(patched_db).save_snapshot(
+        RunningCalibrationSnapshot(as_of_date=date(2026, 6, 1), rhr_baseline=48.0)
+    )
+
+    res = read_impls.GetTrainingEnvironmentImpl("uid")()
+    assert res.ok, res.errors
+    env = res.data["environment"]
+    assert env is not None
+    assert env["at_altitude"] is True
+    assert env["altitude_band"] == "moderate"
+    assert 1900 <= env["current_altitude_m"] <= 1935
+    acc = env["acclimatization"]
+    assert acc is not None
+    assert acc["from_altitude_m"] < 100 and acc["to_altitude_m"] > 1900
+    assert acc["status"] == "disturbed"  # RHR 55 vs baseline 48 → +7 bpm
+    assert env["weather"] is None
+
+
 def test_pbs_detects_10k_pb(patched_db) -> None:
     # Seed two 10k runs; the faster one should win.
     patched_db._conn.executemany(

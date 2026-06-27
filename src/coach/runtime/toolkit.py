@@ -28,6 +28,7 @@ from coach.tools.protocols import (
     GetPmcSeries,
     GetRacePredictions,
     GetRecentActivities,
+    GetTrainingEnvironment,
     GetWeekPlan,
     ProposeAlternatives,
     ReduceIntensity,
@@ -56,6 +57,7 @@ class Toolkit(Protocol):
     get_master_plan_versions: GetMasterPlanVersions
     get_week_plan: GetWeekPlan
     get_activity_detail: GetActivityDetail
+    get_training_environment: GetTrainingEnvironment
 
     # Week-scope draft tools (7)
     swap_sessions: SwapSessions

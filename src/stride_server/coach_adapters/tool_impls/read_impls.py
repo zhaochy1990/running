@@ -245,6 +245,91 @@ class GetPmcSeriesImpl:
         )
 
 
+def _norm_day(value: object) -> str:
+    """Normalise a stored date to ISO ``YYYY-MM-DD`` (daily_health uses YYYYMMDD)."""
+    s = str(value)
+    if len(s) == 8 and s.isdigit():
+        return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+    return s[:10]
+
+
+class GetTrainingEnvironmentImpl:
+    """Training environment: altitude band + signal-informed acclimatization.
+
+    Surfaces *where* the athlete trains (STRIDE-detected altitude, vendor-agnostic)
+    and how far along an acute acclimatization episode they are (RHR/HRV trajectory
+    vs the running_calibration baseline). ``weather`` is reserved for a later
+    signal. Pure detection lives in ``coach.environment``; this only gathers data.
+    """
+
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+
+    @_tool_safe
+    def __call__(self, *, days: int = 120) -> ToolResult:
+        from datetime import timedelta
+
+        from coach.environment import build_training_environment
+        from stride_core.timefmt import today_shanghai, utc_iso_to_shanghai_iso
+
+        db = _open_db(self._user_id)
+        try:
+            as_of = today_shanghai()
+            cutoff = (as_of - timedelta(days=max(7, int(days)))).isoformat()
+            # Per-run representative altitude (recent runs only — timeseries is large).
+            alt_rows = db.query(
+                """SELECT a.date AS udate, AVG(t.altitude) AS alt
+                FROM activities a JOIN timeseries t ON t.label_id = a.label_id
+                WHERE t.altitude IS NOT NULL
+                  AND date(datetime(a.date, '+8 hours')) >= ?
+                GROUP BY a.label_id
+                ORDER BY a.date""",
+                (cutoff,),
+            )
+            altitude_series = [
+                (utc_iso_to_shanghai_iso(r["udate"])[:10], float(r["alt"]))
+                for r in alt_rows
+                if r["alt"] is not None
+            ]
+            rhr_rows = db.query(
+                "SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date"
+            )
+            rhr_series = [(_norm_day(r["date"]), float(r["rhr"])) for r in rhr_rows]
+            hrv_rows = db.query(
+                "SELECT date, last_night_avg FROM daily_hrv "
+                "WHERE last_night_avg IS NOT NULL ORDER BY date"
+            )
+            hrv_series = [(_norm_day(r["date"]), float(r["last_night_avg"])) for r in hrv_rows]
+
+            rhr_baseline = None
+            try:
+                from stride_core.running_calibration.sqlite_connector import (
+                    SQLiteRunningCalibrationRepository,
+                )
+
+                snap = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of_date=as_of)
+                if snap is not None:
+                    rhr_baseline = snap.rhr_baseline
+            except Exception:  # noqa: BLE001 — baseline is supplementary
+                logging.getLogger(__name__).warning(
+                    "get_training_environment: calibration fetch failed", exc_info=True
+                )
+        finally:
+            db.close()
+
+        if not altitude_series:
+            return ToolResult(ok=True, data={"environment": None})
+
+        env = build_training_environment(
+            altitude_series=altitude_series,
+            rhr_series=rhr_series,
+            hrv_series=hrv_series,
+            rhr_baseline=rhr_baseline,
+            as_of=as_of,
+        )
+        return ToolResult(ok=True, data={"environment": env.model_dump()})
+
+
 # ---------------------------------------------------------------------------
 # 4. get_body_composition_latest
 # ---------------------------------------------------------------------------
