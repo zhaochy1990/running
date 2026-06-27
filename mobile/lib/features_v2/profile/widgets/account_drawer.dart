@@ -6,6 +6,8 @@
 /// mono tagline pinned to the bottom.
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -16,7 +18,10 @@ import '../../../core/auth/current_user.dart';
 import '../../../core/router/routes_v2.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/tokens.dart';
+import '../../../core/updater/update_checker.dart';
+import '../../../features/updater/update_prompt.dart';
 import '../../../data/api/stride_api.dart';
+import '../../_shared/sync/sync_controller.dart';
 import '../../home/providers/home_provider.dart';
 import 'menu_item.dart';
 
@@ -27,6 +32,7 @@ class AccountDrawer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(currentUserProvider).valueOrNull;
     final watch = ref.watch(homeProvider).valueOrNull?.watch;
+    final syncing = ref.watch(syncControllerProvider).syncing;
 
     final displayName = profile?.displayName ??
         (profile?.profile?['display_name'] as String?) ??
@@ -131,6 +137,38 @@ class AccountDrawer extends ConsumerWidget {
                     },
                   ),
                   ProfileMenuItem(
+                    icon: Icons.sync,
+                    label: '同步手表数据',
+                    enabled: !syncing,
+                    trailing: syncing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: StrideTokens.accent,
+                            ),
+                          )
+                        : null,
+                    onTap: () async {
+                      // Keep the drawer open so the row's spinner is visible
+                      // while the COROS sync runs; mirror SyncIconButton UX.
+                      final messenger = ScaffoldMessenger.of(context);
+                      try {
+                        await ref
+                            .read(syncControllerProvider.notifier)
+                            .triggerSync();
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('已同步手表数据')),
+                        );
+                      } catch (e) {
+                        messenger.showSnackBar(
+                          SnackBar(content: Text('同步失败：$e')),
+                        );
+                      }
+                    },
+                  ),
+                  ProfileMenuItem(
                     icon: Icons.settings_outlined,
                     label: '设置',
                     onTap: () {
@@ -151,6 +189,32 @@ class AccountDrawer extends ConsumerWidget {
                     icon: Icons.help_outline,
                     label: '常见问题',
                     onTap: () => _comingSoonClose(context, '常见问题'),
+                  ),
+                  ProfileMenuItem(
+                    icon: Icons.system_update_alt,
+                    label: '检查新版本',
+                    onTap: () async {
+                      final messenger = ScaffoldMessenger.of(context);
+                      if (!Platform.isAndroid) {
+                        messenger.showSnackBar(
+                          const SnackBar(
+                            content: Text('iOS 通过 TestFlight 更新'),
+                          ),
+                        );
+                        return;
+                      }
+                      final info = await ref
+                          .read(updateCheckerProvider)
+                          .check(force: true);
+                      if (!context.mounted) return;
+                      if (info == null) {
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('已是最新版本')),
+                        );
+                        return;
+                      }
+                      await showUpdatePrompt(context, ref, info);
+                    },
                   ),
                   ProfileMenuItem(
                     icon: Icons.info_outline,
