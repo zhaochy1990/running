@@ -5,6 +5,7 @@ from __future__ import annotations
 from coach.contracts import AthleteMemory, MemoryWrite
 from coach.orchestrator.memory import (
     MemoryExtraction,
+    build_extraction_prompts,
     dedup_merge,
     format_memory_context,
     load_active_memories,
@@ -40,6 +41,9 @@ def test_should_extract_prefilter():
     assert should_extract("我跟腱有点痛") is True
     assert should_extract("我的目标是破三") is True
     assert should_extract("今天天气不错跑得挺爽") is False
+    # The gate is the *user* turn — a bare status question holds no lasting fact,
+    # even though the coach's reply will mention 海拔/HRV (over-extraction guard).
+    assert should_extract("我最近练得怎么样？状态如何？") is False
 
 
 def test_format_memory_context():
@@ -87,7 +91,8 @@ def test_write_memories_persists_assigns_id_and_receipt():
         extract,
         user_id="u1",
         session_id="s1",
-        conversation_text="对，我搬昆明了",
+        user_text="对，我搬昆明了",
+        conversation_text="用户：对，我搬昆明了\n教练：好的",
         active=[],
         now="2026-06-27T00:00:00Z",
     )
@@ -108,9 +113,124 @@ def test_write_memories_skips_extractor_when_prefilter_misses():
 
     applied, receipt = write_memories(
         store, extract, user_id="u1", session_id="s1",
-        conversation_text="今天天气不错", active=[], now="t",
+        user_text="今天天气不错", conversation_text="今天天气不错", active=[], now="t",
     )
     assert applied == [] and receipt == "" and calls["n"] == 0
+
+
+def test_write_memories_gates_on_user_text_not_coach_reply():
+    """A status question must NOT extract, even if the coach reply mentions 海拔/HRV.
+
+    Regression for the over-extraction bug: the pre-filter ran on
+    ``用户：…\\n教练：…`` so the detector's own altitude/HRV output got persisted
+    as a confirmed fact before the user ever confirmed it.
+    """
+    store = FakeStore()
+    calls = {"n": 0}
+
+    def extract(_s, _u):
+        calls["n"] += 1
+        return MemoryExtraction(
+            writes=[MemoryWrite(op="add", memory=AthleteMemory(id="", kind="life_event", content="迁居昆明"))]
+        )
+
+    applied, receipt = write_memories(
+        store,
+        extract,
+        user_id="u1",
+        session_id="s1",
+        user_text="我最近练得怎么样？状态如何？",
+        conversation_text="用户：我最近练得怎么样？\n教练：你当前在约1900m中等海拔，HRV偏低…",
+        active=[],
+        now="t",
+    )
+    assert applied == [] and receipt == "" and calls["n"] == 0
+    assert store.fetch_active("u1") == []
+
+
+def test_write_memories_strips_llm_invented_id_and_date():
+    """``add`` always gets a server id + ``now`` — never the LLM's invented id/date.
+
+    Regression: the LLM emitted ``id='injury-001'`` and ``created_at='2024-…'``;
+    ``_finalize`` only reassigned when ``not mem.id``, so the garbage survived.
+    """
+    store = FakeStore()
+
+    def extract(_s, _u):
+        return MemoryExtraction(
+            writes=[
+                MemoryWrite(
+                    op="add",
+                    memory=AthleteMemory(
+                        id="injury-001", kind="life_event",
+                        content="迁居昆明~1900m", created_at="2024-06-27T00:00:00Z",
+                    ),
+                )
+            ]
+        )
+
+    applied, _ = write_memories(
+        store, extract, user_id="u1", session_id="s1",
+        user_text="我搬昆明了", conversation_text="用户：我搬昆明了", active=[],
+        now="2026-06-27T00:00:00Z",
+    )
+    assert applied[0].memory.id != "injury-001"
+    assert applied[0].memory.created_at == "2026-06-27T00:00:00Z"
+
+
+def test_update_with_unknown_id_becomes_add():
+    """An ``update`` whose id isn't an active memory is a hallucination → new add."""
+    store = FakeStore()
+
+    def extract(_s, _u):
+        return MemoryExtraction(
+            writes=[
+                MemoryWrite(
+                    op="update",
+                    memory=AthleteMemory(id="ghost-id", kind="goal", content="目标破三"),
+                )
+            ]
+        )
+
+    applied, _ = write_memories(
+        store, extract, user_id="u1", session_id="s1",
+        user_text="我的目标是破三", conversation_text="用户：我的目标是破三",
+        active=[], now="t",
+    )
+    assert len(applied) == 1
+    assert applied[0].op == "add"
+    assert applied[0].memory.id != "ghost-id"
+
+
+def test_resolve_with_unknown_id_dropped():
+    """A ``resolve`` targeting a non-existent memory is dropped (nothing to resolve)."""
+    store = FakeStore()
+
+    def extract(_s, _u):
+        return MemoryExtraction(
+            writes=[
+                MemoryWrite(
+                    op="resolve",
+                    memory=AthleteMemory(id="ghost-id", kind="injury", content="跟腱已好"),
+                )
+            ]
+        )
+
+    applied, receipt = write_memories(
+        store, extract, user_id="u1", session_id="s1",
+        user_text="跟腱已经不痛了", conversation_text="用户：跟腱已经不痛了",
+        active=[], now="t",
+    )
+    assert applied == [] and receipt == ""
+
+
+def test_extraction_prompt_exposes_active_ids_for_update():
+    """The extractor must see active memories + their ids so it can update, not re-add."""
+    active = [AthleteMemory(id="mem-kunming", kind="life_event", content="迁居昆明~1900m")]
+    system, user = build_extraction_prompts("用户：我还在昆明", active)
+    assert "mem-kunming" in user  # the id is visible for op=update
+    assert "迁居昆明" in user
+    assert "update" in system  # the instruction to reuse ids exists
 
 
 def test_load_active_memories():

@@ -158,6 +158,7 @@ def build_orchestrator_graph(
                 memory_extract_fn,
                 user_id=user_id,
                 session_id=state.get("session_id") or "",
+                user_text=utterance,  # gate on the user turn, not the coach reply
                 conversation_text=conversation_text,
                 active=active_memories,
                 now=_now_iso(),
