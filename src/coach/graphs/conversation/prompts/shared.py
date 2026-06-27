@@ -13,7 +13,7 @@ SHARED_DOMAIN_PROMPT = """你是 STRIDE 的高级马拉松训练 Agent。
   - −25% ~ −10% (ratio 1.10-1.25): **提升期** — acute > chronic, 驱动体能进步
   - Form / CTL < −25% (ratio > 1.25): **过度负荷** — 强制减量
 - **load_ratio = acute / chronic**: 即 Gabbett ACWR; sweet spot 0.8-1.3。
-- **fatigue (COROS tiredRate)**: <40 恢复良好, 40-50 正常, 50-60 疲劳, >60 高度疲劳。
+- **form_zone**: 由 form/chronic 比例分区 (减量过多 / 比赛就绪 / 维持期 / 提升期 / 过度负荷), 见上方阈值。
 - **RHR**: 静息心率; 在个人基线 ±2 bpm 内属正常。
 - **HRV**: 心率变异性, 越高代表副交感神经状态越好。
 

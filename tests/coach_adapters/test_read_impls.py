@@ -170,19 +170,62 @@ def test_recent_activities_populated(patched_db) -> None:
     assert a["pace_fmt"] == "5:00/km"
 
 
-def test_health_snapshot_with_tsb(patched_db) -> None:
+def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
+    # STRIDE self-computed PMC (acute/chronic/form), NOT COROS ati/cti.
     patched_db._conn.execute(
-        """INSERT INTO daily_health (date, ati, cti, rhr, training_load_state, fatigue)
+        """INSERT INTO daily_training_load
+           (date, algorithm_version, acute_load, chronic_load, form, load_ratio)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        ("20260513", 40.0, 55.0, 52, "Optimal", 45),
+        ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
+    )
+    patched_db._conn.execute(
+        "INSERT INTO daily_health (date, rhr) VALUES (?, ?)", ("20260513", 52)
     )
     patched_db._conn.commit()
     res = read_impls.GetHealthSnapshotImpl("uid")()
     assert res.ok
     latest = res.data["latest"]
     assert latest is not None
-    assert latest["tsb"] == 15.0  # cti - ati = 55 - 40
-    assert latest["tsb_zone"] == "race_ready"
+    assert latest["chronic_load"] == 62.0
+    assert latest["acute_load"] == 50.0
+    assert latest["form"] == 12.0
+    # form/chronic = 12/62 = 0.19 → 比赛就绪 (ratio-based, not fixed TSB threshold)
+    assert latest["form_zone"] == "race_ready"
+    assert latest["rhr"] == 52  # raw signal still surfaced
+    # No vendor-computed load fields leak to the LLM.
+    for vendor in ("ati", "cti", "tsb", "fatigue", "training_load_state"):
+        assert vendor not in latest
+
+
+def test_pmc_series_uses_stride_load(patched_db) -> None:
+    patched_db._conn.execute(
+        """INSERT INTO daily_training_load
+           (date, algorithm_version, acute_load, chronic_load, form, load_ratio)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
+    )
+    patched_db._conn.commit()
+    res = read_impls.GetPmcSeriesImpl("uid")(days=14)
+    assert res.ok
+    series = res.data["series"]
+    assert len(series) == 1
+    assert series[0]["chronic_load"] == 62.0
+    assert series[0]["form"] == 12.0
+    assert "ati" not in series[0] and "cti" not in series[0]
+
+
+def test_recent_activities_drops_vendor_training_load(patched_db) -> None:
+    patched_db._conn.execute(
+        """INSERT INTO activities
+           (label_id, name, sport_type, sport_name, date, distance_m, duration_s, training_load)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("a1", "run", 100, "Run", "2026-05-13T08:00:00+00:00", 10000, 3000, 400),
+    )
+    patched_db._conn.commit()
+    res = read_impls.GetRecentActivitiesImpl("uid")(limit=5)
+    assert res.ok
+    # The vendor per-activity load must not reach the coach context.
+    assert "training_load" not in res.data["activities"][0]
 
 
 def test_pbs_detects_10k_pb(patched_db) -> None:

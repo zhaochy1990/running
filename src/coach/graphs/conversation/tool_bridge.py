@@ -29,8 +29,8 @@ def _serialize_result(result: ToolResult) -> str:
 _TOOL_DESCRIPTIONS: dict[str, str] = {
     # read
     "get_recent_activities": "List the most recent training activities. Use 'limit' (default 14) to bound rows.",
-    "get_health_snapshot": "Return latest daily_health row (ati/cti/tsb/rhr/fatigue) plus dashboard (HRV/recovery_pct/threshold_pace).",
-    "get_pmc_series": "Daily PMC series over the last `days` (default 42). ati, cti, training_load_ratio, fatigue per day.",
+    "get_health_snapshot": "Latest STRIDE training-load snapshot (acute_load/chronic_load/form/load_ratio + form_zone, rhr) plus dashboard (HRV/recovery_pct/threshold_pace). STRIDE self-computed, vendor-agnostic.",
+    "get_pmc_series": "Daily STRIDE PMC series over the last `days` (default 42): acute_load, chronic_load, form, load_ratio per day (STRIDE self-computed, not COROS ati/cti).",
     "get_body_composition_latest": "Latest body-composition scan + delta from prior scan (weight_kg/body_fat_pct/smm_kg).",
     "get_ability_snapshot": "Latest ability_snapshot rows by dimension (e.g. endurance, speed).",
     "get_race_predictions": "Race time predictions from the dashboard (5K/10K/HM/FM).",

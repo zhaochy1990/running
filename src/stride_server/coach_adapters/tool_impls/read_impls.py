@@ -70,15 +70,25 @@ def _activity_payload(row: Any) -> dict[str, Any]:
     return d
 
 
-def _tsb_zone(tsb: float) -> tuple[str, str]:
-    if tsb >= 25:
-        return "overtaper", "减量过多"
-    if tsb >= 10:
+def _form_zone(form: float | None, chronic: float | None) -> tuple[str, str]:
+    """Classify form by CTL ratio (``form / chronic``), per CLAUDE.md doctrine.
+
+    NOT the classic fixed TSB thresholds — those are calibrated for cyclist
+    CTL 80-120; runners run CTL 40-70, so the same absolute TSB means a very
+    different state. ``form = chronic - acute`` (both STRIDE-computed). Mirrors
+    ``frontend/src/pages/TrainingStatusPage.tsx::classifyForm``.
+    """
+    if form is None or not chronic or chronic <= 0:
+        return "unknown", "数据不足"
+    ratio = form / chronic
+    if ratio > 0.25:
+        return "detraining", "减量过多"
+    if ratio >= 0.10:
         return "race_ready", "比赛就绪"
-    if tsb >= -10:
+    if ratio >= -0.10:
         return "neutral", "维持期"
-    if tsb >= -30:
-        return "training", "提升期"
+    if ratio >= -0.25:
+        return "building", "提升期"
     return "overreaching", "过度负荷"
 
 
@@ -98,7 +108,7 @@ class GetRecentActivitiesImpl:
             rows = db.query(
                 """SELECT label_id, name, sport_type, sport_name, date,
                     distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
-                    avg_cadence, calories_kcal, training_load, vo2max, train_type,
+                    avg_cadence, calories_kcal, vo2max, train_type,
                     feel_type, sport_note
                 FROM activities
                 ORDER BY date DESC, label_id DESC
@@ -126,20 +136,29 @@ class GetHealthSnapshotImpl:
     def __call__(self) -> ToolResult:
         db = _open_db(self._user_id)
         try:
+            # STRIDE self-computed training load (vendor-agnostic) — NOT COROS
+            # ati/cti. Lets the coach reason on one scale across watch brands.
             rows = db.query(
-                """SELECT date, ati, cti, rhr, distance_m, duration_s,
-                    training_load_ratio, training_load_state, fatigue
-                FROM daily_health
+                """SELECT date, acute_load, chronic_load, form, load_ratio
+                FROM daily_training_load
+                WHERE algorithm_version = (
+                    SELECT MAX(algorithm_version) FROM daily_training_load
+                )
                 ORDER BY date DESC
                 LIMIT 1"""
             )
             latest = dict(rows[0]) if rows else None
-            if latest is not None and latest.get("ati") is not None and latest.get("cti") is not None:
-                tsb = round(latest["cti"] - latest["ati"], 1)
-                zone, label = _tsb_zone(tsb)
-                latest["tsb"] = tsb
-                latest["tsb_zone"] = zone
-                latest["tsb_zone_label"] = label
+            if latest is not None:
+                zone, label = _form_zone(latest.get("form"), latest.get("chronic_load"))
+                latest["form_zone"] = zone
+                latest["form_zone_label"] = label
+                # Resting HR is a measured signal (not a vendor-computed load
+                # metric), so it stays — sourced from daily_health.
+                rhr_rows = db.query(
+                    "SELECT rhr FROM daily_health ORDER BY date DESC LIMIT 1"
+                )
+                if rhr_rows:
+                    latest["rhr"] = dict(rhr_rows[0]).get("rhr")
 
             dash_rows = db.query(
                 """SELECT avg_sleep_hrv, hrv_normal_low, hrv_normal_high, recovery_pct,
@@ -173,15 +192,18 @@ class GetPmcSeriesImpl:
             )
         db = _open_db(self._user_id)
         try:
+            # STRIDE self-computed PMC (acute/chronic/form/load_ratio), NOT COROS
+            # ati/cti — ``form`` is already ``chronic - acute``, no recompute.
             rows = db.query(
-                """SELECT date, ati, cti, training_load_ratio, training_load_state, fatigue
-                FROM daily_health ORDER BY date DESC LIMIT ?""",
+                """SELECT date, acute_load, chronic_load, form, load_ratio
+                FROM daily_training_load
+                WHERE algorithm_version = (
+                    SELECT MAX(algorithm_version) FROM daily_training_load
+                )
+                ORDER BY date DESC LIMIT ?""",
                 (max(1, int(days)),),
             )
             records = [dict(r) for r in rows]
-            for rec in records:
-                if rec.get("ati") is not None and rec.get("cti") is not None:
-                    rec["tsb"] = round(rec["cti"] - rec["ati"], 1)
         finally:
             db.close()
         return ToolResult(
