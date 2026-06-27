@@ -600,11 +600,23 @@ def _active_plan_view(plan: MasterPlan) -> MasterPlan:
     mis-fires (sequential-index + coverage failures, plus knock-on taper /
     long-run-share errors).
 
-    This subtracts the completed-week offset so the emitted weeks read 1..N and
-    shifts ``start_date`` to the first active week — exactly the from-week-1
-    shape the weekly rules expect. Phases are left intact (phase-level rules run
-    on the full plan separately). No completed phase, or no offset → returns the
-    plan unchanged (backward compatible).
+    This re-bases the weekly skeleton to the first ACTIVE week in two ways, each
+    decoupled from how the LLM happened to number the weeks:
+
+    * **week_index** — if the emitted weeks are numbered continuously from the
+      season start (base = W1-8 → active starts at W9), subtract the offset so
+      they read 1..N. If the LLM already numbered the active weeks from W1
+      (offset 0), leave the indices alone.
+    * **start_date** — shift to the first active week's start *regardless of the
+      index offset*. The completed lead-in still occupies the calendar span
+      ``[plan.start_date, first active week)`` even when offset is 0, so without
+      this the coverage week-count expectation over-counts by the completed
+      weeks and ``weekly_key_sessions_present`` mis-fires. The completed phases
+      carry no weeks, so the earliest emitted week IS the first active week.
+
+    Phases are left intact (phase-level rules run on the full plan separately).
+    No completed phase, or nothing to re-base → returns the plan unchanged
+    (backward compatible).
     """
     if not any(getattr(p, "is_completed", False) for p in plan.phases):
         return plan
@@ -612,13 +624,27 @@ def _active_plan_view(plan: MasterPlan) -> MasterPlan:
     if not weeks:
         return plan
     offset = weeks[0].week_index - 1
-    if offset <= 0:
-        return plan
-    remapped = [
-        w.model_copy(update={"week_index": w.week_index - offset}) for w in weeks
+    # First active week start: prefer the emitted week's own start, fall back to
+    # the earliest non-completed phase start (LLM may omit week_start), then to
+    # the plan start. This is the calendar anchor the coverage check should use.
+    active_phase_starts = [
+        p.start_date for p in plan.phases
+        if not getattr(p, "is_completed", False) and p.start_date
     ]
+    new_start = (
+        weeks[0].week_start
+        or (min(active_phase_starts) if active_phase_starts else None)
+        or plan.start_date
+    )
+    if offset <= 0 and new_start == plan.start_date:
+        return plan  # already from week 1 with no completed lead-in span
+    remapped = (
+        [w.model_copy(update={"week_index": w.week_index - offset}) for w in weeks]
+        if offset > 0
+        else weeks
+    )
     return plan.model_copy(update={
-        "start_date": remapped[0].week_start or plan.start_date,
+        "start_date": new_start,
         "weekly_key_sessions": remapped,
         "weeks": remapped,
         "total_weeks": len(remapped),
