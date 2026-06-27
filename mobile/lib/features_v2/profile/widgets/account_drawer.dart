@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../../core/app_version.dart';
 import '../../../core/auth/auth_controller.dart';
 import '../../../core/auth/current_user.dart';
 import '../../../core/router/routes_v2.dart';
@@ -33,6 +34,7 @@ class AccountDrawer extends ConsumerWidget {
     final profile = ref.watch(currentUserProvider).valueOrNull;
     final watch = ref.watch(homeProvider).valueOrNull?.watch;
     final syncing = ref.watch(syncControllerProvider).syncing;
+    final appVersion = ref.watch(appVersionProvider).valueOrNull;
 
     final displayName = profile?.displayName ??
         (profile?.profile?['display_name'] as String?) ??
@@ -219,7 +221,8 @@ class AccountDrawer extends ConsumerWidget {
                   ProfileMenuItem(
                     icon: Icons.info_outline,
                     label: '关于 STRIDE',
-                    trailing: _trailingText('v$_appVersionSync'),
+                    trailing: _trailingText(
+                        appVersion != null ? 'v$appVersion' : 'v…'),
                     onTap: () {
                       Navigator.of(context).pop();
                       _showAbout(context);
