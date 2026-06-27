@@ -26,6 +26,7 @@ from .resolver import (
 )
 from .plan import CallPlan, SpecialistCall
 from .turn import ProposalCard, Turn, TurnResponse
+from .memory import AthleteMemory, MemoryKind, MemoryStatus, MemoryWrite
 from .registry import SpecialistEntry, SpecialistRegistry, SpecialistRunner
 
 __all__ = [
@@ -57,4 +58,9 @@ __all__ = [
     "SpecialistEntry",
     "SpecialistRegistry",
     "SpecialistRunner",
+    # memory
+    "AthleteMemory",
+    "MemoryKind",
+    "MemoryStatus",
+    "MemoryWrite",
 ]
