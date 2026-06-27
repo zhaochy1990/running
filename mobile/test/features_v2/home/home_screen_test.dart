@@ -230,14 +230,16 @@ void main() {
     expect(navigatedTo, equals('ACT_001'));
   });
 
-  testWidgets('sync icon renders in hero trailing slot', (tester) async {
+  testWidgets('fixed top bar shows ≡ menu, STRIDE wordmark, and today date',
+      (tester) async {
     await _pump(tester, AsyncData(_makeHomeData()));
-    expect(find.byIcon(Icons.sync), findsOneWidget);
+    // The ≡ that opens the account drawer is pinned in the top app bar
+    // (no longer a scrolling-hero leading slot).
+    expect(find.byIcon(Icons.menu), findsOneWidget);
+    expect(find.text('STRIDE'), findsOneWidget);
+    // Today label e.g. "6月27日 周六" — assert the 月…日 shape is present.
+    expect(find.textContaining(RegExp(r'\d+月\d+日')), findsOneWidget);
+    // Sync moved into the account drawer (#115); no sync icon on the home bar.
+    expect(find.byIcon(Icons.sync), findsNothing);
   });
-  // The "tap doesn't crash" smoke test that previously lived here was
-  // removed: tapping the icon fires SyncController.triggerSync which goes
-  // through the un-stubbed strideApi, leaking a pending Dio timer on
-  // teardown.  Per the plan, the call-semantics guarantees live with the
-  // SyncController unit tests; this file only verifies the icon is wired
-  // into the screen tree.
 }

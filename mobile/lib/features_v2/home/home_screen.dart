@@ -15,10 +15,10 @@ import 'package:go_router/go_router.dart';
 import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
+import '../../shared/utils/format.dart';
 import '../_shared/shell/main_shell.dart';
 import '../_shared/widgets/refreshable.dart';
-import '../_shared/widgets/screen_hero.dart';
-import '../_shared/widgets/sync_icon.dart';
+import '../_shared/widgets/top_bar.dart';
 import '../_shared/widgets/section_header.dart';
 import '../_shared/widgets/stat_row.dart';
 import 'models/home_data.dart';
@@ -34,6 +34,28 @@ class HomeScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
+      // Fixed top bar (mirrors spec/stitch/mobile/tab-runner.html `<header
+      // class="fixed top-0 …">`): ≡ stays pinned regardless of scroll, with the
+      // STRIDE wordmark and today's date. The ≡ opens the global account drawer.
+      appBar: StrideTopBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          tooltip: '菜单',
+          onPressed: () => shellScaffoldKey.currentState?.openDrawer(),
+        ),
+        title: 'STRIDE',
+        actions: [
+          Text(
+            _todayLabel(),
+            style: const TextStyle(
+              fontFamily: AppTypography.fontMono,
+              fontSize: StrideTokens.fs11,
+              color: StrideTokens.muted,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
       body: homeAsync.when(
         loading: () => const Center(
           child: CircularProgressIndicator(color: StrideTokens.accent),
@@ -45,6 +67,11 @@ class HomeScreen extends ConsumerWidget {
         data: (data) => _HomeBody(data: data),
       ),
     );
+  }
+
+  String _todayLabel() {
+    final iso = DateTime.now().toIso8601String();
+    return '${formatDateShort(iso)} ${weekdayCN(iso)}';
   }
 }
 
@@ -61,17 +88,10 @@ class _HomeBody extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            StrideScreenHero.withMenu(
-              onMenu: () => shellScaffoldKey.currentState?.openDrawer(),
-              eyebrow: '主页 · 本周',
-              title: _heroTitle(data.planState),
-              deck: _heroDeck(data),
-              trailing: const SyncIconButton(),
-            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 StrideTokens.spaceLg,
-                StrideTokens.spaceSm,
+                StrideTokens.spaceLg,
                 StrideTokens.spaceLg,
                 StrideTokens.space3xl,
               ),
@@ -182,30 +202,6 @@ class _HomeBody extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _heroTitle(String planState) {
-    switch (planState) {
-      case 'active':
-        return '本周训练 · 进展中';
-      case 'active_no_week':
-        return '本周计划待生成';
-      case 'none':
-      default:
-        return '欢迎来到 STRIDE';
-    }
-  }
-
-  String _heroDeck(HomeData data) {
-    final now = DateTime.now();
-    final monday = now.subtract(Duration(days: now.weekday - 1));
-    final sunday = monday.add(const Duration(days: 6));
-    final range =
-        '${monday.month}/${monday.day.toString().padLeft(2, '0')} — '
-        '${sunday.month}/${sunday.day.toString().padLeft(2, '0')}';
-    final km = data.weeklyStats.totalDistanceKm.toStringAsFixed(1);
-    final sessions = data.weeklyStats.sessionCount;
-    return '$range · 本周完成 $km km · $sessions 节';
   }
 
   String _fmtDuration(int seconds) {
