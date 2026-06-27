@@ -35,19 +35,21 @@ def build_specialist_task(
     utterance: str,
     active_target: TargetRef | None,
     conversation_window: list[Turn],
+    memory_context: str = "",
 ) -> SpecialistTask:
     """Synthesise the rich brief for one specialist call (§4.2).
 
-    S1 hands the expert an empty ``ScopedContext`` — the specialist self-serves
-    its read prefetch (§4.3 "专家自给"). Per-``data_needs`` prefetch is a later
-    optimisation handled in the adapter layer.
+    S1 hands the expert an empty ``ScopedContext`` data bag — the specialist
+    self-serves its read prefetch (§4.3 "专家自给"). Active long-term memory
+    (§4.0), when present, rides ``context.notes`` so the expert's answer is
+    memory-aware.
     """
     card = registry.get_card(intent.specialist_id)
     boundaries = _WRITE_BOUNDARIES if card.writes else _READ_BOUNDARIES
     return SpecialistTask(
         objective=utterance,
         active_target=active_target,
-        context=ScopedContext(),
+        context=ScopedContext(notes=memory_context or None),
         boundaries=boundaries,
         conversation_window=list(conversation_window),
     )
@@ -59,6 +61,7 @@ def build_call_plan(
     registry: SpecialistRegistry,
     utterance: str,
     conversation_window: list[Turn] | None = None,
+    memory_context: str = "",
 ) -> CallPlan:
     """Build the dispatch plan from a ResolverOutput.
 
@@ -79,6 +82,7 @@ def build_call_plan(
                 utterance=utterance,
                 active_target=resolver_output.active_target,
                 conversation_window=window,
+                memory_context=memory_context,
             ),
             depends_on=[],
         )

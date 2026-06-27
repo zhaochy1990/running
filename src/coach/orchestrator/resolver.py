@@ -73,9 +73,18 @@ def build_resolver_system_prompt(registry: SpecialistRegistry) -> str:
     return render_skill("resolver", {"card_catalog": render_card_catalog(registry)})
 
 
-def build_resolver_user_prompt(utterance: str, conversation_window: list[Turn]) -> str:
-    """User prompt = this turn's utterance + recent window (per-turn, varies)."""
+def build_resolver_user_prompt(
+    utterance: str, conversation_window: list[Turn], memory_context: str = ""
+) -> str:
+    """User prompt = this turn's utterance + recent window + injected memory.
+
+    ``memory_context`` (active long-term facts, §4.0) goes in the *user* turn —
+    per-athlete data never enters the cache-stable system prompt.
+    """
     parts: list[str] = []
+    if memory_context:
+        parts.append(memory_context)
+        parts.append("")
     if conversation_window:
         parts.append("# 最近对话")
         for turn in conversation_window:
@@ -208,11 +217,12 @@ def resolve(
     draft_fn: ResolverDraftFn,
     conversation_window: list[Turn] | None = None,
     prior_target: TargetRef | None = None,
+    memory_context: str = "",
 ) -> ResolverOutput:
     """Run the Resolver: LLM intent draft → deterministic target + clarify (§4.1)."""
     window = conversation_window or []
     system_prompt = build_resolver_system_prompt(registry)
-    user_prompt = build_resolver_user_prompt(utterance, window)
+    user_prompt = build_resolver_user_prompt(utterance, window, memory_context)
 
     draft = draft_fn(system_prompt, user_prompt)
     logger.debug(

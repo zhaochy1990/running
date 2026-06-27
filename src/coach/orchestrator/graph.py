@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from langchain_core.messages import AIMessage
@@ -22,6 +23,7 @@ from langgraph.graph import END, START, StateGraph
 from coach.contracts import SpecialistRegistry, TargetRef
 from .aggregator import SynthFn, aggregate
 from .dispatcher import dispatch
+from .memory import MemoryExtractFn, MemoryStore, load_active_memories, write_memories
 from .resolver import ResolverDraftFn, resolve
 from .state import (
     OrchestratorState,
@@ -37,12 +39,18 @@ def _ms(since: float) -> float:
     return (time.perf_counter() - since) * 1000.0
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 def build_orchestrator_graph(
     *,
     registry: SpecialistRegistry,
     draft_fn: ResolverDraftFn,
     checkpointer: Any | None = None,
     synth_fn: SynthFn | None = None,
+    memory_store: MemoryStore | None = None,
+    memory_extract_fn: MemoryExtractFn | None = None,
 ) -> Any:
     """Compile the orchestrator pipeline graph.
 
@@ -60,10 +68,19 @@ def build_orchestrator_graph(
 
         prior_raw = state.get("active_target")
         prior_target = TargetRef.model_validate(prior_raw) if prior_raw else None
+
+        # ⓪ Memory Load — inject active long-term facts into Resolver + specialist.
+        user_id = state.get("user_id") or ""
+        active_memories: list[Any] = []
+        memory_context = ""
+        if memory_store is not None and user_id:
+            active_memories, memory_context = load_active_memories(memory_store, user_id)
+        injected_ids = [m.id for m in active_memories]
         logger.debug(
-            "turn start | session=%s | window=%d turns | prior_target=%s | utterance=%r",
+            "turn start | session=%s | window=%d turns | memories=%d | prior_target=%s | utterance=%r",
             state.get("session_id"),
             len(window),
+            len(active_memories),
             prior_raw,
             utterance,
         )
@@ -75,6 +92,7 @@ def build_orchestrator_graph(
             draft_fn=draft_fn,
             conversation_window=window,
             prior_target=prior_target,
+            memory_context=memory_context,
         )
         logger.debug(
             "① resolver %.0fms | intents=%s | compound=%s | target=%s (from %s) | ambiguity=%s",
@@ -100,6 +118,7 @@ def build_orchestrator_graph(
                 registry=registry,
                 utterance=utterance,
                 conversation_window=window,
+                memory_context=memory_context,
             )
             logger.debug(
                 "② supervisor %.0fms | call_plan=%s",
@@ -131,6 +150,25 @@ def build_orchestrator_graph(
                 turn_response.clarification is not None,
             )
 
+        # ⑤ Memory Writer — pre-filter → extract → dedup → persist → receipt.
+        if memory_store is not None and memory_extract_fn is not None and user_id:
+            conversation_text = f"用户：{utterance}\n教练：{turn_response.reply}"
+            applied, receipt = write_memories(
+                memory_store,
+                memory_extract_fn,
+                user_id=user_id,
+                session_id=state.get("session_id") or "",
+                conversation_text=conversation_text,
+                active=active_memories,
+                now=_now_iso(),
+            )
+            if receipt:
+                turn_response = turn_response.model_copy(
+                    update={"reply": turn_response.reply + receipt}
+                )
+            if applied:
+                logger.debug("⑤ memory writer | %d new fact(s) persisted", len(applied))
+
         logger.debug("turn done | total %.0fms", _ms(t0))
 
         active_target = (
@@ -142,6 +180,7 @@ def build_orchestrator_graph(
             "history": [AIMessage(content=turn_response.reply)],
             "active_target": active_target,
             "turn_response": turn_response.model_dump(),
+            "injected_memories": injected_ids,
         }
 
     graph = StateGraph(OrchestratorState)

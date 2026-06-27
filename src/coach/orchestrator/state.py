@@ -30,6 +30,7 @@ class OrchestratorState(TypedDict, total=False):
     history: Annotated[list[BaseMessage], add_messages]
     active_target: dict[str, Any] | None  # serialised TargetRef, promoted across turns
     turn_response: dict[str, Any] | None   # serialised TurnResponse (this turn's output)
+    injected_memories: list[str]           # ids of long-term memories injected this turn (§5.4)
 
 
 def coach_thread_id(user_id: str, session_id: str) -> str:

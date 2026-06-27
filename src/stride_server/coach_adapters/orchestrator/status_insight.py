@@ -95,7 +95,11 @@ def make_status_insight_runner(
         graph = graph_factory(
             toolkit=active_toolkit, llm=llm, checkpointer=None, scope="qa"
         )
-        messages = _window_to_messages(task.conversation_window)
+        messages: list[Any] = []
+        # Long-term memory (injected by Memory Load, §4.0) as background context.
+        if task.context and task.context.notes:
+            messages.append(HumanMessage(content=f"（已知长期背景，供参考）\n{task.context.notes}"))
+        messages.extend(_window_to_messages(task.conversation_window))
         messages.append(HumanMessage(content=task.objective))
         logger.debug(
             "status_insight: running qa graph | seed=%d msgs (window=%d + objective)",

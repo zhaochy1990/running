@@ -17,6 +17,7 @@ from coach.orchestrator import (
     coach_thread_id,
     make_llm_draft_fn,
 )
+from coach.orchestrator.memory import make_llm_memory_extractor
 from coach.orchestrator.resolver import ResolverDraftFn
 
 from ..toolkit import build_stride_toolkit
@@ -43,6 +44,8 @@ def run_coach_turn(
     registry: SpecialistRegistry | None = None,
     checkpointer: Any | None = None,
     specialist_llm: Any | None = None,
+    memory_store: Any | None = None,
+    memory_extract_fn: Any | None = None,
 ) -> TurnResponse:
     """Run one orchestrator turn and return the TurnResponse (§8 A1).
 
@@ -51,6 +54,7 @@ def run_coach_turn(
     on the cheap orchestrator model.
     """
     from stride_server.coach_runtime import (
+        get_athlete_memory_store,
         get_checkpointer,
         get_generator_llm,
         get_orchestrator_llm,
@@ -60,13 +64,18 @@ def run_coach_turn(
     resolved_registry = registry or build_specialist_registry(
         user_id=user_id, specialist_llm=resolved_specialist_llm
     )
-    resolved_draft_fn = draft_fn or make_llm_draft_fn(get_orchestrator_llm())
+    orchestrator_llm = get_orchestrator_llm()
+    resolved_draft_fn = draft_fn or make_llm_draft_fn(orchestrator_llm)
     resolved_checkpointer = checkpointer or get_checkpointer()
+    resolved_store = memory_store or get_athlete_memory_store()
+    resolved_extract_fn = memory_extract_fn or make_llm_memory_extractor(orchestrator_llm)
 
     graph = build_orchestrator_graph(
         registry=resolved_registry,
         draft_fn=resolved_draft_fn,
         checkpointer=resolved_checkpointer,
+        memory_store=resolved_store,
+        memory_extract_fn=resolved_extract_fn,
     )
     thread_id = coach_thread_id(user_id, session_id)
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
