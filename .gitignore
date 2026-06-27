@@ -14,6 +14,8 @@ venv/
 .coverage
 .coverage.*
 htmlcov/
+# coach_cli local dev checkpointer (session state, never committed)
+data/_coach_dev/
 .claude/*
 !.claude/commands/
 .codex/
