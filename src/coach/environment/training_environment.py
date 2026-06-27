@@ -244,9 +244,12 @@ def _classify_status(
     )
     if disturbed:
         return "disturbed", True
-    # Back within baseline band on every signal we have → adapted.
-    rhr_ok = rhr_delta is None or abs(rhr_delta) < RHR_DISTURBED_BPM
-    hrv_ok = hrv_delta_pct is None or abs(hrv_delta_pct) < HRV_DISTURBED_FRAC * 100
+    # Not perturbed on any signal we have → adapted. The check is **one-sided**,
+    # mirroring `disturbed`: only an *elevated* RHR / *suppressed* HRV blocks
+    # `stabilized`. A better-than-baseline athlete (RHR below, HRV above
+    # baseline — common once adapted/fitter) is stabilized, not stuck recovering.
+    rhr_ok = rhr_delta is None or rhr_delta < RHR_DISTURBED_BPM
+    hrv_ok = hrv_delta_pct is None or hrv_delta_pct > -HRV_DISTURBED_FRAC * 100
     if rhr_ok and hrv_ok:
         return "stabilized", True
     return "recovering", True

@@ -295,8 +295,13 @@ class GetTrainingEnvironmentImpl:
                 "SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date"
             )
             rhr_series = [(_norm_day(r["date"]), float(r["rhr"])) for r in rhr_rows]
+            # daily_hrv PK is (date, provider): a dual-watch user has two rows
+            # per night. Read through the canonical per-date provider picker so
+            # the series isn't double-counted (skews the acclimatization median).
+            from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
+
             hrv_rows = db.query(
-                "SELECT date, last_night_avg FROM daily_hrv "
+                f"SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
                 "WHERE last_night_avg IS NOT NULL ORDER BY date"
             )
             hrv_series = [(_norm_day(r["date"]), float(r["last_night_avg"])) for r in hrv_rows]

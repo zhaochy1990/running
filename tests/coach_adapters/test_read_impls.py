@@ -295,6 +295,58 @@ def test_training_environment_detects_altitude(patched_db, monkeypatch) -> None:
     assert env["weather"] is None
 
 
+def test_training_environment_dedups_dual_provider_hrv(patched_db, monkeypatch) -> None:
+    """A dual-watch user (garmin + coros same night) must not double-count HRV.
+
+    Regression: the env HRV query read ``daily_hrv`` directly, so a user with two
+    providers got two rows per date and the median skewed — flipping the
+    acclimatization status. Reading through ``HRV_PREFERRED_PER_DATE_SQL`` picks
+    one provider (garmin) per night.
+    """
+    from datetime import date
+
+    import stride_core.timefmt as timefmt
+    from stride_core.running_calibration.sqlite_connector import (
+        SQLiteRunningCalibrationRepository,
+    )
+    from stride_core.running_calibration.types import RunningCalibrationSnapshot
+
+    monkeypatch.setattr(timefmt, "today_shanghai", lambda: date(2026, 6, 27))
+    conn = patched_db._conn
+    conn.executemany(
+        "INSERT INTO activities (label_id, name, sport_type, sport_name, date) VALUES (?,?,?,?,?)",
+        [
+            ("s1", "run", 100, "Run", "2026-06-24T02:00:00+00:00"),  # Shanghai
+            ("k1", "run", 100, "Run", "2026-06-27T02:00:00+00:00"),  # Kunming
+        ],
+    )
+    conn.executemany(
+        "INSERT INTO timeseries (label_id, timestamp, altitude) VALUES (?,?,?)",
+        [("s1", 1, 2.0), ("k1", 1, 1931.0)],
+    )
+    conn.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260627', 49)")
+    # HRV baseline (pre-change-point) = 40, garmin only.
+    conn.executemany(
+        "INSERT INTO daily_hrv (date, last_night_avg, provider) VALUES (?,?,?)",
+        [
+            ("2026-06-10", 40, "garmin"),
+            ("2026-06-15", 40, "garmin"),
+            # Recent night: garmin (preferred) = 40, coros = 10. Counting both
+            # → median 25 → −37.5% → 'disturbed'. Deduped → 40 → ~0% → not.
+            ("2026-06-27", 40, "garmin"),
+            ("2026-06-27", 10, "coros"),
+        ],
+    )
+    conn.commit()
+    SQLiteRunningCalibrationRepository(patched_db).save_snapshot(
+        RunningCalibrationSnapshot(as_of_date=date(2026, 6, 1), rhr_baseline=48.0)
+    )
+
+    acc = read_impls.GetTrainingEnvironmentImpl("uid")().data["environment"]["acclimatization"]
+    assert acc["hrv_current"] == 40.0  # garmin, not median(40, 10)=25
+    assert acc["status"] != "disturbed"
+
+
 def test_pbs_detects_10k_pb(patched_db) -> None:
     # Seed two 10k runs; the faster one should win.
     patched_db._conn.executemany(

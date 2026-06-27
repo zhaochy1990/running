@@ -106,6 +106,25 @@ def test_acclimatization_stabilized_when_signals_back_to_baseline():
     assert acc.active is False
 
 
+def test_acclimatization_stabilized_when_better_than_baseline():
+    """A fitter/adapted athlete (RHR below, HRV above baseline) is stabilized.
+
+    Regression: a symmetric ``abs()`` band pinned such an athlete to
+    ``recovering`` forever — only an *elevated* RHR / *suppressed* HRV should
+    block ``stabilized``, mirroring the one-sided ``disturbed`` rule.
+    """
+    env = _env(
+        rhr_series=[("2026-06-27", 43.0)],  # 5 bpm BELOW baseline
+        rhr_baseline=48.0,
+        hrv_series=[("2026-06-10", 40.0), ("2026-06-15", 40.0), ("2026-06-27", 50.0)],  # +25%
+    )
+    acc = env.acclimatization
+    assert acc.rhr_delta_bpm == -5.0
+    assert acc.hrv_delta_pct == pytest.approx(25.0)
+    assert acc.status == "stabilized"
+    assert acc.active is False
+
+
 def test_acclimatization_disturbed_from_suppressed_hrv():
     env = _env(
         hrv_series=[("2026-06-10", 40.0), ("2026-06-15", 40.0), ("2026-06-27", 27.0)],

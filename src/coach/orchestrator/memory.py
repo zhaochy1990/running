@@ -160,6 +160,13 @@ def dedup_merge(writes: list[MemoryWrite], active: list[AthleteMemory]) -> list[
     **kind-agnostic** on purpose: the same fact gets re-tagged across kinds
     (altitude as both ``life_event`` and ``constraint``), so keying on kind
     alone let cross-kind duplicates through.
+
+    Containment is **one-directional**: drop the new fact only when it's a
+    *substring* of an existing one (it adds no information). The reverse —
+    a new fact that *contains* an existing one (``右膝盖痛，落地加重`` over
+    ``膝盖痛``) — is more specific, so it's kept rather than silently lost;
+    the ideal path is an LLM ``op=update``, but losing the detail is worse
+    than a near-duplicate.
     """
     active_keys = {(m.kind, _norm(m.content)) for m in active}
     out: list[MemoryWrite] = []
@@ -167,9 +174,7 @@ def dedup_merge(writes: list[MemoryWrite], active: list[AthleteMemory]) -> list[
         if w.op == "add":
             key = (w.memory.kind, _norm(w.memory.content))
             wc = _norm(w.memory.content)
-            if key in active_keys or any(
-                wc in _norm(m.content) or _norm(m.content) in wc for m in active
-            ):
+            if key in active_keys or any(wc in _norm(m.content) for m in active):
                 continue
             active_keys.add(key)
         out.append(w)

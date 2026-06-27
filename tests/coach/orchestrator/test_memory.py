@@ -66,6 +66,24 @@ def test_dedup_keeps_new_fact():
     assert dedup_merge([w], active) == [w]
 
 
+def test_dedup_keeps_more_specific_superstring_fact():
+    """A new fact that *contains* an existing one is more specific → keep it.
+
+    Regression: bidirectional containment dropped ``右膝盖痛，落地加重`` because
+    the active ``膝盖痛`` was a substring of it — silently losing the detail.
+    """
+    active = [AthleteMemory(id="m1", kind="injury", content="膝盖痛")]
+    w = MemoryWrite(op="add", memory=AthleteMemory(id="", kind="injury", content="右膝盖痛，跑步落地时加重"))
+    assert dedup_merge([w], active) == [w]
+
+
+def test_dedup_drops_less_specific_substring_fact():
+    """A new fact that is a *substring* of an existing one adds nothing → drop."""
+    active = [AthleteMemory(id="m1", kind="injury", content="右膝盖痛，跑步落地时加重")]
+    w = MemoryWrite(op="add", memory=AthleteMemory(id="", kind="injury", content="膝盖痛"))
+    assert dedup_merge([w], active) == []
+
+
 def test_memory_receipt():
     w = MemoryWrite(op="add", memory=AthleteMemory(id="x", kind="life_event", content="迁居昆明~1900m"))
     receipt = memory_receipt([w])
