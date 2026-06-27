@@ -61,9 +61,45 @@ def _get_active_plan(user_id: str) -> MasterPlan | None:
 
 
 def _from_existing_plan(plan: MasterPlan, as_of: date_cls) -> CurrentPhaseContext:
-    """Read current phase + weeks elapsed from the athlete's active plan."""
-    current = None
+    """Read current phase + weeks elapsed from the athlete's active plan.
+
+    Already-completed leading phases (``is_completed`` — a continuity plan's
+    carried-over base) are NOT "current" even when today still falls inside
+    their date range (e.g. the last day of a finished base block): the athlete
+    has moved past them. They are skipped when locating the current phase and
+    instead summed into ``completed_aerobic_weeks`` — the carried-over base the
+    regenerated plan must preserve up front. ``recommended_entry_phase`` then
+    points at the first *active* phase (the entry the new plan continues from),
+    not the completed lead-in. Mirrors
+    ``routes.master_plan._build_current_response`` so the pre-generation
+    detector and the read-time current-phase resolution agree.
+
+    Without this, regenerating a continuity plan whose completed base ends on
+    (or just after) ``as_of`` mis-detects: the loop matches the completed base,
+    yields ``entry=base`` + ``completed_aerobic_weeks=0``, and the planner then
+    emits a degenerate 2-week base instead of preserving the real ~8-week one.
+    """
+    # Carried-over completed base weeks → lets the planner place the
+    # is_completed lead-in (start ≈ plan_start − N weeks).
+    completed_aerobic_weeks = 0
     for ph in plan.phases:
+        if not getattr(ph, "is_completed", False):
+            continue
+        if ph.phase_type != PhaseType.BASE:
+            continue
+        try:
+            s = date_cls.fromisoformat(ph.start_date)
+            e = date_cls.fromisoformat(ph.end_date)
+        except (ValueError, TypeError):
+            continue
+        completed_aerobic_weeks += max(1, (e - s).days // 7 + 1)
+
+    # Current phase = first ACTIVE (not-completed) phase containing today; if
+    # today sits in a completed phase's tail or before the first active phase
+    # begins, fall back to the first active phase (the entry phase).
+    active_phases = [p for p in plan.phases if not getattr(p, "is_completed", False)]
+    current = None
+    for ph in active_phases:
         try:
             start = date_cls.fromisoformat(ph.start_date)
             end = date_cls.fromisoformat(ph.end_date)
@@ -72,29 +108,40 @@ def _from_existing_plan(plan: MasterPlan, as_of: date_cls) -> CurrentPhaseContex
         if start <= as_of <= end:
             current = ph
             break
+    if current is None and active_phases:
+        current = active_phases[0]
 
     if current is None:
-        # Today falls outside every phase window (plan finished / not started).
+        # No active phase at all (every phase completed, or none parseable).
         return CurrentPhaseContext(
             source="existing_plan",
             current_phase_type=None,
             recommended_entry_phase=None,
+            completed_aerobic_weeks=completed_aerobic_weeks,
             confidence="low",
-            rationale="存在历史计划，但今日不在任何阶段窗口内（计划已结束或尚未开始）",
+            rationale="存在历史计划，但今日不在任何未完成阶段窗口内（计划已结束或尚未开始）",
         )
 
-    weeks_in = max(0, (as_of - date_cls.fromisoformat(current.start_date)).days // 7)
+    try:
+        weeks_in = max(0, (as_of - date_cls.fromisoformat(current.start_date)).days // 7)
+    except (ValueError, TypeError):
+        weeks_in = 0
+    rationale = (
+        f"读历史计划：新计划从「{current.name}」"
+        f"（{current.phase_type.value if current.phase_type else '?'}）续接"
+    )
+    if completed_aerobic_weeks:
+        rationale += f"；已完成 {completed_aerobic_weeks} 周有氧基础（保留为已完成前置阶段）"
+    if weeks_in:
+        rationale += f"；当前阶段已进行 {weeks_in} 周"
     return CurrentPhaseContext(
         source="existing_plan",
         current_phase_type=current.phase_type,
         recommended_entry_phase=current.phase_type,  # continue in-place
         weeks_in_phase=weeks_in,
+        completed_aerobic_weeks=completed_aerobic_weeks,
         confidence="high",
-        rationale=(
-            f"读历史计划：当前处于「{current.name}」"
-            f"（{current.phase_type.value if current.phase_type else '?'}），"
-            f"已进行 {weeks_in} 周；新计划从该阶段续接"
-        ),
+        rationale=rationale,
     )
 
 

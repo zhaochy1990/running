@@ -40,15 +40,36 @@ function phaseColor(phase: MasterPlanPhase, index: number): string {
   return fallback[index % fallback.length]
 }
 
+const PHASE_TYPE_SHORT: Record<string, string> = {
+  base: '基础',
+  speed: '速度',
+  build: '专项',
+  peak: '峰值',
+  taper: '减量',
+  race: '比赛',
+  recovery: '恢复',
+}
+
 function shortPhaseName(phase: MasterPlanPhase, index: number): string {
-  const n = phase.name
-  if (n.includes('基础') || n.includes('Base')) return 'P1 基础'
-  if (n.includes('专项') || n.includes('Build')) return 'P2 专项'
-  if (n.includes('马拉松') || n.includes('Peak')) return 'P3 峰值'
-  if (n.includes('减量') || n.includes('Taper')) return 'P4 减量'
-  if (n.includes('比赛') || n.includes('Race')) return '比赛'
-  if (n.includes('恢复') || n.includes('Recovery')) return '恢复'
-  return `P${index + 1}`
+  // P-number comes from the actual phase position; the short label from the
+  // canonical phase_type. The old logic hardcoded P1/P2/P4 per name keyword, so
+  // build ("…专项 build") and peak ("马拉松专项峰值期") — both containing 专项 —
+  // collapsed to the same "P2 专项", and speed (no keyword) fell through to a
+  // bare "P2". Name-keyword matching is now only a fallback for legacy plans
+  // that predate phase_type.
+  const num = `P${index + 1}`
+  let label = phase.phase_type ? PHASE_TYPE_SHORT[phase.phase_type] : undefined
+  if (!label) {
+    const n = phase.name
+    if (n.includes('基础') || n.includes('Base')) label = '基础'
+    else if (n.includes('峰值') || n.includes('Peak')) label = '峰值'
+    else if (n.includes('专项') || n.includes('Build')) label = '专项'
+    else if (n.includes('减量') || n.includes('Taper')) label = '减量'
+    else if (n.includes('速度') || n.includes('Speed')) label = '速度'
+    else if (n.includes('恢复') || n.includes('Recovery')) label = '恢复'
+    else if (n.includes('比赛') || n.includes('Race')) label = '比赛'
+  }
+  return label ? `${num} ${label}` : num
 }
 
 function weeksBetween(start: string, end: string): number {
