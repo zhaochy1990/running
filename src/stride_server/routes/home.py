@@ -19,7 +19,7 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
-from stride_core.registry import read_user_provider
+from stride_core.registry import read_user_provider, user_has_config
 from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
 
 from ..deps import get_db
@@ -275,6 +275,12 @@ def _build_watch_info(db, user: str) -> WatchInfo:
         brand = "coros"
     elif brand_raw == "garmin":
         brand = "garmin"
+    elif user_has_config(user):
+        # Legacy user: config.json exists (watch credentials present) but
+        # predates the explicit `provider` field, so read_user_provider
+        # returns "". They ARE bound — default to COROS rather than showing
+        # the incorrect "未绑定手表".
+        brand = "coros"
     else:
         brand = None
 
