@@ -35,7 +35,47 @@
         "key_workouts": "",
         "monitoring_triggers": [],
         "coach_note": "",
-        "is_completed": true
+        "is_completed": true,
+        "summary": {
+          "total_distance_km": 476.6,
+          "run_count": 45,
+          "weekly_avg_km": 59.6,
+          "avg_pace_s_km": 315,
+          "avg_pace_fmt": "5:15",
+          "avg_hr": 149,
+          "hr_zone_distribution": [
+            {
+              "zone_index": 1,
+              "minutes": 126.0,
+              "percent": 5.1
+            },
+            {
+              "zone_index": 2,
+              "minutes": 1405.0,
+              "percent": 56.7
+            },
+            {
+              "zone_index": 3,
+              "minutes": 412.0,
+              "percent": 16.6
+            },
+            {
+              "zone_index": 4,
+              "minutes": 289.0,
+              "percent": 11.7
+            },
+            {
+              "zone_index": 5,
+              "minutes": 197.0,
+              "percent": 8.0
+            },
+            {
+              "zone_index": 6,
+              "minutes": 47.0,
+              "percent": 1.9
+            }
+          ]
+        }
       },
       {
         "id": "d5427dca-8f85-4245-8046-0ae4d9c8bec9",
@@ -66,7 +106,8 @@
           "任何跟腱、小腿或膝痛 ≥ 3/10 → 取消坡跑，改为平路轻松跑并增加小腿离心和髋稳定"
         ],
         "coach_note": "你现在不是缺基础，而是需要把速度重新接上马拉松专项；这 4 周跑快但不要跑炸，尤其别在正午硬顶。",
-        "is_completed": false
+        "is_completed": false,
+        "summary": null
       },
       {
         "id": "8a08104a-cdc4-44c4-9045-032e2e37b7fe",
@@ -97,7 +138,8 @@
           "睡眠 < 6 小时且 RHR 高于基线 +5bpm → 当天质量课延后 24 小时"
         ],
         "coach_note": "这一段决定 2:50 是否真正可执行：不是每次都跑很快，而是能在疲劳后还稳住 4:02/km 左右的节奏。",
-        "is_completed": false
+        "is_completed": false,
+        "summary": null
       },
       {
         "id": "952e4a4a-2950-45b5-9fc4-c47e8a1f7eca",
@@ -129,7 +171,8 @@
           "出现足底、跟腱、髂胫束疼痛 ≥ 3/10 → 立即用椭圆机/骑行替代一次跑量，并保留髋外展和小腿离心"
         ],
         "coach_note": "峰值期最怕把好状态练没了；你已经有 86.7km 历史周量，向 90km 出头推进可以，但必须靠恢复质量兑现。",
-        "is_completed": false
+        "is_completed": false,
+        "summary": null
       },
       {
         "id": "1a2b3a08-67d5-46fd-8bfb-b696284c128c",
@@ -159,7 +202,8 @@
           "比赛周出现焦虑导致配速冲动 → 只按 B 目标配速开局，前 10km 不快于计划"
         ],
         "coach_note": "减量不是证明自己，而是让训练结果浮出来；到西安前最后两周，最强的训练是克制。",
-        "is_completed": false
+        "is_completed": false,
+        "summary": null
       }
     ],
     "milestones": [
