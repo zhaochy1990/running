@@ -163,6 +163,23 @@ def test_home_no_watch(app_client):
     assert resp.json()["watch"]["brand"] is None
 
 
+def test_home_legacy_user_without_provider_field_is_coros_bound(app_client):
+    # Legacy COROS user: config.json exists (credentials present) but predates
+    # the explicit `provider` field. Must read as bound to COROS, not
+    # "未绑定手表". Regression for the drawer showing wrong binding state.
+    import json
+
+    client, token, tmp_path, _ = app_client
+    _seed(tmp_path, with_data=False, with_provider=None)
+    (tmp_path / USER_UUID / "config.json").write_text(
+        json.dumps({"email": "x@example.com", "password": "secret"}),
+        encoding="utf-8",
+    )
+    resp = client.get(f"/api/{USER_UUID}/home", headers=_auth(token))
+    assert resp.status_code == 200
+    assert resp.json()["watch"]["brand"] == "coros"
+
+
 def test_home_user_mismatch_403(app_client):
     client, _, tmp_path, private_pem = app_client
     _seed(tmp_path)

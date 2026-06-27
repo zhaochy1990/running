@@ -141,6 +141,18 @@ def read_user_provider(
     return str(value) if value else default
 
 
+def user_has_config(user: str, base_dir: Path | None = None) -> bool:
+    """Return True when ``data/{user}/config.json`` exists.
+
+    The config file is written when a user links a watch (it stores the
+    provider credentials), so its presence is the authoritative "this user has
+    bound a watch" signal — even for legacy users whose config predates the
+    explicit ``provider`` field. Absence means a freshly-created, not-yet-
+    onboarded user. Never raises.
+    """
+    return _user_config_path(user, base_dir).exists()
+
+
 def write_user_provider(
     user: str,
     provider: str,
