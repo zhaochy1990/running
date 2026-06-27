@@ -19,6 +19,7 @@ from __future__ import annotations
 from copy import deepcopy
 
 from coach.graphs.generation.master_rule_filter import (
+    _active_plan_view,
     check_goal_realism,
     check_hard_session_spacing,
     check_key_session_density,
@@ -1436,3 +1437,117 @@ def test_orchestrator_back_compat_empty_weekly_key_sessions():
     }
     assert not any(v.rule in batch_b_rules for v in report.violations)
     assert report.ok
+
+
+# ---------------------------------------------------------------------------
+# Season-continuity: completed lead-in phase + active-plan-view exemption
+#
+# Regression for the false weekly_key_sessions_present coverage block: a
+# continuity plan carries an already-completed leading phase (is_completed,
+# NO weeks) on the calendar span, so plan.start_date sits BEFORE the first
+# emitted (active) week. The coverage check must measure the ACTIVE span only,
+# regardless of whether the LLM numbered the active weeks continuously from the
+# season start (W9..) or restarted them at W1. _active_plan_view re-bases the
+# weekly view to the first active week so the check sees the from-week-1 shape.
+# ---------------------------------------------------------------------------
+
+
+def _continuity_plan(*, number_weeks_from: int, n_active_weeks: int = 4) -> dict:
+    """Plan with a 2-week completed base lead-in + ``n_active_weeks`` active weeks.
+
+    completed base : 2026-06-15 → 2026-06-28 (is_completed, no weeks)
+    active phase   : 2026-06-29 → 2026-06-29 + n_active_weeks*7 - 1
+    plan span      : 2026-06-15 → active end (race day proxy)
+
+    ``number_weeks_from`` controls how the active weeks are indexed:
+      * 1 → the LLM restarted the active weeks at W1 (offset 0, the bug case)
+      * 3 → the LLM numbered continuously from the season start (base = W1-2,
+            so the active phase begins at W3)
+    """
+    from datetime import date as _date_cls
+    from datetime import timedelta
+
+    active_start = _date_cls.fromisoformat("2026-06-29")
+    active_end = active_start + timedelta(days=n_active_weeks * 7 - 1)
+    weeks = [
+        _week(
+            week_index=number_weeks_from + i,
+            week_start=(active_start + timedelta(days=i * 7)).isoformat(),
+            phase_id="ph_active",
+            sessions=[{"type": "long_run", "distance_km": 18},
+                      {"type": "threshold", "duration_min": 30}],
+        )
+        for i in range(n_active_weeks)
+    ]
+    return {
+        "plan_id": "p1", "user_id": "u1", "status": "draft", "goal_id": "g1",
+        "start_date": "2026-06-15",
+        "end_date": active_end.isoformat(),
+        "phases": [
+            {
+                "id": "ph_done", "name": "已完成基础期",
+                "start_date": "2026-06-15", "end_date": "2026-06-28",
+                "focus": "completed base", "weekly_distance_km_low": 40,
+                "weekly_distance_km_high": 50, "key_session_types": [],
+                "milestone_ids": [], "is_completed": True,
+            },
+            {
+                "id": "ph_active", "name": "速度期",
+                "start_date": "2026-06-29", "end_date": active_end.isoformat(),
+                "focus": "active", "weekly_distance_km_low": 55,
+                "weekly_distance_km_high": 65,
+                "key_session_types": ["threshold"], "milestone_ids": [],
+            },
+        ],
+        "milestones": [],
+        "current_phase_id": "ph_active",
+        "training_principles": ["80/20"],
+        "generated_by": "test", "version": 1,
+        "created_at": "2026-06-15T00:00:00Z",
+        "updated_at": "2026-06-15T00:00:00Z",
+        "weekly_key_sessions": weeks,
+    }
+
+
+def test_active_view_rebases_start_when_weeks_restart_at_w1():
+    """Offset-0 case (LLM restarted active weeks at W1): start_date must shift to
+    the first active week so the completed lead-in span is excluded."""
+    plan = MasterPlan.model_validate(_continuity_plan(number_weeks_from=1))
+    view = _active_plan_view(plan)
+    assert view.start_date == "2026-06-29"  # re-based off the 06-15 completed start
+    # indices unchanged (already 1..N)
+    assert [w.week_index for w in sorted(view.weekly_key_sessions,
+                                         key=lambda w: w.week_index)] == [1, 2, 3, 4]
+
+
+def test_active_view_rebases_and_renumbers_when_weeks_continuous():
+    """Continuous-numbering case (base = W1-2 → active starts at W3): subtract the
+    offset so the active weeks read 1..N AND re-base start_date."""
+    plan = MasterPlan.model_validate(_continuity_plan(number_weeks_from=3))
+    view = _active_plan_view(plan)
+    assert view.start_date == "2026-06-29"
+    assert [w.week_index for w in sorted(view.weekly_key_sessions,
+                                         key=lambda w: w.week_index)] == [1, 2, 3, 4]
+
+
+def test_completed_lead_in_does_not_false_block_weekly_coverage():
+    """The bug: weekly_key_sessions_present over-counted the completed lead-in's
+    calendar span and reported a missing-weeks error. After re-basing, the active
+    weeks fully cover the active span → no error (both numbering conventions)."""
+    for number_from in (1, 3):
+        plan = MasterPlan.model_validate(_continuity_plan(number_weeks_from=number_from))
+        # Raw plan (no re-base) WOULD fire — documents what the bug looked like.
+        raw = check_weekly_key_sessions_present(plan)
+        assert any(v.rule == "weekly_key_sessions_present" for v in raw), (
+            f"expected raw coverage to over-count for number_from={number_from}"
+        )
+        # Re-based active view → clean.
+        view = _active_plan_view(plan)
+        assert check_weekly_key_sessions_present(view) == []
+
+
+def test_active_view_noop_without_completed_phase():
+    """No is_completed phase → _active_plan_view returns the plan unchanged
+    (backward compatible — existing plans are untouched)."""
+    plan = MasterPlan.model_validate(_base_plan_dict())
+    assert _active_plan_view(plan) is plan
