@@ -69,6 +69,43 @@ def test_existing_plan_reads_current_phase(tmp_path, monkeypatch):
     assert ctx.confidence == "high"
 
 
+def test_existing_continuity_plan_skips_completed_base(tmp_path, monkeypatch):
+    """Regenerating from a continuity plan whose completed base ends on/just
+    after today must NOT re-detect the athlete as "in base". The completed base
+    is skipped, surfaced as completed_aerobic_weeks, and the entry phase points
+    at the first ACTIVE phase (speed) — otherwise the planner emits a degenerate
+    2-week base instead of preserving the carried-over ~8-week one."""
+    from stride_server.coach_adapters import phase_detector
+
+    phases = [
+        # completed base: 2026-05-04 → 2026-06-28 (~8 weeks), is_completed
+        SimpleNamespace(name="已完成的有氧基础期", phase_type=PhaseType.BASE,
+                        start_date="2026-05-04", end_date="2026-06-28",
+                        is_completed=True),
+        # active entry phase begins the day after; today is the base's last days
+        SimpleNamespace(name="夏季速度衔接期", phase_type=PhaseType.SPEED,
+                        start_date="2026-06-29", end_date="2026-07-26",
+                        is_completed=False),
+        SimpleNamespace(name="马拉松专项建设期", phase_type=PhaseType.BUILD,
+                        start_date="2026-07-27", end_date="2026-09-06",
+                        is_completed=False),
+    ]
+    fake_plan = SimpleNamespace(phases=phases)
+    monkeypatch.setattr(phase_detector, "_get_active_plan", lambda uid: fake_plan)
+
+    ctx = phase_detector.detect_current_phase(
+        db=None, user_id="u", goal=_GOAL, profile=None, as_of=date(2026, 6, 27)
+    )
+    assert ctx.source == "existing_plan"
+    # today (06-27) is inside the completed base's tail → must NOT be "base"
+    assert ctx.recommended_entry_phase == PhaseType.SPEED
+    assert ctx.current_phase_type == PhaseType.SPEED
+    # 8 carried-over base weeks surfaced for the is_completed lead-in
+    assert ctx.completed_aerobic_weeks == 8
+    assert ctx.weeks_in_phase == 0  # active phase hasn't started yet
+    assert ctx.confidence == "high"
+
+
 # ---- inferred path ---------------------------------------------------------
 
 
