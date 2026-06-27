@@ -8,6 +8,7 @@ import {
   type TrainingPlan,
   type MasterPlan,
   type MasterPlanPhase,
+  type CompletedPhaseSummary,
 } from '../api'
 import { shanghaiToday } from '../lib/shanghai'
 import { useUser } from '../UserContextValue'
@@ -406,6 +407,10 @@ function PhaseDetail({ phase, index }: { phase: MasterPlanPhase; index: number }
           {phase.focus && <p className="text-sm text-text-secondary mt-1.5 leading-relaxed">{phase.focus}</p>}
         </div>
 
+        {phase.is_completed && phase.summary && (
+          <CompletedPhaseResults summary={phase.summary} color={color} />
+        )}
+
         {phase.rhythm && (
           <EditorialBlock num="01" title="阶段节奏" body={phase.rhythm} />
         )}
@@ -474,6 +479,62 @@ function EditorialBlock({ num, title, body }: { num: string; title: string; body
         {title}
       </h4>
       <p className="text-sm text-text-secondary leading-relaxed pl-8 border-l-2 border-border-subtle">{body}</p>
+    </div>
+  )
+}
+
+function CompletedPhaseResults({
+  summary,
+  color,
+}: {
+  summary: CompletedPhaseSummary
+  color: string
+}) {
+  const stats: { label: string; value: string }[] = [
+    { label: '总跑量', value: `${summary.total_distance_km} km` },
+    { label: '周均', value: `${summary.weekly_avg_km} km` },
+    {
+      label: '平均配速',
+      value: summary.avg_pace_fmt ? `${summary.avg_pace_fmt}/km` : '—',
+    },
+    { label: '平均心率', value: summary.avg_hr != null ? `${summary.avg_hr} bpm` : '—' },
+  ]
+  const zones = summary.hr_zone_distribution ?? []
+
+  return (
+    <div>
+      <h4 className="text-xs font-mono font-bold text-text-primary uppercase tracking-wider mb-3 flex items-center gap-2">
+        <span className="w-6 h-6 flex items-center justify-center bg-text-primary text-bg-base text-[10px] rounded">✓</span>
+        实际成绩
+        <span className="text-[10px] font-normal text-text-muted normal-case">{summary.run_count} 次跑步</span>
+      </h4>
+      <div className="pl-8 border-l-2 border-border-subtle space-y-4">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {stats.map((s) => (
+            <div key={s.label}>
+              <div className="text-[10px] font-mono text-text-muted uppercase tracking-wider">{s.label}</div>
+              <div className="text-lg font-bold text-text-primary tabular-nums">{s.value}</div>
+            </div>
+          ))}
+        </div>
+        {zones.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="text-[10px] font-mono text-text-muted uppercase tracking-wider">心率区间分布</div>
+            {zones.map((z) => (
+              <div key={z.zone_index} className="flex items-center gap-2">
+                <span className="w-7 text-xs font-mono text-text-secondary tabular-nums">Z{z.zone_index}</span>
+                <div className="flex-1 h-2 rounded-full bg-bg-base overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${z.percent}%`, backgroundColor: color }}
+                  />
+                </div>
+                <span className="w-12 text-right text-xs text-text-secondary tabular-nums">{z.percent}%</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

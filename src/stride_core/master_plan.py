@@ -84,6 +84,38 @@ class Milestone(BaseModel):
     comparator: Literal["<=", ">=", "=="] | None = None
 
 
+class HrZoneShare(BaseModel):
+    """One heart-rate zone's share of total in-zone time over a phase window.
+
+    ``minutes`` is the summed in-zone duration (rounded to whole minutes);
+    ``percent`` is that zone's fraction of the phase's total HR-zone time
+    (all zones sum to ~100). Both are deterministic aggregates — no LLM.
+    """
+
+    zone_index: int
+    minutes: float      # SUM(duration_s)/60, rounded 0
+    percent: float      # share of the phase's total HR-zone time, rounded 1
+
+
+class CompletedPhaseSummary(BaseModel):
+    """Deterministic "actual results" rollup for an already-completed phase.
+
+    Computed once at master-plan generation time over the phase's
+    Shanghai-day window (NOT recomputed on read) and cached on ``Phase.summary``.
+    Distance is kilometers (``activities.distance_m`` already stores km).
+    Pace / HR are duration-weighted across runs; ``None`` when no run carried
+    that metric. HR distribution is empty when no zone data exists.
+    """
+
+    total_distance_km: float           # round 1
+    run_count: int
+    weekly_avg_km: float               # total / phase weeks, round 1
+    avg_pace_s_km: int | None          # duration-weighted; None if no pace data
+    avg_pace_fmt: str                  # "5:14"; "" when avg_pace_s_km is None
+    avg_hr: int | None                 # duration-weighted; None if no HR data
+    hr_zone_distribution: list[HrZoneShare] = Field(default_factory=list)
+
+
 class Phase(BaseModel):
     id: str                        # uuid4
     name: str                      # 如 "基础期"
@@ -108,6 +140,11 @@ class Phase(BaseModel):
     # weekly key sessions. Default False keeps every existing plan / fixture —
     # and any plan with no completed lead-in — unchanged (backward compatible).
     is_completed: bool = False
+    # Deterministic "actual results" rollup, populated at generation time only
+    # for is_completed phases (Q2a). None for every active phase and for any
+    # legacy plan / fixture authored before this field — keeps them validating
+    # unchanged. GET serves this cached value; routes never recompute it.
+    summary: CompletedPhaseSummary | None = None
 
 
 # ---------------------------------------------------------------------------
