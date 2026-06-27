@@ -13,6 +13,8 @@ dependents. S1 plans are single-call, so none of that is exercised yet.
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 
 from coach.contracts import (
@@ -20,6 +22,8 @@ from coach.contracts import (
     SpecialistRegistry,
     SpecialistResult,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -34,13 +38,24 @@ def dispatch(call_plan: CallPlan, *, registry: SpecialistRegistry) -> list[Dispa
     """Execute each call and collect attributed results (§4.6)."""
     dispatched: list[DispatchResult] = []
     for call in call_plan.calls:
+        t = time.perf_counter()
+        logger.debug("→ %s start | objective=%r", call.specialist_id, call.task.objective)
         try:
             runner = registry.get_runner(call.specialist_id)
             result = runner(call.task)
         except Exception as exc:  # noqa: BLE001 — contain one failure, keep the plan alive
+            logger.debug("✗ %s raised: %s", call.specialist_id, exc)
             result = SpecialistResult(
                 status="failed",
                 reply_fragment=f"专家 {call.specialist_id} 处理失败：{exc}",
             )
+        logger.debug(
+            "← %s %s %.0fms | %dc%s",
+            call.specialist_id,
+            result.status,
+            (time.perf_counter() - t) * 1000.0,
+            len(result.reply_fragment),
+            " +proposal" if result.proposal is not None else "",
+        )
         dispatched.append(DispatchResult(specialist_id=call.specialist_id, result=result))
     return dispatched

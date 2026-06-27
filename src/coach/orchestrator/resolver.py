@@ -17,7 +17,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import ValidationError
 
 from coach.contracts import (
     Ambiguity,
@@ -102,11 +104,16 @@ def make_llm_draft_fn(model: object) -> ResolverDraftFn:
             if isinstance(result, ResolverDraft):
                 return result
             return ResolverDraft.model_validate(result)
-        except Exception:  # noqa: BLE001 — degrade to a clarify turn, never 500
-            # A malformed / unparseable model output becomes an empty,
-            # self-ambiguous draft → arbitration asks the user to clarify rather
-            # than letting the exception bubble out of the graph node.
-            logger.warning("resolver draft_fn failed; degrading to clarify", exc_info=True)
+        except (ValidationError, OutputParserException):
+            # ONLY a genuine output-parse failure (the model returned something
+            # that doesn't match ResolverDraft) degrades to a clarify turn.
+            # Infra failures — auth / tenant mismatch / network / rate limit —
+            # are NOT caught here: they propagate so the operator sees the real
+            # cause instead of a misleading "想了解还是调整？" question.
+            logger.warning(
+                "resolver: LLM output did not match ResolverDraft schema; degrading to clarify",
+                exc_info=True,
+            )
             return ResolverDraft(intents=[], self_ambiguity=True)
 
     return _draft_fn
@@ -208,6 +215,13 @@ def resolve(
     user_prompt = build_resolver_user_prompt(utterance, window)
 
     draft = draft_fn(system_prompt, user_prompt)
+    logger.debug(
+        "resolver draft (raw LLM) | intents=%s | compound=%s | target_hint=%s | self_ambiguity=%s",
+        [(h.specialist_id, round(h.confidence, 2)) for h in draft.intents],
+        draft.is_compound,
+        draft.target_hint.model_dump(exclude_none=True) if draft.target_hint else None,
+        draft.self_ambiguity,
+    )
 
     valid = _valid_intents(draft.intents, registry)
     target, resolved_from = _resolve_target(draft.target_hint, prior_target)

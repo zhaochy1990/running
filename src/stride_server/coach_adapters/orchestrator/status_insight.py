@@ -13,6 +13,7 @@ to the legacy ``{user}:qa:{date}`` daily thread.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -29,6 +30,8 @@ from coach.graphs.conversation.graph import build_conversation_graph
 from coach.schemas import assistant_parts_from_message
 
 from ..toolkit import build_stride_toolkit
+
+logger = logging.getLogger(__name__)
 
 # Builds the qa conversation graph; injectable so the runner is unit-testable
 # without a real toolkit / LLM.
@@ -94,6 +97,11 @@ def make_status_insight_runner(
         )
         messages = _window_to_messages(task.conversation_window)
         messages.append(HumanMessage(content=task.objective))
+        logger.debug(
+            "status_insight: running qa graph | seed=%d msgs (window=%d + objective)",
+            len(messages),
+            len(task.conversation_window),
+        )
         state_in = {
             "history": messages,
             "scope": "qa",
@@ -106,6 +114,12 @@ def make_status_insight_runner(
             "iteration": 0,
         }
         state = graph.invoke(state_in, config={})
-        return SpecialistResult(status="completed", reply_fragment=_extract_answer(state))
+        answer = _extract_answer(state)
+        logger.debug(
+            "status_insight: qa graph done | answer=%dc | iters=%s",
+            len(answer),
+            state.get("iteration"),
+        )
+        return SpecialistResult(status="completed", reply_fragment=answer)
 
     return _run

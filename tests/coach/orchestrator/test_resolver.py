@@ -108,22 +108,41 @@ def test_tie_clarification_uses_card_descriptions() -> None:
     assert "调整本周训练" in out.ambiguity.clarification
 
 
-def test_make_llm_draft_fn_degrades_to_self_ambiguity_on_failure() -> None:
-    class _BoomStructured:
-        def invoke(self, _messages):
-            raise RuntimeError("model returned garbage")
-
-    class _BoomModel:
+def _draft_fn_for(structured) -> object:
+    class _Model:
         def with_structured_output(self, _schema):
-            return _BoomStructured()
+            return structured
 
-    draft_fn = resolver.make_llm_draft_fn(_BoomModel())
+    return resolver.make_llm_draft_fn(_Model())
+
+
+def test_make_llm_draft_fn_degrades_on_parse_failure() -> None:
+    """A schema/parse failure → empty self-ambiguous draft → clarify turn."""
+    from langchain_core.exceptions import OutputParserException
+
+    class _BadParse:
+        def invoke(self, _messages):
+            raise OutputParserException("model returned non-JSON garbage")
+
+    draft_fn = _draft_fn_for(_BadParse())
     draft = draft_fn("sys", "user")
     assert draft.intents == []
     assert draft.self_ambiguity is True
-    # Through the full resolver, this surfaces as a clarify turn (no dispatch).
     out = resolve("???", registry=_registry(), draft_fn=draft_fn)
     assert out.ambiguity is not None
+
+
+def test_make_llm_draft_fn_propagates_infra_error() -> None:
+    """Auth / tenant / network errors must NOT degrade — they propagate."""
+    import pytest
+
+    class _AuthBoom:
+        def invoke(self, _messages):
+            raise RuntimeError("Tenant provided in token does not match resource token")
+
+    draft_fn = _draft_fn_for(_AuthBoom())
+    with pytest.raises(RuntimeError, match="Tenant"):
+        draft_fn("sys", "user")
 
 
 def test_compound_two_distinct_intents_no_tie_clarify() -> None:
