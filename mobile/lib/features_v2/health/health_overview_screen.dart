@@ -16,6 +16,7 @@ import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/pill_colors.dart';
 import '../../core/theme/tokens.dart';
+import '../_shared/shell/main_shell.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
@@ -37,11 +38,12 @@ class HealthOverviewScreen extends ConsumerWidget {
         bottom: false,
         child: Column(
           children: [
-            const StrideScreenHero(
+            StrideScreenHero.withMenu(
+              onMenu: () => shellScaffoldKey.currentState?.openDrawer(),
               eyebrow: '身体指标 · 今日',
               title: '健康概览',
               deck: '同步自手表的静息心率、HRV、训练负荷与睡眠。',
-              trailing: SyncIconButton(),
+              trailing: const SyncIconButton(),
             ),
             Expanded(
               child: async.when(

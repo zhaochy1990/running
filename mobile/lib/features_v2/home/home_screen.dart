@@ -15,6 +15,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
+import '../_shared/shell/main_shell.dart';
 import '../_shared/widgets/refreshable.dart';
 import '../_shared/widgets/screen_hero.dart';
 import '../_shared/widgets/sync_icon.dart';
@@ -60,7 +61,8 @@ class _HomeBody extends StatelessWidget {
         child: ListView(
           padding: EdgeInsets.zero,
           children: [
-            StrideScreenHero(
+            StrideScreenHero.withMenu(
+              onMenu: () => shellScaffoldKey.currentState?.openDrawer(),
               eyebrow: '主页 · 本周',
               title: _heroTitle(data.planState),
               deck: _heroDeck(data),
