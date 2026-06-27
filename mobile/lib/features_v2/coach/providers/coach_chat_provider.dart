@@ -45,6 +45,11 @@ class CoachChatNotifier extends StateNotifier<CoachChatState> {
 
   final StrideApi _api;
 
+  // Stable per-day conversation thread, mirroring the legacy QA endpoint's
+  // user+today thread derivation: reopening 教练 within the same day continues
+  // today's conversation. Must match the server's [A-Za-z0-9_-] session_id rule.
+  late final String _sessionId = _todaySessionId();
+
   Future<void> sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty || state.loading) return;
@@ -59,14 +64,20 @@ class CoachChatNotifier extends StateNotifier<CoachChatState> {
     );
 
     try {
-      final res = await _api.postCoachQaMessage(trimmed);
+      final res = await _api.postCoachChat(
+        sessionId: _sessionId,
+        message: trimmed,
+      );
+      // Prefer the orchestrated reply; fall back to a clarify-turn question.
+      final replyText = res.reply.trim().isNotEmpty
+          ? res.reply
+          : (res.clarification?.trim().isNotEmpty == true
+              ? res.clarification!
+              : '（教练没有返回内容）');
       state = state.copyWith(
         messages: [
           ...state.messages,
-          CoachMessage(
-            role: 'assistant',
-            text: res.text.isNotEmpty ? res.text : '（教练没有返回内容）',
-          ),
+          CoachMessage(role: 'assistant', text: replyText),
         ],
         loading: false,
         threadId: res.threadId,
@@ -74,6 +85,12 @@ class CoachChatNotifier extends StateNotifier<CoachChatState> {
     } catch (e) {
       state = state.copyWith(loading: false, error: e.toString());
     }
+  }
+
+  static String _todaySessionId() {
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return 'qa-${now.year}-${two(now.month)}-${two(now.day)}';
   }
 }
 
