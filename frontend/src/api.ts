@@ -465,6 +465,26 @@ export interface MasterPlanMilestone {
   completed_actual: string | null
 }
 
+// One heart-rate zone's share of total in-zone time over a completed phase.
+export interface HrZoneShare {
+  zone_index: number
+  minutes: number
+  percent: number
+}
+
+// Deterministic "actual results" rollup for an already-completed phase (Q2a).
+// Backend computes this once at generation time and caches it on the phase;
+// snake_case to match the FastAPI model_dump() payload.
+export interface CompletedPhaseSummary {
+  total_distance_km: number
+  run_count: number
+  weekly_avg_km: number
+  avg_pace_s_km: number | null
+  avg_pace_fmt: string
+  avg_hr: number | null
+  hr_zone_distribution: HrZoneShare[]
+}
+
 export interface MasterPlanPhase {
   id: string
   name: string
@@ -489,6 +509,9 @@ export interface MasterPlanPhase {
   // carried over from the prior plan). Kept on the timeline for continuity,
   // rendered dimmed + 「已完成」. Optional/false for every other phase.
   is_completed?: boolean
+  // Deterministic actual-results rollup (Q2a). Present only on is_completed
+  // phases; null/absent for active phases and legacy plans.
+  summary?: CompletedPhaseSummary | null
 }
 
 export interface MasterPlanNextMilestone {
