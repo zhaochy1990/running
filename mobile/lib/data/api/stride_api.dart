@@ -756,6 +756,34 @@ class StrideApi {
     );
   }
 
+  /// Send a message to the orchestrator coach brain.
+  /// `POST /api/users/me/coach/chat` — body `{session_id, message}`. The server
+  /// derives the thread key as `{user}:coach:{session_id}` and maintains
+  /// conversation history per session. Returns one orchestrated turn:
+  /// `reply` (the user-facing answer), an optional `clarification` (when the
+  /// coach needs more info), the echoed `session_id`, and the `thread_id`.
+  Future<
+      ({
+        String sessionId,
+        String threadId,
+        String reply,
+        String? clarification,
+      })> postCoachChat({
+    required String sessionId,
+    required String message,
+  }) async {
+    final r = await _post<Map<String, dynamic>>(
+      '/api/users/me/coach/chat',
+      body: {'session_id': sessionId, 'message': message},
+    );
+    return (
+      sessionId: r['session_id'] as String? ?? sessionId,
+      threadId: r['thread_id'] as String? ?? '',
+      reply: r['reply'] as String? ?? '',
+      clarification: r['clarification'] as String?,
+    );
+  }
+
   /// Fetch the persisted history for a coach thread.
   /// `GET /api/users/me/coach/threads/{threadId}/messages`. Returns a flat list
   /// of (role, text) — assistant turns flatten their renderable text parts.
