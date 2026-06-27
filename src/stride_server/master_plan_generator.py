@@ -271,6 +271,58 @@ def _build_master_plan(
     )
 
 
+def _inject_completed_phase_summaries(plan: MasterPlan, user_id: str) -> MasterPlan:
+    """Cache a deterministic actual-results summary on each is_completed phase.
+
+    Opens the per-user coros.db once and aggregates each completed phase's
+    Shanghai-day window via ``phase_summary.aggregate_phase_summary`` (no LLM).
+    Returns a new MasterPlan with the summaries populated; phases with no
+    completed lead-in (the common case) come back unchanged.
+
+    Graceful by design: any failure (no DB, aggregation error) leaves the
+    affected phase's ``summary`` as ``None`` rather than failing generation.
+    """
+    completed = [p for p in plan.phases if getattr(p, "is_completed", False)]
+    if not completed:
+        return plan
+
+    try:
+        from stride_core.db import Database
+
+        from .phase_summary import aggregate_phase_summary
+    except Exception:  # noqa: BLE001 — import failure must not block gen
+        logger.warning("phase_summary import failed; skipping summaries", exc_info=True)
+        return plan
+
+    db = None
+    try:
+        db = Database(user=user_id)
+        new_phases: list[Phase] = []
+        for phase in plan.phases:
+            if not getattr(phase, "is_completed", False):
+                new_phases.append(phase)
+                continue
+            try:
+                summary = aggregate_phase_summary(db, phase.start_date, phase.end_date)
+                new_phases.append(phase.model_copy(update={"summary": summary}))
+            except Exception:  # noqa: BLE001 — one phase failing leaves it None
+                logger.warning(
+                    "phase summary failed for phase=%s (%s~%s); leaving None",
+                    phase.id, phase.start_date, phase.end_date, exc_info=True,
+                )
+                new_phases.append(phase)
+        return plan.model_copy(update={"phases": new_phases})
+    except Exception:  # noqa: BLE001 — DB open / outer failure must not block gen
+        logger.warning("completed-phase summary injection failed", exc_info=True)
+        return plan
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def _build_goal_snapshot(
     goal: dict,
     plan_data: dict,
@@ -1365,6 +1417,11 @@ def _run_generate_job_inner(
         logger.warning("job=%s final_artifact model_validate failed: %s", job_id, exc)
         update_job(job_id, status=JobStatus.FAILED, error=f"bad_schema: {exc}")
         return
+
+    # Q2a: cache deterministic "actual results" summaries on completed phases.
+    # Done here (generation time) so GET is a pure read — never recompute on
+    # read. Aggregation touches coros.db so it lives in the adapter layer.
+    plan = _inject_completed_phase_summaries(plan, user_id)
 
     store = get_master_plan_store()
     store.save_plan(plan)
