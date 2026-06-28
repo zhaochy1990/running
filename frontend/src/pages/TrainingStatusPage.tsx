@@ -477,19 +477,19 @@ function EmptyZones() {
   )
 }
 
-// Format a zone bound pair into a single "区间" string.
+// Format a zone bound pair into a single "区间" string, always small → large.
 //
-// Pace zones order pace strings from slower (lower_pace, e.g. 6:42) to faster
-// (upper_pace, e.g. 5:58). Open-ended zones — recovery has no slow cap, the
-// fastest zone has no fast cap — render with ≤ / ≥ relative to the only bound
-// present. HR zones use the same shape, with bpm rising from recovery up.
+// Callers pass (smaller, larger): for pace that means faster→slower (e.g.
+// 4:48 – 5:36), for HR that means bpm rising. Open-ended zones — recovery has
+// no slow cap, the fastest zone has no fast cap — render with ≥ / ≤ relative
+// to the only bound present.
 function formatZoneRange<T extends string | number>(
-  lower: T | null,
-  upper: T | null,
+  smaller: T | null,
+  larger: T | null,
 ): string {
-  if (lower != null && upper != null) return `${lower} – ${upper}`
-  if (upper != null) return `≤ ${upper}`
-  if (lower != null) return `≥ ${lower}`
+  if (smaller != null && larger != null) return `${smaller} – ${larger}`
+  if (smaller != null) return `≥ ${smaller}`
+  if (larger != null) return `≤ ${larger}`
   return '—'
 }
 
@@ -513,7 +513,7 @@ function ZonesRow({ zones }: { zones: StrideZonesResponse | null }) {
                 <tr key={z.name} className="border-b border-border-subtle/50 last:border-0">
                   <td className="py-1.5 text-accent-green">{z.name}</td>
                   <td className="py-1.5 text-text-primary">{z.label}</td>
-                  <td className="py-1.5 text-right text-text-muted">{formatZoneRange(z.lower_pace, z.upper_pace)}</td>
+                  <td className="py-1.5 text-right text-text-muted">{formatZoneRange(z.upper_pace, z.lower_pace)}</td>
                 </tr>
               ))}
             </tbody>
