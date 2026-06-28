@@ -1,0 +1,504 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-06-29_07-05(W10-Phase3专项启动)",
+  "sessions": [
+    {
+      "date": "2026-06-29",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "力量 A — 下肢力量（10 kg）",
+      "spec": {
+        "name": "力量 A — 下肢力量",
+        "date": "2026-06-29",
+        "exercises": [
+          {
+            "canonical_id": "T1301",
+            "display_name": "哑铃高脚杯深蹲（10 kg）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 60,
+            "provider_id": "T1301",
+            "note": "哑铃贴胸，全蹲到底"
+          },
+          {
+            "canonical_id": "T1305",
+            "display_name": "哑铃罗马尼亚硬拉（10 kg/手）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 60,
+            "provider_id": "T1305",
+            "note": "臀主导，腰不圆"
+          },
+          {
+            "canonical_id": "T1064",
+            "display_name": "哑铃箭步蹲（单侧 8 kg）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 45,
+            "provider_id": "T1064",
+            "note": "后腿膝盖轻触地，每侧 10 次"
+          },
+          {
+            "canonical_id": "T1275",
+            "display_name": "单腿提踵（扶墙）",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 30,
+            "provider_id": "T1275",
+            "note": "慢上快下，每侧 15 次"
+          },
+          {
+            "canonical_id": "T1010",
+            "display_name": "平板支撑",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 60,
+            "rest_seconds": 30,
+            "provider_id": "T1010",
+            "note": "臀腰平直"
+          },
+          {
+            "canonical_id": "T1219",
+            "display_name": "单腿臀桥",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "provider_id": "T1219",
+            "note": "顶峰挤臀，每侧 12 次"
+          }
+        ],
+        "note": "长距前一周护腱，延续 10 kg。"
+      }
+    },
+    {
+      "date": "2026-06-29",
+      "session_index": 1,
+      "kind": "run",
+      "summary": "力量后慢跑激活 3 km",
+      "total_distance_m": 3000,
+      "spec": {
+        "name": "慢跑激活",
+        "date": "2026-06-29",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 3000
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 140
+                },
+                "note": "7:00/km 慢跑，填 dose"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-06-30",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 9 km @ Z1（强度课前一天）",
+      "total_distance_m": 9000,
+      "spec": {
+        "name": "轻松跑",
+        "date": "2026-06-30",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 9000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 360,
+                  "high": 390
+                },
+                "note": "HR <148，真减速不冲量",
+                "hr_cap_bpm": 148
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-01",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "强度课：MP 专项 2×4K@MP + 2×1K（早 5:00-6:30，兼 sub-3:40 试金石）",
+      "total_distance_m": 14000,
+      "spec": {
+        "name": "强度课 MP 专项组合",
+        "date": "2026-07-01",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "warmup",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 2500
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 390,
+                  "high": 420
+                },
+                "note": "HR <140 + 4× strides 100m"
+              }
+            ]
+          },
+          {
+            "repeat": 2,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 4000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 310,
+                  "high": 316
+                },
+                "note": "4K @ 马拉松配速 5:10-5:16，HR <=163",
+                "hr_cap_bpm": 165
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {
+                  "kind": "time_s",
+                  "value": 90
+                },
+                "target": {
+                  "kind": "open"
+                },
+                "note": "组间慢跑 1 km @ 6:30，HR 回 <150"
+              }
+            ]
+          },
+          {
+            "repeat": 2,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 1000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 298,
+                  "high": 305
+                },
+                "note": "1K @ 比 MP 快 10-15s（4:58-5:05）"
+              },
+              {
+                "step_kind": "recovery",
+                "duration": {
+                  "kind": "time_s",
+                  "value": 120
+                },
+                "target": {
+                  "kind": "open"
+                },
+                "note": "组间慢跑 2 min，HR 回 <150"
+              }
+            ]
+          },
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "cooldown",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 1500
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 120,
+                  "high": 140
+                },
+                "note": "放松"
+              }
+            ]
+          }
+        ],
+        "note": "本周关键课1，Phase 3 首次 MP 专项，兼 sub-3:40 清凉清晨试金石。配速基于全马目标 5:13/km。高温>26°C 或状态差用降级版 1×4K+2×1K（此情况不作 sub-3:40 判读）。务必清晨执行。MP 段 HR<=163 优先于配速。凉晨 2×4K 稳 5:10-5:16/HR<=163 则 sub-3:40 仍现实；需放到 5:18-5:22 才压住则倾向 C 目标 3:45。"
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "4K shake-out（力量 B 前）",
+      "total_distance_m": 4000,
+      "spec": {
+        "name": "Shake-out 慢跑",
+        "date": "2026-07-02",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 4000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 420,
+                  "high": 420
+                },
+                "note": "HR <145，强度课次日卸载",
+                "hr_cap_bpm": 145
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "session_index": 1,
+      "kind": "strength",
+      "summary": "力量 B — 核心稳定",
+      "spec": {
+        "name": "力量 B — 核心稳定",
+        "date": "2026-07-02",
+        "exercises": [
+          {
+            "canonical_id": "T1243",
+            "display_name": "Dead Bug",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "provider_id": "T1243",
+            "note": "腰不离地，每侧 10 次"
+          },
+          {
+            "canonical_id": "T1150",
+            "display_name": "Bird Dog",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "provider_id": "T1150",
+            "note": "同侧稳定，每侧 10 次"
+          },
+          {
+            "canonical_id": "T1185",
+            "display_name": "侧平板",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 40,
+            "rest_seconds": 30,
+            "provider_id": "T1185",
+            "note": "髋不下沉，每侧 40s"
+          },
+          {
+            "canonical_id": "T1219",
+            "display_name": "单腿臀桥",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "provider_id": "T1219",
+            "note": "顶峰挤臀，每侧 12 次"
+          },
+          {
+            "canonical_id": "T1317",
+            "display_name": "蚌式",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 15,
+            "rest_seconds": 30,
+            "provider_id": "T1317",
+            "note": "臀中肌，ITB 预防，每侧 15 次"
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-03",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 9 km + 4× strides 80m",
+      "total_distance_m": 9000,
+      "spec": {
+        "name": "轻松跑 + strides",
+        "date": "2026-07-03",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 9000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 360,
+                  "high": 390
+                },
+                "note": "HR <148，末段加 4× strides 80m 神经激活",
+                "hr_cap_bpm": 148
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-04",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "长距离 24 km 渐进，末 8K 进 MP（早 5:00-6:30，要求跑满）",
+      "total_distance_m": 24000,
+      "spec": {
+        "name": "长距离 24K 渐进",
+        "date": "2026-07-04",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 360,
+                  "high": 375
+                },
+                "note": "km 0-8 Z1 暖身，压住 6:00",
+                "hr_cap_bpm": 150
+              },
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 340,
+                  "high": 355
+                },
+                "note": "km 8-16 长距有氧",
+                "hr_cap_bpm": 158
+              },
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 313,
+                  "high": 320
+                },
+                "note": "km 16-24 MP 段 5:13-5:20",
+                "hr_cap_bpm": 163
+              }
+            ]
+          }
+        ],
+        "note": "本周关键课2，Phase 3 长距起点。前 8K 必须压住，余量留给末段 8K MP。要求跑满 24K（W9 长距缩水 5K 不可再现），除非锐痛/HR 失控/高温。>30°C 减到 18-20K Z2。"
+      }
+    },
+    {
+      "date": "2026-07-05",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "休息 / 30 min 骑行或散步",
+      "spec": null
+    }
+  ],
+  "nutrition": [
+    {
+      "date": "2026-06-29",
+      "kcal_target": 2450,
+      "carbs_g": 340,
+      "protein_g": 140,
+      "fat_g": 68,
+      "notes_md": "力量日。力量后 30 min：30 g 蛋白 + 40 g 碳"
+    },
+    {
+      "date": "2026-06-30",
+      "kcal_target": 2500,
+      "carbs_g": 360,
+      "protein_g": 135,
+      "fat_g": 70,
+      "notes_md": "轻松跑日"
+    },
+    {
+      "date": "2026-07-01",
+      "kcal_target": 2700,
+      "carbs_g": 440,
+      "protein_g": 140,
+      "fat_g": 65,
+      "notes_md": "强度课日。课前 4:45 香蕉+黑咖啡；课后 30 min 30 g 蛋白 + 60 g 快碳 + 500 ml 电解质"
+    },
+    {
+      "date": "2026-07-02",
+      "kcal_target": 2350,
+      "carbs_g": 320,
+      "protein_g": 140,
+      "fat_g": 68,
+      "notes_md": "力量 B + shake 日"
+    },
+    {
+      "date": "2026-07-03",
+      "kcal_target": 2500,
+      "carbs_g": 360,
+      "protein_g": 135,
+      "fat_g": 70,
+      "notes_md": "轻松跑日。晚餐碳水 6 g/kg ≈ 450 g，长距前夜储备"
+    },
+    {
+      "date": "2026-07-04",
+      "kcal_target": 2800,
+      "carbs_g": 470,
+      "protein_g": 140,
+      "fat_g": 68,
+      "notes_md": "长距离 24K 日。4:45 香蕉+黑咖啡；km 9/18 各 1 胶 + 盐丸；跑后 35 g 蛋白 + 80 g 快碳"
+    },
+    {
+      "date": "2026-07-05",
+      "kcal_target": 2200,
+      "carbs_g": 290,
+      "protein_g": 135,
+      "fat_g": 68,
+      "notes_md": "休息日，热量低位"
+    }
+  ],
+  "notes_md": "W10 Phase 3 专项准备启动周。重点周三 MP 专项强度课（兼 sub-3:40 清凉清晨试金石）+ 周六 24K 长距离（要求跑满）。训练改清晨 5:00-6:30。体能说明：6/11→6/28 COROS L4 62.1→54.5、全马预测 3:35→3:41 明显回落（非过劳，RHR 稳/CTI 升），W9 实跑 ~54K（非计划 62K，长距 26→21K 缩水）。本周不放量，持平真实 ~54K 基础以止跌；sub-3:40 暂不下结论，待凉晨 MP 试金石 + W12 半马测试重估。其它训练按身体反应可增减，恢复也是训练。"
+}
