@@ -45,6 +45,9 @@ MIN_BUCKETS_FOR_CS = 2
 HIGH_CONFIDENCE_BUCKETS = 4
 HIGH_CONFIDENCE_SPAN_RATIO = 3.0
 RECENT_MAX_AGE_DAYS = 60
+# A long effort at/above this duration that is also recent is required before the
+# model claims HIGH confidence — mirrors the threshold-confidence durability bar.
+DURABLE_LONG_DURATION_S = 45 * 60
 
 # A shorter effort must beat the fastest longer effort by at least this relative
 # margin to count as a genuine best effort. Without it, floating-point noise in
@@ -123,6 +126,15 @@ def fit_speed_duration_model(
         >= 2
     )
 
+    # HIGH confidence must reflect *current* durability, not a stale long peak.
+    # A fresh short-effort cluster with a months-old long end should not read as
+    # HIGH — that mismatched the honest threshold confidence in real-user evals.
+    has_recent_long_anchor = any(
+        duration >= DURABLE_LONG_DURATION_S
+        and (as_of_date - candidate.activity.activity_date).days <= RECENT_MAX_AGE_DAYS
+        for duration, candidate in best_by_duration.items()
+    )
+
     total_weight = sum(w for _, _, w in points)
     fastest = max(v for _, v, _ in points)
 
@@ -145,7 +157,7 @@ def fit_speed_duration_model(
         d_prime = max(0.0, d_prime)
 
     confidence = _model_confidence(
-        distinct, points, as_of_date, riegel_k, relied_on_prior, enough_activities
+        distinct, riegel_k, relied_on_prior, enough_activities, has_recent_long_anchor
     )
     evidence = tuple(
         evidence_from_speed(cand, kind="speed_duration")
@@ -341,36 +353,26 @@ def _speed_index(d_prime: float | None) -> float | None:
 
 def _model_confidence(
     distinct: Sequence[float],
-    points: Sequence[tuple[float, float, float]],
-    as_of_date: date,
     riegel_k: float | None,
     relied_on_prior: bool,
     enough_activities: bool,
+    has_recent_long_anchor: bool,
 ) -> CalibrationConfidence:
     if riegel_k is None:
         return CalibrationConfidence.LOW if len(distinct) >= 2 else CalibrationConfidence.NONE
     k_buckets = sorted(d for d in distinct if K_FIT_MIN_DURATION_S <= d <= K_FIT_MAX_DURATION_S)
     span_ratio = (max(k_buckets) / min(k_buckets)) if len(k_buckets) >= 2 else 1.0
-    has_recent = _has_recent_effort(points, as_of_date)
     if relied_on_prior or not enough_activities:
         return CalibrationConfidence.LOW
     if (
         len(k_buckets) >= HIGH_CONFIDENCE_BUCKETS
         and span_ratio >= HIGH_CONFIDENCE_SPAN_RATIO
-        and has_recent
+        and has_recent_long_anchor
     ):
         return CalibrationConfidence.HIGH
     if len(k_buckets) >= MIN_BUCKETS_FOR_K:
         return CalibrationConfidence.MEDIUM
     return CalibrationConfidence.LOW
-
-
-def _has_recent_effort(
-    points: Sequence[tuple[float, float, float]], as_of_date: date,
-) -> bool:
-    # Weight already encodes recency; a strong total weight implies recent data.
-    # Kept explicit for readability of the confidence rule.
-    return sum(w for _, _, w in points) > 0
 
 
 def _evidence_candidates(

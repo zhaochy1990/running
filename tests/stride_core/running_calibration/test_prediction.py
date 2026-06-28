@@ -62,6 +62,25 @@ def test_endurance_athlete_fits_flat_curve():
     assert model.confidence == CalibrationConfidence.HIGH
 
 
+def test_stale_long_anchor_caps_model_confidence_below_high():
+    """A fresh short-effort cluster with a months-old long end must not read as
+    HIGH — model confidence should mirror the threshold's durability bar."""
+    as_of = date(2026, 6, 27)
+    envelope = {
+        180.0: _cand(as_of, duration_s=180, speed_mps=4.80, days_ago=10, label="s3"),
+        300.0: _cand(as_of, duration_s=300, speed_mps=4.60, days_ago=10, label="s5"),
+        600.0: _cand(as_of, duration_s=600, speed_mps=4.40, days_ago=10, label="s10"),
+        1200.0: _cand(as_of, duration_s=1200, speed_mps=4.25, days_ago=12, label="s20"),
+        2700.0: _cand(as_of, duration_s=2700, speed_mps=4.10, days_ago=150, label="stale45"),
+        3600.0: _cand(as_of, duration_s=3600, speed_mps=4.00, days_ago=160, label="stale60"),
+    }
+
+    model = fit_speed_duration_model(envelope, as_of)
+
+    assert model.riegel_k is not None  # still fits and is usable (MEDIUM uses k)
+    assert model.confidence == CalibrationConfidence.MEDIUM
+
+
 def test_speed_athlete_fits_steep_curve():
     as_of = date(2026, 6, 27)
     envelope = _envelope(
