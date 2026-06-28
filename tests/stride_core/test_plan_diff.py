@@ -390,3 +390,46 @@ def test_replace_kind_spec_patch_none_is_skipped(db):
     row = _get_session(db, row_id)
     # kind must NOT have changed
     assert row["kind"] == "run"
+
+
+# ---------------------------------------------------------------------------
+# Folder guard — an op whose session lives in a different week is skipped
+# ---------------------------------------------------------------------------
+
+
+def _insert_session_in(db, *, folder: str, date: str, session_index: int = 0,
+                       kind: str = "run", summary: str = "Easy 10km") -> int:
+    cur = db._conn.execute(
+        """INSERT INTO planned_session
+           (week_folder, date, session_index, kind, summary, total_distance_m)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (folder, date, session_index, kind, summary, 10000.0),
+    )
+    db._conn.commit()
+    return cur.lastrowid
+
+
+def test_apply_skips_session_in_another_folder(db):
+    """A crafted op targeting a date that belongs to a different week must not
+    mutate that other week's session (the apply endpoint takes a client diff)."""
+    other_folder = "2026-04-13_04-19(W-1)"
+    row_id = _insert_session_in(db, folder=other_folder, date="2026-04-15", kind="run")
+
+    op_id = _op_id()
+    diff = _make_diff([  # diff.folder == FOLDER, but the op date is in other_folder
+        DiffOp(
+            id=op_id,
+            op=DiffOpKind.REMOVE_SESSION,
+            date="2026-04-15",
+            session_index=0,
+            old_value=None,
+            new_value=None,
+            spec_patch=None,
+            accepted=None,
+        )
+    ])
+    store = _StoreStub(db)
+    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
+
+    # The other week's session must survive — the guard refused the cross-folder hit.
+    assert _get_session(db, row_id) is not None

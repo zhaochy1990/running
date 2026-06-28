@@ -32,6 +32,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from coach.schemas import AssistantPart, assistant_parts_from_message
 
+from stride_core.plan_diff import PlanDiff, apply_diff
+
 from ..bearer import require_bearer
 from ..coach_adapters.persistence.weekly_version_store import (
     WeeklyPlanVersion,
@@ -41,6 +43,7 @@ from coach.orchestrator import coach_thread_id
 
 from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import build_conversation_graph_for_user, get_checkpointer
+from ..deps import get_plan_state_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -302,6 +305,58 @@ def post_chat_message(
         active_target=turn.active_target.model_dump() if turn.active_target else None,
         proposals=[card.model_dump() for card in turn.proposals],
     )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/users/me/coach/plan/{folder}/apply  (Pattern Y — land a week diff)
+# ---------------------------------------------------------------------------
+
+
+class CoachWeekApplyRequest(BaseModel):
+    """Body for the orchestrator week-diff apply.
+
+    Unlike the legacy plan_chat apply (which kept pending diffs in process
+    memory), the orchestrator is stateless: the ``PlanDiff`` rode the chat
+    response (``proposals[].proposal``) and the client sends the *whole* diff
+    back here with the op ids the user accepted (Pattern Y, §9).
+    """
+
+    diff: PlanDiff
+    accepted_op_ids: list[str]
+
+
+@router.post("/api/users/me/coach/plan/{folder}/apply")
+def apply_coach_week_diff(
+    folder: str,
+    body: CoachWeekApplyRequest,
+    payload: dict = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Apply the accepted ops of a coach-proposed week ``PlanDiff`` to the store."""
+    user_id: str = payload["sub"]
+    diff = body.diff
+    if diff.folder != folder:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"diff folder {diff.folder!r} does not match path folder {folder!r}",
+        )
+
+    # Only land ops the diff actually carries (skip unknown / stale ids).
+    known_ids = {op.id for op in diff.ops}
+    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
+
+    plan_store = get_plan_state_store(user_id)
+    try:
+        apply_diff(plan_store, folder, diff, accepted_op_ids)
+    finally:
+        plan_store.close()
+
+    from datetime import datetime, timezone
+
+    return {
+        "applied": len(accepted_op_ids),
+        "folder": folder,
+        "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
 
 
 # ---------------------------------------------------------------------------

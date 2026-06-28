@@ -112,12 +112,33 @@ def apply_diff(
             raise
 
 
+def _session_in_folder(plan_store: Any, folder: str, op: DiffOp) -> Any | None:
+    """Look up the op's planned session, but only if it lives in ``folder``.
+
+    Ops carry ``(date, session_index)`` and the underlying lookup is
+    folder-agnostic, so without this guard a diff whose op date falls in a
+    *different* week could mutate that other week's session. The orchestrator
+    apply endpoint accepts a client-supplied diff, so this is what keeps a
+    crafted op from reaching outside the declared folder.
+    """
+    row = plan_store.get_planned_session_by_date_index(op.date, op.session_index)
+    if row is None:
+        return None
+    if row["week_folder"] != folder:
+        logger.warning(
+            "apply_diff %s: session at date=%s idx=%s lives in folder %r, not %r; skipping",
+            op.op.value, op.date, op.session_index, row["week_folder"], folder,
+        )
+        return None
+    return row
+
+
 def _apply_op(plan_store: Any, folder: str, op: DiffOp) -> None:
     db = plan_store._db
     conn = db._conn
 
     if op.op == DiffOpKind.REMOVE_SESSION:
-        row = plan_store.get_planned_session_by_date_index(op.date, op.session_index)
+        row = _session_in_folder(plan_store, folder, op)
         if row is None:
             logger.warning(
                 "apply_diff REMOVE_SESSION: no session at date=%s idx=%s",
@@ -154,7 +175,7 @@ def _apply_op(plan_store: Any, folder: str, op: DiffOp) -> None:
         logger.info("apply_diff: added session date=%s idx=%s", op.date, op.session_index)
 
     elif op.op == DiffOpKind.MOVE_SESSION:
-        row = plan_store.get_planned_session_by_date_index(op.date, op.session_index)
+        row = _session_in_folder(plan_store, folder, op)
         if row is None:
             logger.warning(
                 "apply_diff MOVE_SESSION: no session at date=%s idx=%s",
@@ -179,7 +200,7 @@ def _apply_op(plan_store: Any, folder: str, op: DiffOp) -> None:
         DiffOpKind.REPLACE_DISTANCE,
         DiffOpKind.REPLACE_NOTE,
     ):
-        row = plan_store.get_planned_session_by_date_index(op.date, op.session_index)
+        row = _session_in_folder(plan_store, folder, op)
         if row is None:
             logger.warning(
                 "apply_diff %s: no session at date=%s idx=%s",
