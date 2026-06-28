@@ -57,3 +57,9 @@ String durationFmt(int seconds) {
   }
   return '$m:${s.toString().padLeft(2, '0')}';
 }
+
+/// Today's date as a compact CN label, e.g. "6月28日 周日".
+String todayLabel() {
+  final iso = DateTime.now().toIso8601String();
+  return '${formatDateShort(iso)} ${weekdayCN(iso)}';
+}

@@ -19,8 +19,8 @@ import '../../core/theme/tokens.dart';
 import '../_shared/shell/main_shell.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/refreshable.dart';
-import '../_shared/widgets/screen_hero.dart';
-import '../_shared/widgets/sync_icon.dart';
+import '../_shared/widgets/top_bar.dart';
+import '../../shared/utils/format.dart';
 import 'models/health_overview.dart';
 import 'providers/health_overview_provider.dart';
 import 'widgets/metric_card.dart';
@@ -34,26 +34,29 @@ class HealthOverviewScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            StrideScreenHero.withMenu(
-              onMenu: () => shellScaffoldKey.currentState?.openDrawer(),
-              eyebrow: '身体指标 · 今日',
-              title: '健康概览',
-              deck: '同步自手表的静息心率、HRV、训练负荷与睡眠。',
-              trailing: const SyncIconButton(),
-            ),
-            Expanded(
-              child: async.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => _ErrorView(message: e.toString()),
-                data: (overview) => _OverviewBody(overview: overview),
-              ),
-            ),
-          ],
+      appBar: StrideTopBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          tooltip: '菜单',
+          onPressed: () => shellScaffoldKey.currentState?.openDrawer(),
         ),
+        title: '数据',
+        actions: [
+          Text(
+            todayLabel(),
+            style: const TextStyle(
+              fontFamily: AppTypography.fontMono,
+              fontSize: StrideTokens.fs11,
+              color: StrideTokens.muted,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
+      body: async.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => _ErrorView(message: e.toString()),
+        data: (overview) => _OverviewBody(overview: overview),
       ),
     );
   }

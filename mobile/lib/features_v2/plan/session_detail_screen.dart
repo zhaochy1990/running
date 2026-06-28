@@ -25,7 +25,7 @@ import '../../data/api/stride_api.dart';
 import '../../shared/utils/format.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/refreshable.dart';
-import '../_shared/widgets/screen_hero.dart';
+import '../_shared/widgets/top_bar.dart';
 import '../_shared/widgets/stat_row.dart';
 import '../../data/models/plan.dart';
 import 'models/day_plan.dart';
@@ -61,91 +61,71 @@ class SessionDetailScreen extends ConsumerWidget {
     final weekday = weekdayCN(date);
     final fallbackEyebrow = weekday.isEmpty ? '课时' : weekday;
 
+    final barTitle = async.whenOrNull(
+      data: (plan) => '$fallbackEyebrow · ${DayPlan.kindLabel(plan.kind)}',
+      error: (e, _) => '加载失败',
+    ) ?? fallbackEyebrow;
+
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      body: SafeArea(
-        bottom: false,
-        child: async.when(
-          loading: () => Column(
+      appBar: StrideTopBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '返回',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: barTitle,
+      ),
+      body: async.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              StrideScreenHero.withBack(
-                eyebrow: fallbackEyebrow,
-                title: '加载中…',
+              const Text(
+                '加载失败',
+                style: TextStyle(
+                  fontFamily: AppTypography.fontSans,
+                  fontSize: StrideTokens.fs15,
+                  color: StrideTokens.danger,
+                ),
               ),
-              const Expanded(
-                child: Center(child: CircularProgressIndicator()),
+              const SizedBox(height: StrideTokens.spaceMd),
+              TextButton(
+                onPressed: () => ref.invalidate(
+                  planDayProvider(
+                    (date: date, sessionIndex: sessionIndex),
+                  ),
+                ),
+                child: const Text('重试'),
               ),
             ],
           ),
-          error: (e, _) => Column(
-            children: [
-              StrideScreenHero.withBack(
-                eyebrow: fallbackEyebrow,
-                title: '加载失败',
-              ),
-              Expanded(
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        '加载失败',
-                        style: TextStyle(
-                          fontFamily: AppTypography.fontSans,
-                          fontSize: StrideTokens.fs15,
-                          color: StrideTokens.danger,
-                        ),
-                      ),
-                      const SizedBox(height: StrideTokens.spaceMd),
-                      TextButton(
-                        onPressed: () => ref.invalidate(
-                          planDayProvider(
-                            (date: date, sessionIndex: sessionIndex),
-                          ),
-                        ),
-                        child: const Text('重试'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+        ),
+        data: (plan) => rawAsync.when(
+          loading: () => _SessionDetailBody(
+            plan: plan,
+            folder: folder,
+            date: date,
+            sessionIndex: sessionIndex,
+            rawSession: null,
+            nutrition: null,
           ),
-          data: (plan) => Column(
-            children: [
-              StrideScreenHero.withBack(
-                eyebrow: '$fallbackEyebrow · ${DayPlan.kindLabel(plan.kind)}',
-                title: plan.name,
-              ),
-              Expanded(
-                child: rawAsync.when(
-                  loading: () => _SessionDetailBody(
-                    plan: plan,
-                    folder: folder,
-                    date: date,
-                    sessionIndex: sessionIndex,
-                    rawSession: null,
-                    nutrition: null,
-                  ),
-                  error: (_, _) => _SessionDetailBody(
-                    plan: plan,
-                    folder: folder,
-                    date: date,
-                    sessionIndex: sessionIndex,
-                    rawSession: null,
-                    nutrition: null,
-                  ),
-                  data: (raw) => _SessionDetailBody(
-                    plan: plan,
-                    folder: folder,
-                    date: date,
-                    sessionIndex: sessionIndex,
-                    rawSession: raw.session,
-                    nutrition: raw.nutrition,
-                  ),
-                ),
-              ),
-            ],
+          error: (e, _) => _SessionDetailBody(
+            plan: plan,
+            folder: folder,
+            date: date,
+            sessionIndex: sessionIndex,
+            rawSession: null,
+            nutrition: null,
+          ),
+          data: (raw) => _SessionDetailBody(
+            plan: plan,
+            folder: folder,
+            date: date,
+            sessionIndex: sessionIndex,
+            rawSession: raw.session,
+            nutrition: raw.nutrition,
           ),
         ),
       ),

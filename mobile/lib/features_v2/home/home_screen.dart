@@ -46,7 +46,7 @@ class HomeScreen extends ConsumerWidget {
         title: 'STRIDE',
         actions: [
           Text(
-            _todayLabel(),
+            todayLabel(),
             style: const TextStyle(
               fontFamily: AppTypography.fontMono,
               fontSize: StrideTokens.fs11,
@@ -69,10 +69,6 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  String _todayLabel() {
-    final iso = DateTime.now().toIso8601String();
-    return '${formatDateShort(iso)} ${weekdayCN(iso)}';
-  }
 }
 
 class _HomeBody extends StatelessWidget {

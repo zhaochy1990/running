@@ -314,7 +314,7 @@ void main() {
     expect(find.text('训前营养'), findsOneWidget);
   });
 
-  testWidgets('hero eyebrow shows weekday and kind label', (tester) async {
+  testWidgets('top bar title shows weekday and kind label', (tester) async {
     await _pump(tester, AsyncData(_makeEasyPlan()));
     // Date 2026-05-12 is Tuesday → weekdayCN → 周二. Kind 'E' falls back to
     // the upper-cased raw code per DayPlan.kindLabel.
