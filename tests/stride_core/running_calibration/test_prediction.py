@@ -223,12 +223,21 @@ def test_predict_race_matches_cs_dprime_hyperbola():
 
 
 def test_predictions_monotonic_in_distance():
-    model = _fixed_model()
-    p5 = predict_race(model, 5000)
-    p10 = predict_race(model, 10000)
-    phalf = predict_race(model, 21097)
-    assert p5 and p10 and phalf
-    assert p5.pace_s_per_km < p10.pace_s_per_km < phalf.pace_s_per_km
+    model = _fixed_model()  # CS=4.0, D'=200 → valid domain starts at 2*D'=400m
+    dists = [500, 1000, 5000, 10000, 21097, 42195]
+    preds = [predict_race(model, d) for d in dists]
+    assert all(p is not None for p in preds)
+    paces = [p.pace_s_per_km for p in preds]
+    assert paces == sorted(paces)  # pace strictly non-decreasing with distance
+
+
+def test_predict_race_declines_near_and_below_d_prime():
+    """Just above D' the hyperbola degenerates (pace far below CS, non-monotone),
+    so predict_race must decline rather than emit an absurd pace."""
+    model = _fixed_model()  # D'=200 → valid domain starts at 400m
+    assert predict_race(model, 200) is None
+    assert predict_race(model, 300) is None
+    assert predict_race(model, 5000) is not None
 
 
 def test_predict_race_returns_none_without_cs():

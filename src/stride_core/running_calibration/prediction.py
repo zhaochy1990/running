@@ -59,6 +59,11 @@ MONOTONE_MIN_GAIN = 0.005
 # once a cross-user prior distribution exists — see doc §10).
 D_PRIME_INDEX_REF_M = 350.0
 
+# Below this multiple of D′ the CS+D′ hyperbola degenerates (predicted pace
+# shoots below CS and stops being monotone in distance), so predict_race
+# declines. Race distances are far above D′, so this never bites them.
+SHORT_DISTANCE_D_PRIME_MARGIN = 2.0
+
 # Durability placeholder shape (Phase 1): extra time per fractional distance
 # beyond the athlete's longest recent long run, plus a decoupling penalty.
 DURABILITY_PER_OVERRUN = 0.06
@@ -113,6 +118,11 @@ def fit_speed_duration_model(
     if len(points) < 2 or len(distinct) < 2:
         return _prior_only_model(prior)
 
+    # Confidence gates must judge the *same* efforts the curve is fit on: only
+    # buckets that survived the monotone (genuinely-maximal) filter. A non-maximal
+    # sub-window dropped from the fit must not still vote for diversity/recency.
+    surviving = {d for d in distinct}
+
     # Nested sub-windows of a *single* steady run all share one speed and fake a
     # perfectly flat curve (k→0). A trustworthy decay exponent needs efforts from
     # at least two distinct activities; otherwise we keep confidence ≤ LOW so the
@@ -121,7 +131,7 @@ def fit_speed_duration_model(
         len({
             candidate.activity.label_id
             for duration, candidate in best_by_duration.items()
-            if K_FIT_MIN_DURATION_S <= duration <= K_FIT_MAX_DURATION_S
+            if duration in surviving and K_FIT_MIN_DURATION_S <= duration <= K_FIT_MAX_DURATION_S
         })
         >= 2
     )
@@ -130,7 +140,8 @@ def fit_speed_duration_model(
     # A fresh short-effort cluster with a months-old long end should not read as
     # HIGH — that mismatched the honest threshold confidence in real-user evals.
     has_recent_long_anchor = any(
-        duration >= DURABLE_LONG_DURATION_S
+        duration in surviving
+        and duration >= DURABLE_LONG_DURATION_S
         and (as_of_date - candidate.activity.activity_date).days <= RECENT_MAX_AGE_DAYS
         for duration, candidate in best_by_duration.items()
     )
@@ -185,17 +196,20 @@ def predict_race(
     Uses the CS+D′ hyperbola (``distance = CS·t + D′``) which fixes absolute
     pace; the derived Riegel exponent alone has no anchor. Applies an optional
     ``durability_factor ≥ 1`` so long races are not over-predicted.
+
+    Returns ``None`` for near-/sub-D′ distances: there the hyperbola degenerates
+    (``distance − D′ → 0`` makes pace shoot far below CS and become non-monotone
+    in distance), and the linear model is not valid in the sprint domain anyway.
+    Race distances (5K+) are always far above D′ (~100–200 m), so this only
+    declines to predict where a prediction would be meaningless.
     """
     cs = model.critical_speed_mps
     d_prime = model.d_prime_m if model.d_prime_m is not None else 0.0
     if cs is None or cs <= 0 or distance_m <= 0:
         return None
-    if distance_m > d_prime:
-        time_s = (distance_m - d_prime) / cs
-    else:
-        # Sub-D′ sprint: the linear model would give ~0s. Fall back to a speed
-        # modestly above CS rather than emit a degenerate time.
-        time_s = distance_m / (cs * 1.2)
+    if distance_m < d_prime * SHORT_DISTANCE_D_PRIME_MARGIN:
+        return None
+    time_s = (distance_m - d_prime) / cs
     time_s *= max(1.0, durability_factor)
     if time_s <= 0:
         return None

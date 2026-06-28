@@ -12,6 +12,7 @@ Usage:
 
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 import sys
@@ -73,9 +74,19 @@ def main() -> None:
         tmp_path = tmp.name
     shutil.copy2(db_path, tmp_path)
     conn = sqlite3.connect(tmp_path)
-    repo = SQLiteRunningCalibrationRepository(conn)
-    history = repo.fetch_history(as_of - timedelta(days=400), as_of)
+    try:
+        repo = SQLiteRunningCalibrationRepository(conn)
+        history = repo.fetch_history(as_of - timedelta(days=400), as_of)
+        _report(label, as_of, conn, history)
+    finally:
+        conn.close()
+        try:
+            os.unlink(tmp_path)  # close before unlink so Windows releases the handle
+        except OSError:
+            pass
 
+
+def _report(label, as_of, conn, history) -> None:
     print(f"=== {label} === as_of {as_of} | running activities in 400d: {len(history)}")
     if not history:
         print("  (no running history)")
@@ -128,9 +139,10 @@ def main() -> None:
             pred_old = proj(0.06)
             actual = target.avg_speed_mps
             print(
-                f"LOO @ {target_d/60:.0f}min: actual {actual:.3f} | "
+                f"LOO[exponent-only] @ {target_d/60:.0f}min: actual {actual:.3f} | "
                 f"old0.06 {pred_old:.3f} (err {abs(pred_old-actual):.3f}) | "
                 f"new k={k_new:.3f} {pred_new:.3f} (err {abs(pred_new-actual):.3f})"
+                f"  [projects fastest shorter effort with each exponent; CS+D' not used]"
             )
 
     # 6-month drift comparison.
@@ -145,8 +157,6 @@ def main() -> None:
         o, oc, _ = _threshold(hist_m, mend, old=True)
         n, nc, _ = _threshold(hist_m, mend, old=False)
         print(f"  {mend}: old {pace(o):<22} new {pace(n):<22} (old {oc.value}/new {nc.value})")
-
-    conn.close()
 
 
 if __name__ == "__main__":

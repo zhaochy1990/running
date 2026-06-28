@@ -100,6 +100,30 @@ def test_recent_improvement_overrides_stale_60_minute_anchor():
     assert any((as_of - e.activity_date).days <= 30 for e in speed_evidence)
 
 
+def test_speed_type_athlete_gets_more_conservative_threshold_than_constant(monkeypatch):
+    """A steep (speed-type) envelope must drive a SLOWER threshold than the flat
+    0.06 constant would — and the per-athlete exponent must not be silently
+    masked by the long-anchor cap. Without this, a future cap change could
+    neutralize the whole feature undetected."""
+    import stride_core.running_calibration.core as core_mod
+
+    as_of = date(2026, 6, 27)
+    history = [
+        _steady_activity("hard_10m", as_of, days_ago=4, duration_s=10 * 60, speed_mps=4.8, hr_bpm=170, max_hr=188),
+        _steady_activity("tempo_20m", as_of, days_ago=6, duration_s=20 * 60, speed_mps=4.4, hr_bpm=172, max_hr=186),
+        _steady_activity("steady_30m", as_of, days_ago=9, duration_s=30 * 60, speed_mps=4.1, hr_bpm=168, max_hr=184),
+    ]
+
+    new = estimate_running_calibration(history, as_of)
+    # Force the old population-constant path by neutralizing the fit.
+    monkeypatch.setattr(core_mod, "fit_speed_duration_model", lambda *a, **k: core_mod._empty_model())
+    old = estimate_running_calibration(history, as_of)
+
+    assert new.threshold_speed_mps is not None and old.threshold_speed_mps is not None
+    assert new.riegel_k is not None and new.riegel_k > 0.06  # steep individual decay
+    assert new.threshold_speed_mps < old.threshold_speed_mps  # exponent actually bites
+
+
 def test_only_stale_long_effort_yields_medium_not_high_confidence():
     """When the only long-duration evidence is stale, the threshold is still
     estimable from recent shorter efforts but confidence must not claim HIGH."""
