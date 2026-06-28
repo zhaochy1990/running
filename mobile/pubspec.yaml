@@ -54,7 +54,7 @@ dependencies:
   # External URLs (privacy policy, etc.)
   url_launcher: ^6.3.1
 
-  # Markdown rendering for coach chat (LLM output) + in-app docs.
+  # Markdown rendering for coach chat (LLM output).
   # gpt_markdown is purpose-built for ChatGPT/Gemini-style replies and is
   # actively maintained (the original flutter_markdown was discontinued).
   gpt_markdown: ^1.1.7
