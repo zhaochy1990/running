@@ -77,7 +77,7 @@ def main() -> None:
     try:
         repo = SQLiteRunningCalibrationRepository(conn)
         history = repo.fetch_history(as_of - timedelta(days=400), as_of)
-        _report(label, as_of, conn, history)
+        _report(label, as_of, history)
     finally:
         conn.close()
         try:
@@ -86,7 +86,7 @@ def main() -> None:
             pass
 
 
-def _report(label, as_of, conn, history) -> None:
+def _report(label, as_of, history) -> None:
     print(f"=== {label} === as_of {as_of} | running activities in 400d: {len(history)}")
     if not history:
         print("  (no running history)")

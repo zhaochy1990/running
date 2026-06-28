@@ -121,7 +121,7 @@ def fit_speed_duration_model(
     # Confidence gates must judge the *same* efforts the curve is fit on: only
     # buckets that survived the monotone (genuinely-maximal) filter. A non-maximal
     # sub-window dropped from the fit must not still vote for diversity/recency.
-    surviving = {d for d in distinct}
+    surviving = set(distinct)
 
     # Nested sub-windows of a *single* steady run all share one speed and fake a
     # perfectly flat curve (k→0). A trustworthy decay exponent needs efforts from
