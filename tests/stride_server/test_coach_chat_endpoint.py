@@ -288,3 +288,135 @@ def test_apply_requires_auth(chat_client):
         json=_apply_body(),
     )
     assert resp.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# POST /api/users/me/coach/master-plan/{plan_id}/apply  (season diff)
+# ---------------------------------------------------------------------------
+
+_PLAN_ID = "plan-xyz"
+
+
+def _master_plan(status_value="active"):
+    from stride_core.master_plan import (
+        MasterPlan, MasterPlanStatus, Milestone, MilestoneType, Phase,
+    )
+    _status = MasterPlanStatus(status_value)
+    return MasterPlan(
+        plan_id=_PLAN_ID, user_id=USER_UUID, status=_status, goal_id="g1",
+        start_date="2026-06-01", end_date="2026-11-15",
+        phases=[Phase(id="phase-1", name="基础期", start_date="2026-06-01",
+                      end_date="2026-07-31", focus="有氧", weekly_distance_km_low=50.0,
+                      weekly_distance_km_high=65.0, key_session_types=["有氧"],
+                      milestone_ids=["ms-1"])],
+        milestones=[Milestone(id="ms-1", type=MilestoneType.LONG_RUN, date="2026-07-20",
+                              phase_id="phase-1", target="30K")],
+        training_principles=["x"], generated_by="gpt-4.1", version=3,
+        created_at="2026-05-01T00:00:00Z", updated_at="2026-05-01T00:00:00Z",
+    )
+
+
+def _master_diff_body(*, plan_id=_PLAN_ID, end_date="2026-08-15", op_ids=("op1",)):
+    return {
+        "diff": {
+            "diff_id": "md1",
+            "plan_id": plan_id,
+            "ops": [{
+                "id": "op1", "op": "resize_phase", "phase_id": "phase-1",
+                "old_value": {"end_date": "2026-07-31"},
+                "new_value": {"end_date": end_date},
+                "spec_patch": {"end_date": end_date}, "accepted": None,
+            }],
+            "ai_explanation": "延长基础期", "created_at": "2026-06-28T00:00:00Z",
+        },
+        "accepted_op_ids": list(op_ids),
+    }
+
+
+def _stub_master(coach_routes, monkeypatch, *, plan):
+    captured: dict[str, object] = {}
+
+    class _Store:
+        def get_plan(self, user_id, plan_id):
+            return plan
+
+    monkeypatch.setattr(coach_routes, "get_master_plan_store", lambda: _Store())
+
+    def _fake_apply(bridge, plan_id, diff, accepted_op_ids, change_reason):
+        captured.update(plan_id=plan_id, accepted=list(accepted_op_ids), reason=change_reason)
+        return plan.model_copy(update={"version": plan.version + 1})
+
+    monkeypatch.setattr(coach_routes, "apply_master_plan_diff", _fake_apply)
+    return captured
+
+
+def test_master_apply_lands_accepted_ops(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    captured = _stub_master(coach_routes, monkeypatch, plan=_master_plan())
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_master_diff_body(),
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["applied"] == 1
+    assert body["plan_id"] == _PLAN_ID
+    assert body["version"] == 4  # bumped from 3
+    assert captured["accepted"] == ["op1"]
+
+
+def test_master_apply_rejects_plan_id_mismatch(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_master_plan())
+    resp = client.post(
+        "/api/users/me/coach/master-plan/other-plan/apply",
+        json=_master_diff_body(plan_id=_PLAN_ID),
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 400
+
+
+def test_master_apply_rejects_invalid_diff_via_gate(chat_client, monkeypatch):
+    """A diff that inverts a phase is refused by the validation gate (400)."""
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_master_plan())
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_master_diff_body(end_date="2026-05-15"),  # before phase start
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 400
+    assert "结构非法" in resp.json()["detail"]
+
+
+def test_master_apply_404_when_plan_missing(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=None)
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_master_diff_body(),
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 404
+
+
+def test_master_apply_409_when_not_active(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_master_plan(status_value="draft"))
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_master_diff_body(),
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 409
+
+
+def test_master_apply_requires_auth(chat_client):
+    client, _private_pem, _ = chat_client
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_master_diff_body(),
+    )
+    assert resp.status_code in (401, 403)
