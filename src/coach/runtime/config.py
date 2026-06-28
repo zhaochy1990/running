@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, get_args
 
@@ -32,6 +32,25 @@ class CoachConfigError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class ObservabilityConfig:
+    """LangSmith tracing toggle (``[observability]`` section).
+
+    **Off by default.** Flip ``langsmith_enabled`` on for the test phase to get
+    LangChain/LangGraph span tracing in LangSmith. It MUST be turned back off
+    before commercial launch: the coach's prompts/responses carry sensitive
+    athlete health data (HRV / RHR / injuries / life events) and LangSmith SaaS
+    is a US third-party processor — a PIPL cross-border-transfer liability for a
+    China-market product. The API key is read from the environment (never the
+    config file), so an enabled flag with no key safely stays off.
+    """
+
+    langsmith_enabled: bool = False
+    langsmith_project: str = "stride-coach"
+    langsmith_endpoint: str = "https://api.smith.langchain.com"
+    langsmith_api_key_env: str = "LANGSMITH_API_KEY"
+
+
+@dataclass(frozen=True)
 class CoachConfig:
     generator: ModelSpec
     reviewer: ModelSpec
@@ -44,6 +63,8 @@ class CoachConfig:
     # model). Point this at a cheap deployment (gpt-4.1-mini) to realise the
     # low-latency main path (§4.7).
     orchestrator: ModelSpec | None = None
+    # Optional LangSmith tracing toggle; absent ``[observability]`` → disabled.
+    observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
 
     def for_role(self, role: Role) -> ModelSpec:
         if role == "generator":
@@ -203,10 +224,21 @@ def load_config(path: str | Path | None = None) -> CoachConfig:
         else None
     )
 
+    obs_raw = raw.get("observability", {})
+    observability = ObservabilityConfig(
+        langsmith_enabled=bool(obs_raw.get("langsmith_enabled", False)),
+        langsmith_project=str(obs_raw.get("langsmith_project", "stride-coach")),
+        langsmith_endpoint=str(
+            obs_raw.get("langsmith_endpoint", "https://api.smith.langchain.com")
+        ),
+        langsmith_api_key_env=str(obs_raw.get("langsmith_api_key_env", "LANGSMITH_API_KEY")),
+    )
+
     return CoachConfig(
         generator=_build_spec("generator", raw["generator"]),
         reviewer=_build_spec("reviewer", raw["reviewer"]),
         commentary=_build_spec("commentary", raw["commentary"]),
         auth_mode=auth_mode,  # type: ignore[arg-type]
         orchestrator=orchestrator,
+        observability=observability,
     )

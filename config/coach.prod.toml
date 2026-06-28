@@ -93,3 +93,21 @@ timeout_s    = 60
 # / unit tests, inject a fake LLM via coach_runtime.set_*_for_tests instead
 # of switching to api-key auth.
 mode = "managed-identity"
+
+[observability]
+# LangSmith tracing — ENABLED for the test phase (the coach is not yet
+# commercialised). Coach turns export span traces to LangSmith for debugging.
+#
+# IMPORTANT — prod key wiring: `.credentials.local` is git-ignored and does NOT
+# exist in the container, so the key must be provided as the LANGSMITH_API_KEY
+# environment variable (Key Vault secret → container app setting), exactly like
+# AZURE_OPENAI_API_KEY. If LANGSMITH_API_KEY is unset in the container, tracing
+# safely stays OFF (configure_langsmith logs a warning, never fails the turn).
+#
+# TURN OFF (langsmith_enabled = false) BEFORE COMMERCIAL LAUNCH: the coach's
+# prompts/responses carry sensitive athlete health data, and LangSmith SaaS is a
+# US third-party processor — a PIPL cross-border-transfer liability. Test only.
+langsmith_enabled  = true
+langsmith_project  = "stride-coach-prod"
+langsmith_endpoint = "https://api.smith.langchain.com"
+langsmith_api_key_env = "LANGSMITH_API_KEY"
