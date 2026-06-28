@@ -1,0 +1,173 @@
+"""Deterministic validation gate for ``MasterPlanDiff`` (spec §10 open Q#6).
+
+A season-plan amend turn produces a ``MasterPlanDiff`` from the LLM's draft-tool
+call, and the stateless ``/coach/master-plan/{plan_id}/apply`` endpoint accepts a
+client-supplied diff. Before either lands, the diff must satisfy a few structural
+invariants — otherwise a phase could be inverted, a milestone parked outside the
+season, a weekly range flipped, or a stale id edited.
+
+This gate is **pure and deterministic** (no LLM, no DB): it takes the current
+:class:`MasterPlan` plus the proposed :class:`MasterPlanDiff` and returns a list
+of human-readable violation strings (empty list = valid). ``coach.*`` core may
+depend on the ``master_plan`` / ``master_plan_diff`` domain primitives, so this
+lives in core and is unit-testable without infrastructure.
+
+Dates are parsed through :func:`datetime.date.fromisoformat` rather than compared
+as strings — an LLM-emitted non-ISO / non-zero-padded date (``2026-9-1``) would
+otherwise sort lexicographically wrong and slip an inverted window past the gate.
+
+Scope is structural breakage only, never style/quality (that's the LLM's job).
+Only *accepted-or-pending* ops are checked — an explicitly rejected op can't land.
+"""
+
+from __future__ import annotations
+
+from datetime import date as _date
+
+from stride_core.master_plan import MasterPlan
+from stride_core.master_plan_diff import (
+    MasterPlanDiff,
+    MasterPlanDiffOp,
+    MasterPlanDiffOpKind,
+)
+
+_Kind = MasterPlanDiffOpKind
+
+
+def _parse(value: object) -> _date | None:
+    """ISO ``YYYY-MM-DD`` → ``date``; anything malformed → ``None``."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return _date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _within(day: _date, lo: _date | None, hi: _date | None) -> bool:
+    """True if ``day`` is inside the plan window (unbounded if a bound is None)."""
+    if lo is not None and day < lo:
+        return False
+    if hi is not None and day > hi:
+        return False
+    return True
+
+
+def _check_phase_resize(op: MasterPlanDiffOp, phases: dict) -> str | None:
+    phase = phases.get(op.phase_id)
+    if phase is None:
+        return f"调整的阶段（id={op.phase_id}）不在当前赛季计划里"
+    patch = op.spec_patch or {}
+    start = _parse(patch.get("start_date", phase.start_date))
+    end = _parse(patch.get("end_date", phase.end_date))
+    if start is None or end is None:
+        return f"阶段「{phase.name}」调整后的起止日期不是合法 ISO 日期"
+    if start >= end:
+        return (
+            f"阶段「{phase.name}」调整后起始 {start.isoformat()} 不早于结束 "
+            f"{end.isoformat()}，阶段长度为零或为负"
+        )
+    return None
+
+
+def _check_phase_add(op: MasterPlanDiffOp, plan_lo: _date | None, plan_hi: _date | None) -> str | None:
+    patch = op.spec_patch or {}
+    start = _parse(patch.get("start_date"))
+    end = _parse(patch.get("end_date"))
+    if start is None or end is None:
+        return "新增阶段的起止日期缺失或不是合法 ISO 日期"
+    if start >= end:
+        return f"新增阶段起始 {start.isoformat()} 不早于结束 {end.isoformat()}"
+    if not _within(start, plan_lo, plan_hi) or not _within(end, plan_lo, plan_hi):
+        return "新增阶段的日期超出赛季范围"
+    return None
+
+
+def _check_weekly_range(op: MasterPlanDiffOp, phases: dict) -> str | None:
+    if op.phase_id not in phases:
+        return f"操作引用的阶段（id={op.phase_id}）不存在"
+    patch = op.spec_patch or {}
+    lo, hi = patch.get("weekly_distance_km_low"), patch.get("weekly_distance_km_high")
+    if lo is not None and hi is not None and float(lo) > float(hi):
+        return f"周跑量区间下限 {lo} 高于上限 {hi}"
+    return None
+
+
+def _check_milestone_date(
+    op: MasterPlanDiffOp, milestones: dict, plan_lo: _date | None, plan_hi: _date | None
+) -> str | None:
+    ms = milestones.get(op.milestone_id)
+    if ms is None:
+        return f"调整的里程碑（id={op.milestone_id}）不在当前赛季计划里"
+    patch = op.spec_patch or {}
+    new_date = _parse(patch.get("date", ms.date))
+    if new_date is None:
+        return f"里程碑「{ms.target}」的新日期不是合法 ISO 日期"
+    if not _within(new_date, plan_lo, plan_hi):
+        return f"里程碑「{ms.target}」的新日期 {new_date.isoformat()} 超出赛季范围"
+    return None
+
+
+def _check_milestone_add(
+    op: MasterPlanDiffOp, plan_lo: _date | None, plan_hi: _date | None
+) -> str | None:
+    patch = op.spec_patch or {}
+    new_date = _parse(patch.get("date"))
+    if new_date is None:
+        return "新增里程碑的日期缺失或不是合法 ISO 日期"
+    if not _within(new_date, plan_lo, plan_hi):
+        return f"新增里程碑的日期 {new_date.isoformat()} 超出赛季范围"
+    return None
+
+
+def _check_ref(op: MasterPlanDiffOp, phases: dict, milestones: dict) -> str | None:
+    """Reference integrity — a REMOVE/REPLACE must target an existing object."""
+    if op.op in (_Kind.REMOVE_PHASE, _Kind.REPLACE_PHASE_FOCUS):
+        if op.phase_id not in phases:
+            return f"操作引用的阶段（id={op.phase_id}）不存在"
+    if op.op in (_Kind.REMOVE_MILESTONE, _Kind.REPLACE_MILESTONE_TARGET):
+        if op.milestone_id not in milestones:
+            return f"操作引用的里程碑（id={op.milestone_id}）不存在"
+    return None
+
+
+def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
+    """Return structural violations of ``diff`` against ``plan`` (empty = valid).
+
+    Invariants (deterministic, date-parsed):
+
+    * **RESIZE_PHASE / ADD_PHASE** — start strictly before end; ADD also stays
+      within the season window.
+    * **REPLACE_MILESTONE_DATE / ADD_MILESTONE** — the date stays within the
+      season's ``[start_date, end_date]`` window.
+    * **REPLACE_WEEKLY_RANGE** — ``low <= high``.
+    * **Reference integrity** — REMOVE/REPLACE ops target an existing phase /
+      milestone (a stale id can't be applied).
+    * Any unparseable ISO date in a relevant patch is itself a violation.
+    """
+    phases = {p.id: p for p in plan.phases}
+    milestones = {m.id: m for m in plan.milestones}
+    plan_lo, plan_hi = _parse(plan.start_date), _parse(plan.end_date)
+    violations: list[str] = []
+
+    for op in diff.ops:
+        if op.accepted is False:
+            continue  # an explicitly rejected op can't land
+
+        if op.op == _Kind.RESIZE_PHASE:
+            v = _check_phase_resize(op, phases)
+        elif op.op == _Kind.ADD_PHASE:
+            v = _check_phase_add(op, plan_lo, plan_hi)
+        elif op.op == _Kind.REPLACE_WEEKLY_RANGE:
+            v = _check_weekly_range(op, phases)
+        elif op.op == _Kind.REPLACE_MILESTONE_DATE:
+            v = _check_milestone_date(op, milestones, plan_lo, plan_hi)
+        elif op.op == _Kind.ADD_MILESTONE:
+            v = _check_milestone_add(op, plan_lo, plan_hi)
+        else:
+            v = _check_ref(op, phases, milestones)
+
+        if v is not None:
+            violations.append(v)
+
+    return violations
