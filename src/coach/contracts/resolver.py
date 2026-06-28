@@ -65,4 +65,4 @@ class ResolverOutput(BaseModel):
     is_compound: bool = False
     active_target: TargetRef | None = None
     ambiguity: Ambiguity | None = None
-    resolved_from: Literal["anaphora", "explicit", "default"] = "default"
+    resolved_from: Literal["anaphora", "explicit", "default", "resolved"] = "default"

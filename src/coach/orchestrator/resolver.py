@@ -40,6 +40,13 @@ logger = logging.getLogger(__name__)
 # a fake.
 ResolverDraftFn = Callable[[str, str], ResolverDraft]
 
+# A concrete-target resolver: (kind-only/None TargetRef) -> concrete TargetRef
+# (with folder/plan_id filled) or None. The core can only derive a *kind* from
+# the referring phrase; turning "本周" into a real folder needs the DB index, so
+# the adapter injects this (DB-backed) to keep ``coach.*`` pure. Returning None
+# means "couldn't resolve" → the arbitrator falls back to a target clarify.
+TargetResolverFn = Callable[[TargetRef | None], TargetRef | None]
+
 # --- Arbitration thresholds (§4.1 "clarify only when ambiguity changes result")
 CONFIDENCE_FLOOR = 0.35   # below this, the top intent is too weak to dispatch
 TIE_MARGIN = 0.12         # two distinct specialists within this margin = a tie
@@ -218,8 +225,15 @@ def resolve(
     conversation_window: list[Turn] | None = None,
     prior_target: TargetRef | None = None,
     memory_context: str = "",
+    target_resolver: TargetResolverFn | None = None,
 ) -> ResolverOutput:
-    """Run the Resolver: LLM intent draft → deterministic target + clarify (§4.1)."""
+    """Run the Resolver: LLM intent draft → deterministic target + clarify (§4.1).
+
+    ``target_resolver`` (injected by the adapter) upgrades a kind-only / missing
+    target to a concrete one (e.g. "本周" → the current week's folder) for write
+    intents *before* arbitration, so a routine "调整本周" doesn't perpetually ask
+    "哪一周?". It only fires when a write intent still lacks a usable target.
+    """
     window = conversation_window or []
     system_prompt = build_resolver_system_prompt(registry)
     user_prompt = build_resolver_user_prompt(utterance, window, memory_context)
@@ -235,6 +249,22 @@ def resolve(
 
     valid = _valid_intents(draft.intents, registry)
     target, resolved_from = _resolve_target(draft.target_hint, prior_target)
+
+    # Fill a concrete write target (folder) from the DB index before arbitration.
+    # Reads default to most-recent (no target needed). Only fire when exactly one
+    # *distinct* write specialist is in play: with two different writers (e.g. a
+    # future master-plan writer alongside weekly_plan) a single current-week
+    # folder can't be the right target for both, so defer to a clarify instead.
+    write_ids = {h.specialist_id for h in valid if registry.get_card(h.specialist_id).writes}
+    if (
+        target_resolver is not None
+        and len(write_ids) == 1
+        and _needs_target_clarify(target, True)
+    ):
+        upgraded = target_resolver(target)
+        if upgraded is not None:
+            target, resolved_from = upgraded, "resolved"
+
     distinct_ids = {hit.specialist_id for hit in valid}
     is_compound = draft.is_compound and len(distinct_ids) >= 2
 
