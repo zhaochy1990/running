@@ -117,23 +117,24 @@ void main() {
     expect(find.text('晨跑 10K'), findsAtLeastNWidgets(1));
   });
 
-  testWidgets('renders primary stats: distance / duration / pace', (tester) async {
+  testWidgets('renders summary grid: distance / duration / pace', (tester) async {
     await _pump(tester, AsyncData(_makeDetail()));
 
-    // '距离' appears in both lap-table header and stat row
-    expect(find.text('距离'), findsAtLeastNWidgets(1));
-    expect(find.text('时长'), findsAtLeastNWidgets(1));
-    expect(find.text('配速'), findsAtLeastNWidgets(1));
+    // 8-metric grid uses combined "label / UNIT" eyebrows.
+    expect(find.text('距离 / KM'), findsOneWidget);
+    expect(find.text('时长'), findsOneWidget);
+    expect(find.text('平均配速 / KM'), findsOneWidget);
     expect(find.textContaining('10.20'), findsOneWidget);
     expect(find.text('54:05'), findsOneWidget);
   });
 
-  testWidgets('renders secondary stats: HR / calories / ascent', (tester) async {
+  testWidgets('renders summary grid: HR / calories / cadence', (tester) async {
     await _pump(tester, AsyncData(_makeDetail()));
 
-    expect(find.text('心率'), findsOneWidget);
-    expect(find.text('卡路里'), findsOneWidget);
-    expect(find.text('累计爬升'), findsOneWidget);
+    expect(find.text('平均心率 / BPM'), findsOneWidget);
+    expect(find.text('卡路里 / KCAL'), findsOneWidget);
+    expect(find.text('平均步频 / SPM'), findsOneWidget);
+    expect(find.text('训练负荷 / DOSE'), findsOneWidget);
     expect(find.text('152'), findsOneWidget);
   });
 
@@ -143,12 +144,15 @@ void main() {
       AsyncData(_makeDetail(commentary: '节奏稳定，有氧效率良好。')),
     );
 
+    // Commentary card now sits below the two chart cards.
+    await tester.scrollUntilVisible(find.textContaining('节奏稳定'), 500);
     expect(find.textContaining('节奏稳定'), findsOneWidget);
   });
 
   testWidgets('commentary absent shows 暂无 AI 点评', (tester) async {
     await _pump(tester, AsyncData(_makeDetail(commentary: null)));
 
+    await tester.scrollUntilVisible(find.text('暂无 AI 点评'), 500);
     expect(find.text('暂无 AI 点评'), findsOneWidget);
   });
 
@@ -187,9 +191,10 @@ void main() {
   testWidgets('lap table renders lap rows', (tester) async {
     await _pump(tester, AsyncData(_makeDetail()));
 
-    // Lap table sits below the charts; same offstage-clipping concern
-    // as the sport_note tests.
-    expect(find.text('圈', skipOffstage: false), findsOneWidget);
+    // Lap table sits below the charts and commentary; ListView is lazy so the
+    // splits section must scroll into view to mount.
+    await tester.scrollUntilVisible(find.text('圈'), 500);
+    expect(find.text('圈'), findsOneWidget);
   });
 
   testWidgets('loading state shows CircularProgressIndicator', (tester) async {
@@ -234,6 +239,7 @@ void main() {
       AsyncData(_makeDetail(commentary: '训练点评内容。')),
     );
 
+    await tester.scrollUntilVisible(find.text('重新生成'), 500);
     expect(find.text('重新生成'), findsOneWidget);
   });
 
@@ -246,6 +252,7 @@ void main() {
       )),
     );
 
+    await tester.scrollUntilVisible(find.text('gpt-4.1'), 500);
     expect(find.text('gpt-4.1'), findsOneWidget);
   });
 }

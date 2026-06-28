@@ -80,11 +80,19 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
     final allY = spots.map((s) => s.y).toList();
     final minY = (allY.reduce((a, b) => a < b ? a : b) * 0.95).floorToDouble();
     final maxY = (allY.reduce((a, b) => a > b ? a : b) * 1.05).ceilToDouble();
+    final avgY = allY.reduce((a, b) => a + b) / allY.length;
+
+    // X axis: seconds → minutes ticks derived from total duration.
+    final maxX = spots.last.x;
+    final totalMinutes = maxX / 60.0;
+    final xInterval = _xTickIntervalSec(totalMinutes);
 
     return SizedBox(
-      height: 140,
+      height: 150,
       child: LineChart(
         LineChartData(
+          minX: 0,
+          maxX: maxX,
           minY: minY,
           maxY: maxY,
           gridData: FlGridData(
@@ -96,7 +104,14 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
               strokeWidth: 1,
             ),
           ),
-          borderData: FlBorderData(show: false),
+          // Axis baseline: left + bottom border in muted color.
+          borderData: FlBorderData(
+            show: true,
+            border: const Border(
+              left: BorderSide(color: StrideTokens.border, width: 1),
+              bottom: BorderSide(color: StrideTokens.border, width: 1),
+            ),
+          ),
           titlesData: FlTitlesData(
             leftTitles: AxisTitles(
               sideTitles: SideTitles(
@@ -115,8 +130,24 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
                 ),
               ),
             ),
-            bottomTitles: const AxisTitles(
-              sideTitles: SideTitles(showTitles: false),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 18,
+                interval: xInterval,
+                getTitlesWidget: (val, meta) {
+                  // Skip the very last overflow label past the data range.
+                  if (val > maxX + 1) return const SizedBox.shrink();
+                  return Text(
+                    '${(val / 60).round()}',
+                    style: const TextStyle(
+                      fontFamily: AppTypography.fontMono,
+                      fontSize: StrideTokens.fs10,
+                      color: StrideTokens.muted,
+                    ),
+                  );
+                },
+              ),
             ),
             topTitles: const AxisTitles(
               sideTitles: SideTitles(showTitles: false),
@@ -125,6 +156,18 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
               sideTitles: SideTitles(showTitles: false),
             ),
           ),
+          // Red dashed horizontal average line.
+          extraLinesData: ExtraLinesData(
+            horizontalLines: [
+              HorizontalLine(
+                y: avgY,
+                color: StrideTokens.danger,
+                strokeWidth: 1,
+                dashArray: [4, 3],
+              ),
+            ],
+          ),
+          // TODO(M1.x): zone-gradient line coloring (out of scope this pass).
           lineBarsData: [
             LineChartBarData(
               spots: spots,
@@ -142,6 +185,22 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
         ),
       ),
     );
+  }
+
+  /// Choose a sensible minutes tick spacing (returned in seconds) so the X
+  /// axis shows ~4 ticks regardless of run length.
+  double _xTickIntervalSec(double totalMinutes) {
+    if (totalMinutes <= 0) return 60;
+    final rawMin = totalMinutes / 4;
+    const steps = [1, 5, 10, 15, 20, 30, 60];
+    var minutes = steps.last;
+    for (final s in steps) {
+      if (s >= rawMin) {
+        minutes = s;
+        break;
+      }
+    }
+    return minutes * 60.0;
   }
 
   String _fmtPace(int secPerKm) {
