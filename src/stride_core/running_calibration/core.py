@@ -33,6 +33,18 @@ THRESHOLD_SPEED_MODEL_MIN_DURATION_S = 20 * 60
 THRESHOLD_SPEED_LONG_ANCHOR_S = 45 * 60
 THRESHOLD_SPEED_LONG_ANCHOR_CAP_RATIO = 1.02
 THRESHOLD_SPEED_RIEGEL_EXPONENT = 0.06
+# A real long effort is the strongest threshold signal, but only while it still
+# reflects current fitness. Past this age it no longer short-circuits the model
+# nor counts toward HIGH confidence, and it is excluded from the long-anchor cap.
+SHORT_CIRCUIT_MAX_AGE_DAYS = 60
+# Half-life (days) for down-weighting older best-effort projections so the
+# threshold tracks recent fitness instead of being pinned by one old peak.
+RECENCY_HALF_LIFE_DAYS = 90
+
+
+def _recency_weight(activity_date: date, as_of_date: date) -> float:
+    age_days = max(0, (as_of_date - activity_date).days)
+    return 0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS)
 
 
 def estimate_running_calibration(
@@ -54,7 +66,7 @@ def estimate_running_calibration(
         source["hrmax_profile"] = hrmax_profile.source
 
     speed_candidates = best_speed_candidates(recent, BEST_EFFORT_DURATIONS_S)
-    threshold_speed, speed_confidence, speed_evidence = _estimate_threshold_speed(speed_candidates)
+    threshold_speed, speed_confidence, speed_evidence = _estimate_threshold_speed(speed_candidates, as_of_date)
     if threshold_speed is not None:
         source["threshold_speed"] = {
             "method": "best_efforts_upper_envelope_model",
@@ -292,6 +304,7 @@ def _percentile_sorted(values: Sequence[float], pct: float) -> float | None:
 
 def _estimate_threshold_speed(
     candidates: Sequence[SpeedCandidate],
+    as_of_date: date,
 ) -> tuple[float | None, CalibrationConfidence, list[CalibrationEvidence]]:
     if not candidates:
         return None, CalibrationConfidence.NONE, []
@@ -305,14 +318,21 @@ def _estimate_threshold_speed(
 
     if 60 * 60 in best_by_duration:
         best_60 = best_by_duration[60 * 60]
-        if best_60.confidence == CalibrationConfidence.HIGH and best_60.source == "timeseries":
+        # Only a *recent* real one-hour effort short-circuits the model. A stale
+        # peak (e.g. months old) must not pin the estimate and hide newer data.
+        age_days = (as_of_date - best_60.activity.activity_date).days
+        if (
+            best_60.confidence == CalibrationConfidence.HIGH
+            and best_60.source == "timeseries"
+            and age_days <= SHORT_CIRCUIT_MAX_AGE_DAYS
+        ):
             return best_60.avg_speed_mps, CalibrationConfidence.HIGH, [evidence_from_speed(best_60)]
 
     if len(best_by_duration) >= 2:
-        model_speed = _threshold_speed_model(best_by_duration)
+        model_speed = _threshold_speed_model(best_by_duration, as_of_date)
         if model_speed is not None:
             evidence = [evidence_from_speed(c) for _, c in sorted(best_by_duration.items())]
-            confidence = CalibrationConfidence.HIGH if _has_long_high_quality(best_by_duration) else CalibrationConfidence.MEDIUM
+            confidence = CalibrationConfidence.HIGH if _has_long_high_quality(best_by_duration, as_of_date) else CalibrationConfidence.MEDIUM
             return model_speed, confidence, evidence
 
     longest = max(best_by_duration.values(), key=lambda c: c.duration_s)
@@ -325,9 +345,13 @@ def _estimate_threshold_speed(
     return None, CalibrationConfidence.NONE, []
 
 
-def _has_long_high_quality(best_by_duration: dict[float, SpeedCandidate]) -> bool:
+def _has_long_high_quality(best_by_duration: dict[float, SpeedCandidate], as_of_date: date) -> bool:
+    # HIGH confidence requires a long, high-quality effort that is also recent;
+    # a stale long effort no longer certifies current threshold fitness.
     return any(
-        duration >= 45 * 60 and candidate.confidence == CalibrationConfidence.HIGH
+        duration >= 45 * 60
+        and candidate.confidence == CalibrationConfidence.HIGH
+        and (as_of_date - candidate.activity.activity_date).days <= SHORT_CIRCUIT_MAX_AGE_DAYS
         for duration, candidate in best_by_duration.items()
     )
 
@@ -355,14 +379,20 @@ def _critical_speed_curve(best_by_duration: dict[float, SpeedCandidate]) -> floa
     return min(projected, max(slope, 0.9 * projected))
 
 
-def _threshold_speed_model(best_by_duration: dict[float, SpeedCandidate]) -> float | None:
-    projections = _threshold_speed_projections(best_by_duration)
+def _threshold_speed_model(best_by_duration: dict[float, SpeedCandidate], as_of_date: date) -> float | None:
+    projections = _threshold_speed_projections(best_by_duration, as_of_date)
     if projections:
         # Why: historical best efforts are one-sided observations. Non-maximal
         # workouts bias slow, while GPS spikes are already filtered upstream.
         speed = _weighted_quantile(projections, 0.75)
+        # Cap only against a *recent* long effort. A stale long anchor must not
+        # constrain a threshold that recent shorter efforts have moved.
         long_anchor = max(
-            (value for value, _, duration in projections if duration >= THRESHOLD_SPEED_LONG_ANCHOR_S),
+            (
+                value
+                for value, _, duration, age in projections
+                if duration >= THRESHOLD_SPEED_LONG_ANCHOR_S and age <= SHORT_CIRCUIT_MAX_AGE_DAYS
+            ),
             default=None,
         )
         if speed is not None and long_anchor is not None:
@@ -373,8 +403,10 @@ def _threshold_speed_model(best_by_duration: dict[float, SpeedCandidate]) -> flo
     return _critical_speed_curve(best_by_duration)
 
 
-def _threshold_speed_projections(best_by_duration: dict[float, SpeedCandidate]) -> list[tuple[float, float, float]]:
-    projections: list[tuple[float, float, float]] = []
+def _threshold_speed_projections(
+    best_by_duration: dict[float, SpeedCandidate], as_of_date: date
+) -> list[tuple[float, float, float, int]]:
+    projections: list[tuple[float, float, float, int]] = []
     for candidate in best_by_duration.values():
         if candidate.duration_s < THRESHOLD_SPEED_MODEL_MIN_DURATION_S:
             continue
@@ -388,7 +420,10 @@ def _threshold_speed_projections(best_by_duration: dict[float, SpeedCandidate]) 
             weight *= 0.6
         if candidate.source == "timeseries":
             weight *= 1.15
-        projections.append((speed, weight, candidate.duration_s))
+        # Decay older efforts so recent fitness dominates the threshold estimate.
+        weight *= _recency_weight(candidate.activity.activity_date, as_of_date)
+        age_days = max(0, (as_of_date - candidate.activity.activity_date).days)
+        projections.append((speed, weight, candidate.duration_s, age_days))
     return projections
 
 
@@ -397,10 +432,10 @@ def _riegel_threshold_projection(candidate: SpeedCandidate) -> float:
     return float(candidate.avg_speed_mps) * (duration / (60 * 60)) ** THRESHOLD_SPEED_RIEGEL_EXPONENT
 
 
-def _weighted_quantile(values: Sequence[tuple[float, float, float]], quantile: float) -> float | None:
+def _weighted_quantile(values: Sequence[tuple[float, ...]], quantile: float) -> float | None:
     if not values:
         return None
-    ordered = sorted((float(value), max(0.0, float(weight))) for value, weight, _ in values)
+    ordered = sorted((float(value), max(0.0, float(weight))) for value, weight, *_ in values)
     total = sum(weight for _, weight in ordered)
     if total <= 0:
         return median(value for value, _ in ordered)

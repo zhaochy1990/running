@@ -81,6 +81,41 @@ def test_60_minute_performance_recovers_threshold_speed():
     assert snapshot.threshold_speed_confidence == CalibrationConfidence.HIGH
 
 
+def test_recent_improvement_overrides_stale_60_minute_anchor():
+    """A ~6-month-old 60-min effort must not pin the threshold and hide a fitter
+    recent block. Under the old direct short-circuit the stale anchor won
+    outright regardless of age, so recent PBs never moved the estimate."""
+    as_of = date(2026, 6, 27)
+    history = [
+        _steady_activity("old_60m", as_of, days_ago=170, duration_s=60 * 60, speed_mps=4.0, hr_bpm=165),
+        _steady_activity("recent_30m", as_of, days_ago=4, duration_s=30 * 60, speed_mps=4.45, hr_bpm=172, max_hr=184),
+        _steady_activity("recent_20m", as_of, days_ago=9, duration_s=20 * 60, speed_mps=4.5, hr_bpm=173, max_hr=185),
+    ]
+
+    snapshot = estimate_running_calibration(history, as_of)
+
+    assert snapshot.threshold_speed_mps is not None
+    assert snapshot.threshold_speed_mps > 4.1
+    speed_evidence = [e for e in snapshot.evidence if e.kind == "threshold_speed"]
+    assert any((as_of - e.activity_date).days <= 30 for e in speed_evidence)
+
+
+def test_only_stale_long_effort_yields_medium_not_high_confidence():
+    """When the only long-duration evidence is stale, the threshold is still
+    estimable from recent shorter efforts but confidence must not claim HIGH."""
+    as_of = date(2026, 6, 27)
+    history = [
+        _steady_activity("stale_60m", as_of, days_ago=150, duration_s=60 * 60, speed_mps=4.08, hr_bpm=166),
+        _steady_activity("stale_45m", as_of, days_ago=160, duration_s=45 * 60, speed_mps=4.10, hr_bpm=167),
+        _steady_activity("recent_30m", as_of, days_ago=5, duration_s=30 * 60, speed_mps=4.20, hr_bpm=170, max_hr=183),
+    ]
+
+    snapshot = estimate_running_calibration(history, as_of)
+
+    assert snapshot.threshold_speed_mps is not None
+    assert snapshot.threshold_speed_confidence == CalibrationConfidence.MEDIUM
+
+
 def test_overlapping_lap_streams_do_not_create_longer_best_efforts():
     as_of = date(2026, 5, 1)
     laps: list[RunningLap] = []
