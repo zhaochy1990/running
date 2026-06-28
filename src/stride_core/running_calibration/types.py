@@ -105,6 +105,15 @@ class RunningCalibrationSnapshot:
     hrmax_confidence: CalibrationConfidence = CalibrationConfidence.NONE
     high_hr_reference: float | None = None
     critical_power_w: float | None = None
+    # Per-athlete speed-duration model (see prediction.fit_speed_duration_model).
+    # critical_speed_mps/d_prime_m are the CS+D′ hyperbola; riegel_k is the
+    # individual decay exponent that replaces the population-wide 0.06.
+    critical_speed_mps: float | None = None
+    d_prime_m: float | None = None
+    riegel_k: float | None = None
+    endurance_index: float | None = None
+    speed_index: float | None = None
+    speed_duration_confidence: CalibrationConfidence = CalibrationConfidence.NONE
     source: dict[str, Any] = field(default_factory=dict)
     evidence: tuple[CalibrationEvidence, ...] = ()
     id: int | str | None = None

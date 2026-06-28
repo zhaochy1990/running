@@ -39,6 +39,12 @@ RUNNING_CALIBRATION_SCHEMA = (
         hrmax_confidence TEXT NOT NULL DEFAULT 'none',
         high_hr_reference REAL,
         critical_power_w REAL,
+        critical_speed_mps REAL,
+        d_prime_m REAL,
+        riegel_k REAL,
+        endurance_index REAL,
+        speed_index REAL,
+        speed_duration_confidence TEXT NOT NULL DEFAULT 'none',
         source_json TEXT,
         computed_at TEXT NOT NULL DEFAULT (datetime('now')),
         UNIQUE(as_of_date, algorithm_version)
@@ -105,6 +111,12 @@ class SQLiteRunningCalibrationRepository:
                 "hrmax_confidence": "TEXT NOT NULL DEFAULT 'none'",
                 "high_hr_reference": "REAL",
                 "critical_power_w": "REAL",
+                "critical_speed_mps": "REAL",
+                "d_prime_m": "REAL",
+                "riegel_k": "REAL",
+                "endurance_index": "REAL",
+                "speed_index": "REAL",
+                "speed_duration_confidence": "TEXT NOT NULL DEFAULT 'none'",
             },
         )
         self._conn.commit()
@@ -157,8 +169,10 @@ class SQLiteRunningCalibrationRepository:
                (as_of_date, algorithm_version, threshold_hr, threshold_speed_mps,
                 threshold_hr_confidence, threshold_speed_confidence,
                 rhr_baseline, observed_max_hr, hrmax_estimate, hrmax_confidence,
-                high_hr_reference, critical_power_w, source_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                high_hr_reference, critical_power_w,
+                critical_speed_mps, d_prime_m, riegel_k, endurance_index,
+                speed_index, speed_duration_confidence, source_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(as_of_date, algorithm_version) DO UPDATE SET
                    threshold_hr = excluded.threshold_hr,
                    threshold_speed_mps = excluded.threshold_speed_mps,
@@ -170,6 +184,12 @@ class SQLiteRunningCalibrationRepository:
                    hrmax_confidence = excluded.hrmax_confidence,
                    high_hr_reference = excluded.high_hr_reference,
                    critical_power_w = excluded.critical_power_w,
+                   critical_speed_mps = excluded.critical_speed_mps,
+                   d_prime_m = excluded.d_prime_m,
+                   riegel_k = excluded.riegel_k,
+                   endurance_index = excluded.endurance_index,
+                   speed_index = excluded.speed_index,
+                   speed_duration_confidence = excluded.speed_duration_confidence,
                    source_json = excluded.source_json,
                    computed_at = excluded.computed_at""",
             (
@@ -185,6 +205,12 @@ class SQLiteRunningCalibrationRepository:
                 snapshot.hrmax_confidence.value,
                 snapshot.high_hr_reference,
                 snapshot.critical_power_w,
+                snapshot.critical_speed_mps,
+                snapshot.d_prime_m,
+                snapshot.riegel_k,
+                snapshot.endurance_index,
+                snapshot.speed_index,
+                snapshot.speed_duration_confidence.value,
                 source_json,
             ),
         )
@@ -226,6 +252,14 @@ class SQLiteRunningCalibrationRepository:
             hrmax_confidence=CalibrationConfidence(str(_row_value(row, "hrmax_confidence") or CalibrationConfidence.NONE.value)),
             high_hr_reference=_float_or_none(_row_value(row, "high_hr_reference")),
             critical_power_w=_float_or_none(_row_value(row, "critical_power_w")),
+            critical_speed_mps=_float_or_none(_row_value(row, "critical_speed_mps")),
+            d_prime_m=_float_or_none(_row_value(row, "d_prime_m")),
+            riegel_k=_float_or_none(_row_value(row, "riegel_k")),
+            endurance_index=_float_or_none(_row_value(row, "endurance_index")),
+            speed_index=_float_or_none(_row_value(row, "speed_index")),
+            speed_duration_confidence=CalibrationConfidence(
+                str(_row_value(row, "speed_duration_confidence") or CalibrationConfidence.NONE.value)
+            ),
             source=_json_dict(_row_value(row, "source_json")),
             evidence=evidence,
         )

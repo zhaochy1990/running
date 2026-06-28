@@ -15,6 +15,11 @@ THRESHOLD_SPEED_HIGH_RATIO = 1.07
 THRESHOLD_SPEED_MAX_CV = 0.07
 SHORT_SPRINT_HR_CUTOFF_BPM = 198
 LAP_STREAM_ACTIVITY_TOLERANCE = 1.1
+# Half-life (days) for down-weighting older best-effort observations so
+# calibration tracks recent fitness instead of being pinned by one old peak.
+# Single source: both threshold estimation (`core`) and speed-duration model
+# fitting (`prediction`) share this weighting so they cannot drift apart.
+RECENCY_HALF_LIFE_DAYS = 90
 
 
 @dataclass(frozen=True)
@@ -628,6 +633,33 @@ def evidence_from_hr(candidate: ThresholdHrCandidate) -> CalibrationEvidence:
         confidence=candidate.confidence,
         source={"method": "stable_segment_tail_hr"},
     )
+
+
+def recency_weight(
+    activity_date: date, as_of_date: date, *, half_life_days: float = RECENCY_HALF_LIFE_DAYS,
+) -> float:
+    """Exponential decay of an observation's weight by age (half-life in days)."""
+    age_days = max(0, (as_of_date - activity_date).days)
+    return 0.5 ** (age_days / half_life_days)
+
+
+def candidate_weight(candidate: SpeedCandidate, as_of_date: date) -> float:
+    """Shared calibration weight for a best-effort candidate.
+
+    Combines duration trust (longer efforts weighted up), confidence, source
+    quality, and recency decay. Both `core._threshold_speed_projections` and
+    `prediction.fit_speed_duration_model` use this so the threshold estimate and
+    the speed-duration curve are fit on the same evidence weighting.
+    """
+    weight = math.sqrt(max(candidate.duration_s, 1.0) / (60 * 60))
+    if candidate.confidence == CalibrationConfidence.HIGH:
+        weight *= 1.5
+    elif candidate.confidence == CalibrationConfidence.LOW:
+        weight *= 0.6
+    if candidate.source == "timeseries":
+        weight *= 1.15
+    weight *= recency_weight(candidate.activity.activity_date, as_of_date)
+    return weight
 
 
 def weighted_median(values: Sequence[tuple[float, float]]) -> float | None:
