@@ -1,0 +1,186 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-06-29_07-05(健康跑·有氧基础W2)",
+  "notes_md": "健康跑日常规划（非赛事驱动）。全部按时间+心率执行。Z2 轻松（HR 130–145，能完整对话）。W2 每次跑各 +5min；周三加 4×20s strides，温和质量课。",
+  "sessions": [
+    {
+      "date": "2026-06-29",
+      "session_index": 0,
+      "kind": "rest",
+      "summary": "完全休息",
+      "spec": null
+    },
+    {
+      "date": "2026-06-30",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松有氧跑 ~40min（Z2 130–145）",
+      "total_duration_s": 2400,
+      "spec": {
+        "name": "轻松有氧跑",
+        "date": "2026-06-30",
+        "note": "全程按心率，能完整对话",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "warmup", "duration": {"kind": "time_s", "value": 300}, "target": {"kind": "hr_bpm", "low": 105, "high": 135}, "note": "快走转慢跑"},
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 1800}, "target": {"kind": "hr_bpm", "low": 130, "high": 145}, "note": "轻松有氧", "hr_cap_bpm": 150},
+              {"step_kind": "cooldown", "duration": {"kind": "time_s", "value": 300}, "target": {"kind": "hr_bpm", "low": 100, "high": 130}, "note": "慢走放松"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-01",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻质跑 ~35min · 含 4×20s strides（温和质量课）",
+      "total_duration_s": 2100,
+      "spec": {
+        "name": "轻质跑（strides）",
+        "date": "2026-07-01",
+        "note": "Z2 底子上加 4×20s 小加速；感觉不对就改全程轻松跑",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "warmup", "duration": {"kind": "time_s", "value": 480}, "target": {"kind": "hr_bpm", "low": 105, "high": 135}, "note": "慢跑热身"},
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 720}, "target": {"kind": "hr_bpm", "low": 130, "high": 145}, "note": "轻松跑", "hr_cap_bpm": 150}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-01",
+      "session_index": 1,
+      "kind": "run",
+      "summary": "strides 段 4×20s（含 strides + 间歇恢复）",
+      "total_duration_s": 320,
+      "spec": {
+        "name": "strides 组",
+        "date": "2026-07-01",
+        "note": "4 次 20s 稍快 + 60s 慢走/慢跑恢复",
+        "blocks": [
+          {
+            "repeat": 4,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 20}, "target": {"kind": "open", "low": 0, "high": 0}, "note": "稍快，HR 可到 150–155，不喘"},
+              {"step_kind": "recovery", "duration": {"kind": "time_s", "value": 60}, "target": {"kind": "hr_bpm", "low": 105, "high": 135}, "note": "慢走/慢跑恢复"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-01",
+      "session_index": 2,
+      "kind": "run",
+      "summary": "strides 后收尾跑",
+      "total_duration_s": 780,
+      "spec": {
+        "name": "收尾轻松跑",
+        "date": "2026-07-01",
+        "note": "strides 后轻松跑收尾 + 步行放松",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 480}, "target": {"kind": "hr_bpm", "low": 130, "high": 145}, "note": "轻松跑收尾", "hr_cap_bpm": 150},
+              {"step_kind": "cooldown", "duration": {"kind": "time_s", "value": 300}, "target": {"kind": "hr_bpm", "low": 100, "high": 130}, "note": "步行放松"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-02",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "力量 A · 臀/核心/踝 ~25min",
+      "spec": {
+        "name": "力量 A · 臀/核心/踝",
+        "date": "2026-07-02",
+        "note": "徒手，动作质量优先",
+        "exercises": [
+          {"canonical_id": "T1229", "display_name": "臀桥保持", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 45, "provider_id": "T1229", "note": "夹臀，腰不塌"},
+          {"canonical_id": "T1150", "display_name": "鸟狗", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "provider_id": "T1150", "note": "每侧10，核心收紧"},
+          {"canonical_id": "T1061", "display_name": "徒手深蹲", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "provider_id": "T1061", "note": "坐到大腿水平"},
+          {"canonical_id": "T1010", "display_name": "平板支撑", "sets": 3, "target_kind": "time_s", "target_value": 30, "rest_seconds": 30, "provider_id": "T1010", "note": "臀腰平直"}
+        ]
+      }
+    },
+    {
+      "date": "2026-07-03",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松有氧跑 ~35min（Z2 130–145）",
+      "total_duration_s": 2100,
+      "spec": {
+        "name": "轻松有氧跑",
+        "date": "2026-07-03",
+        "note": "按心率，能完整对话；累了可改瑜伽",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "warmup", "duration": {"kind": "time_s", "value": 300}, "target": {"kind": "hr_bpm", "low": 105, "high": 135}, "note": "快走转慢跑"},
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 1500}, "target": {"kind": "hr_bpm", "low": 130, "high": 145}, "note": "轻松有氧", "hr_cap_bpm": 150},
+              {"step_kind": "cooldown", "duration": {"kind": "time_s", "value": 300}, "target": {"kind": "hr_bpm", "low": 100, "high": 130}, "note": "慢走放松"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-04",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松长跑 ~45min（Z2 全程，周内最长）",
+      "total_duration_s": 2700,
+      "spec": {
+        "name": "轻松长跑",
+        "date": "2026-07-04",
+        "note": "周内最长 Z2 跑；热或累时主动走一段；目标是完成不是跑多远",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {"step_kind": "warmup", "duration": {"kind": "time_s", "value": 300}, "target": {"kind": "hr_bpm", "low": 105, "high": 135}, "note": "快走热身"},
+              {"step_kind": "work", "duration": {"kind": "time_s", "value": 2100}, "target": {"kind": "hr_bpm", "low": 130, "high": 145}, "note": "轻松有氧全程", "hr_cap_bpm": 150},
+              {"step_kind": "cooldown", "duration": {"kind": "time_s", "value": 300}, "target": {"kind": "hr_bpm", "low": 100, "high": 130}, "note": "步行放松"}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "date": "2026-07-05",
+      "session_index": 0,
+      "kind": "strength",
+      "summary": "力量 B · 深蹲/提踵/核心 ~25min",
+      "spec": {
+        "name": "力量 B · 深蹲/提踵/核心",
+        "date": "2026-07-05",
+        "note": "徒手，慢起慢落",
+        "exercises": [
+          {"canonical_id": "T1061", "display_name": "徒手深蹲", "sets": 3, "target_kind": "reps", "target_value": 12, "rest_seconds": 45, "provider_id": "T1061", "note": "坐到大腿水平"},
+          {"canonical_id": "T1070", "display_name": "站姿提踵", "sets": 3, "target_kind": "reps", "target_value": 15, "rest_seconds": 30, "provider_id": "T1070", "note": "踝稳定，慢起慢落"},
+          {"canonical_id": "T1185", "display_name": "侧平板", "sets": 3, "target_kind": "time_s", "target_value": 20, "rest_seconds": 30, "provider_id": "T1185", "note": "每侧20s，身体一条线"},
+          {"canonical_id": "T1150", "display_name": "鸟狗", "sets": 3, "target_kind": "reps", "target_value": 10, "rest_seconds": 30, "provider_id": "T1150", "note": "每侧10"}
+        ]
+      }
+    }
+  ],
+  "nutrition": [
+    {"date": "2026-06-29", "kcal_target": 1700, "carbs_g": 180, "protein_g": 90, "fat_g": 55, "water_ml": 2000, "notes_md": "休息日"},
+    {"date": "2026-06-30", "kcal_target": 1850, "carbs_g": 240, "protein_g": 95, "fat_g": 55, "water_ml": 2100, "notes_md": "跑步日：碳水放跑前/跑后；跑后补蛋白20–25g"},
+    {"date": "2026-07-01", "kcal_target": 1850, "carbs_g": 240, "protein_g": 95, "fat_g": 55, "water_ml": 2100, "notes_md": "跑步日（含strides）：跑后补蛋白20–25g"},
+    {"date": "2026-07-02", "kcal_target": 1780, "carbs_g": 200, "protein_g": 95, "fat_g": 58, "water_ml": 2000, "notes_md": "力量后1–2h补蛋白20–25g"},
+    {"date": "2026-07-03", "kcal_target": 1850, "carbs_g": 240, "protein_g": 95, "fat_g": 55, "water_ml": 2100, "notes_md": "跑步日"},
+    {"date": "2026-07-04", "kcal_target": 1850, "carbs_g": 240, "protein_g": 95, "fat_g": 55, "water_ml": 2100, "notes_md": "长跑日（稍长）；跑后补蛋白20–25g"},
+    {"date": "2026-07-05", "kcal_target": 1780, "carbs_g": 200, "protein_g": 95, "fat_g": 58, "water_ml": 2000, "notes_md": "力量后补蛋白"}
+  ]
+}
