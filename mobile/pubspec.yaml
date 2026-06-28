@@ -54,8 +54,10 @@ dependencies:
   # External URLs (privacy policy, etc.)
   url_launcher: ^6.3.1
 
-  # Markdown rendering (privacy / about pages, in-app docs)
-  flutter_markdown: ^0.7.4+3
+  # Markdown rendering for coach chat (LLM output).
+  # gpt_markdown is purpose-built for ChatGPT/Gemini-style replies and is
+  # actively maintained (the original flutter_markdown was discontinued).
+  gpt_markdown: ^1.1.7
 
   # Lightweight key-value store (job_id persistence across app restarts)
   shared_preferences: ^2.3.3
