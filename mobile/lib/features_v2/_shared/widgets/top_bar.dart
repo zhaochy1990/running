@@ -41,36 +41,41 @@ class StrideTopBar extends StatelessWidget implements PreferredSizeWidget {
           color: StrideTokens.surface,
           border: Border(bottom: BorderSide(color: StrideTokens.border2)),
         ),
-        child: Row(
+        child: Stack(
+          alignment: Alignment.center,
           children: [
-            if (leading != null) ...[
-              IconTheme(
-                data: const IconThemeData(size: 20, color: StrideTokens.fgSoft),
-                child: leading!,
-              ),
-              const SizedBox(width: StrideTokens.spaceSm),
-            ],
+            // Leading + actions pinned to edges
+            Row(
+              children: [
+                if (leading != null)
+                  IconTheme(
+                    data: const IconThemeData(size: 20, color: StrideTokens.fgSoft),
+                    child: leading!,
+                  ),
+                const Spacer(),
+                for (int i = 0; i < actions.length; i++) ...[
+                  if (i > 0) const SizedBox(width: StrideTokens.spaceSm),
+                  IconTheme(
+                    data: const IconThemeData(size: 20, color: StrideTokens.fgSoft),
+                    child: actions[i],
+                  ),
+                ],
+              ],
+            ),
+            // Title absolutely centered
             if (title != null)
-              Expanded(
+              Align(
+                alignment: Alignment.center,
                 child: Text(
                   title!,
                   style: const TextStyle(
                     fontFamily: AppTypography.fontSans,
                     fontSize: StrideTokens.fs14,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: StrideTokens.fg,
                   ),
                 ),
-              )
-            else
-              const Spacer(),
-            for (int i = 0; i < actions.length; i++) ...[
-              if (i > 0) const SizedBox(width: StrideTokens.spaceSm),
-              IconTheme(
-                data: const IconThemeData(size: 20, color: StrideTokens.fgSoft),
-                child: actions[i],
               ),
-            ],
           ],
         ),
       ),

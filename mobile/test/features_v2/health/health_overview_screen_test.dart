@@ -129,15 +129,13 @@ void main() {
     expect(find.text('AI 解读'), findsOneWidget);
   });
 
-  testWidgets('hero renders 身体指标 eyebrow + 健康概览 title', (tester) async {
+  testWidgets('fixed bar renders 数据 title and menu icon', (tester) async {
     await _pump(tester, const AsyncData(_fullOverview));
 
-    expect(find.text('身体指标 · 今日'), findsOneWidget);
-    expect(find.text('健康概览'), findsOneWidget);
-  });
-
-  testWidgets('hero trailing renders sync icon', (tester) async {
-    await _pump(tester, const AsyncData(_fullOverview));
-    expect(find.byIcon(Icons.sync), findsOneWidget);
+    expect(find.byIcon(Icons.menu), findsOneWidget);
+    expect(find.text('数据'), findsOneWidget);
+    // Old hero eyebrow and sync icon are gone.
+    expect(find.text('身体指标 · 今日'), findsNothing);
+    expect(find.byIcon(Icons.sync), findsNothing);
   });
 }

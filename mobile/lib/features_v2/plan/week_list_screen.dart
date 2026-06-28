@@ -17,7 +17,7 @@ import '../../core/router/routes_v2.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
 import '../_shared/widgets/refreshable.dart';
-import '../_shared/widgets/screen_hero.dart';
+import '../_shared/widgets/top_bar.dart';
 import '../_shared/widgets/seg_control.dart';
 import 'models/week_list_item.dart';
 import 'providers/week_list_provider.dart';
@@ -40,15 +40,16 @@ class _WeekListScreenState extends ConsumerState<WeekListScreen> {
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
+      appBar: StrideTopBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '返回',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: '训练周',
+      ),
+      body: Column(
         children: [
-          const StrideScreenHero(
-            eyebrow: '训练 · 周计划',
-            title: '训练周',
-            deck: '查看本周课表、滚动生成下周计划，或回看历史周复盘。',
-          ),
           // Segmented control
           Padding(
             padding: const EdgeInsets.fromLTRB(
@@ -84,7 +85,6 @@ class _WeekListScreenState extends ConsumerState<WeekListScreen> {
             ),
           ),
         ],
-        ),
       ),
       floatingActionButton: _GenerateFab(asyncWeeks: asyncWeeks),
     );

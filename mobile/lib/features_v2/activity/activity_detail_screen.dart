@@ -17,7 +17,7 @@ import '../../core/auth/current_user.dart';
 import '../../core/theme/pill_colors.dart';
 import '../_shared/widgets/pill.dart';
 import '../_shared/widgets/refreshable.dart';
-import '../_shared/widgets/screen_hero.dart';
+import '../_shared/widgets/top_bar.dart';
 import '../_shared/widgets/stat_row.dart';
 import 'models/activity_detail.dart';
 import 'providers/activity_detail_provider.dart';
@@ -33,43 +33,30 @@ class ActivityDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final detailAsync = ref.watch(activityDetailProvider(activityId));
 
+    final title = detailAsync.whenOrNull(
+      data: (detail) => detail.activity.name ?? detail.activity.sportName,
+      error: (e, _) => '加载失败',
+    ) ?? '活动详情';
+
     return Scaffold(
       backgroundColor: StrideTokens.bg,
-      body: SafeArea(
-        bottom: false,
-        child: detailAsync.when(
-          loading: () => Column(
-            children: [
-              StrideScreenHero.withBack(eyebrow: '活动详情', title: '加载中…'),
-              const Expanded(
-                child: Center(
-                  child: CircularProgressIndicator(color: StrideTokens.accent),
-                ),
-              ),
-            ],
-          ),
-          error: (err, _) => Column(
-            children: [
-              StrideScreenHero.withBack(eyebrow: '活动详情', title: '加载失败'),
-              Expanded(child: _ErrorBody(message: err.toString())),
-            ],
-          ),
-          data: (detail) => Column(
-            children: [
-              StrideScreenHero.withBack(
-                eyebrow: '活动 · ${detail.activity.sportName}',
-                title: detail.activity.name ?? detail.activity.sportName,
-                deck: '${detail.activity.date} · ${detail.activity.durationFmt}',
-              ),
-              Expanded(
-                child: _DetailBody(
-                  detail: detail,
-                  activityId: activityId,
-                  ref: ref,
-                ),
-              ),
-            ],
-          ),
+      appBar: StrideTopBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: '返回',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: title,
+      ),
+      body: detailAsync.when(
+        loading: () => const Center(
+          child: CircularProgressIndicator(color: StrideTokens.accent),
+        ),
+        error: (err, _) => _ErrorBody(message: err.toString()),
+        data: (detail) => _DetailBody(
+          detail: detail,
+          activityId: activityId,
+          ref: ref,
         ),
       ),
     );
