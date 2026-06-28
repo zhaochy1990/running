@@ -93,3 +93,23 @@ timeout_s    = 60
 # / unit tests, inject a fake LLM via coach_runtime.set_*_for_tests instead
 # of switching to api-key auth.
 mode = "managed-identity"
+
+[observability]
+# LangSmith tracing — OFF by default in prod. This flag is the SINGLE
+# authoritative switch: the runtime forces LANGSMITH_TRACING=false whenever it's
+# false (regardless of any LANGSMITH_API_KEY in the container env), and the
+# deploy step removes a stranded env when it's false. Secret presence alone
+# never enables tracing.
+#
+# To trace prod (test phase only): (1) add the vault secret —
+#   az keyvault secret set --vault-name stride-kv-common --name langsmith-api-key --value <key>
+# and (2) flip this to true in a reviewed PR. Enabling is therefore a deliberate,
+# reviewable change — not a silent side effect of an ops action.
+#
+# Keep this false at/after commercial launch: the coach's prompts/responses
+# carry sensitive athlete health data and LangSmith SaaS is a US third-party
+# processor — a PIPL cross-border-transfer liability.
+langsmith_enabled  = false
+langsmith_project  = "stride-coach-prod"
+langsmith_endpoint = "https://api.smith.langchain.com"
+langsmith_api_key_env = "LANGSMITH_API_KEY"

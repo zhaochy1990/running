@@ -133,3 +133,15 @@ timeout_s    = 60
 # the same code path; the runtime just uses whichever credential source the
 # chain finds first.
 mode = "managed-identity"
+
+[observability]
+# LangSmith tracing for the test phase. ENABLED for local/CLI so coach turns
+# (Resolver / specialists / Memory Writer) show up as span traces in LangSmith.
+# The API key is NOT stored here — it's read from the repo-root
+# `.credentials.local` (`langsmith_api_key=...`), seeded into LANGSMITH_API_KEY
+# at startup. If that key is missing, tracing silently stays off.
+# Turn this OFF before commercial launch (athlete health data → US SaaS).
+langsmith_enabled  = true
+langsmith_project  = "stride-coach-dev"
+langsmith_endpoint = "https://api.smith.langchain.com"
+langsmith_api_key_env = "LANGSMITH_API_KEY"

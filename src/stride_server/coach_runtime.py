@@ -37,6 +37,68 @@ _REVIEWER_LLM_LOCK = threading.Lock()
 _REVIEWER_LLM: Any = None
 _COMMENTARY_LLM_LOCK = threading.Lock()
 _COMMENTARY_LLM: Any = None
+_OBSERVABILITY_LOCK = threading.Lock()
+_OBSERVABILITY_CONFIGURED = False
+
+
+def _seed_langsmith_key_from_credentials(api_key_env: str) -> None:
+    """Dev convenience: seed the LangSmith key env from ``.credentials.local``.
+
+    The repo-root ``.credentials.local`` (gitignored, loose ``key=value`` with
+    ``//`` comments — the same file the frontend smoke uses) may carry a
+    ``langsmith_api_key`` line. If the env var isn't already set, copy it in so
+    the CLI / a local server can trace without the developer exporting it by
+    hand. No-op in prod: the file is absent there, so the key must come from the
+    container env (Key Vault → ``LANGSMITH_API_KEY``)."""
+    if os.environ.get(api_key_env):
+        return
+    from pathlib import Path
+
+    from coach.runtime.config import _find_repo_root
+
+    candidates = [p for p in (_find_repo_root(), Path.cwd()) if p is not None]
+    for root in candidates:
+        cred = root / ".credentials.local"
+        if not cred.exists():
+            continue
+        try:
+            for raw_line in cred.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith(("//", "#")) or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                if key.strip() == "langsmith_api_key" and value.strip():
+                    os.environ[api_key_env] = value.strip()
+                    return
+        except OSError:
+            logger.debug("could not read %s for langsmith key", cred, exc_info=True)
+
+
+def configure_observability() -> None:
+    """Apply the LangSmith tracing toggle once, before any LLM runs (idempotent).
+
+    Reads ``[observability]`` from the coach config and sets the ``LANGSMITH_*``
+    env accordingly. Cheap no-op after the first call; never raises —
+    observability setup must not break a coach turn. Called from each
+    ``get_*_llm`` builder so it runs no matter which entry point (HTTP, CLI,
+    S1 generation) touches an LLM first."""
+    global _OBSERVABILITY_CONFIGURED
+    if _OBSERVABILITY_CONFIGURED:
+        return
+    with _OBSERVABILITY_LOCK:
+        if _OBSERVABILITY_CONFIGURED:
+            return
+        try:
+            from coach.runtime.config import load_config
+            from coach.runtime.observability import configure_langsmith
+
+            obs = load_config().observability
+            if obs.langsmith_enabled:
+                _seed_langsmith_key_from_credentials(obs.langsmith_api_key_env)
+            configure_langsmith(obs)
+        except Exception:  # noqa: BLE001 — tracing setup must never break the coach
+            logger.warning("observability setup failed; continuing untraced", exc_info=True)
+        _OBSERVABILITY_CONFIGURED = True
 
 
 def get_checkpointer() -> Any:
@@ -90,7 +152,7 @@ def set_athlete_memory_store_for_tests(store: Any) -> None:
 def reset_for_tests() -> None:
     """Clear cached LLMs + checkpointer (test-only)."""
     global _CHECKPOINTER, _GENERATOR_LLM, _ORCHESTRATOR_LLM, _REVIEWER_LLM, _COMMENTARY_LLM
-    global _ATHLETE_MEMORY_STORE
+    global _ATHLETE_MEMORY_STORE, _OBSERVABILITY_CONFIGURED
     with (
         _CHECKPOINTER_LOCK,
         _GENERATOR_LLM_LOCK,
@@ -104,6 +166,7 @@ def reset_for_tests() -> None:
         _REVIEWER_LLM = None
         _COMMENTARY_LLM = None
         _ATHLETE_MEMORY_STORE = None
+        _OBSERVABILITY_CONFIGURED = False
 
 
 def set_checkpointer_for_tests(checkpointer: Any) -> None:
@@ -151,6 +214,7 @@ def _build_azure_credentials() -> Any:
 
 def get_generator_llm() -> Any:
     """Return a process-wide singleton generator (Coach Agent)."""
+    configure_observability()
     global _GENERATOR_LLM
     if _GENERATOR_LLM is None:
         with _GENERATOR_LLM_LOCK:
@@ -194,6 +258,7 @@ def get_orchestrator_llm() -> Any:
     Powers the Resolver / Supervisor / Aggregator. Built from the optional
     ``[orchestrator]`` config role, which falls back to ``[reviewer]`` when
     unset (see ``coach.runtime.config.CoachConfig``)."""
+    configure_observability()
     global _ORCHESTRATOR_LLM
     if _ORCHESTRATOR_LLM is None:
         with _ORCHESTRATOR_LLM_LOCK:
@@ -215,6 +280,7 @@ def set_orchestrator_llm_for_tests(llm: Any) -> None:
 
 def get_reviewer_llm() -> Any:
     """Return a process-wide singleton reviewer (Reviewer Agent)."""
+    configure_observability()
     global _REVIEWER_LLM
     if _REVIEWER_LLM is None:
         with _REVIEWER_LLM_LOCK:
