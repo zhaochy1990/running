@@ -16,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/tokens.dart';
+import '../_shared/widgets/chat_markdown.dart';
 import '../_shared/widgets/top_bar.dart';
 import 'models/plan_chat.dart';
 import 'providers/plan_chat_provider.dart';
@@ -266,15 +267,17 @@ class _BubbleWidget extends StatelessWidget {
               ? null
               : Border.all(color: StrideTokens.border2),
         ),
-        child: Text(
-          message.content,
-          style: TextStyle(
-            fontFamily: AppTypography.fontSans,
-            fontSize: StrideTokens.fs14,
-            color: _isUser ? StrideTokens.surface : StrideTokens.fg,
-            height: 1.5,
-          ),
-        ),
+        child: _isUser
+            ? Text(
+                message.content,
+                style: const TextStyle(
+                  fontFamily: AppTypography.fontSans,
+                  fontSize: StrideTokens.fs14,
+                  color: StrideTokens.surface,
+                  height: 1.5,
+                ),
+              )
+            : ChatMarkdown(data: message.content),
       ),
     );
   }
