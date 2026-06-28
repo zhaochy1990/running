@@ -95,19 +95,21 @@ timeout_s    = 60
 mode = "managed-identity"
 
 [observability]
-# LangSmith tracing — ENABLED for the test phase (the coach is not yet
-# commercialised). Coach turns export span traces to LangSmith for debugging.
+# LangSmith tracing — OFF by default in prod. This flag is the SINGLE
+# authoritative switch: the runtime forces LANGSMITH_TRACING=false whenever it's
+# false (regardless of any LANGSMITH_API_KEY in the container env), and the
+# deploy step removes a stranded env when it's false. Secret presence alone
+# never enables tracing.
 #
-# IMPORTANT — prod key wiring: `.credentials.local` is git-ignored and does NOT
-# exist in the container, so the key must be provided as the LANGSMITH_API_KEY
-# environment variable (Key Vault secret → container app setting), exactly like
-# AZURE_OPENAI_API_KEY. If LANGSMITH_API_KEY is unset in the container, tracing
-# safely stays OFF (configure_langsmith logs a warning, never fails the turn).
+# To trace prod (test phase only): (1) add the vault secret —
+#   az keyvault secret set --vault-name stride-kv-common --name langsmith-api-key --value <key>
+# and (2) flip this to true in a reviewed PR. Enabling is therefore a deliberate,
+# reviewable change — not a silent side effect of an ops action.
 #
-# TURN OFF (langsmith_enabled = false) BEFORE COMMERCIAL LAUNCH: the coach's
-# prompts/responses carry sensitive athlete health data, and LangSmith SaaS is a
-# US third-party processor — a PIPL cross-border-transfer liability. Test only.
-langsmith_enabled  = true
+# Keep this false at/after commercial launch: the coach's prompts/responses
+# carry sensitive athlete health data and LangSmith SaaS is a US third-party
+# processor — a PIPL cross-border-transfer liability.
+langsmith_enabled  = false
 langsmith_project  = "stride-coach-prod"
 langsmith_endpoint = "https://api.smith.langchain.com"
 langsmith_api_key_env = "LANGSMITH_API_KEY"

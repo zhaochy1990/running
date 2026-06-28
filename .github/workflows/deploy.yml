@@ -82,10 +82,12 @@ jobs:
           echo "AMAP_KEY=$AMAP_KEY" >> "$GITHUB_ENV"
           echo "AMAP_SECURITY_CODE=$AMAP_SECURITY_CODE" >> "$GITHUB_ENV"
 
-      # LangSmith tracing key (runtime, test phase). Optional: if the secret
-      # isn't in the vault yet, prod tracing stays off and the deploy is
-      # unaffected (coach_runtime degrades gracefully when LANGSMITH_API_KEY is
-      # unset). To enable, add it once:
+      # LangSmith tracing key (runtime, test phase). The authoritative on/off
+      # switch is `[observability].langsmith_enabled` in coach.prod.toml — this
+      # only fetches the key the Deploy step needs WHEN that flag is true.
+      # Tolerant: a missing vault secret is a no-op (the Deploy step then removes
+      # any stale env), so tracing is governed by the reviewed flag, not by
+      # secret presence. To make the key available, add it once:
       #   az keyvault secret set --vault-name stride-kv-common \
       #     --name langsmith-api-key --value <key>
       - name: Pull LangSmith key from Key Vault (optional)
@@ -116,24 +118,33 @@ jobs:
 
       - name: Deploy to Container Apps
         run: |
-          # When the LangSmith key is present, register it as a container-app
-          # secret and map LANGSMITH_API_KEY → secretref. `secret set` and
-          # `--set-env-vars` both MERGE, so existing secrets/env (e.g.
-          # AZURE_OPENAI_API_KEY) are preserved. When absent, deploy exactly as
-          # before — STRIDE_CONFIG_ENV only.
-          EXTRA_ENV=""
-          if [ -n "${LANGSMITH_API_KEY:-}" ]; then
+          # `[observability].langsmith_enabled` in coach.prod.toml is the SINGLE
+          # authoritative tracing switch (the runtime forces LANGSMITH_TRACING
+          # off when it's false, regardless of any env). The deploy mirrors it so
+          # the flag is the gate end-to-end:
+          #   enabled=true  + key present → register secret, set LANGSMITH_API_KEY
+          #   otherwise                   → REMOVE the env so a prior wiring can't
+          #                                 strand and keep tracing on.
+          # Secret presence alone never flips tracing; only the reviewed flag does.
+          if grep -Eiq '^[[:space:]]*langsmith_enabled[[:space:]]*=[[:space:]]*true' config/coach.prod.toml \
+             && [ -n "${LANGSMITH_API_KEY:-}" ]; then
             az containerapp secret set \
               --name ${{ env.APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --secrets langsmith-api-key="$LANGSMITH_API_KEY" >/dev/null
-            EXTRA_ENV="LANGSMITH_API_KEY=secretref:langsmith-api-key"
+            az containerapp update \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
+              --set-env-vars STRIDE_CONFIG_ENV=prod LANGSMITH_API_KEY=secretref:langsmith-api-key
+          else
+            az containerapp update \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
+              --set-env-vars STRIDE_CONFIG_ENV=prod \
+              --remove-env-vars LANGSMITH_API_KEY
           fi
-          az containerapp update \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
-            --set-env-vars STRIDE_CONFIG_ENV=prod $EXTRA_ENV
 
       - name: Update plan-reminder cron job image
         # Pinned to the same image tag as stride-app so the daily cron

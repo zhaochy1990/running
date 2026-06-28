@@ -5,8 +5,30 @@ from __future__ import annotations
 import os
 import textwrap
 
+import pytest
+
 from coach.runtime.config import ObservabilityConfig, load_config
 from coach.runtime.observability import configure_langsmith
+
+_LANGSMITH_ENV = ("LANGSMITH_TRACING", "LANGSMITH_PROJECT", "LANGSMITH_ENDPOINT", "LANGSMITH_API_KEY")
+
+
+@pytest.fixture(autouse=True)
+def _restore_langsmith_env():
+    """Snapshot/restore LANGSMITH_* around every test.
+
+    ``configure_langsmith`` writes these vars via raw ``os.environ`` (not
+    ``monkeypatch``), so without this they would leak across tests — and across
+    files on the same xdist worker — leaving ``LANGSMITH_TRACING=true`` set
+    globally. Restoring here keeps the activation side effects contained.
+    """
+    saved = {k: os.environ.get(k) for k in _LANGSMITH_ENV}
+    yield
+    for key, value in saved.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
 
 _MINIMAL = textwrap.dedent(
     """
