@@ -22,6 +22,11 @@ from coach.orchestrator.resolver import ResolverDraftFn
 
 from ..toolkit import build_stride_toolkit
 from .status_insight import STATUS_INSIGHT_CARD, make_status_insight_runner
+from .weekly_plan import (
+    WEEKLY_PLAN_CARD,
+    make_current_week_target_resolver,
+    make_weekly_plan_runner,
+)
 
 
 def build_specialist_registry(*, user_id: str, specialist_llm: Any) -> SpecialistRegistry:
@@ -31,6 +36,10 @@ def build_specialist_registry(*, user_id: str, specialist_llm: Any) -> Specialis
     registry.register(
         STATUS_INSIGHT_CARD,
         make_status_insight_runner(user_id=user_id, llm=specialist_llm, toolkit=toolkit),
+    )
+    registry.register(
+        WEEKLY_PLAN_CARD,
+        make_weekly_plan_runner(user_id=user_id, llm=specialist_llm, toolkit=toolkit),
     )
     return registry
 
@@ -76,6 +85,7 @@ def run_coach_turn(
         checkpointer=resolved_checkpointer,
         memory_store=resolved_store,
         memory_extract_fn=resolved_extract_fn,
+        target_resolver=make_current_week_target_resolver(user_id),
     )
     thread_id = coach_thread_id(user_id, session_id)
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
