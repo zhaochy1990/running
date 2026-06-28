@@ -754,7 +754,7 @@ def _ensure_training_load_current(db, as_of=None) -> None:
     """
     from datetime import date as _date, timedelta as _timedelta
 
-    from stride_core.timefmt import today_shanghai
+    from stride_core.timefmt import today_shanghai, utc_iso_to_shanghai_iso
     from stride_core.training_load import (
         backfill_training_load,
         recompute_training_load,
@@ -788,12 +788,25 @@ def _ensure_training_load_current(db, as_of=None) -> None:
             ).fetchone()
             earliest = earliest_row[0] if earliest_row and earliest_row[0] else None
             if earliest is not None:
-                coverage_days = (as_of - _date.fromisoformat(earliest[:10])).days
+                # Measure the actual persisted span (earliest..last), not
+                # earliest..as_of — a shallow *and* stale table would otherwise
+                # over-report its depth. daily_training_load.date is Shanghai-local.
+                coverage_days = (
+                    _date.fromisoformat(last[:10]) - _date.fromisoformat(earliest[:10])
+                ).days
                 if coverage_days < _CHRONIC_WARMUP_DAYS:
                     act_row = db._conn.execute(
                         "SELECT MIN(date) FROM activities"
                     ).fetchone()
-                    act_min = act_row[0][:10] if act_row and act_row[0] else None
+                    # activities.date is stored UTC ISO; daily_training_load.date
+                    # is Shanghai-local. Convert before comparing so the
+                    # "older history exists" test is timezone-consistent
+                    # (CLAUDE.md timezone discipline) — a raw UTC slice could be
+                    # one calendar day off and spuriously fire the backfill.
+                    act_min = (
+                        utc_iso_to_shanghai_iso(act_row[0])[:10]
+                        if act_row and act_row[0] else None
+                    )
                     if act_min is not None and act_min < earliest[:10]:
                         logger.info(
                             "_ensure_training_load_current: daily_training_load only "
