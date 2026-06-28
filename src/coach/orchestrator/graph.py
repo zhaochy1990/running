@@ -24,7 +24,7 @@ from coach.contracts import SpecialistRegistry, TargetRef
 from .aggregator import SynthFn, aggregate
 from .dispatcher import dispatch
 from .memory import MemoryExtractFn, MemoryStore, load_active_memories, write_memories
-from .resolver import ResolverDraftFn, resolve
+from .resolver import ResolverDraftFn, TargetResolverFn, resolve
 from .state import (
     OrchestratorState,
     history_to_window,
@@ -51,6 +51,7 @@ def build_orchestrator_graph(
     synth_fn: SynthFn | None = None,
     memory_store: MemoryStore | None = None,
     memory_extract_fn: MemoryExtractFn | None = None,
+    target_resolver: TargetResolverFn | None = None,
 ) -> Any:
     """Compile the orchestrator pipeline graph.
 
@@ -93,6 +94,7 @@ def build_orchestrator_graph(
             conversation_window=window,
             prior_target=prior_target,
             memory_context=memory_context,
+            target_resolver=target_resolver,
         )
         logger.debug(
             "① resolver %.0fms | intents=%s | compound=%s | target=%s (from %s) | ambiguity=%s",

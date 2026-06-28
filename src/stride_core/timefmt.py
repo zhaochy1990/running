@@ -20,6 +20,7 @@ for these forbidden patterns and fails CI if they leak back in.
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 
 SHANGHAI_TZ = timezone(timedelta(hours=8))
@@ -107,3 +108,27 @@ def shanghai_week_range(yyyy_mm_dd_from: str, yyyy_mm_dd_to: str) -> tuple[str, 
     start_utc, _ = shanghai_day_to_utc_range(yyyy_mm_dd_from)
     _, end_utc = shanghai_day_to_utc_range(yyyy_mm_dd_to)
     return start_utc, end_utc
+
+
+_WEEK_FOLDER_RE = re.compile(r"(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})(?:\([^/\\]*\))?")
+
+
+def parse_week_folder_dates(folder_name: str) -> tuple[str, str] | None:
+    """Parse a week-folder name → its inclusive Shanghai-day bounds.
+
+    ``'2026-04-13_04-19(赛后恢复)'`` → ``('2026-04-13', '2026-04-19')``.
+
+    Canonical single source for week-folder date bounds (``stride_server.deps.
+    parse_week_dates`` delegates here; ``coach.*`` / ``stride_core`` callers that
+    can't import the server use this directly). ``re.fullmatch`` anchors both
+    ends so path-traversal-flavored inputs (``..%2f``) are rejected, and the
+    optional ``(...)`` tag may hold anything but a path separator. The end month
+    reuses the start year — matching how week folders are interpreted everywhere
+    else (no year-boundary inference)."""
+    m = _WEEK_FOLDER_RE.fullmatch(folder_name)
+    if not m:
+        return None
+    year = int(m.group(1))
+    sm, sd = int(m.group(2)), int(m.group(3))
+    em, ed = int(m.group(4)), int(m.group(5))
+    return f"{year}-{sm:02d}-{sd:02d}", f"{year}-{em:02d}-{ed:02d}"

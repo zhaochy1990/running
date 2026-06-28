@@ -186,3 +186,105 @@ def test_chat_rejects_empty_message(chat_client, monkeypatch):
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 422  # pydantic min_length
+
+
+# ---------------------------------------------------------------------------
+# POST /api/users/me/coach/plan/{folder}/apply
+# ---------------------------------------------------------------------------
+
+_APPLY_FOLDER = "2026-06-22_06-28(W8)"
+
+
+def _apply_body(folder: str = _APPLY_FOLDER, op_ids=("op1",)) -> dict:
+    return {
+        "diff": {
+            "diff_id": "d1",
+            "folder": folder,
+            "ops": [
+                {
+                    "id": "op1",
+                    "op": "move_session",
+                    "date": "2026-06-24",
+                    "session_index": 0,
+                    "old_value": None,
+                    "new_value": {"date": "2026-06-25", "session_index": 0},
+                    "spec_patch": {"new_date": "2026-06-25", "new_session_index": 0},
+                    "accepted": None,
+                }
+            ],
+            "ai_explanation": "把周三挪到周四",
+            "created_at": "2026-06-28T00:00:00Z",
+        },
+        "accepted_op_ids": list(op_ids),
+    }
+
+
+def _stub_apply(coach_routes, monkeypatch) -> dict:
+    """Isolate the apply route from the DB; capture what it would land."""
+    captured: dict[str, object] = {}
+
+    class _Store:
+        def close(self):
+            captured["closed"] = True
+
+    monkeypatch.setattr(coach_routes, "get_plan_state_store", lambda _u: _Store())
+
+    def _fake_apply(plan_store, folder, diff, accepted_op_ids):
+        captured.update(folder=folder, diff=diff, accepted=list(accepted_op_ids))
+
+    monkeypatch.setattr(coach_routes, "apply_diff", _fake_apply)
+    return captured
+
+
+def test_apply_lands_accepted_ops(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    captured = _stub_apply(coach_routes, monkeypatch)
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_apply_body(),
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["applied"] == 1
+    assert body["folder"] == _APPLY_FOLDER
+    assert captured["accepted"] == ["op1"]
+    assert captured["folder"] == _APPLY_FOLDER
+    assert captured["closed"] is True
+
+
+def test_apply_drops_unknown_op_ids(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    captured = _stub_apply(coach_routes, monkeypatch)
+
+    body = _apply_body(op_ids=("op1", "ghost"))
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["applied"] == 1
+    assert captured["accepted"] == ["op1"]  # 'ghost' isn't in diff.ops
+
+
+def test_apply_rejects_folder_mismatch(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_apply(coach_routes, monkeypatch)
+
+    resp = client.post(
+        "/api/users/me/coach/plan/2026-06-15_06-21(W7)/apply",
+        json=_apply_body(folder=_APPLY_FOLDER),  # diff.folder != path folder
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 400
+
+
+def test_apply_requires_auth(chat_client):
+    client, _private_pem, _ = chat_client
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_apply_body(),
+    )
+    assert resp.status_code in (401, 403)

@@ -465,36 +465,63 @@ class StrideApi {
     return ActivityFeedback.fromJson(json);
   }
 
-  // ── Plan Chat ──────────────────────────────────────────────────────────
+  // ── Weekly plan adjustment (orchestrator coach) ────────────────────────
 
-  /// Send a user message to the plan chat endpoint and return the raw
-  /// response map (contains `ai_response` and optionally `diff`).
-  Future<Map<String, dynamic>> sendPlanChatMessage({
-    required String user,
+  /// Derive a stable, server-accepted session id for a week's adjustment chat.
+  /// The orchestrator constrains `session_id` to `[A-Za-z0-9_-]` (no ':'), but a
+  /// folder like `2026-06-22_06-28(W8)` carries parens — sanitize so reopening
+  /// the same week resumes the same server-threaded conversation.
+  static String weekChatSessionId(String folder) {
+    final sanitized = folder
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '-')
+        .replaceAll(RegExp(r'-{2,}'), '-')
+        .replaceAll(RegExp(r'-+$'), '');
+    return 'week-$sanitized';
+  }
+
+  /// Send a weekly-adjustment message through the orchestrator coach brain.
+  /// `POST /api/users/me/coach/chat`. The `weekly_plan` specialist may attach a
+  /// proposed `PlanDiff` (Pattern Y) which rides back in `proposals[]`; we
+  /// surface the first one. Returns the user-facing `reply`, an optional
+  /// `clarification`, and the proposed diff (or null for a plain Q&A turn).
+  Future<({String reply, String? clarification, Map<String, dynamic>? diff})>
+      sendWeeklyAdjustMessage({
     required String folder,
     required String message,
-    List<Map<String, dynamic>>? history,
   }) async {
-    return _post<Map<String, dynamic>>(
-      '/api/$user/plan/$folder/chat/messages',
-      body: {
-        'message': message,
-        'history': ?history,
-      },
+    final r = await _post<Map<String, dynamic>>(
+      '/api/users/me/coach/chat',
+      body: {'session_id': weekChatSessionId(folder), 'message': message},
+    );
+    final proposals = (r['proposals'] as List?) ?? const [];
+    Map<String, dynamic>? diff;
+    for (final p in proposals) {
+      if (p is Map<String, dynamic> &&
+          p['specialist_id'] == 'weekly_plan' &&
+          p['proposal'] is Map<String, dynamic>) {
+        diff = p['proposal'] as Map<String, dynamic>;
+        break;
+      }
+    }
+    return (
+      reply: r['reply'] as String? ?? '',
+      clarification: r['clarification'] as String?,
+      diff: diff,
     );
   }
 
-  /// Apply accepted diff ops from a pending plan chat diff.
-  Future<Map<String, dynamic>> applyPlanChatDiff({
-    required String user,
+  /// Apply the accepted ops of a coach-proposed week `PlanDiff`. The orchestrator
+  /// is stateless, so the *whole* diff is sent back (Pattern Y).
+  /// `POST /api/users/me/coach/plan/{folder}/apply`.
+  Future<Map<String, dynamic>> applyWeeklyAdjustDiff({
     required String folder,
-    required String diffId,
+    required Map<String, dynamic> diff,
     required List<String> acceptedOpIds,
   }) async {
     return _post<Map<String, dynamic>>(
-      '/api/$user/plan/$folder/chat/apply',
+      '/api/users/me/coach/plan/$folder/apply',
       body: {
-        'diff_id': diffId,
+        'diff': diff,
         'accepted_op_ids': acceptedOpIds,
       },
     );

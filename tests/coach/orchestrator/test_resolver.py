@@ -213,6 +213,86 @@ def test_write_intent_with_concrete_target_no_clarify() -> None:
     assert [h.specialist_id for h in out.intents] == ["weekly_plan"]
 
 
+def test_target_resolver_fills_current_week_for_write_no_clarify() -> None:
+    """A write intent with no target → injected resolver fills the current-week
+    folder, so the turn dispatches instead of asking '哪一周?'."""
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+    )
+    fn, _ = _fixed(draft)
+
+    def _resolver(target: TargetRef | None) -> TargetRef | None:
+        return TargetRef(kind="week", folder="2026-06-22_06-28(W8)")
+
+    out = resolve(
+        "把周三改轻松跑",
+        registry=_registry(),
+        draft_fn=fn,
+        target_resolver=_resolver,
+    )
+    assert out.ambiguity is None
+    assert out.active_target == TargetRef(kind="week", folder="2026-06-22_06-28(W8)")
+    assert out.resolved_from == "resolved"
+
+
+def test_target_resolver_returning_none_still_clarifies() -> None:
+    """If the resolver can't find a current week, fall back to a target clarify."""
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+    )
+    fn, _ = _fixed(draft)
+    out = resolve(
+        "帮我改一下",
+        registry=_registry(),
+        draft_fn=fn,
+        target_resolver=lambda _t: None,
+    )
+    assert out.ambiguity is not None
+    assert out.ambiguity.kind == "target"
+
+
+def test_target_resolver_not_called_for_read_intent() -> None:
+    """Reads default to most-recent; the resolver must not fire for them."""
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+    )
+    fn, _ = _fixed(draft)
+    calls: list[TargetRef | None] = []
+
+    def _resolver(target: TargetRef | None) -> TargetRef | None:
+        calls.append(target)
+        return TargetRef(kind="week", folder="x")
+
+    out = resolve("我最近状态如何", registry=_registry(), draft_fn=fn, target_resolver=_resolver)
+    assert calls == []
+    assert out.ambiguity is None
+    assert out.active_target is None
+
+
+def test_target_resolver_skipped_when_target_already_concrete() -> None:
+    """A write that already has a folder (anaphora / prior turn) skips the resolver."""
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+    )
+    fn, _ = _fixed(draft)
+    calls: list[TargetRef | None] = []
+
+    def _resolver(target: TargetRef | None) -> TargetRef | None:
+        calls.append(target)
+        return None
+
+    out = resolve(
+        "把周三改轻松跑",
+        registry=_registry(),
+        draft_fn=fn,
+        prior_target=TargetRef(kind="week", folder="2026-W26"),
+        target_resolver=_resolver,
+    )
+    assert calls == []
+    assert out.ambiguity is None
+    assert out.active_target == TargetRef(kind="week", folder="2026-W26")
+
+
 def test_prompt_role_split_is_hard_invariant() -> None:
     """System = persona + Card catalog (no utterance); User = utterance (no catalog)."""
     draft = ResolverDraft(intents=[IntentHit(specialist_id="status_insight", confidence=0.9)])

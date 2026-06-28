@@ -15,6 +15,7 @@ from fastapi import HTTPException, Path as FastAPIPath, Request, status
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.registry import ProviderRegistry, UnknownProvider
 from stride_core.source import DataSource
+from stride_core.timefmt import parse_week_folder_dates
 from stride_core.state_stores import (
     CommentaryStore,
     InBodyStore,
@@ -110,21 +111,11 @@ def exercise_name(key: str) -> str:
 def parse_week_dates(folder_name: str) -> tuple[str, str] | None:
     """Parse '2026-04-13_04-19(赛后恢复)' → ('2026-04-13', '2026-04-19').
 
-    Uses ``re.fullmatch`` (both anchors) so that path-traversal-flavored
-    inputs like ``2026-04-13_04-19/../../etc/passwd`` are rejected. Allows an
-    optional trailing ``(...)`` phase tag whose content is anything other
-    than a path separator (so the tag itself can't smuggle a slash through).
+    Thin delegate to the canonical ``stride_core.timefmt.parse_week_folder_dates``
+    (single source for week-folder date bounds). Path-traversal rejection +
+    optional ``(...)`` tag handling live there.
     """
-    m = re.fullmatch(
-        r"(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})(?:\([^/\\]*\))?",
-        folder_name,
-    )
-    if not m:
-        return None
-    year = int(m.group(1))
-    sm, sd = int(m.group(2)), int(m.group(3))
-    em, ed = int(m.group(4)), int(m.group(5))
-    return f"{year}-{sm:02d}-{sd:02d}", f"{year}-{em:02d}-{ed:02d}"
+    return parse_week_folder_dates(folder_name)
 
 
 def get_source(request: Request) -> DataSource:

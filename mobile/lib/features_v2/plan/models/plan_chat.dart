@@ -29,6 +29,7 @@ class DiffOpView {
         sessionIndex: (json['session_index'] as num?)?.toInt() ?? 0,
         oldValue: json['old_value'] as Map<String, dynamic>?,
         newValue: json['new_value'] as Map<String, dynamic>?,
+        specPatch: json['spec_patch'] as Map<String, dynamic>?,
         accepted: json['accepted'] as bool?,
       );
   const DiffOpView({
@@ -38,6 +39,7 @@ class DiffOpView {
     required this.sessionIndex,
     this.oldValue,
     this.newValue,
+    this.specPatch,
     this.accepted,
   });
 
@@ -50,6 +52,11 @@ class DiffOpView {
   final Map<String, dynamic>? oldValue;
   final Map<String, dynamic>? newValue;
 
+  /// The actual change payload the backend applies. Carried through verbatim so
+  /// the orchestrator's stateless apply (which re-validates the whole PlanDiff)
+  /// receives a faithful round-trip.
+  final Map<String, dynamic>? specPatch;
+
   /// null = pending, true = accepted, false = rejected
   final bool? accepted;
 
@@ -60,6 +67,7 @@ class DiffOpView {
         'session_index': sessionIndex,
         'old_value': oldValue,
         'new_value': newValue,
+        'spec_patch': specPatch,
         'accepted': accepted,
       };
 
@@ -70,6 +78,7 @@ class DiffOpView {
         sessionIndex: sessionIndex,
         oldValue: oldValue,
         newValue: newValue,
+        specPatch: specPatch,
         accepted: accepted ?? this.accepted,
       );
 }

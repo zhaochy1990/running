@@ -45,12 +45,15 @@ class PlanChatState {
 // ── Notifier ──────────────────────────────────────────────────────────────────
 
 class PlanChatNotifier extends StateNotifier<PlanChatState> {
-  PlanChatNotifier(this._api, this._userId) : super(const PlanChatState());
+  // The second positional arg (legacy user id) is unused now that the
+  // orchestrator endpoints are scoped to `/api/users/me/...`; kept so existing
+  // call sites / tests (`super(null, null)`) compile unchanged.
+  PlanChatNotifier(this._api, [String? _]) : super(const PlanChatState());
 
   final StrideApi? _api;
-  final String? _userId;
 
-  /// Send a user message to the backend and receive AI response + optional diff.
+  /// Send a user message through the orchestrator coach and receive the AI
+  /// reply + optional `weekly_plan` diff proposal.
   Future<void> sendMessage(String folder, String text) async {
     if (text.trim().isEmpty) return;
 
@@ -65,26 +68,22 @@ class PlanChatNotifier extends StateNotifier<PlanChatState> {
     );
 
     try {
-      final history = state.messages
-          .where((m) => m.role == 'user' || m.role == 'assistant')
-          // exclude the user message we just added (it's the current one)
-          .take(state.messages.length - 1)
-          .map((m) => m.toJson())
-          .toList();
-
-      final resp = await _api!.sendPlanChatMessage(
-        user: _userId ?? '',
+      // The orchestrator threads history server-side per session id, so no
+      // client-side history is sent.
+      final resp = await _api!.sendWeeklyAdjustMessage(
         folder: folder,
         message: text,
-        history: history,
       );
 
-      final aiText = resp['ai_response'] as String? ?? '';
+      // Prefer the user-facing reply; fall back to a clarification question.
+      final aiText = resp.reply.isNotEmpty
+          ? resp.reply
+          : (resp.clarification ?? '');
       final aiMsg = ChatMessage(role: 'assistant', content: aiText);
 
       PlanDiffView? diff;
-      final rawDiff = resp['diff'];
-      if (rawDiff is Map<String, dynamic>) {
+      final rawDiff = resp.diff;
+      if (rawDiff != null) {
         diff = PlanDiffView.fromJson(rawDiff);
       }
 
@@ -113,17 +112,16 @@ class PlanChatNotifier extends StateNotifier<PlanChatState> {
     state = state.copyWith(acceptedOpIds: current);
   }
 
-  /// Apply the accepted ops to the backend.
+  /// Apply the accepted ops to the backend (stateless — send the whole diff).
   Future<void> applyDiff(String folder) async {
     final diff = state.pendingDiff;
     if (diff == null || state.acceptedOpIds.isEmpty) return;
 
     state = state.copyWith(loading: true, error: () => null);
     try {
-      await _api!.applyPlanChatDiff(
-        user: _userId ?? '',
+      await _api!.applyWeeklyAdjustDiff(
         folder: folder,
-        diffId: diff.diffId,
+        diff: diff.toJson(),
         acceptedOpIds: state.acceptedOpIds.toList(),
       );
       // Clear diff after successful apply
