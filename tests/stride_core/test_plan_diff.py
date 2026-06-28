@@ -433,3 +433,48 @@ def test_apply_skips_session_in_another_folder(db):
 
     # The other week's session must survive — the guard refused the cross-folder hit.
     assert _get_session(db, row_id) is not None
+
+
+def test_move_to_date_outside_week_is_skipped(db):
+    """MOVE destination must stay within the folder's week (FOLDER = 05-04..05-10)."""
+    row_id = _insert_session(db, date="2026-05-05", session_index=0)
+
+    op_id = _op_id()
+    diff = _make_diff([
+        DiffOp(
+            id=op_id,
+            op=DiffOpKind.MOVE_SESSION,
+            date="2026-05-05",
+            session_index=0,
+            old_value=None,
+            new_value={"date": "2026-05-18"},
+            spec_patch={"new_date": "2026-05-18", "new_session_index": 0},  # next week
+            accepted=None,
+        )
+    ])
+    store = _StoreStub(db)
+    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
+
+    # Unmoved — the out-of-week destination was refused.
+    assert _get_session(db, row_id)["date"] == "2026-05-05"
+
+
+def test_add_session_outside_week_is_skipped(db):
+    """ADD date must fall within the folder's week."""
+    op_id = _op_id()
+    diff = _make_diff([
+        DiffOp(
+            id=op_id,
+            op=DiffOpKind.ADD_SESSION,
+            date="2026-05-20",  # outside FOLDER's 05-04..05-10 week
+            session_index=0,
+            old_value=None,
+            new_value={"summary": "X"},
+            spec_patch={"kind": "run", "summary": "X"},
+            accepted=None,
+        )
+    ])
+    store = _StoreStub(db)
+    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
+
+    assert _all_sessions(db) == []  # nothing inserted

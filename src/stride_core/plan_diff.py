@@ -22,6 +22,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from stride_core.timefmt import parse_week_folder_dates
+
 logger = logging.getLogger(__name__)
 
 
@@ -113,24 +115,34 @@ def apply_diff(
 
 
 def _session_in_folder(plan_store: Any, folder: str, op: DiffOp) -> Any | None:
-    """Look up the op's planned session, but only if it lives in ``folder``.
+    """Look up the op's source session, scoped to ``folder``.
 
-    Ops carry ``(date, session_index)`` and the underlying lookup is
-    folder-agnostic, so without this guard a diff whose op date falls in a
-    *different* week could mutate that other week's session. The orchestrator
+    Ops carry ``(date, session_index)``; the store's folder-agnostic lookup
+    could return — and a naive guard could then mis-reject against — a row from
+    a different week that happens to share the same (date, index). Scoping the
+    query by ``week_folder`` resolves the right row directly: a crafted op whose
+    date belongs to another week simply finds nothing here. The orchestrator
     apply endpoint accepts a client-supplied diff, so this is what keeps a
     crafted op from reaching outside the declared folder.
     """
-    row = plan_store.get_planned_session_by_date_index(op.date, op.session_index)
-    if row is None:
-        return None
-    if row["week_folder"] != folder:
-        logger.warning(
-            "apply_diff %s: session at date=%s idx=%s lives in folder %r, not %r; skipping",
-            op.op.value, op.date, op.session_index, row["week_folder"], folder,
-        )
-        return None
-    return row
+    return plan_store._db._conn.execute(
+        "SELECT * FROM planned_session "
+        "WHERE week_folder = ? AND date = ? AND session_index = ?",
+        (folder, op.date, op.session_index),
+    ).fetchone()
+
+
+def _within_week(folder: str, date_str: str) -> bool:
+    """True if ``date_str`` (YYYY-MM-DD) falls within ``folder``'s week bounds.
+
+    An unparseable folder name yields ``True`` (don't block on a folder we can't
+    interpret — the source-folder scoping already bounds the blast radius).
+    """
+    bounds = parse_week_folder_dates(folder)
+    if bounds is None:
+        return True
+    date_from, date_to = bounds
+    return date_from <= date_str <= date_to
 
 
 def _apply_op(plan_store: Any, folder: str, op: DiffOp) -> None:
@@ -153,6 +165,12 @@ def _apply_op(plan_store: Any, folder: str, op: DiffOp) -> None:
         logger.info("apply_diff: removed session id=%s", row["id"])
 
     elif op.op == DiffOpKind.ADD_SESSION:
+        if not _within_week(folder, op.date):
+            logger.warning(
+                "apply_diff ADD_SESSION: date=%s is outside week %r; skipping",
+                op.date, folder,
+            )
+            return
         patch = op.spec_patch or {}
         conn.execute(
             """INSERT INTO planned_session
@@ -185,6 +203,12 @@ def _apply_op(plan_store: Any, folder: str, op: DiffOp) -> None:
         patch = op.spec_patch or {}
         new_date = patch.get("new_date", op.date)
         new_index = patch.get("new_session_index", op.session_index)
+        if not _within_week(folder, new_date):
+            logger.warning(
+                "apply_diff MOVE_SESSION: new_date=%s is outside week %r; skipping",
+                new_date, folder,
+            )
+            return
         conn.execute(
             "UPDATE planned_session SET date = ?, session_index = ? WHERE id = ?",
             (new_date, new_index, row["id"]),

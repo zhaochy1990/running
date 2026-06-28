@@ -15,11 +15,31 @@ import pytest
 from stride_core.timefmt import (
     SHANGHAI_DAY_SQL,
     SHANGHAI_TZ,
+    parse_week_folder_dates,
     shanghai_day_to_utc_range,
     shanghai_week_range,
     today_shanghai,
     utc_iso_to_shanghai_iso,
 )
+
+
+class TestParseWeekFolderDates:
+    def test_plain_folder(self):
+        assert parse_week_folder_dates("2026-05-04_05-10") == ("2026-05-04", "2026-05-10")
+
+    def test_with_chinese_tag(self):
+        assert parse_week_folder_dates("2026-04-13_04-19(赛后恢复)") == (
+            "2026-04-13",
+            "2026-04-19",
+        )
+
+    def test_path_traversal_rejected(self):
+        assert parse_week_folder_dates("2026-05-04_05-10/../../etc/passwd") is None
+        assert parse_week_folder_dates("2026-05-04_05-10(../x)") is None
+
+    def test_garbage_returns_none(self):
+        assert parse_week_folder_dates("not-a-folder") is None
+        assert parse_week_folder_dates("") is None
 
 
 class TestUtcIsoToShanghaiIso:
