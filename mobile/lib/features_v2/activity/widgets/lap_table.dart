@@ -1,6 +1,6 @@
 /// LapTable — simplified laps list for the v2 activity detail screen.
 ///
-/// Each row shows: lap index / distance / duration / pace / avg HR.
+/// Each row shows: lap index / distance / duration / pace / avg HR / cadence.
 library;
 
 import 'package:flutter/material.dart';
@@ -41,6 +41,7 @@ class LapTable extends StatelessWidget {
           duration: '时长',
           pace: '配速',
           hr: 'HR',
+          cadence: '步频',
           isHeader: true,
         ),
         const Divider(height: 1, color: StrideTokens.border2),
@@ -52,6 +53,7 @@ class LapTable extends StatelessWidget {
                   duration: lap.durationFmt,
                   pace: lap.paceFmt,
                   hr: lap.avgHr != null ? '${lap.avgHr}' : '--',
+                  cadence: lap.avgCadence != null ? '${lap.avgCadence}' : '--',
                 ),
                 const Divider(height: 1, color: StrideTokens.border2),
               ],
@@ -68,6 +70,7 @@ class _LapRow extends StatelessWidget {
     required this.duration,
     required this.pace,
     required this.hr,
+    required this.cadence,
     this.isHeader = false,
   });
 
@@ -76,6 +79,7 @@ class _LapRow extends StatelessWidget {
   final String duration;
   final String pace;
   final String hr;
+  final String cadence;
   final bool isHeader;
 
   @override
@@ -97,13 +101,17 @@ class _LapRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: StrideTokens.spaceSm),
       child: Row(
         children: [
-          SizedBox(width: 28, child: Text(index, style: style)),
-          Expanded(flex: 2, child: Text(distance, style: style)),
+          SizedBox(width: 24, child: Text(index, style: style)),
+          Expanded(flex: 3, child: Text(distance, style: style)),
           Expanded(flex: 2, child: Text(duration, style: style)),
           Expanded(flex: 2, child: Text(pace, style: style)),
           SizedBox(
-            width: 44,
+            width: 40,
             child: Text(hr, style: style, textAlign: TextAlign.end),
+          ),
+          SizedBox(
+            width: 44,
+            child: Text(cadence, style: style, textAlign: TextAlign.end),
           ),
         ],
       ),
