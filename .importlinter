@@ -98,6 +98,7 @@ source_modules =
     stride_core.running_calibration.types
     stride_core.running_calibration.zones
     stride_core.running_calibration.repository
+    stride_core.running_calibration.prediction
 forbidden_modules =
     stride_core.db
     stride_server
