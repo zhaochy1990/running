@@ -66,12 +66,16 @@ def _weekly_bounds_violation(patch: dict) -> str | None:
     Both ``REPLACE_WEEKLY_RANGE`` and ``ADD_PHASE`` feed these into ``float()`` in
     apply, so a non-numeric value would otherwise ValueError → 500.
     """
-    lo, hi = patch.get("weekly_distance_km_low"), patch.get("weekly_distance_km_high")
-    if lo is None and hi is None:
+    # Key off *presence*, not None-ness: apply branches on ``key in patch`` and
+    # then ``float(value)``, so a key present with value None reaches float(None).
+    has_lo = "weekly_distance_km_low" in patch
+    has_hi = "weekly_distance_km_high" in patch
+    if not has_lo and not has_hi:
         return None
+    lo, hi = patch.get("weekly_distance_km_low"), patch.get("weekly_distance_km_high")
     try:
-        lo_f = float(lo) if lo is not None else None
-        hi_f = float(hi) if hi is not None else None
+        lo_f = float(lo) if has_lo else None
+        hi_f = float(hi) if has_hi else None
     except (TypeError, ValueError):
         return f"周跑量区间不是合法数值：low={lo} high={hi}"
     if lo_f is not None and hi_f is not None and lo_f > hi_f:

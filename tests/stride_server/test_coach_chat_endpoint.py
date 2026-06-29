@@ -420,3 +420,26 @@ def test_master_apply_requires_auth(chat_client):
         json=_master_diff_body(),
     )
     assert resp.status_code in (401, 403)
+
+
+def test_master_apply_400_on_apply_data_error(chat_client, monkeypatch):
+    """A malformed spec_patch that slips past the gate raises inside apply
+    (bad type / enum / missing key) — the endpoint backstop returns 400, not 500."""
+    client, private_pem, coach_routes = chat_client
+
+    class _Store:
+        def get_plan(self, user_id, plan_id):
+            return _master_plan()
+
+    monkeypatch.setattr(coach_routes, "get_master_plan_store", lambda: _Store())
+
+    def _boom(*_a, **_k):
+        raise TypeError("float() argument must be a string or a number, not 'NoneType'")
+
+    monkeypatch.setattr(coach_routes, "apply_master_plan_diff", _boom)
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_master_diff_body(),  # valid per gate; apply raises a data error
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 400

@@ -28,7 +28,7 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from coach.schemas import AssistantPart, assistant_parts_from_message
 
@@ -444,7 +444,19 @@ def apply_coach_master_diff(
     accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
 
     bridge = _MasterStoreBridge(store, user_id)
-    updated_plan = apply_master_plan_diff(bridge, plan_id, diff, accepted_op_ids, body.change_reason)
+    try:
+        updated_plan = apply_master_plan_diff(bridge, plan_id, diff, accepted_op_ids, body.change_reason)
+    except (ValidationError, ValueError, TypeError, KeyError) as exc:
+        # The gate validates diff semantics, but spec_patch contents are untyped
+        # JSON from the client — a pathological value (wrong type, bad enum,
+        # missing construction key) would otherwise raise inside apply and 500.
+        # Convert that whole class to a 400; infra/storage errors are other
+        # exception types and still propagate as a real 5xx.
+        logger.warning("coach master apply: rejecting malformed diff: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="赛季调整数据非法，无法应用",
+        )
 
     return {
         "applied": len(accepted_op_ids),

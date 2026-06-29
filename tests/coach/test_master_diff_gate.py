@@ -326,6 +326,18 @@ def test_add_milestone_valid_type_in_window_passes() -> None:
     assert validate_master_diff(_plan(), _diff(op)) == []
 
 
+def test_weekly_range_present_but_none_is_rejected() -> None:
+    """Key present with value None: apply does float(None)→TypeError; gate must catch."""
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={"weekly_distance_km_low": None},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "合法数值" in violations[0]
+
+
 def test_multiple_violations_all_reported() -> None:
     bad_resize = _op(
         MasterPlanDiffOpKind.RESIZE_PHASE,
