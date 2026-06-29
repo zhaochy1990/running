@@ -8,6 +8,7 @@ Context blocks (all fed on every call):
   5. 训练分段 (laps lap_type='type2')
   6. HR 曲线下采样 (timeseries → 1 point/min)
   7. 活动当日 daily_health 快照 (fatigue / TSB / RHR)
+  7b. 个体基线 (LTHR / max HR, RunningCalibrationRepository — single source)
   8. 最新身体成分快照 (body_composition_scan latest)
   9. 最近 4 周跑量趋势 (activities aggregated by week)
  10. 本周计划 plan.md 节选 (logs/<week>/plan.md)
@@ -22,15 +23,17 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.messages import extract_text
+from coach.skills import render_fragment, render_skill
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import pace_str, sport_name
+from stride_core.timefmt import utc_iso_to_shanghai_iso
 
 from .content_store import list_week_folders as content_week_folders
 from .content_store import read_json as read_content_json
@@ -72,64 +75,14 @@ SHANGHAI_TZ = timezone(timedelta(hours=8))
 
 
 # ============================================================================
-# System prompt — cached; describes role + format + guardrails.
+# System prompt — the static doctrine now lives in the coach `commentary`
+# skill (coach/skills/commentary/SKILL.md), mirroring S1/S2/S3. Rendered once
+# with an empty context (zero ${...} placeholders → byte-identical across all
+# calls, so the Azure prompt-cache prefix stays warm). Exposed as SYSTEM_PROMPT
+# for the adapter + the prompt-invariant tests.
 # ============================================================================
 
-SYSTEM_PROMPT = """你是一位经验丰富的马拉松教练，正在点评跑者的单次训练。
-以**中文**撰写一段简洁的 commentary，字数不超过 200 字。
-
-**结构**：
-1. 开头一句判决：本次训练执行得怎么样、是否达到其实际训练目的
-2. 1-2 个具体数据观察（HR 纪律、配速控制、区间分布、分段质量等）
-3. 结尾给出下一步建议（这次训练对未来 1-2 天意味着什么）
-
-**判断原则（关键）**：
-
-- **时间感知**：user message 顶部会有 `# 生成时刻：...（今天）` 和活动日期。
-  - 活动距今 ≤ 3 天 → 用前瞻语气，可以给短期恢复/执行建议（"明天安排..." / "未来 48h..."）
-  - 活动距今 > 3 天 → 用历史回顾语气，不要给短期恢复建议；结尾应是"这次训练作为 X 时期的样本意味着 Y"
-
-- **环境因素优先于 HR 数字**：
-  - 湿度 > 70% 或温度 > 25°C 会让相同强度下的 HR 漂移 3-8 bpm（完全正常）
-  - 评估 HR 纪律时必须把环境作为解释变量
-  - Z2（约 130-145 bpm）就是轻松跑的目标区间；只要主段落在 Z2，就算达标——即使略超了"HR<140"这种具体数字目标
-  - 不要把环境导致的 HR 漂移说成"纪律失败"
-
-- **整体视角**：看整体，不要盯单一偏差。
-  - 一个 "HR 高 3 bpm" 不能盖过 "Z2 占 92% + strides 精准 + TL 合理" 这样的整体优秀
-  - 判决应当综合配速、HR 区间分布、分段质量、TL、环境、主观反馈多个维度
-
-- **计划对照是辅助信息，不是唯一评分标准**：
-  - 用户可能临时调整安排，或者完成了与本周计划完全不同的另一堂训练
-  - 遇到这种情况，先客观衡量本次训练本身：它作为实际完成的训练，在强度、配速/HR、区间、分段、负荷、环境和主观反馈上是否合理
-  - 不要因为偏离计划而苛责用户，也不要把"没有按计划跑"自动判定为执行失败
-  - 只需要提醒用户本次训练与计划不一致，并说明这对接下来训练安排或恢复的影响
-
-- **数据纪律**：
-  - 绝不虚构或推断上下文里没有的指标（例："RHR 升高" "睡眠下降" 这类没给数据的陈述不能编造）
-  - 只有 "本周计划" 块存在时才能与计划对照
-  - 主要分析对象是"活动主数据"；"背景信息"（InBody、4 周趋势、训练阶段）只在与本次训练直接相关时提及
-  - **数值比较必须先核对大小关系**：写 "A 高于 B" 或 "A 低于 B" 前，先在脑中确认 A 与 B 的实际数值关系。例：均 HR 162 vs LT HR 167 → 162 < 167，说 "均 HR 162 接近 LT HR 167 但未越过"，不要说 "162 远高于 167"。配速也一样：5:30/km 比 4:00/km 慢（pace 数字越大越慢），比较前先想清楚方向。
-
-**格式**：
-- Markdown 粗体强调关键数字
-- 不要用"很棒/不错"这种廉价鼓励
-- 不要以"总体"、"总的来说"这类词收尾——结尾句本身就应当是结论
-
----
-
-**参考：两个对比样本**
-
-**【GOOD — 执行优秀，教练认可】**
-活动：Easy 15.52km + 6×100m strides，均 HR 143，湿度 94%，Z2 占 92%，TL 181
-点评：
-"**执行质量 9/10**。15.52km @ **5:35/km**，Z2 占 **92%** — 一个几乎教科书的 Z2 有氧跑。湿度 94% 让 HR 飘到 143，比计划 <140 高 3 bpm — 这是环境效应而非纪律失败；强行压 HR 得减速到 6:00/km，反而损失刺激。6×100m strides 精准落在 **3:30/km**，TL 181 符合预期。周六 TT 前的最后一次有氧训练到位。"
-
-**【CRASH — 执行失败，需要诊断】**
-活动：马拉松，均配 4:52/km，Z4+Z5 占 71%，前 20km HR 172，22km 后配速断崖至 7:26/km
-点评：
-"均配 **4:52/km** 大幅慢于 B 目标 **4:12/km**，Z4+Z5 合占 **71%** 显示强度失控。前 20km 心率推到 **172**（超 LT 6 bpm），22km 后配速断崖至 **7:26/km** — 典型能量耗竭 + 心率上限失控。教训：当前 4:08/km 稳定性只能维持 40 分钟以内，B 目标配速还未达到。"
-"""
+SYSTEM_PROMPT = render_skill("commentary", {})
 
 
 # ============================================================================
@@ -325,6 +278,44 @@ def get_latest_inbody(db: Database) -> dict[str, Any] | None:
     return scan
 
 
+def get_calibration_baseline(db: Database, as_of_ymd: str | None) -> dict[str, Any] | None:
+    """Athlete HR baselines (LTHR, max HR) from the canonical calibration reader.
+
+    Single source per CLAUDE.md "Athlete baseline metrics" rule — read via
+    ``RunningCalibrationRepository.fetch_latest``, never inline-recomputed or
+    parsed from profile free-text. ``as_of_ymd`` (``YYYY-MM-DD``) scopes to the
+    calibration that was current on the activity date. Returns ``None`` for new
+    users with no snapshot yet (the prompt then falls back to Z5/Z6 only).
+    """
+    try:
+        from stride_core.running_calibration.sqlite_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+
+        as_of = date.fromisoformat(as_of_ymd[:10]) if as_of_ymd and len(as_of_ymd) >= 10 else None
+        snap = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of_date=as_of)
+    except Exception as e:  # noqa: BLE001
+        # A new user / empty table returns None *without* raising; reaching here
+        # means a real fault (schema drift, fetch bug). Log it like the sibling
+        # calibration consumers instead of silently dropping the baseline block.
+        logger.warning("commentary calibration fetch failed: %s", e, exc_info=True)
+        return None
+    if snap is None:
+        return None
+    out: dict[str, Any] = {}
+    if snap.threshold_hr is not None:
+        out["threshold_hr"] = round(snap.threshold_hr)
+        # CalibrationConfidence is a str-Enum; .value is the canonical label.
+        # Suppress the noisy/uninformative "none" level.
+        conf = getattr(snap.threshold_hr_confidence, "value", None)
+        if conf and conf != "none":
+            out["threshold_hr_confidence"] = conf
+    max_hr = snap.observed_max_hr or snap.hrmax_estimate
+    if max_hr is not None:
+        out["max_hr"] = round(max_hr)
+    return out or None
+
+
 # ============================================================================
 # Prompt builder
 # ============================================================================
@@ -384,12 +375,12 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
     ts_points = [dict(t) for t in ts_rows]
     hr_series = downsample_timeseries(ts_points, target=90) if ts_points else None
 
-    # 7. daily_health on activity date
-    activity_ymd = activity["date"][:10] if activity["date"] and "T" in activity["date"] else activity["date"]
-    try:
-        activity_ymd_compact = activity_ymd.replace("-", "")
-    except Exception:
-        activity_ymd_compact = activity_ymd
+    # 7. daily_health on activity date. daily_health.date is Shanghai-local
+    # YYYYMMDD, so key off the Shanghai-local activity day (timezone-discipline
+    # HARD rule) — a raw-UTC slice mis-picks the prior day for 00:00-07:59 CST.
+    # This same Shanghai day also scopes the calibration as-of below.
+    activity_ymd = (utc_iso_to_shanghai_iso(activity.get("date")) or (activity.get("date") or ""))[:10]
+    activity_ymd_compact = activity_ymd.replace("-", "")
     health_rows = db.query(
         "SELECT date, fatigue, ati, cti, rhr, training_load_ratio, training_load_state "
         "FROM daily_health WHERE date <= ? ORDER BY date DESC LIMIT 1",
@@ -398,6 +389,10 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
     health = dict(health_rows[0]) if health_rows else None
     if health and health.get("ati") is not None and health.get("cti") is not None:
         health["tsb"] = round(health["cti"] - health["ati"], 1)
+
+    # 7b. athlete HR baselines (LTHR / max HR) — canonical calibration reader,
+    # scoped to the same Shanghai-local activity day.
+    calibration = get_calibration_baseline(db, activity_ymd or None)
 
     # 8. latest inbody
     inbody = get_latest_inbody(db)
@@ -411,13 +406,18 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
     # 11. prior same-sport commentaries
     prior = get_prior_commentaries(db, activity["sport_type"], label_id, limit=2)
 
-    # Assemble user message — activity FIRST for salience, background blocks last.
-    lines: list[str] = []
-
-    # Today anchor (lets model choose foresight vs retrospective tone)
+    # ----- Assemble the per-activity context for the `commentary` skill's
+    # user_prompt.md. The static doctrine lives in SYSTEM_PROMPT (the skill);
+    # here we build only the variable blocks the template injects. Activity
+    # block FIRST for salience, background block last.
     now_cst = datetime.now(tz=SHANGHAI_TZ)
-    lines.append(f"# 生成时刻：{now_cst.strftime('%Y-%m-%d (%A) %H:%M CST')}（今天）")
-    # Compute days since activity
+    now_cst_str = now_cst.strftime("%Y-%m-%d (%A) %H:%M CST")
+
+    # Days-since-activity line (lets the model pick foresight vs retrospective).
+    # Rendered as a suffix on the timestamp header line — with its own leading
+    # newline when present, "" when absent — so an unparseable date collapses to
+    # a single blank line (no double blank), matching the old inline assembly.
+    days_ago_line = ""
     try:
         act_date_str = activity.get("date", "")
         if "T" in act_date_str:
@@ -428,92 +428,92 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
             act_dt = datetime.fromisoformat(act_date_str).replace(tzinfo=SHANGHAI_TZ)
         days_ago = (now_cst.date() - act_dt.astimezone(SHANGHAI_TZ).date()).days
         if days_ago == 0:
-            lines.append(f"- 本次活动发生于**今天**")
+            days_ago_line = "- 本次活动发生于**今天**"
         elif days_ago == 1:
-            lines.append(f"- 本次活动发生于**昨天**")
+            days_ago_line = "- 本次活动发生于**昨天**"
         else:
-            lines.append(f"- 本次活动距今 **{days_ago} 天**（活动日：{act_dt.astimezone(SHANGHAI_TZ).strftime('%Y-%m-%d')}）")
+            days_ago_line = (
+                f"- 本次活动距今 **{days_ago} 天**"
+                f"（活动日：{act_dt.astimezone(SHANGHAI_TZ).strftime('%Y-%m-%d')}）"
+            )
     except Exception:
         pass
-    lines.append("")
+    days_ago_suffix = f"\n{days_ago_line}" if days_ago_line else ""
 
-    lines.append("# 本次活动数据（主要分析对象）")
-    lines.append("")
-    lines.append(f"- 日期：{_fmt_iso_shanghai(activity.get('date'))}")
-    lines.append(f"- 名称：{activity.get('name') or '(无)'}")
-    lines.append(f"- 运动类型：{sport_name(activity.get('sport_type', 0))}")
+    # ----- Activity block: core metrics + HR zones + training laps + HR curve.
+    act: list[str] = []
+    act.append(f"- 日期：{_fmt_iso_shanghai(activity.get('date'))}")
+    act.append(f"- 名称：{activity.get('name') or '(无)'}")
+    act.append(f"- 运动类型：{sport_name(activity.get('sport_type', 0))}")
     if activity.get("distance_m"):
-        lines.append(f"- 距离：{activity['distance_m']:.2f} km")
+        act.append(f"- 距离：{activity['distance_m']:.2f} km")
     if activity.get("duration_s"):
         mins = int(activity["duration_s"]) // 60
         secs = int(activity["duration_s"]) % 60
-        lines.append(f"- 时长：{mins // 60}:{mins % 60:02d}:{secs:02d}")
+        act.append(f"- 时长：{mins // 60}:{mins % 60:02d}:{secs:02d}")
     if activity.get("avg_pace_s_km"):
-        lines.append(f"- 均配：{_fmt_pace(activity['avg_pace_s_km'])}")
+        act.append(f"- 均配：{_fmt_pace(activity['avg_pace_s_km'])}")
     if activity.get("avg_hr"):
-        lines.append(f"- 均 HR：{activity['avg_hr']}，max HR：{activity.get('max_hr') or '—'}")
+        act.append(f"- 均 HR：{activity['avg_hr']}，max HR：{activity.get('max_hr') or '—'}")
     if activity.get("training_load") is not None:
-        lines.append(f"- Training Load：{activity['training_load']}")
+        act.append(f"- Training Load：{activity['training_load']}")
     if activity.get("vo2max"):
-        lines.append(f"- VO2max：{activity['vo2max']}")
+        act.append(f"- VO2max：{activity['vo2max']}")
     if activity.get("aerobic_effect") is not None or activity.get("anaerobic_effect") is not None:
-        lines.append(
+        act.append(
             f"- Aerobic Effect：{activity.get('aerobic_effect', '—')} | "
             f"Anaerobic Effect：{activity.get('anaerobic_effect', '—')}"
         )
     if activity.get("temperature") is not None:
-        lines.append(
+        act.append(
             f"- 天气：{activity.get('temperature')}°C，湿度 "
             f"{activity.get('humidity', '—')}%，体感 {activity.get('feels_like', '—')}°C"
         )
     if activity.get("sport_note"):
-        lines.append(f"- 用户训练反馈（sport_note）：{activity['sport_note']}")
+        act.append(f"- 用户训练反馈（sport_note）：{activity['sport_note']}")
     if activity.get("feel_type") is not None:
         feel_map = {1: "很好", 2: "好", 3: "一般", 4: "差", 5: "很差"}
-        lines.append(f"- feel_type：{feel_map.get(activity['feel_type'], activity['feel_type'])}")
+        act.append(f"- feel_type：{feel_map.get(activity['feel_type'], activity['feel_type'])}")
 
-    lines.append("")
-    lines.append("## 心率区间分布")
+    act.append("")
+    act.append("## 心率区间分布")
     if zones:
         for z in zones:
             if z.get("duration_s"):
-                lines.append(
-                    f"- Z{z['zone_index']}：{z['duration_s']}s（{z.get('percent', 0)}%）"
-                )
+                act.append(f"- Z{z['zone_index']}：{z['duration_s']}s（{z.get('percent', 0)}%）")
     else:
-        lines.append("- （无 zones 数据）")
+        act.append("- （无 zones 数据）")
 
     if training_laps:
-        lines.append("")
-        lines.append("## 训练分段（type2 laps，非 autoKm）")
+        act.append("")
+        act.append("## 训练分段（type2 laps，非 autoKm）")
         for l in training_laps:
-            lines.append(
+            act.append(
                 f"- #{l['lap_index']}：{l.get('distance_m', 0):.2f} km，"
                 f"{_fmt_pace(l.get('avg_pace'))}，HR {l.get('avg_hr', '—')}/{l.get('max_hr', '—')}"
             )
 
     if hr_series:
-        lines.append("")
-        lines.append("## HR 曲线（下采样 ~1 点/分钟）")
-        lines.append(json.dumps([h for h in hr_series if h is not None]))
+        act.append("")
+        act.append("## HR 曲线（下采样 ~1 点/分钟）")
+        act.append(json.dumps([h for h in hr_series if h is not None]))
 
-    lines.append("")
-    lines.append("# 背景信息（辅助分析，非主角）")
-    lines.append("")
-
+    # ----- Background block: profile / phase / daily-health / calibration /
+    # body-composition / 4-week volume / weekly-plan excerpt / prior commentary.
+    bg: list[str] = []
     if profile:
-        lines.append("## 运动员档案")
+        bg.append("## 运动员档案")
         for k, v in profile.items():
-            lines.append(f"- {k}: {v}")
-        lines.append("")
+            bg.append(f"- {k}: {v}")
+        bg.append("")
 
     if phase:
-        lines.append("## 当前训练阶段")
-        lines.append(f"- {phase['phase']}（{phase['start']} — {phase['end']}）")
-        lines.append("")
+        bg.append("## 当前训练阶段")
+        bg.append(f"- {phase['phase']}（{phase['start']} — {phase['end']}）")
+        bg.append("")
 
     if health:
-        lines.append("## 活动当日身体状态")
+        bg.append("## 活动当日身体状态")
         parts = []
         if health.get("fatigue") is not None: parts.append(f"疲劳 {health['fatigue']}")
         if health.get("tsb") is not None: parts.append(f"TSB {health['tsb']:+}")
@@ -522,46 +522,71 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
         if health.get("rhr") is not None: parts.append(f"RHR {health['rhr']}")
         if health.get("training_load_state"): parts.append(f"负荷状态 {health['training_load_state']}")
         if health.get("training_load_ratio") is not None: parts.append(f"负荷比 {health['training_load_ratio']}")
-        lines.append("- " + "，".join(parts))
-        lines.append("")
+        bg.append("- " + "，".join(parts))
+        bg.append("")
+
+    if calibration:
+        bg.append("## 个体基线（来自校准，单一可信源）")
+        cparts = []
+        if calibration.get("threshold_hr") is not None:
+            c = f"阈值 HR (LTHR) {calibration['threshold_hr']}"
+            if calibration.get("threshold_hr_confidence"):
+                c += f"（置信度 {calibration['threshold_hr_confidence']}）"
+            cparts.append(c)
+        if calibration.get("max_hr") is not None:
+            cparts.append(f"max HR {calibration['max_hr']}")
+        if cparts:
+            bg.append("- " + "，".join(cparts))
+        bg.append("")
 
     if volume:
-        lines.append("## 最近 4 周跑量（不含本次活动当日之后）")
+        bg.append("## 最近 4 周跑量（不含本次活动当日之后）")
         for v in volume:
-            lines.append(f"- {v['week']}：{v['km']} km，{v['runs']} 次，avg HR {v.get('avg_hr', '—')}")
-        lines.append("")
+            bg.append(f"- {v['week']}：{v['km']} km，{v['runs']} 次，avg HR {v.get('avg_hr', '—')}")
+        bg.append("")
 
     if inbody:
-        lines.append("## 最新体测快照")
-        lines.append(
+        bg.append("## 最新体测快照")
+        bg.append(
             f"- {inbody['scan_date']}：体重 {inbody['weight_kg']} kg，"
             f"BF% {inbody['body_fat_pct']}，SMM {inbody['smm_kg']} kg，"
             f"内脏脂肪等级 {inbody['visceral_fat_level']}"
         )
-        for s in inbody.get("segments", []):
-            lines.append(
-                f"  - {s['segment']}：lean {s['lean_mass_kg']} kg "
-                f"({s.get('lean_pct_of_standard', '—')}%), fat {s['fat_mass_kg']} kg "
-                f"({s.get('fat_pct_of_standard', '—')}%)"
+        for sg in inbody.get("segments", []):
+            bg.append(
+                f"  - {sg['segment']}：lean {sg['lean_mass_kg']} kg "
+                f"({sg.get('lean_pct_of_standard', '—')}%), fat {sg['fat_mass_kg']} kg "
+                f"({sg.get('fat_pct_of_standard', '—')}%)"
             )
-        lines.append("")
+        bg.append("")
 
     if plan:
-        lines.append("## 本周计划（plan.md 原文）")
+        bg.append("## 本周计划（plan.md 原文）")
         # Cap to 4000 chars to be safe on token budget
         if len(plan) > 4000:
             plan = plan[:4000] + "\n...[truncated]..."
-        lines.append(plan)
-        lines.append("")
+        bg.append(plan)
+        bg.append("")
 
     if prior:
-        lines.append("## 近期同类活动 commentary（风格锚点）")
-        for p in prior:
-            lines.append(f"### {p.get('date', '—')} — {p.get('name') or '(无名)'}")
-            lines.append(p.get("commentary") or "")
-            lines.append("")
+        bg.append("## 近期同类活动 commentary（风格锚点）")
+        for pc in prior:
+            bg.append(f"### {pc.get('date', '—')} — {pc.get('name') or '(无名)'}")
+            bg.append(pc.get("commentary") or "")
+            bg.append("")
 
-    user_message = "\n".join(lines)
+    # Plain dict → render_fragment, mirroring master_plan's build_master_prompts
+    # (the S1 reference passes a dict literal; no intermediate model needed — the
+    # blocks are adapter-built strings, not untrusted input).
+    user_message = render_fragment(
+        "commentary/user_prompt.md",
+        {
+            "now_cst": now_cst_str,
+            "days_ago": days_ago_suffix,
+            "activity_block": "\n".join(act),
+            "background_block": "\n".join(bg).rstrip(),
+        },
+    )
 
     return [
         {

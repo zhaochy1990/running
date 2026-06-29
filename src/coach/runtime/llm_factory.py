@@ -12,8 +12,8 @@ Three roles consume those providers:
 
 * ``generator`` (coach agent)
 * ``reviewer`` (critique agent)
-* ``commentary`` (per-activity commentary; **stub for now**, the prod
-  commentary path is unchanged and will be migrated in a separate commit)
+* ``commentary`` (per-activity activity commentary — LIVE; consumed by
+  ``stride_server.commentary_ai.generate_commentary``)
 
 Role → ``ModelSpec`` mapping lives in ``config/coach.toml`` and is loaded by
 ``coach.runtime.config.load_config``. This module knows nothing about TOML;
@@ -145,11 +145,11 @@ def build_commentary_llm(
     api_key: str | None = None,
     config: CoachConfig | None = None,
 ) -> Any:
-    """Forward-looking commentary factory.
+    """Build the commentary-role LLM from ``cfg.commentary``.
 
-    NOTE: nothing in the live route surface currently calls this — the
-    production commentary path uses its own direct AOAI client. This stub
-    exists so the migration commit (US-010 wire-up) has a target to call.
+    Consumed by ``coach_runtime.get_commentary_llm()`` (cached process-wide
+    singleton), which ``commentary_ai.generate_commentary()`` calls from the
+    post-sync hook and the ``/regenerate`` route.
     """
     cfg = config or load_config()
     return build_chat_model(cfg.commentary, credentials=credentials, api_key=api_key)

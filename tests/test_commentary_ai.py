@@ -46,11 +46,121 @@ def test_downsample_timeseries_short_passes_through(commentary_ai):
     assert commentary_ai.downsample_timeseries(points, target=10) == [100, 110, 120]
 
 
-def test_system_prompt_handles_plan_deviation_without_scolding(commentary_ai):
+def test_system_prompt_uses_three_tier_plan_decision(commentary_ai):
+    """The plan-matching rule must spell out the 3-tier classify-then-comment flow."""
     prompt = commentary_ai.SYSTEM_PROMPT
-    assert "先客观衡量本次训练本身" in prompt
-    assert "不要因为偏离计划而苛责用户" in prompt
-    assert "只需要提醒用户本次训练与计划不一致" in prompt
+    # The decision procedure header and all three tiers must be present.
+    assert "计划对照决策流程" in prompt
+    assert "执行了计划" in prompt
+    assert "微调了计划" in prompt  # tier 2: swap days / reorder
+    assert "换序" in prompt
+    assert "完全偏离计划" in prompt  # tier 3: off-plan
+    assert "不再拿计划给本次跑步打分" in prompt  # tier 3 doesn't grade the run vs plan
+
+
+# Each entry: (required substring, what guardrail it pins). Collected into one
+# list so a single run reports EVERY missing guardrail at once instead of
+# short-circuiting on the first (code-review finding on test organization).
+_REQUIRED_GUARDRAILS = [
+    ("部分执行", "shortened/restructured session stays tier 1, not off-plan"),
+    ("不改变", "classification decides what to compare against, not whether to credit"),
+    ("是否认可", "classification does not change whether the work is credited"),
+    ("开头那句判决应先确认本次实际训练的价值", "opening verdict leads by confirming training value"),
+    ("例外（真正的执行失败", "genuine execution failure is an explicit exception"),
+    ("如实直接诊断", "genuine failures get honest direct diagnosis"),
+    ("仍用一句话中性点明这是计划外训练", "off-plan runs still neutrally note the deviation"),
+    ("活动距今 > 3 天时", "parallel gap-note age-gates >3d activities"),
+    ("回顾事实", "old-activity gap-note is retrospective only"),
+    ("落空", "negation vocabulary is listed as banned"),
+    ("后果恐吓", "catastrophizing consequences are banned"),
+    ("往低一档靠", "ambiguous classification leans to the lower-deviation tier"),
+    ("信用价值与陈述缺口并行", "credit-value and state-gap run in parallel"),
+    ("强度溢出", "intensity-overshoot trigger present"),
+    ("缺失了一节核心课", "missing-core-session trigger present"),
+    ("逐字出现", "only verbatim plan numbers may be quoted"),
+    ("绝不自己推算或编造区间", "no fabricated plan ranges"),
+    ("未来 48 小时", "stale activities get no fresh short-term advice"),
+    ("个体基线", "overshoot LT comparison references the calibration baseline block"),
+    ("不要臆造 LT 值", "no LT fabrication when the baseline block is absent"),
+]
+
+
+def test_system_prompt_decouples_classification_from_valuation(commentary_ai):
+    """Classification must not become a scolding lever — the core user intent.
+
+    Pins every guardrail substring in one pass so all regressions surface at once.
+    """
+    prompt = commentary_ai.SYSTEM_PROMPT
+    missing = [f"{sub!r} ({why})" for sub, why in _REQUIRED_GUARDRAILS if sub not in prompt]
+    assert not missing, "SYSTEM_PROMPT missing guardrails:\n  " + "\n  ".join(missing)
+
+
+def test_system_prompt_internal_consistency(commentary_ai):
+    """Guards against the two contradictions code-review flagged.
+
+    These are negative/structural assertions (not just substring presence): the
+    closing-structure rule must be age-conditional so it cannot contradict the
+    >3d no-advice ban, tier 3 must reconcile 'don't grade vs plan' with the
+    parallel gap-note, and the deleted auto-fail framing must stay deleted.
+    """
+    prompt = commentary_ai.SYSTEM_PROMPT
+    # Structure point 3 must NOT unconditionally mandate next-1-2-day advice
+    # (that contradicted the >3d ban). It must gate the ending on activity age.
+    assert "结尾收口（按下面" in prompt
+    assert "≤3 天" in prompt and ">3 天" in prompt
+    # Tier 3 reconciliation: it explicitly allows the parallel neutral gap-note
+    # so "don't grade vs plan" and "state missing core session" don't conflict.
+    assert "不与" in prompt and "不打分" in prompt
+    # The UNCONDITIONAL forward-advice mandate (which contradicted the >3d ban)
+    # must be gone — only the age-gated form may remain.
+    assert "结尾给出下一步建议（这次训练对未来 1-2 天意味着什么）" not in prompt
+
+
+def test_system_prompt_is_loaded_from_commentary_skill(commentary_ai):
+    """The doctrine now lives in coach/skills/commentary/SKILL.md (S4), mirroring
+    S1/S2/S3. SYSTEM_PROMPT is just the rendered skill, static and cacheable."""
+    from coach.skills import render_skill
+
+    assert commentary_ai.SYSTEM_PROMPT == render_skill("commentary", {})
+    # Fully static — no ${...} leaked → byte-identical across calls (cache-warm).
+    assert "${" not in commentary_ai.SYSTEM_PROMPT
+    assert commentary_ai.SYSTEM_PROMPT.strip()
+
+
+def test_commentary_user_template_renders_and_leaks_no_placeholders(commentary_ai):
+    """The per-activity context fills user_prompt.md; section headers come from
+    the template, the variable blocks from the adapter."""
+    from coach.skills import render_fragment
+
+    out = render_fragment(
+        "commentary/user_prompt.md",
+        {
+            "now_cst": "2026-06-29 (Monday) 08:30 CST",
+            "days_ago": "\n- 本次活动发生于**今天**",
+            "activity_block": "ACT_MARKER_42",
+            "background_block": "BG_MARKER_7",
+        },
+    )
+    assert "2026-06-29 (Monday) 08:30 CST" in out
+    assert "- 本次活动发生于**今天**" in out
+    assert "ACT_MARKER_42" in out and "BG_MARKER_7" in out
+    # Top-level section headers live in the template (skeleton).
+    assert "# 本次活动数据（主要分析对象）" in out
+    assert "# 背景信息（辅助分析，非主角）" in out
+    # No unrendered placeholders.
+    assert "${" not in out
+
+
+def test_commentary_user_template_no_double_blank_when_days_ago_absent(commentary_ai):
+    """An unparseable date → empty days_ago suffix must collapse to a SINGLE
+    blank line before the activity section, not a double blank (code-review)."""
+    from coach.skills import render_fragment
+
+    out = render_fragment(
+        "commentary/user_prompt.md",
+        {"now_cst": "T", "days_ago": "", "activity_block": "A", "background_block": "B"},
+    )
+    assert "# 生成时刻：T（今天）\n\n# 本次活动数据" in out
 
 
 def test_downsample_timeseries_reduces_to_target(commentary_ai):
@@ -128,6 +238,12 @@ def test_get_athlete_profile_reads_json(commentary_ai, tmp_path, monkeypatch):
 def test_get_athlete_profile_missing(commentary_ai, tmp_path, monkeypatch):
     monkeypatch.setattr(commentary_ai, "USER_DATA_DIR", tmp_path)
     assert commentary_ai.get_athlete_profile("nobody") is None
+
+
+def test_get_calibration_baseline_none_for_new_user(commentary_ai, db):
+    """No calibration snapshot (or schema) → graceful None, so the prompt falls
+    back to Z5/Z6-only overshoot detection instead of fabricating an LT value."""
+    assert commentary_ai.get_calibration_baseline(db, "2026-04-22") is None
 
 
 class TestGeneratedByDB:
