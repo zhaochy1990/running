@@ -70,8 +70,17 @@ def test_system_prompt_decouples_classification_from_valuation(commentary_ai):
     assert "部分执行" in prompt
     # Classification decides what to compare against, not whether to credit.
     assert "不改变" in prompt and "是否认可" in prompt
-    # Must lead by crediting the actual training value.
-    assert "先肯定本次实际训练的价值" in prompt
+    # The opening verdict must lead by confirming the actual training value.
+    assert "开头那句判决应先确认本次实际训练的价值" in prompt
+    # Genuine execution failures / safety issues are an explicit EXCEPTION —
+    # they get honest direct diagnosis and are NOT muzzled by the banned-vocab
+    # rule (so the CRASH exemplar stays consistent with the guardrails).
+    assert "例外（真正的执行失败" in prompt and "如实直接诊断" in prompt
+    # Off-plan (tier 3) runs must still neutrally note the deviation (schedule
+    # awareness), even when no core session is outstanding.
+    assert "仍用一句话中性点明这是计划外训练" in prompt
+    # The parallel gap-note must respect the >3d time-awareness ban.
+    assert "活动距今 > 3 天时" in prompt and "回顾事实" in prompt
     # Negation / catastrophizing vocabulary is explicitly banned.
     assert "落空" in prompt and "后果恐吓" in prompt
     # Ambiguous → lean to the lower (less-deviation) tier.
