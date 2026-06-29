@@ -134,6 +134,9 @@ class GarminDataSource(BaseDataSource):
 
         client = GarminClient.from_stored(creds)
         with Database(user=user) as db:
+            # Self-heal legacy rows (e.g. pre-fix metre distances) before pulling.
+            from garmin_sync.migrations import run_garmin_migrations
+            run_garmin_migrations(db)
             if mode == "health_only":
                 activities, health = run_health_only_sync(client, db, progress=progress)
                 activity_label_ids: tuple[str, ...] = ()
