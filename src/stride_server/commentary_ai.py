@@ -30,7 +30,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.messages import extract_text
-from coach.schemas import CommentaryPromptContext
 from coach.skills import render_fragment, render_skill
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import pace_str, sport_name
@@ -415,6 +414,9 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
     now_cst_str = now_cst.strftime("%Y-%m-%d (%A) %H:%M CST")
 
     # Days-since-activity line (lets the model pick foresight vs retrospective).
+    # Rendered as a suffix on the timestamp header line — with its own leading
+    # newline when present, "" when absent — so an unparseable date collapses to
+    # a single blank line (no double blank), matching the old inline assembly.
     days_ago_line = ""
     try:
         act_date_str = activity.get("date", "")
@@ -436,6 +438,7 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
             )
     except Exception:
         pass
+    days_ago_suffix = f"\n{days_ago_line}" if days_ago_line else ""
 
     # ----- Activity block: core metrics + HR zones + training laps + HR curve.
     act: list[str] = []
@@ -572,13 +575,18 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
             bg.append(pc.get("commentary") or "")
             bg.append("")
 
-    ctx = CommentaryPromptContext(
-        now_cst=now_cst_str,
-        days_ago_line=days_ago_line,
-        activity_block="\n".join(act),
-        background_block="\n".join(bg).rstrip(),
+    # Plain dict → render_fragment, mirroring master_plan's build_master_prompts
+    # (the S1 reference passes a dict literal; no intermediate model needed — the
+    # blocks are adapter-built strings, not untrusted input).
+    user_message = render_fragment(
+        "commentary/user_prompt.md",
+        {
+            "now_cst": now_cst_str,
+            "days_ago": days_ago_suffix,
+            "activity_block": "\n".join(act),
+            "background_block": "\n".join(bg).rstrip(),
+        },
     )
-    user_message = render_fragment("commentary/user_prompt.md", ctx.model_dump())
 
     return [
         {

@@ -136,18 +136,31 @@ def test_commentary_user_template_renders_and_leaks_no_placeholders(commentary_a
         "commentary/user_prompt.md",
         {
             "now_cst": "2026-06-29 (Monday) 08:30 CST",
-            "days_ago_line": "- 本次活动发生于**今天**",
+            "days_ago": "\n- 本次活动发生于**今天**",
             "activity_block": "ACT_MARKER_42",
             "background_block": "BG_MARKER_7",
         },
     )
     assert "2026-06-29 (Monday) 08:30 CST" in out
+    assert "- 本次活动发生于**今天**" in out
     assert "ACT_MARKER_42" in out and "BG_MARKER_7" in out
     # Top-level section headers live in the template (skeleton).
     assert "# 本次活动数据（主要分析对象）" in out
     assert "# 背景信息（辅助分析，非主角）" in out
     # No unrendered placeholders.
     assert "${" not in out
+
+
+def test_commentary_user_template_no_double_blank_when_days_ago_absent(commentary_ai):
+    """An unparseable date → empty days_ago suffix must collapse to a SINGLE
+    blank line before the activity section, not a double blank (code-review)."""
+    from coach.skills import render_fragment
+
+    out = render_fragment(
+        "commentary/user_prompt.md",
+        {"now_cst": "T", "days_ago": "", "activity_block": "A", "background_block": "B"},
+    )
+    assert "# 生成时刻：T（今天）\n\n# 本次活动数据" in out
 
 
 def test_downsample_timeseries_reduces_to_target(commentary_ai):

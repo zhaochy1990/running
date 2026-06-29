@@ -1,5 +1,4 @@
-# 生成时刻：${now_cst}（今天）
-${days_ago_line}
+# 生成时刻：${now_cst}（今天）${days_ago}
 
 # 本次活动数据（主要分析对象）
 
