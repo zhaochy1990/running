@@ -116,6 +116,40 @@ def test_system_prompt_internal_consistency(commentary_ai):
     assert "结尾给出下一步建议（这次训练对未来 1-2 天意味着什么）" not in prompt
 
 
+def test_system_prompt_is_loaded_from_commentary_skill(commentary_ai):
+    """The doctrine now lives in coach/skills/commentary/SKILL.md (S4), mirroring
+    S1/S2/S3. SYSTEM_PROMPT is just the rendered skill, static and cacheable."""
+    from coach.skills import render_skill
+
+    assert commentary_ai.SYSTEM_PROMPT == render_skill("commentary", {})
+    # Fully static — no ${...} leaked → byte-identical across calls (cache-warm).
+    assert "${" not in commentary_ai.SYSTEM_PROMPT
+    assert commentary_ai.SYSTEM_PROMPT.strip()
+
+
+def test_commentary_user_template_renders_and_leaks_no_placeholders(commentary_ai):
+    """The per-activity context fills user_prompt.md; section headers come from
+    the template, the variable blocks from the adapter."""
+    from coach.skills import render_fragment
+
+    out = render_fragment(
+        "commentary/user_prompt.md",
+        {
+            "now_cst": "2026-06-29 (Monday) 08:30 CST",
+            "days_ago_line": "- 本次活动发生于**今天**",
+            "activity_block": "ACT_MARKER_42",
+            "background_block": "BG_MARKER_7",
+        },
+    )
+    assert "2026-06-29 (Monday) 08:30 CST" in out
+    assert "ACT_MARKER_42" in out and "BG_MARKER_7" in out
+    # Top-level section headers live in the template (skeleton).
+    assert "# 本次活动数据（主要分析对象）" in out
+    assert "# 背景信息（辅助分析，非主角）" in out
+    # No unrendered placeholders.
+    assert "${" not in out
+
+
 def test_downsample_timeseries_reduces_to_target(commentary_ai):
     points = [{"heart_rate": i} for i in range(200)]
     out = commentary_ai.downsample_timeseries(points, target=20)

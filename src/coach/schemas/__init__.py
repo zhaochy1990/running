@@ -18,6 +18,7 @@ from .conversation import (
     ToolCall,
     assistant_parts_from_message,
 )
+from .commentary import CommentaryPromptContext
 from .continuity import ContinuitySignals
 from .current_phase import CurrentPhaseContext
 from .job import CoachJob, JobStage, JobStatus, JobType
@@ -36,6 +37,7 @@ __all__ = [
     "TextPhase",
     "ToolCall",
     "assistant_parts_from_message",
+    "CommentaryPromptContext",
     "ContinuitySignals",
     "CurrentPhaseContext",
     "CoachJob",
