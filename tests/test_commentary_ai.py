@@ -58,41 +58,41 @@ def test_system_prompt_uses_three_tier_plan_decision(commentary_ai):
     assert "不再拿计划给本次跑步打分" in prompt  # tier 3 doesn't grade the run vs plan
 
 
+# Each entry: (required substring, what guardrail it pins). Collected into one
+# list so a single run reports EVERY missing guardrail at once instead of
+# short-circuiting on the first (code-review finding on test organization).
+_REQUIRED_GUARDRAILS = [
+    ("部分执行", "shortened/restructured session stays tier 1, not off-plan"),
+    ("不改变", "classification decides what to compare against, not whether to credit"),
+    ("是否认可", "classification does not change whether the work is credited"),
+    ("开头那句判决应先确认本次实际训练的价值", "opening verdict leads by confirming training value"),
+    ("例外（真正的执行失败", "genuine execution failure is an explicit exception"),
+    ("如实直接诊断", "genuine failures get honest direct diagnosis"),
+    ("仍用一句话中性点明这是计划外训练", "off-plan runs still neutrally note the deviation"),
+    ("活动距今 > 3 天时", "parallel gap-note age-gates >3d activities"),
+    ("回顾事实", "old-activity gap-note is retrospective only"),
+    ("落空", "negation vocabulary is listed as banned"),
+    ("后果恐吓", "catastrophizing consequences are banned"),
+    ("往低一档靠", "ambiguous classification leans to the lower-deviation tier"),
+    ("信用价值与陈述缺口并行", "credit-value and state-gap run in parallel"),
+    ("强度溢出", "intensity-overshoot trigger present"),
+    ("缺失了一节核心课", "missing-core-session trigger present"),
+    ("逐字出现", "only verbatim plan numbers may be quoted"),
+    ("绝不自己推算或编造区间", "no fabricated plan ranges"),
+    ("未来 48 小时", "stale activities get no fresh short-term advice"),
+    ("个体基线", "overshoot LT comparison references the calibration baseline block"),
+    ("不要臆造 LT 值", "no LT fabrication when the baseline block is absent"),
+]
+
+
 def test_system_prompt_decouples_classification_from_valuation(commentary_ai):
     """Classification must not become a scolding lever — the core user intent.
 
-    A shortened/restructured session is 'partial execution' (tier 1), not off-plan;
-    every tier must open by crediting the real training value; catastrophizing and
-    fabricated plan numbers are banned.
+    Pins every guardrail substring in one pass so all regressions surface at once.
     """
     prompt = commentary_ai.SYSTEM_PROMPT
-    # Partial execution stays tier 1, not "off-plan".
-    assert "部分执行" in prompt
-    # Classification decides what to compare against, not whether to credit.
-    assert "不改变" in prompt and "是否认可" in prompt
-    # The opening verdict must lead by confirming the actual training value.
-    assert "开头那句判决应先确认本次实际训练的价值" in prompt
-    # Genuine execution failures / safety issues are an explicit EXCEPTION —
-    # they get honest direct diagnosis and are NOT muzzled by the banned-vocab
-    # rule (so the CRASH exemplar stays consistent with the guardrails).
-    assert "例外（真正的执行失败" in prompt and "如实直接诊断" in prompt
-    # Off-plan (tier 3) runs must still neutrally note the deviation (schedule
-    # awareness), even when no core session is outstanding.
-    assert "仍用一句话中性点明这是计划外训练" in prompt
-    # The parallel gap-note must respect the >3d time-awareness ban.
-    assert "活动距今 > 3 天时" in prompt and "回顾事实" in prompt
-    # Negation / catastrophizing vocabulary is explicitly banned.
-    assert "落空" in prompt and "后果恐吓" in prompt
-    # Ambiguous → lean to the lower (less-deviation) tier.
-    assert "往低一档靠" in prompt
-    # Crediting value and stating the gap/overshoot are PARALLEL, not either/or
-    # (guards against over-correcting into pure praise on off-plan hard efforts).
-    assert "信用价值与陈述缺口并行" in prompt
-    assert "强度溢出" in prompt and "缺失了一节核心课" in prompt
-    # Only quote plan numbers that literally appear in the plan block.
-    assert "逐字出现" in prompt and "绝不自己推算或编造区间" in prompt
-    # Stale activities (>3d) must not get fresh short-term advice.
-    assert "未来 48 小时" in prompt
+    missing = [f"{sub!r} ({why})" for sub, why in _REQUIRED_GUARDRAILS if sub not in prompt]
+    assert not missing, "SYSTEM_PROMPT missing guardrails:\n  " + "\n  ".join(missing)
 
 
 def test_system_prompt_internal_consistency(commentary_ai):
@@ -191,6 +191,12 @@ def test_get_athlete_profile_reads_json(commentary_ai, tmp_path, monkeypatch):
 def test_get_athlete_profile_missing(commentary_ai, tmp_path, monkeypatch):
     monkeypatch.setattr(commentary_ai, "USER_DATA_DIR", tmp_path)
     assert commentary_ai.get_athlete_profile("nobody") is None
+
+
+def test_get_calibration_baseline_none_for_new_user(commentary_ai, db):
+    """No calibration snapshot (or schema) → graceful None, so the prompt falls
+    back to Z5/Z6-only overshoot detection instead of fabricating an LT value."""
+    assert commentary_ai.get_calibration_baseline(db, "2026-04-22") is None
 
 
 class TestGeneratedByDB:
