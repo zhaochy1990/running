@@ -22,6 +22,7 @@ Only *accepted-or-pending* ops are checked — an explicitly rejected op can't l
 
 from __future__ import annotations
 
+import math
 from datetime import date as _date
 
 from stride_core.master_plan import MasterPlan, MilestoneType
@@ -78,6 +79,12 @@ def _weekly_bounds_violation(patch: dict) -> str | None:
         hi_f = float(hi) if has_hi else None
     except (TypeError, ValueError):
         return f"周跑量区间不是合法数值：low={lo} high={hi}"
+    # nan/inf are numeric to float(), pass an ordering check (nan>x is always
+    # False), and serialize to JSON null — persisting that bricks the plan on the
+    # next model_validate read. Require finite, non-negative weekly distances.
+    for label, f in (("low", lo_f), ("high", hi_f)):
+        if f is not None and (not math.isfinite(f) or f < 0):
+            return f"周跑量区间数值非法（{label}={f}），必须是有限非负数"
     if lo_f is not None and hi_f is not None and lo_f > hi_f:
         return f"周跑量区间下限 {lo} 高于上限 {hi}"
     return None

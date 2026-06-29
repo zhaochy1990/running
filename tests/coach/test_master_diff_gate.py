@@ -378,6 +378,54 @@ def test_replace_phase_focus_unknown_phase_is_rejected() -> None:
     assert "不存在" in violations[0]
 
 
+def test_weekly_range_nan_is_rejected() -> None:
+    """nan is numeric to float() and defeats ordering checks; serializes to null
+    and bricks the plan on read. Must be rejected."""
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={"weekly_distance_km_low": "nan", "weekly_distance_km_high": "nan"},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "有限非负" in violations[0]
+
+
+def test_weekly_range_inf_is_rejected() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={"weekly_distance_km_low": "inf"},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "有限非负" in violations[0]
+
+
+def test_add_phase_inf_weekly_is_rejected() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.ADD_PHASE,
+        spec_patch={
+            "id": "p2", "name": "X", "start_date": "2026-08-01", "end_date": "2026-09-01",
+            "weekly_distance_km_low": "1e500",  # → inf
+        },
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "有限非负" in violations[0]
+
+
+def test_weekly_range_negative_is_rejected() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={"weekly_distance_km_low": -5.0, "weekly_distance_km_high": 40.0},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "有限非负" in violations[0]
+
+
 def test_multiple_violations_all_reported() -> None:
     bad_resize = _op(
         MasterPlanDiffOpKind.RESIZE_PHASE,
