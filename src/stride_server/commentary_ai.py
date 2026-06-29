@@ -23,7 +23,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -345,21 +345,24 @@ def get_calibration_baseline(db: Database, as_of_ymd: str | None) -> dict[str, A
             SQLiteRunningCalibrationRepository,
         )
 
-        as_of = None
-        if as_of_ymd and len(as_of_ymd) >= 10:
-            as_of = datetime.fromisoformat(as_of_ymd[:10]).date()
+        as_of = date.fromisoformat(as_of_ymd[:10]) if as_of_ymd and len(as_of_ymd) >= 10 else None
         snap = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of_date=as_of)
-    except Exception:  # noqa: BLE001 — new user / missing schema is non-fatal
+    except Exception as e:  # noqa: BLE001
+        # A new user / empty table returns None *without* raising; reaching here
+        # means a real fault (schema drift, fetch bug). Log it like the sibling
+        # calibration consumers instead of silently dropping the baseline block.
+        logger.warning("commentary calibration fetch failed: %s", e, exc_info=True)
         return None
     if snap is None:
         return None
     out: dict[str, Any] = {}
     if snap.threshold_hr is not None:
         out["threshold_hr"] = round(snap.threshold_hr)
-        conf = getattr(snap.threshold_hr_confidence, "value", None) or getattr(
-            snap.threshold_hr_confidence, "name", None
-        )
-        out["threshold_hr_confidence"] = conf
+        # CalibrationConfidence is a str-Enum; .value is the canonical label.
+        # Suppress the noisy/uninformative "none" level.
+        conf = getattr(snap.threshold_hr_confidence, "value", None)
+        if conf and conf != "none":
+            out["threshold_hr_confidence"] = conf
     max_hr = snap.observed_max_hr or snap.hrmax_estimate
     if max_hr is not None:
         out["max_hr"] = round(max_hr)
@@ -440,8 +443,13 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
     if health and health.get("ati") is not None and health.get("cti") is not None:
         health["tsb"] = round(health["cti"] - health["ati"], 1)
 
-    # 7b. athlete HR baselines (LTHR / max HR) — canonical calibration reader
-    calibration = get_calibration_baseline(db, activity_ymd)
+    # 7b. athlete HR baselines (LTHR / max HR) — canonical calibration reader.
+    # Scope as-of the Shanghai-local activity day (timezone-discipline HARD rule):
+    # a raw-UTC slice would mis-pick the prior day's snapshot for 00:00-07:59 CST.
+    from stride_core.timefmt import utc_iso_to_shanghai_iso
+
+    activity_ymd_shanghai = (utc_iso_to_shanghai_iso(activity.get("date")) or activity_ymd or "")[:10]
+    calibration = get_calibration_baseline(db, activity_ymd_shanghai or None)
 
     # 8. latest inbody
     inbody = get_latest_inbody(db)
