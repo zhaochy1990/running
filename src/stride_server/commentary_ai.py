@@ -32,6 +32,7 @@ from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.messages import extract_text
 from stride_core.db import USER_DATA_DIR, Database
 from stride_core.models import pace_str, sport_name
+from stride_core.timefmt import utc_iso_to_shanghai_iso
 
 from .content_store import list_week_folders as content_week_folders
 from .content_store import read_json as read_content_json
@@ -428,12 +429,12 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
     ts_points = [dict(t) for t in ts_rows]
     hr_series = downsample_timeseries(ts_points, target=90) if ts_points else None
 
-    # 7. daily_health on activity date
-    activity_ymd = activity["date"][:10] if activity["date"] and "T" in activity["date"] else activity["date"]
-    try:
-        activity_ymd_compact = activity_ymd.replace("-", "")
-    except Exception:
-        activity_ymd_compact = activity_ymd
+    # 7. daily_health on activity date. daily_health.date is Shanghai-local
+    # YYYYMMDD, so key off the Shanghai-local activity day (timezone-discipline
+    # HARD rule) — a raw-UTC slice mis-picks the prior day for 00:00-07:59 CST.
+    # This same Shanghai day also scopes the calibration as-of below.
+    activity_ymd = (utc_iso_to_shanghai_iso(activity.get("date")) or (activity.get("date") or ""))[:10]
+    activity_ymd_compact = activity_ymd.replace("-", "")
     health_rows = db.query(
         "SELECT date, fatigue, ati, cti, rhr, training_load_ratio, training_load_state "
         "FROM daily_health WHERE date <= ? ORDER BY date DESC LIMIT 1",
@@ -443,13 +444,9 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
     if health and health.get("ati") is not None and health.get("cti") is not None:
         health["tsb"] = round(health["cti"] - health["ati"], 1)
 
-    # 7b. athlete HR baselines (LTHR / max HR) — canonical calibration reader.
-    # Scope as-of the Shanghai-local activity day (timezone-discipline HARD rule):
-    # a raw-UTC slice would mis-pick the prior day's snapshot for 00:00-07:59 CST.
-    from stride_core.timefmt import utc_iso_to_shanghai_iso
-
-    activity_ymd_shanghai = (utc_iso_to_shanghai_iso(activity.get("date")) or activity_ymd or "")[:10]
-    calibration = get_calibration_baseline(db, activity_ymd_shanghai or None)
+    # 7b. athlete HR baselines (LTHR / max HR) — canonical calibration reader,
+    # scoped to the same Shanghai-local activity day.
+    calibration = get_calibration_baseline(db, activity_ymd or None)
 
     # 8. latest inbody
     inbody = get_latest_inbody(db)
