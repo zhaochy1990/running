@@ -754,18 +754,73 @@ def _ensure_training_load_current(db, as_of=None) -> None:
     """
     from datetime import date as _date, timedelta as _timedelta
 
-    from stride_core.timefmt import today_shanghai
+    from stride_core.timefmt import today_shanghai, utc_iso_to_shanghai_iso
     from stride_core.training_load import (
         backfill_training_load,
         recompute_training_load,
     )
 
     as_of = as_of or today_shanghai()
+    # Chronic load is a 42-day EWMA; it needs ~3x its time-constant of warmup
+    # before it converges. A table seeded by post-sync (only the recent synced
+    # window) can REACH as_of yet still be only a few weeks deep — its chronic
+    # EWMA is cold-started from zero and reads far below steady state (e.g.
+    # CTL 21 for an athlete actually training ~65 km/wk). That understated CTL
+    # then mis-frames the athlete as detrained/overreached in the plan prompt
+    # and breaks the dose≈CTL×7 heuristic. So before trusting a "current" table,
+    # check its depth and force a full backfill when it is too shallow.
+    _CHRONIC_WARMUP_DAYS = 126  # 3 x the 42-day chronic EWMA time-constant
     try:
         row = db._conn.execute(
             "SELECT MAX(date) FROM daily_training_load"
         ).fetchone()
         last = row[0] if row and row[0] else None
+
+        # Shallow-table guard: if the earliest persisted row is younger than the
+        # chronic warmup window AND older activity history exists to warm up on,
+        # the chronic EWMA has not converged — refit the full 365-day window.
+        # (When no older activities exist the athlete genuinely has a short
+        # history; a backfill can't deepen it, so fall through and avoid an
+        # expensive no-op refit on every generation.)
+        if last:
+            earliest_row = db._conn.execute(
+                "SELECT MIN(date) FROM daily_training_load"
+            ).fetchone()
+            earliest = earliest_row[0] if earliest_row and earliest_row[0] else None
+            if earliest is not None:
+                # Measure the actual persisted span (earliest..last), not
+                # earliest..as_of — a shallow *and* stale table would otherwise
+                # over-report its depth. daily_training_load.date is Shanghai-local.
+                coverage_days = (
+                    _date.fromisoformat(last[:10]) - _date.fromisoformat(earliest[:10])
+                ).days
+                if coverage_days < _CHRONIC_WARMUP_DAYS:
+                    act_row = db._conn.execute(
+                        "SELECT MIN(date) FROM activities"
+                    ).fetchone()
+                    # activities.date is stored UTC ISO; daily_training_load.date
+                    # is Shanghai-local. Convert before comparing so the
+                    # "older history exists" test is timezone-consistent
+                    # (CLAUDE.md timezone discipline) — a raw UTC slice could be
+                    # one calendar day off and spuriously fire the backfill.
+                    act_min = (
+                        utc_iso_to_shanghai_iso(act_row[0])[:10]
+                        if act_row and act_row[0] else None
+                    )
+                    if act_min is not None and act_min < earliest[:10]:
+                        logger.info(
+                            "_ensure_training_load_current: daily_training_load only "
+                            "%d days deep (< %d warmup); older activities exist from %s "
+                            "— forcing full 365-day backfill so chronic load converges",
+                            coverage_days, _CHRONIC_WARMUP_DAYS, act_min,
+                        )
+                        backfill_training_load(
+                            db, as_of_date=as_of,
+                            load_lookback_days=365,
+                            calibration_lookback_days=365, persist=True,
+                        )
+                        return
+
         if last and last >= as_of.isoformat():
             return  # already current — the post-sync handler computed it
 
