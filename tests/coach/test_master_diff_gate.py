@@ -415,6 +415,19 @@ def test_add_phase_inf_weekly_is_rejected() -> None:
     assert "有限非负" in violations[0]
 
 
+def test_weekly_range_oversized_int_is_rejected_not_crash() -> None:
+    """An int too large for float() raises OverflowError; the gate must return a
+    violation, not propagate (which would 500 at the unwrapped endpoint call)."""
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={"weekly_distance_km_low": 10**400},  # int too large to convert to float
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "不是合法数值" in violations[0]
+
+
 def test_weekly_range_negative_is_rejected() -> None:
     op = _op(
         MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,

@@ -77,7 +77,7 @@ def _weekly_bounds_violation(patch: dict) -> str | None:
     try:
         lo_f = float(lo) if has_lo else None
         hi_f = float(hi) if has_hi else None
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: int too large for float
         return f"周跑量区间不是合法数值：low={lo} high={hi}"
     # nan/inf are numeric to float(), pass an ordering check (nan>x is always
     # False), and serialize to JSON null — persisting that bricks the plan on the

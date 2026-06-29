@@ -433,7 +433,17 @@ def apply_coach_master_diff(
 
     # Re-run the validation gate: the client supplies the diff body, so don't
     # trust it blindly — refuse a structurally broken diff (defense in depth).
-    violations = validate_master_diff(plan, diff)
+    # The gate is wrapped too: it coerces untyped spec_patch values (float() etc.),
+    # so a pathological value that makes the gate itself raise becomes a 400, not
+    # a 500.
+    try:
+        violations = validate_master_diff(plan, diff)
+    except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
+        logger.warning("coach master apply: gate raised on malformed diff: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="赛季调整数据非法，无法应用",
+        )
     if violations:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -446,7 +456,7 @@ def apply_coach_master_diff(
     bridge = _MasterStoreBridge(store, user_id)
     try:
         updated_plan = apply_master_plan_diff(bridge, plan_id, diff, accepted_op_ids, body.change_reason)
-    except (ValidationError, ValueError, TypeError, KeyError) as exc:
+    except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
         # The gate validates diff semantics, but spec_patch contents are untyped
         # JSON from the client — a pathological value (wrong type, bad enum,
         # missing construction key) would otherwise raise inside apply and 500.
