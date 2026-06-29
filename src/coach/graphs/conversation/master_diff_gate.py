@@ -33,6 +33,13 @@ from stride_core.master_plan_diff import (
 
 _Kind = MasterPlanDiffOpKind
 
+# Keys ``_apply_op`` indexes with ``[]`` (not ``.get``) when building the new
+# object — absent here means a KeyError inside apply, which the stateless apply
+# endpoint surfaces as a 500. The gate is the contract apply relies on, so it
+# must require them up front.
+_REQUIRED_ADD_PHASE_KEYS = ("id", "name", "start_date", "end_date")
+_REQUIRED_ADD_MILESTONE_KEYS = ("id", "type", "date", "phase_id")
+
 
 def _parse(value: object) -> _date | None:
     """ISO ``YYYY-MM-DD`` → ``date``; anything malformed → ``None``."""
@@ -53,7 +60,9 @@ def _within(day: _date, lo: _date | None, hi: _date | None) -> bool:
     return True
 
 
-def _check_phase_resize(op: MasterPlanDiffOp, phases: dict) -> str | None:
+def _check_phase_resize(
+    op: MasterPlanDiffOp, phases: dict, plan_lo: _date | None, plan_hi: _date | None
+) -> str | None:
     phase = phases.get(op.phase_id)
     if phase is None:
         return f"调整的阶段（id={op.phase_id}）不在当前赛季计划里"
@@ -67,15 +76,24 @@ def _check_phase_resize(op: MasterPlanDiffOp, phases: dict) -> str | None:
             f"阶段「{phase.name}」调整后起始 {start.isoformat()} 不早于结束 "
             f"{end.isoformat()}，阶段长度为零或为负"
         )
+    if not _within(start, plan_lo, plan_hi) or not _within(end, plan_lo, plan_hi):
+        return f"阶段「{phase.name}」调整后的日期超出赛季范围"
     return None
 
 
-def _check_phase_add(op: MasterPlanDiffOp, plan_lo: _date | None, plan_hi: _date | None) -> str | None:
+def _check_phase_add(
+    op: MasterPlanDiffOp, phases: dict, plan_lo: _date | None, plan_hi: _date | None
+) -> str | None:
     patch = op.spec_patch or {}
+    missing = [k for k in _REQUIRED_ADD_PHASE_KEYS if not patch.get(k)]
+    if missing:
+        return f"新增阶段缺少必填字段：{', '.join(missing)}"
+    if patch.get("id") in phases:
+        return f"新增阶段的 id={patch.get('id')} 与现有阶段冲突"
     start = _parse(patch.get("start_date"))
     end = _parse(patch.get("end_date"))
     if start is None or end is None:
-        return "新增阶段的起止日期缺失或不是合法 ISO 日期"
+        return "新增阶段的起止日期不是合法 ISO 日期"
     if start >= end:
         return f"新增阶段起始 {start.isoformat()} 不早于结束 {end.isoformat()}"
     if not _within(start, plan_lo, plan_hi) or not _within(end, plan_lo, plan_hi):
@@ -88,8 +106,12 @@ def _check_weekly_range(op: MasterPlanDiffOp, phases: dict) -> str | None:
         return f"操作引用的阶段（id={op.phase_id}）不存在"
     patch = op.spec_patch or {}
     lo, hi = patch.get("weekly_distance_km_low"), patch.get("weekly_distance_km_high")
-    if lo is not None and hi is not None and float(lo) > float(hi):
-        return f"周跑量区间下限 {lo} 高于上限 {hi}"
+    if lo is not None and hi is not None:
+        try:
+            if float(lo) > float(hi):
+                return f"周跑量区间下限 {lo} 高于上限 {hi}"
+        except (TypeError, ValueError):
+            return f"周跑量区间不是合法数值：low={lo} high={hi}"
     return None
 
 
@@ -109,12 +131,20 @@ def _check_milestone_date(
 
 
 def _check_milestone_add(
-    op: MasterPlanDiffOp, plan_lo: _date | None, plan_hi: _date | None
+    op: MasterPlanDiffOp, phases: dict, milestones: dict, plan_lo: _date | None, plan_hi: _date | None
 ) -> str | None:
     patch = op.spec_patch or {}
+    missing = [k for k in _REQUIRED_ADD_MILESTONE_KEYS if not patch.get(k)]
+    if missing:
+        return f"新增里程碑缺少必填字段：{', '.join(missing)}"
+    if patch.get("id") in milestones:
+        return f"新增里程碑的 id={patch.get('id')} 与现有里程碑冲突"
+    pid = patch.get("phase_id")
+    if pid not in phases:
+        return f"新增里程碑引用的阶段（id={pid}）不存在"
     new_date = _parse(patch.get("date"))
     if new_date is None:
-        return "新增里程碑的日期缺失或不是合法 ISO 日期"
+        return "新增里程碑的日期不是合法 ISO 日期"
     if not _within(new_date, plan_lo, plan_hi):
         return f"新增里程碑的日期 {new_date.isoformat()} 超出赛季范围"
     return None
@@ -155,15 +185,15 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
             continue  # an explicitly rejected op can't land
 
         if op.op == _Kind.RESIZE_PHASE:
-            v = _check_phase_resize(op, phases)
+            v = _check_phase_resize(op, phases, plan_lo, plan_hi)
         elif op.op == _Kind.ADD_PHASE:
-            v = _check_phase_add(op, plan_lo, plan_hi)
+            v = _check_phase_add(op, phases, plan_lo, plan_hi)
         elif op.op == _Kind.REPLACE_WEEKLY_RANGE:
             v = _check_weekly_range(op, phases)
         elif op.op == _Kind.REPLACE_MILESTONE_DATE:
             v = _check_milestone_date(op, milestones, plan_lo, plan_hi)
         elif op.op == _Kind.ADD_MILESTONE:
-            v = _check_milestone_add(op, plan_lo, plan_hi)
+            v = _check_milestone_add(op, phases, milestones, plan_lo, plan_hi)
         else:
             v = _check_ref(op, phases, milestones)
 

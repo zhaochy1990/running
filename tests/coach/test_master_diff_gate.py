@@ -218,6 +218,81 @@ def test_malformed_iso_date_is_rejected() -> None:
     assert "合法 ISO" in violations[0]
 
 
+def test_add_phase_missing_required_keys_is_rejected() -> None:
+    """ADD_PHASE without id/name → would KeyError in apply; gate must reject."""
+    op = _op(
+        MasterPlanDiffOpKind.ADD_PHASE,
+        spec_patch={"start_date": "2026-07-01", "end_date": "2026-08-01"},  # no id/name
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "缺少必填字段" in violations[0]
+
+
+def test_add_milestone_missing_required_keys_is_rejected() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.ADD_MILESTONE,
+        spec_patch={"date": "2026-08-01"},  # no id/type/phase_id
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "缺少必填字段" in violations[0]
+
+
+def test_add_milestone_orphan_phase_id_is_rejected() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.ADD_MILESTONE,
+        spec_patch={"id": "m9", "type": "race", "date": "2026-08-01", "phase_id": "ghost"},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "不存在" in violations[0]
+
+
+def test_add_phase_id_collision_is_rejected() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.ADD_PHASE,
+        spec_patch={"id": "phase-1", "name": "X", "start_date": "2026-08-01", "end_date": "2026-09-01"},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "冲突" in violations[0]
+
+
+def test_add_milestone_id_collision_is_rejected() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.ADD_MILESTONE,
+        spec_patch={"id": "ms-1", "type": "race", "date": "2026-08-01", "phase_id": "phase-1"},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "冲突" in violations[0]
+
+
+def test_resize_phase_past_season_end_is_rejected() -> None:
+    """RESIZE must stay within the season window (parity with ADD_PHASE)."""
+    op = _op(
+        MasterPlanDiffOpKind.RESIZE_PHASE,
+        phase_id="phase-1",
+        spec_patch={"end_date": "2026-12-01"},  # past plan end 2026-11-15
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "超出赛季范围" in violations[0]
+
+
+def test_weekly_range_non_numeric_is_rejected_not_crash() -> None:
+    """Non-numeric weekly range must be a violation, never an unhandled crash."""
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={"weekly_distance_km_low": "abc", "weekly_distance_km_high": 80.0},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "合法数值" in violations[0]
+
+
 def test_multiple_violations_all_reported() -> None:
     bad_resize = _op(
         MasterPlanDiffOpKind.RESIZE_PHASE,
