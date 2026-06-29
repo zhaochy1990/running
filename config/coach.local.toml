@@ -96,19 +96,21 @@ max_tokens   = 4096
 timeout_s    = 180
 
 [commentary]
-# Activity Commentary Agent — forward-looking stub (production commentary
-# path still uses its own direct AOAI client). Pointed at the same dev
-# deployment so a future migration test can exercise it without touching
-# prod config.
+# Activity Commentary Agent — LIVE binding consumed by
+# commentary_ai.generate_commentary() via get_commentary_llm() /
+# load_config().commentary (model/api_kind/temperature flow through
+# llm_factory). Aligned to prod (gpt-4.1 / chat-completions / temp 0.6) so
+# local 教练简评 generation matches the prod draft-writer; only the endpoint
+# differs (dev AOAI resource). Edits here DO change local runtime behavior.
 provider     = "azure-openai"
-model        = "gpt-5.5"
-deployment   = "gpt-5.5"
-endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
-api_version  = "2025-04-01-preview"
-api_kind     = "responses"
-# temperature omitted — gpt-5.5 reasoning model rejects it (see [generator]).
 max_tokens   = 2048
 timeout_s    = 90
+model        = "gpt-4.1"
+deployment   = "gpt-4.1"
+endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
+api_version  = "2025-04-01-preview"
+api_kind     = "chat-completions"
+temperature  = 0.6
 
 [orchestrator]
 # Orchestrator brain (Resolver / Supervisor / Aggregator / Memory Writer) —

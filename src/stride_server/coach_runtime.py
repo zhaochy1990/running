@@ -8,11 +8,11 @@ Three role-based LLMs are exposed (``get_generator_llm`` / ``get_reviewer_llm``
 The checkpointer is also a process-wide singleton so multi-turn coach
 threads can pick up where they left off across requests.
 
-NOTE on the commentary singleton: nothing in the live route surface
-currently calls ``get_commentary_llm()``. The production commentary
-generation path uses its own direct AOAI client and will be migrated in a
-separate commit. The singleton + test-injection point are here only so the
-migration commit has a target.
+NOTE on the commentary singleton: ``get_commentary_llm()`` is the LIVE
+commentary LLM binding — ``commentary_ai.generate_commentary()`` calls it,
+reached from the post-sync hook (``stride_core.post_sync``) and the
+``/regenerate`` route (``routes/activities.py``). Its ``ModelSpec`` is the
+``[commentary]`` block of ``config/coach.toml``.
 """
 
 from __future__ import annotations
@@ -302,9 +302,9 @@ def set_reviewer_llm_for_tests(llm: Any) -> None:
 def get_commentary_llm() -> Any:
     """Return a process-wide singleton commentary LLM.
 
-    Forward-looking — no live route calls this yet. The current production
-    commentary generation path remains on its own AOAI client until the
-    migration commit (US-010 wire-up) lands.
+    LIVE binding: ``commentary_ai.generate_commentary()`` calls this, reached
+    from the post-sync hook and the ``/regenerate`` route. Built from the
+    ``[commentary]`` ``ModelSpec`` in ``config/coach.toml``.
     """
     global _COMMENTARY_LLM
     if _COMMENTARY_LLM is None:
