@@ -169,14 +169,32 @@ def _check_milestone_add(
     return None
 
 
+def _check_phase_focus(op: MasterPlanDiffOp, phases: dict) -> str | None:
+    if op.phase_id not in phases:
+        return f"操作引用的阶段（id={op.phase_id}）不存在"
+    patch = op.spec_patch or {}
+    # focus is written via model_copy (no re-validation) — a non-str value would
+    # neither raise nor be caught, persisting a plan that bricks on next read.
+    if "focus" in patch and not isinstance(patch["focus"], str):
+        return "阶段 focus 必须是文本"
+    return None
+
+
+def _check_milestone_target(op: MasterPlanDiffOp, milestones: dict) -> str | None:
+    if op.milestone_id not in milestones:
+        return f"操作引用的里程碑（id={op.milestone_id}）不存在"
+    patch = op.spec_patch or {}
+    if "target" in patch and not isinstance(patch["target"], str):
+        return "里程碑 target 必须是文本"
+    return None
+
+
 def _check_ref(op: MasterPlanDiffOp, phases: dict, milestones: dict) -> str | None:
-    """Reference integrity — a REMOVE/REPLACE must target an existing object."""
-    if op.op in (_Kind.REMOVE_PHASE, _Kind.REPLACE_PHASE_FOCUS):
-        if op.phase_id not in phases:
-            return f"操作引用的阶段（id={op.phase_id}）不存在"
-    if op.op in (_Kind.REMOVE_MILESTONE, _Kind.REPLACE_MILESTONE_TARGET):
-        if op.milestone_id not in milestones:
-            return f"操作引用的里程碑（id={op.milestone_id}）不存在"
+    """Reference integrity — a REMOVE must target an existing object."""
+    if op.op == _Kind.REMOVE_PHASE and op.phase_id not in phases:
+        return f"操作引用的阶段（id={op.phase_id}）不存在"
+    if op.op == _Kind.REMOVE_MILESTONE and op.milestone_id not in milestones:
+        return f"操作引用的里程碑（id={op.milestone_id}）不存在"
     return None
 
 
@@ -213,6 +231,10 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
             v = _check_milestone_date(op, milestones, plan_lo, plan_hi)
         elif op.op == _Kind.ADD_MILESTONE:
             v = _check_milestone_add(op, phases, milestones, plan_lo, plan_hi)
+        elif op.op == _Kind.REPLACE_PHASE_FOCUS:
+            v = _check_phase_focus(op, phases)
+        elif op.op == _Kind.REPLACE_MILESTONE_TARGET:
+            v = _check_milestone_target(op, milestones)
         else:
             v = _check_ref(op, phases, milestones)
 

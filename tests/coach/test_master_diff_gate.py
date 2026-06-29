@@ -338,6 +338,46 @@ def test_weekly_range_present_but_none_is_rejected() -> None:
     assert "合法数值" in violations[0]
 
 
+def test_replace_phase_focus_non_string_is_rejected() -> None:
+    """Non-str focus is written via model_copy (no re-validate) → would brick the
+    plan on next read; gate must reject it."""
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS,
+        phase_id="phase-1",
+        spec_patch={"focus": {"x": 1}},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "focus 必须是文本" in violations[0]
+
+
+def test_replace_milestone_target_non_string_is_rejected() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_MILESTONE_TARGET,
+        milestone_id="ms-1",
+        spec_patch={"target": 42},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "target 必须是文本" in violations[0]
+
+
+def test_replace_phase_focus_valid_string_passes() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS,
+        phase_id="phase-1",
+        spec_patch={"focus": "提速"},
+    )
+    assert validate_master_diff(_plan(), _diff(op)) == []
+
+
+def test_replace_phase_focus_unknown_phase_is_rejected() -> None:
+    op = _op(MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS, phase_id="ghost", spec_patch={"focus": "x"})
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "不存在" in violations[0]
+
+
 def test_multiple_violations_all_reported() -> None:
     bad_resize = _op(
         MasterPlanDiffOpKind.RESIZE_PHASE,
