@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from datetime import date as _date
 
-from stride_core.master_plan import MasterPlan
+from stride_core.master_plan import MasterPlan, MilestoneType
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
@@ -58,6 +58,25 @@ def _within(day: _date, lo: _date | None, hi: _date | None) -> bool:
     if hi is not None and day > hi:
         return False
     return True
+
+
+def _weekly_bounds_violation(patch: dict) -> str | None:
+    """Shared weekly-range guard: bounds must be numeric and ``low <= high``.
+
+    Both ``REPLACE_WEEKLY_RANGE`` and ``ADD_PHASE`` feed these into ``float()`` in
+    apply, so a non-numeric value would otherwise ValueError → 500.
+    """
+    lo, hi = patch.get("weekly_distance_km_low"), patch.get("weekly_distance_km_high")
+    if lo is None and hi is None:
+        return None
+    try:
+        lo_f = float(lo) if lo is not None else None
+        hi_f = float(hi) if hi is not None else None
+    except (TypeError, ValueError):
+        return f"周跑量区间不是合法数值：low={lo} high={hi}"
+    if lo_f is not None and hi_f is not None and lo_f > hi_f:
+        return f"周跑量区间下限 {lo} 高于上限 {hi}"
+    return None
 
 
 def _check_phase_resize(
@@ -98,21 +117,13 @@ def _check_phase_add(
         return f"新增阶段起始 {start.isoformat()} 不早于结束 {end.isoformat()}"
     if not _within(start, plan_lo, plan_hi) or not _within(end, plan_lo, plan_hi):
         return "新增阶段的日期超出赛季范围"
-    return None
+    return _weekly_bounds_violation(patch)
 
 
 def _check_weekly_range(op: MasterPlanDiffOp, phases: dict) -> str | None:
     if op.phase_id not in phases:
         return f"操作引用的阶段（id={op.phase_id}）不存在"
-    patch = op.spec_patch or {}
-    lo, hi = patch.get("weekly_distance_km_low"), patch.get("weekly_distance_km_high")
-    if lo is not None and hi is not None:
-        try:
-            if float(lo) > float(hi):
-                return f"周跑量区间下限 {lo} 高于上限 {hi}"
-        except (TypeError, ValueError):
-            return f"周跑量区间不是合法数值：low={lo} high={hi}"
-    return None
+    return _weekly_bounds_violation(op.spec_patch or {})
 
 
 def _check_milestone_date(
@@ -137,6 +148,10 @@ def _check_milestone_add(
     missing = [k for k in _REQUIRED_ADD_MILESTONE_KEYS if not patch.get(k)]
     if missing:
         return f"新增里程碑缺少必填字段：{', '.join(missing)}"
+    try:
+        MilestoneType(patch["type"])  # apply does the same; an unknown value 500s
+    except ValueError:
+        return f"新增里程碑的 type 不是合法类型：{patch.get('type')}"
     if patch.get("id") in milestones:
         return f"新增里程碑的 id={patch.get('id')} 与现有里程碑冲突"
     pid = patch.get("phase_id")

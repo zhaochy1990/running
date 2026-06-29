@@ -293,6 +293,39 @@ def test_weekly_range_non_numeric_is_rejected_not_crash() -> None:
     assert "合法数值" in violations[0]
 
 
+def test_add_milestone_invalid_type_is_rejected() -> None:
+    """An unknown MilestoneType would ValueError→500 in apply; gate must reject."""
+    op = _op(
+        MasterPlanDiffOpKind.ADD_MILESTONE,
+        spec_patch={"id": "m9", "type": "marathon", "date": "2026-08-01", "phase_id": "phase-1"},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "type 不是合法类型" in violations[0]
+
+
+def test_add_phase_non_numeric_weekly_bound_is_rejected() -> None:
+    """ADD_PHASE coerces weekly bounds via float() in apply; non-numeric must be caught."""
+    op = _op(
+        MasterPlanDiffOpKind.ADD_PHASE,
+        spec_patch={
+            "id": "p2", "name": "X", "start_date": "2026-08-01", "end_date": "2026-09-01",
+            "weekly_distance_km_low": "abc",
+        },
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "合法数值" in violations[0]
+
+
+def test_add_milestone_valid_type_in_window_passes() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.ADD_MILESTONE,
+        spec_patch={"id": "m9", "type": "test_run", "date": "2026-08-01", "phase_id": "phase-1"},
+    )
+    assert validate_master_diff(_plan(), _diff(op)) == []
+
+
 def test_multiple_violations_all_reported() -> None:
     bad_resize = _op(
         MasterPlanDiffOpKind.RESIZE_PHASE,
