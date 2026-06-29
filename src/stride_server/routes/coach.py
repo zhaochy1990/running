@@ -28,11 +28,14 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from coach.schemas import AssistantPart, assistant_parts_from_message
 
 from stride_core.plan_diff import PlanDiff, apply_diff
+from stride_core.master_plan import MasterPlanStatus
+from stride_core.master_plan_diff import MasterPlanDiff, apply_master_plan_diff
+from coach.graphs.conversation.master_diff_gate import validate_master_diff
 
 from ..bearer import require_bearer
 from ..coach_adapters.persistence.weekly_version_store import (
@@ -44,6 +47,7 @@ from coach.orchestrator import coach_thread_id
 from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import build_conversation_graph_for_user, get_checkpointer
 from ..deps import get_plan_state_store
+from ..master_plan_store import get_master_plan_store
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -356,6 +360,119 @@ def apply_coach_week_diff(
         "applied": len(accepted_op_ids),
         "folder": folder,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /api/users/me/coach/master-plan/{plan_id}/apply  (Pattern Y — season diff)
+# ---------------------------------------------------------------------------
+
+
+class CoachMasterApplyRequest(BaseModel):
+    """Body for the orchestrator season-plan (master) diff apply.
+
+    Stateless, like the week apply: the ``MasterPlanDiff`` rode the chat response
+    (``proposals[].proposal``) and the client sends the whole diff back with the
+    accepted op ids. Lands on the ACTIVE plan (bumps version + snapshots prior).
+    """
+
+    diff: MasterPlanDiff
+    accepted_op_ids: list[str]
+    change_reason: str = "coach adjustment"
+
+
+class _MasterStoreBridge:
+    """Adapt ``get_master_plan_store()`` (2-arg ``get_plan(user_id, plan_id)`` +
+    ``save_version``) to the ``MasterPlanStore`` protocol ``apply_master_plan_diff``
+    expects (1-arg ``get_plan(plan_id)`` + ``add_version``)."""
+
+    def __init__(self, inner: Any, user_id: str) -> None:
+        self._inner = inner
+        self._user_id = user_id
+
+    def get_plan(self, plan_id: str):
+        return self._inner.get_plan(self._user_id, plan_id)
+
+    def save_plan(self, plan):
+        # Defense in depth: only ever persist a plan owned by this bridge's user,
+        # so a future refactor of apply_master_plan_diff can't write across users.
+        if getattr(plan, "user_id", self._user_id) != self._user_id:
+            raise PermissionError("refusing to save a plan owned by a different user")
+        return self._inner.save_plan(plan)
+
+    def add_version(self, version):
+        return self._inner.save_version(version)
+
+
+@router.post("/api/users/me/coach/master-plan/{plan_id}/apply")
+def apply_coach_master_diff(
+    plan_id: str,
+    body: CoachMasterApplyRequest,
+    payload: dict = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Apply the accepted ops of a coach-proposed season ``MasterPlanDiff``."""
+    user_id: str = payload["sub"]
+    diff = body.diff
+    if diff.plan_id != plan_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"diff plan_id {diff.plan_id!r} does not match path plan_id {plan_id!r}",
+        )
+
+    store = get_master_plan_store()
+    plan = store.get_plan(user_id, plan_id)
+    if plan is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"master plan {plan_id!r} not found")
+    if plan.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="plan belongs to a different user")
+    if plan.status != MasterPlanStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该赛季计划尚未确认（status≠active），不能应用调整",
+        )
+
+    # Re-run the validation gate: the client supplies the diff body, so don't
+    # trust it blindly — refuse a structurally broken diff (defense in depth).
+    # The gate is wrapped too: it coerces untyped spec_patch values (float() etc.),
+    # so a pathological value that makes the gate itself raise becomes a 400, not
+    # a 500.
+    try:
+        violations = validate_master_diff(plan, diff)
+    except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
+        logger.warning("coach master apply: gate raised on malformed diff: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="赛季调整数据非法，无法应用",
+        )
+    if violations:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="赛季调整结构非法：" + "；".join(violations),
+        )
+
+    known_ids = {op.id for op in diff.ops}
+    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
+
+    bridge = _MasterStoreBridge(store, user_id)
+    try:
+        updated_plan = apply_master_plan_diff(bridge, plan_id, diff, accepted_op_ids, body.change_reason)
+    except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
+        # The gate validates diff semantics, but spec_patch contents are untyped
+        # JSON from the client — a pathological value (wrong type, bad enum,
+        # missing construction key) would otherwise raise inside apply and 500.
+        # Convert that whole class to a 400; infra/storage errors are other
+        # exception types and still propagate as a real 5xx.
+        logger.warning("coach master apply: rejecting malformed diff: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="赛季调整数据非法，无法应用",
+        )
+
+    return {
+        "applied": len(accepted_op_ids),
+        "plan_id": plan_id,
+        "version": updated_plan.version,
+        "updated_at": updated_plan.updated_at,
     }
 
 

@@ -20,7 +20,15 @@ from coach.orchestrator import (
 from coach.orchestrator.memory import make_llm_memory_extractor
 from coach.orchestrator.resolver import ResolverDraftFn
 
+from coach.contracts import TargetRef
+from coach.orchestrator.resolver import TargetResolverFn
+
 from ..toolkit import build_stride_toolkit
+from .season_plan import (
+    SEASON_PLAN_CARD,
+    make_current_master_target_resolver,
+    make_season_plan_runner,
+)
 from .status_insight import STATUS_INSIGHT_CARD, make_status_insight_runner
 from .weekly_plan import (
     WEEKLY_PLAN_CARD,
@@ -41,7 +49,26 @@ def build_specialist_registry(*, user_id: str, specialist_llm: Any) -> Specialis
         WEEKLY_PLAN_CARD,
         make_weekly_plan_runner(user_id=user_id, llm=specialist_llm, toolkit=toolkit),
     )
+    registry.register(
+        SEASON_PLAN_CARD,
+        make_season_plan_runner(user_id=user_id, llm=specialist_llm, toolkit=toolkit),
+    )
     return registry
+
+
+def build_target_resolver(user_id: str) -> TargetResolverFn:
+    """Combined target resolver: a ``master`` target resolves to the active season
+    plan, anything else (week/session/None) to the current week. The Resolver
+    only fires this for a write intent that still lacks a concrete target."""
+    master_resolver = make_current_master_target_resolver(user_id)
+    week_resolver = make_current_week_target_resolver(user_id)
+
+    def _resolve(target: TargetRef | None) -> TargetRef | None:
+        if target is not None and target.kind == "master":
+            return master_resolver(target)
+        return week_resolver(target)
+
+    return _resolve
 
 
 def run_coach_turn(
@@ -85,7 +112,7 @@ def run_coach_turn(
         checkpointer=resolved_checkpointer,
         memory_store=resolved_store,
         memory_extract_fn=resolved_extract_fn,
-        target_resolver=make_current_week_target_resolver(user_id),
+        target_resolver=build_target_resolver(user_id),
     )
     thread_id = coach_thread_id(user_id, session_id)
     config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
