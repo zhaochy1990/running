@@ -128,6 +128,45 @@ class TestActivityDetailFromApi:
         assert detail.zones[0].zone_index == 1
         assert detail.zones[0].range_unit == "bpm"
 
+    def test_zones_classified_by_magnitude_not_zonetype(self):
+        # Regression: COROS shipped the pace group as zoneType=0 (was 1), and a
+        # HR group as zoneType=3. Classifying by the literal id mislabeled pace as
+        # HR and dropped the 配速区间 card. Pace bounds are ms/km (273000 = 4:33/km),
+        # HR bounds are bpm — classify by magnitude so both groups survive.
+        data = {
+            "data": {
+                "summary": {"sportType": 100},
+                "lapList": [],
+                "zoneList": [
+                    {
+                        "zoneType": 3,  # real HR group
+                        "zoneItemList": [
+                            {"zoneIndex": 0, "leftScope": 133, "rightScope": 149, "second": 126, "percent": 4},
+                        ],
+                    },
+                    {
+                        "zoneType": 0,  # pace group with the NEW (regressed) id
+                        "zoneItemList": [
+                            {"zoneIndex": 0, "leftScope": 329000, "rightScope": 273000, "second": 1275, "percent": 48},
+                        ],
+                    },
+                ],
+                "frequencyList": [],
+            }
+        }
+        detail = ActivityDetail.from_api(data, "zone_regression")
+        by_type = {z.zone_type: z for z in detail.zones}
+        assert set(by_type) == {"heartRate", "pace"}
+
+        hr = by_type["heartRate"]
+        assert hr.range_unit == "bpm"
+        assert (hr.range_min, hr.range_max) == (133, 149)
+
+        # Pace swaps left/right so range_min is the faster (smaller) bound.
+        pace = by_type["pace"]
+        assert pace.range_unit == "pace"
+        assert (pace.range_min, pace.range_max) == (273000, 329000)
+
 
 class TestTimeseriesPointFromApi:
     """COROS frequencyList per-point parsing — including the running-form
