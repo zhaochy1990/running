@@ -34,10 +34,12 @@ class ActivityDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final detailAsync = ref.watch(activityDetailProvider(activityId));
 
-    final title = detailAsync.whenOrNull(
-      data: (detail) => detail.activity.name ?? detail.activity.sportName,
-      error: (e, _) => '加载失败',
-    ) ?? '活动详情';
+    final title =
+        detailAsync.whenOrNull(
+          data: (detail) => detail.activity.name ?? detail.activity.sportName,
+          error: (e, _) => '加载失败',
+        ) ??
+        '活动详情';
 
     return Scaffold(
       backgroundColor: StrideTokens.bg,
@@ -54,11 +56,8 @@ class ActivityDetailScreen extends ConsumerWidget {
           child: CircularProgressIndicator(color: StrideTokens.accent),
         ),
         error: (err, _) => _ErrorBody(message: err.toString()),
-        data: (detail) => _DetailBody(
-          detail: detail,
-          activityId: activityId,
-          ref: ref,
-        ),
+        data: (detail) =>
+            _DetailBody(detail: detail, activityId: activityId, ref: ref),
       ),
     );
   }
@@ -141,11 +140,7 @@ class _DetailBody extends StatelessWidget {
           const SizedBox(height: StrideTokens.spaceLg),
 
           // 5. AI commentary card
-          _CommentaryCard(
-            activity: act,
-            activityId: activityId,
-            ref: ref,
-          ),
+          _CommentaryCard(activity: act, activityId: activityId, ref: ref),
           const SizedBox(height: StrideTokens.spaceLg),
 
           // 6. Splits table
@@ -200,7 +195,7 @@ class _MetricGrid extends StatelessWidget {
         value: act.distanceKm.toStringAsFixed(2),
         label: '距离 / KM',
       ),
-      _MetricCellData(value: act.durationFmt, label: '时长'),
+      _MetricCellData(value: _compactDurationFmt(act.durationFmt), label: '时长'),
       _MetricCellData(value: act.paceFmt, label: '平均配速 / KM'),
       _MetricCellData(
         value: act.avgHr != null ? '${act.avgHr}' : '--',
@@ -267,6 +262,22 @@ class _MetricCellData {
   final String label;
 }
 
+String _compactDurationFmt(String raw) {
+  final parts = raw.split(':');
+  if (parts.length == 2) return raw;
+  if (parts.length != 3) return raw;
+
+  final h = int.tryParse(parts[0]);
+  final m = int.tryParse(parts[1]);
+  final s = int.tryParse(parts[2]);
+  if (h == null || m == null || s == null) return raw;
+
+  final mm = m.toString();
+  final ss = s.toString().padLeft(2, '0');
+  if (h <= 0) return '$mm:$ss';
+  return '$h:${m.toString().padLeft(2, '0')}:$ss';
+}
+
 class _MetricCell extends StatelessWidget {
   const _MetricCell({required this.data});
   final _MetricCellData data;
@@ -277,15 +288,22 @@ class _MetricCell extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: StrideTokens.spaceMd),
       child: Column(
         children: [
-          Text(
-            data.value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontFamily: AppTypography.fontMono,
-              fontSize: StrideTokens.fs20,
-              fontWeight: FontWeight.w700,
-              color: StrideTokens.fg,
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: StrideTokens.spaceXs,
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                data.value,
+                maxLines: 1,
+                style: const TextStyle(
+                  fontFamily: AppTypography.fontMono,
+                  fontSize: StrideTokens.fs20,
+                  fontWeight: FontWeight.w700,
+                  color: StrideTokens.fg,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: StrideTokens.spaceXs),
@@ -468,9 +486,9 @@ class _CommentaryCardState extends State<_CommentaryCard> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('重新生成失败，请稍后再试')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('重新生成失败，请稍后再试')));
       }
     } finally {
       if (mounted) setState(() => _regenerating = false);
@@ -494,8 +512,11 @@ class _CommentaryCardState extends State<_CommentaryCard> {
         children: [
           Row(
             children: [
-              const Icon(Icons.auto_awesome,
-                  size: 14, color: StrideTokens.accent),
+              const Icon(
+                Icons.auto_awesome,
+                size: 14,
+                color: StrideTokens.accent,
+              ),
               const SizedBox(width: StrideTokens.spaceXs),
               const Text(
                 'AI 点评',
@@ -646,7 +667,11 @@ class _ErrorBody extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 48, color: StrideTokens.danger),
+            const Icon(
+              Icons.error_outline,
+              size: 48,
+              color: StrideTokens.danger,
+            ),
             const SizedBox(height: StrideTokens.spaceLg),
             const Text(
               '加载失败',
