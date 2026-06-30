@@ -2346,7 +2346,7 @@ class Database:
         next push.
         """
         # Lazy import to avoid circular dep:
-        # plan_parser.persistence imports stride_core.db.Database.
+        # plan_parser.persistence imports stride_storage.sqlite.database.Database.
         from plan_parser import apply_weekly_plan
         from stride_core.plan_spec import (
             SUPPORTED_SCHEMA_VERSION, WeeklyPlan,

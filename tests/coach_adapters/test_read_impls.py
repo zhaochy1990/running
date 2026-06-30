@@ -34,7 +34,7 @@ from stride_server.coach_adapters.toolkit import build_stride_toolkit
 
 @pytest.fixture
 def patched_db(tmp_path, monkeypatch):
-    """Open a real ``stride_core.db.Database`` against a tmp_path file and
+    """Open a real ``stride_storage.sqlite.database.Database`` against a tmp_path file and
     monkeypatch :func:`read_impls._open_db` to return it. The same DB
     instance is yielded so tests can seed rows."""
     from stride_storage.sqlite.database import Database

@@ -50,7 +50,7 @@ def _tool_safe(func: Callable[..., ToolResult]) -> Callable[..., ToolResult]:
 
 
 def _open_db(user_id: str) -> Any:
-    """Open a ``stride_core.db.Database`` for ``user_id``. Lazy-imported so
+    """Open a ``stride_storage.sqlite.database.Database`` for ``user_id``. Lazy-imported so
     tool_impls is testable without ``stride_core.db`` initialised in unusual
     environments (e.g. minimal CI containers)."""
     from stride_storage.sqlite.database import Database
