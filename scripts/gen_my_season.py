@@ -60,7 +60,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from coach.graphs.generation.rule_filter import _total_run_distance_m
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.master_plan import MasterPlan
 from stride_core.plan_spec import WeeklyPlan
 from stride_core.timefmt import today_shanghai

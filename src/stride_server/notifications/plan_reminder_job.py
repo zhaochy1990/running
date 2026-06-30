@@ -23,7 +23,8 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 
-from stride_core.db import USER_DATA_DIR, Database
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 
 from . import jpush_client
 from . import store as nstore

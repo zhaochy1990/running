@@ -21,8 +21,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
-from stride_core.db import Database
-from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_storage.sqlite.database import Database
+from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 
 
 USER_ID = "00000000-0000-4000-8000-000000000001"
@@ -183,6 +183,11 @@ def test_stride_zones_happy_path(rsa_keypair, monkeypatch, seeded_db):
     assert body["threshold"]["hr_bpm"] == pytest.approx(175.0)
     assert body["threshold"]["pace_per_km_sec"] == pytest.approx(1000 / 4.65, rel=1e-3)
     assert body["threshold"]["as_of_date"] == "2026-05-15"
+    # Guard the fetch_latest() round-trip: confidences come back via the
+    # CalibrationConfidence enum's .value (string), calibration_id as the int PK.
+    assert body["threshold"]["hr_confidence"] == "medium"
+    assert body["threshold"]["speed_confidence"] == "medium"
+    assert isinstance(body["threshold"]["calibration_id"], int)
     assert len(body["pace_zones"]) == 6
     assert len(body["hr_zones"]) == 6
     # Physiological ordering: recovery → easy → marathon → threshold → interval → repetition.

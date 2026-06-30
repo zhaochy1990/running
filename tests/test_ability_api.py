@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.source import DataSource
 from stride_core.ability import ABILITY_MODEL_VERSION
 from stride_server.config.models import AuthConfig, ServerConfig

@@ -34,7 +34,7 @@ def _resolve_hr_max(db: Any, as_of_date_iso: str, fallback: int = 185) -> int:
     """
     try:
         from datetime import date as _date
-        from stride_core.running_calibration.sqlite_connector import (
+        from stride_storage.sqlite.calibration_connector import (
             SQLiteRunningCalibrationRepository,
         )
         repo = SQLiteRunningCalibrationRepository(db)

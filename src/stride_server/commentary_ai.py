@@ -31,7 +31,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.messages import extract_text
 from coach.skills import render_fragment, render_skill
-from stride_core.db import USER_DATA_DIR, Database
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 from stride_core.models import pace_str, sport_name
 from stride_core.timefmt import utc_iso_to_shanghai_iso
 
@@ -288,7 +289,7 @@ def get_calibration_baseline(db: Database, as_of_ymd: str | None) -> dict[str, A
     users with no snapshot yet (the prompt then falls back to Z5/Z6 only).
     """
     try:
-        from stride_core.running_calibration.sqlite_connector import (
+        from stride_storage.sqlite.calibration_connector import (
             SQLiteRunningCalibrationRepository,
         )
 

@@ -76,7 +76,7 @@ def _seed_activities(tmp_path):
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir(parents=True, exist_ok=True)
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(user=USER_UUID)
     rows = [
         ("run10", "10K Run", 100, "Run", "2026-05-10T00:00:00+00:00", 10.0, 3000.0),

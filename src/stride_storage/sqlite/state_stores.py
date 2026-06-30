@@ -218,7 +218,7 @@ class SqlitePlanStateStore:
     """``PlanStateStore`` backed by the per-user SQLite ``Database``."""
 
     def __init__(self, db: Any) -> None:
-        # ``db`` is ``stride_core.db.Database``; typed as Any here to avoid a
+        # ``db`` is ``stride_storage.sqlite.database.Database``; typed as Any here to avoid a
         # circular import (db.py imports nothing from this module).
         self._db = db
 

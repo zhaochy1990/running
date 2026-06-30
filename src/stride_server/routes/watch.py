@@ -9,7 +9,8 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from stride_core.db import USER_DATA_DIR, Database
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 from stride_core.registry import ProviderRegistry, UnknownProvider
 from stride_core.timefmt import utc_iso_to_shanghai_iso
 

@@ -203,7 +203,7 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     # Commentary lives in a Phase-1 abstracted store; callers may pass one in,
     # otherwise we wrap the local db so legacy callers keep working unchanged.
     if commentary_store is None:
-        from stride_core.state_stores import SqliteCommentaryStore
+        from stride_storage.sqlite.state_stores import SqliteCommentaryStore
         commentary_store = SqliteCommentaryStore(db)
     commentary_row = commentary_store.get_activity_commentary_row(label_id)
     if commentary_row:

@@ -11,7 +11,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.source import SyncProgressCallback
 from stride_core.timefmt import today_shanghai
 

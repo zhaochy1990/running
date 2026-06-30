@@ -1251,7 +1251,7 @@ class TestPromptPerPhaseMilestones:
 
 class TestQueryHistoryRealDB:
     def _seed(self, tmp_path):
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
 
         db = Database(db_path=tmp_path / "coros.db")
         c = db._conn
@@ -1281,7 +1281,7 @@ class TestQueryHistoryRealDB:
     def test_counts_running_across_sport_codes_excludes_strength(self, tmp_path, monkeypatch):
         """total_activities counts sport_type 100, 8001, 101 — excludes sport_type 4."""
         db = self._seed(tmp_path)
-        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
         result = _query_history("anyuser")
         assert result["total_activities"] == 3
 
@@ -1290,7 +1290,7 @@ class TestQueryHistoryRealDB:
         hours from duration_s: (5400 + 2550 + 4000) / 3600 = 3.32 h
         (strength row excluded)."""
         db = self._seed(tmp_path)
-        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
         result = _query_history("anyuser")
         may = next(m for m in result["monthly_km"] if m["month"] == "2026-05")
         assert abs(may["km"] - 46.1) < 0.2
@@ -1303,7 +1303,7 @@ class TestQueryHistoryRealDB:
         from stride_core.pb_records import fetch_personal_bests
 
         db = self._seed(tmp_path)
-        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
         assert fetch_personal_bests(db) == {}  # nothing persisted yet
 
         result = _query_history("anyuser")
@@ -1328,7 +1328,7 @@ class TestWeeklyProfile:
     """
 
     def _db(self, tmp_path):
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         return Database(db_path=tmp_path / "coros.db")
 
     def _add_run(self, c, label, date_iso, *, km, dur_s, avg_hr=None,
@@ -1499,7 +1499,7 @@ class TestWeeklyProfile:
 
 class TestQueryFitnessStateStride:
     def test_reads_stride_load_not_coros(self, tmp_path, monkeypatch):
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         db = Database(db_path=tmp_path / "coros.db")
         c = db._conn
         c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
@@ -1507,14 +1507,41 @@ class TestQueryFitnessStateStride:
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
                   "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8)")
         c.commit()
-        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
         from stride_server import master_plan_generator as mod
         monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
         state = mod._query_fitness_state("anyuser")
         assert state["ctl"] == 64.1      # chronic_load, NOT cti=120
         assert state["atl"] == 69.9      # acute_load, NOT ati=136
-        assert state["rhr"] == 48        # rhr still from daily_health
+        assert state["rhr"] == 48        # no calibration -> fallback to raw daily_health
         assert "64" in state["summary"]
+
+    def test_prefers_calibration_rhr_baseline_over_raw(self, tmp_path, monkeypatch):
+        from stride_storage.sqlite.database import Database
+        from stride_storage.sqlite.calibration_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+        db = Database(db_path=tmp_path / "coros.db")
+        c = db._conn
+        # raw last-measured rhr = 52, but the smoothed calibration baseline = 45.
+        c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
+                  "VALUES ('20260610', 136, 120, 50, 52)")
+        c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+                  "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8)")
+        SQLiteRunningCalibrationRepository(db)  # bootstrap calibration tables
+        c.execute(
+            "INSERT INTO running_calibration_snapshot "
+            "(as_of_date, algorithm_version, threshold_hr, threshold_speed_mps, "
+            " threshold_hr_confidence, threshold_speed_confidence, rhr_baseline, "
+            " observed_max_hr, hrmax_estimate, hrmax_confidence) "
+            "VALUES ('2026-06-10', 1, 175.0, 4.65, 'medium', 'medium', 45.0, 188.0, 188.0, 'medium')"
+        )
+        c.commit()
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
+        from stride_server import master_plan_generator as mod
+        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
+        state = mod._query_fitness_state("anyuser")
+        assert state["rhr"] == 45.0      # calibration baseline preferred over raw 52
 
 
 # ---------------------------------------------------------------------------
@@ -1528,7 +1555,7 @@ class TestQueryFitnessStateStride:
 
 class TestLoadMasterContextDoubleBaseline:
     def _seed_db(self, tmp_path, *, with_body_comp: bool):
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
 
         db = Database(db_path=tmp_path / "coros.db")
         c = db._conn
@@ -1567,7 +1594,7 @@ class TestLoadMasterContextDoubleBaseline:
     def _patch_db_and_load(self, db, monkeypatch, *, profile):
         # All three readers (history, fitness, body-comp) open Database(user=...);
         # route every one at the single seeded handle.
-        monkeypatch.setattr("stride_core.db.Database", lambda **kw: db)
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
         from stride_server import master_plan_generator as mod
         monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
         # Keep continuity hermetic — not the subject under test here.

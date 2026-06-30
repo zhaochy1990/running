@@ -13,7 +13,7 @@ import click
 from rich.console import Console
 
 from coros_sync.cli import _resolve_profile
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.post_sync import run_post_sync_for_labels
 from stride_core.registry import write_user_provider
 

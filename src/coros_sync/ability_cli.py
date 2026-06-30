@@ -34,7 +34,8 @@ from stride_core.ability import (
     marathon_target_from_profile,
     marathon_target_label,
 )
-from stride_core.db import Database, USER_DATA_DIR
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 
 console = Console()
 logger = logging.getLogger(__name__)

@@ -14,7 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from .client import CorosClient, CorosAPIError
 from .models import hrv_list_from_dashboard
 from .normalize import apply_to_detail
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.models import Activity, ActivityDetail, DailyHealth, Dashboard
 from stride_core.source import SyncProgressCallback
 

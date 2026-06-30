@@ -28,7 +28,7 @@ def _open_user_db(tmp_path):
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir(parents=True, exist_ok=True)
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     return Database(user=USER_UUID)
 

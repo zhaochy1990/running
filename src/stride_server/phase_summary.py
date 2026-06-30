@@ -72,7 +72,7 @@ def aggregate_phase_summary(
     """Aggregate a completed phase's actual running results from ``coros.db``.
 
     Args:
-        db: A ``stride_core.db.Database`` (per-user). Only ``db.query`` is used.
+        db: A ``stride_storage.sqlite.database.Database`` (per-user). Only ``db.query`` is used.
         start_date / end_date: Inclusive Shanghai-local ``YYYY-MM-DD`` bounds
             (the phase's ``start_date`` / ``end_date``).
 

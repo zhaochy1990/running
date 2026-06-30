@@ -7,7 +7,7 @@ import math
 from datetime import date, timedelta
 from typing import Any, Iterable, Sequence
 
-from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
+from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.normalize import kind_from_legacy_train_type
 from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
 
@@ -468,7 +468,7 @@ def _calibration_from_running_snapshot_row(row: Any) -> CalibrationSnapshot:
 
 def _fetch_latest_calibration(db: Any) -> CalibrationSnapshot | None:
     from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
-    from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+    from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
     # Ensure the running_calibration_snapshot table exists (idempotent).
     SQLiteRunningCalibrationRepository(db).ensure_schema()
     rows = db.query(
@@ -495,7 +495,7 @@ def refresh_training_load_calibration(
     `daily_health` + activity power. No manual augmentation needed.
     """
     from stride_core.running_calibration import recompute_running_calibration
-    from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+    from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 
     as_of = _parse_date(as_of_date) or today_shanghai()
     repo = SQLiteRunningCalibrationRepository(db)

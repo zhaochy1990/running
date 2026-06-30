@@ -35,7 +35,7 @@ from stride_core.ability import (
     uth_sorensen_vo2max,
     vdot_to_marathon_s,
 )
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 
 
 FIXTURE_PATH = pathlib.Path(__file__).parent / "fixtures" / "ability_sample.json"
@@ -1587,7 +1587,7 @@ class TestComputeAbilitySnapshotHrMaxResolver:
         """
         from datetime import date
         from stride_core.ability import compute_ability_snapshot
-        from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+        from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
         from stride_core.running_calibration.types import (
             CalibrationConfidence, RunningCalibrationSnapshot,
         )
@@ -1606,7 +1606,7 @@ class TestComputeAbilitySnapshotHrMaxResolver:
     def test_compute_ability_snapshot_explicit_hr_max_overrides_baseline(self, ability_db):
         from datetime import date
         from stride_core.ability import compute_ability_snapshot
-        from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+        from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
         from stride_core.running_calibration.types import (
             CalibrationConfidence, RunningCalibrationSnapshot,
         )

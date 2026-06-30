@@ -58,7 +58,23 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 | Authoring artifacts (plan.md, feedback.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**，经 `sync-data.yml` 同步到 Azure Files |
 | Auth tokens / secrets | **Azure Key Vault** |
 
-加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。likes_store 是 two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential` —— 复用这个 pattern，不要发明新的。
+加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。
+
+### 统一数据访问层 `stride_storage`（HARD）
+
+所有持久化**实现**现在归一在独立包 **`src/stride_storage/`**（API Server 与 Coach 共享的数据访问层）。分三个 import 层级（`.importlinter` Contract 5 强制）：
+
+| Tier | 路径 | 装什么 | 谁能 import |
+|------|------|--------|-------------|
+| A `interfaces/` | `stride_storage.interfaces` | 纯 Protocol + frozen config dataclass（无 sqlite/azure import）| 任何包，含 `coach` |
+| B `sqlite/` · `content/` | `stride_storage.sqlite` / `.content` | `Database`、state_stores、calibration connector、content 原语；依赖 `sqlite3` + `stride_core` 纯域 | `stride_server` 等；**coach 不可** |
+| C `azure/` · `keyvault/` · `factories/` · `coach_persistence/` | 同名子包 | 仅 Azure SDK（Table/Blob/Key Vault）、coach 持久化 | `stride_server`；**coach 永不** |
+
+**加新 store / 改存储实现**：放进 `stride_storage` 对应 tier，复用共享原语 —— `azure/credentials.py::get_credential`（唯一 `DefaultAzureCredential`）、`azure/table_backend.py::AzureTableConnection`、`azure/blob_backend.py::get_container_client`、`azure/backend_select.py::choose_backend`、`keyvault/secret_client.py::get_secret_client`。**不要**再各自 new `DefaultAzureCredential()` 或重写 dev/prod 后端选择。canonical 样板：likes（`interfaces/likes.py` + `azure/likes_backend.py`），two-backend（dev JSON / prod Azure Table）。
+
+**config 加载留 server 侧**：`stride_storage` 的 backend 工厂只接收 resolved config dataclass（如 `LikesStorageConfig`）；`ServerConfig` 解析 + 缓存仍在 `stride_server`（避免 `stride_storage → stride_server` 成环）。
+
+**过渡期 shim**：`stride_core.db` / `stride_core.state_stores` / `stride_server.likes_store` 等旧路径现为薄 re-export shim，consumer 暂可照旧 import；增量 cutover 到 `stride_storage.*` 后删除。新代码直接 import `stride_storage.*`。
 
 ## Timezone discipline (HARD)
 
@@ -259,10 +275,10 @@ STRIDE coach 是 LangGraph-based agent，处理 S1（master-plan）/ S2（weekly
 
 | Layer | Path | 允许的 deps |
 |-------|------|-------------|
-| Core | `src/coach/` | `pydantic`, `langgraph`, `langchain-*`, `stride_core` 域原语（`plan_spec` / `workout_spec` / `plan_diff` / `master_plan` / `master_plan_diff`）+ **纯公式层**（`training_load.{core,calibration,types}`、`running_calibration.{core,segments,types,zones,repository}`）|
-| Adapters | `src/stride_server/coach_adapters/` | Core + `stride_core.db` + `coros_sync` + `azure.*` + `fastapi` |
+| Core | `src/coach/` | `pydantic`, `langgraph`, `langchain-*`, `stride_core` 域原语（`plan_spec` / `workout_spec` / `plan_diff` / `master_plan` / `master_plan_diff`）+ **纯公式层**（`training_load.{core,calibration,types}`、`running_calibration.{core,segments,types,zones,repository}`）+ `stride_storage.interfaces`（纯 Protocol/config，可选）|
+| Adapters | `src/stride_server/coach_adapters/` | Core + `stride_storage`（数据访问层，含 `sqlite`/`azure`/`coach_persistence`）+ `coros_sync` + `azure.*` + `fastapi` |
 
-`coach.*` **必须不** import `stride_server.*`、`coros_sync.*`、`garmin_sync.*`、`azure.*`、`fastapi.*` 或 `stride_core.db`。CI 经 `lint-imports` 强制（跑 `PYTHONPATH=src lint-imports`）。
+`coach.*` **必须不** import `stride_server.*`、`coros_sync.*`、`garmin_sync.*`、`azure.*`、`fastapi.*`、`stride_core.db`，或 `stride_storage` 的**实现层**（`.sqlite` / `.azure` / `.content` / `.keyvault` / `.factories` / `.coach_persistence` —— Contract 5）。coach 拿数据仍走 DI：`coach_adapters` 构造 `stride_storage` 的具体 store 注入。CI 经 `lint-imports` 强制（跑 `PYTHONPATH=src lint-imports`，5 contract 全 KEPT）。
 
 **enforced 的是黑名单**：`.importlinter` Contract 1 是 `forbidden` 型，只禁上面 6 个 infra 模块——不是 allowlist。所以任何 **infra-free 的 `stride_core` 纯模块** coach core 都可依赖（如负荷预估 helper `training_load.core::estimate_planned_run_load`，Contract 3 已保证 `training_load.{core,calibration,types}` 自身不碰 db/server/sync/azure/fastapi）。表里"允许的 deps"是**推荐最小面**；要新依赖一个纯模块时，跑 `lint-imports` 确认 4 contract 全 KEPT 即可，不必新建并行实现。
 

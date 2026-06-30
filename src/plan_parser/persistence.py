@@ -6,7 +6,7 @@ import hashlib
 import sqlite3
 from typing import Any, Literal
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.plan_spec import WeeklyPlan
 
 from .model_identity import configured_generator_id

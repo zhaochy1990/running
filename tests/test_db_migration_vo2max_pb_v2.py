@@ -4,7 +4,7 @@ from __future__ import annotations
 import sqlite3
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 
 
 V1_SCHEMA = """

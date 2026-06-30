@@ -177,7 +177,7 @@ def load_master_context(state: GenState) -> dict:
     body_composition: dict | None = None
     current_phase = None
     try:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         db = Database(user=user_id)
         as_of = today_shanghai()
         continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)

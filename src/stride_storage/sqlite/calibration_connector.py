@@ -10,7 +10,7 @@ from typing import Any, Sequence
 
 from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
-from .types import (
+from stride_core.running_calibration.types import (
     CalibrationConfidence,
     CalibrationEvidence,
     HeartRateZone,
@@ -21,7 +21,7 @@ from .types import (
     RunningLap,
     RunningSample,
 )
-from .zones import compute_training_zones
+from stride_core.running_calibration.zones import compute_training_zones
 
 RUNNING_CALIBRATION_SCHEMA = (
     """

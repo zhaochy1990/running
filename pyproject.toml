@@ -62,7 +62,7 @@ coach-cli = "coach_cli.cli:main"
 # direction statically; the Dockerfile strips the package at build time as
 # the runtime guard.
 [tool.hatch.build.targets.wheel]
-packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_server", "src/coach", "src/coach_cli", "src/plan_parser"]
+packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_storage", "src/stride_server", "src/coach", "src/coach_cli", "src/plan_parser"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

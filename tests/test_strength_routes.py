@@ -11,7 +11,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.plan_spec import (
     PlannedSession,
     SessionKind,

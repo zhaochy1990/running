@@ -13,7 +13,7 @@ from rich.table import Table
 
 from .auth import Credentials, USER_DATA_DIR
 from .client import CorosClient, CorosAuthError
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.post_sync import run_post_sync_for_labels
 from .sync import run_sync
 

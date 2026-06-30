@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.models import RUN_SPORT_IDS
 from stride_core.pb_records import (
     best_effort_candidates_for_activity,

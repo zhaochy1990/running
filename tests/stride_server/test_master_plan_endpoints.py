@@ -92,9 +92,11 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
     import stride_core.db as core_db_mod
     monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
 
-    # Point content_store file reads to tmp_path
+    # Point content_store file reads to tmp_path. The read/write primitives
+    # now live in stride_storage.content.store (exposed as cs_mod._store);
+    # patch _file_path there so the facade's delegated calls pick it up.
     import stride_server.content_store as cs_mod
-    monkeypatch.setattr(cs_mod, "_file_path", lambda rel: tmp_path / rel)
+    monkeypatch.setattr(cs_mod._store, "_file_path", lambda rel: tmp_path / rel)
 
     from stride_server.bearer import require_bearer
     from stride_server.routes.master_plan import router

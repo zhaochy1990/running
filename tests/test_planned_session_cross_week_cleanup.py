@@ -17,7 +17,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from stride_core.db import Database, _parse_week_folder_dates
+from stride_core.db import _parse_week_folder_dates
+from stride_storage.sqlite.database import Database
 from stride_core.plan_spec import PlannedNutrition, PlannedSession, SessionKind
 
 

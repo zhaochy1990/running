@@ -105,7 +105,7 @@ def test_get_week_feedback_db_overrides_file(app_client):
     feedback_md = tmp_path / USER_UUID / "logs" / WEEK / "feedback.md"
     feedback_md.write_text("FROM FILE", encoding="utf-8")
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(tmp_path / USER_UUID / "coros.db")
     db.upsert_weekly_feedback(WEEK, "FROM DB EDIT", generated_by="user")
     db.close()
@@ -141,7 +141,7 @@ def test_get_week_plan_db_overrides_file(app_client):
     plan_md = tmp_path / USER_UUID / "logs" / WEEK / "plan.md"
     plan_md.write_text("FROM PLAN FILE", encoding="utf-8")
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(tmp_path / USER_UUID / "coros.db")
     db.upsert_weekly_plan(WEEK, "FROM DB PLAN", generated_by="gpt-5.5")
     db.close()
@@ -157,7 +157,7 @@ def test_get_week_plan_db_overrides_file(app_client):
 def test_list_weeks_uses_db_plan_title(app_client):
     client, token, tmp_path = app_client
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(tmp_path / USER_UUID / "coros.db")
     db.upsert_weekly_plan(WEEK, "# Agent Plan\n\nAdjusted.", generated_by="gpt-5.5")
     db.close()

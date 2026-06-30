@@ -1,24 +1,34 @@
-"""Content storage abstraction for user-owned training artifacts.
+"""Content storage — server-side facade.
 
-Production can read from Azure Blob Storage while local/dev keeps using the
-repository data directory. During migration, Blob misses fall back to files.
+The read/write/list primitives now live in ``stride_storage.content.store``
+(pure: they take a resolved ``ContentStorageConfig`` + an injected blob
+container-client factory). This module keeps the *server* concerns: resolving
+``ContentStorageConfig`` from ``ServerConfig`` and supplying the real Azure
+blob factory (``stride_storage.azure.blob_backend.get_container_client``).
+
+``_container_client`` stays a module attribute here so the existing test seam
+``monkeypatch.setattr(content_store, "_container_client", fake)`` keeps working.
 """
 
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass
-from functools import lru_cache
-from pathlib import Path
 from typing import Any, Iterable
 
-from stride_core import db as core_db
 from stride_server.config import load_server_config
 from stride_server.config.loader import resolve_config_env
 from stride_server.config.models import ConfigError, ContentStorageConfig, ServerConfig
 from stride_server.config.sources import env_source
 
+# Real blob backend (Azure) + pure primitives live in stride_storage.
+from stride_storage.azure.blob_backend import get_container_client as _container_client
+from stride_storage.content import store as _store
+from stride_storage.content.store import ContentItem  # noqa: F401  (re-export)
+
+# The read/write log calls live in stride_storage.content.store (same
+# "uvicorn.error" logger). The facade keeps this handle only to set the
+# process-level log level for content I/O — kept server-side rather than in
+# the stride_storage library so the library doesn't configure app logging.
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.INFO)
 
@@ -28,22 +38,9 @@ PREFIX_ENV = "STRIDE_CONTENT_BLOB_PREFIX"
 DEFAULT_PREFIX = "users"
 
 
-@dataclass(frozen=True)
-class ContentItem:
-    content: str
-    source: str
-
-
-def _clean_relative_path(relative_path: str) -> str:
-    clean = relative_path.replace("\\", "/").lstrip("/")
-    parts = [p for p in clean.split("/") if p not in {"", "."}]
-    if any(p == ".." for p in parts):
-        raise ValueError("Content path cannot contain '..'")
-    return "/".join(parts)
-
-
-def _file_path(relative_path: str) -> Path:
-    return core_db.USER_DATA_DIR / _clean_relative_path(relative_path)
+# ---------------------------------------------------------------------------
+# Config resolution (server policy — stays here)
+# ---------------------------------------------------------------------------
 
 
 def _is_auth_config_error(exc: ConfigError) -> bool:
@@ -70,46 +67,9 @@ def _content_config(config: ContentStorageConfig | None = None) -> ContentStorag
         return _content_config_from_env()
 
 
-def _blob_prefix_from_config(config: ContentStorageConfig) -> str:
-    return config.prefix.strip().strip("/")
-
-
-def _blob_prefix(config: ContentStorageConfig | None = None) -> str:
-    return _blob_prefix_from_config(_content_config(config))
-
-
-def _blob_name(
-    relative_path: str,
-    config: ContentStorageConfig | None = None,
-) -> str:
-    clean = _clean_relative_path(relative_path)
-    prefix = _blob_prefix(config)
-    return f"{prefix}/{clean}" if prefix else clean
-
-
-def _blob_config_from_config(config: ContentStorageConfig) -> tuple[str, str] | None:
-    account_url = config.account_url.strip()
-    container = config.container.strip()
-    if not account_url or not container:
-        return None
-    return account_url, container
-
-
-def _blob_config(config: ContentStorageConfig | None = None) -> tuple[str, str] | None:
-    return _blob_config_from_config(_content_config(config))
-
-
-@lru_cache(maxsize=4)
-def _container_client(account_url: str, container: str):
-    from azure.identity import DefaultAzureCredential
-    from azure.storage.blob import BlobServiceClient
-
-    service = BlobServiceClient(account_url=account_url, credential=DefaultAzureCredential())
-    return service.get_container_client(container)
-
-
-def _is_blob_not_found(exc: Exception) -> bool:
-    return exc.__class__.__name__ in {"ResourceNotFoundError", "BlobNotFoundError"}
+# ---------------------------------------------------------------------------
+# Public API — resolve config + inject the blob factory, delegate to stride_storage
+# ---------------------------------------------------------------------------
 
 
 def read_text(
@@ -117,31 +77,11 @@ def read_text(
     *,
     config: ContentStorageConfig | None = None,
 ) -> ContentItem | None:
-    """Read UTF-8 text from Blob if configured, falling back to local files."""
-    storage_config = _content_config(config)
-    blob_config = _blob_config_from_config(storage_config)
-    if blob_config is not None:
-        account_url, container = blob_config
-        try:
-            data = _container_client(account_url, container).download_blob(
-                _blob_name(relative_path, storage_config)
-            ).readall()
-            logger.info("content read source=blob path=%s", relative_path)
-            return ContentItem(data.decode("utf-8"), "blob")
-        except Exception as exc:
-            if not _is_blob_not_found(exc):
-                logger.warning(
-                    "Blob content read failed for %s; falling back to filesystem: %s",
-                    relative_path,
-                    exc,
-                )
-
-    path = _file_path(relative_path)
-    if not path.exists():
-        logger.info("content read source=missing path=%s", relative_path)
-        return None
-    logger.info("content read source=file path=%s", relative_path)
-    return ContentItem(path.read_text(encoding="utf-8"), "file")
+    return _store.read_text(
+        relative_path,
+        config=_content_config(config),
+        container_client=_container_client,
+    )
 
 
 def write_text(
@@ -151,32 +91,13 @@ def write_text(
     content_type: str = "text/plain; charset=utf-8",
     config: ContentStorageConfig | None = None,
 ) -> str:
-    """Write UTF-8 text to Blob if configured, falling back to local files."""
-    storage_config = _content_config(config)
-    blob_config = _blob_config_from_config(storage_config)
-    data = content.encode("utf-8")
-    if blob_config is not None:
-        account_url, container = blob_config
-        try:
-            _container_client(account_url, container).upload_blob(
-                _blob_name(relative_path, storage_config),
-                data,
-                overwrite=True,
-            )
-            logger.info("content write source=blob path=%s", relative_path)
-            return "blob"
-        except Exception as exc:
-            logger.warning(
-                "Blob content write failed for %s; falling back to filesystem: %s",
-                relative_path,
-                exc,
-            )
-
-    path = _file_path(relative_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    logger.info("content write source=file path=%s", relative_path)
-    return "file"
+    return _store.write_text(
+        relative_path,
+        content,
+        config=_content_config(config),
+        container_client=_container_client,
+        content_type=content_type,
+    )
 
 
 def read_json(
@@ -184,10 +105,11 @@ def read_json(
     *,
     config: ContentStorageConfig | None = None,
 ) -> tuple[Any, str] | None:
-    item = read_text(relative_path, config=config)
-    if item is None:
-        return None
-    return json.loads(item.content), item.source
+    return _store.read_json(
+        relative_path,
+        config=_content_config(config),
+        container_client=_container_client,
+    )
 
 
 def write_json(
@@ -196,12 +118,11 @@ def write_json(
     *,
     config: ContentStorageConfig | None = None,
 ) -> str:
-    content = json.dumps(data, indent=2, default=str)
-    return write_text(
+    return _store.write_json(
         relative_path,
-        content,
-        content_type="application/json; charset=utf-8",
-        config=config,
+        data,
+        config=_content_config(config),
+        container_client=_container_client,
     )
 
 
@@ -210,22 +131,11 @@ def exists(
     *,
     config: ContentStorageConfig | None = None,
 ) -> bool:
-    storage_config = _content_config(config)
-    blob_config = _blob_config_from_config(storage_config)
-    if blob_config is not None:
-        account_url, container = blob_config
-        try:
-            return bool(_container_client(account_url, container).get_blob_client(
-                _blob_name(relative_path, storage_config)
-            ).exists())
-        except Exception as exc:
-            logger.warning(
-                "Blob content exists check failed for %s; falling back to filesystem: %s",
-                relative_path,
-                exc,
-            )
-
-    return _file_path(relative_path).exists()
+    return _store.exists(
+        relative_path,
+        config=_content_config(config),
+        container_client=_container_client,
+    )
 
 
 def list_week_folders(
@@ -233,31 +143,11 @@ def list_week_folders(
     *,
     config: ContentStorageConfig | None = None,
 ) -> list[str]:
-    """Return week folder names discovered in Blob and/or the filesystem."""
-    folders: set[str] = set()
-
-    storage_config = _content_config(config)
-    blob_config = _blob_config_from_config(storage_config)
-    if blob_config is not None:
-        account_url, container = blob_config
-        prefix = _blob_name(f"{user}/logs", storage_config) + "/"
-        try:
-            for blob in _container_client(account_url, container).list_blobs(name_starts_with=prefix):
-                rest = blob.name[len(prefix):]
-                week = rest.split("/", 1)[0]
-                if week:
-                    folders.add(week)
-            logger.info("content list_weeks source=blob user=%s count=%d", user, len(folders))
-        except Exception as exc:
-            logger.warning("Blob week listing failed for %s; falling back to filesystem: %s", user, exc)
-
-    logs_dir = core_db.USER_DATA_DIR / user / "logs"
-    if logs_dir.exists():
-        file_folders = {d.name for d in logs_dir.iterdir() if d.is_dir()}
-        folders.update(file_folders)
-        logger.info("content list_weeks source=file user=%s count=%d", user, len(file_folders))
-
-    return sorted(folders, reverse=True)
+    return _store.list_week_folders(
+        user,
+        config=_content_config(config),
+        container_client=_container_client,
+    )
 
 
 def any_exists(
@@ -265,7 +155,11 @@ def any_exists(
     *,
     config: ContentStorageConfig | None = None,
 ) -> bool:
-    return any(exists(path, config=config) for path in relative_paths)
+    return _store.any_exists(
+        relative_paths,
+        config=_content_config(config),
+        container_client=_container_client,
+    )
 
 
 def list_files_in_folder(
@@ -273,33 +167,8 @@ def list_files_in_folder(
     *,
     config: ContentStorageConfig | None = None,
 ) -> list[str]:
-    """Return basenames of files in ``relative_dir`` from blob + filesystem.
-
-    Used by the weeks route to probe for body-composition artifacts that
-    follow a ``body-composition.*`` / ``inbody.*`` pattern (e.g.
-    ``body-composition.4-14.json`` — dated extra scans).
-    """
-    files: set[str] = set()
-    storage_config = _content_config(config)
-    blob_config = _blob_config_from_config(storage_config)
-    if blob_config is not None:
-        account_url, container = blob_config
-        prefix = _blob_name(relative_dir, storage_config).rstrip("/") + "/"
-        try:
-            for blob in _container_client(account_url, container).list_blobs(name_starts_with=prefix):
-                rest = blob.name[len(prefix):]
-                if rest and "/" not in rest:
-                    files.add(rest)
-        except Exception as exc:
-            logger.warning(
-                "Blob list_files failed for %s; falling back to filesystem: %s",
-                relative_dir,
-                exc,
-            )
-
-    dir_path = _file_path(relative_dir)
-    if dir_path.exists() and dir_path.is_dir():
-        for p in dir_path.iterdir():
-            if p.is_file():
-                files.add(p.name)
-    return sorted(files)
+    return _store.list_files_in_folder(
+        relative_dir,
+        config=_content_config(config),
+        container_client=_container_client,
+    )

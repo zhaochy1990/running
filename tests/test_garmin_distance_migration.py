@@ -5,7 +5,7 @@ from garmin_sync.migrations import (
     _DISTANCE_FIX_FLAG,
     migrate_distance_units_m_to_km,
 )
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 
 
 def _insert(db, label_id, distance_m, synced_at, provider="garmin"):

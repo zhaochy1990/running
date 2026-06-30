@@ -6,7 +6,7 @@ module directly (except at the composition root in stride_server.main).
 
 from __future__ import annotations
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.models import ActivityDetail
 from stride_core.registry import write_user_provider
 from stride_core.source import (

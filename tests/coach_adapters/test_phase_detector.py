@@ -8,7 +8,7 @@ from stride_core.master_plan import PhaseType
 
 
 def _db(tmp_path):
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     return Database(db_path=tmp_path / "coros.db")
 
