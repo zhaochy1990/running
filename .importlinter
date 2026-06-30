@@ -132,3 +132,4 @@ forbidden_modules =
     stride_storage.content
     stride_storage.factories
     stride_storage.keyvault
+    stride_storage.coach_persistence
