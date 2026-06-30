@@ -1513,8 +1513,35 @@ class TestQueryFitnessStateStride:
         state = mod._query_fitness_state("anyuser")
         assert state["ctl"] == 64.1      # chronic_load, NOT cti=120
         assert state["atl"] == 69.9      # acute_load, NOT ati=136
-        assert state["rhr"] == 48        # rhr still from daily_health
+        assert state["rhr"] == 48        # no calibration -> fallback to raw daily_health
         assert "64" in state["summary"]
+
+    def test_prefers_calibration_rhr_baseline_over_raw(self, tmp_path, monkeypatch):
+        from stride_storage.sqlite.database import Database
+        from stride_storage.sqlite.calibration_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+        db = Database(db_path=tmp_path / "coros.db")
+        c = db._conn
+        # raw last-measured rhr = 52, but the smoothed calibration baseline = 45.
+        c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
+                  "VALUES ('20260610', 136, 120, 50, 52)")
+        c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+                  "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8)")
+        SQLiteRunningCalibrationRepository(db)  # bootstrap calibration tables
+        c.execute(
+            "INSERT INTO running_calibration_snapshot "
+            "(as_of_date, algorithm_version, threshold_hr, threshold_speed_mps, "
+            " threshold_hr_confidence, threshold_speed_confidence, rhr_baseline, "
+            " observed_max_hr, hrmax_estimate, hrmax_confidence) "
+            "VALUES ('2026-06-10', 1, 175.0, 4.65, 'medium', 'medium', 45.0, 188.0, 188.0, 'medium')"
+        )
+        c.commit()
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
+        from stride_server import master_plan_generator as mod
+        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
+        state = mod._query_fitness_state("anyuser")
+        assert state["rhr"] == 45.0      # calibration baseline preferred over raw 52
 
 
 # ---------------------------------------------------------------------------
