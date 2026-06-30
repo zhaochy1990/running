@@ -187,17 +187,12 @@ class TestActivityDetailBuilder:
         # Pace converted from m/s
         assert lap.avg_pace is not None and 290 < lap.avg_pace < 300
 
-    def test_with_hr_zones(self):
-        sample = _sample_activity()
-        zones = [
-            {"zoneNumber": 1, "secsInZone": 25, "zoneLowBoundary": 91},
-            {"zoneNumber": 2, "secsInZone": 100, "zoneLowBoundary": 110},
-        ]
-        d = activity_detail_from_garmin(sample, hr_zones=zones)
-        assert len(d.zones) == 2
-        assert d.zones[0].zone_index == 1
-        assert d.zones[0].duration_s == 25
-        assert d.zones[0].range_unit == "bpm"
+    def test_provider_zones_not_ingested(self):
+        # Garmin's own HR-zone buckets are no longer ingested; per-activity
+        # time-in-zone is computed post-sync from STRIDE calibration zones
+        # (stride_core.activity_zones), same as the COROS path.
+        d = activity_detail_from_garmin(_sample_activity())
+        assert d.zones == []
 
 
 class TestTimeseriesFromActivityDetails:

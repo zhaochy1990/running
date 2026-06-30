@@ -214,14 +214,12 @@ class GarminDataSource(BaseDataSource):
                 maxpoly=GARMIN_ACTIVITY_DETAILS_MAXPOLY,
             )
             splits = client.get_activity_splits(label_id)
-            hr_zones = client.get_activity_hr_in_timezones(label_id)
             weather = client.get_activity_weather(label_id)
             timeseries_points = timeseries_points_from_activity_details(details)
 
             detail = activity_detail_from_garmin(
                 activity,
                 splits=splits,
-                hr_zones=hr_zones,
                 weather=weather,
                 timeseries_points=timeseries_points,
             )

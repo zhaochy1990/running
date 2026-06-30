@@ -144,18 +144,16 @@ def _sync_activities(
                     maxpoly=GARMIN_ACTIVITY_DETAILS_MAXPOLY,
                 )
                 splits = client.get_activity_splits(activity_id)
-                hr_zones = client.get_activity_hr_in_timezones(activity_id)
                 weather = client.get_activity_weather(activity_id)
             except Exception as exc:
                 logger.warning("Skipping detail fetch for %s: %s", activity_id, exc)
-                details, splits, hr_zones, weather = None, None, None, None
+                details, splits, weather = None, None, None
 
             timeseries_points = timeseries_points_from_activity_details(details)
 
             detail = activity_detail_from_garmin(
                 activity,
                 splits=splits,
-                hr_zones=hr_zones,
                 weather=weather,
                 timeseries_points=timeseries_points,
             )
