@@ -1260,6 +1260,10 @@ class Database:
         # Upsert child records
         for lap in a.laps:
             self._upsert_lap(a.label_id, lap)
+        # Clear zones before reinserting: a re-sync can change the zone set
+        # (e.g. a misclassified pace group repaired to its own rows), and leftover
+        # rows from a prior parse would otherwise linger as stale zones.
+        self._conn.execute("DELETE FROM zones WHERE label_id = ?", (a.label_id,))
         for zone in a.zones:
             self._upsert_zone(a.label_id, zone)
         self._insert_timeseries(a.label_id, a.timeseries)
