@@ -58,13 +58,22 @@ _RACE_TYPE_BY_DISPLAY_DISTANCE = {
     display: race_type for race_type, display in _DISPLAY_DISTANCE_BY_RACE_TYPE.items()
 }
 
+# Distance windows for matching an activity to a canonical race distance.
+# Real race GPS tracks measure LONG far more often than short (tangents missed,
+# course re-acquire, certified courses are a *minimum* length), so the upper
+# bound must allow ~+3% over nominal. A too-tight upper bound silently drops the
+# real race and lets a shorter *training* run at the exact nominal distance win
+# the PB instead — e.g. an FM upper of 42.4 km excluded real marathons measured
+# at 42.45–42.61 km and recorded a 42.22 km easy run as the marathon PB. Widening
+# the upper bound only ADDS candidates; the fastest within the window still wins,
+# so slower long runs never displace a real race PB.
 ACTIVITY_DISTANCE_TOLERANCE_M: dict[str, tuple[float, float]] = {
     "1K": (950.0, 1050.0),
     "3K": (2900.0, 3100.0),
-    "5K": (4800.0, 5200.0),
-    "10K": (9800.0, 10200.0),
-    "HM": (20800.0, 21300.0),
-    "FM": (41800.0, 42400.0),
+    "5K": (4800.0, 5300.0),
+    "10K": (9800.0, 10500.0),
+    "HM": (20800.0, 21800.0),
+    "FM": (41800.0, 43500.0),
 }
 
 # Physiological speed ceiling for PB candidates. A GPS dropout-and-reacquire can
