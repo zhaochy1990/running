@@ -19,6 +19,7 @@ from stride_storage.interfaces.config import (
     validate_positive,
     validate_required_when,
 )
+from stride_storage.interfaces.likes import LikeEntity, LikesBackend
 
 __all__ = [
     "AzureKeyVaultConfig",
@@ -26,6 +27,8 @@ __all__ = [
     "ConfigError",
     "ContentStorageConfig",
     "JPushConfig",
+    "LikeEntity",
+    "LikesBackend",
     "LikesStorageConfig",
     "MasterPlanStorageConfig",
     "NotificationConfig",

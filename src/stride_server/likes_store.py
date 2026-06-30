@@ -38,12 +38,10 @@ from stride_storage.azure.likes_backend import (  # noqa: F401  (re-export)
     _validate_team_id,
     _validate_user_id,
 )
+from stride_storage.azure.credentials import reset_credential_cache
 from stride_storage.interfaces.likes import LikeEntity, LikesBackend  # noqa: F401
 
 logger = logging.getLogger(__name__)
-
-ACCOUNT_URL_ENV = "STRIDE_LIKES_TABLE_ACCOUNT_URL"
-TABLE_NAME_ENV = "STRIDE_LIKES_TABLE_NAME"
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +80,9 @@ def reset_backend_cache() -> None:
     """Test helper — drop the cached backend so env changes take effect."""
     _get_backend.cache_clear()
     clear_server_config_cache()
+    # Also drop the shared Azure credential so a test that switches backends
+    # gets clean credential state (no-op until a real Azure backend is used).
+    reset_credential_cache()
 
 
 def _now_iso() -> str:
