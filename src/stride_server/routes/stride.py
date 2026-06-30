@@ -63,39 +63,37 @@ def get_stride_zones(user: str) -> dict[str, Any]:
         # SQLiteRunningCalibrationRepository, not by Database.__init__, so a
         # user whose DB has never been backfilled would 500 with "no such
         # table". The repo constructor is idempotent (CREATE IF NOT EXISTS).
+        # Latest calibration via the canonical reader (single source per
+        # CLAUDE.md) instead of re-implementing the snapshot SELECT. The repo
+        # constructor is idempotent and bootstraps the snapshot/zone tables
+        # (CREATE IF NOT EXISTS) so an un-backfilled DB doesn't 500.
         from stride_storage.sqlite.calibration_connector import (
             SQLiteRunningCalibrationRepository,
         )
-        SQLiteRunningCalibrationRepository(db)
-
-        snap_rows = db._conn.execute(
-            """SELECT id, as_of_date, threshold_hr, threshold_speed_mps,
-                      threshold_hr_confidence, threshold_speed_confidence
-               FROM running_calibration_snapshot
-               ORDER BY as_of_date DESC, id DESC
-               LIMIT 1"""
-        ).fetchall()
-        if not snap_rows:
+        repo = SQLiteRunningCalibrationRepository(db)
+        snapshot = repo.fetch_latest()
+        if snapshot is None:
             return {"threshold": None, "pace_zones": [], "hr_zones": []}
-        snap = dict(snap_rows[0])
 
         threshold = {
-            "speed_mps": snap["threshold_speed_mps"],
-            "pace_per_km_sec": _pace_per_km_sec(snap["threshold_speed_mps"]),
-            "hr_bpm": snap["threshold_hr"],
-            "speed_confidence": snap["threshold_speed_confidence"],
-            "hr_confidence": snap["threshold_hr_confidence"],
-            "as_of_date": snap["as_of_date"],
-            "calibration_id": snap["id"],
+            "speed_mps": snapshot.threshold_speed_mps,
+            "pace_per_km_sec": _pace_per_km_sec(snapshot.threshold_speed_mps),
+            "hr_bpm": snapshot.threshold_hr,
+            "speed_confidence": snapshot.threshold_speed_confidence.value,
+            "hr_confidence": snapshot.threshold_hr_confidence.value,
+            "as_of_date": snapshot.as_of_date.isoformat(),
+            "calibration_id": snapshot.id,
         }
 
+        # fetch_latest() hydrates the snapshot but not its zones — read those
+        # by snapshot_id (the one part the repository doesn't expose).
         zone_rows = db._conn.execute(
             """SELECT zone_kind, name, min_value, max_value,
                       min_speed_mps, max_speed_mps
                FROM running_calibration_zone
                WHERE snapshot_id = ?
                ORDER BY zone_kind, name""",
-            (snap["id"],),
+            (snapshot.id,),
         ).fetchall()
 
         hr_zones = []

@@ -879,10 +879,20 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
             "SELECT date, acute_load, chronic_load, form FROM daily_training_load "
             "ORDER BY date DESC LIMIT 1"
         ).fetchone()
-        rhr_row = conn.execute(
-            "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
-        ).fetchone()
-        rhr = rhr_row[0] if rhr_row else None
+        # RHR for the fitness context: prefer the calibration baseline (smoothed
+        # P10/25 over 30-90d — the CLAUDE.md single source) over a single noisy
+        # last reading; fall back to the latest measured value when there is no
+        # calibration snapshot yet.
+        from stride_storage.sqlite.calibration_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+        _calib = SQLiteRunningCalibrationRepository(db).fetch_latest()
+        rhr = _calib.rhr_baseline if _calib and _calib.rhr_baseline is not None else None
+        if rhr is None:
+            rhr_row = conn.execute(
+                "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
+            ).fetchone()
+            rhr = rhr_row[0] if rhr_row else None
 
         if row:
             _date, atl, ctl, form = row
