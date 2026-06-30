@@ -8,7 +8,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
-from stride_core.db import USER_DATA_DIR, Database
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",

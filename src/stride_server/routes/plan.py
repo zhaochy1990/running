@@ -35,7 +35,7 @@ _MAX_PLAN_MD_BYTES = 64 * 1024
 # spacing between hard days, etc.). Symmetric around the planned date.
 _PUSH_DATE_WINDOW_DAYS = 7
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.plan_spec import SUPPORTED_SCHEMA_VERSION, SessionKind, WeeklyPlan
 from stride_core.source import Capability, DataSource, FeatureNotSupported
 from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWorkout

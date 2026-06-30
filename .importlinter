@@ -77,6 +77,12 @@ source_modules =
     stride_core.training_load.types
 forbidden_modules =
     stride_core.db
+    stride_storage.sqlite
+    stride_storage.azure
+    stride_storage.content
+    stride_storage.keyvault
+    stride_storage.coach_persistence
+    stride_storage.factories
     stride_server
     coros_sync
     garmin_sync
@@ -102,6 +108,12 @@ source_modules =
     stride_core.running_calibration.prediction
 forbidden_modules =
     stride_core.db
+    stride_storage.sqlite
+    stride_storage.azure
+    stride_storage.content
+    stride_storage.keyvault
+    stride_storage.coach_persistence
+    stride_storage.factories
     stride_server
     coros_sync
     garmin_sync

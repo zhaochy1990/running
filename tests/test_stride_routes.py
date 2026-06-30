@@ -21,8 +21,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
-from stride_core.db import Database
-from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_storage.sqlite.database import Database
+from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 
 
 USER_ID = "00000000-0000-4000-8000-000000000001"

@@ -48,7 +48,7 @@ def _make_token(private_pem: str, sub: str) -> str:
 
 
 def _seed_activity(user_data_dir, user_id: str, label_id: str) -> None:
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     user_dir = user_data_dir / user_id
     user_dir.mkdir(parents=True, exist_ok=True)
     db = Database(user_dir / "coros.db")

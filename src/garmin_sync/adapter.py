@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.registry import write_user_provider
 from stride_core.source import (
     BaseDataSource,

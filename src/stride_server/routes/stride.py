@@ -63,7 +63,7 @@ def get_stride_zones(user: str) -> dict[str, Any]:
         # SQLiteRunningCalibrationRepository, not by Database.__init__, so a
         # user whose DB has never been backfilled would 500 with "no such
         # table". The repo constructor is idempotent (CREATE IF NOT EXISTS).
-        from stride_core.running_calibration.sqlite_connector import (
+        from stride_storage.sqlite.calibration_connector import (
             SQLiteRunningCalibrationRepository,
         )
         SQLiteRunningCalibrationRepository(db)

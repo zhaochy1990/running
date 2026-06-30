@@ -88,7 +88,7 @@ class TestBodyCompositionUpsert:
 def test_migration_renames_legacy_tables(tmp_path):
     """Existing inbody_scan / inbody_segment tables auto-rename on Database() open."""
     import sqlite3
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     db_path = tmp_path / "coros.db"
     conn = sqlite3.connect(str(db_path))

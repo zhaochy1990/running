@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 
 
 @pytest.fixture(autouse=True)

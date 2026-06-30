@@ -151,7 +151,7 @@ class TestNewUserDefaultKm:
         monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
         client, token, _, _ = app_client
         _post(client, token, {"week_start": MONDAY})
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         db = Database(user=USER_UUID)
         rows = db.query(
             "SELECT * FROM planned_session WHERE week_folder = ?",
@@ -168,7 +168,7 @@ class TestProgressionFromLastWeek:
         """Insert planned sessions + activities for the week of 2026-05-04."""
         import stride_core.db as core_db_mod
         monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         from stride_core.plan_spec import PlannedSession, SessionKind
 
         db = Database(user=USER_UUID)
@@ -230,7 +230,7 @@ class TestProgressionFromLastWeek:
         monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
         monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
 
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         from stride_core.plan_spec import PlannedSession, SessionKind
 
         db = Database(user=USER_UUID)
@@ -327,7 +327,7 @@ class TestConflictHandling:
         _post(client, token, {"week_start": MONDAY})
         _post(client, token, {"week_start": MONDAY}, force=True)
 
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         db = Database(user=USER_UUID)
         rows = db.query(
             "SELECT * FROM planned_session WHERE week_folder = ?",

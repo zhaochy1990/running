@@ -24,7 +24,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.plan_spec import (
     Meal,
     PlannedNutrition,
@@ -345,6 +345,7 @@ class TestApplyWeeklyPlanRollback:
         """Inject an exception into upsert_planned_nutrition and verify NO
         partial rows landed in any of the three tables."""
         import stride_core.db as core_db
+        import stride_storage.sqlite.database as sdb
         monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
         from plan_parser import apply_weekly_plan
 
@@ -359,7 +360,7 @@ class TestApplyWeeklyPlanRollback:
         )
 
         # Pre-condition: no DB exists yet.
-        original_upsert = core_db.Database.upsert_planned_nutrition
+        original_upsert = sdb.Database.upsert_planned_nutrition
 
         def boom(self, *args, **kwargs):
             # Run the original DELETE+INSERT then raise to simulate a mid-call
@@ -368,7 +369,7 @@ class TestApplyWeeklyPlanRollback:
             raise RuntimeError("simulated mid-call failure")
 
         monkeypatch.setattr(
-            core_db.Database, "upsert_planned_nutrition", boom,
+            sdb.Database, "upsert_planned_nutrition", boom,
         )
 
         with pytest.raises(RuntimeError, match="simulated"):

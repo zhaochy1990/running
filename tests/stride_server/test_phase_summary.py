@@ -14,7 +14,7 @@ from stride_server.phase_summary import aggregate_phase_summary
 
 
 def _db(tmp_path):
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     return Database(db_path=tmp_path / "coros.db")
 

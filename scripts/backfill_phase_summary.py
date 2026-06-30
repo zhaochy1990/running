@@ -58,7 +58,7 @@ def main() -> None:
                     help="write local store + bundle (default: dry-run print only)")
     args = ap.parse_args()
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     from stride_core.master_plan import MasterPlan
     from stride_server.phase_summary import aggregate_phase_summary
 

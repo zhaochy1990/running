@@ -86,7 +86,7 @@ def _seed_health_rhr(tmp_path, values: list[int]):
     user_dir.mkdir(parents=True, exist_ok=True)
     (user_dir / "config.json").write_text(json.dumps({"provider": "coros"}), encoding="utf-8")
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(user=USER_UUID)
     for i, rhr in enumerate(values):
         db._conn.execute(

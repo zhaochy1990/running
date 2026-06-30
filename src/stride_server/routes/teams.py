@@ -33,7 +33,8 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 
-from stride_core.db import USER_DATA_DIR, Database
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 from stride_core.models import RUN_SPORT_SQL_LIST, pace_str
 from stride_core.post_sync import run_post_sync_for_result
 from stride_core.registry import ProviderRegistry, UnknownProvider

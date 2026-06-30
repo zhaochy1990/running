@@ -337,7 +337,7 @@ class TestSyncHealthHrv:
         ]
 
         # Reader picks Garmin (richer) when both exist for the same date.
-        from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
+        from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
         picked = db.query(
             f"SELECT provider, last_night_avg, feedback_phrase "
             f"FROM ({HRV_PREFERRED_PER_DATE_SQL}) WHERE date = '2026-05-22'"

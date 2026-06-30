@@ -30,7 +30,7 @@ from coach.graphs.generation.rule_filter import INJURY_CONTRAINDICATION_KEYWORDS
 from coach.schemas import PaceTargets, ToolResult, VolumeTargets
 from stride_core.master_plan import PhaseType
 from stride_core.models import RUN_SPORT_SQL_LIST
-from stride_core.running_calibration.sqlite_connector import (
+from stride_storage.sqlite.calibration_connector import (
     SQLiteRunningCalibrationRepository,
 )
 from stride_core.running_calibration.zones import compute_training_zones
@@ -495,7 +495,7 @@ class RecentTrainingTool:
 
     @_tool_safe
     def __call__(self, *, weeks: int = 4, filter: str | None = None) -> ToolResult:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
 
         db = Database(user=self._user_id)
         try:

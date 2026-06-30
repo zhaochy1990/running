@@ -328,7 +328,7 @@ def test_my_teams_returns_empty_when_unconfigured(app_client):
 
 def _seed_user_db(user_data_dir, user_id: str, activities: list[dict]) -> None:
     """Create data/{user_id}/coros.db with the given activity rows."""
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     user_dir = user_data_dir / user_id
     user_dir.mkdir(parents=True, exist_ok=True)

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from stride_core.ability_hook import run_ability_hook
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.source import SyncProgressCallback, SyncResult
 from stride_core.timefmt import SHANGHAI_DAY_SQL
 from stride_core.training_load import recompute_training_load

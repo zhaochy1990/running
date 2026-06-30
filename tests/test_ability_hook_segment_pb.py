@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.ability_hook import run_ability_hook
 from stride_core.models import RUN_SPORT_IDS
 

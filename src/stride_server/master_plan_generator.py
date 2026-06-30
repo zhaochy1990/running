@@ -287,7 +287,7 @@ def _inject_completed_phase_summaries(plan: MasterPlan, user_id: str) -> MasterP
         return plan
 
     try:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
 
         from .phase_summary import aggregate_phase_summary
     except Exception:  # noqa: BLE001 — import failure must not block gen
@@ -608,7 +608,7 @@ def _query_history(user_id: str) -> dict[str, Any]:
         "weekly_profile": [],
     }
     try:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         from stride_core.models import RUN_SPORT_SQL_LIST
 
         db = Database(user=user_id)
@@ -702,7 +702,7 @@ def _query_history(user_id: str) -> dict[str, Any]:
         # canonical running-calibration reader — never inline-computed (repo
         # HARD rule). If it's unavailable, the fallback is simply disabled.
         try:
-            from stride_core.running_calibration.sqlite_connector import (
+            from stride_storage.sqlite.calibration_connector import (
                 SQLiteRunningCalibrationRepository,
             )
             threshold_speed_mps: float | None = None
@@ -860,7 +860,7 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
         "summary": "体能数据暂无",
     }
     try:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         from stride_core.timefmt import today_shanghai
 
         db = Database(user=user_id)

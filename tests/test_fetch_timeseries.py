@@ -1,7 +1,7 @@
 """Tests for Database.fetch_timeseries used by segment PB scan."""
 from __future__ import annotations
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 
 
 def _insert_activity(db, label_id="X"):

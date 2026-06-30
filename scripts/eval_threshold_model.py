@@ -29,7 +29,7 @@ from stride_core.running_calibration.prediction import (
     predict_race,
 )
 from stride_core.running_calibration.segments import best_speed_candidates
-from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 
 
 def pace(mps: float | None) -> str:

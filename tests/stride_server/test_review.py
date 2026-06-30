@@ -99,7 +99,7 @@ def _user_dir(tmp_path):
 
 def _open_db(tmp_path):
     """Open the test user's Database (creates schema if needed)."""
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     return Database(user=USER_UUID)
 
 

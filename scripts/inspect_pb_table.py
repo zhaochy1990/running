@@ -7,7 +7,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
-from stride_core.db import USER_DATA_DIR, Database
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 from stride_core.ability import _decayed_pb_vdot, PB_MAX_AGE_MONTHS, PB_DECAY_PCT_PER_MONTH
 
 _UUID4_RE = re.compile(

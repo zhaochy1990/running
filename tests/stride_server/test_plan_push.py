@@ -152,7 +152,7 @@ def _seed_sessions(tmp_path, n: int = 6, kind: str = "run") -> None:
 
     core_db_mod.USER_DATA_DIR = tmp_path  # ensure correct path
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     db = Database(user=USER_UUID)
 

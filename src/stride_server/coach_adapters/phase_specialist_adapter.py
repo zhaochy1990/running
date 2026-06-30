@@ -55,7 +55,7 @@ from coach.graphs.generation.weekly_prompt import WeekMeta
 from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.tool_loop import run_tool_loop
 from coach.schemas import PaceTargets
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.master_plan import Milestone, Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
 from stride_core.timefmt import today_shanghai

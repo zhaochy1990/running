@@ -37,7 +37,7 @@ def patched_db(tmp_path, monkeypatch):
     """Open a real ``stride_core.db.Database`` against a tmp_path file and
     monkeypatch :func:`read_impls._open_db` to return it. The same DB
     instance is yielded so tests can seed rows."""
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     db_path = tmp_path / "coach_test.db"
     db = Database(db_path)
@@ -200,7 +200,7 @@ def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
 def test_health_snapshot_threshold_from_stride_calibration(patched_db) -> None:
     from datetime import date
 
-    from stride_core.running_calibration.sqlite_connector import (
+    from stride_storage.sqlite.calibration_connector import (
         SQLiteRunningCalibrationRepository,
     )
     from stride_core.running_calibration.types import RunningCalibrationSnapshot
@@ -256,7 +256,7 @@ def test_training_environment_detects_altitude(patched_db, monkeypatch) -> None:
     from datetime import date
 
     import stride_core.timefmt as timefmt
-    from stride_core.running_calibration.sqlite_connector import (
+    from stride_storage.sqlite.calibration_connector import (
         SQLiteRunningCalibrationRepository,
     )
     from stride_core.running_calibration.types import RunningCalibrationSnapshot
@@ -306,7 +306,7 @@ def test_training_environment_dedups_dual_provider_hrv(patched_db, monkeypatch) 
     from datetime import date
 
     import stride_core.timefmt as timefmt
-    from stride_core.running_calibration.sqlite_connector import (
+    from stride_storage.sqlite.calibration_connector import (
         SQLiteRunningCalibrationRepository,
     )
     from stride_core.running_calibration.types import RunningCalibrationSnapshot

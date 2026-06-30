@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 
 
 _OLD_TABLE_SQL = """CREATE TABLE planned_nutrition (

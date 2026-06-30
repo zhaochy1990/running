@@ -6,14 +6,14 @@ from datetime import date, timedelta
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.models import ActivityDetail, DailyHealth, DailyHrv, TimeseriesPoint
 from stride_core.running_calibration import (
     RUNNING_CALIBRATION_MODEL_VERSION,
     CalibrationConfidence,
     RunningCalibrationSnapshot,
 )
-from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.training_load.adapter import (
     _fetch_health_rows,
     _fetch_samples,
@@ -543,7 +543,7 @@ def test_refresh_bounds_calibration_history_to_lookback_window(db, monkeypatch):
         )
         return original_fetch(self, start, end)
 
-    from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+    from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
     original_fetch = SQLiteRunningCalibrationRepository.fetch_history
     monkeypatch.setattr(SQLiteRunningCalibrationRepository, "fetch_history", patched_fetch_history)
 

@@ -6,7 +6,7 @@ import csv
 import sys
 from pathlib import Path
 
-from .db import Database
+from stride_storage.sqlite.database import Database
 
 ACTIVITY_COLUMNS = [
     "label_id", "name", "sport_name", "date", "distance_m", "duration_s",

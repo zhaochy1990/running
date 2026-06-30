@@ -5,7 +5,7 @@ from __future__ import annotations
 from click.testing import CliRunner
 
 from coros_sync.cli import cli
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
 from plan_parser import PlanParseResult
 

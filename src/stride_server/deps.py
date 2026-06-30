@@ -12,11 +12,12 @@ from pathlib import Path
 
 from fastapi import HTTPException, Path as FastAPIPath, Request, status
 
-from stride_core.db import USER_DATA_DIR, Database
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 from stride_core.registry import ProviderRegistry, UnknownProvider
 from stride_core.source import DataSource
 from stride_core.timefmt import parse_week_folder_dates
-from stride_core.state_stores import (
+from stride_storage.sqlite.state_stores import (
     CommentaryStore,
     InBodyStore,
     PlanStateStore,

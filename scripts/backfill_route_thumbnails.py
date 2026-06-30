@@ -32,7 +32,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from stride_core.db import Database, compute_route_thumbnail  # noqa: E402
+from stride_storage.sqlite.database import Database, compute_route_thumbnail  # noqa: E402
 
 DATA_DIR = PROJECT_ROOT / "data"
 

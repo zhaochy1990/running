@@ -34,7 +34,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from stride_core.db import USER_DATA_DIR, Database  # noqa: E402
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database  # noqa: E402
 from stride_core.pb_records import persist_personal_bests  # noqa: E402
 
 _UUID4_RE = re.compile(

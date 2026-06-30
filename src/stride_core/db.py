@@ -1,14 +1,17 @@
-"""SQLite path constants + back-compat shim.
+"""SQLite per-user data-directory path constants.
 
-The ``Database`` class (schema, upserts, queries) moved to
-``stride_storage.sqlite.database``. The per-user data-directory path constants
-stay HERE, because they are the canonical location that callers + tests already
-read and monkeypatch (``setattr(stride_core.db, "USER_DATA_DIR", tmp)``). The
-moved ``Database`` reads them back lazily at call time, so a monkeypatch is
-observed and there is no import-time cycle.
+The ``Database`` class (schema, upserts, queries) lives in
+``stride_storage.sqlite.database``; import it from there. This module keeps
+only the path constants (``USER_DATA_DIR`` / ``DB_PATH`` / ``PROJECT_ROOT`` /
+``DATA_DIR`` / ``_parse_week_folder_dates``).
 
-Path constants are pure (pathlib/regex) — keeping them in ``stride_core`` does
-not pull any storage implementation into core.
+They stay HERE — not in ``stride_storage`` — because they are the canonical
+location that callers + tests already read and monkeypatch
+(``setattr(stride_core.db, "USER_DATA_DIR", tmp)``), and they are pure
+(pathlib/regex) so keeping them in ``stride_core`` pulls no storage
+implementation into core. ``stride_storage.sqlite.database`` reads them back
+lazily at call time (``_paths()``), so a monkeypatch is observed and there is
+no import-time cycle. This module imports nothing from ``stride_storage``.
 """
 
 from __future__ import annotations
@@ -45,9 +48,3 @@ def _parse_week_folder_dates(folder: str) -> tuple[str, str] | None:
     end_year = int(year) + (1 if int(emonth) < int(smonth) else 0)
     end = f"{end_year:04d}-{emonth}-{eday}"
     return (start, end)
-
-
-# Re-export the relocated Database layer so existing
-# ``from stride_core.db import Database`` (and friends) keep working.
-from stride_storage.sqlite.database import *  # noqa: E402,F401,F403
-from stride_storage.sqlite.database import Database  # noqa: E402,F401

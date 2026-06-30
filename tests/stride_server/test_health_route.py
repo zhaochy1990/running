@@ -30,7 +30,7 @@ def _open_user_db(tmp_path):
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir(parents=True, exist_ok=True)
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     return Database(user=USER_UUID)
 
@@ -48,7 +48,7 @@ def test_rhr_baseline_comes_from_calibration_snapshot(app_client):
     try:
         # Seed the canonical snapshot table with a known rhr_baseline.
         # Leave daily_health empty — inline P10 would give None.
-        from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+        from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
         from stride_core.running_calibration.types import (
             CalibrationConfidence,
             RunningCalibrationSnapshot,
