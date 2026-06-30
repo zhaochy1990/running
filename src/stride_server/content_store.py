@@ -25,6 +25,10 @@ from stride_storage.azure.blob_backend import get_container_client as _container
 from stride_storage.content import store as _store
 from stride_storage.content.store import ContentItem  # noqa: F401  (re-export)
 
+# The read/write log calls live in stride_storage.content.store (same
+# "uvicorn.error" logger). The facade keeps this handle only to set the
+# process-level log level for content I/O — kept server-side rather than in
+# the stride_storage library so the library doesn't configure app logging.
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.INFO)
 

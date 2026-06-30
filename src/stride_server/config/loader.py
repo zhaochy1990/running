@@ -7,6 +7,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from stride_storage.keyvault import reset_secret_client_cache
+
 from .models import ConfigError, ServerConfig
 from .sources import deep_merge, env_source, parse_bool, set_path, toml_file_source
 
@@ -249,6 +251,10 @@ def load_server_config(
 
 def clear_server_config_cache() -> None:
     _cached_default.cache_clear()
+    # Also drop the shared Key Vault client so a config reload gets a fresh
+    # client (and so tests that reset the config cache don't leak a stale
+    # secret client into the next AKV load).
+    reset_secret_client_cache()
 
 
 reset_server_config_cache = clear_server_config_cache
