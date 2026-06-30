@@ -139,10 +139,11 @@ class StrideTrainingLoadHandler:
 class ActivityZonesHandler:
     """Materialize per-activity time-in-zone from STRIDE calibration zones.
 
-    Runs after StrideTrainingLoadHandler (which refreshes the calibration
-    snapshot) and before AbilityHandler (whose L1 reads the `zones` table), so
-    the activity page and HR-zone analytics see STRIDE-derived zones rather than
-    the provider's own buckets.
+    Runs before AbilityHandler (whose L1 reads the `zones` table) so the activity
+    page and HR-zone analytics see STRIDE-derived zones rather than the provider's
+    own buckets. Uses the latest persisted running-calibration snapshot, preferring
+    the one as-of the activity's date; that snapshot is maintained by the
+    training-load calibration refresh, not recomputed here.
     """
 
     name = "activity_zones"
@@ -208,13 +209,15 @@ class ActivityZonesHandler:
                 if not zone_set.pace_zones and not zone_set.heart_rate_zones:
                     continue
 
-                running_samples = repo._fetch_samples(
+                running_samples = repo.fetch_activity_samples(
                     lid,
                     provider=row.get("provider"),
                     activity_distance_m=row.get("distance_m"),
                 )
                 if not running_samples:
                     continue
+                # dwell_seconds returns one entry per input sample (same length),
+                # so the zip stays 1:1 even when some samples lack a timestamp.
                 dwell = dwell_seconds([s.elapsed_s for s in running_samples])
                 samples = [
                     ZoneSample(dwell_s=d, speed_mps=s.speed_mps, hr_bpm=s.heart_rate_bpm)
@@ -229,6 +232,12 @@ class ActivityZonesHandler:
                     db._upsert_zone(lid, zone)
                 db._conn.commit()
             except Exception:
+                # Roll back the pending DELETE/insert so a later activity's commit
+                # in this same loop can't land this one's half-applied write.
+                try:
+                    db._conn.rollback()
+                except Exception:
+                    pass
                 logger.warning(
                     "activity-zones post-sync failed for %s", lid, exc_info=True
                 )

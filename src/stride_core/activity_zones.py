@@ -128,24 +128,35 @@ def compute_activity_time_in_zone(
 
 
 def dwell_seconds(elapsed_s: Sequence[float | None]) -> list[float]:
-    """Per-sample dwell from monotonic elapsed seconds.
+    """Per-sample dwell from elapsed seconds, aligned 1:1 to the input.
 
-    Each sample's dwell is the gap to the next sample. Gaps far larger than the
-    typical cadence (device paused / signal dropout) are clamped to the median
-    cadence so a stop doesn't dump minutes into whatever zone preceded it. The
-    final sample inherits the median cadence.
+    Each sample's dwell is the gap to the next sample. The returned list always
+    has the same length as ``elapsed_s`` so callers can zip it straight back onto
+    the samples — samples with a missing timestamp (COROS drops it during early
+    GPS acquisition) or a non-increasing gap get the median cadence rather than
+    being dropped or mispaired. Gaps far larger than the typical cadence (device
+    paused / signal dropout) are clamped to the median so a stop doesn't dump
+    minutes into whatever zone preceded it; the final sample inherits the median.
     """
-    clean = [float(e) for e in elapsed_s if e is not None]
-    if len(clean) < 2:
-        return [1.0] * len(clean)
-    deltas = [b - a for a, b in zip(clean, clean[1:]) if b > a]
+    n = len(elapsed_s)
+    if n == 0:
+        return []
+    deltas = [
+        b - a
+        for a, b in zip(elapsed_s, elapsed_s[1:])
+        if a is not None and b is not None and b > a
+    ]
     if not deltas:
-        return [1.0] * len(clean)
+        return [1.0] * n
     ordered = sorted(deltas)
     median = ordered[len(ordered) // 2] or 1.0
     cap = median * 5
-    # A gap far above the typical cadence is a pause / signal dropout — count it
-    # as one nominal sample, not the whole stop. The last sample (no successor)
-    # inherits the median cadence.
-    dwell = [d if 0 < d <= cap else median for d in (deltas + [median])]
+    dwell: list[float] = []
+    for i in range(n):
+        a = elapsed_s[i]
+        b = elapsed_s[i + 1] if i + 1 < n else None
+        if a is not None and b is not None and a < b <= a + cap:
+            dwell.append(b - a)
+        else:
+            dwell.append(median)
     return dwell

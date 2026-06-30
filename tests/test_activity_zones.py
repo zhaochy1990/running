@@ -110,3 +110,18 @@ class TestDwellSeconds:
     def test_handles_too_few_points(self):
         assert dwell_seconds([5]) == [1.0]
         assert dwell_seconds([]) == []
+
+    def test_aligns_one_to_one_with_input(self):
+        # Must return exactly one dwell per input sample so the caller's zip onto
+        # the samples stays paired — even when timestamps are missing (COROS drops
+        # them during early GPS acquisition).
+        elapsed = [0, 1, None, 3, 4]
+        dwell = dwell_seconds(elapsed)
+        assert len(dwell) == len(elapsed)
+        assert all(d > 0 for d in dwell)
+
+    def test_non_monotonic_gap_gets_median(self):
+        # A backwards/zero step isn't a real dwell; fall back to the median.
+        dwell = dwell_seconds([0, 1, 0, 2])
+        assert len(dwell) == 4
+        assert all(d > 0 for d in dwell)
