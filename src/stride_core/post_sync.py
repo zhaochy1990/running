@@ -136,6 +136,104 @@ class StrideTrainingLoadHandler:
                     time.sleep(self._backoff_s)
 
 
+class ActivityZonesHandler:
+    """Materialize per-activity time-in-zone from STRIDE calibration zones.
+
+    Runs after StrideTrainingLoadHandler (which refreshes the calibration
+    snapshot) and before AbilityHandler (whose L1 reads the `zones` table), so
+    the activity page and HR-zone analytics see STRIDE-derived zones rather than
+    the provider's own buckets.
+    """
+
+    name = "activity_zones"
+
+    def applies_to(self, context: PostSyncContext) -> bool:
+        return bool(context.activity_label_ids)
+
+    def run(self, context: PostSyncContext) -> None:
+        label_ids = _unique_labels(context.activity_label_ids)
+        if not label_ids:
+            return
+
+        from datetime import date as _date
+
+        from stride_core.activity_zones import (
+            ZoneSample,
+            compute_activity_time_in_zone,
+            dwell_seconds,
+        )
+        from stride_core.models import RUN_SPORT_IDS
+        from stride_core.running_calibration.sqlite_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+        from stride_core.running_calibration.zones import compute_training_zones
+
+        db = context.db
+        repo = SQLiteRunningCalibrationRepository(db)
+
+        _emit(
+            context.progress,
+            phase="activity_zones",
+            message="正在计算 STRIDE 配速 / 心率区间",
+            activity_label_count=len(label_ids),
+        )
+
+        for lid in label_ids:
+            try:
+                meta = db.query(
+                    f"SELECT sport_type, distance_m, provider, "
+                    f"{SHANGHAI_DAY_SQL} AS shanghai_date "
+                    f"FROM activities WHERE label_id = ?",
+                    (lid,),
+                )
+                if not meta:
+                    continue
+                row = dict(meta[0])
+                if row.get("sport_type") not in RUN_SPORT_IDS:
+                    continue
+                day = row.get("shanghai_date")
+                if not day:
+                    continue
+
+                # Prefer the calibration as-of the activity's date; fall back to
+                # the latest snapshot when none predates it (activity synced late,
+                # or a new user whose only snapshot is dated after this run) so the
+                # zones still render rather than silently vanishing.
+                snapshot = repo.fetch_latest(
+                    as_of_date=_date.fromisoformat(str(day))
+                ) or repo.fetch_latest()
+                if snapshot is None:
+                    continue
+                zone_set = compute_training_zones(snapshot)
+                if not zone_set.pace_zones and not zone_set.heart_rate_zones:
+                    continue
+
+                running_samples = repo._fetch_samples(
+                    lid,
+                    provider=row.get("provider"),
+                    activity_distance_m=row.get("distance_m"),
+                )
+                if not running_samples:
+                    continue
+                dwell = dwell_seconds([s.elapsed_s for s in running_samples])
+                samples = [
+                    ZoneSample(dwell_s=d, speed_mps=s.speed_mps, hr_bpm=s.heart_rate_bpm)
+                    for s, d in zip(running_samples, dwell)
+                ]
+
+                rows = compute_activity_time_in_zone(
+                    samples, zone_set.pace_zones, zone_set.heart_rate_zones
+                )
+                db._conn.execute("DELETE FROM zones WHERE label_id = ?", (lid,))
+                for zone in rows:
+                    db._upsert_zone(lid, zone)
+                db._conn.commit()
+            except Exception:
+                logger.warning(
+                    "activity-zones post-sync failed for %s", lid, exc_info=True
+                )
+
+
 class AbilityHandler:
     name = "ability"
 
@@ -220,6 +318,7 @@ class PersonalBestsHandler:
 
 DEFAULT_POST_SYNC_HANDLERS: tuple[PostSyncHandler, ...] = (
     StrideTrainingLoadHandler(),
+    ActivityZonesHandler(),
     AbilityHandler(),
     PersonalBestsHandler(),
     ActivityCommentaryHandler(),
@@ -303,6 +402,7 @@ def run_post_sync_for_result(
 __all__ = [
     "AbilityHandler",
     "ActivityCommentaryHandler",
+    "ActivityZonesHandler",
     "DEFAULT_POST_SYNC_HANDLERS",
     "PostSyncContext",
     "PostSyncHandler",

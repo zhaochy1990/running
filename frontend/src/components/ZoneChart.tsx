@@ -52,9 +52,13 @@ function formatDuration(seconds: number): string {
 }
 
 function formatHRRange(zone: Zone, zones: Zone[]): string {
-  if (zone.range_min == null || zone.range_max == null) return ''
-  const min = Math.round(zone.range_min)
-  const max = Math.round(zone.range_max)
+  const min = zone.range_min != null ? Math.round(zone.range_min) : null
+  const max = zone.range_max != null ? Math.round(zone.range_max) : null
+  if (min == null && max == null) return ''
+  // STRIDE-derived zones leave the outer edges open (recovery has no low bound,
+  // the fastest zone no high bound). Provider rows carry both bounds.
+  if (min == null) return `< ${max}`
+  if (max == null) return `≥ ${min}`
   const maxIdx = Math.max(...zones.map((z) => z.zone_index))
   if (zone.zone_index === 1) {
     const z2 = zones.find((z) => z.zone_index === 2)
@@ -67,11 +71,16 @@ function formatHRRange(zone: Zone, zones: Zone[]): string {
 }
 
 function formatPaceRange(zone: Zone, zones: Zone[]): string {
-  if (zone.range_min == null || zone.range_max == null) return ''
   const toPace = (msPerKm: number) => {
     const s = Math.round(msPerKm / 1000)
     return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
   }
+  // range_min is the faster edge (smaller ms/km), range_max the slower edge.
+  // STRIDE-derived zones leave one edge open: recovery has no slow bound (→
+  // slower than its fast edge), the fastest zone no fast bound.
+  if (zone.range_min == null && zone.range_max == null) return ''
+  if (zone.range_min == null) return `< ${toPace(zone.range_max!)}`
+  if (zone.range_max == null) return `> ${toPace(zone.range_min)}`
   const minPace = toPace(zone.range_min)
   const maxPace = toPace(zone.range_max)
   const maxIdx = Math.max(...zones.map((z) => z.zone_index))
