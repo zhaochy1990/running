@@ -9,6 +9,7 @@ import HealthPage from './pages/HealthPage'
 import BodyCompositionPage from './pages/BodyCompositionPage'
 import TrainingPlanPage from './pages/TrainingPlanPage'
 import TrainingPlanAdjustPage from './pages/TrainingPlanAdjustPage'
+import CoachChatPage from './pages/CoachChatPage'
 import ActivitiesPage from './pages/ActivitiesPage'
 import AbilityPage from './pages/AbilityPage'
 import TrainingStatusPage from './pages/TrainingStatusPage'
@@ -63,6 +64,7 @@ function Dashboard() {
             <Route path="/body-composition" element={<BodyCompositionPage />} />
             <Route path="/plan" element={<TrainingPlanPage />} />
             <Route path="/plan/adjust" element={<TrainingPlanAdjustPage />} />
+            <Route path="/coach" element={<CoachChatPage />} />
             <Route path="/activities" element={<ActivitiesPage />} />
             <Route path="/ability" element={<AbilityPage />} />
             <Route path="/training-status" element={<TrainingStatusPage />} />

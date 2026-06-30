@@ -103,6 +103,7 @@ export default function AppLayout() {
                 text="本周训练"
               />
               <NavItem to="/plan" collapsed={collapsed} icon={<DocIcon />} text="训练计划" />
+              <NavItem to="/coach" collapsed={collapsed} icon={<CoachIcon />} text="AI 教练" />
               <NavItem to="/activities" collapsed={collapsed} icon={<ActivityIcon />} text="活动列表" />
             </NavSection>
 
@@ -185,6 +186,14 @@ function DocIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
       <path d="M14 2v6h6M8 13h8M8 17h6" />
+    </svg>
+  )
+}
+
+function CoachIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" />
     </svg>
   )
 }

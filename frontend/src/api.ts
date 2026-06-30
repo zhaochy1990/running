@@ -1745,3 +1745,150 @@ export interface StrideTrainingLoadResponse {
 export function getStrideTrainingLoad(user: string, days = 90) {
   return fetchJSON<StrideTrainingLoadResponse>(`/${user}/stride/training-load?days=${days}`)
 }
+
+// ---------------------------------------------------------------------------
+// Coach Chat — orchestrator brain (`/coach/chat`) + stateless Pattern-Y apply
+// ---------------------------------------------------------------------------
+// Contract: src/stride_server/routes/coach.py + src/coach/contracts/{turn,target}.py.
+// `/coach/chat` is non-streaming JSON; write proposals ride the response and are
+// landed only when the user confirms via the matching apply endpoint, which is
+// stateless — the whole diff is sent back (no server-side pending-diff store).
+
+/** Week-plan diff op — mirrors stride_core.plan_diff.DiffOp (DiffOpKind values). */
+export type WeekDiffOpKind =
+  | 'move_session'
+  | 'replace_kind'
+  | 'replace_distance'
+  | 'add_session'
+  | 'remove_session'
+  | 'replace_note'
+
+export interface WeekDiffOp {
+  id: string
+  op: WeekDiffOpKind
+  date: string
+  session_index: number
+  old_value: Record<string, unknown> | null
+  new_value: Record<string, unknown> | null
+  spec_patch: Record<string, unknown> | null
+  accepted: boolean | null
+}
+
+/** Week-plan diff — mirrors stride_core.plan_diff.PlanDiff. */
+export interface PlanDiff {
+  diff_id: string
+  folder: string
+  ops: WeekDiffOp[]
+  ai_explanation: string
+  created_at: string
+}
+
+/** Which plan object a turn / proposal acts on — coach.contracts.target.TargetRef. */
+export interface CoachTargetRef {
+  kind: 'master' | 'week' | 'session'
+  plan_id?: string | null
+  folder?: string | null
+  date?: string | null
+  session_index?: number | null
+}
+
+/** A Pattern-Y write proposal — coach.contracts.turn.ProposalCard. */
+export interface CoachProposalCard {
+  specialist_id: string
+  // PlanDiff (carries `folder`) for week/session targets; MasterPlanDiff
+  // (carries `plan_id`) for master targets. Discriminate via `target.kind`.
+  proposal: PlanDiff | MasterPlanDiff
+  target: CoachTargetRef | null
+  summary: string
+}
+
+/** Response of POST /coach/chat — one orchestrated turn (TurnResponse). */
+export interface CoachChatResponse {
+  session_id: string
+  thread_id: string
+  reply: string
+  // clarification != null ⟹ proposals is empty (architecture §4.4 invariant).
+  clarification: string | null
+  active_target: CoachTargetRef | null
+  proposals: CoachProposalCard[]
+}
+
+/** One renderable piece of an assistant turn — coach.schemas.conversation.AssistantPart. */
+export interface CoachAssistantPart {
+  kind: 'text' | 'reasoning' | 'refusal' | 'tool_meta'
+  text: string
+  phase: 'commentary' | 'final_answer' | null
+  annotations?: Record<string, unknown>[]
+  id?: string | null
+}
+
+/** A persisted thread message — assistant turns carry `parts`, others `content`. */
+export interface CoachThreadMessage {
+  role: 'user' | 'assistant' | 'tool'
+  content: string
+  parts: CoachAssistantPart[]
+  name?: string | null
+  tool_call_id?: string | null
+}
+
+export interface CoachThreadHistoryResponse {
+  thread_id: string
+  user_id: string
+  scope: string
+  key: string
+  messages: CoachThreadMessage[]
+}
+
+export interface CoachWeekApplyResponse {
+  applied: number
+  folder: string
+  updated_at: string
+}
+
+export interface CoachMasterApplyResponse {
+  applied: number
+  plan_id: string
+  version: number
+  updated_at: string
+}
+
+/** Type guard: is this proposal a week-plan diff (vs a master-plan diff)? */
+export function isWeekDiff(proposal: PlanDiff | MasterPlanDiff): proposal is PlanDiff {
+  return 'folder' in proposal
+}
+
+/** POST a user turn to the orchestrator brain. */
+export function sendCoachChat(sessionId: string, message: string) {
+  return postJSON<CoachChatResponse>('/users/me/coach/chat', {
+    session_id: sessionId,
+    message,
+  })
+}
+
+/** Cross-session chat history for a coach thread (`{user}:coach:{session_id}`). */
+export async function getCoachThread(threadId: string): Promise<CoachThreadHistoryResponse> {
+  const res = await apiFetch('GET', `/users/me/coach/threads/${encodeURIComponent(threadId)}/messages`)
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+/** Land accepted ops of a coach-proposed week diff (Pattern Y, stateless). */
+export function applyCoachWeekDiff(folder: string, diff: PlanDiff, acceptedOpIds: string[]) {
+  return postJSON<CoachWeekApplyResponse>(
+    `/users/me/coach/plan/${encodeURIComponent(folder)}/apply`,
+    { diff, accepted_op_ids: acceptedOpIds },
+  )
+}
+
+/** Land accepted ops of a coach-proposed season (master) diff (Pattern Y, stateless). */
+export function applyCoachMasterDiff(
+  planId: string,
+  diff: MasterPlanDiff,
+  acceptedOpIds: string[],
+  changeReason = 'coach adjustment',
+) {
+  return postJSON<CoachMasterApplyResponse>(
+    `/users/me/coach/master-plan/${encodeURIComponent(planId)}/apply`,
+    { diff, accepted_op_ids: acceptedOpIds, change_reason: changeReason },
+  )
+}
