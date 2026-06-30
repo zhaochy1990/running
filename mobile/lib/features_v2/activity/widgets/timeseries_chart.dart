@@ -191,12 +191,13 @@ class _TimeseriesChartState extends ConsumerState<TimeseriesChart> {
                     ),
                     FlDotData(
                       show: true,
-                      getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
-                        radius: 4,
-                        color: color,
-                        strokeWidth: 1.5,
-                        strokeColor: StrideTokens.bg,
-                      ),
+                      getDotPainter: (spot, percent, bar, index) =>
+                          FlDotCirclePainter(
+                            radius: 4,
+                            color: color,
+                            strokeWidth: 1.5,
+                            strokeColor: StrideTokens.bg,
+                          ),
                     ),
                   ),
                 )
