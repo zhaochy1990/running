@@ -34,9 +34,6 @@ from stride_storage.interfaces.master_plan import MasterPlanStore  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-ACCOUNT_URL_ENV = "STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL"
-TABLE_NAME_ENV = "STRIDE_MASTER_PLAN_TABLE_NAME"
-
 
 # ---------------------------------------------------------------------------
 # Config resolution + cached store (server policy — stays here)

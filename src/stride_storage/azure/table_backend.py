@@ -47,6 +47,17 @@ class AzureTableConnection:
                 endpoint=self._account_url,
                 credential=get_credential(),
             )
+            # Table creation is intentionally best-effort: we attempt
+            # create_table once, treat "already exists" as success, and on any
+            # other error log a warning and proceed with the table client.
+            # Rationale: in prod the table already exists, so a transient error
+            # here (e.g. a 503) should not block the request — and if the table
+            # genuinely does not exist, the first real upsert/query surfaces a
+            # clear error anyway. This deliberately unifies the three migrated
+            # stores onto one lenient policy (master_plan / notifications
+            # already swallowed here; athlete_memory previously used
+            # create_table_if_not_exists, which is the same create+catch under
+            # the hood — only its non-ResourceExists handling is loosened).
             try:
                 service.create_table(self._table_name)
             except ResourceExistsError:

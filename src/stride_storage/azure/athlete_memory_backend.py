@@ -104,7 +104,9 @@ class AzureTableAthleteMemoryBackend:
         self._conn.table().upsert_entity(self._to_entity(user_id, memory))
 
     def list_for_user(self, user_id: str) -> list[dict[str, Any]]:
-        rows = self._conn.table().query_entities(f"PartitionKey eq '{user_id}'")
+        rows = self._conn.table().query_entities(
+            "PartitionKey eq @pk", parameters={"pk": user_id},
+        )
         return [self._from_entity(dict(r)) for r in rows]
 
     def delete(self, user_id: str, memory_id: str) -> None:
