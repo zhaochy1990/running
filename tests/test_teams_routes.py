@@ -39,7 +39,7 @@ def test_notifications_backend_uses_config_file_backend() -> None:
         )
     )
 
-    assert backend.__class__.__name__ == "_FileBackend"
+    assert backend.__class__.__name__ == "FileNotificationsBackend"
 
 
 def test_jpush_credentials_from_config() -> None:
@@ -76,7 +76,7 @@ def test_notifications_backend_uses_legacy_likes_url_when_dedicated_env_blank(mo
 
     backend = nstore._get_backend()
 
-    assert backend.__class__.__name__ == "_AzureTableBackend"
+    assert backend.__class__.__name__ == "AzureTableNotificationsBackend"
     nstore.reset_backend_cache()
 
 
