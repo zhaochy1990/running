@@ -39,7 +39,7 @@ def test_likes_backend_uses_config_file_backend() -> None:
 
     backend = ls.backend_from_config(cfg)
 
-    assert backend.__class__.__name__ == "_FileBackend"
+    assert backend.__class__.__name__ == "FileLikesBackend"
 
 
 def test_likes_backend_uses_config_azure_backend() -> None:
@@ -52,7 +52,7 @@ def test_likes_backend_uses_config_azure_backend() -> None:
 
     backend = ls.backend_from_config(cfg)
 
-    assert backend.__class__.__name__ == "_AzureTableBackend"
+    assert backend.__class__.__name__ == "AzureTableLikesBackend"
 
 
 def test_likes_default_file_backend_does_not_require_valid_auth_config(monkeypatch) -> None:
@@ -71,7 +71,7 @@ def test_likes_default_file_backend_does_not_require_valid_auth_config(monkeypat
 
     backend = ls._get_backend()
 
-    assert backend.__class__.__name__ == "_FileBackend"
+    assert backend.__class__.__name__ == "FileLikesBackend"
     ls.reset_backend_cache()
 
 
