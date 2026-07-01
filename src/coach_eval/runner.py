@@ -138,9 +138,7 @@ def _fixture_to_fitness_state() -> dict:
         "ctl": None,
         "atl": None,
         "tsb": None,
-        "fatigue": None,
         "rhr": None,
-        "training_load_state": None,
         "summary": "(frozen_fixture mode: no live HRV/CTL signals — S1 is strategic/monthly scale)",
     }
 

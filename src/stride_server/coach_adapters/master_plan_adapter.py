@@ -158,7 +158,12 @@ def load_master_context(state: GenState) -> dict:
         user_id,
         history.get("total_activities", 0),
     )
-    logger.debug("load_master_context: user=%s history_summary=%r", user_id, history_summary)
+    logger.debug(
+        "load_master_context: user=%s history_summary_chars=%d weekly_profile_weeks=%d",
+        user_id,
+        len(history_summary),
+        len(history.get("weekly_profile") or []),
+    )
 
     if job_id:
         update_job(job_id, stage=JobStage.EVALUATING, progress=30)
@@ -216,7 +221,6 @@ def load_master_context(state: GenState) -> dict:
             logger.warning("load_master_context: snippet stash failed: %s", exc)
 
     return {
-        "history": history,
         "history_summary": history_summary,
         "fitness_state": fitness_state,
         "continuity": continuity.model_dump() if continuity is not None else None,
