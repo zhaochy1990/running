@@ -127,6 +127,7 @@ class ChatResponse(BaseModel):
     clarification: str | None = None
     active_target: dict | None = None
     proposals: list[dict] = Field(default_factory=list)
+    artifacts: list[dict] = Field(default_factory=list)
 
 
 class ChatMessage(BaseModel):
@@ -320,6 +321,7 @@ def post_chat_message(
         clarification=turn.clarification,
         active_target=turn.active_target.model_dump() if turn.active_target else None,
         proposals=[card.model_dump() for card in turn.proposals],
+        artifacts=[artifact.model_dump() for artifact in turn.artifacts],
     )
 
 

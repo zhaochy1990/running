@@ -1,6 +1,6 @@
 /// C4 — Master plan generation provider.
 ///
-/// Calls POST /api/users/me/master-plan/generate, persists the job_id to
+/// Starts generation through POST /api/users/me/coach/chat, persists job_id to
 /// SharedPreferences, then polls GET .../jobs/{job_id} every 2 s until done.
 library;
 

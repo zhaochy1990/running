@@ -24,6 +24,10 @@ from coach.contracts import TargetRef
 from coach.orchestrator.resolver import TargetResolverFn
 
 from ..toolkit import build_stride_toolkit
+from .master_plan_generation import (
+    MASTER_PLAN_GENERATION_CARD,
+    make_master_plan_generation_runner,
+)
 from .season_plan import (
     SEASON_PLAN_CARD,
     make_current_master_target_resolver,
@@ -52,6 +56,10 @@ def build_specialist_registry(*, user_id: str, specialist_llm: Any) -> Specialis
     registry.register(
         SEASON_PLAN_CARD,
         make_season_plan_runner(user_id=user_id, llm=specialist_llm, toolkit=toolkit),
+    )
+    registry.register(
+        MASTER_PLAN_GENERATION_CARD,
+        make_master_plan_generation_runner(user_id=user_id),
     )
     return registry
 

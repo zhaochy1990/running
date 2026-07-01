@@ -665,11 +665,38 @@ export interface GenerateMasterPlanResponse {
   eta_seconds: number
 }
 
+function masterPlanGenerationMessage(goalId?: string): string {
+  return goalId
+    ? `请通过 orchestrator 为当前训练目标生成新的赛季训练总纲。goal_id=${goalId}`
+    : '请通过 orchestrator 为我生成新的赛季训练总纲。'
+}
+
 export function generateMasterPlan(goalId?: string) {
-  return postJSON<GenerateMasterPlanResponse & { error?: string; detail?: unknown }>(
-    '/users/me/master-plan/generate',
-    goalId ? { goal_id: goalId } : {},
-  )
+  return postJSON<CoachChatResponse>('/users/me/coach/chat', {
+    session_id: 'master-plan-generation',
+    message: masterPlanGenerationMessage(goalId),
+  }).then((res) => {
+    if (!res.ok) {
+      return res as unknown as JsonResult<GenerateMasterPlanResponse & { error?: string; detail?: unknown }>
+    }
+    const artifact = (res.data.artifacts ?? []).find((a) => a.kind === 'master_plan_generation_job')
+    if (!artifact) {
+      return {
+        ok: false,
+        status: 502,
+        data: { job_id: '', status: 'failed', eta_seconds: 0, error: 'coach_missing_generation_job' },
+      } satisfies JsonResult<GenerateMasterPlanResponse & { error?: string; detail?: unknown }>
+    }
+    return {
+      ok: true,
+      status: res.status,
+      data: {
+        job_id: artifact.id,
+        status: artifact.summary || 'queued',
+        eta_seconds: 120,
+      },
+    } satisfies JsonResult<GenerateMasterPlanResponse & { error?: string; detail?: unknown }>
+  })
 }
 
 export type MasterPlanJobStatus = 'queued' | 'running' | 'done' | 'failed'
@@ -1802,6 +1829,13 @@ export interface CoachProposalCard {
   summary: string
 }
 
+export interface CoachArtifactRef {
+  id: string
+  kind: string
+  uri?: string | null
+  summary?: string | null
+}
+
 /** Response of POST /coach/chat — one orchestrated turn (TurnResponse). */
 export interface CoachChatResponse {
   session_id: string
@@ -1811,6 +1845,7 @@ export interface CoachChatResponse {
   clarification: string | null
   active_target: CoachTargetRef | null
   proposals: CoachProposalCard[]
+  artifacts?: CoachArtifactRef[]
 }
 
 /** One renderable piece of an assistant turn — coach.schemas.conversation.AssistantPart. */

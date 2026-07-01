@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from stride_core.plan_diff import PlanDiff
 from stride_core.master_plan_diff import MasterPlanDiff
 
+from .artifact import ArtifactRef
 from .target import TargetRef
 from .turn import Turn
 
@@ -61,15 +62,6 @@ class SpecialistTask(BaseModel):
 # ---------------------------------------------------------------------------
 # Result outputs
 # ---------------------------------------------------------------------------
-
-
-class ArtifactRef(BaseModel):
-    """Reference to heavy output kept out of the orchestrator context (§3.3)."""
-
-    id: str
-    kind: str
-    uri: str | None = None
-    summary: str | None = None
 
 
 class UsageStats(BaseModel):
@@ -126,4 +118,5 @@ class SpecialistCard(BaseModel):
     tags: list[str] = Field(default_factory=list)
     examples: list[str] = Field(default_factory=list)
     writes: bool = False
+    requires_target: bool = True
     data_needs: list[str] = Field(default_factory=list)

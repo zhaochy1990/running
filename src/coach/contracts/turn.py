@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from stride_core.plan_diff import PlanDiff
 from stride_core.master_plan_diff import MasterPlanDiff
 
+from .artifact import ArtifactRef
 from .target import TargetRef
 
 
@@ -50,5 +51,6 @@ class TurnResponse(BaseModel):
 
     reply: str
     proposals: list[ProposalCard] = Field(default_factory=list)
+    artifacts: list[ArtifactRef] = Field(default_factory=list)
     clarification: str | None = None
     active_target: TargetRef | None = None

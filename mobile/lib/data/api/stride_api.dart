@@ -584,11 +584,26 @@ class StrideApi {
   // ── Master Plan (M3 C4/C5) ─────────────────────────────────────────────
   Future<Map<String, dynamic>> postMasterPlanGenerate(
       {String? goalId, String? profileId}) async {
-    final body = <String, dynamic>{};
-    if (goalId != null) body['goal_id'] = goalId;
-    if (profileId != null) body['profile_id'] = profileId;
-    return _post<Map<String, dynamic>>(
-        '/api/users/me/master-plan/generate', body: body);
+    final message = goalId == null
+        ? '请通过 orchestrator 为我生成新的赛季训练总纲。'
+        : '请通过 orchestrator 为当前训练目标生成新的赛季训练总纲。goal_id=$goalId';
+    final fullMessage = profileId == null ? message : '$message profile_id=$profileId';
+    final r = await _post<Map<String, dynamic>>(
+      '/api/users/me/coach/chat',
+      body: {'session_id': 'master-plan-generation', 'message': fullMessage},
+    );
+    final artifacts = (r['artifacts'] as List?) ?? const [];
+    for (final artifact in artifacts) {
+      if (artifact is Map<String, dynamic> &&
+          artifact['kind'] == 'master_plan_generation_job') {
+        return {
+          'job_id': artifact['id'] as String? ?? '',
+          'status': artifact['summary'] as String? ?? 'queued',
+          'eta_seconds': 120,
+        };
+      }
+    }
+    throw Exception('coach_missing_generation_job');
   }
 
   Future<Map<String, dynamic>> getMasterPlanJobStatus(String jobId) async {

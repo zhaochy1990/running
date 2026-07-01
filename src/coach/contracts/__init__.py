@@ -7,9 +7,9 @@ dispatcher / Aggregator) and the domain specialists. No infrastructure imports;
 
 from __future__ import annotations
 
+from .artifact import ArtifactRef
 from .target import TargetKind, TargetRef
 from .specialist import (
-    ArtifactRef,
     ScopedContext,
     SpecialistCard,
     SpecialistResult,

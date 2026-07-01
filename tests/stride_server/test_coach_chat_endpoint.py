@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from coach.contracts import ProposalCard, TargetRef, TurnResponse
+from coach.contracts import ArtifactRef, ProposalCard, TargetRef, TurnResponse
 from stride_core.plan_diff import PlanDiff
 from stride_server.config.models import AuthConfig, ServerConfig
 
@@ -129,6 +129,40 @@ def test_chat_surfaces_proposal_cards(chat_client, monkeypatch):
     assert len(proposals) == 1
     assert proposals[0]["specialist_id"] == "weekly_plan"
     assert proposals[0]["proposal"]["folder"] == "2026-W26"
+
+
+def test_chat_surfaces_artifacts(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+
+    def _fake_turn(**_kw) -> TurnResponse:
+        return TurnResponse(
+            reply="已开始生成赛季总纲",
+            artifacts=[
+                ArtifactRef(
+                    id="job-1",
+                    kind="master_plan_generation_job",
+                    uri="/api/users/me/master-plan/jobs/job-1",
+                    summary="queued",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(coach_routes, "run_coach_turn", _fake_turn)
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={"session_id": "s-art", "message": "生成赛季计划"},
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    artifacts = resp.json()["artifacts"]
+    assert artifacts == [
+        {
+            "id": "job-1",
+            "kind": "master_plan_generation_job",
+            "uri": "/api/users/me/master-plan/jobs/job-1",
+            "summary": "queued",
+        }
+    ]
 
 
 def test_chat_clarify_turn_has_no_proposals(chat_client, monkeypatch):

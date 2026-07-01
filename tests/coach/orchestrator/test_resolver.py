@@ -198,6 +198,25 @@ def test_write_intent_without_target_clarifies_target() -> None:
     assert out.ambiguity.kind == "target"
 
 
+def test_write_intent_without_target_allowed_when_card_does_not_require_target() -> None:
+    reg = _registry()
+    reg.register(
+        SpecialistCard(
+            id="master_plan_generation",
+            description="生成新的赛季总纲",
+            writes=True,
+            requires_target=False,
+        )
+    )
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="master_plan_generation", confidence=0.9)],
+    )
+    fn, _ = _fixed(draft)
+    out = resolve("帮我生成一个赛季计划", registry=reg, draft_fn=fn)
+    assert out.ambiguity is None
+    assert out.active_target is None
+
+
 def test_write_intent_with_concrete_target_no_clarify() -> None:
     draft = ResolverDraft(
         intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],

@@ -166,8 +166,12 @@ def _valid_intents(draft_intents: list[IntentHit], registry: SpecialistRegistry)
     return valid[:MAX_INTENTS]
 
 
-def _writes(intents: list[IntentHit], registry: SpecialistRegistry) -> bool:
-    return any(registry.get_card(h.specialist_id).writes for h in intents)
+def _requires_target(intents: list[IntentHit], registry: SpecialistRegistry) -> bool:
+    return any(
+        registry.get_card(h.specialist_id).writes
+        and registry.get_card(h.specialist_id).requires_target
+        for h in intents
+    )
 
 
 def _needs_target_clarify(target: TargetRef | None, writes: bool) -> bool:
@@ -207,7 +211,7 @@ def _arbitrate(
             b = registry.get_card(valid[1].specialist_id).description
             return Ambiguity(kind="intent", clarification=f"你是想「{a}」，还是「{b}」？")
 
-    if _needs_target_clarify(target, _writes(valid, registry)):
+    if _requires_target(valid, registry) and _needs_target_clarify(target, True):
         return Ambiguity(kind="target", clarification="你指的是哪一个计划 / 哪一周？")
     return None
 
@@ -255,7 +259,12 @@ def resolve(
     # *distinct* write specialist is in play: with two different writers (e.g. a
     # future master-plan writer alongside weekly_plan) a single current-week
     # folder can't be the right target for both, so defer to a clarify instead.
-    write_ids = {h.specialist_id for h in valid if registry.get_card(h.specialist_id).writes}
+    write_ids = {
+        h.specialist_id
+        for h in valid
+        if registry.get_card(h.specialist_id).writes
+        and registry.get_card(h.specialist_id).requires_target
+    }
     if (
         target_resolver is not None
         and len(write_ids) == 1
