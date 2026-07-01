@@ -232,9 +232,7 @@ def patch_history(monkeypatch):
         "ctl": None,
         "atl": None,
         "tsb": None,
-        "fatigue": None,
         "rhr": None,
-        "training_load_state": None,
         "summary": "体能数据暂无",
     })
     # load_master_context now calls analyze_continuity with Database(user=...),
@@ -1504,6 +1502,8 @@ class TestQueryFitnessStateStride:
         c = db._conn
         c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
                   "VALUES ('20260610', 136, 120, 50, 48)")
+        c.execute("INSERT INTO daily_hrv (date, last_night_avg, provider) "
+                  "VALUES ('2026-06-10', 42, 'garmin')")
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
                   "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8)")
         c.commit()
@@ -1514,7 +1514,12 @@ class TestQueryFitnessStateStride:
         assert state["ctl"] == 64.1      # chronic_load, NOT cti=120
         assert state["atl"] == 69.9      # acute_load, NOT ati=136
         assert state["rhr"] == 48        # rhr still from daily_health
+        assert state["hrv"] == 42        # latest preferred daily_hrv row
+        assert state["hrv_date"] == "2026-06-10"
+        assert "fatigue" not in state
+        assert "training_load_state" not in state
         assert "64" in state["summary"]
+        assert "HRV 42ms" in state["summary"]
 
 
 # ---------------------------------------------------------------------------
@@ -1589,12 +1594,13 @@ class TestLoadMasterContextDoubleBaseline:
             db, monkeypatch, profile={"height_cm": 175.0}
         )
 
-        # COROS race_predictions are NOT surfaced. Real PBs (best_*_s) come from
-        # detect_personal_bests over activities — none seeded here, so None.
-        hist = ctx["history"]
-        assert "pred_5k_s" not in hist
-        assert "pred_fm_s" not in hist
-        assert hist["best_fm_s"] is None
+        # The graph context exposes only the rendered history summary. COROS
+        # race_predictions are NOT surfaced; with no seeded activities, real PBs
+        # remain n/a instead of using prediction rows as anchors.
+        assert "history" not in ctx
+        assert "Actual personal bests" in ctx["history_summary"]
+        assert "FM: n/a" in ctx["history_summary"]
+        assert "3:20:00" not in ctx["history_summary"]
 
         # Body-composition baseline — latest scan (2026-06-01, not the older one).
         bc = ctx["body_composition"]
@@ -1624,7 +1630,7 @@ class TestLoadMasterContextDoubleBaseline:
 
     def test_graceful_degrade_no_body_comp(self, tmp_path, monkeypatch):
         """No body_composition_scan → load_master_context succeeds, body_composition
-        is None, history still present (PB-only anchor; predictions never
+        is None, and the rendered history remains PB-only (predictions never
         surfaced)."""
         db = self._seed_db(tmp_path, with_body_comp=False)
         ctx = self._patch_db_and_load(
@@ -1633,9 +1639,10 @@ class TestLoadMasterContextDoubleBaseline:
 
         # Degrades, never raises.
         assert ctx["body_composition"] is None
-        # History present but carries no fitness-prediction baseline.
-        assert "pred_fm_s" not in ctx["history"]
-        assert ctx["history"]["best_fm_s"] is None
+        # History summary present but carries no fitness-prediction baseline.
+        assert "history" not in ctx
+        assert "FM: n/a" in ctx["history_summary"]
+        assert "3:20:00" not in ctx["history_summary"]
 
     def test_bmi_math(self):
         """BMI helper on a known weight+height: 60kg @ 1.70m → 20.76."""
@@ -1669,7 +1676,8 @@ class TestFormatHistorySummary:
         base = {
             "week_start": week_start, "distance_km": 42.1, "hours": 3.8,
             "avg_pace_s_km": 321.0, "avg_hr": 148.0, "ctl": 58.0, "atl": 64.0,
-            "form": -6.0, "dose": 412.0, "rhr": 49.0, "hrv": 31.0,
+            "training_load_ratio": 1.1034, "form": -6.0, "dose": 412.0,
+            "rhr": 49.0, "hrv": 31.0,
             "n_runs": 5, "n_long": 1, "n_speed": 1, "n_race": 0,
         }
         base.update(over)
@@ -1687,12 +1695,12 @@ class TestFormatHistorySummary:
         assert "Average monthly volume" not in out
         # Table header + separator.
         assert (
-            "| Week | Dist | Time | Pace | HR | CTL | ATL | Form | Dose "
+            "| Week | Distance | Time | Pace | HR | CTL | ATL | Load Ratio | Form | Dose "
             "| RHR | HRV | Runs | Long | Speed | Race |"
         ) in out
         # The seeded week's data row (week-number prefix omitted to stay robust).
         assert (
-            "| 42.1 | 3.8 | 5:21/km | 148 | 58 | 64 | -6 | 412 | 49 | 31 "
+            "| 42.1 | 3.8 | 5:21/km | 148 | 58 | 64 | 1.10 | -6 | 412 | 49 | 31 "
             "| 5 | 1 | 1 | 0 |"
         ) in out
         assert "Totals (1wk):" in out
@@ -1702,7 +1710,8 @@ class TestFormatHistorySummary:
     def test_tolerates_none_metrics(self):
         wk = self._week(
             "2026-02-23", avg_pace_s_km=None, avg_hr=None, ctl=None, atl=None,
-            form=None, dose=0.0, rhr=None, hrv=None, n_long=0, n_speed=0,
+            training_load_ratio=None, form=None, dose=0.0, rhr=None, hrv=None,
+            n_long=0, n_speed=0,
         )
         out = self._summary(self._history([wk]))
         # Missing metrics render as explicit n/a — no crash, no "None" leaked.
@@ -1710,7 +1719,7 @@ class TestFormatHistorySummary:
         assert "n/a" in out
         # dose 0.0 → "0" (a real zero, not missing); n_runs still shown.
         assert (
-            "| 42.1 | 3.8 | n/a | n/a | n/a | n/a | n/a | 0 | n/a | n/a "
+            "| 42.1 | 3.8 | n/a | n/a | n/a | n/a | n/a | n/a | 0 | n/a | n/a "
             "| 5 | 0 | 0 | 0 |"
         ) in out
 

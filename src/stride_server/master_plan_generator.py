@@ -463,6 +463,7 @@ def _query_weekly_profile(
                 "avg_hr": None,
                 "ctl": None,
                 "atl": None,
+                "training_load_ratio": None,
                 "form": None,
                 "dose": 0.0,
                 "rhr": None,
@@ -545,6 +546,7 @@ def _query_weekly_profile(
         # rows ascend by date, so the last write per week is the latest day.
         b["ctl"] = r[3]  # chronic_load (CTL, 42-day EWMA)
         b["atl"] = r[4]  # acute_load (ATL, 7-day EWMA)
+        b["training_load_ratio"] = (r[4] / r[3]) if r[3] else None
         b["form"] = r[5]
     for wk, total in dose_acc.items():
         buckets[wk]["dose"] = total
@@ -854,9 +856,9 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
         "ctl": None,
         "atl": None,
         "tsb": None,
-        "fatigue": None,
         "rhr": None,
-        "training_load_state": None,
+        "hrv": None,
+        "hrv_date": None,
         "summary": "体能数据暂无",
     }
     try:
@@ -883,6 +885,14 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
             "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
         ).fetchone()
         rhr = rhr_row[0] if rhr_row else None
+        from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
+
+        hrv_row = conn.execute(
+            f"SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
+            "WHERE last_night_avg IS NOT NULL ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+        hrv_date = hrv_row[0] if hrv_row else None
+        hrv = hrv_row[1] if hrv_row else None
 
         if row:
             _date, atl, ctl, form = row
@@ -892,6 +902,8 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
                 "atl": round(atl, 1) if atl is not None else None,
                 "tsb": round(form, 1) if form is not None else None,
                 "rhr": rhr,
+                "hrv": round(hrv, 1) if hrv is not None else None,
+                "hrv_date": hrv_date,
                 "training_load_ratio": ratio,
             })
             parts = []
@@ -905,6 +917,8 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
                 parts.append(f"acute/chronic {ratio}")
             if rhr is not None:
                 parts.append(f"RHR {rhr}bpm")
+            if hrv is not None:
+                parts.append(f"HRV {hrv:.0f}ms")
             result["summary"] = "，".join(parts) if parts else "体能数据暂无"
 
     except Exception as exc:  # noqa: BLE001
@@ -949,11 +963,11 @@ def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
             return week_start
 
     header = (
-        "| Week | Dist | Time | Pace | HR | CTL | ATL | Form | Dose "
+        "| Week | Distance | Time | Pace | HR | CTL | ATL | Load Ratio | Form | Dose "
         "| RHR | HRV | Runs | Long | Speed | Race |"
     )
     sep = (
-        "|------|------|------|------|----|-----|-----|------|------"
+        "|------|----------|------|------|----|-----|-----|------------|------|------"
         "|-----|-----|------|------|-------|------|"
     )
     lines: list[str] = [
@@ -970,6 +984,7 @@ def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
             num(w.get("avg_hr"), ".0f"),
             num(w.get("ctl"), ".0f"),
             num(w.get("atl"), ".0f"),
+            num(w.get("training_load_ratio"), ".2f"),
             num(w.get("form"), "+.0f"),
             num(w.get("dose"), ".0f"),
             num(w.get("rhr"), ".0f"),
@@ -999,8 +1014,9 @@ def _format_history_summary(history: dict[str, Any]) -> str:
     """Convert raw history dict into a readable (English) summary for the prompt.
 
     Volume is now reported as a 16-week weekly athlete profile (distance/time/
-    pace/HR/CTL-ATL-form/dose/RHR/HRV + run-type counts per week), replacing the
-    former monthly-volume block. Total / max-week / real-PB anchor lines are kept.
+    pace/HR/CTL-ATL-load-ratio-form/dose/RHR/HRV + run-type counts per week),
+    replacing the former monthly-volume block. Total / max-week / real-PB
+    anchor lines are kept.
     """
     lines: list[str] = []
 
