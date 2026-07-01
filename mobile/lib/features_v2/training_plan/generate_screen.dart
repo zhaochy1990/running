@@ -1,6 +1,6 @@
 /// C4 — Master plan generation screen (fullscreen, no shell).
 ///
-/// Kicks off POST /api/users/me/master-plan/generate, persists job_id,
+/// Kicks off generation through POST /api/users/me/coach/chat, persists job_id,
 /// polls every 2s, and auto-navigates to C5 on completion.
 library;
 

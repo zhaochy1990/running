@@ -127,6 +127,7 @@ class ChatResponse(BaseModel):
     clarification: str | None = None
     active_target: dict | None = None
     proposals: list[dict] = Field(default_factory=list)
+    artifacts: list[dict] = Field(default_factory=list)
 
 
 class ChatMessage(BaseModel):
@@ -184,9 +185,21 @@ def _short_thread_id_for_qa(user_id: str) -> str:
 
 
 def _parse_thread_id(thread_id: str) -> tuple[str, str, str]:
-    """Return (user_id, short_scope, key); raise ValueError on malformed."""
+    """Return (user_id, short_scope, key); raise ValueError on malformed.
+
+    Also accepts the orchestrator session scope ``coach`` — the ``/coach/chat``
+    brain keys threads as ``{user}:coach:{session_id}`` (§5.1). The shared
+    conversation-graph parser predates that scope, so handle it here rather than
+    widening the core parser (whose scope segments map to the Scope enum).
+    """
     from coach.graphs.conversation.scope import parse_short_thread_id
 
+    parts = thread_id.split(":", 2)
+    if len(parts) == 3 and parts[1] == "coach":
+        owner_id, _, session_id = parts
+        if not owner_id or not session_id:
+            raise ValueError(f"malformed thread_id {thread_id!r}")
+        return owner_id, "coach", session_id
     return parse_short_thread_id(thread_id)
 
 
@@ -308,6 +321,7 @@ def post_chat_message(
         clarification=turn.clarification,
         active_target=turn.active_target.model_dump() if turn.active_target else None,
         proposals=[card.model_dump() for card in turn.proposals],
+        artifacts=[artifact.model_dump() for artifact in turn.artifacts],
     )
 
 

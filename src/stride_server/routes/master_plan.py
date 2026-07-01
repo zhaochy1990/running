@@ -19,7 +19,6 @@ from __future__ import annotations
 import json
 import logging
 import time
-import threading
 from datetime import date as date_cls, datetime, timezone, timedelta
 from typing import Any
 from uuid import uuid4
@@ -35,12 +34,14 @@ from stride_core.master_plan_diff import (
 )
 
 from ..bearer import require_bearer
-from ..content_store import read_json
 from .. import job_runner
-from ..job_runner import JobStatus, JobStage, STAGE_LABEL_MAP
+from ..job_runner import JobStatus, STAGE_LABEL_MAP
 from .. import llm_client as _llm_client_mod
 from ..llm_client import LLMClient, LLMError, LLMUnavailable
-from .. import master_plan_generator
+from ..coach_adapters.master_plan_generation_job import (
+    MasterPlanGenerationJobError,
+    start_master_plan_generation_job,
+)
 from ..master_plan_store import get_master_plan_store
 
 logger = logging.getLogger(__name__)
@@ -90,33 +91,6 @@ class GenerateRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _read_current_goal(user_id: str) -> dict[str, Any] | None:
-    """Read current training goal from content store. Returns None if absent."""
-    item = read_json(f"{user_id}/training_goal.json")
-    if item is None:
-        return None
-    data, _ = item
-    if isinstance(data, dict):
-        return data.get("current")
-    return None
-
-
-def _read_current_profile(user_id: str) -> dict[str, Any] | None:
-    """Read current running profile from content store. Returns None if absent."""
-    item = read_json(f"{user_id}/running_profile.json")
-    if item is None:
-        return None
-    data, _ = item
-    if isinstance(data, dict):
-        return data.get("current")
-    return None
-
-
-# ---------------------------------------------------------------------------
 # POST /api/users/me/master-plan/generate
 # ---------------------------------------------------------------------------
 
@@ -132,64 +106,41 @@ def generate_master_plan(
     that job (HTTP 200) instead of starting a duplicate.
     """
     user_id: str = payload["sub"]
+    try:
+        result = start_master_plan_generation_job(
+            user_id=user_id,
+            goal_id=body.goal_id,
+            profile_id=body.profile_id,
+        )
+    except MasterPlanGenerationJobError as exc:
+        if exc.code == "goal_not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=exc.message,
+            ) from exc
+        if exc.code == "missing_goal":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=exc.message,
+            ) from exc
+        raise
 
-    # --- Idempotency check ---
-    existing = job_runner.get_running_job_for_user(user_id)
-    if existing is not None:
-        # Return existing job — do not create a duplicate
+    if result.reused_existing:
         from fastapi.responses import JSONResponse
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
-                "job_id": existing.job_id,
-                "status": existing.status.value,
-                "eta_seconds": 120,
+                "job_id": result.job_id,
+                "status": result.status,
+                "eta_seconds": result.eta_seconds,
             },
         )
 
-    # --- Validate explicit goal_id if provided ---
-    if body.goal_id is not None:
-        goal_store_item = read_json(f"{user_id}/training_goal.json")
-        if goal_store_item is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Training goal '{body.goal_id}' not found",
-            )
-        store_data, _ = goal_store_item
-        current_goal = store_data.get("current") if isinstance(store_data, dict) else None
-        if current_goal is None or current_goal.get("goal_id") != body.goal_id:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Training goal '{body.goal_id}' not found",
-            )
-
-    # --- Read current goal (required) ---
-    goal = _read_current_goal(user_id)
-    if goal is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="训练目标未设置",
-        )
-
-    # --- Read current profile (optional) ---
-    profile = _read_current_profile(user_id)
-
-    # --- Create job ---
-    job_id = job_runner.create_job(user_id)
-
-    # --- Launch daemon thread ---
-    t = threading.Thread(
-        target=master_plan_generator.run_generate_job,
-        args=(job_id, user_id, goal, profile),
-        daemon=True,
-        name=f"master-plan-gen-{job_id}",
-    )
-    t.start()
-
     return {
-        "job_id": job_id,
-        "status": JobStatus.QUEUED.value,
-        "eta_seconds": 120,
+        "job_id": result.job_id,
+        "status": result.status,
+        "eta_seconds": result.eta_seconds,
     }
 
 

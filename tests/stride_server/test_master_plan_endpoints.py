@@ -127,6 +127,12 @@ def _stub_noop(job_id, user_id, goal, profile):
     pass
 
 
+def _patch_generate_job(monkeypatch, fn) -> None:
+    import stride_server.coach_adapters.master_plan_generation_job as job_mod
+
+    monkeypatch.setattr(job_mod.master_plan_generator, "run_generate_job", fn)
+
+
 # ---------------------------------------------------------------------------
 # Test 1: POST generate with valid goal → 201 with job_id
 # ---------------------------------------------------------------------------
@@ -136,8 +142,7 @@ def test_generate_with_goal_returns_201(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, _ = app_client
     _write_goal(tmp_path)
 
-    import stride_server.routes.master_plan as mp_mod
-    monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
+    _patch_generate_job(monkeypatch, _stub_noop)
 
     resp = client.post(
         "/api/users/me/master-plan/generate",
@@ -160,8 +165,7 @@ def test_generate_without_goal_returns_422(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, _ = app_client
     # Do NOT write goal — content_store returns None
 
-    import stride_server.routes.master_plan as mp_mod
-    monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
+    _patch_generate_job(monkeypatch, _stub_noop)
 
     resp = client.post(
         "/api/users/me/master-plan/generate",
@@ -181,8 +185,7 @@ def test_generate_with_nonexistent_goal_id_returns_404(app_client, tmp_path, mon
     client, token, tmp_path, _ = app_client
     _write_goal(tmp_path)  # goal exists but with different goal_id
 
-    import stride_server.routes.master_plan as mp_mod
-    monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
+    _patch_generate_job(monkeypatch, _stub_noop)
 
     resp = client.post(
         "/api/users/me/master-plan/generate",
@@ -201,8 +204,7 @@ def test_generate_idempotent_when_running_job_exists(app_client, tmp_path, monke
     client, token, tmp_path, _ = app_client
     _write_goal(tmp_path)
 
-    import stride_server.routes.master_plan as mp_mod
-    monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
+    _patch_generate_job(monkeypatch, _stub_noop)
 
     # First request — creates job
     resp1 = client.post(
@@ -234,8 +236,7 @@ def test_get_job_status_returns_200(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, _ = app_client
     _write_goal(tmp_path)
 
-    import stride_server.routes.master_plan as mp_mod
-    monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
+    _patch_generate_job(monkeypatch, _stub_noop)
 
     # Create a job first
     create_resp = client.post(
@@ -289,8 +290,7 @@ def test_get_job_other_user_returns_403(app_client, tmp_path, monkeypatch):
     client, token, tmp_path, private_pem = app_client
     _write_goal(tmp_path)
 
-    import stride_server.routes.master_plan as mp_mod
-    monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
+    _patch_generate_job(monkeypatch, _stub_noop)
 
     # USER_UUID creates a job
     create_resp = client.post(
@@ -319,8 +319,7 @@ def test_get_job_stage_label_empty_when_no_stage(app_client, tmp_path, monkeypat
     client, token, tmp_path, _ = app_client
     _write_goal(tmp_path)
 
-    import stride_server.routes.master_plan as mp_mod
-    monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", _stub_noop)
+    _patch_generate_job(monkeypatch, _stub_noop)
 
     create_resp = client.post(
         "/api/users/me/master-plan/generate",
@@ -349,8 +348,6 @@ def test_raw_output_only_on_failure(app_client, tmp_path, monkeypatch):
     _write_goal(tmp_path)
 
     import stride_server.job_runner as jr_mod
-    import stride_server.routes.master_plan as mp_mod
-
     def stub_fail(job_id, user_id, goal, profile):
         jr_mod.update_job(
             job_id,
@@ -360,7 +357,7 @@ def test_raw_output_only_on_failure(app_client, tmp_path, monkeypatch):
             progress=85,
         )
 
-    monkeypatch.setattr(mp_mod.master_plan_generator, "run_generate_job", stub_fail)
+    _patch_generate_job(monkeypatch, stub_fail)
 
     create_resp = client.post(
         "/api/users/me/master-plan/generate",

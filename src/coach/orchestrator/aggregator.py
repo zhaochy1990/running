@@ -63,6 +63,15 @@ def _proposal_cards(dispatched: list[DispatchResult], resolver_output: ResolverO
     return cards
 
 
+def _artifacts(dispatched: list[DispatchResult]) -> list:
+    refs: list = []
+    for item in dispatched:
+        if item.result.status != "completed" or not item.result.artifacts:
+            continue
+        refs.extend(item.result.artifacts)
+    return refs
+
+
 def aggregate(
     dispatched: list[DispatchResult],
     *,
@@ -89,16 +98,27 @@ def aggregate(
         return TurnResponse(reply=_FAILURE_REPLY, proposals=[], active_target=active_target)
 
     proposals = _proposal_cards(completed, resolver_output)
+    artifacts = _artifacts(completed)
     fragments = [item.result.reply_fragment for item in completed if item.result.reply_fragment]
 
     # Priority 3: single-result fast path — passthrough, no synthesis LLM.
     if len(completed) == 1:
         reply = fragments[0] if fragments else ""
-        return TurnResponse(reply=reply, proposals=proposals, active_target=active_target)
+        return TurnResponse(
+            reply=reply,
+            proposals=proposals,
+            artifacts=artifacts,
+            active_target=active_target,
+        )
 
     # Priority 4: multi-result — synthesise (or deterministic join fallback).
     if synth_fn is not None:
         reply = synth_fn(fragments, utterance)
     else:
         reply = "\n\n".join(fragments)
-    return TurnResponse(reply=reply, proposals=proposals, active_target=active_target)
+    return TurnResponse(
+        reply=reply,
+        proposals=proposals,
+        artifacts=artifacts,
+        active_target=active_target,
+    )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from coach.contracts import (
+    ArtifactRef,
     Ambiguity,
     IntentHit,
     ResolverOutput,
@@ -104,6 +105,19 @@ def test_completed_with_proposal_builds_card() -> None:
     assert card.specialist_id == "weekly_plan"
     assert card.target == TargetRef(kind="week", folder="2026-W26")
     assert isinstance(card.proposal, PlanDiff)
+
+
+def test_completed_with_artifact_passes_artifact_ref() -> None:
+    item = DispatchResult(
+        specialist_id="master_plan_generation",
+        result=SpecialistResult(
+            status="completed",
+            reply_fragment="已开始生成",
+            artifacts=[ArtifactRef(id="job-1", kind="master_plan_generation_job")],
+        ),
+    )
+    resp = aggregate([item], resolver_output=_resolver(), utterance="生成赛季计划")
+    assert resp.artifacts == [ArtifactRef(id="job-1", kind="master_plan_generation_job")]
 
 
 def test_multi_result_uses_synth_fn() -> None:

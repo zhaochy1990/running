@@ -283,6 +283,32 @@ def test_history_unknown_own_thread_returns_empty(coach_client):
     assert body["messages"] == []
 
 
+def test_history_accepts_orchestrator_coach_scope(coach_client):
+    """`/coach/chat` keys threads as ``{user}:coach:{session}``; the history
+    endpoint must read that scope back (not 400 it like an unknown scope)."""
+    client, private_pem, _ = coach_client
+    own_tid = f"{USER_UUID}:coach:sess-abc_123"
+    resp = client.get(
+        f"/api/users/me/coach/threads/{own_tid}/messages",
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["user_id"] == USER_UUID
+    assert body["scope"] == "coach"
+    assert body["messages"] == []
+
+
+def test_history_coach_scope_cross_user_returns_403(coach_client):
+    client, private_pem, _ = coach_client
+    foreign_tid = f"{OTHER_UUID}:coach:sess-abc"
+    resp = client.get(
+        f"/api/users/me/coach/threads/{foreign_tid}/messages",
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 403, resp.text
+
+
 def test_history_returns_messages_after_qa_post(coach_client):
     """Post one message, then GET the thread history — should include
     both user and assistant turns; assistant uses ``parts`` shape."""
