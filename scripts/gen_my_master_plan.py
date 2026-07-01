@@ -198,9 +198,21 @@ def main() -> int:
     _t0 = time.perf_counter()
     print(f"[gen] starting generation graph at {datetime.now(tz=SHANGHAI_TZ).isoformat(timespec='seconds')}", flush=True)
     
-    # ctx = load_master_context(state)
-    # _t1 = time.perf_counter()
-    # print(f"[gen] loaded context in {_t1 - _t0:.1f}s", flush=True)
+    ctx = load_master_context(state)
+    _t1 = time.perf_counter()
+    print(f"[gen] loaded context in {_t1 - _t0:.1f}s", flush=True)
+    fitness_state = ctx.get("fitness_state") or {}
+    logger.info(
+        "[gen] loaded context keys=%s, history_summary=%d chars, "
+        "CTL=%s, ATL=%s, TSB=%s",
+        sorted(ctx.keys()),
+        len(ctx.get("history_summary") or ""),
+        fitness_state.get("ctl"),
+        fitness_state.get("atl"),
+        fitness_state.get("tsb"),
+    )
+    print(f"{json.dumps(ctx, ensure_ascii=False, indent=2)}", flush=True)
+    return 0
     
     # state["context"] = ctx
     # master_plan = generate_master_plan(state)
@@ -236,6 +248,9 @@ def main() -> int:
                     final_state = chunk
         else:
             final_state = graph.invoke(state)
+        
+        _t3 = time.perf_counter()
+        logger.info(f"[gen] generation graph completed in {_t3 - _t0:.1f}s")
     except LLMUnavailable as exc:
         print(f"\n  LLM unavailable: {exc}")
         print("  → run `az login`; check config/coach.local.toml")
@@ -252,6 +267,7 @@ def main() -> int:
         return 1
 
     verdict = final_state.get("final_verdict")
+    logger.info(f"[gen] final verdict: {verdict}")
     if verdict == "block":
         violations = final_state.get("rule_violations") or []
         print("\n  verdict=block — L1 safety rules rejected the draft:")
