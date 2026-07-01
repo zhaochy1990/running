@@ -54,31 +54,14 @@ api_kind     = "responses"
 # Kimi-K2.5:
 #   model = "Kimi-K2.5"      ; deployment = "Kimi-K2.5"      ; api_kind = "chat-completions" ; temperature = 0.6
 
-# temperature intentionally NOT set — gpt-5.5 is a reasoning model that
-# rejects the parameter (400 "Unsupported parameter"). llm_factory skips
-# the kwarg when ModelSpec.temperature is None. Re-add this line only if
-# you point the role at a non-reasoning model.
-# max_tokens=131072 (128k) — the phase-at-once generator emits an entire
-# phase's weeks in one LLM call. 128k matches the gpt-5 family's actual
-# visible-output cap, and a phase of aspirational (spec=null) weeks (≤6
-# weeks of sessions) stays comfortably under it — the 512k experiment only
-# ever consumed a fraction. Capping at the real ceiling trims per-call
-# latency (the model won't budget reasoning/output for headroom it can't
-# use) without risking truncation. If a phase ever does truncate, the
-# bottleneck is the Azure deployment's max_response_tokens (set at
-# deployment create time, NOT this config) — raise it in the Azure portal.
+# max_tokens=131072 (128k) .
 max_tokens   = 131072
 # reasoning_effort intentionally NOT set — defaults to model's medium,
 # which is what S1 strategic reasoning (phase ordering, goal realism,
 # injury safety, distance specificity) needs. Lowering it to "low" or
 # "minimal" trades depth for budget; only flip this if you have evidence
 # the output is consistently truncating at max_tokens.
-# timeout_s=300 — at default reasoning_effort=medium and the new 131072
-# token ceiling, the model can spend a lot of compute on reasoning for
-# longer S1 plans (22-week dingchentao etc). 120s was too tight; 5 min
-# accommodates the reasoning latency without hanging callers indefinitely.
-# Bumped 300->600 for local migration runs: dev resource + home network is
-# slower than prod, and a full FM season plan can exceed 5 min end-to-end.
+
 timeout_s    = 600
 
 [reviewer]
@@ -100,7 +83,7 @@ timeout_s    = 180
 # commentary_ai.generate_commentary() via get_commentary_llm() /
 # load_config().commentary (model/api_kind/temperature flow through
 # llm_factory). NOT an inert stub. Model/temperature match prod's draft-writer
-# (gpt-4.1 / chat-completions / temp 0.6) so local 教练简评 reads like prod;
+# (gpt-4.1 / chat-completions / temp 0.4) so local 教练简评 stays steadier;
 # but this is NOT full parity — local uses this dev AOAI endpoint via managed
 # identity, while prod (coach.prod.toml) uses a different endpoint + api_key
 # auth (api_key_env) + api_version 2025-01-01-preview. NOTE: get_commentary_llm()
@@ -114,7 +97,7 @@ deployment   = "gpt-4.1"
 endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
 api_version  = "2025-04-01-preview"
 api_kind     = "chat-completions"
-temperature  = 0.6
+temperature  = 0.4
 
 [orchestrator]
 # Orchestrator brain (Resolver / Supervisor / Aggregator / Memory Writer) —
