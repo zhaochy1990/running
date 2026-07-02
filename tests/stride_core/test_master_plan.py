@@ -208,7 +208,6 @@ def test_master_plan_accepts_embedded_goal_and_weeks():
     plan = MasterPlan.model_validate(CANONICAL_MASTER_PLAN_DICT)
 
     assert plan.goal.goal_id == "goal-xyz"
-    assert plan.goal_id == "goal-xyz"
     assert plan.goal.distance == TargetDistance.FM
     assert plan.goal.target_time == "3:30:00"
     assert plan.total_weeks == 24
@@ -217,6 +216,7 @@ def test_master_plan_accepts_embedded_goal_and_weeks():
     assert plan.weekly_key_sessions[0].week_start == "2026-06-01"
 
     dumped = plan.model_dump(mode="json")
+    assert "goal_id" not in dumped
     assert dumped["goal"]["target_time"] == "3:30:00"
     assert dumped["weeks"][0]["target_weekly_km_high"] == 60.0
 
@@ -243,13 +243,14 @@ def test_master_plan_legacy_weekly_key_sessions_populates_weeks():
     assert plan.weekly_key_sessions[0].week_index == 1
 
 
-def test_master_plan_rejects_divergent_goal_id_mirror():
+def test_master_plan_ignores_legacy_divergent_goal_id_mirror():
     data = {
         **CANONICAL_MASTER_PLAN_DICT,
         "goal_id": "different-goal-id",
     }
-    with pytest.raises(ValidationError, match="goal_id must match goal.goal_id"):
-        MasterPlan.model_validate(data)
+    plan = MasterPlan.model_validate(data)
+    assert plan.goal.goal_id == "goal-xyz"
+    assert "goal_id" not in plan.model_dump(mode="json")
 
 
 def test_master_plan_json_round_trip():
@@ -305,10 +306,11 @@ def test_master_plan_missing_status_raises():
         MasterPlan.model_validate(d)
 
 
-def test_master_plan_missing_goal_id_raises():
+def test_master_plan_accepts_canonical_shape_without_top_level_goal_id():
     d = {k: v for k, v in MASTER_PLAN_DICT.items() if k != "goal_id"}
-    with pytest.raises(ValidationError):
-        MasterPlan.model_validate(d)
+    d["goal"] = GOAL_DICT
+    plan = MasterPlan.model_validate(d)
+    assert plan.goal.goal_id == "goal-xyz"
 
 
 def test_master_plan_invalid_status_raises():

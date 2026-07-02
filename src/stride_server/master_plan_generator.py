@@ -254,7 +254,6 @@ def _build_master_plan(
         plan_id=str(uuid4()),
         user_id=user_id,
         status=MasterPlanStatus.DRAFT,
-        goal_id=goal_snapshot.goal_id,
         goal=goal_snapshot,
         start_date=plan_start,
         end_date=end_date,
@@ -344,6 +343,8 @@ def _build_goal_snapshot(
         or _default_race_name(raw_distance)
     )
     race_date = goal.get("race_date") or plan_data.get("race_date") or fallback_race_date
+    raw_location = goal.get("location")
+    location = str(raw_location).strip() if raw_location is not None else None
 
     return MasterPlanGoal(
         goal_id=goal_id,
@@ -352,7 +353,7 @@ def _build_goal_snapshot(
         race_date=str(race_date or fallback_race_date),
         target_time=str(target_time),
         timezone=str(goal.get("timezone") or "Asia/Shanghai"),
-        location=goal.get("location"),
+        location=location or None,
     )
 
 

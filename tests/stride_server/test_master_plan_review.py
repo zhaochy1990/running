@@ -75,11 +75,12 @@ def _make_plan(
         completed_actual=None,
     )
     now = datetime.now(timezone.utc).isoformat()
+    goal_id = str(uuid4())
     return MasterPlan(
         plan_id=str(uuid4()),
         user_id=user_id,
         status=status,
-        goal_id=str(uuid4()),
+        goal=MasterPlanGoal(goal_id=goal_id, target_time="", race_date=end_date),
         start_date=start_date,
         end_date=end_date,
         phases=[phase],
@@ -781,7 +782,6 @@ class TestCurrentMasterPlan:
             plan_id=str(uuid4()),
             user_id=USER_UUID,
             status=MasterPlanStatus.ACTIVE,
-            goal_id=goal_id,
             goal=MasterPlanGoal(
                 goal_id=goal_id,
                 race_name="Shanghai Marathon",
@@ -822,7 +822,7 @@ class TestCurrentMasterPlan:
         assert data["goal"]["goal_id"] == goal_id
         assert data["goal"]["target_time"] == "3:30:00"
         assert data["goal"]["timezone"] == "Asia/Shanghai"
-        assert data["goal_id"] == goal_id
+        assert "goal_id" not in data
         assert data["total_weeks"] == 1
         assert data["weeks"][0]["week_index"] == 1
         assert data["weeks"][0]["key_sessions"][0]["type"] == "long_run"

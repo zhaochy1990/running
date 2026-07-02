@@ -79,7 +79,7 @@ USER_ID = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
 # generator normalises target_finish_time / race_distance internally, so keep
 # these exact key names.
 GOAL = {
-    "goal_id": "my-2026-fall",        # any stable string; used as plan.goal_id
+    "goal_id": "my-2026-fall",        # stable source training-goal id; stored in plan.goal.goal_id
     "race_distance": "FM",            # one of: 5K | 10K | HM | FM | trail
     "target_finish_time": "2:50:00",  # "H:MM:SS"; set to None for finish-only
     "race_date": "2026-10-18",        # YYYY-MM-DD; plan end_date won't exceed this

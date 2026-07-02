@@ -328,7 +328,6 @@ class TestBuildMasterPlan:
     def test_happy_path(self):
         plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, GOAL)
         assert plan.user_id == USER_ID
-        assert plan.goal_id == GOAL_ID
         assert plan.goal.goal_id == GOAL_ID
         assert plan.status == MasterPlanStatus.DRAFT
         assert plan.version == 1
@@ -399,13 +398,44 @@ class TestBuildMasterPlan:
         plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
 
         assert plan.goal.goal_id == GOAL_ID
-        assert plan.goal_id == GOAL_ID
         assert plan.goal.race_name == "Shanghai Marathon"
         assert plan.goal.distance == "FM"
         assert plan.goal.race_date == "2026-11-01"
         assert plan.goal.target_time == "3:25:00"
         assert plan.goal.timezone == "Asia/Shanghai"
         assert plan.goal.location == "Shanghai"
+
+    def test_goal_location_stays_null_when_not_provided(self):
+        goal = {
+            "goal_id": GOAL_ID,
+            "type": "race",
+            "race_name": "Shanghai Marathon",
+            "race_date": "2026-11-01",
+            "race_distance": "FM",
+            "target_finish_time": "3:25:00",
+            "timezone": "Asia/Shanghai",
+        }
+
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
+
+        assert plan.goal.location is None
+        assert plan.model_dump(mode="json")["goal"]["location"] is None
+
+    def test_goal_location_ignores_llm_inference(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["goal"] = {
+            "goal_id": GOAL_ID,
+            "race_name": "Shanghai Marathon",
+            "distance": "FM",
+            "race_date": "2026-11-01",
+            "target_time": "3:25:00",
+            "timezone": "Asia/Shanghai",
+            "location": "Shanghai",
+        }
+
+        plan = _build_master_plan(data, USER_ID, {"goal_id": GOAL_ID})
+
+        assert plan.goal.location is None
 
     def test_builds_canonical_weeks_from_llm_weeks(self):
         data = json.loads(_VALID_JSON_STR)

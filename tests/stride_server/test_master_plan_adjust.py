@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from stride_core.master_plan import (
     MasterPlan,
+    MasterPlanGoal,
     MasterPlanStatus,
     MasterPlanVersion,
     Milestone,
@@ -70,11 +71,12 @@ def _make_plan(
         completed_actual=None,
     )
     now = datetime.now(timezone.utc).isoformat()
+    goal_id = str(uuid4())
     return MasterPlan(
         plan_id=str(uuid4()),
         user_id=user_id,
         status=status,
-        goal_id=str(uuid4()),
+        goal=MasterPlanGoal(goal_id=goal_id, target_time="", race_date=end_date),
         start_date=start_date,
         end_date=end_date,
         phases=[phase],
