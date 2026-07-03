@@ -127,7 +127,6 @@ class MasterPlan {
         planId: json['plan_id'] as String? ?? '',
         userId: json['user_id'] as String? ?? '',
         status: json['status'] as String? ?? '',
-        goalId: json['goal_id'] as String? ?? '',
         startDate: json['start_date'] as String? ?? '',
         endDate: json['end_date'] as String? ?? '',
         phases: (json['phases'] as List? ?? const [])
@@ -156,7 +155,6 @@ class MasterPlan {
     required this.planId,
     required this.userId,
     required this.status,
-    required this.goalId,
     required this.startDate,
     required this.endDate,
     required this.phases,
@@ -176,7 +174,6 @@ class MasterPlan {
   final String planId;
   final String userId;
   final String status;
-  final String goalId;
   final String startDate;
   final String endDate;
   final List<PlanPhase> phases;

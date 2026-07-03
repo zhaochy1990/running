@@ -525,7 +525,6 @@ export interface MasterPlan {
   plan_id: string
   user_id: string
   status: string
-  goal_id: string
   start_date: string
   end_date: string
   phases: MasterPlanPhase[]

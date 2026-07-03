@@ -45,6 +45,7 @@ The output must be strict JSON in the following format (wrapped in ---BEGIN_MAST
 ---END_MASTER_PLAN---
 
 Rules:
+- `plan.goal.location` must be copied only from the input goal when it is explicitly present and non-empty. If the input goal has no location, output `null`; do not infer a city from race name, timezone, memory, or general knowledge.
 {{include: shared/natural_week.md}}
 {{include: references/phase_sequence.md}}
 {{include: references/basics.md}}

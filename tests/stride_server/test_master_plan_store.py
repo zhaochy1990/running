@@ -15,6 +15,7 @@ from stride_server.config import clear_server_config_cache
 from stride_server.config.models import MasterPlanStorageConfig
 from stride_core.master_plan import (
     MasterPlan,
+    MasterPlanGoal,
     MasterPlanStatus,
     MasterPlanVersion,
     Milestone,
@@ -69,7 +70,7 @@ def _make_plan(
         plan_id=plan_id,
         user_id=user_id,
         status=status,
-        goal_id=GOAL_ID,
+        goal=MasterPlanGoal(goal_id=GOAL_ID, target_time="", race_date="2026-11-15"),
         start_date="2026-06-01",
         end_date="2026-11-15",
         phases=[_make_phase()],

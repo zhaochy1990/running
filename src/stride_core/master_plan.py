@@ -260,9 +260,6 @@ class MasterPlan(BaseModel):
     plan_id: str                   # uuid4
     user_id: str                   # JWT sub UUID
     status: MasterPlanStatus
-    # Denormalized mirror of goal.goal_id. Keep it for legacy clients and
-    # stored snapshots; validation below rejects divergent input.
-    goal_id: str                   # 关联的 training-goal id
     goal: MasterPlanGoal           # embedded goal snapshot for runtime reads
     start_date: str                # 总纲开始日期 ISO YYYY-MM-DD
     end_date: str                  # 总纲结束日期 ISO YYYY-MM-DD
@@ -308,8 +305,6 @@ class MasterPlan(BaseModel):
             if "timezone" not in goal_dict or not goal_dict.get("timezone"):
                 goal_dict["timezone"] = "Asia/Shanghai"
             values["goal"] = goal_dict
-            if not goal_id and goal_dict.get("goal_id"):
-                values["goal_id"] = goal_dict["goal_id"]
 
         if "weeks" not in values and "weekly_key_sessions" in values:
             values["weeks"] = values.get("weekly_key_sessions") or []
@@ -329,9 +324,6 @@ class MasterPlan(BaseModel):
 
     @model_validator(mode="after")
     def _sync_week_aliases(self) -> "MasterPlan":
-        if self.goal_id != self.goal.goal_id:
-            raise ValueError("goal_id must match goal.goal_id")
-
         # ``weeks`` is the canonical public field; ``weekly_key_sessions`` is
         # a compatibility alias for existing rule-filter code and snapshots.
         # They intentionally share the same week model instances.
