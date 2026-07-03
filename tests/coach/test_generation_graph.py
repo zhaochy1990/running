@@ -67,6 +67,40 @@ def test_happy_path_finalize():
     assert out["final_artifact"]["week_folder"] == "2026-05-11_05-17"
 
 
+def test_generator_timing_metadata_is_preserved():
+    def loader(_state):
+        return {}
+
+    def generator(_state):
+        return {
+            "current_draft": _clean_plan(),
+            "timing_metadata": {
+                "generator_system_prompt_chars": 123,
+                "generator_user_prompt_chars": 45,
+                "generator_raw_response_chars": 678,
+            },
+        }
+
+    def reviewer(state):
+        return ReviewReport(
+            verdict="pass", reviewer_model="fake", iteration=state["iteration"]
+        )
+
+    graph = build_generation_graph(
+        load_context=loader,
+        generator=generator,
+        reviewer=reviewer,
+        max_iterations=3,
+    )
+    out = graph.invoke(
+        {"job_id": "j", "user_id": "u", "plan_type": "week", "input_payload": {}}
+    )
+
+    assert out["timings"]["generator_system_prompt_chars"] == 123
+    assert out["timings"]["generator_user_prompt_chars"] == 45
+    assert out["timings"]["generator_raw_response_chars"] == 678
+
+
 # ---------------------------------------------------------------------------
 # Reviewer verdict 'revise' → loop back to generator; second pass succeeds
 # ---------------------------------------------------------------------------
@@ -176,6 +210,11 @@ def test_rule_filter_violation_triggers_regenerate():
     assert call_count["gen"] == 2
     # Reviewer skipped on the first round because rule_filter killed it
     assert call_count["rev"] == 1
+    history = out["timings"]["rule_filter_history"]
+    assert [h["iteration"] for h in history] == [1, 2]
+    assert history[0]["violations"]
+    assert history[0]["violations"][0]["severity"] == "error"
+    assert history[1]["violations"] == []
 
 
 # ---------------------------------------------------------------------------

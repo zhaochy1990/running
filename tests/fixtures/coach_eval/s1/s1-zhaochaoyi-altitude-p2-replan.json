@@ -1,0 +1,177 @@
+{
+  "fixture_id": "s1-zhaochaoyi-altitude-p2-replan",
+  "scope": "s1",
+  "description": "Real zhaochaoyi season context at P2W2: advanced FM runner targeting 2026-10-18 sub-2:50, recently moved from Shanghai to Kunming altitude with RHR yellow and two missed long runs. Tests whether S1 can continue the existing season instead of restarting base, adapt to altitude, protect Achilles, and preserve FM-specific progression.",
+  "tags": ["real_user", "phase_transition", "altitude", "injury_constraint", "target_distance"],
+  "input": {
+    "as_of_date": "2026-06-30",
+    "user_profile": {
+      "user_id": "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+      "hr_zones": {
+        "z1": [95, 133],
+        "z2": [133, 148],
+        "z3": [148, 158],
+        "z4": [158, 172],
+        "z5": [172, 190]
+      },
+      "weight_kg": 71.6,
+      "height_cm": 182,
+      "injuries": [
+        "右跟腱止点肌腱病（慢性，可控；马拉松配速超过30km后可能发作）",
+        "右髂胫束摩擦综合征史（已恢复，需维持髋/臀力量）"
+      ],
+      "experience_level": "advanced",
+      "weekly_run_days_max": 6,
+      "prs": {
+        "10k_s": 2427,
+        "hm_s": 5262,
+        "fm_s": 10762
+      },
+      "target_race": {
+        "distance": "fm",
+        "goal_time_s": 10200,
+        "race_date": "2026-10-18"
+      },
+      "db_history_weeks": 14
+    },
+    "season_window": {
+      "start_date": "2026-04-27",
+      "end_date": "2026-10-18"
+    },
+    "fitness_state": {
+      "ctl": 121,
+      "atl": 117,
+      "tsb": 4,
+      "fatigue": 41,
+      "rhr": 53,
+      "training_load_state": "yellow-green: altitude adaptation, acute≈chronic",
+      "summary": "As of 2026-06-30: RHR 53 (yellow for this athlete, likely Kunming altitude + travel), acute≈117 and chronic≈121, ratio ~0.96, VO2max 58, Achilles quiet. Trainable but must use HR/RPE and reduce the planned flatland 85-88km P2W2 load."
+    },
+    "continuity": {
+      "days_since_last_race": 79,
+      "post_race_recovery_status": "recovered",
+      "recent_aerobic_weeks": 8,
+      "recent_volume_trend": "rising",
+      "recent_longest_run_km": 32,
+      "recent_quality_sessions_per_week": 1.5,
+      "current_form_zone": "maintenance/building",
+      "current_chronic_load": 121,
+      "return_from_layoff": false,
+      "macro_cycle": "summer",
+      "season_context": "Existing 2026 autumn FM cycle: Phase 1 base completed 2026-04-27 to 2026-06-21; currently P2W2 in the build/specific-prep phase at Kunming altitude.",
+      "injuries": ["right insertional Achilles tendinopathy", "resolved right ITB history"]
+    },
+    "current_phase": {
+      "source": "existing_plan",
+      "current_phase_type": "build",
+      "weeks_in_phase": 2,
+      "completed_aerobic_weeks": 8,
+      "recommended_entry_phase": "build",
+      "confidence": "high",
+      "rationale": "TRAINING_PLAN.md and logs show Phase 1 base completed through 2026-06-21; 2026-06-30 is P2W2, but P2W1 under-delivered volume and missed the long run after travel to Kunming altitude."
+    },
+    "body_composition": {
+      "scan_date": "2026-04-20",
+      "weight_kg": 71.6,
+      "body_fat_pct": 23.7,
+      "smm_kg": 30.9,
+      "fat_mass_kg": null,
+      "bmr_kcal": null,
+      "bmi": 21.62
+    },
+    "body_composition_summary": "Latest body composition in this cycle: weight 71.6-72kg, body fat 23.7%, skeletal muscle 30.9kg; season target is about 68kg by race while preserving muscle and quality-session fueling.",
+    "training_history_summary": {
+      "history_window_months": 18,
+      "monthly_mileage_km": [
+        180, 210, 230, 245, 220, 185,
+        160, 140, 170, 210, 235, 205,
+        145, 170, 195, 215, 225, 205
+      ],
+      "weekly_profile": [
+        {"week_start": "2026-03-30", "distance_km": 48.0, "hours": 4.1, "avg_pace_s_km": 307, "avg_hr": 147, "ctl": 112, "atl": 116, "form": -4, "dose": 520, "rhr": 47, "hrv": 34, "n_runs": 5, "n_long": 1, "n_speed": 1, "n_race": 0},
+        {"week_start": "2026-04-06", "distance_km": 42.2, "hours": 3.0, "avg_pace_s_km": 257, "avg_hr": 166, "ctl": 116, "atl": 128, "form": -12, "dose": 610, "rhr": 49, "hrv": 31, "n_runs": 2, "n_long": 1, "n_speed": 0, "n_race": 1},
+        {"week_start": "2026-04-13", "distance_km": 26.0, "hours": 2.6, "avg_pace_s_km": 360, "avg_hr": 134, "ctl": 108, "atl": 82, "form": 26, "dose": 260, "rhr": 47, "hrv": 36, "n_runs": 4, "n_long": 0, "n_speed": 0, "n_race": 0},
+        {"week_start": "2026-04-20", "distance_km": 38.0, "hours": 3.4, "avg_pace_s_km": 322, "avg_hr": 141, "ctl": 109, "atl": 92, "form": 17, "dose": 350, "rhr": 47, "hrv": 35, "n_runs": 5, "n_long": 0, "n_speed": 1, "n_race": 0},
+        {"week_start": "2026-04-27", "distance_km": 60.0, "hours": 5.2, "avg_pace_s_km": 314, "avg_hr": 145, "ctl": 112, "atl": 110, "form": 2, "dose": 560, "rhr": 48, "hrv": 34, "n_runs": 5, "n_long": 1, "n_speed": 1, "n_race": 0},
+        {"week_start": "2026-05-04", "distance_km": 62.0, "hours": 5.4, "avg_pace_s_km": 318, "avg_hr": 144, "ctl": 114, "atl": 115, "form": -1, "dose": 590, "rhr": 48, "hrv": 33, "n_runs": 5, "n_long": 1, "n_speed": 1, "n_race": 0},
+        {"week_start": "2026-05-11", "distance_km": 66.0, "hours": 5.7, "avg_pace_s_km": 316, "avg_hr": 146, "ctl": 117, "atl": 122, "form": -5, "dose": 640, "rhr": 48, "hrv": 32, "n_runs": 5, "n_long": 1, "n_speed": 1, "n_race": 0},
+        {"week_start": "2026-05-18", "distance_km": 58.0, "hours": 5.1, "avg_pace_s_km": 323, "avg_hr": 142, "ctl": 116, "atl": 104, "form": 12, "dose": 500, "rhr": 47, "hrv": 35, "n_runs": 5, "n_long": 1, "n_speed": 0, "n_race": 0},
+        {"week_start": "2026-05-25", "distance_km": 75.0, "hours": 6.5, "avg_pace_s_km": 312, "avg_hr": 145, "ctl": 121, "atl": 135, "form": -14, "dose": 720, "rhr": 48, "hrv": 32, "n_runs": 6, "n_long": 1, "n_speed": 1, "n_race": 0},
+        {"week_start": "2026-06-01", "distance_km": 78.0, "hours": 6.8, "avg_pace_s_km": 314, "avg_hr": 146, "ctl": 124, "atl": 143, "form": -19, "dose": 780, "rhr": 49, "hrv": 31, "n_runs": 6, "n_long": 1, "n_speed": 1, "n_race": 0},
+        {"week_start": "2026-06-08", "distance_km": 82.0, "hours": 7.0, "avg_pace_s_km": 309, "avg_hr": 148, "ctl": 128, "atl": 154, "form": -26, "dose": 840, "rhr": 50, "hrv": 30, "n_runs": 6, "n_long": 1, "n_speed": 1, "n_race": 0},
+        {"week_start": "2026-06-15", "distance_km": 43.4, "hours": 3.6, "avg_pace_s_km": 298, "avg_hr": 153, "ctl": 121, "atl": 101, "form": 20, "dose": 430, "rhr": 47, "hrv": 34, "n_runs": 3, "n_long": 0, "n_speed": 2, "n_race": 0},
+        {"week_start": "2026-06-22", "distance_km": 62.0, "hours": 5.3, "avg_pace_s_km": 306, "avg_hr": 149, "ctl": 121, "atl": 117, "form": 4, "dose": 801, "rhr": 53, "hrv": 30, "n_runs": 6, "n_long": 0, "n_speed": 1, "n_race": 0}
+      ],
+      "peak_weekly_km_in_window": 82,
+      "longest_run_km_in_window": 35,
+      "race_history": [
+        {"distance": "hm", "date": "2024-11-02", "time_s": 5262, "race_type": "A_race"},
+        {"distance": "fm", "date": "2025-03-29", "time_s": 10762, "race_type": "A_race"},
+        {"distance": "fm", "date": "2026-01-19", "time_s": 12060, "race_type": "B_race"},
+        {"distance": "fm", "date": "2026-03-29", "time_s": 12180, "race_type": "B_race"},
+        {"distance": "fm", "date": "2026-04-12", "time_s": 12300, "race_type": "B_race"},
+        {"distance": "10k", "date": "2026-04-25", "time_s": 2427, "race_type": "time_trial"},
+        {"distance": "10k", "date": "2026-06-24", "time_s": 2360, "race_type": "time_trial"}
+      ],
+      "training_gaps": [
+        {"from": "2026-04-13", "to": "2026-04-26", "reason": "post-race recovery after three marathons in one winter/spring"},
+        {"from": "2026-06-15", "to": "2026-06-28", "reason": "long run missed for two consecutive weeks during P1W8/P2W1 transition and travel to Kunming altitude"}
+      ],
+      "consistency_score": 0.84
+    },
+    "user_intent_md": "使用我当前真实训练状态重规划 2026-10-18 西安马拉松赛季总纲，不要从头重跑基础期。当前是 P2W2（6/29-7/5），Phase 1 基础期 4/27-6/21 已完成，计划原本 P2 逐步到 88-90km，P3 到 92-95km。6/27 起人在昆明海拔约1931m，RHR 升到 53，所有强度课和长距离必须 HR/RPE 优先，配速比平原慢 15-25s/km 属正常。本周 P2W1 实际约62km，连续第二周缺长距离，最大缺口是专项长距离和 MP 心率段；但轻松跑纪律已有改善。目标仍保留 A=2:50 通道，默认执行 B=2:52-2:53，需通过 7月半马测试和 9月30km专项检查点决定。请特别处理：VO2max 仍停在58、轻松跑 HR<145 纪律、股四头肌耐力不足、右跟腱止点肌腱病、夏季高温/昆明高原修正、体重约72kg到赛前68kg。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "schema_valid": true,
+      "phase_count_min": 4,
+      "peak_before_race_days_min": 7,
+      "peak_before_race_days_max": 21
+    },
+    "soft_rubric": {
+      "season_structure": {
+        "min_score": 4,
+        "behavior": "Plan must preserve the completed Phase 1 base block as is_completed=true or otherwise explicitly show continuity from completed base into current build. It must not restart from base on 2026-06-30. Remaining arc should be build/specific prep -> peak/FM specific -> taper to 2026-10-18."
+      },
+      "goal_realism": {
+        "min_score": 4,
+        "behavior": "PB 2:59:22 to A goal 2:50 is plausible but conditional; plan should default to B 2:52-2:53 execution. A must not open from HM alone: require a strict HM/10K marker plus the late 30-32km FM-specific rehearsal with 20-24km MP, VO2/HR/RPE stability, Achilles response, and heat/altitude adaptation all passing."
+      },
+      "peak_timing": {
+        "min_score": 4,
+        "behavior": "FM peak phase should end about 2 weeks before 2026-10-18. Maximum 30-34km rehearsal should land about race - 3..4 weeks, include meaningful MP work, and be followed by a recovery/absorption week plus taper instead of another maximal long run."
+      },
+      "volume_progression": {
+        "min_score": 4,
+        "behavior": "Because last actual week was 62km with two missed long runs and altitude/RHR yellow, first active build weeks should not jump straight to 88-90km; rebuild long run first around 22-25km and 64-78km weeks, then progress toward 85-95km only if RHR/Achilles/altitude adapt, with recovery weeks around 60-70% of load weeks."
+      },
+      "frequency_respect": {
+        "min_score": 5,
+        "behavior": "weekly_run_days_max=6; use 5-6 run days, maintain at least one true rest/mobility day, and avoid overloading with more than two hard run sessions plus long run."
+      },
+      "injury_safety": {
+        "min_score": 4,
+        "behavior": "Right insertional Achilles risk must gate 28-34km and MP segments; no consecutive 32km+ long runs without recovery. Include eccentric calf, hip/glute stability, quad eccentric/durability track and downgrade triggers."
+      },
+      "phase_nutrition_strategy": {
+        "min_score": 4,
+        "behavior": "Must include phase-specific fueling and weight plan: mild deficit on easy/rest days, no deficit on quality/long-run days, altitude hydration/iron note, long-run fueling practice, taper carb load, and 72 -> 68kg without compromising quality."
+      },
+      "request_handling": {
+        "min_score": 5,
+        "behavior": "Must explicitly address all requested real-context issues: P2W2 continuation, Kunming altitude/RHR 53, two missed long runs, VO2max 58 plateau, HR<145 easy discipline, quad durability, Achilles, A/B/C goal gates, and heat/altitude pace correction."
+      }
+    },
+    "anti_patterns": [
+      "Restarting with a new base phase as if Phase 1 had not been completed",
+      "Ignoring Kunming altitude and prescribing flatland paces as mandatory targets",
+      "Jumping immediately from 62km actual week to 88-90km without altitude/RHR/long-run rebuild gating",
+      "No explicit handling of the two missed long runs",
+      "No A/B/C goal gates, treating 2:50 as unconditional, or opening A from HM alone without late FM-specific rehearsal and Achilles/HR/RPE checks",
+      "Peak long run below 28km for FM",
+      "No 30-32km rehearsal with substantial MP work around race - 3..4 weeks",
+      "Consecutive 32km+ long runs despite Achilles history",
+      "No phase-specific nutrition or no weight-management strategy"
+    ]
+  }
+}

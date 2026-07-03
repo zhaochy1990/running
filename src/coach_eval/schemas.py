@@ -13,7 +13,7 @@ axes are skipped during ``per_axis_avg`` aggregation.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -51,8 +51,14 @@ class FixtureRunOutcome(BaseModel):
     scope: Scope
     l1_passed: bool
     l1_violations: list[dict] = Field(default_factory=list)
+    generated_artifact: dict | None = None
+    generation_iterations: int | None = None
+    timings: dict[str, Any] = Field(default_factory=dict)
     judge_score: JudgeScore | None = None
+    judge_samples: list[JudgeScore] = Field(default_factory=list)
+    judge_summary: dict = Field(default_factory=dict)
     error: str | None = None
+    debug: dict[str, Any] = Field(default_factory=dict)
 
 
 class EvalReport(BaseModel):

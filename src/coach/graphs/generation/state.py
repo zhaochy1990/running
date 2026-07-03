@@ -12,11 +12,13 @@ class GenState(TypedDict, total=False):
     user_id: str
     plan_type: Literal["master", "week", "commentary", "weekly_review"]
     input_payload: dict
+    runtime_options: dict
     context: dict
     current_draft: dict | None
     rule_violations: list[dict]
     review_history: list[ReviewReport]
     iteration: int
+    timings: dict
     max_iterations: int
     final_verdict: Literal["pass", "auto_fix", "revise", "block"] | None
     final_artifact: dict | None

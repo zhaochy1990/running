@@ -103,6 +103,25 @@ def test_no_athlete_memories_no_block():
     _, user = build_master_prompts(GOAL, PROFILE, "history", {}, "2026-05-09", athlete_memories=[])
     assert "Known athlete facts" not in user
 
+
+def test_previous_master_plan_context_injected_into_user_prompt_only():
+    from stride_server.master_plan_generator import build_master_prompts
+
+    prev = "上周期 peak 62 km/wk，long run 32-34 km；已完成恢复，30km后腿酸。"
+    system, user = build_master_prompts(
+        GOAL,
+        {**PROFILE, "prev_master_plan_md": prev},
+        "history",
+        {},
+        "2026-05-09",
+    )
+
+    assert "Previous master plan context" in user
+    assert "32-34km" in user
+    assert "completed recovery" in user
+    assert "Current cycle position block" in user
+    assert "Previous master plan context" not in system
+
 _VALID_PLAN_DICT = {
     "schema": "weekly-plan/master/v1",
     "plan": {
@@ -263,6 +282,52 @@ def _run_job_sync(job_id: str, goal: dict = GOAL, profile: dict | None = PROFILE
     run_generate_job(job_id, USER_ID, goal, profile)
 
 
+def test_generate_master_plan_returns_prompt_size_metadata(monkeypatch):
+    raw_response = _sentinel_wrap(_VALID_JSON_STR)
+
+    class CapturingLLMClient:
+        kwargs_seen: list[dict[str, Any]] = []
+
+        def __init__(self) -> None:
+            pass
+
+        def chat_sync(self, *args: Any, **kwargs: Any) -> str:
+            CapturingLLMClient.kwargs_seen.append(kwargs)
+            return raw_response
+
+    CapturingLLMClient.kwargs_seen = []
+    monkeypatch.setattr(adapter_mod, "LLMClient", CapturingLLMClient)
+
+    out = adapter_mod.generate_master_plan(
+        {
+            "job_id": "",
+            "user_id": "",
+            "input_payload": {"goal": GOAL, "profile": PROFILE},
+            "runtime_options": {"master_max_tokens": 20000},
+            "context": {
+                "history_summary": "history",
+                "fitness_state": {"summary": "fitness"},
+            },
+        }
+    )
+
+    metadata = out["timing_metadata"]
+    assert metadata["generator_system_prompt_chars"] > 0
+    assert metadata["generator_user_prompt_chars"] > 0
+    assert metadata["generator_max_tokens"] == 20000
+    assert metadata["generator_raw_response_chars"] == len(raw_response)
+    assert CapturingLLMClient.kwargs_seen == [{"max_tokens": 20000}]
+
+
+def test_master_plan_generation_uses_s1_specific_output_cap():
+    """S1 master plans should not inherit the 128k phase-at-once budget.
+
+    The cap still needs to stay above the observed 13-16k raw response range
+    so larger fixtures have parse-safe headroom.
+    """
+    assert adapter_mod.MASTER_PLAN_MAX_TOKENS == 24576
+
+
 # ---------------------------------------------------------------------------
 # _parse_llm_output unit tests
 # ---------------------------------------------------------------------------
@@ -384,6 +449,45 @@ class TestBuildMasterPlan:
         plan = _build_master_plan(data, USER_ID, GOAL)
         assert plan.milestones[0].type == MilestoneType.LONG_RUN
 
+    def test_tune_up_race_milestone_alias_maps_to_test_run(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["milestones"][0]["type"] = "tune_up_race"
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert plan.milestones[0].type == MilestoneType.TEST_RUN
+
+    def test_non_target_race_milestone_maps_to_test_run(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["milestones"][0].update({
+            "type": "race",
+            "date": "2026-07-05",
+            "target": "10K tune-up",
+        })
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "10k", "race_date": "2026-09-20"},
+        )
+
+        assert plan.milestones[0].type == MilestoneType.TEST_RUN
+
+    def test_target_race_milestone_stays_race(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["milestones"][0].update({
+            "type": "race",
+            "date": "2026-09-20",
+        })
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"target_race": {"distance": "10k", "race_date": "2026-09-20"}},
+        )
+
+        assert plan.milestones[0].type == MilestoneType.RACE
+
     def test_builds_embedded_goal_from_training_goal_dict(self):
         goal = {
             "goal_id": GOAL_ID,
@@ -490,6 +594,478 @@ class TestBuildMasterPlan:
         goal = {k: v for k, v in GOAL.items() if k != "target_finish_time"}
         plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
         assert plan.goal.target_time == ""
+
+    def test_goal_time_seconds_formats_embedded_target_time(self):
+        goal = {k: v for k, v in GOAL.items() if k != "target_finish_time"}
+        goal["goal_time_s"] = 10200
+
+        plan = _build_master_plan(_VALID_PLAN_DICT, USER_ID, goal)
+
+        assert plan.goal.target_time == "2:50:00"
+
+    def test_long_run_milestone_date_aligns_to_matching_week_sunday(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "建设期",
+                "phase_type": "build",
+                "start_date": "2026-07-20",
+                "end_date": "2026-08-09",
+                "focus": "专项建设",
+                "weekly_distance_km_low": 50,
+                "weekly_distance_km_high": 60,
+                "key_session_types": ["long_run"],
+            }
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "long_run",
+                "date": "2026-07-26",
+                "phase_name": "建设期",
+                "target": "16km长跑",
+                "metric": "long_run_distance_km",
+                "target_value": 16,
+                "comparator": ">=",
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-07-20",
+                "phase_name": "建设期",
+                "target_weekly_km_low": 50,
+                "target_weekly_km_high": 58,
+                "key_sessions": [{"type": "long_run", "distance_km": 15}],
+            },
+            {
+                "week_index": 2,
+                "week_start": "2026-07-27",
+                "phase_name": "建设期",
+                "target_weekly_km_low": 52,
+                "target_weekly_km_high": 60,
+                "key_sessions": [{"type": "long_run", "distance_km": 16}],
+            },
+        ]
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert plan.milestones[0].date == "2026-08-02"
+
+    def test_long_run_milestone_without_matching_week_is_not_rewritten(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "建设期",
+                "phase_type": "build",
+                "start_date": "2026-07-20",
+                "end_date": "2026-08-09",
+                "focus": "专项建设",
+                "weekly_distance_km_low": 50,
+                "weekly_distance_km_high": 60,
+                "key_session_types": ["long_run"],
+            }
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "long_run",
+                "date": "2026-07-26",
+                "phase_name": "建设期",
+                "target": "20km长跑",
+                "metric": "long_run_distance_km",
+                "target_value": 20,
+                "comparator": ">=",
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-07-20",
+                "phase_name": "建设期",
+                "target_weekly_km_low": 50,
+                "target_weekly_km_high": 58,
+                "key_sessions": [{"type": "long_run", "distance_km": 15}],
+            },
+            {
+                "week_index": 2,
+                "week_start": "2026-07-27",
+                "phase_name": "建设期",
+                "target_weekly_km_low": 52,
+                "target_weekly_km_high": 60,
+                "key_sessions": [{"type": "long_run", "distance_km": 16}],
+            },
+        ]
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert plan.milestones[0].date == "2026-07-26"
+
+    def test_standard_10k_long_run_caps_at_16km_and_updates_milestone(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "10K专项期",
+                "phase_type": "build",
+                "start_date": "2026-07-20",
+                "end_date": "2026-08-09",
+                "focus": "10K专项建设",
+                "weekly_distance_km_low": 50,
+                "weekly_distance_km_high": 60,
+                "key_session_types": ["long_run", "interval"],
+            }
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "long_run",
+                "date": "2026-08-09",
+                "phase_name": "10K专项期",
+                "target": "17km长跑",
+                "metric": "long_run_distance_km",
+                "target_value": 17,
+                "comparator": ">=",
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-08-03",
+                "phase_name": "10K专项期",
+                "target_weekly_km_low": 56,
+                "target_weekly_km_high": 60,
+                "key_sessions": [{"type": "long_run", "distance_km": 17}],
+            },
+        ]
+
+        plan = _build_master_plan(data, USER_ID, {"distance": "10k"})
+
+        assert plan.weeks[0].key_sessions[0].distance_km == 16
+        assert plan.milestones[0].target_value == 16
+        assert plan.milestones[0].target == "16km长跑"
+
+    def test_high_volume_10k_long_run_is_not_capped(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "高跑量10K专项期",
+                "phase_type": "build",
+                "start_date": "2026-07-20",
+                "end_date": "2026-08-09",
+                "focus": "高跑量10K专项建设",
+                "weekly_distance_km_low": 60,
+                "weekly_distance_km_high": 66,
+                "key_session_types": ["long_run", "interval"],
+            }
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "long_run",
+                "date": "2026-08-09",
+                "phase_name": "高跑量10K专项期",
+                "target": "17km长跑",
+                "metric": "long_run_distance_km",
+                "target_value": 17,
+                "comparator": ">=",
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-08-03",
+                "phase_name": "高跑量10K专项期",
+                "target_weekly_km_low": 62,
+                "target_weekly_km_high": 66,
+                "key_sessions": [{"type": "long_run", "distance_km": 17}],
+            },
+        ]
+
+        plan = _build_master_plan(data, USER_ID, {"race_distance": "10K"})
+
+        assert plan.weeks[0].key_sessions[0].distance_km == 17
+        assert plan.milestones[0].target_value == 17
+
+    def test_standard_5k_long_run_caps_at_12km_and_updates_milestone(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "5K专项期",
+                "phase_type": "peak",
+                "start_date": "2026-08-03",
+                "end_date": "2026-08-23",
+                "focus": "5K专项锐化",
+                "weekly_distance_km_low": 48,
+                "weekly_distance_km_high": 55,
+                "key_session_types": ["long_run", "vo2max"],
+            }
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "long_run",
+                "date": "2026-08-16",
+                "phase_name": "5K专项期",
+                "target": "14km长跑",
+                "metric": "long_run_distance_km",
+                "target_value": 14,
+                "comparator": ">=",
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-08-10",
+                "phase_name": "5K专项期",
+                "target_weekly_km_low": 50,
+                "target_weekly_km_high": 55,
+                "key_sessions": [{"type": "long_run", "distance_km": 14}],
+            },
+        ]
+
+        plan = _build_master_plan(data, USER_ID, {"distance": "5k"})
+
+        assert plan.weeks[0].key_sessions[0].distance_km == 12
+        assert plan.milestones[0].target_value == 12
+        assert plan.milestones[0].target == "12km长跑"
+
+    def test_high_volume_5k_long_run_is_not_capped(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "高跑量5K专项期",
+                "phase_type": "peak",
+                "start_date": "2026-08-03",
+                "end_date": "2026-08-23",
+                "focus": "高跑量5K专项锐化",
+                "weekly_distance_km_low": 56,
+                "weekly_distance_km_high": 60,
+                "key_session_types": ["long_run", "vo2max"],
+            }
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "long_run",
+                "date": "2026-08-16",
+                "phase_name": "高跑量5K专项期",
+                "target": "14km长跑",
+                "metric": "long_run_distance_km",
+                "target_value": 14,
+                "comparator": ">=",
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-08-10",
+                "phase_name": "高跑量5K专项期",
+                "target_weekly_km_low": 56,
+                "target_weekly_km_high": 60,
+                "key_sessions": [{"type": "long_run", "distance_km": 14}],
+            },
+        ]
+
+        plan = _build_master_plan(data, USER_ID, {"target_race": {"distance": "5k"}})
+
+        assert plan.weeks[0].key_sessions[0].distance_km == 14
+        assert plan.milestones[0].target_value == 14
+
+    def test_5k_peak_nutrition_avoids_marathon_fueling_language(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "基础期营养：热量平衡，蛋白1.4-1.6g/kg。",
+            "峰值锐化期营养：5-7g/kg碳水，赛配课前高碳，练胶+钠。",
+            "比赛减量期营养：5K不做马拉松式碳载，熟悉餐。",
+        ]
+
+        plan = _build_master_plan(data, USER_ID, {"distance": "5k"})
+
+        assert "5-7g/kg" not in "\n".join(plan.training_principles)
+        assert "练胶" not in "\n".join(plan.training_principles)
+        assert "钠" not in "\n".join(plan.training_principles)
+        assert any("熟悉早餐" in item for item in plan.training_principles)
+
+    def test_sub250_fm_gate_requires_combination_evidence(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "PB2:59:22→2:50为5.2%，A需HM≤1:24:30或10K≤38:00+29km含22kmMP过关"
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "test_run",
+                "date": "2026-08-02",
+                "phase_name": "专项建设期",
+                "target": "10K≤38:30为B观察；A仍需≤37:00或HM≤1:21:30",
+                "metric": "race_time_s_10k",
+                "target_value": 2310,
+                "comparator": "<=",
+            },
+            {
+                "type": "race",
+                "date": "2026-10-18",
+                "phase_name": "赛前期",
+                "target": "A<2:50需HM≤1:24:30或10K≤38:00+29km含22kmMP全过；B2:52-2:55；C<3h",
+                "metric": "race_time_s_fm",
+                "target_value": 10200,
+                "comparator": "<=",
+            }
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "fm", "goal_time_s": 10200, "race_date": "2026-10-18"},
+            {"experience_level": "advanced", "prs": {"fm_s": 10762}},
+        )
+
+        principles = "\n".join(plan.training_principles)
+        support_target = plan.milestones[0].target
+        race_target = plan.milestones[1].target
+        for text in (principles, race_target):
+            assert "A=2:50" in text
+            assert "HM<=1:24:30" in text
+            assert "10K<=37:45" in text
+            assert "29-32km" in text
+            assert "22-24kmMP" in text
+            assert "MP" in text
+            assert "VO2/HR/RPE" in text
+            assert "跟腱" in text
+            assert "B=2:52-2:55" in text
+            assert "10K≤38:00" not in text
+            assert "HM≤1:21:30" not in text
+            assert "10K>=38:00" in text
+            assert "观察/B" in text
+
+        assert "10K≤38:30为B观察" in support_target
+        assert "A=2:50按比赛里程碑" in support_target
+        assert "HM≤1:21:30" not in support_target
+
+    def test_sub250_fm_gate_normalizes_stale_distance_wording(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "PB2:59:22→2:50为5.2%；A=2:50需HM<=1:24:30/10K<=37:45 + 31-32km含22-24kmMP + VO2/HR/RPE + 跟腱全过。"
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "race",
+                "date": "2026-10-18",
+                "phase_name": "赛前期",
+                "target": "A=2:50需HM<=1:24:30/10K<=37:45 + 31-32km含22-24kmMP + VO2/HR/RPE + 跟腱全过；B=2:52-2:55。",
+                "metric": "race_time_s_fm",
+                "target_value": 10200,
+                "comparator": "<=",
+            }
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "fm", "goal_time_s": 10200, "race_date": "2026-10-18"},
+            {"experience_level": "advanced", "prs": {"fm_s": 10762}},
+        )
+
+        rendered = "\n".join(plan.training_principles + [plan.milestones[0].target])
+        assert "29-32km" in rendered
+        assert "最大合法MP彩排" in rendered
+        assert "31-32km" not in rendered
+
+    def test_sub250_gate_does_not_mask_unrealistic_fm_goal(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "PB3:45→2:50过于激进，本周期建议保守。"
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "fm", "goal_time_s": 10200, "race_date": "2026-10-18"},
+            {"experience_level": "advanced", "prs": {"fm_s": 13500}},
+        )
+
+        assert "A=2:50" not in "\n".join(plan.training_principles)
+
+    def test_three_day_mp_long_run_week_drops_extra_hard_session(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "马拉松建设期",
+                "phase_type": "build",
+                "start_date": "2026-07-20",
+                "end_date": "2026-08-09",
+                "focus": "三跑建设",
+                "weekly_distance_km_low": 40,
+                "weekly_distance_km_high": 48,
+                "key_session_types": ["long_run", "threshold", "strength_key"],
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-07-20",
+                "phase_name": "马拉松建设期",
+                "target_weekly_km_low": 42,
+                "target_weekly_km_high": 48,
+                "key_sessions": [
+                    {"type": "long_run", "distance_km": 24, "purpose": "含8km马配"},
+                    {"type": "threshold", "duration_min": 30},
+                    {"type": "strength_key", "duration_min": 30},
+                ],
+            }
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            GOAL,
+            profile={"weekly_run_days_max": 3},
+        )
+
+        assert [s.type for s in plan.weeks[0].key_sessions] == [
+            "long_run", "strength_key"
+        ]
+
+    def test_full_frequency_mp_long_run_week_keeps_extra_hard_session(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "马拉松建设期",
+                "phase_type": "build",
+                "start_date": "2026-07-20",
+                "end_date": "2026-08-09",
+                "focus": "全频建设",
+                "weekly_distance_km_low": 60,
+                "weekly_distance_km_high": 75,
+                "key_session_types": ["long_run", "threshold"],
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-07-20",
+                "phase_name": "马拉松建设期",
+                "target_weekly_km_low": 68,
+                "target_weekly_km_high": 75,
+                "key_sessions": [
+                    {"type": "long_run", "distance_km": 24, "purpose": "含8km马配"},
+                    {"type": "threshold", "duration_min": 30},
+                ],
+            }
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            GOAL,
+            profile={"weekly_run_days_max": 5},
+        )
+
+        assert [s.type for s in plan.weeks[0].key_sessions] == ["long_run", "threshold"]
+
+    def test_pushback_principle_adds_multi_cycle_path(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "历史峰值55km，100km周量违反约10%递增，过劳风险高；本周期峰值60-70km。"
+        ]
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert "下周期80km" in plan.training_principles[0]
+        assert "再后周期90+km" in plan.training_principles[0]
 
 
 class TestBuildMapsNewFields:
@@ -730,15 +1306,18 @@ class TestRunGenerateJob:
 
         class FlakyLLMClient:
             calls = 0
+            kwargs_seen: list[dict[str, Any]] = []
 
             def __init__(self) -> None:
                 pass
 
             def chat_sync(self, *args: Any, **kwargs: Any) -> str:
                 FlakyLLMClient.calls += 1
+                FlakyLLMClient.kwargs_seen.append(kwargs)
                 return garbage if FlakyLLMClient.calls == 1 else valid_response
 
         FlakyLLMClient.calls = 0  # reset per-test
+        FlakyLLMClient.kwargs_seen = []
         monkeypatch.setattr(adapter_mod, "LLMClient", FlakyLLMClient)
 
         job_id = create_job(USER_ID)
@@ -747,6 +1326,10 @@ class TestRunGenerateJob:
         job = get_job(job_id)
         assert job.status == JobStatus.DONE, f"unexpected error: {job.error!r}"
         assert FlakyLLMClient.calls == 2, "retry should fire exactly once"
+        assert FlakyLLMClient.kwargs_seen == [
+            {"max_tokens": adapter_mod.MASTER_PLAN_MAX_TOKENS},
+            {"max_tokens": adapter_mod.MASTER_PLAN_MAX_TOKENS},
+        ]
         assert len(patch_store.saved_plans) == 1
 
     def test_llm_unavailable_fails_job(self, monkeypatch, patch_store, patch_history):
@@ -1014,6 +1597,121 @@ class TestPromptRegression:
                   "is_recovery_week", "is_taper_week"):
             assert f in prompt
 
+    def test_prompt_requests_compact_canonical_week_output(self):
+        prompt = self._build()
+        assert "minified JSON" in prompt
+        assert "canonical `weeks`" in prompt
+        assert "compatibility aliases" in prompt
+        assert "omit optional `intensity`" in prompt
+        assert "omit optional `purpose`" in prompt
+        assert "routine long_run/threshold/tempo/interval/vo2max/hill/strength" in prompt
+        assert "keep it for MP/HMP/RP, A/B gate, injury" in prompt
+        assert "altitude/heat, travel/holiday, fueling, recovery, or user-request meaning" in prompt
+        assert "training_principles" in prompt
+        assert "≤10" in prompt
+        assert '"weekly_key_sessions"' not in prompt
+
+    def test_prompt_preserves_non_droppable_requested_items(self):
+        prompt = self._build()
+        assert "Non-droppable requested items" in prompt
+        assert "A/B/C" in prompt
+        assert "weight/body-composition target" in prompt
+        assert "hydration/electrolytes" in prompt
+        assert "ferritin/iron-status" in prompt
+        assert "ferritin or hemoglobin" in prompt
+        assert "秋季后再筹备马拉松" in prompt
+        assert "recover 1-2 weeks after the current race" in prompt
+        assert "both a transition principle and the taper/race `coach_note`" in prompt
+
+    def test_prompt_requires_strict_aggressive_a_goal_gates(self):
+        prompt = self._build()
+        assert "A gate" in prompt
+        assert "FM A=2:50" in prompt
+        assert "<=1:25:30" in prompt
+        assert "22-24km" in prompt
+        assert "not 28km" in prompt
+        assert "sub-3/sub-2:50 is multi-cycle" in prompt
+        assert "observation/B only" in prompt
+        assert "30-32km MP rehearsal" in prompt
+        assert "historical_peak * 1.10 + 2km" in prompt
+        assert "historical_peak + 7km" in prompt
+        assert "<=80-82km" in prompt
+        assert "not `84-85km` or `92km`" in prompt
+        assert "28-29km" in prompt
+        assert "C=PB/no-regression finish" in prompt
+        assert "HM <=1:18:00" in prompt
+        assert "mid-cycle `test_run` A-gate milestone" in prompt
+        assert "10K<=36:00" in prompt
+        assert "next load max 70/71; not 72" in prompt
+        assert "label it observation/B only" in prompt
+        assert "Do not loosen the A gate to HM 1:18:30" in prompt
+        assert "28 -> max 30" in prompt
+        assert "peak `42km` needs first taper `<=31km`" in prompt
+        assert "default peak phase `end_date` is about `race_date − 14 days`" in prompt
+        assert "21 days only with an explicit freshness/travel/injury reason" in prompt
+        assert "Even if `season_window.end_date` is race day" in prompt
+        assert "base maintenance" in prompt
+        assert "post-race repair nutrition principle" in prompt
+        assert "72kg -> 68kg" in prompt
+        assert "small deficit on easy/rest days" in prompt
+        assert "no deficit" in prompt
+        assert "protein 1.6-1.8 g/kg/day" in prompt
+        assert "overrides Base" in prompt
+        assert "calcium + vitamin D" in prompt
+        assert "no 1.4-1.6" in prompt
+        assert "do not merge build+peak into one `建设/峰值` nutrition line" in prompt
+        assert "Race taper for HM" in prompt
+        assert "do not use marathon-style 3-day 8-10 g/kg/day carb-loading" in prompt
+        assert "10K tune-up around `<=39:00` is only a B/observation gate" in prompt
+        assert "10K<=37:00" in prompt
+        assert "10K<=37:45" in prompt
+        assert "observation/B+" in prompt
+        assert "<=38:00" in prompt
+        assert "10K `<=37:45`" in prompt
+        assert "10K `>=38:00` is observation/B only" in prompt
+        assert "29-32km/22-24kmMP" in prompt
+        assert "最大合法29-32km/22-24kmMP" in prompt
+        assert "HM is only an observation gate" in prompt
+        assert "Never summarize as just `HM+31km过关`" in prompt
+        assert "2/14-2/16" in prompt
+        assert "avoiding oily/high-fat/high-sugar banquet foods" in prompt
+        assert "避开油腻/高脂/高糖宴席和新食物" in prompt
+        assert "do not reduce the holiday note to only carrying gels" in prompt
+        assert "本周期60-70km，下周期80km，再后周期90+km" in prompt
+        assert "Tune-up/test weeks count as load" in prompt
+        assert "74 -> recovery -> 89" in prompt
+        assert "not 82/89" in prompt
+        assert "about 30-35km" in prompt
+        assert "not <30 unless current load forces it" in prompt
+        assert "single 28km max rehearsal week may reach `64-65km`" in prompt
+        assert "do not create both a 64km and a 65km high week" in prompt
+        assert "all other load weeks stay <=63km" in prompt
+        assert "avoid unfamiliar steep routes" in prompt
+        assert "no last-minute volume catch-up" in prompt
+        assert "65-72km" in prompt
+        assert "not 60-64 unless current-load/injury" in prompt
+        assert "2/9-2/15" in prompt
+        assert "no `long_run` key session" in prompt
+        assert "short Z2 + short MP/strides" in prompt
+        assert "gear+fuel packing" in prompt
+        assert "shoes, race kit, gels/sodium, familiar breakfast" in prompt
+        assert "only one" in prompt
+        assert "28km / 72km" in prompt
+        assert "avoid `26km`" in prompt
+        assert "Stale race data still keeps FM >=28km" in prompt
+        assert "`20-26km`" in prompt
+        assert "set the milestone date to that Sunday" in prompt
+        assert "Do not put big checkpoints on recovery weeks" in prompt
+        assert "copy that week's exact `long_run.distance_km`" in prompt
+        assert "week_start=2026-09-14" in prompt
+        assert "never 2026-09-13" in prompt
+        assert "no 86-92/32km unless explicit recent 85-90km history" in prompt
+        assert "no `86-92km` peak or `32km` unless explicit recent 85-90km history" in prompt
+        assert "never output `30/85`" in prompt
+        assert "share-safe `29km / 84-85km` or `30km / >=86km`" in prompt
+        assert "never `30/85` or `32/92`" in prompt
+        assert "do not stop at `25km`" in prompt
+
     def test_prompt_includes_distance_specificity_block(self):
         """Distance specificity HARD block calls out FM / HM / 10K / 5K."""
         prompt = self._build()
@@ -1022,6 +1720,76 @@ class TestPromptRegression:
         assert "HM (half marathon)" in prompt
         assert "10K" in prompt
         assert "5K" in prompt
+        assert "default to <=55km for a normal sub-18 5K block" in prompt
+        assert "default to `68-70km`" in prompt
+        assert "avoid 71-75km" in prompt
+        assert "Do not create a 4-week 5K peak" in prompt
+        assert "never start taper the previous Monday (14d)" in prompt
+        assert "17-18km only for explicit high-volume 10K" in prompt
+        assert "Do not create a 4-week 10K peak phase" in prompt
+        assert "Do not label a 4-week block as `peak`" in prompt
+        assert "race weeks may contain only one `race`" in prompt
+        assert "mention strides/activation only in `focus`" in prompt
+
+    def test_master_system_prompt_stays_compact_after_distance_rules(self):
+        from coach.skills import render_skill
+
+        system = render_skill("master_plan_planner", {})
+
+        assert len(system) < 34500
+        assert "Distance specificity" in system
+        assert "default to <=55km for a normal sub-18 5K block" in system
+        assert "default to `68-70km`" in system
+        assert "avoid 71-75km" in system
+
+    def test_prompt_includes_ramp_integer_boundary_sentinels(self):
+        prompt = self._build()
+
+        assert "`64 -> 72`" in prompt
+        assert "`64 -> max 70/71`" in prompt
+        assert "(not 72)" in prompt
+        assert "`70 -> 80`" in prompt
+        assert "`70 -> max 77/78`" in prompt
+        assert "(not 80)" in prompt
+        assert "`72 -> 82`" in prompt
+        assert "`72 -> max 79/80`" in prompt
+        assert "(not 82)" in prompt
+        assert "`80 -> 90`" in prompt
+        assert "`80 -> max 88/89`" in prompt
+        assert "(not 90)" in prompt
+
+    def test_prompt_includes_long_run_share_integer_sentinels(self):
+        prompt = self._build()
+
+        assert "`22km` >=63" in prompt
+        assert "never output `22/62`" in prompt
+
+    def test_prompt_includes_frequency_limited_fm_peak_guidance(self):
+        prompt = self._build()
+        assert "Frequency-limited ceiling" in prompt
+        assert "`profile.weekly_run_days_max <= 3`" in prompt
+        assert "45-48km" in prompt
+        assert "not a flat `40-42km` peak" in prompt
+        assert "one protected max rehearsal" in prompt
+        assert "26-28km / 45-48km" in prompt
+        assert "exactly `28km / 48km`" in prompt
+        assert "not 26/27" in prompt
+        assert "many consecutive weeks where long-run share exceeds 50%" in prompt
+        assert "5-6 run days plus at least one true rest/mobility day" in prompt
+        assert "`零剂量<=2` alone is not enough" in prompt
+
+    def test_prompt_includes_recent_s1_regression_sentinels(self):
+        prompt = self._build()
+        assert "normal sub-40/sub-39:30 defaults <=60km" in prompt
+        assert "not 62-64" in prompt
+        assert "training_principles` must explicitly ban deep squat" in prompt
+        assert "lunge/弓步" in prompt
+        assert "high box jump" in prompt
+        assert "plyometrics/jump drills" in prompt
+        assert "3:17 -> 3:10 is about 3.6%" in prompt
+        assert "not 1.8%" in prompt
+        assert "use `strength_key` only for rehab/test/phase anchors" in prompt
+        assert "do not list routine maintenance strength every week" in prompt
 
     def test_prompt_includes_goal_realism_block(self):
         """Goal realism HARD block preserved across Batch B + D."""
@@ -1034,8 +1802,8 @@ class TestPromptRegression:
         consumes the raw prod field name."""
         prompt = self._build()
         # the JSON block in the prompt should carry our canonical keys
-        assert "\"distance\": \"fm\"" in prompt
-        assert "\"goal_time_s\": 12000" in prompt
+        assert '"distance":"fm"' in prompt
+        assert '"goal_time_s":12000' in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -1184,6 +1952,51 @@ class TestPromptRoleSplit:
         assert "2026-10-19" in user  # race_date surfaced to the user turn
         # plan_start = upcoming Monday after 2026-05-19 (a Tuesday) → 2026-05-25
         assert "2026-05-25" in user
+
+    def test_goal_season_start_freezes_plan_start_for_eval_replay(self):
+        """S1 eval fixtures carry an explicit season_start. That start date,
+        not the wall-clock today, must anchor plan_start so frozen fixtures stay
+        reproducible and do not skip early base weeks as time passes."""
+        from stride_server.master_plan_generator import build_master_prompts
+
+        _system, user = build_master_prompts(
+            goal={
+                "distance": "fm",
+                "race_date": "2026-10-18",
+                "goal_time_s": 10200,
+                "season_start": "2026-05-19",
+            },
+            profile={"prs": {"fm_s": 10762}, "weekly_run_days_max": 6},
+            history_summary="hist",
+            fitness_state={"summary": "fitness"},
+            today="2026-06-30",
+        )
+        assert "Plan start Monday" in user
+        assert "`plan.start_date` MUST equal `2026-05-25` verbatim" in user
+        assert "`weeks[0].week_start` MUST equal `2026-05-25`" in user
+        assert "do not skip early weeks" in user
+        assert "2026-05-25" in user
+        assert "2026-07-06" not in user
+
+    def test_goal_as_of_date_freezes_today_for_eval_replay(self):
+        """Frozen fixtures should not describe early fixture weeks as already
+        completed just because the wall clock advanced."""
+        from stride_server.master_plan_generator import build_master_prompts
+
+        _system, user = build_master_prompts(
+            goal={
+                "distance": "fm",
+                "race_date": "2026-10-18",
+                "season_start": "2026-05-19",
+                "as_of_date": "2026-05-19",
+            },
+            profile=None,
+            history_summary="hist",
+            fitness_state={"summary": "fitness"},
+            today="2026-06-30",
+        )
+        assert "Today's date: 2026-05-19" in user
+        assert "Today's date: 2026-06-30" not in user
 
 
 # ---------------------------------------------------------------------------
@@ -1746,20 +2559,12 @@ class TestFormatHistorySummary:
 
     def test_renders_weekly_block_not_monthly(self):
         out = self._summary(self._history([self._week("2026-02-23")]))
-        # New 16-week markdown-table block present; old monthly line gone.
-        assert "16-week weekly profile (most recent last)" in out
+        # New compact 16-week block present; old monthly line gone.
+        assert "16-week weekly profile (most recent last; n/a=no data)" in out
         assert "Last 6 months" not in out
         assert "Average monthly volume" not in out
-        # Table header + separator.
-        assert (
-            "| Week | Distance | Time | Pace | HR | CTL | ATL | Load Ratio | Form | Dose "
-            "| RHR | HRV | Runs | Long | Speed | Race |"
-        ) in out
-        # The seeded week's data row (week-number prefix omitted to stay robust).
-        assert (
-            "| 42.1 | 3.8 | 5:21/km | 148 | 58 | 64 | 1.10 | -6 | 412 | 49 | 31 "
-            "| 5 | 1 | 1 | 0 |"
-        ) in out
+        assert "W|km|h|pace|HR|CTL/ATL|ratio|form|dose|RHR/HRV|runs/L/S/R" in out
+        assert "2026-W09|42.1|3.8|5:21/km|148|58/64|1.10|-6|412|49/31|5/1/1/0" in out
         assert "Totals (1wk):" in out
         # PB anchor line still rendered.
         assert "Actual personal bests (PB" in out
@@ -1775,10 +2580,7 @@ class TestFormatHistorySummary:
         assert "None" not in out
         assert "n/a" in out
         # dose 0.0 → "0" (a real zero, not missing); n_runs still shown.
-        assert (
-            "| 42.1 | 3.8 | n/a | n/a | n/a | n/a | n/a | n/a | 0 | n/a | n/a "
-            "| 5 | 0 | 0 | 0 |"
-        ) in out
+        assert "2026-W09|42.1|3.8|n/a|n/a|n/a/n/a|n/a|n/a|0|n/a/n/a|5/0/0/0" in out
 
     def test_empty_profile_message(self):
         out = self._summary(self._history([]))

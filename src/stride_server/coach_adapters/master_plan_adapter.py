@@ -46,6 +46,13 @@ from ..master_plan_generator import (
 
 logger = logging.getLogger(__name__)
 
+# S1 master plans are compact season skeletons, not phase-at-once weekly plans.
+# Recent real raw model outputs are ~13-16k chars, so 24k visible-output tokens
+# leaves headroom for larger fixtures while avoiding the 128k generator-role
+# default that can encourage long reasoning/output budgets on gpt-5.x. Keep this
+# S1-specific; phase-at-once weekly generation still uses config max_tokens.
+MASTER_PLAN_MAX_TOKENS = 24576
+
 
 def _compute_bmi(weight_kg: float | None, height_cm: float | None) -> float | None:
     """BMI = weight_kg / height_m². Returns ``None`` when either input is
@@ -256,6 +263,7 @@ def generate_master_plan(state: GenState) -> dict:
     job_id = state.get("job_id") or ""
     user_id = state.get("user_id") or ""
     payload = state.get("input_payload") or {}
+    runtime_options = state.get("runtime_options") or {}
     goal = payload.get("goal") or {}
     profile = payload.get("profile")
 
@@ -300,6 +308,10 @@ def generate_master_plan(state: GenState) -> dict:
         current_phase=current_phase,
         athlete_memories=athlete_memories,
     )
+    prompt_chars = {
+        "generator_system_prompt_chars": len(system_prompt),
+        "generator_user_prompt_chars": len(user_text),
+    }
     logger.debug(
         "generate_master_plan: system_prompt=%d chars, user_prompt=%d chars, goal=%r, profile=%r",
         len(system_prompt),
@@ -326,7 +338,26 @@ def generate_master_plan(state: GenState) -> dict:
             "**显式修复**这些问题，不要重复同样的错误：\n"
             f"{violations_text}"
         )
+        prompt_chars["generator_user_prompt_chars"] = len(user_text)
     user_message = [{"role": "user", "content": user_text}]
+
+    master_max_tokens = MASTER_PLAN_MAX_TOKENS
+    if runtime_options.get("master_max_tokens") is not None:
+        try:
+            master_max_tokens = int(runtime_options["master_max_tokens"])
+        except (TypeError, ValueError):
+            logger.warning(
+                "generate_master_plan: ignoring invalid master_max_tokens=%r",
+                runtime_options.get("master_max_tokens"),
+            )
+            master_max_tokens = MASTER_PLAN_MAX_TOKENS
+        else:
+            if master_max_tokens <= 0:
+                logger.warning(
+                    "generate_master_plan: ignoring non-positive master_max_tokens=%r",
+                    runtime_options.get("master_max_tokens"),
+                )
+                master_max_tokens = MASTER_PLAN_MAX_TOKENS
 
     client = LLMClient()
     # max_tokens + reasoning_effort flow from ``config/coach.toml [generator]``
@@ -342,11 +373,16 @@ def generate_master_plan(state: GenState) -> dict:
         ", with rule-violation feedback" if (iteration > 0 and violations) else "",
     )
     _t0 = time.monotonic()
-    raw = client.chat_sync(system_prompt, user_message)
+    raw = client.chat_sync(
+        system_prompt,
+        user_message,
+        max_tokens=master_max_tokens,
+    )
+    raw_response_chars = len(raw)
     logger.info(
         "generate_master_plan: LLM call returned in %.1fs (raw=%d chars)",
         time.monotonic() - _t0,
-        len(raw),
+        raw_response_chars,
     )
 
     parsed = _parse_llm_output(raw)
@@ -361,16 +397,26 @@ def generate_master_plan(state: GenState) -> dict:
             "(raw_len=%d) — retrying once",
             len(raw),
         )
-        raw_retry = client.chat_sync(system_prompt, user_message)
+        raw_retry = client.chat_sync(
+            system_prompt,
+            user_message,
+            max_tokens=master_max_tokens,
+        )
         parsed = _parse_llm_output(raw_retry)
         if parsed is None:
             err = ValueError(
                 f"parse_failed: all 3 tiers failed twice "
                 f"(raw1 len={len(raw)}, raw2 len={len(raw_retry)})"
             )
-            err.raw_output = raw_retry[:2000]  # type: ignore[attr-defined]
+            err.raw_output = (  # type: ignore[attr-defined]
+                "---RAW_ATTEMPT_1---\n"
+                f"{raw[:2000]}\n"
+                "---RAW_ATTEMPT_2---\n"
+                f"{raw_retry[:2000]}"
+            )
             raise err
         raw = raw_retry  # for downstream logging consistency
+        raw_response_chars = len(raw_retry)
 
     # Stamp the actual configured generator model (config/coach.toml
     # [generator].model) rather than a hardcoded literal, so generated_by
@@ -380,7 +426,9 @@ def generate_master_plan(state: GenState) -> dict:
 
     generated_by = get_generator_model()
     try:
-        plan = _build_master_plan(parsed, user_id, goal, generated_by=generated_by)
+        plan = _build_master_plan(
+            parsed, user_id, goal, profile=profile, generated_by=generated_by
+        )
     except ValueError as exc:
         # Re-raise with bad_schema prefix so caller can distinguish from
         # parse_failed (both are ValueError historically).
@@ -392,7 +440,14 @@ def generate_master_plan(state: GenState) -> dict:
     if job_id:
         update_job(job_id, stage=JobStage.RULE_FILTER, progress=75)
 
-    return {"current_draft": plan.model_dump(mode="json")}
+    return {
+        "current_draft": plan.model_dump(mode="json"),
+        "timing_metadata": {
+            **prompt_chars,
+            "generator_max_tokens": master_max_tokens,
+            "generator_raw_response_chars": raw_response_chars,
+        },
+    }
 
 
 def master_reviewer(state: GenState) -> ReviewReport:
