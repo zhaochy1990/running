@@ -943,7 +943,11 @@ def _ensure_sub250_fm_combination_gate(
         text = str(principle)
         if _is_sub250_gate_principle(text):
             if not gate_inserted:
-                updated_principles.append(_compose_sub250_gate_principle(text))
+                updated_principles.append(
+                    text
+                    if _has_sub250_combo_gate(text)
+                    else _compose_sub250_gate_principle(text)
+                )
                 gate_inserted = True
             continue
         updated_principles.append(text)
@@ -972,8 +976,6 @@ def _ensure_sub250_fm_combination_gate(
             continue
         needs_combo = "A" in target and "2:50" in target and (
             not _has_sub250_combo_gate(target)
-            or "或" in target
-            or "or" in target.lower()
         )
         if needs_combo:
             updated_milestones.append(

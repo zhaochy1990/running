@@ -964,6 +964,39 @@ class TestBuildMasterPlan:
         assert "最大合法MP彩排" in rendered
         assert "31-32km" not in rendered
 
+    def test_sub250_fm_gate_preserves_valid_slash_form_context(self):
+        data = json.loads(_VALID_JSON_STR)
+        principle = (
+            "PB2:59:22→2:50为5.2%；A=2:50仅HM<=1:24:30或10K<=37:45 + "
+            "最大合法29-32km/22-24kmMP + VO2/HR/RPE + 跟腱全过时开放；训练按B执行。"
+        )
+        race_target = (
+            "A=2:50仅HM<=1:24:30或10K<=37:45 + 最大合法29-32km/22-24kmMP + "
+            "VO2/HR/RPE + 跟腱全过；B=2:52-2:53；C<3h；高温或跟腱异常降级。"
+        )
+        data["plan"]["training_principles"] = [principle]
+        data["plan"]["milestones"] = [
+            {
+                "type": "race",
+                "date": "2026-10-18",
+                "phase_name": "赛前期",
+                "target": race_target,
+                "metric": "race_time_s_fm",
+                "target_value": 10200,
+                "comparator": "<=",
+            }
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "fm", "goal_time_s": 10200, "race_date": "2026-10-18"},
+            {"experience_level": "advanced", "prs": {"fm_s": 10762}},
+        )
+
+        assert plan.training_principles == [principle]
+        assert plan.milestones[0].target == race_target
+
     def test_sub250_gate_does_not_mask_unrealistic_fm_goal(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["training_principles"] = [
