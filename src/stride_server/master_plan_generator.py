@@ -876,8 +876,26 @@ def _normalise_sub250_gate_text(text: str) -> str:
     )
 
 
+def _is_disjunctive_sub250_gate(compact: str) -> bool:
+    connectors = ("或", "or")
+    evidence_tokens = ("29-32km", "22-24kmMP", "VO2", "HR/RPE", "跟腱", "Achilles")
+    gate_tokens = ("HM<=1:24:30", "10K<=37:45", *evidence_tokens)
+    present = [token for token in gate_tokens if token in compact]
+    if len(present) < 4:
+        return False
+    ordered = sorted((compact.find(token), token) for token in present)
+    disjunctive_links = 0
+    for (start, token), (next_start, _) in zip(ordered, ordered[1:]):
+        between = compact[start + len(token):next_start]
+        if any(connector in between for connector in connectors):
+            disjunctive_links += 1
+    return disjunctive_links >= 2
+
+
 def _has_sub250_combo_gate(text: str) -> bool:
     compact = _normalise_sub250_gate_text(text)
+    if _is_disjunctive_sub250_gate(compact):
+        return False
     return all(
         token in compact
         for token in (

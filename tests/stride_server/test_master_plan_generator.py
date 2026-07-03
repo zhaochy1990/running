@@ -997,6 +997,36 @@ class TestBuildMasterPlan:
         assert plan.training_principles == [principle]
         assert plan.milestones[0].target == race_target
 
+    def test_sub250_fm_gate_rewrites_disjunctive_token_list(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "PB2:59:22→2:50为5.2%；A=2:50 opens with HM<=1:24:30 or 10K<=37:45 or 29-32km/22-24kmMP or VO2/HR/RPE or Achilles."
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "race",
+                "date": "2026-10-18",
+                "phase_name": "赛前期",
+                "target": "A=2:50 opens with HM<=1:24:30 or 10K<=37:45 or 29-32km/22-24kmMP or VO2/HR/RPE or Achilles; B=2:52-2:55。",
+                "metric": "race_time_s_fm",
+                "target_value": 10200,
+                "comparator": "<=",
+            }
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "fm", "goal_time_s": 10200, "race_date": "2026-10-18"},
+            {"experience_level": "advanced", "prs": {"fm_s": 10762}},
+        )
+
+        rendered = "\n".join(plan.training_principles + [plan.milestones[0].target])
+        assert "opens with" not in rendered
+        assert "HM<=1:24:30或10K<=37:45之一达标" in rendered
+        assert "最大合法MP彩排" in rendered
+        assert "全部通过时开放" in rendered
+
     def test_sub250_gate_does_not_mask_unrealistic_fm_goal(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["training_principles"] = [
