@@ -876,25 +876,48 @@ def _normalise_sub250_gate_text(text: str) -> str:
     )
 
 
-def _is_disjunctive_sub250_gate(compact: str) -> bool:
-    connectors = ("或", "or")
-    evidence_tokens = ("29-32km", "22-24kmMP", "VO2", "HR/RPE", "跟腱", "Achilles")
-    gate_tokens = ("HM<=1:24:30", "10K<=37:45", *evidence_tokens)
-    present = [token for token in gate_tokens if token in compact]
+def _normalise_sub250_gate_text_for_scan(text: str) -> str:
+    return (
+        text.replace("≤", "<=")
+        .replace("＜", "<")
+        .replace("＝", "=")
+        .replace("：", ":")
+        .replace("　", " ")
+    )
+
+
+def _sub250_link_is_disjunctive(text: str) -> bool:
+    return "或" in text or re.search(r"(?i)(?<![a-z0-9])or(?![a-z0-9])", text) is not None
+
+
+def _is_disjunctive_sub250_gate(text: str, compact: str) -> bool:
+    scan = _normalise_sub250_gate_text_for_scan(text)
+    scan_lower = scan.lower()
+    gate_tokens = (
+        "HM<=1:24:30", "10K<=37:45", "29-32km", "22-24kmMP",
+        "VO2", "HR/RPE", "跟腱", "Achilles",
+    )
+    present = []
+    for token in gate_tokens:
+        if token not in compact:
+            continue
+        pos = scan_lower.find(token.lower())
+        if pos >= 0:
+            present.append((pos, token))
     if len(present) < 4:
         return False
-    ordered = sorted((compact.find(token), token) for token in present)
+    ordered = sorted(present)
     disjunctive_links = 0
     for (start, token), (next_start, _) in zip(ordered, ordered[1:]):
-        between = compact[start + len(token):next_start]
-        if any(connector in between for connector in connectors):
+        between = scan[start + len(token):next_start]
+        if _sub250_link_is_disjunctive(between):
             disjunctive_links += 1
     return disjunctive_links >= 2
 
 
 def _has_sub250_combo_gate(text: str) -> bool:
     compact = _normalise_sub250_gate_text(text)
-    if _is_disjunctive_sub250_gate(compact):
+    if _is_disjunctive_sub250_gate(text, compact):
         return False
     return all(
         token in compact
