@@ -1677,7 +1677,10 @@ class TestPromptRegression:
         assert "never 2026-09-13" in prompt
         assert "no 86-92/32km unless explicit recent 85-90km history" in prompt
         assert "no `86-92km` peak or `32km` unless explicit recent 85-90km history" in prompt
-        assert "prefer `30/85` over `32/92`" in prompt
+        assert "never output `30/85`" in prompt
+        assert "share-safe `29km / 84-85km` or `30km / >=86km`" in prompt
+        assert "never `30/85` or `32/92`" in prompt
+        assert "do not stop at `25km`" in prompt
 
     def test_prompt_includes_distance_specificity_block(self):
         """Distance specificity HARD block calls out FM / HM / 10K / 5K."""
