@@ -855,7 +855,7 @@ def _is_sub250_advanced_fm_goal(goal: dict, profile: dict | None) -> bool:
 
 _SUB250_COMBINATION_GATE = (
     "A=2:50仅在HM<=1:24:30或10K<=37:45之一达标，且最大合法MP彩排"
-    "(31-32km含22-24kmMP；30km仅限显式风险/历史/ramp上限)、"
+    "(29-32km含22-24kmMP；29-30km仅限显式风险/历史/ramp上限)、"
     "VO2/HR/RPE、跟腱反应全部通过时开放；HM<=1:25:30或10K>=38:00"
     "只算观察/B；否则默认B=2:52-2:55，C=破PB/稳健完赛。"
 )

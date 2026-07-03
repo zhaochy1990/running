@@ -920,7 +920,7 @@ class TestBuildMasterPlan:
             assert "A=2:50" in text
             assert "HM<=1:24:30" in text
             assert "10K<=37:45" in text
-            assert "31-32km" in text
+            assert "29-32km" in text
             assert "22-24kmMP" in text
             assert "MP" in text
             assert "VO2/HR/RPE" in text
@@ -1640,7 +1640,8 @@ class TestPromptRegression:
         assert "<=38:00" in prompt
         assert "10K `<=37:45`" in prompt
         assert "10K `>=38:00` is observation/B only" in prompt
-        assert "31-32km/22-24kmMP" in prompt
+        assert "29-32km/22-24kmMP" in prompt
+        assert "最大合法29-32km/22-24kmMP" in prompt
         assert "HM is only an observation gate" in prompt
         assert "Never summarize as just `HM+31km过关`" in prompt
         assert "2/14-2/16" in prompt
@@ -1721,6 +1722,9 @@ class TestPromptRegression:
         assert "`70 -> 80`" in prompt
         assert "`70 -> max 77/78`" in prompt
         assert "(not 80)" in prompt
+        assert "`72 -> 82`" in prompt
+        assert "`72 -> max 79/80`" in prompt
+        assert "(not 82)" in prompt
         assert "`80 -> 90`" in prompt
         assert "`80 -> max 88/89`" in prompt
         assert "(not 90)" in prompt
