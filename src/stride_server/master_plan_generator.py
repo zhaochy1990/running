@@ -881,8 +881,8 @@ def _has_sub250_combo_gate(text: str) -> bool:
     return all(
         token in compact
         for token in (
-            "A=2:50", "HM<=1:24:30", "10K<=37:45", "22-24kmMP",
-            "MP", "VO2", "HR/RPE",
+            "A=2:50", "HM<=1:24:30", "10K<=37:45", "29-32km",
+            "22-24kmMP", "MP", "VO2", "HR/RPE",
         )
     ) and ("跟腱" in text or "Achilles" in text)
 
