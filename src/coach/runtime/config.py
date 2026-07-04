@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, get_args
 
-from .model_spec import AuthMode, ModelSpec, Provider, ReasoningEffort, Role
+from .model_spec import AuthMode, ModelSpec, ReasoningEffort, Role
 
 
 CONFIG_FILENAME = "config/coach.toml"
@@ -127,25 +127,24 @@ def _resolve_path(path: str | Path | None) -> Path:
     return cwd_candidate.resolve()
 
 
-_VALID_PROVIDERS: set[str] = {"azure-openai", "azure-ai-inference"}
+_VALID_PROVIDERS: set[str] = {"azure-openai", "azure-ai-inference", "openai-compatible"}
 _VALID_AUTH_MODES: set[str] = {"managed-identity", "api-key"}
 _VALID_API_KINDS: set[str] = {"chat-completions", "responses"}
 # Derived from the ``ReasoningEffort`` Literal so adding a new level
 # (e.g. ``"maximal"``) is a single-line change in ``model_spec.py`` and
 # doesn't drift between the type alias and runtime validation.
 _VALID_REASONING_EFFORTS: frozenset[str] = frozenset(get_args(ReasoningEffort))
-_REQUIRED_FIELDS = (
+_COMMON_REQUIRED_FIELDS = (
     "provider",
     "model",
     "deployment",
     "endpoint",
-    "api_version",
     "timeout_s",
 )
 
 
 def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
-    missing = [f for f in _REQUIRED_FIELDS if f not in raw]
+    missing = [f for f in _COMMON_REQUIRED_FIELDS if f not in raw]
     if missing:
         raise CoachConfigError(
             f"[{role}] missing required fields in coach.toml: {missing}"
@@ -154,6 +153,10 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
     if provider not in _VALID_PROVIDERS:
         raise CoachConfigError(
             f"[{role}] unknown provider {provider!r}; valid: {sorted(_VALID_PROVIDERS)}"
+        )
+    if provider in {"azure-openai", "azure-ai-inference"} and "api_version" not in raw:
+        raise CoachConfigError(
+            f"[{role}] missing required fields in coach.toml: ['api_version']"
         )
     temperature = raw.get("temperature")
     max_tokens = raw.get("max_tokens")
@@ -165,10 +168,19 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
             f"[{role}] unknown reasoning_effort {reasoning_effort!r}; "
             f"valid: {sorted(_VALID_REASONING_EFFORTS)}"
         )
+    if reasoning_effort == "max" and provider != "openai-compatible":
+        raise CoachConfigError(
+            f"[{role}] reasoning_effort='max' is only supported by "
+            "provider='openai-compatible'"
+        )
     api_kind = raw.get("api_kind", "chat-completions")
     if api_kind not in _VALID_API_KINDS:
         raise CoachConfigError(
             f"[{role}] unknown api_kind {api_kind!r}; valid: {sorted(_VALID_API_KINDS)}"
+        )
+    if provider == "openai-compatible" and api_kind != "chat-completions":
+        raise CoachConfigError(
+            f"[{role}] openai-compatible provider supports only api_kind='chat-completions'"
         )
     endpoint = str(raw["endpoint"])
     if not endpoint.startswith(("https://", "http://")):
@@ -181,7 +193,7 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
         model=str(raw["model"]),
         deployment=str(raw["deployment"]),
         endpoint=endpoint,
-        api_version=str(raw["api_version"]),
+        api_version=str(raw["api_version"]) if raw.get("api_version") is not None else None,
         temperature=float(temperature) if temperature is not None else None,
         max_tokens=int(max_tokens) if max_tokens is not None else None,
         timeout_s=float(raw["timeout_s"]),

@@ -212,6 +212,16 @@ def _build_azure_credentials() -> Any:
     )
 
 
+def _credentials_for_spec(spec: Any) -> tuple[Any | None, str | None]:
+    """Return the auth material needed by ``llm_factory`` for one role."""
+    api_key = os.environ.get(spec.api_key_env) if spec.api_key_env else None
+    if api_key:
+        return None, api_key
+    if spec.provider == "openai-compatible":
+        return None, None
+    return _build_azure_credentials(), None
+
+
 def get_generator_llm() -> Any:
     """Return a process-wide singleton generator (Coach Agent)."""
     configure_observability()
@@ -219,10 +229,15 @@ def get_generator_llm() -> Any:
     if _GENERATOR_LLM is None:
         with _GENERATOR_LLM_LOCK:
             if _GENERATOR_LLM is None:
+                from coach.runtime.config import load_config
                 from coach.runtime.llm_factory import build_generator_llm
 
+                cfg = load_config()
+                credentials, api_key = _credentials_for_spec(cfg.generator)
                 _GENERATOR_LLM = build_generator_llm(
-                    credentials=_build_azure_credentials(),
+                    credentials=credentials,
+                    api_key=api_key,
+                    config=cfg,
                 )
     return _GENERATOR_LLM
 
@@ -263,10 +278,16 @@ def get_orchestrator_llm() -> Any:
     if _ORCHESTRATOR_LLM is None:
         with _ORCHESTRATOR_LLM_LOCK:
             if _ORCHESTRATOR_LLM is None:
+                from coach.runtime.config import load_config
                 from coach.runtime.llm_factory import build_orchestrator_llm
 
+                cfg = load_config()
+                spec = cfg.for_role("orchestrator")
+                credentials, api_key = _credentials_for_spec(spec)
                 _ORCHESTRATOR_LLM = build_orchestrator_llm(
-                    credentials=_build_azure_credentials(),
+                    credentials=credentials,
+                    api_key=api_key,
+                    config=cfg,
                 )
     return _ORCHESTRATOR_LLM
 
@@ -285,10 +306,15 @@ def get_reviewer_llm() -> Any:
     if _REVIEWER_LLM is None:
         with _REVIEWER_LLM_LOCK:
             if _REVIEWER_LLM is None:
+                from coach.runtime.config import load_config
                 from coach.runtime.llm_factory import build_reviewer_llm
 
+                cfg = load_config()
+                credentials, api_key = _credentials_for_spec(cfg.reviewer)
                 _REVIEWER_LLM = build_reviewer_llm(
-                    credentials=_build_azure_credentials(),
+                    credentials=credentials,
+                    api_key=api_key,
+                    config=cfg,
                 )
     return _REVIEWER_LLM
 
@@ -314,19 +340,12 @@ def get_commentary_llm() -> Any:
                 from coach.runtime.llm_factory import build_commentary_llm
 
                 cfg = load_config()
-                api_key = None
-                if cfg.commentary.api_key_env:
-                    api_key = os.environ.get(cfg.commentary.api_key_env)
-                if api_key:
-                    _COMMENTARY_LLM = build_commentary_llm(
-                        api_key=api_key,
-                        config=cfg,
-                    )
-                else:
-                    _COMMENTARY_LLM = build_commentary_llm(
-                        credentials=_build_azure_credentials(),
-                        config=cfg,
-                    )
+                credentials, api_key = _credentials_for_spec(cfg.commentary)
+                _COMMENTARY_LLM = build_commentary_llm(
+                    credentials=credentials,
+                    api_key=api_key,
+                    config=cfg,
+                )
     return _COMMENTARY_LLM
 
 

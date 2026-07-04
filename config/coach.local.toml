@@ -51,6 +51,11 @@ api_kind     = "responses"
 #   model = "gpt-4.1-mini"   ; deployment = "gpt-4.1-mini"   ; api_kind = "chat-completions" ; temperature = 0.4
 # DeepSeek-R1 (reasoning, emits <think>):
 #   model = "DeepSeek-R1"    ; deployment = "DeepSeek-R1"    ; api_kind = "chat-completions"
+# DeepSeek V4 via official OpenAI-compatible API:
+#   use config/coach.deepseek-v4-flash.toml or config/coach.deepseek-v4-pro.toml
+#   with STRIDE_COACH_CONFIG_PATH and DEEPSEEK_API_KEY. These are not Azure
+#   deployments, so they use provider = "openai-compatible" and
+#   endpoint = "https://api.deepseek.com".
 # Kimi-K2.5:
 #   model = "Kimi-K2.5"      ; deployment = "Kimi-K2.5"      ; api_kind = "chat-completions" ; temperature = 0.6
 

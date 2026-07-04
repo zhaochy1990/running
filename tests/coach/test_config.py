@@ -263,6 +263,71 @@ def test_api_kind_responses_round_trips(tmp_path: Path) -> None:
     assert cfg.reviewer.api_kind == "chat-completions"  # only generator overridden
 
 
+def test_openai_compatible_provider_does_not_require_api_version(tmp_path: Path) -> None:
+    toml = """
+[generator]
+provider     = "openai-compatible"
+model        = "deepseek-v4-pro"
+deployment   = "deepseek-v4-pro"
+endpoint     = "https://api.deepseek.com"
+api_key_env  = "DEEPSEEK_API_KEY"
+api_kind     = "chat-completions"
+max_tokens   = 8192
+timeout_s    = 120
+reasoning_effort = "max"
+
+[generator.extra]
+thinking = { type = "enabled" }
+response_format = { type = "json_object" }
+
+[reviewer]
+provider     = "azure-ai-inference"
+model        = "claude-opus-4-7"
+deployment   = "<PLACEHOLDER_CLAUDE>"
+endpoint     = "https://example.openai.azure.com"
+api_version  = "2024-05-01-preview"
+temperature  = 0.0
+max_tokens   = 4096
+timeout_s    = 180
+
+[commentary]
+provider     = "azure-openai"
+model        = "gpt-4.1"
+deployment   = "<PLACEHOLDER_GPT_4_1>"
+endpoint     = "https://example.openai.azure.com"
+api_version  = "2024-10-01-preview"
+temperature  = 0.6
+max_tokens   = 2048
+timeout_s    = 90
+
+[auth]
+mode = "managed-identity"
+"""
+    p = tmp_path / "coach.toml"
+    p.write_text(toml)
+    cfg = load_config(p)
+    assert cfg.generator.provider == "openai-compatible"
+    assert cfg.generator.api_version is None
+    assert cfg.generator.api_key_env == "DEEPSEEK_API_KEY"
+    assert cfg.generator.reasoning_effort == "max"
+    assert cfg.generator.extra == {
+        "thinking": {"type": "enabled"},
+        "response_format": {"type": "json_object"},
+    }
+
+
+def test_openai_compatible_rejects_responses_api_kind(tmp_path: Path) -> None:
+    toml = _valid_toml().replace('provider     = "azure-openai"', 'provider     = "openai-compatible"', 1)
+    toml = toml.replace('model        = "gpt-5.4"', 'model        = "deepseek-v4-pro"', 1)
+    toml = toml.replace('deployment   = "<PLACEHOLDER_X>"', 'deployment   = "deepseek-v4-pro"', 1)
+    toml = toml.replace('endpoint     = "https://example.openai.azure.com"', 'endpoint     = "https://api.deepseek.com"', 1)
+    toml = toml.replace('api_version  = "2024-10-01-preview"', 'api_key_env  = "DEEPSEEK_API_KEY"\napi_kind     = "responses"', 1)
+    p = tmp_path / "coach.toml"
+    p.write_text(toml)
+    with pytest.raises(CoachConfigError, match="supports only api_kind"):
+        load_config(p)
+
+
 # ---------------------------------------------------------------------------
 # reasoning_effort (PR #25 — gpt-5 / o-series reasoning models)
 # ---------------------------------------------------------------------------
@@ -289,6 +354,18 @@ def test_reasoning_effort_each_valid_value_round_trips(tmp_path: Path) -> None:
         p.write_text(toml)
         cfg = load_config(p)
         assert cfg.generator.reasoning_effort == effort, effort
+
+
+def test_reasoning_effort_max_is_openai_compatible_only(tmp_path: Path) -> None:
+    bad = _valid_toml().replace(
+        "timeout_s    = 120",
+        "timeout_s    = 120\nreasoning_effort = \"max\"",
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(bad)
+    with pytest.raises(CoachConfigError, match="only supported"):
+        load_config(p)
 
 
 def test_reasoning_effort_typo_rejected_at_load(tmp_path: Path) -> None:

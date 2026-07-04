@@ -1,0 +1,76 @@
+# Coach LLM Configuration — DeepSeek V4 Pro local test
+#
+# Official DeepSeek OpenAI-compatible base URL: https://api.deepseek.com
+# Set the key locally before use:
+#   export DEEPSEEK_API_KEY=...
+# Run with:
+#   STRIDE_COACH_CONFIG_PATH=config/coach.deepseek-v4-pro.toml <command>
+
+[generator]
+provider = "openai-compatible"
+model = "deepseek-v4-pro"
+deployment = "deepseek-v4-pro"
+endpoint = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+api_kind = "chat-completions"
+max_tokens = 65536
+timeout_s = 600
+reasoning_effort = "max"
+
+[generator.extra]
+thinking = { type = "enabled" }
+# Enable only for roles/calls that require raw JSON object output.
+# response_format = { type = "json_object" }
+
+[reviewer]
+provider = "openai-compatible"
+model = "deepseek-v4-pro"
+deployment = "deepseek-v4-pro"
+endpoint = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+api_kind = "chat-completions"
+max_tokens = 8192
+timeout_s = 300
+reasoning_effort = "high"
+
+[reviewer.extra]
+thinking = { type = "enabled" }
+
+[commentary]
+provider = "openai-compatible"
+model = "deepseek-v4-pro"
+deployment = "deepseek-v4-pro"
+endpoint = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+api_kind = "chat-completions"
+max_tokens = 2048
+timeout_s = 120
+reasoning_effort = "high"
+
+[commentary.extra]
+thinking = { type = "enabled" }
+
+[orchestrator]
+provider = "openai-compatible"
+model = "deepseek-v4-pro"
+deployment = "deepseek-v4-pro"
+endpoint = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+api_kind = "chat-completions"
+max_tokens = 4096
+timeout_s = 120
+reasoning_effort = "high"
+
+[orchestrator.extra]
+thinking = { type = "enabled" }
+# For a lower-latency non-thinking orchestrator experiment, change this to
+# thinking = { type = "disabled" } and then add temperature = 0.0 above.
+
+[auth]
+mode = "api-key"
+
+[observability]
+langsmith_enabled = true
+langsmith_project = "stride-coach-deepseek-v4-pro"
+langsmith_endpoint = "https://api.smith.langchain.com"
+langsmith_api_key_env = "LANGSMITH_API_KEY"

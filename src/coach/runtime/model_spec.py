@@ -4,9 +4,10 @@ Two role-bearing fields:
 
 * ``role`` (set at construction by ``config.load_config``) — which coach
   function this model powers: ``generator``, ``reviewer``, ``commentary``.
-* ``provider`` — which Azure surface it's deployed on: ``azure-openai``
-  (AOAI deployments) or ``azure-ai-inference`` (Foundry serverless
-  endpoints, used for non-OpenAI models like Claude / Gemini / Llama).
+* ``provider`` — which LLM API surface backs the role: ``azure-openai``
+  (AOAI deployments), ``azure-ai-inference`` (Foundry serverless endpoints),
+  or ``openai-compatible`` (third-party OpenAI-compatible chat endpoints such
+  as DeepSeek).
 
 The split keeps role names stable while the backing model can be swapped
 per-environment by editing ``config/coach.toml``.
@@ -19,10 +20,10 @@ from typing import Any, Literal
 
 
 Role = Literal["generator", "reviewer", "commentary", "orchestrator"]
-Provider = Literal["azure-openai", "azure-ai-inference"]
+Provider = Literal["azure-openai", "azure-ai-inference", "openai-compatible"]
 AuthMode = Literal["managed-identity", "api-key"]
 ApiKind = Literal["chat-completions", "responses"]
-ReasoningEffort = Literal["minimal", "low", "medium", "high"]
+ReasoningEffort = Literal["minimal", "low", "medium", "high", "max"]
 
 
 @dataclass(frozen=True)
@@ -32,24 +33,20 @@ class ModelSpec:
     role: Role
     provider: Provider
     model: str                # descriptive id (used as ``generated_by`` stamp)
-    deployment: str           # Azure deployment name
+    deployment: str           # Azure deployment name or request model id
     endpoint: str             # full base URL (e.g. https://x.cognitiveservices.azure.com)
-    api_version: str
+    api_version: str | None
     temperature: float | None
     max_tokens: int | None
     timeout_s: float
     api_key_env: str | None = None   # ``api-key`` auth only; ``None`` → MI
     api_kind: ApiKind = "chat-completions"  # ``responses`` → AOAI /openai/responses path
-    # Reasoning-effort budget for gpt-5 / o-series models on the Responses
-    # API. ``None`` (default) leaves the kwarg unset → the SDK / model use
-    # their default (typically ``medium``). Lowering it to ``low`` or
-    # ``minimal`` trades reasoning depth for output-token budget, which is
-    # sometimes needed when a long structured response (e.g. S1 master
-    # plan) bumps against the cap — but it can degrade quality on tasks
-    # that legitimately need deep chain-of-thought (multi-month
-    # periodisation reasoning, goal realism, etc.). Leave None unless
-    # there's a concrete reason. Typed as a Literal so an invalid value
-    # in coach.toml fails at config-load time, not at first LLM call.
+    # Reasoning-effort budget for reasoning models. Azure GPT/o-series use
+    # minimal/low/medium/high; DeepSeek V4 also accepts max. ``None`` leaves
+    # the kwarg unset so the SDK/model use their default. Leave unset unless
+    # there is a concrete reason to control reasoning budget. Typed as a
+    # Literal so an invalid value in coach.toml fails at config-load time, not
+    # at first LLM call.
     reasoning_effort: ReasoningEffort | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
