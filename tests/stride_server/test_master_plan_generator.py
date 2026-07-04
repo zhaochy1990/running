@@ -880,7 +880,7 @@ class TestBuildMasterPlan:
         assert "钠" not in "\n".join(plan.training_principles)
         assert any("熟悉早餐" in item for item in plan.training_principles)
 
-    def test_sub250_fm_gate_requires_combination_evidence(self):
+    def test_aggressive_fm_gate_requires_combination_evidence(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["training_principles"] = [
             "PB2:59:22→2:50为5.2%，A需HM≤1:24:30或10K≤38:00+29km含22kmMP过关"
@@ -935,7 +935,7 @@ class TestBuildMasterPlan:
         assert "A=2:50按比赛里程碑" in support_target
         assert "HM≤1:21:30" not in support_target
 
-    def test_sub250_fm_gate_normalizes_stale_distance_wording(self):
+    def test_aggressive_fm_gate_normalizes_stale_distance_wording(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["training_principles"] = [
             "PB2:59:22→2:50为5.2%；A=2:50需HM<=1:24:30/10K<=37:45 + 31-32km含22-24kmMP + VO2/HR/RPE + 跟腱全过。"
@@ -964,7 +964,7 @@ class TestBuildMasterPlan:
         assert "最大合法MP彩排" in rendered
         assert "31-32km" not in rendered
 
-    def test_sub250_gate_does_not_mask_unrealistic_fm_goal(self):
+    def test_aggressive_fm_gate_does_not_mask_unrealistic_fm_goal(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["training_principles"] = [
             "PB3:45→2:50过于激进，本周期建议保守。"
@@ -978,6 +978,38 @@ class TestBuildMasterPlan:
         )
 
         assert "A=2:50" not in "\n".join(plan.training_principles)
+
+    def test_aggressive_fm_gate_uses_target_specific_thresholds(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "PB2:55:00→2:45为5.7%，A需HM≤1:24:30或10K≤37:45+31km含22kmMP过关"
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "race",
+                "date": "2026-10-18",
+                "phase_name": "赛前期",
+                "target": "A<2:45需HM≤1:24:30或10K≤37:45+31km含22kmMP全过；B2:47-2:50；C破PB",
+                "metric": "race_time_s_fm",
+                "target_value": 9900,
+                "comparator": "<=",
+            }
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "fm", "goal_time_s": 9900, "race_date": "2026-10-18"},
+            {"experience_level": "advanced", "prs": {"fm_s": 10500}},
+        )
+
+        rendered = "\n".join(plan.training_principles + [plan.milestones[0].target])
+        assert "A=2:45" in rendered
+        assert "HM<=1:22:00" in rendered
+        assert "10K<=36:30" in rendered
+        assert "B=2:47-2:50" in rendered
+        assert "A=2:50" not in rendered
+        assert "HM<=1:24:30" not in rendered
 
     def test_three_day_mp_long_run_week_drops_extra_hard_session(self):
         data = json.loads(_VALID_JSON_STR)
@@ -1626,12 +1658,13 @@ class TestPromptRegression:
     def test_prompt_requires_strict_aggressive_a_goal_gates(self):
         prompt = self._build()
         assert "A gate" in prompt
-        assert "FM A=2:50" in prompt
-        assert "<=1:25:30" in prompt
+        assert "Aggressive FM A gates are strict and target-specific" in prompt
+        assert "target-specific" in prompt
         assert "22-24km" in prompt
         assert "not 28km" in prompt
-        assert "sub-3/sub-2:50 is multi-cycle" in prompt
+        assert "multi-cycle" in prompt
         assert "observation/B only" in prompt
+        assert "Slightly slower HM/10K marks are observation/B only" in prompt
         assert "30-32km MP rehearsal" in prompt
         assert "historical_peak * 1.10 + 2km" in prompt
         assert "historical_peak + 7km" in prompt
@@ -1664,13 +1697,11 @@ class TestPromptRegression:
         assert "do not use marathon-style 3-day 8-10 g/kg/day carb-loading" in prompt
         assert "10K tune-up around `<=39:00` is only a B/observation gate" in prompt
         assert "10K<=37:00" in prompt
-        assert "10K<=37:45" in prompt
         assert "observation/B+" in prompt
         assert "<=38:00" in prompt
-        assert "10K `<=37:45`" in prompt
-        assert "10K `>=38:00` is observation/B only" in prompt
+        assert "target-equivalent HM/10K" in prompt or "目标等价HM/10K" in prompt
         assert "29-32km/22-24kmMP" in prompt
-        assert "最大合法29-32km/22-24kmMP" in prompt
+        assert "max legal 29-32km/22-24kmMP" in prompt
         assert "HM is only an observation gate" in prompt
         assert "Never summarize as just `HM+31km过关`" in prompt
         assert "2/14-2/16" in prompt

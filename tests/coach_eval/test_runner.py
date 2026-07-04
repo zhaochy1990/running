@@ -971,8 +971,8 @@ def test_s1_judge_prompt_allows_no_recovery_phase_when_window_ends_at_race():
     assert "`10K<=37:00`" in S1_JUDGE_SYSTEM_PROMPT
     assert "不要仅因当前/近期 10K 约 40 分" in S1_JUDGE_SYSTEM_PROMPT
     assert "goal.target_time" in S1_JUDGE_SYSTEM_PROMPT
-    assert "不要因为 `goal.target_time` 仍是 `2:50:00`" in S1_JUDGE_SYSTEM_PROMPT
-    assert "≤1:26:30" in S1_JUDGE_SYSTEM_PROMPT
+    assert "不要因为 `goal.target_time` 仍是 A 目标" in S1_JUDGE_SYSTEM_PROMPT
+    assert "目标等价 HM/10K gate" in S1_JUDGE_SYSTEM_PROMPT
     assert "不要求每个信号都出现在 race milestone" in S1_JUDGE_SYSTEM_PROMPT
     assert "不要仅因 recovery→load 的视觉回弹扣到 4" in S1_JUDGE_SYSTEM_PROMPT
     assert "伤后 FM 回归" in S1_JUDGE_SYSTEM_PROMPT

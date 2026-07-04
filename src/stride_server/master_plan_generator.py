@@ -261,7 +261,7 @@ def _build_master_plan(
         _ensure_pushback_multi_cycle_path(plan_data.get("training_principles", [])),
         goal,
     )
-    training_principles, milestones = _ensure_sub250_fm_combination_gate(
+    training_principles, milestones = _ensure_aggressive_fm_combination_gate(
         training_principles,
         milestones,
         goal,
@@ -837,14 +837,19 @@ def _profile_fm_pb_seconds(profile: dict | None) -> float | None:
     return None
 
 
-def _is_sub250_advanced_fm_goal(goal: dict, profile: dict | None) -> bool:
+def _fm_pb_improvement(goal_s: float | None, profile: dict | None) -> float | None:
+    pb_s = _profile_fm_pb_seconds(profile)
+    if goal_s is None or pb_s is None or goal_s <= 0 or pb_s <= 0:
+        return None
+    return (pb_s - goal_s) / pb_s
+
+
+def _is_aggressive_advanced_fm_goal(goal: dict, profile: dict | None) -> bool:
     if not _is_target_distance(goal, "fm"):
         return False
     goal_s = _goal_time_seconds(goal)
-    if goal_s is None or abs(goal_s - 10200.0) > 60.0:
-        return False
-    pb_s = _profile_fm_pb_seconds(profile)
-    if pb_s is None or pb_s > 11100.0:
+    improvement = _fm_pb_improvement(goal_s, profile)
+    if improvement is None or improvement <= 0.03 or improvement > 0.15:
         return False
     if isinstance(profile, dict):
         level = str(profile.get("experience_level") or "").lower()
@@ -853,19 +858,62 @@ def _is_sub250_advanced_fm_goal(goal: dict, profile: dict | None) -> bool:
     return True
 
 
-_SUB250_COMBINATION_GATE = (
-    "A=2:50仅在HM<=1:24:30或10K<=37:45之一达标，且最大合法MP彩排"
-    "(29-32km含22-24kmMP；29-30km仅限显式风险/历史/ramp上限)、"
-    "VO2/HR/RPE、跟腱反应全部通过时开放；HM<=1:25:30或10K>=38:00"
-    "只算观察/B；否则默认B=2:52-2:55，C=破PB/稳健完赛。"
-)
-
-_SUB250_SUPPORTING_GATE = (
-    "A=2:50按比赛里程碑HM/10K+MP彩排+VO2/HR/RPE+跟腱组合门槛开放。"
-)
+def _format_race_time(seconds: float) -> str:
+    rounded = int(round(seconds / 15.0) * 15)
+    h, rem = divmod(rounded, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
 
 
-def _normalise_sub250_gate_text(text: str) -> str:
+def _format_goal_time(seconds: float) -> str:
+    h, rem = divmod(int(round(seconds)), 3600)
+    m, s = divmod(rem, 60)
+    if s:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{h}:{m:02d}"
+
+
+def _aggressive_fm_gate_thresholds(goal_s: float) -> tuple[str, str, str, str]:
+    # Riegel-equivalent tune-up times with a small buffer so a tune-up only
+    # opens A when it supports the full marathon goal, not merely the B plan.
+    hm_s = goal_s * (21.0975 / 42.195) ** 1.06 * 1.035
+    ten_k_s = goal_s * (10.0 / 42.195) ** 1.06 * 1.02
+    observation_hm_s = hm_s + 60
+    observation_10k_s = ten_k_s + 15
+    return (
+        _format_race_time(hm_s),
+        _format_race_time(ten_k_s),
+        _format_race_time(observation_hm_s),
+        _format_race_time(observation_10k_s),
+    )
+
+
+def _aggressive_fm_b_band(goal_s: float) -> str:
+    low = _format_goal_time(goal_s + 120)
+    high = _format_goal_time(goal_s + 300)
+    return low if low == high else f"{low}-{high}"
+
+
+def _compose_aggressive_fm_combination_gate(goal_s: float) -> str:
+    goal_time = _format_goal_time(goal_s)
+    hm_gate, ten_k_gate, hm_observe, ten_k_observe = _aggressive_fm_gate_thresholds(goal_s)
+    b_band = _aggressive_fm_b_band(goal_s)
+    return (
+        f"A={goal_time}仅在HM<={hm_gate}或10K<={ten_k_gate}之一达标，且最大合法MP彩排"
+        "(29-32km含22-24kmMP；29-30km仅限显式风险/历史/ramp上限)、"
+        f"VO2/HR/RPE、跟腱反应全部通过时开放；HM<={hm_observe}或10K>={ten_k_observe}"
+        f"只算观察/B；否则默认B={b_band}，C=破PB/稳健完赛。"
+    )
+
+
+def _compose_aggressive_fm_supporting_gate(goal_s: float) -> str:
+    goal_time = _format_goal_time(goal_s)
+    return f"A={goal_time}按比赛里程碑HM/10K+MP彩排+VO2/HR/RPE+跟腱组合门槛开放。"
+
+
+def _normalise_aggressive_fm_gate_text(text: str) -> str:
     return (
         text.replace("≤", "<=")
         .replace("＜", "<")
@@ -876,93 +924,103 @@ def _normalise_sub250_gate_text(text: str) -> str:
     )
 
 
-def _has_sub250_combo_gate(text: str) -> bool:
-    compact = _normalise_sub250_gate_text(text)
+def _has_aggressive_fm_combo_gate(text: str, goal_s: float) -> bool:
+    compact = _normalise_aggressive_fm_gate_text(text)
+    goal_time = _format_goal_time(goal_s)
+    hm_gate, ten_k_gate, _, _ = _aggressive_fm_gate_thresholds(goal_s)
     return all(
         token in compact
         for token in (
-            "A=2:50", "HM<=1:24:30", "10K<=37:45", "29-32km",
-            "22-24kmMP", "MP", "VO2", "HR/RPE",
+            f"A={goal_time}", f"HM<={hm_gate}", f"10K<={ten_k_gate}",
+            "29-32km", "22-24kmMP", "MP", "VO2", "HR/RPE",
         )
     ) and ("跟腱" in text or "Achilles" in text)
 
 
-def _is_sub250_gate_principle(text: str) -> bool:
-    compact = _normalise_sub250_gate_text(text)
-    if "2:50" not in compact or "A" not in compact:
+def _is_aggressive_fm_gate_principle(text: str, goal_s: float) -> bool:
+    compact = _normalise_aggressive_fm_gate_text(text)
+    goal_time = _format_goal_time(goal_s)
+    if goal_time not in compact or "A" not in compact:
         return False
     return any(token in compact for token in ("HM<=", "10K<=", "MP", "VO2", "HR/RPE")) or any(
         token in text for token in ("关口", "门槛", "闸门", "开放", "过关", "全过")
     )
 
 
-def _sub250_principle_prefix(text: str) -> str:
+def _aggressive_fm_principle_prefix(text: str, goal_s: float) -> str:
     stripped = text.strip().rstrip("。；; ")
     markers = ("；A", ";A", "，A", ",A", " A", "A需", "A=", "A可", "A目标", "A<", "A≤")
     positions = [pos for marker in markers if (pos := stripped.find(marker)) >= 0]
     if positions:
         return stripped[: min(positions)].rstrip("。；;，, ")
-    if "PB" in stripped and "2:50" in stripped and not stripped.startswith("A"):
+    if "PB" in stripped and _format_goal_time(goal_s) in stripped and not stripped.startswith("A"):
         return stripped
     return ""
 
 
-def _compose_sub250_gate_principle(text: str) -> str:
-    prefix = _sub250_principle_prefix(text)
+def _compose_aggressive_fm_gate_principle(text: str, goal_s: float) -> str:
+    prefix = _aggressive_fm_principle_prefix(text, goal_s)
+    gate = _compose_aggressive_fm_combination_gate(goal_s)
     if prefix:
-        return prefix + "；" + _SUB250_COMBINATION_GATE
-    return _SUB250_COMBINATION_GATE
+        return prefix + "；" + gate
+    return gate
 
 
-def _normalise_sub250_supporting_gate_target(target: str) -> str | None:
-    compact = _normalise_sub250_gate_text(target)
+def _normalise_aggressive_fm_supporting_gate_target(target: str, goal_s: float) -> str | None:
+    compact = _normalise_aggressive_fm_gate_text(target)
     if "A" not in compact or ("HM<=" not in compact and "10K<=" not in compact):
         return None
-    if "2:50" in compact or _has_sub250_combo_gate(target):
+    goal_time = _format_goal_time(goal_s)
+    if goal_time in compact or _has_aggressive_fm_combo_gate(target, goal_s):
         return None
 
-    prefix = _sub250_principle_prefix(target)
+    prefix = _aggressive_fm_principle_prefix(target, goal_s)
+    supporting_gate = _compose_aggressive_fm_supporting_gate(goal_s)
     if prefix and ("观察" in prefix or "B" in prefix):
-        return prefix + "；" + _SUB250_SUPPORTING_GATE
-    return _SUB250_SUPPORTING_GATE
+        return prefix + "；" + supporting_gate
+    return supporting_gate
 
 
-def _ensure_sub250_fm_combination_gate(
+def _ensure_aggressive_fm_combination_gate(
     principles: list[str],
     milestones: list[Milestone],
     goal: dict,
     profile: dict | None,
 ) -> tuple[list[str], list[Milestone]]:
-    """Make sub-2:50 FM A-gates explicit combination gates."""
-    if not _is_sub250_advanced_fm_goal(goal, profile):
+    """Make aggressive advanced FM A-gates explicit combination gates."""
+    if not _is_aggressive_advanced_fm_goal(goal, profile):
         return principles, milestones
+    goal_s = _goal_time_seconds(goal)
+    if goal_s is None:
+        return principles, milestones
+    combination_gate = _compose_aggressive_fm_combination_gate(goal_s)
 
     updated_principles: list[str] = []
     gate_inserted = False
     for principle in principles:
         text = str(principle)
-        if _is_sub250_gate_principle(text):
+        if _is_aggressive_fm_gate_principle(text, goal_s):
             if not gate_inserted:
-                updated_principles.append(_compose_sub250_gate_principle(text))
+                updated_principles.append(_compose_aggressive_fm_gate_principle(text, goal_s))
                 gate_inserted = True
             continue
         updated_principles.append(text)
 
-    if not _has_sub250_combo_gate("\n".join(updated_principles)):
+    if not _has_aggressive_fm_combo_gate("\n".join(updated_principles), goal_s):
         if updated_principles:
             updated_principles[0] = (
                 updated_principles[0].rstrip("。；; ")
                 + "；"
-                + _SUB250_COMBINATION_GATE
+                + combination_gate
             )
         else:
-            updated_principles.append(_SUB250_COMBINATION_GATE)
+            updated_principles.append(combination_gate)
 
     updated_milestones: list[Milestone] = []
     for milestone in milestones:
         target = milestone.target or ""
         if milestone.type != MilestoneType.RACE:
-            supporting_target = _normalise_sub250_supporting_gate_target(target)
+            supporting_target = _normalise_aggressive_fm_supporting_gate_target(target, goal_s)
             if supporting_target:
                 updated_milestones.append(
                     milestone.model_copy(update={"target": supporting_target})
@@ -970,18 +1028,18 @@ def _ensure_sub250_fm_combination_gate(
                 continue
             updated_milestones.append(milestone)
             continue
-        needs_combo = "A" in target and "2:50" in target and (
-            not _has_sub250_combo_gate(target)
+        needs_combo = "A" in target and _format_goal_time(goal_s) in target and (
+            not _has_aggressive_fm_combo_gate(target, goal_s)
             or "或" in target
             or "or" in target.lower()
         )
         if needs_combo:
             updated_milestones.append(
-                milestone.model_copy(update={"target": _SUB250_COMBINATION_GATE})
+                milestone.model_copy(update={"target": combination_gate})
             )
             continue
 
-        supporting_target = _normalise_sub250_supporting_gate_target(target)
+        supporting_target = _normalise_aggressive_fm_supporting_gate_target(target, goal_s)
         if supporting_target:
             updated_milestones.append(
                 milestone.model_copy(update={"target": supporting_target})
