@@ -18,13 +18,21 @@
 
 [generator]
 # Coach Agent — generates weekly + master plans, drives chat with tools
-provider     = "azure-openai"
-model        = "gpt-5.5"
-deployment   = "gpt-5.5"
-endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
-api_version  = "2025-04-01-preview"
-api_kind     = "responses"
+provider = "azure-openai"
+model = "gpt-5.5"
+deployment = "gpt-5.5"
+endpoint = "https://azureai4identity.cognitiveservices.azure.com"
+api_version = "2025-04-01-preview"
+api_kind = "responses"
 
+# max_tokens=131072 (128k) .
+max_tokens = 131072
+# reasoning_effort intentionally NOT set — defaults to model's medium,
+# which is what S1 strategic reasoning (phase ordering, goal realism,
+# injury safety, distance specificity) needs. Lowering it to "low" or
+# "minimal" trades depth for budget; only flip this if you have evidence
+# the output is consistently truncating at max_tokens.
+timeout_s = 600
 
 # ── Alternative generator models — verified reachable 2026-06-16 on the
 #    AzureAIforSubstrateIdentity resource. ALL use the SAME provider / endpoint /
@@ -59,29 +67,20 @@ api_kind     = "responses"
 # Kimi-K2.5:
 #   model = "Kimi-K2.5"      ; deployment = "Kimi-K2.5"      ; api_kind = "chat-completions" ; temperature = 0.6
 
-# max_tokens=131072 (128k) .
-max_tokens   = 131072
-# reasoning_effort intentionally NOT set — defaults to model's medium,
-# which is what S1 strategic reasoning (phase ordering, goal realism,
-# injury safety, distance specificity) needs. Lowering it to "low" or
-# "minimal" trades depth for budget; only flip this if you have evidence
-# the output is consistently truncating at max_tokens.
-
-timeout_s    = 600
 
 [reviewer]
 # Reviewer Agent — same model for now (no separate Claude Opus deployment on
 # this resource yet); temperature dropped to 0 + reviewer prompt still surfaces
 # a useful fraction of generator bugs.
-provider     = "azure-openai"
-model        = "gpt-5.5"
-deployment   = "gpt-5.5"
-endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
-api_version  = "2025-04-01-preview"
-api_kind     = "responses"
+provider = "azure-openai"
+model = "gpt-5.5"
+deployment = "gpt-5.5"
+endpoint = "https://azureai4identity.cognitiveservices.azure.com"
+api_version = "2025-04-01-preview"
+api_kind = "responses"
 # temperature omitted — gpt-5.5 reasoning model rejects it (see [generator]).
-max_tokens   = 4096
-timeout_s    = 180
+max_tokens = 4096
+timeout_s = 180
 
 [commentary]
 # Activity Commentary Agent — consumed at runtime by
@@ -94,15 +93,15 @@ timeout_s    = 180
 # auth (api_key_env) + api_version 2025-01-01-preview. NOTE: get_commentary_llm()
 # caches the built LLM in a process-wide singleton, so edits here take effect on
 # the NEXT process start, not mid-session.
-provider     = "azure-openai"
-max_tokens   = 2048
-timeout_s    = 90
-model        = "gpt-4.1"
-deployment   = "gpt-4.1"
-endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
-api_version  = "2025-04-01-preview"
-api_kind     = "chat-completions"
-temperature  = 0.4
+provider = "azure-openai"
+max_tokens = 2048
+timeout_s = 90
+model = "gpt-4.1"
+deployment = "gpt-4.1"
+endpoint = "https://azureai4identity.cognitiveservices.azure.com"
+api_version = "2025-04-01-preview"
+api_kind = "chat-completions"
+temperature = 0.4
 
 [orchestrator]
 # Orchestrator brain (Resolver / Supervisor / Aggregator / Memory Writer) —
@@ -111,15 +110,15 @@ temperature  = 0.4
 # the §4.7 low-latency lever: orchestration runs on a cheap model, strong models
 # are reserved for the specialists. Optional — if this section is removed,
 # for_role("orchestrator") falls back to [reviewer] (gpt-5.5).
-provider     = "azure-openai"
-model        = "gpt-4.1-mini"
-deployment   = "gpt-4.1-mini"
-endpoint     = "https://azureai4identity.cognitiveservices.azure.com"
-api_version  = "2025-04-01-preview"
-api_kind     = "chat-completions"
-temperature  = 0.0
-max_tokens   = 2048
-timeout_s    = 60
+provider = "azure-openai"
+model = "gpt-4.1-mini"
+deployment = "gpt-4.1-mini"
+endpoint = "https://azureai4identity.cognitiveservices.azure.com"
+api_version = "2025-04-01-preview"
+api_kind = "chat-completions"
+temperature = 0.0
+max_tokens = 2048
+timeout_s = 60
 
 [auth]
 # DefaultAzureCredential — picks up Azure CLI token after `az login`.
@@ -135,7 +134,7 @@ mode = "managed-identity"
 # `.credentials.local` (`langsmith_api_key=...`), seeded into LANGSMITH_API_KEY
 # at startup. If that key is missing, tracing silently stays off.
 # Turn this OFF before commercial launch (athlete health data → US SaaS).
-langsmith_enabled  = true
-langsmith_project  = "stride-coach-dev"
+langsmith_enabled = true
+langsmith_project = "stride-coach-dev"
 langsmith_endpoint = "https://api.smith.langchain.com"
 langsmith_api_key_env = "LANGSMITH_API_KEY"
