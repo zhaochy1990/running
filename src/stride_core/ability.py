@@ -27,48 +27,22 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_hr_max(db: Any, as_of_date_iso: str) -> int | None:
-    """Resolve the athlete's max HR for `as_of_date_iso`, in priority order.
+    """Resolve the athlete's max HR for `as_of_date_iso`.
 
-    1. Persisted STRIDE `hrmax_estimate` from `running_calibration_snapshot`
-       (the canonical baseline — see CLAUDE.md "Athlete baseline metrics —
-       single source").
-    2. On-the-fly estimate via `running_calibration.estimate_hrmax_profile`
-       over synced running history. This is the fallback when no snapshot has
-       been persisted yet (post-sync recompute only *reads* calibration, it
-       never writes it — so new athletes have no Tier-1 row). It reuses the
-       canonical estimator — same physiological-band + neighbour-support +
-       confidence checks — rather than a parallel, weaker computation.
-    3. `None` — when neither source has data. Callers MUST handle None and
-       skip HR-dependent computation rather than substitute a hardcoded
-       constant. We deliberately do NOT fall back to a population default
-       (the old 185) because a wrong HRmax silently corrupts every HR-zone
-       and VO2max-from-HR derivation downstream.
+    Reads the persisted STRIDE `hrmax_estimate` from the latest
+    `running_calibration_snapshot` — the canonical baseline (CLAUDE.md
+    "Athlete baseline metrics — single source"). That snapshot, including
+    HRmax, is (re)computed and persisted by the weekly running-calibration
+    job (`estimate_running_calibration` derives threshold + HRmax together),
+    NOT on the sync/read path — so this resolver only ever reads, never
+    recomputes over history.
+
+    Returns `None` when no snapshot exists yet (e.g. a new athlete before the
+    first weekly job runs). Callers MUST handle None and skip HR-dependent
+    computation rather than substitute a hardcoded constant: a wrong HRmax
+    silently corrupts every HR-zone and VO2max-from-HR derivation downstream,
+    so we deliberately do NOT fall back to a population default (the old 185).
     """
-    snapshot_hrmax = _hrmax_from_snapshot(db, as_of_date_iso)
-    if snapshot_hrmax is not None:
-        return snapshot_hrmax
-
-    estimated_hrmax = _hrmax_from_history(db, as_of_date_iso)
-    if estimated_hrmax is not None:
-        logger.warning(
-            "hr_max: no persisted calibration snapshot for %s; estimated "
-            "hrmax=%d on-the-fly from running history",
-            as_of_date_iso,
-            estimated_hrmax,
-        )
-        return estimated_hrmax
-
-    logger.error(
-        "hr_max: no persisted calibration snapshot and no usable running "
-        "history for %s — returning None (HR-dependent ability scoring "
-        "will be skipped)",
-        as_of_date_iso,
-    )
-    return None
-
-
-def _hrmax_from_snapshot(db: Any, as_of_date_iso: str) -> int | None:
-    """STRIDE-computed hrmax_estimate from the latest calibration snapshot."""
     try:
         from datetime import date as _date
         from stride_storage.sqlite.calibration_connector import (
@@ -80,39 +54,14 @@ def _hrmax_from_snapshot(db: Any, as_of_date_iso: str) -> int | None:
         logger.debug("hr_max: snapshot read failed (legacy DB?)", exc_info=True)
         return None
     if snap is None or snap.hrmax_estimate is None:
+        logger.warning(
+            "hr_max: no calibration snapshot for %s — returning None "
+            "(HR-dependent ability scoring will be skipped until the weekly "
+            "running-calibration job persists one)",
+            as_of_date_iso,
+        )
         return None
     return int(round(snap.hrmax_estimate))
-
-
-def _hrmax_from_history(
-    db: Any, as_of_date_iso: str, *, lookback_days: int = 180
-) -> int | None:
-    """Estimate HRmax from synced running history via the canonical estimator.
-
-    Delegates to `running_calibration.estimate_hrmax_profile` so the
-    physiological-band (80..230) check — plus neighbour-support and confidence
-    grading when per-second timeseries is present — is applied once, in one
-    place, never a second weaker MAX(max_hr) reimplementation (CLAUDE.md
-    "Athlete baseline metrics — single source"). Returns None when history
-    yields no valid HR sample.
-    """
-    try:
-        from datetime import date as _date, timedelta as _timedelta
-        from stride_core.running_calibration import estimate_hrmax_profile
-        from stride_storage.sqlite.calibration_connector import (
-            SQLiteRunningCalibrationRepository,
-        )
-
-        as_of = _date.fromisoformat(as_of_date_iso)
-        repo = SQLiteRunningCalibrationRepository(db)
-        history = repo.fetch_history(as_of - _timedelta(days=lookback_days), as_of)
-    except Exception:  # noqa: BLE001
-        logger.warning("hr_max: running-history fetch failed", exc_info=True)
-        return None
-    profile = estimate_hrmax_profile(history)
-    if profile.estimated_hrmax is None:
-        return None
-    return int(round(profile.estimated_hrmax))
 
 
 def _resolve_train_kind(activity: Any) -> str | None:
@@ -2043,8 +1992,8 @@ def compute_ability_snapshot(
     local time (UTC+8) as project memory requires.
 
     `hr_max` defaults to the user's resolved max HR via `_resolve_hr_max`
-    (persisted `hrmax_estimate` → on-the-fly history estimate → None). When it
-    resolves to None, an empty snapshot is returned. Explicit kwargs override.
+    (the persisted `hrmax_estimate`, else None). When it resolves to None, an
+    empty snapshot is returned. Explicit kwargs override.
     """
     if db is None:
         return _empty_snapshot(date)
