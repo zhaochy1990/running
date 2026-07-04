@@ -212,7 +212,7 @@ def main() -> int:
         fitness_state.get("tsb"),
     )
     print(f"{json.dumps(ctx, ensure_ascii=False, indent=2)}", flush=True)
-    return 0
+    # return 0
     
     # state["context"] = ctx
     # master_plan = generate_master_plan(state)
