@@ -101,6 +101,7 @@ def _build_master_plan(
     goal: dict,
     profile: dict | None = None,
     generated_by: str = "unknown",
+    pb_seconds: dict[str, float] | None = None,
 ) -> MasterPlan:
     """Map LLM output JSON -> MasterPlan instance.
 
@@ -265,7 +266,7 @@ def _build_master_plan(
         training_principles,
         milestones,
         goal,
-        profile,
+        pb_seconds,
     )
     return MasterPlan(
         plan_id=str(uuid4()),
@@ -598,6 +599,17 @@ def _normalise_target_distance(value: object) -> str:
         "10公里": "10k",
         "10千米": "10k",
         "10km": "10k",
+        "half": "hm",
+        "half-marathon": "hm",
+        "half marathon": "hm",
+        "半马": "hm",
+        "半程马拉松": "hm",
+        "marathon": "fm",
+        "full": "fm",
+        "full-marathon": "fm",
+        "full marathon": "fm",
+        "马拉松": "fm",
+        "全马": "fm",
     }
     return lookup.get(token, token)
 
@@ -809,53 +821,84 @@ def _goal_time_seconds(goal: dict) -> float | None:
         value = goal.get("target_time_s")
     if value is None:
         value = _parse_hms_to_seconds(str(goal.get("target_finish_time") or ""))
+    if value is None:
+        target = goal.get("target_race")
+        if isinstance(target, dict):
+            value = target.get("goal_time_s")
+            if value is None:
+                value = target.get("target_time_s")
+            if value is None:
+                value = _parse_hms_to_seconds(str(target.get("target_finish_time") or ""))
     try:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
 
 
-def _profile_fm_pb_seconds(profile: dict | None) -> float | None:
-    if not isinstance(profile, dict):
-        return None
-    prs = profile.get("prs")
-    if isinstance(prs, dict) and prs.get("fm_s") is not None:
+_PB_SECONDS_KEY_ALIASES: dict[str, str] = {
+    "5k": "5k",
+    "5-k": "5k",
+    "5km": "5k",
+    "10k": "10k",
+    "10-k": "10k",
+    "10km": "10k",
+    "half": "hm",
+    "hm": "hm",
+    "half_marathon": "hm",
+    "half-marathon": "hm",
+    "marathon": "fm",
+    "full": "fm",
+    "fm": "fm",
+}
+
+
+def _normalise_pb_seconds(pb_seconds: dict | None) -> dict[str, float]:
+    if not isinstance(pb_seconds, dict):
+        return {}
+    out: dict[str, float] = {}
+    for raw_key, raw_value in pb_seconds.items():
+        key = _PB_SECONDS_KEY_ALIASES.get(
+            str(raw_key or "").strip().lower().replace("_", "-")
+        )
+        if key is None:
+            key = _normalise_target_distance(raw_key)
+        if key not in {"5k", "10k", "hm", "fm"}:
+            continue
         try:
-            return float(prs["fm_s"])
+            value = float(raw_value)
         except (TypeError, ValueError):
-            return None
-    pbs = profile.get("pbs")
-    if isinstance(pbs, list):
-        for pb in pbs:
-            if not isinstance(pb, dict):
-                continue
-            if _normalise_target_distance(pb.get("distance")) != "fm":
-                continue
-            seconds = _parse_hms_to_seconds(str(pb.get("time") or ""))
-            if seconds is not None:
-                return float(seconds)
-    return None
+            continue
+        if value > 0:
+            out[key] = value
+    return out
 
 
-def _fm_pb_improvement(goal_s: float | None, profile: dict | None) -> float | None:
-    pb_s = _profile_fm_pb_seconds(profile)
+def _fm_pb_improvement(goal_s: float | None, pb_seconds: dict | None) -> float | None:
+    pb_s = _normalise_pb_seconds(pb_seconds).get("fm")
     if goal_s is None or pb_s is None or goal_s <= 0 or pb_s <= 0:
         return None
     return (pb_s - goal_s) / pb_s
 
 
-def _is_aggressive_advanced_fm_goal(goal: dict, profile: dict | None) -> bool:
+def _has_advanced_pb(pb_seconds: dict | None) -> bool:
+    pbs = _normalise_pb_seconds(pb_seconds)
+    thresholds = {
+        "5k": 19 * 60,
+        "10k": 40 * 60,
+        "hm": 90 * 60,
+        "fm": 3 * 3600 + 10 * 60,
+    }
+    return any(pbs.get(distance, float("inf")) <= seconds for distance, seconds in thresholds.items())
+
+
+def _is_aggressive_advanced_fm_goal(goal: dict, pb_seconds: dict | None) -> bool:
     if not _is_target_distance(goal, "fm"):
         return False
     goal_s = _goal_time_seconds(goal)
-    improvement = _fm_pb_improvement(goal_s, profile)
+    improvement = _fm_pb_improvement(goal_s, pb_seconds)
     if improvement is None or improvement <= 0.03 or improvement > 0.15:
         return False
-    if isinstance(profile, dict):
-        level = str(profile.get("experience_level") or "").lower()
-        if level and level != "advanced":
-            return False
-    return True
+    return _has_advanced_pb(pb_seconds)
 
 
 def _format_race_time(seconds: float) -> str:
@@ -970,12 +1013,23 @@ def _normalise_aggressive_fm_supporting_gate_target(target: str, goal_s: float) 
     compact = _normalise_aggressive_fm_gate_text(target)
     if "A" not in compact or ("HM<=" not in compact and "10K<=" not in compact):
         return None
-    goal_time = _format_goal_time(goal_s)
-    if goal_time in compact or _has_aggressive_fm_combo_gate(target, goal_s):
+    if _has_aggressive_fm_combo_gate(target, goal_s):
         return None
 
     prefix = _aggressive_fm_principle_prefix(target, goal_s)
     supporting_gate = _compose_aggressive_fm_supporting_gate(goal_s)
+    observation_parts = []
+    for part in re.split(r"[；;。]+", target):
+        part = part.strip()
+        if not part:
+            continue
+        part_compact = _normalise_aggressive_fm_gate_text(part)
+        if "A" in part_compact and ("HM<=" in part_compact or "10K<=" in part_compact):
+            continue
+        if "观察" in part or "B" in part_compact:
+            observation_parts.append(part)
+    if observation_parts:
+        return "；".join(observation_parts + [supporting_gate])
     if prefix and ("观察" in prefix or "B" in prefix):
         return prefix + "；" + supporting_gate
     return supporting_gate
@@ -985,10 +1039,10 @@ def _ensure_aggressive_fm_combination_gate(
     principles: list[str],
     milestones: list[Milestone],
     goal: dict,
-    profile: dict | None,
+    pb_seconds: dict | None,
 ) -> tuple[list[str], list[Milestone]]:
     """Make aggressive advanced FM A-gates explicit combination gates."""
-    if not _is_aggressive_advanced_fm_goal(goal, profile):
+    if not _is_aggressive_advanced_fm_goal(goal, pb_seconds):
         return principles, milestones
     goal_s = _goal_time_seconds(goal)
     if goal_s is None:
@@ -1334,8 +1388,8 @@ def _query_history(user_id: str) -> dict[str, Any]:
     """Query activities DB for a 3-year training history summary.
 
     Returns a dict with keys: monthly_km, max_weekly_km, total_activities,
-    and best_*_s (REAL personal bests — actual achieved efforts; the single
-    race-time anchor for milestone baselines).
+    and weekly_profile. PB loading happens in load_master_context via
+    load_personal_bests so training-history and race-time anchors stay separate.
 
     All failures are silently absorbed — returns zeros / empty lists rather
     than blocking the generation flow.
@@ -1344,10 +1398,6 @@ def _query_history(user_id: str) -> dict[str, Any]:
         "monthly_km": [],
         "max_weekly_km": 0.0,
         "total_activities": 0,
-        "best_5k_s": None,
-        "best_10k_s": None,
-        "best_hm_s": None,
-        "best_fm_s": None,
         "weekly_profile": [],
     }
     try:
@@ -1414,31 +1464,6 @@ def _query_history(user_id: str) -> dict[str, Any]:
             f"SELECT COUNT(*) FROM activities WHERE sport_type IN ({RUN_SPORT_SQL_LIST})"
         ).fetchone()
         result["total_activities"] = row[0] or 0
-
-        # Real personal bests — actual achieved efforts. Read from the persisted
-        # personal_bests table (populated post-sync), so generation no longer pays
-        # the ~7s chronological best-effort scan. load_personal_bests self-heals
-        # when the table was never scanned and records PB-less users so it doesn't
-        # re-scan every run. These are the ONLY race-time anchor fed to the
-        # planner: COROS race_predictions (fitness-based optimistic ceilings) are
-        # deliberately NOT surfaced, since conflating them anchored milestones to
-        # paces the athlete has never actually run (e.g. a "PB 38:38" 10K when the
-        # real best is 40:06).
-        try:
-            from stride_core.pb_records import load_personal_bests
-            pb_map = load_personal_bests(db)
-            pb_key = {
-                "5K": "best_5k_s",
-                "10K": "best_10k_s",
-                "HM": "best_hm_s",
-                "FM": "best_fm_s",
-            }
-            for disp, key in pb_key.items():
-                entry = pb_map.get(disp)
-                if entry and entry.get("pb_time_sec"):
-                    result[key] = round(entry["pb_time_sec"])
-        except Exception:  # noqa: BLE001 — PB read must not block gen
-            logger.warning("_query_history: PB read failed for %s", user_id, exc_info=True)
 
         # 16-week weekly athlete profile. The threshold speed (for the NULL-
         # train_kind pace fallback in speed classification) is read from the

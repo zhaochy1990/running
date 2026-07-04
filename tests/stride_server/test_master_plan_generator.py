@@ -242,10 +242,7 @@ def patch_history(monkeypatch):
         "monthly_km": [],
         "max_weekly_km": 0.0,
         "total_activities": 0,
-        "best_5k_s": None,
-        "best_10k_s": None,
-        "best_hm_s": None,
-        "best_fm_s": None,
+        "weekly_profile": [],
     })
     monkeypatch.setattr(mod, "_query_fitness_state", lambda uid: {
         "ctl": None,
@@ -306,6 +303,7 @@ def test_generate_master_plan_returns_prompt_size_metadata(monkeypatch):
             "runtime_options": {"master_max_tokens": 20000},
             "context": {
                 "history_summary": "history",
+                "pb_seconds": {"fm": 10762},
                 "fitness_state": {"summary": "fitness"},
             },
         }
@@ -317,6 +315,40 @@ def test_generate_master_plan_returns_prompt_size_metadata(monkeypatch):
     assert metadata["generator_max_tokens"] == 20000
     assert metadata["generator_raw_response_chars"] == len(raw_response)
     assert CapturingLLMClient.kwargs_seen == [{"max_tokens": 20000}]
+
+
+def test_generate_master_plan_passes_context_pb_seconds_to_builder(monkeypatch):
+    raw_response = _sentinel_wrap(_VALID_JSON_STR)
+    seen: dict[str, Any] = {}
+
+    def fake_build(parsed, user_id, goal, profile=None, generated_by="unknown", pb_seconds=None):
+        seen["pb_seconds"] = pb_seconds
+        return _build_master_plan(
+            parsed,
+            user_id,
+            goal,
+            profile=profile,
+            generated_by=generated_by,
+            pb_seconds=pb_seconds,
+        )
+
+    monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
+    monkeypatch.setattr(adapter_mod, "_build_master_plan", fake_build)
+
+    adapter_mod.generate_master_plan(
+        {
+            "job_id": "",
+            "user_id": USER_ID,
+            "input_payload": {"goal": GOAL, "profile": PROFILE},
+            "context": {
+                "history_summary": "history",
+                "fitness_state": {"summary": "fitness"},
+                "pb_seconds": {"fm": 10762.0},
+            },
+        }
+    )
+
+    assert seen["pb_seconds"] == {"fm": 10762.0}
 
 
 def test_master_plan_generation_uses_s1_specific_output_cap():
@@ -910,7 +942,8 @@ class TestBuildMasterPlan:
             data,
             USER_ID,
             {"distance": "fm", "goal_time_s": 10200, "race_date": "2026-10-18"},
-            {"experience_level": "advanced", "prs": {"fm_s": 10762}},
+            {"experience_level": "advanced"},
+            pb_seconds={"fm": 10762},
         )
 
         principles = "\n".join(plan.training_principles)
@@ -956,7 +989,8 @@ class TestBuildMasterPlan:
             data,
             USER_ID,
             {"distance": "fm", "goal_time_s": 10200, "race_date": "2026-10-18"},
-            {"experience_level": "advanced", "prs": {"fm_s": 10762}},
+            {"experience_level": "advanced"},
+            pb_seconds={"fm": 10762},
         )
 
         rendered = "\n".join(plan.training_principles + [plan.milestones[0].target])
@@ -974,7 +1008,8 @@ class TestBuildMasterPlan:
             data,
             USER_ID,
             {"distance": "fm", "goal_time_s": 10200, "race_date": "2026-10-18"},
-            {"experience_level": "advanced", "prs": {"fm_s": 13500}},
+            {"experience_level": "advanced"},
+            pb_seconds={"fm": 13500},
         )
 
         assert "A=2:50" not in "\n".join(plan.training_principles)
@@ -1000,7 +1035,8 @@ class TestBuildMasterPlan:
             data,
             USER_ID,
             {"distance": "fm", "goal_time_s": 9900, "race_date": "2026-10-18"},
-            {"experience_level": "advanced", "prs": {"fm_s": 10500}},
+            {"experience_level": "advanced"},
+            pb_seconds={"fm": 10500},
         )
 
         rendered = "\n".join(plan.training_principles + [plan.milestones[0].target])
@@ -1010,6 +1046,110 @@ class TestBuildMasterPlan:
         assert "B=2:47-2:50" in rendered
         assert "A=2:50" not in rendered
         assert "HM<=1:24:30" not in rendered
+
+    def test_aggressive_fm_gate_uses_explicit_pb_seconds_with_nested_goal(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "PB2:55:00→2:45为5.7%，A需HM≤1:24:30或10K≤37:45+31km含22kmMP过关"
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "race",
+                "date": "2026-10-18",
+                "phase_name": "赛前期",
+                "target": "A<2:45需HM≤1:24:30或10K≤37:45+31km含22kmMP全过；B2:47-2:50；C破PB",
+                "metric": "race_time_s_fm",
+                "target_value": 9900,
+                "comparator": "<=",
+            }
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"target_race": {"distance": "fm", "goal_time_s": 9900, "race_date": "2026-10-18"}},
+            {"experience_level": "advanced"},
+            pb_seconds={"fm": 10500},
+        )
+
+        rendered = "\n".join(plan.training_principles + [plan.milestones[0].target])
+        assert "A=2:45" in rendered
+        assert "HM<=1:22:00" in rendered
+        assert "10K<=36:30" in rendered
+        assert "HM<=1:24:30" not in rendered
+
+    def test_aggressive_fm_gate_accepts_marathon_distance_alias(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "PB2:59:22→2:50为5.2%，A需HM≤1:24:30或10K≤38:00+29km含22kmMP过关"
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"race_distance": "marathon", "goal_time_s": 10200, "race_date": "2026-10-18"},
+            pb_seconds={"fm": 10762},
+        )
+
+        rendered = "\n".join(plan.training_principles)
+        assert "A=2:50" in rendered
+        assert "最大合法MP彩排" in rendered
+
+    def test_aggressive_fm_gate_requires_advanced_pb_not_profile_volume(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "多年跑者，PB4:00→3:45，A需HM≤1:47或10K≤48+29km过关。"
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "fm", "goal_time_s": 13500, "race_date": "2026-10-18"},
+            {"running_age": "3y_plus", "current_weekly_km": "60_plus"},
+            pb_seconds={"fm": 14400},
+        )
+
+        assert "最大合法MP彩排" not in "\n".join(plan.training_principles)
+
+    def test_aggressive_fm_supporting_gate_rewrites_stale_target_time_test_run(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["training_principles"] = [
+            "PB2:55:00→2:45为5.7%，A需HM≤1:24:30或10K≤37:45+31km含22kmMP过关"
+        ]
+        data["plan"]["milestones"] = [
+            {
+                "type": "test_run",
+                "date": "2026-08-02",
+                "phase_name": "专项建设期",
+                "target": "A=2:45仍需HM≤1:24:30或10K≤37:45；10K≤38:30为B观察",
+                "metric": "race_time_s_10k",
+                "target_value": 2310,
+                "comparator": "<=",
+            },
+            {
+                "type": "race",
+                "date": "2026-10-18",
+                "phase_name": "赛前期",
+                "target": "A<2:45需HM≤1:24:30或10K≤37:45+31km含22kmMP全过；B2:47-2:50；C破PB",
+                "metric": "race_time_s_fm",
+                "target_value": 9900,
+                "comparator": "<=",
+            },
+        ]
+
+        plan = _build_master_plan(
+            data,
+            USER_ID,
+            {"distance": "fm", "goal_time_s": 9900, "race_date": "2026-10-18"},
+            {"experience_level": "advanced"},
+            pb_seconds={"fm": 10500},
+        )
+
+        support_target = plan.milestones[0].target
+        assert "A=2:45按比赛里程碑" in support_target
+        assert "10K≤38:30为B观察" in support_target
+        assert "HM≤1:24:30" not in support_target
+        assert "10K≤37:45" not in support_target
 
     def test_three_day_mp_long_run_week_drops_extra_hard_session(self):
         data = json.loads(_VALID_JSON_STR)
@@ -2168,10 +2308,9 @@ class TestQueryHistoryRealDB:
         assert abs(may["km"] - 46.1) < 0.2
         assert abs(may["hours"] - 3.32) < 0.05
 
-    def test_pbs_self_heal_then_read_from_table(self, tmp_path, monkeypatch):
-        """personal_bests starts empty → _query_history self-heals (persists) and
-        reads it. a1 (21.1km/5400s) → HM PB; a2 (10km/2550s) → 10K PB. After the
-        first call the table is populated for cheap subsequent reads."""
+    def test_query_history_does_not_load_or_self_heal_pbs(self, tmp_path, monkeypatch):
+        """_query_history only loads training history. PB loading belongs to
+        load_master_context/load_personal_bests so the PB source is explicit."""
         from stride_core.pb_records import fetch_personal_bests
 
         db = self._seed(tmp_path)
@@ -2179,11 +2318,11 @@ class TestQueryHistoryRealDB:
         assert fetch_personal_bests(db) == {}  # nothing persisted yet
 
         result = _query_history("anyuser")
-        assert result["best_10k_s"] == 2550
-        assert result["best_hm_s"] == 5400
+        assert "best_10k_s" not in result
+        assert "best_hm_s" not in result
 
-        # The self-heal persisted the rows, so the table now serves them directly.
-        assert "10K" in fetch_personal_bests(db)
+        # _query_history must not trigger load_personal_bests self-heal.
+        assert fetch_personal_bests(db) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -2425,7 +2564,7 @@ class TestQueryFitnessStateStride:
 
 # ---------------------------------------------------------------------------
 # load_master_context double baseline (Stage-3a P2)
-# Performance baseline (real PBs via _query_history → load_personal_bests) +
+# Performance baseline (real PBs via load_master_context/load_personal_bests) +
 # body-composition baseline (body_composition_scan, added here). COROS
 # race_predictions are deliberately NOT surfaced into the context. Graceful
 # degrade when there's no body-comp scan.
@@ -2439,9 +2578,8 @@ class TestLoadMasterContextDoubleBaseline:
         db = Database(db_path=tmp_path / "coros.db")
         c = db._conn
         # Seed COROS race_predictions to prove they are NOT surfaced into the
-        # context: _query_history anchors milestones to real PBs only (from
-        # detect_personal_bests over activities, none seeded here), so these
-        # prediction rows must never leak into history.
+        # context: load_master_context anchors milestones to real PBs from
+        # personal_bests, so these prediction rows must never leak into history.
         for race_type, dur in (
             ("5K", 1200.0),       # 20:00
             ("10K", 2520.0),      # 42:00
@@ -2452,6 +2590,19 @@ class TestLoadMasterContextDoubleBaseline:
                 "INSERT INTO race_predictions (race_type, duration_s, avg_pace) "
                 "VALUES (?, ?, NULL)",
                 (race_type, dur),
+            )
+        for distance, pb_time_sec in (("10K", 2550.0), ("FM", 10762.0)):
+            entry = {
+                "distance": distance,
+                "pb_time_sec": pb_time_sec,
+                "achieved_at": "2026-05-08",
+                "source": "activity",
+            }
+            c.execute(
+                "INSERT INTO personal_bests "
+                "(distance, pb_time_sec, achieved_at, source, entry_json) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (distance, pb_time_sec, entry["achieved_at"], entry["source"], json.dumps(entry)),
             )
         if with_body_comp:
             c.execute(
@@ -2496,11 +2647,13 @@ class TestLoadMasterContextDoubleBaseline:
         )
 
         # The graph context exposes only the rendered history summary. COROS
-        # race_predictions are NOT surfaced; with no seeded activities, real PBs
-        # remain n/a instead of using prediction rows as anchors.
+        # race_predictions are NOT surfaced; real PBs come from personal_bests,
+        # not prediction rows.
         assert "history" not in ctx
+        assert ctx["pb_seconds"] == {"10k": 2550.0, "fm": 10762.0}
         assert "Actual personal bests" in ctx["history_summary"]
-        assert "FM: n/a" in ctx["history_summary"]
+        assert "10K: 42:30" in ctx["history_summary"]
+        assert "FM: 2:59:22" in ctx["history_summary"]
         assert "3:20:00" not in ctx["history_summary"]
 
         # Body-composition baseline — latest scan (2026-06-01, not the older one).
@@ -2542,7 +2695,8 @@ class TestLoadMasterContextDoubleBaseline:
         assert ctx["body_composition"] is None
         # History summary present but carries no fitness-prediction baseline.
         assert "history" not in ctx
-        assert "FM: n/a" in ctx["history_summary"]
+        assert ctx["pb_seconds"] == {"10k": 2550.0, "fm": 10762.0}
+        assert "FM: 2:59:22" in ctx["history_summary"]
         assert "3:20:00" not in ctx["history_summary"]
 
     def test_bmi_math(self):
