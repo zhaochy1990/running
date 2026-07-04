@@ -137,6 +137,31 @@ def _seed_from_fixture(db: Database, fx: dict) -> None:
     _seed_dashboard(db, fx["dashboard"])
 
 
+def _seed_hrmax_snapshot(db: Database, hrmax: float = 185.0, *, as_of=None) -> None:
+    """Persist a running_calibration snapshot carrying `hrmax`.
+
+    Ability scoring reads HRmax from the persisted calibration snapshot (the
+    weekly calibration job's output); tests that assert HR-dependent scores
+    must seed one explicitly rather than relying on a fallback. 185 matches
+    the historical default these tests were written against.
+    """
+    from datetime import date as _date
+    from stride_storage.sqlite.calibration_connector import (
+        SQLiteRunningCalibrationRepository,
+    )
+    from stride_core.running_calibration.types import (
+        CalibrationConfidence, RunningCalibrationSnapshot,
+    )
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.save_snapshot(RunningCalibrationSnapshot(
+        as_of_date=as_of or _date(2026, 4, 23),
+        hrmax_estimate=hrmax,
+        threshold_hr_confidence=CalibrationConfidence.NONE,
+        threshold_speed_confidence=CalibrationConfidence.NONE,
+        hrmax_confidence=CalibrationConfidence.MEDIUM,
+    ))
+
+
 @pytest.fixture
 def fx() -> dict:
     """Fresh deep-copy of the fixture for each test."""
@@ -1265,6 +1290,7 @@ class TestEconomyDedupe:
 
 class TestA1_4_IntervalEvidence:
     def test_interval_bumps_vo2max(self, ability_db):
+        _seed_hrmax_snapshot(ability_db)
         before = compute_ability_snapshot(ability_db, "2026-04-23")
         before_vo2 = before["l3_dimensions"]["vo2max"]["score"]
         before_marathon = before["l4_marathon_estimate_s"]
@@ -1326,6 +1352,7 @@ class TestA1_4_IntervalEvidence:
 
 class TestA1_5_LongRunEvidence:
     def test_long_run_bumps_endurance(self, ability_db):
+        _seed_hrmax_snapshot(ability_db)
         before = compute_ability_snapshot(ability_db, "2026-04-23")
         before_end = before["l3_dimensions"]["endurance"]["score"]
         before_marathon = before["l4_marathon_estimate_s"]
@@ -1409,6 +1436,7 @@ class TestA1_6_MarathonVdotLinearity:
     def test_stale_high_vdot_ignored_by_current_window(self, tmp_path, fx):
         db = Database(db_path=tmp_path / "stale_vdot.db")
         _seed_from_fixture(db, fx)
+        _seed_hrmax_snapshot(db)
         try:
             old_fast = {
                 "label_id": "OLD_FAST_INTERVAL",
@@ -1465,6 +1493,7 @@ class TestA1_7_Vo2maxEstimators:
     def test_5k_tt_primary_matches_daniels(self, tmp_path, fx):
         db = Database(db_path=tmp_path / "a17.db")
         _seed_from_fixture(db, fx)
+        _seed_hrmax_snapshot(db)
 
         # Add a 5K time trial at 18:55 on 2026-04-22 — race-like activity
         # triggers primary VDOT path inside compute_l3_vo2max.
@@ -1541,6 +1570,7 @@ class TestBoundary:
     def test_only_easy_runs_fallback(self, tmp_path, fx):
         db = Database(db_path=tmp_path / "easy_only.db")
         _seed_from_fixture(db, fx)
+        _seed_hrmax_snapshot(db)
         snap = compute_ability_snapshot(db, "2026-04-23")
         vo2 = snap["l3_dimensions"]["vo2max"]
         # No interval / race-like evidence → primary is None, secondary falls back
@@ -1621,8 +1651,89 @@ class TestComputeAbilitySnapshotHrMaxResolver:
         snap = compute_ability_snapshot(ability_db, "2026-04-23", hr_max=210)
         assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 210
 
-    def test_compute_ability_snapshot_falls_back_to_185(self, ability_db):
-        """When no baseline exists, the legacy 185 default is preserved."""
-        from stride_core.ability import compute_ability_snapshot
+    def test_compute_ability_snapshot_returns_empty_when_no_snapshot(self, ability_db):
+        """With no persisted calibration snapshot, hr_max resolves to None and
+        an empty snapshot is returned — we never substitute the legacy 185
+        default nor recompute HRmax over history on the read path. HRmax is
+        (re)computed and persisted by the weekly running-calibration job.
+        """
+        from stride_core.ability import compute_ability_snapshot, _empty_snapshot
+        # ability_db has activities but no running_calibration snapshot.
         snap = compute_ability_snapshot(ability_db, "2026-04-23")
-        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 185
+        assert snap == _empty_snapshot("2026-04-23")
+
+    def test_compute_ability_snapshot_uses_later_hrmax_for_historical_backfill(self, ability_db):
+        """Historical dates before the first calibration snapshot should still
+        use the first later HRmax snapshot instead of persisting empty ability
+        rows for days with activity data.
+        """
+        from datetime import date
+        from stride_core.ability import compute_ability_snapshot, _empty_snapshot
+        from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
+        from stride_core.running_calibration.types import (
+            CalibrationConfidence, RunningCalibrationSnapshot,
+        )
+
+        repo = SQLiteRunningCalibrationRepository(ability_db)
+        repo.save_snapshot(RunningCalibrationSnapshot(
+            as_of_date=date(2026, 4, 23),
+            hrmax_estimate=200.0,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.MEDIUM,
+        ))
+
+        snap = compute_ability_snapshot(ability_db, "2026-04-13")
+
+        assert snap != _empty_snapshot("2026-04-13")
+        assert snap["date"] == "2026-04-13"
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 200
+
+    def test_compute_ability_snapshot_returns_empty_when_no_hr_max(self, tmp_path):
+        """With no snapshot at all, hr_max resolves to None and an empty
+        snapshot is returned — never the legacy 185 default.
+        """
+        from stride_core.ability import compute_ability_snapshot, _empty_snapshot
+        db = Database(db_path=tmp_path / "empty.db")
+        try:
+            snap = compute_ability_snapshot(db, "2026-04-23")
+            assert snap == _empty_snapshot("2026-04-23")
+        finally:
+            db.close()
+
+    def test_resolve_hr_max_reads_persisted_snapshot(self, ability_db):
+        """_resolve_hr_max reads the persisted snapshot hrmax_estimate and does
+        NOT recompute over history — even though ability_db has running history
+        that could be scanned, the resolver returns the stored value."""
+        from datetime import date
+        from stride_core.ability import _resolve_hr_max
+        from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
+        from stride_core.running_calibration.types import (
+            CalibrationConfidence, RunningCalibrationSnapshot,
+        )
+        repo = SQLiteRunningCalibrationRepository(ability_db)
+        repo.save_snapshot(RunningCalibrationSnapshot(
+            as_of_date=date(2026, 4, 23),
+            hrmax_estimate=192.0,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.MEDIUM,
+        ))
+        assert _resolve_hr_max(ability_db, "2026-04-23") == 192
+
+    def test_resolve_hr_max_none_when_no_snapshot(self, ability_db):
+        """No snapshot → None, even when running history exists. The resolver
+        must not fall back to scanning activities (that recompute belongs to
+        the weekly calibration job, off the sync/read path)."""
+        from stride_core.ability import _resolve_hr_max
+        # ability_db has activities but no calibration snapshot persisted.
+        assert _resolve_hr_max(ability_db, "2026-04-23") is None
+
+    def test_resolve_hr_max_none_when_empty_db(self, tmp_path):
+        """No snapshot + no data → None (never the legacy 185)."""
+        from stride_core.ability import _resolve_hr_max
+        db = Database(db_path=tmp_path / "empty.db")
+        try:
+            assert _resolve_hr_max(db, "2026-04-23") is None
+        finally:
+            db.close()

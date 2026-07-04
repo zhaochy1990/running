@@ -13,6 +13,7 @@ which is the sole orchestrator that reads from `db._conn`.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import sqlite3
@@ -22,15 +23,25 @@ from typing import Any, Iterable, Mapping, Sequence
 from stride_core.models import RUN_SPORT_IDS, RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
 from stride_core.normalize import TrainKind, kind_from_legacy_train_type
 
+logger = logging.getLogger(__name__)
 
-def _resolve_hr_max(db: Any, as_of_date_iso: str, fallback: int = 185) -> int:
-    """Look up hrmax_estimate from running_calibration_snapshot.
 
-    Falls back to `fallback` (default 185) when:
-      - the connector cannot be constructed (legacy DB / missing schema)
-      - no snapshot exists yet
-      - snapshot has no hrmax_estimate
-    See CLAUDE.md HARD rule "Athlete baseline metrics — single source".
+def _resolve_hr_max(db: Any, as_of_date_iso: str) -> int | None:
+    """Resolve the athlete's max HR for `as_of_date_iso`.
+
+    Reads the persisted STRIDE `hrmax_estimate` from the latest
+    `running_calibration_snapshot` — the canonical baseline (CLAUDE.md
+    "Athlete baseline metrics — single source"). That snapshot, including
+    HRmax, is (re)computed and persisted by the weekly running-calibration
+    job (`estimate_running_calibration` derives threshold + HRmax together),
+    NOT on the sync/read path — so this resolver only ever reads, never
+    recomputes over history.
+
+    Returns `None` when no snapshot exists yet (e.g. a new athlete before the
+    first weekly job runs). Callers MUST handle None and skip HR-dependent
+    computation rather than substitute a hardcoded constant: a wrong HRmax
+    silently corrupts every HR-zone and VO2max-from-HR derivation downstream,
+    so we deliberately do NOT fall back to a population default (the old 185).
     """
     try:
         from datetime import date as _date
@@ -38,11 +49,23 @@ def _resolve_hr_max(db: Any, as_of_date_iso: str, fallback: int = 185) -> int:
             SQLiteRunningCalibrationRepository,
         )
         repo = SQLiteRunningCalibrationRepository(db)
-        snap = repo.fetch_latest(as_of_date=_date.fromisoformat(as_of_date_iso))
+        as_of_date = _date.fromisoformat(as_of_date_iso)
+        fetch_nearest_hrmax = getattr(repo, "fetch_nearest_hrmax", None)
+        if callable(fetch_nearest_hrmax):
+            snap = fetch_nearest_hrmax(as_of_date)
+        else:
+            snap = repo.fetch_latest(as_of_date=as_of_date)
     except Exception:  # noqa: BLE001
-        return fallback
+        logger.debug("hr_max: snapshot read failed (legacy DB?)", exc_info=True)
+        return None
     if snap is None or snap.hrmax_estimate is None:
-        return fallback
+        logger.warning(
+            "hr_max: no calibration snapshot with HRmax for %s — returning None "
+            "(HR-dependent ability scoring will be skipped until the weekly "
+            "running-calibration job persists one)",
+            as_of_date_iso,
+        )
+        return None
     return int(round(snap.hrmax_estimate))
 
 
@@ -1973,14 +1996,21 @@ def compute_ability_snapshot(
     `date` is an ISO YYYY-MM-DD string.  All date filtering uses Shanghai
     local time (UTC+8) as project memory requires.
 
-    `hr_max` defaults to the user's latest detected `hrmax_estimate` from
-    `running_calibration_snapshot`; falls back to 185 when no snapshot
-    exists. Explicit kwargs override.
+    `hr_max` defaults to the user's resolved max HR via `_resolve_hr_max`
+    (the persisted `hrmax_estimate`, else None). When it resolves to None, an
+    empty snapshot is returned. Explicit kwargs override.
     """
     if db is None:
         return _empty_snapshot(date)
     if hr_max is None:
         hr_max = _resolve_hr_max(db, date)
+    if hr_max is None:
+        logger.error(
+            "compute_ability_snapshot: no resolvable hr_max for %s — "
+            "returning empty snapshot (HR-dependent scoring skipped)",
+            date,
+        )
+        return _empty_snapshot(date)
 
     try:
         conn = db._conn
