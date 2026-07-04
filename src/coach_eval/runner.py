@@ -159,10 +159,27 @@ def _fixture_to_fitness_state() -> dict:
     }
 
 
+def _fixture_to_pb_seconds(fixture_input: dict) -> dict[str, float]:
+    prs = (fixture_input.get("user_profile") or {}).get("prs") or {}
+    out: dict[str, float] = {}
+    for raw_key, key in (("5k_s", "5k"), ("10k_s", "10k"), ("hm_s", "hm"), ("fm_s", "fm")):
+        value = prs.get(raw_key)
+        if value is None:
+            continue
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            continue
+        if seconds > 0:
+            out[key] = seconds
+    return out
+
+
 def _make_frozen_load_context(fixture: dict) -> Callable[[dict], dict]:
     """Closure: returns a ``load_context`` callable bound to this fixture."""
     fixture_input = fixture.get("input") or {}
     history = _fixture_to_history_dict(fixture_input)
+    pb_seconds = _fixture_to_pb_seconds(fixture_input)
     history_summary = _format_history_summary(history)
     fitness_state = fixture_input.get("fitness_state") or _fixture_to_fitness_state()
 
@@ -171,6 +188,7 @@ def _make_frozen_load_context(fixture: dict) -> Callable[[dict], dict]:
             "history": history,
             "history_summary": history_summary,
             "fitness_state": fitness_state,
+            "pb_seconds": pb_seconds,
         }
         for key in (
             "continuity",

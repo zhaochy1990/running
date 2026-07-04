@@ -38,6 +38,7 @@ from ..llm_client import LLMClient
 from ..master_plan_generator import (
     _build_master_plan,
     _format_history_summary,
+    _normalise_pb_seconds,
     _parse_llm_output,
     _query_fitness_state,
     _query_history,
@@ -110,6 +111,38 @@ def _format_body_composition_summary(bc: dict) -> str:
     return f"最新体测（{bc.get('scan_date', '?')}）— " + "，".join(parts)
 
 
+_PB_HISTORY_KEYS = {
+    "5k": "best_5k_s",
+    "10k": "best_10k_s",
+    "hm": "best_hm_s",
+    "fm": "best_fm_s",
+}
+
+
+def _load_pb_seconds(db) -> dict[str, float]:
+    """Load achieved PB seconds from personal_bests, self-healing via the
+    canonical PB reader when needed."""
+    from stride_core.pb_records import load_personal_bests
+
+    pb_map = load_personal_bests(db)
+    raw = {}
+    for display, key in (("5K", "5k"), ("10K", "10k"), ("HM", "hm"), ("FM", "fm")):
+        entry = pb_map.get(display)
+        if isinstance(entry, dict) and entry.get("pb_time_sec") is not None:
+            raw[key] = entry.get("pb_time_sec")
+    return _normalise_pb_seconds(raw)
+
+
+def _history_with_pb_seconds(history: dict, pb_seconds: dict[str, float]) -> dict:
+    if not pb_seconds:
+        return history
+    out = dict(history)
+    for key, history_key in _PB_HISTORY_KEYS.items():
+        if pb_seconds.get(key) is not None:
+            out[history_key] = round(pb_seconds[key])
+    return out
+
+
 def _build_context_snippets(
     history: dict, fitness_state: dict, goal: dict
 ) -> dict[str, Any]:
@@ -159,19 +192,11 @@ def load_master_context(state: GenState) -> dict:
     if job_id:
         update_job(job_id, stage=JobStage.READING_HISTORY, progress=10)
     history = _query_history(user_id)
-    history_summary = _format_history_summary(history)
     logger.debug(
         "load_master_context: user=%s history_loaded activities=%d",
         user_id,
         history.get("total_activities", 0),
     )
-    logger.debug(
-        "load_master_context: user=%s history_summary_chars=%d weekly_profile_weeks=%d",
-        user_id,
-        len(history_summary),
-        len(history.get("weekly_profile") or []),
-    )
-
     if job_id:
         update_job(job_id, stage=JobStage.EVALUATING, progress=30)
     logger.debug("load_master_context: user=%s querying fitness state...", user_id)
@@ -188,10 +213,15 @@ def load_master_context(state: GenState) -> dict:
     continuity = None
     body_composition: dict | None = None
     current_phase = None
+    pb_seconds: dict[str, float] = {}
     try:
         from stride_storage.sqlite.database import Database
         db = Database(user=user_id)
         as_of = today_shanghai()
+        try:
+            pb_seconds = _load_pb_seconds(db)
+        except Exception as exc:  # noqa: BLE001 — PB read must not block gen
+            logger.warning("load_master_context: PB read failed for %s: %s", user_id, exc)
         continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)
         # Authoritative current-phase position. Deterministic-only here
         # (cross_validate_with_llm=False): the LLM cross-check is a reviewer
@@ -207,14 +237,23 @@ def load_master_context(state: GenState) -> dict:
             )
         except Exception as exc:  # noqa: BLE001 — detection must not hard-fail gen
             logger.warning("load_master_context: phase detection failed: %s", exc)
-        # Body-composition baseline (the performance baseline is already loaded
-        # above via _query_history → real PBs). Reuse the same db handle.
+        # Body-composition baseline. Reuse the same db handle as the explicit
+        # PB/continuity context load above.
         try:
             body_composition = _load_body_composition(db, profile)
         except Exception as exc:  # noqa: BLE001 — degrade to perf-only milestones
             logger.warning("load_master_context: body_composition failed: %s", exc)
     except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
         logger.warning("load_master_context: continuity failed: %s", exc)
+
+    history_summary = _format_history_summary(_history_with_pb_seconds(history, pb_seconds))
+    logger.debug(
+        "load_master_context: user=%s history_summary_chars=%d weekly_profile_weeks=%d pb_keys=%s",
+        user_id,
+        len(history_summary),
+        len(history.get("weekly_profile") or []),
+        sorted(pb_seconds),
+    )
 
     # Surface live-data snippets to the generating UI (screen-2). Best-effort:
     # a failure here must never block context load.
@@ -229,6 +268,7 @@ def load_master_context(state: GenState) -> dict:
 
     return {
         "history_summary": history_summary,
+        "pb_seconds": pb_seconds,
         "fitness_state": fitness_state,
         "continuity": continuity.model_dump() if continuity is not None else None,
         "current_phase": current_phase.model_dump() if current_phase is not None else None,
@@ -270,6 +310,7 @@ def generate_master_plan(state: GenState) -> dict:
     ctx = state.get("context") or {}
     history_summary = ctx.get("history_summary", "")
     fitness_state = ctx.get("fitness_state") or {}
+    pb_seconds = ctx.get("pb_seconds") or {}
 
     if job_id:
         update_job(job_id, stage=JobStage.PLANNING_PHASES, progress=60)
@@ -427,7 +468,12 @@ def generate_master_plan(state: GenState) -> dict:
     generated_by = get_generator_model()
     try:
         plan = _build_master_plan(
-            parsed, user_id, goal, profile=profile, generated_by=generated_by
+            parsed,
+            user_id,
+            goal,
+            profile=profile,
+            generated_by=generated_by,
+            pb_seconds=pb_seconds,
         )
     except ValueError as exc:
         # Re-raise with bad_schema prefix so caller can distinguish from

@@ -10,7 +10,7 @@ description: Distance-specific structure, volume, long runs, taper.
   - **5K**: 40-55km; default to <=55km for a normal sub-18 5K block; 60km+ only if explicitly high-volume 5K. Taper 3-5 days.
   - **10K**: 50-60km; normal sub-40/sub-39:30 defaults <=60km, not 62-64; 64km+ only if explicitly high-volume.
   - **HM (half marathon)**: 60-70km; for a normal sub-1:20 HM block, default to `68-70km` (not 72km) and avoid 71-75km unless user asks for HM with FM-like volume. Taper about 1 week.
-  - **FM (full marathon)**: advanced sub-3/sub-2:50 may reach 75-85km when history/ramp allow; with 16+ weeks do not compress base below 4 weeks.
+  - **FM (full marathon)**: advanced sub-3 or aggressive PB goals may reach 75-85km when history/ramp allow; with 16+ weeks do not compress base below 4 weeks.
 - Long_run + emphasis by distance, progressing only +1-3km at a time from recent longest run:
   - **FM (full marathon)**: long_run ~28-35km; emphasize MP long runs + tempo; peak phase 3-4 weeks.
   - **HM (half marathon)**: long_run ~18-22km (max 25km); threshold + HMP; peak 2-3 weeks.

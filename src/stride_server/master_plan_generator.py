@@ -101,6 +101,7 @@ def _build_master_plan(
     goal: dict,
     profile: dict | None = None,
     generated_by: str = "unknown",
+    pb_seconds: dict[str, float] | None = None,
 ) -> MasterPlan:
     """Map LLM output JSON -> MasterPlan instance.
 
@@ -261,11 +262,11 @@ def _build_master_plan(
         _ensure_pushback_multi_cycle_path(plan_data.get("training_principles", [])),
         goal,
     )
-    training_principles, milestones = _ensure_sub250_fm_combination_gate(
+    training_principles, milestones = _ensure_aggressive_fm_combination_gate(
         training_principles,
         milestones,
         goal,
-        profile,
+        pb_seconds,
     )
     return MasterPlan(
         plan_id=str(uuid4()),
@@ -598,6 +599,17 @@ def _normalise_target_distance(value: object) -> str:
         "10公里": "10k",
         "10千米": "10k",
         "10km": "10k",
+        "half": "hm",
+        "half-marathon": "hm",
+        "half marathon": "hm",
+        "半马": "hm",
+        "半程马拉松": "hm",
+        "marathon": "fm",
+        "full": "fm",
+        "full-marathon": "fm",
+        "full marathon": "fm",
+        "马拉松": "fm",
+        "全马": "fm",
     }
     return lookup.get(token, token)
 
@@ -809,63 +821,142 @@ def _goal_time_seconds(goal: dict) -> float | None:
         value = goal.get("target_time_s")
     if value is None:
         value = _parse_hms_to_seconds(str(goal.get("target_finish_time") or ""))
+    if value is None:
+        target = goal.get("target_race")
+        if isinstance(target, dict):
+            value = target.get("goal_time_s")
+            if value is None:
+                value = target.get("target_time_s")
+            if value is None:
+                value = _parse_hms_to_seconds(str(target.get("target_finish_time") or ""))
     try:
         return float(value) if value is not None else None
     except (TypeError, ValueError):
         return None
 
 
-def _profile_fm_pb_seconds(profile: dict | None) -> float | None:
-    if not isinstance(profile, dict):
-        return None
-    prs = profile.get("prs")
-    if isinstance(prs, dict) and prs.get("fm_s") is not None:
+_PB_SECONDS_KEY_ALIASES: dict[str, str] = {
+    "5k": "5k",
+    "5-k": "5k",
+    "5km": "5k",
+    "10k": "10k",
+    "10-k": "10k",
+    "10km": "10k",
+    "half": "hm",
+    "hm": "hm",
+    "half_marathon": "hm",
+    "half-marathon": "hm",
+    "marathon": "fm",
+    "full": "fm",
+    "fm": "fm",
+}
+
+
+def _normalise_pb_seconds(pb_seconds: dict | None) -> dict[str, float]:
+    if not isinstance(pb_seconds, dict):
+        return {}
+    out: dict[str, float] = {}
+    for raw_key, raw_value in pb_seconds.items():
+        key = _PB_SECONDS_KEY_ALIASES.get(
+            str(raw_key or "").strip().lower().replace("_", "-")
+        )
+        if key is None:
+            key = _normalise_target_distance(raw_key)
+        if key not in {"5k", "10k", "hm", "fm"}:
+            continue
         try:
-            return float(prs["fm_s"])
+            value = float(raw_value)
         except (TypeError, ValueError):
-            return None
-    pbs = profile.get("pbs")
-    if isinstance(pbs, list):
-        for pb in pbs:
-            if not isinstance(pb, dict):
-                continue
-            if _normalise_target_distance(pb.get("distance")) != "fm":
-                continue
-            seconds = _parse_hms_to_seconds(str(pb.get("time") or ""))
-            if seconds is not None:
-                return float(seconds)
-    return None
+            continue
+        if value > 0:
+            out[key] = value
+    return out
 
 
-def _is_sub250_advanced_fm_goal(goal: dict, profile: dict | None) -> bool:
+def _fm_pb_improvement(goal_s: float | None, pb_seconds: dict | None) -> float | None:
+    pb_s = _normalise_pb_seconds(pb_seconds).get("fm")
+    if goal_s is None or pb_s is None or goal_s <= 0 or pb_s <= 0:
+        return None
+    return (pb_s - goal_s) / pb_s
+
+
+def _has_advanced_pb(pb_seconds: dict | None) -> bool:
+    pbs = _normalise_pb_seconds(pb_seconds)
+    thresholds = {
+        "5k": 19 * 60,
+        "10k": 40 * 60,
+        "hm": 90 * 60,
+        "fm": 3 * 3600 + 10 * 60,
+    }
+    return any(pbs.get(distance, float("inf")) <= seconds for distance, seconds in thresholds.items())
+
+
+def _is_aggressive_advanced_fm_goal(goal: dict, pb_seconds: dict | None) -> bool:
     if not _is_target_distance(goal, "fm"):
         return False
     goal_s = _goal_time_seconds(goal)
-    if goal_s is None or abs(goal_s - 10200.0) > 60.0:
+    improvement = _fm_pb_improvement(goal_s, pb_seconds)
+    if improvement is None or improvement <= 0.03 or improvement > 0.15:
         return False
-    pb_s = _profile_fm_pb_seconds(profile)
-    if pb_s is None or pb_s > 11100.0:
-        return False
-    if isinstance(profile, dict):
-        level = str(profile.get("experience_level") or "").lower()
-        if level and level != "advanced":
-            return False
-    return True
+    return _has_advanced_pb(pb_seconds)
 
 
-_SUB250_COMBINATION_GATE = (
-    "A=2:50仅在HM<=1:24:30或10K<=37:45之一达标，且最大合法MP彩排"
-    "(29-32km含22-24kmMP；29-30km仅限显式风险/历史/ramp上限)、"
-    "VO2/HR/RPE、跟腱反应全部通过时开放；HM<=1:25:30或10K>=38:00"
-    "只算观察/B；否则默认B=2:52-2:55，C=破PB/稳健完赛。"
-)
-
-_SUB250_SUPPORTING_GATE = (
-    "A=2:50按比赛里程碑HM/10K+MP彩排+VO2/HR/RPE+跟腱组合门槛开放。"
-)
+def _format_race_time(seconds: float) -> str:
+    rounded = int(round(seconds / 15.0) * 15)
+    h, rem = divmod(rounded, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
 
 
-def _normalise_sub250_gate_text(text: str) -> str:
+def _format_goal_time(seconds: float) -> str:
+    h, rem = divmod(int(round(seconds)), 3600)
+    m, s = divmod(rem, 60)
+    if s:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{h}:{m:02d}"
+
+
+def _aggressive_fm_gate_thresholds(goal_s: float) -> tuple[str, str, str, str]:
+    # Riegel-equivalent tune-up times with a small buffer so a tune-up only
+    # opens A when it supports the full marathon goal, not merely the B plan.
+    hm_s = goal_s * (21.0975 / 42.195) ** 1.06 * 1.035
+    ten_k_s = goal_s * (10.0 / 42.195) ** 1.06 * 1.02
+    observation_hm_s = hm_s + 60
+    observation_10k_s = ten_k_s + 15
+    return (
+        _format_race_time(hm_s),
+        _format_race_time(ten_k_s),
+        _format_race_time(observation_hm_s),
+        _format_race_time(observation_10k_s),
+    )
+
+
+def _aggressive_fm_b_band(goal_s: float) -> str:
+    low = _format_goal_time(goal_s + 120)
+    high = _format_goal_time(goal_s + 300)
+    return low if low == high else f"{low}-{high}"
+
+
+def _compose_aggressive_fm_combination_gate(goal_s: float) -> str:
+    goal_time = _format_goal_time(goal_s)
+    hm_gate, ten_k_gate, hm_observe, ten_k_observe = _aggressive_fm_gate_thresholds(goal_s)
+    b_band = _aggressive_fm_b_band(goal_s)
+    return (
+        f"A={goal_time}仅在HM<={hm_gate}或10K<={ten_k_gate}之一达标，且最大合法MP彩排"
+        "(29-32km含22-24kmMP；29-30km仅限显式风险/历史/ramp上限)、"
+        f"VO2/HR/RPE、跟腱反应全部通过时开放；HM<={hm_observe}或10K>={ten_k_observe}"
+        f"只算观察/B；否则默认B={b_band}，C=破PB/稳健完赛。"
+    )
+
+
+def _compose_aggressive_fm_supporting_gate(goal_s: float) -> str:
+    goal_time = _format_goal_time(goal_s)
+    return f"A={goal_time}按比赛里程碑HM/10K+MP彩排+VO2/HR/RPE+跟腱组合门槛开放。"
+
+
+def _normalise_aggressive_fm_gate_text(text: str) -> str:
     return (
         text.replace("≤", "<=")
         .replace("＜", "<")
@@ -876,93 +967,114 @@ def _normalise_sub250_gate_text(text: str) -> str:
     )
 
 
-def _has_sub250_combo_gate(text: str) -> bool:
-    compact = _normalise_sub250_gate_text(text)
+def _has_aggressive_fm_combo_gate(text: str, goal_s: float) -> bool:
+    compact = _normalise_aggressive_fm_gate_text(text)
+    goal_time = _format_goal_time(goal_s)
+    hm_gate, ten_k_gate, _, _ = _aggressive_fm_gate_thresholds(goal_s)
     return all(
         token in compact
         for token in (
-            "A=2:50", "HM<=1:24:30", "10K<=37:45", "29-32km",
-            "22-24kmMP", "MP", "VO2", "HR/RPE",
+            f"A={goal_time}", f"HM<={hm_gate}", f"10K<={ten_k_gate}",
+            "29-32km", "22-24kmMP", "MP", "VO2", "HR/RPE",
         )
     ) and ("跟腱" in text or "Achilles" in text)
 
 
-def _is_sub250_gate_principle(text: str) -> bool:
-    compact = _normalise_sub250_gate_text(text)
-    if "2:50" not in compact or "A" not in compact:
+def _is_aggressive_fm_gate_principle(text: str, goal_s: float) -> bool:
+    compact = _normalise_aggressive_fm_gate_text(text)
+    goal_time = _format_goal_time(goal_s)
+    if goal_time not in compact or "A" not in compact:
         return False
     return any(token in compact for token in ("HM<=", "10K<=", "MP", "VO2", "HR/RPE")) or any(
         token in text for token in ("关口", "门槛", "闸门", "开放", "过关", "全过")
     )
 
 
-def _sub250_principle_prefix(text: str) -> str:
+def _aggressive_fm_principle_prefix(text: str, goal_s: float) -> str:
     stripped = text.strip().rstrip("。；; ")
     markers = ("；A", ";A", "，A", ",A", " A", "A需", "A=", "A可", "A目标", "A<", "A≤")
     positions = [pos for marker in markers if (pos := stripped.find(marker)) >= 0]
     if positions:
         return stripped[: min(positions)].rstrip("。；;，, ")
-    if "PB" in stripped and "2:50" in stripped and not stripped.startswith("A"):
+    if "PB" in stripped and _format_goal_time(goal_s) in stripped and not stripped.startswith("A"):
         return stripped
     return ""
 
 
-def _compose_sub250_gate_principle(text: str) -> str:
-    prefix = _sub250_principle_prefix(text)
+def _compose_aggressive_fm_gate_principle(text: str, goal_s: float) -> str:
+    prefix = _aggressive_fm_principle_prefix(text, goal_s)
+    gate = _compose_aggressive_fm_combination_gate(goal_s)
     if prefix:
-        return prefix + "；" + _SUB250_COMBINATION_GATE
-    return _SUB250_COMBINATION_GATE
+        return prefix + "；" + gate
+    return gate
 
 
-def _normalise_sub250_supporting_gate_target(target: str) -> str | None:
-    compact = _normalise_sub250_gate_text(target)
+def _normalise_aggressive_fm_supporting_gate_target(target: str, goal_s: float) -> str | None:
+    compact = _normalise_aggressive_fm_gate_text(target)
     if "A" not in compact or ("HM<=" not in compact and "10K<=" not in compact):
         return None
-    if "2:50" in compact or _has_sub250_combo_gate(target):
+    if _has_aggressive_fm_combo_gate(target, goal_s):
         return None
 
-    prefix = _sub250_principle_prefix(target)
+    prefix = _aggressive_fm_principle_prefix(target, goal_s)
+    supporting_gate = _compose_aggressive_fm_supporting_gate(goal_s)
+    observation_parts = []
+    for part in re.split(r"[；;。]+", target):
+        part = part.strip()
+        if not part:
+            continue
+        part_compact = _normalise_aggressive_fm_gate_text(part)
+        if "A" in part_compact and ("HM<=" in part_compact or "10K<=" in part_compact):
+            continue
+        if "观察" in part or "B" in part_compact:
+            observation_parts.append(part)
+    if observation_parts:
+        return "；".join(observation_parts + [supporting_gate])
     if prefix and ("观察" in prefix or "B" in prefix):
-        return prefix + "；" + _SUB250_SUPPORTING_GATE
-    return _SUB250_SUPPORTING_GATE
+        return prefix + "；" + supporting_gate
+    return supporting_gate
 
 
-def _ensure_sub250_fm_combination_gate(
+def _ensure_aggressive_fm_combination_gate(
     principles: list[str],
     milestones: list[Milestone],
     goal: dict,
-    profile: dict | None,
+    pb_seconds: dict | None,
 ) -> tuple[list[str], list[Milestone]]:
-    """Make sub-2:50 FM A-gates explicit combination gates."""
-    if not _is_sub250_advanced_fm_goal(goal, profile):
+    """Make aggressive advanced FM A-gates explicit combination gates."""
+    if not _is_aggressive_advanced_fm_goal(goal, pb_seconds):
         return principles, milestones
+    goal_s = _goal_time_seconds(goal)
+    if goal_s is None:
+        return principles, milestones
+    combination_gate = _compose_aggressive_fm_combination_gate(goal_s)
 
     updated_principles: list[str] = []
     gate_inserted = False
     for principle in principles:
         text = str(principle)
-        if _is_sub250_gate_principle(text):
+        if _is_aggressive_fm_gate_principle(text, goal_s):
             if not gate_inserted:
-                updated_principles.append(_compose_sub250_gate_principle(text))
+                updated_principles.append(_compose_aggressive_fm_gate_principle(text, goal_s))
                 gate_inserted = True
             continue
         updated_principles.append(text)
 
-    if not _has_sub250_combo_gate("\n".join(updated_principles)):
+    if not _has_aggressive_fm_combo_gate("\n".join(updated_principles), goal_s):
         if updated_principles:
             updated_principles[0] = (
                 updated_principles[0].rstrip("。；; ")
                 + "；"
-                + _SUB250_COMBINATION_GATE
+                + combination_gate
             )
         else:
-            updated_principles.append(_SUB250_COMBINATION_GATE)
+            updated_principles.append(combination_gate)
 
     updated_milestones: list[Milestone] = []
     for milestone in milestones:
         target = milestone.target or ""
         if milestone.type != MilestoneType.RACE:
-            supporting_target = _normalise_sub250_supporting_gate_target(target)
+            supporting_target = _normalise_aggressive_fm_supporting_gate_target(target, goal_s)
             if supporting_target:
                 updated_milestones.append(
                     milestone.model_copy(update={"target": supporting_target})
@@ -970,18 +1082,18 @@ def _ensure_sub250_fm_combination_gate(
                 continue
             updated_milestones.append(milestone)
             continue
-        needs_combo = "A" in target and "2:50" in target and (
-            not _has_sub250_combo_gate(target)
+        needs_combo = "A" in target and _format_goal_time(goal_s) in target and (
+            not _has_aggressive_fm_combo_gate(target, goal_s)
             or "或" in target
             or "or" in target.lower()
         )
         if needs_combo:
             updated_milestones.append(
-                milestone.model_copy(update={"target": _SUB250_COMBINATION_GATE})
+                milestone.model_copy(update={"target": combination_gate})
             )
             continue
 
-        supporting_target = _normalise_sub250_supporting_gate_target(target)
+        supporting_target = _normalise_aggressive_fm_supporting_gate_target(target, goal_s)
         if supporting_target:
             updated_milestones.append(
                 milestone.model_copy(update={"target": supporting_target})
@@ -1276,8 +1388,8 @@ def _query_history(user_id: str) -> dict[str, Any]:
     """Query activities DB for a 3-year training history summary.
 
     Returns a dict with keys: monthly_km, max_weekly_km, total_activities,
-    and best_*_s (REAL personal bests — actual achieved efforts; the single
-    race-time anchor for milestone baselines).
+    and weekly_profile. PB loading happens in load_master_context via
+    load_personal_bests so training-history and race-time anchors stay separate.
 
     All failures are silently absorbed — returns zeros / empty lists rather
     than blocking the generation flow.
@@ -1286,10 +1398,6 @@ def _query_history(user_id: str) -> dict[str, Any]:
         "monthly_km": [],
         "max_weekly_km": 0.0,
         "total_activities": 0,
-        "best_5k_s": None,
-        "best_10k_s": None,
-        "best_hm_s": None,
-        "best_fm_s": None,
         "weekly_profile": [],
     }
     try:
@@ -1356,31 +1464,6 @@ def _query_history(user_id: str) -> dict[str, Any]:
             f"SELECT COUNT(*) FROM activities WHERE sport_type IN ({RUN_SPORT_SQL_LIST})"
         ).fetchone()
         result["total_activities"] = row[0] or 0
-
-        # Real personal bests — actual achieved efforts. Read from the persisted
-        # personal_bests table (populated post-sync), so generation no longer pays
-        # the ~7s chronological best-effort scan. load_personal_bests self-heals
-        # when the table was never scanned and records PB-less users so it doesn't
-        # re-scan every run. These are the ONLY race-time anchor fed to the
-        # planner: COROS race_predictions (fitness-based optimistic ceilings) are
-        # deliberately NOT surfaced, since conflating them anchored milestones to
-        # paces the athlete has never actually run (e.g. a "PB 38:38" 10K when the
-        # real best is 40:06).
-        try:
-            from stride_core.pb_records import load_personal_bests
-            pb_map = load_personal_bests(db)
-            pb_key = {
-                "5K": "best_5k_s",
-                "10K": "best_10k_s",
-                "HM": "best_hm_s",
-                "FM": "best_fm_s",
-            }
-            for disp, key in pb_key.items():
-                entry = pb_map.get(disp)
-                if entry and entry.get("pb_time_sec"):
-                    result[key] = round(entry["pb_time_sec"])
-        except Exception:  # noqa: BLE001 — PB read must not block gen
-            logger.warning("_query_history: PB read failed for %s", user_id, exc_info=True)
 
         # 16-week weekly athlete profile. The threshold speed (for the NULL-
         # train_kind pace fallback in speed classification) is read from the
