@@ -108,6 +108,13 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
         # bogus drop to 0. PB enrollment + any L1 above already ran, so stop
         # here rather than writing an empty snapshot.
         if hr_max is None:
+            _print_ability_summary(
+                prior_l4,
+                prior_l4,
+                prior_marathon,
+                prior_marathon,
+                suffix=" | skipped: missing HRmax",
+            )
             return
 
         snapshot = compute_ability_snapshot(db, date=today_iso)
@@ -162,17 +169,11 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
         except Exception:
             logger.warning("ability snapshot persistence failed", exc_info=True)
 
-        new_l4 = snapshot.get("l4_composite")
-        new_marathon = snapshot.get("l4_marathon_estimate_s")
-        l4_before = f"{prior_l4:.1f}" if prior_l4 is not None else "—"
-        l4_after = f"{new_l4:.1f}" if new_l4 is not None else "—"
-        l4_delta = _fmt_delta(prior_l4, new_l4)
-        m_before = _fmt_marathon(prior_marathon)
-        m_after = _fmt_marathon(new_marathon)
-        m_delta = _fmt_time_delta(prior_marathon, new_marathon)
-        print(
-            f"ability: L4 {l4_before} -> {l4_after} ({l4_delta}) | "
-            f"全马典型预测 {m_before} -> {m_after} ({m_delta})"
+        _print_ability_summary(
+            prior_l4,
+            snapshot.get("l4_composite"),
+            prior_marathon,
+            snapshot.get("l4_marathon_estimate_s"),
         )
     except Exception:
         logger.warning("ability hook failed", exc_info=True)
@@ -254,6 +255,26 @@ def _fmt_marathon(total_s: float | int | None) -> str:
     h, rem = divmod(s, 3600)
     m, sec = divmod(rem, 60)
     return f"{h}:{m:02d}:{sec:02d}"
+
+
+def _print_ability_summary(
+    prior_l4: float | None,
+    new_l4: float | None,
+    prior_marathon: int | None,
+    new_marathon: float | int | None,
+    *,
+    suffix: str = "",
+) -> None:
+    l4_before = f"{prior_l4:.1f}" if prior_l4 is not None else "—"
+    l4_after = f"{new_l4:.1f}" if new_l4 is not None else "—"
+    l4_delta = _fmt_delta(prior_l4, new_l4)
+    m_before = _fmt_marathon(prior_marathon)
+    m_after = _fmt_marathon(new_marathon)
+    m_delta = _fmt_time_delta(prior_marathon, new_marathon)
+    print(
+        f"ability: L4 {l4_before} -> {l4_after} ({l4_delta}) | "
+        f"全马典型预测 {m_before} -> {m_after} ({m_delta}){suffix}"
+    )
 
 
 def _fmt_delta(before: float | None, after: float | None, sign: bool = True) -> str:
