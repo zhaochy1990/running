@@ -214,8 +214,8 @@ def _build_azure_credentials() -> Any:
 
 def _credentials_for_spec(spec: Any) -> tuple[Any | None, str | None]:
     """Return the auth material needed by ``llm_factory`` for one role."""
-    api_key = os.environ.get(spec.api_key_env) if spec.api_key_env else None
-    if api_key:
+    if spec.auth_mode == "api-key":
+        api_key = os.environ.get(spec.api_key_env) if spec.api_key_env else None
         return None, api_key
     if spec.provider == "openai-compatible":
         return None, None

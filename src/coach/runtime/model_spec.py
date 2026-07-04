@@ -39,6 +39,7 @@ class ModelSpec:
     temperature: float | None
     max_tokens: int | None
     timeout_s: float
+    auth_mode: AuthMode = "managed-identity"
     api_key_env: str | None = None   # ``api-key`` auth only; ``None`` → MI
     api_kind: ApiKind = "chat-completions"  # ``responses`` → AOAI /openai/responses path
     # Reasoning-effort budget for reasoning models. Azure GPT/o-series use

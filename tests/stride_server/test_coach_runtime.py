@@ -52,6 +52,7 @@ model        = "deepseek-v4-flash"
 deployment   = "deepseek-v4-flash"
 endpoint     = "https://api.deepseek.com"
 api_key_env  = "DEEPSEEK_API_KEY"
+auth         = "api-key"
 api_kind     = "chat-completions"
 max_tokens   = 4096
 timeout_s    = 120

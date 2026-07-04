@@ -49,6 +49,7 @@ def _spec(
     deployment="real-deployment",
     endpoint="https://example.openai.azure.com",
     api_key_env=None,
+    auth_mode="managed-identity",
     api_kind="chat-completions",
     reasoning_effort=None,
     extra=None,
@@ -63,6 +64,7 @@ def _spec(
         temperature=0.0,
         max_tokens=1024,
         timeout_s=60,
+        auth_mode=auth_mode,
         api_key_env=api_key_env,
         api_kind=api_kind,
         reasoning_effort=reasoning_effort,
@@ -223,7 +225,7 @@ def test_api_key_can_come_from_env(monkeypatch):
     import langchain_openai
 
     monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
-    build_chat_model(_spec(api_key_env="MY_KEY"))
+    build_chat_model(_spec(api_key_env="MY_KEY", auth_mode="api-key"))
     assert captured["api_key"] == "sk-from-env"
 
 
@@ -248,6 +250,7 @@ def test_openai_compatible_construction_uses_chat_openai_fields(monkeypatch):
         deployment="deepseek-v4-pro",
         endpoint="https://api.deepseek.com",
         api_key_env="DEEPSEEK_API_KEY",
+        auth_mode="api-key",
         reasoning_effort="max",
         extra={
             "thinking": {"type": "enabled"},
@@ -285,6 +288,7 @@ def test_openai_compatible_api_key_can_come_from_env(monkeypatch):
         deployment="deepseek-v4-flash",
         endpoint="https://api.deepseek.com",
         api_key_env="DEEPSEEK_API_KEY",
+        auth_mode="api-key",
     )
     build_chat_model(spec)
     assert captured["api_key"] == "sk-from-env"
@@ -296,6 +300,7 @@ def test_openai_compatible_missing_api_key_raises():
         deployment="deepseek-v4-flash",
         endpoint="https://api.deepseek.com",
         api_key_env="DEEPSEEK_API_KEY",
+        auth_mode="api-key",
     )
     with pytest.raises(CoachLLMUnavailable, match="DEEPSEEK_API_KEY"):
         build_chat_model(spec)

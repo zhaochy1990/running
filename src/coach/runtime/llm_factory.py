@@ -90,7 +90,7 @@ def build_chat_model(
         )
 
     resolved_api_key = api_key
-    if resolved_api_key is None and spec.api_key_env:
+    if resolved_api_key is None and spec.auth_mode == "api-key" and spec.api_key_env:
         resolved_api_key = os.environ.get(spec.api_key_env)
 
     if spec.provider == "azure-openai":
