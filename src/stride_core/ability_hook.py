@@ -46,6 +46,12 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
         from stride_core.ability import _resolve_hr_max
         today_iso = (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
         hr_max = _resolve_hr_max(db, today_iso)
+        if hr_max is None:
+            logger.warning(
+                "ability hook: no resolvable hr_max for %s — L1 quality "
+                "scoring skipped for this sync (PB enrollment still runs)",
+                today_iso,
+            )
         prior_l4, prior_marathon = _fetch_latest_l4_and_marathon(db)
 
         for lid in new_label_ids or []:
@@ -55,13 +61,17 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                     continue
                 if activity.get("sport_type") not in RUN_SPORT_IDS:
                     continue
-                l1 = compute_l1_quality(activity, plan_target=None, hr_max=hr_max)
-                db.upsert_activity_ability(
-                    label_id=lid,
-                    l1_quality=l1.get("total"),
-                    l1_breakdown=l1.get("breakdown"),
-                    contribution=None,
-                )
+                # L1 quality is HR-dependent; skip it (but still enroll PBs
+                # below) when no max HR could be resolved, rather than scoring
+                # against a fabricated default.
+                if hr_max is not None:
+                    l1 = compute_l1_quality(activity, plan_target=None, hr_max=hr_max)
+                    db.upsert_activity_ability(
+                        label_id=lid,
+                        l1_quality=l1.get("total"),
+                        l1_breakdown=l1.get("breakdown"),
+                        contribution=None,
+                    )
                 # v8: segment-scan PB enrollment. Each (race_type, source_activity)
                 # yields its own row; the L3 reader picks current best per race_type.
                 try:
@@ -92,6 +102,13 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                 logger.warning(
                     "ability L1 compute failed for %s", lid, exc_info=True
                 )
+
+        # Without a resolvable HRmax the full snapshot would be all-zero
+        # (L3/L4 = 0.0); persisting that would corrupt history and report a
+        # bogus drop to 0. PB enrollment + any L1 above already ran, so stop
+        # here rather than writing an empty snapshot.
+        if hr_max is None:
+            return
 
         snapshot = compute_ability_snapshot(db, date=today_iso)
 

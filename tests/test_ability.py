@@ -1621,8 +1621,105 @@ class TestComputeAbilitySnapshotHrMaxResolver:
         snap = compute_ability_snapshot(ability_db, "2026-04-23", hr_max=210)
         assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 210
 
-    def test_compute_ability_snapshot_falls_back_to_185(self, ability_db):
-        """When no baseline exists, the legacy 185 default is preserved."""
+    def test_compute_ability_snapshot_falls_back_to_history_estimate(self, ability_db):
+        """With no persisted calibration snapshot, hr_max falls back to an
+        on-the-fly estimate via the canonical `estimate_hrmax_profile` over
+        running history (Tier 2), not a hardcoded constant. The fixture's
+        running activities yield estimated hrmax=158.
+        """
         from stride_core.ability import compute_ability_snapshot
         snap = compute_ability_snapshot(ability_db, "2026-04-23")
-        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 185
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 158
+
+    def test_compute_ability_snapshot_returns_empty_when_no_hr_max(self, tmp_path):
+        """With neither a calibration snapshot nor any usable running history
+        (Tier 3), hr_max resolves to None and an empty snapshot is returned —
+        we never substitute the legacy 185 default.
+        """
+        from stride_core.ability import compute_ability_snapshot, _empty_snapshot
+        db = Database(db_path=tmp_path / "empty.db")
+        try:
+            snap = compute_ability_snapshot(db, "2026-04-23")
+            assert snap == _empty_snapshot("2026-04-23")
+        finally:
+            db.close()
+
+    def test_resolve_hr_max_priority_snapshot_over_history(self, ability_db):
+        """Tier 1 (persisted calibration snapshot) wins over Tier 2 (history
+        estimate) even when both are available."""
+        from datetime import date
+        from stride_core.ability import _resolve_hr_max
+        from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
+        from stride_core.running_calibration.types import (
+            CalibrationConfidence, RunningCalibrationSnapshot,
+        )
+        repo = SQLiteRunningCalibrationRepository(ability_db)
+        repo.save_snapshot(RunningCalibrationSnapshot(
+            as_of_date=date(2026, 4, 23),
+            hrmax_estimate=192.0,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.MEDIUM,
+        ))
+        # Snapshot 192 should win over the fixture's history estimate of 158.
+        assert _resolve_hr_max(ability_db, "2026-04-23") == 192
+
+    def test_resolve_hr_max_none_when_no_data(self, tmp_path):
+        """Tier 3: no snapshot + no running history → None."""
+        from stride_core.ability import _resolve_hr_max
+        db = Database(db_path=tmp_path / "empty.db")
+        try:
+            assert _resolve_hr_max(db, "2026-04-23") is None
+        finally:
+            db.close()
+
+    def test_resolve_hr_max_history_rejects_out_of_band_spike(self, tmp_path, fx):
+        """Tier 2 delegates to estimate_hrmax_profile, whose physiological-band
+        check (80..230) rejects an out-of-band sensor artifact (e.g. 255) — a
+        naive MAX(max_hr) reimplementation would have taken it as HRmax.
+        """
+        from stride_core.ability import _resolve_hr_max
+        db = Database(db_path=tmp_path / "spike.db")
+        try:
+            _seed_activities(db, fx["activities"])  # clean history, tops at 158
+            _seed_activities(db, [{
+                "label_id": "SPIKE", "name": "spike", "sport_type": 100,
+                "date": "2026-04-20T01:00:00+00:00", "distance_m": 5000,
+                "duration_s": 1800, "avg_pace_s_km": 360, "avg_hr": 140,
+                "max_hr": 255, "avg_cadence": 170, "train_type": None,
+            }])
+            resolved = _resolve_hr_max(db, "2026-04-23")
+            assert resolved is not None
+            assert resolved <= 230, f"out-of-band spike leaked into HRmax: {resolved}"
+        finally:
+            db.close()
+
+    def test_resolve_hr_max_history_rejects_unsupported_in_band_spike(self, tmp_path, fx):
+        """In-band-but-isolated max_hr (220, surrounded by ~150 samples with no
+        neighbour within 5bpm) is NOT taken as HRmax: estimate_hrmax_profile's
+        neighbour-support check rejects the unsupported timeseries peak. This
+        exercises the support check specifically (the value is inside 80..230,
+        so the physiological band alone would not catch it).
+        """
+        from stride_core.ability import _resolve_hr_max
+        db = Database(db_path=tmp_path / "spike2.db")
+        try:
+            _seed_activities(db, fx["activities"])  # clean history, tops at 158
+            # One activity reporting summary max_hr=220 but whose per-second
+            # HR sits at ~150 with a lone unsupported 220 sample (no neighbour
+            # within 5bpm) — the summary peak is unsupported by timeseries.
+            ts = [{"timestamp": i, "heart_rate": 150, "speed": 3.0, "cadence": 170}
+                  for i in range(40)]
+            ts[20] = {"timestamp": 20, "heart_rate": 220, "speed": 3.0, "cadence": 170}
+            _seed_activities(db, [{
+                "label_id": "INBAND", "name": "inband", "sport_type": 100,
+                "date": "2026-04-21T01:00:00+00:00", "distance_m": 5000,
+                "duration_s": 1800, "avg_pace_s_km": 360, "avg_hr": 150,
+                "max_hr": 220, "avg_cadence": 170, "train_type": None,
+                "timeseries": ts,
+            }])
+            resolved = _resolve_hr_max(db, "2026-04-23")
+            assert resolved is not None
+            assert resolved < 220, f"unsupported in-band spike leaked into HRmax: {resolved}"
+        finally:
+            db.close()
