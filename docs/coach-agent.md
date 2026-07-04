@@ -37,7 +37,7 @@ Provider tags:
 | `azure-ai-inference` | `AzureAIChatCompletionsModel` | MI or `api_key_env` | Foundry serverless |
 | `openai-compatible` | `ChatOpenAI` | `api_key_env` | Third-party OpenAI-compatible chat endpoints such as DeepSeek V4 |
 
-DeepSeek V4 local A/B configs live in `config/coach.deepseek-v4-flash.toml` and `config/coach.deepseek-v4-pro.toml`; run with `STRIDE_COACH_CONFIG_PATH=...` and `DEEPSEEK_API_KEY`. Shared model properties, including auth, live under `[models.<key>]`, while each role only references the key (`model = "deepseekv4pro"`) and can inherit role-specific defaults from `[models.<key>.generator]` / `[models.<key>.reviewer]` / etc. DeepSeek-specific knobs stay in `ModelSpec.extra`: `thinking` is passed via `extra_body`, `response_format` via `model_kwargs`, while graph/business code stays provider-neutral.
+`config/coach.local.toml` carries a single local model registry under `[models.<key>]`, including DeepSeek V4 and Azure dev models. Shared model properties, including auth, live under the model key, while each role only references the key (`model = "deepseekv4pro"`) and can inherit role-specific defaults from `[models.<key>.generator]` / `[models.<key>.reviewer]` / etc. DeepSeek-specific knobs stay in `ModelSpec.extra`: `thinking` is passed via `extra_body`, `response_format` via `model_kwargs`, while graph/business code stays provider-neutral.
 
 **Commentary migrated**：自 PR #16 起 `stride_server.commentary_ai.generate_commentary` 通过 `coach_runtime.get_commentary_llm()` 走 `[commentary]` section。改 coach.toml 的 `[commentary]` section **会**直接影响生产 commentary 路径。`server.toml` 里历史 `[commentary]` 块（pre-PR-#16 残留）在 PR #25 删除。
 

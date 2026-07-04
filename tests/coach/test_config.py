@@ -203,17 +203,21 @@ def test_canonical_config_file_loads(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_local_config_generator_max_tokens_is_128k(monkeypatch) -> None:
-    """The repo-shipped developer ``config/coach.local.toml`` must load with
-    the generator's max_tokens at the gpt-5 family's 128k visible-output cap
-    for the phase-at-once generator (one LLM call emits an entire phase's
-    weeks). Other roles stay small."""
+    """The repo-shipped developer ``config/coach.local.toml`` must load the
+    model registry and resolve active role model keys."""
     repo_root = Path(__file__).resolve().parents[2]
     local_config_path = repo_root / "config" / "coach.local.toml"
     monkeypatch.setenv(PATH_ENV, str(local_config_path))
     cfg = load_config()
-    assert cfg.generator.max_tokens == 131072
-    assert cfg.reviewer.max_tokens == 4096
+    assert cfg.generator.model == "deepseek-v4-pro"
+    assert cfg.generator.provider == "openai-compatible"
+    assert cfg.generator.auth_mode == "api-key"
+    assert cfg.generator.max_tokens == 65536
+    assert cfg.generator.reasoning_effort == "max"
+    assert cfg.reviewer.model == "deepseek-v4-flash"
+    assert cfg.reviewer.max_tokens == 8192
     assert cfg.commentary.max_tokens == 2048
+    assert cfg.for_role("orchestrator").model == "deepseek-v4-flash"
 
 
 def test_endpoint_must_be_http_url(tmp_path: Path) -> None:
