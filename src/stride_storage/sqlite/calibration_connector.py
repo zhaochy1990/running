@@ -236,6 +236,42 @@ class SQLiteRunningCalibrationRepository:
         row = self._conn.execute(sql, params).fetchone()
         if row is None:
             return None
+        return self._snapshot_from_row(row)
+
+    def fetch_nearest_hrmax(self, as_of_date: date) -> RunningCalibrationSnapshot | None:
+        """Return the nearest snapshot with HRmax for historical ability reads.
+
+        Prefer the latest snapshot on or before ``as_of_date``. If none exists,
+        use the earliest later snapshot with ``hrmax_estimate`` so backfills for
+        dates before the first calibration run can still score real activities.
+        """
+        prior = self._fetch_hrmax_snapshot(
+            "as_of_date <= ? ORDER BY as_of_date DESC, id DESC LIMIT 1",
+            (as_of_date.isoformat(),),
+        )
+        if prior is not None:
+            return prior
+        return self._fetch_hrmax_snapshot(
+            "as_of_date > ? ORDER BY as_of_date ASC, id ASC LIMIT 1",
+            (as_of_date.isoformat(),),
+        )
+
+    def _fetch_hrmax_snapshot(
+        self,
+        where_and_order: str,
+        params: tuple[Any, ...],
+    ) -> RunningCalibrationSnapshot | None:
+        row = self._conn.execute(
+            "SELECT * FROM running_calibration_snapshot "
+            "WHERE hrmax_estimate IS NOT NULL AND "
+            f"{where_and_order}",
+            params,
+        ).fetchone()
+        if row is None:
+            return None
+        return self._snapshot_from_row(row)
+
+    def _snapshot_from_row(self, row: Any) -> RunningCalibrationSnapshot:
         snapshot_id = int(_row_value(row, "id"))
         evidence = self._fetch_evidence(snapshot_id)
         return RunningCalibrationSnapshot(

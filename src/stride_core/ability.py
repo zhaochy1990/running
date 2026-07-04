@@ -49,13 +49,18 @@ def _resolve_hr_max(db: Any, as_of_date_iso: str) -> int | None:
             SQLiteRunningCalibrationRepository,
         )
         repo = SQLiteRunningCalibrationRepository(db)
-        snap = repo.fetch_latest(as_of_date=_date.fromisoformat(as_of_date_iso))
+        as_of_date = _date.fromisoformat(as_of_date_iso)
+        fetch_nearest_hrmax = getattr(repo, "fetch_nearest_hrmax", None)
+        if callable(fetch_nearest_hrmax):
+            snap = fetch_nearest_hrmax(as_of_date)
+        else:
+            snap = repo.fetch_latest(as_of_date=as_of_date)
     except Exception:  # noqa: BLE001
         logger.debug("hr_max: snapshot read failed (legacy DB?)", exc_info=True)
         return None
     if snap is None or snap.hrmax_estimate is None:
         logger.warning(
-            "hr_max: no calibration snapshot for %s — returning None "
+            "hr_max: no calibration snapshot with HRmax for %s — returning None "
             "(HR-dependent ability scoring will be skipped until the weekly "
             "running-calibration job persists one)",
             as_of_date_iso,

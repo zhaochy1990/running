@@ -1662,6 +1662,33 @@ class TestComputeAbilitySnapshotHrMaxResolver:
         snap = compute_ability_snapshot(ability_db, "2026-04-23")
         assert snap == _empty_snapshot("2026-04-23")
 
+    def test_compute_ability_snapshot_uses_later_hrmax_for_historical_backfill(self, ability_db):
+        """Historical dates before the first calibration snapshot should still
+        use the first later HRmax snapshot instead of persisting empty ability
+        rows for days with activity data.
+        """
+        from datetime import date
+        from stride_core.ability import compute_ability_snapshot, _empty_snapshot
+        from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
+        from stride_core.running_calibration.types import (
+            CalibrationConfidence, RunningCalibrationSnapshot,
+        )
+
+        repo = SQLiteRunningCalibrationRepository(ability_db)
+        repo.save_snapshot(RunningCalibrationSnapshot(
+            as_of_date=date(2026, 4, 23),
+            hrmax_estimate=200.0,
+            threshold_hr_confidence=CalibrationConfidence.NONE,
+            threshold_speed_confidence=CalibrationConfidence.NONE,
+            hrmax_confidence=CalibrationConfidence.MEDIUM,
+        ))
+
+        snap = compute_ability_snapshot(ability_db, "2026-04-13")
+
+        assert snap != _empty_snapshot("2026-04-13")
+        assert snap["date"] == "2026-04-13"
+        assert snap["l3_dimensions"]["vo2max"]["hr_max_used"] == 200
+
     def test_compute_ability_snapshot_returns_empty_when_no_hr_max(self, tmp_path):
         """With no snapshot at all, hr_max resolves to None and an empty
         snapshot is returned — never the legacy 185 default.
