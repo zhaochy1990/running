@@ -224,50 +224,38 @@
 <div class="space-y-4">
 <!-- Week Grid -->
 <div class="grid grid-cols-7 gap-2">
-<template x-for="day in ['M', 'T', 'W', 'T', 'F', 'S', 'S']">
 <div class="flex flex-col items-center gap-2">
-<span class="font-label-mono-caps text-[9px] text-text-faint">MON</span>
-<div class="w-full aspect-square border border-border-default rounded flex items-center justify-center bg-surface-hover cursor-pointer transition-all active:scale-95">
-<span class="material-symbols-outlined text-[14px] text-text-faint">wb_sunny</span>
-</div>
-<div class="w-full aspect-square border-2 border-primary rounded flex items-center justify-center bg-green-soft cursor-pointer transition-all">
-<span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">dark_mode</span>
-</div>
-</div>
-</template>
-<!-- Manual Grid Render for logic clarity since template is pseudocode -->
-<div class="flex flex-col items-center gap-2">
-<span class="font-label-mono-caps text-[9px] text-text-faint">MON</span>
+<span class="font-label-mono-caps text-[9px] text-text-faint">周一</span>
 <div class="w-full aspect-square border border-border-default rounded flex items-center justify-center bg-surface-hover"><span class="material-symbols-outlined text-[14px] text-text-faint">wb_sunny</span></div>
 <div class="w-full aspect-square border-2 border-primary rounded flex items-center justify-center bg-green-soft"><span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">dark_mode</span></div>
 </div>
 <div class="flex flex-col items-center gap-2">
-<span class="font-label-mono-caps text-[9px] text-text-faint">TUE</span>
+<span class="font-label-mono-caps text-[9px] text-text-faint">周二</span>
 <div class="w-full aspect-square border border-border-default rounded flex items-center justify-center bg-surface-hover"><span class="material-symbols-outlined text-[14px] text-text-faint">wb_sunny</span></div>
 <div class="w-full aspect-square border-2 border-primary rounded flex items-center justify-center bg-green-soft"><span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">dark_mode</span></div>
 </div>
 <div class="flex flex-col items-center gap-2">
-<span class="font-label-mono-caps text-[9px] text-text-faint">WED</span>
+<span class="font-label-mono-caps text-[9px] text-text-faint">周三</span>
 <div class="w-full aspect-square border-2 border-primary rounded flex items-center justify-center bg-green-soft"><span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">wb_sunny</span></div>
 <div class="w-full aspect-square border border-border-default rounded flex items-center justify-center bg-surface-hover"><span class="material-symbols-outlined text-[14px] text-text-faint">dark_mode</span></div>
 </div>
 <div class="flex flex-col items-center gap-2">
-<span class="font-label-mono-caps text-[9px] text-text-faint">THU</span>
+<span class="font-label-mono-caps text-[9px] text-text-faint">周四</span>
 <div class="w-full aspect-square border border-border-default rounded flex items-center justify-center bg-surface-hover"><span class="material-symbols-outlined text-[14px] text-text-faint">wb_sunny</span></div>
 <div class="w-full aspect-square border-2 border-primary rounded flex items-center justify-center bg-green-soft"><span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">dark_mode</span></div>
 </div>
 <div class="flex flex-col items-center gap-2">
-<span class="font-label-mono-caps text-[9px] text-text-faint">FRI</span>
+<span class="font-label-mono-caps text-[9px] text-text-faint">周五</span>
 <div class="w-full aspect-square border border-border-default rounded flex items-center justify-center bg-surface-hover"><span class="material-symbols-outlined text-[14px] text-text-faint">wb_sunny</span></div>
 <div class="w-full aspect-square border-2 border-primary rounded flex items-center justify-center bg-green-soft"><span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">dark_mode</span></div>
 </div>
 <div class="flex flex-col items-center gap-2">
-<span class="font-label-mono-caps text-[9px] text-text-faint text-primary">SAT</span>
+<span class="font-label-mono-caps text-[9px] text-text-faint text-primary">周六</span>
 <div class="w-full aspect-square border-2 border-primary rounded flex items-center justify-center bg-green-soft"><span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">wb_sunny</span></div>
 <div class="w-full aspect-square border border-border-default rounded flex items-center justify-center bg-surface-hover"><span class="material-symbols-outlined text-[14px] text-text-faint">dark_mode</span></div>
 </div>
 <div class="flex flex-col items-center gap-2">
-<span class="font-label-mono-caps text-[9px] text-text-faint text-primary">SUN</span>
+<span class="font-label-mono-caps text-[9px] text-text-faint text-primary">周日</span>
 <div class="w-full aspect-square border-2 border-primary rounded flex items-center justify-center bg-green-soft"><span class="material-symbols-outlined text-[14px] text-primary" style="font-variation-settings: 'FILL' 1;">wb_sunny</span></div>
 <div class="w-full aspect-square border border-border-default rounded flex items-center justify-center bg-surface-hover"><span class="material-symbols-outlined text-[14px] text-text-faint">dark_mode</span></div>
 </div>
@@ -340,29 +328,4 @@
 </div>
 </div>
 </footer>
-<script>
-        let drawerOpen = true;
-        const drawerContent = document.getElementById('drawer-content');
-        const drawerIcon = document.getElementById('drawer-icon');
-        const drawerContainer = document.getElementById('info-drawer');
-
-        function toggleDrawer() {
-            drawerOpen = !drawerOpen;
-            if (drawerOpen) {
-                drawerContent.style.display = 'grid';
-                drawerIcon.style.transform = 'rotate(0deg)';
-                drawerContainer.style.transform = 'translateY(0)';
-            } else {
-                drawerContent.style.display = 'none';
-                drawerIcon.style.transform = 'rotate(180deg)';
-                // Offset to just show the header
-                // drawerContainer.style.transform = 'translateY(100%)'; 
-            }
-        }
-
-        // Initialize state
-        window.onload = () => {
-            // Initial subtle pulse or interaction logic can go here
-        };
-    </script>
 </body></html>

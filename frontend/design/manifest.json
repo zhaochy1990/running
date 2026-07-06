@@ -20,9 +20,9 @@
       "number": 1,
       "story": "新用户生成赛季训练计划",
       "slug": "master-plan-new-user-intake",
-      "title": "STRIDE - 创建赛季计划",
-      "stitchScreenId": "b906b849888d4b1982f5e37529a9c367",
-      "html": "master_plan/1_master-plan-new-user-intake.html",
+      "title": "STRIDE - 创建赛季训练计划 (Athlete Intake Update)",
+      "stitchScreenId": "f4550d40558e45b8ae61e63ee9470a47",
+      "html": "master_plan/new_user/1_master-plan-new-user-intake.html",
       "archiveHtml": "b906b849888d4b1982f5e37529a9c367_master-plan-new-user-intake.html"
     },
     {
@@ -32,7 +32,7 @@
       "slug": "master-plan-new-user-coach-questions",
       "title": "STRIDE - Coach 结构化追问",
       "stitchScreenId": "d94e0be4410b4015959b6ec998ad3bd5",
-      "html": "master_plan/2_master-plan-new-user-coach-questions.html",
+      "html": "master_plan/new_user/2_master-plan-new-user-coach-questions.html",
       "archiveHtml": "d94e0be4410b4015959b6ec998ad3bd5_master-plan-new-user-coach-questions.html"
     },
     {
@@ -42,7 +42,7 @@
       "slug": "master-plan-new-user-generating",
       "title": "STRIDE - 正在生成赛季训练计划",
       "stitchScreenId": "5fbb5e90241e41779cd4a1293e360420",
-      "html": "master_plan/3_master-plan-new-user-generating.html",
+      "html": "master_plan/new_user/3_master-plan-new-user-generating.html",
       "archiveHtml": "5fbb5e90241e41779cd4a1293e360420_master-plan-new-user-generating.html"
     },
     {
@@ -52,7 +52,7 @@
       "slug": "master-plan-new-user-plan-ready",
       "title": "STRIDE - 训练计划 / 创建赛季训练计划",
       "stitchScreenId": "bd9af979092141458eac4d40ecdbc41e",
-      "html": "master_plan/4_master-plan-new-user-plan-ready.html",
+      "html": "master_plan/new_user/4_master-plan-new-user-plan-ready.html",
       "archiveHtml": "bd9af979092141458eac4d40ecdbc41e_master-plan-new-user-plan-ready.html"
     },
     {
@@ -62,7 +62,7 @@
       "slug": "master-plan-new-user-plan-review",
       "title": "STRIDE - 审阅赛季训练计划",
       "stitchScreenId": "2832d72bf7f948c4986709ce104fd302",
-      "html": "master_plan/5_master-plan-new-user-plan-review.html",
+      "html": "master_plan/new_user/5_master-plan-new-user-plan-review.html",
       "archiveHtml": "2832d72bf7f948c4986709ce104fd302_master-plan-new-user-plan-review.html"
     },
     {
@@ -72,7 +72,7 @@
       "slug": "master-plan-current-view",
       "title": "STRIDE - 赛季训练计划",
       "stitchScreenId": "b0fb375484024783a53c79427716deb6",
-      "html": "master_plan/6_master-plan-current-view.html",
+      "html": "master_plan/new_user/6_master-plan-current-view.html",
       "archiveHtml": "b0fb375484024783a53c79427716deb6_master-plan-current-view.html"
     },
     {
@@ -82,7 +82,7 @@
       "slug": "master-plan-existing-current-adjust",
       "title": "STRIDE - 调整赛季训练计划",
       "stitchScreenId": "4cab3e545f97449d9181135d9de57f23",
-      "html": "master_plan/7_master-plan-existing-current-adjust.html",
+      "html": "master_plan/existing_user/1_master-plan-existing-current-adjust.html",
       "archiveHtml": "4cab3e545f97449d9181135d9de57f23_master-plan-existing-current-adjust.html"
     },
     {
@@ -92,7 +92,7 @@
       "slug": "master-plan-existing-adjust-generating",
       "title": "STRIDE - 赛季训练计划调整生成中",
       "stitchScreenId": "c6370ba60c964c16bef0b2235cd2e976",
-      "html": "master_plan/8_master-plan-existing-adjust-generating.html",
+      "html": "master_plan/existing_user/2_master-plan-existing-adjust-generating.html",
       "archiveHtml": "c6370ba60c964c16bef0b2235cd2e976_master-plan-existing-adjust-generating.html"
     },
     {
@@ -102,7 +102,7 @@
       "slug": "master-plan-existing-diff-review",
       "title": "STRIDE - 审阅计划调整",
       "stitchScreenId": "7d3cd54892e04ad0a42edbd60769a20b",
-      "html": "master_plan/9_master-plan-existing-diff-review.html",
+      "html": "master_plan/existing_user/3_master-plan-existing-diff-review.html",
       "archiveHtml": "7d3cd54892e04ad0a42edbd60769a20b_master-plan-existing-diff-review.html"
     },
     {
@@ -112,7 +112,7 @@
       "slug": "master-plan-existing-applied-success",
       "title": "调整已应用 - STRIDE 训练中心",
       "stitchScreenId": "061166dcf45142be9ca3417e47f7713b",
-      "html": "master_plan/10_master-plan-existing-applied-success.html",
+      "html": "master_plan/existing_user/4_master-plan-existing-applied-success.html",
       "archiveHtml": "061166dcf45142be9ca3417e47f7713b_master-plan-existing-applied-success.html"
     },
     {
@@ -122,7 +122,7 @@
       "slug": "master-plan-feedback-update-in-progress",
       "title": "STRIDE - 计划更新中",
       "stitchScreenId": "05ed35b6cb0348f08c42425da7c1c335",
-      "html": "master_plan/11_master-plan-feedback-update-in-progress.html",
+      "html": "master_plan/existing_user/5_master-plan-feedback-update-in-progress.html",
       "archiveHtml": "05ed35b6cb0348f08c42425da7c1c335_master-plan-feedback-update-in-progress.html"
     },
     {
@@ -132,7 +132,7 @@
       "slug": "master-plan-generation-failed",
       "title": "STRIDE | 计划生成没有完成",
       "stitchScreenId": "76bdbbe4285f4ab7957a79a490112414",
-      "html": "master_plan/12_master-plan-generation-failed.html",
+      "html": "master_plan/existing_user/6_master-plan-generation-failed.html",
       "archiveHtml": "76bdbbe4285f4ab7957a79a490112414_master-plan-generation-failed.html"
     },
     {
@@ -142,7 +142,7 @@
       "slug": "master-plan-no-effective-change",
       "title": "STRIDE - 没有需要应用的变化",
       "stitchScreenId": "dd5c2ae52f7246dba382204c65d2d326",
-      "html": "master_plan/13_master-plan-no-effective-change.html",
+      "html": "master_plan/existing_user/7_master-plan-no-effective-change.html",
       "archiveHtml": "dd5c2ae52f7246dba382204c65d2d326_boundary-no-effective-change.html"
     },
     {
@@ -152,7 +152,7 @@
       "slug": "master-plan-resume-unfinished-flow",
       "title": "STRIDE - 调整流程的恢复",
       "stitchScreenId": "12d9bf2119234b14b4ecb5f5b038df46",
-      "html": "master_plan/14_master-plan-resume-unfinished-flow.html",
+      "html": "master_plan/existing_user/8_master-plan-resume-unfinished-flow.html",
       "archiveHtml": "12d9bf2119234b14b4ecb5f5b038df46_boundary-resume-unfinished-flow.html"
     },
     {
