@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+
+<html lang="zh"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - 审阅赛季训练计划</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&amp;family=JetBrains+Mono:wght@500;700&amp;family=Newsreader:ital,wght@0,400;1,400&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#3d4a3f",
+                        "text-muted": "#555570",
+                        "surface-container-high": "#e7e8ea",
+                        "on-secondary-fixed": "#001f24",
+                        "surface-tint": "#006d38",
+                        "primary-fixed": "#77fca4",
+                        "inverse-on-surface": "#f0f1f3",
+                        "on-surface": "#191c1e",
+                        "primary": "#006d38",
+                        "tertiary-fixed": "#ffdadb",
+                        "surface-container-highest": "#e1e2e4",
+                        "border-subtle": "#e8eaf0",
+                        "surface": "#f8f9fb",
+                        "secondary-fixed-dim": "#66d6e7",
+                        "inverse-primary": "#59df8a",
+                        "outline-variant": "#bccabc",
+                        "on-background": "#191c1e",
+                        "green-edge": "#c8e8d6",
+                        "inverse-surface": "#2e3132",
+                        "secondary-fixed": "#97f0ff",
+                        "red-soft": "#fde8e8",
+                        "phase-peak": "#e68a00",
+                        "border-default": "#d8dae5",
+                        "phase-taper": "#7c4dff",
+                        "accent-pink": "#e91e63",
+                        "on-secondary": "#ffffff",
+                        "red-edge": "#f3c8c8",
+                        "phase-specialty": "#0097a7",
+                        "on-error": "#ffffff",
+                        "text-primary": "#1a1c2e",
+                        "purple-soft": "#ede7ff",
+                        "background": "#f8f9fb",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "secondary-container": "#7fedfe",
+                        "purple-edge": "#d4c8ff",
+                        "on-tertiary-container": "#5d001a",
+                        "tertiary": "#a93347",
+                        "on-error-container": "#93000a",
+                        "tertiary-container": "#ec6678",
+                        "cyan-soft": "#e0f4f7",
+                        "green-soft": "#e6f7ee",
+                        "surface-variant": "#e1e2e4",
+                        "surface-container-low": "#f2f4f6",
+                        "amber-soft": "#fdf2dd",
+                        "surface-hover": "#f5f6fa",
+                        "on-tertiary-fixed-variant": "#881a31",
+                        "surface-dim": "#d9dadc",
+                        "primary-container": "#00a85a",
+                        "amber-edge": "#f6e0a8",
+                        "outline": "#6d7b6e",
+                        "tertiary-fixed-dim": "#ffb2b8",
+                        "on-primary-fixed-variant": "#005229",
+                        "on-primary-fixed": "#00210d",
+                        "on-tertiary-fixed": "#40000f",
+                        "on-primary-container": "#003317",
+                        "surface-bright": "#f8f9fb",
+                        "secondary": "#006874",
+                        "phase-race": "#d32f2f",
+                        "surface-container": "#edeef0",
+                        "phase-base": "#00a85a",
+                        "on-secondary-fixed-variant": "#004f58",
+                        "on-secondary-container": "#006b77",
+                        "cyan-edge": "#b9e3ea",
+                        "on-primary": "#ffffff",
+                        "primary-fixed-dim": "#59df8a",
+                        "error-container": "#ffdad6",
+                        "text-faint": "#8888a0"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "topbar-height": "50px",
+                        "sidebar-width": "220px",
+                        "base": "8px",
+                        "sidebar-collapsed": "60px",
+                        "container-padding": "24px",
+                        "card-padding": "12px",
+                        "card-gap": "16px",
+                        "coach-panel-width": "360px"
+                    },
+                    "fontFamily": {
+                        "label-mono-caps": ["JetBrains Mono"],
+                        "editorial-quote": ["Newsreader"],
+                        "headline-sm": ["Outfit"],
+                        "headline-md": ["Outfit"],
+                        "label-mono-sm": ["JetBrains Mono"],
+                        "display-lg": ["Outfit"],
+                        "body-md": ["Outfit"],
+                        "metric-value": ["Outfit"],
+                        "editorial-prose": ["Newsreader"],
+                        "body-sm": ["Outfit"]
+                    },
+                    "fontSize": {
+                        "label-mono-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.14em", "fontWeight": "500" }],
+                        "editorial-quote": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-sm": ["18px", { "lineHeight": "1.4", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-mono-sm": ["9px", { "lineHeight": "10px", "letterSpacing": "0.1em", "fontWeight": "500" }],
+                        "display-lg": ["32px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "metric-value": ["28px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "editorial-prose": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "body-sm": ["13px", { "lineHeight": "1.4", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { background-color: #f8f9fb; color: #1a1c2e; font-family: 'Outfit', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .material-symbols-outlined.fill { font-variation-settings: 'FILL' 1; }
+        
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d8dae5; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #8888a0; }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex">
+<!-- Fixed Left Sidebar -->
+<aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-low border-r border-border-default flex flex-col z-20">
+<div class="flex flex-col h-full py-6">
+<div class="px-6 mb-8">
+<span class="font-display-lg text-display-lg font-black text-primary tracking-tighter">STRIDE</span>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mt-1">训练中心</p>
+</div>
+<nav class="flex-1 space-y-1 mb-6">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">calendar_view_week</span>
+<span class="font-label-mono-caps text-label-mono-caps">本周训练</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-primary border-l-4 border-primary font-bold bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px] fill">event_note</span>
+<span class="font-label-mono-caps text-label-mono-caps">训练计划</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">directions_run</span>
+<span class="font-label-mono-caps text-label-mono-caps">活动</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">monitoring</span>
+<span class="font-label-mono-caps text-label-mono-caps">能力</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">favorite</span>
+<span class="font-label-mono-caps text-label-mono-caps">健康</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">speed</span>
+<span class="font-label-mono-caps text-label-mono-caps">体测</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">groups</span>
+<span class="font-label-mono-caps text-label-mono-caps">团队</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+<span class="font-label-mono-caps text-label-mono-caps">教练</span>
+</a>
+</nav>
+<div class="px-4">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="font-label-mono-caps text-label-mono-caps">设置</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- Main Workspace -->
+<main class="ml-[220px] mr-[360px] flex-1 flex flex-col min-h-screen bg-background relative">
+<!-- Top App Bar -->
+<header class="h-[50px] bg-surface border-b border-border-default flex items-center justify-between px-container-padding sticky top-0 z-10 w-full">
+<div class="flex items-center text-body-sm font-body-sm text-text-muted">
+<span>训练计划</span>
+<span class="material-symbols-outlined text-[16px] mx-2">chevron_right</span>
+<span class="text-primary font-bold">审阅赛季训练计划</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined">help_outline</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-variant border border-border-default overflow-hidden flex items-center justify-center">
+<img alt="User avatar" class="w-full h-full object-cover" data-alt="A small, professional headshot portrait of an athletic runner looking determined, set against a clean white background, high-end editorial lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBMj08rtzz1E6CU44UfBoS1T3HoUwKw1iIbElkUx0VaA9QU3_b8HHnYS0cYas4wxIz0_ilSj0tqzZqMsmMacrzY5u04-vD1T7qJJtKD5RVtHnEuX19FDoSKeNUZGK6LZzTjbs1mIexHrZ9oOR7yMLTJ8PJvtrC4PPNR2khsaNrx-qCNebTBog_IfnwEdjOdJzpfdRJUjmQYClWVDA3EAmBuIyRmjyQIPlC20lyZiM6j1P9IyaLdeS_1bFLFySGzyYICpXh0s9qOSEo"/>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<div class="px-container-padding py-8 flex-1 flex flex-col max-w-5xl mx-auto w-full">
+<!-- Header Section -->
+<div class="mb-8">
+<div class="flex items-end justify-between mb-4">
+<div>
+<div class="flex items-center gap-2 text-text-muted mb-2">
+<span class="font-label-mono-caps text-label-mono-caps">2026 西安马拉松</span>
+<span>·</span>
+<span class="font-label-mono-caps text-label-mono-caps">西安</span>
+<span>·</span>
+<span class="font-label-mono-caps text-label-mono-caps text-primary">目标 sub-2:50</span>
+<span>·</span>
+<span class="font-label-mono-caps text-label-mono-caps">峰值 100 km</span>
+</div>
+<h1 class="font-headline-md text-[32px] font-bold text-text-primary tracking-tight">审阅你的赛季训练计划</h1>
+</div>
+</div>
+<p class="text-body-md text-text-muted">新计划预览，启用后正式生效并下发至你的日历。</p>
+</div>
+<!-- Draft Master Plan Review (aligned with current view) -->
+<section class="mb-6 flex gap-2">
+<button class="px-4 py-2 bg-white border border-border-default rounded-lg font-body-sm font-bold text-text-primary shadow-sm">计划总览</button>
+
+</section>
+
+<section class="bg-white border border-border-default rounded-lg mb-6 overflow-hidden">
+<div class="p-5 border-b border-border-subtle"><h3 class="font-headline-sm text-[17px] text-text-primary">训练周期</h3></div>
+<div class="p-6">
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-4 uppercase">预计周跑量（KM/周）</p>
+<div class="h-40 grid items-end gap-1.5" style="grid-template-columns: repeat(24, minmax(0, 1fr));">
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:45%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:52%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:58%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:50%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:62%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:68%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:75%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:55%"></div>
+<div class="bg-cyan-500/40 rounded-t hover:bg-cyan-500 transition-colors" style="height:62%"></div>
+<div class="bg-cyan-500/40 rounded-t hover:bg-cyan-500 transition-colors" style="height:68%"></div>
+<div class="bg-cyan-500/40 rounded-t hover:bg-cyan-500 transition-colors" style="height:74%"></div>
+<div class="bg-cyan-500/40 rounded-t hover:bg-cyan-500 transition-colors" style="height:43%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:78%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:85%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:92%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:58%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:92%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:92%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:88%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:64%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:86%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:64%"></div>
+<div class="bg-phase-taper/40 rounded-t hover:bg-phase-taper transition-colors" style="height:45%"></div>
+<div class="bg-phase-taper/40 rounded-t hover:bg-phase-taper transition-colors" style="height:38%"></div></div>
+<div class="mt-3 grid font-label-mono-sm text-[10px] text-text-faint" style="grid-template-columns: repeat(24, minmax(0, 1fr));">
+<div class="text-left" style="grid-column: 1 / span 3;">05/04<br/><span class="font-body-sm text-[11px]">P1 基础</span></div>
+<div class="text-left" style="grid-column: 9 / span 3;">06/29<br/><span class="font-body-sm text-[11px]">P2 速度</span></div>
+<div class="text-left" style="grid-column: 13 / span 3;">07/27<br/><span class="font-body-sm text-[11px]">P3 专项</span></div>
+<div class="text-left" style="grid-column: 18 / span 3;">08/31<br/><span class="font-body-sm text-[11px]">P4 峰值</span></div>
+<div class="text-left" style="grid-column: 23 / span 2;">10/05<br/><span class="font-body-sm text-[11px]">P5 减量</span></div>
+</div>
+</div>
+</section>
+
+<section class="flex flex-wrap gap-2 mb-6"><button data-phase-tab="0" data-base-class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors" data-active-class="bg-cyan-soft border-cyan-edge text-primary font-bold" data-inactive-class="bg-white border-border-default text-text-muted" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-white border-border-default text-text-muted"><span class="w-1.5 h-1.5 rounded-full bg-phase-base"></span>有氧基础期（已完成） · 8周</button><button data-phase-tab="1" data-base-class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors" data-active-class="bg-cyan-soft border-cyan-edge text-primary font-bold" data-inactive-class="bg-white border-border-default text-text-muted" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-cyan-soft border-cyan-edge text-primary font-bold"><span class="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>夏季速度衔接期 · 4周</button><button data-phase-tab="2" data-base-class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors" data-active-class="bg-cyan-soft border-cyan-edge text-primary font-bold" data-inactive-class="bg-white border-border-default text-text-muted" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-white border-border-default text-text-muted"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>马拉松专项 build 期 · 5周</button><button data-phase-tab="3" data-base-class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors" data-active-class="bg-cyan-soft border-cyan-edge text-primary font-bold" data-inactive-class="bg-white border-border-default text-text-muted" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-white border-border-default text-text-muted"><span class="w-1.5 h-1.5 rounded-full bg-phase-peak"></span>马拉松专项峰值期 · 5周</button><button data-phase-tab="4" data-base-class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors" data-active-class="bg-cyan-soft border-cyan-edge text-primary font-bold" data-inactive-class="bg-white border-border-default text-text-muted" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-white border-border-default text-text-muted"><span class="w-1.5 h-1.5 rounded-full bg-phase-taper"></span>减量与比赛期 · 2周</button></section>
+
+
+
+<div class="space-y-6">
+<section data-phase-panel="0" class="bg-white border border-border-default rounded-lg overflow-hidden hidden">
+<div class="p-5 border-b border-border-subtle bg-green-soft/40 flex items-center gap-3">
+<span class="w-3 h-3 rounded-full bg-phase-base"></span>
+<div>
+<h3 class="font-headline-sm text-[17px] text-text-primary">有氧基础期（已完成）</h3>
+<p class="font-label-mono-sm text-text-faint mt-1">2026/05/04 - 2026/06/28 · base · 已完成</p>
+</div>
+<span class="ml-auto font-label-mono-sm text-text-muted">45-75 km/w</span>
+</div>
+<div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2 space-y-5 pr-2">
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段重点</h4><p class="text-[13px] text-text-primary leading-6">已完成约 8 周有氧基础，近期最长跑已到 28km，CTL 维持在 60+；本阶段仅保留在赛季时间线上，不重新安排周课表。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段节奏</h4><p class="text-[13px] text-text-primary leading-6">保留已完成阶段，仅作为赛季时间线记录。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">关键课</h4><p class="text-[13px] text-text-primary leading-6">无新增关键课安排。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">监控触发</h4><ul class="space-y-2 text-[13px] text-text-primary leading-6"><li class="text-text-faint">无</li></ul></div>
+<div class="bg-cyan-soft border border-cyan-edge rounded p-4"><h4 class="font-headline-sm text-[16px] font-bold text-primary mb-2">Coach Note</h4><p class="font-editorial-prose text-[14px] leading-6 text-text-primary italic">已完成阶段不需要新的 coach note。</p></div>
+
+<div class="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+<div class="bg-surface-container-low border border-border-subtle rounded p-3"><p class="font-label-mono-sm text-text-faint mb-1">总跑量</p><p class="font-bold text-text-primary">476.6 km</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-3"><p class="font-label-mono-sm text-text-faint mb-1">跑步次数</p><p class="font-bold text-text-primary">45</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-3"><p class="font-label-mono-sm text-text-faint mb-1">均配</p><p class="font-bold text-text-primary">5:15/km</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-3"><p class="font-label-mono-sm text-text-faint mb-1">均心率</p><p class="font-bold text-text-primary">149 bpm</p></div>
+</div>
+<div class="mt-3 bg-surface-container-low border border-border-subtle rounded p-3"><p class="font-label-mono-sm text-text-faint mb-2">心率区间分布</p><div class="grid grid-cols-2 gap-x-6 gap-y-1"><div class="flex justify-between text-[12px]"><span>Z1</span><span>5.1% · 126min</span></div><div class="flex justify-between text-[12px]"><span>Z2</span><span>56.7% · 1405min</span></div><div class="flex justify-between text-[12px]"><span>Z3</span><span>16.6% · 412min</span></div><div class="flex justify-between text-[12px]"><span>Z4</span><span>11.7% · 289min</span></div><div class="flex justify-between text-[12px]"><span>Z5</span><span>8.0% · 197min</span></div><div class="flex justify-between text-[12px]"><span>Z6</span><span>1.9% · 47min</span></div></div></div>
+
+</div>
+<div class="space-y-4">
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键课型</p><div class="flex flex-wrap gap-2"><span class="text-body-sm text-text-faint">无关键课型</span></div></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-2">周里程区间</p><p class="text-[24px] font-bold text-text-primary">45-75<span class="text-sm font-normal text-text-muted"> km/w</span></p><p class="font-body-sm text-text-faint mt-1">5/4 - 6/28</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键里程碑</p><div class="space-y-3"><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/06/28</span><span class="font-label-mono-sm text-text-faint">长距离</span></div>
+<p class="text-[13px] text-text-primary leading-6">已完成基础期出口：最长跑达到 28km，说明有氧底盘足以进入夏季速度衔接。</p>
+</div></div></div>
+</div>
+</div>
+</section>
+
+<section data-phase-panel="1" class="bg-white border border-border-default rounded-lg overflow-hidden">
+<div class="p-5 border-b border-border-subtle bg-cyan-soft/40 flex items-center gap-3">
+<span class="w-3 h-3 rounded-full bg-cyan-500"></span>
+<div>
+<h3 class="font-headline-sm text-[17px] text-text-primary">夏季速度衔接期</h3>
+<p class="font-label-mono-sm text-text-faint mt-1">2026/06/29 - 2026/07/26 · speed</p>
+</div>
+<span class="ml-auto font-label-mono-sm text-text-muted">54-74 km/w</span>
+</div>
+<div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2 space-y-5 pr-2">
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段重点</h4><p class="text-[13px] text-text-primary leading-6">从已完成 8 周基础后进入速度衔接；前 3 周用 5K/10K 速度、坡跑和短阈值唤醒神经肌肉，第 4 周恢复到阶段下限的 70-80%。目标 Form 分布：maintenance 40-50% + building 30-40% + race-ready 10-20%，从当前比赛就绪状态逐步回到可训练负荷。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段节奏</h4><p class="text-[13px] text-text-primary leading-6">每周 5 跑 + 2 次力量耐久：1 次速度/VO2max、1 次坡跑或短阈值、1 次周末长跑，其余为 Z2 有氧；周量高值约 62→68→74km，第 4 周降到 38-43km。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">关键课</h4><p class="text-[13px] text-text-primary leading-6">重点不是堆更多马拉松配速，而是在高温夏训中把 5K-10K 速度和跑姿弹性找回来；长跑维持 21-24km，不急着超过近期 28km。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">监控触发</h4><ul class="space-y-2 text-[13px] text-text-primary leading-6"><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>晨起 RHR 高于当前 53bpm 基线 +7bpm 且连续 2 天 → 当周取消 VO2max 或坡跑，周量下调 20-25%</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>早晨 HRV 低于近期 32-34 区间超过 15% 且腿部沉重 → 质量课改为 40-50 分钟 Z2</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>高温体感温度 ≥ 32℃ → 速度课移到清晨或傍晚，组间恢复延长 30-60 秒</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>任何跟腱、小腿或膝痛 ≥ 3/10 → 取消坡跑，改为平路轻松跑并增加小腿离心和髋稳定</span></li></ul></div>
+<div class="bg-cyan-soft border border-cyan-edge rounded p-4"><h4 class="font-headline-sm text-[16px] font-bold text-primary mb-2">Coach Note</h4><p class="font-editorial-prose text-[14px] leading-6 text-text-primary italic">你现在不是缺基础，而是需要把速度重新接上马拉松专项；这 4 周跑快但不要跑炸，尤其别在正午硬顶。</p></div>
+
+</div>
+<div class="space-y-4">
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键课型</p><div class="flex flex-wrap gap-2"><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">间歇</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">VO2max</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">坡跑</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">长距离</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">力量重点</span></div></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-2">周里程区间</p><p class="text-[24px] font-bold text-text-primary">54-74<span class="text-sm font-normal text-text-muted"> km/w</span></p><p class="font-body-sm text-text-faint mt-1">6/29 - 7/26</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键里程碑</p><div class="space-y-3"><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/07/19</span><span class="font-label-mono-sm text-text-faint">测试跑</span></div>
+<p class="text-[13px] text-text-primary leading-6">5K 测试跑力争 18:55 以内；这是基于实际 PB 19:30 的约 3% 提升，不把预测成绩当作 PB。</p>
+</div><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/07/26</span><span class="font-label-mono-sm text-text-faint">力量测试</span></div>
+<p class="text-[13px] text-text-primary leading-6">无痛完成单腿提踵每侧 25 次、单腿臀桥每侧 20 次，左右差控制在 10% 以内，为后续 90km 级别周量做耐久准备。</p>
+</div></div></div>
+</div>
+</div>
+</section>
+
+<section data-phase-panel="2" class="bg-white border border-border-default rounded-lg overflow-hidden hidden">
+<div class="p-5 border-b border-border-subtle bg-surface-container-low flex items-center gap-3">
+<span class="w-3 h-3 rounded-full bg-secondary"></span>
+<div>
+<h3 class="font-headline-sm text-[17px] text-text-primary">马拉松专项 build 期</h3>
+<p class="font-label-mono-sm text-text-faint mt-1">2026/07/27 - 2026/08/30 · build</p>
+</div>
+<span class="ml-auto font-label-mono-sm text-text-muted">72-92 km/w</span>
+</div>
+<div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2 space-y-5 pr-2">
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段重点</h4><p class="text-[13px] text-text-primary leading-6">3:1 周期，前 3 周递增，第 4 周降到阶段下限的 70-80% 并取消质量课，第 5 周重新进入专项负荷；核心是把马拉松配速嵌入长跑，从 26km 含 8km 逐步推进到 32km 含 18km。目标 Form 分布：building 50-60% + maintenance 20-30% + race-ready 10%，chronic 明显上升。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段节奏</h4><p class="text-[13px] text-text-primary leading-6">每周 5 跑 + 2 次力量耐久：周中 1 次阈值/节奏，周末 1 次含马拉松配速的长跑组合，其余为 Z2；周量高值约 78→85→92km，第 4 周降到 50-58km，第 5 周回到 90-92km。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">关键课</h4><p class="text-[13px] text-text-primary leading-6">长跑是本阶段主课：26-32km 总距离内嵌 8-18km 目标马拉松配速，练 30km 前后的补给、配速控制和后链耐力。阈值课只做辅助，不和最重长课硬碰硬。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">监控触发</h4><ul class="space-y-2 text-[13px] text-text-primary leading-6"><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>马拉松配速段心率比同配速历史均值高 ≥ 5bpm 且体感升高 → 下一周 MP 段减少 20%</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>长跑后 24 小时内下楼梯股四头肌或膝痛 ≥ 3/10 → 周中阈值课改 Z2，力量只做激活</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>连续 2 周周量完成率 &lt; 85% → 不继续加量，重复上一负荷周结构</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>睡眠 &lt; 6 小时且 RHR 高于基线 +5bpm → 当天质量课延后 24 小时</span></li></ul></div>
+<div class="bg-cyan-soft border border-cyan-edge rounded p-4"><h4 class="font-headline-sm text-[16px] font-bold text-primary mb-2">Coach Note</h4><p class="font-editorial-prose text-[14px] leading-6 text-text-primary italic">这一段决定 2:50 是否真正可执行：不是每次都跑很快，而是能在疲劳后还稳住 4:02/km 左右的节奏。</p></div>
+
+</div>
+<div class="space-y-4">
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键课型</p><div class="flex flex-wrap gap-2"><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">长距离</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">马配</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">阈值</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">节奏</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">力量重点</span></div></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-2">周里程区间</p><p class="text-[24px] font-bold text-text-primary">72-92<span class="text-sm font-normal text-text-muted"> km/w</span></p><p class="font-body-sm text-text-faint mt-1">7/27 - 8/30</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键里程碑</p><div class="space-y-3"><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/08/16</span><span class="font-label-mono-sm text-text-faint">长距离</span></div>
+<p class="text-[13px] text-text-primary leading-6">完成 31km 长跑，内含 16km 目标马拉松配速，并按比赛补给节奏摄入碳水。</p>
+</div><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/08/30</span><span class="font-label-mono-sm text-text-faint">长距离</span></div>
+<p class="text-[13px] text-text-primary leading-6">完成 32km 长跑，内含 18km 目标马拉松配速；后 10km 配速掉幅控制在 3% 以内。</p>
+</div></div></div>
+</div>
+</div>
+</section>
+
+<section data-phase-panel="3" class="bg-white border border-border-default rounded-lg overflow-hidden hidden">
+<div class="p-5 border-b border-border-subtle bg-amber-soft/40 flex items-center gap-3">
+<span class="w-3 h-3 rounded-full bg-phase-peak"></span>
+<div>
+<h3 class="font-headline-sm text-[17px] text-text-primary">马拉松专项峰值期</h3>
+<p class="font-label-mono-sm text-text-faint mt-1">2026/08/31 - 2026/10/04 · peak</p>
+</div>
+<span class="ml-auto font-label-mono-sm text-text-muted">80-92 km/w</span>
+</div>
+<div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2 space-y-5 pr-2">
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段重点</h4><p class="text-[13px] text-text-primary leading-6">3:1 周期，前 3 周以马拉松配速长课和半马热身赛建立专项峰值，第 4 周降到阶段下限的 70-80%，第 5 周做最后一次受控专项确认；峰值长跑达到 32km，内含 22-24km 马拉松配速。目标 Form 分布：building 40% + maintenance 30% + race-ready 30%，chronic 持平或轻微下降。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段节奏</h4><p class="text-[13px] text-text-primary leading-6">每周 5 跑 + 1-2 次力量维持：大多数周只保留一个“长跑+马配”主质量块，另加短阈值或比赛调动；周量高值约 92→92→88km，第 4 周 56-64km，第 5 周 80-86km。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">关键课</h4><p class="text-[13px] text-text-primary leading-6">峰值课以 32km 长跑含 20-24km 马拉松配速为主，随后用半马热身赛检验竞争环境下的耐力与补给。最后一周专项课缩短到 30km 含 16km MP，留下适应而不是留下疲劳。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">监控触发</h4><ul class="space-y-2 text-[13px] text-text-primary leading-6"><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>32km 专项长课后 48 小时仍有异常疲劳或静息心率 +7bpm → 下一周取消阈值，仅保留轻松跑和力量激活</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>马配段后半程配速掉幅 &gt; 3% 且非天气原因 → 下次 MP 总量减少 4-6km，优先修正补给</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>半马热身赛后肌肉酸痛评分 ≥ 6/10 持续 2 天 → 之后 5 天不做任何硬课</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>出现足底、跟腱、髂胫束疼痛 ≥ 3/10 → 立即用椭圆机/骑行替代一次跑量，并保留髋外展和小腿离心</span></li></ul></div>
+<div class="bg-cyan-soft border border-cyan-edge rounded p-4"><h4 class="font-headline-sm text-[16px] font-bold text-primary mb-2">Coach Note</h4><p class="font-editorial-prose text-[14px] leading-6 text-text-primary italic">峰值期最怕把好状态练没了；你已经有 86.7km 历史周量，向 90km 出头推进可以，但必须靠恢复质量兑现。</p></div>
+
+</div>
+<div class="space-y-4">
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键课型</p><div class="flex flex-wrap gap-2"><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">长距离</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">马配</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">热身赛</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">阈值</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">力量重点</span></div></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-2">周里程区间</p><p class="text-[24px] font-bold text-text-primary">80-92<span class="text-sm font-normal text-text-muted"> km/w</span></p><p class="font-body-sm text-text-faint mt-1">8/31 - 10/4</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键里程碑</p><div class="space-y-3"><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/09/06</span><span class="font-label-mono-sm text-text-faint">长距离</span></div>
+<p class="text-[13px] text-text-primary leading-6">完成 32km 长跑，内含 20km 目标马拉松配速，验证 30km 前后的补给和后链稳定性。</p>
+</div><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/09/13</span><span class="font-label-mono-sm text-text-faint">长距离</span></div>
+<p class="text-[13px] text-text-primary leading-6">半马热身赛目标 1:23:30 以内；基于实际 HM PB 1:26:38 的约 3.6% 提升，用来校验 2:50 全马配速可行性。</p>
+</div><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/09/20</span><span class="font-label-mono-sm text-text-faint">长距离</span></div>
+<p class="text-[13px] text-text-primary leading-6">完成 32km 长跑，内含 24km 目标马拉松配速；这是本周期最关键的专项耐力确认。</p>
+</div></div></div>
+</div>
+</div>
+</section>
+
+<section data-phase-panel="4" class="bg-white border border-border-default rounded-lg overflow-hidden hidden">
+<div class="p-5 border-b border-border-subtle bg-purple-soft/40 flex items-center gap-3">
+<span class="w-3 h-3 rounded-full bg-phase-taper"></span>
+<div>
+<h3 class="font-headline-sm text-[17px] text-text-primary">减量与比赛期</h3>
+<p class="font-label-mono-sm text-text-faint mt-1">2026/10/05 - 2026/10/18 · taper</p>
+</div>
+<span class="ml-auto font-label-mono-sm text-text-muted">30-64 km/w</span>
+</div>
+<div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2 space-y-5 pr-2">
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段重点</h4><p class="text-[13px] text-text-primary leading-6">总周期超过 12 周，采用 2 周减量；周量较峰值周下降 25% 以上，保留少量马拉松配速触感与短促激活。目标 Form 分布：race-ready 60-70% + maintenance 20-30%，acute 主动下降，chronic 只轻微回落。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段节奏</h4><p class="text-[13px] text-text-primary leading-6">第 1 周约 58-64km，保留 22km 长跑含少量 MP；比赛周约 38-45km，只做短激活和比赛。力量从训练改为激活，避免新的肌肉酸痛。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">关键课</h4><p class="text-[13px] text-text-primary leading-6">减量期只维持速度感觉，不再追求适应；比赛周所有训练都服务于 10 月 18 日站上起跑线时腿部轻、糖原满、节奏清楚。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">监控触发</h4><ul class="space-y-2 text-[13px] text-text-primary leading-6"><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>赛前 10 天内任何疼痛 ≥ 3/10 → 取消全部强度，只保留 30-40 分钟轻松跑和灵活性</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>RHR 高于基线 +7bpm 或出现感冒症状 → 立刻减量 30-50%，优先睡眠与补水</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>赛前 3 天体重异常下降 &gt; 1% 或尿色偏深 → 增加碳水、水和电解质，不再限制饮食</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>比赛周出现焦虑导致配速冲动 → 只按 B 目标配速开局，前 10km 不快于计划</span></li></ul></div>
+<div class="bg-cyan-soft border border-cyan-edge rounded p-4"><h4 class="font-headline-sm text-[16px] font-bold text-primary mb-2">Coach Note</h4><p class="font-editorial-prose text-[14px] leading-6 text-text-primary italic">减量不是证明自己，而是让训练结果浮出来；到西安前最后两周，最强的训练是克制。</p></div>
+
+</div>
+<div class="space-y-4">
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键课型</p><div class="flex flex-wrap gap-2"><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">长距离</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">马配</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">间歇</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">比赛</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">力量重点</span></div></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-2">周里程区间</p><p class="text-[24px] font-bold text-text-primary">30-64<span class="text-sm font-normal text-text-muted"> km/w</span></p><p class="font-body-sm text-text-faint mt-1">10/5 - 10/18</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键里程碑</p><div class="space-y-3"><div class="bg-surface-container-low border border-border-subtle rounded p-3">
+<div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/10/18</span><span class="font-label-mono-sm text-text-faint">比赛</span></div>
+<p class="text-[13px] text-text-primary leading-6">西安马拉松 A 目标 2:50:00；若天气或身体反馈不理想，执行 B 目标 2:53:00-2:55:00，底线是稳定刷新 2:57:11 的实际 PB。</p>
+</div></div></div>
+</div>
+</div>
+</section>
+</div>
+
+<section class="mt-8 bg-white border border-border-default rounded-lg overflow-hidden">
+<div class="p-5 border-b border-border-subtle"><h3 class="font-headline-sm text-[17px] text-text-primary">训练原则</h3></div>
+<div class="p-6"><ol class="space-y-3"><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">01</span><span class="text-[13px] text-text-primary leading-6">你的全马 PB 为 2:57:11，目标 2:50:00 是约 4.1% 的单周期提升，低于全马 10% 上限，可以作为 A 目标训练；B 目标为 2:53:00-2:55:00，C 目标为稳定破 PB，比赛日若高温或风大则按 B 目标执行。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">02</span><span class="text-[13px] text-text-primary leading-6">夏季速度衔接期保持能量平衡，不做激进减重；蛋白质 1.4-1.6 g/kg/天，质量课或长课后 30 分钟内补充碳水+蛋白约 3:1，优先把训练适应吃出来。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">03</span><span class="text-[13px] text-text-primary leading-6">专项 build 与 peak 阶段把碳水提高到 5-7 g/kg/天；超过 90 分钟的长课前 30-60 分钟摄入 30-60 g 碳水，课中每小时 30-60 g 碳水，并在 28-32km 马拉松配速长课中反复演练补给。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">04</span><span class="text-[13px] text-text-primary leading-6">减量与比赛周以保存糖原为第一目标，赛前 3 天碳水提高到 8-10 g/kg/天，减少高纤维和陌生食物；赛后 7-10 天蛋白质提高到 1.8-2.0 g/kg/天，并补足水分和电解质促进修复。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">05</span><span class="text-[13px] text-text-primary leading-6">每 4 周安排 1 周恢复周，周量降到该阶段下限的 70-80%，恢复周取消阈值、间歇和马拉松配速质量课，只保留轻松跑、灵活性和必要的短长跑。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">06</span><span class="text-[13px] text-text-primary leading-6">强度分布围绕 STRIDE Form 控制：速度期从比赛就绪回到可训练，build 期目标 building 50-60%，peak 期 building 约 40% 且 race-ready 约 30%，taper 期 race-ready 60-70%；周剂量维持约为 CTL×7，推进 building 时约为 CTL×7.7 以上。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">07</span><span class="text-[13px] text-text-primary leading-6">单日长跑剂量不得超过周总剂量的 35%，避免“一个大长课 + 多天空白”的尖峰负荷；每周零剂量日不超过 2 天，禁止周日和周一连续完全不动。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">08</span><span class="text-[13px] text-text-primary leading-6">跑量上升只在负荷周之间比较，周高值增幅不超过 10%；恢复周后的回弹参照上一个负荷周，而不是参照恢复周，确保从当前 CTL 约 62 平稳推向 90km 左右峰值。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">09</span><span class="text-[13px] text-text-primary leading-6">每个阶段都保留力量与耐久轨道：速度/build 每周 2 次臀腿后链、髋稳定、腘绳肌、小腿和踝足弹性训练，peak 降为 1-2 次维持，taper 仅做激活；目标是让 30km 后的掉速不是由结构耐力先崩掉。</span></li></ol></div>
+</section>
+
+
+</main>
+<!-- Right Sidebar (Coach Chat) -->
+<aside class="fixed right-0 top-0 h-full w-[360px] bg-surface-container-lowest border-l border-border-default flex flex-col z-20 shadow-[-4px_0_24px_rgba(0,0,0,0.02)]">
+<div class="flex flex-col h-full overflow-hidden">
+<!-- Chat Header -->
+<div class="p-4 border-b border-border-subtle bg-surface-bright flex items-center gap-2 shrink-0">
+<span class="material-symbols-outlined text-primary text-[20px]">psychology</span>
+<span class="font-label-mono-caps text-[12px] font-bold tracking-wider">和 COACH 审阅计划</span>
+</div>
+<!-- Chat Transcript (Scrollable) -->
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
+<!-- Coach Message -->
+<div class="flex gap-3 max-w-[90%]">
+<div class="w-6 h-6 rounded bg-primary-container flex-shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-on-primary text-[14px]">psychology</span>
+</div>
+<div class="bg-surface-container-low border border-border-default rounded-tr-lg rounded-b-lg p-3">
+<p class="font-body-sm text-[13px] text-text-primary leading-6">这是根据你的 COROS 数据和目标生成的计划。重点在于 P3 峰值期的里程提升，你觉得强度如何？</p>
+</div>
+</div>
+<!-- User Message -->
+<div class="flex gap-3 max-w-[90%] self-end flex-row-reverse">
+<div class="w-6 h-6 rounded bg-surface-variant flex-shrink-0 flex items-center justify-center overflow-hidden">
+<img alt="User" class="w-full h-full object-cover" data-alt="Small avatar crop, professional runner face" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDWuyu47zSq5VOJROAqUlKfscuFzoP-k5L9lpQGo47dBbP6IciEL9p5RVCxz_rslE4PyPPsdWxw2knaph8N2XZY3pmgqpZBS-IeUb5N5k2AXEqE5hlwGYMUUvC6fv1KS_Gc525lgGzokLkJc-vcfV94oGcfqIicY-IZ4i_04wuvDhJOUHWCzHcRruiCIxsvtsUJJR4coItTTq3PQb49JOVyKYLbYDrwGbVnqfBNNsAtuUU34prz63tHdxl7q-2WswDgiYxej3iujpI"/>
+</div>
+<div class="bg-surface-bright border border-border-default rounded-tl-lg rounded-b-lg p-3">
+<p class="font-body-sm text-[13px] text-text-primary leading-6">
+                            感觉峰值周的里程有点太激进了，能稍微降一点吗？
+                        </p>
+</div>
+</div>
+<!-- Diff Card (Proposed Change) -->
+<div class="ml-9 mr-2 bg-white border border-border-default rounded shadow-sm overflow-hidden">
+<div class="bg-amber-soft/30 border-b border-border-subtle p-2 flex items-center gap-2">
+<span class="material-symbols-outlined text-phase-peak text-[16px]">edit_note</span>
+<span class="font-label-mono-caps text-[10px] text-text-primary font-bold">已记录反馈：调整峰值强度</span>
+</div>
+<div class="p-3">
+<ul class="space-y-2 mb-4">
+<li class="flex items-start gap-2 text-body-sm">
+<span class="material-symbols-outlined text-primary text-[16px] mt-0.5">info</span>
+<span class="text-text-primary">系统将尝试降低 P3 周里程上限 <span class="text-error font-mono text-[11px] bg-red-soft px-1 rounded">-5km</span></span>
+</li>
+<li class="flex items-start gap-2 text-body-sm">
+<span class="material-symbols-outlined text-primary text-[16px] mt-0.5">info</span>
+<span class="text-text-primary">可能会增加一周恢复周</span>
+</li>
+</ul>
+<p class="text-[11px] text-text-muted italic">继续告诉我你的想法，我会根据反馈调整计划。</p>
+</div>
+</div>
+</div>
+<!-- Chat Input & Actions -->
+<div class="p-4 border-t border-border-subtle bg-surface-bright shrink-0 space-y-3">
+<div class="bg-green-soft border border-green-edge rounded-lg p-3 flex items-center gap-3">
+<div class="flex items-center gap-2 flex-1 min-w-0">
+<span class="material-symbols-outlined text-primary text-[18px]">check_circle</span>
+<p class="font-body-sm text-text-primary font-semibold truncate">准备好训练了吗？</p>
+</div>
+<button class="shrink-0 px-4 py-2 bg-primary text-white rounded font-body-sm font-bold shadow-sm hover:bg-surface-tint transition-colors flex items-center justify-center gap-1.5">
+<span class="material-symbols-outlined text-[18px]">check_circle</span>启用计划
+</button>
+</div>
+<div class="relative">
+<input class="w-full bg-surface border border-border-default rounded p-3 pr-10 text-body-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" placeholder="告诉 Coach 你想调整哪里..." type="text"/>
+<button class="absolute right-3 top-1/2 -translate-y-1/2 text-primary hover:text-primary-fixed-dim transition-colors" title="提交反馈">
+<span class="material-symbols-outlined text-[20px]">send</span>
+</button>
+</div>
+</div>
+</div>
+</aside>
+</body></html>
