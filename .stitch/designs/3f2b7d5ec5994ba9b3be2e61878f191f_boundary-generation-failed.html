@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE | 计划生成没有完成</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Newsreader:ital,wght@0,400;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffdadb",
+                        "inverse-on-surface": "#f0f1f3",
+                        "surface-container-high": "#e7e8ea",
+                        "outline-variant": "#bccabc",
+                        "tertiary-container": "#ec6678",
+                        "inverse-primary": "#59df8a",
+                        "on-tertiary-fixed-variant": "#881a31",
+                        "on-surface": "#191c1e",
+                        "on-primary-container": "#003317",
+                        "surface-container-low": "#f2f4f6",
+                        "red-soft": "#fde8e8",
+                        "error": "#ba1a1a",
+                        "border-subtle": "#e8eaf0",
+                        "surface": "#f8f9fb",
+                        "amber-soft": "#fdf2dd",
+                        "on-primary-fixed": "#00210d",
+                        "text-primary": "#1a1c2e",
+                        "primary-fixed": "#77fca4",
+                        "phase-race": "#d32f2f",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#d9dadc",
+                        "phase-taper": "#7c4dff",
+                        "inverse-surface": "#2e3132",
+                        "green-edge": "#c8e8d6",
+                        "on-primary-fixed-variant": "#005229",
+                        "border-default": "#d8dae5",
+                        "phase-specialty": "#0097a7",
+                        "secondary-fixed-dim": "#66d6e7",
+                        "cyan-soft": "#e0f4f7",
+                        "primary": "#006d38",
+                        "cyan-edge": "#b9e3ea",
+                        "surface-variant": "#e1e2e4",
+                        "on-tertiary-container": "#5d001a",
+                        "surface-bright": "#f8f9fb",
+                        "on-primary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "on-secondary-container": "#006b77",
+                        "on-tertiary": "#ffffff",
+                        "text-muted": "#555570",
+                        "on-secondary-fixed": "#001f24",
+                        "secondary-fixed": "#97f0ff",
+                        "primary-container": "#00a85a",
+                        "primary-fixed-dim": "#59df8a",
+                        "phase-base": "#00a85a",
+                        "red-edge": "#f3c8c8",
+                        "surface-container": "#edeef0",
+                        "on-surface-variant": "#3d4a3f",
+                        "amber-edge": "#f6e0a8",
+                        "secondary": "#006874",
+                        "phase-peak": "#e68a00",
+                        "secondary-container": "#7fedfe",
+                        "purple-soft": "#ede7ff",
+                        "on-error": "#ffffff",
+                        "surface-hover": "#f5f6fa",
+                        "green-soft": "#e6f7ee",
+                        "outline": "#6d7b6e",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed-dim": "#ffb2b8",
+                        "surface-tint": "#006d38",
+                        "on-error-container": "#93000a",
+                        "purple-edge": "#d4c8ff",
+                        "surface-container-lowest": "#ffffff",
+                        "background": "#f8f9fb",
+                        "surface-container-highest": "#e1e2e4",
+                        "on-tertiary-fixed": "#40000f",
+                        "on-secondary-fixed-variant": "#004f58",
+                        "text-faint": "#8888a0",
+                        "accent-pink": "#e91e63",
+                        "tertiary": "#a93347"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sidebar-collapsed": "60px",
+                        "card-gap": "16px",
+                        "sidebar-width": "220px",
+                        "container-padding": "24px",
+                        "card-padding": "12px",
+                        "topbar-height": "50px",
+                        "coach-panel-width": "360px",
+                        "base": "8px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Outfit"],
+                        "metric-value": ["Outfit"],
+                        "headline-md": ["Outfit"],
+                        "label-mono-sm": ["JetBrains Mono"],
+                        "editorial-quote": ["Newsreader"],
+                        "editorial-prose": ["Newsreader"],
+                        "body-sm": ["Outfit"],
+                        "label-mono-caps": ["JetBrains Mono"],
+                        "body-md": ["Outfit"],
+                        "headline-sm": ["Outfit"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+            font-size: 1.25rem;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .transition-all-200 { transition: all 200ms ease-in-out; }
+    </style>
+</head>
+<body class="bg-surface text-text-primary font-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen flex">
+<!-- Left Sidebar -->
+<aside class="w-sidebar-width bg-surface border-r border-border-default h-screen sticky top-0 flex flex-col pt-4 shrink-0 hidden md:flex">
+<div class="px-6 mb-8 flex items-center gap-2">
+<span class="font-display-lg text-display-lg font-bold text-primary tracking-tight">STRIDE</span>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 bg-green-soft text-primary rounded-lg font-body-md font-medium" href="#">
+<span class="material-symbols-outlined text-[20px]">calendar_month</span>
+            赛季训练计划
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">view_week</span>
+            本周课表
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+            训练记录
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">insights</span>
+            数据洞察
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">forum</span>
+            Coach
+        </a>
+</nav>
+<div class="p-4 mt-auto border-t border-border-default">
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+            设置
+        </a>
+</div>
+</aside>
+<!-- Middle Column -->
+<main class="flex-1 max-w-[800px] flex flex-col p-8 bg-background">
+<header class="mb-8 flex justify-between items-end">
+<div>
+<h1 class="font-headline-md text-[28px] font-bold text-text-primary mb-2">计划生成没有完成</h1>
+<p class="font-editorial-prose text-text-muted text-[16px]">你的输入已保存，但我们需要一点帮助来完成调整。</p>
+</div>
+<button class="px-4 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded font-body-md transition-colors border border-border-default bg-white">
+                返回当前计划
+            </button>
+</header>
+<!-- Status Grid -->
+<div class="grid grid-cols-3 gap-4 mb-8">
+<div class="bg-white border border-border-default rounded-lg p-4 flex flex-col">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-text-faint text-[20px]">security</span>
+<span class="font-label-mono-caps text-text-faint">当前状态</span>
+</div>
+<span class="font-body-md font-medium text-text-primary">当前计划未改变</span>
+</div>
+<div class="bg-white border border-border-default rounded-lg p-4 flex flex-col">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-text-faint text-[20px]">save</span>
+<span class="font-label-mono-caps text-text-faint">反馈记录</span>
+</div>
+<span class="font-body-md font-medium text-text-primary">用户反馈已保存</span>
+</div>
+<div class="bg-white border border-red-edge rounded-lg p-4 flex flex-col">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-error text-[20px]">error</span>
+<span class="font-label-mono-caps text-error">失败环节</span>
+</div>
+<span class="font-body-md font-medium text-error">失败发生在计划校验阶段</span>
+</div>
+</div>
+<!-- Diagnostic Info -->
+<div class="bg-red-soft border border-red-edge rounded-lg p-6 mb-8 flex gap-4">
+<div class="mt-1">
+<span class="material-symbols-outlined text-error">warning</span>
+</div>
+<div>
+<h3 class="font-headline-sm text-error mb-2">训练量约束冲突</h3>
+<p class="font-editorial-prose text-text-primary">
+                    你要求提高峰值期的强度，但同时也要求控制总训练量。在校验阶段，系统发现为了达到目标赛事的负荷要求，如果强度提高，在不改变休息日的情况下，无法将总训练量保持在安全范围内。
+                </p>
+</div>
+</div>
+<!-- Plan Summary -->
+<div class="bg-white border border-border-default rounded-lg p-6">
+<h3 class="font-label-mono-caps text-text-faint mb-4">受影响的阶段概览</h3>
+<div class="flex items-center justify-between py-3 border-b border-border-subtle">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-phase-peak"></div>
+<span class="font-body-md font-medium text-text-primary">P3 峰值期</span>
+<span class="font-label-mono-sm text-text-muted ml-2">W12 - W16</span>
+</div>
+<div class="text-right">
+<span class="font-label-mono-sm text-text-muted block">当前负荷</span>
+<span class="font-body-sm text-text-primary">高强度, 中等量</span>
+</div>
+</div>
+<div class="flex items-center justify-between py-3">
+<div class="flex items-center gap-3">
+<div class="w-2 h-2 rounded-full bg-phase-taper"></div>
+<span class="font-body-md font-medium text-text-primary">P4 减量期</span>
+<span class="font-label-mono-sm text-text-muted ml-2">W17 - W18</span>
+</div>
+<div class="text-right">
+<span class="font-label-mono-sm text-text-muted block">当前负荷</span>
+<span class="font-body-sm text-text-primary">低强度, 低量</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Right Column (Coach Chat) -->
+<aside class="w-coach-panel-width bg-surface-bright border-l border-border-default flex flex-col shrink-0 h-screen sticky top-0">
+<div class="p-4 border-b border-border-default flex items-center justify-between bg-white">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">forum</span>
+<span class="font-headline-sm text-text-primary">STRIDE Coach</span>
+</div>
+</div>
+<div class="flex-1 p-4 overflow-y-auto space-y-6 flex flex-col">
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
+<span class="material-symbols-outlined text-primary text-[18px]">smart_toy</span>
+</div>
+<div class="bg-white border border-border-default p-3 rounded-lg rounded-tl-none max-w-[85%] shadow-sm">
+<p class="font-editorial-prose text-text-primary leading-relaxed">
+                        由于在不增加总训练量的前提下提高强度会导致负荷超标，校验未能通过。<br/><br/>
+                        我们可以通过以下方式解决：<br/>
+                        1. 减少每周的长距离跑里程。<br/>
+                        2. 增加一个休息日。<br/>
+                        3. 稍微放宽对总训练量的限制。<br/><br/>
+                        你倾向于哪种方式？或者直接告诉我你的想法。
+                    </p>
+</div>
+</div>
+</div>
+<div class="p-4 bg-white border-t border-border-default">
+<div class="relative flex items-center">
+<input class="w-full bg-surface border border-border-default rounded-full py-2.5 pl-4 pr-10 font-body-sm text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors" placeholder="告诉 Coach 如何调整..." type="text"/>
+<button class="absolute right-2 p-1.5 text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">send</span>
+</button>
+</div>
+<p class="font-label-mono-sm text-text-faint text-center mt-3">你也可以输入 "重新生成计划"</p>
+</div>
+</aside>
+</body></html>

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>调整已应用 - STRIDE Endurance Lab</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&amp;family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&amp;family=Outfit:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-hover": "#f5f6fa",
+                    "error-container": "#ffdad6",
+                    "outline-variant": "#bccabc",
+                    "on-primary-fixed-variant": "#005229",
+                    "error": "#ba1a1a",
+                    "background": "#f8f9fb",
+                    "surface-bright": "#f8f9fb",
+                    "amber-soft": "#fdf2dd",
+                    "on-primary": "#ffffff",
+                    "phase-race": "#d32f2f",
+                    "on-tertiary": "#ffffff",
+                    "inverse-surface": "#2e3132",
+                    "purple-soft": "#ede7ff",
+                    "on-secondary-container": "#006b77",
+                    "secondary-container": "#7fedfe",
+                    "phase-taper": "#7c4dff",
+                    "on-surface": "#191c1e",
+                    "border-subtle": "#e8eaf0",
+                    "primary-fixed": "#77fca4",
+                    "on-tertiary-fixed-variant": "#881a31",
+                    "phase-peak": "#e68a00",
+                    "phase-base": "#00a85a",
+                    "on-error-container": "#93000a",
+                    "cyan-edge": "#b9e3ea",
+                    "surface-container-highest": "#e1e2e4",
+                    "red-soft": "#fde8e8",
+                    "red-edge": "#f3c8c8",
+                    "on-secondary": "#ffffff",
+                    "inverse-on-surface": "#f0f1f3",
+                    "on-secondary-fixed-variant": "#004f58",
+                    "surface-tint": "#006d38",
+                    "tertiary-container": "#ec6678",
+                    "text-primary": "#1a1c2e",
+                    "surface-container-high": "#e7e8ea",
+                    "primary-container": "#00a85a",
+                    "outline": "#6d7b6e",
+                    "on-tertiary-fixed": "#40000f",
+                    "accent-pink": "#e91e63",
+                    "tertiary-fixed-dim": "#ffb2b8",
+                    "tertiary": "#a93347",
+                    "border-default": "#d8dae5",
+                    "phase-specialty": "#0097a7",
+                    "purple-edge": "#d4c8ff",
+                    "on-tertiary-container": "#5d001a",
+                    "primary": "#006d38",
+                    "amber-edge": "#f6e0a8",
+                    "green-edge": "#c8e8d6",
+                    "surface-variant": "#e1e2e4",
+                    "on-secondary-fixed": "#001f24",
+                    "surface-container-lowest": "#ffffff",
+                    "inverse-primary": "#59df8a",
+                    "secondary-fixed": "#97f0ff",
+                    "surface-dim": "#d9dadc",
+                    "cyan-soft": "#e0f4f7",
+                    "on-error": "#ffffff",
+                    "green-soft": "#e6f7ee",
+                    "primary-fixed-dim": "#59df8a",
+                    "on-primary-container": "#003317",
+                    "on-surface-variant": "#3d4a3f",
+                    "text-muted": "#555570",
+                    "surface-container-low": "#f2f4f6",
+                    "on-background": "#191c1e",
+                    "surface-container": "#edeef0",
+                    "surface": "#f8f9fb",
+                    "secondary-fixed-dim": "#66d6e7",
+                    "on-primary-fixed": "#00210d",
+                    "secondary": "#006874",
+                    "text-faint": "#8888a0",
+                    "tertiary-fixed": "#ffdadb"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "sidebar-collapsed": "60px",
+                    "card-gap": "16px",
+                    "coach-panel-width": "360px",
+                    "topbar-height": "50px",
+                    "container-padding": "24px",
+                    "card-padding": "12px",
+                    "sidebar-width": "220px",
+                    "base": "8px"
+            },
+            "fontFamily": {
+                    "display-lg": [
+                            "Outfit"
+                    ],
+                    "editorial-prose": [
+                            "Newsreader"
+                    ],
+                    "headline-sm": [
+                            "Outfit"
+                    ],
+                    "body-md": [
+                            "Outfit"
+                    ],
+                    "label-mono-caps": [
+                            "JetBrains Mono"
+                    ],
+                    "editorial-quote": [
+                            "Newsreader"
+                    ],
+                    "metric-value": [
+                            "Outfit"
+                    ],
+                    "body-sm": [
+                            "Outfit"
+                    ],
+                    "label-mono-sm": [
+                            "JetBrains Mono"
+                    ],
+                    "headline-md": [
+                            "Outfit"
+                    ]
+            },
+            "fontSize": {
+                    "display-lg": [
+                            "32px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "editorial-prose": [
+                            "16px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "headline-sm": [
+                            "18px",
+                            {
+                                    "lineHeight": "1.4",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "1.5",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "label-mono-caps": [
+                            "10px",
+                            {
+                                    "lineHeight": "12px",
+                                    "letterSpacing": "0.14em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "editorial-quote": [
+                            "18px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "metric-value": [
+                            "28px",
+                            {
+                                    "lineHeight": "1",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "body-sm": [
+                            "13px",
+                            {
+                                    "lineHeight": "1.4",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "label-mono-sm": [
+                            "9px",
+                            {
+                                    "lineHeight": "10px",
+                                    "letterSpacing": "0.1em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "600"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.text-primary');
+        }
+        .tabular-nums { font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body class="antialiased min-h-screen flex selection:bg-primary-container selection:text-on-primary-container">
+<!-- SideNavBar -->
+<nav class="flex flex-col h-screen fixed left-0 top-0 z-50 fixed left-0 top-0 h-full w-[220px] bg-surface-container-low dark:bg-surface-dim border-r border-border-default dark:border-outline transition-all duration-200 ease-in-out">
+<!-- Brand Header -->
+<div class="px-6 py-8 flex flex-col items-start border-b border-border-subtle">
+<h1 class="font-display-lg text-display-lg font-bold text-primary dark:text-primary-fixed">STRIDE</h1>
+<span class="font-label-mono-caps text-label-mono-caps text-text-faint mt-1">Endurance Lab</span>
+</div>
+<!-- Main Navigation -->
+<div class="flex-1 py-4 flex flex-col gap-1 overflow-y-auto">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-hover dark:hover:bg-surface-container-high transition-colors hover:bg-surface-hover dark:hover:bg-surface-container-high transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">calendar_today</span>
+<span class="font-body-md text-body-md font-medium">This Week</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-primary dark:text-primary-fixed border-l-4 border-primary font-bold bg-surface-hover dark:bg-surface-container-highest transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">event_note</span>
+<span class="font-body-md text-body-md">Training Plan</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-hover dark:hover:bg-surface-container-high transition-colors hover:bg-surface-hover dark:hover:bg-surface-container-high transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">directions_run</span>
+<span class="font-body-md text-body-md font-medium">Activities</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-hover dark:hover:bg-surface-container-high transition-colors hover:bg-surface-hover dark:hover:bg-surface-container-high transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">analytics</span>
+<span class="font-body-md text-body-md font-medium">Insights</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-hover dark:hover:bg-surface-container-high transition-colors hover:bg-surface-hover dark:hover:bg-surface-container-high transition-all duration-200 ease-in-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">smart_toy</span>
+<span class="font-body-md text-body-md font-medium">Coach</span>
+</a>
+</div>
+<!-- Footer Navigation -->
+<div class="p-4 border-t border-border-subtle flex flex-col gap-1">
+<a class="flex items-center gap-3 px-4 py-2 text-text-muted hover:text-primary transition-colors font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+                Settings
+            </a>
+<a class="flex items-center gap-3 px-4 py-2 text-text-muted hover:text-primary transition-colors font-body-sm text-body-sm" href="#">
+<span class="material-symbols-outlined text-[18px]">help_outline</span>
+                Support
+            </a>
+</div>
+</nav>
+<!-- Main Content Wrapper -->
+<div class="flex-1 ml-[220px] flex flex-col min-h-screen">
+<!-- TopAppBar -->
+<header class="flex justify-between items-center h-[50px] px-6 ml-[220px] w-[calc(100%-220px)] z-40 fixed top-0 right-0 h-[50px] bg-surface dark:bg-surface-dim border-b border-border-default dark:border-outline transition-all duration-200 ease-in-out">
+<div class="flex items-center gap-4">
+<div class="flex items-center text-text-muted font-body-sm text-body-sm">
+<span class="hover:text-primary cursor-pointer transition-colors">Training Plan</span>
+<span class="material-symbols-outlined text-[14px] mx-1">chevron_right</span>
+<span class="text-text-primary font-medium">调整已应用</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-text-muted hover:text-primary transition-colors cursor-pointer active:opacity-70">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-text-muted hover:text-primary transition-colors cursor-pointer active:opacity-70">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Page Canvas -->
+<main class="flex-1 mt-[50px] p-container-padding flex flex-col justify-center items-center gap-[32px] max-w-[1400px] mx-auto w-full min-h-[calc(100vh-50px)]">
+<!-- Success Header -->
+<section class="flex flex-col items-center gap-4 text-center max-w-2xl w-full">
+<div class="w-16 h-16 rounded-full bg-green-soft flex items-center justify-center mb-2">
+<span class="material-symbols-outlined text-[32px] text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+</div>
+<h2 class="font-display-lg text-display-lg text-text-primary">赛季训练计划已启用</h2>
+<p class="font-editorial-prose text-editorial-prose text-text-muted">新版计划已经成为当前生效版本。</p>
+<div class="flex items-center gap-2 mt-2 px-4 py-2 bg-surface-container-low rounded-full border border-border-subtle">
+<span class="font-label-mono-caps text-label-mono-caps text-text-primary">v4</span>
+<span class="text-border-default">|</span>
+<span class="font-label-mono-caps text-label-mono-caps text-text-muted tabular-nums">2026/07/04</span>
+<span class="text-border-default">|</span>
+<span class="font-body-sm text-body-sm text-text-muted">由 v3 调整而来</span>
+</div>
+</section>
+<!-- Main Layout Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-card-gap items-start w-full max-w-4xl">
+<!-- Center Column (Affected Weeks Workflow) -->
+<div class="col-span-1 lg:col-span-8 flex flex-col gap-6">
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+<!-- Card 1 -->
+<div class="bg-surface-container-lowest border border-border-default rounded-DEFAULT p-5 flex items-center gap-3">
+<span class="material-symbols-outlined text-primary bg-green-soft p-2 rounded-full">flag</span>
+<div class="font-headline-sm text-[15px] font-semibold text-text-primary">目标赛事未变</div>
+</div>
+<!-- Card 2 -->
+<div class="bg-surface-container-lowest border border-border-default rounded-DEFAULT p-5 flex items-center gap-3">
+<span class="material-symbols-outlined text-phase-specialty bg-cyan-soft p-2 rounded-full">trending_down</span>
+<div class="font-headline-sm text-[15px] font-semibold text-text-primary">专项期强度下调</div>
+</div>
+<!-- Card 3 -->
+<div class="bg-surface-container-lowest border border-border-default rounded-DEFAULT p-5 flex items-center gap-3">
+<span class="material-symbols-outlined text-phase-base bg-green-soft p-2 rounded-full">battery_charging_full</span>
+<div class="font-headline-sm text-[15px] font-semibold text-text-primary">恢复周提前</div>
+</div>
+<!-- Card 4 -->
+<div class="bg-surface-container-lowest border border-border-default rounded-DEFAULT p-5 flex items-center gap-3">
+<span class="material-symbols-outlined text-secondary bg-cyan-soft p-2 rounded-full">sync</span>
+<div class="font-headline-sm text-[15px] font-semibold text-text-primary">本周课表将重新同步</div>
+</div>
+</div>
+<div class="flex gap-4 justify-center mt-4">
+<button class="px-6 py-3 bg-primary text-on-primary rounded hover:bg-surface-tint transition-colors font-medium font-body-sm text-body-sm shadow-sm">返回赛季训练计划</button>
+<a class="px-6 py-3 border border-border-default rounded text-text-primary hover:bg-surface-container-low transition-colors font-medium font-body-sm text-body-sm flex items-center justify-center" href="#">查看版本历史</a>
+</div>
+</div>
+<!-- Right Column (Coach & Diff) -->
+<div class="col-span-1 lg:col-span-4 flex flex-col gap-card-gap">
+<!-- Coach Follow-up Panel -->
+<div class="bg-surface-container-lowest border border-border-default rounded-DEFAULT p-5 flex flex-col gap-4 relative overflow-hidden h-full">
+<div class="flex items-center gap-3">
+<img class="w-10 h-10 rounded-full object-cover border border-border-subtle" data-alt="A professional, minimalist profile photo of a marathon runner, clean lighting, neutral background, 200x200." src="https://lh3.googleusercontent.com/aida/AP1WRLsN2VznzGQTirogoD6BeJVXLjyb_HCzGuiOj7VlzVc_e-LXNMFxAsyZZcX4284Rx0U6nIHVWX-yW0PTIExnVQzer-lNKgJrzICqvX-YhpW-Wmuy7emv8hLbPB3ShX4DHQpXHvbOtmo6qfRHpZzBsunq3t_I6rpxN-OKNAlOXGCz83WSUFMGrRKIpaCEF6yXI0sbcUdMsjiGjgk4NZd2o-Jdzpt9uqwOu0fZi6OUCZoqEux5QSMrXDCf0fQ"/>
+<div>
+<div class="font-headline-sm text-[15px] font-semibold text-text-primary">Coach Analysis</div>
+<div class="font-label-mono-sm text-[10px] text-text-faint uppercase">Post-Adjustment Note</div>
+</div>
+</div>
+<p class="font-editorial-prose text-editorial-prose text-text-primary italic text-[15px]">
+                            "The adjustments to lower the intensity during the specialty phase and move the recovery week earlier will ensure a safer and more sustainable progression. This approach helps rebuild aerobic capacity without risking early peak burnout."
+                        </p>
+</div>
+</div>
+</div>
+</main>
+</div>
+</body></html>

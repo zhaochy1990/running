@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+
+<html lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE | Coach</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Newsreader:ital,wght@0,400;1,400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffdadb",
+                        "inverse-on-surface": "#f0f1f3",
+                        "surface-container-high": "#e7e8ea",
+                        "outline-variant": "#bccabc",
+                        "tertiary-container": "#ec6678",
+                        "inverse-primary": "#59df8a",
+                        "on-tertiary-fixed-variant": "#881a31",
+                        "on-surface": "#191c1e",
+                        "on-primary-container": "#003317",
+                        "surface-container-low": "#f2f4f6",
+                        "red-soft": "#fde8e8",
+                        "error": "#ba1a1a",
+                        "border-subtle": "#e8eaf0",
+                        "surface": "#f8f9fb",
+                        "amber-soft": "#fdf2dd",
+                        "on-primary-fixed": "#00210d",
+                        "text-primary": "#1a1c2e",
+                        "primary-fixed": "#77fca4",
+                        "phase-race": "#d32f2f",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#d9dadc",
+                        "phase-taper": "#7c4dff",
+                        "inverse-surface": "#2e3132",
+                        "green-edge": "#c8e8d6",
+                        "on-primary-fixed-variant": "#005229",
+                        "border-default": "#d8dae5",
+                        "phase-specialty": "#0097a7",
+                        "secondary-fixed-dim": "#66d6e7",
+                        "cyan-soft": "#e0f4f7",
+                        "primary": "#006d38",
+                        "cyan-edge": "#b9e3ea",
+                        "surface-variant": "#e1e2e4",
+                        "on-tertiary-container": "#5d001a",
+                        "surface-bright": "#f8f9fb",
+                        "on-primary": "#ffffff",
+                        "on-background": "#191c1e",
+                        "on-secondary-container": "#006b77",
+                        "on-tertiary": "#ffffff",
+                        "text-muted": "#555570",
+                        "on-secondary-fixed": "#001f24",
+                        "secondary-fixed": "#97f0ff",
+                        "primary-container": "#00a85a",
+                        "primary-fixed-dim": "#59df8a",
+                        "phase-base": "#00a85a",
+                        "red-edge": "#f3c8c8",
+                        "surface-container": "#edeef0",
+                        "on-surface-variant": "#3d4a3f",
+                        "amber-edge": "#f6e0a8",
+                        "secondary": "#006874",
+                        "phase-peak": "#e68a00",
+                        "secondary-container": "#7fedfe",
+                        "purple-soft": "#ede7ff",
+                        "on-error": "#ffffff",
+                        "surface-hover": "#f5f6fa",
+                        "green-soft": "#e6f7ee",
+                        "outline": "#6d7b6e",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed-dim": "#ffb2b8",
+                        "surface-tint": "#006d38",
+                        "on-error-container": "#93000a",
+                        "purple-edge": "#d4c8ff",
+                        "surface-container-lowest": "#ffffff",
+                        "background": "#f8f9fb",
+                        "surface-container-highest": "#e1e2e4",
+                        "on-tertiary-fixed": "#40000f",
+                        "on-secondary-fixed-variant": "#004f58",
+                        "text-faint": "#8888a0",
+                        "accent-pink": "#e91e63",
+                        "tertiary": "#a93347"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "sidebar-collapsed": "60px",
+                        "card-gap": "16px",
+                        "sidebar-width": "220px",
+                        "container-padding": "24px",
+                        "card-padding": "12px",
+                        "topbar-height": "50px",
+                        "coach-panel-width": "360px",
+                        "base": "8px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Outfit"],
+                        "metric-value": ["Outfit"],
+                        "headline-md": ["Outfit"],
+                        "label-mono-sm": ["JetBrains Mono"],
+                        "editorial-quote": ["Newsreader"],
+                        "editorial-prose": ["Newsreader"],
+                        "body-sm": ["Outfit"],
+                        "label-mono-caps": ["JetBrains Mono"],
+                        "body-md": ["Outfit"],
+                        "headline-sm": ["Outfit"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+            font-size: 1.25rem;
+        }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .transition-all-200 { transition: all 200ms ease-in-out; }
+    </style>
+</head>
+<body class="bg-background text-text-primary font-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen flex">
+<!-- Left Sidebar -->
+<aside class="w-sidebar-width bg-surface border-r border-border-default h-screen sticky top-0 flex flex-col pt-4 shrink-0 hidden md:flex">
+<div class="px-6 mb-8 flex items-center gap-2">
+<span class="font-display-lg text-display-lg font-bold text-primary tracking-tight">STRIDE</span>
+</div>
+<nav class="flex-1 px-4 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2 bg-green-soft text-primary rounded-lg font-body-md font-medium" href="#">
+<span class="material-symbols-outlined text-[20px]">calendar_month</span>
+            赛季训练计划
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">view_week</span>
+            本周课表
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+            训练记录
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">insights</span>
+            数据洞察
+        </a>
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">forum</span>
+            Coach
+        </a>
+</nav>
+<div class="p-4 mt-auto border-t border-border-default">
+<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+            设置
+        </a>
+</div>
+</aside>
+<!-- Coach Workspace Main Area -->
+<main class="flex-1 bg-surface-bright flex flex-col h-screen overflow-hidden">
+<!-- Header -->
+<header class="p-6 border-b border-border-default bg-white flex items-center justify-between shrink-0">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">forum</span>
+<h1 class="font-headline-sm text-text-primary font-bold">STRIDE Coach</h1>
+</div>
+</header>
+<!-- Chat Area -->
+<div class="flex-1 p-6 overflow-y-auto space-y-8 flex flex-col max-w-4xl mx-auto w-full">
+<!-- Coach Message Block -->
+<div class="flex items-start gap-4">
+<div class="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-1">
+<span class="material-symbols-outlined text-primary">smart_toy</span>
+</div>
+<div class="space-y-4 max-w-[85%]">
+<div class="bg-white border border-border-default p-5 rounded-xl rounded-tl-none shadow-sm">
+<p class="font-editorial-prose text-text-primary leading-relaxed">
+                        由于训练负荷约束存在冲突，计划生成未能完成。当前已启用计划未受任何影响。
+                    </p>
+</div>
+<!-- Clarifying Questions -->
+<div class="space-y-3 pl-2">
+<button class="w-full text-left bg-white border border-border-default hover:border-primary p-4 rounded-lg font-body-md text-text-primary transition-colors flex items-center justify-between group shadow-sm">
+<span>你更愿意减少长距离跑里程，还是增加休息日？</span>
+<span class="material-symbols-outlined text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
+</button>
+<button class="w-full text-left bg-white border border-border-default hover:border-primary p-4 rounded-lg font-body-md text-text-primary transition-colors flex items-center justify-between group shadow-sm">
+<span>峰值期强度提升的优先级有多高？</span>
+<span class="material-symbols-outlined text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
+</button>
+<button class="w-full text-left bg-white border border-border-default hover:border-primary p-4 rounded-lg font-body-md text-text-primary transition-colors flex items-center justify-between group shadow-sm">
+<span>总训练量上限是否可以小幅放宽？</span>
+<span class="material-symbols-outlined text-text-muted group-hover:text-primary transition-colors">chevron_right</span>
+</button>
+</div>
+<p class="font-label-mono-sm text-text-faint pt-2 pl-2 flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[14px]">info</span>
+                    你的输入已保存，回答这些问题后 Coach 会继续为你优化计划。
+                </p>
+</div>
+</div>
+</div>
+<!-- Chat Input -->
+<div class="p-6 bg-white border-t border-border-default shrink-0">
+<div class="max-w-4xl mx-auto">
+<div class="relative flex items-center">
+<input class="w-full bg-surface border border-border-default rounded-full py-3.5 pl-6 pr-14 font-body-md text-text-primary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors shadow-sm" placeholder="直接回答 Coach 的问题..." type="text"/>
+<button class="absolute right-3 p-2 text-text-muted hover:text-primary transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]">send</span>
+</button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

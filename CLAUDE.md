@@ -30,6 +30,25 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 | 接支付 / 支付宝 / 微信 / 订阅付费（调研 + 大陆主体接入方案，未开工）| [`docs/payment-china.md`](docs/payment-china.md) |
 | 改 race 预测 / 个体疲劳指数 / CS-D′ speed-duration 模型（去掉写死 Riegel 0.06，设计稿未实现）| [`docs/race-prediction-model.md`](docs/race-prediction-model.md) |
 | Frontend pages / API 路由清单 | [`docs/frontend.md`](docs/frontend.md) |
+| Web 产品设计 / Stitch 设计稿 | [`frontend/DESIGN.md`](frontend/DESIGN.md) —— Stitch MCP workflow + 设计规则 |
+
+## Stitch MCP design workflow (HARD)
+
+Web design work uses Stitch as the source of truth. Formal STRIDE Web design changes must be made through Stitch MCP first, then exported to `frontend/design/` as review snapshots.
+
+Before inspecting, updating, regenerating, or adding Stitch designs, read [`frontend/DESIGN.md`](frontend/DESIGN.md). It defines the required two-column / three-column workspace rules, user-facing terminology, CTA ownership, review checklist, and the MCP sequence: `list_projects` -> `list_design_systems` -> `list_screens` -> `get_screen` -> `edit_screens` or generation -> export HTML -> update `frontend/design/README.md` and the scenario README -> visible-text audit.
+
+Do not hand-edit local exported HTML as the final design source. If direct Stitch MCP tools are unavailable, use the configured `stitch` MCP server via JSON-RPC at `https://stitch.googleapis.com/mcp` with local Codex credentials; never write or reveal credential values.
+
+Operational rules for Stitch MCP:
+
+1. Treat Stitch screen IDs and returned artifacts as the source of truth; local HTML files are review snapshots only.
+2. For existing screens, call `get_screen` first, then use `edit_screens`; only use generation when a required state does not exist.
+3. Use project `STRIDE · Web` (`9898197682875783129`) and design system `STRIDE Endurance Lab` (`assets/78bc062efcff47b5944c094f5db74850`) unless the user explicitly changes the design direction.
+4. In prompts, describe layout, content, state, preserved product capabilities, terminology constraints, and CTA ownership; do not duplicate design-system token details for normal generation.
+5. Stitch responses may return full `outputComponents` artifacts or only a session/update event. If the artifact is missing, call `get_screen` for the updated screen before exporting.
+6. Download `htmlCode.downloadUrl` to `.stitch/designs/`, then copy the story-ordered review HTML files to the relevant `frontend/design/` scenario directory.
+7. Update `frontend/design/README.md`, the scenario README, and `frontend/design/manifest.json`; verify HTML links and run the banned visible-text audit before handing design work back.
 
 ## Frontend local verification (HARD)
 

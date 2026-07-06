@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Week Diff Review - STRIDE</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Newsreader:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-secondary-fixed": "#001f24", "background": "#f8f9fb", "primary": "#006d38", "surface-container-lowest": "#ffffff", "green-edge": "#c8e8d6", "error-container": "#ffdad6", "surface-bright": "#f8f9fb", "on-secondary": "#ffffff", "purple-soft": "#ede7ff", "primary-fixed": "#77fca4", "on-error": "#ffffff", "accent-pink": "#e91e63", "secondary-container": "#7fedfe", "surface": "#f8f9fb", "on-tertiary": "#ffffff", "on-primary-container": "#003317", "amber-edge": "#f6e0a8", "tertiary": "#a93347", "primary-fixed-dim": "#59df8a", "error": "#ba1a1a", "secondary": "#006874", "phase-taper": "#7c4dff", "tertiary-fixed-dim": "#ffb2b8", "on-secondary-container": "#006b77", "on-background": "#191c1e", "on-tertiary-fixed": "#40000f", "on-primary": "#ffffff", "secondary-fixed-dim": "#66d6e7", "border-default": "#d8dae5", "on-error-container": "#93000a", "purple-edge": "#d4c8ff", "surface-tint": "#006d38", "on-tertiary-container": "#5d001a", "surface-variant": "#e1e2e4", "surface-dim": "#d9dadc", "surface-container": "#edeef0", "on-primary-fixed-variant": "#005229", "text-faint": "#8888a0", "inverse-on-surface": "#f0f1f3", "phase-base": "#00a85a", "outline": "#6d7b6e", "cyan-edge": "#b9e3ea", "secondary-fixed": "#97f0ff", "on-tertiary-fixed-variant": "#881a31", "red-edge": "#f3c8c8", "primary-container": "#00a85a", "tertiary-fixed": "#ffdadb", "text-muted": "#555570", "on-surface": "#191c1e", "surface-container-highest": "#e1e2e4", "inverse-surface": "#2e3132", "surface-container-low": "#f2f4f6", "phase-race": "#d32f2f", "text-primary": "#1a1c2e", "inverse-primary": "#59df8a", "on-secondary-fixed-variant": "#004f58", "cyan-soft": "#e0f4f7", "border-subtle": "#e8eaf0", "phase-peak": "#e68a00", "phase-specialty": "#0097a7", "red-soft": "#fde8e8", "amber-soft": "#fdf2dd", "tertiary-container": "#ec6678", "on-primary-fixed": "#00210d", "surface-container-high": "#e7e8ea", "green-soft": "#e6f7ee", "surface-hover": "#f5f6fa", "outline-variant": "#bccabc", "on-surface-variant": "#3d4a3f"
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                    spacing: { "coach-panel-width": "360px", "card-gap": "16px", "card-padding": "12px", "topbar-height": "50px", "sidebar-width": "220px", "container-padding": "24px", "base": "8px", "sidebar-collapsed": "60px" },
+                    fontFamily: {
+                        "metric-value": ["Outfit"], "label-mono-caps": ["JetBrains Mono"], "editorial-quote": ["Newsreader"], "editorial-prose": ["Newsreader"], "headline-sm": ["Outfit"], "label-mono-sm": ["JetBrains Mono"], "display-lg": ["Outfit"], "body-sm": ["Outfit"], "body-md": ["Outfit"], "headline-md": ["Outfit"]
+                    },
+                    fontSize: {
+                        "metric-value": ["28px", { lineHeight: "1", fontWeight: "700" }],
+                        "label-mono-caps": ["10px", { lineHeight: "12px", letterSpacing: "0.14em", fontWeight: "500" }],
+                        "editorial-quote": ["18px", { lineHeight: "1.6", fontWeight: "400" }],
+                        "editorial-prose": ["16px", { lineHeight: "1.6", fontWeight: "400" }],
+                        "headline-sm": ["18px", { lineHeight: "1.4", fontWeight: "600" }],
+                        "label-mono-sm": ["9px", { lineHeight: "10px", letterSpacing: "0.1em", fontWeight: "500" }],
+                        "display-lg": ["32px", { lineHeight: "1.1", letterSpacing: "-0.02em", fontWeight: "600" }],
+                        "body-sm": ["13px", { lineHeight: "1.4", fontWeight: "400" }],
+                        "body-md": ["14px", { lineHeight: "1.5", fontWeight: "400" }],
+                        "headline-md": ["24px", { lineHeight: "1.2", letterSpacing: "-0.01em", fontWeight: "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for analytical feel */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background-color: #d8dae5; border-radius: 999px; }
+    </style>
+</head>
+<body class="bg-background text-text-primary font-body-md text-body-md h-screen w-full flex overflow-hidden selection:bg-primary selection:text-on-primary">
+<!-- ==================== LEFT COLUMN: SideNavBar ==================== -->
+<!-- Applying exact logic and styles from JSON Component 0: SideNavBar -->
+<nav class="w-[220px] h-screen fixed left-0 top-0 bg-surface-container border-r border-border-default flex flex-col h-full py-6 z-20">
+<!-- Header -->
+<div class="px-6 mb-8 flex flex-col gap-1">
+<h1 class="font-display-lg text-display-lg font-bold text-primary tracking-tight">STRIDE</h1>
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted uppercase">Endurance Elite</span>
+</div>
+<!-- Navigation Links -->
+<ul class="flex-1 flex flex-col gap-1">
+<!-- Dashboard (Inactive) -->
+<li>
+<a class="flex items-center gap-3 px-6 py-2.5 text-on-surface-variant hover:bg-surface-hover transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">dashboard</span>
+                    Dashboard
+                </a>
+</li>
+<!-- Training Plan (Inactive) -->
+<li>
+<a class="flex items-center gap-3 px-6 py-2.5 text-on-surface-variant hover:bg-surface-hover transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">calendar_today</span>
+                    Training Plan
+                </a>
+</li>
+<!-- This Week (Active - Intent matches "本周训练") -->
+<li>
+<a class="flex items-center gap-3 px-[20px] py-2.5 text-on-background border-l-4 border-primary font-bold bg-surface-hover transition-all duration-150 font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">event_note</span>
+                    This Week
+                </a>
+</li>
+<!-- Analysis (Inactive) -->
+<li>
+<a class="flex items-center gap-3 px-6 py-2.5 text-on-surface-variant hover:bg-surface-hover transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">query_stats</span>
+                    Analysis
+                </a>
+</li>
+<!-- Library (Inactive) -->
+<li>
+<a class="flex items-center gap-3 px-6 py-2.5 text-on-surface-variant hover:bg-surface-hover transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">analytics</span>
+                    Library
+                </a>
+</li>
+<!-- Settings (Inactive) -->
+<li>
+<a class="flex items-center gap-3 px-6 py-2.5 text-on-surface-variant hover:bg-surface-hover transition-colors font-body-md text-body-md" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+                    Settings
+                </a>
+</li>
+</ul>
+<!-- Contextual Stepper: Week Diff Review -->
+<div class="mt-8 px-6 pt-6 border-t border-border-default">
+<h3 class="font-label-mono-caps text-label-mono-caps text-text-muted mb-4 uppercase">Week Diff Review</h3>
+<div class="flex items-center justify-between mb-4">
+<span class="font-label-mono-sm text-label-mono-sm bg-surface text-text-muted px-2 py-1 rounded border border-border-default">v7</span>
+<span class="material-symbols-outlined text-[14px] text-text-muted">arrow_forward</span>
+<span class="font-label-mono-sm text-label-mono-sm text-on-surface border border-amber-edge px-2 py-1 rounded bg-surface">v8</span>
+</div>
+<!-- Vertical Stepper -->
+<div class="flex flex-col gap-0 relative">
+<!-- Line background -->
+<div class="absolute left-[5px] top-[10px] bottom-[10px] w-px bg-border-default -z-10"></div>
+<!-- Step 1: Complete -->
+<div class="flex items-start gap-3 pb-4">
+<div class="w-3 h-3 rounded-full bg-primary flex items-center justify-center mt-1 z-10 ring-4 ring-surface-container"></div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted mt-1 leading-none uppercase">生成建议</span>
+</div>
+<!-- Step 2: Active -->
+<div class="flex items-start gap-3 pb-4">
+<div class="w-3 h-3 rounded-full bg-surface-container border-2 border-primary mt-1 z-10 flex items-center justify-center ring-4 ring-surface-container">
+<div class="w-1 h-1 rounded-full bg-primary"></div>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-primary font-bold mt-1 leading-none uppercase">审阅 Diff</span>
+</div>
+<!-- Step 3: Pending -->
+<div class="flex items-start gap-3">
+<div class="w-3 h-3 rounded-full bg-surface-container border border-border-default mt-1 z-10 ring-4 ring-surface-container"></div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-faint mt-1 leading-none uppercase">应用计划</span>
+</div>
+</div>
+</div>
+<!-- CTA -->
+<div class="px-6 mt-8">
+<button class="w-full border border-border-default text-text-primary hover:bg-surface-hover py-2 rounded-lg font-label-mono-caps text-label-mono-caps transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">sync</span>
+                Sync Device
+            </button>
+</div>
+</nav>
+<!-- ==================== MIDDLE COLUMN: Main Content ==================== -->
+<main class="flex-1 ml-[220px] mr-[360px] h-screen overflow-y-auto relative bg-background">
+<div class="max-w-[800px] mx-auto px-12 py-12 pb-[120px]">
+<!-- Header Section -->
+<header class="mb-8">
+<div class="flex items-center gap-3 mb-2">
+<div class="px-2 py-0.5 rounded-full bg-amber-soft border border-amber-edge text-on-surface font-label-mono-sm text-label-mono-sm uppercase">计划版本</div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted">v7 → v8</span>
+</div>
+<h2 class="font-display-lg text-display-lg text-text-primary">审阅本周调整草稿</h2>
+</header>
+<!-- Change Summary Bento -->
+<div class="grid grid-cols-5 gap-px bg-border-default border border-border-default rounded-lg overflow-hidden mb-8">
+<div class="bg-surface p-4 flex flex-col justify-center">
+<span class="font-label-mono-caps text-label-mono-caps text-text-muted mb-1">变化项</span>
+<span class="font-metric-value text-metric-value text-text-primary">5</span>
+</div>
+<div class="bg-surface p-4 flex flex-col justify-center">
+<span class="font-label-mono-caps text-label-mono-caps text-text-muted mb-1">受影响日</span>
+<span class="font-metric-value text-metric-value text-text-primary">3</span>
+</div>
+<div class="bg-surface p-4 flex flex-col justify-center col-span-2">
+<span class="font-label-mono-caps text-label-mono-caps text-text-muted mb-1">周里程变化</span>
+<div class="flex items-baseline gap-2">
+<span class="font-metric-value text-metric-value text-text-muted line-through opacity-70">48<span class="text-[14px]">km</span></span>
+<span class="material-symbols-outlined text-[16px] text-text-muted">arrow_right_alt</span>
+<span class="font-metric-value text-metric-value text-primary">42<span class="text-[14px]">km</span></span>
+</div>
+</div>
+<div class="bg-amber-soft p-4 flex flex-col justify-center">
+<span class="font-label-mono-caps text-label-mono-caps text-on-surface mb-1">调整风险</span>
+<span class="font-metric-value text-[20px] font-bold text-on-surface">低</span>
+</div>
+</div>
+<!-- Impact Panel -->
+<div class="bg-surface border border-border-default rounded-lg p-4 mb-8 flex items-start gap-4">
+<div class="w-8 h-8 rounded-full bg-green-soft flex items-center justify-center shrink-0 mt-0.5">
+<span class="material-symbols-outlined text-primary text-[18px]">verified</span>
+</div>
+<div>
+<h4 class="font-headline-sm text-headline-sm text-text-primary mb-1">不改变 赛季训练计划</h4>
+<p class="font-body-md text-body-md text-text-muted">本次微调仅针对本周状态及出差日程，后续几周的 P1 核心目标（16周马拉松破PB）保持有效，进度无脱轨风险。</p>
+</div>
+</div>
+<!-- Tabs -->
+<div class="flex items-center gap-6 border-b border-border-default mb-6">
+<button class="pb-3 border-b-2 border-primary text-primary font-headline-sm text-[15px] px-1">只看变化</button>
+<button class="pb-3 border-b-2 border-transparent text-text-muted hover:text-text-primary transition-colors font-body-md text-[15px] px-1">查看全部</button>
+</div>
+<!-- Diff List (Cards) -->
+<div class="flex flex-col gap-4">
+<!-- Diff Card: Tuesday (Move) -->
+<div class="bg-surface border border-border-default rounded-lg p-5 group hover:border-border-subtle transition-colors">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="font-label-mono-caps text-label-mono-caps bg-surface-container px-2 py-1 rounded text-text-primary">TUE</div>
+<span class="font-body-sm text-body-sm text-text-muted">10月24日</span>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-cyan-edge bg-on-surface-variant px-2 py-0.5 rounded uppercase">日程调整</span>
+</div>
+<div class="flex items-center gap-4 mb-5">
+<!-- Before -->
+<div class="flex-1 border border-border-default border-dashed rounded p-3 opacity-60">
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted block mb-1">原计划</span>
+<div class="font-headline-sm text-headline-sm text-text-primary">VO2 Max Intervals</div>
+<div class="font-body-sm text-body-sm text-text-muted mt-1">6 x 800m @ 3:45/km</div>
+</div>
+<!-- Arrow -->
+<div class="shrink-0 text-text-muted flex flex-col items-center gap-1">
+<span class="material-symbols-outlined">arrow_forward</span>
+<span class="font-label-mono-sm text-label-mono-sm">延后</span>
+</div>
+<!-- After -->
+<div class="flex-1 bg-cyan-soft border border-cyan-edge rounded p-3">
+<span class="font-label-mono-sm text-label-mono-sm text-on-surface block mb-1">移动至周五</span>
+<div class="font-headline-sm text-headline-sm text-on-surface line-through opacity-50">VO2 Max Intervals</div>
+<div class="font-body-sm text-body-sm text-on-surface font-bold mt-1 text-primary">-&gt; 休息日</div>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="px-3 py-1.5 rounded font-label-mono-caps text-label-mono-caps text-text-muted hover:bg-surface-hover border border-transparent hover:border-border-default transition-all">反馈</button>
+<button class="px-3 py-1.5 rounded font-label-mono-caps text-label-mono-caps text-primary hover:bg-green-soft border border-transparent hover:border-green-edge transition-all flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">chat_bubble</span> 问 Coach
+                        </button>
+</div>
+</div>
+<!-- Diff Card: Wednesday (Replace) -->
+<div class="bg-surface border border-border-default rounded-lg p-5 group hover:border-border-subtle transition-colors">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="font-label-mono-caps text-label-mono-caps bg-surface-container px-2 py-1 rounded text-text-primary">WED</div>
+<span class="font-body-sm text-body-sm text-text-muted">10月25日</span>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-amber-edge bg-on-surface-variant px-2 py-0.5 rounded uppercase">内容替换</span>
+</div>
+<div class="flex items-center gap-4 mb-5">
+<div class="flex-1 border border-border-default border-dashed rounded p-3 opacity-60">
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted block mb-1">原计划</span>
+<div class="font-headline-sm text-headline-sm text-text-primary">Recovery Run</div>
+<div class="font-body-sm text-body-sm text-text-muted mt-1">8km @ 5:30/km</div>
+</div>
+<div class="shrink-0 text-text-muted flex flex-col items-center gap-1">
+<span class="material-symbols-outlined">swap_horiz</span>
+</div>
+<div class="flex-1 bg-amber-soft border border-amber-edge rounded p-3">
+<span class="font-label-mono-sm text-label-mono-sm text-on-surface block mb-1">替换为</span>
+<div class="font-headline-sm text-headline-sm text-on-surface">休息与放松</div>
+<div class="font-body-sm text-body-sm text-on-surface mt-1 opacity-80">(标注出差，避免疲劳累积)</div>
+</div>
+</div>
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="px-3 py-1.5 rounded font-label-mono-caps text-label-mono-caps text-text-muted hover:bg-surface-hover border border-transparent hover:border-border-default transition-all">反馈</button>
+<button class="px-3 py-1.5 rounded font-label-mono-caps text-label-mono-caps text-primary hover:bg-green-soft border border-transparent hover:border-green-edge transition-all flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">chat_bubble</span> 问 Coach
+                        </button>
+</div>
+</div>
+<!-- Diff Card: Friday (Modify Down) -->
+<div class="bg-surface border border-border-default rounded-lg p-5 group hover:border-border-subtle transition-colors">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="font-label-mono-caps text-label-mono-caps bg-surface-container px-2 py-1 rounded text-text-primary">FRI</div>
+<span class="font-body-sm text-body-sm text-text-muted">10月27日</span>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-primary-fixed-dim bg-on-surface-variant px-2 py-0.5 rounded uppercase">强度下调</span>
+</div>
+<div class="flex items-center gap-4 mb-5">
+<div class="flex-1 border border-border-default border-dashed rounded p-3 opacity-60">
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted block mb-1">原计划</span>
+<div class="font-headline-sm text-headline-sm text-text-primary">Tempo Run</div>
+<div class="font-body-sm text-body-sm text-text-muted mt-1">12km w/ 6km @ 4:15/km</div>
+</div>
+<div class="shrink-0 text-text-muted flex flex-col items-center gap-1">
+<span class="material-symbols-outlined">trending_down</span>
+</div>
+<div class="flex-1 bg-green-soft border border-green-edge rounded p-3 relative overflow-hidden">
+<!-- Injected move badge indicator -->
+<div class="absolute top-0 right-0 bg-primary text-on-primary font-label-mono-sm text-[8px] px-1.5 py-0.5 rounded-bl">从周二移入</div>
+<span class="font-label-mono-sm text-label-mono-sm text-on-primary-container block mb-1">降强度为</span>
+<div class="font-headline-sm text-headline-sm text-on-primary-container">有氧进阶 (Aerobic Dev)</div>
+<div class="font-body-sm text-body-sm text-on-primary-container mt-1 opacity-80">10km @ 4:45/km <span class="text-[10px] ml-1 bg-surface-lowest px-1 rounded border border-border-default">替换原定间歇</span></div>
+</div>
+</div>
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="px-3 py-1.5 rounded font-label-mono-caps text-label-mono-caps text-text-muted hover:bg-surface-hover border border-transparent hover:border-border-default transition-all">反馈</button>
+<button class="px-3 py-1.5 rounded font-label-mono-caps text-label-mono-caps text-primary hover:bg-green-soft border border-transparent hover:border-green-edge transition-all flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">chat_bubble</span> 问 Coach
+                        </button>
+</div>
+</div>
+<!-- Diff Card: Sunday (Keep with limit) -->
+<div class="bg-surface border border-border-default rounded-lg p-5 group hover:border-border-subtle transition-colors">
+<div class="flex justify-between items-start mb-4">
+<div class="flex items-center gap-3">
+<div class="font-label-mono-caps text-label-mono-caps bg-surface-container px-2 py-1 rounded text-text-primary">SUN</div>
+<span class="font-body-sm text-body-sm text-text-muted">10月29日</span>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted bg-surface-container px-2 py-0.5 rounded uppercase border border-border-default">微调保留</span>
+</div>
+<div class="flex items-center gap-4 mb-5">
+<div class="flex-1 border border-border-default border-dashed rounded p-3 opacity-60">
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted block mb-1">原计划</span>
+<div class="font-headline-sm text-headline-sm text-text-primary">Long Run</div>
+<div class="font-body-sm text-body-sm text-text-muted mt-1">24km @ 5:15/km</div>
+</div>
+<div class="shrink-0 text-text-muted flex flex-col items-center gap-1">
+<span class="material-symbols-outlined">tune</span>
+</div>
+<div class="flex-1 bg-surface border border-border-default rounded p-3">
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted block mb-1">修改上限</span>
+<div class="font-headline-sm text-headline-sm text-text-primary">Long Run (Capped)</div>
+<div class="font-body-sm text-body-sm text-text-primary mt-1 font-bold">上限 20km <span class="font-normal text-text-muted">@ 5:15/km</span></div>
+</div>
+</div>
+<div class="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+<button class="px-3 py-1.5 rounded font-label-mono-caps text-label-mono-caps text-text-muted hover:bg-surface-hover border border-transparent hover:border-border-default transition-all">反馈</button>
+<button class="px-3 py-1.5 rounded font-label-mono-caps text-label-mono-caps text-primary hover:bg-green-soft border border-transparent hover:border-green-edge transition-all flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">chat_bubble</span> 问 Coach
+                        </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Sticky Bottom Bar -->
+<div class="fixed bottom-0 left-[220px] right-[360px] bg-surface/90 backdrop-blur-md border-t border-border-default p-4 z-30 shadow-[0_-4px_24px_rgba(0,0,0,0.02)]">
+<div class="max-w-[800px] mx-auto flex items-center justify-between">
+<button class="px-4 py-2 font-label-mono-caps text-label-mono-caps text-error hover:bg-red-soft rounded transition-colors">
+                    放弃草稿
+                </button>
+<div class="flex items-center gap-3">
+<button class="px-6 py-2.5 font-label-mono-caps text-label-mono-caps text-text-primary border border-border-default hover:bg-surface-hover rounded transition-colors">
+                        提交反馈
+                    </button>
+<button class="px-6 py-2.5 font-label-mono-caps text-label-mono-caps text-on-primary bg-primary hover:bg-primary/90 rounded transition-colors shadow-sm flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">check</span>
+                        应用本周调整
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<!-- ==================== RIGHT COLUMN: NavigationDrawer (Coach Chat) ==================== -->
+<!-- Applying exact logic and styles from JSON Component 2: NavigationDrawer -->
+<aside class="w-[360px] h-screen fixed right-0 top-0 bg-surface-container-low border-l border-border-default flex flex-col h-full z-20 transition-all duration-300 ease-in-out">
+<!-- Header -->
+<div class="p-4 border-b border-border-default flex items-center justify-between bg-surface-container-low sticky top-0 z-10">
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-tertiary-container flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">smart_toy</span>
+                    AI Coach Chat
+                </h2>
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted uppercase tracking-wider">Pro Insights</span>
+</div>
+<button class="w-8 h-8 rounded-full hover:bg-surface-container-high flex items-center justify-center text-text-muted transition-colors">
+<span class="material-symbols-outlined text-[20px]">close</span>
+</button>
+</div>
+<!-- Chat History Area -->
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-6 font-editorial-prose text-editorial-prose">
+<!-- Date Divider -->
+<div class="flex items-center justify-center">
+<span class="font-label-mono-caps text-[10px] text-text-faint bg-surface-container px-2 py-1 rounded">JUST NOW</span>
+</div>
+<!-- Coach Message -->
+<div class="flex items-start gap-3">
+<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center shrink-0 mt-1">
+<span class="material-symbols-outlined text-on-primary text-[16px]">bolt</span>
+</div>
+<div class="bg-surface border border-border-default rounded-lg rounded-tl-none p-4 text-text-primary shadow-sm relative">
+<p class="mb-3">已为你生成修订建议。主要变动是避开了周三的出差高峰，并将强度课顺延，同时微调了长距离以确保你能充分恢复。</p>
+<p class="text-text-muted">你可以点击左侧具体卡片上的「问 Coach」针对单日计划提问，或者在这里直接告诉我你的总体感觉。</p>
+<!-- Internal system thought indicator (analytical feel) -->
+<div class="mt-4 pt-3 border-t border-border-default flex items-center gap-2">
+<span class="material-symbols-outlined text-[14px] text-text-faint">memory</span>
+<span class="font-label-mono-sm text-label-mono-sm text-text-faint">Processed: HRV Data, Calendar Sync</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Composer & Quick Prompts Area -->
+<div class="p-4 border-t border-border-default bg-surface-container-low">
+<!-- Quick Prompts (Horizontal Scroll) -->
+<div class="flex items-center gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide" style="scrollbar-width: none;">
+<button class="shrink-0 px-3 py-1.5 rounded-full border border-border-default bg-surface hover:bg-surface-hover text-text-primary font-body-sm text-[13px] transition-colors whitespace-nowrap">
+                    解释周五变化
+                </button>
+<button class="shrink-0 px-3 py-1.5 rounded-full border border-border-default bg-surface hover:bg-surface-hover text-text-primary font-body-sm text-[13px] transition-colors whitespace-nowrap">
+                    保留周二间歇
+                </button>
+<button class="shrink-0 px-3 py-1.5 rounded-full border border-border-default bg-surface hover:bg-surface-hover text-text-primary font-body-sm text-[13px] transition-colors whitespace-nowrap">
+                    长距离再降一点
+                </button>
+</div>
+<!-- Input Field -->
+<div class="relative bg-surface border border-border-default rounded-lg focus-within:border-primary transition-colors flex items-end p-1">
+<textarea class="w-full bg-transparent border-none focus:ring-0 resize-none py-2.5 px-3 font-body-md text-body-md placeholder:text-text-faint min-h-[44px] max-h-[120px]" placeholder="告诉 Coach 哪一处还想改..." rows="1"></textarea>
+<button class="w-9 h-9 shrink-0 flex items-center justify-center text-primary hover:bg-green-soft rounded mb-0.5 mr-0.5 transition-colors">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">arrow_upward</span>
+</button>
+</div>
+<!-- Footer Tabs (from JSON) -->
+<div class="flex items-center justify-between mt-4 px-2">
+<button class="flex items-center gap-1.5 text-text-muted hover:text-text-primary font-label-mono-caps text-label-mono-caps transition-colors">
+<span class="material-symbols-outlined text-[14px]">comment</span> Feedback
+                </button>
+<button class="flex items-center gap-1.5 text-text-muted hover:text-text-primary font-label-mono-caps text-label-mono-caps transition-colors">
+<span class="material-symbols-outlined text-[14px]">tune</span> Settings
+                </button>
+</div>
+</div>
+</aside>
+</body></html>

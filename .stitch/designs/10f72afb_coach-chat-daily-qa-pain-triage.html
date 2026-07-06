@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+
+<html lang="zh"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Coach Chat / Pain Triage - STRIDE</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Newsreader:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "inverse-on-surface": "#f0f1f3",
+                    "surface-container-lowest": "#ffffff",
+                    "primary-fixed": "#77fca4",
+                    "on-secondary-fixed": "#001f24",
+                    "phase-specialty": "#0097a7",
+                    "cyan-edge": "#b9e3ea",
+                    "text-faint": "#8888a0",
+                    "purple-edge": "#d4c8ff",
+                    "on-tertiary-container": "#5d001a",
+                    "on-error-container": "#93000a",
+                    "amber-soft": "#fdf2dd",
+                    "error": "#ba1a1a",
+                    "tertiary-fixed": "#ffdadb",
+                    "surface-variant": "#e1e2e4",
+                    "purple-soft": "#ede7ff",
+                    "surface-bright": "#f8f9fb",
+                    "on-secondary-container": "#006b77",
+                    "on-secondary-fixed-variant": "#004f58",
+                    "red-edge": "#f3c8c8",
+                    "phase-race": "#d32f2f",
+                    "on-secondary": "#ffffff",
+                    "text-primary": "#1a1c2e",
+                    "on-primary-fixed": "#00210d",
+                    "inverse-primary": "#59df8a",
+                    "secondary": "#006874",
+                    "surface-container-high": "#e7e8ea",
+                    "primary": "#006d38",
+                    "inverse-surface": "#2e3132",
+                    "green-edge": "#c8e8d6",
+                    "surface-container-low": "#f2f4f6",
+                    "surface-dim": "#d9dadc",
+                    "on-tertiary-fixed-variant": "#881a31",
+                    "on-background": "#191c1e",
+                    "phase-base": "#00a85a",
+                    "surface-container-highest": "#e1e2e4",
+                    "green-soft": "#e6f7ee",
+                    "surface": "#f8f9fb",
+                    "on-primary-fixed-variant": "#005229",
+                    "primary-container": "#00a85a",
+                    "background": "#f8f9fb",
+                    "accent-pink": "#e91e63",
+                    "on-primary-container": "#003317",
+                    "on-primary": "#ffffff",
+                    "phase-peak": "#e68a00",
+                    "amber-edge": "#f6e0a8",
+                    "secondary-fixed": "#97f0ff",
+                    "cyan-soft": "#e0f4f7",
+                    "tertiary-fixed-dim": "#ffb2b8",
+                    "secondary-container": "#7fedfe",
+                    "on-tertiary-fixed": "#40000f",
+                    "on-tertiary": "#ffffff",
+                    "on-error": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "red-soft": "#fde8e8",
+                    "tertiary-container": "#ec6678",
+                    "outline-variant": "#bccabc",
+                    "secondary-fixed-dim": "#66d6e7",
+                    "border-subtle": "#e8eaf0",
+                    "surface-tint": "#006d38",
+                    "primary-fixed-dim": "#59df8a",
+                    "on-surface-variant": "#3d4a3f",
+                    "text-muted": "#555570",
+                    "phase-taper": "#7c4dff",
+                    "outline": "#6d7b6e",
+                    "border-default": "#d8dae5",
+                    "surface-hover": "#f5f6fa",
+                    "on-surface": "#191c1e",
+                    "tertiary": "#a93347",
+                    "surface-container": "#edeef0"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "topbar-height": "50px",
+                    "base": "8px",
+                    "coach-panel-width": "360px",
+                    "sidebar-width": "220px",
+                    "sidebar-collapsed": "60px",
+                    "container-padding": "24px",
+                    "card-padding": "12px",
+                    "card-gap": "16px"
+            },
+            "fontFamily": {
+                    "body-sm": [
+                            "Outfit"
+                    ],
+                    "label-mono-sm": [
+                            "JetBrains Mono"
+                    ],
+                    "headline-md": [
+                            "Outfit"
+                    ],
+                    "display-lg": [
+                            "Outfit"
+                    ],
+                    "headline-sm": [
+                            "Outfit"
+                    ],
+                    "editorial-prose": [
+                            "Newsreader"
+                    ],
+                    "metric-value": [
+                            "Outfit"
+                    ],
+                    "label-mono-caps": [
+                            "JetBrains Mono"
+                    ],
+                    "body-md": [
+                            "Outfit"
+                    ],
+                    "editorial-quote": [
+                            "Newsreader"
+                    ]
+            },
+            "fontSize": {
+                    "body-sm": [
+                            "13px",
+                            {
+                                    "lineHeight": "1.4",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "label-mono-sm": [
+                            "9px",
+                            {
+                                    "lineHeight": "10px",
+                                    "letterSpacing": "0.1em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "headline-md": [
+                            "24px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "letterSpacing": "-0.01em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "display-lg": [
+                            "32px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "letterSpacing": "-0.02em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "headline-sm": [
+                            "18px",
+                            {
+                                    "lineHeight": "1.4",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "editorial-prose": [
+                            "16px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "metric-value": [
+                            "28px",
+                            {
+                                    "lineHeight": "1",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "label-mono-caps": [
+                            "10px",
+                            {
+                                    "lineHeight": "12px",
+                                    "letterSpacing": "0.14em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "body-md": [
+                            "14px",
+                            {
+                                    "lineHeight": "1.5",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "editorial-quote": [
+                            "18px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "fontWeight": "400"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .filled-icon {
+          font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for chat area */
+        .chat-scroll::-webkit-scrollbar {
+            width: 4px;
+        }
+        .chat-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .chat-scroll::-webkit-scrollbar-thumb {
+            background-color: #d8dae5;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-background text-text-primary font-body-md min-h-screen flex text-body-md">
+<!-- SideNavBar -->
+<nav class="hidden md:flex flex-col h-full py-container-padding bg-surface-container-low dark:bg-surface-container-lowest text-primary dark:text-primary-fixed-dim font-body-md text-body-md fixed left-0 top-0 h-full w-sidebar-width border-r border-border-default dark:border-outline-variant flat no shadows z-50">
+<div class="px-4 mb-8">
+<h1 class="font-display-lg text-display-lg font-bold text-text-primary dark:text-on-background">STRIDE</h1>
+<p class="font-label-mono-sm text-label-mono-sm text-text-muted mt-2 uppercase">Master Plan • P1 Base Phase • Week 08/24</p>
+</div>
+<ul class="flex-1 space-y-1">
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">calendar_view_week</span>
+                    Weekly Training
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">event_note</span>
+                    Training Plan
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-primary dark:text-on-background font-bold border-l-4 border-primary px-4 py-2 bg-surface-hover dark:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl filled-icon">psychology</span>
+                    AI Coach
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">directions_run</span>
+                    Activities
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">trending_up</span>
+                    Ability
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">monitor_heart</span>
+                    Health
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">science</span>
+                    Testing
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">group</span>
+                    Team
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">school</span>
+                    Coach
+                </a>
+</li>
+<li>
+<a class="flex items-center text-text-muted dark:text-on-surface-variant px-4 py-2 hover:bg-surface-hover dark:hover:bg-surface-dim hover:bg-surface-hover dark:hover:bg-surface-dim transition-colors duration-200 Active: opacity-80 transition-opacity" href="#">
+<span class="material-symbols-outlined mr-3 text-xl">settings</span>
+                    Settings
+                </a>
+</li>
+</ul>
+<div class="px-4 mt-auto space-y-4">
+<button class="w-full bg-primary text-on-primary py-2 px-4 rounded-DEFAULT font-headline-sm text-headline-sm hover:bg-surface-tint transition-colors">Upgrade Plan</button>
+<div class="pt-4 border-t border-border-default">
+<a class="flex items-center text-text-muted py-2 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">help</span> Support
+                </a>
+<a class="flex items-center text-text-muted py-2 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined mr-3">logout</span> Log Out
+                </a>
+</div>
+<div class="flex items-center gap-3 mt-4">
+<img alt="Athlete Profile Picture" class="w-10 h-10 rounded-full object-cover border border-border-default" data-alt="A detailed, close-up, high-contrast, black and white portrait of a focused runner. Professional studio lighting, flat minimalist styling." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAtjQGsNifIV3cq9YC-AY02GQgVNu-EQZb6j3QrGxpU8-Oyms7lylULh2hnsByJJspPiUJKis1cgHwebQUk3gUwzRa2BBZfbMCILUHHQWY_vt2N_jpJodMh46Q9AZPXsrEc_AsKBs1U8JCTCP9wgOvXd5JEFu_ZJdkdFWaxNOyGlzBk_7C55oHyNxMrZbb9BVeV3h1M7TZILNZKHkRMukCXkfv3yOExGz_TEDTT5w5ZMVQGoSqyIrHPj4WOZFwO4wx4Nogf2I4tNlg"/>
+</div>
+</div>
+</nav>
+<!-- TopAppBar -->
+<header class="flex justify-between items-center px-container-padding bg-background dark:bg-background text-primary dark:text-primary-fixed-dim font-headline-sm text-headline-sm fixed top-0 right-0 h-topbar-height w-full md:w-[calc(100%-220px)] border-b border-border-default dark:border-outline-variant flat no shadows z-40 bg-opacity-95 backdrop-blur-sm">
+<div class="hidden">STRIDE</div>
+<div class="flex-1 max-w-md mx-4 hidden md:block">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-text-muted">search</span>
+<input class="w-full pl-10 pr-4 py-1.5 bg-surface-container border border-border-default rounded-DEFAULT text-body-sm font-body-sm focus:outline-none focus:border-primary" placeholder="Search..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4 ml-auto">
+<button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="text-text-muted hover:text-primary transition-colors md:hidden"><span class="material-symbols-outlined">search</span></button>
+<button class="hidden md:block px-4 py-1.5 border border-border-default text-text-primary rounded-DEFAULT text-body-sm font-body-sm hover:bg-surface-hover transition-colors">Sync Data</button>
+<button class="bg-primary text-on-primary px-4 py-1.5 rounded-DEFAULT text-body-sm font-body-sm hover:bg-surface-tint transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">play_arrow</span> Start Workout
+            </button>
+<img alt="User profile" class="w-8 h-8 rounded-full object-cover border border-border-default md:hidden" data-alt="A detailed, close-up, high-contrast, black and white portrait of a focused runner. Professional studio lighting, flat minimalist styling." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAt0m-n0KHUswanftrkkUnQCRv4VmurUIU59uWPF0TUMDiR4yMODMtZYPCCMgi0SIp6QrXjSusaSUbxpc7y7cnSh0wdfUkvcjfsx12-j19QsukGux0G8-jggoS-e1cfTilCLQCVg3o5FkEClU61fXV3J9CqpoXZLRFWuswvb9La4CqXPcUwvnKCbX1wafmI0RAUPK9yH3EbBZfsR9tG0DJTqR8DYNp1o-Qj3RhQcTBcN46vpmp6vvAwgcMUSlrRxlOZsIJI9L3yGtU"/>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 ml-0 md:ml-sidebar-width mt-topbar-height p-container-padding grid grid-cols-1 lg:grid-cols-12 gap-card-gap h-[calc(100vh-50px)] overflow-hidden">
+<!-- Left Column: Context -->
+<aside class="col-span-1 lg:col-span-4 flex flex-col gap-card-gap overflow-y-auto pr-2 pb-8">
+<!-- AI Coach Status -->
+<div class="bg-surface-container-lowest border border-border-default rounded-DEFAULT p-card-padding flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-purple-soft border border-purple-edge flex items-center justify-center text-phase-taper">
+<span class="material-symbols-outlined filled-icon text-2xl">psychology</span>
+</div>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-text-primary">AI Coach Active</h2>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted flex items-center gap-2 mt-1">
+<span class="w-1.5 h-1.5 rounded-full bg-phase-base"></span>
+                        ANALYZING HEALTH DATA
+                    </p>
+</div>
+</div>
+<!-- Health Context Card -->
+<div class="bg-surface-container-lowest border border-border-default rounded-DEFAULT p-card-padding flex flex-col gap-4">
+<div class="flex items-center gap-2 border-b border-border-default pb-3">
+<span class="material-symbols-outlined text-text-muted text-lg">medical_information</span>
+<h3 class="font-label-mono-caps text-label-mono-caps text-text-muted">CURRENT CONTEXT</h3>
+</div>
+<div class="space-y-4">
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-text-faint">history</span>
+<div>
+<p class="font-label-mono-sm text-label-mono-sm text-text-muted mb-1">RECENT LOAD</p>
+<p class="font-body-sm text-body-sm text-text-primary">Recent hill strides</p>
+</div>
+</div>
+<div class="flex gap-3 bg-red-soft border border-red-edge rounded p-2">
+<span class="material-symbols-outlined text-error">warning</span>
+<div>
+<p class="font-label-mono-sm text-label-mono-sm text-error mb-1">NOTE</p>
+<p class="font-body-sm text-body-sm text-text-primary font-bold">Calf tightness reported</p>
+</div>
+</div>
+<div class="flex gap-3">
+<span class="material-symbols-outlined text-text-faint">skip_next</span>
+<div>
+<p class="font-label-mono-sm text-label-mono-sm text-text-muted mb-1">NEXT SCHEDULED</p>
+<p class="font-body-sm text-body-sm text-text-primary">Intervals (5x1km @ threshold)</p>
+</div>
+</div>
+</div>
+</div>
+</aside>
+<!-- Right Column: Coach Chat -->
+<section class="col-span-1 lg:col-span-8 bg-surface-container-lowest border border-border-default rounded-DEFAULT flex flex-col overflow-hidden h-full">
+<!-- Chat Header -->
+<div class="border-b border-border-default px-6 py-4 flex items-center gap-3 bg-surface-bright">
+<span class="material-symbols-outlined text-phase-taper filled-icon">psychology</span>
+<div>
+<h2 class="font-headline-sm text-headline-sm text-text-primary">Pain Triage Assessment</h2>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted">SESSION ID: PT-8924</p>
+</div>
+</div>
+<!-- Chat Area -->
+<div class="flex-1 overflow-y-auto chat-scroll p-6 space-y-6 flex flex-col">
+<!-- User Message -->
+<div class="flex flex-col items-end gap-1">
+<div class="bg-surface-container border border-border-default rounded-lg rounded-tr-none px-4 py-3 max-w-[80%]">
+<p class="font-body-md text-body-md text-text-primary">我跟腱疼。</p>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-faint">10:42 AM</span>
+</div>
+<!-- Coach Response -->
+<div class="flex flex-col items-start gap-1">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-phase-taper text-sm filled-icon">psychology</span>
+<span class="font-label-mono-caps text-label-mono-caps text-text-muted">AI COACH</span>
+</div>
+<div class="bg-surface-bright border border-border-default rounded-lg rounded-tl-none px-4 py-3 max-w-[85%] space-y-3">
+<p class="font-editorial-prose text-editorial-prose text-text-primary">
+                            收到，注意到了。跟腱疼痛不能掉以轻心，尤其是在最近有坡道冲刺训练的情况下。为了安全起见，我们需要先评估一下情况。
+                        </p>
+<!-- Safety Warning -->
+<div class="bg-amber-soft border border-amber-edge p-3 flex gap-3 mt-4">
+<span class="material-symbols-outlined text-phase-peak shrink-0">info</span>
+<p class="font-body-sm text-body-sm text-text-primary">
+<strong class="font-semibold">免责声明:</strong> Coach 无法提供医疗诊断。如有严重红肿、跛行或持续疼痛，请咨询医疗专家。
+                            </p>
+</div>
+</div>
+</div>
+<!-- Coach Assessment Form (Interactive Element) -->
+<div class="flex flex-col items-start gap-1">
+<div class="bg-surface-bright border border-border-default rounded-lg rounded-tl-none px-0 py-0 max-w-[90%] overflow-hidden w-full">
+<div class="px-4 py-3 border-b border-border-default bg-surface-container-low flex justify-between items-center">
+<h4 class="font-headline-sm text-headline-sm text-text-primary">疼痛评估量表</h4>
+<span class="font-label-mono-caps text-label-mono-caps text-text-muted">STEP 1/3</span>
+</div>
+<div class="p-5 space-y-6">
+<!-- Location -->
+<div>
+<label class="font-label-mono-caps text-label-mono-caps text-text-muted block mb-3">疼痛位置 (Pain Location)</label>
+<div class="flex gap-4">
+<div class="flex-1 bg-surface border border-border-default rounded p-3 text-center cursor-pointer hover:bg-surface-hover">
+<span class="font-body-sm text-body-sm">小腿肚 (Calf)</span>
+</div>
+<div class="flex-1 bg-red-soft border-2 border-phase-race rounded p-3 text-center relative">
+<span class="material-symbols-outlined absolute top-1 right-1 text-phase-race text-sm">check_circle</span>
+<span class="font-body-sm text-body-sm font-bold text-on-error-container">跟腱 (Achilles)</span>
+</div>
+<div class="flex-1 bg-surface border border-border-default rounded p-3 text-center cursor-pointer hover:bg-surface-hover">
+<span class="font-body-sm text-body-sm">足底 (Plantar)</span>
+</div>
+</div>
+</div>
+<!-- Severity Slider -->
+<div>
+<label class="font-label-mono-caps text-label-mono-caps text-text-muted block mb-3 flex justify-between">
+<span>疼痛程度 (Severity)</span>
+<span>6/10</span>
+</label>
+<input class="w-full h-2 bg-surface-container rounded-full appearance-none cursor-pointer accent-phase-race" max="10" min="0" type="range" value="6"/>
+<div class="flex justify-between mt-2 font-label-mono-sm text-label-mono-sm text-text-faint">
+<span>0 (无痛)</span>
+<span>5 (中度)</span>
+<span>10 (剧痛)</span>
+</div>
+</div>
+<!-- Additional Symptoms -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="border border-border-default rounded p-3">
+<label class="flex items-center gap-3 cursor-pointer">
+<input class="form-checkbox text-primary rounded-sm border-border-default focus:ring-primary h-4 w-4" type="checkbox"/>
+<span class="font-body-sm text-body-sm">发生时间在24小时内</span>
+</label>
+</div>
+<div class="border border-border-default rounded p-3">
+<label class="flex items-center gap-3 cursor-pointer">
+<input class="form-checkbox text-primary rounded-sm border-border-default focus:ring-primary h-4 w-4" type="checkbox"/>
+<span class="font-body-sm text-body-sm">是否红肿发热</span>
+</label>
+</div>
+<div class="border border-border-default rounded p-3 col-span-1 md:col-span-2">
+<label class="flex items-center gap-3 cursor-pointer">
+<input checked="" class="form-checkbox text-primary rounded-sm border-border-default focus:ring-primary h-4 w-4" type="checkbox"/>
+<span class="font-body-sm text-body-sm">跑步时是否加剧</span>
+</label>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Coach Recommendations -->
+<div class="flex flex-col items-start gap-1">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-phase-taper text-sm filled-icon">psychology</span>
+<span class="font-label-mono-caps text-label-mono-caps text-text-muted">AI COACH ACTION PLAN</span>
+</div>
+<div class="bg-surface-container-lowest border border-border-default rounded-lg rounded-tl-none px-5 py-4 max-w-[85%]">
+<ul class="space-y-3">
+<li class="flex gap-3 items-start">
+<span class="material-symbols-outlined text-error mt-0.5">block</span>
+<span class="font-body-sm text-body-sm">暂停坡跑和高强度训练</span>
+</li>
+<li class="flex gap-3 items-start">
+<span class="material-symbols-outlined text-primary mt-0.5">self_improvement</span>
+<span class="font-body-sm text-body-sm">尝试基础灵活性训练 (仅在无痛范围内)</span>
+</li>
+<li class="flex gap-3 items-start">
+<span class="material-symbols-outlined text-phase-peak mt-0.5">warning</span>
+<span class="font-body-sm text-body-sm font-semibold">避免带痛训练，必要时休息。</span>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<!-- Input Area / Actions -->
+<div class="border-t border-border-default bg-surface-container-lowest p-4">
+<!-- Suggested Actions (Bento style flex) -->
+<div class="flex flex-wrap gap-2 mb-4">
+<button class="bg-surface border border-border-default text-text-primary px-3 py-1.5 rounded-full font-body-sm text-body-sm hover:bg-surface-hover transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">edit_calendar</span>
+                        临时调整本周训练
+                    </button>
+<button class="bg-primary text-on-primary px-3 py-1.5 rounded-full font-body-sm text-body-sm hover:bg-surface-tint transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">check_circle</span>
+                        继续回答疼痛问题
+                    </button>
+<button class="bg-surface border border-border-default text-text-primary px-3 py-1.5 rounded-full font-body-sm text-body-sm hover:bg-surface-hover transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">history</span>
+                        查看健康记录
+                    </button>
+</div>
+<div class="relative">
+<input class="w-full bg-surface-container border border-border-default rounded-DEFAULT py-3 pl-4 pr-12 text-body-md font-body-md focus:outline-none focus:border-primary" placeholder="Type a message..." type="text"/>
+<button class="absolute right-2 top-1/2 -translate-y-1/2 text-primary p-2 hover:bg-surface-hover rounded-full transition-colors">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+</div>
+</section>
+</main>
+</body></html>

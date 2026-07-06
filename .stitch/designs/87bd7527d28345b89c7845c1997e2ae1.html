@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - 审阅计划调整</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&amp;family=Newsreader:wght@400&amp;family=Outfit:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "text-primary": "#1a1c2e",
+                        "surface-container-highest": "#e1e2e4",
+                        "outline": "#6d7b6e",
+                        "on-primary": "#ffffff",
+                        "accent-pink": "#e91e63",
+                        "surface-variant": "#e1e2e4",
+                        "tertiary-container": "#ec6678",
+                        "on-secondary-fixed-variant": "#004f58",
+                        "on-secondary-fixed": "#001f24",
+                        "on-secondary-container": "#006b77",
+                        "surface-bright": "#f8f9fb",
+                        "phase-base": "#00a85a",
+                        "on-surface-variant": "#3d4a3f",
+                        "phase-peak": "#e68a00",
+                        "purple-edge": "#d4c8ff",
+                        "on-secondary": "#ffffff",
+                        "primary-container": "#00a85a",
+                        "on-background": "#191c1e",
+                        "on-primary-container": "#003317",
+                        "cyan-edge": "#b9e3ea",
+                        "amber-soft": "#fdf2dd",
+                        "surface-container": "#edeef0",
+                        "on-tertiary": "#ffffff",
+                        "surface-container-low": "#f2f4f6",
+                        "on-tertiary-container": "#5d001a",
+                        "tertiary-fixed-dim": "#ffb2b8",
+                        "secondary-fixed-dim": "#66d6e7",
+                        "tertiary": "#a93347",
+                        "secondary": "#006874",
+                        "red-soft": "#fde8e8",
+                        "inverse-on-surface": "#f0f1f3",
+                        "border-default": "#d8dae5",
+                        "background": "#f8f9fb",
+                        "on-tertiary-fixed-variant": "#881a31",
+                        "on-primary-fixed": "#00210d",
+                        "on-tertiary-fixed": "#40000f",
+                        "purple-soft": "#ede7ff",
+                        "border-subtle": "#e8eaf0",
+                        "outline-variant": "#bccabc",
+                        "inverse-surface": "#2e3132",
+                        "phase-specialty": "#0097a7",
+                        "text-faint": "#8888a0",
+                        "surface": "#f8f9fb",
+                        "primary-fixed-dim": "#59df8a",
+                        "on-primary-fixed-variant": "#005229",
+                        "error-container": "#ffdad6",
+                        "surface-container-lowest": "#ffffff",
+                        "inverse-primary": "#59df8a",
+                        "tertiary-fixed": "#ffdadb",
+                        "phase-taper": "#7c4dff",
+                        "on-error-container": "#93000a",
+                        "primary": "#006d38",
+                        "text-muted": "#555570",
+                        "surface-container-high": "#e7e8ea",
+                        "secondary-fixed": "#97f0ff",
+                        "green-edge": "#c8e8d6",
+                        "amber-edge": "#f6e0a8",
+                        "surface-tint": "#006d38",
+                        "on-surface": "#191c1e",
+                        "surface-hover": "#f5f6fa",
+                        "primary-fixed": "#77fca4",
+                        "surface-dim": "#d9dadc",
+                        "green-soft": "#e6f7ee",
+                        "red-edge": "#f3c8c8",
+                        "error": "#ba1a1a",
+                        "cyan-soft": "#e0f4f7",
+                        "secondary-container": "#7fedfe",
+                        "phase-race": "#d32f2f",
+                        "on-error": "#ffffff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "topbar-height": "50px",
+                        "base": "8px",
+                        "sidebar-collapsed": "60px",
+                        "sidebar-width": "240px",
+                        "container-padding": "24px",
+                        "coach-panel-width": "340px",
+                        "card-padding": "12px",
+                        "card-gap": "16px"
+                    },
+                    "fontFamily": {
+                        "metric-value": ["Outfit"],
+                        "body-md": ["Outfit"],
+                        "headline-sm": ["Outfit"],
+                        "label-mono-caps": ["JetBrains Mono"],
+                        "label-mono-sm": ["JetBrains Mono"],
+                        "editorial-prose": ["Newsreader"],
+                        "display-lg": ["Outfit"],
+                        "body-sm": ["Outfit"],
+                        "editorial-quote": ["Newsreader"],
+                        "headline-md": ["Outfit"]
+                    },
+                    "fontSize": {
+                        "metric-value": ["28px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "body-md": ["14px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "headline-sm": ["18px", { "lineHeight": "1.4", "fontWeight": "600" }],
+                        "label-mono-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.14em", "fontWeight": "500" }],
+                        "label-mono-sm": ["9px", { "lineHeight": "10px", "letterSpacing": "0.1em", "fontWeight": "500" }],
+                        "editorial-prose": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "display-lg": ["32px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-sm": ["13px", { "lineHeight": "1.4", "fontWeight": "400" }],
+                        "editorial-quote": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body { font-family: 'Outfit', sans-serif; background-color: #f8f9fb; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .tabular-nums { font-variant-numeric: tabular-nums; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d8dae5; border-radius: 2px; }
+    </style>
+</head>
+<body class="bg-background text-text-primary h-screen flex overflow-hidden">
+<!-- Column 1: Left Navigation -->
+<nav class="w-sidebar-width h-screen border-r border-border-default bg-surface-container flex flex-col z-20 shrink-0">
+<div class="px-6 py-8">
+<h1 class="font-display-lg text-display-lg font-bold text-primary">STRIDE</h1>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mt-1 uppercase">Elite Performance</p>
+</div>
+<ul class="flex flex-col gap-1 px-3 mb-8">
+<li>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-text-muted hover:bg-surface-hover hover:text-text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">calendar_view_week</span>
+<span class="font-body-md">Weekly Training</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2.5 text-text-primary bg-surface-hover rounded-lg transition-colors font-semibold" href="#">
+<span class="material-symbols-outlined text-[20px]">calendar_month</span>
+<span class="font-body-md">Master Plan</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2.5 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">directions_run</span>
+<span class="font-body-md">Activities</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2.5 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">insights</span>
+<span class="font-body-md">Metrics</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 px-3 py-2.5 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="font-body-md">Settings</span>
+</a>
+</li>
+</ul>
+</nav>
+<!-- Column 2: Middle Workspace -->
+<main class="flex-grow flex flex-col h-screen overflow-hidden">
+<!-- Top Nav -->
+<header class="h-topbar-height border-b border-border-default bg-surface-container-lowest flex items-center justify-between px-container-padding shrink-0">
+<div class="flex items-center gap-2 font-body-md text-body-md text-text-muted">
+<a class="hover:text-primary" href="#">Master Plan</a>
+<span class="material-symbols-outlined text-sm">chevron_right</span>
+<span class="text-text-primary font-medium">审阅计划调整</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-text-muted hover:text-primary"><span class="material-symbols-outlined">notifications</span></button>
+<img alt="Profile" class="w-7 h-7 rounded-full border border-border-default" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCM8T_KH29ld86Yac6Y2k9R8-RAVWSnltDDN1iEmnjxpycLQAtT6ntJtDrXwWa12_mH5pzJ41N_gqO9UOgJtv5IHmqyPL96LdHuelLxDpmVzRs9k7pBdC3BDT7X5bfZ8UkpEsMCfZaTMS1I3IZHyAZX3zSjmy2enseZZ_1u0l99neaA7w82ZYtkw3_rPe1q-gu4pnLgkn0ItYUnO9Ij7QpIx4zckRTFutV9g2Z5lGkebi-62EK6NKJyjkVOq_V4FqehRUwHTn2hFpU"/>
+</div>
+</header>
+<!-- Content Area -->
+<div class="flex-grow overflow-y-auto p-container-padding bg-background space-y-8">
+<div>
+<div class="flex items-center justify-between mb-4">
+<h2 class="font-display-lg text-display-lg text-text-primary">审阅计划调整</h2>
+<div class="bg-surface-container-lowest border border-border-default rounded-lg px-3 py-1.5 flex items-center gap-2">
+<span class="font-label-mono-caps text-[11px] text-text-muted">VERSION</span>
+<span class="font-label-mono-caps text-[11px] tabular-nums font-bold">
+                        当前 v3 <span class="text-text-faint px-1">→</span> <span class="text-primary">新计划 v4</span>
+</span>
+</div>
+</div>
+<!-- Header Summary -->
+<div class="grid grid-cols-4 gap-3">
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<p class="font-label-mono-caps text-label-mono-sm text-text-muted mb-1">变更项</p>
+<p class="font-metric-value text-metric-value tabular-nums">5</p>
+</div>
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<p class="font-label-mono-caps text-label-mono-sm text-text-muted mb-1">受影响阶段</p>
+<p class="font-metric-value text-[24px] font-bold text-text-primary tabular-nums mt-1">P2-P4</p>
+</div>
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<p class="font-label-mono-caps text-label-mono-sm text-text-muted mb-1">负荷变动</p>
+<p class="font-metric-value text-metric-value tabular-nums text-primary">-8%</p>
+</div>
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<p class="font-label-mono-caps text-label-mono-sm text-text-muted mb-1">风险评级</p>
+<div class="flex items-center gap-2 mt-2">
+<span class="w-2 h-2 rounded-full bg-phase-base"></span>
+<span class="font-body-md text-body-md font-bold text-phase-base">低</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Section '变化总览' -->
+<div>
+<h3 class="font-headline-sm text-text-primary mb-3">变化总览</h3>
+<div class="bg-surface-container-lowest border border-border-default rounded-xl overflow-hidden divide-y divide-border-subtle">
+<div class="p-3 flex items-center gap-3">
+<span class="font-label-mono-sm text-primary bg-green-soft px-2 py-1 rounded border border-green-edge">修改</span>
+<span class="font-body-sm text-text-primary">备选赛事</span>
+</div>
+<div class="p-3 flex items-center gap-3">
+<span class="font-label-mono-sm text-secondary bg-cyan-soft px-2 py-1 rounded border border-cyan-edge">降强度</span>
+<span class="font-body-sm text-text-primary">峰值跑量</span>
+</div>
+<div class="p-3 flex items-center gap-3">
+<span class="font-label-mono-sm text-primary bg-green-soft px-2 py-1 rounded border border-green-edge">修改</span>
+<span class="font-body-sm text-text-primary">恢复周频率</span>
+</div>
+<div class="p-3 flex items-center gap-3">
+<span class="font-label-mono-sm text-secondary bg-cyan-soft px-2 py-1 rounded border border-cyan-edge">降强度</span>
+<span class="font-body-sm text-text-primary">关键课强度</span>
+</div>
+<div class="p-3 flex items-center gap-3">
+<span class="font-label-mono-sm text-text-muted bg-surface-container px-2 py-1 rounded border border-border-default">保持不变</span>
+<span class="font-body-sm text-text-muted">目标赛事</span>
+</div>
+</div>
+</div>
+<!-- Section '核心变动对比' -->
+<div>
+<h3 class="font-headline-sm text-text-primary mb-3">核心变动对比</h3>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<p class="font-label-mono-caps text-label-mono-sm text-text-muted mb-2">备选赛事</p>
+<div class="flex items-center gap-3 mb-3">
+<span class="text-text-muted line-through font-body-sm">苏州半马</span>
+<span class="material-symbols-outlined text-text-faint text-sm">arrow_forward</span>
+<span class="font-body-sm font-semibold text-text-primary">杭州半马</span>
+</div>
+<p class="font-body-sm text-text-muted bg-surface-hover p-2 rounded-lg"><span class="font-medium text-text-primary">影响：</span>更符合赛道体感</p>
+</div>
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<p class="font-label-mono-caps text-label-mono-sm text-text-muted mb-2">峰值跑量</p>
+<div class="flex items-center gap-3 mb-3">
+<span class="text-text-muted line-through font-body-sm tabular-nums">72km</span>
+<span class="material-symbols-outlined text-text-faint text-sm">arrow_forward</span>
+<span class="font-body-sm font-semibold text-primary tabular-nums">68km</span>
+</div>
+<p class="font-body-sm text-text-muted bg-surface-hover p-2 rounded-lg"><span class="font-medium text-text-primary">影响：</span>降低持续积累伤病的风险</p>
+</div>
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<p class="font-label-mono-caps text-label-mono-sm text-text-muted mb-2">恢复周</p>
+<div class="flex items-center gap-3 mb-3">
+<span class="text-text-muted line-through font-body-sm">每 4 周</span>
+<span class="material-symbols-outlined text-text-faint text-sm">arrow_forward</span>
+<span class="font-body-sm font-semibold text-text-primary">每 3 周</span>
+</div>
+<p class="font-body-sm text-text-muted bg-surface-hover p-2 rounded-lg"><span class="font-medium text-text-primary">影响：</span>增加生理冗余</p>
+</div>
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<p class="font-label-mono-caps text-label-mono-sm text-text-muted mb-2">周末长跑</p>
+<div class="flex items-center gap-3 mb-3">
+<span class="text-text-muted line-through font-body-sm">28km 匀速</span>
+<span class="material-symbols-outlined text-text-faint text-sm">arrow_forward</span>
+<span class="font-body-sm font-semibold text-text-primary">24km (含末段 M 配速)</span>
+</div>
+<p class="font-body-sm text-text-muted bg-surface-hover p-2 rounded-lg"><span class="font-medium text-text-primary">影响：</span>提高配速稳定性</p>
+</div>
+</div>
+</div>
+<!-- Section '对训练结果的影响' -->
+<div>
+<h3 class="font-headline-sm text-text-primary mb-3">对训练结果的影响</h3>
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-4">
+<ul class="space-y-3">
+<li class="flex items-center justify-between">
+<span class="font-body-sm text-text-primary">完赛信心</span>
+<div class="flex items-center gap-2">
+<span class="w-24 h-1.5 bg-surface-container rounded-full overflow-hidden"><span class="block h-full bg-primary w-[80%]"></span></span>
+<span class="material-symbols-outlined text-primary text-[16px]">trending_up</span>
+</div>
+</li>
+<li class="flex items-center justify-between">
+<span class="font-body-sm text-text-primary">受伤风险</span>
+<div class="flex items-center gap-2">
+<span class="w-24 h-1.5 bg-surface-container rounded-full overflow-hidden"><span class="block h-full bg-phase-base w-[30%]"></span></span>
+<span class="material-symbols-outlined text-phase-base text-[16px]">trending_down</span>
+</div>
+</li>
+<li class="flex items-center justify-between">
+<span class="font-body-sm text-text-primary">峰值体能</span>
+<div class="flex items-center gap-2">
+<span class="w-24 h-1.5 bg-surface-container rounded-full overflow-hidden"><span class="block h-full bg-primary w-[75%]"></span></span>
+<span class="material-symbols-outlined text-text-muted text-[16px]">horizontal_rule</span>
+</div>
+</li>
+<li class="flex items-center justify-between">
+<span class="font-body-sm text-text-primary">恢复效率</span>
+<div class="flex items-center gap-2">
+<span class="w-24 h-1.5 bg-surface-container rounded-full overflow-hidden"><span class="block h-full bg-primary w-[90%]"></span></span>
+<span class="material-symbols-outlined text-primary text-[16px]">trending_up</span>
+</div>
+</li>
+</ul>
+</div>
+</div>
+<!-- Action Footer -->
+<div class="pt-4 border-t border-border-default flex items-center gap-3 pb-8">
+<button class="bg-primary hover:bg-surface-tint text-on-primary font-bold px-6 py-3 rounded-xl transition-all shadow-sm">
+                    启用计划
+                </button>
+<button class="text-text-faint hover:text-error px-4 py-3 rounded-xl transition-colors font-medium">
+                    放弃调整
+                </button>
+</div>
+</div>
+</main>
+<!-- Column 3: AI Coach Interaction -->
+<aside class="w-coach-panel-width h-screen border-l border-border-default bg-surface-container-lowest flex flex-col shrink-0">
+<div class="p-6 border-b border-border-subtle bg-surface-container-low flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined text-sm">smart_toy</span>
+</div>
+<div>
+<p class="font-headline-sm text-sm">AI 教练 / 调整建议</p>
+</div>
+</div>
+<div class="flex-grow overflow-y-auto p-6 space-y-6">
+<!-- Message from Coach -->
+<div class="space-y-4">
+<p class="font-editorial-prose text-editorial-prose text-text-primary leading-relaxed">
+                    你好！根据你的反馈，我重新平衡了第 12-18 周的负荷。重点是降低了峰值跑量并增加了恢复频率，这会让你的进度更稳健。你觉得这个节奏如何？
+                </p>
+</div>
+<!-- Interventions -->
+<div class="space-y-2 pt-4">
+<button class="w-full text-left p-3 rounded-xl border border-border-default hover:bg-surface-hover hover:border-primary transition-all flex items-center justify-between group">
+<span class="font-body-sm text-text-primary">解释变化原因</span>
+<span class="material-symbols-outlined text-text-faint group-hover:text-primary text-sm">lightbulb</span>
+</button>
+<button class="w-full text-left p-3 rounded-xl border border-border-default hover:bg-surface-hover hover:border-primary transition-all flex items-center justify-between group">
+<span class="font-body-sm text-text-primary">重新生成计划</span>
+<span class="material-symbols-outlined text-text-faint group-hover:text-primary text-sm">refresh</span>
+</button>
+</div>
+</div>
+<!-- Chat Input Placeholder -->
+<div class="p-4 border-t border-border-subtle bg-surface-container-low">
+<div class="bg-surface-container-lowest border border-border-default rounded-xl p-3 flex items-center gap-2">
+<input class="flex-grow bg-transparent border-none focus:ring-0 text-sm placeholder-text-faint" placeholder="询问教练..." type="text"/>
+<button class="text-primary hover:scale-110 transition-transform"><span class="material-symbols-outlined">send</span></button>
+</div>
+</div>
+</aside>
+</body></html>

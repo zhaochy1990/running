@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Weekly Plan / Drafting</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&amp;family=Outfit:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed": "#001f24",
+                        "background": "#f8f9fb",
+                        "primary": "#006d38",
+                        "surface-container-lowest": "#ffffff",
+                        "green-edge": "#c8e8d6",
+                        "error-container": "#ffdad6",
+                        "surface-bright": "#f8f9fb",
+                        "on-secondary": "#ffffff",
+                        "purple-soft": "#ede7ff",
+                        "primary-fixed": "#77fca4",
+                        "on-error": "#ffffff",
+                        "accent-pink": "#e91e63",
+                        "secondary-container": "#7fedfe",
+                        "surface": "#f8f9fb",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-container": "#003317",
+                        "amber-edge": "#f6e0a8",
+                        "tertiary": "#a93347",
+                        "primary-fixed-dim": "#59df8a",
+                        "error": "#ba1a1a",
+                        "secondary": "#006874",
+                        "phase-taper": "#7c4dff",
+                        "tertiary-fixed-dim": "#ffb2b8",
+                        "on-secondary-container": "#006b77",
+                        "on-background": "#191c1e",
+                        "on-tertiary-fixed": "#40000f",
+                        "on-primary": "#ffffff",
+                        "secondary-fixed-dim": "#66d6e7",
+                        "border-default": "#d8dae5",
+                        "on-error-container": "#93000a",
+                        "purple-edge": "#d4c8ff",
+                        "surface-tint": "#006d38",
+                        "on-tertiary-container": "#5d001a",
+                        "surface-variant": "#e1e2e4",
+                        "surface-dim": "#d9dadc",
+                        "surface-container": "#edeef0",
+                        "on-primary-fixed-variant": "#005229",
+                        "text-faint": "#8888a0",
+                        "inverse-on-surface": "#f0f1f3",
+                        "phase-base": "#00a85a",
+                        "outline": "#6d7b6e",
+                        "cyan-edge": "#b9e3ea",
+                        "secondary-fixed": "#97f0ff",
+                        "on-tertiary-fixed-variant": "#881a31",
+                        "red-edge": "#f3c8c8",
+                        "primary-container": "#00a85a",
+                        "tertiary-fixed": "#ffdadb",
+                        "text-muted": "#555570",
+                        "on-surface": "#191c1e",
+                        "surface-container-highest": "#e1e2e4",
+                        "inverse-surface": "#2e3132",
+                        "surface-container-low": "#f2f4f6",
+                        "phase-race": "#d32f2f",
+                        "text-primary": "#1a1c2e",
+                        "inverse-primary": "#59df8a",
+                        "on-secondary-fixed-variant": "#004f58",
+                        "cyan-soft": "#e0f4f7",
+                        "border-subtle": "#e8eaf0",
+                        "phase-peak": "#e68a00",
+                        "phase-specialty": "#0097a7",
+                        "red-soft": "#fde8e8",
+                        "amber-soft": "#fdf2dd",
+                        "tertiary-container": "#ec6678",
+                        "on-primary-fixed": "#00210d",
+                        "surface-container-high": "#e7e8ea",
+                        "green-soft": "#e6f7ee",
+                        "surface-hover": "#f5f6fa",
+                        "outline-variant": "#bccabc",
+                        "on-surface-variant": "#3d4a3f"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "coach-panel-width": "360px",
+                        "card-gap": "16px",
+                        "card-padding": "12px",
+                        "topbar-height": "50px",
+                        "sidebar-width": "220px",
+                        "container-padding": "24px",
+                        "base": "8px",
+                        "sidebar-collapsed": "60px"
+                    },
+                    "fontFamily": {
+                        "metric-value": ["Outfit"],
+                        "label-mono-caps": ["JetBrains Mono"],
+                        "editorial-quote": ["Newsreader"],
+                        "editorial-prose": ["Newsreader"],
+                        "headline-sm": ["Outfit"],
+                        "label-mono-sm": ["JetBrains Mono"],
+                        "display-lg": ["Outfit"],
+                        "body-sm": ["Outfit"],
+                        "body-md": ["Outfit"],
+                        "headline-md": ["Outfit"]
+                    },
+                    "fontSize": {
+                        "metric-value": ["28px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "label-mono-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.14em", "fontWeight": "500" }],
+                        "editorial-quote": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "editorial-prose": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-sm": ["18px", { "lineHeight": "1.4", "fontWeight": "600" }],
+                        "label-mono-sm": ["9px", { "lineHeight": "10px", "letterSpacing": "0.1em", "fontWeight": "500" }],
+                        "display-lg": ["32px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-sm": ["13px", { "lineHeight": "1.4", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-background text-text-primary font-body-md text-body-md antialiased overflow-hidden flex min-h-screen">
+<!-- Left Column: SideNavBar -->
+<nav class="bg-surface-container dark:bg-surface-container w-[220px] h-screen fixed left-0 top-0 border-r border-border-default dark:border-outline flex flex-col h-full py-6 z-50">
+<!-- Brand / Header -->
+<div class="px-6 mb-8">
+<h1 class="font-display-lg text-display-lg font-bold text-primary dark:text-primary-fixed">STRIDE</h1>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mt-1 uppercase">Endurance Elite</p>
+</div>
+<!-- Plan Context Snippet (Added based on prompt context) -->
+<div class="px-6 mb-6">
+<div class="bg-surface-container-low border border-border-default rounded p-3">
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted uppercase mb-1">Current Focus</p>
+<p class="font-body-sm text-body-sm font-medium">Week 08 · Base Phase</p>
+<div class="flex items-center gap-2 mt-2">
+<span class="w-1.5 h-1.5 rounded-full bg-phase-base"></span>
+<span class="font-label-mono-caps text-label-mono-caps uppercase">v7 ACTIVE</span>
+</div>
+</div>
+</div>
+<!-- Navigation Tabs -->
+<ul class="flex-1 flex flex-col gap-1 px-4">
+<!-- Index 0: Dashboard -->
+<li>
+<a class="flex items-center gap-3 px-4 py-2 rounded text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-hover dark:hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">dashboard</span>
+<span class="font-body-md text-body-md">Dashboard</span>
+</a>
+</li>
+<!-- Index 1: Training Plan -->
+<li>
+<a class="flex items-center gap-3 px-4 py-2 rounded text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-hover dark:hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">calendar_today</span>
+<span class="font-body-md text-body-md">Training Plan</span>
+</a>
+</li>
+<!-- Index 2: This Week (ACTIVE) -->
+<li>
+<a class="flex items-center gap-3 px-4 py-2 rounded-r text-on-background dark:text-on-background border-l-4 border-primary font-bold bg-surface-hover dark:bg-surface-variant transition-all duration-150" href="#">
+<span class="material-symbols-outlined text-[20px] text-primary">event_note</span>
+<span class="font-body-md text-body-md">This Week</span>
+</a>
+</li>
+<!-- Index 3: Analysis -->
+<li>
+<a class="flex items-center gap-3 px-4 py-2 rounded text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-hover dark:hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">query_stats</span>
+<span class="font-body-md text-body-md">Analysis</span>
+</a>
+</li>
+<!-- Index 4: Library -->
+<li>
+<a class="flex items-center gap-3 px-4 py-2 rounded text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-hover dark:hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">analytics</span>
+<span class="font-body-md text-body-md">Library</span>
+</a>
+</li>
+<!-- Index 5: Settings -->
+<li>
+<a class="flex items-center gap-3 px-4 py-2 rounded text-on-surface-variant dark:text-on-surface-variant hover:bg-surface-hover dark:hover:bg-surface-variant transition-colors group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">settings</span>
+<span class="font-body-md text-body-md">Settings</span>
+</a>
+</li>
+</ul>
+<!-- Bottom CTA -->
+<div class="px-6 mt-auto pt-6">
+<button class="w-full flex items-center justify-center gap-2 bg-surface text-primary border border-border-default rounded py-2 hover:bg-surface-hover transition-colors">
+<span class="material-symbols-outlined text-[18px]">sync</span>
+<span class="font-body-sm text-body-sm font-medium">Sync Device</span>
+</button>
+</div>
+</nav>
+<!-- Middle Column: Main Canvas -->
+<main class="ml-[220px] mr-[360px] flex-1 relative h-screen bg-background overflow-hidden">
+<!-- Background: Dimmed Current Calendar Grid -->
+<div class="absolute inset-0 p-container-padding opacity-20 pointer-events-none flex flex-col gap-4">
+<div class="flex justify-between items-end mb-4">
+<div>
+<h2 class="font-headline-md text-headline-md font-bold">Week 08</h2>
+<p class="font-label-mono-caps text-label-mono-caps mt-1">Base Phase / Endurance Focus</p>
+</div>
+</div>
+<div class="grid grid-cols-7 gap-4 flex-1">
+<!-- Mock Days -->
+<div class="border border-border-default bg-surface rounded p-3 flex flex-col h-full"><span class="font-label-mono-caps text-label-mono-caps mb-2">MON</span><div class="w-full h-2 bg-phase-base rounded mb-2"></div><div class="w-2/3 h-2 bg-border-default rounded"></div></div>
+<div class="border border-border-default bg-surface rounded p-3 flex flex-col h-full"><span class="font-label-mono-caps text-label-mono-caps mb-2">TUE</span><div class="w-full h-8 bg-phase-specialty rounded mb-2"></div><div class="w-1/2 h-2 bg-border-default rounded"></div></div>
+<div class="border border-border-default bg-surface rounded p-3 flex flex-col h-full"><span class="font-label-mono-caps text-label-mono-caps mb-2">WED</span><div class="w-full h-2 bg-border-default rounded mb-2"></div><div class="flex-1 flex items-center justify-center border border-dashed border-border-default rounded mt-2"><span class="material-symbols-outlined text-border-default">flight</span></div></div>
+<div class="border border-border-default bg-surface rounded p-3 flex flex-col h-full"><span class="font-label-mono-caps text-label-mono-caps mb-2">THU</span><div class="w-full h-4 bg-phase-base rounded mb-2"></div></div>
+<div class="border border-border-default bg-surface rounded p-3 flex flex-col h-full"><span class="font-label-mono-caps text-label-mono-caps mb-2">FRI</span><div class="w-full h-8 bg-phase-specialty rounded mb-2"></div></div>
+<div class="border border-border-default bg-surface rounded p-3 flex flex-col h-full"><span class="font-label-mono-caps text-label-mono-caps mb-2">SAT</span><div class="w-full h-16 bg-phase-base rounded mb-2"></div></div>
+<div class="border border-border-default bg-surface rounded p-3 flex flex-col h-full"><span class="font-label-mono-caps text-label-mono-caps mb-2">SUN</span><div class="w-full h-2 bg-border-default rounded mb-2"></div><span class="font-label-mono-sm text-label-mono-sm">REST</span></div>
+</div>
+</div>
+<!-- Foreground: Drafting Pipeline Overlay -->
+<div class="absolute inset-0 flex items-center justify-center z-10 bg-background/40 backdrop-blur-[2px]">
+<div class="bg-surface-container-lowest w-[540px] border border-border-default rounded-lg p-8 shadow-sm flex flex-col relative overflow-hidden">
+<!-- Top Progress Bar (Subtle) -->
+<div class="absolute top-0 left-0 h-1 bg-border-default w-full">
+<div class="h-full bg-primary w-[50%] transition-all duration-500 ease-out"></div>
+</div>
+<div class="text-center mb-8 mt-2">
+<h2 class="font-headline-md text-headline-md font-bold text-on-surface">正在生成中...</h2>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mt-2 uppercase tracking-widest">Generation Pipeline</p>
+</div>
+<!-- Vertical Stepper -->
+<div class="flex flex-col gap-0 px-8 relative mb-8">
+<!-- Step 1: Done -->
+<div class="flex items-start gap-4 relative pb-6">
+<div class="absolute left-[11px] top-[24px] bottom-0 w-[1px] bg-primary z-0"></div>
+<div class="w-[24px] h-[24px] rounded-full bg-primary text-on-primary flex items-center justify-center z-10 shrink-0 relative">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</div>
+<div class="flex-1 pt-[2px]">
+<p class="font-body-md text-body-md font-medium text-on-surface">分析上周总结</p>
+</div>
+</div>
+<!-- Step 2: Done -->
+<div class="flex items-start gap-4 relative pb-6">
+<div class="absolute left-[11px] top-[24px] bottom-0 w-[1px] bg-primary z-0"></div>
+<div class="w-[24px] h-[24px] rounded-full bg-primary text-on-primary flex items-center justify-center z-10 shrink-0 relative">
+<span class="material-symbols-outlined text-[14px]">check</span>
+</div>
+<div class="flex-1 pt-[2px]">
+<p class="font-body-md text-body-md font-medium text-on-surface">检查本周训练重点</p>
+</div>
+</div>
+<!-- Step 3: Loading (Active) -->
+<div class="flex items-start gap-4 relative pb-6">
+<div class="absolute left-[11px] top-[24px] bottom-0 w-[1px] bg-border-default z-0 border-l border-dashed border-border-default"></div>
+<div class="w-[24px] h-[24px] rounded-full border-2 border-primary bg-surface-container-lowest flex items-center justify-center z-10 shrink-0 relative">
+<span class="material-symbols-outlined text-[14px] text-primary spinner">sync</span>
+</div>
+<div class="flex-1 pt-[2px]">
+<p class="font-body-md text-body-md font-bold text-primary">重新编排课表</p>
+</div>
+</div>
+<!-- Step 4: Pending -->
+<div class="flex items-start gap-4 relative pb-6">
+<div class="absolute left-[11px] top-[24px] bottom-0 w-[1px] bg-border-default z-0 border-l border-dashed border-border-default"></div>
+<div class="w-[24px] h-[24px] rounded-full border border-border-default bg-surface flex items-center justify-center z-10 shrink-0 relative">
+<div class="w-2 h-2 rounded-full bg-border-default"></div>
+</div>
+<div class="flex-1 pt-[2px]">
+<p class="font-body-md text-body-md text-text-muted">校验力量训练</p>
+</div>
+</div>
+<!-- Step 5: Pending -->
+<div class="flex items-start gap-4 relative pb-6">
+<div class="absolute left-[11px] top-[24px] bottom-0 w-[1px] bg-border-default z-0 border-l border-dashed border-border-default"></div>
+<div class="w-[24px] h-[24px] rounded-full border border-border-default bg-surface flex items-center justify-center z-10 shrink-0 relative">
+<div class="w-2 h-2 rounded-full bg-border-default"></div>
+</div>
+<div class="flex-1 pt-[2px]">
+<p class="font-body-md text-body-md text-text-muted">保留训练记录与反馈</p>
+</div>
+</div>
+<!-- Step 6: Pending -->
+<div class="flex items-start gap-4 relative">
+<div class="w-[24px] h-[24px] rounded-full border border-border-default bg-surface flex items-center justify-center z-10 shrink-0 relative">
+<div class="w-2 h-2 rounded-full bg-border-default"></div>
+</div>
+<div class="flex-1 pt-[2px]">
+<p class="font-body-md text-body-md text-text-muted">准备设备同步方案</p>
+</div>
+</div>
+</div>
+<!-- Impact Preview (Soft Callout) -->
+<div class="bg-surface-hover border border-border-default rounded p-4 mb-6">
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3 uppercase">Impact Preview</p>
+<div class="flex justify-between items-center">
+<div>
+<p class="font-body-sm text-body-sm text-text-muted">受影响日</p>
+<p class="font-body-md text-body-md font-medium mt-1">Tue, Wed, Fri</p>
+</div>
+<div class="w-[1px] h-8 bg-border-default"></div>
+<div>
+<p class="font-body-sm text-body-sm text-text-muted">Volume</p>
+<p class="font-metric-value text-metric-value text-[20px] text-tertiary mt-1">~ -6km</p>
+</div>
+<div class="w-[1px] h-8 bg-border-default"></div>
+<div>
+<p class="font-body-sm text-body-sm text-text-muted">Intensity</p>
+<div class="flex items-center gap-2 mt-1">
+<span class="font-metric-value text-metric-value text-[20px] text-text-muted">2</span>
+<span class="material-symbols-outlined text-[16px] text-text-muted">arrow_right_alt</span>
+<span class="font-metric-value text-metric-value text-[20px] text-primary">1</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Notes -->
+<div class="flex items-center justify-between mt-auto pt-4 border-t border-border-subtle">
+<div class="flex items-center gap-2 text-text-muted">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+<span class="font-label-mono-sm text-label-mono-sm uppercase">Estimated: 约 1-2 分钟</span>
+</div>
+<div class="flex items-center gap-2 text-amber-600">
+<span class="material-symbols-outlined text-[16px]">info</span>
+<span class="font-body-sm text-body-sm">当前本周课表仍然生效，尚未写入日历或设备</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- Right Column: NavigationDrawer (AI Coach Chat) -->
+<aside class="bg-surface-container-low dark:bg-surface-container-low w-[360px] h-screen fixed right-0 top-0 border-l border-border-default dark:border-outline flex flex-col h-full p-4 overflow-y-auto transition-all duration-300 ease-in-out z-50">
+<!-- Drawer Header -->
+<div class="flex items-center justify-between mb-6 pb-4 border-b border-border-default">
+<div>
+<h2 class="font-headline-sm text-headline-sm text-on-tertiary-container font-bold">AI Coach Chat</h2>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mt-1 uppercase">Pro Insights</p>
+</div>
+<button class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-surface-container-high transition-colors">
+<span class="material-symbols-outlined text-text-muted">more_vert</span>
+</button>
+</div>
+<!-- Chat History -->
+<div class="flex-1 flex flex-col gap-6 overflow-y-auto pr-2 mb-4">
+<!-- User Intent (Context) -->
+<div class="flex flex-col items-end gap-1">
+<div class="bg-surface border border-border-default rounded-lg rounded-tr-none px-4 py-3 max-w-[85%]">
+<p class="font-body-md text-body-md text-on-surface">周三临时安排出差，无法完成原定的长跑，请帮我调整本周课表。</p>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-muted">10:42 AM</span>
+</div>
+<!-- Coach Response (Active) -->
+<div class="flex flex-col items-start gap-1">
+<div class="flex items-center gap-2 mb-1">
+<div class="w-6 h-6 rounded-full bg-primary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-[14px] text-on-primary-container">psychology</span>
+</div>
+<span class="font-label-mono-caps text-label-mono-caps text-primary font-bold uppercase">Coach</span>
+</div>
+<div class="bg-surface-container-lowest border border-primary/20 rounded-lg rounded-tl-none px-4 py-3 max-w-[95%] shadow-sm">
+<p class="font-editorial-prose text-editorial-prose text-on-surface">
+                        收到。将周三设为休息日或极低强度恢复。
+                        <br/><br/>
+                        我正在为你计算最佳的平衡方案。这可能需要一两分钟。你可以先去忙别的，生成完成后我会通知你。
+                    </p>
+<!-- Inline Actions -->
+<div class="flex gap-2 mt-4 pt-3 border-t border-border-subtle">
+<button class="flex-1 py-1.5 border border-border-default bg-surface hover:bg-surface-hover rounded font-label-mono-caps text-label-mono-caps transition-colors">
+                            稍后查看
+                        </button>
+<button class="flex-1 py-1.5 border border-error/30 text-error bg-error-container/20 hover:bg-error-container/50 rounded font-label-mono-caps text-label-mono-caps transition-colors">
+                            取消生成
+                        </button>
+</div>
+</div>
+<div class="flex items-center gap-2 mt-1">
+<span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+<span class="font-label-mono-sm text-label-mono-sm text-primary">Drafting...</span>
+</div>
+</div>
+</div>
+<!-- Drawer Footer Tabs -->
+<div class="flex justify-between mt-auto pt-4 border-t border-border-default">
+<button class="flex items-center gap-2 text-text-muted hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[16px]">comment</span>
+<span class="font-label-mono-caps text-label-mono-caps uppercase">Feedback</span>
+</button>
+<button class="flex items-center gap-2 text-text-muted hover:text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+<span class="font-label-mono-caps text-label-mono-caps uppercase">Settings</span>
+</button>
+</div>
+</aside>
+</body></html>

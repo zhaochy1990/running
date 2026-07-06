@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - Weekly Plan</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&amp;family=Newsreader:ital,opsz,wght@0,6..72,200..800;1,6..72,200..800&amp;family=Outfit:wght@300;400;500;600;700&amp;family=Public+Sans:ital,wght@0,100..900;1,100..900&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        background: "#f9fafb",
+                        "on-background": "#111827",
+                        surface: "#ffffff",
+                        "on-surface": "#111827",
+                        "surface-variant": "#f3f4f6",
+                        "on-surface-variant": "#4b5563",
+                        "surface-container-low": "#ffffff",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-hover": "#f3f4f6",
+                        "surface-dim": "#e5e7eb",
+                        primary: "#00a85a",
+                        "on-primary": "#ffffff",
+                        "primary-container": "#bbf7d0",
+                        "on-primary-container": "#14532d",
+                        secondary: "#374151",
+                        "on-secondary": "#ffffff",
+                        error: "#ef4444",
+                        "error-container": "#fee2e2",
+                        "on-error-container": "#991b1b",
+                        warning: "#f59e0b",
+                        "warning-container": "#fef3c7",
+                        "on-warning-container": "#92400e",
+                        info: "#3b82f6",
+                        "info-container": "#dbeafe",
+                        "on-info-container": "#1e40af",
+                        success: "#10b981",
+                        "success-container": "#d1fae5",
+                        "on-success-container": "#065f46",
+                        "border-default": "#e5e7eb",
+                        "text-primary": "#111827",
+                        "text-muted": "#6b7280",
+                        "text-secondary": "#374151",
+                        
+                        // Phase colors
+                        phase: {
+                            base: "#3b82f6",     // E-Run, Recovery (Blue)
+                            threshold: "#f59e0b",// Tempo (Amber)
+                            interval: "#ef4444", // I-Run (Red)
+                            strength: "#8b5cf6", // Strength (Purple)
+                            rest: "#9ca3af"      // Rest (Gray)
+                        }
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px",
+                        "2xl": "1rem",
+                        "3xl": "1.5rem"
+                    },
+                    spacing: {
+                        "sidebar-width": "220px",
+                        "topbar-height": "64px",
+                        "container-padding": "2rem"
+                    },
+                    fontFamily: {
+                        "headline": ["Outfit", "sans-serif"],
+                        "display": ["Outfit", "sans-serif"],
+                        "body": ["Outfit", "sans-serif"],
+                        "label": ["Outfit", "sans-serif"],
+                        "mono": ["JetBrains Mono", "monospace"],
+                        "serif": ["Newsreader", "serif"]
+                    },
+                    fontSize: {
+                        "display-lg": ["2.25rem", { lineHeight: "2.5rem" }],
+                        "headline-sm": ["1.125rem", { lineHeight: "1.75rem" }],
+                        "body-md": ["0.875rem", { lineHeight: "1.25rem" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style type="text/tailwindcss">
+        @layer utilities {
+            .scrollbar-hide::-webkit-scrollbar {
+                display: none;
+            }
+            .scrollbar-hide {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
+            .mono-data {
+                @apply font-mono tracking-tight;
+            }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body antialiased min-h-screen">
+<!-- JSON: SideNavBar -->
+<nav class="fixed left-0 top-0 h-full w-sidebar-width bg-surface-container-low border-r border-border-default flex flex-col py-container-padding z-40">
+<!-- Header -->
+<div class="px-6 mb-8 flex flex-col items-start gap-4">
+<div class="flex items-center gap-3 w-full">
+<div class="w-10 h-10 rounded-full bg-surface-variant overflow-hidden flex-shrink-0 border border-border-default">
+<img alt="Athlete Profile Picture" class="w-full h-full object-cover" data-alt="A detailed close-up, highly professional studio portrait of an athletic user profile picture for an app, showing a focused runner against a clean, light studio background with soft natural lighting, realistic rendering." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCiFpFtpEHnn0cwov9b7Ep2QCef1WhMWKk59rVo2gzZ7Gmt63NMusrQ1QuRmDiSwwWEdYaMyq49_p6Tgkh7KPyhrISS_9TM2ne6koMRhsecbSsXMs6q3jDTyJxF01hMsgQY0A2u2X98JwCZQyGT6K0HNN8ju0I2xaLqH2BDUTaESTe-RrN7xL7XUKgiuLZNGi_TuIWQu26cUTHNVIng8OTsSlE2tMOwcX8G3jtuCTi33KNoIJPhC7_k2ICDBVJWcV_bl3p65XgeAAY"/>
+</div>
+<div>
+<h1 class="font-display-lg text-display-lg font-bold text-text-primary tracking-tight" style="font-size: 1.5rem; line-height: 1.75rem;">STRIDE</h1>
+</div>
+</div>
+<div class="w-full bg-surface-variant rounded-lg p-3 border border-border-default shadow-sm">
+<p class="text-xs font-semibold text-text-primary mb-1">Master Plan</p>
+<div class="flex items-center justify-between text-xs text-text-muted">
+<span>P1 基础期</span>
+<span class="mono-data">Week 08/24</span>
+</div>
+<div class="w-full bg-border-default h-1.5 rounded-full mt-2 overflow-hidden">
+<div class="bg-primary h-full rounded-full" style="width: 33%"></div>
+</div>
+</div>
+</div>
+<!-- Navigation Links -->
+<div class="flex-1 overflow-y-auto w-full">
+<ul class="flex flex-col gap-1 px-2">
+<!-- Active Item: Weekly Training -->
+<li>
+<a class="flex items-center gap-3 text-text-primary font-bold border-l-4 border-primary px-4 py-2 bg-surface-hover transition-opacity opacity-80 rounded-r-md" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">calendar_view_week</span>
+<span>Weekly Training</span>
+</a>
+</li>
+<!-- Inactive Items -->
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">event_note</span>
+<span>Training Plan</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">psychology</span>
+<span>AI Coach</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">directions_run</span>
+<span>Activities</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">trending_up</span>
+<span>Ability</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">monitor_heart</span>
+<span>Health</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">science</span>
+<span>Testing</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">group</span>
+<span>Team</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">school</span>
+<span>Coach</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted px-4 py-2 hover:bg-surface-hover transition-colors duration-200 rounded-md ml-1" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span>Settings</span>
+</a>
+</li>
+</ul>
+</div>
+<!-- Footer -->
+<div class="mt-auto px-6 pt-6 flex flex-col gap-4 border-t border-border-default mx-2">
+<button class="w-full bg-surface-variant hover:bg-surface-dim text-text-primary text-sm font-semibold py-2 rounded-lg transition-colors border border-border-default">
+                Upgrade Plan
+            </button>
+<ul class="flex flex-col gap-2">
+<li>
+<a class="flex items-center gap-3 text-text-muted text-sm hover:text-text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-base">help</span>
+<span>Support</span>
+</a>
+</li>
+<li>
+<a class="flex items-center gap-3 text-text-muted text-sm hover:text-text-primary transition-colors" href="#">
+<span class="material-symbols-outlined text-base">logout</span>
+<span>Log Out</span>
+</a>
+</li>
+</ul>
+</div>
+</nav>
+<!-- JSON: TopAppBar -->
+<header class="fixed top-0 right-0 h-topbar-height w-[calc(100%-220px)] bg-background border-b border-border-default flex justify-between items-center px-container-padding z-30">
+<!-- Search -->
+<div class="flex-1 flex justify-end items-center gap-6">
+<!-- Actions -->
+<div class="flex items-center gap-3">
+<button class="text-text-muted hover:text-primary transition-colors p-2 hover:scale-95 transition-transform">
+<span class="material-symbols-outlined">search</span>
+</button>
+<button class="text-text-muted hover:text-primary transition-colors p-2 relative hover:scale-95 transition-transform">
+<span class="material-symbols-outlined">notifications</span>
+<span class="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
+</button>
+<div class="h-6 w-px bg-border-default mx-1"></div>
+<button class="text-text-secondary hover:text-primary font-medium text-sm transition-colors hover:scale-95 transition-transform">
+                    Sync Data
+                </button>
+<button class="bg-primary hover:bg-primary/90 text-on-primary px-4 py-1.5 rounded-full text-sm font-semibold shadow-sm transition-all hover:scale-95 transition-transform">
+                    Start Workout
+                </button>
+</div>
+<button class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden border border-border-default hover:scale-95 transition-transform">
+<img alt="User profile" class="w-full h-full object-cover" data-alt="A detailed close-up, highly professional studio portrait of an athletic user profile picture for an app, showing a focused runner against a clean, light studio background with soft natural lighting, realistic rendering." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAyNjp8oDUchY0Dn6ZFzvLv7rqAotMDQiX4Ct74W8kXj4jPYdgTA9n83dHl6HbAX0zT7Ed6SaqxbJpKfs7aJgFw5oeNRAeYQYP5mrX80Oo_5J90bp5GVW4pA2lPXHVeIjbCP4kwSkFR7itm6XR8hA7PqANffSlTN-_brhxpQdc8q9CfxQyLPnb1JM0c3LhprzFnw8_xP8XyhGQX0XU25WWBCrekXAN4hdR20GK_0fQG8UFSJweou0UBiSBZmUSptAhqNYtorjLNFFM"/>
+</button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="ml-[220px] mt-[64px] p-container-padding max-w-[1400px] mx-auto pb-24">
+<!-- Page Header Section -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-6">
+<div class="space-y-3">
+<div class="flex items-center gap-3">
+<h2 class="font-headline text-3xl font-bold tracking-tight text-text-primary">本周课表</h2>
+<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-surface-variant text-text-secondary border border-border-default">
+                        W08 · 基础期
+                    </span>
+</div>
+<div class="flex items-center text-text-muted text-sm gap-2 mono-data">
+<span class="material-symbols-outlined text-sm">calendar_today</span>
+                    7月6日 - 7月12日
+                </div>
+</div>
+<div class="flex flex-wrap items-center gap-3">
+<button class="px-4 py-2 bg-surface text-text-secondary border border-border-default rounded-lg text-sm font-medium hover:bg-surface-hover transition-colors shadow-sm">
+                    版本历史
+                </button>
+<button class="px-4 py-2 bg-surface text-text-secondary border border-border-default rounded-lg text-sm font-medium hover:bg-surface-hover transition-colors shadow-sm">
+                    查看赛季训练计划
+                </button>
+<button class="px-5 py-2 bg-primary text-on-primary rounded-lg text-sm font-bold shadow-sm hover:bg-primary/90 transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">tune</span>
+                    调整本周
+                </button>
+</div>
+</div>
+<!-- Alert -->
+<div class="mb-6 bg-warning-container/50 border border-warning/30 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+<span class="material-symbols-outlined text-warning mt-0.5">warning</span>
+<div>
+<h4 class="text-sm font-bold text-on-warning-container">昨晚 HRV 略低，建议关注体感</h4>
+<p class="text-xs text-on-warning-container/80 mt-1">Consider scaling back intensity today if perceived exertion is higher than usual.</p>
+</div>
+</div>
+<!-- Tabbed Navigation -->
+<div class="mb-6 border-b border-border-default">
+<nav class="flex gap-6">
+<a class="pb-3 border-b-2 border-primary text-primary font-semibold text-sm" href="#">训练计划</a>
+<a class="pb-3 border-b-2 border-transparent text-text-muted hover:text-text-primary font-medium text-sm transition-colors" href="#">日历</a>
+<a class="pb-3 border-b-2 border-transparent text-text-muted hover:text-text-primary font-medium text-sm transition-colors" href="#">力量训练</a>
+<a class="pb-3 border-b-2 border-transparent text-text-muted hover:text-text-primary font-medium text-sm transition-colors" href="#">训练记录</a>
+<a class="pb-3 border-b-2 border-transparent text-text-muted hover:text-text-primary font-medium text-sm transition-colors" href="#">本周反馈</a>
+</nav>
+</div>
+<!-- Summary Metrics Row -->
+<div class="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+<div class="bg-surface border border-border-default rounded-xl p-4 shadow-sm flex flex-col justify-between">
+<span class="text-xs text-text-muted font-medium mb-1">计划跑量</span>
+<div class="flex items-baseline gap-1">
+<span class="text-2xl font-bold text-text-primary mono-data">54</span>
+<span class="text-sm text-text-muted">km</span>
+</div>
+</div>
+<div class="bg-surface border border-border-default rounded-xl p-4 shadow-sm flex flex-col justify-between">
+<span class="text-xs text-text-muted font-medium mb-1">已完成跑量</span>
+<div class="flex items-baseline gap-1">
+<span class="text-2xl font-bold text-text-primary mono-data">23.4</span>
+<span class="text-sm text-text-muted">km</span>
+</div>
+</div>
+<div class="bg-surface border border-border-default rounded-xl p-4 shadow-sm flex flex-col justify-between">
+<span class="text-xs text-text-muted font-medium mb-1">完成率</span>
+<div class="flex items-baseline gap-1">
+<span class="text-2xl font-bold text-text-primary mono-data">43</span>
+<span class="text-sm text-text-muted">%</span>
+</div>
+</div>
+<div class="bg-surface border border-border-default rounded-xl p-4 shadow-sm flex flex-col justify-between">
+<span class="text-xs text-text-muted font-medium mb-1">强度课</span>
+<div class="flex items-baseline gap-1">
+<span class="text-2xl font-bold text-text-primary mono-data">2</span>
+</div>
+</div>
+<div class="bg-surface border border-border-default rounded-xl p-4 shadow-sm flex flex-col justify-between">
+<span class="text-xs text-text-muted font-medium mb-1">恢复日</span>
+<div class="flex items-baseline gap-1">
+<span class="text-2xl font-bold text-text-primary mono-data">2</span>
+</div>
+</div>
+<div class="bg-surface border border-border-default rounded-xl p-4 shadow-sm flex flex-col justify-between">
+<span class="text-xs text-text-muted font-medium mb-1">力量训练</span>
+<div class="flex items-baseline gap-1">
+<span class="text-2xl font-bold text-text-primary mono-data">1</span>
+</div>
+</div>
+</div>
+<!-- Watch Push Section -->
+<div class="bg-surface border border-border-default rounded-xl p-5 mb-8 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+<div class="flex items-center gap-4">
+<div class="w-10 h-10 rounded-full bg-surface-variant flex items-center justify-center text-text-secondary border border-border-default">
+<span class="material-symbols-outlined">watch</span>
+</div>
+<div>
+<h3 class="text-sm font-bold text-text-primary">手表同步状态</h3>
+<div class="flex items-center gap-3 text-xs text-text-muted mt-1">
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-success"></span> 2个已推送</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-info"></span> 4个可推送</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-surface-dim"></span> 1个暂不可推送</span>
+</div>
+</div>
+</div>
+<button class="px-5 py-2 bg-text-primary text-surface rounded-lg text-sm font-bold shadow-sm hover:bg-text-primary/90 transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-sm">sync</span>
+                一键推送本周训练
+            </button>
+</div>
+<!-- Main Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Left Column (Span 7): Schedule Grid -->
+<div class="lg:col-span-7 flex flex-col gap-6">
+<!-- Seven-Day Grid (Mon-Sun) -->
+<div class="bg-surface border border-border-default rounded-2xl shadow-sm overflow-hidden flex-1">
+<div class="flex items-center justify-between px-5 py-4 border-b border-border-default bg-surface-variant/50">
+<h3 class="text-sm font-bold text-text-primary">周排期表</h3>
+<div class="flex gap-4 text-xs text-text-muted">
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-phase-base"></span> 跑步</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-phase-strength"></span> 力量</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-phase-rest"></span> 休息</span>
+</div>
+</div>
+<div class="divide-y divide-border-default">
+<!-- Mon -->
+<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
+<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
+<span class="text-xs text-text-muted font-medium uppercase">周一</span>
+<span class="text-lg font-bold text-text-primary mono-data">06</span>
+</div>
+<div class="pl-4 flex flex-col justify-center gap-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-base/10 text-phase-base border border-phase-base/20">跑步</span>
+<span class="font-semibold text-text-primary text-sm">轻松跑</span>
+</div>
+<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">timer</span> 45 min</span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">straighten</span> ~8 km</span>
+</div>
+</div>
+<div class="text-right flex flex-col items-end gap-1">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-success-container/50 text-success border border-success/20">
+<span class="material-symbols-outlined text-[12px]">check_circle</span> 已匹配
+                                </span>
+<span class="text-[10px] text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-success">watch</span> 已推送
+                                </span>
+</div>
+</div>
+<!-- Tue -->
+<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
+<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
+<span class="text-xs text-text-muted font-medium uppercase">周二</span>
+<span class="text-lg font-bold text-text-primary mono-data">07</span>
+</div>
+<div class="pl-4 flex flex-col justify-center gap-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-base/10 text-phase-base border border-phase-base/20">跑步</span>
+<span class="font-semibold text-text-primary text-sm">间歇跑</span>
+</div>
+<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">route</span> 6x800m</span>
+</div>
+</div>
+<div class="text-right flex flex-col items-end gap-1">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-success-container/50 text-success border border-success/20">
+<span class="material-symbols-outlined text-[12px]">check_circle</span> 已匹配
+                                </span>
+<span class="text-[10px] text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-success">watch</span> 已推送
+                                </span>
+</div>
+</div>
+<!-- Wed -->
+<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 bg-surface-variant/30 opacity-70">
+<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
+<span class="text-xs text-text-muted font-medium uppercase">周三</span>
+<span class="text-lg font-bold text-text-muted mono-data">08</span>
+</div>
+<div class="pl-4 flex flex-col justify-center gap-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-rest/10 text-phase-rest border border-phase-rest/20">休息</span>
+<span class="font-medium text-text-muted text-sm">休息</span>
+</div>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-text-muted">无需推送</span>
+</div>
+</div>
+<!-- Thu -->
+<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
+<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
+<span class="text-xs text-text-muted font-medium uppercase">周四</span>
+<span class="text-lg font-bold text-text-primary mono-data">09</span>
+</div>
+<div class="pl-4 flex flex-col justify-center gap-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-strength/10 text-phase-strength border border-phase-strength/20">力量</span>
+<span class="font-semibold text-text-primary text-sm">核心与下肢力量</span>
+</div>
+<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">fitness_center</span> 40 min</span>
+</div>
+</div>
+<div class="text-right flex flex-col items-end gap-1">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-text-muted border border-border-default border-dashed">
+                                    计划中
+                                </span>
+<span class="text-[10px] text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-info">watch</span> 推送到手表
+                                </span>
+</div>
+</div>
+<!-- Fri -->
+<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
+<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
+<span class="text-xs text-text-muted font-medium uppercase">周五</span>
+<span class="text-lg font-bold text-text-primary mono-data">10</span>
+</div>
+<div class="pl-4 flex flex-col justify-center gap-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-base/10 text-phase-base border border-phase-base/20">跑步</span>
+<span class="font-semibold text-text-primary text-sm">节奏跑</span>
+</div>
+<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">timer</span> 20 min @ 4:15</span>
+</div>
+</div>
+<div class="text-right flex flex-col items-end gap-1">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-text-muted border border-border-default border-dashed">
+                                    计划中
+                                </span>
+<span class="text-[10px] text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-info">watch</span> 推送到手表
+                                </span>
+</div>
+</div>
+<!-- Sat -->
+<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 bg-surface-variant/30 opacity-70">
+<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
+<span class="text-xs text-text-muted font-medium uppercase">周六</span>
+<span class="text-lg font-bold text-text-muted mono-data">11</span>
+</div>
+<div class="pl-4 flex flex-col justify-center gap-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-rest/10 text-phase-rest border border-phase-rest/20">休息</span>
+<span class="font-medium text-text-muted text-sm">休息</span>
+</div>
+</div>
+<div class="text-right">
+<span class="text-[10px] text-text-muted">无需推送</span>
+</div>
+</div>
+<!-- Sun -->
+<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
+<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
+<span class="text-xs text-text-muted font-medium uppercase text-primary">周日</span>
+<span class="text-lg font-bold text-text-primary mono-data">12</span>
+</div>
+<div class="pl-4 flex flex-col justify-center gap-1">
+<div class="flex items-center gap-2">
+<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-base/10 text-phase-base border border-phase-base/20">跑步</span>
+<span class="font-semibold text-text-primary text-sm">长距离跑 (LSD)</span>
+</div>
+<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">straighten</span> 22 km</span>
+</div>
+</div>
+<div class="text-right flex flex-col items-end gap-1">
+<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-text-muted border border-border-default border-dashed">
+                                    计划中
+                                </span>
+<span class="text-[10px] text-text-muted flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px] text-info">watch</span> 推送到手表
+                                </span>
+</div>
+</div>
+</div>
+</div>
+<!-- Activity Records -->
+<div class="bg-surface border border-border-default rounded-2xl p-6 shadow-sm">
+<h3 class="text-sm font-bold text-text-primary mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-base">history</span>
+                        最近活动记录
+                    </h3>
+<ul class="space-y-3">
+<li class="p-3 bg-surface-variant rounded-lg border border-border-default text-sm">
+<div class="flex justify-between items-start mb-1">
+<span class="font-semibold text-text-primary">周二 轻松跑</span>
+<span class="text-xs text-text-muted mono-data">07-07</span>
+</div>
+<div class="flex flex-wrap gap-x-4 gap-y-2 text-xs text-text-secondary mono-data mt-2">
+<span>已完成 8.2km</span>
+<span>45:20</span>
+<span>配速 5'31"</span>
+</div>
+<div class="mt-2 pt-2 border-t border-border-default text-xs text-success flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">link</span> 匹配 周二有氧跑
+                            </div>
+</li>
+</ul>
+</div>
+</div>
+<!-- Right Column (Span 5): Details & Feedback -->
+<div class="lg:col-span-5 flex flex-col gap-6">
+<!-- Coach Note -->
+<div class="bg-[#fdfcf8] border border-[#e8e4d8] rounded-2xl p-6 shadow-sm relative overflow-hidden">
+<div class="absolute top-0 right-0 p-4 opacity-10">
+<span class="material-symbols-outlined text-4xl">format_quote</span>
+</div>
+<div class="flex items-center gap-3 mb-4">
+<img alt="Coach Avatar" class="w-8 h-8 rounded-full border border-border-default" data-alt="A small circular avatar portrait of a professional athletic running coach, wearing a dark athletic polo, neutral studio background, photorealistic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYIwb9-qVFOssEE4VY7ty_m2BeWsdRyd5gQN-6S7QIyvaCF6fVTSNDkVkN0y4OvczQa_a3jOjLjHLb4PXdG6o7Y5c1d2fs47rsNRlA-tTw8p4_A30mYT9YkiU-lAP5aS7Q_DHZ5p7rEOG5BzfOzSlEJGFYhGhtLqTuRx7c0nATYnmQG8wEIv3ajaCYISxxF_u4bCLU8XEl256s2fU67G-NwBMSEDHSMSipGpJLYwpZExXAylUf2VWcFuJcrhbhfQwKEHpLfFJDCB8"/>
+<span class="text-sm font-bold text-text-primary">教练提示</span>
+</div>
+<p class="font-serif text-sm text-text-secondary leading-relaxed">
+                        本周是基础期的重要过渡。保持训练量稳定的同时，我们要微调周五的节奏跑强度，以确保你在周末长跑前能充分恢复，让身体更好地适应负荷。
+                    </p>
+</div>
+<!-- Strength Section Details -->
+<div class="bg-surface border border-border-default rounded-2xl p-6 shadow-sm">
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-sm font-bold text-text-primary flex items-center gap-2">
+<span class="material-symbols-outlined text-base text-phase-strength">fitness_center</span>
+                            本周重点力量训练
+                        </h3>
+<span class="text-[10px] bg-phase-strength/10 text-phase-strength px-2 py-0.5 rounded font-bold border border-phase-strength/20">Thu 09</span>
+</div>
+<div class="mb-4">
+<p class="text-xs text-text-muted mb-2 font-medium">目标肌群</p>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-variant rounded text-xs text-text-secondary border border-border-default">臀腿</span>
+<span class="px-2 py-1 bg-surface-variant rounded text-xs text-text-secondary border border-border-default">核心</span>
+</div>
+</div>
+<div>
+<p class="text-xs text-text-muted mb-2 font-medium">训练内容</p>
+<ul class="space-y-2">
+<li class="flex justify-between items-center text-sm border-b border-border-default pb-2">
+<span class="text-text-primary">保加利亚分腿蹲</span>
+<span class="mono-data text-text-secondary font-medium">3 x 8/侧</span>
+</li>
+<li class="flex justify-between items-center text-sm border-b border-border-default pb-2">
+<span class="text-text-primary">罗马尼亚硬拉</span>
+<span class="mono-data text-text-secondary font-medium">3 x 10</span>
+</li>
+<li class="flex justify-between items-center text-sm">
+<span class="text-text-primary">平板支撑</span>
+<span class="mono-data text-text-secondary font-medium">3 x 45s</span>
+</li>
+</ul>
+</div>
+</div>
+<!-- Weekly Feedback Section -->
+<div class="bg-surface border border-border-default rounded-2xl p-6 shadow-sm flex-1">
+<h3 class="text-sm font-bold text-text-primary mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-base">edit_note</span>
+                        本周反馈
+                    </h3>
+<div class="space-y-3 mb-6">
+<div class="flex items-start gap-2 text-sm text-text-secondary">
+<span class="material-symbols-outlined text-[16px] text-text-muted mt-0.5">check</span>
+<span>整体感受</span>
+</div>
+<div class="flex items-start gap-2 text-sm text-text-secondary">
+<span class="material-symbols-outlined text-[16px] text-text-muted mt-0.5">check</span>
+<span>身体状态</span>
+</div>
+<div class="flex items-start gap-2 text-sm text-text-secondary">
+<span class="material-symbols-outlined text-[16px] text-text-muted mt-0.5">check</span>
+<span>计划执行</span>
+</div>
+<div class="flex items-start gap-2 text-sm text-text-secondary">
+<span class="material-symbols-outlined text-[16px] text-text-muted mt-0.5">check</span>
+<span>下周建议</span>
+</div>
+</div>
+<button class="w-full bg-surface text-text-primary border border-border-default rounded-lg py-2 text-sm font-bold shadow-sm hover:bg-surface-hover transition-colors">
+                        写反馈
+                    </button>
+</div>
+</div>
+</div>
+</main>
+</body></html>

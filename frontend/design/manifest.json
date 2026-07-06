@@ -1,0 +1,279 @@
+{
+  "project": "STRIDE · Web",
+  "projectId": "9898197682875783129",
+  "designSystem": "STRIDE Endurance Lab",
+  "designSystemAssetId": "assets/78bc062efcff47b5944c094f5db74850",
+  "deviceType": "DESKTOP",
+  "sourceOfTruth": "Stitch MCP",
+  "exportedAt": "2026-07-04T14:05:00+08:00",
+  "localSnapshotFormat": "HTML-only",
+  "notes": "frontend/design contains story-ordered review snapshots. Screenshots are not retained in this directory. .stitch/designs contains archived Stitch exports when available. Do not hand-edit HTML as the design source.",
+  "directories": {
+    "master_plan": "赛季训练计划场景",
+    "weekly_plan": "本周课表场景",
+    "qa": "日常 Coach 问答场景",
+    ".": "场景索引与全量 manifest"
+  },
+  "pages": [
+    {
+      "category": "master_plan",
+      "number": 1,
+      "story": "新用户生成赛季训练计划",
+      "slug": "master-plan-new-user-intake",
+      "title": "STRIDE - 创建赛季计划",
+      "stitchScreenId": "b906b849888d4b1982f5e37529a9c367",
+      "html": "master_plan/1_master-plan-new-user-intake.html",
+      "archiveHtml": "b906b849888d4b1982f5e37529a9c367_master-plan-new-user-intake.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 2,
+      "story": "新用户生成赛季训练计划",
+      "slug": "master-plan-new-user-coach-questions",
+      "title": "STRIDE - Coach 结构化追问",
+      "stitchScreenId": "d94e0be4410b4015959b6ec998ad3bd5",
+      "html": "master_plan/2_master-plan-new-user-coach-questions.html",
+      "archiveHtml": "d94e0be4410b4015959b6ec998ad3bd5_master-plan-new-user-coach-questions.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 3,
+      "story": "新用户生成赛季训练计划",
+      "slug": "master-plan-new-user-generating",
+      "title": "STRIDE - 正在生成赛季训练计划",
+      "stitchScreenId": "5fbb5e90241e41779cd4a1293e360420",
+      "html": "master_plan/3_master-plan-new-user-generating.html",
+      "archiveHtml": "5fbb5e90241e41779cd4a1293e360420_master-plan-new-user-generating.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 4,
+      "story": "新用户生成赛季训练计划",
+      "slug": "master-plan-new-user-plan-ready",
+      "title": "STRIDE - 训练计划 / 创建赛季训练计划",
+      "stitchScreenId": "bd9af979092141458eac4d40ecdbc41e",
+      "html": "master_plan/4_master-plan-new-user-plan-ready.html",
+      "archiveHtml": "bd9af979092141458eac4d40ecdbc41e_master-plan-new-user-plan-ready.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 5,
+      "story": "新用户生成赛季训练计划",
+      "slug": "master-plan-new-user-plan-review",
+      "title": "STRIDE - 审阅赛季训练计划",
+      "stitchScreenId": "2832d72bf7f948c4986709ce104fd302",
+      "html": "master_plan/5_master-plan-new-user-plan-review.html",
+      "archiveHtml": "2832d72bf7f948c4986709ce104fd302_master-plan-new-user-plan-review.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 6,
+      "story": "新用户生成赛季训练计划",
+      "slug": "master-plan-current-view",
+      "title": "STRIDE - 赛季训练计划",
+      "stitchScreenId": "b0fb375484024783a53c79427716deb6",
+      "html": "master_plan/6_master-plan-current-view.html",
+      "archiveHtml": "b0fb375484024783a53c79427716deb6_master-plan-current-view.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 7,
+      "story": "存量用户修改赛季训练计划",
+      "slug": "master-plan-existing-current-adjust",
+      "title": "STRIDE - 调整赛季训练计划",
+      "stitchScreenId": "4cab3e545f97449d9181135d9de57f23",
+      "html": "master_plan/7_master-plan-existing-current-adjust.html",
+      "archiveHtml": "4cab3e545f97449d9181135d9de57f23_master-plan-existing-current-adjust.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 8,
+      "story": "存量用户修改赛季训练计划",
+      "slug": "master-plan-existing-adjust-generating",
+      "title": "STRIDE - 赛季训练计划调整生成中",
+      "stitchScreenId": "c6370ba60c964c16bef0b2235cd2e976",
+      "html": "master_plan/8_master-plan-existing-adjust-generating.html",
+      "archiveHtml": "c6370ba60c964c16bef0b2235cd2e976_master-plan-existing-adjust-generating.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 9,
+      "story": "存量用户修改赛季训练计划",
+      "slug": "master-plan-existing-diff-review",
+      "title": "STRIDE - 审阅计划调整",
+      "stitchScreenId": "7d3cd54892e04ad0a42edbd60769a20b",
+      "html": "master_plan/9_master-plan-existing-diff-review.html",
+      "archiveHtml": "7d3cd54892e04ad0a42edbd60769a20b_master-plan-existing-diff-review.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 10,
+      "story": "存量用户修改赛季训练计划",
+      "slug": "master-plan-existing-applied-success",
+      "title": "调整已应用 - STRIDE 训练中心",
+      "stitchScreenId": "061166dcf45142be9ca3417e47f7713b",
+      "html": "master_plan/10_master-plan-existing-applied-success.html",
+      "archiveHtml": "061166dcf45142be9ca3417e47f7713b_master-plan-existing-applied-success.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 11,
+      "story": "边界状态与流程恢复",
+      "slug": "master-plan-feedback-update-in-progress",
+      "title": "STRIDE - 计划更新中",
+      "stitchScreenId": "05ed35b6cb0348f08c42425da7c1c335",
+      "html": "master_plan/11_master-plan-feedback-update-in-progress.html",
+      "archiveHtml": "05ed35b6cb0348f08c42425da7c1c335_master-plan-feedback-update-in-progress.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 12,
+      "story": "边界状态与流程恢复",
+      "slug": "master-plan-generation-failed",
+      "title": "STRIDE | 计划生成没有完成",
+      "stitchScreenId": "76bdbbe4285f4ab7957a79a490112414",
+      "html": "master_plan/12_master-plan-generation-failed.html",
+      "archiveHtml": "76bdbbe4285f4ab7957a79a490112414_master-plan-generation-failed.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 13,
+      "story": "边界状态与流程恢复",
+      "slug": "master-plan-no-effective-change",
+      "title": "STRIDE - 没有需要应用的变化",
+      "stitchScreenId": "dd5c2ae52f7246dba382204c65d2d326",
+      "html": "master_plan/13_master-plan-no-effective-change.html",
+      "archiveHtml": "dd5c2ae52f7246dba382204c65d2d326_boundary-no-effective-change.html"
+    },
+    {
+      "category": "master_plan",
+      "number": 14,
+      "story": "边界状态与流程恢复",
+      "slug": "master-plan-resume-unfinished-flow",
+      "title": "STRIDE - 调整流程的恢复",
+      "stitchScreenId": "12d9bf2119234b14b4ecb5f5b038df46",
+      "html": "master_plan/14_master-plan-resume-unfinished-flow.html",
+      "archiveHtml": "12d9bf2119234b14b4ecb5f5b038df46_boundary-resume-unfinished-flow.html"
+    },
+    {
+      "category": "weekly_plan",
+      "number": 1,
+      "story": "用户调整当前本周课表",
+      "slug": "weekly-plan-current-home",
+      "title": "本周课表 - STRIDE Weekly Training (Localized & Refined)",
+      "stitchScreenId": "2f7e8c2d4d5d4358b5d6ac00663e9d81",
+      "html": "weekly_plan/1_weekly-plan-current-home.html",
+      "archiveHtml": "2f7e8c2d4d5d4358b5d6ac00663e9d81_weekly-plan-current-home.html"
+    },
+    {
+      "category": "weekly_plan",
+      "number": 2,
+      "story": "用户调整当前本周课表",
+      "slug": "weekly-plan-current-week-adjust",
+      "title": "STRIDE - 调整本周课表 (Term Refined)",
+      "stitchScreenId": "0ad70259c9c543b89b51923bb817fcd1",
+      "html": "weekly_plan/2_weekly-plan-current-week-adjust.html",
+      "archiveHtml": "0ad70259c9c543b89b51923bb817fcd1_weekly-plan-current-week-adjust.html"
+    },
+    {
+      "category": "weekly_plan",
+      "number": 3,
+      "story": "用户调整当前本周课表",
+      "slug": "weekly-plan-generating",
+      "title": "生成本周调整计划 - STRIDE (Term Refined)",
+      "stitchScreenId": "711681dff3c54a76826fca6935fa2057",
+      "html": "weekly_plan/3_weekly-plan-generating.html",
+      "archiveHtml": "711681dff3c54a76826fca6935fa2057_weekly-plan-generating.html"
+    },
+    {
+      "category": "weekly_plan",
+      "number": 4,
+      "story": "用户调整当前本周课表",
+      "slug": "weekly-plan-week-diff-review",
+      "title": "审阅本周调整 - STRIDE (Term Refined)",
+      "stitchScreenId": "0f3d57cee3044ece8608a02f192ad540",
+      "html": "weekly_plan/4_weekly-plan-week-diff-review.html",
+      "archiveHtml": "0f3d57cee3044ece8608a02f192ad540_weekly-plan-week-diff-review.html"
+    },
+    {
+      "category": "weekly_plan",
+      "number": 5,
+      "story": "用户调整当前本周课表",
+      "slug": "weekly-plan-season-plan-impact-prompt",
+      "title": "STRIDE - 赛季训练计划影响提示 (Term Refined)",
+      "stitchScreenId": "192494140b1a45f084db96fd4439e544",
+      "html": "weekly_plan/5_weekly-plan-season-plan-impact-prompt.html",
+      "archiveHtml": "192494140b1a45f084db96fd4439e544_weekly-plan-season-plan-impact-prompt.html"
+    },
+    {
+      "category": "weekly_plan",
+      "number": 6,
+      "story": "用户调整当前本周课表",
+      "slug": "weekly-plan-applied-success",
+      "title": "本周课表 - 调整已应用 (Terminology Polish)",
+      "stitchScreenId": "49e018f1292c453d8a6fbaea9ae5fafa",
+      "html": "weekly_plan/6_weekly-plan-applied-success.html",
+      "archiveHtml": "49e018f1292c453d8a6fbaea9ae5fafa_weekly-plan-applied-success.html"
+    },
+    {
+      "category": "qa",
+      "number": 1,
+      "story": "日常 Coach 问答",
+      "slug": "qa-daily-metrics",
+      "title": "STRIDE - 日常问答指标",
+      "stitchScreenId": "7ea490fa13514c09a4723a8788a3141f",
+      "html": "qa/1_qa-daily-metrics.html",
+      "archiveHtml": "7ea490fa13514c09a4723a8788a3141f_coach-chat-daily-qa-metrics.html"
+    },
+    {
+      "category": "qa",
+      "number": 2,
+      "story": "日常 Coach 问答",
+      "slug": "qa-tempo-review",
+      "title": "STRIDE - 节奏跑复盘",
+      "stitchScreenId": "7c533ac952e840c7b5c51bdbca4ee489",
+      "html": "qa/2_qa-tempo-review.html",
+      "archiveHtml": "7c533ac952e840c7b5c51bdbca4ee489_coach-chat-daily-qa-tempo-review.html"
+    },
+    {
+      "category": "qa",
+      "number": 3,
+      "story": "日常 Coach 问答",
+      "slug": "qa-fatigue",
+      "title": "STRIDE - 疲劳状态分流",
+      "stitchScreenId": "22b37219213c4d0fa9187200c5a489d3",
+      "html": "qa/3_qa-fatigue.html",
+      "archiveHtml": "22b37219213c4d0fa9187200c5a489d3_coach-chat-daily-qa-fatigue.html"
+    },
+    {
+      "category": "qa",
+      "number": 4,
+      "story": "日常 Coach 问答",
+      "slug": "qa-pain-triage",
+      "title": "STRIDE - 疼痛风险分流",
+      "stitchScreenId": "061455167528498b9e3271982743aa5b",
+      "html": "qa/4_qa-pain-triage.html",
+      "archiveHtml": "061455167528498b9e3271982743aa5b_coach-chat-daily-qa-pain-triage.html"
+    },
+    {
+      "category": "qa",
+      "number": 5,
+      "story": "日常 Coach 问答",
+      "slug": "qa-escalation-to-weekly-plan",
+      "title": "STRIDE - 升级到本周课表调整",
+      "stitchScreenId": "ab3e64d9c39c45e0954f3fdf1160cd75",
+      "html": "qa/5_qa-escalation-to-weekly-plan.html",
+      "archiveHtml": "ab3e64d9c39c45e0954f3fdf1160cd75_coach-chat-escalation-to-weekly-plan.html"
+    },
+    {
+      "category": "qa",
+      "number": 6,
+      "story": "日常 Coach 问答",
+      "slug": "qa-escalation-to-master-plan",
+      "title": "STRIDE - 升级到赛季训练计划调整",
+      "stitchScreenId": "6dd18834bf3a4df1bbce4ad69e6d8cf2",
+      "html": "qa/6_qa-escalation-to-master-plan.html",
+      "archiveHtml": "6dd18834bf3a4df1bbce4ad69e6d8cf2_coach-chat-escalation-to-season-plan.html"
+    }
+  ]
+}

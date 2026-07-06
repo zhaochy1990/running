@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - 计划更新中</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&amp;family=Newsreader:ital,wght@0,400;1,400&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-hover": "#f5f6fa",
+                        "primary-fixed-dim": "#59df8a",
+                        "on-secondary-fixed": "#001f24",
+                        "cyan-soft": "#e0f4f7",
+                        "phase-taper": "#7c4dff",
+                        "outline": "#6d7b6e",
+                        "phase-race": "#d32f2f",
+                        "on-primary": "#ffffff",
+                        "text-primary": "#1a1c2e",
+                        "on-error": "#ffffff",
+                        "green-soft": "#e6f7ee",
+                        "secondary": "#006874",
+                        "primary-container": "#00a85a",
+                        "on-tertiary-fixed-variant": "#881a31",
+                        "surface": "#f8f9fb",
+                        "on-secondary-container": "#006b77",
+                        "on-surface-variant": "#3d4a3f",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-fixed": "#40000f",
+                        "primary": "#006d38",
+                        "secondary-container": "#7fedfe",
+                        "green-edge": "#c8e8d6",
+                        "on-error-container": "#93000a",
+                        "cyan-edge": "#b9e3ea",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed-variant": "#005229",
+                        "border-subtle": "#e8eaf0",
+                        "surface-dim": "#d9dadc",
+                        "surface-container-highest": "#e1e2e4",
+                        "phase-base": "#00a85a",
+                        "on-primary-container": "#003317",
+                        "surface-variant": "#e1e2e4",
+                        "tertiary-fixed": "#ffdadb",
+                        "purple-edge": "#d4c8ff",
+                        "primary-fixed": "#77fca4",
+                        "surface-container-lowest": "#ffffff",
+                        "on-background": "#191c1e",
+                        "on-primary-fixed": "#00210d",
+                        "text-muted": "#555570",
+                        "secondary-fixed-dim": "#66d6e7",
+                        "on-secondary-fixed-variant": "#004f58",
+                        "inverse-primary": "#59df8a",
+                        "amber-edge": "#f6e0a8",
+                        "surface-container": "#edeef0",
+                        "surface-container-low": "#f2f4f6",
+                        "accent-pink": "#e91e63",
+                        "on-tertiary-container": "#5d001a",
+                        "on-surface": "#191c1e",
+                        "on-secondary": "#ffffff",
+                        "tertiary-container": "#ec6678",
+                        "surface-tint": "#006d38",
+                        "phase-specialty": "#0097a7",
+                        "tertiary": "#a93347",
+                        "inverse-on-surface": "#f0f1f3",
+                        "phase-peak": "#e68a00",
+                        "red-soft": "#fde8e8",
+                        "purple-soft": "#ede7ff",
+                        "tertiary-fixed-dim": "#ffb2b8",
+                        "secondary-fixed": "#97f0ff",
+                        "border-default": "#d8dae5",
+                        "text-faint": "#8888a0",
+                        "red-edge": "#f3c8c8",
+                        "background": "#f8f9fb",
+                        "amber-soft": "#fdf2dd",
+                        "error": "#ba1a1a",
+                        "inverse-surface": "#2e3132",
+                        "surface-container-high": "#e7e8ea",
+                        "outline-variant": "#bccabc",
+                        "surface-bright": "#f8f9fb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "card-padding": "12px",
+                        "topbar-height": "50px",
+                        "sidebar-width": "220px",
+                        "coach-panel-width": "360px",
+                        "sidebar-collapsed": "60px",
+                        "base": "8px",
+                        "container-padding": "24px",
+                        "card-gap": "16px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Outfit"],
+                        "metric-value": ["Outfit"],
+                        "body-sm": ["Outfit"],
+                        "editorial-prose": ["Newsreader"],
+                        "editorial-quote": ["Newsreader"],
+                        "body-md": ["Outfit"],
+                        "label-mono-caps": ["JetBrains Mono"],
+                        "headline-sm": ["Outfit"],
+                        "display-lg": ["Outfit"],
+                        "label-mono-sm": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "metric-value": ["28px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "body-sm": ["13px", { "lineHeight": "1.4", "fontWeight": "400" }],
+                        "editorial-prose": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "editorial-quote": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "body-md": ["14px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "label-mono-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.14em", "fontWeight": "500" }],
+                        "headline-sm": ["18px", { "lineHeight": "1.4", "fontWeight": "600" }],
+                        "display-lg": ["32px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "label-mono-sm": ["9px", { "lineHeight": "10px", "letterSpacing": "0.1em", "fontWeight": "500" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .loading-pulse {
+            animation: pulse-border 1.5s infinite ease-in-out;
+        }
+        @keyframes pulse-border {
+            0% { border-color: #d8dae5; box-shadow: 0 0 0 0 rgba(0, 109, 56, 0); }
+            50% { border-color: #00a85a; box-shadow: 0 0 0 4px rgba(0, 109, 56, 0.1); }
+            100% { border-color: #d8dae5; box-shadow: 0 0 0 0 rgba(0, 109, 56, 0); }
+        }
+        .spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-background text-text-primary font-body-md antialiased h-screen overflow-hidden flex">
+<!-- SideNavBar -->
+<nav class="fixed h-full w-[220px] left-0 top-0 bg-surface-container flex flex-col py-base border-r border-border-default z-20">
+<div class="px-container-padding mb-8 mt-2">
+<h1 class="font-headline-md text-headline-md font-bold text-primary tracking-tight">STRIDE</h1>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mt-1 uppercase">Elite Performance</p>
+</div>
+<div class="flex-1 flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg border-l-4 border-primary text-primary font-bold bg-surface-hover transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">calendar_today</span>
+<span class="font-body-md text-body-md">赛季训练计划</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg border-l-4 border-transparent text-on-surface-variant font-medium hover:bg-surface-hover transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">fitness_center</span>
+<span class="font-body-md text-body-md">本周课表</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg border-l-4 border-transparent text-on-surface-variant font-medium hover:bg-surface-hover transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">history</span>
+<span class="font-body-md text-body-md">训练记录</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg border-l-4 border-transparent text-on-surface-variant font-medium hover:bg-surface-hover transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">analytics</span>
+<span class="font-body-md text-body-md">数据洞察</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg border-l-4 border-transparent text-on-surface-variant font-medium hover:bg-surface-hover transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+<span class="font-body-md text-body-md">Coach</span>
+</a>
+</div>
+<div class="mt-auto px-3 flex flex-col gap-1 pt-4 border-t border-border-default/50">
+<a class="flex items-center gap-3 px-3 py-2 rounded-lg text-on-surface-variant font-medium hover:bg-surface-hover transition-colors duration-200" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+<span class="font-body-sm text-body-sm">设置</span>
+</a>
+</div>
+</nav>
+<!-- TopAppBar -->
+<header class="fixed top-0 right-0 h-[50px] left-[220px] bg-surface border-b border-border-default flex items-center justify-between px-container-padding z-10">
+<div class="flex items-center gap-2 font-body-sm text-body-sm text-text-muted">
+<span>Workspace</span>
+<span class="material-symbols-outlined text-[16px]">chevron_right</span>
+<span class="text-on-surface font-semibold">赛季训练计划</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-text-muted hover:text-primary transition-colors">
+<span class="material-symbols-outlined">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="ml-[220px] mt-[50px] w-full flex h-[calc(100vh-50px)]">
+<!-- Center Workspace -->
+<div class="flex-1 overflow-y-auto bg-background p-8">
+<div class="max-w-3xl mx-auto mt-8">
+<div class="mb-12 text-center">
+<span class="material-symbols-outlined text-[48px] text-primary mb-4 spinner" style="font-variation-settings: 'FILL' 0, 'wght' 200;">sync</span>
+<h2 class="font-display-lg text-display-lg text-text-primary mb-3">计划更新中</h2>
+<p class="font-editorial-prose text-editorial-prose text-text-muted max-w-lg mx-auto">Coach 正在根据你的反馈重新计算调整方案，当前已启用计划不受影响</p>
+</div>
+<!-- Context Summary Card -->
+<div class="bg-surface border border-border-default rounded-lg p-6 mb-8 shadow-sm">
+<div class="flex items-start justify-between mb-4">
+<div>
+<span class="font-label-mono-caps text-label-mono-caps text-text-faint uppercase block mb-1">Target Event</span>
+<h3 class="font-headline-sm text-headline-sm text-text-primary">2026 Shanghai Marathon</h3>
+</div>
+<div class="text-right">
+<span class="font-label-mono-caps text-label-mono-caps text-text-faint uppercase block mb-1">Plan Version</span>
+<span class="font-label-mono-caps text-label-mono-caps text-primary bg-green-soft border border-green-edge px-2 py-1 rounded">v1.2</span>
+</div>
+</div>
+<div class="flex gap-4 border-t border-border-subtle pt-4">
+<div>
+<span class="font-label-mono-caps text-label-mono-caps text-text-faint uppercase block">Impacting Weeks</span>
+<span class="font-body-sm text-body-sm text-text-primary">W12-16</span>
+</div>
+<div class="pl-4 border-l border-border-subtle">
+<span class="font-label-mono-caps text-label-mono-caps text-text-faint uppercase block">Current Phase</span>
+<span class="font-body-sm text-body-sm text-text-primary">Peak</span>
+</div>
+</div>
+</div>
+<!-- Progress Indicator -->
+<div class="bg-surface border border-border-default rounded-lg p-8 mb-8 relative overflow-hidden">
+<!-- Vertical Stepper -->
+<div class="relative pl-6">
+<!-- Line -->
+<div class="absolute left-[31px] top-[14px] bottom-[14px] w-[1px] bg-border-default"></div>
+<div class="absolute left-[31px] top-[14px] h-[40%] w-[2px] bg-primary rounded-full transition-all duration-1000"></div>
+<!-- Step 1: Complete -->
+<div class="relative flex items-center gap-6 mb-8 z-10">
+<div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center shrink-0 shadow-sm border border-primary">
+<span class="material-symbols-outlined text-on-primary text-[14px]" style="font-variation-settings: 'wght' 600;">check</span>
+</div>
+<div>
+<h4 class="font-label-mono-caps text-label-mono-caps text-text-primary">已保存反馈</h4>
+<p class="font-body-sm text-body-sm text-text-muted mt-0.5">你的要求已被接收并记录</p>
+</div>
+</div>
+<!-- Step 2: Active/Loading -->
+<div class="relative flex items-center gap-6 mb-8 z-10">
+<div class="w-6 h-6 rounded-full bg-surface border-2 border-primary flex items-center justify-center shrink-0 loading-pulse">
+<div class="w-2 h-2 rounded-full bg-primary"></div>
+</div>
+<div>
+<h4 class="font-label-mono-caps text-label-mono-caps text-primary font-bold">正在重算训练量</h4>
+<p class="font-body-sm text-body-sm text-text-muted mt-0.5">调整赛前两周的跑量和强度分布</p>
+</div>
+</div>
+<!-- Step 3: Pending -->
+<div class="relative flex items-center gap-6 mb-8 z-10 opacity-50">
+<div class="w-6 h-6 rounded-full bg-surface border border-border-default flex items-center justify-center shrink-0">
+<div class="w-1.5 h-1.5 rounded-full bg-border-default"></div>
+</div>
+<div>
+<h4 class="font-label-mono-caps text-label-mono-caps text-text-primary">正在校验恢复周</h4>
+<p class="font-body-sm text-body-sm text-text-muted mt-0.5">确保减量期的疲劳消除模型合理</p>
+</div>
+</div>
+<!-- Step 4: Pending -->
+<div class="relative flex items-center gap-6 z-10 opacity-50">
+<div class="w-6 h-6 rounded-full bg-surface border border-border-default flex items-center justify-center shrink-0">
+<div class="w-1.5 h-1.5 rounded-full bg-border-default"></div>
+</div>
+<div>
+<h4 class="font-label-mono-caps text-label-mono-caps text-text-primary">即将生成调整方案</h4>
+</div>
+</div>
+</div>
+</div>
+<div class="text-center">
+<p class="font-body-sm text-body-sm text-text-faint flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[16px]">info</span>
+                        你可以放心离开此页面，生成完成后我们会通知你，或回来继续审阅。
+                    </p>
+</div>
+</div>
+</div>
+<!-- Right Column (Coach Chat) -->
+<aside class="w-[360px] bg-surface border-l border-border-default flex flex-col h-full shrink-0">
+<div class="h-[50px] border-b border-border-default flex items-center px-4 bg-surface-container-lowest">
+<span class="material-symbols-outlined text-[20px] text-primary mr-2">psychology</span>
+<span class="font-headline-sm text-headline-sm text-text-primary">Coach Analysis</span>
+</div>
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
+<!-- Date divider -->
+<div class="text-center my-2">
+<span class="font-label-mono-caps text-label-mono-caps text-text-faint uppercase bg-surface px-2">Today, 10:42 AM</span>
+</div>
+<!-- User Message -->
+<div class="flex flex-col items-end">
+<div class="bg-surface-hover border border-border-default rounded-lg rounded-tr-none p-3 max-w-[85%]">
+<p class="font-body-md text-body-md text-text-primary">把赛前两周再保守一点</p>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-faint mt-1">You</span>
+</div>
+<!-- Coach Message -->
+<div class="flex flex-col items-start">
+<div class="bg-green-soft border border-green-edge rounded-lg rounded-tl-none p-3 max-w-[85%]">
+<p class="font-body-md text-body-md text-on-primary-container">收到，我正在重新优化方案。这需要约 1-2 分钟，你可以先去忙，完成后我会在这里告诉你。</p>
+</div>
+<span class="font-label-mono-sm text-label-mono-sm text-text-faint mt-1 text-primary">STRIDE Coach</span>
+</div>
+<!-- Thinking Indicator -->
+<div class="flex flex-col items-start mt-2">
+<div class="flex gap-1 items-center px-3 py-2 bg-surface-container-low rounded-lg rounded-tl-none border border-border-subtle">
+<div class="w-1.5 h-1.5 rounded-full bg-primary/40 animate-[bounce_1.4s_infinite_ease-in-out_both]" style="animation-delay: -0.32s"></div>
+<div class="w-1.5 h-1.5 rounded-full bg-primary/60 animate-[bounce_1.4s_infinite_ease-in-out_both]" style="animation-delay: -0.16s"></div>
+<div class="w-1.5 h-1.5 rounded-full bg-primary/80 animate-[bounce_1.4s_infinite_ease-in-out_both]"></div>
+</div>
+</div>
+</div>
+<!-- Input Area -->
+<div class="p-4 border-t border-border-default bg-surface-container-lowest">
+<div class="relative">
+<input class="w-full bg-surface border border-border-default rounded-lg pl-3 pr-10 py-2.5 font-body-sm text-body-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all text-text-primary placeholder:text-text-muted" placeholder="补充你的反馈..." type="text"/>
+<button class="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:text-primary-container transition-colors p-1 flex items-center justify-center">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">send</span>
+</button>
+</div>
+<p class="font-label-mono-sm text-label-mono-sm text-text-faint mt-2 text-center">AI generated plan based on your recent metrics.</p>
+</div>
+</aside>
+</main>
+</body></html>
