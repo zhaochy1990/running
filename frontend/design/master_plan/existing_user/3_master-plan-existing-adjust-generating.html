@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>STRIDE - 调整赛季训练计划</title>
+<title>STRIDE - 赛季训练计划调整生成中</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&amp;family=JetBrains+Mono:wght@500;700&amp;family=Newsreader:ital,wght@0,400;1,400&amp;display=swap" rel="stylesheet"/>
@@ -202,7 +202,7 @@
 <div class="flex items-center text-body-sm font-body-sm text-text-muted">
 <span>训练计划</span>
 <span class="material-symbols-outlined text-[16px] mx-2">chevron_right</span>
-<span class="text-primary font-bold">调整赛季训练计划</span>
+<span class="text-primary font-bold">调整方案生成中</span>
 </div>
 <div class="flex items-center gap-4">
 <button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">notifications</span></button>
@@ -231,12 +231,16 @@
 </div>
 <span class="px-3 py-1 rounded-full bg-green-soft border border-green-edge text-primary font-label-mono-sm text-[10px]">v1.3 已启用</span>
 </div>
-<p class="text-body-md text-text-muted">这是当前正在生效的赛季训练计划。Coach 会以它为上下文，理解你想调整的目标、训练量、比赛安排或恢复节奏。</p>
+<p class="text-body-md text-text-muted">Coach 正在基于你的调整意图生成方案。当前赛季训练计划仍保持生效，生成完成后中栏会切换为变化审阅。</p>
 </div>
 <section class="mb-6 flex gap-2">
 <button class="px-4 py-2 bg-white border border-border-default rounded-lg font-body-sm font-bold text-text-primary shadow-sm">计划总览</button>
 <button class="px-4 py-2 bg-surface-container-low border border-border-default rounded-lg font-body-sm text-text-muted">版本记录</button>
 <button class="px-4 py-2 bg-surface-container-low border border-border-default rounded-lg font-body-sm text-text-muted">调整上下文</button>
+</section>
+<section class="mb-6 bg-cyan-soft border border-cyan-edge rounded-lg p-4 flex items-start gap-3">
+<span class="material-symbols-outlined text-primary text-[20px] animate-spin">sync</span>
+<div><p class="font-body-sm text-text-primary font-bold">正在生成调整方案</p><p class="font-body-sm text-text-muted mt-1">中栏保留当前计划作为基准；右侧 Coach 会展示生成进度和可补充的约束。</p></div>
 </section>
 <section class="bg-white border border-border-default rounded-lg mb-6 overflow-hidden">
 <div class="p-5 border-b border-border-subtle flex items-center justify-between">
@@ -327,52 +331,25 @@
 <div class="flex flex-col h-full overflow-hidden">
 <div class="p-4 border-b border-border-subtle bg-surface-bright flex items-center gap-2 shrink-0">
 <span class="material-symbols-outlined text-primary text-[20px]">psychology</span>
-<span class="font-label-mono-caps text-[12px] font-bold tracking-wider">和 COACH 调整计划</span>
+<span class="font-label-mono-caps text-[12px] font-bold tracking-wider">COACH 正在生成调整方案</span>
 </div>
 <div class="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
-<div class="flex gap-3 max-w-[90%]">
-<div class="w-6 h-6 rounded bg-primary-container flex-shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[14px]">psychology</span></div>
-<div class="bg-surface-container-low border border-border-default rounded-tr-lg rounded-b-lg p-3">
-<p class="font-body-sm text-[13px] text-text-primary leading-6">我已经把当前赛季训练计划放在中间。你可以告诉我想调整目标比赛、训练量、强度、恢复周，还是某个阶段的重点。</p>
+<div class="flex gap-3 max-w-[90%] self-end flex-row-reverse"><div class="w-6 h-6 rounded bg-surface-variant flex-shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-[14px] text-text-muted">person</span></div><div class="bg-surface-bright border border-border-default rounded-tl-lg rounded-b-lg p-3"><p class="font-body-sm text-[13px] text-text-primary leading-6">我想把峰值周的里程稍微降一点，并且增加恢复余地。</p></div></div>
+<div class="flex gap-3 max-w-[90%]"><div class="w-6 h-6 rounded bg-primary-container flex-shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[14px]">psychology</span></div><div class="bg-surface-container-low border border-border-default rounded-tr-lg rounded-b-lg p-3"><p class="font-body-sm text-[13px] text-text-primary leading-6">收到。我正在基于当前赛季训练计划、近期训练负荷和你的调整意图生成方案。中栏会继续保留当前计划，方便你对照。</p></div></div>
+<div class="ml-9 mr-2 bg-white border border-border-default rounded-lg shadow-sm overflow-hidden">
+<div class="bg-cyan-soft/50 border-b border-cyan-edge p-3 flex items-center gap-2"><span class="material-symbols-outlined text-primary text-[18px] animate-spin">sync</span><span class="font-label-mono-caps text-[10px] text-text-primary font-bold">正在生成调整方案</span></div>
+<div class="p-4 space-y-4">
+<div class="relative pl-8 space-y-4 before:absolute before:left-[11px] before:top-3 before:bottom-3 before:w-px before:bg-border-subtle">
+<div class="relative"><span class="absolute -left-8 top-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center"><span class="material-symbols-outlined text-[14px]">check</span></span><p class="font-body-sm text-text-primary font-semibold">整理调整诉求</p><p class="font-body-sm text-text-muted text-[12px] mt-1">降低峰值周量，增加恢复余地</p></div>
+<div class="relative"><span class="absolute -left-8 top-0 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center"><span class="material-symbols-outlined text-[14px]">check</span></span><p class="font-body-sm text-text-primary font-semibold">评估训练负荷影响</p><p class="font-body-sm text-text-muted text-[12px] mt-1">检查 CTL、Form 和恢复周位置</p></div>
+<div class="relative"><span class="absolute -left-8 top-0 w-6 h-6 rounded-full bg-white border-2 border-primary flex items-center justify-center animate-pulse"><span class="w-2 h-2 rounded-full bg-primary"></span></span><p class="font-body-sm text-primary font-bold">重排阶段重点</p><p class="font-body-sm text-text-muted text-[12px] mt-1">正在调整 P3/P4 的关键课密度</p></div>
+<div class="relative"><span class="absolute -left-8 top-0 w-6 h-6 rounded-full bg-white border border-border-default"></span><p class="font-body-sm text-text-muted">准备变化审阅</p></div>
+</div>
+<div class="pt-3 border-t border-border-subtle flex items-center justify-between"><span class="font-label-mono-sm text-text-muted bg-surface-container-low px-2 py-1 rounded">预计 1-3 分钟</span><span class="font-label-mono-sm text-primary">输入已齐，开始生成</span></div>
 </div>
 </div>
-<div class="flex gap-3 max-w-[90%] self-end flex-row-reverse">
-<div class="w-6 h-6 rounded bg-surface-variant flex-shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-[14px] text-text-muted">person</span></div>
-<div class="bg-surface-bright border border-border-default rounded-tl-lg rounded-b-lg p-3">
-<p class="font-body-sm text-[13px] text-text-primary leading-6">我想把峰值周的里程稍微降一点，并且增加恢复余地。</p>
 </div>
-</div>
-<div class="ml-9 mr-2 bg-white border border-border-default rounded shadow-sm overflow-hidden">
-<div class="bg-amber-soft/30 border-b border-border-subtle p-2 flex items-center gap-2">
-<span class="material-symbols-outlined text-phase-peak text-[16px]">edit_note</span>
-<span class="font-label-mono-caps text-[10px] text-text-primary font-bold">已记录调整意图</span>
-</div>
-<div class="p-3">
-<ul class="space-y-2 mb-4">
-<li class="flex items-start gap-2 text-body-sm"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">info</span><span class="text-text-primary">优先检查 P4 峰值期周量上限和恢复周位置</span></li>
-<li class="flex items-start gap-2 text-body-sm"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">info</span><span class="text-text-primary">保留 2:50 目标，但降低连续高负荷风险</span></li>
-</ul>
-<p class="text-[11px] text-text-muted italic">继续补充约束后，Coach 会生成可审阅的调整方案。</p>
-</div>
-</div>
-<div class="bg-cyan-soft border border-cyan-edge rounded-lg p-3 ml-9 mr-2">
-<p class="font-body-sm text-text-primary font-semibold mb-1">下一步</p>
-<p class="font-body-sm text-text-muted leading-5">请说明你能接受的峰值周范围，或哪些日期更需要恢复。</p>
-</div>
-</div>
-<div class="p-4 border-t border-border-subtle bg-surface-bright shrink-0 space-y-3">
-<div class="flex gap-2 overflow-x-auto pb-1">
-<button class="px-3 py-1.5 rounded-full border border-border-default bg-surface font-body-sm text-body-sm text-text-muted hover:border-primary hover:text-primary transition-colors whitespace-nowrap">降低峰值周量</button>
-<button class="px-3 py-1.5 rounded-full border border-border-default bg-surface font-body-sm text-body-sm text-text-muted hover:border-primary hover:text-primary transition-colors whitespace-nowrap">增加恢复周</button>
-<button class="px-3 py-1.5 rounded-full border border-border-default bg-surface font-body-sm text-body-sm text-text-muted hover:border-primary hover:text-primary transition-colors whitespace-nowrap">改目标比赛</button>
-</div>
-<div class="relative">
-<input class="w-full bg-surface border border-border-default rounded p-3 pr-10 text-body-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" placeholder="告诉 Coach 你想调整什么..." type="text"/>
-<button class="absolute right-3 top-1/2 -translate-y-1/2 text-primary hover:text-primary-fixed-dim transition-colors" title="发送给 Coach">
-<span class="material-symbols-outlined text-[20px]">send</span>
-</button>
-</div>
-</div>
+<div class="p-4 border-t border-border-subtle bg-surface-bright shrink-0 space-y-3"><div class="relative"><input class="w-full bg-surface-container-low border border-border-default rounded p-3 pr-10 text-body-sm text-text-muted cursor-not-allowed" disabled="" placeholder="调整方案生成中，暂时不能发送消息" type="text"/><button class="absolute right-3 top-1/2 -translate-y-1/2 text-text-faint cursor-not-allowed" disabled="" title="生成中暂不可发送"><span class="material-symbols-outlined text-[20px]">hourglass_top</span></button></div></div>
 </div>
 </aside>
 </body></html>

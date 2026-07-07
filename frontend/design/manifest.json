@@ -89,31 +89,33 @@
       "category": "master_plan",
       "number": 8,
       "story": "存量用户修改赛季训练计划",
-      "slug": "master-plan-existing-adjust-generating",
-      "title": "STRIDE - 赛季训练计划调整生成中",
-      "stitchScreenId": "c6370ba60c964c16bef0b2235cd2e976",
-      "html": "master_plan/existing_user/2_master-plan-existing-adjust-generating.html",
-      "archiveHtml": "c6370ba60c964c16bef0b2235cd2e976_master-plan-existing-adjust-generating.html"
+      "slug": "master-plan-existing-coach-questions",
+      "title": "STRIDE - Coach 结构化追问",
+      "stitchScreenId": null,
+      "html": "master_plan/existing_user/2_master-plan-existing-coach-questions.html",
+      "archiveHtml": null,
+      "notes": "Local-first review snapshot; pending sync back to Stitch."
     },
     {
       "category": "master_plan",
       "number": 9,
       "story": "存量用户修改赛季训练计划",
-      "slug": "master-plan-existing-diff-review",
-      "title": "STRIDE - 审阅计划调整",
-      "stitchScreenId": "7d3cd54892e04ad0a42edbd60769a20b",
-      "html": "master_plan/existing_user/3_master-plan-existing-diff-review.html",
-      "archiveHtml": "7d3cd54892e04ad0a42edbd60769a20b_master-plan-existing-diff-review.html"
+      "slug": "master-plan-existing-adjust-generating",
+      "title": "STRIDE - 赛季训练计划调整生成中",
+      "stitchScreenId": "c6370ba60c964c16bef0b2235cd2e976",
+      "html": "master_plan/existing_user/3_master-plan-existing-adjust-generating.html",
+      "archiveHtml": "c6370ba60c964c16bef0b2235cd2e976_master-plan-existing-adjust-generating.html"
     },
     {
       "category": "master_plan",
       "number": 10,
       "story": "存量用户修改赛季训练计划",
-      "slug": "master-plan-existing-applied-success",
-      "title": "调整已应用 - STRIDE 训练中心",
-      "stitchScreenId": "061166dcf45142be9ca3417e47f7713b",
-      "html": "master_plan/existing_user/4_master-plan-existing-applied-success.html",
-      "archiveHtml": "061166dcf45142be9ca3417e47f7713b_master-plan-existing-applied-success.html"
+      "slug": "master-plan-existing-diff-review",
+      "title": "STRIDE - 审阅调整后的赛季训练计划",
+      "stitchScreenId": "7d3cd54892e04ad0a42edbd60769a20b",
+      "html": "master_plan/existing_user/4_master-plan-existing-diff-review.html",
+      "archiveHtml": "7d3cd54892e04ad0a42edbd60769a20b_master-plan-existing-diff-review.html",
+      "notes": "Middle column shows the adjusted plan preview; textual diff explanation lives in Coach Chat."
     },
     {
       "category": "master_plan",
@@ -129,21 +131,23 @@
       "category": "master_plan",
       "number": 12,
       "story": "边界状态与流程恢复",
-      "slug": "master-plan-generation-failed",
-      "title": "STRIDE | 计划生成没有完成",
+      "slug": "master-plan-generation-system-error",
+      "title": "STRIDE - 系统异常导致生成失败",
       "stitchScreenId": "76bdbbe4285f4ab7957a79a490112414",
       "html": "master_plan/existing_user/6_master-plan-generation-failed.html",
-      "archiveHtml": "76bdbbe4285f4ab7957a79a490112414_master-plan-generation-failed.html"
+      "archiveHtml": "76bdbbe4285f4ab7957a79a490112414_master-plan-generation-failed.html",
+      "notes": "System/network/internal error; middle column preserves the previous adjusted plan."
     },
     {
       "category": "master_plan",
       "number": 13,
       "story": "边界状态与流程恢复",
-      "slug": "master-plan-no-effective-change",
-      "title": "STRIDE - 没有需要应用的变化",
+      "slug": "master-plan-request-rejected",
+      "title": "STRIDE - Coach 驳回调整要求",
       "stitchScreenId": "dd5c2ae52f7246dba382204c65d2d326",
-      "html": "master_plan/existing_user/7_master-plan-no-effective-change.html",
-      "archiveHtml": "dd5c2ae52f7246dba382204c65d2d326_boundary-no-effective-change.html"
+      "html": "master_plan/existing_user/7_master-plan-request-rejected.html",
+      "archiveHtml": "dd5c2ae52f7246dba382204c65d2d326_boundary-no-effective-change.html",
+      "notes": "Coach rejects an unreasonable request; middle column preserves the previous adjusted plan."
     },
     {
       "category": "master_plan",
