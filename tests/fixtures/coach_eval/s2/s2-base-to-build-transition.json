@@ -1,0 +1,72 @@
+{
+  "fixture_id": "s2-base-to-build-transition",
+  "scope": "s2",
+  "description": "First build week after a stable base block; add controlled quality without a mileage jump.",
+  "tags": ["phase_transition", "build", "progression"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-s2-user",
+      "phase": "build",
+      "hr_zones": {"z1": [95, 122], "z2": [122, 141], "z3": [141, 160], "z4": [160, 176], "z5": [176, 190]},
+      "threshold_pace_s_km": 238,
+      "weight_kg": 70,
+      "injuries": []
+    },
+    "current_phase": {"phase_type": "build", "week_index": 1, "total_weeks": 6},
+    "target_week_start": "2026-06-01",
+    "week_folder": "2026-06-01_06-07(S2B1)",
+    "target_weekly_km": 52,
+    "pace_targets": {
+      "easy_pace_low_s_km": 315,
+      "easy_pace_high_s_km": 345,
+      "marathon_pace_s_km": 255,
+      "threshold_pace_s_km": 238,
+      "interval_pace_s_km": 218,
+      "rep_1000m_s_km": 214,
+      "rep_400m_s_km": 203
+    },
+    "volume_targets": {"weekly_km": 52, "long_run_km": 15.5, "quality_km_budget": 9, "easy_km": 27.5},
+    "prev_plans_md": ["prev_week_km: 50\nBase W6 planned 50 km, mostly Z2, long run 15 km, strides only."],
+    "prev_feedback_md": ["RPE 5/10. Felt fresh. No pain. Easy runs were controlled and sleep was normal."],
+    "recent_signals": {
+      "hrv_7d": [61, 62, 63, 62, 64, 63, 64],
+      "rhr_7d": [49, 48, 48, 49, 48, 48, 48],
+      "sleep_score_7d": [78, 80, 82, 79, 81, 83, 82],
+      "ctl": 47,
+      "atl": 48,
+      "tsb": -1,
+      "prev_week_km": 50,
+      "as_of_date": "2026-05-31"
+    },
+    "user_request_md": "进入 build 第一周，想开始有一点质量课，但不要太猛。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "target_week_start": "2026-06-01",
+      "week_folder": "2026-06-01_06-07(S2B1)",
+      "target_weekly_km": 52,
+      "weekly_km_tolerance_pct": 0.08,
+      "prev_week_km": 50,
+      "prev_ctl": 47,
+      "z45_pace_threshold_s_km": 238,
+      "max_hard_sessions": 1,
+      "min_run_days": 4,
+      "nutrition_daily": true
+    },
+    "soft_rubric": {
+      "schema_validity": {"min_score": 5, "behavior": "valid WeeklyPlan matching the target week"},
+      "safety_load": {"min_score": 4, "behavior": "keeps week one build load close to base volume"},
+      "progression": {"min_score": 5, "behavior": "adds one controlled quality stimulus after base"},
+      "phase_fit": {"min_score": 5, "behavior": "clearly behaves like build week one, not peak"},
+      "signal_response": {"min_score": 4, "behavior": "stable recovery signals allow but do not require quality"},
+      "weekly_distribution": {"min_score": 4, "behavior": "quality, long run, strength and rest are spaced"},
+      "nutrition_alignment": {"min_score": 4, "behavior": "quality and long-run days receive more carbs"},
+      "request_handling": {"min_score": 4, "behavior": "honors cautious quality request"}
+    },
+    "anti_patterns": [
+      "two hard sessions in the first build week",
+      "weekly volume above 55 km",
+      "long run over 35 percent of weekly volume"
+    ]
+  }
+}

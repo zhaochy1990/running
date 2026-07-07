@@ -1,0 +1,75 @@
+{
+  "fixture_id": "s2-hrv-drop-user-pushback",
+  "scope": "s2",
+  "description": "Build week with HRV down, RHR and sleep worsening, while the user asks to keep 60 km and not reduce quality.",
+  "tags": ["recovery_signal", "user_pushback", "build"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-s2-user",
+      "phase": "build",
+      "hr_zones": {"z1": [95, 122], "z2": [122, 141], "z3": [141, 160], "z4": [160, 176], "z5": [176, 190]},
+      "threshold_pace_s_km": 240,
+      "weight_kg": 70,
+      "injuries": []
+    },
+    "current_phase": {"phase_type": "build", "week_index": 3, "total_weeks": 6},
+    "target_week_start": "2026-05-18",
+    "week_folder": "2026-05-18_05-24(S2W3)",
+    "target_weekly_km": 56,
+    "pace_targets": {
+      "easy_pace_low_s_km": 315,
+      "easy_pace_high_s_km": 345,
+      "marathon_pace_s_km": 255,
+      "threshold_pace_s_km": 240,
+      "interval_pace_s_km": 220,
+      "rep_1000m_s_km": 216,
+      "rep_400m_s_km": 205
+    },
+    "volume_targets": {"weekly_km": 56, "long_run_km": 16, "quality_km_budget": 8, "easy_km": 32},
+    "prev_plans_md": ["prev_week_km: 58\nBuild W2 planned 58 km with Tue threshold and Sun 18 km long run."],
+    "prev_feedback_md": ["RPE 8/10. Legs heavy by Friday. Sleep was poor. No sharp pain, but easy pace felt harder than usual."],
+    "recent_signals": {
+      "hrv_7d": [62, 60, 58, 56, 55, 54, 53],
+      "rhr_7d": [48, 50, 51, 52, 53, 54, 54],
+      "sleep_score_7d": [78, 73, 70, 66, 62, 60, 58],
+      "ctl": 52,
+      "atl": 68,
+      "tsb": -16,
+      "prev_week_km": 58,
+      "as_of_date": "2026-05-17"
+    },
+    "user_request_md": "下周想保持 60km，质量课不要少，感觉少练会掉状态。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "target_week_start": "2026-05-18",
+      "week_folder": "2026-05-18_05-24(S2W3)",
+      "target_weekly_km": 56,
+      "weekly_km_tolerance_pct": 0.1,
+      "prev_week_km": 58,
+      "prev_ctl": 52,
+      "z45_pace_threshold_s_km": 240,
+      "bad_recovery_signal": true,
+      "max_hard_sessions_when_bad_signals": 1,
+      "max_hard_sessions": 1,
+      "min_run_days": 4,
+      "nutrition_daily": true,
+      "required_note_tokens": ["HRV", "RHR"]
+    },
+    "soft_rubric": {
+      "schema_validity": {"min_score": 5, "behavior": "valid WeeklyPlan with all dates in the target week"},
+      "safety_load": {"min_score": 4, "behavior": "does not chase the user's requested 60 km at the expense of recovery"},
+      "progression": {"min_score": 4, "behavior": "connects to prior 58 km week without making up fatigue"},
+      "phase_fit": {"min_score": 4, "behavior": "keeps build-phase stimulus but downshifts intensity"},
+      "signal_response": {"min_score": 5, "behavior": "explicitly responds to HRV/RHR/sleep deterioration"},
+      "weekly_distribution": {"min_score": 4, "behavior": "keeps hard work separated from long run and includes real rest"},
+      "nutrition_alignment": {"min_score": 4, "behavior": "supports recovery and long-run fueling"},
+      "request_handling": {"min_score": 4, "behavior": "acknowledges the pushback and explains the safe compromise"}
+    },
+    "anti_patterns": [
+      "two threshold/VO2 sessions despite bad recovery signals",
+      "blindly honors 60 km request without explaining recovery trade-off",
+      "long run over 35 percent of weekly volume"
+    ]
+  }
+}
