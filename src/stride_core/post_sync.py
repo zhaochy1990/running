@@ -164,7 +164,7 @@ class ActivityZonesHandler:
             dwell_seconds,
         )
         from stride_core.models import RUN_SPORT_IDS
-        from stride_core.running_calibration.sqlite_connector import (
+        from stride_storage.sqlite.calibration_connector import (
             SQLiteRunningCalibrationRepository,
         )
         from stride_core.running_calibration.zones import compute_training_zones
