@@ -43,6 +43,7 @@ from typing import Any
 
 from coach.graphs.generation.graph import build_generation_graph
 from coach.graphs.generation.master_rule_filter import run_master_rule_filter
+from coach.schemas import ReviewReport
 from stride_server.coach_adapters.master_plan_adapter import (
     apply_master_patches,
     generate_master_plan,
@@ -54,6 +55,9 @@ from stride_server.master_plan_generator import _format_history_summary
 from .graph import call_judge_with_retries, run_evaluation_for_fixture
 from .judge_s1 import JUDGE_PROMPT_VERSION as S1_JUDGE_VERSION
 from .judge_s1 import build_s1_judge_prompt_metadata, make_s1_judge
+from .judge_s2 import JUDGE_PROMPT_VERSION as S2_JUDGE_VERSION
+from .judge_s2 import build_s2_judge_prompt_metadata, make_s2_judge
+from .s2_l1 import run_s2_l1_filter, s2_rule_filter_kwargs
 from .schemas import AxisScore, EvalReport, FixtureRunOutcome, JudgeScore, aggregate_axis_avg
 
 logger = logging.getLogger(__name__)
@@ -272,6 +276,202 @@ def _s1_rule_filter_kwargs(fixture: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# S2 frozen-fixture helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_frozen_weekly_load_context(fixture: dict) -> Callable[[dict], dict]:
+    """Return fixture input as weekly generation context, with no DB access."""
+    fixture_input = fixture.get("input") or {}
+
+    def load_ctx(_state: dict) -> dict:
+        return dict(fixture_input)
+
+    return load_ctx
+
+
+def _build_s2_initial_state(fixture: dict) -> dict:
+    fixture_input = fixture.get("input") or {}
+    user_profile = fixture_input.get("user_profile") or {}
+    return {
+        "job_id": "",
+        "user_id": user_profile.get("user_id") or "eval-fixture-user",
+        "plan_type": "week",
+        "input_payload": dict(fixture_input),
+    }
+
+
+def _s2_phase_type(fixture_input: dict):
+    from stride_core.master_plan import PhaseType
+
+    raw = (
+        (fixture_input.get("current_phase") or {}).get("phase_type")
+        if isinstance(fixture_input.get("current_phase"), dict)
+        else fixture_input.get("current_phase")
+    )
+    if raw is None:
+        raw = (fixture_input.get("user_profile") or {}).get("phase") or "base"
+    try:
+        return PhaseType(str(raw))
+    except ValueError as exc:
+        raise ValueError(f"bad S2 fixture phase_type {raw!r}") from exc
+
+
+def _s2_week_meta(fixture_input: dict):
+    from coach.graphs.generation.weekly_prompt import WeekMeta
+
+    week_meta = fixture_input.get("week_meta") or {}
+    week_folder = (
+        week_meta.get("week_folder")
+        or fixture_input.get("week_folder")
+        or _folder_from_week_start(str(fixture_input.get("target_week_start") or ""))
+    )
+    target_km = (
+        week_meta.get("target_weekly_km")
+        or fixture_input.get("target_weekly_km")
+        or ((fixture_input.get("recent_signals") or {}).get("prev_week_km"))
+        or 0.0
+    )
+    phase_position = week_meta.get("phase_position") or _s2_phase_position(fixture_input)
+    return WeekMeta(
+        phase_position=str(phase_position),
+        week_folder=str(week_folder),
+        target_weekly_km=float(target_km or 0.0),
+    )
+
+
+def _folder_from_week_start(start: str) -> str:
+    if not start:
+        return ""
+    try:
+        from datetime import date as _date, timedelta as _timedelta
+
+        d = _date.fromisoformat(start)
+        end = d + _timedelta(days=6)
+        return f"{d.isoformat()}_{end.strftime('%m-%d')}(S2)"
+    except ValueError:
+        return start
+
+
+def _s2_phase_position(fixture_input: dict) -> str:
+    current_phase = fixture_input.get("current_phase") or {}
+    if isinstance(current_phase, dict):
+        phase = current_phase.get("phase_type") or current_phase.get("name") or "base"
+        week = current_phase.get("week_index") or current_phase.get("weeks_in_phase")
+        total = current_phase.get("total_weeks") or current_phase.get("phase_weeks")
+        if week and total:
+            return f"{phase} week {week}/{total}"
+        if week:
+            return f"{phase} week {week}"
+        return str(phase)
+    return str(current_phase or (fixture_input.get("user_profile") or {}).get("phase") or "base")
+
+
+def _s2_pace_targets(fixture_input: dict):
+    from coach.schemas import PaceTargets
+
+    raw = fixture_input.get("pace_targets") or {}
+    if not raw:
+        raise ValueError("S2 fixture input must include pace_targets for generation")
+    return PaceTargets.model_validate(raw)
+
+
+def _s2_volume_targets(fixture_input: dict, phase_type: Any, week_meta: Any):
+    from coach.schemas import VolumeTargets
+    from stride_server.coach_adapters.specialist_tools import volume_targets
+
+    raw = fixture_input.get("volume_targets") or {}
+    if raw:
+        return VolumeTargets.model_validate(raw)
+    level = float((fixture_input.get("recent_signals") or {}).get("ctl") or 60.0)
+    return volume_targets(week_meta.target_weekly_km, phase_type, level)
+
+
+def _s2_context_block(fixture_input: dict) -> str:
+    parts: list[str] = []
+    signals = fixture_input.get("recent_signals") or {}
+    if signals:
+        parts.append("【近期身体/负荷信号】 " + json.dumps(signals, ensure_ascii=False, separators=(",", ":")))
+    prev_plans = fixture_input.get("prev_plans_md") or []
+    if prev_plans:
+        parts.append("【前序计划摘要】\n" + "\n---\n".join(str(x) for x in prev_plans[-2:]))
+    feedback = fixture_input.get("prev_feedback_md") or []
+    if feedback:
+        parts.append("【上周反馈】\n" + "\n---\n".join(str(x) for x in feedback[-2:]))
+    request = fixture_input.get("user_request_md")
+    if request:
+        parts.append(f"【用户本轮请求】 {request}")
+    injuries = (fixture_input.get("user_profile") or {}).get("injuries") or []
+    if injuries:
+        parts.append("【伤病约束】 " + ", ".join(str(x) for x in injuries))
+    return "\n".join(parts)
+
+
+def generate_weekly_plan_from_fixture(state: dict) -> dict:
+    """Generate one S2 WeeklyPlan from frozen fixture input.
+
+    This adapter intentionally avoids DB reads. Fixtures must carry the pace
+    table and weekly volume target they want the generator to use.
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from coach.graphs.generation.weekly_prompt import build_weekly_system_prompt
+    from coach.runtime.messages import extract_text
+    from coach.runtime.tool_loop import run_tool_loop
+    from stride_core.plan_spec import WeeklyPlan
+    from stride_server.coach_runtime import get_generator_llm
+    from stride_server.master_plan_generator import _parse_llm_output
+
+    context = state.get("context") or {}
+    phase_type = _s2_phase_type(context)
+    week_meta = _s2_week_meta(context)
+    pace_targets = _s2_pace_targets(context)
+    volume_targets = _s2_volume_targets(context, phase_type, week_meta)
+    context_block = _s2_context_block(context)
+
+    system_prompt = build_weekly_system_prompt(
+        phase=phase_type,
+        week_meta=week_meta,
+        pace_targets=pace_targets,
+        volume_targets=volume_targets,
+        context_block=context_block,
+    )
+    user_text = "请基于上述上下文生成该目标周的 WeeklyPlan JSON。"
+    messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_text)]
+    llm = get_generator_llm()
+    raw = run_tool_loop(llm, messages, {})
+    parsed = _parse_llm_output(raw)
+    if parsed is None:
+        err = ValueError(f"parse_failed: weekly plan output unparseable (raw_len={len(raw)})")
+        err.raw_output = raw[:2000]  # type: ignore[attr-defined]
+        raise err
+    try:
+        plan = WeeklyPlan.from_dict(parsed)
+    except Exception as exc:  # noqa: BLE001 - adapter schema boundary
+        raise ValueError(f"bad_schema: WeeklyPlan.from_dict failed: {exc}") from exc
+    return {
+        "current_draft": plan.to_dict(),
+        "timing_metadata": {
+            "generator_system_prompt_chars": len(system_prompt),
+            "generator_user_prompt_chars": len(user_text),
+            "generator_raw_response_chars": len(extract_text(raw)),
+        },
+    }
+
+
+def weekly_eval_reviewer(state: dict) -> ReviewReport:
+    """Deterministic reviewer for S2 eval; L2 judge owns quality assessment."""
+    return ReviewReport(
+        verdict="pass",
+        reviewer_model="coach_eval.weekly_eval_reviewer",
+        iteration=int(state.get("iteration") or 0),
+        issues=[],
+        suggested_patches=[],
+        commentary_md="S2 eval reviewer pass-through; L1 and L2 judge carry eval signal.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # S1 runner
 # ---------------------------------------------------------------------------
 
@@ -308,6 +508,7 @@ def run_s1_evaluation(
 
     resumed_outcomes, resumed_run_id = _load_resume_outcomes(
         resume_report_path,
+        scope="s1",
         mode=mode,
         judge_prompt_version=S1_JUDGE_VERSION,
     )
@@ -670,9 +871,227 @@ def _judge_variance_summary(samples: list[JudgeScore]) -> dict[str, Any]:
     }
 
 
-def run_s2_evaluation(**_kwargs: Any) -> EvalReport:
-    """Phase 2 placeholder."""
-    raise NotImplementedError("S2 evaluation lands after S1 baseline is stable")
+def run_s2_evaluation(
+    *,
+    mode: RunMode,
+    fixture_ids: list[str] | None = None,
+    judge_llm: Any | None = None,
+    checkpoint: bool = True,
+    resume_report_path: Path | None = None,
+) -> EvalReport:
+    """Run S2 weekly-plan evaluation end-to-end."""
+    if mode != RunMode.FROZEN_FIXTURE:
+        raise NotImplementedError("S2 full generation currently supports frozen_fixture mode only")
+    fixtures = load_fixtures("s2", fixture_ids)
+    if not fixtures:
+        logger.warning("No S2 fixtures matched (scope=s2, ids=%s)", fixture_ids)
+        return _build_report("s2", mode, [], judge_prompt_version=S2_JUDGE_VERSION)
+
+    if judge_llm is None:
+        from stride_server.coach_runtime import get_generator_llm
+
+        judge_llm = get_generator_llm()
+    judge = make_s2_judge(judge_llm)
+
+    resumed_outcomes, resumed_run_id = _load_resume_outcomes(
+        resume_report_path,
+        scope="s2",
+        mode=mode,
+        judge_prompt_version=S2_JUDGE_VERSION,
+    )
+    outcomes: list[FixtureRunOutcome] = []
+    run_id = resumed_run_id or _new_run_id()
+    for i, fixture in enumerate(fixtures, start=1):
+        fid = fixture.get("fixture_id", f"<idx={i}>")
+        resumed = resumed_outcomes.get(str(fid))
+        if resumed is not None:
+            logger.info(
+                "S2 eval [%d/%d] mode=%s id=%s — resumed from %s",
+                i,
+                len(fixtures),
+                mode.value,
+                fid,
+                resume_report_path,
+            )
+            outcomes.append(resumed)
+            if checkpoint:
+                write_report(_build_report(
+                    "s2",
+                    mode,
+                    outcomes,
+                    judge_prompt_version=S2_JUDGE_VERSION,
+                    run_id=f"{run_id}.partial",
+                ))
+            continue
+
+        logger.info("S2 eval [%d/%d] mode=%s id=%s", i, len(fixtures), mode.value, fid)
+        gen_graph = build_generation_graph(
+            load_context=_make_frozen_weekly_load_context(fixture),
+            generator=generate_weekly_plan_from_fixture,
+            reviewer=weekly_eval_reviewer,
+            rule_filter=run_s2_l1_filter,
+            rule_filter_kwargs=s2_rule_filter_kwargs(fixture),
+        )
+        outcome = run_evaluation_for_fixture(
+            fixture=fixture,
+            gen_graph=gen_graph,
+            judge=judge,
+            initial_state_builder=_build_s2_initial_state,
+            judge_prompt_metadata_builder=build_s2_judge_prompt_metadata,
+        )
+        outcomes.append(outcome)
+        if checkpoint:
+            write_report(_build_report(
+                "s2",
+                mode,
+                outcomes,
+                judge_prompt_version=S2_JUDGE_VERSION,
+                run_id=f"{run_id}.partial",
+            ))
+
+    return _build_report(
+        "s2", mode, outcomes, judge_prompt_version=S2_JUDGE_VERSION, run_id=run_id
+    )
+
+
+def run_s2_judge_artifact_evaluation(
+    *,
+    mode: RunMode,
+    fixture_id: str,
+    artifact_path: Path,
+    judge_llm: Any | None = None,
+    judge_repeat: int = 1,
+    run_judge: bool = True,
+) -> EvalReport:
+    """Run S2 L1 + optional L2 against an existing WeeklyPlan JSON artifact."""
+    fixtures = load_fixtures("s2", [fixture_id])
+    if not fixtures:
+        raise ValueError(f"No S2 fixture matched fixture_id={fixture_id!r}")
+    fixture = fixtures[0]
+
+    try:
+        with open(artifact_path, encoding="utf-8") as f:
+            generated_plan = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Could not read generated artifact {artifact_path}: {exc}") from exc
+    if not isinstance(generated_plan, dict):
+        raise ValueError(f"Generated artifact must be a JSON object: {artifact_path}")
+
+    source_timings, source_generation_iterations = _artifact_source_generation_metadata(
+        artifact_path,
+        fixture_id=fixture_id,
+        generated_plan=generated_plan,
+    )
+    l1_t0 = time.monotonic()
+    l1_report = run_s2_l1_filter(generated_plan, fixture=fixture)
+    timings: dict[str, Any] = dict(source_timings)
+    timings.update({"rule_filter_s": [time.monotonic() - l1_t0]})
+    l1_violations = [
+        {
+            "rule": v.rule,
+            "severity": v.severity,
+            "message": v.message,
+            "details": v.details,
+        }
+        for v in l1_report.violations
+    ]
+
+    if not l1_report.ok:
+        outcome = FixtureRunOutcome(
+            fixture_id=fixture_id,
+            scope="s2",
+            l1_passed=l1_report.ok,
+            l1_violations=l1_violations,
+            generated_artifact=generated_plan,
+            generation_iterations=source_generation_iterations,
+            timings=timings,
+        )
+        return _build_report("s2", mode, [outcome], judge_prompt_version=S2_JUDGE_VERSION)
+
+    if not run_judge:
+        outcome = FixtureRunOutcome(
+            fixture_id=fixture_id,
+            scope="s2",
+            l1_passed=True,
+            l1_violations=l1_violations,
+            generated_artifact=generated_plan,
+            generation_iterations=source_generation_iterations,
+            timings=timings,
+            judge_score=JudgeScore(
+                fixture_id=fixture_id,
+                scope="s2",
+                axes=[],
+                overall_verdict="pass",
+                overall_rationale="L1-only artifact evaluation passed; L2 judge skipped.",
+                judge_model="none",
+                judge_prompt_version=S2_JUDGE_VERSION,
+            ),
+        )
+        return _build_report("s2", mode, [outcome], judge_prompt_version=S2_JUDGE_VERSION)
+
+    if judge_repeat <= 0:
+        raise ValueError("judge_repeat must be a positive integer")
+    if judge_llm is None:
+        from stride_server.coach_runtime import get_generator_llm
+
+        judge_llm = get_generator_llm()
+    judge = make_s2_judge(judge_llm)
+
+    judge_samples: list[JudgeScore] = []
+    judge_attempt_s: list[float] = []
+    judge_retries = 0
+    timings.update(build_s2_judge_prompt_metadata(generated_plan, fixture))
+    try:
+        for _ in range(judge_repeat):
+            sample, sample_timings = call_judge_with_retries(
+                judge,
+                generated_plan,
+                fixture,
+                fixture_id=fixture_id,
+            )
+            judge_samples.append(sample)
+            judge_attempt_s.extend(sample_timings.get("judge_attempt_s") or [])
+            judge_retries += int(sample_timings.get("judge_retries") or 0)
+    except Exception as exc:  # noqa: BLE001 - eval boundary
+        logger.warning("eval fixture=%s judge failed: %s", fixture_id, exc)
+        if judge_attempt_s:
+            timings["judge_attempt_s"] = judge_attempt_s
+            timings["judge_retries"] = judge_retries
+            timings["judge_s"] = sum(judge_attempt_s)
+            timings["total_s"] = float(timings["judge_s"]) + sum(timings["rule_filter_s"])
+        outcome = FixtureRunOutcome(
+            fixture_id=fixture_id,
+            scope="s2",
+            l1_passed=True,
+            l1_violations=l1_violations,
+            generated_artifact=generated_plan,
+            generation_iterations=source_generation_iterations,
+            timings=timings,
+            judge_samples=judge_samples if judge_repeat > 1 else [],
+            judge_summary=_judge_variance_summary(judge_samples) if len(judge_samples) > 1 else {},
+            error=f"judge_failed: {type(exc).__name__}: {exc}",
+            debug={"exception_type": type(exc).__name__},
+        )
+        return _build_report("s2", mode, [outcome], judge_prompt_version=S2_JUDGE_VERSION)
+
+    judge_score = _summarize_judge_samples(judge_samples)
+    timings["judge_attempt_s"] = judge_attempt_s
+    timings["judge_retries"] = judge_retries
+    timings["judge_s"] = sum(judge_attempt_s)
+    timings["total_s"] = float(timings["judge_s"]) + sum(timings["rule_filter_s"])
+    outcome = FixtureRunOutcome(
+        fixture_id=fixture_id,
+        scope="s2",
+        l1_passed=True,
+        l1_violations=l1_violations,
+        generated_artifact=generated_plan,
+        generation_iterations=source_generation_iterations,
+        timings=timings,
+        judge_score=judge_score,
+        judge_samples=judge_samples if judge_repeat > 1 else [],
+        judge_summary=_judge_variance_summary(judge_samples) if judge_repeat > 1 else {},
+    )
+    return _build_report("s2", mode, [outcome], judge_prompt_version=S2_JUDGE_VERSION)
 
 
 def run_s3_evaluation(**_kwargs: Any) -> EvalReport:
@@ -737,6 +1156,7 @@ def _build_report(
 def _load_resume_outcomes(
     resume_report_path: Path | None,
     *,
+    scope: str,
     mode: RunMode,
     judge_prompt_version: str,
 ) -> tuple[dict[str, FixtureRunOutcome], str | None]:
@@ -747,8 +1167,8 @@ def _load_resume_outcomes(
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError(f"Could not read --resume-report {resume_report_path}: {exc}") from exc
     report = EvalReport.model_validate(payload)
-    if report.scope != "s1":
-        raise ValueError(f"--resume-report scope must be 's1', got {report.scope!r}")
+    if report.scope != scope:
+        raise ValueError(f"--resume-report scope must be {scope!r}, got {report.scope!r}")
     if report.mode != mode.value:
         raise ValueError(
             f"--resume-report mode mismatch: report={report.mode!r}, requested={mode.value!r}"

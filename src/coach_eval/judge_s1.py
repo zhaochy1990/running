@@ -12,9 +12,7 @@ the runner stores the version alongside each ``JudgeScore`` so a future
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 from collections.abc import Callable
 from typing import Literal, get_args
 
@@ -24,6 +22,13 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from coach.runtime.messages import extract_text
 
 from .schemas import AxisScore, JudgeScore
+from .judge_utils import (
+    clean_compact,
+    json_compact,
+    matches_expected,
+    model_name,
+    parse_judge_output,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,74 +122,6 @@ S1 特别提醒：
 """
 
 
-def _parse_judge_output(raw: str) -> dict | None:
-    """3-tier parse: sentinel → fenced → balanced-braces."""
-    m = re.search(r"---BEGIN_JUDGE---(.*?)---END_JUDGE---", raw, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    m = re.search(r"```(?:json)?\s*(.*?)```", raw, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-    fb = raw.find("{")
-    lb = raw.rfind("}")
-    if fb != -1 and lb > fb:
-        try:
-            return json.loads(raw[fb : lb + 1])
-        except json.JSONDecodeError:
-            pass
-    return None
-
-
-def _model_name(llm: BaseChatModel) -> str:
-    """Best-effort: surface a human-readable model id for the report."""
-    for attr in ("deployment_name", "model_name", "model"):
-        v = getattr(llm, attr, None)
-        if v:
-            return str(v)
-    return type(llm).__name__
-
-
-def _matches_expected(
-    axis: str, score: int | None, expected: dict
-) -> bool:
-    """True iff ``score >= expected.soft_rubric[axis].min_score`` (or axis is N/A)."""
-    if score is None:
-        return True
-    rubric = (expected.get("soft_rubric") or {}).get(axis)
-    if not isinstance(rubric, dict):
-        return True  # no min_score set → no constraint to violate
-    min_score = rubric.get("min_score")
-    if not isinstance(min_score, (int, float)):
-        return True
-    return score >= min_score
-
-
-def _clean_compact(value: object) -> object:
-    """Drop empty/null/default noise from the judge-only compact view."""
-    if isinstance(value, dict):
-        out: dict[str, object] = {}
-        for key, val in value.items():
-            cleaned = _clean_compact(val)
-            if cleaned is None or cleaned == [] or cleaned == {}:
-                continue
-            out[str(key)] = cleaned
-        return out
-    if isinstance(value, list):
-        return [cleaned for item in value if (cleaned := _clean_compact(item)) is not None]
-    return value
-
-
-def _json_compact(obj: object) -> str:
-    """Render prompt JSON exactly as the judge user message does."""
-    return json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
-
-
 def _compact_generated_plan(generated_plan: dict) -> dict:
     """Build a smaller judge view without mutating the generated artifact.
 
@@ -226,7 +163,7 @@ def _compact_generated_plan(generated_plan: dict) -> dict:
         }
         if phase.get("is_completed") is True:
             item["is_completed"] = True
-        compact_phases.append(_clean_compact(item))
+        compact_phases.append(clean_compact(item))
     compact["phases"] = compact_phases
 
     compact_milestones: list[dict[str, object]] = []
@@ -243,7 +180,7 @@ def _compact_generated_plan(generated_plan: dict) -> dict:
         phase_name = phase_name_by_id.get(str(milestone.get("phase_id")))
         if phase_name:
             item["phase_name"] = phase_name
-        compact_milestones.append(_clean_compact(item))
+        compact_milestones.append(clean_compact(item))
     compact["milestones"] = compact_milestones
 
     compact_weeks: list[dict[str, object]] = []
@@ -269,16 +206,16 @@ def _compact_generated_plan(generated_plan: dict) -> dict:
         for session in week.get("key_sessions") or []:
             if not isinstance(session, dict):
                 continue
-            sessions.append(_clean_compact({
+            sessions.append(clean_compact({
                 key: session.get(key)
                 for key in ("type", "distance_km", "duration_min", "intensity", "purpose")
                 if key in session
             }))
         item["key_sessions"] = sessions
-        compact_weeks.append(_clean_compact(item))
+        compact_weeks.append(clean_compact(item))
     compact["weeks"] = compact_weeks
 
-    return _clean_compact(compact)
+    return clean_compact(compact)
 
 
 def _build_user_message(generated_plan: dict, fixture: dict) -> str:
@@ -294,15 +231,15 @@ def _build_user_message(generated_plan: dict, fixture: dict) -> str:
 
     return (
         f"<scenario>\n{scenario}\n</scenario>\n\n"
-        f"<user_profile>\n{_json_compact(user_profile)}\n</user_profile>\n\n"
-        f"<season_window>\n{_json_compact(season_window)}\n</season_window>\n\n"
-        f"<training_history>\n{_json_compact(training_history)}\n</training_history>\n\n"
+        f"<user_profile>\n{json_compact(user_profile)}\n</user_profile>\n\n"
+        f"<season_window>\n{json_compact(season_window)}\n</season_window>\n\n"
+        f"<training_history>\n{json_compact(training_history)}\n</training_history>\n\n"
         f"<user_intent>\n{user_intent_md}\n</user_intent>\n\n"
-        f"<expected>\n{_json_compact(expected)}\n</expected>\n\n"
+        f"<expected>\n{json_compact(expected)}\n</expected>\n\n"
         "<draft_master_plan_compact note=\"UUID metadata, null fields, and "
         "duplicate weekly_key_sessions identical to weeks are omitted; evaluate "
         "the generated plan content below\">\n"
-        f"{_json_compact(compact_plan)}\n</draft_master_plan_compact>\n"
+        f"{json_compact(compact_plan)}\n</draft_master_plan_compact>\n"
     )
 
 
@@ -312,8 +249,8 @@ def build_s1_judge_prompt_metadata(generated_plan: dict, fixture: dict) -> dict[
     return {
         "judge_system_prompt_chars": len(S1_JUDGE_SYSTEM_PROMPT),
         "judge_user_prompt_chars": len(_build_user_message(generated_plan, fixture)),
-        "judge_compact_plan_chars": len(_json_compact(compact_plan)),
-        "judge_original_plan_chars": len(_json_compact(generated_plan)),
+        "judge_compact_plan_chars": len(json_compact(compact_plan)),
+        "judge_original_plan_chars": len(json_compact(generated_plan)),
     }
 
 
@@ -332,7 +269,7 @@ def make_s1_judge(llm: BaseChatModel) -> Callable[[dict, dict], JudgeScore]:
     suite reports a fail instead of crashing.
     """
 
-    judge_model_label = _model_name(llm)
+    judge_model_label = model_name(llm)
 
     def judge(generated_plan: dict, fixture: dict) -> JudgeScore:
         fixture_id = fixture.get("fixture_id", "<unknown>")
@@ -352,7 +289,7 @@ def make_s1_judge(llm: BaseChatModel) -> Callable[[dict, dict], JudgeScore]:
 
         raw = extract_text(resp.content)
 
-        parsed = _parse_judge_output(raw)
+        parsed = parse_judge_output(raw)
         if parsed is None:
             logger.warning(
                 "judge_s1 parse failed fixture=%s raw_len=%d", fixture_id, len(raw)
@@ -387,7 +324,7 @@ def make_s1_judge(llm: BaseChatModel) -> Callable[[dict, dict], JudgeScore]:
                     axis=axis_name,
                     score=score,
                     rationale=str(ax.get("rationale", "")),
-                    matches_expected=_matches_expected(axis_name, score, expected),
+                    matches_expected=matches_expected(axis_name, score, expected),
                     anti_patterns_hit=list(ax.get("anti_patterns_hit") or []),
                 )
             )
