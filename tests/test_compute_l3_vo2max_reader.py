@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 
 
 READER_QUERY = """

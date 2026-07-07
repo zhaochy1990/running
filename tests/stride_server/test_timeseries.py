@@ -70,7 +70,7 @@ def _seed(tmp_path, *, ts_points: int = 0):
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir(parents=True, exist_ok=True)
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(user=USER_UUID)
     db._conn.execute(
         "INSERT INTO activities (label_id, name, sport_type, date, distance_m, duration_s) "

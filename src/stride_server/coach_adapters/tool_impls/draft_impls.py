@@ -57,8 +57,8 @@ def _fail(*errors: str) -> ToolResult:
 
 def _open_plan_store(user_id: str) -> tuple[Any, Any]:
     """Return ``(db, plan_store)`` — caller owns ``db.close()``."""
-    from stride_core.db import Database
-    from stride_core.state_stores import SqlitePlanStateStore
+    from stride_storage.sqlite.database import Database
+    from stride_storage.sqlite.state_stores import SqlitePlanStateStore
 
     db = Database(user=user_id)
     return db, SqlitePlanStateStore(db)

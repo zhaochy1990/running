@@ -11,13 +11,13 @@ import json
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.plan_spec import (
     PlannedNutrition,
     PlannedSession,
     SessionKind,
 )
-from stride_core.state_stores import (
+from stride_storage.sqlite.state_stores import (
     SqliteCommentaryStore,
     SqliteInBodyStore,
     SqlitePlanStateStore,

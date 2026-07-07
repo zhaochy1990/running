@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.training_load import backfill_training_load, refresh_training_load_calibration
 
 from .plan import require_internal_token

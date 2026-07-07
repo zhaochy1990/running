@@ -32,11 +32,7 @@ const List<Color> kZoneColors = [
 enum ZoneKind { hr, pace }
 
 class ZoneDistribution extends StatelessWidget {
-  const ZoneDistribution({
-    super.key,
-    required this.zones,
-    required this.type,
-  });
+  const ZoneDistribution({super.key, required this.zones, required this.type});
 
   /// Already normalized + sorted zones for this [type].
   final List<ZoneV2> zones;
@@ -60,9 +56,7 @@ class ZoneDistribution extends StatelessWidget {
         for (var i = 0; i < display.length; i++)
           _ZoneRow(
             zone: display[i],
-            color: i < kZoneColors.length
-                ? kZoneColors[i]
-                : StrideTokens.muted,
+            color: i < kZoneColors.length ? kZoneColors[i] : StrideTokens.muted,
             label: i < kZoneLabels.length
                 ? kZoneLabels[i]
                 : 'Z${display[i].zoneIndex}',
@@ -70,8 +64,9 @@ class ZoneDistribution extends StatelessWidget {
                 ? _formatHrRange(display[i], display)
                 : _formatPaceRange(display[i], display),
             unit: type == ZoneKind.hr ? ' bpm' : '/km',
-            widthFraction:
-                (display[i].percent / maxPercent).clamp(0.02, 1.0).toDouble(),
+            widthFraction: (display[i].percent / maxPercent)
+                .clamp(0.02, 1.0)
+                .toDouble(),
           ),
       ],
     );
@@ -102,32 +97,30 @@ class _ZoneRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // LEFT: Z{n} {name} (range unit)
+          // LEFT: label column (fixed) + range column (fixed), no unit.
           SizedBox(
-            width: 132,
-            child: RichText(
+            width: 80,
+            child: Text(
+              label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: label,
-                    style: const TextStyle(
-                      fontFamily: AppTypography.fontMono,
-                      fontSize: StrideTokens.fs10,
-                      color: StrideTokens.fg,
-                    ),
-                  ),
-                  if (range.isNotEmpty)
-                    TextSpan(
-                      text: '  ($range$unit)',
-                      style: const TextStyle(
-                        fontFamily: AppTypography.fontMono,
-                        fontSize: 9,
-                        color: StrideTokens.muted2,
-                      ),
-                    ),
-                ],
+              style: const TextStyle(
+                fontFamily: AppTypography.fontMono,
+                fontSize: StrideTokens.fs10,
+                color: StrideTokens.fg,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 62,
+            child: Text(
+              range,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontFamily: AppTypography.fontMono,
+                fontSize: 9,
+                color: StrideTokens.muted2,
               ),
             ),
           ),
@@ -142,7 +135,9 @@ class _ZoneRow extends StatelessWidget {
                   Container(
                     decoration: BoxDecoration(
                       color: StrideTokens.grid,
-                      borderRadius: BorderRadius.circular(StrideTokens.radiusPill),
+                      borderRadius: BorderRadius.circular(
+                        StrideTokens.radiusPill,
+                      ),
                     ),
                   ),
                   // proportional fill
@@ -151,8 +146,9 @@ class _ZoneRow extends StatelessWidget {
                     child: Container(
                       decoration: BoxDecoration(
                         color: color.withValues(alpha: 0.85),
-                        borderRadius:
-                            BorderRadius.circular(StrideTokens.radiusPill),
+                        borderRadius: BorderRadius.circular(
+                          StrideTokens.radiusPill,
+                        ),
                       ),
                     ),
                   ),
@@ -175,26 +171,34 @@ class _ZoneRow extends StatelessWidget {
           const SizedBox(width: StrideTokens.spaceSm),
           // RIGHT: duration + percent
           SizedBox(
-            width: 72,
+            width: 76,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                Text(
-                  _formatDuration(zone.durationS.round()),
-                  style: const TextStyle(
-                    fontFamily: AppTypography.fontMono,
-                    fontSize: StrideTokens.fs10,
-                    color: StrideTokens.muted,
+                SizedBox(
+                  width: 34,
+                  child: Text(
+                    _formatDuration(zone.durationS.round()),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontFamily: AppTypography.fontMono,
+                      fontSize: StrideTokens.fs10,
+                      color: StrideTokens.muted,
+                    ),
                   ),
                 ),
                 const SizedBox(width: StrideTokens.spaceXs),
-                Text(
-                  '${zone.percent.toStringAsFixed(1)}%',
-                  style: TextStyle(
-                    fontFamily: AppTypography.fontMono,
-                    fontSize: StrideTokens.fs11,
-                    fontWeight: FontWeight.w700,
-                    color: color,
+                SizedBox(
+                  width: 38,
+                  child: Text(
+                    '${zone.percent.toStringAsFixed(1)}%',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontFamily: AppTypography.fontMono,
+                      fontSize: StrideTokens.fs11,
+                      fontWeight: FontWeight.w700,
+                      color: color,
+                    ),
                   ),
                 ),
               ],
@@ -209,14 +213,13 @@ class _ZoneRow extends StatelessWidget {
 // ── Formatting (ported from ZoneChart.tsx) ──────────────────────────────────
 
 String _formatDuration(int seconds) {
-  final m = seconds ~/ 60;
+  final h = seconds ~/ 3600;
+  final m = (seconds % 3600) ~/ 60;
   final s = seconds % 60;
-  if (m >= 60) {
-    final h = m ~/ 60;
-    final rm = m % 60;
-    return '${h}h${rm}m';
+  if (h > 0) {
+    return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
-  return s > 0 ? '${m}m${s}s' : '${m}m';
+  return '$m:${s.toString().padLeft(2, '0')}';
 }
 
 int _maxZoneIndex(List<ZoneV2> zones) {
@@ -262,6 +265,6 @@ String _formatPaceRange(ZoneV2 zone, List<ZoneV2> zones) {
       return '> $maxPace';
     }
   }
-  if (zone.zoneIndex == maxIdx) return '< $minPace';
+  if (zone.zoneIndex == maxIdx) return '< $maxPace';
   return '$minPace–$maxPace';
 }

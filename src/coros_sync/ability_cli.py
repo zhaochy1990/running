@@ -34,7 +34,8 @@ from stride_core.ability import (
     marathon_target_from_profile,
     marathon_target_label,
 )
-from stride_core.db import Database, USER_DATA_DIR
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -374,6 +375,13 @@ def _ability_for(profile: str, label_id: str) -> None:
             from stride_core.ability import _resolve_hr_max
             from stride_core.timefmt import today_shanghai
             hr_max = _resolve_hr_max(db, today_shanghai().isoformat())
+            if hr_max is None:
+                console.print(
+                    "[red]No max HR available: neither a STRIDE calibration "
+                    "snapshot nor any watch-vendor max_hr in activities. "
+                    "Sync running data first, then retry.[/red]"
+                )
+                raise SystemExit(1)
             l1_full = compute_l1_quality(activity, plan_target=None, hr_max=hr_max)
             l1 = {"total": l1_full.get("total"), "breakdown": l1_full.get("breakdown")}
 

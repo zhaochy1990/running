@@ -52,7 +52,7 @@ from langchain_core.messages import AIMessage, SystemMessage
 from coach.graphs.generation.rule_filter import _total_run_distance_m, run_rule_filter
 from coach.graphs.generation.season_rule_filter import run_season_rule_filter
 from coach.graphs.generation.week_schedule import derive_phase_weeks
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.master_plan import (
     MasterPlan,
     MasterPlanStatus,
@@ -62,7 +62,7 @@ from stride_core.master_plan import (
     PhaseType,
 )
 from stride_core.plan_spec import WeeklyPlan
-from stride_core.running_calibration.sqlite_connector import (
+from stride_storage.sqlite.calibration_connector import (
     SQLiteRunningCalibrationRepository,
 )
 from stride_core.running_calibration.types import (

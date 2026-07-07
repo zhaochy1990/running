@@ -30,6 +30,25 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 | 接支付 / 支付宝 / 微信 / 订阅付费（调研 + 大陆主体接入方案，未开工）| [`docs/payment-china.md`](docs/payment-china.md) |
 | 改 race 预测 / 个体疲劳指数 / CS-D′ speed-duration 模型（去掉写死 Riegel 0.06，设计稿未实现）| [`docs/race-prediction-model.md`](docs/race-prediction-model.md) |
 | Frontend pages / API 路由清单 | [`docs/frontend.md`](docs/frontend.md) |
+| Web 产品设计 / Stitch 设计稿 | [`frontend/DESIGN.md`](frontend/DESIGN.md) —— Stitch MCP workflow + 设计规则 |
+
+## Stitch MCP design workflow (HARD)
+
+Web design work uses Stitch as the source of truth. Formal STRIDE Web design changes must be made through Stitch MCP first, then exported to `frontend/design/` as review snapshots.
+
+Before inspecting, updating, regenerating, or adding Stitch designs, read [`frontend/DESIGN.md`](frontend/DESIGN.md). It defines the required two-column / three-column workspace rules, user-facing terminology, CTA ownership, review checklist, and the MCP sequence: `list_projects` -> `list_design_systems` -> `list_screens` -> `get_screen` -> `edit_screens` or generation -> export HTML -> update `frontend/design/README.md` and the scenario README -> visible-text audit.
+
+Do not hand-edit local exported HTML as the final design source. If direct Stitch MCP tools are unavailable, use the configured `stitch` MCP server via JSON-RPC at `https://stitch.googleapis.com/mcp` with local Codex credentials; never write or reveal credential values.
+
+Operational rules for Stitch MCP:
+
+1. Treat Stitch screen IDs and returned artifacts as the source of truth; local HTML files are review snapshots only.
+2. For existing screens, call `get_screen` first, then use `edit_screens`; only use generation when a required state does not exist.
+3. Use project `STRIDE · Web` (`9898197682875783129`) and design system `STRIDE Endurance Lab` (`assets/78bc062efcff47b5944c094f5db74850`) unless the user explicitly changes the design direction.
+4. In prompts, describe layout, content, state, preserved product capabilities, terminology constraints, and CTA ownership; do not duplicate design-system token details for normal generation.
+5. Stitch responses may return full `outputComponents` artifacts or only a session/update event. If the artifact is missing, call `get_screen` for the updated screen before exporting.
+6. Download `htmlCode.downloadUrl` to `.stitch/designs/`, then copy the story-ordered review HTML files to the relevant `frontend/design/` scenario directory.
+7. Update `frontend/design/README.md`, the scenario README, and `frontend/design/manifest.json`; verify HTML links and run the banned visible-text audit before handing design work back.
 
 ## Frontend local verification (HARD)
 
@@ -58,7 +77,23 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 | Authoring artifacts (plan.md, feedback.md, TRAINING_PLAN.md) | **Markdown files in `data/{user_id}/logs/`**，经 `sync-data.yml` 同步到 Azure Files |
 | Auth tokens / secrets | **Azure Key Vault** |
 
-加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。likes_store 是 two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential` —— 复用这个 pattern，不要发明新的。
+加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。
+
+### 统一数据访问层 `stride_storage`（HARD）
+
+所有持久化**实现**现在归一在独立包 **`src/stride_storage/`**（API Server 与 Coach 共享的数据访问层）。分三个 import 层级（`.importlinter` Contract 5 强制）：
+
+| Tier | 路径 | 装什么 | 谁能 import |
+|------|------|--------|-------------|
+| A `interfaces/` | `stride_storage.interfaces` | 纯 Protocol + frozen config dataclass（无 sqlite/azure import）| 任何包，含 `coach` |
+| B `sqlite/` · `content/` | `stride_storage.sqlite` / `.content` | `Database`、state_stores、calibration connector、content 原语；依赖 `sqlite3` + `stride_core` 纯域 | `stride_server` 等；**coach 不可** |
+| C `azure/` · `keyvault/` · `factories/` · `coach_persistence/` | 同名子包 | 仅 Azure SDK（Table/Blob/Key Vault）、coach 持久化 | `stride_server`；**coach 永不** |
+
+**加新 store / 改存储实现**：放进 `stride_storage` 对应 tier，复用共享原语 —— `azure/credentials.py::get_credential`（唯一 `DefaultAzureCredential`）、`azure/table_backend.py::AzureTableConnection`、`azure/blob_backend.py::get_container_client`、`azure/backend_select.py::choose_backend`、`keyvault/secret_client.py::get_secret_client`。**不要**再各自 new `DefaultAzureCredential()` 或重写 dev/prod 后端选择。canonical 样板：likes（`interfaces/likes.py` + `azure/likes_backend.py`），two-backend（dev JSON / prod Azure Table）。
+
+**config 加载留 server 侧**：`stride_storage` 的 backend 工厂只接收 resolved config dataclass（如 `LikesStorageConfig`）；`ServerConfig` 解析 + 缓存仍在 `stride_server`（避免 `stride_storage → stride_server` 成环）。
+
+**过渡期 shim**：`stride_core.db` / `stride_core.state_stores` / `stride_server.likes_store` 等旧路径现为薄 re-export shim，consumer 暂可照旧 import；增量 cutover 到 `stride_storage.*` 后删除。新代码直接 import `stride_storage.*`。
 
 ## Timezone discipline (HARD)
 
@@ -259,10 +294,10 @@ STRIDE coach 是 LangGraph-based agent，处理 S1（master-plan）/ S2（weekly
 
 | Layer | Path | 允许的 deps |
 |-------|------|-------------|
-| Core | `src/coach/` | `pydantic`, `langgraph`, `langchain-*`, `stride_core` 域原语（`plan_spec` / `workout_spec` / `plan_diff` / `master_plan` / `master_plan_diff`）+ **纯公式层**（`training_load.{core,calibration,types}`、`running_calibration.{core,segments,types,zones,repository}`）|
-| Adapters | `src/stride_server/coach_adapters/` | Core + `stride_core.db` + `coros_sync` + `azure.*` + `fastapi` |
+| Core | `src/coach/` | `pydantic`, `langgraph`, `langchain-*`, `stride_core` 域原语（`plan_spec` / `workout_spec` / `plan_diff` / `master_plan` / `master_plan_diff`）+ **纯公式层**（`training_load.{core,calibration,types}`、`running_calibration.{core,segments,types,zones,repository}`）+ `stride_storage.interfaces`（纯 Protocol/config，可选）|
+| Adapters | `src/stride_server/coach_adapters/` | Core + `stride_storage`（数据访问层，含 `sqlite`/`azure`/`coach_persistence`）+ `coros_sync` + `azure.*` + `fastapi` |
 
-`coach.*` **必须不** import `stride_server.*`、`coros_sync.*`、`garmin_sync.*`、`azure.*`、`fastapi.*` 或 `stride_core.db`。CI 经 `lint-imports` 强制（跑 `PYTHONPATH=src lint-imports`）。
+`coach.*` **必须不** import `stride_server.*`、`coros_sync.*`、`garmin_sync.*`、`azure.*`、`fastapi.*`、`stride_core.db`，或 `stride_storage` 的**实现层**（`.sqlite` / `.azure` / `.content` / `.keyvault` / `.factories` / `.coach_persistence` —— Contract 5）。coach 拿数据仍走 DI：`coach_adapters` 构造 `stride_storage` 的具体 store 注入。CI 经 `lint-imports` 强制（跑 `PYTHONPATH=src lint-imports`，5 contract 全 KEPT）。
 
 **enforced 的是黑名单**：`.importlinter` Contract 1 是 `forbidden` 型，只禁上面 6 个 infra 模块——不是 allowlist。所以任何 **infra-free 的 `stride_core` 纯模块** coach core 都可依赖（如负荷预估 helper `training_load.core::estimate_planned_run_load`，Contract 3 已保证 `training_load.{core,calibration,types}` 自身不碰 db/server/sync/azure/fastapi）。表里"允许的 deps"是**推荐最小面**；要新依赖一个纯模块时，跑 `lint-imports` 确认 4 contract 全 KEPT 即可，不必新建并行实现。
 

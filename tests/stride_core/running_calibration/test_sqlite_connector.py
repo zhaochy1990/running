@@ -6,9 +6,9 @@ from datetime import date
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.models import ActivityDetail, TimeseriesPoint
-from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.running_calibration.types import CalibrationConfidence, RunningCalibrationSnapshot
 
 

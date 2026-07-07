@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.running_calibration import (
     RUNNING_CALIBRATION_MODEL_VERSION,
     RunningCalibrationSnapshot,
     CalibrationConfidence,
 )
-from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.training_load.adapter import _fetch_latest_calibration
 
 

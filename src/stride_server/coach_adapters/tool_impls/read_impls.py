@@ -50,10 +50,10 @@ def _tool_safe(func: Callable[..., ToolResult]) -> Callable[..., ToolResult]:
 
 
 def _open_db(user_id: str) -> Any:
-    """Open a ``stride_core.db.Database`` for ``user_id``. Lazy-imported so
+    """Open a ``stride_storage.sqlite.database.Database`` for ``user_id``. Lazy-imported so
     tool_impls is testable without ``stride_core.db`` initialised in unusual
     environments (e.g. minimal CI containers)."""
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
 
     return Database(user=user_id)
 
@@ -175,7 +175,7 @@ class GetHealthSnapshotImpl:
             # rather than failing the whole snapshot.
             calibration = None
             try:
-                from stride_core.running_calibration.sqlite_connector import (
+                from stride_storage.sqlite.calibration_connector import (
                     SQLiteRunningCalibrationRepository,
                 )
                 from stride_core.timefmt import today_shanghai
@@ -298,7 +298,7 @@ class GetTrainingEnvironmentImpl:
             # daily_hrv PK is (date, provider): a dual-watch user has two rows
             # per night. Read through the canonical per-date provider picker so
             # the series isn't double-counted (skews the acclimatization median).
-            from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
+            from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
 
             hrv_rows = db.query(
                 f"SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
@@ -308,7 +308,7 @@ class GetTrainingEnvironmentImpl:
 
             rhr_baseline = None
             try:
-                from stride_core.running_calibration.sqlite_connector import (
+                from stride_storage.sqlite.calibration_connector import (
                     SQLiteRunningCalibrationRepository,
                 )
 
@@ -346,7 +346,7 @@ class GetBodyCompositionLatestImpl:
 
     @_tool_safe
     def __call__(self) -> ToolResult:
-        from stride_core.state_stores import SqliteInBodyStore
+        from stride_storage.sqlite.state_stores import SqliteInBodyStore
 
         db = _open_db(self._user_id)
         try:
@@ -532,7 +532,7 @@ class GetWeekPlanImpl:
 
     @_tool_safe
     def __call__(self, *, folder: str) -> ToolResult:
-        from stride_core.state_stores import SqlitePlanStateStore
+        from stride_storage.sqlite.state_stores import SqlitePlanStateStore
         from stride_server import content_store
         from stride_server.deps import parse_week_dates
 

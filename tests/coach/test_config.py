@@ -203,17 +203,21 @@ def test_canonical_config_file_loads(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_local_config_generator_max_tokens_is_128k(monkeypatch) -> None:
-    """The repo-shipped developer ``config/coach.local.toml`` must load with
-    the generator's max_tokens at the gpt-5 family's 128k visible-output cap
-    for the phase-at-once generator (one LLM call emits an entire phase's
-    weeks). Other roles stay small."""
+    """The repo-shipped developer ``config/coach.local.toml`` must load the
+    model registry and resolve active role model keys."""
     repo_root = Path(__file__).resolve().parents[2]
     local_config_path = repo_root / "config" / "coach.local.toml"
     monkeypatch.setenv(PATH_ENV, str(local_config_path))
     cfg = load_config()
-    assert cfg.generator.max_tokens == 131072
-    assert cfg.reviewer.max_tokens == 4096
+    assert cfg.generator.model == "deepseek-v4-pro"
+    assert cfg.generator.provider == "openai-compatible"
+    assert cfg.generator.auth_mode == "api-key"
+    assert cfg.generator.max_tokens == 65536
+    assert cfg.generator.reasoning_effort == "max"
+    assert cfg.reviewer.model == "deepseek-v4-flash"
+    assert cfg.reviewer.max_tokens == 8192
     assert cfg.commentary.max_tokens == 2048
+    assert cfg.for_role("orchestrator").model == "deepseek-v4-flash"
 
 
 def test_endpoint_must_be_http_url(tmp_path: Path) -> None:
@@ -263,6 +267,252 @@ def test_api_kind_responses_round_trips(tmp_path: Path) -> None:
     assert cfg.reviewer.api_kind == "chat-completions"  # only generator overridden
 
 
+def test_openai_compatible_provider_does_not_require_api_version(tmp_path: Path) -> None:
+    toml = """
+[generator]
+provider     = "openai-compatible"
+model        = "deepseek-v4-pro"
+deployment   = "deepseek-v4-pro"
+endpoint     = "https://api.deepseek.com"
+api_key_env  = "DEEPSEEK_API_KEY"
+auth         = "api-key"
+api_kind     = "chat-completions"
+max_tokens   = 8192
+timeout_s    = 120
+reasoning_effort = "max"
+
+[generator.extra]
+thinking = { type = "enabled" }
+response_format = { type = "json_object" }
+
+[reviewer]
+provider     = "azure-ai-inference"
+model        = "claude-opus-4-7"
+deployment   = "<PLACEHOLDER_CLAUDE>"
+endpoint     = "https://example.openai.azure.com"
+api_version  = "2024-05-01-preview"
+temperature  = 0.0
+max_tokens   = 4096
+timeout_s    = 180
+
+[commentary]
+provider     = "azure-openai"
+model        = "gpt-4.1"
+deployment   = "<PLACEHOLDER_GPT_4_1>"
+endpoint     = "https://example.openai.azure.com"
+api_version  = "2024-10-01-preview"
+temperature  = 0.6
+max_tokens   = 2048
+timeout_s    = 90
+
+[auth]
+mode = "managed-identity"
+"""
+    p = tmp_path / "coach.toml"
+    p.write_text(toml)
+    cfg = load_config(p)
+    assert cfg.generator.provider == "openai-compatible"
+    assert cfg.generator.api_version is None
+    assert cfg.generator.api_key_env == "DEEPSEEK_API_KEY"
+    assert cfg.generator.auth_mode == "api-key"
+    assert cfg.generator.reasoning_effort == "max"
+    assert cfg.generator.extra == {
+        "thinking": {"type": "enabled"},
+        "response_format": {"type": "json_object"},
+    }
+
+
+def test_model_definition_reference_expands_role_specs(tmp_path: Path) -> None:
+    toml = """
+[models.deepseekv4pro]
+provider = "openai-compatible"
+model = "deepseek-v4-pro"
+deployment = "deepseek-v4-pro"
+endpoint = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+auth = "api-key"
+api_kind = "chat-completions"
+max_tokens = 4096
+timeout_s = 120
+reasoning_effort = "high"
+
+[models.deepseekv4pro.extra]
+thinking = { type = "enabled" }
+
+[models.deepseekv4pro.generator]
+max_tokens = 65536
+timeout_s = 600
+reasoning_effort = "max"
+
+[models.deepseekv4pro.generator.extra]
+response_format = { type = "json_object" }
+
+[models.deepseekv4pro.reviewer]
+max_tokens = 8192
+timeout_s = 300
+
+[models.deepseekv4pro.commentary]
+max_tokens = 2048
+
+[generator]
+model = "deepseekv4pro"
+
+[reviewer]
+model = "deepseekv4pro"
+
+[commentary]
+model = "deepseekv4pro"
+
+[auth]
+mode = "api-key"
+"""
+    p = tmp_path / "coach.toml"
+    p.write_text(toml)
+    cfg = load_config(p)
+
+    assert cfg.generator.provider == "openai-compatible"
+    assert cfg.generator.model == "deepseek-v4-pro"
+    assert cfg.generator.deployment == "deepseek-v4-pro"
+    assert cfg.generator.endpoint == "https://api.deepseek.com"
+    assert cfg.generator.api_key_env == "DEEPSEEK_API_KEY"
+    assert cfg.generator.auth_mode == "api-key"
+    assert cfg.generator.max_tokens == 65536
+    assert cfg.generator.timeout_s == 600
+    assert cfg.generator.reasoning_effort == "max"
+    assert cfg.generator.extra == {
+        "thinking": {"type": "enabled"},
+        "response_format": {"type": "json_object"},
+    }
+
+    assert cfg.reviewer.model == "deepseek-v4-pro"
+    assert cfg.reviewer.auth_mode == "api-key"
+    assert cfg.reviewer.max_tokens == 8192
+    assert cfg.reviewer.timeout_s == 300
+    assert cfg.reviewer.reasoning_effort == "high"
+    assert cfg.reviewer.extra == {"thinking": {"type": "enabled"}}
+
+    assert cfg.commentary.model == "deepseek-v4-pro"
+    assert cfg.commentary.auth_mode == "api-key"
+    assert cfg.commentary.max_tokens == 2048
+    assert cfg.commentary.timeout_s == 120
+
+
+def test_model_definition_unknown_reference_rejected(tmp_path: Path) -> None:
+    toml = """
+[models.deepseekv4pro]
+provider = "openai-compatible"
+model = "deepseek-v4-pro"
+deployment = "deepseek-v4-pro"
+endpoint = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+max_tokens = 4096
+timeout_s = 120
+
+[generator]
+model = "typo"
+
+[reviewer]
+provider     = "azure-ai-inference"
+model        = "claude-opus-4-7"
+deployment   = "<PLACEHOLDER_CLAUDE>"
+endpoint     = "https://example.openai.azure.com"
+api_version  = "2024-05-01-preview"
+temperature  = 0.0
+max_tokens   = 4096
+timeout_s    = 180
+
+[commentary]
+provider     = "azure-openai"
+model        = "gpt-4.1"
+deployment   = "<PLACEHOLDER_GPT_4_1>"
+endpoint     = "https://example.openai.azure.com"
+api_version  = "2024-10-01-preview"
+temperature  = 0.6
+max_tokens   = 2048
+timeout_s    = 90
+
+[auth]
+mode = "managed-identity"
+"""
+    p = tmp_path / "coach.toml"
+    p.write_text(toml)
+    with pytest.raises(CoachConfigError, match="unknown model reference"):
+        load_config(p)
+
+
+def test_model_definition_auth_overrides_global_auth(tmp_path: Path) -> None:
+    toml = """
+[models.deepseekv4pro]
+provider = "openai-compatible"
+model = "deepseek-v4-pro"
+deployment = "deepseek-v4-pro"
+endpoint = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+auth = "api-key"
+max_tokens = 4096
+timeout_s = 120
+
+[generator]
+model = "deepseekv4pro"
+
+[reviewer]
+provider     = "azure-ai-inference"
+model        = "claude-opus-4-7"
+deployment   = "<PLACEHOLDER_CLAUDE>"
+endpoint     = "https://example.openai.azure.com"
+api_version  = "2024-05-01-preview"
+temperature  = 0.0
+max_tokens   = 4096
+timeout_s    = 180
+
+[commentary]
+provider     = "azure-openai"
+model        = "gpt-4.1"
+deployment   = "<PLACEHOLDER_GPT_4_1>"
+endpoint     = "https://example.openai.azure.com"
+api_version  = "2024-10-01-preview"
+temperature  = 0.6
+max_tokens   = 2048
+timeout_s    = 90
+
+[auth]
+mode = "managed-identity"
+"""
+    p = tmp_path / "coach.toml"
+    p.write_text(toml)
+    cfg = load_config(p)
+    assert cfg.generator.auth_mode == "api-key"
+    assert cfg.reviewer.auth_mode == "managed-identity"
+
+
+def test_role_api_key_env_implies_api_key_auth_for_legacy_configs(tmp_path: Path) -> None:
+    p = tmp_path / "coach.toml"
+    p.write_text(_valid_toml())
+    cfg = load_config(p)
+    assert cfg.generator.auth_mode == "managed-identity"
+
+    prod_like = _valid_toml().replace(
+        "timeout_s    = 90",
+        "timeout_s    = 90\napi_key_env  = \"AZURE_OPENAI_API_KEY\"",
+        1,
+    )
+    p.write_text(prod_like)
+    cfg = load_config(p)
+    assert cfg.commentary.auth_mode == "api-key"
+
+
+def test_openai_compatible_rejects_responses_api_kind(tmp_path: Path) -> None:
+    toml = _valid_toml().replace('provider     = "azure-openai"', 'provider     = "openai-compatible"', 1)
+    toml = toml.replace('model        = "gpt-5.4"', 'model        = "deepseek-v4-pro"', 1)
+    toml = toml.replace('deployment   = "<PLACEHOLDER_X>"', 'deployment   = "deepseek-v4-pro"', 1)
+    toml = toml.replace('endpoint     = "https://example.openai.azure.com"', 'endpoint     = "https://api.deepseek.com"', 1)
+    toml = toml.replace('api_version  = "2024-10-01-preview"', 'api_key_env  = "DEEPSEEK_API_KEY"\napi_kind     = "responses"', 1)
+    p = tmp_path / "coach.toml"
+    p.write_text(toml)
+    with pytest.raises(CoachConfigError, match="supports only api_kind"):
+        load_config(p)
+
+
 # ---------------------------------------------------------------------------
 # reasoning_effort (PR #25 — gpt-5 / o-series reasoning models)
 # ---------------------------------------------------------------------------
@@ -289,6 +539,18 @@ def test_reasoning_effort_each_valid_value_round_trips(tmp_path: Path) -> None:
         p.write_text(toml)
         cfg = load_config(p)
         assert cfg.generator.reasoning_effort == effort, effort
+
+
+def test_reasoning_effort_max_is_openai_compatible_only(tmp_path: Path) -> None:
+    bad = _valid_toml().replace(
+        "timeout_s    = 120",
+        "timeout_s    = 120\nreasoning_effort = \"max\"",
+        1,
+    )
+    p = tmp_path / "coach.toml"
+    p.write_text(bad)
+    with pytest.raises(CoachConfigError, match="only supported"):
+        load_config(p)
 
 
 def test_reasoning_effort_typo_rejected_at_load(tmp_path: Path) -> None:

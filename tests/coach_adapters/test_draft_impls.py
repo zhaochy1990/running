@@ -20,8 +20,8 @@ from stride_server.coach_adapters.tool_impls import draft_impls
 def patched_plan(tmp_path, monkeypatch):
     """Open a real Database under tmp_path and monkeypatch ``_open_plan_store``
     so every draft impl uses it. Seeds two run sessions + one strength."""
-    from stride_core.db import Database
-    from stride_core.state_stores import SqlitePlanStateStore
+    from stride_storage.sqlite.database import Database
+    from stride_storage.sqlite.state_stores import SqlitePlanStateStore
 
     db_path = tmp_path / "draft_test.db"
     db = Database(db_path)

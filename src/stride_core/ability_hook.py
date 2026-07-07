@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.models import RUN_SPORT_IDS
 from stride_core.pb_records import (
     best_effort_candidates_for_activity,
@@ -46,6 +46,12 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
         from stride_core.ability import _resolve_hr_max
         today_iso = (datetime.now(timezone.utc) + timedelta(hours=8)).strftime("%Y-%m-%d")
         hr_max = _resolve_hr_max(db, today_iso)
+        if hr_max is None:
+            logger.warning(
+                "ability hook: no resolvable hr_max for %s — L1 quality "
+                "scoring skipped for this sync (PB enrollment still runs)",
+                today_iso,
+            )
         prior_l4, prior_marathon = _fetch_latest_l4_and_marathon(db)
 
         for lid in new_label_ids or []:
@@ -55,13 +61,17 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                     continue
                 if activity.get("sport_type") not in RUN_SPORT_IDS:
                     continue
-                l1 = compute_l1_quality(activity, plan_target=None, hr_max=hr_max)
-                db.upsert_activity_ability(
-                    label_id=lid,
-                    l1_quality=l1.get("total"),
-                    l1_breakdown=l1.get("breakdown"),
-                    contribution=None,
-                )
+                # L1 quality is HR-dependent; skip it (but still enroll PBs
+                # below) when no max HR could be resolved, rather than scoring
+                # against a fabricated default.
+                if hr_max is not None:
+                    l1 = compute_l1_quality(activity, plan_target=None, hr_max=hr_max)
+                    db.upsert_activity_ability(
+                        label_id=lid,
+                        l1_quality=l1.get("total"),
+                        l1_breakdown=l1.get("breakdown"),
+                        contribution=None,
+                    )
                 # v8: segment-scan PB enrollment. Each (race_type, source_activity)
                 # yields its own row; the L3 reader picks current best per race_type.
                 try:
@@ -92,6 +102,20 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
                 logger.warning(
                     "ability L1 compute failed for %s", lid, exc_info=True
                 )
+
+        # Without a resolvable HRmax the full snapshot would be all-zero
+        # (L3/L4 = 0.0); persisting that would corrupt history and report a
+        # bogus drop to 0. PB enrollment + any L1 above already ran, so stop
+        # here rather than writing an empty snapshot.
+        if hr_max is None:
+            _print_ability_summary(
+                prior_l4,
+                prior_l4,
+                prior_marathon,
+                prior_marathon,
+                suffix=" | skipped: missing HRmax",
+            )
+            return
 
         snapshot = compute_ability_snapshot(db, date=today_iso)
 
@@ -145,17 +169,11 @@ def run_ability_hook(db: Database, new_label_ids: list[str]) -> None:
         except Exception:
             logger.warning("ability snapshot persistence failed", exc_info=True)
 
-        new_l4 = snapshot.get("l4_composite")
-        new_marathon = snapshot.get("l4_marathon_estimate_s")
-        l4_before = f"{prior_l4:.1f}" if prior_l4 is not None else "—"
-        l4_after = f"{new_l4:.1f}" if new_l4 is not None else "—"
-        l4_delta = _fmt_delta(prior_l4, new_l4)
-        m_before = _fmt_marathon(prior_marathon)
-        m_after = _fmt_marathon(new_marathon)
-        m_delta = _fmt_time_delta(prior_marathon, new_marathon)
-        print(
-            f"ability: L4 {l4_before} -> {l4_after} ({l4_delta}) | "
-            f"全马典型预测 {m_before} -> {m_after} ({m_delta})"
+        _print_ability_summary(
+            prior_l4,
+            snapshot.get("l4_composite"),
+            prior_marathon,
+            snapshot.get("l4_marathon_estimate_s"),
         )
     except Exception:
         logger.warning("ability hook failed", exc_info=True)
@@ -237,6 +255,26 @@ def _fmt_marathon(total_s: float | int | None) -> str:
     h, rem = divmod(s, 3600)
     m, sec = divmod(rem, 60)
     return f"{h}:{m:02d}:{sec:02d}"
+
+
+def _print_ability_summary(
+    prior_l4: float | None,
+    new_l4: float | None,
+    prior_marathon: int | None,
+    new_marathon: float | int | None,
+    *,
+    suffix: str = "",
+) -> None:
+    l4_before = f"{prior_l4:.1f}" if prior_l4 is not None else "—"
+    l4_after = f"{new_l4:.1f}" if new_l4 is not None else "—"
+    l4_delta = _fmt_delta(prior_l4, new_l4)
+    m_before = _fmt_marathon(prior_marathon)
+    m_after = _fmt_marathon(new_marathon)
+    m_delta = _fmt_time_delta(prior_marathon, new_marathon)
+    print(
+        f"ability: L4 {l4_before} -> {l4_after} ({l4_delta}) | "
+        f"全马典型预测 {m_before} -> {m_after} ({m_delta}){suffix}"
+    )
 
 
 def _fmt_delta(before: float | None, after: float | None, sign: bool = True) -> str:

@@ -11,8 +11,8 @@ from datetime import date
 
 import pytest
 
-from stride_core.db import Database
-from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_storage.sqlite.database import Database
+from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.running_calibration.types import (
     CalibrationConfidence,
     RunningCalibrationSnapshot,
@@ -68,6 +68,49 @@ def test_fetch_latest_respects_as_of_date(db: Database):
     repo.save_snapshot(_snap("2026-05-20", hrmax=190.0))
 
     result = repo.fetch_latest(as_of_date=date(2026, 5, 15))
+
+    assert result is not None
+    assert result.hrmax_estimate == 185.0
+    assert result.as_of_date == date(2026, 5, 10)
+
+
+def test_fetch_nearest_hrmax_uses_latest_prior_snapshot(db: Database):
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.save_snapshot(_snap("2026-05-01", hrmax=180.0))
+    repo.save_snapshot(_snap("2026-05-10", hrmax=185.0))
+    repo.save_snapshot(_snap("2026-05-20", hrmax=190.0))
+
+    result = repo.fetch_nearest_hrmax(date(2026, 5, 15))
+
+    assert result is not None
+    assert result.hrmax_estimate == 185.0
+    assert result.as_of_date == date(2026, 5, 10)
+
+
+def test_fetch_nearest_hrmax_falls_forward_before_first_snapshot(db: Database):
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.save_snapshot(_snap("2026-05-10", hrmax=185.0))
+    repo.save_snapshot(_snap("2026-05-20", hrmax=190.0))
+
+    result = repo.fetch_nearest_hrmax(date(2026, 5, 1))
+
+    assert result is not None
+    assert result.hrmax_estimate == 185.0
+    assert result.as_of_date == date(2026, 5, 10)
+
+
+def test_fetch_nearest_hrmax_skips_snapshots_without_hrmax(db: Database):
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.save_snapshot(RunningCalibrationSnapshot(
+        as_of_date=date(2026, 5, 1),
+        hrmax_estimate=None,
+        threshold_hr_confidence=CalibrationConfidence.NONE,
+        threshold_speed_confidence=CalibrationConfidence.NONE,
+        hrmax_confidence=CalibrationConfidence.NONE,
+    ))
+    repo.save_snapshot(_snap("2026-05-10", hrmax=185.0))
+
+    result = repo.fetch_nearest_hrmax(date(2026, 5, 1))
 
     assert result is not None
     assert result.hrmax_estimate == 185.0

@@ -4,6 +4,7 @@ root_packages =
     coach_eval
     stride_server
     stride_core
+    stride_storage
     coros_sync
     garmin_sync
 include_external_packages = True
@@ -76,6 +77,12 @@ source_modules =
     stride_core.training_load.types
 forbidden_modules =
     stride_core.db
+    stride_storage.sqlite
+    stride_storage.azure
+    stride_storage.content
+    stride_storage.keyvault
+    stride_storage.coach_persistence
+    stride_storage.factories
     stride_server
     coros_sync
     garmin_sync
@@ -101,8 +108,40 @@ source_modules =
     stride_core.running_calibration.prediction
 forbidden_modules =
     stride_core.db
+    stride_storage.sqlite
+    stride_storage.azure
+    stride_storage.content
+    stride_storage.keyvault
+    stride_storage.coach_persistence
+    stride_storage.factories
     stride_server
     coros_sync
     garmin_sync
     fastapi
     azure
+
+# -----------------------------------------------------------------------------
+# Contract 5: coach must not import storage implementations
+#
+# `stride_storage` is the unified data-access layer. Its Tier-A `interfaces`
+# subpackage (pure Protocols + frozen config dataclasses) is safe for the
+# pure `coach` runtime to import. The implementation tiers, however, pull in
+# `sqlite3` / Azure SDKs / Key Vault and must stay out of coach core — coach
+# keeps receiving concrete stores via dependency injection from
+# `stride_server.coach_adapters`. This guard lets coach use
+# `stride_storage.interfaces` while blocking any accidental coupling to the
+# heavy backends (Grimp detects function-level imports too, so the azure-free
+# import chain is enforced).
+# -----------------------------------------------------------------------------
+[importlinter:contract:coach-no-storage-impl]
+name = Coach must not import storage implementations (interfaces only)
+type = forbidden
+source_modules =
+    coach
+forbidden_modules =
+    stride_storage.sqlite
+    stride_storage.azure
+    stride_storage.content
+    stride_storage.factories
+    stride_storage.keyvault
+    stride_storage.coach_persistence

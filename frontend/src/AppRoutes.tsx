@@ -27,19 +27,48 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-type GateState = 'loading' | 'onboarding' | 'ready'
+// `loading` = profile fetch in flight; `error` = the fetch itself failed
+// (network / cold backend / 5xx) so we genuinely don't know the onboarding
+// state; `onboarding` = profile loaded and onboarding is incomplete; `ready`
+// = profile loaded and onboarding done. A failed fetch must NOT be treated as
+// "onboarding needed" — otherwise a transient error on app open bounces an
+// already-onboarded user to /onboarding, which reads as an unexpected error
+// screen before the retry succeeds and lands them home.
+type GateState = 'loading' | 'error' | 'onboarding' | 'ready'
 function OnboardingGate({ children }: { children: React.ReactNode }) {
   const [gateState, setGateState] = useState<GateState>('loading')
+  // Bumping this re-triggers the fetch effect (used by the retry button).
+  const [attempt, setAttempt] = useState(0)
   const location = useLocation()
   useEffect(() => {
+    let cancelled = false
     getMyProfile()
-      .then((p) => setGateState(p.onboarding.completed_at ? 'ready' : 'onboarding'))
-      .catch(() => setGateState('onboarding'))
-  }, [])
+      .then((p) => {
+        if (!cancelled) setGateState(p.onboarding.completed_at ? 'ready' : 'onboarding')
+      })
+      .catch(() => {
+        if (!cancelled) setGateState('error')
+      })
+    return () => { cancelled = true }
+  }, [attempt])
   if (gateState === 'loading') {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-5 h-5 border-2 border-accent-green/30 border-t-accent-green rounded-full animate-spin" />
+      </div>
+    )
+  }
+  if (gateState === 'error') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4 px-6 text-center">
+        <p className="text-sm text-text-muted font-mono">加载失败，请检查网络后重试</p>
+        <button
+          type="button"
+          onClick={() => { setGateState('loading'); setAttempt((n) => n + 1) }}
+          className="px-4 py-2 rounded-md border border-accent-green/40 text-accent-green text-sm font-mono hover:bg-accent-green/10 transition-colors"
+        >
+          重试
+        </button>
       </div>
     )
   }

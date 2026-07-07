@@ -45,25 +45,30 @@ def _spec(
     *,
     role="generator",
     provider="azure-openai",
+    model="gpt-5",
     deployment="real-deployment",
     endpoint="https://example.openai.azure.com",
     api_key_env=None,
+    auth_mode="managed-identity",
     api_kind="chat-completions",
     reasoning_effort=None,
+    extra=None,
 ) -> ModelSpec:
     return ModelSpec(
         role=role,
         provider=provider,
-        model="gpt-5",
+        model=model,
         deployment=deployment,
         endpoint=endpoint,
         api_version="2024-10-01-preview",
         temperature=0.0,
         max_tokens=1024,
         timeout_s=60,
+        auth_mode=auth_mode,
         api_key_env=api_key_env,
         api_kind=api_kind,
         reasoning_effort=reasoning_effort,
+        extra=extra or {},
     )
 
 
@@ -220,8 +225,85 @@ def test_api_key_can_come_from_env(monkeypatch):
     import langchain_openai
 
     monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
-    build_chat_model(_spec(api_key_env="MY_KEY"))
+    build_chat_model(_spec(api_key_env="MY_KEY", auth_mode="api-key"))
     assert captured["api_key"] == "sk-from-env"
+
+
+# ---------------------------------------------------------------------------
+# openai-compatible provider — DeepSeek / other OpenAI-compatible endpoints
+# ---------------------------------------------------------------------------
+
+
+def test_openai_compatible_construction_uses_chat_openai_fields(monkeypatch):
+    captured: dict = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import langchain_openai
+
+    monkeypatch.setattr(langchain_openai, "ChatOpenAI", FakeChatOpenAI)
+    spec = _spec(
+        provider="openai-compatible",
+        model="deepseek-v4-pro",
+        deployment="deepseek-v4-pro",
+        endpoint="https://api.deepseek.com",
+        api_key_env="DEEPSEEK_API_KEY",
+        auth_mode="api-key",
+        reasoning_effort="max",
+        extra={
+            "thinking": {"type": "enabled"},
+            "response_format": {"type": "json_object"},
+            "top_p": 0.9,
+        },
+    )
+    build_chat_model(spec, api_key="sk-deepseek")
+
+    assert captured["base_url"] == "https://api.deepseek.com"
+    assert captured["model"] == "deepseek-v4-pro"
+    assert captured["api_key"] == "sk-deepseek"
+    assert captured["timeout"] == 60
+    assert captured["max_tokens"] == 1024
+    assert captured["reasoning_effort"] == "max"
+    assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
+    assert captured["model_kwargs"] == {"response_format": {"type": "json_object"}}
+    assert captured["top_p"] == 0.9
+    assert "azure_ad_token_provider" not in captured
+
+
+def test_openai_compatible_api_key_can_come_from_env(monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-from-env")
+    captured: dict = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import langchain_openai
+
+    monkeypatch.setattr(langchain_openai, "ChatOpenAI", FakeChatOpenAI)
+    spec = _spec(
+        provider="openai-compatible",
+        deployment="deepseek-v4-flash",
+        endpoint="https://api.deepseek.com",
+        api_key_env="DEEPSEEK_API_KEY",
+        auth_mode="api-key",
+    )
+    build_chat_model(spec)
+    assert captured["api_key"] == "sk-from-env"
+
+
+def test_openai_compatible_missing_api_key_raises():
+    spec = _spec(
+        provider="openai-compatible",
+        deployment="deepseek-v4-flash",
+        endpoint="https://api.deepseek.com",
+        api_key_env="DEEPSEEK_API_KEY",
+        auth_mode="api-key",
+    )
+    with pytest.raises(CoachLLMUnavailable, match="DEEPSEEK_API_KEY"):
+        build_chat_model(spec)
 
 
 # ---------------------------------------------------------------------------

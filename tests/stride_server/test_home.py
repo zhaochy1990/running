@@ -78,7 +78,7 @@ def _seed(tmp_path, *, with_data: bool = True, with_provider: str | None = "coro
             json.dumps({"provider": with_provider}), encoding="utf-8"
         )
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(user=USER_UUID)
     if with_data:
         from datetime import datetime, timezone
@@ -194,7 +194,7 @@ def test_home_cache_hit_then_invalidation(app_client, monkeypatch):
     r1 = client.get(f"/api/{USER_UUID}/home", headers=_auth(token))
     assert r1.status_code == 200
     # Insert another activity → without cache invalidation, count stays at 1.
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(user=USER_UUID)
     db._conn.execute(
         "INSERT INTO activities (label_id, name, sport_type, date, distance_m, duration_s) "

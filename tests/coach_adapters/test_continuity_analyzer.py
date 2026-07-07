@@ -4,7 +4,7 @@ from coach.schemas import ContinuitySignals
 
 
 def _db(tmp_path):
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     return Database(db_path=tmp_path / "coros.db")
 
 
@@ -46,7 +46,7 @@ def test_macro_cycle_winter_for_march_race(tmp_path):
 
 def test_volume_trend_and_aerobic_weeks(tmp_path):
     from stride_server.coach_adapters.continuity_analyzer import analyze_continuity
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(db_path=tmp_path / "coros.db")
     c = db._conn
     base = ["2026-04-27", "2026-05-04", "2026-05-11", "2026-05-18", "2026-05-25", "2026-06-01"]

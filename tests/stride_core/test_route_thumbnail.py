@@ -5,7 +5,7 @@ import math
 
 from scripts.backfill_route_thumbnails import _backfill_one
 from stride_core.models import ActivityDetail, TimeseriesPoint
-from stride_core.db import compute_route_thumbnail
+from stride_storage.sqlite.database import compute_route_thumbnail
 
 
 def _track_points(laps: int = 25, samples_per_lap: int = 48) -> list[dict[str, float]]:

@@ -25,10 +25,10 @@ from datetime import date
 
 import pytest
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.master_plan import Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
-from stride_core.running_calibration.sqlite_connector import (
+from stride_storage.sqlite.calibration_connector import (
     SQLiteRunningCalibrationRepository,
 )
 from stride_core.running_calibration.types import (

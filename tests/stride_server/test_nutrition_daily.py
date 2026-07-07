@@ -115,7 +115,7 @@ def _seed_planned_session(tmp_path, user: str, date: str, kind: str, spec_json: 
     if not config_path.exists():
         config_path.write_text(json.dumps({"provider": "coros"}), encoding="utf-8")
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     db = Database(user=user)
     db._conn.execute(
         """INSERT INTO planned_session

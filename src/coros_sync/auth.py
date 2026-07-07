@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 import re
-from functools import lru_cache
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -54,12 +53,13 @@ def _keyvault_secret_name(user: str) -> str:
     return f"{prefix}-{_safe_secret_part(user)}"
 
 
-@lru_cache(maxsize=4)
 def _keyvault_secret_client(vault_url: str) -> Any:
-    from azure.identity import DefaultAzureCredential
-    from azure.keyvault.secrets import SecretClient
+    # Delegates to the shared (cached) Key Vault client in stride_storage so
+    # all COROS/Garmin/server secret access uses one credential. Kept as a
+    # module-level function because tests monkeypatch it.
+    from stride_storage.keyvault import get_secret_client
 
-    return SecretClient(vault_url=vault_url, credential=DefaultAzureCredential())
+    return get_secret_client(vault_url)
 
 
 def _is_keyvault_not_found(exc: Exception) -> bool:

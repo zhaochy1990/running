@@ -38,6 +38,7 @@ from ..llm_client import LLMClient
 from ..master_plan_generator import (
     _build_master_plan,
     _format_history_summary,
+    _normalise_pb_seconds,
     _parse_llm_output,
     _query_fitness_state,
     _query_history,
@@ -45,6 +46,13 @@ from ..master_plan_generator import (
 )
 
 logger = logging.getLogger(__name__)
+
+# S1 master plans are compact season skeletons, not phase-at-once weekly plans.
+# Recent real raw model outputs are ~13-16k chars, so 24k visible-output tokens
+# leaves headroom for larger fixtures while avoiding the 128k generator-role
+# default that can encourage long reasoning/output budgets on gpt-5.x. Keep this
+# S1-specific; phase-at-once weekly generation still uses config max_tokens.
+MASTER_PLAN_MAX_TOKENS = 24576
 
 
 def _compute_bmi(weight_kg: float | None, height_cm: float | None) -> float | None:
@@ -103,6 +111,38 @@ def _format_body_composition_summary(bc: dict) -> str:
     return f"最新体测（{bc.get('scan_date', '?')}）— " + "，".join(parts)
 
 
+_PB_HISTORY_KEYS = {
+    "5k": "best_5k_s",
+    "10k": "best_10k_s",
+    "hm": "best_hm_s",
+    "fm": "best_fm_s",
+}
+
+
+def _load_pb_seconds(db) -> dict[str, float]:
+    """Load achieved PB seconds from personal_bests, self-healing via the
+    canonical PB reader when needed."""
+    from stride_core.pb_records import load_personal_bests
+
+    pb_map = load_personal_bests(db)
+    raw = {}
+    for display, key in (("5K", "5k"), ("10K", "10k"), ("HM", "hm"), ("FM", "fm")):
+        entry = pb_map.get(display)
+        if isinstance(entry, dict) and entry.get("pb_time_sec") is not None:
+            raw[key] = entry.get("pb_time_sec")
+    return _normalise_pb_seconds(raw)
+
+
+def _history_with_pb_seconds(history: dict, pb_seconds: dict[str, float]) -> dict:
+    if not pb_seconds:
+        return history
+    out = dict(history)
+    for key, history_key in _PB_HISTORY_KEYS.items():
+        if pb_seconds.get(key) is not None:
+            out[history_key] = round(pb_seconds[key])
+    return out
+
+
 def _build_context_snippets(
     history: dict, fitness_state: dict, goal: dict
 ) -> dict[str, Any]:
@@ -152,14 +192,11 @@ def load_master_context(state: GenState) -> dict:
     if job_id:
         update_job(job_id, stage=JobStage.READING_HISTORY, progress=10)
     history = _query_history(user_id)
-    history_summary = _format_history_summary(history)
     logger.debug(
         "load_master_context: user=%s history_loaded activities=%d",
         user_id,
         history.get("total_activities", 0),
     )
-    logger.debug("load_master_context: user=%s history_summary=%r", user_id, history_summary)
-
     if job_id:
         update_job(job_id, stage=JobStage.EVALUATING, progress=30)
     logger.debug("load_master_context: user=%s querying fitness state...", user_id)
@@ -176,10 +213,15 @@ def load_master_context(state: GenState) -> dict:
     continuity = None
     body_composition: dict | None = None
     current_phase = None
+    pb_seconds: dict[str, float] = {}
     try:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         db = Database(user=user_id)
         as_of = today_shanghai()
+        try:
+            pb_seconds = _load_pb_seconds(db)
+        except Exception as exc:  # noqa: BLE001 — PB read must not block gen
+            logger.warning("load_master_context: PB read failed for %s: %s", user_id, exc)
         continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)
         # Authoritative current-phase position. Deterministic-only here
         # (cross_validate_with_llm=False): the LLM cross-check is a reviewer
@@ -195,14 +237,23 @@ def load_master_context(state: GenState) -> dict:
             )
         except Exception as exc:  # noqa: BLE001 — detection must not hard-fail gen
             logger.warning("load_master_context: phase detection failed: %s", exc)
-        # Body-composition baseline (the performance baseline is already loaded
-        # above via _query_history → real PBs). Reuse the same db handle.
+        # Body-composition baseline. Reuse the same db handle as the explicit
+        # PB/continuity context load above.
         try:
             body_composition = _load_body_composition(db, profile)
         except Exception as exc:  # noqa: BLE001 — degrade to perf-only milestones
             logger.warning("load_master_context: body_composition failed: %s", exc)
     except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
         logger.warning("load_master_context: continuity failed: %s", exc)
+
+    history_summary = _format_history_summary(_history_with_pb_seconds(history, pb_seconds))
+    logger.debug(
+        "load_master_context: user=%s history_summary_chars=%d weekly_profile_weeks=%d pb_keys=%s",
+        user_id,
+        len(history_summary),
+        len(history.get("weekly_profile") or []),
+        sorted(pb_seconds),
+    )
 
     # Surface live-data snippets to the generating UI (screen-2). Best-effort:
     # a failure here must never block context load.
@@ -216,8 +267,8 @@ def load_master_context(state: GenState) -> dict:
             logger.warning("load_master_context: snippet stash failed: %s", exc)
 
     return {
-        "history": history,
         "history_summary": history_summary,
+        "pb_seconds": pb_seconds,
         "fitness_state": fitness_state,
         "continuity": continuity.model_dump() if continuity is not None else None,
         "current_phase": current_phase.model_dump() if current_phase is not None else None,
@@ -252,12 +303,14 @@ def generate_master_plan(state: GenState) -> dict:
     job_id = state.get("job_id") or ""
     user_id = state.get("user_id") or ""
     payload = state.get("input_payload") or {}
+    runtime_options = state.get("runtime_options") or {}
     goal = payload.get("goal") or {}
     profile = payload.get("profile")
 
     ctx = state.get("context") or {}
     history_summary = ctx.get("history_summary", "")
     fitness_state = ctx.get("fitness_state") or {}
+    pb_seconds = ctx.get("pb_seconds") or {}
 
     if job_id:
         update_job(job_id, stage=JobStage.PLANNING_PHASES, progress=60)
@@ -296,6 +349,10 @@ def generate_master_plan(state: GenState) -> dict:
         current_phase=current_phase,
         athlete_memories=athlete_memories,
     )
+    prompt_chars = {
+        "generator_system_prompt_chars": len(system_prompt),
+        "generator_user_prompt_chars": len(user_text),
+    }
     logger.debug(
         "generate_master_plan: system_prompt=%d chars, user_prompt=%d chars, goal=%r, profile=%r",
         len(system_prompt),
@@ -322,7 +379,26 @@ def generate_master_plan(state: GenState) -> dict:
             "**显式修复**这些问题，不要重复同样的错误：\n"
             f"{violations_text}"
         )
+        prompt_chars["generator_user_prompt_chars"] = len(user_text)
     user_message = [{"role": "user", "content": user_text}]
+
+    master_max_tokens = MASTER_PLAN_MAX_TOKENS
+    if runtime_options.get("master_max_tokens") is not None:
+        try:
+            master_max_tokens = int(runtime_options["master_max_tokens"])
+        except (TypeError, ValueError):
+            logger.warning(
+                "generate_master_plan: ignoring invalid master_max_tokens=%r",
+                runtime_options.get("master_max_tokens"),
+            )
+            master_max_tokens = MASTER_PLAN_MAX_TOKENS
+        else:
+            if master_max_tokens <= 0:
+                logger.warning(
+                    "generate_master_plan: ignoring non-positive master_max_tokens=%r",
+                    runtime_options.get("master_max_tokens"),
+                )
+                master_max_tokens = MASTER_PLAN_MAX_TOKENS
 
     client = LLMClient()
     # max_tokens + reasoning_effort flow from ``config/coach.toml [generator]``
@@ -338,11 +414,16 @@ def generate_master_plan(state: GenState) -> dict:
         ", with rule-violation feedback" if (iteration > 0 and violations) else "",
     )
     _t0 = time.monotonic()
-    raw = client.chat_sync(system_prompt, user_message)
+    raw = client.chat_sync(
+        system_prompt,
+        user_message,
+        max_tokens=master_max_tokens,
+    )
+    raw_response_chars = len(raw)
     logger.info(
         "generate_master_plan: LLM call returned in %.1fs (raw=%d chars)",
         time.monotonic() - _t0,
-        len(raw),
+        raw_response_chars,
     )
 
     parsed = _parse_llm_output(raw)
@@ -357,16 +438,26 @@ def generate_master_plan(state: GenState) -> dict:
             "(raw_len=%d) — retrying once",
             len(raw),
         )
-        raw_retry = client.chat_sync(system_prompt, user_message)
+        raw_retry = client.chat_sync(
+            system_prompt,
+            user_message,
+            max_tokens=master_max_tokens,
+        )
         parsed = _parse_llm_output(raw_retry)
         if parsed is None:
             err = ValueError(
                 f"parse_failed: all 3 tiers failed twice "
                 f"(raw1 len={len(raw)}, raw2 len={len(raw_retry)})"
             )
-            err.raw_output = raw_retry[:2000]  # type: ignore[attr-defined]
+            err.raw_output = (  # type: ignore[attr-defined]
+                "---RAW_ATTEMPT_1---\n"
+                f"{raw[:2000]}\n"
+                "---RAW_ATTEMPT_2---\n"
+                f"{raw_retry[:2000]}"
+            )
             raise err
         raw = raw_retry  # for downstream logging consistency
+        raw_response_chars = len(raw_retry)
 
     # Stamp the actual configured generator model (config/coach.toml
     # [generator].model) rather than a hardcoded literal, so generated_by
@@ -376,7 +467,14 @@ def generate_master_plan(state: GenState) -> dict:
 
     generated_by = get_generator_model()
     try:
-        plan = _build_master_plan(parsed, user_id, goal, generated_by=generated_by)
+        plan = _build_master_plan(
+            parsed,
+            user_id,
+            goal,
+            profile=profile,
+            generated_by=generated_by,
+            pb_seconds=pb_seconds,
+        )
     except ValueError as exc:
         # Re-raise with bad_schema prefix so caller can distinguish from
         # parse_failed (both are ValueError historically).
@@ -388,7 +486,14 @@ def generate_master_plan(state: GenState) -> dict:
     if job_id:
         update_job(job_id, stage=JobStage.RULE_FILTER, progress=75)
 
-    return {"current_draft": plan.model_dump(mode="json")}
+    return {
+        "current_draft": plan.model_dump(mode="json"),
+        "timing_metadata": {
+            **prompt_chars,
+            "generator_max_tokens": master_max_tokens,
+            "generator_raw_response_chars": raw_response_chars,
+        },
+    }
 
 
 def master_reviewer(state: GenState) -> ReviewReport:

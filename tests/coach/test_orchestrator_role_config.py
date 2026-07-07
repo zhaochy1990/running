@@ -78,8 +78,9 @@ def test_orchestrator_falls_back_to_reviewer_when_absent(tmp_path: Path) -> None
 
 
 def test_repo_local_config_has_cheap_orchestrator() -> None:
-    """The checked-in dev config points orchestrator at a cheap, fast model."""
+    """The checked-in dev config resolves the orchestrator model key."""
     repo_root = Path(__file__).resolve().parents[2]
     cfg = load_config(repo_root / "config" / "coach.local.toml")
     assert cfg.orchestrator is not None
-    assert cfg.orchestrator.model == "gpt-4.1-mini"
+    assert cfg.orchestrator.model == "deepseek-v4-flash"
+    assert cfg.orchestrator.auth_mode == "api-key"

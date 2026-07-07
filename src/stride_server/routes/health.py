@@ -6,9 +6,9 @@ import json
 
 from fastapi import APIRouter, Query
 
-from stride_core.db import HRV_PREFERRED_PER_DATE_SQL
+from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
-from stride_core.running_calibration.sqlite_connector import SQLiteRunningCalibrationRepository
+from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.timefmt import today_shanghai
 
 from ..deps import format_duration, get_db

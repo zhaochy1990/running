@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.table import Table
 
-from .db import Database
+from stride_storage.sqlite.database import Database
 from .models import pace_str
 
 console = Console()

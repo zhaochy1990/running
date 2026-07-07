@@ -75,7 +75,7 @@
       },
       "volume_progression": {
         "min_score": 4,
-        "behavior": "周量从 30 km 起 (70% pre-injury 50km)，每 4 周加 10%；peak 不超过 55-60 km（与 pre-injury 58 km 持平）"
+        "behavior": "周量从 30 km 起 (70% pre-injury 50km)，每 4 周加 10%；伤后 peak 默认与 pre-injury 58 km 持平。若为了 FM 最低 28km 彩排，可接受单个监控良好的 64-65 km 峰值周，并在随后立刻恢复/减量；不得上到 70-80+ km"
       },
       "frequency_respect": {
         "min_score": 5,
@@ -83,7 +83,7 @@
       },
       "injury_safety": {
         "min_score": 5,
-        "behavior": "强制：避免深蹲 / lunge / 高箱跳 / plyo / 高强度坡跑；力量训练改 isometric squat / leg press / glute bridge；如疼痛 NRS ≥ 4 立即降量"
+        "behavior": "强制：避免深蹲 / lunge / 高箱跳 / plyo / 高强度坡跑；力量训练改 isometric squat / leg press / glute bridge；如疼痛 NRS ≥ 4 立即降量。若 peak 到 64-65km，必须说明这是 FM 28km 彩排的监控例外，不是常规堆量"
       },
       "phase_nutrition_strategy": {
         "min_score": 3,
@@ -96,7 +96,7 @@
     },
     "anti_patterns": [
       "plan 力量训练含深蹲 / 弓步 / 跳跃动作（直接违反伤病约束）",
-      "peak 周量 > 60 km（伤后过早堆量，复发风险）",
+      "peak 周量 > 65 km（伤后过早堆量，复发风险；64-65km 只在 FM 28km 彩排且有监控/恢复周时可接受）",
       "base phase ≤ 4 周（伤后不够 rebuild）",
       "key_sessions[] 含 hill repeats（用户明确要求避免）",
       "周量起点从 50+ km 起（无视 70% 重建原则）"

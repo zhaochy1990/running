@@ -299,11 +299,12 @@ _PLAN_ID = "plan-xyz"
 
 def _master_plan(status_value="active"):
     from stride_core.master_plan import (
-        MasterPlan, MasterPlanStatus, Milestone, MilestoneType, Phase,
+        MasterPlan, MasterPlanGoal, MasterPlanStatus, Milestone, MilestoneType, Phase,
     )
     _status = MasterPlanStatus(status_value)
     return MasterPlan(
-        plan_id=_PLAN_ID, user_id=USER_UUID, status=_status, goal_id="g1",
+        plan_id=_PLAN_ID, user_id=USER_UUID, status=_status,
+        goal=MasterPlanGoal(goal_id="g1", target_time="", race_date="2026-11-15"),
         start_date="2026-06-01", end_date="2026-11-15",
         phases=[Phase(id="phase-1", name="基础期", start_date="2026-06-01",
                       end_date="2026-07-31", focus="有氧", weekly_distance_km_low=50.0,

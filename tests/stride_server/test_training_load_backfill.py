@@ -72,7 +72,7 @@ def test_internal_training_load_backfill_refreshes_threshold_and_recent_load(tmp
     monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
     monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     from stride_server.config import clear_server_config_cache
     from stride_server.routes.training_load import internal_router
 
@@ -111,7 +111,7 @@ def test_internal_training_load_calibration_refresh_updates_threshold_only(tmp_p
     monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
     monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
 
-    from stride_core.db import Database
+    from stride_storage.sqlite.database import Database
     from stride_server.config import clear_server_config_cache
     from stride_server.routes.training_load import internal_router
 

@@ -16,6 +16,7 @@ import 'package:stride/features_v2/activity/providers/timeseries_provider.dart';
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
 ActivityDetailV2 _makeDetail({
+  String durationFmt = '54:05',
   String? commentary,
   String? sportNote,
   String? commentaryGeneratedBy,
@@ -26,7 +27,7 @@ ActivityDetailV2 _makeDetail({
       sportName: 'running',
       date: '2026-05-11',
       distanceKm: 10.2,
-      durationFmt: '54:05',
+      durationFmt: durationFmt,
       paceFmt: "5'18\"/km",
       name: '晨跑 10K',
       avgHr: 152,
@@ -52,11 +53,8 @@ ActivityDetailV2 _makeDetail({
 
 // ── Stub StrideApi ───────────────────────────────────────────────────────
 //
-// The (id, fields: Set<String>) family key has identity equality on the
-// `fields` Set, so a per-record `timeseriesProvider(...).overrideWith(...)`
-// does NOT match the widget's own `{fieldStr}` Set literal at call time.
-// Override `strideApiProvider` instead so the real Dio client never fires
-// when scrollUntilVisible scrolls past a chart sliver.
+// Keep the timeseries future unresolved so scrollUntilVisible can mount chart
+// slivers without issuing a real Dio request.
 class _StubApi extends StrideApi {
   _StubApi() : super(Dio());
 
@@ -84,15 +82,11 @@ Future<void> _pump(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        activityDetailProvider(activityId).overrideWith(
-          (_) => _resolve(state),
-        ),
+        activityDetailProvider(activityId).overrideWith((_) => _resolve(state)),
         strideApiProvider.overrideWithValue(_StubApi()),
         currentUserIdProvider.overrideWithValue('user-001'),
       ],
-      child: MaterialApp(
-        home: ActivityDetailScreen(activityId: activityId),
-      ),
+      child: MaterialApp(home: ActivityDetailScreen(activityId: activityId)),
     ),
   );
   // Settle so FutureProvider resolves
@@ -102,8 +96,10 @@ Future<void> _pump(
 Future<ActivityDetailV2> _resolve(AsyncValue<ActivityDetailV2> state) {
   return switch (state) {
     AsyncData(:final value) => Future.value(value),
-    AsyncError(:final error, :final stackTrace) =>
-      Future.error(error, stackTrace),
+    AsyncError(:final error, :final stackTrace) => Future.error(
+      error,
+      stackTrace,
+    ),
     _ => Completer<ActivityDetailV2>().future, // stays loading
   };
 }
@@ -117,7 +113,9 @@ void main() {
     expect(find.text('晨跑 10K'), findsAtLeastNWidgets(1));
   });
 
-  testWidgets('renders summary grid: distance / duration / pace', (tester) async {
+  testWidgets('renders summary grid: distance / duration / pace', (
+    tester,
+  ) async {
     await _pump(tester, AsyncData(_makeDetail()));
 
     // 8-metric grid uses combined "label / UNIT" eyebrows.
@@ -126,6 +124,44 @@ void main() {
     expect(find.text('平均配速 / KM'), findsOneWidget);
     expect(find.textContaining('10.20'), findsOneWidget);
     expect(find.text('54:05'), findsOneWidget);
+  });
+
+  testWidgets('summary grid compacts sub-hour duration to mm:ss', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await _pump(tester, AsyncData(_makeDetail(durationFmt: '00:54:39')));
+
+    final durationText = find.text('54:39');
+    expect(durationText, findsOneWidget);
+    expect(find.text('00:54:39'), findsNothing);
+    expect(
+      find.ancestor(of: durationText, matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<Text>(durationText).overflow,
+      isNot(TextOverflow.ellipsis),
+    );
+  });
+
+  testWidgets('summary grid displays hour-plus duration as h:mm:ss', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await _pump(tester, AsyncData(_makeDetail(durationFmt: '01:02:03')));
+
+    final durationText = find.text('1:02:03');
+    expect(durationText, findsOneWidget);
+    expect(find.text('01:02:03'), findsNothing);
+    expect(
+      find.ancestor(of: durationText, matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
   });
 
   testWidgets('renders summary grid: HR / calories / cadence', (tester) async {
@@ -139,10 +175,7 @@ void main() {
   });
 
   testWidgets('commentary text is shown when present', (tester) async {
-    await _pump(
-      tester,
-      AsyncData(_makeDetail(commentary: '节奏稳定，有氧效率良好。')),
-    );
+    await _pump(tester, AsyncData(_makeDetail(commentary: '节奏稳定，有氧效率良好。')));
 
     // Commentary card now sits below the two chart cards.
     await tester.scrollUntilVisible(find.textContaining('节奏稳定'), 500);
@@ -157,28 +190,19 @@ void main() {
   });
 
   testWidgets('sport_note is shown when present', (tester) async {
-    await _pump(
-      tester,
-      AsyncData(_makeDetail(sportNote: '今天感觉很好，配速轻松。')),
-    );
+    await _pump(tester, AsyncData(_makeDetail(sportNote: '今天感觉很好，配速轻松。')));
 
     // Training-note section sits below the charts; SliverChildListDelegate
     // is lazy, so the children must scroll into view to mount. The _StubApi
     // keeps the chart's timeseries future unresolved, so no real Dio fires.
-    await tester.scrollUntilVisible(
-      find.textContaining('今天感觉很好'),
-      500,
-    );
+    await tester.scrollUntilVisible(find.textContaining('今天感觉很好'), 500);
     expect(find.textContaining('今天感觉很好'), findsOneWidget);
   });
 
   testWidgets('sport_note=null shows v1.x placeholder', (tester) async {
     await _pump(tester, AsyncData(_makeDetail(sportNote: null)));
 
-    await tester.scrollUntilVisible(
-      find.textContaining('v1.x 即将支持'),
-      500,
-    );
+    await tester.scrollUntilVisible(find.textContaining('v1.x 即将支持'), 500);
     expect(find.textContaining('v1.x 即将支持'), findsOneWidget);
   });
 
@@ -202,15 +226,17 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          activityDetailProvider('ACT_001').overrideWith(
-            (_) => Completer<ActivityDetailV2>().future,
-          ),
-          timeseriesProvider((id: 'ACT_001', fields: {'hr'})).overrideWith(
-            (_) => Completer<TimeseriesData>().future,
-          ),
-          timeseriesProvider((id: 'ACT_001', fields: {'pace'})).overrideWith(
-            (_) => Completer<TimeseriesData>().future,
-          ),
+          activityDetailProvider(
+            'ACT_001',
+          ).overrideWith((_) => Completer<ActivityDetailV2>().future),
+          timeseriesProvider((
+            id: 'ACT_001',
+            fields: 'hr',
+          )).overrideWith((_) => Completer<TimeseriesData>().future),
+          timeseriesProvider((
+            id: 'ACT_001',
+            fields: 'pace',
+          )).overrideWith((_) => Completer<TimeseriesData>().future),
           currentUserIdProvider.overrideWithValue('user-001'),
         ],
         child: const MaterialApp(
@@ -234,10 +260,7 @@ void main() {
   });
 
   testWidgets('AI commentary card shows 重新生成 button', (tester) async {
-    await _pump(
-      tester,
-      AsyncData(_makeDetail(commentary: '训练点评内容。')),
-    );
+    await _pump(tester, AsyncData(_makeDetail(commentary: '训练点评内容。')));
 
     await tester.scrollUntilVisible(find.text('重新生成'), 500);
     expect(find.text('重新生成'), findsOneWidget);
@@ -246,10 +269,9 @@ void main() {
   testWidgets('commentary_generated_by shown as pill', (tester) async {
     await _pump(
       tester,
-      AsyncData(_makeDetail(
-        commentary: '好的训练。',
-        commentaryGeneratedBy: 'gpt-4.1',
-      )),
+      AsyncData(
+        _makeDetail(commentary: '好的训练。', commentaryGeneratedBy: 'gpt-4.1'),
+      ),
     );
 
     await tester.scrollUntilVisible(find.text('gpt-4.1'), 500);

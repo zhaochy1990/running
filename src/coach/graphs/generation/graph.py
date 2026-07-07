@@ -85,12 +85,13 @@ def build_generation_graph(
     def load_ctx_node(state: GenState) -> dict:
         t0 = time.monotonic()
         ctx = load_context(state)
+        elapsed = time.monotonic() - t0
         cp = (ctx or {}).get("current_phase") or {}
         cont = (ctx or {}).get("continuity") or {}
         logger.info(
             "gen[load_context] done in %.1fs — current_phase: source=%s entry=%s "
             "weeks_in=%s conf=%s | continuity: aerobic_weeks=%s form=%s",
-            time.monotonic() - t0,
+            elapsed,
             cp.get("source"),
             cp.get("recommended_entry_phase"),
             cp.get("weeks_in_phase"),
@@ -98,7 +99,7 @@ def build_generation_graph(
             cont.get("recent_aerobic_weeks"),
             cont.get("current_form_zone"),
         )
-        return {"context": ctx, "iteration": 0}
+        return {"context": ctx, "iteration": 0, "timings": {"load_context_s": elapsed}}
 
     def generator_node(state: GenState) -> dict:
         attempt = int(state.get("iteration") or 0) + 1
@@ -111,6 +112,7 @@ def build_generation_graph(
         )
         t0 = time.monotonic()
         out = generator(state)
+        elapsed = time.monotonic() - t0
         # generator MUST return current_draft; ensure shape
         draft = out.get("current_draft")
         phases = (draft or {}).get("phases") or []
@@ -118,55 +120,74 @@ def build_generation_graph(
         logger.info(
             "gen[generator] attempt %d done in %.1fs — %d phase(s): %s",
             attempt,
-            time.monotonic() - t0,
+            elapsed,
             len(phases),
             phase_seq or "(none)",
         )
+        timings = dict(state.get("timings") or {})
+        timings.setdefault("generator_attempt_s", []).append(elapsed)
+        timings["generator_total_s"] = sum(timings.get("generator_attempt_s", []))
+        metadata = out.get("timing_metadata") or {}
+        if isinstance(metadata, dict):
+            timings.update(metadata)
         return {
             "current_draft": draft,
             "iteration": attempt,
+            "timings": timings,
         }
 
     def rule_filter_node(state: GenState) -> dict:
         draft = state.get("current_draft") or {}
         t0 = time.monotonic()
         report: RuleFilterReport = rule_filter_fn(draft, **rfk)
+        elapsed = time.monotonic() - t0
         errors = [v for v in report.violations if v.severity == "error"]
         warns = [v for v in report.violations if v.severity != "error"]
         logger.info(
             "gen[rule_filter] iter %s done in %.1fs — %d error(s), %d warning(s)%s",
             state.get("iteration"),
-            time.monotonic() - t0,
+            elapsed,
             len(errors),
             len(warns),
             "" if not report.violations else ": " + "; ".join(
                 f"{v.rule}({v.severity})" for v in report.violations
             ),
         )
+        timings = dict(state.get("timings") or {})
+        timings.setdefault("rule_filter_s", []).append(elapsed)
+        violations_payload = [
+            {
+                "rule": v.rule,
+                "severity": v.severity,
+                "message": v.message,
+                "details": v.details,
+            }
+            for v in report.violations
+        ]
+        timings.setdefault("rule_filter_history", []).append({
+            "iteration": state.get("iteration"),
+            "violations": violations_payload,
+        })
         return {
-            "rule_violations": [
-                {
-                    "rule": v.rule,
-                    "severity": v.severity,
-                    "message": v.message,
-                    "details": v.details,
-                }
-                for v in report.violations
-            ]
+            "rule_violations": violations_payload,
+            "timings": timings,
         }
 
     def reviewer_node(state: GenState) -> dict:
         t0 = time.monotonic()
         report = reviewer(state)
+        elapsed = time.monotonic() - t0
         history = list(state.get("review_history") or [])
         history.append(report)
         logger.info(
             "gen[reviewer] iter %s done in %.1fs — verdict=%s",
             state.get("iteration"),
-            time.monotonic() - t0,
+            elapsed,
             report.verdict,
         )
-        return {"review_history": history, "final_verdict": report.verdict}
+        timings = dict(state.get("timings") or {})
+        timings["reviewer_s"] = elapsed
+        return {"review_history": history, "final_verdict": report.verdict, "timings": timings}
 
     def apply_patches_node(state: GenState) -> dict:
         draft = state.get("current_draft") or {}

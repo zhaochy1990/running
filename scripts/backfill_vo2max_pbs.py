@@ -36,7 +36,8 @@ from stride_core.ability_hook import (  # noqa: E402
     _normalize_ts_units,
     _parse_pauses,
 )
-from stride_core.db import USER_DATA_DIR, Database  # noqa: E402
+from stride_core.db import USER_DATA_DIR
+from stride_storage.sqlite.database import Database  # noqa: E402
 from stride_core.models import RUN_SPORT_IDS  # noqa: E402
 from stride_core.running_calibration.segments import (  # noqa: E402
     best_distance_candidates,

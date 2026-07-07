@@ -7,7 +7,7 @@ import json
 import pytest
 from pathlib import Path
 
-from stride_core.db import Database
+from stride_storage.sqlite.database import Database
 from stride_core.ability_hook import run_ability_hook
 
 

@@ -10,6 +10,7 @@ import pytest
 from coach.schemas import ToolResult
 from stride_core.master_plan import (
     MasterPlan,
+    MasterPlanGoal,
     MasterPlanStatus,
     Milestone,
     MilestoneType,
@@ -74,7 +75,7 @@ def seeded_plan(tmp_path, monkeypatch):
         plan_id=str(uuid4()),
         user_id=USER_ID,
         status=MasterPlanStatus.ACTIVE,
-        goal_id=str(uuid4()),
+        goal=MasterPlanGoal(goal_id=str(uuid4()), target_time="", race_date="2026-09-14"),
         start_date="2026-05-12",
         end_date="2026-09-14",
         phases=[phase1, phase2],

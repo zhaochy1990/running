@@ -16,7 +16,8 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date as date_cls
+from datetime import datetime, timedelta, timezone
 
 from stride_core.timefmt import today_shanghai
 from typing import TYPE_CHECKING, Any
@@ -98,7 +99,9 @@ def _build_master_plan(
     parsed: dict,
     user_id: str,
     goal: dict,
+    profile: dict | None = None,
     generated_by: str = "unknown",
+    pb_seconds: dict[str, float] | None = None,
 ) -> MasterPlan:
     """Map LLM output JSON -> MasterPlan instance.
 
@@ -173,19 +176,19 @@ def _build_master_plan(
         milestone_id = str(uuid4())
         phase_id = phase_name_to_id.get(m.get("phase_name", ""), fallback_phase_id)
 
-        # Validate milestone type — skip unknown types gracefully
-        raw_type = m.get("type", "long_run")
-        try:
-            milestone_type = MilestoneType(raw_type)
-        except ValueError:
-            logger.warning("unknown milestone type %r; defaulting to long_run", raw_type)
-            milestone_type = MilestoneType.LONG_RUN
+        # Validate milestone type — accept common LLM aliases gracefully.
+        milestone_date = str(m.get("date", start_date))
+        milestone_type = _normalise_milestone_type_for_goal(
+            _parse_milestone_type(m.get("type", "long_run")),
+            milestone_date,
+            goal,
+        )
 
         milestones.append(
             Milestone(
                 id=milestone_id,
                 type=milestone_type,
-                date=m.get("date", start_date),
+                date=milestone_date,
                 phase_id=phase_id,
                 target=m.get("target", ""),
                 completed_actual=None,
@@ -235,6 +238,11 @@ def _build_master_plan(
             )
         )
 
+    milestones = _align_long_run_milestones_to_weeks(milestones, weeks)
+    weeks, milestones = _cap_standard_10k_long_runs(weeks, milestones, goal)
+    weeks, milestones = _cap_standard_5k_long_runs(weeks, milestones, goal)
+    weeks = _drop_three_day_stacked_hard_sessions(weeks, goal, profile)
+
     now_iso = datetime.now(timezone.utc).isoformat()
     # Plan-level start_date / total_weeks span the WHOLE season, including any
     # already-completed leading phase (is_completed). The weekly skeleton only
@@ -250,11 +258,20 @@ def _build_master_plan(
         if weeks
         else compute_total_weeks(plan_start, end_date)
     )
+    training_principles = _normalise_short_race_nutrition_principles(
+        _ensure_pushback_multi_cycle_path(plan_data.get("training_principles", [])),
+        goal,
+    )
+    training_principles, milestones = _ensure_aggressive_fm_combination_gate(
+        training_principles,
+        milestones,
+        goal,
+        pb_seconds,
+    )
     return MasterPlan(
         plan_id=str(uuid4()),
         user_id=user_id,
         status=MasterPlanStatus.DRAFT,
-        goal_id=goal_snapshot.goal_id,
         goal=goal_snapshot,
         start_date=plan_start,
         end_date=end_date,
@@ -263,7 +280,7 @@ def _build_master_plan(
         milestones=milestones,
         weeks=weeks,
         weekly_key_sessions=weeks,
-        training_principles=plan_data.get("training_principles", []),
+        training_principles=training_principles,
         generated_by=generated_by,
         version=1,
         created_at=now_iso,
@@ -287,7 +304,7 @@ def _inject_completed_phase_summaries(plan: MasterPlan, user_id: str) -> MasterP
         return plan
 
     try:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
 
         from .phase_summary import aggregate_phase_summary
     except Exception:  # noqa: BLE001 — import failure must not block gen
@@ -334,7 +351,12 @@ def _build_goal_snapshot(
     # the plan targets completion rather than a finish time, and the
     # goal-realism prompt rule no-ops when no target time is present. We store
     # an empty string rather than raising so generation proceeds.
-    target_time = goal.get("target_time") or goal.get("target_finish_time") or ""
+    target_time = (
+        goal.get("target_time")
+        or goal.get("target_finish_time")
+        or _format_seconds_as_hms(goal.get("goal_time_s"))
+        or ""
+    )
 
     raw_distance = goal.get("distance") or goal.get("race_distance") or plan_data.get("distance")
     race_name = (
@@ -344,6 +366,8 @@ def _build_goal_snapshot(
         or _default_race_name(raw_distance)
     )
     race_date = goal.get("race_date") or plan_data.get("race_date") or fallback_race_date
+    raw_location = goal.get("location")
+    location = str(raw_location).strip() if raw_location is not None else None
 
     return MasterPlanGoal(
         goal_id=goal_id,
@@ -352,8 +376,23 @@ def _build_goal_snapshot(
         race_date=str(race_date or fallback_race_date),
         target_time=str(target_time),
         timezone=str(goal.get("timezone") or "Asia/Shanghai"),
-        location=goal.get("location"),
+        location=location or None,
     )
+
+
+def _format_seconds_as_hms(value: Any) -> str | None:
+    """Format integer seconds as ``H:MM:SS`` for the embedded goal snapshot."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return None
+    if seconds <= 0:
+        return None
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}"
 
 
 def _default_race_name(distance: Any) -> str:
@@ -367,6 +406,56 @@ def _default_race_name(distance: Any) -> str:
         "trail": "越野目标赛",
     }
     return names.get(dist, "目标赛事")
+
+
+_MILESTONE_TYPE_ALIASES: dict[str, MilestoneType] = {
+    "tune_up_race": MilestoneType.TEST_RUN,
+    "time_trial": MilestoneType.TEST_RUN,
+    "fitness_test": MilestoneType.TEST_RUN,
+}
+
+
+def _parse_milestone_type(raw_type: Any) -> MilestoneType:
+    """Parse LLM milestone type, accepting common test-run aliases."""
+    raw = str(raw_type or "long_run")
+    alias = _MILESTONE_TYPE_ALIASES.get(raw.lower())
+    if alias is not None:
+        return alias
+    try:
+        return MilestoneType(raw)
+    except ValueError:
+        logger.warning("unknown milestone type %r; defaulting to long_run", raw_type)
+        return MilestoneType.LONG_RUN
+
+
+def _goal_race_date(goal: dict) -> str | None:
+    race_date = goal.get("race_date")
+    if race_date:
+        return str(race_date)
+    target_race = goal.get("target_race")
+    if isinstance(target_race, dict) and target_race.get("race_date"):
+        return str(target_race["race_date"])
+    return None
+
+
+def _normalise_milestone_type_for_goal(
+    milestone_type: MilestoneType,
+    milestone_date: str,
+    goal: dict,
+) -> MilestoneType:
+    """Only the target-race date should remain a race milestone."""
+    if milestone_type != MilestoneType.RACE:
+        return milestone_type
+    race_date = _goal_race_date(goal)
+    if race_date and milestone_date != race_date:
+        logger.info(
+            "downgrading non-target race milestone on %s to test_run "
+            "(target race %s)",
+            milestone_date,
+            race_date,
+        )
+        return MilestoneType.TEST_RUN
+    return milestone_type
 
 
 def _iter_plan_weeks(plan_data: dict) -> list:
@@ -387,6 +476,712 @@ def _to_optional_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _week_long_run_km(week: MasterPlanWeek) -> float | None:
+    distances = [
+        session.distance_km
+        for session in week.key_sessions
+        if session.type == "long_run" and session.distance_km is not None
+    ]
+    if not distances:
+        return None
+    return max(float(distance) for distance in distances)
+
+
+def _week_start_date(week: MasterPlanWeek) -> date_cls | None:
+    try:
+        return date_cls.fromisoformat(week.week_start)
+    except (TypeError, ValueError):
+        return None
+
+
+def _align_long_run_milestones_to_weeks(
+    milestones: list[Milestone],
+    weeks: list[MasterPlanWeek],
+) -> list[Milestone]:
+    """Move long-run milestone dates onto a matching weekly skeleton week.
+
+    The LLM sometimes writes a checkpoint on the Sunday just before the week
+    whose skeleton contains that long run. Keep the target intact and move the
+    date to the matching week's Sunday when a same-phase week already contains
+    that exact-or-longer long run. If no such week exists, leave the milestone
+    untouched so L1 can surface the real mismatch.
+    """
+    if not milestones or not weeks:
+        return milestones
+
+    aligned: list[Milestone] = []
+    for milestone in milestones:
+        if (
+            milestone.type != MilestoneType.LONG_RUN
+            or milestone.target_value is None
+            or not str(milestone.metric or "").lower().startswith("long_run")
+        ):
+            aligned.append(milestone)
+            continue
+
+        target_km = float(milestone.target_value)
+        matching_week: MasterPlanWeek | None = None
+        try:
+            milestone_date = date_cls.fromisoformat(milestone.date)
+        except (TypeError, ValueError):
+            milestone_date = None
+
+        same_phase_weeks: list[tuple[MasterPlanWeek, date_cls, float]] = []
+        for week in weeks:
+            if week.phase_id != milestone.phase_id:
+                continue
+            week_start = _week_start_date(week)
+            long_run_km = _week_long_run_km(week)
+            if week_start is None or long_run_km is None:
+                continue
+            same_phase_weeks.append((week, week_start, long_run_km))
+            if (
+                milestone_date is not None
+                and week_start <= milestone_date <= week_start + timedelta(days=6)
+            ):
+                matching_week = week
+
+        if matching_week is not None:
+            week_lr = _week_long_run_km(matching_week)
+            if week_lr is not None and week_lr + 0.5 >= target_km:
+                aligned.append(milestone)
+                continue
+
+        candidates = [
+            (week, week_start, long_run_km)
+            for week, week_start, long_run_km in same_phase_weeks
+            if long_run_km + 0.5 >= target_km
+        ]
+        if not candidates:
+            aligned.append(milestone)
+            continue
+
+        def _candidate_key(item: tuple[MasterPlanWeek, date_cls, float]) -> tuple[int, int]:
+            week, week_start, _long_run_km = item
+            distance_days = (
+                abs((week_start - milestone_date).days)
+                if milestone_date is not None else week.week_index
+            )
+            recovery_penalty = 1 if (week.is_recovery_week or week.is_taper_week) else 0
+            return (recovery_penalty, distance_days)
+
+        chosen_week, chosen_start, _chosen_long_run = min(candidates, key=_candidate_key)
+        new_date = (chosen_start + timedelta(days=6)).isoformat()
+        if new_date != milestone.date:
+            logger.info(
+                "aligning long_run milestone date %s -> %s for %.0fkm target "
+                "(week_index=%s)",
+                milestone.date,
+                new_date,
+                target_km,
+                chosen_week.week_index,
+            )
+            aligned.append(milestone.model_copy(update={"date": new_date}))
+        else:
+            aligned.append(milestone)
+    return aligned
+
+
+def _normalise_target_distance(value: object) -> str:
+    token = str(value or "").strip().lower().replace("_", "-")
+    lookup = {
+        "5-k": "5k",
+        "five-k": "5k",
+        "five-km": "5k",
+        "5公里": "5k",
+        "5千米": "5k",
+        "5km": "5k",
+        "10-k": "10k",
+        "ten-k": "10k",
+        "ten-km": "10k",
+        "10公里": "10k",
+        "10千米": "10k",
+        "10km": "10k",
+        "half": "hm",
+        "half-marathon": "hm",
+        "half marathon": "hm",
+        "半马": "hm",
+        "半程马拉松": "hm",
+        "marathon": "fm",
+        "full": "fm",
+        "full-marathon": "fm",
+        "full marathon": "fm",
+        "马拉松": "fm",
+        "全马": "fm",
+    }
+    return lookup.get(token, token)
+
+
+def _is_target_distance(goal: dict, distance: str) -> bool:
+    for key in ("distance", "race_distance"):
+        if _normalise_target_distance(goal.get(key)) == distance:
+            return True
+    target = goal.get("target_race")
+    if isinstance(target, dict):
+        return _normalise_target_distance(target.get("distance")) == distance
+    return False
+
+
+def _is_target_10k(goal: dict) -> bool:
+    return _is_target_distance(goal, "10k")
+
+
+def _is_target_5k(goal: dict) -> bool:
+    return _is_target_distance(goal, "5k")
+
+
+def _cap_standard_10k_long_runs(
+    weeks: list[MasterPlanWeek],
+    milestones: list[Milestone],
+    goal: dict,
+) -> tuple[list[MasterPlanWeek], list[Milestone]]:
+    """Keep ordinary 10K skeletons inside the 14-16km long-run band.
+
+    L1 allows up to 18km to avoid rejecting explicit high-volume 10K plans, but
+    standard sub-40 style 10K fixtures expect 14-16km. When the weekly high is
+    already within the normal 10K band (<=60km), clamp only the soft 17-18km
+    overage; larger HM/FM-style long runs are left for L1 to reject.
+    """
+    if not _is_target_10k(goal):
+        return weeks, milestones
+
+    capped_weeks: list[MasterPlanWeek] = []
+    capped_dates: set[str] = set()
+    changed = False
+    for week in weeks:
+        if week.is_recovery_week or week.is_taper_week:
+            capped_weeks.append(week)
+            continue
+        if week.target_weekly_km_high is None or week.target_weekly_km_high > 60:
+            capped_weeks.append(week)
+            continue
+
+        sessions: list[KeySession] = []
+        week_changed = False
+        for session in week.key_sessions:
+            if (
+                session.type == "long_run"
+                and session.distance_km is not None
+                and 16.0 < float(session.distance_km) <= 18.0
+            ):
+                sessions.append(session.model_copy(update={"distance_km": 16.0}))
+                week_changed = True
+            else:
+                sessions.append(session)
+
+        if week_changed:
+            try:
+                capped_dates.add(
+                    (date_cls.fromisoformat(week.week_start) + timedelta(days=6)).isoformat()
+                )
+            except (TypeError, ValueError):
+                pass
+            capped_weeks.append(week.model_copy(update={"key_sessions": sessions}))
+            changed = True
+        else:
+            capped_weeks.append(week)
+
+    if not changed:
+        return weeks, milestones
+
+    capped_milestones: list[Milestone] = []
+    for milestone in milestones:
+        if (
+            milestone.type == MilestoneType.LONG_RUN
+            and milestone.date in capped_dates
+            and milestone.target_value is not None
+            and 16.0 < float(milestone.target_value) <= 18.0
+            and str(milestone.metric or "").lower().startswith("long_run")
+        ):
+            target = re.sub(r"(?<!\d)1[78](?:\.0)?\s*km", "16km", milestone.target)
+            target = re.sub(r"(?<!\d)1[78](?:\.0)?\s*公里", "16公里", target)
+            capped_milestones.append(
+                milestone.model_copy(update={"target_value": 16.0, "target": target})
+            )
+        else:
+            capped_milestones.append(milestone)
+
+    logger.info("capped standard 10K long_run distances to 16km")
+    return capped_weeks, capped_milestones
+
+
+def _cap_standard_5k_long_runs(
+    weeks: list[MasterPlanWeek],
+    milestones: list[Milestone],
+    goal: dict,
+) -> tuple[list[MasterPlanWeek], list[Milestone]]:
+    """Keep ordinary 5K skeletons inside the 8-12km long-run band."""
+    if not _is_target_5k(goal):
+        return weeks, milestones
+
+    capped_weeks: list[MasterPlanWeek] = []
+    capped_dates: set[str] = set()
+    changed = False
+    for week in weeks:
+        if week.is_recovery_week or week.is_taper_week:
+            capped_weeks.append(week)
+            continue
+        if week.target_weekly_km_high is None or week.target_weekly_km_high > 55:
+            capped_weeks.append(week)
+            continue
+
+        sessions: list[KeySession] = []
+        week_changed = False
+        for session in week.key_sessions:
+            if (
+                session.type == "long_run"
+                and session.distance_km is not None
+                and 12.0 < float(session.distance_km) <= 14.0
+            ):
+                sessions.append(session.model_copy(update={"distance_km": 12.0}))
+                week_changed = True
+            else:
+                sessions.append(session)
+
+        if week_changed:
+            try:
+                capped_dates.add(
+                    (date_cls.fromisoformat(week.week_start) + timedelta(days=6)).isoformat()
+                )
+            except (TypeError, ValueError):
+                pass
+            capped_weeks.append(week.model_copy(update={"key_sessions": sessions}))
+            changed = True
+        else:
+            capped_weeks.append(week)
+
+    if not changed:
+        return weeks, milestones
+
+    capped_milestones: list[Milestone] = []
+    for milestone in milestones:
+        if (
+            milestone.type == MilestoneType.LONG_RUN
+            and milestone.date in capped_dates
+            and milestone.target_value is not None
+            and 12.0 < float(milestone.target_value) <= 14.0
+            and str(milestone.metric or "").lower().startswith("long_run")
+        ):
+            target = re.sub(r"(?<!\d)1[34](?:\.0)?\s*km", "12km", milestone.target)
+            target = re.sub(r"(?<!\d)1[34](?:\.0)?\s*公里", "12公里", target)
+            capped_milestones.append(
+                milestone.model_copy(update={"target_value": 12.0, "target": target})
+            )
+        else:
+            capped_milestones.append(milestone)
+
+    logger.info("capped standard 5K long_run distances to 12km")
+    return capped_weeks, capped_milestones
+
+
+def _normalise_short_race_nutrition_principles(
+    principles: list[Any],
+    goal: dict,
+) -> list[str]:
+    rendered = [str(item) for item in (principles or [])]
+    if not rendered or not (_is_target_5k(goal) or _is_target_10k(goal)):
+        return rendered
+
+    race_label = "5K" if _is_target_5k(goal) else "10K"
+    out: list[str] = []
+    changed = False
+    for principle in rendered:
+        compact = principle.replace(" ", "").lower()
+        mentions_short_race = race_label.lower() in compact or race_label in principle
+        mentions_phase = (
+            "peak" in compact
+            or "taper" in compact
+            or "峰值" in principle
+            or "锐化" in principle
+            or "减量" in principle
+        )
+        if not mentions_short_race and not mentions_phase:
+            out.append(principle)
+            continue
+
+        updated = principle
+        updated = re.sub(r"5-7\s*g/kg", "按训练日适量", updated, flags=re.IGNORECASE)
+        updated = re.sub(r"5-7g/kg", "训练日适量碳水", updated, flags=re.IGNORECASE)
+        updated = updated.replace("练胶和钠", "熟悉早餐和少量补水")
+        updated = updated.replace("练胶+钠", "熟悉早餐和少量补水")
+        updated = updated.replace("练胶", "熟悉早餐")
+        updated = updated.replace("补钠", "少量补水")
+        if updated != principle:
+            changed = True
+        out.append(updated)
+
+    return out if changed else rendered
+
+
+def _goal_time_seconds(goal: dict) -> float | None:
+    value = goal.get("goal_time_s")
+    if value is None:
+        value = goal.get("target_time_s")
+    if value is None:
+        value = _parse_hms_to_seconds(str(goal.get("target_finish_time") or ""))
+    if value is None:
+        target = goal.get("target_race")
+        if isinstance(target, dict):
+            value = target.get("goal_time_s")
+            if value is None:
+                value = target.get("target_time_s")
+            if value is None:
+                value = _parse_hms_to_seconds(str(target.get("target_finish_time") or ""))
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+_PB_SECONDS_KEY_ALIASES: dict[str, str] = {
+    "5k": "5k",
+    "5-k": "5k",
+    "5km": "5k",
+    "10k": "10k",
+    "10-k": "10k",
+    "10km": "10k",
+    "half": "hm",
+    "hm": "hm",
+    "half_marathon": "hm",
+    "half-marathon": "hm",
+    "marathon": "fm",
+    "full": "fm",
+    "fm": "fm",
+}
+
+
+def _normalise_pb_seconds(pb_seconds: dict | None) -> dict[str, float]:
+    if not isinstance(pb_seconds, dict):
+        return {}
+    out: dict[str, float] = {}
+    for raw_key, raw_value in pb_seconds.items():
+        key = _PB_SECONDS_KEY_ALIASES.get(
+            str(raw_key or "").strip().lower().replace("_", "-")
+        )
+        if key is None:
+            key = _normalise_target_distance(raw_key)
+        if key not in {"5k", "10k", "hm", "fm"}:
+            continue
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            out[key] = value
+    return out
+
+
+def _fm_pb_improvement(goal_s: float | None, pb_seconds: dict | None) -> float | None:
+    pb_s = _normalise_pb_seconds(pb_seconds).get("fm")
+    if goal_s is None or pb_s is None or goal_s <= 0 or pb_s <= 0:
+        return None
+    return (pb_s - goal_s) / pb_s
+
+
+def _has_advanced_pb(pb_seconds: dict | None) -> bool:
+    pbs = _normalise_pb_seconds(pb_seconds)
+    thresholds = {
+        "5k": 19 * 60,
+        "10k": 40 * 60,
+        "hm": 90 * 60,
+        "fm": 3 * 3600 + 10 * 60,
+    }
+    return any(pbs.get(distance, float("inf")) <= seconds for distance, seconds in thresholds.items())
+
+
+def _is_aggressive_advanced_fm_goal(goal: dict, pb_seconds: dict | None) -> bool:
+    if not _is_target_distance(goal, "fm"):
+        return False
+    goal_s = _goal_time_seconds(goal)
+    improvement = _fm_pb_improvement(goal_s, pb_seconds)
+    if improvement is None or improvement <= 0.03 or improvement > 0.15:
+        return False
+    return _has_advanced_pb(pb_seconds)
+
+
+def _format_race_time(seconds: float) -> str:
+    rounded = int(round(seconds / 15.0) * 15)
+    h, rem = divmod(rounded, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+
+def _format_goal_time(seconds: float) -> str:
+    h, rem = divmod(int(round(seconds)), 3600)
+    m, s = divmod(rem, 60)
+    if s:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{h}:{m:02d}"
+
+
+def _aggressive_fm_gate_thresholds(goal_s: float) -> tuple[str, str, str, str]:
+    # Riegel-equivalent tune-up times with a small buffer so a tune-up only
+    # opens A when it supports the full marathon goal, not merely the B plan.
+    hm_s = goal_s * (21.0975 / 42.195) ** 1.06 * 1.035
+    ten_k_s = goal_s * (10.0 / 42.195) ** 1.06 * 1.02
+    observation_hm_s = hm_s + 60
+    observation_10k_s = ten_k_s + 15
+    return (
+        _format_race_time(hm_s),
+        _format_race_time(ten_k_s),
+        _format_race_time(observation_hm_s),
+        _format_race_time(observation_10k_s),
+    )
+
+
+def _aggressive_fm_b_band(goal_s: float) -> str:
+    low = _format_goal_time(goal_s + 120)
+    high = _format_goal_time(goal_s + 300)
+    return low if low == high else f"{low}-{high}"
+
+
+def _compose_aggressive_fm_combination_gate(goal_s: float) -> str:
+    goal_time = _format_goal_time(goal_s)
+    hm_gate, ten_k_gate, hm_observe, ten_k_observe = _aggressive_fm_gate_thresholds(goal_s)
+    b_band = _aggressive_fm_b_band(goal_s)
+    return (
+        f"A={goal_time}仅在HM<={hm_gate}或10K<={ten_k_gate}之一达标，且最大合法MP彩排"
+        "(29-32km含22-24kmMP；29-30km仅限显式风险/历史/ramp上限)、"
+        f"VO2/HR/RPE、跟腱反应全部通过时开放；HM<={hm_observe}或10K>={ten_k_observe}"
+        f"只算观察/B；否则默认B={b_band}，C=破PB/稳健完赛。"
+    )
+
+
+def _compose_aggressive_fm_supporting_gate(goal_s: float) -> str:
+    goal_time = _format_goal_time(goal_s)
+    return f"A={goal_time}按比赛里程碑HM/10K+MP彩排+VO2/HR/RPE+跟腱组合门槛开放。"
+
+
+def _normalise_aggressive_fm_gate_text(text: str) -> str:
+    return (
+        text.replace("≤", "<=")
+        .replace("＜", "<")
+        .replace("＝", "=")
+        .replace("：", ":")
+        .replace("　", "")
+        .replace(" ", "")
+    )
+
+
+def _has_aggressive_fm_combo_gate(text: str, goal_s: float) -> bool:
+    compact = _normalise_aggressive_fm_gate_text(text)
+    goal_time = _format_goal_time(goal_s)
+    hm_gate, ten_k_gate, _, _ = _aggressive_fm_gate_thresholds(goal_s)
+    return all(
+        token in compact
+        for token in (
+            f"A={goal_time}", f"HM<={hm_gate}", f"10K<={ten_k_gate}",
+            "29-32km", "22-24kmMP", "MP", "VO2", "HR/RPE",
+        )
+    ) and ("跟腱" in text or "Achilles" in text)
+
+
+def _is_aggressive_fm_gate_principle(text: str, goal_s: float) -> bool:
+    compact = _normalise_aggressive_fm_gate_text(text)
+    goal_time = _format_goal_time(goal_s)
+    if goal_time not in compact or "A" not in compact:
+        return False
+    return any(token in compact for token in ("HM<=", "10K<=", "MP", "VO2", "HR/RPE")) or any(
+        token in text for token in ("关口", "门槛", "闸门", "开放", "过关", "全过")
+    )
+
+
+def _aggressive_fm_principle_prefix(text: str, goal_s: float) -> str:
+    stripped = text.strip().rstrip("。；; ")
+    markers = ("；A", ";A", "，A", ",A", " A", "A需", "A=", "A可", "A目标", "A<", "A≤")
+    positions = [pos for marker in markers if (pos := stripped.find(marker)) >= 0]
+    if positions:
+        return stripped[: min(positions)].rstrip("。；;，, ")
+    if "PB" in stripped and _format_goal_time(goal_s) in stripped and not stripped.startswith("A"):
+        return stripped
+    return ""
+
+
+def _compose_aggressive_fm_gate_principle(text: str, goal_s: float) -> str:
+    prefix = _aggressive_fm_principle_prefix(text, goal_s)
+    gate = _compose_aggressive_fm_combination_gate(goal_s)
+    if prefix:
+        return prefix + "；" + gate
+    return gate
+
+
+def _normalise_aggressive_fm_supporting_gate_target(target: str, goal_s: float) -> str | None:
+    compact = _normalise_aggressive_fm_gate_text(target)
+    if "A" not in compact or ("HM<=" not in compact and "10K<=" not in compact):
+        return None
+    if _has_aggressive_fm_combo_gate(target, goal_s):
+        return None
+
+    prefix = _aggressive_fm_principle_prefix(target, goal_s)
+    supporting_gate = _compose_aggressive_fm_supporting_gate(goal_s)
+    observation_parts = []
+    for part in re.split(r"[；;。]+", target):
+        part = part.strip()
+        if not part:
+            continue
+        part_compact = _normalise_aggressive_fm_gate_text(part)
+        if "A" in part_compact and ("HM<=" in part_compact or "10K<=" in part_compact):
+            continue
+        if "观察" in part or "B" in part_compact:
+            observation_parts.append(part)
+    if observation_parts:
+        return "；".join(observation_parts + [supporting_gate])
+    if prefix and ("观察" in prefix or "B" in prefix):
+        return prefix + "；" + supporting_gate
+    return supporting_gate
+
+
+def _ensure_aggressive_fm_combination_gate(
+    principles: list[str],
+    milestones: list[Milestone],
+    goal: dict,
+    pb_seconds: dict | None,
+) -> tuple[list[str], list[Milestone]]:
+    """Make aggressive advanced FM A-gates explicit combination gates."""
+    if not _is_aggressive_advanced_fm_goal(goal, pb_seconds):
+        return principles, milestones
+    goal_s = _goal_time_seconds(goal)
+    if goal_s is None:
+        return principles, milestones
+    combination_gate = _compose_aggressive_fm_combination_gate(goal_s)
+
+    updated_principles: list[str] = []
+    gate_inserted = False
+    for principle in principles:
+        text = str(principle)
+        if _is_aggressive_fm_gate_principle(text, goal_s):
+            if not gate_inserted:
+                updated_principles.append(_compose_aggressive_fm_gate_principle(text, goal_s))
+                gate_inserted = True
+            continue
+        updated_principles.append(text)
+
+    if not _has_aggressive_fm_combo_gate("\n".join(updated_principles), goal_s):
+        if updated_principles:
+            updated_principles[0] = (
+                updated_principles[0].rstrip("。；; ")
+                + "；"
+                + combination_gate
+            )
+        else:
+            updated_principles.append(combination_gate)
+
+    updated_milestones: list[Milestone] = []
+    for milestone in milestones:
+        target = milestone.target or ""
+        if milestone.type != MilestoneType.RACE:
+            supporting_target = _normalise_aggressive_fm_supporting_gate_target(target, goal_s)
+            if supporting_target:
+                updated_milestones.append(
+                    milestone.model_copy(update={"target": supporting_target})
+                )
+                continue
+            updated_milestones.append(milestone)
+            continue
+        needs_combo = "A" in target and _format_goal_time(goal_s) in target and (
+            not _has_aggressive_fm_combo_gate(target, goal_s)
+            or "或" in target
+            or "or" in target.lower()
+        )
+        if needs_combo:
+            updated_milestones.append(
+                milestone.model_copy(update={"target": combination_gate})
+            )
+            continue
+
+        supporting_target = _normalise_aggressive_fm_supporting_gate_target(target, goal_s)
+        if supporting_target:
+            updated_milestones.append(
+                milestone.model_copy(update={"target": supporting_target})
+            )
+            continue
+
+        if not needs_combo:
+            updated_milestones.append(milestone)
+            continue
+
+    return updated_principles, updated_milestones
+
+
+_THREE_DAY_EXTRA_HARD_TYPES = {
+    "threshold", "tempo", "interval", "vo2max", "hill", "tune_up_race", "time_trial",
+}
+
+
+def _weekly_run_days_max(goal: dict, profile: dict | None = None) -> int | None:
+    for source in (profile, goal):
+        if not isinstance(source, dict):
+            continue
+        for key in ("weekly_run_days_max", "weekly_training_days"):
+            value = source.get(key)
+            if isinstance(value, int):
+                return value
+    return None
+
+
+def _week_has_mp_or_long_long_run(week: MasterPlanWeek) -> bool:
+    for session in week.key_sessions:
+        if session.type != "long_run":
+            continue
+        purpose = str(session.purpose or "").lower()
+        if (session.distance_km or 0) >= 24:
+            return True
+        if any(marker in purpose for marker in ("mp", "马配", "目标配速")):
+            return True
+    return False
+
+
+def _drop_three_day_stacked_hard_sessions(
+    weeks: list[MasterPlanWeek],
+    goal: dict,
+    profile: dict | None = None,
+) -> list[MasterPlanWeek]:
+    """For 3-run plans, long/MP weeks cannot carry another hard workout."""
+    max_days = _weekly_run_days_max(goal, profile)
+    if max_days is None or max_days > 3:
+        return weeks
+
+    out: list[MasterPlanWeek] = []
+    changed = False
+    for week in weeks:
+        if week.is_recovery_week or week.is_taper_week or not _week_has_mp_or_long_long_run(week):
+            out.append(week)
+            continue
+        sessions = [
+            session for session in week.key_sessions
+            if session.type not in _THREE_DAY_EXTRA_HARD_TYPES
+        ]
+        if len(sessions) != len(week.key_sessions):
+            logger.info(
+                "dropping stacked hard sessions from 3-run MP/long-run week %s",
+                week.week_index,
+            )
+            out.append(week.model_copy(update={"key_sessions": sessions}))
+            changed = True
+        else:
+            out.append(week)
+    return out if changed else weeks
+
+
+def _ensure_pushback_multi_cycle_path(principles: list[Any]) -> list[str]:
+    """Add the expected multi-cycle path when a 100km pushback is present."""
+    rendered = [str(item) for item in (principles or [])]
+    joined = "\n".join(rendered)
+    compact = joined.replace(" ", "")
+    has_pushback = "100km" in compact and "55km" in compact
+    has_path = all(token in compact for token in ("下周期80", "再后周期90"))
+    if not has_pushback or has_path or not rendered:
+        return rendered
+
+    rendered[0] = (
+        rendered[0].rstrip("。；; ")
+        + "；本周期60-70km，下周期80km，再后周期90+km，100km需更长期适应。"
+    )
+    return rendered
 
 
 # ---------------------------------------------------------------------------
@@ -463,6 +1258,7 @@ def _query_weekly_profile(
                 "avg_hr": None,
                 "ctl": None,
                 "atl": None,
+                "training_load_ratio": None,
                 "form": None,
                 "dose": 0.0,
                 "rhr": None,
@@ -545,6 +1341,7 @@ def _query_weekly_profile(
         # rows ascend by date, so the last write per week is the latest day.
         b["ctl"] = r[3]  # chronic_load (CTL, 42-day EWMA)
         b["atl"] = r[4]  # acute_load (ATL, 7-day EWMA)
+        b["training_load_ratio"] = (r[4] / r[3]) if r[3] else None
         b["form"] = r[5]
     for wk, total in dose_acc.items():
         buckets[wk]["dose"] = total
@@ -591,8 +1388,8 @@ def _query_history(user_id: str) -> dict[str, Any]:
     """Query activities DB for a 3-year training history summary.
 
     Returns a dict with keys: monthly_km, max_weekly_km, total_activities,
-    and best_*_s (REAL personal bests — actual achieved efforts; the single
-    race-time anchor for milestone baselines).
+    and weekly_profile. PB loading happens in load_master_context via
+    load_personal_bests so training-history and race-time anchors stay separate.
 
     All failures are silently absorbed — returns zeros / empty lists rather
     than blocking the generation flow.
@@ -601,14 +1398,10 @@ def _query_history(user_id: str) -> dict[str, Any]:
         "monthly_km": [],
         "max_weekly_km": 0.0,
         "total_activities": 0,
-        "best_5k_s": None,
-        "best_10k_s": None,
-        "best_hm_s": None,
-        "best_fm_s": None,
         "weekly_profile": [],
     }
     try:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         from stride_core.models import RUN_SPORT_SQL_LIST
 
         db = Database(user=user_id)
@@ -672,37 +1465,12 @@ def _query_history(user_id: str) -> dict[str, Any]:
         ).fetchone()
         result["total_activities"] = row[0] or 0
 
-        # Real personal bests — actual achieved efforts. Read from the persisted
-        # personal_bests table (populated post-sync), so generation no longer pays
-        # the ~7s chronological best-effort scan. load_personal_bests self-heals
-        # when the table was never scanned and records PB-less users so it doesn't
-        # re-scan every run. These are the ONLY race-time anchor fed to the
-        # planner: COROS race_predictions (fitness-based optimistic ceilings) are
-        # deliberately NOT surfaced, since conflating them anchored milestones to
-        # paces the athlete has never actually run (e.g. a "PB 38:38" 10K when the
-        # real best is 40:06).
-        try:
-            from stride_core.pb_records import load_personal_bests
-            pb_map = load_personal_bests(db)
-            pb_key = {
-                "5K": "best_5k_s",
-                "10K": "best_10k_s",
-                "HM": "best_hm_s",
-                "FM": "best_fm_s",
-            }
-            for disp, key in pb_key.items():
-                entry = pb_map.get(disp)
-                if entry and entry.get("pb_time_sec"):
-                    result[key] = round(entry["pb_time_sec"])
-        except Exception:  # noqa: BLE001 — PB read must not block gen
-            logger.warning("_query_history: PB read failed for %s", user_id, exc_info=True)
-
         # 16-week weekly athlete profile. The threshold speed (for the NULL-
         # train_kind pace fallback in speed classification) is read from the
         # canonical running-calibration reader — never inline-computed (repo
         # HARD rule). If it's unavailable, the fallback is simply disabled.
         try:
-            from stride_core.running_calibration.sqlite_connector import (
+            from stride_storage.sqlite.calibration_connector import (
                 SQLiteRunningCalibrationRepository,
             )
             threshold_speed_mps: float | None = None
@@ -854,13 +1622,13 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
         "ctl": None,
         "atl": None,
         "tsb": None,
-        "fatigue": None,
         "rhr": None,
-        "training_load_state": None,
+        "hrv": None,
+        "hrv_date": None,
         "summary": "体能数据暂无",
     }
     try:
-        from stride_core.db import Database
+        from stride_storage.sqlite.database import Database
         from stride_core.timefmt import today_shanghai
 
         db = Database(user=user_id)
@@ -879,10 +1647,29 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
             "SELECT date, acute_load, chronic_load, form FROM daily_training_load "
             "ORDER BY date DESC LIMIT 1"
         ).fetchone()
-        rhr_row = conn.execute(
-            "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
+        # RHR for the fitness context: prefer the calibration baseline (smoothed
+        # P10/25 over 30-90d — the CLAUDE.md single source) over a single noisy
+        # last reading; fall back to the latest measured value when there is no
+        # calibration snapshot yet.
+        from stride_storage.sqlite.calibration_connector import (
+            SQLiteRunningCalibrationRepository,
+        )
+        _calib = SQLiteRunningCalibrationRepository(db).fetch_latest()
+        rhr = _calib.rhr_baseline if _calib and _calib.rhr_baseline is not None else None
+        if rhr is None:
+            rhr_row = conn.execute(
+                "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
+            ).fetchone()
+            rhr = rhr_row[0] if rhr_row else None
+
+        from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
+
+        hrv_row = conn.execute(
+            f"SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
+            "WHERE last_night_avg IS NOT NULL ORDER BY date DESC LIMIT 1"
         ).fetchone()
-        rhr = rhr_row[0] if rhr_row else None
+        hrv_date = hrv_row[0] if hrv_row else None
+        hrv = hrv_row[1] if hrv_row else None
 
         if row:
             _date, atl, ctl, form = row
@@ -892,6 +1679,8 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
                 "atl": round(atl, 1) if atl is not None else None,
                 "tsb": round(form, 1) if form is not None else None,
                 "rhr": rhr,
+                "hrv": round(hrv, 1) if hrv is not None else None,
+                "hrv_date": hrv_date,
                 "training_load_ratio": ratio,
             })
             parts = []
@@ -905,6 +1694,8 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
                 parts.append(f"acute/chronic {ratio}")
             if rhr is not None:
                 parts.append(f"RHR {rhr}bpm")
+            if hrv is not None:
+                parts.append(f"HRV {hrv:.0f}ms")
             result["summary"] = "，".join(parts) if parts else "体能数据暂无"
 
     except Exception as exc:  # noqa: BLE001
@@ -919,11 +1710,11 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
 
 
 def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
-    """Render the 16-week weekly profile as a markdown table (for the LLM).
+    """Render the 16-week weekly profile as compact one-line rows.
 
     One row per week (oldest → newest). Missing metrics render as ``n/a`` rather
     than being silently dropped, so the model can tell "no data that week" apart
-    from a genuine low value. A trailing totals line follows the table.
+    from a genuine low value. A trailing totals line follows the rows.
     """
     if not profile:
         return ["16-week weekly profile: no recent weekly data"]
@@ -948,38 +1739,25 @@ def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
         except (ValueError, TypeError):
             return week_start
 
-    header = (
-        "| Week | Dist | Time | Pace | HR | CTL | ATL | Form | Dose "
-        "| RHR | HRV | Runs | Long | Speed | Race |"
-    )
-    sep = (
-        "|------|------|------|------|----|-----|-----|------|------"
-        "|-----|-----|------|------|-------|------|"
-    )
     lines: list[str] = [
-        "16-week weekly profile (most recent last); n/a = no data that week:",
-        header,
-        sep,
+        "16-week weekly profile (most recent last; n/a=no data):",
+        "W|km|h|pace|HR|CTL/ATL|ratio|form|dose|RHR/HRV|runs/L/S/R",
     ]
     for w in profile:
-        cells = [
-            iso_week(w["week_start"]),
-            num(w.get("distance_km"), ".1f"),
-            num(w.get("hours"), ".1f"),
-            pace(w.get("avg_pace_s_km")),
-            num(w.get("avg_hr"), ".0f"),
-            num(w.get("ctl"), ".0f"),
-            num(w.get("atl"), ".0f"),
-            num(w.get("form"), "+.0f"),
-            num(w.get("dose"), ".0f"),
-            num(w.get("rhr"), ".0f"),
-            num(w.get("hrv"), ".0f"),
-            str(w.get("n_runs", 0)),
-            str(w.get("n_long", 0)),
-            str(w.get("n_speed", 0)),
-            str(w.get("n_race", 0)),
-        ]
-        lines.append("| " + " | ".join(cells) + " |")
+        lines.append(
+            f"{iso_week(w['week_start'])}|"
+            f"{num(w.get('distance_km'), '.1f')}|"
+            f"{num(w.get('hours'), '.1f')}|"
+            f"{pace(w.get('avg_pace_s_km'))}|"
+            f"{num(w.get('avg_hr'), '.0f')}|"
+            f"{num(w.get('ctl'), '.0f')}/{num(w.get('atl'), '.0f')}|"
+            f"{num(w.get('training_load_ratio'), '.2f')}|"
+            f"{num(w.get('form'), '+.0f')}|"
+            f"{num(w.get('dose'), '.0f')}|"
+            f"{num(w.get('rhr'), '.0f')}/{num(w.get('hrv'), '.0f')}|"
+            f"{w.get('n_runs', 0)}/{w.get('n_long', 0)}/"
+            f"{w.get('n_speed', 0)}/{w.get('n_race', 0)}"
+        )
 
     active = [w for w in profile if w.get("n_runs", 0) > 0]
     n_total = sum(w.get("n_runs", 0) for w in profile)
@@ -999,8 +1777,9 @@ def _format_history_summary(history: dict[str, Any]) -> str:
     """Convert raw history dict into a readable (English) summary for the prompt.
 
     Volume is now reported as a 16-week weekly athlete profile (distance/time/
-    pace/HR/CTL-ATL-form/dose/RHR/HRV + run-type counts per week), replacing the
-    former monthly-volume block. Total / max-week / real-PB anchor lines are kept.
+    pace/HR/CTL-ATL-load-ratio-form/dose/RHR/HRV + run-type counts per week),
+    replacing the former monthly-volume block. Total / max-week / real-PB
+    anchor lines are kept.
     """
     lines: list[str] = []
 
@@ -1193,6 +1972,7 @@ def build_master_prompts(
     continuity: "ContinuitySignals | None" = None,
     body_composition: dict[str, Any] | None = None,
     body_composition_summary: str | None = None,
+    previous_master_plan_md: str | None = None,
     current_phase: "CurrentPhaseContext | None" = None,
     athlete_memories: "list | None" = None,
 ) -> tuple[str, str]:
@@ -1219,21 +1999,29 @@ def build_master_prompts(
     # ``profile.prs``) silently no-ops in production.
     goal, profile = _normalize_for_prompt(goal, profile)
 
-    goal_json = json.dumps(goal, ensure_ascii=False, indent=2)
-    profile_json = json.dumps(profile, ensure_ascii=False, indent=2) if profile else "未填写"
+    prompt_today = goal.get("as_of_date") or today
+
+    goal_json = json.dumps(goal, ensure_ascii=False, separators=(",", ":"))
+    profile_json = (
+        json.dumps(profile, ensure_ascii=False, separators=(",", ":"))
+        if profile
+        else "未填写"
+    )
+
     fitness_summary = fitness_state.get("summary", "体能数据暂无")
     race_date = goal.get("race_date") or "未指定"
 
     # Natural-week alignment: anchor the plan start to the UPCOMING Monday so
     # every phase/week is a clean Mon→Sun block (today if today is a Monday).
-    # LLMs are unreliable at day-of-week arithmetic, so compute it here and
-    # inject the concrete date rather than asking the model to round.
+    # Offline S1 eval fixtures may freeze an explicit season_start; use that
+    # as the anchor so replay does not drift with the wall clock.
     from datetime import date as _date_cls, timedelta as _timedelta
+    plan_start_anchor = goal.get("season_start") or prompt_today
     try:
-        _t = _date_cls.fromisoformat(today)
+        _t = _date_cls.fromisoformat(str(plan_start_anchor))
         plan_start = (_t + _timedelta(days=(7 - _t.weekday()) % 7)).isoformat()
     except (ValueError, TypeError):
-        plan_start = today
+        plan_start = prompt_today
 
     # Dynamic context blocks: data-presence conditionals + value computation stay
     # here (data logic), but the English prose lives in markdown fragments under
@@ -1298,6 +2086,19 @@ def build_master_prompts(
             "bmr": _fmt("bmr_kcal", "kcal"), "bmi": _fmt("bmi"),
         }) + "\n"
 
+    previous_plan_block = ""
+    previous_plan_text = previous_master_plan_md or (profile or {}).get("prev_master_plan_md")
+    if previous_plan_text:
+        previous_plan_block = (
+            "\nPrevious master plan context (evidence only; do not emit completed "
+            "phases unless an explicit Current cycle position block authorizes them):\n"
+            f"{previous_plan_text}\n\n"
+            "Continuity extraction requirement: cite the prior peak weekly km, "
+            "prior long-run range (for example 32-34km), completed recovery status, "
+            "and prior-cycle reflection in `training_principles[0..2]`, phase focus, "
+            "or milestone target text. Apply those facts to current volume and MP work.\n"
+        )
+
     # Prompt content lives in the markdown skill src/coach/skills/master_plan_planner/
     # (SKILL.md + shared/ + references/), loaded + rendered here.
     #
@@ -1322,7 +2123,7 @@ def build_master_prompts(
     from coach.skills import render_fragment, render_skill
     system_prompt = render_skill("master_plan_planner", {})
     user_prompt = render_fragment("master_plan_planner/user_prompt.md", {
-        "today": today,
+        "today": prompt_today,
         "plan_start": plan_start,
         "race_date": race_date,
         "goal_json": goal_json,
@@ -1334,6 +2135,7 @@ def build_master_prompts(
         "known_constraints_block": known_constraints_block,
         "macro_block": macro_block,
         "body_comp_block": body_comp_block,
+        "previous_plan_block": previous_plan_block,
     })
     return system_prompt, user_prompt
 

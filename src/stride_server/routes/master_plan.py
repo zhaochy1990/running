@@ -303,7 +303,7 @@ def _build_plan_summary(plan: Any) -> str:
     """Build a concise text summary of the plan for the LLM system prompt."""
     lines = [
         f"计划期间：{plan.start_date} ~ {plan.end_date}",
-        f"目标 ID：{plan.goal_id}",
+        f"目标 ID：{plan.goal.goal_id}",
         "",
         "阶段：",
     ]
@@ -677,7 +677,6 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         "plan_id": plan.plan_id,
         "user_id": plan.user_id,
         "status": plan.status.value,
-        "goal_id": plan.goal_id,
         "goal": plan.goal.model_dump(mode="json"),
         "start_date": plan.start_date,
         "end_date": plan.end_date,
