@@ -126,11 +126,6 @@ class GarminClient:
     def get_activity_splits(self, activity_id: int | str) -> dict[str, Any]:
         return self._api.get_activity_splits(activity_id) or {}
 
-    def get_activity_hr_in_timezones(
-        self, activity_id: int | str
-    ) -> list[dict[str, Any]]:
-        return self._api.get_activity_hr_in_timezones(activity_id) or []
-
     def get_activity_weather(self, activity_id: int | str) -> dict[str, Any]:
         try:
             return self._api.get_activity_weather(activity_id) or {}

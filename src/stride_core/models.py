@@ -158,38 +158,6 @@ class Zone:
     duration_s: int
     percent: float
 
-    @classmethod
-    def from_api(cls, data: dict, is_pace: bool) -> Zone:
-        return cls(
-            zone_type="pace" if is_pace else "heartRate",
-            zone_index=(data.get("zoneIndex", 0)) + 1,
-            range_min=data.get("rightScope") if is_pace else data.get("leftScope"),
-            range_max=data.get("leftScope") if is_pace else data.get("rightScope"),
-            range_unit="pace" if is_pace else "bpm",
-            duration_s=data.get("second", 0),
-            percent=data.get("percent", 0),
-        )
-
-
-# COROS encodes pace-zone bounds in milliseconds-per-km (e.g. 273000 = 4:33/km)
-# and HR-zone bounds in bpm (always < ~230). The two ranges never overlap, so a
-# zone group is classified by the magnitude of its bounds rather than the COROS
-# `zoneType` id — that id is unstable: COROS has shipped the pace group as both
-# zoneType 1 (older firmware) and zoneType 0 (newer), and the old `== 1` check
-# silently relabeled the new pace group as heartRate. That collided with the real
-# HR group on zone_index and dropped the 配速区间 card on the activity page.
-_PACE_SCOPE_THRESHOLD_MS = 1000
-
-
-def _zone_group_is_pace(items: list[dict]) -> bool:
-    """True when a COROS zone group holds pace (ms/km) bounds rather than HR (bpm)."""
-    for item in items:
-        for key in ("leftScope", "rightScope"):
-            value = item.get(key)
-            if value is not None and abs(value) >= _PACE_SCOPE_THRESHOLD_MS:
-                return True
-    return False
-
 
 @dataclass
 class TimeseriesPoint:
@@ -336,14 +304,13 @@ class ActivityDetail:
             for i, lap_data in enumerate(group.get("lapItemList", [])):
                 laps.append(Lap.from_api(lap_data, i + 1, lap_type))
 
-        # Parse zones. Classify each group as pace vs HR by its bound magnitude
-        # (see _zone_group_is_pace) — COROS's `zoneType` id is unreliable.
+        # Per-activity time-in-zone is computed post-sync from STRIDE calibration
+        # zones (stride_core.activity_zones), not ingested from the provider's own
+        # `zoneList` buckets — those depend on watch config and a churn-prone
+        # encoding (COROS silently moved the pace group's `zoneType` 1→0). The
+        # activity is stored with no zones; the post-sync ActivityZonesHandler
+        # fills them so they match the Training Status page.
         zones: list[Zone] = []
-        for group in detail.get("zoneList", []):
-            items = group.get("zoneItemList", [])
-            is_pace = _zone_group_is_pace(items)
-            for item in items:
-                zones.append(Zone.from_api(item, is_pace))
 
         # Parse timeseries
         timeseries = [
