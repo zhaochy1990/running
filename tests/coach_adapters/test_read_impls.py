@@ -1,4 +1,4 @@
-"""US-005 acceptance — all 11 read tool impls must return a ToolResult on both
+"""US-005 acceptance — all read tool impls must return a ToolResult on both
 empty and populated DBs without ever raising."""
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from coach.schemas import ToolResult
 from coach.tools.protocols import (
     GetAbilitySnapshot,
     GetActivityDetail,
+    GetHealthSeries,
     GetHealthSnapshot,
     GetBodyCompositionLatest,
     GetMasterPlanCurrent,
@@ -57,6 +58,7 @@ def test_all_impls_satisfy_protocols() -> None:
     pairs: list[tuple[Any, type]] = [
         (read_impls.GetRecentActivitiesImpl(uid), GetRecentActivities),
         (read_impls.GetHealthSnapshotImpl(uid), GetHealthSnapshot),
+        (read_impls.GetHealthSeriesImpl(uid), GetHealthSeries),
         (read_impls.GetPmcSeriesImpl(uid), GetPmcSeries),
         (read_impls.GetBodyCompositionLatestImpl(uid), GetBodyCompositionLatest),
         (read_impls.GetAbilitySnapshotImpl(uid), GetAbilitySnapshot),
@@ -93,6 +95,15 @@ def test_health_snapshot_empty(patched_db) -> None:
     res = read_impls.GetHealthSnapshotImpl("uid")()
     assert res.ok
     assert res.data == {"latest": None, "dashboard": {}, "calibration": None}
+
+
+def test_health_series_empty(patched_db) -> None:
+    res = read_impls.GetHealthSeriesImpl("uid")(days=14)
+    assert res.ok
+    assert res.data["days"] == 14
+    assert res.data["series"] == []
+    assert res.data["coverage"]["rhr"] == 0
+    assert res.data["coverage"]["hrv_last_night_avg"] == 0
 
 
 def test_pmc_series_empty(patched_db) -> None:
@@ -219,6 +230,109 @@ def test_health_snapshot_threshold_from_stride_calibration(patched_db) -> None:
     # The COROS dashboard threshold must NOT be surfaced.
     assert "threshold_hr" not in res.data["dashboard"]
     assert "threshold_pace_s_km" not in res.data["dashboard"]
+
+
+def test_health_series_merges_requested_metrics_by_date(patched_db) -> None:
+    conn = patched_db._conn
+    conn.executemany(
+        "INSERT INTO daily_health (date, rhr, fatigue) VALUES (?, ?, ?)",
+        [
+            ("20260701", 49, 42.0),
+            ("20260702", 50, 45.0),
+            ("2026-07-03", 51, 50.0),
+        ],
+    )
+    conn.executemany(
+        """INSERT INTO daily_hrv
+           (date, last_night_avg, status, baseline_balanced_low, baseline_balanced_upper, provider)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        [
+            ("2026-07-01", 42, "BALANCED", 35, 55, "coros"),
+            ("2026-07-03", 38, "LOW", 35, 55, "coros"),
+        ],
+    )
+    conn.executemany(
+        """INSERT INTO daily_training_load
+           (date, algorithm_version, training_dose, acute_load, chronic_load, form, load_ratio,
+            readiness_gate, readiness_reasons_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            ("2026-07-01", 1, 60.0, 50.0, 55.0, 5.0, 0.91, "green", '["ok"]'),
+            ("2026-07-03", 1, 80.0, 58.0, 56.0, -2.0, 1.04, "yellow", '["low_hrv"]'),
+        ],
+    )
+    conn.commit()
+
+    res = read_impls.GetHealthSeriesImpl("uid")(
+        days=7,
+        metrics=["rhr", "hrv_last_night_avg", "hrv_status", "fatigue", "form", "readiness_reasons"],
+    )
+    assert res.ok
+    assert res.data["metrics"] == [
+        "rhr",
+        "hrv_last_night_avg",
+        "hrv_status",
+        "fatigue",
+        "form",
+        "readiness_reasons",
+    ]
+    assert res.data["coverage"]["rhr"] == 3
+    assert res.data["coverage"]["hrv_last_night_avg"] == 2
+    assert res.data["coverage"]["form"] == 2
+    assert res.data["series"] == [
+        {
+            "date": "2026-07-01",
+            "rhr": 49,
+            "hrv_last_night_avg": 42,
+            "hrv_status": "BALANCED",
+            "fatigue": 42.0,
+            "form": 5.0,
+            "readiness_reasons": ["ok"],
+        },
+        {"date": "2026-07-02", "rhr": 50, "fatigue": 45.0},
+        {
+            "date": "2026-07-03",
+            "rhr": 51,
+            "hrv_last_night_avg": 38,
+            "hrv_status": "LOW",
+            "fatigue": 50.0,
+            "form": -2.0,
+            "readiness_reasons": ["low_hrv"],
+        },
+    ]
+
+
+def test_health_series_prefers_garmin_when_dual_provider_hrv(patched_db) -> None:
+    conn = patched_db._conn
+    conn.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260704', 48)")
+    conn.executemany(
+        "INSERT INTO daily_hrv (date, last_night_avg, provider) VALUES (?, ?, ?)",
+        [
+            ("2026-07-04", 20, "coros"),
+            ("2026-07-04", 44, "garmin"),
+        ],
+    )
+    conn.commit()
+
+    res = read_impls.GetHealthSeriesImpl("uid")(
+        days=7,
+        metrics=["rhr", "hrv_last_night_avg", "hrv_provider"],
+    )
+    assert res.ok
+    assert res.data["series"] == [
+        {
+            "date": "2026-07-04",
+            "rhr": 48,
+            "hrv_last_night_avg": 44,
+            "hrv_provider": "garmin",
+        }
+    ]
+
+
+def test_health_series_rejects_unknown_metrics(patched_db) -> None:
+    res = read_impls.GetHealthSeriesImpl("uid")(metrics=["rhr", "vo2max"])
+    assert not res.ok
+    assert any("unsupported metrics" in e and "vo2max" in e for e in res.errors)
 
 
 def test_pmc_series_uses_stride_load(patched_db) -> None:

@@ -30,6 +30,7 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     # read
     "get_recent_activities": "List the most recent training activities. Use 'limit' (default 14) to bound rows.",
     "get_health_snapshot": "Latest STRIDE training-load snapshot (acute_load/chronic_load/form/load_ratio + form_zone, rhr), dashboard (HRV/recovery_pct), and STRIDE calibration (threshold_hr/threshold_pace_s_km). Threshold is STRIDE self-computed (running_calibration), NOT the COROS dashboard value.",
+    "get_health_series": "General recent daily health series over the last `days` (default 14, max 365). Whitelisted metrics include rhr, hrv_last_night_avg, hrv_status, fatigue, ati/cti, training_load_ratio/state, training_dose, acute_load, chronic_load, form, load_ratio, readiness_gate/reasons. Use aliases like metrics=['recovery'], ['hrv'], ['load'], or explicit metrics.",
     "get_pmc_series": "Daily STRIDE PMC series over the last `days` (default 42): acute_load, chronic_load, form, load_ratio per day (STRIDE self-computed, not COROS ati/cti).",
     "get_body_composition_latest": "Latest body-composition scan + delta from prior scan (weight_kg/body_fat_pct/smm_kg).",
     "get_ability_snapshot": "Latest ability_snapshot rows by dimension (e.g. endurance, speed).",
@@ -122,6 +123,7 @@ def _wrap(name: str, callable_: Callable[..., ToolResult]) -> StructuredTool:
 READ_TOOL_NAMES = (
     "get_recent_activities",
     "get_health_snapshot",
+    "get_health_series",
     "get_pmc_series",
     "get_body_composition_latest",
     "get_ability_snapshot",
