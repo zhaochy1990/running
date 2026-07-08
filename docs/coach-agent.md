@@ -67,8 +67,8 @@ Provider tags:
 
 | Method + path | Purpose |
 |---------------|---------|
-| `POST /api/users/me/coach/conversations/qa/messages` | S3 daily Q&A。Server 自己生 `thread_id = f"{user_id}:qa:{today_shanghai().isoformat()}"`。Body 的 `thread_id` 静默忽略（pydantic `extra=ignore`）。 |
-| `GET /api/users/me/coach/threads/{thread_id}/messages` | 跨 session chat history。解析 thread_id；owner 段必须 == JWT.sub 否则 403。malformed → 400。 |
+| `POST /api/users/me/coach/chat` | 唯一公开 Coach 对话入口。Session-threaded orchestrator brain，server 派生 `thread_id = f"{user_id}:coach:{session_id}"`，状态问答经 `status_insight` 只读 specialist。 |
+| `GET /api/users/me/coach/threads/{thread_id}/messages` | 跨 session chat history。解析 thread_id；owner 段必须 == JWT.sub 否则 403。malformed → 400。支持 `coach` session thread；内部 `qa` scope 只作为 `status_insight` implementation detail，不再是 public API。 |
 | `GET /api/users/me/coach/plan-versions/week/{folder}` | 倒序列出某周的 plan versions，限定 JWT.sub user_id。 |
 | `GET /api/users/me/coach/plan-versions/week/{folder}/{version_id}` | Version artifact + parent chain。`folder` 必传 —— 没有全表扫描 fallback。missing 或 cross-user → 404。 |
 

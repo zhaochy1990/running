@@ -3,8 +3,8 @@
 /// Mirrors `spec/stitch/mobile/tab-coach.html`: a ChatGPT-style transcript,
 /// quick-question chips when empty, and a bottom input bar.
 ///
-/// Data: `POST /api/users/me/coach/conversations/qa/messages` via
-/// [coachChatProvider]. The server derives the thread from user + today.
+/// Data: `POST /api/users/me/coach/chat` via [coachChatProvider]. The client
+/// uses a stable per-day session id so reopening 教练 resumes today's thread.
 library;
 
 import 'package:flutter/material.dart';
