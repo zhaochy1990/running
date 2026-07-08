@@ -222,62 +222,57 @@
     {
       "category": "qa",
       "number": 1,
-      "story": "日常 Coach 问答",
-      "slug": "qa-daily-metrics",
-      "title": "STRIDE - 日常问答指标",
-      "stitchScreenId": "7ea490fa13514c09a4723a8788a3141f",
-      "html": "qa/1_qa-daily-metrics.html",
-      "archiveHtml": "7ea490fa13514c09a4723a8788a3141f_coach-chat-daily-qa-metrics.html"
+      "story": "日常 Coach 问答渲染模型",
+      "slug": "qa-current-markdown-rendering",
+      "title": "STRIDE - QA 当前 Markdown 渲染",
+      "stitchScreenId": null,
+      "html": "qa/1_qa-current-markdown-rendering.html",
+      "archiveHtml": null,
+      "notes": "Local-first snapshot for current Coach markdown-only output rendering."
     },
     {
       "category": "qa",
       "number": 2,
-      "story": "日常 Coach 问答",
-      "slug": "qa-tempo-review",
-      "title": "STRIDE - 节奏跑复盘",
-      "stitchScreenId": "7c533ac952e840c7b5c51bdbca4ee489",
-      "html": "qa/2_qa-tempo-review.html",
-      "archiveHtml": "7c533ac952e840c7b5c51bdbca4ee489_coach-chat-daily-qa-tempo-review.html"
+      "story": "日常 Coach 问答渲染模型",
+      "slug": "qa-stride-card-metric-summary",
+      "title": "STRIDE - QA 指标摘要卡",
+      "stitchScreenId": null,
+      "html": "qa/2_qa-stride-card-metric-summary.html",
+      "archiveHtml": null,
+      "notes": "Ideal structured JSON rendering for stride-card metric_summary."
     },
     {
       "category": "qa",
       "number": 3,
-      "story": "日常 Coach 问答",
-      "slug": "qa-fatigue",
-      "title": "STRIDE - 疲劳状态分流",
-      "stitchScreenId": "22b37219213c4d0fa9187200c5a489d3",
-      "html": "qa/3_qa-fatigue.html",
-      "archiveHtml": "22b37219213c4d0fa9187200c5a489d3_coach-chat-daily-qa-fatigue.html"
+      "story": "日常 Coach 问答渲染模型",
+      "slug": "qa-stride-card-workout-review",
+      "title": "STRIDE - QA 单次训练复盘卡",
+      "stitchScreenId": null,
+      "html": "qa/3_qa-stride-card-workout-review.html",
+      "archiveHtml": null,
+      "notes": "Ideal structured JSON rendering for stride-card workout_review."
     },
     {
       "category": "qa",
       "number": 4,
-      "story": "日常 Coach 问答",
-      "slug": "qa-pain-triage",
-      "title": "STRIDE - 疼痛风险分流",
-      "stitchScreenId": "061455167528498b9e3271982743aa5b",
-      "html": "qa/4_qa-pain-triage.html",
-      "archiveHtml": "061455167528498b9e3271982743aa5b_coach-chat-daily-qa-pain-triage.html"
+      "story": "日常 Coach 问答渲染模型",
+      "slug": "qa-stride-card-fatigue-triage",
+      "title": "STRIDE - QA 疲劳分流卡",
+      "stitchScreenId": null,
+      "html": "qa/4_qa-stride-card-fatigue-triage.html",
+      "archiveHtml": null,
+      "notes": "Ideal structured JSON rendering for stride-card fatigue_triage."
     },
     {
       "category": "qa",
       "number": 5,
-      "story": "日常 Coach 问答",
-      "slug": "qa-escalation-to-weekly-plan",
-      "title": "STRIDE - 升级到本周课表调整",
-      "stitchScreenId": "ab3e64d9c39c45e0954f3fdf1160cd75",
-      "html": "qa/5_qa-escalation-to-weekly-plan.html",
-      "archiveHtml": "ab3e64d9c39c45e0954f3fdf1160cd75_coach-chat-escalation-to-weekly-plan.html"
-    },
-    {
-      "category": "qa",
-      "number": 6,
-      "story": "日常 Coach 问答",
-      "slug": "qa-escalation-to-master-plan",
-      "title": "STRIDE - 升级到赛季训练计划调整",
-      "stitchScreenId": "6dd18834bf3a4df1bbce4ad69e6d8cf2",
-      "html": "qa/6_qa-escalation-to-master-plan.html",
-      "archiveHtml": "6dd18834bf3a4df1bbce4ad69e6d8cf2_coach-chat-escalation-to-season-plan.html"
+      "story": "日常 Coach 问答渲染模型",
+      "slug": "qa-stride-card-pain-triage",
+      "title": "STRIDE - QA 疼痛风险分流卡",
+      "stitchScreenId": null,
+      "html": "qa/5_qa-stride-card-pain-triage.html",
+      "archiveHtml": null,
+      "notes": "Ideal structured JSON rendering for stride-card pain_triage."
     }
   ]
 }
