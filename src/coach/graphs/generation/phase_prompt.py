@@ -145,7 +145,40 @@ def _render_milestone_block(milestone_summary: str) -> str:
 【本阶段 milestone（生成时必须朝它设计）】
 本阶段需要达成的阶段末目标（reviewer 会用它评审，请直接对齐它生成）：
 {milestone_summary}
-长跑距离、质量课进度、减量周安放都要朝这个目标推进——阶段末必须命中它。
+长跑距离、质量课进度、减量周安放都要朝这些目标推进——阶段末必须命中。
+
+【milestone 落地硬要求】
+- 每个 milestone 都必须在其日期所在自然周生成一个可见的具体 session，summary/notes_md 写出目标、metric/数值和执行标准；不能只在阶段说明里泛泛提到。
+- long_run/race_pace milestone：对应周长跑必须达到目标距离/MP 段。
+- test_run/race milestone：对应周必须有测试/比赛或明确的控制跑安排。
+- strength_test milestone：对应周必须有 strength 或 note session，写清目标动作、次数/组数、左右侧、测试标准和通过/停止条件；不能只写“力量维护”。
+- body_composition milestone：对应周必须有 nutrition/strength/recovery 行动和复测安排。
+"""
+
+
+def _render_key_session_rotation(phase_type: PhaseType) -> str:
+    """Phase-specific key-session rotation guard.
+
+    Safety gates catch load errors, but they do not catch a physiologically
+    stale phase where every week repeats the same interval pattern. Render this
+    as prompt doctrine so phase-at-once generation deliberately varies the core
+    stimulus while staying inside each week's volume budget.
+    """
+    pools = {
+        PhaseType.BASE: "阈值引入 2k * 3-4、短坡技术跑、渐进 z2 长跑；基础期不排 Z5 大课",
+        PhaseType.BUILD: "阈值巡航 2k * 4-5、tempo 连续跑、MP 中长课、CV/10k 1k 组；按周轮换，不连续复制同一结构",
+        PhaseType.SPEED: "VO2max 1k 组、400m 短间歇、60-90s 短坡、5K 测试/控制跑；高区课型按周轮换",
+        PhaseType.PEAK: "MP 长跑不同结构（如后段 MP、分段 MP、连续 MP）、中周 MP、少量阈值保鲜；不每周复制同一 MP 模板",
+        PhaseType.TAPER: "短 MP 唤醒、少量 strides、比赛周节奏触感；不安排大容量质量课",
+        PhaseType.RECOVERY: "easy、mobility、力量维护；无质量课",
+    }
+    pool = pools.get(phase_type, pools[PhaseType.BASE])
+    return f"""\
+【核心课轮换（训练质量要求）】
+- 本阶段的质量课 / 长跑核心刺激必须逐周有进展和变化，**不要连续两周复制同一种主课结构**。
+- 允许的轮换池：{pool}。
+- 如果某周是 DELOAD/减量周，删除质量课；可保留 easy、mobility、力量维护，或只在 milestone 周安排低风险测试。
+- 每周仍只保留 1-2 个核心刺激，其余跑量用 z1-z2/easy 承接，不能为了轮换而增加额外硬课。
 """
 
 
@@ -220,7 +253,9 @@ def build_phase_system_prompt(
 - 按 is_deload 标记安放减量周：在标记为 DELOAD 的周**必须删除质量课**（这是硬性要求，不是建议），仅保留 easy + mobility/力量维护。
 - 保持 doctrine 规定的强度分布（三区占比），不要把质量集中到单周 spike。
 - 用逐周表注入的 volume_targets 预算命中每周目标周量；绝不自行编配速 / 里程。
+- 比赛周也要贴近逐周表目标周量：若 race 本身低于目标周量 2km 以上，安排 2-4km 赛前 shakeout/激活跑补足；不要用“比赛日不额外加跑”把整周周量压到 race distance。
 
+{_render_key_session_rotation(phase_type)}
 {WEEKLY_HARD_RULES}
 【必传上下文——本运动员真实数据，必须使用，不得编造】
 配速表（pace_targets，s/km，全阶段共用，用这些数字）：{pace_targets.render()}

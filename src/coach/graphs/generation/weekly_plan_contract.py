@@ -29,9 +29,10 @@ from .rule_filter import MAX_WEEKLY_RAMP_RATIO
 # gate it must satisfy — a drift-guard test asserts the two stay equal.
 WEEKLY_HARD_RULES = f"""\
 【每周安全硬约束——违反的周会被 rule_filter 自动拒绝、触发整阶段重做，务必一次满足】
-1. 周量渐进（weekly_progression）：每周跑步总里程 ≤ 上一周的 {MAX_WEEKLY_RAMP_RATIO:.2f} 倍\
-（即每周环比涨幅 ≤ {(MAX_WEEKLY_RAMP_RATIO - 1) * 100:.0f}%）。减量/恢复周往下走永远合规。\
-满足方式：按逐周表 target km 渐进，绝不单周跳涨。
+1. 周量渐进（weekly_progression）：普通负荷周跑步总里程 ≤ 上一个**负荷周**的 {MAX_WEEKLY_RAMP_RATIO:.2f} 倍\
+（即负荷周之间涨幅 ≤ {(MAX_WEEKLY_RAMP_RATIO - 1) * 100:.0f}%）。减量/恢复周往下走永远合规；\
+减量周后的回升与减量前的最近负荷周比较，不与减量谷底比较。满足方式：按逐周表 target km 渐进，\
+恢复周降 20-30%，恢复后回到不超过上一负荷周 10% 的训练量。
 2. 长跑占比（long_run_share）：当周最长一次跑 ≤ 当周跑步总里程的 35%（当周有 ≥2 次跑步时强制）。\
 满足方式：长跑里程不超过周量的 1/3，其余里程拆到 easy/质量日。
 3. 强度分布（intensity_distribution，80/20 极化）：高强度（Z4-Z5：VO2max/间歇，配速快于阈值）的\
@@ -47,6 +48,9 @@ WEEKLY_HARD_RULES = f"""\
 逐周表第 1 行的 target——该值已按上一阶段工作量×{MAX_WEEKLY_RAMP_RATIO:.2f} 算好，\
 超过会触发跨阶段 boundary 拒绝、整阶段重做。\
 满足方式：各周里程命中各自 target、不要上探超过；第 1 周宁可略低也不要踩着 target 上限往上凑。
+7. 目标周量命中（weekly_target_volume）：每周跑步总里程必须在逐周表 `目标周量` 的 ±1km 内，\
+不能自行多加或少排。满足方式：把 run session 的 `total_distance_m` 加总后对齐 target；\
+若分配后差距 >1km，调整 easy/shakeout 里程，而不是改变核心课强度。
 """
 
 

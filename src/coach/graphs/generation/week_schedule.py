@@ -13,20 +13,25 @@ The ramp character per phase is the codebase's authoritative spec — see the
 "训练负荷分布约束 (HARD)" and "Phase 与 Form 分布对应关系" tables in the project
 ``CLAUDE.md``:
 
-* **base / build / speed** (ramp-up): climb ``target_weekly_km`` ~6%/week toward
+* **base / build / speed** (ramp-up): climb ``target_weekly_km`` toward
   ``weekly_distance_km_high``, with a **3:1 deload** — every 4th week drops to
-  ~0.75× the prior week, then climbing resumes. Never exceed the high band.
+  ~0.75× the prior load week, then the next load week resumes from the most
+  recent load week instead of crawling up from the trough. Build/speed phases
+  target the high band by the end of each load block when feasible; long-run
+  milestones add a weekly-volume floor so the milestone can satisfy the 35%
+  longest-run safety cap. Never exceed the high band.
 * **peak**: hold near ``high`` with a tiny micro-drift (chronic plateaus).
 * **taper**: step **down** across the phase, ~−25% front → ~−45% by the final
   week off the peak-entry volume.
 * **recovery**: deload — step down from entry to low volume (chronic drops).
 * ``phase_type is None``: neutral ramp-up, treated base-like (documented fallback).
 
-**≤1.10×-safe (HARD invariant)**: consecutive ramp-UP weeks satisfy
-``week[i] <= 1.10 * week[i-1]`` so Stage-3a's
+**≤1.10×-safe (HARD invariant)**: consecutive load weeks satisfy
+``load_week[i] <= 1.10 * previous_load_week`` so Stage-3a's
 ``run_rule_filter.check_weekly_progression`` (cap 1.10×) never pre-fails on the
 descriptors emitted here. Deload / taper / recovery weeks step DOWN (always
-safe). When continuity applies, the first week is also held ≤1.10× of
+safe). The load week after a deload compares to the last load week, not the
+deload trough. When continuity applies, the first week is also held ≤1.10× of
 ``prev_phase_end_km`` — no phase-boundary spike.
 
 **Short-phase resolution** (the ≤1.10× vs 3:1-deload tension): the 3:1 deload
@@ -42,7 +47,7 @@ from __future__ import annotations
 import math
 from datetime import date, timedelta
 
-from stride_core.master_plan import Phase, PhaseType
+from stride_core.master_plan import Milestone, MilestoneType, Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
 
 from .rule_filter import MAX_WEEKLY_RAMP_RATIO, _total_run_distance_m
@@ -119,6 +124,11 @@ def _floor_1dp(x: float) -> float:
     return math.floor(x * 10) / 10
 
 
+def _ceil_1dp(x: float) -> float:
+    """Round ``x`` UP to 1 decimal place for target floors."""
+    return math.ceil(x * 10) / 10
+
+
 def _parse(d: str) -> date:
     return date.fromisoformat(d)
 
@@ -161,6 +171,109 @@ def _phase_label(phase: Phase) -> str:
     return "训练"
 
 
+def _is_rampup_deload_index(i: int) -> bool:
+    """Whether zero-based week index ``i`` is the planned 3:1 deload week."""
+    return (i + 1) % _DELOAD_CADENCE == 0
+
+
+def _previous_load_index(idx: int) -> int | None:
+    """Previous non-deload week index before ``idx`` under the 3:1 rhythm."""
+    for j in range(idx - 1, -1, -1):
+        if not _is_rampup_deload_index(j):
+            return j
+    return None
+
+
+def _longest_run_km_from_text(text: str | None) -> float | None:
+    """Best-effort long-run distance parser for milestone free text.
+
+    Only explicit ``km``/``公里`` units are considered. Bare race labels such as
+    ``5K`` are intentionally ignored so test-run milestones do not become
+    long-run volume floors.
+    """
+    if not text:
+        return None
+    import re
+
+    values = [
+        float(m.group(1))
+        for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(?:km|公里)", text, flags=re.I)
+    ]
+    return max(values) if values else None
+
+
+def _milestone_required_week_km(milestone: Milestone) -> float | None:
+    """Weekly km floor implied by a long-run milestone, if any."""
+    metric = (milestone.metric or "").lower()
+    candidates: list[float] = []
+    if metric in {"long_run_km", "race_pace_km"} and milestone.target_value:
+        candidates.append(float(milestone.target_value))
+    if milestone.type is MilestoneType.LONG_RUN or metric in {"long_run_km", "race_pace_km"}:
+        text_long = _longest_run_km_from_text(milestone.target)
+        if text_long is not None:
+            candidates.append(text_long)
+    if not candidates:
+        return None
+    # ``long_run_share`` caps the longest run at 35% of weekly running volume.
+    return max(candidates) / 0.35
+
+
+def _milestone_week_index(
+    milestone: Milestone,
+    *,
+    spans: list[tuple[date, date]],
+    phase: Phase,
+) -> int | None:
+    owned_ids = set(phase.milestone_ids or [])
+    if milestone.phase_id != phase.id and milestone.id not in owned_ids:
+        return None
+    try:
+        milestone_date = _parse(milestone.date)
+    except (TypeError, ValueError):
+        return None
+    for i, (mon, sun) in enumerate(spans):
+        if mon <= milestone_date <= sun:
+            return i
+    return None
+
+
+def _rampup_minimums(
+    n: int,
+    *,
+    high: float,
+    phase_type: PhaseType | None,
+    milestone_week_floors: dict[int, float] | None = None,
+) -> list[float]:
+    """Minimum targets for load weeks, back-propagated through load baselines."""
+    mins = [0.0 for _ in range(n)]
+
+    if phase_type in {PhaseType.BUILD, PhaseType.SPEED}:
+        for i in range(n):
+            if _is_rampup_deload_index(i):
+                continue
+            next_is_deload = i + 1 < n and _is_rampup_deload_index(i + 1)
+            if next_is_deload or i == n - 1:
+                mins[i] = max(mins[i], high)
+
+    for i, floor in (milestone_week_floors or {}).items():
+        if 0 <= i < n:
+            mins[i] = max(mins[i], min(_ceil_1dp(float(floor)), high))
+
+    # Back-propagate target floors through previous LOAD weeks, skipping the
+    # planned deload troughs. This keeps load-week progression ≤1.10×.
+    for i in range(n - 1, -1, -1):
+        if mins[i] <= 0:
+            continue
+        prev_i = _previous_load_index(i)
+        needed = mins[i] / _MAX_RAMP_RATIO
+        while prev_i is not None and needed > 0:
+            mins[prev_i] = max(mins[prev_i], min(_ceil_1dp(needed), high))
+            needed = mins[prev_i] / _MAX_RAMP_RATIO
+            prev_i = _previous_load_index(prev_i)
+
+    return [min(v, high) for v in mins]
+
+
 def _rampup_volumes(
     n: int,
     *,
@@ -168,10 +281,14 @@ def _rampup_volumes(
     high: float,
     start_km: float,
     first_week_cap: float | None = None,
+    minimums: list[float] | None = None,
 ) -> list[float]:
-    """Base/build/speed/None ramp: climb ~6%/week toward ``high`` with a 3:1
-    deload every 4th week. Each up-step is clamped to ``high`` and to the
-    ≤1.10× cap relative to the prior week; deload weeks step down (safe).
+    """Base/build/speed/None ramp with 3:1 load-week semantics.
+
+    Load weeks climb toward ``high`` and any milestone/phase floors while staying
+    ≤1.10× of the previous load week. Deload weeks drop from the prior load
+    week, and the next load week resumes from that same prior load week rather
+    than crawling up from the trough.
 
     ``first_week_cap`` (continuity ≤1.10× of the prior phase exit) is a HARD
     ceiling on week 1 that WINS over the band floor — see ``derive_phase_weeks``
@@ -179,26 +296,30 @@ def _rampup_volumes(
     (possibly sub-floor) first week under the same 1.10× cap, climbing back
     toward the band rather than jumping into it."""
     vols: list[float] = []
-    prev = start_km
+    prev_load = start_km
     for i in range(n):
-        idx = i + 1  # 1-based
         if i == 0:
             cur = start_km
-        elif idx % _DELOAD_CADENCE == 0:
-            # 3:1 deload — drop to ~0.75× the prior (climbing) week.
-            cur = prev * _DELOAD_FACTOR
+        elif _is_rampup_deload_index(i):
+            # 3:1 deload — drop from the prior LOAD week.
+            cur = prev_load * _DELOAD_FACTOR
         else:
-            cur = prev * _RAMPUP_STEP
+            cur = prev_load * _RAMPUP_STEP
             cur = min(cur, high)
-            # Belt-and-braces: never let a climb exceed the 1.10× cap.
-            cur = min(cur, prev * _MAX_RAMP_RATIO)
+            # Belt-and-braces: never let a load-week climb exceed the 1.10× cap.
+            cur = min(cur, prev_load * _MAX_RAMP_RATIO)
         # Keep volumes sane relative to the band (deload may dip below low) —
         # but the HARD ≤1.10× first-week cap (below) overrides this soft floor.
         cur = max(cur, low * 0.65)
+        if minimums and i < len(minimums):
+            cur = max(cur, minimums[i])
         if i == 0 and first_week_cap is not None:
             cur = min(cur, first_week_cap)
+        if i > 0 and not _is_rampup_deload_index(i):
+            cur = min(cur, prev_load * _MAX_RAMP_RATIO)
         vols.append(cur)
-        prev = cur
+        if not _is_rampup_deload_index(i):
+            prev_load = cur
     return vols
 
 
@@ -272,7 +393,10 @@ def _recovery_volumes(n: int, *, low: float, high: float, start_km: float) -> li
 
 
 def derive_phase_weeks(
-    phase: Phase, *, prev_phase_end_km: float | None = None
+    phase: Phase,
+    *,
+    prev_phase_end_km: float | None = None,
+    milestones: list[Milestone] | None = None,
 ) -> list[WeekMeta]:
     """Expand one master-plan ``Phase`` into ordered per-week ``WeekMeta``.
 
@@ -333,10 +457,31 @@ def derive_phase_weeks(
         # Continuity cap: never start the phase >1.10× the prior exit volume.
         if first_week_cap is not None:
             anchor = min(anchor, first_week_cap)
+        milestone_week_floors: dict[int, float] = {}
+        for milestone in milestones or []:
+            week_idx = _milestone_week_index(milestone, spans=spans, phase=phase)
+            if week_idx is None:
+                continue
+            required = _milestone_required_week_km(milestone)
+            if required is not None:
+                milestone_week_floors[week_idx] = max(
+                    milestone_week_floors.get(week_idx, 0.0), required
+                )
+        minimums = _rampup_minimums(
+            n,
+            high=high,
+            phase_type=pt,
+            milestone_week_floors=milestone_week_floors,
+        )
         # ``first_week_cap`` also threads into the ramp so its band floor can't
         # push week 1 back above the cap; weeks 2+ ramp from the capped week 1.
         vols = _rampup_volumes(
-            n, low=low, high=high, start_km=anchor, first_week_cap=first_week_cap
+            n,
+            low=low,
+            high=high,
+            start_km=anchor,
+            first_week_cap=first_week_cap,
+            minimums=minimums,
         )
     elif pt is PhaseType.PEAK:
         # Do NOT lift the anchor to ``low`` here: when the threaded working volume
@@ -388,9 +533,20 @@ def derive_phase_weeks(
     if emitted:
         if first_week_cap is not None:
             emitted[0] = min(emitted[0], _floor_1dp(first_week_cap))
-        for i in range(1, len(emitted)):
-            ceiling = _floor_1dp(emitted[i - 1] * _MAX_RAMP_RATIO)
-            emitted[i] = min(emitted[i], ceiling)
+        if pt in (PhaseType.BASE, PhaseType.BUILD, PhaseType.SPEED, None):
+            last_load = emitted[0]
+            for i in range(1, len(emitted)):
+                if _is_rampup_deload_index(i):
+                    adjacent_ceiling = _floor_1dp(emitted[i - 1] * _MAX_RAMP_RATIO)
+                    emitted[i] = min(emitted[i], adjacent_ceiling)
+                    continue
+                ceiling = _floor_1dp(last_load * _MAX_RAMP_RATIO)
+                emitted[i] = min(emitted[i], ceiling)
+                last_load = emitted[i]
+        else:
+            for i in range(1, len(emitted)):
+                ceiling = _floor_1dp(emitted[i - 1] * _MAX_RAMP_RATIO)
+                emitted[i] = min(emitted[i], ceiling)
 
     label = _phase_label(phase)
     out: list[WeekMeta] = []

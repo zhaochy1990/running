@@ -41,7 +41,10 @@ is imported, not reimplemented.
 from __future__ import annotations
 
 import logging
-from datetime import date as date_cls
+import math
+import re
+from dataclasses import replace
+from datetime import date as date_cls, timedelta
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -56,7 +59,7 @@ from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.tool_loop import run_tool_loop
 from coach.schemas import PaceTargets
 from stride_storage.sqlite.database import Database
-from stride_core.master_plan import Milestone, Phase, PhaseType
+from stride_core.master_plan import Milestone, MilestoneType, Phase, PhaseType
 from stride_core.plan_spec import WeeklyPlan
 from stride_core.timefmt import today_shanghai
 
@@ -87,6 +90,7 @@ def build_phase_week_specs(
     phase_type: PhaseType,
     week_metas: list[WeekMeta],
     level: float,
+    milestones: list[Milestone] | None = None,
     as_of: date_cls | None = None,
 ) -> tuple[PaceTargets, list[PhaseWeekSpec]]:
     """Build the ``(shared pace table, per-week PhaseWeekSpec list)`` for a phase.
@@ -157,7 +161,86 @@ def build_phase_week_specs(
         # (which is reserved for unparseable LLM responses and is caught +
         # retried by ``generate_specialist_phase``).
         raise ValueError("empty week_metas — nothing to generate")
+    milestone_long_runs = _milestone_long_run_by_folder(specs, list(milestones or []))
+    if milestone_long_runs:
+        specs = [
+            replace(
+                spec,
+                volume=_with_long_run_budget(
+                    spec.volume,
+                    long_run_km=milestone_long_runs.get(spec.week_folder, spec.volume.long_run_km),
+                ),
+            )
+            for spec in specs
+        ]
     return pace, specs
+
+
+def _parse_week_start(folder: str) -> date_cls | None:
+    try:
+        return date_cls.fromisoformat(str(folder)[:10])
+    except ValueError:
+        return None
+
+
+def _explicit_km_values(text: str | None) -> list[float]:
+    if not text:
+        return []
+    return [
+        float(m.group(1))
+        for m in re.finditer(r"(\d+(?:\.\d+)?)\s*(?:km|公里)", text, flags=re.I)
+    ]
+
+
+def _required_long_run_km(milestone: Milestone) -> float | None:
+    metric = (milestone.metric or "").lower()
+    candidates: list[float] = []
+    if metric in {"long_run_km", "race_pace_km"} and milestone.target_value:
+        candidates.append(float(milestone.target_value))
+    if milestone.type is MilestoneType.LONG_RUN or metric in {"long_run_km", "race_pace_km"}:
+        candidates.extend(_explicit_km_values(milestone.target))
+    return max(candidates) if candidates else None
+
+
+def _ceil_1dp(value: float) -> float:
+    return math.ceil(value * 10) / 10
+
+
+def _milestone_long_run_by_folder(
+    week_specs: list[PhaseWeekSpec], milestones: list[Milestone]
+) -> dict[str, float]:
+    by_folder: dict[str, float] = {}
+    for milestone in milestones:
+        required = _required_long_run_km(milestone)
+        if required is None:
+            continue
+        try:
+            mdate = date_cls.fromisoformat(milestone.date)
+        except (TypeError, ValueError):
+            continue
+        for spec in week_specs:
+            start = _parse_week_start(spec.week_folder)
+            if start is None or not (start <= mdate <= start + timedelta(days=6)):
+                continue
+            cap = spec.target_weekly_km * 0.35
+            adjusted = min(_ceil_1dp(required), math.floor(cap * 10) / 10)
+            by_folder[spec.week_folder] = max(by_folder.get(spec.week_folder, 0.0), adjusted)
+            break
+    return by_folder
+
+
+def _with_long_run_budget(volume: Any, *, long_run_km: float) -> Any:
+    current = float(volume.long_run_km)
+    target = max(current, float(long_run_km))
+    if target <= current:
+        return volume
+    easy = max(float(volume.easy_km) - (target - current), 0.0)
+    return volume.model_copy(
+        update={
+            "long_run_km": round(target, 1),
+            "easy_km": round(easy, 1),
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +343,12 @@ def generate_specialist_phase(
     # 1. Open the user DB once and build the shared pace table + per-week specs.
     db = Database(user=user_id)
     pace_targets, week_specs = build_phase_week_specs(
-        db, goal=goal, phase_type=phase_type, week_metas=week_metas, level=level
+        db,
+        goal=goal,
+        phase_type=phase_type,
+        week_metas=week_metas,
+        level=level,
+        milestones=list(milestones or []),
     )
 
     # 2. Render the pre-rendered context block (continuity + prior tail + injuries).
@@ -491,11 +579,21 @@ def generate_phase_validated(
     )
     z45_threshold = pace_targets.threshold_pace_s_km
 
-    # prev_week_km per week i = the DETERMINISTIC target of week i-1 (week 0 →
-    # None). Computed up front from the metas (independent of generation).
-    prev_km_for: list[float | None] = [None] + [
-        float(m.target_weekly_km) for m in metas[:-1]
-    ]
+    # prev_week_km per week i = the prior deterministic LOAD target. Planned
+    # deloads are observable as target dips in the metas; the following load
+    # week is compared to the last load target, not the deload trough. This
+    # mirrors the season/master-plan volume rules and avoids dropping valid
+    # post-deload rebounds.
+    prev_km_for: list[float | None] = []
+    last_load_target: float | None = None
+    prev_target: float | None = None
+    for i, meta in enumerate(metas):
+        current_target = float(meta.target_weekly_km)
+        is_deload = prev_target is not None and current_target < prev_target
+        prev_km_for.append(prev_target if is_deload else last_load_target)
+        if not is_deload:
+            last_load_target = current_target
+        prev_target = current_target
 
     # 2. Bounded attempt loop. First attempt carries the EXTERNAL feedback (the
     #    reviewer's issues, or None); later attempts carry the prior attempt's
@@ -556,6 +654,7 @@ def generate_phase_validated(
             report = run_rule_filter(
                 wk,
                 prev_week_km=prev_km_for[i],
+                target_weekly_km=float(metas[i].target_weekly_km),
                 injuries=injuries or None,
                 z45_pace_threshold_s_km=z45_threshold,
             )

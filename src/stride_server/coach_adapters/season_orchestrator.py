@@ -71,18 +71,26 @@ turn derives km via ``rule_filter._total_run_distance_m``) — never hand-rolled
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+from datetime import date as date_cls, timedelta
 import logging
+import math
 
 from coach.graphs.generation.season_rule_filter import (
     SeasonRuleReport,
     run_season_rule_filter,
 )
+from coach.graphs.generation.rule_filter import MAX_WEEKLY_RAMP_RATIO
 from coach.graphs.generation.week_schedule import (
     derive_phase_weeks,
     representative_working_km,
 )
+from coach.graphs.generation.weekly_prompt import WeekMeta
 from coach.schemas import PhaseReview, PhaseWeeks, SeasonPlanBundle
-from stride_core.master_plan import MasterPlan, Milestone, Phase
+from stride_core.master_plan import MasterPlan, MasterPlanWeek, Milestone, Phase
+from stride_core.models import RUN_SPORT_SQL_LIST
+from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_storage.sqlite.database import Database
 
 from ..coach_runtime import get_generator_model
 from .phase_review_adapter import review_phase
@@ -137,6 +145,316 @@ def _phase_exit_km(weeks: list[dict]) -> float | None:
     return representative_working_km(weeks)
 
 
+def _phase_label(phase: Phase) -> str:
+    if phase.name:
+        return phase.name
+    if phase.phase_type is not None:
+        return phase.phase_type.value
+    return "训练"
+
+
+def _week_folder(week_start: date_cls, phase_week_index: int) -> str:
+    week_end = week_start + timedelta(days=6)
+    return f"{week_start.isoformat()}_{week_end.strftime('%m-%d')}(W{phase_week_index})"
+
+
+def _master_week_target_km(week: MasterPlanWeek) -> float:
+    high = float(week.target_weekly_km_high or 0.0)
+    if high > 0:
+        return high
+    return float(week.target_weekly_km_low or 0.0)
+
+
+def _master_week_metas_for_phase(
+    phase: Phase, master_weeks: list[MasterPlanWeek]
+) -> list[WeekMeta]:
+    """Convert S1's week-level skeleton into S2 ``WeekMeta`` rows.
+
+    ``MasterPlan.weeks`` is the strategic source of truth when present. The
+    older deterministic phase-band expander remains a fallback for legacy plans
+    that have no week skeleton.
+    """
+    owned: list[MasterPlanWeek] = [w for w in master_weeks if w.phase_id == phase.id]
+    if not owned:
+        return []
+    owned.sort(key=lambda w: (w.week_index, w.week_start))
+    label = _phase_label(phase)
+    n = len(owned)
+    out: list[WeekMeta] = []
+    for i, week in enumerate(owned, start=1):
+        try:
+            week_start = date_cls.fromisoformat(week.week_start)
+        except (TypeError, ValueError):
+            continue
+        out.append(
+            WeekMeta(
+                phase_position=f"{label} week {i}/{n}",
+                week_folder=_week_folder(week_start, i),
+                target_weekly_km=round(_master_week_target_km(week), 1),
+            )
+        )
+    return out
+
+
+def _resolve_phase_week_metas(
+    phase: Phase,
+    *,
+    prev_phase_end_km: float | None,
+    milestones: list[Milestone],
+    master_weeks: list[MasterPlanWeek],
+) -> list[WeekMeta]:
+    from_master = _master_week_metas_for_phase(phase, master_weeks)
+    if from_master:
+        return from_master
+    return derive_phase_weeks(
+        phase,
+        prev_phase_end_km=prev_phase_end_km,
+        milestones=milestones,
+    )
+
+
+def _float_from_mapping(raw: object, *keys: str) -> float | None:
+    if not isinstance(raw, dict):
+        return None
+    for key in keys:
+        value = raw.get(key)
+        if value in (None, ""):
+            continue
+        try:
+            out = float(value)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(out):
+            return out
+    return None
+
+
+def _floor_1dp(value: float) -> float:
+    return math.floor((float(value) + 1e-9) * 10.0) / 10.0
+
+
+def _first_week_start(master_plan: MasterPlan) -> date_cls | None:
+    starts: list[date_cls] = []
+    for week in master_plan.weeks or master_plan.weekly_key_sessions or []:
+        try:
+            starts.append(date_cls.fromisoformat(week.week_start))
+        except (TypeError, ValueError):
+            continue
+    if starts:
+        return min(starts)
+    for phase in master_plan.phases:
+        try:
+            starts.append(date_cls.fromisoformat(phase.start_date))
+        except (TypeError, ValueError):
+            continue
+    return min(starts) if starts else None
+
+
+@dataclass(frozen=True)
+class _ActualExecutionBaseline:
+    last_week_km: float
+    last_week_dose: float | None = None
+    acute_load: float | None = None
+    chronic_load: float | None = None
+
+
+def _last_completed_week_actual(
+    user_id: str, first_week_start: date_cls
+) -> _ActualExecutionBaseline | None:
+    prev_start = first_week_start - timedelta(days=7)
+    prev_end = first_week_start - timedelta(days=1)
+    try:
+        db = Database(user=user_id)
+        km_row = db._conn.execute(
+            f"""
+            SELECT COALESCE(SUM(
+                CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END
+            ), 0.0) AS total_km
+            FROM activities
+            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
+              AND {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
+            """,
+            (prev_start.isoformat(), prev_end.isoformat()),
+        ).fetchone()
+        dose_row = db._conn.execute(
+            """
+            SELECT COALESCE(SUM(training_dose), 0.0) AS total_dose
+            FROM daily_training_load
+            WHERE date BETWEEN ? AND ?
+            """,
+            (prev_start.isoformat(), prev_end.isoformat()),
+        ).fetchone()
+        load_row = db._conn.execute(
+            """
+            SELECT acute_load, chronic_load
+            FROM daily_training_load
+            WHERE date BETWEEN ? AND ?
+              AND acute_load IS NOT NULL
+              AND chronic_load IS NOT NULL
+            ORDER BY date DESC
+            LIMIT 1
+            """,
+            (prev_start.isoformat(), prev_end.isoformat()),
+        ).fetchone()
+    except Exception as exc:  # noqa: BLE001 — execution cap is best-effort context
+        logger.warning("season: failed to read last completed week actual load: %s", exc)
+        return None
+    if not km_row:
+        return None
+    km = float(km_row[0] or 0.0)
+    if km <= 0:
+        return None
+    dose = float(dose_row[0] or 0.0) if dose_row else 0.0
+    acute = float(load_row[0]) if load_row and load_row[0] is not None else None
+    chronic = float(load_row[1]) if load_row and load_row[1] is not None else None
+    return _ActualExecutionBaseline(
+        last_week_km=round(km, 1),
+        last_week_dose=round(dose, 1) if dose > 0 else None,
+        acute_load=round(acute, 1) if acute is not None else None,
+        chronic_load=round(chronic, 1) if chronic is not None else None,
+    )
+
+
+def _last_completed_week_actual_km(user_id: str, first_week_start: date_cls) -> float | None:
+    baseline = _last_completed_week_actual(user_id, first_week_start)
+    return baseline.last_week_km if baseline is not None else None
+
+
+def _readiness_adjusted_first_ratio(
+    requested_ratio: float,
+    *,
+    last_week_km: float,
+    last_week_dose: float | None,
+    acute_load: float | None,
+    chronic_load: float | None,
+    max_end_ratio: float = 1.25,
+) -> float:
+    if acute_load is None or chronic_load is None or chronic_load <= 0:
+        return requested_ratio
+    if last_week_dose is None or last_week_dose <= 0 or last_week_km <= 0:
+        return requested_ratio
+
+    # Predict the end-of-week ATL/CTL after executing a constant daily planned
+    # dose. Keep the final ratio out of overreach (>1.25), not just the first
+    # day's ratio. This mirrors STRIDE PMC's 7/42-day EWMA constants.
+    k_acute = 1.0 - math.exp(-1.0 / 7.0)
+    k_chronic = 1.0 - math.exp(-1.0 / 42.0)
+
+    def _end_ratio(weekly_dose: float) -> float:
+        acute = float(acute_load)
+        chronic = float(chronic_load)
+        daily = weekly_dose / 7.0
+        for _ in range(7):
+            acute += k_acute * (daily - acute)
+            chronic += k_chronic * (daily - chronic)
+        return acute / chronic if chronic > 0 else float("inf")
+
+    proposed_dose = last_week_dose * requested_ratio
+    if _end_ratio(proposed_dose) <= max_end_ratio:
+        return requested_ratio
+
+    lo = 0.0
+    hi = proposed_dose
+    for _ in range(40):
+        mid = (lo + hi) / 2.0
+        if _end_ratio(mid) <= max_end_ratio:
+            lo = mid
+        else:
+            hi = mid
+    dose_ratio = lo / last_week_dose if last_week_dose > 0 else requested_ratio
+    return max(0.0, min(requested_ratio, dose_ratio))
+
+
+@dataclass
+class _ActualExecutionCapper:
+    """Safety cap for future week targets after recent under-execution."""
+
+    last_load_km: float
+    last_week_dose: float | None = None
+    acute_load: float | None = None
+    chronic_load: float | None = None
+    first_ramp_ratio: float = 1.15
+    planned_ramp_ratio: float = MAX_WEEKLY_RAMP_RATIO
+    prev_target_km: float | None = None
+    _used_actual_baseline: bool = False
+
+    @classmethod
+    def from_context(
+        cls, context: dict, *, master_plan: MasterPlan
+    ) -> "_ActualExecutionCapper | None":
+        raw = context.get("actual_execution") or context.get("execution_adjustment")
+        baseline = _float_from_mapping(
+            raw,
+            "last_week_km",
+            "last_actual_week_km",
+            "actual_last_week_km",
+            "completed_week_km",
+        )
+        last_week_dose = _float_from_mapping(
+            raw,
+            "last_week_dose",
+            "last_week_training_dose",
+            "last_actual_week_dose",
+            "completed_week_dose",
+            "training_dose",
+        )
+        acute_load = _float_from_mapping(raw, "acute_load", "last_acute_load", "current_acute_load")
+        chronic_load = _float_from_mapping(raw, "chronic_load", "last_chronic_load", "current_chronic_load")
+        if baseline is None:
+            user_id = str(context.get("user_id") or master_plan.user_id or "")
+            first = _first_week_start(master_plan)
+            if user_id and first is not None:
+                actual = _last_completed_week_actual(user_id, first)
+                if actual is not None:
+                    baseline = actual.last_week_km
+                    last_week_dose = last_week_dose if last_week_dose is not None else actual.last_week_dose
+                    acute_load = acute_load if acute_load is not None else actual.acute_load
+                    chronic_load = chronic_load if chronic_load is not None else actual.chronic_load
+        if baseline is None or baseline <= 0:
+            return None
+        ratio = _float_from_mapping(raw, "max_ramp_ratio", "ramp_ratio") or 1.15
+        # The requested safety envelope is 10-15%; never allow a context value to
+        # widen the first rebound beyond 15%. Subsequent generated weeks still
+        # obey the repository's weekly progression hard gate (10%).
+        ratio = min(max(ratio, 1.0), 1.15)
+        ratio = _readiness_adjusted_first_ratio(
+            ratio,
+            last_week_km=float(baseline),
+            last_week_dose=last_week_dose,
+            acute_load=acute_load,
+            chronic_load=chronic_load,
+        )
+        return cls(
+            last_load_km=round(baseline, 1),
+            last_week_dose=round(last_week_dose, 1) if last_week_dose is not None else None,
+            acute_load=round(acute_load, 1) if acute_load is not None else None,
+            chronic_load=round(chronic_load, 1) if chronic_load is not None else None,
+            first_ramp_ratio=ratio,
+        )
+
+    def apply(self, metas: list[WeekMeta]) -> list[WeekMeta]:
+        capped: list[WeekMeta] = []
+        for meta in metas:
+            target = float(meta.target_weekly_km)
+            is_deload = self.prev_target_km is not None and target < self.prev_target_km
+            if is_deload:
+                emitted = target
+            else:
+                ratio = (
+                    self.first_ramp_ratio
+                    if not self._used_actual_baseline
+                    else self.planned_ramp_ratio
+                )
+                ceiling = _floor_1dp(self.last_load_km * ratio)
+                emitted = min(target, ceiling) if ceiling > 0 else target
+                self.last_load_km = emitted
+                self._used_actual_baseline = True
+            emitted = round(emitted, 1)
+            capped.append(replace(meta, target_weekly_km=emitted))
+            self.prev_target_km = emitted
+        return capped
+
+
 def _review_feedback(review: PhaseReview | None) -> str | None:
     """Render a prior attempt's ``PhaseReview`` into a regen feedback string.
 
@@ -176,6 +494,7 @@ def _review_feedback(review: PhaseReview | None) -> str | None:
 def _generate_one_phase(
     phase: Phase,
     *,
+    week_metas: list[WeekMeta],
     prev_phase_end_km: float | None,
     context: dict,
     injuries: list[str],
@@ -195,7 +514,6 @@ def _generate_one_phase(
     belt-and-braces outer guard the orchestration contract requires).
     """
     try:
-        week_metas = derive_phase_weeks(phase, prev_phase_end_km=prev_phase_end_km)
         # Phase-at-once generation: one LLM call for the whole phase, rule-gated
         # per week, regen-with-rule-feedback, strays dropped. Takes WeekMeta
         # objects directly (no dict conversion). ``feedback`` threads the prior
@@ -249,6 +567,7 @@ def _fallback_phase_type(phase: Phase):
 def _best_phase_attempt(
     phase: Phase,
     *,
+    week_metas: list[WeekMeta],
     prev_phase_end_km: float | None,
     context: dict,
     injuries: list[str],
@@ -282,6 +601,7 @@ def _best_phase_attempt(
             )
         pw = _generate_one_phase(
             phase,
+            week_metas=week_metas,
             prev_phase_end_km=prev_phase_end_km,
             context=context,
             injuries=injuries,
@@ -356,6 +676,9 @@ def generate_season(
     """
     injuries = list(injuries or [])
     milestones = list(master_plan.milestones or [])
+    master_weeks = list(master_plan.weeks or master_plan.weekly_key_sessions or [])
+    actual_capper = _ActualExecutionCapper.from_context(context, master_plan=master_plan)
+    phase_week_metas: dict[str, list[WeekMeta]] = {}
 
     # --- Pass 1: inline per-phase generation with review-driven regen. -------
     n_phases = len(master_plan.phases)
@@ -369,6 +692,15 @@ def generate_season(
     prev_exit_km: float | None = None
     for i, phase in enumerate(master_plan.phases):
         owned = _phase_milestones(phase, milestones)
+        week_metas = _resolve_phase_week_metas(
+            phase,
+            prev_phase_end_km=prev_exit_km,
+            milestones=owned,
+            master_weeks=master_weeks,
+        )
+        if actual_capper is not None:
+            week_metas = actual_capper.apply(week_metas)
+        phase_week_metas[phase.id] = week_metas
         logger.info(
             "season: ▶ phase %d/%d %s — generating (prev_working=%s)",
             i + 1,
@@ -378,6 +710,7 @@ def generate_season(
         )
         pw = _best_phase_attempt(
             phase,
+            week_metas=week_metas,
             prev_phase_end_km=prev_exit_km,
             context=context,
             injuries=injuries,
@@ -452,8 +785,17 @@ def generate_season(
             idx = pos_by_id[pid]
             upstream_exit = _upstream_exit_km(phase_results, idx)
             owned = _phase_milestones(phase, milestones)
+            week_metas = phase_week_metas.get(phase.id)
+            if week_metas is None:
+                week_metas = _resolve_phase_week_metas(
+                    phase,
+                    prev_phase_end_km=upstream_exit,
+                    milestones=owned,
+                    master_weeks=master_weeks,
+                )
             regen = _best_phase_attempt(
                 phase,
+                week_metas=week_metas,
                 prev_phase_end_km=upstream_exit,
                 context=context,
                 injuries=injuries,

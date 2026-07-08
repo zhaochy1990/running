@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 
 import stride_server.coach_adapters.phase_review_adapter as adapter_mod
-from stride_server.coach_adapters.phase_review_adapter import review_phase
+from stride_server.coach_adapters.phase_review_adapter import _render_milestone_summary, review_phase
 from stride_core.master_plan import Milestone, MilestoneType, Phase, PhaseType
 
 
@@ -200,6 +200,16 @@ def test_prompt_carries_doctrine_and_milestone(fake_llm):
     assert "1140" in system_prompt
     # the generated week summary
     assert "2026-06-15_06-21(W1)" in system_prompt
+
+
+def test_milestone_summary_includes_date_type_and_metric():
+    summary = _render_milestone_summary([_milestone()])
+
+    assert summary is not None
+    assert "2026-06-28" in summary
+    assert "test_run" in summary
+    assert "race_time_s_5k <= 1140" in summary
+    assert "5k sub-19:00" in summary
 
 
 def test_milestones_filtered_to_this_phase(fake_llm):

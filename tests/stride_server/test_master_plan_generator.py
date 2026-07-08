@@ -385,6 +385,17 @@ class TestParseLlmOutput:
         assert result is not None
         assert result["schema"] == "weekly-plan/master/v1"
 
+    def test_layer3_uses_first_complete_json_object_when_tail_has_extra_brace(self):
+        """Phase-at-once generation sometimes returns a valid JSON envelope
+        followed by one stray closing brace. The parser should recover the
+        first complete object instead of slicing through the last brace and
+        turning it into ``Extra data``.
+        """
+        raw = _VALID_JSON_STR + "}"
+        result = _parse_llm_output(raw)
+        assert result is not None
+        assert result["schema"] == "weekly-plan/master/v1"
+
     def test_sentinel_takes_priority_over_fenced(self):
         """Sentinel layer is tried first; fenced block is ignored."""
         sentinel_payload = {"schema": "weekly-plan/master/v1", "plan": {"start_date": "2026-01-01", "end_date": "2026-12-31", "phases": [], "milestones": [], "training_principles": []}}
@@ -896,6 +907,53 @@ class TestBuildMasterPlan:
 
         assert plan.weeks[0].key_sessions[0].distance_km == 14
         assert plan.milestones[0].target_value == 14
+
+    def test_post_recovery_load_week_is_not_left_at_recovery_trough(self):
+        data = json.loads(_VALID_JSON_STR)
+        data["plan"]["phases"] = [
+            {
+                "name": "峰值期",
+                "phase_type": "peak",
+                "start_date": "2026-09-07",
+                "end_date": "2026-10-04",
+                "focus": "峰值专项",
+                "weekly_distance_km_low": 80,
+                "weekly_distance_km_high": 112,
+                "key_session_types": ["long_run", "race_pace"],
+            }
+        ]
+        data["plan"]["weeks"] = [
+            {
+                "week_index": 1,
+                "week_start": "2026-09-07",
+                "phase_name": "峰值期",
+                "target_weekly_km_low": 104,
+                "target_weekly_km_high": 112,
+                "key_sessions": [{"type": "long_run", "distance_km": 30}],
+            },
+            {
+                "week_index": 2,
+                "week_start": "2026-09-14",
+                "phase_name": "峰值期",
+                "target_weekly_km_low": 74,
+                "target_weekly_km_high": 79,
+                "is_recovery_week": True,
+                "key_sessions": [],
+            },
+            {
+                "week_index": 3,
+                "week_start": "2026-09-21",
+                "phase_name": "峰值期",
+                "target_weekly_km_low": 78,
+                "target_weekly_km_high": 84,
+                "key_sessions": [{"type": "long_run", "distance_km": 28}],
+            },
+        ]
+
+        plan = _build_master_plan(data, USER_ID, GOAL)
+
+        assert plan.weeks[2].target_weekly_km_high == 100.8
+        assert plan.weeks[2].target_weekly_km_low == 94.8
 
     def test_5k_peak_nutrition_avoids_marathon_fueling_language(self):
         data = json.loads(_VALID_JSON_STR)
@@ -1851,6 +1909,13 @@ class TestPromptRegression:
         assert "本周期60-70km，下周期80km，再后周期90+km" in prompt
         assert "Tune-up/test weeks count as load" in prompt
         assert "74 -> recovery -> 89" in prompt
+        assert "20-30% cut" in prompt
+        assert "not 70-80% of phase lower bound" in prompt
+        assert "phase's lower weekly-volume bound" not in prompt
+        assert "previous load week before recovery" in prompt
+        assert "75 -> 56-60 recovery -> 75-82" in prompt
+        assert "recovery/taper do not reset budget" in prompt
+        assert "75 -> 56-60" in prompt
         assert "not 82/89" in prompt
         assert "about 30-35km" in prompt
         assert "not <30 unless current load forces it" in prompt
@@ -2040,6 +2105,39 @@ class TestPromptIncludesCurrentPhase:
             today="2026-06-16", current_phase=CurrentPhaseContext(source="unknown"),
         )
         assert "Recommended start phase" not in prompt
+
+    def test_explicit_season_start_disables_completed_lead_in_authorization(self):
+        from coach.schemas import CurrentPhaseContext
+        from stride_core.master_plan import PhaseType
+
+        cp = CurrentPhaseContext(
+            source="inferred",
+            current_phase_type=PhaseType.BUILD,
+            recommended_entry_phase=PhaseType.BUILD,
+            completed_aerobic_weeks=12,
+            confidence="high",
+            rationale="season replay starts from a fixed May window",
+        )
+
+        prompt = _full_prompt(
+            goal={
+                "race_distance": "FM",
+                "race_date": "2026-10-18",
+                "season_start": "2026-05-04",
+                "as_of_date": "2026-05-04",
+            },
+            profile=None,
+            history_summary="h",
+            fitness_state={"summary": "s"},
+            today="2026-07-07",
+            current_phase=cp,
+        )
+
+        assert "Recommended start phase: build" in prompt
+        assert "Do NOT emit completed lead-in phases" in prompt
+        assert "Keep completed lead-in phases" not in prompt
+        assert "is_completed: true" not in prompt
+        assert "`weeks[0].week_start` MUST equal `2026-05-04`" in prompt
 
 
 class TestMacroCycleGuidance:
@@ -2707,6 +2805,67 @@ class TestLoadMasterContextDoubleBaseline:
         assert _compute_bmi(70.0, None) is None
         assert _compute_bmi(None, 175.0) is None
         assert _compute_bmi(70.0, 0) is None
+
+    def test_goal_as_of_date_anchors_context_queries(self, monkeypatch):
+        """Replay generation must use the frozen as_of_date for DB-derived
+        context, not today's wall clock. Otherwise a May replay can leak July
+        fitness/history into the prompt while only the visible date is frozen.
+        """
+        from datetime import date as date_cls
+
+        seen: dict[str, object] = {}
+
+        class _Db:
+            pass
+
+        def _history(uid, *, as_of=None):
+            seen["history_as_of"] = as_of
+            return {"total_activities": 0, "weekly_profile": []}
+
+        def _fitness(uid, *, as_of=None):
+            seen["fitness_as_of"] = as_of
+            return {"summary": "fitness"}
+
+        monkeypatch.setattr(adapter_mod, "_query_history", _history)
+        monkeypatch.setattr(adapter_mod, "_query_fitness_state", _fitness)
+        monkeypatch.setattr(adapter_mod, "_load_pb_seconds", lambda db: {})
+
+        def _body(db, profile, *, as_of=None):
+            seen["body_as_of"] = as_of
+            return None
+
+        monkeypatch.setattr(adapter_mod, "_load_body_composition", _body)
+        monkeypatch.setattr(adapter_mod, "_format_body_composition_summary", lambda bc: "body")
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: _Db())
+
+        def _continuity(db, *, goal, profile, as_of):
+            seen["continuity_as_of"] = as_of
+            return None
+
+        def _phase(db, *, user_id, goal, profile, as_of, continuity, cross_validate_with_llm):
+            seen["phase_as_of"] = as_of
+            return None
+
+        monkeypatch.setattr(adapter_mod, "analyze_continuity", _continuity)
+        monkeypatch.setattr(adapter_mod, "detect_current_phase", _phase)
+
+        adapter_mod.load_master_context(
+            {
+                "user_id": USER_ID,
+                "job_id": "",
+                "input_payload": {
+                    "goal": {**GOAL, "as_of_date": "2026-05-19"},
+                    "profile": PROFILE,
+                },
+            }
+        )
+
+        frozen = date_cls(2026, 5, 19)
+        assert seen["history_as_of"] == frozen
+        assert seen["fitness_as_of"] == frozen
+        assert seen["continuity_as_of"] == frozen
+        assert seen["phase_as_of"] == frozen
+        assert seen["body_as_of"] == frozen
 
 
 # ---------------------------------------------------------------------------

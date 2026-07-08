@@ -175,6 +175,54 @@ def test_volume_arc_within_phase_spike_fails():
     assert arc[0].details["phase_id"] == "p1"
 
 
+def test_volume_arc_post_deload_rebound_uses_prior_load_week():
+    bundle = _bundle(
+        [
+            _phase(
+                "p1",
+                PhaseType.BUILD,
+                [
+                    _week("2026-05-04", 80, folder="w1"),
+                    _week("2026-05-11", 86, folder="w2"),
+                    _week("2026-05-18", 64, folder="w3"),  # recovery dip
+                    _week("2026-05-25", 88, folder="w4"),  # 1.02x vs 86
+                ],
+            ),
+        ]
+    )
+    mp = _master_plan([_mp_phase("p1", PhaseType.BUILD)], [])
+
+    report = run_season_rule_filter(bundle, mp)
+
+    assert not any(v.rule == "volume_arc" for v in report.errors()), [
+        v.message for v in report.errors()
+    ]
+
+
+def test_volume_arc_post_deload_jump_past_prior_load_still_fails():
+    bundle = _bundle(
+        [
+            _phase(
+                "p1",
+                PhaseType.BUILD,
+                [
+                    _week("2026-05-04", 80, folder="w1"),
+                    _week("2026-05-11", 86, folder="w2"),
+                    _week("2026-05-18", 64, folder="w3"),  # recovery dip
+                    _week("2026-05-25", 98, folder="w4"),  # 1.14x vs 86
+                ],
+            ),
+        ]
+    )
+    mp = _master_plan([_mp_phase("p1", PhaseType.BUILD)], [])
+
+    report = run_season_rule_filter(bundle, mp)
+
+    arc = [v for v in report.errors() if v.rule == "volume_arc"]
+    assert arc, "expected a volume_arc error for a jump past the prior load week"
+    assert arc[0].details["previous_load_km"] == 86
+
+
 def test_volume_arc_phase_boundary_spike_reported_via_phase_transition():
     # phase 2 week 1 (66km) = 1.5x phase 1's last week (44km) → boundary spike.
     # By design (documented in season_rule_filter), boundary spikes are reported

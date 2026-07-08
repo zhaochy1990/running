@@ -247,6 +247,9 @@ def test_phase_prompt_carries_weekly_hard_rules_block():
     assert "休息日" in prompt
     # 5. injury_conflict — injury-contraindicated strength
     assert "伤病" in prompt
+    # target volume — generated weekly km must stay within 1km of the injected target
+    assert "weekly_target_volume" in prompt
+    assert "1km" in prompt
 
 
 @pytest.mark.parametrize("phase", list(PhaseType))
@@ -350,6 +353,23 @@ def test_phase_prompt_carries_milestone_block_when_present():
     assert "朝本阶段 milestone 目标距离推进（见 doctrine）" not in prompt
 
 
+def test_phase_prompt_requires_concrete_week_session_for_each_milestone():
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.BUILD,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+        milestone_summary="单腿提踵25次+下台阶稳（calf_raise_reps >= 25）",
+    )
+
+    assert "每个 milestone" in prompt
+    assert "日期所在自然周" in prompt
+    assert "具体 session" in prompt
+    assert "strength_test" in prompt
+    assert "目标动作" in prompt
+    assert "测试标准" in prompt
+
+
 def test_phase_prompt_omits_milestone_block_when_absent():
     """``milestone_summary=None`` → no 【本阶段 milestone】 block, no dangling
     label. The holistic block's milestone-free fallback wording still appears.
@@ -389,6 +409,38 @@ def test_phase_prompt_deload_quality_removal_is_emphatic():
         context_block="",
     )
     assert "必须删除质量课" in prompt
+
+
+def test_phase_prompt_carries_key_session_rotation_guard():
+    """The phase-at-once prompt must prevent the generator from repeating the
+    same quality workout pattern week after week. This is a phase-level quality
+    requirement, not a deterministic safety gate.
+    """
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.SPEED,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+    )
+    assert "核心课轮换" in prompt
+    assert "连续两周" in prompt
+    assert "1k" in prompt
+    assert "400m" in prompt
+    assert "坡" in prompt
+    assert "测试" in prompt
+
+
+def test_phase_prompt_race_week_still_targets_master_weekly_volume():
+    prompt = build_phase_system_prompt(
+        phase_type=PhaseType.TAPER,
+        week_specs=_week_specs(),
+        pace_targets=_pace_targets(),
+        context_block="",
+    )
+
+    assert "比赛周也要贴近逐周表目标周量" in prompt
+    assert "shakeout" in prompt
+    assert "race distance" in prompt
 
 
 # ---------------------------------------------------------------------------

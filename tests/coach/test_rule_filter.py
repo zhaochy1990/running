@@ -213,6 +213,51 @@ def test_no_prev_week_km_skips_progression_rule():
     assert not any(v.rule == "weekly_progression" for v in report.errors())
 
 
+def test_weekly_target_volume_over_master_target_fails():
+    plan = _plan_dict(
+        [
+            _minimal_run_session("2026-05-11", 28000),
+            _minimal_run_session("2026-05-13", 26000),
+            _minimal_run_session("2026-05-15", 26000),
+            _rest_session("2026-05-16"),
+        ]
+    )
+
+    report = run_rule_filter(plan, target_weekly_km=78.0)
+
+    assert any(v.rule == "weekly_target_volume" for v in report.errors())
+
+
+def test_weekly_target_volume_allows_rounding_tolerance():
+    plan = _plan_dict(
+        [
+            _minimal_run_session("2026-05-11", 27000),
+            _minimal_run_session("2026-05-13", 26000),
+            _minimal_run_session("2026-05-15", 25900),
+            _rest_session("2026-05-16"),
+        ]
+    )
+
+    report = run_rule_filter(plan, target_weekly_km=78.0)
+
+    assert not any(v.rule == "weekly_target_volume" for v in report.errors())
+
+
+def test_weekly_target_volume_under_master_target_fails():
+    plan = _plan_dict(
+        [
+            _minimal_run_session("2026-05-11", 26000),
+            _minimal_run_session("2026-05-13", 25000),
+            _minimal_run_session("2026-05-15", 25000),
+            _rest_session("2026-05-16"),
+        ]
+    )
+
+    report = run_rule_filter(plan, target_weekly_km=78.0)
+
+    assert any(v.rule == "weekly_target_volume" for v in report.errors())
+
+
 # ---------------------------------------------------------------------------
 # Athlete-relative Z4-Z5 threshold (Stage-3a Task 0)
 # ---------------------------------------------------------------------------

@@ -389,7 +389,15 @@ def _expected_total_weeks(mp: MasterPlan) -> int:
     total = 0
     prev: float | None = None
     for phase in mp.phases:
-        metas = derive_phase_weeks(phase, prev_phase_end_km=prev)
+        owned_ids = set(phase.milestone_ids or [])
+        owned_milestones = [
+            m for m in mp.milestones if m.phase_id == phase.id or m.id in owned_ids
+        ]
+        metas = derive_phase_weeks(
+            phase,
+            prev_phase_end_km=prev,
+            milestones=owned_milestones,
+        )
         total += len(metas)
         if metas:
             prev = max(m.target_weekly_km for m in metas)
@@ -472,8 +480,12 @@ def test_season_integration_all_weeks_rule_clean(db, monkeypatch):
     # how the season is actually generated.
     checked = 0
     for pw in bundle.phases:
-        prev_km: float | None = None  # reset per phase — matches the generator
+        prev_present_km: float | None = None
+        last_load_km: float | None = None
         for week in pw.weeks:
+            cur_km = _week_run_km(week)
+            is_deload = prev_present_km is not None and cur_km < prev_present_km
+            prev_km = prev_present_km if is_deload else last_load_km
             report = run_rule_filter(
                 week,
                 prev_week_km=prev_km,
@@ -485,7 +497,9 @@ def test_season_integration_all_weeks_rule_clean(db, monkeypatch):
                 f"independently trips a rule: "
                 f"{[v.rule + ': ' + v.message for v in report.errors()]}"
             )
-            prev_km = _week_run_km(week)
+            if not is_deload:
+                last_load_km = cur_km
+            prev_present_km = cur_km
             checked += 1
     assert checked == produced, "every produced week must have been re-checked"
 

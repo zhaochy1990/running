@@ -161,6 +161,44 @@ def check_weekly_progression(
     return []
 
 
+def check_weekly_target_volume(
+    plan: WeeklyPlan,
+    *,
+    target_weekly_km: float | None,
+    tolerance_km: float = 1.0,
+) -> list[RuleViolation]:
+    """Weekly running distance must match the injected master-plan target.
+
+    S2 receives a deterministic per-week target from ``master_plan.weeks``. A
+    generated week that drifts beyond a small rounding tolerance is no longer
+    executing the master skeleton, even if the usual progression and long-run
+    share checks still pass.
+    """
+    if target_weekly_km is None or target_weekly_km <= 0:
+        return []
+    cur_km = _total_run_distance_m(plan) / 1000.0
+    diff = cur_km - float(target_weekly_km)
+    if abs(diff) <= tolerance_km:
+        return []
+    return [
+        RuleViolation(
+            rule="weekly_target_volume",
+            severity="error",
+            message=(
+                f"weekly mileage {cur_km:.1f}km differs from target "
+                f"{float(target_weekly_km):.1f}km by {diff:+.1f}km; "
+                f"tolerance is ±{tolerance_km:.1f}km"
+            ),
+            details={
+                "current_km": cur_km,
+                "target_km": float(target_weekly_km),
+                "diff_km": diff,
+                "tolerance_km": tolerance_km,
+            },
+        )
+    ]
+
+
 def check_long_run_share(plan: WeeklyPlan) -> list[RuleViolation]:
     """Longest run ≤ 35% of weekly mileage.
 
@@ -340,6 +378,7 @@ def run_rule_filter(
     plan_dict: dict,
     *,
     prev_week_km: float | None = None,
+    target_weekly_km: float | None = None,
     prev_ctl: float | None = None,
     injuries: Iterable[str] | None = None,
     ramp_cap_tss: float = 6.0,
@@ -359,6 +398,9 @@ def run_rule_filter(
         return RuleFilterReport(violations=violations)
     plan = WeeklyPlan.from_dict(plan_dict)
     violations.extend(check_weekly_progression(plan, prev_week_km=prev_week_km))
+    violations.extend(
+        check_weekly_target_volume(plan, target_weekly_km=target_weekly_km)
+    )
     violations.extend(check_long_run_share(plan))
     violations.extend(
         check_intensity_distribution(
