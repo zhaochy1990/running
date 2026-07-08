@@ -1682,6 +1682,20 @@ class Database:
             "SELECT * FROM body_composition_scan ORDER BY scan_date DESC LIMIT 1"
         ).fetchone()
 
+    def body_composition_scan_at_or_before(self, scan_date: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM body_composition_scan WHERE scan_date <= ? "
+            "ORDER BY scan_date DESC LIMIT 1",
+            (scan_date,),
+        ).fetchone()
+
+    def body_composition_scan_before(self, scan_date: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM body_composition_scan WHERE scan_date < ? "
+            "ORDER BY scan_date DESC LIMIT 1",
+            (scan_date,),
+        ).fetchone()
+
     # --- Ability score (custom running ability system) ---
 
     def upsert_ability_snapshot(

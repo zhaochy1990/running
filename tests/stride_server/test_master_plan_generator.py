@@ -2806,6 +2806,39 @@ class TestLoadMasterContextDoubleBaseline:
         assert _compute_bmi(None, 175.0) is None
         assert _compute_bmi(70.0, 0) is None
 
+    def test_body_composition_as_of_uses_storage_api_not_adapter_sql(self):
+        from datetime import date as date_cls
+        from stride_server.coach_adapters.master_plan_adapter import _load_body_composition
+
+        class _Db:
+            @property
+            def _conn(self):  # pragma: no cover - should never be reached
+                raise AssertionError("adapter must not access raw SQL connection")
+
+            def body_composition_scan_at_or_before(self, scan_date: str):
+                assert scan_date == "2026-05-01"
+                return {
+                    "scan_date": "2026-04-23",
+                    "weight_kg": 71.6,
+                    "body_fat_pct": 22.9,
+                    "smm_kg": 31.1,
+                    "fat_mass_kg": 16.4,
+                    "visceral_fat_level": 5,
+                    "bmr_kcal": None,
+                    "protein_kg": None,
+                    "water_l": None,
+                    "smi": None,
+                    "inbody_score": 68,
+                }
+
+        body = _load_body_composition(
+            _Db(), {"height_cm": 170.0}, as_of=date_cls(2026, 5, 1)
+        )
+
+        assert body is not None
+        assert body["scan_date"] == "2026-04-23"
+        assert body["bmi"] == pytest.approx(24.78, abs=0.01)
+
     def test_goal_as_of_date_anchors_context_queries(self, monkeypatch):
         """Replay generation must use the frozen as_of_date for DB-derived
         context, not today's wall clock. Otherwise a May replay can leak July

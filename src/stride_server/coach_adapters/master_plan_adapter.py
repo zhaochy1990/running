@@ -86,11 +86,7 @@ def _load_body_composition(
     if as_of is None:
         row = db.latest_body_composition_scan()
     else:
-        row = db._conn.execute(
-            "SELECT * FROM body_composition_scan WHERE scan_date <= ? "
-            "ORDER BY scan_date DESC LIMIT 1",
-            (as_of.isoformat(),),
-        ).fetchone()
+        row = db.body_composition_scan_at_or_before(as_of.isoformat())
     if row is None:
         return None
     weight_kg = row["weight_kg"]

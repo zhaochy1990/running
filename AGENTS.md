@@ -62,6 +62,12 @@ For both Web UI and mobile UI, we need to use the Stitch MCP to design with Stit
 
 加新 feature 前问：*"这一行来自手表 sync 吗？"* 不是就别加 SQLite 表。likes_store 是 two-backend 文件（dev JSON / prod Azure Table）+ `DefaultAzureCredential` —— 复用这个 pattern，不要发明新的。
 
+### SQL ownership rule (HARD)
+
+只有 `src/stride_storage/` 包允许直接写 SQL 读取 / 修改数据库。其它包（`stride_server/`、`coach/`、`stride_core/`、routes、adapters、scripts 等）需要数据时必须调用 `stride_storage` 暴露的 API / repository / store 方法；缺方法就先在 `stride_storage` 增加一个语义明确的方法，并补 storage 层测试。
+
+禁止在非 storage 包里新增：`db._conn.execute(...)`、`conn.execute(...)`、裸 SQL 字符串查询表、或为了绕开缺失 API 直接打开 SQLite 连接。例外只限已有 legacy 代码的迁移前状态；改到相关代码时要顺手收敛到 storage API，不能扩大直接 SQL 面。
+
 ## Timezone discipline (HARD)
 
 所有 `coros.db` 时间戳列存 **UTC ISO 8601**。所有面向用户的日 / 周分类是 **Asia/Shanghai (UTC+8, 无 DST)**。混用会把 00:00–07:59 上海窗口静默错分到错误日期。
