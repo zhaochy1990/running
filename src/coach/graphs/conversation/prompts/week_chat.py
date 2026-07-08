@@ -15,7 +15,7 @@ WEEK_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 
 **Read tools** (取上下文)
 - get_week_plan(folder) — 本周 plan.md + planned_session + planned_nutrition
-- get_health_snapshot / get_pmc_series — TSB / 疲劳 / RHR / HRV
+- get_health_snapshot / get_health_series / get_pmc_series — TSB / 疲劳 / RHR / HRV / 日序列趋势
 - get_recent_activities — 最近完成的训练
 - get_body_composition_latest — 体测数据
 - get_pbs / get_race_predictions / get_master_plan_current

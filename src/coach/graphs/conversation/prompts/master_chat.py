@@ -16,7 +16,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 **Read tools** (取上下文)
 - get_master_plan_current — 当前激活总纲 (phases / milestones / 训练原则)
 - get_master_plan_versions(plan_id) — 历史版本链
-- get_health_snapshot / get_pmc_series — 训练负荷
+- get_health_snapshot / get_health_series / get_pmc_series — 训练负荷 / 疲劳 / 恢复日序列
 - get_race_predictions / get_pbs — 比赛预测与历史 PB
 - get_body_composition_latest — 体测数据
 - get_week_plan(folder) — 本周计划 (查阅当前阶段执行情况)

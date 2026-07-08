@@ -16,6 +16,7 @@ can't satisfy from a coach tool context.
 from __future__ import annotations
 
 import functools
+import json
 import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -208,7 +209,226 @@ class GetHealthSnapshotImpl:
 
 
 # ---------------------------------------------------------------------------
-# 3. get_pmc_series
+# 3. get_health_series
+# ---------------------------------------------------------------------------
+
+
+_HEALTH_SERIES_LOAD_METRICS = (
+    "training_dose",
+    "acute_load",
+    "chronic_load",
+    "form",
+    "load_ratio",
+    "readiness_gate",
+    "readiness_reasons",
+)
+_HEALTH_SERIES_HRV_METRICS = (
+    "hrv_weekly_avg",
+    "hrv_last_night_avg",
+    "hrv_last_night_5min_high",
+    "hrv_status",
+    "hrv_daily_balanced_low",
+    "hrv_daily_balanced_upper",
+    "hrv_provider",
+)
+_SUPPORTED_HEALTH_SERIES_METRICS = (
+    "rhr",
+    "fatigue",
+    "ati",
+    "cti",
+    "training_load_ratio",
+    "training_load_state",
+    "distance_m",
+    "duration_s",
+    *_HEALTH_SERIES_HRV_METRICS,
+    *_HEALTH_SERIES_LOAD_METRICS,
+)
+_DEFAULT_HEALTH_SERIES_METRICS = (
+    "rhr",
+    "hrv_last_night_avg",
+    "hrv_status",
+    "fatigue",
+    "acute_load",
+    "chronic_load",
+    "form",
+    "load_ratio",
+    "readiness_gate",
+    "readiness_reasons",
+)
+_HEALTH_SERIES_ALIASES: dict[str, tuple[str, ...]] = {
+    "all": _SUPPORTED_HEALTH_SERIES_METRICS,
+    "hrv": _HEALTH_SERIES_HRV_METRICS,
+    "load": _HEALTH_SERIES_LOAD_METRICS,
+    "pmc": _HEALTH_SERIES_LOAD_METRICS,
+    "training_load": _HEALTH_SERIES_LOAD_METRICS,
+    "recovery": (
+        "rhr",
+        "hrv_last_night_avg",
+        "hrv_status",
+        "hrv_provider",
+        "fatigue",
+        "readiness_gate",
+        "readiness_reasons",
+    ),
+}
+
+
+def _normalise_health_series_metrics(metrics: list[str] | None) -> tuple[list[str], list[str]]:
+    requested = metrics or list(_DEFAULT_HEALTH_SERIES_METRICS)
+    supported = set(_SUPPORTED_HEALTH_SERIES_METRICS)
+    selected: list[str] = []
+    invalid: list[str] = []
+    for raw in requested:
+        key = str(raw).strip().lower().replace("-", "_")
+        if not key:
+            continue
+        expanded = _HEALTH_SERIES_ALIASES.get(key, (key,))
+        for metric in expanded:
+            if metric not in supported:
+                invalid.append(metric)
+            elif metric not in selected:
+                selected.append(metric)
+    return selected, invalid
+
+
+class GetHealthSeriesImpl:
+    """General daily health series reader for bounded, whitelisted metrics.
+
+    This gives the coach one flexible read tool for questions such as "最近 7 天
+    RHR/HRV", "近 14 天疲劳", or "最近一个月负荷趋势" without exposing arbitrary SQL.
+    """
+
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+
+    @_tool_safe
+    def __call__(self, *, days: int = 14, metrics: list[str] | None = None) -> ToolResult:
+        from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
+
+        limit = max(1, min(int(days), 365))
+        selected, invalid = _normalise_health_series_metrics(metrics)
+        if invalid:
+            return ToolResult(
+                ok=False,
+                errors=[
+                    "unsupported metrics: "
+                    + ", ".join(sorted(set(invalid)))
+                    + "; supported metrics: "
+                    + ", ".join(_SUPPORTED_HEALTH_SERIES_METRICS)
+                    + "; aliases: "
+                    + ", ".join(sorted(_HEALTH_SERIES_ALIASES))
+                ],
+            )
+
+        db = _open_db(self._user_id)
+        try:
+            health_rows = db.query(
+                """SELECT date, ati, cti, rhr, distance_m, duration_s,
+                    training_load_ratio, training_load_state, fatigue
+                FROM daily_health
+                ORDER BY CASE
+                    WHEN length(date) = 8 AND date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+                        THEN substr(date, 1, 4) || '-' || substr(date, 5, 2) || '-' || substr(date, 7, 2)
+                    ELSE substr(date, 1, 10)
+                END DESC
+                LIMIT ?""",
+                (limit,),
+            )
+            hrv_rows = db.query(
+                """SELECT date, weekly_avg, last_night_avg, last_night_5min_high, status,
+                    baseline_balanced_low AS daily_balanced_low,
+                    baseline_balanced_upper AS daily_balanced_upper,
+                    provider
+                FROM (""" + HRV_PREFERRED_PER_DATE_SQL + """)
+                WHERE last_night_avg IS NOT NULL
+                ORDER BY date DESC
+                LIMIT ?""",
+                (limit,),
+            )
+            load_rows = db.query(
+                """SELECT date, training_dose, acute_load, chronic_load, form,
+                    load_ratio, readiness_gate, readiness_reasons_json
+                FROM daily_training_load
+                WHERE algorithm_version = (
+                    SELECT MAX(algorithm_version) FROM daily_training_load
+                )
+                ORDER BY date DESC
+                LIMIT ?""",
+                (limit,),
+            )
+        finally:
+            db.close()
+
+        by_date: dict[str, dict[str, Any]] = {}
+        for row in health_rows:
+            day = _norm_day(row["date"])
+            merged = by_date.setdefault(day, {"date": day})
+            for metric in (
+                "rhr",
+                "fatigue",
+                "ati",
+                "cti",
+                "training_load_ratio",
+                "training_load_state",
+                "distance_m",
+                "duration_s",
+            ):
+                if metric in selected:
+                    merged[metric] = row[metric]
+
+        for row in hrv_rows:
+            day = _norm_day(row["date"])
+            merged = by_date.setdefault(day, {"date": day})
+            hrv_metric_map = {
+                "hrv_weekly_avg": row["weekly_avg"],
+                "hrv_last_night_avg": row["last_night_avg"],
+                "hrv_last_night_5min_high": row["last_night_5min_high"],
+                "hrv_status": row["status"],
+                "hrv_daily_balanced_low": row["daily_balanced_low"],
+                "hrv_daily_balanced_upper": row["daily_balanced_upper"],
+                "hrv_provider": row["provider"],
+            }
+            for metric, value in hrv_metric_map.items():
+                if metric in selected:
+                    merged[metric] = value
+
+        for row in load_rows:
+            day = _norm_day(row["date"])
+            merged = by_date.setdefault(day, {"date": day})
+            for metric in _HEALTH_SERIES_LOAD_METRICS:
+                if metric not in selected:
+                    continue
+                if metric == "readiness_reasons":
+                    raw = row["readiness_reasons_json"]
+                    try:
+                        value = json.loads(raw) if raw else []
+                    except (TypeError, ValueError):
+                        value = []
+                    merged[metric] = value
+                else:
+                    merged[metric] = row[metric]
+
+        # Return chart/chat-friendly oldest -> newest order.
+        series = sorted(by_date.values(), key=lambda item: item["date"])[-limit:]
+        coverage = {
+            metric: sum(1 for row in series if row.get(metric) is not None)
+            for metric in selected
+        }
+        return ToolResult(
+            ok=True,
+            data={
+                "days": limit,
+                "metrics": selected,
+                "series": series,
+                "coverage": coverage,
+                "supported_metrics": list(_SUPPORTED_HEALTH_SERIES_METRICS),
+                "aliases": {k: list(v) for k, v in _HEALTH_SERIES_ALIASES.items()},
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# 4. get_pmc_series
 # ---------------------------------------------------------------------------
 
 
@@ -336,7 +556,7 @@ class GetTrainingEnvironmentImpl:
 
 
 # ---------------------------------------------------------------------------
-# 4. get_body_composition_latest
+# 5. get_body_composition_latest
 # ---------------------------------------------------------------------------
 
 
@@ -377,7 +597,7 @@ class GetBodyCompositionLatestImpl:
 
 
 # ---------------------------------------------------------------------------
-# 5. get_ability_snapshot
+# 6. get_ability_snapshot
 # ---------------------------------------------------------------------------
 
 
@@ -407,7 +627,7 @@ class GetAbilitySnapshotImpl:
 
 
 # ---------------------------------------------------------------------------
-# 6. get_race_predictions
+# 7. get_race_predictions
 # ---------------------------------------------------------------------------
 
 
@@ -429,7 +649,7 @@ class GetRacePredictionsImpl:
 
 
 # ---------------------------------------------------------------------------
-# 7. get_pbs
+# 8. get_pbs
 # ---------------------------------------------------------------------------
 
 
@@ -464,7 +684,7 @@ class GetPbsImpl:
 
 
 # ---------------------------------------------------------------------------
-# 8. get_master_plan_current
+# 9. get_master_plan_current
 # ---------------------------------------------------------------------------
 
 
@@ -484,7 +704,7 @@ class GetMasterPlanCurrentImpl:
 
 
 # ---------------------------------------------------------------------------
-# 9. get_master_plan_versions
+# 10. get_master_plan_versions
 # ---------------------------------------------------------------------------
 
 
@@ -522,7 +742,7 @@ class GetMasterPlanVersionsImpl:
 
 
 # ---------------------------------------------------------------------------
-# 10. get_week_plan
+# 11. get_week_plan
 # ---------------------------------------------------------------------------
 
 
@@ -590,7 +810,7 @@ class GetWeekPlanImpl:
 
 
 # ---------------------------------------------------------------------------
-# 11. get_activity_detail
+# 12. get_activity_detail
 # ---------------------------------------------------------------------------
 
 

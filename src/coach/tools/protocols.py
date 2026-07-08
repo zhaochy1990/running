@@ -2,7 +2,7 @@
 
 Tools come in two flavours:
 
-* **Read tools (11)** — pull data out of STRIDE state. They are safe to call
+* **Read tools (12)** — pull data out of STRIDE state. They are safe to call
   any time and their ``ToolResult.data`` contains the read payload.
 
 * **Draft tools (13)** — emit a proposed change. They never apply it. Their
@@ -26,7 +26,7 @@ from coach.schemas import ToolResult
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Read tools (11)
+# Read tools (12)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -38,6 +38,11 @@ class GetRecentActivities(Protocol):
 @runtime_checkable
 class GetHealthSnapshot(Protocol):
     def __call__(self) -> ToolResult: ...
+
+
+@runtime_checkable
+class GetHealthSeries(Protocol):
+    def __call__(self, *, days: int = 14, metrics: list[str] | None = None) -> ToolResult: ...
 
 
 @runtime_checkable
@@ -173,6 +178,7 @@ class RegenerateMaster(Protocol):
 READ_TOOL_NAMES: tuple[str, ...] = (
     "get_recent_activities",
     "get_health_snapshot",
+    "get_health_series",
     "get_pmc_series",
     "get_body_composition_latest",
     "get_ability_snapshot",
