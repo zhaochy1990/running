@@ -176,7 +176,7 @@
       "slug": "weekly-plan-current-week-adjust",
       "title": "STRIDE - 调整本周课表 (Term Refined)",
       "stitchScreenId": "0ad70259c9c543b89b51923bb817fcd1",
-      "html": "weekly_plan/2_weekly-plan-current-week-adjust.html",
+      "html": "weekly_plan/adjustment/1_weekly-plan-current-week-adjust.html",
       "archiveHtml": "0ad70259c9c543b89b51923bb817fcd1_weekly-plan-current-week-adjust.html"
     },
     {
@@ -186,7 +186,7 @@
       "slug": "weekly-plan-generating",
       "title": "生成本周调整计划 - STRIDE (Term Refined)",
       "stitchScreenId": "711681dff3c54a76826fca6935fa2057",
-      "html": "weekly_plan/3_weekly-plan-generating.html",
+      "html": "weekly_plan/adjustment/2_weekly-plan-generating.html",
       "archiveHtml": "711681dff3c54a76826fca6935fa2057_weekly-plan-generating.html"
     },
     {
@@ -196,7 +196,7 @@
       "slug": "weekly-plan-week-diff-review",
       "title": "审阅本周调整 - STRIDE (Term Refined)",
       "stitchScreenId": "0f3d57cee3044ece8608a02f192ad540",
-      "html": "weekly_plan/4_weekly-plan-week-diff-review.html",
+      "html": "weekly_plan/adjustment/3_weekly-plan-week-diff-review.html",
       "archiveHtml": "0f3d57cee3044ece8608a02f192ad540_weekly-plan-week-diff-review.html"
     },
     {
@@ -206,7 +206,7 @@
       "slug": "weekly-plan-season-plan-impact-prompt",
       "title": "STRIDE - 赛季训练计划影响提示 (Term Refined)",
       "stitchScreenId": "192494140b1a45f084db96fd4439e544",
-      "html": "weekly_plan/5_weekly-plan-season-plan-impact-prompt.html",
+      "html": "weekly_plan/adjustment/4_weekly-plan-season-plan-impact-prompt.html",
       "archiveHtml": "192494140b1a45f084db96fd4439e544_weekly-plan-season-plan-impact-prompt.html"
     },
     {
@@ -216,7 +216,7 @@
       "slug": "weekly-plan-applied-success",
       "title": "本周课表 - 调整已应用 (Terminology Polish)",
       "stitchScreenId": "49e018f1292c453d8a6fbaea9ae5fafa",
-      "html": "weekly_plan/6_weekly-plan-applied-success.html",
+      "html": "weekly_plan/adjustment/5_weekly-plan-applied-success.html",
       "archiveHtml": "49e018f1292c453d8a6fbaea9ae5fafa_weekly-plan-applied-success.html"
     },
     {
@@ -273,6 +273,39 @@
       "html": "qa/5_qa-stride-card-pain-triage.html",
       "archiveHtml": null,
       "notes": "Ideal structured JSON rendering for stride-card pain_triage."
+    },
+    {
+      "category": "weekly_plan",
+      "number": 7,
+      "story": "本周课表当前视图 Tabs",
+      "slug": "weekly-plan-tab-strength",
+      "title": "本周力量训练 - STRIDE Weekly Workbench",
+      "stitchScreenId": null,
+      "html": "weekly_plan/2_weekly-plan-tab-strength.html",
+      "archiveHtml": null,
+      "notes": "Local-first tab snapshot based on season_bundle W1; pending sync back to Stitch."
+    },
+    {
+      "category": "weekly_plan",
+      "number": 8,
+      "story": "本周课表当前视图 Tabs",
+      "slug": "weekly-plan-tab-records",
+      "title": "本周训练记录 - STRIDE Weekly Workbench",
+      "stitchScreenId": null,
+      "html": "weekly_plan/3_weekly-plan-tab-records.html",
+      "archiveHtml": null,
+      "notes": "Local-first tab snapshot based on season_bundle W1; pending sync back to Stitch."
+    },
+    {
+      "category": "weekly_plan",
+      "number": 9,
+      "story": "本周课表当前视图 Tabs",
+      "slug": "weekly-plan-tab-feedback",
+      "title": "本周反馈 - STRIDE Weekly Workbench",
+      "stitchScreenId": null,
+      "html": "weekly_plan/4_weekly-plan-tab-feedback.html",
+      "archiveHtml": null,
+      "notes": "Local-first tab snapshot based on season_bundle W1; pending sync back to Stitch."
     }
   ]
 }
