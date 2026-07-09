@@ -764,25 +764,7 @@ class StrideApi {
     return _post<Map<String, dynamic>>('/api/$user/nutrition/meals', body: body);
   }
 
-  // ── Coach S3 daily Q&A ─────────────────────────────────────────────────
-  /// Send a daily Q&A message to the Coach Agent.
-  /// `POST /api/users/me/coach/conversations/qa/messages` — the server derives
-  /// the thread_id from user_id + today (Shanghai), so the client never sends
-  /// one. Returns (threadId, assistant text, iteration).
-  Future<({String threadId, String text, int iteration})> postCoachQaMessage(
-    String message,
-  ) async {
-    final r = await _post<Map<String, dynamic>>(
-      '/api/users/me/coach/conversations/qa/messages',
-      body: {'message': message},
-    );
-    return (
-      threadId: r['thread_id'] as String? ?? '',
-      text: _textFromParts(r['parts']),
-      iteration: (r['iteration'] as num?)?.toInt() ?? 0,
-    );
-  }
-
+  // ── Coach chat ─────────────────────────────────────────────────────────
   /// Send a message to the orchestrator coach brain.
   /// `POST /api/users/me/coach/chat` — body `{session_id, message}`. The server
   /// derives the thread key as `{user}:coach:{session_id}` and maintains
