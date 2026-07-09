@@ -1,0 +1,3984 @@
+{
+  "schema": "season-plan-bundle/v1",
+  "master_plan_id": "ed1db6d9-40a0-41e8-952d-c64979312de7",
+  "generated_by": "gpt-5.5",
+  "phases": [
+    {
+      "phase_id": "bbdf29ad-6e95-4161-ade7-1c124a6c43e1",
+      "phase_type": "speed",
+      "weeks": [
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-05-04_05-10(W1)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-04",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "速度周期第 1 周先保留完整休息日，避免从上一阶段切入时高区负荷过快。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-05",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "VO2max：1k * 5，总13km",
+              "spec": null,
+              "notes_md": "热身约3km + 1km * 5 @ 1km rep 3:37/km，组间慢跑/走动约2-3min + 冷身补足总量。快段控制在高质量但不冲刺，目标是建立 VO2max 刺激。其余慢跑按 z2 4:51-5:40/km。",
+              "total_distance_m": 13000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-06",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "全程 z2 4:51-5:40/km，保持能完整说话；不追加加速。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-06",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "髋稳定 + 核心 30min",
+              "spec": null,
+              "notes_md": "COROS 动作：T1317 clamshell 3×15/side；T1321 banded hip abduction 3×15/side；T1160 single leg bridge 3×12/side；T1010 planks 3×40s；T1185 side plank 3×30s/side。动作质量优先，左右侧感受接近。",
+              "total_distance_m": null,
+              "total_duration_s": 1800,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-07",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km 下限偏轻松；若小腿紧张，缩短步幅、提高触地轻快感。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-08",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "小腿离心 + 胸椎活动度",
+              "spec": null,
+              "notes_md": "COROS 动作：T1070 standing calf raises 3×12，离心慢放3s；T1248 thoracic spine rotation 2×12/side；T1234 cat cow stretch 2×30s；T1243 dead bug 3×10/side。为后续速度课做跟腱和核心准备，不做爆发跳跃。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-09",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "中长跑 17.6km",
+              "spec": null,
+              "notes_md": "全程 z2 4:51-5:40/km，后半程只允许自然提到 z2 上沿，不进入阈值。补水与碳水按长跑日执行。",
+              "total_distance_m": 17600,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-10",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松有氧 16.4km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，作为有氧承接，不追配速。若前一日疲劳明显，可拆成上午10km + 下午6.4km 轻松跑。",
+              "total_distance_m": 16400,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-05-05",
+              "kcal_target": 2900,
+              "carbs_g": 420,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3000,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 650,
+                  "carbs_g": 95,
+                  "protein_g": 28,
+                  "fat_g": 16,
+                  "items_md": "燕麦 + 香蕉 + 鸡蛋 + 酸奶"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "训练前60-90min",
+                  "kcal": 250,
+                  "carbs_g": 55,
+                  "protein_g": 5,
+                  "fat_g": 2,
+                  "items_md": "面包/能量棒 + 水"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 850,
+                  "carbs_g": 120,
+                  "protein_g": 40,
+                  "fat_g": 22,
+                  "items_md": "米饭 + 鱼/鸡胸 + 蔬菜 + 橄榄油"
+                }
+              ],
+              "notes_md": "VO2max 日提高碳水可用性，训练后30min内补充碳水和蛋白。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-05-09",
+              "kcal_target": 3000,
+              "carbs_g": 450,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "长跑前2-3h",
+                  "kcal": 700,
+                  "carbs_g": 120,
+                  "protein_g": 22,
+                  "fat_g": 12,
+                  "items_md": "白粥/面包 + 香蕉 + 蜂蜜 + 少量蛋白"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "跑后30min",
+                  "kcal": 350,
+                  "carbs_g": 60,
+                  "protein_g": 25,
+                  "fat_g": 5,
+                  "items_md": "巧克力奶/酸奶 + 面包或水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 900,
+                  "carbs_g": 130,
+                  "protein_g": 45,
+                  "fat_g": 22,
+                  "items_md": "米饭/意面 + 瘦肉 + 蔬菜 + 汤"
+                }
+              ],
+              "notes_md": "17.6km 长跑前保证主食；天气热时额外补电解质。"
+            }
+          ],
+          "notes_md": "周量 65km，单次最长 17.6km，质量课只保留 1 次 VO2max，符合速度周期高区渐进起步。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-05-11_05-17(W2)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-11",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "完整休息，保证本周 400m 短间歇前神经系统恢复。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-12",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "短间歇：400m * 16，总13.6km",
+              "spec": null,
+              "notes_md": "热身约3km + 400m * 16 @ 400m rep 3:25/km，组间200m慢跑恢复 + 冷身补足13.6km。重点是放松、步频和跑姿经济性，不做全力冲刺。慢跑段按 z2 4:51-5:40/km 感受恢复。",
+              "total_distance_m": 13600,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-13",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，体感偏轻松，关注小腿和足底反应。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-13",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "臀中肌 + 单腿控制",
+              "spec": null,
+              "notes_md": "COROS 动作：T1317 clamshell 3×15/side；T1321 banded hip abduction 3×15/side；T1167 single leg squats 3×8/side；T1249 bird dog balance 3×10/side；T1070 standing calf raises 3×12 离心慢放。左右侧稳定性优先，不追负重。",
+              "total_distance_m": null,
+              "total_duration_s": 1800,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-14",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 9km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km；前一日力量后如臀中肌酸痛，放慢到区间后半。",
+              "total_distance_m": 9000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-15",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8.5km",
+              "spec": null,
+              "notes_md": "保持 z2 4:51-5:40/km，不加入阈值或节奏段。",
+              "total_distance_m": 8500,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-16",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "中长跑 18.4km",
+              "spec": null,
+              "notes_md": "全程 z2 4:51-5:40/km；本周长跑略进阶但仍低强度，单次距离低于周量35%。",
+              "total_distance_m": 18400,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-17",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10.5km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，作为长跑后有氧恢复，跑后做轻度拉伸。",
+              "total_distance_m": 10500,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-05-12",
+              "kcal_target": 2950,
+              "carbs_g": 430,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3000,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 650,
+                  "carbs_g": 95,
+                  "protein_g": 28,
+                  "fat_g": 16,
+                  "items_md": "燕麦 + 香蕉 + 鸡蛋 + 咖啡/茶"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "训练前60min",
+                  "kcal": 220,
+                  "carbs_g": 50,
+                  "protein_g": 3,
+                  "fat_g": 1,
+                  "items_md": "吐司 + 果酱或能量胶"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 900,
+                  "carbs_g": 135,
+                  "protein_g": 42,
+                  "fat_g": 22,
+                  "items_md": "米饭 + 牛肉/鸡肉 + 蔬菜"
+                }
+              ],
+              "notes_md": "400m 间歇日避免空腹高强度；训练中炎热可补电解质。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-05-16",
+              "kcal_target": 3050,
+              "carbs_g": 455,
+              "protein_g": 135,
+              "fat_g": 78,
+              "water_ml": 3300,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "长跑前2-3h",
+                  "kcal": 720,
+                  "carbs_g": 125,
+                  "protein_g": 22,
+                  "fat_g": 12,
+                  "items_md": "米粥/馒头 + 香蕉 + 少量鸡蛋"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "跑后30min",
+                  "kcal": 350,
+                  "carbs_g": 60,
+                  "protein_g": 25,
+                  "fat_g": 5,
+                  "items_md": "酸奶 + 面包 + 水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 900,
+                  "carbs_g": 130,
+                  "protein_g": 45,
+                  "fat_g": 24,
+                  "items_md": "意面/米饭 + 鱼肉 + 蔬菜"
+                }
+              ],
+              "notes_md": "长跑日碳水充足，跑后优先恢复糖原。"
+            }
+          ],
+          "notes_md": "周量 68km；核心课从 1km VO2max 切换为 400m 短间歇，提升速度储备和跑步经济性。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-05-18_05-24(W3)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-18",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "5K 测试周保留完整休息，避免测试前累积疲劳过高。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-19",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km；最后保持放松，不做额外间歇，为周日5K测试蓄力。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-19",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "测试周力量维护 25min",
+              "spec": null,
+              "notes_md": "COROS 动作轻量维护：T1317 clamshell 2×15/side；T1160 single leg bridge 2×12/side；T1010 planks 2×40s；T1248 thoracic spine rotation 2×12/side；T1070 standing calf raises 2×12 离心慢放。避免做到力竭。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-20",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "中长跑 19.4km",
+              "spec": null,
+              "notes_md": "全程 z2 4:51-5:40/km，作为阶段内长跑进阶；不加入 MP 或阈值。",
+              "total_distance_m": 19400,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-21",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8.6km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，尽量放松；若长跑后肌肉酸痛，按区间慢端执行。",
+              "total_distance_m": 8600,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-22",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km；保持步频自然，避免测试前过度发力。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-23",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "测试前轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，跑后做短时间动态活动度；不安排快跑，保证周日测试新鲜度。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-24",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "5K测试：目标 race_time_s_5k <= 1155，总14km",
+              "spec": null,
+              "notes_md": "milestone 执行：5K≤19:15（race_time_s_5k <= 1155），海拔心率不过冲。建议热身约3km + 技术跑动 + 5K 控制测试，目标均速参考 VO2max(5k) 3:40/km 附近，但前1km不得过冲；测试后慢跑冷身补足总14km。停止/降级条件：胸闷、眩晕、疼痛>3/10 或心率异常飙升。",
+              "total_distance_m": 14000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-05-20",
+              "kcal_target": 3050,
+              "carbs_g": 455,
+              "protein_g": 135,
+              "fat_g": 78,
+              "water_ml": 3300,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "长跑前2-3h",
+                  "kcal": 720,
+                  "carbs_g": 125,
+                  "protein_g": 22,
+                  "fat_g": 12,
+                  "items_md": "米粥/面包 + 香蕉 + 少量鸡蛋"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "跑后30min",
+                  "kcal": 350,
+                  "carbs_g": 60,
+                  "protein_g": 25,
+                  "fat_g": 5,
+                  "items_md": "酸奶/牛奶 + 面包 + 水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 900,
+                  "carbs_g": 130,
+                  "protein_g": 45,
+                  "fat_g": 24,
+                  "items_md": "米饭 + 鱼/鸡肉 + 蔬菜"
+                }
+              ],
+              "notes_md": "中长跑后尽早补碳水，避免影响周日测试。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-05-24",
+              "kcal_target": 3000,
+              "carbs_g": 450,
+              "protein_g": 130,
+              "fat_g": 70,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "测试前3h",
+                  "kcal": 700,
+                  "carbs_g": 125,
+                  "protein_g": 20,
+                  "fat_g": 10,
+                  "items_md": "白面包/米粥 + 香蕉 + 蜂蜜，低纤维低脂"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "测试前30-45min",
+                  "kcal": 120,
+                  "carbs_g": 28,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "能量胶或运动饮料"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 900,
+                  "carbs_g": 130,
+                  "protein_g": 45,
+                  "fat_g": 22,
+                  "items_md": "米饭/意面 + 瘦肉 + 蔬菜 + 汤"
+                }
+              ],
+              "notes_md": "5K测试日不要尝试新食物；热天增加电解质。"
+            }
+          ],
+          "notes_md": "周量 72km；本周以 5K 测试作为唯一高质量核心刺激，直接对齐 2026-05-24 里程碑。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-05-25_05-31(W4)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-25",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "DELOAD 周，完整休息；本周删除质量课。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-26",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "减量周仅 easy，z2 4:51-5:40/km；绝不加入间歇、阈值或坡冲。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-27",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，保持轻松。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-27",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "减量周力量维护 + 活动度",
+              "spec": null,
+              "notes_md": "COROS 动作：T1248 thoracic spine rotation 2×12/side；T1234 cat cow stretch 2×30s；T1243 dead bug 2×10/side；T1185 side plank 2×30s/side；T1070 standing calf raises 2×12 离心慢放。维护为主，不追疲劳。",
+              "total_distance_m": null,
+              "total_duration_s": 1200,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-28",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8.4km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km；若疲劳未消，允许按区间慢端完成。",
+              "total_distance_m": 8400,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-29",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "第二个完整休息日，吸收前三周速度刺激。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-30",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松中长跑 14.6km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km；这是减量周最长跑，控制在轻松有氧，不做后程加速。",
+              "total_distance_m": 14600,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-05-31",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 13km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，完成周量即可；跑后做放松拉伸。",
+              "total_distance_m": 13000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-05-30",
+              "kcal_target": 2750,
+              "carbs_g": 380,
+              "protein_g": 135,
+              "fat_g": 78,
+              "water_ml": 3000,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2h",
+                  "kcal": 620,
+                  "carbs_g": 100,
+                  "protein_g": 22,
+                  "fat_g": 12,
+                  "items_md": "燕麦/面包 + 香蕉 + 鸡蛋"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 800,
+                  "carbs_g": 110,
+                  "protein_g": 40,
+                  "fat_g": 22,
+                  "items_md": "米饭 + 鸡肉/鱼 + 蔬菜"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 800,
+                  "carbs_g": 105,
+                  "protein_g": 42,
+                  "fat_g": 24,
+                  "items_md": "面/米饭 + 瘦肉 + 蔬菜"
+                }
+              ],
+              "notes_md": "减量周总量下降，但蛋白维持，帮助组织修复。"
+            }
+          ],
+          "notes_md": "周量 54km，DELOAD：严格删除质量课，只保留 easy、活动度和力量维护。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-06-01_06-07(W5)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-01",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "减量后回升周先休息，准备短坡神经肌肉刺激。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-02",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "短坡：90s * 10，总14.8km",
+              "spec": null,
+              "notes_md": "热身约3km + 90s * 10 控制上坡，组间慢跑/走回充分恢复 + 冷身补足14.8km。上坡只做强但可控的神经肌肉刺激，不全力冲刺；平路慢跑按 z2 4:51-5:40/km。若小腿或跟腱不适，立即改为全程 z2。",
+              "total_distance_m": 14800,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-03",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，重点观察短坡后小腿反应。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-03",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "髋稳定 + 小腿离心",
+              "spec": null,
+              "notes_md": "COROS 动作：T1321 banded hip abduction 3×15/side；T1160 single leg bridge 3×12/side；T1289 hip thrust 3×10；T1249 bird dog balance 3×10/side；T1070 standing calf raises 3×12 离心慢放。保持左右侧输出接近。",
+              "total_distance_m": null,
+              "total_duration_s": 1800,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-04",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km；不加速，确保周日力量测试前不过度疲劳。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-05",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8.2km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，轻松完成。",
+              "total_distance_m": 8200,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-06",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "中长跑 20km",
+              "spec": null,
+              "notes_md": "全程 z2 4:51-5:40/km，速度周期仍维持有氧底；单次最长跑低于周量35%。",
+              "total_distance_m": 20000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-07",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 13km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，跑后充分补水补碳水；随后进行力量对称测试。",
+              "total_distance_m": 13000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-07",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "力量对称测试：strength_symmetry_pct >= 90",
+              "spec": null,
+              "notes_md": "milestone 执行：目标 strength_symmetry_pct >= 90，即单腿下台阶/提踵左右差≤10%，全程无痛。测试内容：1）单腿下台阶 3×8/side，记录膝内扣、骨盆控制和完成次数；2）T1070 standing calf raises 单腿提踵测试，左右各做至技术质量下降，记录有效次数，左右差≤10%为通过；3）T1167 single leg squats 2×6/side 作为辅助观察。通过标准：疼痛≤3/10、动作可控、次日不加重；停止条件：疼痛>3/10、明显代偿或跟腱/膝部不适加重。",
+              "total_distance_m": null,
+              "total_duration_s": 1800,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-06-02",
+              "kcal_target": 3000,
+              "carbs_g": 440,
+              "protein_g": 135,
+              "fat_g": 78,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 680,
+                  "carbs_g": 105,
+                  "protein_g": 28,
+                  "fat_g": 16,
+                  "items_md": "燕麦 + 香蕉 + 鸡蛋 + 酸奶"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "训练前60min",
+                  "kcal": 240,
+                  "carbs_g": 52,
+                  "protein_g": 4,
+                  "fat_g": 1,
+                  "items_md": "面包/能量胶 + 水"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 900,
+                  "carbs_g": 130,
+                  "protein_g": 42,
+                  "fat_g": 24,
+                  "items_md": "米饭 + 牛肉/鱼 + 蔬菜"
+                }
+              ],
+              "notes_md": "短坡日保证碳水和电解质，减少神经肌肉疲劳后的抽筋风险。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-06-07",
+              "kcal_target": 3100,
+              "carbs_g": 455,
+              "protein_g": 140,
+              "fat_g": 80,
+              "water_ml": 3300,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 700,
+                  "carbs_g": 120,
+                  "protein_g": 24,
+                  "fat_g": 12,
+                  "items_md": "米粥/面包 + 香蕉 + 鸡蛋"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "跑后30min",
+                  "kcal": 380,
+                  "carbs_g": 65,
+                  "protein_g": 25,
+                  "fat_g": 6,
+                  "items_md": "酸奶/牛奶 + 面包 + 水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 950,
+                  "carbs_g": 135,
+                  "protein_g": 48,
+                  "fat_g": 25,
+                  "items_md": "米饭/意面 + 瘦肉 + 蔬菜 + 汤"
+                }
+              ],
+              "notes_md": "力量测试日蛋白和碳水都要足量，避免长跑周末后恢复不足。"
+            }
+          ],
+          "notes_md": "周量 74km；核心课切换为短坡，周日完成力量对称里程碑测试。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-06-08_06-14(W6)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-08",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "完整休息，吸收上周短坡与力量测试。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-09",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "VO2max：1k * 7，总15.2km",
+              "spec": null,
+              "notes_md": "热身约3km + 1km * 7 @ 1km rep 3:37/km，组间约400m慢跑恢复 + 冷身补足15.2km。相较第1周增加组数，但仍只保留1次高强度课；慢跑段按 z2 4:51-5:40/km。若第5组后动作变形，完成到6组即可并用冷身补足总距离。",
+              "total_distance_m": 15200,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-10",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8.8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，重点放松小腿和髋部。",
+              "total_distance_m": 8800,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-10",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "核心抗旋 + 臀中肌维护",
+              "spec": null,
+              "notes_md": "COROS 动作：T1317 clamshell 3×15/side；T1321 banded hip abduction 3×15/side；T1249 bird dog balance 3×10/side；T1185 side plank 3×30s/side；T1243 dead bug 3×10/side。力量维护，不做到力竭。",
+              "total_distance_m": null,
+              "total_duration_s": 1800,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-11",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km；保持步幅自然，不加阈值段。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-12",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，作为周末长跑前恢复。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-13",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "中长跑 20.5km",
+              "spec": null,
+              "notes_md": "全程 z2 4:51-5:40/km，完成速度周期末有氧底维护；不加入 MP 4:02/km 段。",
+              "total_distance_m": 20500,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-14",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松有氧 13.5km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，作为阶段收尾；跑后记录本阶段速度课完成度、5K测试和力量对称测试结果，为后续专项期衔接。",
+              "total_distance_m": 13500,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-06-09",
+              "kcal_target": 3050,
+              "carbs_g": 450,
+              "protein_g": 135,
+              "fat_g": 78,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 700,
+                  "carbs_g": 110,
+                  "protein_g": 28,
+                  "fat_g": 16,
+                  "items_md": "燕麦/面包 + 香蕉 + 鸡蛋 + 酸奶"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "训练前60-90min",
+                  "kcal": 260,
+                  "carbs_g": 58,
+                  "protein_g": 4,
+                  "fat_g": 1,
+                  "items_md": "吐司 + 果酱或能量胶"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 920,
+                  "carbs_g": 135,
+                  "protein_g": 42,
+                  "fat_g": 24,
+                  "items_md": "米饭/意面 + 鱼/鸡肉 + 蔬菜"
+                }
+              ],
+              "notes_md": "1km * 7 日高区负荷最高，训练前后均要补碳水。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-06-13",
+              "kcal_target": 3150,
+              "carbs_g": 465,
+              "protein_g": 140,
+              "fat_g": 82,
+              "water_ml": 3400,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "长跑前2-3h",
+                  "kcal": 740,
+                  "carbs_g": 130,
+                  "protein_g": 22,
+                  "fat_g": 12,
+                  "items_md": "米粥/馒头 + 香蕉 + 蜂蜜 + 少量鸡蛋"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "跑后30min",
+                  "kcal": 400,
+                  "carbs_g": 70,
+                  "protein_g": 25,
+                  "fat_g": 6,
+                  "items_md": "牛奶/酸奶 + 面包 + 水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 950,
+                  "carbs_g": 135,
+                  "protein_g": 48,
+                  "fat_g": 25,
+                  "items_md": "米饭/意面 + 瘦肉 + 蔬菜 + 汤"
+                }
+              ],
+              "notes_md": "阶段末长跑日补足碳水和水分，帮助衔接后续专项期。"
+            }
+          ],
+          "notes_md": "周量 76km；VO2max 组数进阶到 1k * 7，长跑达到 20.5km，完成速度周期收束。"
+        }
+      ],
+      "review": {
+        "verdict": "pass",
+        "commentary_md": "本阶段整体符合 speed 周期特征：非恢复周持续安排 VO2max、短间歇、短坡或 5K 测试，高区刺激真实存在且以 easy/中长跑承托，强度分布呈两极化。W4 按 W3 约75%减量并取消质量课，W3 与 W5 分别对 5K 与力量对称里程碑有明确推进。",
+        "issues": []
+      },
+      "blocked_week_count": 0
+    },
+    {
+      "phase_id": "fbe2cacf-ddf1-428a-91f2-6c4f8deb84d0",
+      "phase_type": "build",
+      "weeks": [
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-06-15_06-21(W1)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-15",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "专项期第1周从80km起步，今天不安排跑步/力量/交叉，保证至少1个完整休息日。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-16",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "阈值巡航 14km：2k * 4 @ 阈值",
+              "spec": null,
+              "notes_md": "总量14km；热身与放松均为z2 4:51-5:40/km，中段2k * 4 @ 阈值4:05/km，组间90s慢跑恢复。控制为可完成的巡航强度，不冲刺。",
+              "total_distance_m": 14000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-17",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "全程z2 4:51-5:40/km，保持轻松对话，承接昨日阈值课。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-18",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km + 放松加速",
+              "spec": null,
+              "notes_md": "主体z2 4:51-5:40/km；末段做6次15-20秒放松加速，动作轻快但不进入冲刺。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-19",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "力量维护：核心与髋稳定 30min",
+              "spec": null,
+              "notes_md": "侧桥、死虫、臀桥、弹力带侧向走、慢速提踵；避免跳跃式爆发，动作以稳定和对称为主。",
+              "total_distance_m": null,
+              "total_duration_s": 1800,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-20",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "中长轻松跑 20km",
+              "spec": null,
+              "notes_md": "全程z2 4:51-5:40/km，补足周量但不制造额外强度；为周日专项长跑保留体感。",
+              "total_distance_m": 20000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-21",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "专项长跑 24km（milestone：long_run_distance_km >= 24，内含8km MP）",
+              "spec": null,
+              "notes_md": "阶段milestone执行：24km长跑内8km @ MP 4:02/km，目标 metric：long_run_distance_km >= 24；执行标准：前段z2 4:51-5:40/km，后段分配8km MP，补给稳定，RPE可控，次日不出现异常酸痛。",
+              "total_distance_m": 24000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-06-21",
+              "kcal_target": 3000,
+              "carbs_g": 430,
+              "protein_g": 130,
+              "fat_g": 75,
+              "water_ml": 3000,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 650,
+                  "carbs_g": 115,
+                  "protein_g": 20,
+                  "fat_g": 10,
+                  "items_md": "米饭/面包为主 + 香蕉1根 + 少量蛋白，低纤维低油脂"
+                },
+                {
+                  "name": "训练补给",
+                  "time_hint": "长跑中",
+                  "kcal": 300,
+                  "carbs_g": 75,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "每35-40分钟1胶，配水；出汗多时补钠"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 700,
+                  "carbs_g": 110,
+                  "protein_g": 35,
+                  "fat_g": 15,
+                  "items_md": "碳水 + 优质蛋白，尽快补液"
+                }
+              ],
+              "notes_md": "本周第一次专项长跑，重点验证8km MP段的胶、水、钠节奏。"
+            }
+          ],
+          "notes_md": "周量80km，1次阈值巡航 + 1次含MP专项长跑；不连续硬日，长跑24km占周量30%。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-06-22_06-28(W2)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-22",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "DELOAD周，删除质量课；今天完全休息。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-23",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，不做MP/阈值/间歇。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-24",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，偏轻松下限，目标是恢复。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-25",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "全程z2 4:51-5:40/km；保持步频自然。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-26",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "减量周力量维护 25min",
+              "spec": null,
+              "notes_md": "核心抗旋、臀中肌激活、足踝小肌群、慢速提踵；不做高负荷下肢力量。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-27",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，跑完做轻柔拉伸。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-28",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松长跑 18km",
+              "spec": null,
+              "notes_md": "DELOAD长跑，仅z2 4:51-5:40/km，不加入MP段。",
+              "total_distance_m": 18000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-06-28",
+              "kcal_target": 2700,
+              "carbs_g": 360,
+              "protein_g": 125,
+              "fat_g": 75,
+              "water_ml": 2800,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2h",
+                  "kcal": 550,
+                  "carbs_g": 90,
+                  "protein_g": 20,
+                  "fat_g": 10,
+                  "items_md": "燕麦/面包 + 香蕉 + 酸奶"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 650,
+                  "carbs_g": 95,
+                  "protein_g": 35,
+                  "fat_g": 15,
+                  "items_md": "米饭 + 鸡蛋/鱼肉 + 蔬菜"
+                }
+              ],
+              "notes_md": "减量周不需要过度碳载，但保持恢复所需碳水。"
+            }
+          ],
+          "notes_md": "DELOAD周，周量60km；硬性删除质量课，仅easy + 力量维护。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-06-29_07-05(W3)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-29",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "从减量周回升，先完整休息。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-06-30",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "CV间歇 15km：1k * 6 @ 1km rep",
+              "spec": null,
+              "notes_md": "热身与放松z2 4:51-5:40/km；主训练1k * 6 @ 1km rep 3:37/km，组间200m慢跑。快段总量6km，控制高强度占比。",
+              "total_distance_m": 15000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-01",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，腿部沉重则靠近5:40/km。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-02",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "MP中长课 16km（8km @ MP）",
+              "spec": null,
+              "notes_md": "总量16km；中段8km @ MP 4:02/km，其余z2 4:51-5:40/km。与周二间歇间隔48小时以上。",
+              "total_distance_m": 16000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-03",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，恢复优先。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-03",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "核心与髋稳定 25min",
+              "spec": null,
+              "notes_md": "死虫、侧桥、臀桥、弹力带侧向走、慢速提踵；全程无疼痛动作。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-04",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，作为长跑前激活。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-05",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "专项耐力长跑 25km",
+              "spec": null,
+              "notes_md": "主体z2 4:51-5:40/km，末段可自然加至接近MP但不要求进入MP；重点是稳定补给与耐力衔接。",
+              "total_distance_m": 25000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-07-05",
+              "kcal_target": 3100,
+              "carbs_g": 450,
+              "protein_g": 130,
+              "fat_g": 75,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 650,
+                  "carbs_g": 115,
+                  "protein_g": 22,
+                  "fat_g": 10,
+                  "items_md": "白米粥/面包 + 香蕉 + 蜂蜜，低纤维"
+                },
+                {
+                  "name": "训练补给",
+                  "time_hint": "长跑中",
+                  "kcal": 300,
+                  "carbs_g": 75,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "每35-40分钟1胶，配水；按出汗情况补钠"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 750,
+                  "carbs_g": 120,
+                  "protein_g": 35,
+                  "fat_g": 15,
+                  "items_md": "米饭/面 + 瘦肉/鱼 + 电解质饮料"
+                }
+              ],
+              "notes_md": "本周恢复到82km，长跑继续练习胶和钠。"
+            }
+          ],
+          "notes_md": "周量82km，核心轮换为CV间歇 + MP中长课，周日25km耐力长跑。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-07-06_07-12(W4)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-06",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "本周有7/12 milestone长跑，周一完全休息。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-07",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "Tempo连续跑 15km（45min @ 阈值附近）",
+              "spec": null,
+              "notes_md": "热身/放松z2 4:51-5:40/km；中段45min控制在阈值4:05/km附近但以稳态为先，不冲过阈值。",
+              "total_distance_m": 15000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-08",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，保持轻松。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-09",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 13km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，避免把easy跑成质量课。",
+              "total_distance_m": 13000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-10",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "力量维护 25min",
+              "spec": null,
+              "notes_md": "核心抗伸展、臀中肌、足踝稳定、慢速提踵；不做跳跃。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-11",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "中长轻松跑 20km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，周日长跑前不加入快段。",
+              "total_distance_m": 20000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-12",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "专项长跑 26km（milestone：long_run_distance_km >= 26，内含10km MP）",
+              "spec": null,
+              "notes_md": "阶段milestone执行：26km长跑内10km @ MP 4:02/km；目标 metric：long_run_distance_km >= 26。执行标准：前段z2 4:51-5:40/km，MP段心率/RPE正常，无明显漂移，补给不中断。",
+              "total_distance_m": 26000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-07-12",
+              "kcal_target": 3200,
+              "carbs_g": 470,
+              "protein_g": 130,
+              "fat_g": 75,
+              "water_ml": 3300,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 700,
+                  "carbs_g": 125,
+                  "protein_g": 20,
+                  "fat_g": 10,
+                  "items_md": "米饭/面包 + 香蕉 + 少量蛋白，低脂低纤维"
+                },
+                {
+                  "name": "训练补给",
+                  "time_hint": "长跑中",
+                  "kcal": 360,
+                  "carbs_g": 90,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "每35分钟左右1胶，MP段前确保有碳水；配水并补钠"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 800,
+                  "carbs_g": 125,
+                  "protein_g": 40,
+                  "fat_g": 18,
+                  "items_md": "主食 + 瘦肉/鱼/蛋 + 电解质"
+                }
+              ],
+              "notes_md": "本周验证26km含10km MP时的心率/RPE和胃肠稳定性。"
+            }
+          ],
+          "notes_md": "周量84km，核心为tempo连续跑 + milestone专项长跑。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-07-13_07-19(W5)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-13",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "上周milestone后完整休息，吸收专项刺激。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-14",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "MP中长课 18km（12km @ MP）",
+              "spec": null,
+              "notes_md": "热身与放松z2 4:51-5:40/km；中段12km @ MP 4:02/km，目标是稳定节奏而非提速。",
+              "total_distance_m": 18000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-15",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，必要时靠近慢端。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-16",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "CV间歇 14km：1k * 6 @ 1km rep",
+              "spec": null,
+              "notes_md": "热身/放松z2 4:51-5:40/km；1k * 6 @ 1km rep 3:37/km，组间200m慢跑。快段不过量，保持动作经济性。",
+              "total_distance_m": 14000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-17",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，放松为主。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-17",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "力量维护 25min",
+              "spec": null,
+              "notes_md": "核心、臀中肌、足踝稳定、慢速提踵；不安排跳跃或大重量。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-18",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，保持长跑前轻松。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-19",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "专项耐力长跑 26km",
+              "spec": null,
+              "notes_md": "主体z2 4:51-5:40/km；可在末段自然接近MP体感，但不强制MP段，避免连续两周复制milestone结构。",
+              "total_distance_m": 26000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-07-19",
+              "kcal_target": 3200,
+              "carbs_g": 460,
+              "protein_g": 130,
+              "fat_g": 75,
+              "water_ml": 3300,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 680,
+                  "carbs_g": 120,
+                  "protein_g": 20,
+                  "fat_g": 10,
+                  "items_md": "白米饭/面包 + 香蕉 + 蜂蜜水"
+                },
+                {
+                  "name": "训练补给",
+                  "time_hint": "长跑中",
+                  "kcal": 330,
+                  "carbs_g": 80,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "每35-40分钟1胶，配水和钠"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 780,
+                  "carbs_g": 120,
+                  "protein_g": 38,
+                  "fat_g": 18,
+                  "items_md": "主食 + 高蛋白 + 电解质"
+                }
+              ],
+              "notes_md": "维持高碳水以支持86km负荷周。"
+            }
+          ],
+          "notes_md": "周量86km，核心轮换为MP中长课 + CV间歇，长跑保持专项耐力。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-07-20_07-26(W6)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-20",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "DELOAD周，删除质量课；完全休息。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-21",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "仅z2 4:51-5:40/km。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-22",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，恢复优先。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-23",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，不加速。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-24",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "减量周力量维护 25min",
+              "spec": null,
+              "notes_md": "核心稳定、臀中肌激活、足踝控制、慢速提踵；低疲劳。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-25",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 15km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，保持放松。",
+              "total_distance_m": 15000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-26",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松长跑 19km",
+              "spec": null,
+              "notes_md": "DELOAD长跑，全程z2 4:51-5:40/km，不安排MP。",
+              "total_distance_m": 19000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-07-26",
+              "kcal_target": 2800,
+              "carbs_g": 380,
+              "protein_g": 125,
+              "fat_g": 75,
+              "water_ml": 2900,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2h",
+                  "kcal": 580,
+                  "carbs_g": 95,
+                  "protein_g": 20,
+                  "fat_g": 12,
+                  "items_md": "燕麦/面包 + 香蕉 + 酸奶"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 680,
+                  "carbs_g": 100,
+                  "protein_g": 35,
+                  "fat_g": 16,
+                  "items_md": "米饭 + 鱼/鸡蛋 + 蔬菜"
+                }
+              ],
+              "notes_md": "减量周维持碳水，不做激进热量赤字。"
+            }
+          ],
+          "notes_md": "DELOAD周，周量64km；无质量课，仅easy和力量维护。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-07-27_08-02(W7)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-27",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "进入新一轮负荷周，先完整休息。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-28",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "阈值巡航 15km：2k * 4 @ 阈值",
+              "spec": null,
+              "notes_md": "热身/放松z2 4:51-5:40/km；2k * 4 @ 阈值4:05/km，组间90s慢跑。与前一负荷周主课结构错开。",
+              "total_distance_m": 15000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-29",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，恢复阈值课。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-30",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "全程z2 4:51-5:40/km。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-31",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，跑后放松。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-07-31",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "核心与髋稳定 25min",
+              "spec": null,
+              "notes_md": "侧桥、死虫、臀桥、弹力带侧向走、提踵；低疲劳。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-01",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，准备周日milestone。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-02",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "专项长跑 27km（milestone：long_run_distance_km >= 27，内含12km MP）",
+              "spec": null,
+              "notes_md": "阶段milestone执行：27km长跑内12km @ MP 4:02/km；目标 metric：long_run_distance_km >= 27。执行标准：胶和钠按赛制执行，前段z2 4:51-5:40/km，MP段稳定，胃肠无明显不适。",
+              "total_distance_m": 27000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-08-02",
+              "kcal_target": 3300,
+              "carbs_g": 490,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3400,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 720,
+                  "carbs_g": 130,
+                  "protein_g": 22,
+                  "fat_g": 10,
+                  "items_md": "米饭/面包 + 香蕉 + 少量蛋白，低纤维"
+                },
+                {
+                  "name": "训练补给",
+                  "time_hint": "长跑中",
+                  "kcal": 420,
+                  "carbs_g": 100,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "按赛制练习胶和钠：每30-35分钟1胶，配水；出汗多时增加电解质"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 850,
+                  "carbs_g": 135,
+                  "protein_g": 40,
+                  "fat_g": 18,
+                  "items_md": "米饭/面 + 瘦肉/鱼 + 电解质饮料"
+                }
+              ],
+              "notes_md": "本周营养目标是完整彩排27km含12km MP的胶和钠。"
+            }
+          ],
+          "notes_md": "周量86km，核心为阈值巡航 + 27km含12km MP milestone长跑。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-08-03_08-09(W8)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-03",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "上周27km milestone后完整休息。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-04",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "CV间歇 16km：1k * 8 @ 1km rep",
+              "spec": null,
+              "notes_md": "热身/放松z2 4:51-5:40/km；1k * 8 @ 1km rep 3:37/km，组间200m慢跑。高强度快段总量8km，注意动作放松。",
+              "total_distance_m": 16000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-05",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-06",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "MP中长课 18km（12km @ MP）",
+              "spec": null,
+              "notes_md": "总量18km；中段12km @ MP 4:02/km，其余z2 4:51-5:40/km。与周二间歇间隔，避免连续硬日。",
+              "total_distance_m": 18000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-07",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，恢复为主。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-07",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "力量维护 25min",
+              "spec": null,
+              "notes_md": "核心、臀中肌、足踝稳定、慢速提踵；不做跳跃。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-08",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，长跑前保持轻松。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-09",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "专项耐力长跑 26km",
+              "spec": null,
+              "notes_md": "主体z2 4:51-5:40/km，末段可渐进但不强制MP；本周重点已在CV与MP中长课。",
+              "total_distance_m": 26000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-08-09",
+              "kcal_target": 3300,
+              "carbs_g": 480,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3400,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 700,
+                  "carbs_g": 125,
+                  "protein_g": 22,
+                  "fat_g": 10,
+                  "items_md": "白米饭/面包 + 香蕉 + 蜂蜜水"
+                },
+                {
+                  "name": "训练补给",
+                  "time_hint": "长跑中",
+                  "kcal": 360,
+                  "carbs_g": 90,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "每35-40分钟1胶，配水和钠"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 820,
+                  "carbs_g": 130,
+                  "protein_g": 40,
+                  "fat_g": 18,
+                  "items_md": "主食 + 优质蛋白 + 电解质"
+                }
+              ],
+              "notes_md": "88km负荷周，确保长跑后补碳水和电解质。"
+            }
+          ],
+          "notes_md": "周量88km，核心轮换为CV间歇 + MP中长课，长跑26km。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-08-10_08-16(W9)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-10",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "DELOAD周；因8/16有10K观察测试，本周其余训练全部easy。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-11",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松长跑 24.6km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，不安排MP；作为减量周内的低强度耐力维持。",
+              "total_distance_m": 24600,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-12",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，放松。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-13",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "仅z2 4:51-5:40/km。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-14",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，保持腿部新鲜。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-14",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "测试周力量维护 20min",
+              "spec": null,
+              "notes_md": "仅核心激活、臀中肌和足踝稳定；低疲劳，不影响周日10K测试。",
+              "total_distance_m": null,
+              "total_duration_s": 1200,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-15",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "赛前激活跑 11km",
+              "spec": null,
+              "notes_md": "主体z2 4:51-5:40/km，末段4次15秒放松加速；不做疲劳性训练。",
+              "total_distance_m": 11000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-16",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "10K测试 16km总量（milestone：race_time_s_10k <= 2280）",
+              "spec": null,
+              "notes_md": "阶段milestone执行：10K测试目标 race_time_s_10k <= 2280，即10K≤38:00；参考均速约3:48/km来自目标本身。总量16km：充分热身、10K控制测试、放松跑。执行标准：前5K稳住，后5K若HR/RPE正常再推进；跟腱/小腿疼痛>3/10或动作变形则停止冲击目标。",
+              "total_distance_m": 16000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-08-16",
+              "kcal_target": 3100,
+              "carbs_g": 460,
+              "protein_g": 130,
+              "fat_g": 70,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "测试前3h",
+                  "kcal": 650,
+                  "carbs_g": 115,
+                  "protein_g": 20,
+                  "fat_g": 10,
+                  "items_md": "白米饭/面包 + 香蕉 + 少量蛋白，避免高纤维"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "测试前30-45min",
+                  "kcal": 120,
+                  "carbs_g": 30,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "半支或1支能量胶，配水"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "测试后1h内",
+                  "kcal": 800,
+                  "carbs_g": 120,
+                  "protein_g": 40,
+                  "fat_g": 18,
+                  "items_md": "主食 + 优质蛋白 + 电解质"
+                }
+              ],
+              "notes_md": "10K测试日以碳水可用性和胃肠舒适为优先。"
+            }
+          ],
+          "notes_md": "DELOAD周目标82km内，除8/16 milestone测试外不安排其他质量课。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-08-17_08-23(W10)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-17",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "10K测试后恢复；DELOAD周继续删除质量课。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-18",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，观察测试后肌肉反应。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-19",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，偏慢。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-20",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "全程z2 4:51-5:40/km。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-21",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "减量周力量维护 25min",
+              "spec": null,
+              "notes_md": "核心、臀中肌、足踝稳定、慢速提踵；不做高负荷动作。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-22",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 13km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。",
+              "total_distance_m": 13000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-23",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松长跑 19km",
+              "spec": null,
+              "notes_md": "DELOAD长跑，仅z2 4:51-5:40/km，不加入MP。",
+              "total_distance_m": 19000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-08-23",
+              "kcal_target": 2800,
+              "carbs_g": 380,
+              "protein_g": 125,
+              "fat_g": 75,
+              "water_ml": 2900,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2h",
+                  "kcal": 580,
+                  "carbs_g": 95,
+                  "protein_g": 20,
+                  "fat_g": 12,
+                  "items_md": "燕麦/面包 + 香蕉 + 酸奶"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 680,
+                  "carbs_g": 100,
+                  "protein_g": 35,
+                  "fat_g": 16,
+                  "items_md": "米饭 + 鸡蛋/鱼 + 蔬菜"
+                }
+              ],
+              "notes_md": "减量恢复周，支持下周重新回到88km。"
+            }
+          ],
+          "notes_md": "DELOAD周，周量62km；无质量课，仅easy和力量维护。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-08-24_08-30(W11)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-24",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "回到负荷周，准备阶段末关键长跑。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-25",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "Tempo连续跑 16km（40-45min @ 阈值附近）",
+              "spec": null,
+              "notes_md": "热身/放松z2 4:51-5:40/km；中段40-45min控制在阈值4:05/km附近，保持连续稳态，不冲刺。",
+              "total_distance_m": 16000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-26",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-27",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，不加快。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-28",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，保持轻松。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-28",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "力量维护 20min",
+              "spec": null,
+              "notes_md": "核心、臀中肌、足踝稳定；周日关键长跑前降低力量疲劳。",
+              "total_distance_m": null,
+              "total_duration_s": 1200,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-29",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，长跑前激活但不累积疲劳。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-30",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "专项长跑 28km（milestone：long_run_distance_km >= 28，内含16km MP）",
+              "spec": null,
+              "notes_md": "阶段末milestone执行：28km长跑内16km @ MP 4:02/km；目标 metric：long_run_distance_km >= 28。执行标准：前段z2 4:51-5:40/km，MP段稳定不漂，胶/钠按赛制，次日可恢复为通过标准。",
+              "total_distance_m": 28000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-08-30",
+              "kcal_target": 3400,
+              "carbs_g": 510,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3500,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 750,
+                  "carbs_g": 135,
+                  "protein_g": 22,
+                  "fat_g": 10,
+                  "items_md": "白米饭/面包 + 香蕉 + 蜂蜜，低纤维低脂"
+                },
+                {
+                  "name": "训练补给",
+                  "time_hint": "长跑中",
+                  "kcal": 480,
+                  "carbs_g": 115,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "每30-35分钟1胶，MP段前和MP段中持续配水；按赛制补钠"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 900,
+                  "carbs_g": 145,
+                  "protein_g": 42,
+                  "fat_g": 18,
+                  "items_md": "米饭/面 + 瘦肉/鱼/蛋 + 电解质饮料"
+                }
+              ],
+              "notes_md": "阶段末关键彩排，营养重点是16km MP段期间碳水和钠不中断。"
+            }
+          ],
+          "notes_md": "周量88km，阶段关键周：tempo连续跑 + 28km含16km MP milestone长跑。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-08-31_09-06(W12)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-08-31",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "关键长跑后完整休息，准备最后一个负荷维持周。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-01",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "MP中长课 18km（16km @ MP分段完成）",
+              "spec": null,
+              "notes_md": "总量18km；MP段累计16km @ MP 4:02/km，可拆为8km + 8km，中间短暂补水慢跑；其余z2 4:51-5:40/km。",
+              "total_distance_m": 18000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-02",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 10km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，恢复MP中长课。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-03",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "CV间歇 15km：1k * 6 @ 1km rep",
+              "spec": null,
+              "notes_md": "热身/放松z2 4:51-5:40/km；1k * 6 @ 1km rep 3:37/km，组间200m慢跑。相比W8减少组数，避免阶段末过度高强度。",
+              "total_distance_m": 15000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-04",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-04",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "力量维护 20min",
+              "spec": null,
+              "notes_md": "核心、臀中肌、足踝稳定；低疲劳。",
+              "total_distance_m": null,
+              "total_duration_s": 1200,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-05",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10.6km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，用于精确贴近88km周量。",
+              "total_distance_m": 10600,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-06",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "专项耐力长跑 26.4km",
+              "spec": null,
+              "notes_md": "主体z2 4:51-5:40/km，疲劳低时末段可自然渐进但不安排硬性MP段；长跑占周量30%。",
+              "total_distance_m": 26400,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-09-06",
+              "kcal_target": 3300,
+              "carbs_g": 480,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3400,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2-3h",
+                  "kcal": 700,
+                  "carbs_g": 125,
+                  "protein_g": 22,
+                  "fat_g": 10,
+                  "items_md": "米饭/面包 + 香蕉 + 蜂蜜水"
+                },
+                {
+                  "name": "训练补给",
+                  "time_hint": "长跑中",
+                  "kcal": 360,
+                  "carbs_g": 90,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "每35-40分钟1胶，配水和钠"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 820,
+                  "carbs_g": 130,
+                  "protein_g": 40,
+                  "fat_g": 18,
+                  "items_md": "主食 + 优质蛋白 + 电解质"
+                }
+              ],
+              "notes_md": "保持长跑补给流程，为后续巅峰期承接做准备。"
+            }
+          ],
+          "notes_md": "周量88km，最后负荷维持周；MP中长课 + 缩量CV，避免复制上一周长跑主刺激。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-09-07_09-13(W13)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-07",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "DELOAD周，删除质量课，为专项期收束和后续阶段承接。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-08",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，不做MP/阈值/间歇。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-09",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，偏慢恢复。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-10",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "全程z2 4:51-5:40/km。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-11",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "减量周力量维护 25min",
+              "spec": null,
+              "notes_md": "核心稳定、臀中肌、足踝控制、慢速提踵；低疲劳，维持动作质量。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-12",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 14km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。",
+              "total_distance_m": 14000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-13",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松长跑 20km",
+              "spec": null,
+              "notes_md": "DELOAD长跑，全程z2 4:51-5:40/km，不安排MP；结束专项期后评估疲劳、HR漂移和恢复情况。",
+              "total_distance_m": 20000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-09-13",
+              "kcal_target": 2900,
+              "carbs_g": 400,
+              "protein_g": 130,
+              "fat_g": 75,
+              "water_ml": 3000,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "跑前2h",
+                  "kcal": 600,
+                  "carbs_g": 100,
+                  "protein_g": 20,
+                  "fat_g": 12,
+                  "items_md": "燕麦/面包 + 香蕉 + 酸奶"
+                },
+                {
+                  "name": "恢复餐",
+                  "time_hint": "跑后1h内",
+                  "kcal": 700,
+                  "carbs_g": 105,
+                  "protein_g": 35,
+                  "fat_g": 16,
+                  "items_md": "米饭/面 + 鱼/鸡蛋 + 蔬菜 + 电解质"
+                }
+              ],
+              "notes_md": "专项期收束周，营养重点是恢复而非制造能量缺口。"
+            }
+          ],
+          "notes_md": "DELOAD周，周量66km；删除质量课，仅easy + 力量维护，完成专项期吸收。"
+        }
+      ],
+      "review": {
+        "verdict": "pass",
+        "commentary_md": "整体呈现专项期 build 特征：MP长跑从8km推进到16km，阈值/tempo/MP/CV混合质量课真实出现，且恢复周基本取消大容量质量。主要瑕疵是恢复周安排与阶段重点中“W4/8/12为70-80%”不完全一致，但未改变本阶段的核心生理指向与里程碑推进。",
+        "issues": [
+          {
+            "review_class": "progression",
+            "severity": "warning",
+            "message": "阶段重点要求3:1且W4/8/12为70-80%恢复周，但当前实际恢复周更接近W2/W6/W10/W13；W4、W8、W12仍为高量或高质量周，周期化节奏与指定减量节点不完全一致。",
+            "target_path": null,
+            "suggested_action": null
+          }
+        ]
+      },
+      "blocked_week_count": 0
+    },
+    {
+      "phase_id": "dd8c3c68-4610-4afd-8c38-8a06497aac75",
+      "phase_type": "peak",
+      "weeks": [
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-09-14_09-20(W1)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-14",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "巅峰期第 1 周开局保留恢复余量；不安排跑步、力量或交叉训练。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-15",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "中周 MP 课 18.5km：12km @ MP",
+              "spec": null,
+              "notes_md": "平路执行。建议：3km z2 热身（4:51-5:40/km）+ 12km @ MP（4:02/km）+ 3.5km z2 放松。目标是在可控呼吸和稳定步频下巩固马拉松配速耐力，不额外加速。",
+              "total_distance_m": 18500,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-16",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "全程 z2 4:51-5:40/km；以恢复和堆叠有氧量为主，避免把 easy 跑成节奏跑。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-17",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 10km + 放松跑姿",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。最后可做 4-6 组 15 秒自然加速跑姿唤醒，非冲刺、不过度用力，不计作质量课。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-18",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "力量维护 25分钟",
+              "spec": null,
+              "notes_md": "低疲劳维护：提踵 3 * 12、臀桥 3 * 12、侧桥 3 * 30秒/侧、蚌式开合 2 * 15/侧、髋稳定控制 2 * 8/侧。全程疼痛≤3/10，避免跳跃和大重量。",
+              "total_distance_m": null,
+              "total_duration_s": 1500,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-19",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 15.8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，保持轻松可交谈；为周日长跑做准备，不做任何阈值或 MP 段。",
+              "total_distance_m": 15800,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-20",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "里程碑长跑 27.7km：达成 long_run_distance_km >= 24",
+              "spec": null,
+              "notes_md": "本周 milestone：2026-09-20 long_run_distance_km >= 24。执行标准：全程 27.7km，稳态长跑，主要 z2 4:51-5:40/km；中后段可自然接近但不强迫进入 MP，保留峰值彩排余量。通过标准：完成 ≥24km，心率/RPE 稳定，跟腱或其他疼痛≤3/10且次日不加重。",
+              "total_distance_m": 27700,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-09-15",
+              "kcal_target": 3000,
+              "carbs_g": 430,
+              "protein_g": 130,
+              "fat_g": 75,
+              "water_ml": 3000,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 700,
+                  "carbs_g": 105,
+                  "protein_g": 28,
+                  "fat_g": 16,
+                  "items_md": "燕麦 + 香蕉 + 酸奶 + 鸡蛋"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 850,
+                  "carbs_g": 125,
+                  "protein_g": 35,
+                  "fat_g": 22,
+                  "items_md": "米饭 + 鸡胸/鱼 + 蔬菜 + 橄榄油"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "训练后30分钟内",
+                  "kcal": 350,
+                  "carbs_g": 55,
+                  "protein_g": 25,
+                  "fat_g": 5,
+                  "items_md": "恢复饮品或牛奶 + 面包/水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 850,
+                  "carbs_g": 115,
+                  "protein_g": 38,
+                  "fat_g": 24,
+                  "items_md": "面/米饭 + 瘦肉/豆制品 + 蔬菜"
+                }
+              ],
+              "notes_md": "MP 课日提高碳水，训练后优先补充碳水和蛋白。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-09-20",
+              "kcal_target": 3300,
+              "carbs_g": 500,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3500,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "长跑前2-3小时",
+                  "kcal": 650,
+                  "carbs_g": 120,
+                  "protein_g": 18,
+                  "fat_g": 10,
+                  "items_md": "白面包/贝果 + 香蕉 + 蜂蜜 + 少量酸奶"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "长跑中",
+                  "kcal": 360,
+                  "carbs_g": 90,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "按 30-40g 碳水/小时补给，配水；练习比赛日胶和饮水节奏"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "长跑后1小时内",
+                  "kcal": 900,
+                  "carbs_g": 140,
+                  "protein_g": 38,
+                  "fat_g": 20,
+                  "items_md": "米饭/面 + 鸡蛋/鱼/瘦肉 + 蔬菜 + 水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 900,
+                  "carbs_g": 125,
+                  "protein_g": 42,
+                  "fat_g": 25,
+                  "items_md": "主食充足 + 优质蛋白 + 易消化蔬菜"
+                }
+              ],
+              "notes_md": "长跑日重点是补糖、补水和肠胃演练；跑后观察跟腱和整体疲劳。"
+            }
+          ],
+          "notes_md": "第 1 周目标周量 84km，实际安排 84km。核心刺激为中周 MP 课 + 周日 27.7km 稳态长跑；不引入新刺激，重点把 MP 感觉和长跑耐受推向峰值前一档。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-09-21_09-27(W2)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-21",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "峰值周开始前完整休息；不安排跑步、力量或交叉训练。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-22",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 13km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。只做有氧承接，保持步幅自然，不追配速下限。",
+              "total_distance_m": 13000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-23",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "阈值保鲜 19.8km：2k * 4 @ 阈值",
+              "spec": null,
+              "notes_md": "平路执行，作为保鲜而非拔高。建议：4km z2 热身（4:51-5:40/km）+ 2k * 4 @ 阈值（4:05/km），组间 1km z2 慢跑恢复 + 3.8km z2 放松。阈值段保持 LTHR 附近、动作放松，不冲最后一组。",
+              "total_distance_m": 19800,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-24",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 13km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。重点恢复周三阈值课，若疲劳明显则跑在 5:20-5:40/km 区间。",
+              "total_distance_m": 13000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-25",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8.8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，短一些、轻一些，为周日 31.4km 实战长跑蓄力。",
+              "total_distance_m": 8800,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-25",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "力量维护 20分钟",
+              "spec": null,
+              "notes_md": "低负荷激活：提踵 2 * 12、臀桥 2 * 12、侧桥 2 * 30秒/侧、蚌式开合 2 * 12/侧、踝足控制 2 * 8/侧。动作干净即可，不做力竭。",
+              "total_distance_m": null,
+              "total_duration_s": 1200,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-26",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "赛前式 shakeout 4km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km，非常轻松；主要检查装备、补给和身体状态。可做 4 组 10-15 秒自然放松加速，非冲刺。",
+              "total_distance_m": 4000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-27",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "里程碑实战长跑 31.4km：内含 22km @ MP",
+              "spec": null,
+              "notes_md": "本周 milestone：2026-09-27 long_run_distance_km >= 31，且 31km 内完成 22km MP，周量 90km。建议结构：5km z2 热身（4:51-5:40/km）+ 22km @ MP（4:02/km）+ 4.4km z2 放松。执行标准：平路、穿比赛鞋或接近比赛配置，按比赛补给节奏练习；MP 段不加速，心率/RPE 可控。通过标准：完成 ≥31km，总周量命中 90km，22km MP 稳定，HR/RPE/跟腱全过，疼痛≤3/10且次日不加重。",
+              "total_distance_m": 31400,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-09-23",
+              "kcal_target": 3150,
+              "carbs_g": 460,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 700,
+                  "carbs_g": 105,
+                  "protein_g": 28,
+                  "fat_g": 16,
+                  "items_md": "燕麦/面包 + 香蕉 + 鸡蛋 + 酸奶"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 900,
+                  "carbs_g": 135,
+                  "protein_g": 38,
+                  "fat_g": 22,
+                  "items_md": "米饭 + 鱼/鸡肉 + 蔬菜 + 汤"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "训练后30分钟内",
+                  "kcal": 400,
+                  "carbs_g": 65,
+                  "protein_g": 25,
+                  "fat_g": 5,
+                  "items_md": "牛奶/恢复饮 + 水果 + 面包"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 900,
+                  "carbs_g": 125,
+                  "protein_g": 40,
+                  "fat_g": 25,
+                  "items_md": "意面/米饭 + 瘦肉/豆腐 + 蔬菜"
+                }
+              ],
+              "notes_md": "阈值保鲜课日保证糖原充足，但避免过量油脂影响消化。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-09-26",
+              "kcal_target": 3300,
+              "carbs_g": 530,
+              "protein_g": 125,
+              "fat_g": 65,
+              "water_ml": 3300,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 750,
+                  "carbs_g": 125,
+                  "protein_g": 25,
+                  "fat_g": 15,
+                  "items_md": "米粥/面包 + 香蕉 + 鸡蛋"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 950,
+                  "carbs_g": 160,
+                  "protein_g": 35,
+                  "fat_g": 18,
+                  "items_md": "米饭/面 + 鸡肉/鱼 + 少量蔬菜"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "16:00",
+                  "kcal": 350,
+                  "carbs_g": 70,
+                  "protein_g": 8,
+                  "fat_g": 4,
+                  "items_md": "贝果/面包 + 果酱 + 电解质饮料"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 950,
+                  "carbs_g": 160,
+                  "protein_g": 35,
+                  "fat_g": 18,
+                  "items_md": "意面/米饭 + 瘦肉 + 少量易消化蔬菜"
+                }
+              ],
+              "notes_md": "为周日 31.4km MP 彩排做碳水准备；避免生冷、高纤维和陌生食物。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-09-27",
+              "kcal_target": 3600,
+              "carbs_g": 580,
+              "protein_g": 140,
+              "fat_g": 75,
+              "water_ml": 3800,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "长跑前2-3小时",
+                  "kcal": 750,
+                  "carbs_g": 145,
+                  "protein_g": 18,
+                  "fat_g": 8,
+                  "items_md": "白面包/贝果 + 香蕉 + 蜂蜜/果酱 + 少量酸奶"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "长跑中",
+                  "kcal": 600,
+                  "carbs_g": 150,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "按 45-60g 碳水/小时补给，配水和电解质；完全按比赛计划演练"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "长跑后1小时内",
+                  "kcal": 1000,
+                  "carbs_g": 155,
+                  "protein_g": 42,
+                  "fat_g": 22,
+                  "items_md": "米饭/面 + 鱼/鸡肉 + 水果 + 电解质饮料"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 950,
+                  "carbs_g": 135,
+                  "protein_g": 45,
+                  "fat_g": 25,
+                  "items_md": "主食充足 + 优质蛋白 + 熟蔬菜"
+                }
+              ],
+              "notes_md": "峰值长跑日必须把补给当作训练内容；记录每小时碳水、水量、胃肠反应、HR/RPE 和跟腱反馈。"
+            }
+          ],
+          "notes_md": "第 2 周目标周量 90km，实际安排 90km，为本阶段峰值周。核心刺激轮换为阈值保鲜 + 31.4km 实战 MP 长跑，周日明确命中 31km 内 22km MP 的阶段里程碑。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-09-28_10-04(W3)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-28",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "峰值长跑后完整休息；不安排跑步、力量或交叉训练。重点观察跟腱、睡眠和静息心率。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-29",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "减量周轻松跑 10km",
+              "spec": null,
+              "notes_md": "DELOAD 周删除质量课。全程 z2 4:51-5:40/km，跑完应感觉更轻松而不是更累。",
+              "total_distance_m": 10000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-30",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。保持低压力有氧，严禁加入 MP、阈值或间歇。",
+              "total_distance_m": 12000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-09-30",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "灵活性 + 力量维护 20分钟",
+              "spec": null,
+              "notes_md": "减量周维护：提踵 2 * 10、臀桥 2 * 10、侧桥 2 * 25秒/侧、髋外展控制 2 * 10/侧、踝足活动度 5分钟。全程轻松，不做力竭。",
+              "total_distance_m": null,
+              "total_duration_s": 1200,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-01",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。以恢复为第一目标；如果峰值周残留疲劳明显，跑在区间慢端。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-02",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "第二个完整休息日，帮助吸收前两周峰值负荷。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-03",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 12.9km",
+              "spec": null,
+              "notes_md": "z2 4:51-5:40/km。维持跑感，不安排任何质量段。",
+              "total_distance_m": 12900,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-04",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "减量周长跑 21.1km easy",
+              "spec": null,
+              "notes_md": "DELOAD 周长跑仅做 easy：全程 z2 4:51-5:40/km，控制心率和落地冲击，不加入 MP。目标是保留长跑节奏感，同时让身体从峰值周恢复。",
+              "total_distance_m": 21100,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-09-28",
+              "kcal_target": 2850,
+              "carbs_g": 380,
+              "protein_g": 140,
+              "fat_g": 80,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "8:00",
+                  "kcal": 650,
+                  "carbs_g": 90,
+                  "protein_g": 30,
+                  "fat_g": 18,
+                  "items_md": "燕麦 + 鸡蛋 + 水果 + 酸奶"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 850,
+                  "carbs_g": 115,
+                  "protein_g": 40,
+                  "fat_g": 25,
+                  "items_md": "米饭 + 鱼/鸡肉 + 蔬菜"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "16:00",
+                  "kcal": 300,
+                  "carbs_g": 45,
+                  "protein_g": 18,
+                  "fat_g": 6,
+                  "items_md": "牛奶/酸奶 + 水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 800,
+                  "carbs_g": 100,
+                  "protein_g": 42,
+                  "fat_g": 24,
+                  "items_md": "主食 + 豆制品/瘦肉 + 熟蔬菜"
+                }
+              ],
+              "notes_md": "峰值周后恢复日，蛋白和抗炎食物充足，帮助肌肉修复。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-10-04",
+              "kcal_target": 3000,
+              "carbs_g": 430,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3300,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "长跑前2小时",
+                  "kcal": 600,
+                  "carbs_g": 105,
+                  "protein_g": 18,
+                  "fat_g": 10,
+                  "items_md": "面包/粥 + 香蕉 + 少量酸奶"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "长跑中",
+                  "kcal": 250,
+                  "carbs_g": 60,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "按 30g 碳水/小时左右轻量补给，配水"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "长跑后1小时内",
+                  "kcal": 850,
+                  "carbs_g": 125,
+                  "protein_g": 38,
+                  "fat_g": 20,
+                  "items_md": "米饭/面 + 鸡肉/鱼 + 水果"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "19:00",
+                  "kcal": 850,
+                  "carbs_g": 110,
+                  "protein_g": 40,
+                  "fat_g": 25,
+                  "items_md": "主食 + 优质蛋白 + 熟蔬菜"
+                }
+              ],
+              "notes_md": "减量周长跑仍需补糖补水，但总负荷下降，避免用饮食制造额外压力。"
+            }
+          ],
+          "notes_md": "第 3 周为 DELOAD/减量周，目标周量 64km，实际安排 64km。严格删除质量课，仅保留 easy、休息和低疲劳力量维护，用于吸收 W1-W2 的峰值专项刺激。"
+        }
+      ],
+      "review": {
+        "verdict": "pass",
+        "commentary_md": "本阶段整体符合巅峰期定位：W1 以中周 MP 和 24km+ 长跑铺垫，W2 完成 31.4km 内含 22km MP 的核心实战长跑，并配少量阈值保鲜，W3 明显吸收回落。周量从 84km 到 90km 后降至 64km，符合“最高专项负荷后立即吸收、慢性持平或微降”的阶段重点。",
+        "issues": []
+      },
+      "blocked_week_count": 0
+    },
+    {
+      "phase_id": "c73f3661-7a38-4fe5-a23b-c4caf4855cdb",
+      "phase_type": "taper",
+      "weeks": [
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-10-05_10-11(W1)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-05",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "减量期第 1 周先清疲劳，不安排跑步、力量或交叉训练。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-06",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8.4km + 6 * 20s strides",
+              "spec": null,
+              "notes_md": "主体全程 Z2 4:51-5:40/km；最后做 6 * 20s 放松加速，接近但不快于 400m rep 3:25/km，组间慢跑/走到呼吸完全恢复。只做神经肌肉唤醒，不做质量课。",
+              "total_distance_m": 8400,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-06",
+              "session_index": 1,
+              "kind": "strength",
+              "summary": "力量维护 20-25min",
+              "spec": null,
+              "notes_md": "低疲劳维护：臀桥 2 * 12、侧桥 2 * 30s/侧、弹力带蚌式 2 * 12/侧、提踵 2 * 12。全程留 3-4 次余力，不做到酸胀。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-07",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "短 MP 唤醒 14km（含 6.2km @ MP 4:02/km）",
+              "spec": null,
+              "notes_md": "结构：热身 3km @ Z2 4:51-5:40/km；6.2km @ MP 4:02/km；放松 4.8km @ Z2 4:51-5:40/km。目标是保留比赛节奏触感，RPE 控制在可控、不过度兴奋；若跟腱或小腿不适 >3/10，MP 段立即降为 Z2。",
+              "total_distance_m": 14000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-08",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "吸收周中 MP 触感，不安排任何训练。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-09",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "轻松跑 8km",
+              "spec": null,
+              "notes_md": "全程 Z2 4:51-5:40/km，以放松、步频自然为主；不加速、不补强度。",
+              "total_distance_m": 8000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-10",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "恢复慢跑 6km",
+              "spec": null,
+              "notes_md": "Z2 下沿或更轻松，配速控制在 4:51-5:40/km 内偏慢侧；以清疲劳和维持跑感为主。",
+              "total_distance_m": 6000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-11",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "减量长跑 15.6km",
+              "spec": null,
+              "notes_md": "全程 Z2 4:51-5:40/km，不做后程提速。最长单次 15.6km，占本周 52km 的 30%，控制在安全范围内；目标是保持有氧适应和耐力触感，不制造新疲劳。",
+              "total_distance_m": 15600,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-10-07",
+              "kcal_target": 2850,
+              "carbs_g": 390,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 2800,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 700,
+                  "carbs_g": 105,
+                  "protein_g": 28,
+                  "fat_g": 16,
+                  "items_md": "燕麦 + 香蕉 + 酸奶 + 鸡蛋"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 850,
+                  "carbs_g": 120,
+                  "protein_g": 40,
+                  "fat_g": 22,
+                  "items_md": "米饭 + 鸡胸/鱼肉 + 熟蔬菜 + 少量橄榄油"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "18:30",
+                  "kcal": 850,
+                  "carbs_g": 120,
+                  "protein_g": 42,
+                  "fat_g": 22,
+                  "items_md": "意面或米饭 + 瘦肉 + 易消化蔬菜"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "训练后 30min 内",
+                  "kcal": 450,
+                  "carbs_g": 45,
+                  "protein_g": 25,
+                  "fat_g": 15,
+                  "items_md": "乳清/牛奶 + 面包或能量棒"
+                }
+              ],
+              "notes_md": "MP 唤醒日补足碳水，训练后优先补糖原和蛋白，避免因减量期食量过低影响比赛周状态。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-10-11",
+              "kcal_target": 3000,
+              "carbs_g": 430,
+              "protein_g": 135,
+              "fat_g": 75,
+              "water_ml": 3000,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "长跑前 2-3h",
+                  "kcal": 650,
+                  "carbs_g": 105,
+                  "protein_g": 20,
+                  "fat_g": 12,
+                  "items_md": "白面包/贝果 + 香蕉 + 蜂蜜 + 少量酸奶"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "长跑后 30min 内",
+                  "kcal": 450,
+                  "carbs_g": 70,
+                  "protein_g": 25,
+                  "fat_g": 8,
+                  "items_md": "恢复饮 + 米饼或面包"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 900,
+                  "carbs_g": 130,
+                  "protein_g": 42,
+                  "fat_g": 22,
+                  "items_md": "米饭 + 鸡肉/鱼 + 熟蔬菜"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "18:30",
+                  "kcal": 800,
+                  "carbs_g": 105,
+                  "protein_g": 38,
+                  "fat_g": 24,
+                  "items_md": "土豆/米饭 + 瘦肉 + 易消化蔬菜"
+                }
+              ],
+              "notes_md": "长跑仍按比赛补给习惯小剂量演练：若胃肠稳定，可每 30-35min 摄入 25-30g 碳水，避免尝试新品牌。"
+            }
+          ],
+          "notes_md": "本周目标周量 52km，实际跑量 52km。核心刺激只有 1 次短 MP 唤醒，MP 段 6.2km 使用注入配速 MP 4:02/km；其余跑量均为 Z2 4:51-5:40/km 或更轻松，取消大长跑和大容量质量课。"
+        },
+        {
+          "schema": "weekly-plan/v1",
+          "week_folder": "2026-10-12_10-18(W2)",
+          "sessions": [
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-12",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "比赛周减量，主动下降 acute load；不安排训练。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-13",
+              "session_index": 0,
+              "kind": "strength",
+              "summary": "比赛周力量维护 15-20min",
+              "spec": null,
+              "notes_md": "仅做激活，不制造酸痛：臀桥 2 * 10、侧桥 2 * 25s/侧、弹力带侧向走 2 * 10步/侧、站姿提踵 2 * 10。所有动作轻松完成，若出现局部疼痛 >3/10 或动作代偿，立即停止。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-14",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "DELOAD 周删除独立质量课；不安排 MP、阈值或间歇。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-15",
+              "session_index": 0,
+              "kind": "note",
+              "summary": "比赛策略确认：A/B/C 目标门槛",
+              "spec": null,
+              "notes_md": "2026-10-18 全马里程碑执行标准：A 目标 race_time_s_fm <= 10200，即 2:50:00，对应 MP 4:02/km；仅当 HM <= 1:24:30 或 10K <= 37:45 之一已达标，且最大合法 MP 彩排、VO2/HR/RPE、跟腱反应全部通过时开放 A。若仅 HM <= 1:25:30 或 10K >= 38:00，则按观察/B 执行；默认 B=2:52-2:55，C=破 PB/稳健完赛。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-16",
+              "session_index": 0,
+              "kind": "rest",
+              "summary": "完全休息",
+              "spec": null,
+              "notes_md": "优先睡眠和补碳，不临时加练。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-17",
+              "session_index": 0,
+              "kind": "note",
+              "summary": "赛前检查与补给打包",
+              "spec": null,
+              "notes_md": "确认号码布、比赛鞋袜、凡士林/防磨、能量胶、盐丸或电解质、起跑前衣物。晚餐选择熟悉低纤维高碳水食物，不尝试新食材。",
+              "total_distance_m": null,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            },
+            {
+              "schema": "plan-session/v1",
+              "date": "2026-10-18",
+              "session_index": 0,
+              "kind": "run",
+              "summary": "全马比赛 42.195km + 赛前热身/缓冲 2.8km（总 45km）",
+              "spec": null,
+              "notes_md": "里程碑：race_time_s_fm <= 10200，A=2:50:00，目标 MP 4:02/km。执行门槛：只有在 HM <= 1:24:30 或 10K <= 37:45 之一达标，且最大合法 MP 彩排、VO2/HR/RPE、跟腱反应全部通过时，才按 A 目标推进；否则按 B=2:52-2:55 或 C=破 PB/稳健完赛执行。比赛策略：前 5km 不快于 MP 4:02/km，10-32km 稳定在目标体感和补给节奏，32km 后根据 HR/RPE 和腿部反应决定是否维持或保守。若跟腱疼痛 >3/10、步态改变、心率/RPE 明显失控，立即降级为 B/C。总跑量含赛前非常轻松热身和必要缓冲，用于命中本周 45km 目标周量；不额外安排独立 shakeout，避免再次造成最长跑占比问题。",
+              "total_distance_m": 45000,
+              "total_duration_s": null,
+              "scheduled_workout_id": null
+            }
+          ],
+          "nutrition": [
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-10-15",
+              "kcal_target": 3100,
+              "carbs_g": 470,
+              "protein_g": 125,
+              "fat_g": 70,
+              "water_ml": 3000,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "7:30",
+                  "kcal": 750,
+                  "carbs_g": 120,
+                  "protein_g": 25,
+                  "fat_g": 14,
+                  "items_md": "米粥/燕麦 + 面包 + 香蕉 + 酸奶"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 950,
+                  "carbs_g": 145,
+                  "protein_g": 40,
+                  "fat_g": 22,
+                  "items_md": "米饭 + 鸡肉/鱼肉 + 熟蔬菜"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "18:30",
+                  "kcal": 950,
+                  "carbs_g": 145,
+                  "protein_g": 38,
+                  "fat_g": 22,
+                  "items_md": "意面/米饭 + 瘦肉 + 少量熟蔬菜"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "下午",
+                  "kcal": 450,
+                  "carbs_g": 60,
+                  "protein_g": 22,
+                  "fat_g": 12,
+                  "items_md": "贝果/面包 + 运动饮料或果汁"
+                }
+              ],
+              "notes_md": "开始提高碳水占比，减少高纤维和油腻食物，保持尿色浅黄。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-10-17",
+              "kcal_target": 3300,
+              "carbs_g": 540,
+              "protein_g": 115,
+              "fat_g": 60,
+              "water_ml": 3200,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "8:00",
+                  "kcal": 800,
+                  "carbs_g": 140,
+                  "protein_g": 22,
+                  "fat_g": 12,
+                  "items_md": "白面包/贝果 + 果酱 + 香蕉 + 低脂酸奶"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "12:30",
+                  "kcal": 1000,
+                  "carbs_g": 165,
+                  "protein_g": 35,
+                  "fat_g": 20,
+                  "items_md": "白米饭 + 少量鸡肉/鱼 + 熟胡萝卜或土豆"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "18:00",
+                  "kcal": 1050,
+                  "carbs_g": 175,
+                  "protein_g": 35,
+                  "fat_g": 18,
+                  "items_md": "意面/白米饭 + 少量瘦肉 + 低纤维熟食"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "上午/下午分次",
+                  "kcal": 450,
+                  "carbs_g": 60,
+                  "protein_g": 23,
+                  "fat_g": 10,
+                  "items_md": "运动饮料 + 米饼/面包 + 少量酸奶"
+                }
+              ],
+              "notes_md": "赛前一天以熟悉、低纤维、高碳水为主；不要暴饮暴食。电解质随水分分次摄入，避免睡前大量饮水影响睡眠。"
+            },
+            {
+              "schema": "plan-nutrition/v1",
+              "date": "2026-10-18",
+              "kcal_target": 3600,
+              "carbs_g": 600,
+              "protein_g": 110,
+              "fat_g": 55,
+              "water_ml": 3500,
+              "meals": [
+                {
+                  "name": "早餐",
+                  "time_hint": "起跑前 3-4h",
+                  "kcal": 700,
+                  "carbs_g": 130,
+                  "protein_g": 18,
+                  "fat_g": 8,
+                  "items_md": "白面包/贝果 + 香蕉 + 蜂蜜/果酱 + 少量运动饮料"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "起跑前 15-20min",
+                  "kcal": 120,
+                  "carbs_g": 30,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "能量胶 1 包 + 少量水"
+                },
+                {
+                  "name": "加餐",
+                  "time_hint": "比赛中",
+                  "kcal": 700,
+                  "carbs_g": 170,
+                  "protein_g": 0,
+                  "fat_g": 0,
+                  "items_md": "按既定品牌能量胶和运动饮料执行，目标约 60-75g 碳水/小时，配水摄入"
+                },
+                {
+                  "name": "午餐",
+                  "time_hint": "完赛后 1-2h",
+                  "kcal": 950,
+                  "carbs_g": 140,
+                  "protein_g": 40,
+                  "fat_g": 20,
+                  "items_md": "米饭/面 + 鸡肉/鱼肉 + 电解质饮料"
+                },
+                {
+                  "name": "晚餐",
+                  "time_hint": "18:30",
+                  "kcal": 1000,
+                  "carbs_g": 130,
+                  "protein_g": 52,
+                  "fat_g": 27,
+                  "items_md": "主食 + 优质蛋白 + 熟蔬菜，按胃口恢复进食"
+                }
+              ],
+              "notes_md": "比赛日不尝试新补给。若气温高，优先保证水和电解质；若胃部不适，改为少量多次摄入。"
+            }
+          ],
+          "notes_md": "本周为 DELOAD/比赛周，删除所有独立质量课和大容量训练；实际跑量 45km，集中在 2026-10-18 比赛及同一 session 内的赛前热身/缓冲，避免额外 shakeout 造成周内最长跑占比问题。阶段末里程碑在比赛 session 中明确：A=2:50:00（race_time_s_fm <= 10200）仅在前置门槛全部满足时开放，否则执行 B/C。"
+        }
+      ],
+      "review": {
+        "verdict": "pass",
+        "commentary_md": "本阶段符合2周FM减量期特征：W1以短MP唤醒、少量strides和大量easy维持触感，未出现大容量质量课或大长跑；W2赛前训练负荷显著收缩，以休息、策略确认和比赛执行为主。整体推进了急性负荷下降、保糖原与比赛就绪目标，并与A/B/C比赛门槛管理相匹配。",
+        "issues": []
+      },
+      "blocked_week_count": 0
+    }
+  ]
+}
