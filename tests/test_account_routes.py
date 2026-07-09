@@ -12,7 +12,29 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
+from stride_core.source import BaseDataSource, ProviderInfo
+
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
+
+
+class _DummySource(BaseDataSource):
+    def __init__(self) -> None:
+        self.logout_calls: list[str] = []
+
+    @property
+    def info(self) -> ProviderInfo:
+        return ProviderInfo(
+            name="coros",
+            display_name="COROS",
+            regions=("cn",),
+            capabilities=frozenset(),
+        )
+
+    def is_logged_in(self, user: str) -> bool:
+        return True
+
+    def logout(self, user: str) -> None:
+        self.logout_calls.append(user)
 
 
 @pytest.fixture
@@ -54,15 +76,24 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
     import stride_server.routes.account as account_mod
     monkeypatch.setattr(account_mod, "USER_DATA_DIR", tmp_path)
 
+    from stride_core.registry import ProviderRegistry
+
+    source = _DummySource()
+    registry = ProviderRegistry()
+    registry.register(source, default=True)
+
     from stride_server.bearer import require_bearer
+    from stride_server.deps import get_registry
     from stride_server.routes.account import router
 
     app = FastAPI()
+    app.state.registry = registry
+    app.dependency_overrides[get_registry] = lambda: registry
     app.include_router(router, dependencies=[Depends(require_bearer)])
 
     token = _make_token(private_pem)
     client = TestClient(app, raise_server_exceptions=False)
-    return client, token, tmp_path
+    return client, token, tmp_path, source
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -70,7 +101,7 @@ def _auth(token: str) -> dict[str, str]:
 
 
 def test_delete_account_deletes_local_data_after_auth_delete(app_client, monkeypatch):
-    client, token, tmp_path = app_client
+    client, token, tmp_path, source = app_client
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir()
     (user_dir / "profile.json").write_text("{}")
@@ -88,10 +119,11 @@ def test_delete_account_deletes_local_data_after_auth_delete(app_client, monkeyp
     assert resp.status_code == 204
     assert not user_dir.exists()
     assert seen["bearer"] == token
+    assert source.logout_calls == [USER_UUID]
 
 
 def test_delete_account_keeps_local_data_when_auth_service_blocks(app_client, monkeypatch):
-    client, token, tmp_path = app_client
+    client, token, tmp_path, source = app_client
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir()
     (user_dir / "profile.json").write_text("{}")
@@ -107,10 +139,11 @@ def test_delete_account_keeps_local_data_when_auth_service_blocks(app_client, mo
 
     assert resp.status_code == 409
     assert user_dir.exists()
+    assert source.logout_calls == []
 
 
 def test_delete_account_finishes_local_cleanup_when_auth_account_is_already_gone(app_client, monkeypatch):
-    client, token, tmp_path = app_client
+    client, token, tmp_path, source = app_client
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir()
     (user_dir / "profile.json").write_text("{}")
@@ -126,11 +159,12 @@ def test_delete_account_finishes_local_cleanup_when_auth_account_is_already_gone
 
     assert resp.status_code == 204
     assert not user_dir.exists()
+    assert source.logout_calls == [USER_UUID]
 
 
 def test_delete_account_retries_rmtree_then_succeeds(app_client, monkeypatch):
     """A transient OSError from rmtree (SMB delayed-close) is ridden out."""
-    client, token, tmp_path = app_client
+    client, token, tmp_path, _source = app_client
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir()
     (user_dir / "coros.db").write_text("sqlite")
@@ -164,7 +198,7 @@ def test_delete_account_retries_rmtree_then_succeeds(app_client, monkeypatch):
 
 def test_delete_account_returns_500_when_rmtree_keeps_failing(app_client, monkeypatch):
     """A persistent rmtree failure surfaces as 500 (no silent residue)."""
-    client, token, tmp_path = app_client
+    client, token, tmp_path, _source = app_client
     user_dir = tmp_path / USER_UUID
     user_dir.mkdir()
     (user_dir / "coros.db").write_text("sqlite")
@@ -190,13 +224,13 @@ def test_delete_account_returns_500_when_rmtree_keeps_failing(app_client, monkey
 
 
 def test_delete_account_no_auth_returns_401(app_client):
-    client, _, _ = app_client
+    client, _, _, _ = app_client
     resp = client.delete("/api/users/me")
     assert resp.status_code == 401
 
 
 def test_delete_account_rejects_invalid_subject_before_auth_delete(app_client, rsa_keypair, monkeypatch):
-    client, _, _ = app_client
+    client, _, _, _ = app_client
     private_pem, _ = rsa_keypair
     token = _make_token(private_pem, sub="not-a-uuid")
 

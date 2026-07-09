@@ -27,6 +27,11 @@ class FakeSecretClient:
     def set_secret(self, name: str, value: str) -> None:
         self.secrets[name] = value
 
+    def begin_delete_secret(self, name: str) -> None:
+        if name not in self.secrets:
+            raise ResourceNotFoundError(name)
+        del self.secrets[name]
+
 
 def test_credentials_use_file_backend_by_default(tmp_path, monkeypatch):
     monkeypatch.delenv("STRIDE_COROS_KEYVAULT_URL", raising=False)
@@ -103,3 +108,49 @@ def test_keyvault_secret_name_sanitizes_non_keyvault_chars(monkeypatch):
     monkeypatch.setenv("STRIDE_COROS_KEYVAULT_SECRET_PREFIX", "coros_config")
 
     assert auth_mod._keyvault_secret_name("__cli_test") == "coros-config-cli-test"
+
+
+def test_delete_removes_keyvault_secret(monkeypatch):
+    fake_client = FakeSecretClient()
+    user = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
+    fake_client.secrets[f"coros-config-{user}"] = json.dumps({
+        "email": "runner@example.com",
+        "pwd_hash": "hash",
+        "access_token": "token",
+        "region": "cn",
+        "user_id": "coros-user",
+    })
+    monkeypatch.setenv("STRIDE_COROS_KEYVAULT_URL", "https://stride-kv.vault.azure.net/")
+    monkeypatch.setattr(auth_mod, "_keyvault_secret_client", lambda _url: fake_client)
+
+    Credentials.delete(user=user)
+
+    assert f"coros-config-{user}" not in fake_client.secrets
+
+
+def test_delete_local_file_preserves_provider(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRIDE_COROS_KEYVAULT_URL", raising=False)
+    monkeypatch.setattr(auth_mod, "USER_DATA_DIR", tmp_path)
+    user = "alice"
+    config_path = tmp_path / user / "config.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(json.dumps({
+        "provider": "coros",
+        "email": "runner@example.com",
+        "pwd_hash": "hash",
+        "access_token": "token",
+        "region": "cn",
+        "user_id": "coros-user",
+    }), encoding="utf-8")
+
+    Credentials.delete(user=user)
+
+    assert json.loads(config_path.read_text(encoding="utf-8")) == {"provider": "coros"}
+
+
+def test_delete_idempotent_when_secret_missing(monkeypatch):
+    fake_client = FakeSecretClient()
+    monkeypatch.setenv("STRIDE_COROS_KEYVAULT_URL", "https://stride-kv.vault.azure.net/")
+    monkeypatch.setattr(auth_mod, "_keyvault_secret_client", lambda _url: fake_client)
+
+    Credentials.delete(user="a1b2c3d4-e5f6-4aaa-89ab-123456789012")
