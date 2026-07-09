@@ -1,0 +1,959 @@
+{
+  "plan_id": "27b07f22-0d4c-4617-91f2-5724efad2044",
+  "user_id": "ba103cff-ad2c-4f9e-9920-983337544a2c",
+  "status": "draft",
+  "goal": {
+    "goal_id": "s1-2026-chengdu-fm",
+    "race_name": "成都马拉松",
+    "distance": "FM",
+    "race_date": "2026-10-18",
+    "target_time": "2:26:00",
+    "timezone": "Asia/Shanghai",
+    "location": null
+  },
+  "start_date": "2026-05-18",
+  "end_date": "2026-10-18",
+  "total_weeks": 22,
+  "phases": [
+    {
+      "id": "029bb731-dbc5-4419-9112-b7f12940ef9b",
+      "name": "已完成有氧基础期",
+      "start_date": "2026-05-18",
+      "end_date": "2026-07-12",
+      "focus": "已完成8周基础；周量曾达130-170km，近期主动降量到43km；不展开周课表",
+      "weekly_distance_km_low": 55.0,
+      "weekly_distance_km_high": 170.0,
+      "key_session_types": [],
+      "milestone_ids": [],
+      "phase_type": "base",
+      "rhythm": "",
+      "key_workouts": "",
+      "monitoring_triggers": [],
+      "coach_note": "",
+      "is_completed": true,
+      "summary": {
+        "total_distance_km": 818.2,
+        "run_count": 111,
+        "weekly_avg_km": 102.3,
+        "avg_pace_s_km": 342,
+        "avg_pace_fmt": "5:42",
+        "avg_hr": 139,
+        "hr_zone_distribution": []
+      }
+    },
+    {
+      "id": "e24ba832-63ab-40e2-b635-c93ce29c441c",
+      "name": "夏训速度期",
+      "start_date": "2026-07-13",
+      "end_date": "2026-07-26",
+      "focus": "接续已完成基础，恢复频率并发展VO2/速度；建设态50-60%+维持20-30%+比赛态10%；短于4周无恢复周",
+      "weekly_distance_km_low": 42.0,
+      "weekly_distance_km_high": 51.0,
+      "key_session_types": [
+        "间歇",
+        "计时跑",
+        "长距离",
+        "力量耐久"
+      ],
+      "milestone_ids": [
+        "964da3d5-a4ac-4100-a645-67de25f30c2f"
+      ],
+      "phase_type": "speed",
+      "rhythm": "周二间歇，周末长跑；5-6跑日，避开正午热环境。",
+      "key_workouts": "5K计时+短间歇，长跑16-17km，力量保小腿髋臀。",
+      "monitoring_triggers": [
+        "RHR+7或HRV跌20%两天→降量25%",
+        "热感头晕/尿色深→补钠并改室内",
+        "小腿/髋膝痛≥3/10→取消间歇"
+      ],
+      "coach_note": "近期量降到43km，先稳住频率，不补课不追量。",
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "name": "马拉松专项建设期",
+      "start_date": "2026-07-27",
+      "end_date": "2026-08-30",
+      "focus": "马拉松专项建设；建设态50-60%+维持20-30%+比赛态10%；3:1，W4降至低量70-80%并取消质量课，W5回专项",
+      "weekly_distance_km_low": 55.0,
+      "weekly_distance_km_high": 73.0,
+      "key_session_types": [
+        "阈值",
+        "MP段",
+        "长距离",
+        "力量耐久"
+      ],
+      "milestone_ids": [
+        "93eadc7e-578f-4da1-9e81-911c54d208ec",
+        "4b6e15a9-27ba-4f3c-b442-efc2d46757c4",
+        "7de86405-b836-4dea-851d-374bb5db9cfd"
+      ],
+      "phase_type": "build",
+      "rhythm": "三周递增一周恢复；MP嵌入长跑，质量课清晨/傍晚。",
+      "key_workouts": "10K观测，21-25km长跑，MP从8km到12km。",
+      "monitoring_triggers": [
+        "配速同等HR升>8bpm→下调MP量",
+        "长跑后疲劳>48h→下周高量-20%",
+        "RHR+7两天→取消阈值课"
+      ],
+      "coach_note": "用B目标配速做日常训练，A只靠后续专项证据打开。",
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "name": "马拉松峰值期",
+      "start_date": "2026-08-31",
+      "end_date": "2026-10-04",
+      "focus": "MP峰值；建设态40%+维持30%+比赛态30%；3:1，最大32km后恢复周，末周轻负荷到赛前14天",
+      "weekly_distance_km_low": 76.0,
+      "weekly_distance_km_high": 96.0,
+      "key_session_types": [
+        "MP长跑",
+        "长距离",
+        "力量耐久"
+      ],
+      "milestone_ids": [
+        "fd7822df-99ae-4425-95ac-4357a34b8fcb",
+        "fd6e665b-fe8b-46ec-b784-39354c9dda92",
+        "125703f1-6c4e-4162-a12e-e68db946194a"
+      ],
+      "phase_type": "peak",
+      "rhythm": "2-3个高负荷后恢复；最大MP课后真降量，不堆叠32km。",
+      "key_workouts": "28-32km长跑，MP 16→18→22km，随后恢复再轻专项。",
+      "monitoring_triggers": [
+        "32km后睡眠差/RHR+7→恢复周再降10%",
+        "MP段RPE>8→A目标暂关闭",
+        "小腿/髋膝痛≥3/10→长跑缩短"
+      ],
+      "coach_note": "最大课在9/20前后，之后不再创造周量或长跑纪录。",
+      "is_completed": false,
+      "summary": null
+    },
+    {
+      "id": "c2c38721-e3ad-4e3f-b45f-4d775f8bcbd5",
+      "name": "减量比赛期",
+      "start_date": "2026-10-05",
+      "end_date": "2026-10-18",
+      "focus": "14天FM减量；比赛态60-70%+维持20-30%；急性负荷主动下降，保留短MP激活",
+      "weekly_distance_km_low": 42.2,
+      "weekly_distance_km_high": 72.0,
+      "key_session_types": [
+        "短MP",
+        "比赛",
+        "力量激活"
+      ],
+      "milestone_ids": [
+        "b0507bc8-911e-4077-9bc9-1bb39735f671"
+      ],
+      "phase_type": "taper",
+      "rhythm": "首周降到峰值75%内，赛周只保激活和睡眠。",
+      "key_workouts": "20km含8km MP；赛周不做质量课，只短促激活。",
+      "monitoring_triggers": [
+        "赛前感冒/发热→只保完赛或DNS评估",
+        "RHR+7两天→取消MP激活",
+        "胃肠不适→回熟悉早餐和胶"
+      ],
+      "coach_note": "赛后恢复1-2周，再进下一马拉松基础/建设，不补赛前欠量。",
+      "is_completed": false,
+      "summary": null
+    }
+  ],
+  "milestones": [
+    {
+      "id": "964da3d5-a4ac-4100-a645-67de25f30c2f",
+      "type": "test_run",
+      "date": "2026-07-26",
+      "phase_id": "e24ba832-63ab-40e2-b635-c93ce29c441c",
+      "target": "5K≤15:35，验证速度但不硬开A目标",
+      "completed_actual": null,
+      "metric": "race_time_s_5k",
+      "target_value": 935.0,
+      "comparator": "<="
+    },
+    {
+      "id": "93eadc7e-578f-4da1-9e81-911c54d208ec",
+      "type": "test_run",
+      "date": "2026-08-16",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target": "10K≤32:50为A观察门槛，热中HR/RPE需正常",
+      "completed_actual": null,
+      "metric": "race_time_s_10k",
+      "target_value": 1970.0,
+      "comparator": "<="
+    },
+    {
+      "id": "4b6e15a9-27ba-4f3c-b442-efc2d46757c4",
+      "type": "strength_test",
+      "date": "2026-08-23",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target": "单腿下台阶20次/侧+提踵25次/侧无痛稳髋",
+      "completed_actual": null,
+      "metric": null,
+      "target_value": null,
+      "comparator": null
+    },
+    {
+      "id": "7de86405-b836-4dea-851d-374bb5db9cfd",
+      "type": "long_run",
+      "date": "2026-08-30",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target": "25km含12km MP，补给30-60g/h",
+      "completed_actual": null,
+      "metric": "long_run_distance_km",
+      "target_value": 25.0,
+      "comparator": ">="
+    },
+    {
+      "id": "fd7822df-99ae-4425-95ac-4357a34b8fcb",
+      "type": "long_run",
+      "date": "2026-09-06",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target": "28km含16km MP，热中HR/RPE可控",
+      "completed_actual": null,
+      "metric": "long_run_distance_km",
+      "target_value": 28.0,
+      "comparator": ">="
+    },
+    {
+      "id": "fd6e665b-fe8b-46ec-b784-39354c9dda92",
+      "type": "long_run",
+      "date": "2026-09-20",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target": "32km含22km MP，胶钠、HR/RPE全正常",
+      "completed_actual": null,
+      "metric": "long_run_distance_km",
+      "target_value": 32.0,
+      "comparator": ">="
+    },
+    {
+      "id": "125703f1-6c4e-4162-a12e-e68db946194a",
+      "type": "long_run",
+      "date": "2026-10-04",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target": "28km含12km MP，完成后进入14天减量",
+      "completed_actual": null,
+      "metric": "long_run_distance_km",
+      "target_value": 28.0,
+      "comparator": ">="
+    },
+    {
+      "id": "b0507bc8-911e-4077-9bc9-1bb39735f671",
+      "type": "race",
+      "date": "2026-10-18",
+      "phase_id": "c2c38721-e3ad-4e3f-b45f-4d775f8bcbd5",
+      "target": "A2:26需10K≤32:50+32km/22MP且HR/RPE正常；B2:28内；C完赛PB附近",
+      "completed_actual": null,
+      "metric": "race_time_s_fm",
+      "target_value": 8760.0,
+      "comparator": "<="
+    }
+  ],
+  "weeks": [
+    {
+      "week_index": 9,
+      "week_start": "2026-07-13",
+      "phase_id": "e24ba832-63ab-40e2-b635-c93ce29c441c",
+      "target_weekly_km_low": 42.0,
+      "target_weekly_km_high": 47.0,
+      "key_sessions": [
+        {
+          "type": "interval",
+          "distance_km": null,
+          "duration_min": 30.0,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "threshold",
+          "distance_km": null,
+          "duration_min": 25.0,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "long_run",
+          "distance_km": 16.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 10,
+      "week_start": "2026-07-20",
+      "phase_id": "e24ba832-63ab-40e2-b635-c93ce29c441c",
+      "target_weekly_km_low": 45.0,
+      "target_weekly_km_high": 51.0,
+      "key_sessions": [
+        {
+          "type": "time_trial",
+          "distance_km": 5.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "long_run",
+          "distance_km": 17.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 11,
+      "week_start": "2026-07-27",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 50.0,
+      "target_weekly_km_high": 56.0,
+      "key_sessions": [
+        {
+          "type": "interval",
+          "distance_km": null,
+          "duration_min": 32.0,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "threshold",
+          "distance_km": null,
+          "duration_min": 30.0,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "long_run",
+          "distance_km": 19.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 12,
+      "week_start": "2026-08-03",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 55.0,
+      "target_weekly_km_high": 61.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 21.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 8.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 13,
+      "week_start": "2026-08-10",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 60.0,
+      "target_weekly_km_high": 67.0,
+      "key_sessions": [
+        {
+          "type": "time_trial",
+          "distance_km": 10.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "long_run",
+          "distance_km": 23.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 14,
+      "week_start": "2026-08-17",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 39.0,
+      "target_weekly_km_high": 42.0,
+      "key_sessions": [
+        {
+          "type": "strength_key",
+          "distance_km": null,
+          "duration_min": 30.0,
+          "intensity": null,
+          "purpose": "下台阶、提踵、稳髋检查"
+        }
+      ],
+      "is_recovery_week": true,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 15,
+      "week_start": "2026-08-24",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 65.0,
+      "target_weekly_km_high": 73.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 25.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 12.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 16,
+      "week_start": "2026-08-31",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 76.0,
+      "target_weekly_km_high": 80.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 28.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 16.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 17,
+      "week_start": "2026-09-07",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 78.0,
+      "target_weekly_km_high": 88.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 24.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 18.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "分段MP，非最大长跑"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 18,
+      "week_start": "2026-09-14",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 86.0,
+      "target_weekly_km_high": 96.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 32.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 22.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内最大MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 19,
+      "week_start": "2026-09-21",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 54.0,
+      "target_weekly_km_high": 58.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 20.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": true,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 20,
+      "week_start": "2026-09-28",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 82.0,
+      "target_weekly_km_high": 90.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 28.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 12.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 21,
+      "week_start": "2026-10-05",
+      "phase_id": "c2c38721-e3ad-4e3f-b45f-4d775f8bcbd5",
+      "target_weekly_km_low": 60.0,
+      "target_weekly_km_high": 70.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 20.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 8.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "减量期短MP激活"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": true
+    },
+    {
+      "week_index": 22,
+      "week_start": "2026-10-12",
+      "phase_id": "c2c38721-e3ad-4e3f-b45f-4d775f8bcbd5",
+      "target_weekly_km_low": 42.2,
+      "target_weekly_km_high": 45.0,
+      "key_sessions": [
+        {
+          "type": "race",
+          "distance_km": 42.2,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": true
+    }
+  ],
+  "weekly_key_sessions": [
+    {
+      "week_index": 9,
+      "week_start": "2026-07-13",
+      "phase_id": "e24ba832-63ab-40e2-b635-c93ce29c441c",
+      "target_weekly_km_low": 42.0,
+      "target_weekly_km_high": 47.0,
+      "key_sessions": [
+        {
+          "type": "interval",
+          "distance_km": null,
+          "duration_min": 30.0,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "threshold",
+          "distance_km": null,
+          "duration_min": 25.0,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "long_run",
+          "distance_km": 16.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 10,
+      "week_start": "2026-07-20",
+      "phase_id": "e24ba832-63ab-40e2-b635-c93ce29c441c",
+      "target_weekly_km_low": 45.0,
+      "target_weekly_km_high": 51.0,
+      "key_sessions": [
+        {
+          "type": "time_trial",
+          "distance_km": 5.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "long_run",
+          "distance_km": 17.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 11,
+      "week_start": "2026-07-27",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 50.0,
+      "target_weekly_km_high": 56.0,
+      "key_sessions": [
+        {
+          "type": "interval",
+          "distance_km": null,
+          "duration_min": 32.0,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "threshold",
+          "distance_km": null,
+          "duration_min": 30.0,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "long_run",
+          "distance_km": 19.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 12,
+      "week_start": "2026-08-03",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 55.0,
+      "target_weekly_km_high": 61.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 21.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 8.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 13,
+      "week_start": "2026-08-10",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 60.0,
+      "target_weekly_km_high": 67.0,
+      "key_sessions": [
+        {
+          "type": "time_trial",
+          "distance_km": 10.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "long_run",
+          "distance_km": 23.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 14,
+      "week_start": "2026-08-17",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 39.0,
+      "target_weekly_km_high": 42.0,
+      "key_sessions": [
+        {
+          "type": "strength_key",
+          "distance_km": null,
+          "duration_min": 30.0,
+          "intensity": null,
+          "purpose": "下台阶、提踵、稳髋检查"
+        }
+      ],
+      "is_recovery_week": true,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 15,
+      "week_start": "2026-08-24",
+      "phase_id": "cfb75443-bed3-4dff-bc0f-0007fc298c25",
+      "target_weekly_km_low": 65.0,
+      "target_weekly_km_high": 73.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 25.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 12.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 16,
+      "week_start": "2026-08-31",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 76.0,
+      "target_weekly_km_high": 80.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 28.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 16.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 17,
+      "week_start": "2026-09-07",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 78.0,
+      "target_weekly_km_high": 88.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 24.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 18.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "分段MP，非最大长跑"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 18,
+      "week_start": "2026-09-14",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 86.0,
+      "target_weekly_km_high": 96.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 32.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 22.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内最大MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 19,
+      "week_start": "2026-09-21",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 54.0,
+      "target_weekly_km_high": 58.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 20.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": true,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 20,
+      "week_start": "2026-09-28",
+      "phase_id": "3a5b7d70-9de8-449b-b2b3-1c40b71957e2",
+      "target_weekly_km_low": 82.0,
+      "target_weekly_km_high": 90.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 28.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 12.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "同次长跑内MP段"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": false
+    },
+    {
+      "week_index": 21,
+      "week_start": "2026-10-05",
+      "phase_id": "c2c38721-e3ad-4e3f-b45f-4d775f8bcbd5",
+      "target_weekly_km_low": 60.0,
+      "target_weekly_km_high": 70.0,
+      "key_sessions": [
+        {
+          "type": "long_run",
+          "distance_km": 20.0,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        },
+        {
+          "type": "race_pace",
+          "distance_km": 8.0,
+          "duration_min": null,
+          "intensity": "MP",
+          "purpose": "减量期短MP激活"
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": true
+    },
+    {
+      "week_index": 22,
+      "week_start": "2026-10-12",
+      "phase_id": "c2c38721-e3ad-4e3f-b45f-4d775f8bcbd5",
+      "target_weekly_km_low": 42.2,
+      "target_weekly_km_high": 45.0,
+      "key_sessions": [
+        {
+          "type": "race",
+          "distance_km": 42.2,
+          "duration_min": null,
+          "intensity": null,
+          "purpose": null
+        }
+      ],
+      "is_recovery_week": false,
+      "is_taper_week": true
+    }
+  ],
+  "training_principles": [
+    "FM PB2:28:51→2:26约1.9%，A可冲；B2:28内，C完赛/PB附近。",
+    "6跑日保1天真休；长跑≤周量35%，零剂量≤2且周一/周日不连零。",
+    "速度/基础延续：能量平衡，蛋白1.4-1.6g/kg，跑后碳蛋白3:1。",
+    "建设期：质量/长课周碳水5-7g/kg，跑前30-60g，长课30-60g/h。",
+    "峰值期碳循环：MP日前高碳，轻松日正常；演练胶+钠。",
+    "减量期保糖原：赛前3天碳水8-10g/kg，用熟悉低纤食物。",
+    "赛后修复：1-2周降量，蛋白1.8-2.0g/kg，补水电解质。",
+    "夏训避正午；高汗/RHR上浮时补水电解质钠，查铁蛋白/血红蛋白。",
+    "每4周恢复到当期低量70-80%，取消质量课，防止ATL过冲。",
+    "每周2次力量耐久：小腿、髋臀、股四头离心，服务后程抗疲劳。"
+  ],
+  "generated_by": "gpt-5.5",
+  "version": 1,
+  "created_at": "2026-07-09T12:51:02.633827+00:00",
+  "updated_at": "2026-07-09T12:51:02.633827+00:00"
+}
