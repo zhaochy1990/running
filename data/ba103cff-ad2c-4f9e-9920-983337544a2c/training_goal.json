@@ -1,0 +1,16 @@
+{
+  "current": {
+    "goal_id": "s1-2026-chengdu-fm",
+    "type": "race",
+    "race_date": "2026-10-18",
+    "race_distance": "FM",
+    "race_name": "成都马拉松",
+    "target_finish_time": "2:26:00",
+    "weekly_training_days": 6,
+    "available_time_slots": [],
+    "strength_willingness": null,
+    "created_at": "2026-07-09T12:40:22.873421+00:00",
+    "updated_at": "2026-07-09T12:40:22.873421+00:00"
+  },
+  "history": []
+}
