@@ -13,9 +13,11 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 
 from stride_core.db import USER_DATA_DIR
+from stride_core.registry import ProviderRegistry, UnknownProvider
 
 from .. import auth_service_client as auth_client
 from ..bearer import current_user_id, require_bearer
+from ..deps import get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -105,10 +107,30 @@ def _delete_local_user_data(user_id: str) -> None:
     _rmtree_resilient(path)
 
 
+def _delete_watch_credentials(user_id: str, registry: ProviderRegistry) -> None:
+    """Best-effort watch credential cleanup for account deletion.
+
+    Account deletion removes the whole local user directory, so the only
+    durable credential residue risk is the provider backend (prod AKV). The
+    adapter owns that backend-specific cleanup via ``logout``.
+    """
+    try:
+        source = registry.for_user(user_id)
+    except UnknownProvider:
+        logger.warning("cannot delete watch credentials: unknown provider for user %s", user_id)
+        return
+    try:
+        source.logout(user_id)
+    except Exception:
+        logger.exception("failed to delete watch credentials for user %s", user_id)
+        raise
+
+
 @router.delete("/api/users/me", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_my_account(
     authorization: str | None = Header(default=None),
     claims: dict = Depends(require_bearer),
+    registry: ProviderRegistry = Depends(get_registry),
 ):
     user_id = current_user_id(claims)
     _user_data_path(user_id)
@@ -126,6 +148,7 @@ async def delete_my_account(
         raise HTTPException(status_code=503, detail=f"auth-service unavailable: {exc}") from exc
 
     try:
+        _delete_watch_credentials(user_id, registry)
         _delete_local_user_data(user_id)
     except OSError as exc:
         logger.exception("failed to delete local user data for %s", user_id)

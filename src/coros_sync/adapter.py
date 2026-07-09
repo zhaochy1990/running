@@ -104,22 +104,15 @@ class CorosDataSource(BaseDataSource):
         return Credentials.load(user=user).is_logged_in
 
     def logout(self, user: str) -> None:
-        """Clear COROS credentials so is_logged_in returns False.
+        """Clear COROS credentials from the active backend.
 
-        Saves empty credential fields while preserving non-credential keys
-        (like ``provider``) in config.json thanks to the merge logic in
-        ``Credentials.save()``.
+        File backend preserves the provider tag in ``config.json``; Key Vault
+        backend soft-deletes the per-user ``coros-config-*`` secret so account
+        deletion and watch disconnect do not leave credential-name residue.
         """
-        creds = Credentials.load(user=user)
-        if not creds.is_logged_in:
+        if not Credentials.load(user=user).is_logged_in:
             return
-        Credentials(
-            email=creds.email,
-            pwd_hash="",
-            access_token="",
-            region=creds.region,
-            user_id=creds.user_id,
-        ).save(user=user)
+        Credentials.delete(user=user)
 
     def sync_user(
         self,
