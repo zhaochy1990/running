@@ -8,11 +8,13 @@ import shutil
 import sqlite3
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 from stride_core.models import (
     ActivityDetail, BodyCompositionScan, BodySegment, DailyHealth, DailyHrv,
-    Dashboard, Lap, RacePrediction, TimeseriesPoint, Zone,
+    Dashboard, Lap, RacePrediction, RUN_SPORT_SQL_LIST, TimeseriesPoint, Zone,
 )
+from stride_core.timefmt import SHANGHAI_DAY_SQL
 
 
 def _paths():
@@ -1310,6 +1312,167 @@ class Database:
             "SELECT 1 FROM activities WHERE label_id = ?", (label_id,)
         ).fetchone()
         return row is not None
+
+    def list_activities(
+        self,
+        *,
+        offset: int = 0,
+        limit: int = 50,
+        sport: str | None = None,
+        sport_category: Literal["run", "strength"] | None = None,
+        min_distance_km: float | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+    ) -> dict:
+        """Return a filtered activity page plus full-month summaries.
+
+        ``date_from`` / ``date_to`` are Shanghai-local ``YYYY-MM-DD`` strings;
+        ``activities.date`` stores UTC ISO, so all date and month operations use
+        ``SHANGHAI_DAY_SQL``.
+        """
+        where, params = self._build_activity_list_filter(
+            sport=sport,
+            sport_category=sport_category,
+            min_distance_km=min_distance_km,
+            date_from=date_from,
+            date_to=date_to,
+        )
+        total = self._conn.execute(
+            f"SELECT count(*) as cnt FROM activities {where}", tuple(params)
+        ).fetchone()
+        total_count = total["cnt"] if total else 0
+
+        month_sql = self._activity_month_sql()
+        rows = self._conn.execute(
+            f"""SELECT label_id, name, sport_type, sport_name, date,
+                      {month_sql} AS shanghai_month,
+                      distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
+                      avg_cadence, calories_kcal, training_load, vo2max, train_type,
+                      ascent_m, aerobic_effect, anaerobic_effect,
+                      temperature, humidity, feels_like, wind_speed,
+                      route_thumb_json
+                 FROM activities {where}
+                ORDER BY date DESC, label_id DESC
+                LIMIT ? OFFSET ?""",
+            tuple(params + [limit, offset]),
+        ).fetchall()
+
+        return {
+            "total": total_count,
+            "offset": offset,
+            "limit": limit,
+            "rows": rows,
+            "monthly_summaries": self._activity_monthly_summaries_for_visible_months(
+                where,
+                params,
+                rows,
+            ),
+        }
+
+    def _build_activity_list_filter(
+        self,
+        *,
+        sport: str | None,
+        sport_category: Literal["run", "strength"] | None,
+        min_distance_km: float | None,
+        date_from: str | None,
+        date_to: str | None,
+    ) -> tuple[str, list]:
+        conditions: list[str] = []
+        params: list = []
+
+        if sport:
+            conditions.append("sport_name = ?")
+            params.append(sport)
+        if sport_category == "run":
+            run_sql, run_params = self._running_activity_sql()
+            conditions.append(run_sql)
+            params.extend(run_params)
+        elif sport_category == "strength":
+            conditions.append(
+                "(sport_type IN (402, 800) OR sport = ? OR lower(coalesce(sport_name, '')) LIKE ?)"
+            )
+            params.extend(["strength", "%strength%"])
+        if min_distance_km is not None and min_distance_km > 0:
+            # The legacy column is named distance_m, but synced activity rows
+            # store kilometers here. The API's distance_km field preserves
+            # that contract.
+            conditions.append("coalesce(distance_m, 0) >= ?")
+            params.append(min_distance_km)
+        if date_from:
+            conditions.append(f"{SHANGHAI_DAY_SQL} >= ?")
+            params.append(date_from)
+        if date_to:
+            conditions.append(f"{SHANGHAI_DAY_SQL} <= ?")
+            params.append(date_to)
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        return where, params
+
+    @staticmethod
+    def _running_activity_sql() -> tuple[str, list[str]]:
+        running_sport_values = (
+            "run_outdoor",
+            "run_indoor",
+            "run_trail",
+            "run_track",
+            "run_treadmill",
+        )
+        running_sport_names = (
+            "run",
+            "indoor run",
+            "trail run",
+            "track run",
+            "treadmill",
+        )
+        sport_value_placeholders = ",".join("?" for _ in running_sport_values)
+        sport_name_placeholders = ",".join("?" for _ in running_sport_names)
+        return (
+            f"""(sport_type IN ({RUN_SPORT_SQL_LIST})
+                 OR sport IN ({sport_value_placeholders})
+                 OR lower(coalesce(sport_name, '')) IN ({sport_name_placeholders}))""",
+            [*running_sport_values, *running_sport_names],
+        )
+
+    @staticmethod
+    def _activity_month_sql() -> str:
+        return f"substr({SHANGHAI_DAY_SQL}, 1, 7)"
+
+    def _activity_monthly_summaries_for_visible_months(
+        self,
+        where: str,
+        params: list,
+        rows: list[sqlite3.Row],
+    ) -> dict[str, dict]:
+        month_sql = self._activity_month_sql()
+        visible_months = sorted({row["shanghai_month"] for row in rows if row["shanghai_month"]})
+        if not visible_months:
+            return {}
+
+        month_placeholders = ",".join("?" for _ in visible_months)
+        run_sql, run_params = self._running_activity_sql()
+        summary_where = (
+            f"{where} AND {month_sql} IN ({month_placeholders})"
+            if where
+            else f"WHERE {month_sql} IN ({month_placeholders})"
+        )
+        summary_rows = self._conn.execute(
+            f"""SELECT {month_sql} AS month,
+                      count(*) AS activity_count,
+                      coalesce(sum(CASE WHEN {run_sql} THEN coalesce(distance_m, 0) ELSE 0 END), 0) AS total_run_km,
+                      coalesce(sum(coalesce(duration_s, 0)), 0) AS duration_s
+                 FROM activities {summary_where}
+                GROUP BY month""",
+            tuple(run_params + params + visible_months),
+        ).fetchall()
+        return {
+            row["month"]: {
+                "activity_count": int(row["activity_count"] or 0),
+                "total_run_km": round(float(row["total_run_km"] or 0), 1),
+                "duration_s": int(row["duration_s"] or 0),
+            }
+            for row in summary_rows
+        }
 
     def get_activity_count(self) -> int:
         row = self._conn.execute("SELECT count(*) FROM activities").fetchone()

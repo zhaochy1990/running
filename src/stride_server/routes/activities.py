@@ -8,10 +8,10 @@ from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
-from stride_core.models import EXERCISE_TYPES, RUN_SPORT_SQL_LIST, pace_str
+from stride_core.models import EXERCISE_TYPES, pace_str
 from stride_core.post_sync import run_post_sync_for_labels
 from stride_core.source import DataSource
-from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
+from stride_core.timefmt import utc_iso_to_shanghai_iso
 
 from ..bearer import require_bearer
 from ..deps import (
@@ -26,65 +26,6 @@ from ..deps import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_RUNNING_SPORT_VALUES = (
-    "run_outdoor",
-    "run_indoor",
-    "run_trail",
-    "run_track",
-    "run_treadmill",
-)
-_RUNNING_SPORT_NAMES = (
-    "run",
-    "indoor run",
-    "trail run",
-    "track run",
-    "treadmill",
-)
-
-
-def _running_activity_sql() -> tuple[str, list[str]]:
-    sport_value_placeholders = ",".join("?" for _ in _RUNNING_SPORT_VALUES)
-    sport_name_placeholders = ",".join("?" for _ in _RUNNING_SPORT_NAMES)
-    return (
-        f"""(sport_type IN ({RUN_SPORT_SQL_LIST})
-             OR sport IN ({sport_value_placeholders})
-             OR lower(coalesce(sport_name, '')) IN ({sport_name_placeholders}))""",
-        [*_RUNNING_SPORT_VALUES, *_RUNNING_SPORT_NAMES],
-    )
-
-
-def _activity_month_sql() -> str:
-    return f"substr({SHANGHAI_DAY_SQL}, 1, 7)"
-
-
-def _monthly_summaries_for_visible_months(db, where: str, params: list, rows) -> dict[str, dict]:
-    month_sql = _activity_month_sql()
-    visible_months = sorted({row["shanghai_month"] for row in rows if row["shanghai_month"]})
-    if not visible_months:
-        return {}
-
-    month_placeholders = ",".join("?" for _ in visible_months)
-    run_sql, run_params = _running_activity_sql()
-    summary_where = f"{where} AND {month_sql} IN ({month_placeholders})" if where else f"WHERE {month_sql} IN ({month_placeholders})"
-    summary_rows = db.query(
-        f"""SELECT {month_sql} AS month,
-                  count(*) AS activity_count,
-                  coalesce(sum(CASE WHEN {run_sql} THEN coalesce(distance_m, 0) ELSE 0 END), 0) AS total_run_km,
-                  coalesce(sum(coalesce(duration_s, 0)), 0) AS duration_s
-             FROM activities {summary_where}
-            GROUP BY month""",
-        tuple(run_params + params + visible_months),
-    )
-    return {
-        row["month"]: {
-            "activity_count": int(row["activity_count"] or 0),
-            "total_run_km": round(float(row["total_run_km"] or 0), 1),
-            "duration_s": int(row["duration_s"] or 0),
-        }
-        for row in summary_rows
-    }
-
 
 def _json_list(value) -> list[str]:
     if not value:
@@ -133,60 +74,19 @@ def list_activities(
     date_to: str | None = None,
 ):
     db = get_db(user)
-    conditions = []
-    params: list = []
-
-    if sport:
-        conditions.append("sport_name = ?")
-        params.append(sport)
-    if sport_category == "run":
-        run_sql, run_params = _running_activity_sql()
-        conditions.append(run_sql)
-        params.extend(run_params)
-    elif sport_category == "strength":
-        conditions.append(
-            "(sport_type IN (402, 800) OR sport = ? OR lower(coalesce(sport_name, '')) LIKE ?)"
-        )
-        params.extend(["strength", "%strength%"])
-    if min_distance_km is not None and min_distance_km > 0:
-        # The legacy column is named distance_m, but synced activity rows store
-        # kilometers here. The API's distance_km field preserves that contract.
-        conditions.append("coalesce(distance_m, 0) >= ?")
-        params.append(min_distance_km)
-    # date_from / date_to are Shanghai-local YYYY-MM-DD; activities.date is
-    # UTC ISO. Compare via SHANGHAI_DAY_SQL so a workout that starts at
-    # 00:30 Shanghai (16:30 UTC the previous day) classifies into the
-    # Shanghai day, not the UTC day.
-    if date_from:
-        conditions.append(f"{SHANGHAI_DAY_SQL} >= ?")
-        params.append(date_from)
-    if date_to:
-        conditions.append(f"{SHANGHAI_DAY_SQL} <= ?")
-        params.append(date_to)
-
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-    total = db.query(f"SELECT count(*) as cnt FROM activities {where}", tuple(params))
-    total_count = total[0]["cnt"] if total else 0
-
-    rows = db.query(
-        f"""SELECT label_id, name, sport_type, sport_name, date,
-            {_activity_month_sql()} AS shanghai_month,
-            distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
-            avg_cadence, calories_kcal, training_load, vo2max, train_type,
-            ascent_m, aerobic_effect, anaerobic_effect,
-            temperature, humidity, feels_like, wind_speed,
-            route_thumb_json
-        FROM activities {where}
-        ORDER BY date DESC, label_id DESC
-        LIMIT ? OFFSET ?""",
-        tuple(params + [limit, offset]),
+    result = db.list_activities(
+        offset=offset,
+        limit=limit,
+        sport=sport,
+        sport_category=sport_category,
+        min_distance_km=min_distance_km,
+        date_from=date_from,
+        date_to=date_to,
     )
-    monthly_summaries = _monthly_summaries_for_visible_months(db, where, params, rows)
     db.close()
 
     activities = []
-    for r in rows:
+    for r in result["rows"]:
         d = dict(r)
         d.pop("shanghai_month", None)
         # UTC → Shanghai ISO at the API boundary; see stride_core/timefmt.py.
@@ -209,11 +109,11 @@ def list_activities(
         activities.append(d)
 
     return {
-        "total": total_count,
+        "total": result["total"],
         "offset": offset,
         "limit": limit,
         "activities": activities,
-        "monthly_summaries": monthly_summaries,
+        "monthly_summaries": result["monthly_summaries"],
     }
 
 
