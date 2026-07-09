@@ -1,4 +1,4 @@
-import type { Activity } from '../api'
+import type { Activity, ActivityMonthlySummary } from '../api'
 import { shanghaiDate } from '../lib/shanghai'
 
 export const ACTIVITY_PAGE_SIZE = 25
@@ -24,6 +24,7 @@ export interface ActivityMonthGroup {
   key: string
   label: string
   activities: Activity[]
+  summary?: ActivityMonthlySummary
 }
 
 export type PageItem = number | 'ellipsis-left' | 'ellipsis-right'
@@ -85,7 +86,10 @@ export function summarizeActivities(activities: Activity[]): ActivitySummary {
   }
 }
 
-export function groupActivitiesByMonth(activities: Activity[]): ActivityMonthGroup[] {
+export function groupActivitiesByMonth(
+  activities: Activity[],
+  summaries: Record<string, ActivityMonthlySummary> = {},
+): ActivityMonthGroup[] {
   const groups: ActivityMonthGroup[] = []
   const groupByKey = new Map<string, ActivityMonthGroup>()
 
@@ -97,6 +101,7 @@ export function groupActivitiesByMonth(activities: Activity[]): ActivityMonthGro
         key: monthKey,
         label: formatMonthLabel(monthKey),
         activities: [],
+        summary: summaries[monthKey],
       }
       groupByKey.set(monthKey, group)
       groups.push(group)

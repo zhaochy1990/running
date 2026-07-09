@@ -81,7 +81,10 @@ export default function ActivitiesPage() {
   }, [appliedRange, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, sportFilter, user])
 
   const summary = useMemo(() => summarizeActivities(monthActivities), [monthActivities])
-  const monthGroups = useMemo(() => groupActivitiesByMonth(activityPage.activities), [activityPage.activities])
+  const monthGroups = useMemo(
+    () => groupActivitiesByMonth(activityPage.activities, activityPage.monthly_summaries),
+    [activityPage.activities, activityPage.monthly_summaries],
+  )
   const totalPages = Math.max(1, Math.ceil(activityPage.total / (activityPage.limit || ACTIVITY_PAGE_SIZE)))
   const currentPage = Math.min(
     Math.max(1, Math.floor(activityPage.offset / (activityPage.limit || ACTIVITY_PAGE_SIZE)) + 1),
@@ -239,7 +242,7 @@ export default function ActivitiesPage() {
         <>
           <div className="space-y-4">
             {monthGroups.map((group) => (
-              <MonthSection key={group.key} label={group.label} activities={group.activities} />
+              <MonthSection key={group.key} label={group.label} activities={group.activities} summary={group.summary} />
             ))}
           </div>
           <Pager
@@ -269,16 +272,27 @@ function SummaryCell({ label, value, unit }: { label: string; value: string; uni
   )
 }
 
-function MonthSection({ label, activities }: { label: string; activities: Activity[] }) {
-  const monthSummary = summarizeActivities(activities)
-  const duration = formatHoursMinutes(activities.reduce((sum, activity) => sum + activity.duration_s, 0))
+function MonthSection({
+  label,
+  activities,
+  summary,
+}: {
+  label: string
+  activities: Activity[]
+  summary?: NonNullable<ActivitiesListResponse['monthly_summaries']>[string]
+}) {
+  const fallbackSummary = summarizeActivities(activities)
+  const activityCount = summary?.activity_count ?? activities.length
+  const totalRunKm = summary?.total_run_km ?? fallbackSummary.totalRunKm
+  const durationS = summary?.duration_s ?? activities.reduce((sum, activity) => sum + activity.duration_s, 0)
+  const duration = formatHoursMinutes(durationS)
 
   return (
     <section>
       <div className="mb-2 flex items-baseline justify-between gap-3 px-0.5">
         <h2 className="m-0 text-sm font-semibold tracking-normal text-text-primary">{label}</h2>
         <div className="font-mono text-[11px] text-text-muted">
-          {activities.length} 节 · {monthSummary.totalRunKm.toFixed(1)} km · {duration}
+          {activityCount} 节 · {totalRunKm.toFixed(1)} km · {duration}
         </div>
       </div>
       <div className="overflow-hidden rounded-[11px] border border-border-subtle bg-bg-card">
