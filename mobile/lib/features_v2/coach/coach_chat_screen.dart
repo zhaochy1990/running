@@ -4,7 +4,8 @@
 /// quick-question chips when empty, and a bottom input bar.
 ///
 /// Data: `POST /api/users/me/coach/chat` via [coachChatProvider]. The client
-/// uses a stable per-day session id so reopening 教练 resumes today's thread.
+/// sends a stable per-day `session_id`; the server maps it to a user-scoped
+/// orchestrator thread.
 library;
 
 import 'package:flutter/material.dart';

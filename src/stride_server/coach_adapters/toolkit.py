@@ -30,13 +30,14 @@ from .tool_impls.draft_impls import (
 from .tool_impls.read_impls import (
     GetAbilitySnapshotImpl,
     GetActivityDetailImpl,
-    GetHealthSnapshotImpl,
     GetBodyCompositionLatestImpl,
+    GetHealthSnapshotImpl,
     GetMasterPlanCurrentImpl,
     GetMasterPlanVersionsImpl,
     GetPbsImpl,
     GetPmcSeriesImpl,
     GetRacePredictionsImpl,
+    GetHealthSeriesImpl,
     GetRecentActivitiesImpl,
     GetTrainingEnvironmentImpl,
     GetWeekPlanImpl,
@@ -45,11 +46,12 @@ from .tool_impls.read_impls import (
 
 @dataclass(frozen=True)
 class StrideToolkit:
-    """Frozen container holding callable instances for all 24 tools."""
+    """Frozen container holding callable instances for all 25 tools."""
 
-    # read (11)
+    # read (12)
     get_recent_activities: GetRecentActivitiesImpl
     get_health_snapshot: GetHealthSnapshotImpl
+    get_health_series: GetHealthSeriesImpl
     get_pmc_series: GetPmcSeriesImpl
     get_body_composition_latest: GetBodyCompositionLatestImpl
     get_ability_snapshot: GetAbilitySnapshotImpl
@@ -86,6 +88,7 @@ def build_stride_toolkit(user_id: str) -> Toolkit:
     return StrideToolkit(
         get_recent_activities=GetRecentActivitiesImpl(user_id),
         get_health_snapshot=GetHealthSnapshotImpl(user_id),
+        get_health_series=GetHealthSeriesImpl(user_id),
         get_pmc_series=GetPmcSeriesImpl(user_id),
         get_body_composition_latest=GetBodyCompositionLatestImpl(user_id),
         get_ability_snapshot=GetAbilitySnapshotImpl(user_id),

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - QA 单次训练复盘卡</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet"/>
+<style>
+  body { font-family: Outfit, sans-serif; }
+  .serif { font-family: Newsreader, serif; }
+  .mono { font-family: JetBrains Mono, monospace; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .filled-icon { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .chat-scroll::-webkit-scrollbar { width: 4px; }
+  .chat-scroll::-webkit-scrollbar-thumb { background: #d8dae5; border-radius: 4px; }
+</style>
+</head>
+
+<body class="bg-[#f8f9fb] text-[#1a1c2e] min-h-screen">
+<header class="fixed top-0 right-0 h-[50px] left-[220px] bg-white border-b border-[#d8dae5] flex justify-between items-center px-6 z-10">
+  <div class="flex items-center space-x-4"><span class="mono text-[10px] font-bold tracking-widest text-[#3d4a3f]">COACH / QA RENDERING</span></div>
+  <div class="flex items-center space-x-6"><button class="text-[#3d4a3f] hover:text-[#006d38]"><span class="material-symbols-outlined text-[20px]">notifications</span></button><button class="text-[#3d4a3f] hover:text-[#006d38]"><span class="material-symbols-outlined text-[20px]">help_outline</span></button><div class="w-8 h-8 rounded-full bg-[#e7e8ea] border border-[#d8dae5]"></div></div>
+</header>
+<aside class="w-[220px] h-screen fixed left-0 top-0 bg-[#f2f4f6] border-r border-[#d8dae5] flex flex-col py-6 z-50">
+  <div class="px-6 mb-10 flex items-center gap-3"><div class="w-8 h-8 bg-[#006d38] rounded flex items-center justify-center text-white font-bold">S</div><div><h1 class="text-[20px] leading-tight font-bold text-[#006d38]">STRIDE</h1><p class="mono text-[9px] text-[#555570] tracking-widest">训练中心</p></div></div>
+  <nav class="flex-1 space-y-1">
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">dashboard</span><span class="mono text-[10px] tracking-[0.14em]">仪表盘</span></a>
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">calendar_month</span><span class="mono text-[10px] tracking-[0.14em]">训练计划</span></a>
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">view_week</span><span class="mono text-[10px] tracking-[0.14em]">周历</span></a>
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">fitness_center</span><span class="mono text-[10px] tracking-[0.14em]">活动记录</span></a>
+    <a class="flex items-center px-6 py-3 text-[#1a1c2e] bg-[#f5f6fa] relative" href="#"><div class="absolute left-0 top-0 bottom-0 w-[4px] bg-[#006d38]"></div><span class="material-symbols-outlined filled-icon mr-3 text-[#006d38]">psychology</span><span class="mono text-[10px] tracking-[0.14em] font-bold">COACH</span></a>
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">settings</span><span class="mono text-[10px] tracking-[0.14em]">设置</span></a>
+  </nav>
+  <div class="mt-auto px-6"><div class="p-4 bg-white border border-[#d8dae5] rounded-lg"><p class="mono text-[8px] text-[#8888a0] mb-2 uppercase">运动员档案</p><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-[#e7e8ea] border border-[#e8eaf0]"></div><div><p class="text-sm font-bold">高级跑者</p><p class="mono text-[9px] text-[#006d38]">STRIDE PRO</p></div></div></div></div>
+</aside>
+<main class="ml-[220px] mt-[50px] flex flex-col h-[calc(100vh-50px)] bg-[#f8f9fb]">
+  <div class="px-8 py-4 border-b border-[#d8dae5] bg-white flex items-center justify-between shrink-0"><h2 class="text-[18px] font-semibold text-[#1a1c2e]">Coach 问答</h2><div class="flex items-center gap-2"><span class="w-2 h-2 bg-[#00a85a] rounded-full"></span><span class="mono text-[9px] text-[#555570] uppercase">两栏聊天布局</span></div></div>
+  <div class="flex-1 overflow-y-auto chat-scroll p-8 space-y-8">
+
+    <div class="flex justify-center"><span class="mono text-[9px] tracking-[0.1em] px-2 py-1 rounded-full bg-[#f2f4f6] border border-[#e8eaf0] text-[#555570]">IDEAL OUTPUT · ui_blocks.workout_review</span></div>
+    <div class="flex justify-end"><div class="bg-[#e7e8ea] border border-[#d8dae5] px-4 py-3 rounded-xl rounded-tr-none max-w-[70%]"><p>我今天早上的节奏跑跑得怎么样？</p></div></div>
+
+    <div class="flex items-start gap-4 max-w-5xl"><div class="w-10 h-10 rounded-full bg-[#00a85a] flex items-center justify-center text-white shrink-0"><span class="material-symbols-outlined">psychology</span></div><div class="space-y-4 w-full">
+      <div class="bg-white border border-[#d8dae5] p-6 rounded-xl rounded-tl-none shadow-sm"><p class="text-[18px] font-semibold mb-2">完成质量不错，但后半程心率漂移偏高。</p><p class="serif text-[16px] leading-relaxed">Coach API 直接返回训练复盘 block，前端按固定列和状态色渲染。</p></div>
+      <div class="bg-white border border-[#d8dae5] rounded-lg overflow-hidden max-w-5xl"><div class="bg-[#f2f4f6] px-4 py-2 border-b border-[#d8dae5] flex items-center justify-between"><h3 class="text-[18px] font-semibold">节奏跑复盘</h3><span class="mono text-[9px] px-2 py-1 rounded bg-[#fdf2dd] text-[#e68a00] border border-[#f6e0a8]">workout_review</span></div><div class="grid grid-cols-4 gap-px bg-[#d8dae5] text-sm"><div class="bg-white p-3 mono text-[9px] text-[#555570]">指标</div><div class="bg-white p-3 mono text-[9px] text-[#555570]">计划</div><div class="bg-white p-3 mono text-[9px] text-[#555570]">实际</div><div class="bg-white p-3 mono text-[9px] text-[#555570]">判断</div><div class="bg-white p-3">均配</div><div class="bg-white p-3">4:35-4:45/km</div><div class="bg-white p-3">4:38/km</div><div class="bg-white p-3 text-[#006d38]">达标</div><div class="bg-[#fdf2dd] p-3 font-semibold">漂移</div><div class="bg-[#fdf2dd] p-3">&lt; 5%</div><div class="bg-[#fdf2dd] p-3 text-[#ba1a1a] font-semibold">8.2%</div><div class="bg-[#fdf2dd] p-3 text-[#ba1a1a]">偏高</div></div><div class="p-4 space-y-2"><div class="flex justify-between bg-[#f8f9fb] border border-[#e8eaf0] rounded p-3"><span>Tempo Block 1</span><span class="mono text-[9px] text-[#555570]">4 km · 4:37/km · 158 bpm</span></div><div class="flex justify-between bg-[#fdf2dd] border border-[#f6e0a8] rounded p-3"><span>Tempo Block 2</span><span class="mono text-[9px] text-[#ba1a1a]">4 km · 4:39/km · 168 bpm</span></div></div></div>
+    </div></div>
+
+
+  </div>
+  <div class="p-6 bg-white border-t border-[#d8dae5] shrink-0">
+  <div class="max-w-4xl mx-auto relative">
+    <textarea class="w-full bg-[#f2f4f6] border border-[#d8dae5] rounded-xl px-4 py-4 pr-32 text-[#1a1c2e] focus:outline-none focus:ring-1 focus:ring-[#006d38] focus:border-[#006d38] resize-none" placeholder="向 Coach 继续提问..." rows="2"></textarea>
+    <button class="absolute right-3 bottom-3 bg-[#00a85a] text-white px-6 py-2 rounded-lg font-semibold hover:opacity-90 transition-all shadow-sm">发送给 Coach</button>
+  </div>
+</div>
+</main>
+</body></html>

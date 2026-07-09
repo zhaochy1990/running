@@ -42,9 +42,10 @@ class FakeToolkit:
 
     user_id: str = "fake-user"
 
-    # read (11)
+    # read (12)
     get_recent_activities: _FakeTool = field(default_factory=_FakeTool)
     get_health_snapshot: _FakeTool = field(default_factory=_FakeTool)
+    get_health_series: _FakeTool = field(default_factory=_FakeTool)
     get_pmc_series: _FakeTool = field(default_factory=_FakeTool)
     get_body_composition_latest: _FakeTool = field(default_factory=_FakeTool)
     get_ability_snapshot: _FakeTool = field(default_factory=_FakeTool)
@@ -83,6 +84,7 @@ def _assert_toolkit_protocol() -> None:
     # Touch every attribute named on the Toolkit Protocol
     for name in (
         "get_recent_activities", "get_health_snapshot", "get_pmc_series",
+        "get_health_series",
         "get_body_composition_latest", "get_ability_snapshot", "get_race_predictions",
         "get_pbs", "get_master_plan_current", "get_master_plan_versions",
         "get_week_plan", "get_activity_detail",

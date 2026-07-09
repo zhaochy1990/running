@@ -1,87 +1,86 @@
 <!DOCTYPE html>
-
 <html lang="zh-CN"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>STRIDE | Coach</title>
+<title>STRIDE - 系统异常导致生成失败</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Newsreader:ital,wght@0,400;1,400&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&amp;family=JetBrains+Mono:wght@500;700&amp;family=Newsreader:ital,wght@0,400;1,400&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
             theme: {
                 extend: {
                     "colors": {
-                        "tertiary-fixed": "#ffdadb",
-                        "inverse-on-surface": "#f0f1f3",
+                        "on-tertiary": "#ffffff",
+                        "on-surface-variant": "#3d4a3f",
+                        "text-muted": "#555570",
                         "surface-container-high": "#e7e8ea",
-                        "outline-variant": "#bccabc",
-                        "tertiary-container": "#ec6678",
-                        "inverse-primary": "#59df8a",
-                        "on-tertiary-fixed-variant": "#881a31",
+                        "on-secondary-fixed": "#001f24",
+                        "surface-tint": "#006d38",
+                        "primary-fixed": "#77fca4",
+                        "inverse-on-surface": "#f0f1f3",
                         "on-surface": "#191c1e",
-                        "on-primary-container": "#003317",
-                        "surface-container-low": "#f2f4f6",
-                        "red-soft": "#fde8e8",
-                        "error": "#ba1a1a",
+                        "primary": "#006d38",
+                        "tertiary-fixed": "#ffdadb",
+                        "surface-container-highest": "#e1e2e4",
                         "border-subtle": "#e8eaf0",
                         "surface": "#f8f9fb",
-                        "amber-soft": "#fdf2dd",
-                        "on-primary-fixed": "#00210d",
-                        "text-primary": "#1a1c2e",
-                        "primary-fixed": "#77fca4",
-                        "phase-race": "#d32f2f",
-                        "on-secondary": "#ffffff",
-                        "surface-dim": "#d9dadc",
-                        "phase-taper": "#7c4dff",
-                        "inverse-surface": "#2e3132",
-                        "green-edge": "#c8e8d6",
-                        "on-primary-fixed-variant": "#005229",
-                        "border-default": "#d8dae5",
-                        "phase-specialty": "#0097a7",
                         "secondary-fixed-dim": "#66d6e7",
-                        "cyan-soft": "#e0f4f7",
-                        "primary": "#006d38",
-                        "cyan-edge": "#b9e3ea",
-                        "surface-variant": "#e1e2e4",
-                        "on-tertiary-container": "#5d001a",
-                        "surface-bright": "#f8f9fb",
-                        "on-primary": "#ffffff",
+                        "inverse-primary": "#59df8a",
+                        "outline-variant": "#bccabc",
                         "on-background": "#191c1e",
-                        "on-secondary-container": "#006b77",
-                        "on-tertiary": "#ffffff",
-                        "text-muted": "#555570",
-                        "on-secondary-fixed": "#001f24",
+                        "green-edge": "#c8e8d6",
+                        "inverse-surface": "#2e3132",
                         "secondary-fixed": "#97f0ff",
-                        "primary-container": "#00a85a",
-                        "primary-fixed-dim": "#59df8a",
-                        "phase-base": "#00a85a",
-                        "red-edge": "#f3c8c8",
-                        "surface-container": "#edeef0",
-                        "on-surface-variant": "#3d4a3f",
-                        "amber-edge": "#f6e0a8",
-                        "secondary": "#006874",
+                        "red-soft": "#fde8e8",
                         "phase-peak": "#e68a00",
-                        "secondary-container": "#7fedfe",
-                        "purple-soft": "#ede7ff",
-                        "on-error": "#ffffff",
-                        "surface-hover": "#f5f6fa",
-                        "green-soft": "#e6f7ee",
-                        "outline": "#6d7b6e",
-                        "error-container": "#ffdad6",
-                        "tertiary-fixed-dim": "#ffb2b8",
-                        "surface-tint": "#006d38",
-                        "on-error-container": "#93000a",
-                        "purple-edge": "#d4c8ff",
-                        "surface-container-lowest": "#ffffff",
-                        "background": "#f8f9fb",
-                        "surface-container-highest": "#e1e2e4",
-                        "on-tertiary-fixed": "#40000f",
-                        "on-secondary-fixed-variant": "#004f58",
-                        "text-faint": "#8888a0",
+                        "border-default": "#d8dae5",
+                        "phase-taper": "#7c4dff",
                         "accent-pink": "#e91e63",
-                        "tertiary": "#a93347"
+                        "on-secondary": "#ffffff",
+                        "red-edge": "#f3c8c8",
+                        "phase-specialty": "#0097a7",
+                        "on-error": "#ffffff",
+                        "text-primary": "#1a1c2e",
+                        "purple-soft": "#ede7ff",
+                        "background": "#f8f9fb",
+                        "surface-container-lowest": "#ffffff",
+                        "error": "#ba1a1a",
+                        "secondary-container": "#7fedfe",
+                        "purple-edge": "#d4c8ff",
+                        "on-tertiary-container": "#5d001a",
+                        "tertiary": "#a93347",
+                        "on-error-container": "#93000a",
+                        "tertiary-container": "#ec6678",
+                        "cyan-soft": "#e0f4f7",
+                        "green-soft": "#e6f7ee",
+                        "surface-variant": "#e1e2e4",
+                        "surface-container-low": "#f2f4f6",
+                        "amber-soft": "#fdf2dd",
+                        "surface-hover": "#f5f6fa",
+                        "on-tertiary-fixed-variant": "#881a31",
+                        "surface-dim": "#d9dadc",
+                        "primary-container": "#00a85a",
+                        "amber-edge": "#f6e0a8",
+                        "outline": "#6d7b6e",
+                        "tertiary-fixed-dim": "#ffb2b8",
+                        "on-primary-fixed-variant": "#005229",
+                        "on-primary-fixed": "#00210d",
+                        "on-tertiary-fixed": "#40000f",
+                        "on-primary-container": "#003317",
+                        "surface-bright": "#f8f9fb",
+                        "secondary": "#006874",
+                        "phase-race": "#d32f2f",
+                        "surface-container": "#edeef0",
+                        "phase-base": "#00a85a",
+                        "on-secondary-fixed-variant": "#004f58",
+                        "on-secondary-container": "#006b77",
+                        "cyan-edge": "#b9e3ea",
+                        "on-primary": "#ffffff",
+                        "primary-fixed-dim": "#59df8a",
+                        "error-container": "#ffdad6",
+                        "text-faint": "#8888a0"
                     },
                     "borderRadius": {
                         "DEFAULT": "0.25rem",
@@ -90,57 +89,279 @@
                         "full": "9999px"
                     },
                     "spacing": {
-                        "sidebar-collapsed": "60px",
-                        "card-gap": "16px",
+                        "topbar-height": "50px",
                         "sidebar-width": "220px",
+                        "base": "8px",
+                        "sidebar-collapsed": "60px",
                         "container-padding": "24px",
                         "card-padding": "12px",
-                        "topbar-height": "50px",
-                        "coach-panel-width": "360px",
-                        "base": "8px"
+                        "card-gap": "16px",
+                        "coach-panel-width": "360px"
                     },
                     "fontFamily": {
-                        "display-lg": ["Outfit"],
-                        "metric-value": ["Outfit"],
+                        "label-mono-caps": ["JetBrains Mono"],
+                        "editorial-quote": ["Newsreader"],
+                        "headline-sm": ["Outfit"],
                         "headline-md": ["Outfit"],
                         "label-mono-sm": ["JetBrains Mono"],
-                        "editorial-quote": ["Newsreader"],
-                        "editorial-prose": ["Newsreader"],
-                        "body-sm": ["Outfit"],
-                        "label-mono-caps": ["JetBrains Mono"],
+                        "display-lg": ["Outfit"],
                         "body-md": ["Outfit"],
-                        "headline-sm": ["Outfit"]
+                        "metric-value": ["Outfit"],
+                        "editorial-prose": ["Newsreader"],
+                        "body-sm": ["Outfit"]
+                    },
+                    "fontSize": {
+                        "label-mono-caps": ["10px", { "lineHeight": "12px", "letterSpacing": "0.14em", "fontWeight": "500" }],
+                        "editorial-quote": ["18px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "headline-sm": ["18px", { "lineHeight": "1.4", "fontWeight": "600" }],
+                        "headline-md": ["24px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "label-mono-sm": ["9px", { "lineHeight": "10px", "letterSpacing": "0.1em", "fontWeight": "500" }],
+                        "display-lg": ["32px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "body-md": ["14px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "metric-value": ["28px", { "lineHeight": "1", "fontWeight": "700" }],
+                        "editorial-prose": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                        "body-sm": ["13px", { "lineHeight": "1.4", "fontWeight": "400" }]
                     }
                 }
             }
         }
     </script>
 <style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-            vertical-align: middle;
-            font-size: 1.25rem;
-        }
-        .scrollbar-hide::-webkit-scrollbar { display: none; }
-        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        .transition-all-200 { transition: all 200ms ease-in-out; }
+        body { background-color: #f8f9fb; color: #1a1c2e; font-family: 'Outfit', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .material-symbols-outlined.fill { font-variation-settings: 'FILL' 1; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d8dae5; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #8888a0; }
     </style>
 </head>
-<body class="bg-background text-text-primary font-body-md selection:bg-primary-container selection:text-on-primary-container min-h-screen flex">
-<!-- Left Sidebar -->
-<aside class="w-sidebar-width bg-surface border-r border-border-default h-screen sticky top-0 flex flex-col pt-4 shrink-0 hidden md:flex">
-<div class="px-6 mb-8 flex items-center gap-2">
-<span class="font-display-lg text-display-lg font-bold text-primary tracking-tight">STRIDE</span>
+<body class="antialiased min-h-screen flex">
+<aside class="fixed left-0 top-0 h-full w-[220px] bg-surface-container-low border-r border-border-default flex flex-col z-20">
+<div class="flex flex-col h-full py-6">
+<div class="px-6 mb-8">
+<span class="font-display-lg text-display-lg font-black text-primary tracking-tighter">STRIDE</span>
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mt-1">训练中心</p>
 </div>
-<nav class="flex-1 px-4 space-y-1"><a class="flex items-center gap-3 px-3 py-2 bg-green-soft text-primary rounded-lg font-body-md font-medium" href="#"><span class="material-symbols-outlined text-[20px]">calendar_month</span>训练计划</a><a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#"><span class="material-symbols-outlined text-[20px]">directions_run</span>活动</a><a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#"><span class="material-symbols-outlined text-[20px]">monitoring</span>能力</a><a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#"><span class="material-symbols-outlined text-[20px]">favorite</span>健康</a></nav>
-<div class="p-4 mt-auto border-t border-border-default">
-<a class="flex items-center gap-3 px-3 py-2 text-text-muted hover:bg-surface-hover hover:text-text-primary rounded-lg font-body-md transition-colors" href="#">
+<nav class="flex-1 space-y-1 mb-6">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">calendar_view_week</span>
+<span class="font-label-mono-caps text-label-mono-caps">本周训练</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-primary border-l-4 border-primary font-bold bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px] fill">event_note</span>
+<span class="font-label-mono-caps text-label-mono-caps">训练计划</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">directions_run</span>
+<span class="font-label-mono-caps text-label-mono-caps">活动</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">monitoring</span>
+<span class="font-label-mono-caps text-label-mono-caps">能力</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">favorite</span>
+<span class="font-label-mono-caps text-label-mono-caps">健康</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">speed</span>
+<span class="font-label-mono-caps text-label-mono-caps">体测</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">groups</span>
+<span class="font-label-mono-caps text-label-mono-caps">团队</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
+<span class="material-symbols-outlined text-[20px]">psychology</span>
+<span class="font-label-mono-caps text-label-mono-caps">教练</span>
+</a>
+</nav>
+<div class="px-4 mt-auto border-t border-border-default pt-4 space-y-4">
+<div class="bg-white border border-border-default rounded-lg p-3">
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-2">当前计划</p>
+<p class="font-body-sm text-text-primary font-bold">v1.4 上一版调整方案</p>
+<p class="font-label-mono-sm text-text-faint mt-1">更新于 2026-06-20</p>
+</div>
+<div class="bg-white border border-border-default rounded-lg p-3">
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-2">版本入口</p>
+<div class="space-y-2 text-body-sm">
+<div class="flex items-center justify-between text-text-primary"><span>v1.3</span><span class="text-primary font-bold">当前</span></div>
+<div class="flex items-center justify-between text-text-faint"><span>v1.2</span><span>06/20</span></div>
+</div>
+</div>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:text-primary transition-colors hover:bg-surface-hover" href="#">
 <span class="material-symbols-outlined text-[20px]">settings</span>
-            设置
-        </a>
+<span class="font-label-mono-caps text-label-mono-caps">设置</span>
+</a>
+</div>
 </div>
 </aside>
-<!-- Coach Workspace Main Area -->
-<main class="flex-1 bg-surface-bright flex flex-col h-screen overflow-hidden"><div class="flex h-full overflow-hidden"><div class="flex-1 flex flex-col border-r border-border-default bg-white overflow-hidden"><header class="p-6 border-b border-border-default flex items-center justify-between shrink-0"><div class="flex items-center gap-3"><h1 class="font-headline-sm text-text-primary font-bold">审阅赛季训练计划</h1><div class="flex items-center gap-2 px-2 py-1 bg-surface-container rounded text-[12px] font-label-mono-sm text-text-muted"><span>v1.2</span><span class="material-symbols-outlined text-[14px]">arrow_forward</span><span class="text-primary font-bold">v1.3</span></div></div></header><div class="flex-1 overflow-y-auto p-8 space-y-8"><div class="space-y-2"><div class="flex items-center justify-between"><h2 class="text-[24px] font-bold tracking-tight">2026 上海马拉松</h2><span class="text-text-muted font-body-md">2026年11月15日 · 上海</span></div><div class="flex gap-4 text-text-muted font-label-mono-sm"><span>距离比赛还有 24 周</span><span>目标成绩: 3:30:00</span></div></div><div class="bg-surface p-6 rounded-xl border border-border-default space-y-6"><div class="flex items-end gap-1 h-32"> <div class="flex-1 bg-primary/20 rounded-t-sm" style="height: 40%"></div><div class="flex-1 bg-primary/20 rounded-t-sm" style="height: 45%"></div><div class="flex-1 bg-primary/20 rounded-t-sm" style="height: 55%"></div><div class="flex-1 bg-primary/20 rounded-t-sm" style="height: 60%"></div><div class="flex-1 bg-primary/40 rounded-t-sm" style="height: 70%"></div><div class="flex-1 bg-primary/40 rounded-t-sm" style="height: 75%"></div><div class="flex-1 bg-primary/40 rounded-t-sm" style="height: 85%"></div><div class="flex-1 bg-primary/40 rounded-t-sm" style="height: 90%"></div><div class="flex-1 bg-primary rounded-t-sm" style="height: 100%"></div><div class="flex-1 bg-primary rounded-t-sm" style="height: 95%"></div><div class="flex-1 bg-tertiary/40 rounded-t-sm" style="height: 30%"></div> </div><div class="grid grid-cols-4 gap-4 text-center"><div class="space-y-1"><div class="text-primary font-bold">基础期</div><div class="text-[12px] text-text-muted">8周</div></div><div class="space-y-1"><div class="text-text-primary font-bold">强化期</div><div class="text-[12px] text-text-muted">8周</div></div><div class="space-y-1"><div class="text-text-primary font-bold">巅峰期</div><div class="text-[12px] text-text-muted">6周</div></div><div class="space-y-1"><div class="text-text-muted font-bold">减量期</div><div class="text-[12px] text-text-muted">2周</div></div></div></div><div class="space-y-4"><h3 class="font-headline-sm">关键课表类型</h3><div class="grid grid-cols-2 gap-4"><div class="p-4 border border-border-default rounded-lg"> <div class="font-bold mb-1">长距离跑 (LSD)</div><div class="text-text-muted text-body-sm">控制在 30km 以内，侧重耐力基础</div></div><div class="p-4 border border-border-default rounded-lg"> <div class="font-bold mb-1">乳酸阈值跑</div><div class="text-text-muted text-body-sm">提升巡航速度，维持 4:50 左右配速</div></div></div></div></div><div class="p-6 border-t border-border-default bg-white flex flex-col items-center gap-3"><p class="text-text-muted text-body-sm">当前计划仍在生效，启用后即可替换</p><button class="w-full max-w-md bg-primary text-white py-3 rounded-full font-bold hover:bg-primary/90 transition-colors">启用计划</button></div></div><aside class="w-coach-panel-width flex flex-col bg-surface-bright overflow-hidden"><header class="p-6 border-b border-border-default flex items-center gap-2 shrink-0"><span class="material-symbols-outlined text-primary">smart_toy</span><h2 class="font-bold">Coach</h2></header><div class="flex-1 overflow-y-auto p-4 space-y-6"><div class="flex flex-col items-end gap-2"><div class="bg-primary text-white p-3 rounded-xl rounded-tr-none max-w-[90%] text-body-md">我觉得峰值周跑量还是太高，能不能把最长距离控制在 30 公里以内？</div></div><div class="flex flex-col items-start gap-2"><div class="bg-white border border-border-default p-4 rounded-xl rounded-tl-none max-w-[90%] shadow-sm"><p class="font-editorial-prose text-text-primary leading-relaxed">收到你的反馈。降低长距离上限可以有效控制疲劳。我已理解你的要求，正在以此为基准重新计算负荷分配。在开始前，我想确认：你是否希望在减少长距离的同时，通过增加一次周中的短距离恢复跑来维持总里程？</p></div><div class="bg-white border border-border-default p-4 rounded-lg w-[90%] shadow-sm space-y-3"><div class="font-bold text-body-sm">调整确认：减少长距离上限至 30km</div><div class="flex flex-col gap-2"><button class="w-full py-2 px-3 border border-primary text-primary rounded-md text-body-sm hover:bg-primary/5 transition-colors">是的，增加恢复跑</button><button class="w-full py-2 px-3 border border-border-default text-text-primary rounded-md text-body-sm hover:bg-surface-hover transition-colors">不需要，直接降低总量</button></div></div></div></div><div class="p-4 border-t border-border-default bg-white"><div class="relative flex items-center"><input class="w-full bg-surface border border-border-default rounded-full py-2.5 pl-4 pr-10 text-body-sm focus:outline-none focus:border-primary" placeholder="继续补充你的想法..." type="text"/><button class="absolute right-2 p-1 text-text-muted hover:text-primary"><span class="material-symbols-outlined">send</span></button></div></div></aside></div></main>
+<main class="ml-[220px] mr-[360px] flex-1 flex flex-col min-h-screen bg-background relative">
+<header class="h-[50px] bg-surface border-b border-border-default flex items-center justify-between px-container-padding sticky top-0 z-10 w-full">
+<div class="flex items-center text-body-sm font-body-sm text-text-muted">
+<span>训练计划</span>
+<span class="material-symbols-outlined text-[16px] mx-2">chevron_right</span>
+<span class="text-primary font-bold">系统异常</span>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">notifications</span></button>
+<button class="text-text-muted hover:text-primary transition-colors"><span class="material-symbols-outlined">help_outline</span></button>
+<div class="w-8 h-8 rounded-full bg-surface-variant border border-border-default flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-[18px]">person</span>
+</div>
+</div>
+</header>
+<div class="px-container-padding py-8 flex-1 flex flex-col max-w-5xl mx-auto w-full">
+<div class="mb-8">
+<div class="flex items-end justify-between mb-4">
+<div>
+<div class="flex items-center gap-2 text-text-muted mb-2 flex-wrap">
+<span class="font-label-mono-caps text-label-mono-caps">2026 西安马拉松</span>
+<span>·</span>
+<span class="font-label-mono-caps text-label-mono-caps">西安</span>
+<span>·</span>
+<span class="font-label-mono-caps text-label-mono-caps text-primary">目标 sub-2:50</span>
+<span>·</span>
+<span class="font-label-mono-caps text-label-mono-caps">2026/10/18</span>
+<span>·</span>
+<span class="font-label-mono-caps text-label-mono-caps">峰值 86 km</span>
+</div>
+<h1 class="font-headline-md text-[32px] font-bold text-text-primary tracking-tight">系统异常导致生成失败</h1>
+</div>
+<span class="px-3 py-1 rounded-full bg-green-soft border border-green-edge text-primary font-label-mono-sm text-[10px]">v1.4 上一版调整方案</span>
+</div>
+<p class="text-body-md text-text-muted">系统没有完成这次更新。当前中栏保留失败前正在处理的上一版调整方案，方便你重试或修改输入。</p>
+</div>
+<section class="mb-6 flex gap-2">
+<button class="px-4 py-2 bg-white border border-border-default rounded-lg font-body-sm font-bold text-text-primary shadow-sm">计划总览</button>
+</section>
+<section class="bg-white border border-border-default rounded-lg mb-6 overflow-hidden">
+<div class="p-5 border-b border-border-subtle flex items-center justify-between">
+<h3 class="font-headline-sm text-[17px] text-text-primary">训练周期</h3>
+<div class="flex items-center gap-3 font-label-mono-sm text-text-faint">
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-phase-base"></span>基础</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-500"></span>速度</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-secondary"></span>专项</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-phase-peak"></span>峰值</span>
+<span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-phase-taper"></span>减量</span>
+</div>
+</div>
+<div class="p-6">
+<p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-4 uppercase">预计周跑量（KM/周）</p>
+<div class="h-40 grid items-end gap-1.5" style="grid-template-columns: repeat(24, minmax(0, 1fr));">
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:45%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:52%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:58%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:50%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:62%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:68%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:75%"></div>
+<div class="bg-phase-base/40 rounded-t hover:bg-phase-base transition-colors" style="height:55%"></div>
+<div class="bg-cyan-500/40 rounded-t hover:bg-cyan-500 transition-colors" style="height:62%"></div>
+<div class="bg-cyan-500/40 rounded-t hover:bg-cyan-500 transition-colors" style="height:68%"></div>
+<div class="bg-cyan-500/40 rounded-t hover:bg-cyan-500 transition-colors" style="height:74%"></div>
+<div class="bg-cyan-500/40 rounded-t hover:bg-cyan-500 transition-colors" style="height:43%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:78%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:85%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:92%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:58%"></div>
+<div class="bg-secondary/40 rounded-t hover:bg-secondary transition-colors" style="height:92%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:92%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:88%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:64%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:86%"></div>
+<div class="bg-phase-peak/40 rounded-t hover:bg-phase-peak transition-colors" style="height:64%"></div>
+<div class="bg-phase-taper/40 rounded-t hover:bg-phase-taper transition-colors" style="height:45%"></div>
+<div class="bg-phase-taper/40 rounded-t hover:bg-phase-taper transition-colors" style="height:38%"></div>
+</div>
+<div class="mt-3 grid font-label-mono-sm text-[10px] text-text-faint" style="grid-template-columns: repeat(24, minmax(0, 1fr));">
+<div class="text-left" style="grid-column: 1 / span 3;">05/04<br/><span class="font-body-sm text-[11px]">P1 基础</span></div>
+<div class="text-left" style="grid-column: 9 / span 3;">06/29<br/><span class="font-body-sm text-[11px]">P2 速度</span></div>
+<div class="text-left" style="grid-column: 13 / span 3;">07/27<br/><span class="font-body-sm text-[11px]">P3 专项</span></div>
+<div class="text-left" style="grid-column: 18 / span 3;">08/31<br/><span class="font-body-sm text-[11px]">P4 峰值</span></div>
+<div class="text-left" style="grid-column: 23 / span 2;">10/05<br/><span class="font-body-sm text-[11px]">P5 减量</span></div>
+</div>
+</div>
+</section>
+<section class="flex flex-wrap gap-2 mb-6">
+<button data-phase-tab="0" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-white border-border-default text-text-muted"><span class="w-1.5 h-1.5 rounded-full bg-phase-base"></span>有氧基础期（已完成） · 8周</button>
+<button data-phase-tab="1" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-cyan-soft border-cyan-edge text-primary font-bold"><span class="w-1.5 h-1.5 rounded-full bg-cyan-500"></span>夏季速度衔接期 · 4周</button>
+<button data-phase-tab="2" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-white border-border-default text-text-muted"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>马拉松专项 build 期 · 5周</button>
+<button data-phase-tab="3" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-white border-border-default text-text-muted"><span class="w-1.5 h-1.5 rounded-full bg-phase-peak"></span>马拉松专项峰值期 · 5周</button>
+<button data-phase-tab="4" class="px-3 py-1.5 border rounded-full font-label-mono-sm text-[11px] leading-none flex items-center gap-1.5 hover:bg-surface-hover transition-colors bg-white border-border-default text-text-muted"><span class="w-1.5 h-1.5 rounded-full bg-phase-taper"></span>减量与比赛期 · 2周</button>
+</section>
+<section data-phase-panel="1" class="bg-white border border-border-default rounded-lg overflow-hidden">
+<div class="p-5 border-b border-border-subtle bg-cyan-soft/40 flex items-center gap-3">
+<span class="w-3 h-3 rounded-full bg-cyan-500"></span>
+<div>
+<h3 class="font-headline-sm text-[17px] text-text-primary">夏季速度衔接期</h3>
+<p class="font-label-mono-sm text-text-faint mt-1">2026/06/29 - 2026/07/26 · speed · 当前所在阶段</p>
+</div>
+<span class="ml-auto font-label-mono-sm text-text-muted">52-70 km/w</span>
+</div>
+<div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+<div class="lg:col-span-2 space-y-5 pr-2">
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段重点</h4><p class="text-[13px] text-text-primary leading-6">从已完成 8 周基础后进入速度衔接；前 3 周用 5K/10K 速度、坡跑和短阈值唤醒神经肌肉，第 4 周恢复到阶段下限的 70-80%。当前计划把你从比赛就绪状态逐步拉回可训练负荷。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">阶段节奏</h4><p class="text-[13px] text-text-primary leading-6">每周 5 跑 + 2 次力量耐久：1 次速度/VO2max、1 次坡跑或短阈值、1 次周末长跑，其余为 Z2 有氧；周量高值约 60→66→70km，第 4 周降到 38-43km，为后续专项期留出恢复余地。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">关键课</h4><p class="text-[13px] text-text-primary leading-6">重点不是堆更多马拉松配速，而是在高温夏训中把 5K-10K 速度和跑姿弹性找回来；长跑维持 21-24km，并把峰值期前的疲劳控制在可吸收范围。</p></div>
+<div><h4 class="font-headline-sm text-[16px] font-bold text-text-primary mb-2">监控触发</h4><ul class="space-y-2 text-[13px] text-text-primary leading-6"><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>晨起 RHR 高于当前 53bpm 基线 +7bpm 且连续 2 天 → 当周取消 VO2max 或坡跑，周量下调 20-25%</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>早晨 HRV 低于近期 32-34 区间超过 15% 且腿部沉重 → 质量课改为 40-50 分钟 Z2</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>高温体感温度 ≥ 32℃ → 速度课移到清晨或傍晚，组间恢复延长 30-60 秒</span></li><li class="flex gap-2"><span class="material-symbols-outlined text-primary text-[16px] mt-0.5">radio_button_checked</span><span>任何跟腱、小腿或膝痛 ≥ 3/10 → 取消坡跑，改为平路轻松跑并增加小腿离心和髋稳定</span></li></ul></div>
+<div class="bg-cyan-soft border border-cyan-edge rounded p-4"><h4 class="font-headline-sm text-[16px] font-bold text-primary mb-2">Coach Note</h4><p class="font-editorial-prose text-[14px] leading-6 text-text-primary italic">这版计划保留 sub-2:50 的专项方向，但把峰值风险前置管理：先让速度衔接更稳，再进入更可控的专项累积。</p></div>
+</div>
+<div class="space-y-4">
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键课型</p><div class="flex flex-wrap gap-2"><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">间歇</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">VO2max</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">坡跑</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">长距离</span><span class="px-2 py-1 bg-surface-container-low border border-border-subtle rounded font-label-mono-sm text-[10px] text-text-muted">力量重点</span></div></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-2">周里程区间</p><p class="text-[24px] font-bold text-text-primary">52-70<span class="text-sm font-normal text-text-muted"> km/w</span></p><p class="font-body-sm text-text-faint mt-1">6/29 - 7/26</p></div>
+<div class="bg-surface-container-low border border-border-subtle rounded p-4"><p class="font-label-mono-caps text-label-mono-caps text-text-muted mb-3">关键里程碑</p><div class="space-y-3"><div class="bg-surface-container-low border border-border-subtle rounded p-3"><div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/07/19</span><span class="font-label-mono-sm text-text-faint">测试跑</span></div><p class="text-[13px] text-text-primary leading-6">5K 测试跑力争 18:55 以内；这是基于实际 PB 19:30 的约 3% 提升，不把预测成绩当作 PB。</p></div><div class="bg-surface-container-low border border-border-subtle rounded p-3"><div class="flex items-center justify-between mb-2"><span class="font-label-mono-sm text-primary">2026/07/26</span><span class="font-label-mono-sm text-text-faint">力量测试</span></div><p class="text-[13px] text-text-primary leading-6">无痛完成单腿提踵每侧 25 次、单腿臀桥每侧 20 次，左右差控制在 10% 以内。</p></div></div></div>
+</div>
+</div>
+</section>
+<section class="mt-8 bg-white border border-border-default rounded-lg overflow-hidden">
+<div class="p-5 border-b border-border-subtle"><h3 class="font-headline-sm text-[17px] text-text-primary">训练原则</h3></div>
+<div class="p-6"><ol class="space-y-3"><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">01</span><span class="text-[13px] text-text-primary leading-6">全马 PB 为 2:57:11，目标 2:50:00 是约 4.1% 的单周期提升；天气或身体反馈不理想时执行 B 目标 2:53:00-2:55:00。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">02</span><span class="text-[13px] text-text-primary leading-6">夏季速度衔接期保持能量平衡，不做激进减重；质量课或长课后 30 分钟内补充碳水+蛋白约 3:1。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">03</span><span class="text-[13px] text-text-primary leading-6">专项 build 与 peak 阶段把碳水提高到 5-7 g/kg/天，并在 28-32km 马拉松配速长课中反复演练补给。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">04</span><span class="text-[13px] text-text-primary leading-6">每 4 周安排 1 周恢复周，周量降到该阶段下限的 70-80%，恢复周取消阈值、间歇和马拉松配速质量课。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">05</span><span class="text-[13px] text-text-primary leading-6">单日长跑剂量不得超过周总剂量的 35%，每周零剂量日不超过 2 天，避免尖峰负荷。</span></li><li class="flex gap-3"><span class="font-label-mono-sm text-primary mt-1">06</span><span class="text-[13px] text-text-primary leading-6">强度分布围绕 STRIDE Form 控制：build 期目标 building 50-60%，peak 期 building 约 40% 且 race-ready 约 30%。</span></li></ol></div>
+</section>
+</div>
+</main>
+<aside class="fixed right-0 top-0 h-full w-[360px] bg-surface-container-lowest border-l border-border-default flex flex-col z-20 shadow-[-4px_0_24px_rgba(0,0,0,0.02)]">
+<div class="flex flex-col h-full overflow-hidden">
+<div class="p-4 border-b border-border-subtle bg-surface-bright flex items-center gap-2 shrink-0">
+<span class="material-symbols-outlined text-error text-[20px]">error</span>
+<span class="font-label-mono-caps text-[12px] font-bold tracking-wider">系统异常</span>
+</div>
+<div class="flex-1 overflow-y-auto p-4 flex flex-col gap-6">
+<div class="flex gap-3 max-w-[90%] self-end flex-row-reverse">
+<div class="w-6 h-6 rounded bg-surface-variant flex-shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-[14px] text-text-muted">person</span></div>
+<div class="bg-surface-bright border border-border-default rounded-tl-lg rounded-b-lg p-3">
+<p class="font-body-sm text-[13px] text-text-primary leading-6">这版还是有点保守，能不能保留一次完整 24km MP，但加上状态条件？</p>
+</div>
+</div>
+<div class="ml-9 mr-2 bg-red-soft border border-red-edge rounded-lg shadow-sm overflow-hidden">
+<div class="p-3 border-b border-red-edge/60 flex items-center gap-2">
+<span class="material-symbols-outlined text-error text-[18px]">error</span>
+<span class="font-label-mono-caps text-[10px] text-text-primary font-bold">计划生成没有完成</span>
+</div>
+<div class="p-3 space-y-2">
+<p class="font-body-sm text-text-primary font-semibold">系统处理时发生异常。</p>
+<p class="font-body-sm text-text-muted text-[12px] leading-5">可能是网络中断、服务暂时不可用，或内部服务错误。中栏这份上一版调整方案不会丢失，当前已启用计划也不受影响。</p>
+<div class="bg-white/70 border border-red-edge rounded p-2 font-label-mono-sm text-text-muted">错误类型：Internal server error · 可重试</div>
+</div>
+</div>
+<div class="flex gap-3 max-w-[92%]">
+<div class="w-6 h-6 rounded bg-primary-container flex-shrink-0 flex items-center justify-center"><span class="material-symbols-outlined text-on-primary text-[14px]">psychology</span></div>
+<div class="bg-surface-container-low border border-border-default rounded-tr-lg rounded-b-lg p-3">
+<p class="font-body-sm text-[13px] text-text-primary leading-6">建议直接重试生成。如果你刚才的反馈需要调整，也可以先修改输入再重试。</p>
+</div>
+</div>
+</div>
+<div class="p-4 border-t border-border-subtle bg-surface-bright shrink-0 space-y-3">
+<div class="grid grid-cols-2 gap-2">
+<button class="px-3 py-2 rounded bg-primary text-white font-body-sm font-bold hover:bg-surface-tint transition-colors">重试生成</button>
+<button class="px-3 py-2 rounded border border-border-default bg-surface text-text-primary font-body-sm hover:border-primary hover:text-primary transition-colors">修改输入</button>
+</div>
+<div class="relative">
+<input class="w-full bg-surface border border-border-default rounded p-3 pr-10 text-body-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all" placeholder="修改输入，或直接重试生成..." type="text"/>
+<button class="absolute right-3 top-1/2 -translate-y-1/2 text-primary hover:text-primary-fixed-dim transition-colors" title="发送给 Coach"><span class="material-symbols-outlined text-[20px]">send</span></button>
+</div>
+</div>
+</div>
+</aside>
 </body></html>

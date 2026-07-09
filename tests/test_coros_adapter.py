@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -373,3 +375,34 @@ def test_resync_activity_fetches_and_upserts(tmp_path, monkeypatch):
     assert fake_detail.date == "20260420"
     fake_db.upsert_activity.assert_called_once_with(fake_detail)
     fake_db.close.assert_called_once()
+
+
+def test_logout_removes_credentials_but_keeps_provider(tmp_path: Path, monkeypatch):
+    from coros_sync import auth as auth_mod
+
+    monkeypatch.delenv("STRIDE_COROS_KEYVAULT_URL", raising=False)
+    monkeypatch.setattr(auth_mod, "USER_DATA_DIR", tmp_path)
+
+    path = tmp_path / "u" / "config.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({
+        "provider": "coros",
+        "email": "x@y.com",
+        "pwd_hash": "hash",
+        "access_token": "token",
+        "region": "cn",
+        "user_id": "coros-user",
+    }), encoding="utf-8")
+
+    CorosDataSource().logout("u")
+
+    assert json.loads(path.read_text(encoding="utf-8")) == {"provider": "coros"}
+
+
+def test_logout_when_no_creds_is_noop(tmp_path: Path, monkeypatch):
+    from coros_sync import auth as auth_mod
+
+    monkeypatch.delenv("STRIDE_COROS_KEYVAULT_URL", raising=False)
+    monkeypatch.setattr(auth_mod, "USER_DATA_DIR", tmp_path)
+
+    CorosDataSource().logout("never_seen")

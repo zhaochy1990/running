@@ -19,10 +19,10 @@
 
 ### QA / 日常问答
 
-日常 Coach 问答相关设计稿已集中到 [qa/](./qa/)。包含训练指标问答、单次训练复盘、疲劳分流、疼痛分流，以及从问答升级到计划调整的入口。
+日常 Coach 问答相关设计稿已集中到 [qa/](./qa/)。包含当前 markdown 回复渲染，以及理想 structured JSON / stride-card 输出下的指标摘要、单次训练复盘、疲劳分流和疼痛分流。QA 只使用两栏布局；计划调整入口可以作为聊天内联 CTA 出现，但计划更新流程归属 Master Plan 或 Weekly Plan 场景。
 
 - 故事索引: [qa/README.md](./qa/README.md)
-- 页面数量: 6 个 HTML
+- 页面数量: 5 个 HTML
 
 ### Weekly Plan / 本周课表
 
