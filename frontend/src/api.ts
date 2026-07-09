@@ -360,6 +360,13 @@ export interface ActivitiesListResponse {
   offset: number
   limit: number
   activities: Activity[]
+  monthly_summaries?: Record<string, ActivityMonthlySummary>
+}
+
+export interface ActivityMonthlySummary {
+  activity_count: number
+  total_run_km: number
+  duration_s: number
 }
 
 export function getActivities(

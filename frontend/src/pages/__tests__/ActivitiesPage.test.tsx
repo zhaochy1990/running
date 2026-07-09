@@ -203,6 +203,31 @@ describe('ActivitiesPage', () => {
     expect(screen.getByText('Activity detail route')).toBeInTheDocument()
   })
 
+  it('renders whole-month totals from the server when a month spans pages', async () => {
+    const activities = [
+      makeActivity({ label_id: 'may-1', name: 'May Run 1', date: '2026-05-10T06:00:00+08:00', distance_km: 10, duration_s: 3000 }),
+      makeActivity({ label_id: 'may-2', name: 'May Run 2', date: '2026-05-09T06:00:00+08:00', distance_km: 5, duration_s: 1500 }),
+      makeActivity({ label_id: 'may-3', name: 'May Run 3', date: '2026-05-08T06:00:00+08:00', distance_km: 7, duration_s: 2100 }),
+      makeActivity({ label_id: 'may-4', name: 'May Run 4', date: '2026-05-07T06:00:00+08:00', distance_km: 5, duration_s: 1500 }),
+    ]
+    vi.mocked(getActivities).mockResolvedValue({
+      total: activities.length,
+      offset: 0,
+      limit: 2,
+      activities: activities.slice(0, 2),
+      monthly_summaries: {
+        '2026-05': { activity_count: 4, total_run_km: 27, duration_s: 8100 },
+      },
+    })
+    vi.mocked(getAllActivities).mockResolvedValue(activities)
+
+    renderActivitiesPage()
+
+    expect(await screen.findByText('May Run 1')).toBeInTheDocument()
+    expect(screen.getByText('4 节 · 27.0 km · 2 小时 15 分')).toBeInTheDocument()
+    expect(screen.queryByText('2 节 · 15.0 km · 1 小时 15 分')).not.toBeInTheDocument()
+  })
+
   it('lets users change rows per page and requests the new server limit', async () => {
     const activities = Array.from({ length: 60 }, (_, index) => (
       makeActivity({ label_id: `run-${index}`, name: `Run ${index}`, date: '2026-05-08T06:00:00+08:00' })
