@@ -161,12 +161,12 @@ class LLMClient:
         ``None`` (default), the bound deployment's construction-time
         ``max_tokens`` from ``[generator]`` config applies — that's the
         path callers should usually take, so the budget is tunable from
-        ``config/coach.toml`` without code edits. We bind the value under
-        whichever kwarg name the bound model's API uses
-        (``max_output_tokens`` for Responses API, ``max_tokens`` for Chat
-        Completions); langchain-openai's Responses-API path silently
-        drops ``max_tokens``, which previously truncated S1 plans
-        mid-JSON.
+        ``config/coach.toml`` without code edits. LangChain OpenAI models
+        normalize that constructor value to ``max_completion_tokens`` before
+        producing either Chat Completions or Responses payloads, so per-call
+        overrides must use the same internal kwarg. Binding ``max_tokens`` or
+        ``max_output_tokens`` can leave the constructor default in place and
+        add a second, conflicting request parameter.
 
         ``reasoning_effort`` (``"minimal"`` / ``"low"`` / ``"medium"`` /
         ``"high"``) caps reasoning-token consumption on gpt-5 / o-series
@@ -201,18 +201,12 @@ class LLMClient:
         # preferable to silently dropping the caller's intent.
         bind_kwargs: dict[str, Any] = {}
         if max_tokens is not None:
-            # Branch on api_kind so we only bind the kwarg the underlying
-            # SDK accepts: ``max_output_tokens`` for Responses API,
-            # ``max_tokens`` for Chat Completions. Binding the wrong name
-            # is silently dropped at best (the original truncation bug);
-            # binding the right name guarantees the cap reaches the SDK.
-            # langchain's AzureChatOpenAI exposes the routing decision as
-            # ``use_responses_api`` (set at construction from
-            # ``ModelSpec.api_kind``).
-            if getattr(self._llm, "use_responses_api", False):
-                bind_kwargs["max_output_tokens"] = max_tokens
-            else:
-                bind_kwargs["max_tokens"] = max_tokens
+            # langchain-openai stores constructor ``max_tokens`` as the
+            # provider-neutral ``max_completion_tokens`` default. Bind the
+            # same key so per-call overrides replace that default instead of
+            # creating an invalid ``max_tokens`` + ``max_completion_tokens``
+            # pair in the final OpenAI/Azure request body.
+            bind_kwargs["max_completion_tokens"] = max_tokens
         if reasoning_effort is not None:
             bind_kwargs["reasoning_effort"] = reasoning_effort
         target = self._llm.bind(**bind_kwargs) if bind_kwargs else self._llm

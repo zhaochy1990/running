@@ -140,6 +140,35 @@ export function postProfile(profile: ProfileIn) {
   return postJSON<{ error?: string; detail?: unknown }>('/users/me/profile', profile)
 }
 
+export type RunningAge = 'lt_6m' | '6m_1y' | '1y_3y' | '3y_plus'
+export type CurrentWeeklyKm = 'lt_20' | '20_40' | '40_60' | '60_plus'
+export type RunningPbDistance = '5K' | '10K' | 'HM' | 'FM'
+
+export interface RunningProfilePb {
+  distance: RunningPbDistance
+  time: string
+}
+
+export interface RunningProfileInput {
+  running_age: RunningAge
+  current_weekly_km: CurrentWeeklyKm
+  pbs: RunningProfilePb[]
+  injuries: string[]
+}
+
+export interface RunningProfile extends RunningProfileInput {
+  profile_id?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export function createRunningProfile(profile: RunningProfileInput) {
+  return postJSON<RunningProfile & { error?: string; detail?: unknown }>(
+    '/users/me/running-profile',
+    profile,
+  )
+}
+
 export function patchMyProfile(patch: ProfilePatchIn) {
   return patchJSON<{
     ok?: boolean
@@ -532,6 +561,15 @@ export interface MasterPlan {
   plan_id: string
   user_id: string
   status: string
+  goal?: {
+    goal_id: string
+    race_name?: string
+    distance?: string
+    race_date?: string
+    target_time?: string
+    timezone?: string
+    location?: string | null
+  }
   start_date: string
   end_date: string
   phases: MasterPlanPhase[]
@@ -599,6 +637,53 @@ export async function getCurrentMasterPlan(): Promise<MasterPlan | null> {
   return res.json()
 }
 
+export async function getDraftMasterPlan(): Promise<MasterPlan | null> {
+  const res = await apiFetch('GET', '/users/me/master-plan/draft')
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export async function getMasterPlanById(planId: string): Promise<MasterPlan> {
+  const res = await apiFetch('GET', `/users/me/master-plan/${encodeURIComponent(planId)}`)
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json()
+}
+
+export function sendMasterPlanReviewMessage(
+  planId: string,
+  message: string,
+  history: MasterPlanAdjustMessage[] = [],
+) {
+  return postJSON<MasterPlanAdjustMessageResponse>(
+    `/users/me/master-plan/${encodeURIComponent(planId)}/review/messages`,
+    { message, history },
+  )
+}
+
+export interface MasterPlanReviewApplyResponse {
+  plan_id: string
+  version: number
+  updated_at: string
+  applied: number
+}
+
+export function applyMasterPlanReviewDiff(
+  planId: string,
+  diff: MasterPlanDiff,
+  acceptedOpIds: string[],
+  changeReason: string,
+) {
+  return postJSON<MasterPlanReviewApplyResponse>(
+    `/users/me/master-plan/${encodeURIComponent(planId)}/review/apply`,
+    {
+      diff,
+      accepted_op_ids: acceptedOpIds,
+      change_reason: changeReason,
+    },
+  )
+}
+
 export function sendMasterPlanAdjustMessage(
   planId: string,
   message: string,
@@ -645,6 +730,7 @@ export interface TrainingGoalInput {
 }
 
 export interface TrainingGoal extends TrainingGoalInput {
+  goal_id?: string
   id?: string
   created_at?: string
   updated_at?: string

@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import {
   getCurrentMasterPlan,
+  getDraftMasterPlan,
   getMyProfile,
   getTrainingGoal,
   getTrainingPlan,
@@ -24,6 +25,7 @@ vi.mock('../../api', async () => {
   return {
     ...actual,
     getCurrentMasterPlan: vi.fn(),
+    getDraftMasterPlan: vi.fn(),
     getTrainingPlan: vi.fn(),
     getTrainingGoal: vi.fn(),
     getMyProfile: vi.fn(),
@@ -131,6 +133,7 @@ describe('TrainingPlanPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     vi.mocked(getCurrentMasterPlan).mockResolvedValue(masterPlan)
+    vi.mocked(getDraftMasterPlan).mockResolvedValue(null)
     vi.mocked(getTrainingPlan).mockResolvedValue({
       content: '# Legacy Plan',
       phases: [],
@@ -189,5 +192,26 @@ describe('TrainingPlanPage', () => {
     expect(screen.getByText(/目标赛事：半马 · 2026\/09\/20/)).toBeInTheDocument()
     expect(screen.getByText('2026/09/20 · 半马')).toBeInTheDocument()
     expect(screen.getByText('01:29:30')).toBeInTheDocument()
+  })
+
+  it('renders a draft master plan in review mode instead of auto-confirming it', async () => {
+    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getDraftMasterPlan).mockResolvedValueOnce({
+      ...masterPlan,
+      status: 'draft',
+      plan_id: 'draft-1',
+    })
+    vi.mocked(getTrainingPlan).mockResolvedValueOnce({
+      content: null,
+      phases: [],
+      current_phase: null,
+    })
+
+    renderPlanPage()
+
+    expect(await screen.findByRole('heading', { name: '审阅你的赛季训练计划' })).toBeInTheDocument()
+    expect(screen.getByText('和 Coach 审阅计划')).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /启用计划/ })[0]).toBeInTheDocument()
+    expect(screen.queryByText('调整计划')).not.toBeInTheDocument()
   })
 })

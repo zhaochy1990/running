@@ -51,12 +51,88 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
+
+
+def _json_loads_lenient(blob: str) -> Any | None:
+    """Parse JSON-ish LLM output without weakening the public contract.
+
+    The prompt still asks for strict JSON. This helper is only a final fallback
+    for common model artifacts seen in live generation, such as trailing commas
+    or a top-level one-item array around the envelope. It returns ``None`` on
+    failure so the caller can continue to the next extraction layer.
+    """
+    text = blob.strip()
+    if not text:
+        return None
+
+    candidates = [text]
+    repaired = _TRAILING_COMMA_RE.sub(r"\1", text)
+    if repaired != text:
+        candidates.append(repaired)
+
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+
+    try:
+        import json5  # type: ignore[import-untyped]
+    except Exception:  # noqa: BLE001 - optional fallback dependency
+        return None
+
+    try:
+        return json5.loads(text)
+    except Exception:  # noqa: BLE001 - json5 raises multiple parse errors
+        return None
+
+
+def _normalise_parsed_master_plan(data: Any) -> dict | None:
+    """Return the master-plan envelope from a parsed JSON value if present."""
+    if isinstance(data, dict):
+        if "schema" in data and isinstance(data.get("plan"), dict):
+            return data
+        # Some models wrap the requested envelope in a descriptive object.
+        for key in ("master_plan", "masterPlan", "output", "result", "data"):
+            nested = _normalise_parsed_master_plan(data.get(key))
+            if nested is not None:
+                return nested
+    elif isinstance(data, list):
+        for item in data:
+            nested = _normalise_parsed_master_plan(item)
+            if nested is not None:
+                return nested
+    return None
+
+
+def _parse_json_candidate(blob: str) -> Any | None:
+    return _json_loads_lenient(blob)
+
+
+def _parse_first_json_object(raw: str) -> Any | None:
+    """Parse the first complete JSON object from text with trailing prose."""
+    first_brace = raw.find("{")
+    if first_brace == -1:
+        return None
+    try:
+        parsed, _end = json.JSONDecoder().raw_decode(raw[first_brace:])
+        return parsed
+    except json.JSONDecodeError:
+        return _parse_json_candidate(raw[first_brace:])
+
+
 def _parse_llm_output(raw: str) -> dict | None:
-    """Parse LLM output with 3-tier fallback.
+    """Parse LLM output into a generic JSON object with 3-tier fallback.
 
     Layer 1: sentinel-anchored  ---BEGIN_MASTER_PLAN--- ... ---END_MASTER_PLAN---
     Layer 2: fenced code block  ```json ... ```
     Layer 3: balanced braces    first { to last }
+
+    This helper is shared by master-plan, weekly-plan, and phase-at-once
+    adapters, so it must stay schema-agnostic and return any parsed dict
+    envelope. Master-plan-specific wrapper unwrapping lives in
+    ``_parse_master_plan_output`` below.
     """
     # Layer 1: sentinel
     sentinel_match = re.search(
@@ -65,30 +141,57 @@ def _parse_llm_output(raw: str) -> dict | None:
         re.DOTALL,
     )
     if sentinel_match:
-        try:
-            return json.loads(sentinel_match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
+        parsed = _parse_json_candidate(sentinel_match.group(1))
+        if isinstance(parsed, dict):
+            return parsed
 
     # Layer 2: fenced code block
     fenced_match = re.search(r"```json\s*(.*?)```", raw, re.DOTALL)
     if fenced_match:
-        try:
-            return json.loads(fenced_match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
+        parsed = _parse_json_candidate(fenced_match.group(1))
+        if isinstance(parsed, dict):
+            return parsed
 
     # Layer 3: first complete JSON object. ``raw_decode`` is stricter than the
     # old first-brace→last-brace slice in the useful direction: it returns the
     # first complete object and tolerates trailing prose/stray braces, while
     # still failing when the object itself is malformed.
-    first_brace = raw.find("{")
-    if first_brace != -1:
-        try:
-            parsed, _end = json.JSONDecoder().raw_decode(raw[first_brace:])
-            return parsed if isinstance(parsed, dict) else None
-        except json.JSONDecodeError:
-            pass
+    parsed = _parse_first_json_object(raw)
+    if isinstance(parsed, dict):
+        return parsed
+
+    return None
+
+
+def _parse_master_plan_output(raw: str) -> dict | None:
+    """Parse S1 master-plan output, including model-added wrappers."""
+    sentinel_match = re.search(
+        r"---BEGIN_MASTER_PLAN---(.*?)---END_MASTER_PLAN---",
+        raw,
+        re.DOTALL,
+    )
+    if sentinel_match:
+        parsed = _normalise_parsed_master_plan(
+            _parse_json_candidate(sentinel_match.group(1))
+        )
+        if parsed is not None:
+            return parsed
+
+    fenced_match = re.search(r"```json\s*(.*?)```", raw, re.DOTALL)
+    if fenced_match:
+        parsed = _normalise_parsed_master_plan(
+            _parse_json_candidate(fenced_match.group(1))
+        )
+        if parsed is not None:
+            return parsed
+
+    parsed = _normalise_parsed_master_plan(_parse_first_json_object(raw))
+    if parsed is not None:
+        return parsed
+
+    parsed = _normalise_parsed_master_plan(_parse_json_candidate(raw))
+    if parsed is not None:
+        return parsed
 
     return None
 

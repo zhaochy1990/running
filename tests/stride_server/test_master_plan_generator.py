@@ -34,6 +34,7 @@ import stride_server.coach_adapters.master_plan_adapter as adapter_mod
 from stride_server.master_plan_generator import (
     _build_master_plan,
     _parse_llm_output,
+    _parse_master_plan_output,
     _query_history,
     run_generate_job,
 )
@@ -423,6 +424,39 @@ class TestParseLlmOutput:
         valid_fenced = _fenced_wrap(_VALID_JSON_STR)
         raw = broken_sentinel + "\n" + valid_fenced
         result = _parse_llm_output(raw)
+        assert result is not None
+        assert result["schema"] == "weekly-plan/master/v1"
+
+    def test_sentinel_accepts_trailing_commas(self):
+        raw = """---BEGIN_MASTER_PLAN---
+{
+  "schema": "weekly-plan/master/v1",
+  "plan": {
+    "start_date": "2026-05-12",
+    "end_date": "2026-11-01",
+  },
+}
+---END_MASTER_PLAN---"""
+
+        result = _parse_master_plan_output(raw)
+
+        assert result is not None
+        assert result["schema"] == "weekly-plan/master/v1"
+        assert result["plan"]["end_date"] == "2026-11-01"
+
+    def test_sentinel_unwraps_descriptive_object(self):
+        raw = _sentinel_wrap(json.dumps({"master_plan": _VALID_PLAN_DICT}, ensure_ascii=False))
+
+        result = _parse_master_plan_output(raw)
+
+        assert result is not None
+        assert result["schema"] == "weekly-plan/master/v1"
+
+    def test_sentinel_unwraps_top_level_array(self):
+        raw = _sentinel_wrap(json.dumps([_VALID_PLAN_DICT], ensure_ascii=False))
+
+        result = _parse_master_plan_output(raw)
+
         assert result is not None
         assert result["schema"] == "weekly-plan/master/v1"
 

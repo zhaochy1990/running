@@ -1,14 +1,22 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
+  applyMasterPlanReviewDiff,
+  confirmMasterPlan,
   getCurrentMasterPlan,
+  getDraftMasterPlan,
+  getMasterPlanById,
   getMyProfile,
   getTrainingGoal,
   getTrainingPlan,
+  sendMasterPlanReviewMessage,
   type CompletedPhaseSummary,
   type MasterPlan,
+  type MasterPlanAdjustMessage,
+  type MasterPlanDiff,
+  type MasterPlanDiffOp,
   type MasterPlanMilestone,
   type MasterPlanPhase,
   type MyProfile,
@@ -135,12 +143,12 @@ function distanceLabel(value: string): string {
   return labels[value] || value
 }
 
-function targetFrom(goal: TrainingGoal | null, profile: MyProfile | null): TargetSummary {
+function targetFrom(goal: TrainingGoal | null, profile: MyProfile | null, plan?: MasterPlan | null): TargetSummary {
   const rawProfile = profile?.profile ?? null
-  const raceName = goal?.race_name?.trim() || stringField(rawProfile, 'target_race')
-  const distance = goal?.race_distance || stringField(rawProfile, 'target_distance')
-  const raceDate = goal?.race_date || stringField(rawProfile, 'target_race_date')
-  const targetTime = goal?.target_finish_time || stringField(rawProfile, 'target_time')
+  const raceName = goal?.race_name?.trim() || plan?.goal?.race_name || stringField(rawProfile, 'target_race')
+  const distance = goal?.race_distance || plan?.goal?.distance || stringField(rawProfile, 'target_distance')
+  const raceDate = goal?.race_date || plan?.goal?.race_date || stringField(rawProfile, 'target_race_date')
+  const targetTime = goal?.target_finish_time || plan?.goal?.target_time || stringField(rawProfile, 'target_time')
   return {
     raceName,
     distance: distanceLabel(distance),
@@ -149,12 +157,13 @@ function targetFrom(goal: TrainingGoal | null, profile: MyProfile | null): Targe
   }
 }
 
-type PageState = 'loading' | 'setup' | 'plan'
+type PageState = 'loading' | 'setup' | 'review' | 'plan'
 
 export default function TrainingPlanPage() {
   const { user } = useUser()
   const navigate = useNavigate()
   const [masterPlan, setMasterPlan] = useState<MasterPlan | null>(null)
+  const [draftPlan, setDraftPlan] = useState<MasterPlan | null>(null)
   const [fallbackPlan, setFallbackPlan] = useState<TrainingPlan | null>(null)
   const [target, setTarget] = useState<TargetSummary>(EMPTY_TARGET)
   const [pageState, setPageState] = useState<PageState>('loading')
@@ -169,15 +178,21 @@ export default function TrainingPlanPage() {
 
     Promise.all([
       getCurrentMasterPlan().catch(() => null),
+      getDraftMasterPlan().catch(() => null),
       getTrainingPlan(user).catch(() => null),
       getTrainingGoal().catch(() => null),
       getMyProfile().catch(() => null),
-    ]).then(([master, fallback, goal, profile]) => {
+    ]).then(([master, draft, fallback, goal, profile]) => {
       if (cancelled) return
       setMasterPlan(master)
+      setDraftPlan(draft)
       setFallbackPlan(fallback)
-      setTarget(targetFrom(goal, profile))
-      if (master || fallback?.content) {
+      setTarget(targetFrom(goal, profile, master ?? draft))
+      if (master) {
+        setPageState('plan')
+      } else if (draft) {
+        setPageState('review')
+      } else if (fallback?.content) {
         setPageState('plan')
       } else {
         setPageState('setup')
@@ -212,12 +227,32 @@ export default function TrainingPlanPage() {
           lede="设置目标赛事，AI 教练会基于你的训练史与当前体能倒推出一份周期化赛季计划"
         />
         <TrainingPlanSetup
-          onComplete={() => {
+          onDraftReady={(planId) => {
             setPageState('loading')
-            loadPlan()
+            getMasterPlanById(planId)
+              .then((plan) => {
+                setDraftPlan(plan)
+                setTarget((prev) => prev.raceName ? prev : targetFrom(null, null, plan))
+                setPageState('review')
+              })
+              .catch(() => { loadPlan() })
           }}
         />
       </div>
+    )
+  }
+
+  if (pageState === 'review' && draftPlan) {
+    return (
+      <DraftReviewWorkspace
+        plan={draftPlan}
+        target={target}
+        onPlanUpdated={setDraftPlan}
+        onConfirmed={() => {
+          setPageState('loading')
+          loadPlan()
+        }}
+      />
     )
   }
 
@@ -259,6 +294,360 @@ export default function TrainingPlanPage() {
   )
 }
 
+function DraftReviewWorkspace({
+  plan,
+  target,
+  onPlanUpdated,
+  onConfirmed,
+}: {
+  plan: MasterPlan
+  target: TargetSummary
+  onPlanUpdated: (plan: MasterPlan) => void
+  onConfirmed: () => void
+}) {
+  const [selectedPhaseId, setSelectedPhaseId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<MasterPlanAdjustMessage[]>(() => [
+    {
+      role: 'assistant',
+      content: '这是根据你的目标和手表数据生成的赛季计划草稿。你可以先看中间的周期、阶段和关键里程碑；觉得哪里不合适，直接告诉我。',
+    },
+  ])
+  const [draftText, setDraftText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
+  const [diff, setDiff] = useState<MasterPlanDiff | null>(null)
+  const [selectedOpIds, setSelectedOpIds] = useState<Set<string>>(new Set())
+  const [applying, setApplying] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
+
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault()
+    const text = draftText.trim()
+    if (!text || sending) return
+    setDraftText('')
+    setChatError(null)
+    const nextMessages: MasterPlanAdjustMessage[] = [...messages, { role: 'user', content: text }]
+    setMessages(nextMessages)
+    setSending(true)
+    try {
+      const response = await sendMasterPlanReviewMessage(plan.plan_id, text, messages)
+      if (!response.ok) throw new Error(response.status === 503 ? 'AI 教练当前不可用，请稍后重试' : `HTTP ${response.status}`)
+      const assistantMessage: MasterPlanAdjustMessage = { role: 'assistant', content: response.data.ai_response }
+      setMessages([...nextMessages, assistantMessage])
+      const nextDiff = response.data.diff
+      setDiff(nextDiff && nextDiff.ops.length > 0 ? nextDiff : null)
+      setSelectedOpIds(new Set(nextDiff?.ops.map((op) => op.id) ?? []))
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : '发送失败')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const toggleOp = (opId: string) => {
+    setSelectedOpIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(opId)) next.delete(opId)
+      else next.add(opId)
+      return next
+    })
+  }
+
+  const applyDiff = async () => {
+    if (!diff?.diff_id || applying) return
+    const opIds = diff.ops.map((op) => op.id).filter((id) => selectedOpIds.has(id))
+    if (opIds.length === 0) return
+    setApplying(true)
+    setChatError(null)
+    try {
+      const response = await applyMasterPlanReviewDiff(plan.plan_id, diff, opIds, diff.ai_explanation || 'review feedback')
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const updated = await getMasterPlanById(plan.plan_id)
+      onPlanUpdated(updated)
+      setDiff(null)
+      setSelectedOpIds(new Set())
+      setMessages((prev) => [...prev, { role: 'assistant', content: `已采用 ${response.data.applied} 项调整，计划预览已更新。` }])
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : '采用调整失败')
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  const confirmPlan = async () => {
+    if (confirming) return
+    setConfirming(true)
+    setConfirmError(null)
+    try {
+      const response = await confirmMasterPlan(plan.plan_id)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      onConfirmed()
+    } catch (err) {
+      setConfirmError(err instanceof Error ? err.message : '启用计划失败')
+    } finally {
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <div className="grid min-h-full grid-cols-1 bg-bg-primary lg:grid-cols-[minmax(0,1fr)_360px]">
+      <main className="min-w-0 px-4 py-6 sm:px-8 sm:py-8">
+        <section className="mx-auto max-w-5xl">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-accent-green mb-2">
+                赛季计划 · 待审阅
+              </p>
+              <h1 className="text-[28px] font-semibold leading-tight text-text-primary">审阅你的赛季训练计划</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-text-secondary">
+                这份计划仍是草稿。确认启用前，可以让 Coach 根据你的反馈调整阶段、周量或里程碑。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={confirmPlan}
+              disabled={confirming}
+              className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg bg-accent-green px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-accent-green-dim disabled:cursor-not-allowed disabled:opacity-55"
+            >
+              <CheckIcon />
+              {confirming ? '启用中...' : '启用计划'}
+            </button>
+          </div>
+          {confirmError && (
+            <div className="mb-4 rounded-lg border border-accent-red/30 bg-accent-red/5 px-4 py-3 text-sm text-accent-red">
+              {confirmError}
+            </div>
+          )}
+          <SeasonOverviewBody
+            plan={plan}
+            target={target}
+            selectedPhaseId={selectedPhaseId}
+            onSelectPhase={setSelectedPhaseId}
+          />
+        </section>
+      </main>
+
+      <ReviewChatPanel
+        messages={messages}
+        input={draftText}
+        onInput={setDraftText}
+        onSubmit={handleSubmit}
+        sending={sending}
+        error={chatError}
+        diff={diff}
+        selectedOpIds={selectedOpIds}
+        onToggleOp={toggleOp}
+        onApply={applyDiff}
+        applying={applying}
+        onConfirm={confirmPlan}
+        confirming={confirming}
+      />
+    </div>
+  )
+}
+
+function ReviewChatPanel({
+  messages,
+  input,
+  onInput,
+  onSubmit,
+  sending,
+  error,
+  diff,
+  selectedOpIds,
+  onToggleOp,
+  onApply,
+  applying,
+  onConfirm,
+  confirming,
+}: {
+  messages: MasterPlanAdjustMessage[]
+  input: string
+  onInput: (value: string) => void
+  onSubmit: (event: FormEvent) => void
+  sending: boolean
+  error: string | null
+  diff: MasterPlanDiff | null
+  selectedOpIds: Set<string>
+  onToggleOp: (opId: string) => void
+  onApply: () => void
+  applying: boolean
+  onConfirm: () => void
+  confirming: boolean
+}) {
+  const acceptedCount = diff?.ops.filter((op) => selectedOpIds.has(op.id)).length ?? 0
+  return (
+    <aside className="flex min-h-[620px] flex-col border-l border-border-subtle bg-bg-card lg:sticky lg:top-0 lg:h-screen">
+      <div className="flex h-[50px] shrink-0 items-center gap-2 border-b border-border-subtle px-4">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-green text-white font-mono text-xs font-bold">S</span>
+        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-text-primary">和 Coach 审阅计划</span>
+      </div>
+
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        {messages.map((message, index) => (
+          <div key={`${message.role}-${index}`} className={`flex gap-2 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[88%] rounded-lg border px-3 py-2 text-sm leading-6 ${
+              message.role === 'user'
+                ? 'border-border-subtle bg-bg-primary text-text-primary'
+                : 'border-border-subtle bg-bg-secondary text-text-primary'
+            }`}>
+              {message.content}
+            </div>
+          </div>
+        ))}
+
+        {diff && diff.ops.length > 0 && (
+          <div className="rounded-lg border border-border-subtle bg-bg-primary p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-text-primary">Coach 调整建议</h3>
+              <span className="font-mono text-[11px] text-text-muted">{acceptedCount}/{diff.ops.length}</span>
+            </div>
+            {diff.ai_explanation && <p className="mb-3 text-xs leading-5 text-text-secondary">{diff.ai_explanation}</p>}
+            <div className="space-y-2">
+              {diff.ops.map((op) => (
+                <ReviewDiffOpRow
+                  key={op.id}
+                  op={op}
+                  checked={selectedOpIds.has(op.id)}
+                  onToggle={() => onToggleOp(op.id)}
+                />
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={onApply}
+              disabled={applying || selectedOpIds.size === 0}
+              className="mt-3 inline-flex h-8 w-full items-center justify-center gap-2 rounded-md bg-accent-green px-3 text-xs font-semibold text-white transition-colors hover:bg-accent-green-dim disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CheckIcon />
+              {applying ? '采用中...' : '采用选中调整'}
+            </button>
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-lg border border-accent-red/30 bg-accent-red/5 p-3 text-xs text-accent-red">
+            {error}
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 space-y-3 border-t border-border-subtle bg-bg-card px-4 py-4">
+        <div className="flex items-center gap-3 rounded-lg border border-green-edge bg-green-soft p-3">
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">准备好训练了吗？</p>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={confirming}
+            className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md bg-accent-green px-3 text-xs font-semibold text-white hover:bg-accent-green-dim disabled:opacity-50"
+          >
+            <CheckIcon />
+            启用计划
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="relative">
+          <input
+            value={input}
+            onChange={(event) => onInput(event.target.value)}
+            disabled={sending}
+            placeholder="告诉 Coach 你想调整哪里..."
+            className="h-10 w-full rounded-lg border border-border-subtle bg-bg-primary px-3 pr-12 text-sm text-text-primary outline-none transition-colors focus:border-accent-green focus:ring-1 focus:ring-accent-green disabled:opacity-60"
+          />
+          <button
+            type="submit"
+            disabled={sending || !input.trim()}
+            title="提交反馈"
+            className="absolute right-2 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md text-accent-green transition-colors hover:bg-accent-green/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <SendIcon />
+          </button>
+        </form>
+      </div>
+    </aside>
+  )
+}
+
+function ReviewDiffOpRow({ op, checked, onToggle }: { op: MasterPlanDiffOp; checked: boolean; onToggle: () => void }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border-subtle bg-bg-card p-2.5">
+      <input type="checkbox" checked={checked} onChange={onToggle} className="mt-1 accent-accent-green" />
+      <span className="min-w-0">
+        <span className="block text-xs font-semibold text-text-primary">{diffOpLabel(op.op)}</span>
+        <span className="mt-0.5 block break-words text-[11px] leading-5 text-text-muted">{summarizeDiffValue(op)}</span>
+      </span>
+    </label>
+  )
+}
+
+function SeasonOverviewBody({
+  plan,
+  target,
+  selectedPhaseId,
+  onSelectPhase,
+}: {
+  plan: MasterPlan
+  target: TargetSummary
+  selectedPhaseId: string | null
+  onSelectPhase: (id: string) => void
+}) {
+  const today = shanghaiToday()
+  const phases = plan.phases ?? EMPTY_PHASES
+  const milestones = plan.milestones ?? EMPTY_MILESTONES
+  const trainingPrinciples = plan.training_principles ?? EMPTY_TRAINING_PRINCIPLES
+  const spans = useMemo(() => buildPhaseSpans(phases, plan.total_weeks), [phases, plan.total_weeks])
+  const totalWeeks = plan.total_weeks ?? spans.at(-1)?.weekEnd ?? weeksBetween(plan.start_date, plan.end_date)
+  const currentWeek = plan.current_week_number ?? currentWeekNumber(plan.start_date, today, totalWeeks)
+  const currentPhaseId = plan.current_phase_id ?? findPhaseForDate(phases, today)?.id ?? phases[0]?.id ?? null
+  const activePhaseId = selectedPhaseId ?? currentPhaseId
+  const activeSpan = spans.find((span) => span.phase.id === activePhaseId) ?? spans[0] ?? null
+  const currentSpan = spans.find((span) => span.phase.id === currentPhaseId) ?? activeSpan
+  const nextMilestone = selectNextMilestone(plan, today)
+
+  return (
+    <div className="space-y-6">
+      {spans.length > 0 && (
+        <MileageCycleCard
+          spans={spans}
+          totalWeeks={totalWeeks}
+          currentWeek={currentWeek}
+          onSelectPhase={onSelectPhase}
+        />
+      )}
+
+      {spans.length > 0 && (
+        <PhasePills
+          spans={spans}
+          activePhaseId={activeSpan?.phase.id ?? null}
+          currentPhaseId={currentPhaseId}
+          onSelectPhase={onSelectPhase}
+        />
+      )}
+
+      <SummaryCards
+        plan={plan}
+        target={target}
+        currentWeek={currentWeek}
+        currentPhase={currentSpan?.phase ?? null}
+        nextMilestone={nextMilestone}
+      />
+
+      {activeSpan && (
+        <PhaseDetail
+          phase={activeSpan.phase}
+          index={activeSpan.index}
+          span={activeSpan}
+          milestones={milestones.filter((milestone) => milestone.phase_id === activeSpan.phase.id)}
+        />
+      )}
+
+      {trainingPrinciples.length > 0 && (
+        <TrainingPrinciples principles={trainingPrinciples} />
+      )}
+    </div>
+  )
+}
+
 function SeasonOverview({
   plan,
   target,
@@ -278,16 +667,11 @@ function SeasonOverview({
 }) {
   const today = shanghaiToday()
   const phases = plan.phases ?? EMPTY_PHASES
-  const milestones = plan.milestones ?? EMPTY_MILESTONES
-  const trainingPrinciples = plan.training_principles ?? EMPTY_TRAINING_PRINCIPLES
   const spans = useMemo(() => buildPhaseSpans(phases, plan.total_weeks), [phases, plan.total_weeks])
   const totalWeeks = plan.total_weeks ?? spans.at(-1)?.weekEnd ?? weeksBetween(plan.start_date, plan.end_date)
   const currentWeek = plan.current_week_number ?? currentWeekNumber(plan.start_date, today, totalWeeks)
   const currentPhaseId = plan.current_phase_id ?? findPhaseForDate(phases, today)?.id ?? phases[0]?.id ?? null
-  const activePhaseId = selectedPhaseId ?? currentPhaseId
-  const activeSpan = spans.find((span) => span.phase.id === activePhaseId) ?? spans[0] ?? null
-  const currentSpan = spans.find((span) => span.phase.id === currentPhaseId) ?? activeSpan
-  const nextMilestone = selectNextMilestone(plan, today)
+  const currentSpan = spans.find((span) => span.phase.id === currentPhaseId) ?? spans[0] ?? null
   const heroTitle = target.raceName || '赛季训练计划'
   const heroLede = buildHeroLede(plan, target, currentSpan?.phase ?? null, totalWeeks, currentWeek)
 
@@ -334,46 +718,12 @@ function SeasonOverview({
       {tab === 'weeks' ? (
         <WeeksGrid />
       ) : (
-        <div className="space-y-6">
-          {spans.length > 0 && (
-            <MileageCycleCard
-              spans={spans}
-              totalWeeks={totalWeeks}
-              currentWeek={currentWeek}
-              onSelectPhase={onSelectPhase}
-            />
-          )}
-
-          {spans.length > 0 && (
-            <PhasePills
-              spans={spans}
-              activePhaseId={activeSpan?.phase.id ?? null}
-              currentPhaseId={currentPhaseId}
-              onSelectPhase={onSelectPhase}
-            />
-          )}
-
-          <SummaryCards
-            plan={plan}
-            target={target}
-            currentWeek={currentWeek}
-            currentPhase={currentSpan?.phase ?? null}
-            nextMilestone={nextMilestone}
-          />
-
-          {activeSpan && (
-            <PhaseDetail
-              phase={activeSpan.phase}
-              index={activeSpan.index}
-              span={activeSpan}
-              milestones={milestones.filter((milestone) => milestone.phase_id === activeSpan.phase.id)}
-            />
-          )}
-
-          {trainingPrinciples.length > 0 && (
-            <TrainingPrinciples principles={trainingPrinciples} />
-          )}
-        </div>
+        <SeasonOverviewBody
+          plan={plan}
+          target={target}
+          selectedPhaseId={selectedPhaseId}
+          onSelectPhase={onSelectPhase}
+        />
       )}
     </div>
   )
@@ -857,4 +1207,47 @@ function RefreshIcon() {
       <path d="M21 3v6h-6" />
     </svg>
   )
+}
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
+function SendIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+      <path d="M22 2 11 13" />
+      <path d="m22 2-7 20-4-9-9-4 20-7Z" />
+    </svg>
+  )
+}
+
+function diffOpLabel(op: string): string {
+  const labels: Record<string, string> = {
+    add_phase: '新增阶段',
+    remove_phase: '删除阶段',
+    resize_phase: '调整阶段日期',
+    replace_phase_focus: '调整阶段重点',
+    replace_weekly_range: '调整周量区间',
+    add_milestone: '新增里程碑',
+    remove_milestone: '删除里程碑',
+    replace_milestone_date: '调整里程碑日期',
+    replace_milestone_target: '调整里程碑目标',
+  }
+  return labels[op] ?? op
+}
+
+function summarizeDiffValue(op: MasterPlanDiffOp): string {
+  const oldValue = compactJson(op.old_value)
+  const newValue = compactJson(op.new_value ?? op.spec_patch)
+  return `${oldValue} -> ${newValue}`
+}
+
+function compactJson(value: Record<string, unknown> | null): string {
+  if (!value || Object.keys(value).length === 0) return '无'
+  return JSON.stringify(value)
 }
