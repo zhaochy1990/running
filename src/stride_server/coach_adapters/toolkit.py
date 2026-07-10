@@ -28,6 +28,7 @@ from .tool_impls.draft_impls import (
     SwapSessionsImpl,
 )
 from .tool_impls.read_impls import (
+    EstimateMasterPlanLoadImpl,
     GetAbilitySnapshotImpl,
     GetActivityDetailImpl,
     GetBodyCompositionLatestImpl,
@@ -46,9 +47,9 @@ from .tool_impls.read_impls import (
 
 @dataclass(frozen=True)
 class StrideToolkit:
-    """Frozen container holding callable instances for all 25 tools."""
+    """Frozen container holding callable instances for all 26 tools."""
 
-    # read (12)
+    # read (13)
     get_recent_activities: GetRecentActivitiesImpl
     get_health_snapshot: GetHealthSnapshotImpl
     get_health_series: GetHealthSeriesImpl
@@ -62,6 +63,7 @@ class StrideToolkit:
     get_week_plan: GetWeekPlanImpl
     get_activity_detail: GetActivityDetailImpl
     get_training_environment: GetTrainingEnvironmentImpl
+    estimate_master_plan_load: EstimateMasterPlanLoadImpl
 
     # week-scope draft (7) — placeholders until US-007
     swap_sessions: SwapSessionsImpl
@@ -99,6 +101,7 @@ def build_stride_toolkit(user_id: str) -> Toolkit:
         get_week_plan=GetWeekPlanImpl(user_id),
         get_activity_detail=GetActivityDetailImpl(user_id),
         get_training_environment=GetTrainingEnvironmentImpl(user_id),
+        estimate_master_plan_load=EstimateMasterPlanLoadImpl(user_id),
         swap_sessions=SwapSessionsImpl(user_id),
         shift_session=ShiftSessionImpl(user_id),
         reduce_intensity=ReduceIntensityImpl(user_id),

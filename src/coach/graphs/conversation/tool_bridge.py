@@ -41,6 +41,7 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_week_plan": "This week's plan.md, feedback.md, planned_session and planned_nutrition rows.",
     "get_activity_detail": "Full activity detail by label_id — laps, zones, segments, AI commentary.",
     "get_training_environment": "Training environment: STRIDE-detected current altitude + band, whether at altitude, and signal-informed acclimatization status (disturbed/recovering/stabilized from RHR/HRV vs baseline) after a recent altitude gain. Consult when assessing status; if a recent gain looks unconfirmed, ask the user to confirm the environment change. (weather TBD).",
+    "estimate_master_plan_load": "Estimate historical weekly km/dose anchors and planned master-plan weekly load. Pass a MasterPlan-shaped `plan` draft to check underload/overload alignment; omit it to estimate the active master plan and still get the history anchor.",
     # week-scope draft
     "swap_sessions": "Propose swapping the run scheduled on date_a with the one on date_b (PlanDiff).",
     "shift_session": "Propose moving a single session from `date` to `to_date` (PlanDiff).",
@@ -134,6 +135,7 @@ READ_TOOL_NAMES = (
     "get_week_plan",
     "get_activity_detail",
     "get_training_environment",
+    "estimate_master_plan_load",
 )
 
 WEEK_DRAFT_TOOL_NAMES = (

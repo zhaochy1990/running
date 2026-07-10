@@ -2,7 +2,7 @@
 
 Tools come in two flavours:
 
-* **Read tools (12)** — pull data out of STRIDE state. They are safe to call
+* **Read tools (13)** — pull data out of STRIDE state. They are safe to call
   any time and their ``ToolResult.data`` contains the read payload.
 
 * **Draft tools (13)** — emit a proposed change. They never apply it. Their
@@ -26,7 +26,7 @@ from coach.schemas import ToolResult
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Read tools (12)
+# Read tools (13)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -93,6 +93,19 @@ class GetActivityDetail(Protocol):
 @runtime_checkable
 class GetTrainingEnvironment(Protocol):
     def __call__(self, *, days: int = 120) -> ToolResult: ...
+
+
+@runtime_checkable
+class EstimateMasterPlanLoad(Protocol):
+    def __call__(
+        self,
+        *,
+        plan: dict | None = None,
+        target_race: dict | None = None,
+        weekly_run_days_max: int | None = None,
+        injuries: list[str] | None = None,
+        as_of_date: str | None = None,
+    ) -> ToolResult: ...
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -189,6 +202,7 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "get_week_plan",
     "get_activity_detail",
     "get_training_environment",
+    "estimate_master_plan_load",
 )
 
 WEEK_DRAFT_TOOL_NAMES: tuple[str, ...] = (

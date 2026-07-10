@@ -18,6 +18,9 @@ ${profile_json}
 History training summary:
 ${history_summary}
 
+Training-load tool result:
+${training_load_tool_summary}
+
 Current fitness state:
 ${fitness_summary}
 ${current_phase_block}${continuity_block}${known_constraints_block}${macro_block}${body_comp_block}${previous_plan_block}

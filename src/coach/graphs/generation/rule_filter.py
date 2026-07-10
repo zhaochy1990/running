@@ -383,6 +383,7 @@ def run_rule_filter(
     injuries: Iterable[str] | None = None,
     ramp_cap_tss: float = 6.0,
     z45_pace_threshold_s_km: float | None = None,
+    **_extra: Any,
 ) -> RuleFilterReport:
     """Run every rule against ``plan_dict``; the schema rule runs first because
     later checks need a parsed ``WeeklyPlan``.

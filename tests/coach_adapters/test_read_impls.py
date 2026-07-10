@@ -3,6 +3,7 @@ empty and populated DBs without ever raising."""
 
 from __future__ import annotations
 
+from datetime import date as date_cls
 from typing import Any
 
 import pytest
@@ -15,6 +16,7 @@ from coach.tools.protocols import (
     GetHealthSeries,
     GetHealthSnapshot,
     GetBodyCompositionLatest,
+    EstimateMasterPlanLoad,
     GetMasterPlanCurrent,
     GetMasterPlanVersions,
     GetPbs,
@@ -68,6 +70,7 @@ def test_all_impls_satisfy_protocols() -> None:
         (read_impls.GetMasterPlanVersionsImpl(uid), GetMasterPlanVersions),
         (read_impls.GetWeekPlanImpl(uid), GetWeekPlan),
         (read_impls.GetActivityDetailImpl(uid), GetActivityDetail),
+        (read_impls.EstimateMasterPlanLoadImpl(uid), EstimateMasterPlanLoad),
     ]
     for impl, proto in pairs:
         assert isinstance(impl, proto), f"{type(impl).__name__} fails {proto.__name__}"
@@ -157,6 +160,80 @@ def test_activity_detail_missing(patched_db) -> None:
     res = read_impls.GetActivityDetailImpl("uid")(label_id="nope")
     assert not res.ok
     assert any("not found" in e for e in res.errors)
+
+
+def test_estimate_master_plan_load_empty_no_plan(patched_db) -> None:
+    res = read_impls.EstimateMasterPlanLoadImpl("uid")()
+    assert res.ok
+    assert res.data["plan_estimate"] is None
+    assert res.data["history_anchor"]["history_active_weeks"] == 0
+
+
+def test_estimate_master_plan_load_with_plan_and_history(patched_db, monkeypatch) -> None:
+    from stride_server import master_plan_generator as mpg
+
+    seen: dict[str, Any] = {}
+    kms = [120.0, 130.0, 125.0, 135.0, 128.0, 132.0, 126.0, 129.0]
+
+    def _history(_uid, *, as_of=None):
+        seen["as_of"] = as_of
+        return {
+            "max_weekly_km": max(kms),
+            "weekly_profile": [
+                {
+                    "week_start": f"2026-01-{idx:02d}",
+                    "distance_km": km,
+                    "hours": km * 300 / 3600,
+                    "dose": km * 0.8,
+                    "n_runs": 6,
+                }
+                for idx, km in enumerate(kms, start=1)
+            ],
+        }
+
+    monkeypatch.setattr(mpg, "_query_history", _history)
+    plan = {
+        "goal": {"distance": "HM"},
+        "weeks": [
+            {
+                "week_index": 1,
+                "week_start": "2026-07-06",
+                "target_weekly_km_high": 60,
+                "key_sessions": [{"type": "long_run", "distance_km": 18}],
+            },
+            {
+                "week_index": 2,
+                "week_start": "2026-07-13",
+                "target_weekly_km_high": 65,
+                "key_sessions": [{"type": "threshold", "duration_min": 35}],
+            },
+            {
+                "week_index": 3,
+                "week_start": "2026-07-20",
+                "target_weekly_km_high": 70,
+                "key_sessions": [{"type": "long_run", "distance_km": 20}],
+            },
+            {
+                "week_index": 4,
+                "week_start": "2026-07-27",
+                "target_weekly_km_high": 44,
+                "is_recovery_week": True,
+                "key_sessions": [],
+            },
+        ],
+    }
+    res = read_impls.EstimateMasterPlanLoadImpl("uid")(
+        plan=plan,
+        target_race={"distance": "hm"},
+        weekly_run_days_max=6,
+        as_of_date="2026-05-19",
+    )
+    assert res.ok, res.errors
+    assert seen["as_of"] == date_cls(2026, 5, 19)
+    estimate = res.data["plan_estimate"]
+    assert estimate["history_anchor"]["advanced_history"] is True
+    assert estimate["plan_summary"]["peak_weekly_km"] == 70.0
+    assert estimate["alignment"]["status"] == "underload"
 
 
 # ---------------------------------------------------------------------------

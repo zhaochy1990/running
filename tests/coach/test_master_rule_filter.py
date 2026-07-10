@@ -37,7 +37,7 @@ from coach.graphs.generation.master_rule_filter import (
     check_phase_duration_balance,
     check_season_window_fits,
     check_strength_durability_track,
-    check_target_distance_volume_ceiling,
+    check_master_plan_load_alignment,
     check_target_distance_long_run,
     check_taper_volume_drop,
     check_three_day_extra_run_text,
@@ -1394,55 +1394,6 @@ def test_target_distance_long_run_deload_long_run_doesnt_count_for_peak():
     assert violations[0].details["max_long_run_km"] == 22.0
 
 
-def test_target_distance_volume_ceiling_catches_5k_fm_style_volume():
-    weeks = [_week(
-        week_index=1,
-        week_start="2026-05-19",
-        km_high=68,
-        sessions=[{"type": "long_run", "distance_km": 12}],
-    )]
-    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
-
-    violations = check_target_distance_volume_ceiling(
-        plan, target_race={"distance": "5k"}
-    )
-
-    assert len(violations) == 1
-    assert violations[0].rule == "target_distance_volume_ceiling"
-    assert violations[0].details["max_allowed_km_high"] == 60.0
-
-
-def test_target_distance_volume_ceiling_catches_10k_hm_style_long_run():
-    weeks = [_week(
-        week_index=1,
-        week_start="2026-05-19",
-        km_high=58,
-        sessions=[{"type": "long_run", "distance_km": 20}],
-    )]
-    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
-
-    violations = check_target_distance_volume_ceiling(
-        plan, target_race={"distance": "10k"}
-    )
-
-    assert len(violations) == 1
-    assert violations[0].details["max_allowed_long_run_km"] == 18.0
-
-
-def test_target_distance_volume_ceiling_allows_hm_specific_volume():
-    weeks = [_week(
-        week_index=1,
-        week_start="2026-05-19",
-        km_high=70,
-        sessions=[{"type": "long_run", "distance_km": 22}],
-    )]
-    plan = MasterPlan.model_validate(_plan_with_weeks(weeks))
-
-    assert check_target_distance_volume_ceiling(
-        plan, target_race={"distance": "hm"}
-    ) == []
-
-
 def test_distance_taper_length_rejects_two_week_hm_taper_phase():
     plan_dict = _base_plan_dict()
     plan_dict["phases"][3]["start_date"] = "2026-10-05"
@@ -1997,6 +1948,59 @@ def test_long_run_share_threshold_keeps_35pct_for_low_history_hm():
         injuries=None,
         training_history_summary={"peak_weekly_km_in_window": 58},
     ) == 0.35
+
+
+def test_rule_filter_no_longer_applies_fixed_target_distance_volume_rule():
+    plan_dict = _plan_with_weeks([
+        _week(
+            week_index=1,
+            week_start="2026-07-06",
+            km_high=150,
+            sessions=[{"type": "long_run", "distance_km": 24}],
+        ),
+    ])
+
+    report = run_master_rule_filter(
+        plan_dict,
+        target_race={"distance": "hm", "race_date": "2026-10-18"},
+        state={
+            "master_plan_load_estimate": {
+                "history_anchor": {
+                    "distance_anchor_km": 150.8,
+                    "history_peak_weekly_km": 237.2,
+                },
+                "plan_summary": {"peak_weekly_km": 150},
+                "alignment": {"status": "ok", "issues": []},
+            }
+        },
+    )
+
+    assert not any(v.rule == "target_distance_volume_ceiling" for v in report.violations)
+
+
+def test_master_plan_load_alignment_reports_underload_error():
+    violations = check_master_plan_load_alignment(
+        master_plan_load_estimate={
+            "history_anchor": {"distance_anchor_km": 150},
+            "plan_summary": {"peak_weekly_km": 75},
+            "alignment": {
+                "status": "underload",
+                "issues": [
+                    {
+                        "kind": "underload_peak",
+                        "severity": "error",
+                        "message": "planned peak 75km is too low",
+                        "details": {"peak_weekly_km": 75, "distance_anchor_km": 150},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert len(violations) == 1
+    assert violations[0].rule == "master_plan_load_alignment"
+    assert violations[0].severity == "error"
+    assert violations[0].details["kind"] == "underload_peak"
 
 
 # ---------------------------------------------------------------------------
