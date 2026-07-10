@@ -135,6 +135,43 @@ def test_reviewer_revise_loops_until_pass():
     assert call_count["rev"] == 2
 
 
+def test_generator_retry_clears_stale_master_plan_load_estimate():
+    call_count = {"gen": 0, "rev": 0}
+
+    def loader(_state):
+        return {}
+
+    def generator(_state):
+        call_count["gen"] += 1
+        out = {"current_draft": _clean_plan()}
+        if call_count["gen"] == 1:
+            out["master_plan_load_estimate"] = {
+                "alignment": {
+                    "status": "overload",
+                    "issues": [{"kind": "stale", "message": "old estimate"}],
+                }
+            }
+        return out
+
+    def reviewer(state):
+        call_count["rev"] += 1
+        verdict = "revise" if call_count["rev"] == 1 else "pass"
+        return ReviewReport(
+            verdict=verdict, reviewer_model="fake", iteration=state["iteration"]
+        )
+
+    graph = build_generation_graph(
+        load_context=loader, generator=generator, reviewer=reviewer, max_iterations=3
+    )
+    out = graph.invoke(
+        {"job_id": "j", "user_id": "u", "plan_type": "master", "input_payload": {}}
+    )
+
+    assert out["final_verdict"] == "pass"
+    assert call_count["gen"] == 2
+    assert out["master_plan_load_estimate"] is None
+
+
 # ---------------------------------------------------------------------------
 # Max iterations reached → fallback (verdict stays 'block')
 # ---------------------------------------------------------------------------

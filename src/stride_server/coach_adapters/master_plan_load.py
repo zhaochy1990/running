@@ -183,6 +183,10 @@ def _session_duration_min(session: Any) -> float | None:
     return _float(_get(session, "duration_min"))
 
 
+def _is_deload_week(week: Mapping[str, Any]) -> bool:
+    return bool(week.get("is_recovery_week") or week.get("is_taper_week"))
+
+
 def _session_intensity_factor(session: Any, race_distance: str) -> float:
     stype = _session_type(session)
     text = " ".join(
@@ -268,6 +272,8 @@ def estimate_master_plan_training_load(
         sessions = _get(week, "key_sessions", []) or []
         key_km = 0.0
         key_dose = 0.0
+        long_run_km = 0.0
+        long_run_dose = 0.0
         for session in sessions:
             stype = _session_type(session)
             if stype in {"strength_key", "strength"}:
@@ -277,12 +283,16 @@ def estimate_master_plan_training_load(
             if km is not None:
                 key_km += max(0.0, km)
             intensity = _session_intensity_factor(session, race_distance)
-            key_dose += _estimate_run_dose(
+            session_dose = _estimate_run_dose(
                 km=km,
                 duration_min=duration,
                 pace_s_km=pace_s_km,
                 intensity_factor=intensity,
             )
+            key_dose += session_dose
+            if stype == "long_run":
+                long_run_km = max(long_run_km, max(0.0, km or 0.0))
+                long_run_dose = max(long_run_dose, session_dose)
         remaining_easy_km = max(0.0, high - key_km)
         easy_dose = _estimate_run_dose(
             km=remaining_easy_km,
@@ -300,11 +310,16 @@ def estimate_master_plan_training_load(
             "estimated_raw_tss": _round(raw_total_dose),
             "key_session_km": _round(key_km),
             "remaining_easy_km": _round(remaining_easy_km),
+            "long_run_km": _round(long_run_km),
+            "long_run_dose": _round(long_run_dose * dose_scale),
+            "key_session_km_ratio": _round(key_km / high if high > 0 else None, 2),
+            "long_run_km_ratio": _round(long_run_km / high if high > 0 else None, 2),
+            "long_run_dose_ratio": _round((long_run_dose * dose_scale) / total_dose if total_dose > 0 else None, 2),
             "is_recovery_week": is_recovery,
             "is_taper_week": is_taper,
         })
 
-    load_weeks = [w for w in weeks_out if not w["is_recovery_week"] and not w["is_taper_week"] and (w["target_weekly_km_high"] or 0) > 0]
+    load_weeks = [w for w in weeks_out if not _is_deload_week(w) and (w["target_weekly_km_high"] or 0) > 0]
     first4 = load_weeks[:4]
     km_values = [float(w["target_weekly_km_high"] or 0.0) for w in load_weeks]
     dose_values = [float(w["estimated_dose"] or 0.0) for w in load_weeks]
@@ -314,6 +329,10 @@ def estimate_master_plan_training_load(
         "first4_load_avg_km": _round(mean([float(w["target_weekly_km_high"] or 0.0) for w in first4]) if first4 else None),
         "avg_load_week_km": _round(mean(km_values) if km_values else None),
         "peak_weekly_km": _round(max(km_values) if km_values else None),
+        "peak_long_run_km": _round(max((float(w["long_run_km"] or 0.0) for w in load_weeks), default=0.0) if load_weeks else None),
+        "max_long_run_km_ratio": _round(max((float(w["long_run_km_ratio"] or 0.0) for w in load_weeks), default=0.0) if load_weeks else None, 2),
+        "max_long_run_dose_ratio": _round(max((float(w["long_run_dose_ratio"] or 0.0) for w in load_weeks), default=0.0) if load_weeks else None, 2),
+        "max_key_session_km_ratio": _round(max((float(w["key_session_km_ratio"] or 0.0) for w in load_weeks), default=0.0) if load_weeks else None, 2),
         "first4_load_avg_dose": _round(mean([float(w["estimated_dose"] or 0.0) for w in first4]) if first4 else None),
         "avg_load_week_dose": _round(mean(dose_values) if dose_values else None),
         "peak_weekly_dose": _round(max(dose_values) if dose_values else None),
@@ -329,6 +348,7 @@ def estimate_master_plan_training_load(
     alignment = evaluate_master_plan_load_alignment(
         plan_summary=summary,
         history_anchor=anchor,
+        weeks=weeks_out,
         target_race=target_race,
         weekly_run_days_max=weekly_run_days_max,
         injuries=injuries,
@@ -350,6 +370,7 @@ def evaluate_master_plan_load_alignment(
     *,
     plan_summary: Mapping[str, Any],
     history_anchor: Mapping[str, Any],
+    weeks: Iterable[Mapping[str, Any]] | None = None,
     target_race: Mapping[str, Any] | None = None,
     weekly_run_days_max: int | None = None,
     injuries: list[str] | None = None,
@@ -364,17 +385,16 @@ def evaluate_master_plan_load_alignment(
     high_history = bool(history_anchor.get("advanced_history"))
     run_days_ok = weekly_run_days_max is None or weekly_run_days_max >= 5
     injury_or_gap = _has_injury_or_gap(injuries)
-
-    if not baseline_km or active_weeks < 4:
-        return {"status": "insufficient_history", "issues": issues}
+    has_history_anchor = bool(baseline_km and active_weeks >= 4)
 
     first4 = _float(plan_summary.get("first4_load_avg_km"))
     peak = _float(plan_summary.get("peak_weekly_km"))
     avg = _float(plan_summary.get("avg_load_week_km"))
     first4_dose = _float(plan_summary.get("first4_load_avg_dose"))
     peak_dose = _float(plan_summary.get("peak_weekly_dose"))
+    load_weeks = [dict(w) for w in (weeks or []) if not _is_deload_week(w) and (_float(w.get("target_weekly_km_high")) or 0.0) > 0]
 
-    if high_history and run_days_ok and distance in {"hm", "fm"} and not injury_or_gap:
+    if has_history_anchor and high_history and run_days_ok and distance in {"hm", "fm"} and not injury_or_gap:
         if first4 is not None and first4 < baseline_km * 0.75:
             issues.append({
                 "kind": "underload_start",
@@ -411,7 +431,7 @@ def evaluate_master_plan_load_alignment(
                 "details": {"peak_weekly_dose": peak_dose, "dose_anchor": baseline_dose},
             })
 
-    if history_peak and peak is not None and peak > history_peak * 1.10 + 5.0:
+    if has_history_anchor and history_peak and peak is not None and peak > history_peak * 1.10 + 5.0:
         issues.append({
             "kind": "overload_peak",
             "severity": "error",
@@ -422,7 +442,7 @@ def evaluate_master_plan_load_alignment(
             ),
             "details": {"peak_weekly_km": peak, "history_peak_weekly_km": history_peak},
         })
-    if baseline_km and avg is not None and not injury_or_gap and avg > baseline_km * 1.30:
+    if has_history_anchor and baseline_km and avg is not None and not injury_or_gap and avg > baseline_km * 1.30:
         issues.append({
             "kind": "overload_average",
             "severity": "error",
@@ -433,9 +453,54 @@ def evaluate_master_plan_load_alignment(
             "details": {"avg_load_week_km": avg, "distance_anchor_km": baseline_km},
         })
 
-    status = "ok"
-    if any(i.get("kind", "").startswith("underload") for i in issues):
+    long_run_km_limit = 0.60 if weekly_run_days_max is not None and weekly_run_days_max <= 3 else 0.50
+    long_run_dose_limit = 0.65 if weekly_run_days_max is not None and weekly_run_days_max <= 3 else 0.55
+    if injury_or_gap:
+        long_run_km_limit = max(long_run_km_limit, 0.55)
+        long_run_dose_limit = max(long_run_dose_limit, 0.60)
+    concentrated = [
+        w for w in load_weeks
+        if (_float(w.get("long_run_km_ratio")) or 0.0) > long_run_km_limit
+        or (_float(w.get("long_run_dose_ratio")) or 0.0) > long_run_dose_limit
+    ]
+    if concentrated:
+        worst = max(
+            concentrated,
+            key=lambda w: max(
+                _float(w.get("long_run_km_ratio")) or 0.0,
+                _float(w.get("long_run_dose_ratio")) or 0.0,
+            ),
+        )
+        issues.append({
+            "kind": "overload_long_run_load",
+            "severity": "error",
+            "message": (
+                f"week {worst.get('week_index')} puts too much estimated load into the long run "
+                f"({(_float(worst.get('long_run_km_ratio')) or 0.0):.0%} of weekly km, "
+                f"{(_float(worst.get('long_run_dose_ratio')) or 0.0):.0%} of weekly dose); "
+                "use the load-estimator tool to spread load across supporting easy/aerobic work "
+                "or reduce the long run rather than relying on a fixed distance template"
+            ),
+            "details": {
+                "week_index": worst.get("week_index"),
+                "target_weekly_km_high": worst.get("target_weekly_km_high"),
+                "long_run_km": worst.get("long_run_km"),
+                "long_run_km_ratio": worst.get("long_run_km_ratio"),
+                "long_run_dose": worst.get("long_run_dose"),
+                "long_run_dose_ratio": worst.get("long_run_dose_ratio"),
+                "long_run_km_ratio_limit": long_run_km_limit,
+                "long_run_dose_ratio_limit": long_run_dose_limit,
+            },
+        })
+
+    has_underload_issue = any(i.get("kind", "").startswith("underload") for i in issues)
+    has_overload_issue = any(i.get("kind", "").startswith("overload") for i in issues)
+    if has_underload_issue and has_overload_issue:
+        status = "mixed"
+    elif has_underload_issue:
         status = "underload"
-    if any(i.get("kind", "").startswith("overload") for i in issues):
-        status = "overload" if status == "ok" else "mixed"
+    elif has_overload_issue:
+        status = "overload"
+    else:
+        status = "ok" if has_history_anchor else "insufficient_history"
     return {"status": status, "issues": issues}

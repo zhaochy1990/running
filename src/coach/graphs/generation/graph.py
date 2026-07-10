@@ -134,10 +134,8 @@ def build_generation_graph(
             "current_draft": draft,
             "iteration": attempt,
             "timings": timings,
+            "master_plan_load_estimate": out.get("master_plan_load_estimate"),
         }
-        for key in ("master_plan_load_estimate",):
-            if key in out:
-                state_update[key] = out[key]
         return state_update
 
     def rule_filter_node(state: GenState) -> dict:

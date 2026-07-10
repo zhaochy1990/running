@@ -30,8 +30,6 @@ Input-aware (need ``rule_filter_kwargs``):
 * ``target_distance_long_run``: peak long_run distance_km matches target
   race distance — fm ≥ 28km, hm ≥ 18km, 10k ≥ 10km, 5k ≥ 6km (error),
   with a severe-goal-mismatch low-volume FM exception.
-* ``target_distance_volume_ceiling``: 5K / 10K / HM plans must not inherit
-  FM-style weekly volume or long-run length (error).
 * ``distance_taper_length``: explicit taper phases must stay within the
   distance-specific taper length for 5K / 10K / HM / FM (error).
 * ``key_session_density``: ``weekly_run_days_max <= 3`` → ≤2 key sessions
@@ -730,17 +728,6 @@ def _is_severe_low_volume_fm_mismatch(
     )
 
 
-# Distance-specific defaults used only when no high-history load anchor is
-# available. They catch the S1 failure mode where an ordinary short-race plan
-# copies an FM template; they are not hard caps for athletes whose tool-derived
-# history shows much higher normal training load.
-_TARGET_DISTANCE_VOLUME_LIMITS: dict[str, dict[str, float]] = {
-    "5k": {"weekly_km_high": 60.0, "long_run_km": 14.0},
-    "10k": {"weekly_km_high": 69.0, "long_run_km": 18.0},
-    "hm": {"weekly_km_high": 75.0, "long_run_km": 25.0},
-}
-
-
 _DISTANCE_TAPER_MAX_DAYS: dict[str, int] = {
     # Weekly skeletons are natural-week based. A 5K mini-taper may be expressed
     # as a race-week taper phase (Mon-Sun) whose focus says the actual cut-down
@@ -1374,107 +1361,6 @@ def check_target_distance_long_run(
             )
         ]
     return []
-
-
-def check_target_distance_volume_ceiling(
-    plan: MasterPlan,
-    *,
-    target_race: dict | None,
-    training_history_summary: dict | None = None,
-) -> list[RuleViolation]:
-    """Shorter target races must not inherit FM-style volume or long runs.
-
-    This is intentionally limited to 5K / 10K / HM because FM and ultra plans
-    need broad individualisation. The numeric defaults are bypassed for
-    high-history athletes; their volume is governed by the load-estimator tool
-    alignment instead of a race-distance template cap.
-    """
-    if not plan.weekly_key_sessions or not target_race:
-        return []
-    distance = _normalise_distance_key(target_race.get("distance"))
-    limits = _TARGET_DISTANCE_VOLUME_LIMITS.get(distance)
-    if limits is None:
-        return []
-
-    history_anchor = max(
-        _float_or_none((training_history_summary or {}).get("distance_anchor_km")) or 0.0,
-        _float_or_none((training_history_summary or {}).get("recent_median_weekly_km")) or 0.0,
-        _float_or_none((training_history_summary or {}).get("recent_avg_weekly_km")) or 0.0,
-    )
-    history_peak = max(
-        _float_or_none((training_history_summary or {}).get("history_peak_weekly_km")) or 0.0,
-        _float_or_none((training_history_summary or {}).get("peak_weekly_km_in_window")) or 0.0,
-        _float_or_none((training_history_summary or {}).get("max_weekly_km")) or 0.0,
-    )
-    high_history_volume = (
-        history_anchor > limits["weekly_km_high"] or history_peak > limits["weekly_km_high"] * 1.25
-    )
-
-    load_weeks = [
-        week for week in plan.weekly_key_sessions
-        if not _week_is_deload(week) and week.target_weekly_km_high is not None
-    ]
-    if not load_weeks:
-        return []
-
-    violations: list[RuleViolation] = []
-    peak_week = max(load_weeks, key=lambda w: w.target_weekly_km_high)
-    max_weekly = limits["weekly_km_high"]
-    if peak_week.target_weekly_km_high > max_weekly and not high_history_volume:
-        violations.append(
-            RuleViolation(
-                rule="target_distance_volume_ceiling",
-                severity="error",
-                message=(
-                    f"target {distance} but week {peak_week.week_index} reaches "
-                    f"{peak_week.target_weekly_km_high:.0f}km; this looks like "
-                    f"an FM/HM volume template. Cap {distance} peak weekly "
-                    f"high at <= {max_weekly:.0f}km unless the fixture "
-                    "explicitly asks for high-volume specialization"
-                ),
-                details={
-                    "distance": distance,
-                    "week_index": peak_week.week_index,
-                    "target_weekly_km_high": peak_week.target_weekly_km_high,
-                    "max_allowed_km_high": max_weekly,
-                },
-            )
-        )
-
-    max_long_run = 0.0
-    max_long_run_week = None
-    for week in load_weeks:
-        longest = max(
-            (
-                session.distance_km
-                for session in week.key_sessions
-                if session.type == "long_run" and session.distance_km is not None
-            ),
-            default=0.0,
-        )
-        if longest > max_long_run:
-            max_long_run = longest
-            max_long_run_week = week
-    max_lr = limits["long_run_km"]
-    if max_long_run > max_lr and max_long_run_week is not None and not high_history_volume:
-        violations.append(
-            RuleViolation(
-                rule="target_distance_volume_ceiling",
-                severity="error",
-                message=(
-                    f"target {distance} but week {max_long_run_week.week_index} "
-                    f"has {max_long_run:.0f}km long_run; cap long_run at "
-                    f"<= {max_lr:.0f}km to preserve target-distance specificity"
-                ),
-                details={
-                    "distance": distance,
-                    "week_index": max_long_run_week.week_index,
-                    "long_run_km": max_long_run,
-                    "max_allowed_long_run_km": max_lr,
-                },
-            )
-        )
-    return violations
 
 
 def check_master_plan_load_alignment(
@@ -2711,13 +2597,6 @@ def run_master_rule_filter(
             active,
             target_race=target_race,
             prs=prs,
-            training_history_summary=effective_training_history_summary,
-        )
-    )
-    violations.extend(
-        check_target_distance_volume_ceiling(
-            active,
-            target_race=target_race,
             training_history_summary=effective_training_history_summary,
         )
     )

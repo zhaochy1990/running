@@ -80,3 +80,109 @@ def test_low_history_short_race_not_forced_up() -> None:
 
     assert estimate["history_anchor"]["advanced_history"] is False
     assert estimate["alignment"]["status"] == "ok"
+
+
+def test_long_run_ratios_are_estimated_from_weekly_load() -> None:
+    anchor = build_training_history_load_anchor(_history([45, 48, 50, 52]))
+
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "10K"},
+            "weeks": [
+                {
+                    "week_index": 1,
+                    "week_start": "2026-07-01",
+                    "target_weekly_km_high": 60,
+                    "key_sessions": [
+                        {"type": "long_run", "distance_km": 18},
+                        {"type": "threshold", "distance_km": 8},
+                    ],
+                }
+            ],
+        },
+        history_anchor=anchor,
+        target_race={"distance": "10k"},
+        weekly_run_days_max=5,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["long_run_km"] == 18.0
+    assert week["long_run_km_ratio"] == 0.3
+    assert week["key_session_km_ratio"] == 0.43
+    assert estimate["plan_summary"]["max_long_run_km_ratio"] == 0.3
+
+
+def test_long_run_load_concentration_is_flagged_without_distance_caps() -> None:
+    anchor = build_training_history_load_anchor(_history([45, 48, 50, 52]))
+
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "10K"},
+            "weeks": [
+                {
+                    "week_index": 1,
+                    "week_start": "2026-07-01",
+                    "target_weekly_km_high": 38,
+                    "key_sessions": [{"type": "long_run", "distance_km": 22}],
+                }
+            ],
+        },
+        history_anchor=anchor,
+        target_race={"distance": "10k"},
+        weekly_run_days_max=5,
+    )
+
+    assert estimate["alignment"]["status"] == "overload"
+    issue = estimate["alignment"]["issues"][0]
+    assert issue["kind"] == "overload_long_run_load"
+    assert issue["details"]["long_run_km_ratio"] == 0.58
+    assert "fixed distance template" in issue["message"]
+
+
+def test_long_run_concentration_still_runs_with_insufficient_history() -> None:
+    anchor = build_training_history_load_anchor(_history([32, 35, 30]))
+
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [
+                {
+                    "week_index": 1,
+                    "week_start": "2026-07-01",
+                    "target_weekly_km_high": 45,
+                    "key_sessions": [{"type": "long_run", "distance_km": 28}],
+                }
+            ],
+        },
+        history_anchor=anchor,
+        target_race={"distance": "fm"},
+        weekly_run_days_max=5,
+    )
+
+    assert estimate["history_anchor"]["history_active_weeks"] == 3
+    assert estimate["alignment"]["status"] == "overload"
+    assert estimate["alignment"]["issues"][0]["kind"] == "overload_long_run_load"
+
+
+def test_three_day_runner_protected_long_run_uses_wider_load_threshold() -> None:
+    anchor = build_training_history_load_anchor(_history([38, 40, 42, 39]))
+
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [
+                {
+                    "week_index": 1,
+                    "week_start": "2026-07-01",
+                    "target_weekly_km_high": 48,
+                    "key_sessions": [{"type": "long_run", "distance_km": 28}],
+                }
+            ],
+        },
+        history_anchor=anchor,
+        target_race={"distance": "fm"},
+        weekly_run_days_max=3,
+    )
+
+    assert estimate["weeks"][0]["long_run_km_ratio"] == 0.58
+    assert estimate["alignment"]["status"] == "ok"

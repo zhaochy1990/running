@@ -876,7 +876,7 @@ class TestBuildMasterPlan:
 
         assert plan.milestones[0].date == "2026-07-26"
 
-    def test_standard_10k_long_run_caps_at_16km_and_updates_milestone(self):
+    def test_10k_long_run_is_not_deterministically_capped(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["phases"] = [
             {
@@ -914,52 +914,11 @@ class TestBuildMasterPlan:
 
         plan = _build_master_plan(data, USER_ID, {"distance": "10k"})
 
-        assert plan.weeks[0].key_sessions[0].distance_km == 16
-        assert plan.milestones[0].target_value == 16
-        assert plan.milestones[0].target == "16km长跑"
-
-    def test_high_volume_10k_long_run_is_not_capped(self):
-        data = json.loads(_VALID_JSON_STR)
-        data["plan"]["phases"] = [
-            {
-                "name": "高跑量10K专项期",
-                "phase_type": "build",
-                "start_date": "2026-07-20",
-                "end_date": "2026-08-09",
-                "focus": "高跑量10K专项建设",
-                "weekly_distance_km_low": 60,
-                "weekly_distance_km_high": 66,
-                "key_session_types": ["long_run", "interval"],
-            }
-        ]
-        data["plan"]["milestones"] = [
-            {
-                "type": "long_run",
-                "date": "2026-08-09",
-                "phase_name": "高跑量10K专项期",
-                "target": "17km长跑",
-                "metric": "long_run_distance_km",
-                "target_value": 17,
-                "comparator": ">=",
-            }
-        ]
-        data["plan"]["weeks"] = [
-            {
-                "week_index": 1,
-                "week_start": "2026-08-03",
-                "phase_name": "高跑量10K专项期",
-                "target_weekly_km_low": 62,
-                "target_weekly_km_high": 66,
-                "key_sessions": [{"type": "long_run", "distance_km": 17}],
-            },
-        ]
-
-        plan = _build_master_plan(data, USER_ID, {"race_distance": "10K"})
-
         assert plan.weeks[0].key_sessions[0].distance_km == 17
         assert plan.milestones[0].target_value == 17
+        assert plan.milestones[0].target == "17km长跑"
 
-    def test_standard_5k_long_run_caps_at_12km_and_updates_milestone(self):
+    def test_5k_long_run_is_not_deterministically_capped(self):
         data = json.loads(_VALID_JSON_STR)
         data["plan"]["phases"] = [
             {
@@ -997,50 +956,9 @@ class TestBuildMasterPlan:
 
         plan = _build_master_plan(data, USER_ID, {"distance": "5k"})
 
-        assert plan.weeks[0].key_sessions[0].distance_km == 12
-        assert plan.milestones[0].target_value == 12
-        assert plan.milestones[0].target == "12km长跑"
-
-    def test_high_volume_5k_long_run_is_not_capped(self):
-        data = json.loads(_VALID_JSON_STR)
-        data["plan"]["phases"] = [
-            {
-                "name": "高跑量5K专项期",
-                "phase_type": "peak",
-                "start_date": "2026-08-03",
-                "end_date": "2026-08-23",
-                "focus": "高跑量5K专项锐化",
-                "weekly_distance_km_low": 56,
-                "weekly_distance_km_high": 60,
-                "key_session_types": ["long_run", "vo2max"],
-            }
-        ]
-        data["plan"]["milestones"] = [
-            {
-                "type": "long_run",
-                "date": "2026-08-16",
-                "phase_name": "高跑量5K专项期",
-                "target": "14km长跑",
-                "metric": "long_run_distance_km",
-                "target_value": 14,
-                "comparator": ">=",
-            }
-        ]
-        data["plan"]["weeks"] = [
-            {
-                "week_index": 1,
-                "week_start": "2026-08-10",
-                "phase_name": "高跑量5K专项期",
-                "target_weekly_km_low": 56,
-                "target_weekly_km_high": 60,
-                "key_sessions": [{"type": "long_run", "distance_km": 14}],
-            },
-        ]
-
-        plan = _build_master_plan(data, USER_ID, {"target_race": {"distance": "5k"}})
-
         assert plan.weeks[0].key_sessions[0].distance_km == 14
         assert plan.milestones[0].target_value == 14
+        assert plan.milestones[0].target == "14km长跑"
 
     def test_post_recovery_load_week_is_not_left_at_recovery_trough(self):
         data = json.loads(_VALID_JSON_STR)
@@ -2123,12 +2041,13 @@ class TestPromptRegression:
     def test_prompt_includes_long_run_share_integer_sentinels(self):
         prompt = self._build()
 
+        assert "Long-run load concentration" in prompt
         assert "`22km` >=63" in prompt
         assert "never output `22/62`" in prompt
 
     def test_prompt_includes_frequency_limited_fm_peak_guidance(self):
         prompt = self._build()
-        assert "Frequency-limited ceiling" in prompt
+        assert "Frequency-limited load budget" in prompt
         assert "`profile.weekly_run_days_max <= 3`" in prompt
         assert "45-48km" in prompt
         assert "not a flat `40-42km` peak" in prompt
