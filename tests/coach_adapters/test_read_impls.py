@@ -3,6 +3,7 @@ empty and populated DBs without ever raising."""
 
 from __future__ import annotations
 
+from datetime import date as date_cls
 from typing import Any
 
 import pytest
@@ -171,20 +172,26 @@ def test_estimate_master_plan_load_empty_no_plan(patched_db) -> None:
 def test_estimate_master_plan_load_with_plan_and_history(patched_db, monkeypatch) -> None:
     from stride_server import master_plan_generator as mpg
 
+    seen: dict[str, Any] = {}
     kms = [120.0, 130.0, 125.0, 135.0, 128.0, 132.0, 126.0, 129.0]
-    monkeypatch.setattr(mpg, "_query_history", lambda _uid: {
-        "max_weekly_km": max(kms),
-        "weekly_profile": [
-            {
-                "week_start": f"2026-01-{idx:02d}",
-                "distance_km": km,
-                "hours": km * 300 / 3600,
-                "dose": km * 0.8,
-                "n_runs": 6,
-            }
-            for idx, km in enumerate(kms, start=1)
-        ],
-    })
+
+    def _history(_uid, *, as_of=None):
+        seen["as_of"] = as_of
+        return {
+            "max_weekly_km": max(kms),
+            "weekly_profile": [
+                {
+                    "week_start": f"2026-01-{idx:02d}",
+                    "distance_km": km,
+                    "hours": km * 300 / 3600,
+                    "dose": km * 0.8,
+                    "n_runs": 6,
+                }
+                for idx, km in enumerate(kms, start=1)
+            ],
+        }
+
+    monkeypatch.setattr(mpg, "_query_history", _history)
     plan = {
         "goal": {"distance": "HM"},
         "weeks": [
@@ -219,8 +226,10 @@ def test_estimate_master_plan_load_with_plan_and_history(patched_db, monkeypatch
         plan=plan,
         target_race={"distance": "hm"},
         weekly_run_days_max=6,
+        as_of_date="2026-05-19",
     )
     assert res.ok, res.errors
+    assert seen["as_of"] == date_cls(2026, 5, 19)
     estimate = res.data["plan_estimate"]
     assert estimate["history_anchor"]["advanced_history"] is True
     assert estimate["plan_summary"]["peak_weekly_km"] == 70.0

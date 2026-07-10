@@ -1508,6 +1508,39 @@ def check_master_plan_load_alignment(
     return violations
 
 
+def _merge_load_anchor_into_training_history(
+    training_history_summary: dict | None,
+    master_plan_load_estimate: dict | None,
+) -> dict | None:
+    """Expose the load-estimator history anchor to older history-aware rules.
+
+    Production S1 generation now computes the athlete's weekly km/dose anchor
+    as an Agent tool result. Several legacy L1 rules still read
+    ``training_history_summary`` only; merge the tool anchor in as defaults so
+    they do not fall back to generic distance-template caps for high-history
+    runners.
+    """
+    if not master_plan_load_estimate:
+        return training_history_summary
+    history_anchor = master_plan_load_estimate.get("history_anchor")
+    if not isinstance(history_anchor, dict) or not history_anchor:
+        return training_history_summary
+    merged = dict(history_anchor)
+    if (
+        merged.get("peak_weekly_km_in_window") is None
+        and merged.get("history_peak_weekly_km") is not None
+    ):
+        merged["peak_weekly_km_in_window"] = merged.get("history_peak_weekly_km")
+    if (
+        merged.get("max_weekly_km") is None
+        and merged.get("history_peak_weekly_km") is not None
+    ):
+        merged["max_weekly_km"] = merged.get("history_peak_weekly_km")
+    if training_history_summary:
+        merged.update(training_history_summary)
+    return merged
+
+
 def check_distance_taper_length(
     plan: MasterPlan, *, target_race: dict | None
 ) -> list[RuleViolation]:
@@ -2636,6 +2669,10 @@ def run_master_rule_filter(
         maybe_estimate = state.get("master_plan_load_estimate")
         if isinstance(maybe_estimate, dict):
             master_plan_load_estimate = maybe_estimate
+    effective_training_history_summary = _merge_load_anchor_into_training_history(
+        training_history_summary,
+        master_plan_load_estimate,
+    )
     plan = MasterPlan.model_validate(plan_dict)
     # Weekly-skeleton (Batch B) rules run on the active view, re-based to week 1,
     # so a continuity plan's already-completed lead-in (is_completed phases with
@@ -2674,14 +2711,14 @@ def run_master_rule_filter(
             active,
             target_race=target_race,
             prs=prs,
-            training_history_summary=training_history_summary,
+            training_history_summary=effective_training_history_summary,
         )
     )
     violations.extend(
         check_target_distance_volume_ceiling(
             active,
             target_race=target_race,
-            training_history_summary=training_history_summary,
+            training_history_summary=effective_training_history_summary,
         )
     )
     violations.extend(
@@ -2714,21 +2751,21 @@ def run_master_rule_filter(
             active,
             target_race=target_race,
             prs=prs,
-            training_history_summary=training_history_summary,
+            training_history_summary=effective_training_history_summary,
         )
     )
     violations.extend(
         check_injury_return_volume_ceiling(
             active,
             injuries=injuries,
-            training_history_summary=training_history_summary,
+            training_history_summary=effective_training_history_summary,
         )
     )
     violations.extend(
         check_injury_return_peak_exception_count(
             active,
             injuries=injuries,
-            training_history_summary=training_history_summary,
+            training_history_summary=effective_training_history_summary,
         )
     )
     violations.extend(check_hard_session_spacing(active))
@@ -2736,7 +2773,7 @@ def run_master_rule_filter(
         target_race=target_race,
         weekly_run_days_max=weekly_run_days_max,
         injuries=injuries,
-        training_history_summary=training_history_summary,
+        training_history_summary=effective_training_history_summary,
     )
     violations.extend(
         check_long_run_distance_share(
@@ -2751,7 +2788,7 @@ def run_master_rule_filter(
             active,
             target_race=target_race,
             prs=prs,
-            training_history_summary=training_history_summary,
+            training_history_summary=effective_training_history_summary,
         )
     )
     violations.extend(check_milestone_week_consistency(active))

@@ -264,7 +264,9 @@ def load_master_context(state: GenState) -> dict:
         logger.warning("load_master_context: continuity failed: %s", exc)
 
     history_summary = _format_history_summary(_history_with_pb_seconds(history, pb_seconds))
-    load_tool_result = EstimateMasterPlanLoadImpl(user_id)()
+    load_tool_result = EstimateMasterPlanLoadImpl(user_id)(
+        as_of_date=as_of.isoformat(),
+    )
     training_load_tool: dict = {}
     training_load_tool_summary = "Training-load estimator tool: unavailable."
     if load_tool_result.ok and isinstance(load_tool_result.data, dict):
@@ -304,6 +306,7 @@ def load_master_context(state: GenState) -> dict:
         "history_summary": history_summary,
         "pb_seconds": pb_seconds,
         "fitness_state": fitness_state,
+        "as_of_date": as_of.isoformat(),
         "training_load_tool": training_load_tool,
         "training_load_tool_summary": training_load_tool_summary,
         "continuity": continuity.model_dump() if continuity is not None else None,
@@ -535,6 +538,7 @@ def generate_master_plan(state: GenState) -> dict:
         or (profile or {}).get("weekly_training_days")
         or goal.get("weekly_training_days"),
         injuries=(profile or {}).get("injuries") or goal.get("injuries"),
+        as_of_date=ctx.get("as_of_date"),
     )
     if load_tool_result.ok and isinstance(load_tool_result.data, dict):
         load_estimate = load_tool_result.data.get("plan_estimate")

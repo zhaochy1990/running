@@ -239,7 +239,7 @@ def patch_history(monkeypatch):
     """Patch DB queries to return empty history (avoids needing a real DB)."""
     import stride_server.master_plan_generator as mod
 
-    monkeypatch.setattr(mod, "_query_history", lambda uid: {
+    monkeypatch.setattr(mod, "_query_history", lambda uid, *, as_of=None: {
         "monthly_km": [],
         "max_weekly_km": 0.0,
         "total_activities": 0,
@@ -357,6 +357,7 @@ def test_generate_master_plan_returns_load_tool_estimate(monkeypatch):
     )
 
     assert calls and calls[0]["plan"]["user_id"] == USER_ID
+    assert calls[0]["as_of_date"] is None
     assert out["master_plan_load_estimate"]["alignment"]["status"] == "ok"
 
 
@@ -397,19 +398,19 @@ def test_generate_master_plan_passes_context_pb_seconds_to_builder(monkeypatch):
 def test_load_master_context_uses_load_tool_for_anchor(monkeypatch):
     import stride_server.master_plan_generator as mod
 
-    monkeypatch.setattr(mod, "_query_history", lambda _uid: {
+    monkeypatch.setattr(mod, "_query_history", lambda _uid, *, as_of=None: {
         "monthly_km": [],
         "max_weekly_km": 150.0,
         "total_activities": 100,
         "weekly_profile": [],
     })
-    monkeypatch.setattr(mod, "_query_fitness_state", lambda _uid: {"summary": "fitness"})
+    monkeypatch.setattr(mod, "_query_fitness_state", lambda _uid, *, as_of=None: {"summary": "fitness"})
     monkeypatch.setattr(adapter_mod, "_query_history", mod._query_history)
     monkeypatch.setattr(adapter_mod, "_query_fitness_state", mod._query_fitness_state)
     monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
     monkeypatch.setattr(adapter_mod, "detect_current_phase", lambda *a, **k: None)
     monkeypatch.setattr(adapter_mod, "_load_pb_seconds", lambda _db: {})
-    monkeypatch.setattr(adapter_mod, "_load_body_composition", lambda _db, _profile: None)
+    monkeypatch.setattr(adapter_mod, "_load_body_composition", lambda _db, _profile, *, as_of=None: None)
 
     class FakeDb:
         def close(self):
@@ -2976,6 +2977,16 @@ class TestLoadMasterContextDoubleBaseline:
         class _Db:
             pass
 
+        class _LoadTool:
+            def __init__(self, user_id: str) -> None:
+                self.user_id = user_id
+
+            def __call__(self, **kwargs: Any):
+                from coach.schemas import ToolResult
+
+                seen["load_tool_as_of"] = kwargs.get("as_of_date")
+                return ToolResult(ok=True, data={"history_anchor": {}})
+
         def _history(uid, *, as_of=None):
             seen["history_as_of"] = as_of
             return {"total_activities": 0, "weekly_profile": []}
@@ -3006,6 +3017,7 @@ class TestLoadMasterContextDoubleBaseline:
 
         monkeypatch.setattr(adapter_mod, "analyze_continuity", _continuity)
         monkeypatch.setattr(adapter_mod, "detect_current_phase", _phase)
+        monkeypatch.setattr(adapter_mod, "EstimateMasterPlanLoadImpl", _LoadTool)
 
         adapter_mod.load_master_context(
             {
@@ -3024,6 +3036,7 @@ class TestLoadMasterContextDoubleBaseline:
         assert seen["continuity_as_of"] == frozen
         assert seen["phase_as_of"] == frozen
         assert seen["body_as_of"] == frozen
+        assert seen["load_tool_as_of"] == "2026-05-19"
 
 
 # ---------------------------------------------------------------------------

@@ -80,4 +80,3 @@ def test_low_history_short_race_not_forced_up() -> None:
 
     assert estimate["history_anchor"]["advanced_history"] is False
     assert estimate["alignment"]["status"] == "ok"
-

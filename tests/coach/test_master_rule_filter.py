@@ -2016,6 +2016,34 @@ def test_target_distance_volume_ceiling_allows_high_history_hm_volume():
     ) == []
 
 
+def test_rule_filter_uses_load_anchor_for_high_history_hm_volume_ceiling():
+    plan_dict = _plan_with_weeks([
+        _week(
+            week_index=1,
+            week_start="2026-07-06",
+            km_high=150,
+            sessions=[{"type": "long_run", "distance_km": 24}],
+        ),
+    ])
+
+    report = run_master_rule_filter(
+        plan_dict,
+        target_race={"distance": "hm", "race_date": "2026-10-18"},
+        state={
+            "master_plan_load_estimate": {
+                "history_anchor": {
+                    "distance_anchor_km": 150.8,
+                    "history_peak_weekly_km": 237.2,
+                },
+                "plan_summary": {"peak_weekly_km": 150},
+                "alignment": {"status": "ok", "issues": []},
+            }
+        },
+    )
+
+    assert not any(v.rule == "target_distance_volume_ceiling" for v in report.violations)
+
+
 def test_master_plan_load_alignment_reports_underload_error():
     violations = check_master_plan_load_alignment(
         master_plan_load_estimate={

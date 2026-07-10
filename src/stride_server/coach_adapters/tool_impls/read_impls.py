@@ -19,6 +19,7 @@ import functools
 import json
 import logging
 from collections.abc import Callable
+from datetime import date as date_cls
 from datetime import datetime, timezone
 from typing import Any
 
@@ -580,6 +581,7 @@ class EstimateMasterPlanLoadImpl:
         target_race: dict | None = None,
         weekly_run_days_max: int | None = None,
         injuries: list[str] | None = None,
+        as_of_date: str | None = None,
     ) -> ToolResult:
         from stride_server.coach_adapters.master_plan_load import (
             build_training_history_load_anchor,
@@ -588,7 +590,10 @@ class EstimateMasterPlanLoadImpl:
         from stride_server.master_plan_generator import _query_history
         from stride_server.master_plan_store import get_master_plan_store
 
-        history = _query_history(self._user_id)
+        as_of = None
+        if as_of_date:
+            as_of = date_cls.fromisoformat(str(as_of_date))
+        history = _query_history(self._user_id, as_of=as_of)
         anchor = build_training_history_load_anchor(history)
         source = "provided"
         plan_obj: dict | None = plan

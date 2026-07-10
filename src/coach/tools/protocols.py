@@ -104,6 +104,7 @@ class EstimateMasterPlanLoad(Protocol):
         target_race: dict | None = None,
         weekly_run_days_max: int | None = None,
         injuries: list[str] | None = None,
+        as_of_date: str | None = None,
     ) -> ToolResult: ...
 
 
