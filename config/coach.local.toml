@@ -138,16 +138,16 @@ timeout_s = 60
 # ---------------------------------------------------------------------------
 
 [generator]
-model = "gpt55"
+model = "deepseekv4pro"
 
 [reviewer]
-model = "gpt55"
+model = "deepseekv4flash"
 
 [commentary]
-model = "gpt55"
+model = "deepseekv4flash"
 
 [orchestrator]
-model = "gpt55"
+model = "deepseekv4flash"
 
 [observability]
 # LangSmith tracing for the test phase. ENABLED for local/CLI so coach turns
