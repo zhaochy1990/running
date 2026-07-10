@@ -130,16 +130,20 @@ def build_generation_graph(
         metadata = out.get("timing_metadata") or {}
         if isinstance(metadata, dict):
             timings.update(metadata)
-        return {
+        state_update = {
             "current_draft": draft,
             "iteration": attempt,
             "timings": timings,
         }
+        for key in ("master_plan_load_estimate",):
+            if key in out:
+                state_update[key] = out[key]
+        return state_update
 
     def rule_filter_node(state: GenState) -> dict:
         draft = state.get("current_draft") or {}
         t0 = time.monotonic()
-        report: RuleFilterReport = rule_filter_fn(draft, **rfk)
+        report: RuleFilterReport = rule_filter_fn(draft, state=state, **rfk)
         elapsed = time.monotonic() - t0
         errors = [v for v in report.violations if v.severity == "error"]
         warns = [v for v in report.violations if v.severity != "error"]

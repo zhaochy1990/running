@@ -730,9 +730,10 @@ def _is_severe_low_volume_fm_mismatch(
     )
 
 
-# Distance-specific upper guards. These are not generic training theory caps;
-# they catch the S1 failure mode where a short-race plan copies an FM template
-# just because the athlete has historical marathon volume.
+# Distance-specific defaults used only when no high-history load anchor is
+# available. They catch the S1 failure mode where an ordinary short-race plan
+# copies an FM template; they are not hard caps for athletes whose tool-derived
+# history shows much higher normal training load.
 _TARGET_DISTANCE_VOLUME_LIMITS: dict[str, dict[str, float]] = {
     "5k": {"weekly_km_high": 60.0, "long_run_km": 14.0},
     "10k": {"weekly_km_high": 69.0, "long_run_km": 18.0},
@@ -1376,14 +1377,17 @@ def check_target_distance_long_run(
 
 
 def check_target_distance_volume_ceiling(
-    plan: MasterPlan, *, target_race: dict | None
+    plan: MasterPlan,
+    *,
+    target_race: dict | None,
+    training_history_summary: dict | None = None,
 ) -> list[RuleViolation]:
     """Shorter target races must not inherit FM-style volume or long runs.
 
     This is intentionally limited to 5K / 10K / HM because FM and ultra plans
-    need broad individualisation. For the shorter fixtures, the recurring bad
-    output is clear: weekly peaks in the 70-80km range and long runs sized for
-    HM/FM even when the target is 5K or 10K.
+    need broad individualisation. The numeric defaults are bypassed for
+    high-history athletes; their volume is governed by the load-estimator tool
+    alignment instead of a race-distance template cap.
     """
     if not plan.weekly_key_sessions or not target_race:
         return []
@@ -1391,6 +1395,20 @@ def check_target_distance_volume_ceiling(
     limits = _TARGET_DISTANCE_VOLUME_LIMITS.get(distance)
     if limits is None:
         return []
+
+    history_anchor = max(
+        _float_or_none((training_history_summary or {}).get("distance_anchor_km")) or 0.0,
+        _float_or_none((training_history_summary or {}).get("recent_median_weekly_km")) or 0.0,
+        _float_or_none((training_history_summary or {}).get("recent_avg_weekly_km")) or 0.0,
+    )
+    history_peak = max(
+        _float_or_none((training_history_summary or {}).get("history_peak_weekly_km")) or 0.0,
+        _float_or_none((training_history_summary or {}).get("peak_weekly_km_in_window")) or 0.0,
+        _float_or_none((training_history_summary or {}).get("max_weekly_km")) or 0.0,
+    )
+    high_history_volume = (
+        history_anchor > limits["weekly_km_high"] or history_peak > limits["weekly_km_high"] * 1.25
+    )
 
     load_weeks = [
         week for week in plan.weekly_key_sessions
@@ -1402,7 +1420,7 @@ def check_target_distance_volume_ceiling(
     violations: list[RuleViolation] = []
     peak_week = max(load_weeks, key=lambda w: w.target_weekly_km_high)
     max_weekly = limits["weekly_km_high"]
-    if peak_week.target_weekly_km_high > max_weekly:
+    if peak_week.target_weekly_km_high > max_weekly and not high_history_volume:
         violations.append(
             RuleViolation(
                 rule="target_distance_volume_ceiling",
@@ -1438,7 +1456,7 @@ def check_target_distance_volume_ceiling(
             max_long_run = longest
             max_long_run_week = week
     max_lr = limits["long_run_km"]
-    if max_long_run > max_lr and max_long_run_week is not None:
+    if max_long_run > max_lr and max_long_run_week is not None and not high_history_volume:
         violations.append(
             RuleViolation(
                 rule="target_distance_volume_ceiling",
@@ -1453,6 +1471,37 @@ def check_target_distance_volume_ceiling(
                     "week_index": max_long_run_week.week_index,
                     "long_run_km": max_long_run,
                     "max_allowed_long_run_km": max_lr,
+                },
+            )
+        )
+    return violations
+
+
+def check_master_plan_load_alignment(
+    *, master_plan_load_estimate: dict | None
+) -> list[RuleViolation]:
+    """Turn the adapter load-estimator tool output into L1 retry feedback."""
+    if not master_plan_load_estimate:
+        return []
+    alignment = master_plan_load_estimate.get("alignment") or {}
+    issues = alignment.get("issues") or []
+    violations: list[RuleViolation] = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        severity = str(issue.get("severity") or "error")
+        if severity not in {"error", "warning"}:
+            severity = "error"
+        violations.append(
+            RuleViolation(
+                rule="master_plan_load_alignment",
+                severity=severity,
+                message=str(issue.get("message") or issue.get("kind") or "load alignment issue"),
+                details={
+                    "kind": issue.get("kind"),
+                    **(issue.get("details") or {}),
+                    "plan_summary": master_plan_load_estimate.get("plan_summary"),
+                    "history_anchor": master_plan_load_estimate.get("history_anchor"),
                 },
             )
         )
@@ -2558,6 +2607,8 @@ def run_master_rule_filter(
     weekly_run_days_max: int | None = None,
     injuries: list[str] | None = None,
     training_history_summary: dict | None = None,
+    master_plan_load_estimate: dict | None = None,
+    state: dict | None = None,
     **_extra: Any,
 ) -> RuleFilterReport:
     """Run every master-plan rule against ``plan_dict``.
@@ -2581,6 +2632,10 @@ def run_master_rule_filter(
     if violations:
         # Schema failure — downstream checks need a parsed MasterPlan; bail.
         return RuleFilterReport(violations=violations)
+    if master_plan_load_estimate is None and state:
+        maybe_estimate = state.get("master_plan_load_estimate")
+        if isinstance(maybe_estimate, dict):
+            master_plan_load_estimate = maybe_estimate
     plan = MasterPlan.model_validate(plan_dict)
     # Weekly-skeleton (Batch B) rules run on the active view, re-based to week 1,
     # so a continuity plan's already-completed lead-in (is_completed phases with
@@ -2623,7 +2678,16 @@ def run_master_rule_filter(
         )
     )
     violations.extend(
-        check_target_distance_volume_ceiling(active, target_race=target_race)
+        check_target_distance_volume_ceiling(
+            active,
+            target_race=target_race,
+            training_history_summary=training_history_summary,
+        )
+    )
+    violations.extend(
+        check_master_plan_load_alignment(
+            master_plan_load_estimate=master_plan_load_estimate,
+        )
     )
     violations.extend(
         check_key_session_density(

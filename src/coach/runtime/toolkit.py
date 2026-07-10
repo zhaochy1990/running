@@ -1,6 +1,6 @@
 """Toolkit Protocol — the contract every adapter must satisfy.
 
-A ``Toolkit`` aggregates implementations of all 25 callable tools. Adapters
+A ``Toolkit`` aggregates implementations of all 26 callable tools. Adapters
 in ``stride_server.coach_adapters.toolkit`` produce a concrete instance,
 test stubs in ``tests/coach/stubs/fake_toolkit.py`` produce a ``FakeToolkit``.
 
@@ -17,6 +17,7 @@ from coach.tools.protocols import (
     ChangePaceTarget,
     ChangeTarget,
     CompressPhase,
+    EstimateMasterPlanLoad,
     ExtendPhase,
     GetAbilitySnapshot,
     GetActivityDetail,
@@ -44,9 +45,9 @@ from coach.tools.protocols import (
 
 @runtime_checkable
 class Toolkit(Protocol):
-    """All 25 tools surfaced as attributes for direct callable access."""
+    """All 26 tools surfaced as attributes for direct callable access."""
 
-    # Read tools (12)
+    # Read tools (13)
     get_recent_activities: GetRecentActivities
     get_health_snapshot: GetHealthSnapshot
     get_health_series: GetHealthSeries
@@ -60,6 +61,7 @@ class Toolkit(Protocol):
     get_week_plan: GetWeekPlan
     get_activity_detail: GetActivityDetail
     get_training_environment: GetTrainingEnvironment
+    estimate_master_plan_load: EstimateMasterPlanLoad
 
     # Week-scope draft tools (7)
     swap_sessions: SwapSessions

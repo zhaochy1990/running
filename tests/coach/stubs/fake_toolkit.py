@@ -42,7 +42,7 @@ class FakeToolkit:
 
     user_id: str = "fake-user"
 
-    # read (12)
+    # read (13)
     get_recent_activities: _FakeTool = field(default_factory=_FakeTool)
     get_health_snapshot: _FakeTool = field(default_factory=_FakeTool)
     get_health_series: _FakeTool = field(default_factory=_FakeTool)
@@ -55,6 +55,8 @@ class FakeToolkit:
     get_master_plan_versions: _FakeTool = field(default_factory=_FakeTool)
     get_week_plan: _FakeTool = field(default_factory=_FakeTool)
     get_activity_detail: _FakeTool = field(default_factory=_FakeTool)
+    get_training_environment: _FakeTool = field(default_factory=_FakeTool)
+    estimate_master_plan_load: _FakeTool = field(default_factory=_FakeTool)
 
     # week-scope draft (7)
     swap_sessions: _FakeTool = field(default_factory=_FakeTool)
@@ -87,7 +89,8 @@ def _assert_toolkit_protocol() -> None:
         "get_health_series",
         "get_body_composition_latest", "get_ability_snapshot", "get_race_predictions",
         "get_pbs", "get_master_plan_current", "get_master_plan_versions",
-        "get_week_plan", "get_activity_detail",
+        "get_week_plan", "get_activity_detail", "get_training_environment",
+        "estimate_master_plan_load",
         "swap_sessions", "shift_session", "reduce_intensity",
         "replace_session", "add_strength_session", "change_pace_target",
         "regenerate_week",

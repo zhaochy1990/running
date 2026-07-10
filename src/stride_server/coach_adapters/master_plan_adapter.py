@@ -44,6 +44,8 @@ from ..master_plan_generator import (
     _query_history,
     build_master_prompts,
 )
+from .master_plan_load import format_training_load_anchor_for_prompt
+from .tool_impls.read_impls import EstimateMasterPlanLoadImpl
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +264,21 @@ def load_master_context(state: GenState) -> dict:
         logger.warning("load_master_context: continuity failed: %s", exc)
 
     history_summary = _format_history_summary(_history_with_pb_seconds(history, pb_seconds))
+    load_tool_result = EstimateMasterPlanLoadImpl(user_id)()
+    training_load_tool: dict = {}
+    training_load_tool_summary = "Training-load estimator tool: unavailable."
+    if load_tool_result.ok and isinstance(load_tool_result.data, dict):
+        training_load_tool = load_tool_result.data
+        training_load_tool_summary = format_training_load_anchor_for_prompt(
+            training_load_tool.get("history_anchor")
+        )
+        history_summary = history_summary + "\n" + training_load_tool_summary
+    else:
+        logger.warning(
+            "load_master_context: estimate_master_plan_load anchor failed user=%s errors=%s",
+            user_id,
+            load_tool_result.errors,
+        )
     logger.debug(
         "load_master_context: user=%s history_summary_chars=%d weekly_profile_weeks=%d pb_keys=%s",
         user_id,
@@ -287,6 +304,8 @@ def load_master_context(state: GenState) -> dict:
         "history_summary": history_summary,
         "pb_seconds": pb_seconds,
         "fitness_state": fitness_state,
+        "training_load_tool": training_load_tool,
+        "training_load_tool_summary": training_load_tool_summary,
         "continuity": continuity.model_dump() if continuity is not None else None,
         "current_phase": current_phase.model_dump() if current_phase is not None else None,
         "body_composition": body_composition,
@@ -365,6 +384,7 @@ def generate_master_plan(state: GenState) -> dict:
         body_composition_summary=ctx.get("body_composition_summary"),
         current_phase=current_phase,
         athlete_memories=athlete_memories,
+        training_load_tool_summary=ctx.get("training_load_tool_summary"),
     )
     prompt_chars = {
         "generator_system_prompt_chars": len(system_prompt),
@@ -503,7 +523,29 @@ def generate_master_plan(state: GenState) -> dict:
     if job_id:
         update_job(job_id, stage=JobStage.RULE_FILTER, progress=75)
 
-    return {
+    load_estimate: dict | None = None
+    load_tool_result = EstimateMasterPlanLoadImpl(user_id)(
+        plan=plan.model_dump(mode="json"),
+        target_race={
+            "distance": goal.get("distance") or goal.get("race_distance"),
+            "goal_time_s": goal.get("goal_time_s"),
+            "race_date": goal.get("race_date"),
+        },
+        weekly_run_days_max=(profile or {}).get("weekly_run_days_max")
+        or (profile or {}).get("weekly_training_days")
+        or goal.get("weekly_training_days"),
+        injuries=(profile or {}).get("injuries") or goal.get("injuries"),
+    )
+    if load_tool_result.ok and isinstance(load_tool_result.data, dict):
+        load_estimate = load_tool_result.data.get("plan_estimate")
+    else:
+        logger.warning(
+            "generate_master_plan: estimate_master_plan_load draft failed user=%s errors=%s",
+            user_id,
+            load_tool_result.errors,
+        )
+
+    out = {
         "current_draft": plan.model_dump(mode="json"),
         "timing_metadata": {
             **prompt_chars,
@@ -511,6 +553,9 @@ def generate_master_plan(state: GenState) -> dict:
             "generator_raw_response_chars": raw_response_chars,
         },
     }
+    if load_estimate is not None:
+        out["master_plan_load_estimate"] = load_estimate
+    return out
 
 
 def master_reviewer(state: GenState) -> ReviewReport:

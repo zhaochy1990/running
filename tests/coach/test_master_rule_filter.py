@@ -37,6 +37,7 @@ from coach.graphs.generation.master_rule_filter import (
     check_phase_duration_balance,
     check_season_window_fits,
     check_strength_durability_track,
+    check_master_plan_load_alignment,
     check_target_distance_volume_ceiling,
     check_target_distance_long_run,
     check_taper_volume_drop,
@@ -1997,6 +1998,47 @@ def test_long_run_share_threshold_keeps_35pct_for_low_history_hm():
         injuries=None,
         training_history_summary={"peak_weekly_km_in_window": 58},
     ) == 0.35
+
+
+def test_target_distance_volume_ceiling_allows_high_history_hm_volume():
+    plan = MasterPlan.model_validate(_plan_with_weeks([
+        _week(week_index=1, week_start="2026-07-06", km_high=120,
+              sessions=[{"type": "long_run", "distance_km": 24}]),
+    ]))
+
+    assert check_target_distance_volume_ceiling(
+        plan,
+        target_race={"distance": "hm"},
+        training_history_summary={
+            "distance_anchor_km": 150,
+            "history_peak_weekly_km": 237,
+        },
+    ) == []
+
+
+def test_master_plan_load_alignment_reports_underload_error():
+    violations = check_master_plan_load_alignment(
+        master_plan_load_estimate={
+            "history_anchor": {"distance_anchor_km": 150},
+            "plan_summary": {"peak_weekly_km": 75},
+            "alignment": {
+                "status": "underload",
+                "issues": [
+                    {
+                        "kind": "underload_peak",
+                        "severity": "error",
+                        "message": "planned peak 75km is too low",
+                        "details": {"peak_weekly_km": 75, "distance_anchor_km": 150},
+                    }
+                ],
+            },
+        }
+    )
+
+    assert len(violations) == 1
+    assert violations[0].rule == "master_plan_load_alignment"
+    assert violations[0].severity == "error"
+    assert violations[0].details["kind"] == "underload_peak"
 
 
 # ---------------------------------------------------------------------------

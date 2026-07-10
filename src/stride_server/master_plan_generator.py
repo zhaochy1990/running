@@ -1979,6 +1979,17 @@ def _format_history_summary(history: dict[str, Any]) -> str:
     lines.append(f"Max single-week distance (history): {max_wk} km")
 
     lines.extend(_format_weekly_profile(history.get("weekly_profile", [])))
+    try:
+        from stride_server.coach_adapters.master_plan_load import (
+            build_training_history_load_anchor,
+            format_training_load_anchor_for_prompt,
+        )
+
+        lines.append(format_training_load_anchor_for_prompt(
+            build_training_history_load_anchor(history)
+        ))
+    except Exception:  # noqa: BLE001 — history formatting must not block prompts
+        logger.warning("_format_history_summary: load anchor formatting failed", exc_info=True)
 
     def fmt_time(sec: int | None) -> str:
         if sec is None:
@@ -2164,6 +2175,7 @@ def build_master_prompts(
     previous_master_plan_md: str | None = None,
     current_phase: "CurrentPhaseContext | None" = None,
     athlete_memories: "list | None" = None,
+    training_load_tool_summary: str | None = None,
 ) -> tuple[str, str]:
     """Build the ``(system_prompt, user_prompt)`` pair for S1 generation.
 
@@ -2324,6 +2336,7 @@ def build_master_prompts(
         "goal_json": goal_json,
         "profile_json": profile_json,
         "history_summary": history_summary,
+        "training_load_tool_summary": training_load_tool_summary or "Training-load estimator tool: not available.",
         "fitness_summary": fitness_summary,
         "current_phase_block": current_phase_block,
         "continuity_block": continuity_block,

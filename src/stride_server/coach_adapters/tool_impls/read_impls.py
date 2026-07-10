@@ -556,7 +556,74 @@ class GetTrainingEnvironmentImpl:
 
 
 # ---------------------------------------------------------------------------
-# 5. get_body_composition_latest
+# 5. estimate_master_plan_load
+# ---------------------------------------------------------------------------
+
+
+class EstimateMasterPlanLoadImpl:
+    """Estimate historical anchors and planned load for a master plan draft.
+
+    This is a read tool: it performs no writes and can be used both by the
+    conversation agent and the S1 generation adapter. ``plan`` may be a raw LLM
+    envelope, a ``MasterPlan.model_dump()`` dict, or omitted to estimate the
+    user's active master plan.
+    """
+
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+
+    @_tool_safe
+    def __call__(
+        self,
+        *,
+        plan: dict | None = None,
+        target_race: dict | None = None,
+        weekly_run_days_max: int | None = None,
+        injuries: list[str] | None = None,
+    ) -> ToolResult:
+        from stride_server.coach_adapters.master_plan_load import (
+            build_training_history_load_anchor,
+            estimate_master_plan_training_load,
+        )
+        from stride_server.master_plan_generator import _query_history
+        from stride_server.master_plan_store import get_master_plan_store
+
+        history = _query_history(self._user_id)
+        anchor = build_training_history_load_anchor(history)
+        source = "provided"
+        plan_obj: dict | None = plan
+        if plan_obj is None:
+            active = get_master_plan_store().get_active_plan(self._user_id)
+            plan_obj = active.model_dump(mode="json") if active is not None else None
+            source = "active"
+        if plan_obj is None:
+            return ToolResult(
+                ok=True,
+                data={
+                    "history_anchor": anchor,
+                    "plan_estimate": None,
+                    "plan_source": source,
+                },
+            )
+        estimate = estimate_master_plan_training_load(
+            plan_obj,
+            history_anchor=anchor,
+            target_race=target_race,
+            weekly_run_days_max=weekly_run_days_max,
+            injuries=injuries,
+        )
+        return ToolResult(
+            ok=True,
+            data={
+                "history_anchor": anchor,
+                "plan_estimate": estimate,
+                "plan_source": source,
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# 6. get_body_composition_latest
 # ---------------------------------------------------------------------------
 
 

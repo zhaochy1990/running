@@ -318,6 +318,48 @@ def test_generate_master_plan_returns_prompt_size_metadata(monkeypatch):
     assert CapturingLLMClient.kwargs_seen == [{"max_tokens": 20000}]
 
 
+def test_generate_master_plan_returns_load_tool_estimate(monkeypatch):
+    raw_response = _sentinel_wrap(_VALID_JSON_STR)
+    calls: list[dict[str, Any]] = []
+
+    class FakeLoadTool:
+        def __init__(self, user_id: str) -> None:
+            self.user_id = user_id
+
+        def __call__(self, **kwargs: Any):
+            from coach.schemas import ToolResult
+
+            calls.append(kwargs)
+            return ToolResult(
+                ok=True,
+                data={
+                    "plan_estimate": {
+                        "history_anchor": {"distance_anchor_km": 100.0},
+                        "plan_summary": {"peak_weekly_km": 95.0},
+                        "alignment": {"status": "ok", "issues": []},
+                    }
+                },
+            )
+
+    monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
+    monkeypatch.setattr(adapter_mod, "EstimateMasterPlanLoadImpl", FakeLoadTool)
+
+    out = adapter_mod.generate_master_plan(
+        {
+            "job_id": "",
+            "user_id": USER_ID,
+            "input_payload": {"goal": GOAL, "profile": PROFILE},
+            "context": {
+                "history_summary": "history",
+                "fitness_state": {"summary": "fitness"},
+            },
+        }
+    )
+
+    assert calls and calls[0]["plan"]["user_id"] == USER_ID
+    assert out["master_plan_load_estimate"]["alignment"]["status"] == "ok"
+
+
 def test_generate_master_plan_passes_context_pb_seconds_to_builder(monkeypatch):
     raw_response = _sentinel_wrap(_VALID_JSON_STR)
     seen: dict[str, Any] = {}
@@ -350,6 +392,63 @@ def test_generate_master_plan_passes_context_pb_seconds_to_builder(monkeypatch):
     )
 
     assert seen["pb_seconds"] == {"fm": 10762.0}
+
+
+def test_load_master_context_uses_load_tool_for_anchor(monkeypatch):
+    import stride_server.master_plan_generator as mod
+
+    monkeypatch.setattr(mod, "_query_history", lambda _uid: {
+        "monthly_km": [],
+        "max_weekly_km": 150.0,
+        "total_activities": 100,
+        "weekly_profile": [],
+    })
+    monkeypatch.setattr(mod, "_query_fitness_state", lambda _uid: {"summary": "fitness"})
+    monkeypatch.setattr(adapter_mod, "_query_history", mod._query_history)
+    monkeypatch.setattr(adapter_mod, "_query_fitness_state", mod._query_fitness_state)
+    monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
+    monkeypatch.setattr(adapter_mod, "detect_current_phase", lambda *a, **k: None)
+    monkeypatch.setattr(adapter_mod, "_load_pb_seconds", lambda _db: {})
+    monkeypatch.setattr(adapter_mod, "_load_body_composition", lambda _db, _profile: None)
+
+    class FakeDb:
+        def close(self):
+            pass
+
+    monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: FakeDb())
+
+    class FakeLoadTool:
+        def __init__(self, user_id: str) -> None:
+            self.user_id = user_id
+
+        def __call__(self, **kwargs: Any):
+            from coach.schemas import ToolResult
+
+            return ToolResult(
+                ok=True,
+                data={
+                    "history_anchor": {
+                        "history_active_weeks": 12,
+                        "distance_anchor_km": 120.0,
+                        "recent_avg_weekly_km": 122.0,
+                        "recent_median_weekly_km": 120.0,
+                        "recent_last4_avg_weekly_km": 118.0,
+                        "history_peak_weekly_km": 150.0,
+                        "dose_anchor": 95.0,
+                        "avg_runs_per_active_week": 6.0,
+                    }
+                },
+            )
+
+    monkeypatch.setattr(adapter_mod, "EstimateMasterPlanLoadImpl", FakeLoadTool)
+
+    ctx = adapter_mod.load_master_context(
+        {"user_id": USER_ID, "job_id": "", "input_payload": {"goal": GOAL, "profile": PROFILE}}
+    )
+
+    assert ctx["training_load_tool"]["history_anchor"]["distance_anchor_km"] == 120.0
+    assert "Training-load estimator tool" in ctx["history_summary"]
+    assert "km_anchor=120.0km" in ctx["training_load_tool_summary"]
 
 
 def test_master_plan_generation_uses_s1_specific_output_cap():
@@ -1893,21 +1992,18 @@ class TestPromptRegression:
         assert "Aggressive FM A gates are strict and target-specific" in prompt
         assert "target-specific" in prompt
         assert "22-24km" in prompt
-        assert "not 28km" in prompt
         assert "multi-cycle" in prompt
+        assert "genuinely low-volume runner" in prompt
         assert "observation/B only" in prompt
         assert "Slightly slower HM/10K marks are observation/B only" in prompt
         assert "30-32km MP rehearsal" in prompt
-        assert "historical_peak * 1.10 + 2km" in prompt
-        assert "historical_peak + 7km" in prompt
-        assert "<=80-82km" in prompt
-        assert "not `84-85km` or `92km`" in prompt
+        assert "Use the load-estimator anchor" in prompt
+        assert "instead of forcing a volume record" in prompt
         assert "28-29km" in prompt
         assert "C=PB/no-regression finish" in prompt
         assert "HM <=1:18:00" in prompt
         assert "mid-cycle `test_run` A-gate milestone" in prompt
         assert "10K<=36:00" in prompt
-        assert "next load max 70/71; not 72" in prompt
         assert "label it observation/B only" in prompt
         assert "Do not loosen the A gate to HM 1:18:30" in prompt
         assert "28 -> max 30" in prompt
@@ -1975,11 +2071,8 @@ class TestPromptRegression:
         assert "copy that week's exact `long_run.distance_km`" in prompt
         assert "week_start=2026-09-14" in prompt
         assert "never 2026-09-13" in prompt
-        assert "no 86-92/32km unless explicit recent 85-90km history" in prompt
-        assert "no `86-92km` peak or `32km` unless explicit recent 85-90km history" in prompt
-        assert "never output `30/85`" in prompt
-        assert "share-safe `29km / 84-85km` or `30km / >=86km`" in prompt
-        assert "never `30/85` or `32/92`" in prompt
+        assert "Do not impose ordinary race-distance caps" in prompt
+        assert "Advanced athletes with high actual history must not be forced down" in prompt
         assert "do not stop at `25km`" in prompt
 
     def test_prompt_includes_distance_specificity_block(self):
@@ -1990,9 +2083,8 @@ class TestPromptRegression:
         assert "HM (half marathon)" in prompt
         assert "10K" in prompt
         assert "5K" in prompt
-        assert "default to <=55km for a normal sub-18 5K block" in prompt
-        assert "default to `68-70km`" in prompt
-        assert "avoid 71-75km" in prompt
+        assert "Do not use fixed race-distance volume caps" in prompt
+        assert "Distance changes allocation, not an absolute cap" in prompt
         assert "Do not create a 4-week 5K peak" in prompt
         assert "never start taper the previous Monday (14d)" in prompt
         assert "17-18km only for explicit high-volume 10K" in prompt
@@ -2008,9 +2100,8 @@ class TestPromptRegression:
 
         assert len(system) < 34500
         assert "Distance specificity" in system
-        assert "default to <=55km for a normal sub-18 5K block" in system
-        assert "default to `68-70km`" in system
-        assert "avoid 71-75km" in system
+        assert "Do not use fixed race-distance volume caps" in system
+        assert "Training-load estimator tool" in system
 
     def test_prompt_includes_ramp_integer_boundary_sentinels(self):
         prompt = self._build()
@@ -2050,8 +2141,8 @@ class TestPromptRegression:
 
     def test_prompt_includes_recent_s1_regression_sentinels(self):
         prompt = self._build()
-        assert "normal sub-40/sub-39:30 defaults <=60km" in prompt
-        assert "not 62-64" in prompt
+        assert "Do not use fixed race-distance volume caps" in prompt
+        assert "high-history HM/FM/10K/5K runner may need volume above ordinary templates" in prompt
         assert "training_principles` must explicitly ban deep squat" in prompt
         assert "lunge/弓步" in prompt
         assert "high box jump" in prompt
