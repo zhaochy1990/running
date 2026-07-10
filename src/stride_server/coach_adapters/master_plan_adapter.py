@@ -39,7 +39,7 @@ from ..master_plan_generator import (
     _build_master_plan,
     _format_history_summary,
     _normalise_pb_seconds,
-    _parse_llm_output,
+    _parse_master_plan_output,
     _query_fitness_state,
     _query_history,
     build_master_prompts,
@@ -443,7 +443,7 @@ def generate_master_plan(state: GenState) -> dict:
         raw_response_chars,
     )
 
-    parsed = _parse_llm_output(raw)
+    parsed = _parse_master_plan_output(raw)
     if parsed is None:
         # parse_failed is non-deterministic — gpt-5.5 occasionally returns a
         # truncated / empty body. Retry once with the same prompt before
@@ -460,7 +460,7 @@ def generate_master_plan(state: GenState) -> dict:
             user_message,
             max_tokens=master_max_tokens,
         )
-        parsed = _parse_llm_output(raw_retry)
+        parsed = _parse_master_plan_output(raw_retry)
         if parsed is None:
             err = ValueError(
                 f"parse_failed: all 3 tiers failed twice "

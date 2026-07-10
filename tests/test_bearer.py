@@ -72,6 +72,23 @@ def test_open_mode_when_key_unset(monkeypatch):
     assert claims == {"sub": "anonymous", "role": "anonymous"}
 
 
+def test_open_mode_decodes_present_bearer_without_verifying_signature(monkeypatch, rsa_keypair):
+    private_pem, _ = rsa_keypair
+    _reset_module_state(monkeypatch, {"STRIDE_CONFIG_ENV": "local"})
+    from stride_server.bearer import require_bearer
+
+    token = _issue(
+        private_pem,
+        sub="550e8400-e29b-41d4-a716-446655440000",
+        role="user",
+    )
+
+    claims = require_bearer(authorization=f"Bearer {token}")
+
+    assert claims["sub"] == "550e8400-e29b-41d4-a716-446655440000"
+    assert claims["role"] == "user"
+
+
 def test_rejects_missing_header_when_key_configured(monkeypatch, rsa_keypair):
     _, public_pem = rsa_keypair
     _reset_module_state(monkeypatch, {"STRIDE_AUTH_PUBLIC_KEY_PEM": public_pem})

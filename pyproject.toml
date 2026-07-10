@@ -37,6 +37,7 @@ web = [
     # Foundry exposes them all behind the unified Azure AI Inference API.
     "langchain-azure-ai>=1.0,<2.0",
     "langgraph>=1.0,<2.0",
+    "json5>=0.9",
     "azure-identity>=1.17",
     "azure-keyvault-secrets>=4.8",
     "azure-storage-blob>=12.20",

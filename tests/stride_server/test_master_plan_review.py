@@ -459,6 +459,26 @@ class TestReviewApply:
         assert resp.status_code == 200, resp.text
         return resp.json()["diff"]["diff_id"], resp.json()["diff"]["ops"][0]["id"]
 
+    def _make_resize_diff(self, plan_id: str, phase_id: str, end_date: str) -> tuple[MasterPlanDiff, str]:
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.RESIZE_PHASE,
+            phase_id=phase_id,
+            milestone_id=None,
+            old_value={"end_date": "2026-07-06"},
+            new_value={"end_date": end_date},
+            spec_patch={"end_date": end_date},
+            accepted=None,
+        )
+        diff = MasterPlanDiff(
+            diff_id=str(uuid4()),
+            plan_id=plan_id,
+            ops=[op],
+            ai_explanation="延长基础期",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        return diff, op.id
+
     def test_apply_updates_plan(self, app_client):
         """Apply accepted op → plan phase end_date updated."""
         client, token, tmp_path, _ = app_client
@@ -488,6 +508,52 @@ class TestReviewApply:
         assert updated.version == 1
         # status should still be DRAFT
         assert updated.status == MasterPlanStatus.DRAFT
+
+    def test_apply_accepts_stateless_diff_body(self, app_client):
+        """Client can send the full diff back; apply does not require server memory."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        diff, op_id = self._make_resize_diff(plan.plan_id, plan.phases[0].id, "2026-08-03")
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={
+                "diff": diff.model_dump(mode="json"),
+                "accepted_op_ids": [op_id],
+                "change_reason": "需要更多基础",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["applied"] == 1
+        updated = store.get_plan(USER_UUID, plan.plan_id)
+        assert updated is not None
+        assert updated.phases[0].end_date == "2026-08-03"
+
+    def test_apply_rejects_diff_plan_id_mismatch(self, app_client):
+        """Client-supplied diff must match the path plan id."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        diff, op_id = self._make_resize_diff("other-plan", plan.phases[0].id, "2026-08-03")
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={
+                "diff": diff.model_dump(mode="json"),
+                "accepted_op_ids": [op_id],
+                "change_reason": "需要更多基础",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 400, resp.text
 
     def test_apply_unknown_diff_id_returns_404(self, app_client):
         """Unknown diff_id → 404."""
@@ -553,25 +619,7 @@ class TestReviewApply:
         plan = _make_plan()
         store.save_plan(plan)
 
-        # Build a diff for the actual phase id in the plan
-        phase_id = plan.phases[0].id
-        op = MasterPlanDiffOp(
-            id=str(uuid4()),
-            op=MasterPlanDiffOpKind.RESIZE_PHASE,
-            phase_id=phase_id,
-            milestone_id=None,
-            old_value={"end_date": "2026-07-06"},
-            new_value={"end_date": "2026-08-03"},
-            spec_patch={"end_date": "2026-08-03"},
-            accepted=None,
-        )
-        diff = MasterPlanDiff(
-            diff_id=str(uuid4()),
-            plan_id=plan.plan_id,
-            ops=[op],
-            ai_explanation="延长基础期",
-            created_at=datetime.now(timezone.utc).isoformat(),
-        )
+        diff, op_id = self._make_resize_diff(plan.plan_id, plan.phases[0].id, "2026-08-03")
         mp_mod._PENDING_MP_DIFFS[(USER_UUID, plan.plan_id, diff.diff_id)] = (
             diff, time.monotonic()
         )
@@ -580,7 +628,7 @@ class TestReviewApply:
             f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
             json={
                 "diff_id": diff.diff_id,
-                "accepted_op_ids": [op.id],
+                "accepted_op_ids": [op_id],
                 "change_reason": "需要更多基础",
             },
             headers=_auth(token),
@@ -969,6 +1017,46 @@ class TestCurrentMasterPlan:
 
         resp = client.get(
             "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 404, resp.text
+
+    def test_draft_endpoint_returns_latest_draft(self, app_client):
+        """GET /draft returns the newest draft so review can survive refresh."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        older = _make_plan(status=MasterPlanStatus.DRAFT).model_copy(
+            update={"updated_at": "2026-05-01T00:00:00+00:00"}
+        )
+        newer = _make_plan(status=MasterPlanStatus.DRAFT).model_copy(
+            update={"updated_at": "2026-05-02T00:00:00+00:00"}
+        )
+        active = _make_plan(status=MasterPlanStatus.ACTIVE).model_copy(
+            update={"updated_at": "2026-05-03T00:00:00+00:00"}
+        )
+        store.save_plan(older)
+        store.save_plan(newer)
+        store.save_plan(active)
+
+        resp = client.get(
+            "/api/users/me/master-plan/draft",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["plan_id"] == newer.plan_id
+        assert data["status"] == "draft"
+
+    def test_draft_endpoint_returns_404_without_draft(self, app_client):
+        """GET /draft returns 404 when only active/archived plans exist."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        store.save_plan(_make_plan(status=MasterPlanStatus.ACTIVE))
+
+        resp = client.get(
+            "/api/users/me/master-plan/draft",
             headers=_auth(token),
         )
 

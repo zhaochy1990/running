@@ -1,12 +1,11 @@
-"""Unit tests for ``stride_server.llm_client.LLMClient.chat_sync`` —
-specifically the bind-branching behaviour added in PR #25.
+"""Unit tests for ``stride_server.llm_client.LLMClient.chat_sync``.
 
-The historical bug (silent ``max_tokens`` drop on the Responses API
-path) is exactly what these tests pin: when the bound model is using
-``use_responses_api``, ``max_tokens`` must reach the SDK as
-``max_output_tokens`` (not ``max_tokens``); for chat-completions the
-inverse. ``reasoning_effort`` must reach the SDK only when the caller
-explicitly opts in.
+The public API keeps the historical ``max_tokens`` argument, but recent
+``langchain-openai`` normalizes constructor token caps to the internal
+``max_completion_tokens`` default for both Chat Completions and Responses.
+Per-call overrides must bind that same key so they replace the default instead
+of adding a second, conflicting request-body parameter. ``reasoning_effort``
+must reach the SDK only when the caller explicitly opts in.
 """
 
 from __future__ import annotations
@@ -50,34 +49,35 @@ def _make_client(fake: _FakeLangChainModel) -> llm_client_mod.LLMClient:
 
 
 # ---------------------------------------------------------------------------
-# max_tokens binding — branches on use_responses_api
+# max_tokens binding — overrides the langchain-openai normalized default
 # ---------------------------------------------------------------------------
 
 
-def test_chat_sync_responses_api_binds_max_output_tokens():
-    """When the bound model uses the Responses API, ``max_tokens=N`` must
-    bind as ``max_output_tokens=N`` (not ``max_tokens``). This is the
-    fix for the original truncation bug where langchain-openai's
-    Responses-API path silently drops ``max_tokens``."""
+def test_chat_sync_responses_api_binds_max_completion_tokens():
+    """Responses API overrides must use langchain-openai's normalized
+    ``max_completion_tokens`` key; ``max_output_tokens`` would not replace the
+    constructor default in current SDK versions."""
     fake = _FakeLangChainModel(use_responses_api=True)
     client = _make_client(fake)
     client.chat_sync("sys", [{"role": "user", "content": "hi"}], max_tokens=32768)
     assert len(fake.bind_calls) == 1
     kwargs = fake.bind_calls[0]
-    assert kwargs == {"max_output_tokens": 32768}
+    assert kwargs == {"max_completion_tokens": 32768}
     assert "max_tokens" not in kwargs
+    assert "max_output_tokens" not in kwargs
 
 
-def test_chat_sync_chat_completions_binds_max_tokens():
-    """When the bound model uses Chat Completions, ``max_tokens=N`` must
-    bind as ``max_tokens=N`` (the Chat-Completions kwarg name).
-    ``max_output_tokens`` is unknown to that API and must NOT be set."""
+def test_chat_sync_chat_completions_binds_max_completion_tokens():
+    """Chat Completions overrides also use ``max_completion_tokens`` so they
+    replace the constructor default instead of adding an incompatible
+    ``max_tokens`` request parameter."""
     fake = _FakeLangChainModel(use_responses_api=False)
     client = _make_client(fake)
     client.chat_sync("sys", [{"role": "user", "content": "hi"}], max_tokens=4096)
     assert len(fake.bind_calls) == 1
     kwargs = fake.bind_calls[0]
-    assert kwargs == {"max_tokens": 4096}
+    assert kwargs == {"max_completion_tokens": 4096}
+    assert "max_tokens" not in kwargs
     assert "max_output_tokens" not in kwargs
 
 
@@ -122,8 +122,8 @@ def test_chat_sync_reasoning_effort_none_omitted():
 
 
 def test_chat_sync_max_tokens_and_reasoning_effort_combined():
-    """Both kwargs can be set together. Responses-API path:
-    ``max_output_tokens`` + ``reasoning_effort``."""
+    """Both kwargs can be set together. Token cap overrides use
+    ``max_completion_tokens``; reasoning keeps its direct kwarg."""
     fake = _FakeLangChainModel(use_responses_api=True)
     client = _make_client(fake)
     client.chat_sync(
@@ -131,7 +131,7 @@ def test_chat_sync_max_tokens_and_reasoning_effort_combined():
         max_tokens=65536, reasoning_effort="high",
     )
     assert fake.bind_calls == [
-        {"max_output_tokens": 65536, "reasoning_effort": "high"},
+        {"max_completion_tokens": 65536, "reasoning_effort": "high"},
     ]
 
 

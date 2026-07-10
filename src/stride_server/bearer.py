@@ -99,8 +99,11 @@ def require_bearer(
     """FastAPI dependency — verify Authorization Bearer against the auth-service.
 
     Returns the decoded claims on success. When the public key is not
-    configured, returns a synthetic ``{"sub": "anonymous", "role": "anonymous"}``
-    claims dict so downstream handlers can still run in dev mode.
+    configured and local fail-open auth is enabled, a present Bearer token is
+    decoded without signature verification so local development still preserves
+    the auth-service ``sub``. If no Bearer is present, returns a synthetic
+    ``{"sub": "anonymous", "role": "anonymous"}`` claims dict so anonymous
+    dev-only endpoints can still run.
     """
     cfg = _resolve_server_config(request)
     public_key = (
@@ -111,6 +114,30 @@ def require_bearer(
     if public_key is None:
         if cfg.auth.allow_insecure_without_key:
             _warn_open_once()
+            if authorization and authorization.lower().startswith("bearer "):
+                token = authorization[len("Bearer ") :].strip()
+                try:
+                    claims = jwt.decode(
+                        token,
+                        options={
+                            "verify_signature": False,
+                            "verify_aud": False,
+                            "verify_iss": False,
+                        },
+                    )
+                except jwt.InvalidTokenError as exc:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail=f"Invalid token: {exc}",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    ) from exc
+                if not isinstance(claims, dict) or not claims.get("sub"):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Invalid token: missing sub claim",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
+                return claims
             return {"sub": "anonymous", "role": "anonymous"}
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

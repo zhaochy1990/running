@@ -7,6 +7,7 @@ Implemented endpoints:
   POST /api/users/me/master-plan/{plan_id}/review/apply     — T21: apply diff
   POST /api/users/me/master-plan/{plan_id}/confirm          — T22: confirm draft→active
   GET  /api/users/me/master-plan/current                    — T23: active plan
+  GET  /api/users/me/master-plan/draft                      — latest draft plan
   GET  /api/users/me/master-plan/{plan_id}                  — T23: by id
   POST /api/users/me/master-plan/{plan_id}/adjust/messages  — T42: adjust chat (active)
   POST /api/users/me/master-plan/{plan_id}/adjust/apply     — T42: apply adjust diff
@@ -422,7 +423,9 @@ class ReviewMessagesRequest(BaseModel):
 
 
 class ReviewApplyRequest(BaseModel):
-    diff_id: str
+    diff: MasterPlanDiff | None = None
+    # Back-compat for older clients/tests that apply a server-held pending diff.
+    diff_id: str | None = None
     accepted_op_ids: list[str]
     change_reason: str = ""
 
@@ -545,11 +548,21 @@ def review_apply(
             detail="该总纲已确认（status=active），不能再 apply review diff",
         )
 
-    diff = _mp_diff_get(user_id, plan_id, body.diff_id)
+    diff = body.diff
+    if diff is None and body.diff_id:
+        diff = _mp_diff_get(user_id, plan_id, body.diff_id)
     if diff is None:
+        detail = "diff body is required"
+        if body.diff_id:
+            detail = f"Diff '{body.diff_id}' not found or expired (TTL={_MP_DIFF_TTL}s)"
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Diff '{body.diff_id}' not found or expired (TTL={_MP_DIFF_TTL}s)",
+            detail=detail,
+        )
+    if diff.plan_id != plan_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"diff plan_id {diff.plan_id!r} does not match path plan_id {plan_id!r}",
         )
 
     # Filter to known op ids; silently skip unknowns (fault-tolerant)
@@ -564,7 +577,7 @@ def review_apply(
         updated_plan = plan
 
     # Clean up pending diff after successful apply
-    _PENDING_MP_DIFFS.pop((user_id, plan_id, body.diff_id), None)
+    _PENDING_MP_DIFFS.pop((user_id, plan_id, diff.diff_id), None)
 
     return {
         "applied": applied,
@@ -734,6 +747,28 @@ def get_current_master_plan(
         )
 
     return _build_current_response(plan)
+
+
+@router.get("/api/users/me/master-plan/draft")
+def get_latest_draft_master_plan(
+    payload: dict = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Return the newest DRAFT master plan for review, if one exists."""
+    user_id: str = payload["sub"]
+    store = get_master_plan_store()
+
+    drafts = [
+        plan for plan in store.list_plans(user_id)
+        if plan.status == MasterPlanStatus.DRAFT
+    ]
+    if not drafts:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="当前没有待审阅的训练总纲",
+        )
+
+    drafts.sort(key=lambda p: p.updated_at or p.created_at, reverse=True)
+    return _build_current_response(drafts[0])
 
 
 @router.get("/api/users/me/master-plan/{plan_id}")
