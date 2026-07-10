@@ -1700,7 +1700,7 @@ class TestRunGenerateJob:
         """Unexpected exception in _run_generate_job_inner → job FAILED, no crash."""
         import stride_server.master_plan_generator as mod
 
-        def _exploding_history(_uid: str) -> dict:
+        def _exploding_history(_uid: str, *, as_of=None) -> dict:
             raise RuntimeError("unexpected database crash!")
 
         monkeypatch.setattr(mod, "_query_history", _exploding_history)
