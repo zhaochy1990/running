@@ -64,7 +64,12 @@ def _compute_bmi(weight_kg: float | None, height_cm: float | None) -> float | No
     return round(weight_kg / (height_m * height_m), 2)
 
 
-def _load_body_composition(db, profile: dict | None) -> dict | None:
+def _load_body_composition(
+    db,
+    profile: dict | None,
+    *,
+    as_of: date_cls | None = None,
+) -> dict | None:
     """Read the latest body-composition scan via the canonical Database reader
     (no inline SQL) and assemble the planner baseline block.
 
@@ -78,7 +83,10 @@ def _load_body_composition(db, profile: dict | None) -> dict | None:
     Returns ``None`` when there is no scan (graceful degrade — performance-only
     milestones remain possible).
     """
-    row = db.latest_body_composition_scan()
+    if as_of is None:
+        row = db.latest_body_composition_scan()
+    else:
+        row = db.body_composition_scan_at_or_before(as_of.isoformat())
     if row is None:
         return None
     weight_kg = row["weight_kg"]
@@ -144,7 +152,7 @@ def _history_with_pb_seconds(history: dict, pb_seconds: dict[str, float]) -> dic
 
 
 def _build_context_snippets(
-    history: dict, fitness_state: dict, goal: dict
+    history: dict, fitness_state: dict, goal: dict, *, as_of: date_cls | None = None
 ) -> dict[str, Any]:
     """Assemble the live-data snippets shown on the generating screen (screen-2):
     avg/max weekly km, weeks-to-race, CTL/ATL/form. Best-effort — every field is
@@ -155,7 +163,7 @@ def _build_context_snippets(
     if race_date:
         try:
             snippets["weeks_to_race"] = max(
-                0, (date_cls.fromisoformat(race_date) - today_shanghai()).days // 7
+                0, (date_cls.fromisoformat(race_date) - (as_of or today_shanghai())).days // 7
             )
         except (ValueError, TypeError):
             pass
@@ -188,10 +196,21 @@ def load_master_context(state: GenState) -> dict:
     """
     user_id = state.get("user_id") or ""
     job_id = state.get("job_id") or ""
+    payload = state.get("input_payload") or {}
+    goal = payload.get("goal") or {}
+    profile = payload.get("profile")
+
+    as_of = today_shanghai()
+    raw_as_of = goal.get("as_of_date")
+    if raw_as_of:
+        try:
+            as_of = date_cls.fromisoformat(str(raw_as_of))
+        except (ValueError, TypeError):
+            logger.warning("load_master_context: ignoring invalid as_of_date=%r", raw_as_of)
 
     if job_id:
         update_job(job_id, stage=JobStage.READING_HISTORY, progress=10)
-    history = _query_history(user_id)
+    history = _query_history(user_id, as_of=as_of)
     logger.debug(
         "load_master_context: user=%s history_loaded activities=%d",
         user_id,
@@ -200,16 +219,13 @@ def load_master_context(state: GenState) -> dict:
     if job_id:
         update_job(job_id, stage=JobStage.EVALUATING, progress=30)
     logger.debug("load_master_context: user=%s querying fitness state...", user_id)
-    fitness_state = _query_fitness_state(user_id)
+    fitness_state = _query_fitness_state(user_id, as_of=as_of)
     logger.debug(
         "load_master_context: user=%s fitness_summary=%r",
         user_id,
         fitness_state.get("summary"),
     )
 
-    payload = state.get("input_payload") or {}
-    goal = payload.get("goal") or {}
-    profile = payload.get("profile")
     continuity = None
     body_composition: dict | None = None
     current_phase = None
@@ -217,7 +233,6 @@ def load_master_context(state: GenState) -> dict:
     try:
         from stride_storage.sqlite.database import Database
         db = Database(user=user_id)
-        as_of = today_shanghai()
         try:
             pb_seconds = _load_pb_seconds(db)
         except Exception as exc:  # noqa: BLE001 — PB read must not block gen
@@ -240,7 +255,7 @@ def load_master_context(state: GenState) -> dict:
         # Body-composition baseline. Reuse the same db handle as the explicit
         # PB/continuity context load above.
         try:
-            body_composition = _load_body_composition(db, profile)
+            body_composition = _load_body_composition(db, profile, as_of=as_of)
         except Exception as exc:  # noqa: BLE001 — degrade to perf-only milestones
             logger.warning("load_master_context: body_composition failed: %s", exc)
     except Exception as exc:  # noqa: BLE001 — context load must never hard-fail
@@ -261,7 +276,9 @@ def load_master_context(state: GenState) -> dict:
         try:
             update_job(
                 job_id,
-                context_snippets=_build_context_snippets(history, fitness_state, goal),
+                context_snippets=_build_context_snippets(
+                    history, fitness_state, goal, as_of=as_of
+                ),
             )
         except Exception as exc:  # noqa: BLE001 — snippets are cosmetic
             logger.warning("load_master_context: snippet stash failed: %s", exc)

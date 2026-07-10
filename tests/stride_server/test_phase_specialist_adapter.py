@@ -511,6 +511,29 @@ def test_prompt_carries_one_pace_table_and_n_volume_budgets(patch_db, monkeypatc
     assert "周量 90km" in system_prompt
 
 
+def test_prompt_raises_milestone_week_long_run_budget(patch_db, monkeypatch):
+    metas = _week_metas([80.0, 90.0])
+    folders = [m.week_folder for m in metas]
+    milestone = Milestone(
+        id="m1",
+        type=MilestoneType.LONG_RUN,
+        date="2026-06-22",  # week 2 in the test metas
+        phase_id="ph1",
+        target="完成 31km 长跑，含 16km MP",
+        metric="long_run_km",
+        comparator=">=",
+        target_value=31.0,
+    )
+    model = FakeBindableLLM([ai_text(_batch(folders))])
+    _install_model(monkeypatch, model)
+
+    generate_specialist_phase(_build_phase(), metas, _context(), milestones=[milestone])
+    system_prompt = model.captured[0][0]
+
+    assert "第 2/2 周" in system_prompt
+    assert "周量 90km · 长跑 31km" in system_prompt
+
+
 def test_deload_marker_in_prompt(patch_db, monkeypatch):
     metas = _week_metas([70.0, 80.0, 60.0])  # week 3 dips → deload
     folders = [m.week_folder for m in metas]

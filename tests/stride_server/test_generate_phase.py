@@ -137,11 +137,12 @@ def _clean_plan_dict(week_folder: str) -> dict:
 
 def _no_rest_plan_dict(week_folder: str) -> dict:
     """A plan that violates rest_days: a session on all 7 days of the week."""
-    # 7 small runs (≈5km each, total 35km < 40km target so weekly_progression
-    # does NOT also trip — the ONLY violation is rest_days).
+    # 7 small runs (total 40km, matching target) so weekly_progression and
+    # weekly_target_volume do NOT also trip — the ONLY violation is rest_days.
     sessions = []
     for i in range(7):
-        sessions.append(_run_session(f"2026-06-{15 + i:02d}", 5000, f"run d{i}"))
+        dist = 4000 if i == 6 else 6000
+        sessions.append(_run_session(f"2026-06-{15 + i:02d}", dist, f"run d{i}"))
     return {
         "schema": "weekly-plan/v1",
         "week_folder": week_folder,
@@ -304,35 +305,113 @@ def test_parse_failed_degrades_to_empty(patch_db, monkeypatch):
 def test_prev_week_km_uses_target_not_generated_km(patch_db, monkeypatch):
     """Week i's progression check uses week_metas[i-1].target_weekly_km.
 
-    Targets are flat at 40km. The generated km DRIFTS: week 1 = 20km,
-    week 2 = 40km. A *generated-km* progression check would see 40/20 = 2.0x
-    and trip the 1.10x cap. The *target-based* check sees 40/40 = 1.0x and
-    passes. So generate_phase_validated must return BOTH weeks (no false violation).
+    Targets are 40km then 43km. The generated km DRIFTS inside the allowed
+    target-volume tolerance: week 1 = 39km, week 2 = 43km. A *generated-km*
+    progression check would see 43/39 = 1.10x+ and trip the 1.10x cap. The
+    *target-based* check sees 43/40 = 1.075x and passes. So
+    generate_phase_validated must return BOTH weeks (no false violation).
     """
-    metas = _week_metas([40.0, 40.0])
+    metas = _week_metas([40.0, 43.0])
     folders = [m.week_folder for m in metas]
 
-    # Week 1 generated total = 20km (small), week 2 = 40km (matches target).
+    # Week 1 generated total = 39km (within target tolerance), week 2 = 43km.
     week1 = {
         "schema": "weekly-plan/v1",
         "week_folder": folders[0],
         "sessions": [
-            _run_session("2026-06-15", 7000, "easy"),
-            _run_session("2026-06-18", 7000, "easy"),
-            _run_session("2026-06-21", 6000, "长跑 6km"),
+            _run_session("2026-06-15", 13000, "easy"),
+            _run_session("2026-06-18", 13000, "easy"),
+            _run_session("2026-06-21", 13000, "长跑 13km"),
         ],
         "nutrition": [],
-        "notes_md": "20km week",
+        "notes_md": "39km week",
     }
-    week2 = _clean_plan_dict(folders[1])  # 40km total
+    week2 = {
+        "schema": "weekly-plan/v1",
+        "week_folder": folders[1],
+        "sessions": [
+            _run_session("2026-06-22", 15000, "长跑 15km"),
+            _run_session("2026-06-25", 14000, "easy"),
+            _run_session("2026-06-28", 14000, "easy"),
+        ],
+        "nutrition": [],
+        "notes_md": "43km week",
+    }
     model = FakeBindableLLM([ai_text(_batch([week1, week2]))])
     _install_model(monkeypatch, model)
 
     out = generate_phase_validated(_build_phase(), metas, _context())
-    # If prev_week_km used the generated 20km, week2 (40km) = 2.0x → dropped.
-    # Target-based (40/40 = 1.0x) → both survive.
+    # If prev_week_km used the generated 39km, week2 (43km) > 1.10x → dropped.
+    # Target-based (43/40 = 1.075x) → both survive.
     assert len(out) == 2
     assert len(model.captured) == 1  # no regen (no false violation)
+
+
+def test_post_deload_week_uses_last_load_target_for_progression(patch_db, monkeypatch):
+    """The per-week rule gate must mirror season/master-plan semantics:
+    recovery weeks are intentional dips, and the following load week is compared
+    to the last load target rather than the recovery trough.
+
+    Targets: 80 -> 86 -> 64(deload) -> 88. Generated weeks match those targets.
+    Comparing week 4 against the 64km trough would falsely trip 1.38x; comparing
+    against the previous load week 86km passes at 1.02x.
+    """
+    metas = _week_metas([80.0, 86.0, 64.0, 88.0])
+    folders = [m.week_folder for m in metas]
+
+    week_dicts = [
+        {
+            "schema": "weekly-plan/v1",
+            "week_folder": folders[0],
+            "sessions": [
+                _run_session("2026-06-15", 28000, "长跑 28km"),
+                _run_session("2026-06-17", 22000, "阈值"),
+                _run_session("2026-06-19", 16000, "easy"),
+                _run_session("2026-06-21", 14000, "easy"),
+            ],
+            "nutrition": [],
+        },
+        {
+            "schema": "weekly-plan/v1",
+            "week_folder": folders[1],
+            "sessions": [
+                _run_session("2026-06-22", 30000, "长跑 30km"),
+                _run_session("2026-06-24", 22000, "tempo"),
+                _run_session("2026-06-26", 18000, "easy"),
+                _run_session("2026-06-28", 16000, "easy"),
+            ],
+            "nutrition": [],
+        },
+        {
+            "schema": "weekly-plan/v1",
+            "week_folder": folders[2],
+            "sessions": [
+                _run_session("2026-06-29", 22000, "轻松长跑 22km"),
+                _run_session("2026-07-01", 16000, "easy"),
+                _run_session("2026-07-03", 14000, "easy"),
+                _run_session("2026-07-05", 12000, "easy"),
+            ],
+            "nutrition": [],
+        },
+        {
+            "schema": "weekly-plan/v1",
+            "week_folder": folders[3],
+            "sessions": [
+                _run_session("2026-07-06", 30000, "长跑 30km"),
+                _run_session("2026-07-08", 24000, "MP"),
+                _run_session("2026-07-10", 18000, "easy"),
+                _run_session("2026-07-12", 16000, "easy"),
+            ],
+            "nutrition": [],
+        },
+    ]
+    model = FakeBindableLLM([ai_text(_batch(week_dicts))])
+    _install_model(monkeypatch, model)
+
+    out = generate_phase_validated(_build_phase(), metas, _context(), max_attempts=1)
+
+    assert len(out) == 4
+    assert len(model.captured) == 1
 
 
 # ---------------------------------------------------------------------------

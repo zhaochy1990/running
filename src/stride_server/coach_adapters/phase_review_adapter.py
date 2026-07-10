@@ -93,12 +93,20 @@ def _render_milestone_summary(milestones: list[Milestone]) -> str | None:
             tv = m.target_value
             tv_str = str(int(tv)) if float(tv).is_integer() else str(tv)
             quant = f"{m.metric} {m.comparator} {tv_str}"
-        if target and quant:
-            parts.append(f"{target}（{quant}）")
-        elif quant:
-            parts.append(quant)
-        elif target:
-            parts.append(target)
+        meta = " | ".join(
+            token
+            for token in (
+                m.date,
+                m.type.value,
+                quant,
+            )
+            if token
+        )
+        body = target or quant
+        if body and meta:
+            parts.append(f"[{meta}] {body}")
+        elif body:
+            parts.append(body)
     return "；".join(parts) if parts else None
 
 

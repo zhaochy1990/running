@@ -61,6 +61,21 @@ class TestBodyCompositionUpsert:
         latest = db.latest_body_composition_scan()
         assert dict(latest)["scan_date"] == "2026-04-23"
 
+    def test_scan_at_or_before_is_inclusive(self, db):
+        db.upsert_body_composition_scan(_make_scan("2026-04-01", weight=70.0))
+        db.upsert_body_composition_scan(_make_scan("2026-04-23", weight=71.0))
+        db.upsert_body_composition_scan(_make_scan("2026-05-10", weight=72.0))
+
+        exact = db.body_composition_scan_at_or_before("2026-04-23")
+        between = db.body_composition_scan_at_or_before("2026-05-01")
+        before_all = db.body_composition_scan_at_or_before("2026-03-31")
+
+        assert exact is not None
+        assert dict(exact)["scan_date"] == "2026-04-23"
+        assert between is not None
+        assert dict(between)["scan_date"] == "2026-04-23"
+        assert before_all is None
+
     def test_get_missing_returns_none(self, db):
         assert db.get_body_composition_scan("2099-01-01") is None
         assert db.get_body_composition_segments("2099-01-01") == []

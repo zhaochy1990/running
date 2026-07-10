@@ -78,12 +78,15 @@ def _parse_llm_output(raw: str) -> dict | None:
         except json.JSONDecodeError:
             pass
 
-    # Layer 3: balanced braces
+    # Layer 3: first complete JSON object. ``raw_decode`` is stricter than the
+    # old first-brace→last-brace slice in the useful direction: it returns the
+    # first complete object and tolerates trailing prose/stray braces, while
+    # still failing when the object itself is malformed.
     first_brace = raw.find("{")
-    last_brace = raw.rfind("}")
-    if first_brace != -1 and last_brace > first_brace:
+    if first_brace != -1:
         try:
-            return json.loads(raw[first_brace : last_brace + 1])
+            parsed, _end = json.JSONDecoder().raw_decode(raw[first_brace:])
+            return parsed if isinstance(parsed, dict) else None
         except json.JSONDecodeError:
             pass
 
@@ -239,6 +242,7 @@ def _build_master_plan(
         )
 
     milestones = _align_long_run_milestones_to_weeks(milestones, weeks)
+    weeks = _raise_post_recovery_under_rebound(weeks)
     weeks, milestones = _cap_standard_10k_long_runs(weeks, milestones, goal)
     weeks, milestones = _cap_standard_5k_long_runs(weeks, milestones, goal)
     weeks = _drop_three_day_stacked_hard_sessions(weeks, goal, profile)
@@ -582,6 +586,63 @@ def _align_long_run_milestones_to_weeks(
         else:
             aligned.append(milestone)
     return aligned
+
+
+def _raise_post_recovery_under_rebound(
+    weeks: list[MasterPlanWeek], *, min_rebound_ratio: float = 0.90
+) -> list[MasterPlanWeek]:
+    """Raise load weeks that crawl up from a recovery trough.
+
+    A recovery week is an intentional cut from the prior load week; the next
+    non-taper load week should be anchored to that prior load week, not to the
+    trough. This post-process is deliberately narrow: it never touches taper
+    weeks and never raises above the prior load week.
+    """
+    if not weeks:
+        return weeks
+    out: list[MasterPlanWeek] = []
+    current_load: MasterPlanWeek | None = None
+    pending_recovery: MasterPlanWeek | None = None
+    prior_load_before_recovery: MasterPlanWeek | None = None
+    changed = False
+
+    for week in sorted(weeks, key=lambda w: (w.week_index, w.week_start)):
+        if week.is_recovery_week or week.is_taper_week:
+            if week.is_recovery_week and current_load is not None:
+                pending_recovery = week
+                prior_load_before_recovery = current_load
+            out.append(week)
+            continue
+
+        emitted = week
+        if pending_recovery is not None and prior_load_before_recovery is not None:
+            prior = float(prior_load_before_recovery.target_weekly_km_high or 0.0)
+            current = float(week.target_weekly_km_high or 0.0)
+            floor = round(prior * min_rebound_ratio, 1)
+            if prior > 0 and current > 0 and current < floor:
+                delta = floor - current
+                low = float(week.target_weekly_km_low or 0.0)
+                emitted = week.model_copy(
+                    update={
+                        "target_weekly_km_high": floor,
+                        "target_weekly_km_low": round(max(0.0, low + delta), 1),
+                    }
+                )
+                changed = True
+                logger.info(
+                    "raised post-recovery week %s from %.1fkm to %.1fkm "
+                    "against prior load %.1fkm",
+                    week.week_index,
+                    current,
+                    floor,
+                    prior,
+                )
+            pending_recovery = None
+            prior_load_before_recovery = None
+        current_load = emitted
+        out.append(emitted)
+
+    return out if changed else weeks
 
 
 def _normalise_target_distance(value: object) -> str:
@@ -1221,6 +1282,7 @@ def _query_weekly_profile(
     *,
     weeks: int = 16,
     threshold_speed_mps: float | None = None,
+    as_of: date_cls | None = None,
 ) -> list[dict[str, Any]]:
     """Build a per-Shanghai-week athlete profile, oldest → newest.
 
@@ -1282,6 +1344,7 @@ def _query_weekly_profile(
         pace_speed_clause = (
             f"(duration_s > 0 AND ({_PER_RUN_KM}) * 1000.0 / duration_s >= {threshold_speed_mps})"
         )
+    as_of = as_of or today_shanghai()
     rows = conn.execute(
         f"""
         SELECT {act_monday} AS wk,
@@ -1299,8 +1362,10 @@ def _query_weekly_profile(
                SUM(CASE WHEN {race_like} THEN 1 ELSE 0 END) AS n_race
         FROM activities
         WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
+          AND date(datetime(date, '+8 hours')) <= ?
         GROUP BY wk
-        """
+        """,
+        (as_of.isoformat(),),
     ).fetchall()
     for r in rows:
         wk = r[0]
@@ -1328,8 +1393,10 @@ def _query_weekly_profile(
         f"""
         SELECT {dtl_monday} AS wk, date, training_dose, chronic_load, acute_load, form
         FROM daily_training_load
+        WHERE date <= ?
         ORDER BY date ASC
-        """
+        """,
+        (as_of.isoformat(),),
     ).fetchall()
     dose_acc: dict[str, float] = {}
     for r in rows:
@@ -1354,8 +1421,10 @@ def _query_weekly_profile(
         SELECT {health_monday} AS wk, AVG(rhr) AS rhr
         FROM daily_health
         WHERE rhr IS NOT NULL
+          AND {health_norm} <= ?
         GROUP BY wk
-        """
+        """,
+        (as_of.isoformat(),),
     ).fetchall()
     for r in rows:
         wk = r[0]
@@ -1370,8 +1439,10 @@ def _query_weekly_profile(
         SELECT {hrv_monday} AS wk, AVG(last_night_avg) AS hrv
         FROM daily_hrv
         WHERE last_night_avg IS NOT NULL
+          AND date <= ?
         GROUP BY wk
-        """
+        """,
+        (as_of.isoformat(),),
     ).fetchall()
     for r in rows:
         wk = r[0]
@@ -1384,7 +1455,7 @@ def _query_weekly_profile(
     return ordered[-weeks:]
 
 
-def _query_history(user_id: str) -> dict[str, Any]:
+def _query_history(user_id: str, *, as_of: date_cls | None = None) -> dict[str, Any]:
     """Query activities DB for a 3-year training history summary.
 
     Returns a dict with keys: monthly_km, max_weekly_km, total_activities,
@@ -1414,6 +1485,8 @@ def _query_history(user_id: str) -> dict[str, Any]:
         # users). RUN_SPORT_SQL_LIST is the same single-source fragment
         # ability.py uses; keep them in sync.
 
+        as_of = as_of or today_shanghai()
+
         # Monthly running km (last 36 months). NOTE: activities.distance_m is
         # misnamed — it stores KILOMETERS (magnitude < 500), with legacy rows
         # in meters (>= 500). Normalise per-row with the same heuristic as
@@ -1433,10 +1506,12 @@ def _query_history(user_id: str) -> dict[str, Any]:
                    {_HR_EXPR} AS hours
             FROM activities
             WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
-              AND date >= date('now', '-36 months')
+              AND date(datetime(date, '+8 hours')) >= date(?, '-36 months')
+              AND date(datetime(date, '+8 hours')) <= ?
             GROUP BY month
             ORDER BY month
-            """
+            """,
+            (as_of.isoformat(), as_of.isoformat()),
         ).fetchall()
         result["monthly_km"] = [
             {"month": r[0], "km": round(r[1], 1), "hours": round(r[2] or 0.0, 1)}
@@ -1452,16 +1527,23 @@ def _query_history(user_id: str) -> dict[str, Any]:
                        {_KM_EXPR} AS week_km
                 FROM activities
                 WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
-                  AND date >= date('now', '-36 months')
+                  AND date(datetime(date, '+8 hours')) >= date(?, '-36 months')
+                  AND date(datetime(date, '+8 hours')) <= ?
                 GROUP BY wk
             )
-            """
+            """,
+            (as_of.isoformat(), as_of.isoformat()),
         ).fetchone()
         result["max_weekly_km"] = round(row[0] or 0.0, 1)
 
         # Total running activities
         row = conn.execute(
-            f"SELECT COUNT(*) FROM activities WHERE sport_type IN ({RUN_SPORT_SQL_LIST})"
+            f"""
+            SELECT COUNT(*) FROM activities
+            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
+              AND date(datetime(date, '+8 hours')) <= ?
+            """,
+            (as_of.isoformat(),),
         ).fetchone()
         result["total_activities"] = row[0] or 0
 
@@ -1475,7 +1557,7 @@ def _query_history(user_id: str) -> dict[str, Any]:
             )
             threshold_speed_mps: float | None = None
             try:
-                snap = SQLiteRunningCalibrationRepository(db).fetch_latest(today_shanghai())
+                snap = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of)
                 if snap is not None:
                     threshold_speed_mps = snap.threshold_speed_mps
             except Exception:  # noqa: BLE001 — calibration read must not block
@@ -1483,7 +1565,7 @@ def _query_history(user_id: str) -> dict[str, Any]:
                     "_query_history: threshold_speed read failed for %s", user_id, exc_info=True
                 )
             result["weekly_profile"] = _query_weekly_profile(
-                conn, weeks=16, threshold_speed_mps=threshold_speed_mps
+                conn, weeks=16, threshold_speed_mps=threshold_speed_mps, as_of=as_of
             )
         except Exception:  # noqa: BLE001 — weekly profile must not block gen
             logger.warning(
@@ -1611,7 +1693,7 @@ def _ensure_training_load_current(db, as_of=None) -> None:
         logger.warning("_ensure_training_load_current failed: %s", exc)
 
 
-def _query_fitness_state(user_id: str) -> dict[str, Any]:
+def _query_fitness_state(user_id: str, *, as_of: date_cls | None = None) -> dict[str, Any]:
     """Query STRIDE daily_training_load for the most recent fitness snapshot.
 
     Returns the latest CTL/ATL/form from the canonical STRIDE PMC table (not
@@ -1629,10 +1711,9 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
     }
     try:
         from stride_storage.sqlite.database import Database
-        from stride_core.timefmt import today_shanghai
-
         db = Database(user=user_id)
         conn = db._conn
+        as_of = as_of or today_shanghai()
 
         # daily_training_load is maintained at sync time by the post-sync
         # TrainingLoadHandler, so this call is now a cheap freshness check
@@ -1641,11 +1722,12 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
         # (seeded from the last persisted EWMA) when the DB is stale. It is NOT
         # the old ~47s full 365-day recompute. Kept as a safety net so a
         # generation against an un-synced DB still gets a current fitness state.
-        _ensure_training_load_current(db, as_of=today_shanghai())
+        _ensure_training_load_current(db, as_of=as_of)
 
         row = conn.execute(
             "SELECT date, acute_load, chronic_load, form FROM daily_training_load "
-            "ORDER BY date DESC LIMIT 1"
+            "WHERE date <= ? ORDER BY date DESC LIMIT 1",
+            (as_of.isoformat(),),
         ).fetchone()
         # RHR for the fitness context: prefer the calibration baseline (smoothed
         # P10/25 over 30-90d — the CLAUDE.md single source) over a single noisy
@@ -1654,11 +1736,14 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
         from stride_storage.sqlite.calibration_connector import (
             SQLiteRunningCalibrationRepository,
         )
-        _calib = SQLiteRunningCalibrationRepository(db).fetch_latest()
+        _calib = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of)
         rhr = _calib.rhr_baseline if _calib and _calib.rhr_baseline is not None else None
         if rhr is None:
             rhr_row = conn.execute(
-                "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
+                "SELECT rhr FROM daily_health WHERE rhr IS NOT NULL "
+                "AND (substr(date,1,4)||'-'||substr(date,5,2)||'-'||substr(date,7,2)) <= ? "
+                "ORDER BY date DESC LIMIT 1",
+                (as_of.isoformat(),),
             ).fetchone()
             rhr = rhr_row[0] if rhr_row else None
 
@@ -1666,7 +1751,8 @@ def _query_fitness_state(user_id: str) -> dict[str, Any]:
 
         hrv_row = conn.execute(
             f"SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
-            "WHERE last_night_avg IS NOT NULL ORDER BY date DESC LIMIT 1"
+            "WHERE last_night_avg IS NOT NULL AND date <= ? ORDER BY date DESC LIMIT 1",
+            (as_of.isoformat(),),
         ).fetchone()
         hrv_date = hrv_row[0] if hrv_row else None
         hrv = hrv_row[1] if hrv_row else None
@@ -2051,6 +2137,7 @@ def build_master_prompts(
     # Authoritative current-phase block (deterministic pre-generation): the planner
     # MUST begin at recommended_entry_phase and must not re-prescribe completed phases.
     current_phase_block = ""
+    explicit_season_start = bool(goal.get("season_start"))
     if current_phase is not None and current_phase.recommended_entry_phase is not None:
         cp = current_phase
         cur = cp.current_phase_type.value if cp.current_phase_type else "unknown"
@@ -2058,7 +2145,12 @@ def build_master_prompts(
         wip = f"~{cp.weeks_in_phase} weeks" if cp.weeks_in_phase is not None else "unknown"
         src = {"existing_plan": "read prior training plan",
                "inferred": "inferred from recent activity records"}.get(cp.source, cp.source)
-        current_phase_block = "\n" + render_fragment("shared/blocks/current_phase.md", {
+        current_phase_fragment = (
+            "shared/blocks/current_phase_no_lead_in.md"
+            if explicit_season_start
+            else "shared/blocks/current_phase.md"
+        )
+        current_phase_block = "\n" + render_fragment(current_phase_fragment, {
             "src": src, "cur": cur, "wip": wip,
             "completed_aerobic_weeks": cp.completed_aerobic_weeks,
             "entry": entry, "confidence": cp.confidence, "rationale": cp.rationale,

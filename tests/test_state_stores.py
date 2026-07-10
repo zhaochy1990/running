@@ -259,3 +259,33 @@ class TestSqliteInBodyStore:
         segs = store.get_body_composition_segments("2026-04-20")
         assert len(segs) == 1
         assert segs[0]["segment"] == "left_arm"
+
+    def test_scan_at_or_before_delegates_to_database(self, db):
+        from stride_core.models import BodyCompositionScan
+
+        store = SqliteInBodyStore(db)
+        store.upsert_body_composition_scan(
+            BodyCompositionScan.from_dict({
+                "scan_date": "2026-04-20",
+                "weight_kg": 68.0,
+                "body_fat_pct": 12.5,
+                "smm_kg": 33.0,
+                "fat_mass_kg": 8.5,
+                "visceral_fat_level": 4,
+            })
+        )
+        store.upsert_body_composition_scan(
+            BodyCompositionScan.from_dict({
+                "scan_date": "2026-05-10",
+                "weight_kg": 69.0,
+                "body_fat_pct": 12.0,
+                "smm_kg": 33.5,
+                "fat_mass_kg": 8.3,
+                "visceral_fat_level": 4,
+            })
+        )
+
+        row = store.body_composition_scan_at_or_before("2026-05-01")
+
+        assert row is not None
+        assert row["scan_date"] == "2026-04-20"

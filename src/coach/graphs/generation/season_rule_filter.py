@@ -229,11 +229,12 @@ def _planned_weeks_for_phase(phase: PhaseWeeks) -> int:
 
 
 def check_volume_arc(bundle: SeasonPlanBundle) -> list[SeasonRuleViolation]:
-    """Season-spanning week-over-week UP-step cap (≤ 1.10x).
+    """Season-spanning load-week UP-step cap (≤ 1.10x).
 
-    Flatten every present week across all phases in order and compare each week
-    to the previous *present* week. An UP-step above the cap is an error; any
-    down-step (deload / taper) is always fine.
+    Within each phase, compare each non-deload load week to the previous load
+    week. A down-step is a planned deload/recovery trough and is always fine;
+    the next load week compares to the last load week before that trough, not to
+    the trough itself. Cross-phase steps are owned by ``check_phase_transition``.
 
     Gap handling: blocked / excluded weeks create gaps in the flattened series.
     We compare consecutive *present* weeks only, but to avoid a known-blocked gap
@@ -246,41 +247,42 @@ def check_volume_arc(bundle: SeasonPlanBundle) -> list[SeasonRuleViolation]:
     missing intermediate week's km).
     """
     violations: list[SeasonRuleViolation] = []
-    # Build a flat list of (phase_index, week_km), only present weeks.
-    flat: list[tuple[int, float]] = []
-    for pi, phase in enumerate(bundle.phases):
-        for km in _phase_week_kms(phase):
-            flat.append((pi, km))
-
-    for idx in range(1, len(flat)):
-        prev_pi, prev_km = flat[idx - 1]
-        cur_pi, cur_km = flat[idx]
-        if prev_km <= 0:
-            continue
-        # Cross-phase steps are owned by check_phase_transition (richer context);
-        # skip here to avoid double-reporting the exact same boundary spike.
-        if cur_pi != prev_pi:
-            continue
-        ratio = cur_km / prev_km
-        if ratio > UP_STEP_RATIO_CAP:
-            phase = bundle.phases[cur_pi]
+    for phase in bundle.phases:
+        last_load_km: float | None = None
+        prev_present_km: float | None = None
+        for cur_km in _phase_week_kms(phase):
+            if prev_present_km is not None and cur_km < prev_present_km:
+                prev_present_km = cur_km
+                continue
+            base = last_load_km
+            if base is None or base <= 0:
+                last_load_km = cur_km
+                prev_present_km = cur_km
+                continue
+            ratio = cur_km / base
+            if ratio <= UP_STEP_RATIO_CAP:
+                last_load_km = cur_km
+                prev_present_km = cur_km
+                continue
             violations.append(
                 SeasonRuleViolation(
                     rule="volume_arc",
                     severity="error",
                     message=(
                         f"phase {phase.phase_id!r}: weekly run volume jumped "
-                        f"{ratio:.2f}x ({prev_km:.1f}km → {cur_km:.1f}km); cap is "
+                        f"{ratio:.2f}x ({base:.1f}km → {cur_km:.1f}km); cap is "
                         f"{UP_STEP_RATIO_CAP:.2f}x"
                     ),
                     details={
                         "phase_id": phase.phase_id,
-                        "previous_km": prev_km,
+                        "previous_load_km": base,
                         "current_km": cur_km,
                         "ratio": ratio,
                     },
                 )
             )
+            last_load_km = cur_km
+            prev_present_km = cur_km
     return violations
 
 

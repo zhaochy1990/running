@@ -13,10 +13,11 @@ import re
 
 import pytest
 
-from stride_core.master_plan import Phase, PhaseType
+from stride_core.master_plan import Milestone, MilestoneType, Phase, PhaseType
 
 from coach.graphs.generation.week_schedule import (
     derive_phase_weeks,
+    _is_rampup_deload_index,
     representative_working_km,
 )
 from coach.graphs.generation.weekly_prompt import WeekMeta
@@ -156,10 +157,18 @@ def test_no_rampup_week_exceeds_110pct_of_prev(pt):
         _phase(start=_SIX_WEEK_START, end=_SIX_WEEK_END, low=50, high=80, phase_type=pt)
     )
     kms = [w.target_weekly_km for w in weeks]
-    for prev, cur in zip(kms, kms[1:]):
-        # Up-weeks must respect the 1.10x cap; down-weeks (deload/taper) are
-        # always safe. So the only assertion that matters is the UP bound.
-        assert cur <= prev * 1.10 + 1e-6, (pt, prev, cur, kms)
+    if pt in (PhaseType.BASE, PhaseType.BUILD, PhaseType.SPEED, None):
+        last_load = kms[0]
+        for i, cur in enumerate(kms[1:], start=1):
+            if _is_rampup_deload_index(i):
+                continue
+            assert cur <= last_load * 1.10 + 1e-6, (pt, last_load, cur, kms)
+            last_load = cur
+    else:
+        for prev, cur in zip(kms, kms[1:]):
+            # Up-weeks must respect the 1.10x cap; down-weeks (deload/taper) are
+            # always safe. So the only assertion that matters is the UP bound.
+            assert cur <= prev * 1.10 + 1e-6, (pt, prev, cur, kms)
 
 
 @pytest.mark.parametrize("pt", list(PhaseType) + [None])
@@ -190,9 +199,18 @@ def test_first_week_cap_holds_when_prev_below_band_floor(pt):
     # floor (band floor is a soft target; ≤1.10× is HARD and wins).
     assert kms[0] <= prev_end * 1.10 + 1e-6, (pt, kms)
     # Subsequent weeks ramp from the (sub-floor) first week WITHOUT themselves
-    # violating ≤1.10× — they climb toward the band, they don't snap into it.
-    for prev, cur in zip(kms, kms[1:]):
-        assert cur <= prev * 1.10 + 1e-6, (pt, prev, cur, kms)
+    # violating the relevant ≤1.10× baseline — ramp-up phases compare load
+    # weeks across deloads, other phases compare adjacent weeks.
+    if pt in (PhaseType.BASE, PhaseType.BUILD, PhaseType.SPEED, None):
+        last_load = kms[0]
+        for i, cur in enumerate(kms[1:], start=1):
+            if _is_rampup_deload_index(i):
+                continue
+            assert cur <= last_load * 1.10 + 1e-6, (pt, last_load, cur, kms)
+            last_load = cur
+    else:
+        for prev, cur in zip(kms, kms[1:]):
+            assert cur <= prev * 1.10 + 1e-6, (pt, prev, cur, kms)
 
 
 def test_first_week_cap_specific_violation_cases():
@@ -236,8 +254,12 @@ def test_first_week_cap_specific_violation_cases():
     )
     base_kms = [w.target_weekly_km for w in base]
     assert base_kms[0] <= 20.0 * 1.10 + 1e-6, base_kms
-    for prev, cur in zip(base_kms, base_kms[1:]):
-        assert cur <= prev * 1.10 + 1e-6, (prev, cur, base_kms)
+    last_load = base_kms[0]
+    for i, cur in enumerate(base_kms[1:], start=1):
+        if _is_rampup_deload_index(i):
+            continue
+        assert cur <= last_load * 1.10 + 1e-6, (last_load, cur, base_kms)
+        last_load = cur
 
 
 # ---------------------------------------------------------------------------
@@ -397,8 +419,12 @@ def test_none_phase_type_behaves_base_like():
     kms = [w.target_weekly_km for w in weeks]
     # Neutral ramp-up: climbs overall (peak above start), respects the cap.
     assert max(kms) > kms[0]
-    for prev, cur in zip(kms, kms[1:]):
-        assert cur <= prev * 1.10 + 1e-6
+    last_load = kms[0]
+    for i, cur in enumerate(kms[1:], start=1):
+        if _is_rampup_deload_index(i):
+            continue
+        assert cur <= last_load * 1.10 + 1e-6
+        last_load = cur
 
 
 # ---------------------------------------------------------------------------
@@ -515,3 +541,76 @@ def test_peak_reaches_band_when_threaded_with_working_volume_not_deload_trough()
     trough = derive_phase_weeks(peak, prev_phase_end_km=47.0)
     trough_kms = [w.target_weekly_km for w in trough]
     assert not any(km >= 70.0 - 1e-6 for km in trough_kms), trough_kms
+
+
+def test_ramp_up_rebounds_after_deload_from_prior_load_week():
+    """After a 3:1 recovery dip, the next load week resumes from the last
+    non-deload target, not from the recovery trough.
+
+    User-facing weekly-plan quality depends on this: a 72 -> 79 -> 87 -> 65
+    recovery week should be allowed to rebound near the previous load level.
+    Climbing from the 65km trough strands the next load week around 69km and
+    makes late-phase long-run milestones impossible for the wrong reason.
+    """
+    phase = _phase(
+        start="2026-07-27",
+        end="2026-08-30",  # 5 weeks: 3 load + 1 deload + 1 rebound
+        low=72,
+        high=92,
+        phase_type=PhaseType.BUILD,
+        name="专项 build",
+    )
+
+    weeks = derive_phase_weeks(phase, prev_phase_end_km=69.8)
+    kms = [w.target_weekly_km for w in weeks]
+
+    assert len(kms) == 5
+    assert kms[3] < kms[2]  # planned recovery dip
+    assert kms[4] >= kms[2]
+    assert kms[4] <= kms[2] * 1.10 + 1e-6
+    assert kms[4] > kms[3] * 1.20  # not a slow climb from the trough
+
+
+def test_milestone_long_run_target_sets_weekly_volume_floor_when_feasible():
+    """A long-run milestone needs enough weekly km for the 35% longest-run
+    safety rule. The scheduler should back-propagate a feasible volume floor to
+    the milestone week instead of handing the generator a budget that makes the
+    milestone structurally impossible.
+    """
+    phase = _phase(
+        start="2026-07-27",
+        end="2026-08-30",
+        low=72,
+        high=92,
+        phase_type=PhaseType.BUILD,
+        name="专项 build",
+    )
+    milestone = Milestone(
+        id="m-long",
+        type=MilestoneType.LONG_RUN,
+        date="2026-08-16",  # week 3
+        phase_id=phase.id,
+        target="完成 31km 长跑，内含 16km MP",
+        metric="long_run_km",
+        comparator=">=",
+        target_value=31.0,
+    )
+
+    weeks = derive_phase_weeks(
+        phase,
+        prev_phase_end_km=69.8,
+        milestones=[milestone],
+    )
+    kms = [w.target_weekly_km for w in weeks]
+
+    required_week_km = 31.0 / 0.35
+    assert kms[2] >= required_week_km
+    assert all(km <= 92.0 + 1e-6 for km in kms)
+    for i, (prev, cur) in enumerate(zip(kms, kms[1:]), start=2):
+        if cur >= prev:
+            # The post-deload rebound (week 5) is still compared to the most
+            # recent load week, so adjacent ratio can legitimately exceed 1.10.
+            if i == 5:
+                assert cur <= kms[2] * 1.10 + 1e-6
+            else:
+                assert cur <= prev * 1.10 + 1e-6

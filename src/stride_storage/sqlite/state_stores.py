@@ -204,6 +204,10 @@ class InBodyStore(Protocol):
 
     def latest_body_composition_scan(self) -> Mapping[str, Any] | None: ...
 
+    def body_composition_scan_at_or_before(
+        self, scan_date: str,
+    ) -> Mapping[str, Any] | None: ...
+
     def body_composition_scan_before(
         self, scan_date: str,
     ) -> Mapping[str, Any] | None: ...
@@ -455,12 +459,12 @@ class SqliteInBodyStore:
     def latest_body_composition_scan(self) -> Mapping[str, Any] | None:
         return self._db.latest_body_composition_scan()
 
+    def body_composition_scan_at_or_before(
+        self, scan_date: str,
+    ) -> Mapping[str, Any] | None:
+        return self._db.body_composition_scan_at_or_before(scan_date)
+
     def body_composition_scan_before(
         self, scan_date: str,
     ) -> Mapping[str, Any] | None:
-        rows = self._db._conn.execute(
-            "SELECT * FROM body_composition_scan WHERE scan_date < ? "
-            "ORDER BY scan_date DESC LIMIT 1",
-            (scan_date,),
-        ).fetchall()
-        return rows[0] if rows else None
+        return self._db.body_composition_scan_before(scan_date)
