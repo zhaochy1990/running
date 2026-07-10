@@ -54,9 +54,6 @@ class TestGarminSyncTimeseries:
             def get_activity_splits(self, activity_id):
                 return {"lapDTOs": []}
 
-            def get_activity_hr_in_timezones(self, activity_id):
-                return []
-
             def get_activity_weather(self, activity_id):
                 return {}
 

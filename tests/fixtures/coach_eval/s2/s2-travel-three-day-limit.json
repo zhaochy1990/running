@@ -1,0 +1,74 @@
+{
+  "fixture_id": "s2-travel-three-day-limit",
+  "scope": "s2",
+  "description": "Travel week with only three trainable days; preserve key stimulus without cramming a normal week into three days.",
+  "tags": ["edge_case", "frequency_limit", "travel"],
+  "input": {
+    "user_profile": {
+      "user_id": "eval-s2-user",
+      "phase": "base",
+      "hr_zones": {"z1": [95, 122], "z2": [122, 141], "z3": [141, 160], "z4": [160, 176], "z5": [176, 190]},
+      "threshold_pace_s_km": 242,
+      "weight_kg": 70,
+      "injuries": []
+    },
+    "current_phase": {"phase_type": "base", "week_index": 4, "total_weeks": 8},
+    "target_week_start": "2026-06-15",
+    "week_folder": "2026-06-15_06-21(S2T)",
+    "target_weekly_km": 36,
+    "pace_targets": {
+      "easy_pace_low_s_km": 320,
+      "easy_pace_high_s_km": 350,
+      "marathon_pace_s_km": 258,
+      "threshold_pace_s_km": 242,
+      "interval_pace_s_km": 222,
+      "rep_1000m_s_km": 218,
+      "rep_400m_s_km": 207
+    },
+    "volume_targets": {"weekly_km": 36, "long_run_km": 12, "quality_km_budget": 4, "easy_km": 20},
+    "prev_plans_md": ["prev_week_km: 44\nBase W3 planned 44 km, five run days, long run 14 km."],
+    "prev_feedback_md": ["RPE 6/10. Completed all runs. Travel next week means only Tue, Thu, Sun are realistic for running."],
+    "recent_signals": {
+      "hrv_7d": [60, 61, 60, 62, 61, 60, 61],
+      "rhr_7d": [49, 49, 50, 49, 49, 50, 49],
+      "sleep_score_7d": [76, 78, 77, 79, 76, 75, 78],
+      "ctl": 44,
+      "atl": 46,
+      "tsb": -2,
+      "prev_week_km": 44,
+      "as_of_date": "2026-06-14"
+    },
+    "user_request_md": "下周出差，只能周二、周四、周日跑。别让我酒店跑步机跑太久。"
+  },
+  "expected": {
+    "hard_constraints": {
+      "target_week_start": "2026-06-15",
+      "week_folder": "2026-06-15_06-21(S2T)",
+      "target_weekly_km": 36,
+      "weekly_km_tolerance_pct": 0.12,
+      "prev_week_km": 44,
+      "prev_ctl": 44,
+      "z45_pace_threshold_s_km": 242,
+      "max_run_days": 3,
+      "min_run_days": 3,
+      "max_hard_sessions": 1,
+      "nutrition_daily": true,
+      "required_note_tokens": ["出差"]
+    },
+    "soft_rubric": {
+      "schema_validity": {"min_score": 5, "behavior": "valid WeeklyPlan matching the three available run dates"},
+      "safety_load": {"min_score": 4, "behavior": "reduces volume rather than stacking too much into three days"},
+      "progression": {"min_score": 4, "behavior": "treats travel as a planned down week from 44 km"},
+      "phase_fit": {"min_score": 4, "behavior": "base phase remains mostly aerobic"},
+      "signal_response": {"min_score": 4, "behavior": "stable signals allow moderate training but travel constraint dominates"},
+      "weekly_distribution": {"min_score": 5, "behavior": "uses Tue/Thu/Sun sensibly with rest or mobility between"},
+      "nutrition_alignment": {"min_score": 4, "behavior": "travel meals remain practical and support the long run"},
+      "request_handling": {"min_score": 5, "behavior": "explicitly respects Tue/Thu/Sun and treadmill constraint"}
+    },
+    "anti_patterns": [
+      "more than three run days",
+      "two hard sessions in a travel week",
+      "long treadmill workout despite the user request"
+    ]
+  }
+}

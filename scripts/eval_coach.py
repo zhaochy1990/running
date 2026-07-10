@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         "--scope",
         choices=("s1", "s2", "s3", "all"),
         default="s1",
-        help="Which scope to evaluate. v1 only s1 implemented.",
+        help="Which scope to evaluate. S1 and S2 are implemented; S3 is pending.",
     )
     parser.add_argument(
         "--fixture",
@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help=(
-            "Reuse an existing generated MasterPlan JSON artifact and run S1 L1+L2 only. "
+            "Reuse an existing generated plan JSON artifact and run L1+L2 only. "
             "Requires exactly one --fixture and skips the expensive generator call."
         ),
     )
@@ -313,12 +313,11 @@ def main(argv: list[str] | None = None) -> int:
             allow_partial_gate=args.allow_partial_gate,
         )
 
-    # v1: only S1 wired
-    if args.scope in ("s2", "s3"):
-        print(f"--scope {args.scope} not implemented in v1; see docs/coach-eval_{args.scope.upper()}.md", file=sys.stderr)
+    if args.scope == "s3":
+        print("--scope s3 not implemented yet; see docs/coach-eval_S3.md", file=sys.stderr)
         return EXIT_FAIL
     if args.scope == "all":
-        print("--scope all not implemented in v1; specify --scope s1", file=sys.stderr)
+        print("--scope all not implemented yet; specify --scope s1 or --scope s2", file=sys.stderr)
         return EXIT_FAIL
     if args.master_max_tokens is not None and args.master_max_tokens <= 0:
         print("--master-max-tokens must be a positive integer", file=sys.stderr)
@@ -342,9 +341,6 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_judge_artifact(args: argparse.Namespace) -> int:
     """L1 + L2 against a saved generated-plan artifact, skipping generation."""
-    if args.scope != "s1":
-        print("--judge-artifact is only implemented for --scope s1", file=sys.stderr)
-        return EXIT_FAIL
     if not args.fixture_ids or len(args.fixture_ids) != 1:
         print("--judge-artifact requires exactly one --fixture", file=sys.stderr)
         return EXIT_FAIL
@@ -352,17 +348,30 @@ def _run_judge_artifact(args: argparse.Namespace) -> int:
     from coach_eval.runner import (
         RunMode,
         run_s1_judge_artifact_evaluation,
+        run_s2_judge_artifact_evaluation,
         write_report,
     )
 
     mode = RunMode(args.mode)
     try:
-        report = run_s1_judge_artifact_evaluation(
-            mode=mode,
-            fixture_id=args.fixture_ids[0],
-            artifact_path=args.judge_artifact,
-            judge_repeat=args.judge_repeat,
-        )
+        if args.scope == "s1":
+            report = run_s1_judge_artifact_evaluation(
+                mode=mode,
+                fixture_id=args.fixture_ids[0],
+                artifact_path=args.judge_artifact,
+                judge_repeat=args.judge_repeat,
+            )
+        elif args.scope == "s2":
+            report = run_s2_judge_artifact_evaluation(
+                mode=mode,
+                fixture_id=args.fixture_ids[0],
+                artifact_path=args.judge_artifact,
+                judge_repeat=args.judge_repeat,
+                run_judge=args.layer != "L1",
+            )
+        else:
+            print(f"--judge-artifact is not implemented for --scope {args.scope}", file=sys.stderr)
+            return EXIT_FAIL
     except Exception as exc:  # noqa: BLE001 — top-level CLI boundary
         msg = str(exc).lower()
         if "llm" in msg and ("unavailable" in msg or "not enabled" in msg):
@@ -1269,18 +1278,29 @@ def _run_full(args: argparse.Namespace) -> int:
     from coach_eval.runner import (
         RunMode,
         run_s1_evaluation,
+        run_s2_evaluation,
         write_report,
     )
 
     mode = RunMode(args.mode)
 
     try:
-        report = run_s1_evaluation(
-            mode=mode,
-            fixture_ids=args.fixture_ids,
-            master_max_tokens=args.master_max_tokens,
-            resume_report_path=args.resume_report,
-        )
+        if args.scope == "s1":
+            report = run_s1_evaluation(
+                mode=mode,
+                fixture_ids=args.fixture_ids,
+                master_max_tokens=args.master_max_tokens,
+                resume_report_path=args.resume_report,
+            )
+        elif args.scope == "s2":
+            report = run_s2_evaluation(
+                mode=mode,
+                fixture_ids=args.fixture_ids,
+                resume_report_path=args.resume_report,
+            )
+        else:
+            print(f"--scope {args.scope} not implemented", file=sys.stderr)
+            return EXIT_FAIL
     except Exception as exc:  # noqa: BLE001 — top-level CLI boundary
         msg = str(exc).lower()
         if "llm" in msg and ("unavailable" in msg or "not enabled" in msg):

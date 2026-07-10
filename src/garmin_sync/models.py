@@ -225,17 +225,20 @@ def activity_detail_from_garmin(
     activity_summary: dict[str, Any],
     *,
     splits: dict[str, Any] | None = None,
-    hr_zones: list[dict[str, Any]] | None = None,
     weather: dict[str, Any] | None = None,
     timeseries_points: list[TimeseriesPoint] | None = None,
 ) -> ActivityDetail:
     """Build an `ActivityDetail` from Garmin's activity summary + sub-resources.
 
     `activity_summary` is the dict returned by `get_activity` /
-    `get_activities()[i]`. The sub-resource dicts (splits, hr_zones, weather)
-    are optional — they're populated when the caller wants the full detail.
+    `get_activities()[i]`. The sub-resource dicts (splits, weather) are
+    optional — they're populated when the caller wants the full detail.
     `timeseries_points` is also optional and typically heavy; sync v1 leaves
     it empty (we can backfill from FIT files in a later phase).
+
+    Per-activity zones are intentionally left empty here: time-in-zone is
+    computed post-sync from STRIDE calibration zones (stride_core.activity_zones),
+    not ingested from Garmin's own HR-zone buckets — same as the COROS path.
     """
     a = activity_summary
     activity_type = a.get("activityType") or {}
@@ -244,7 +247,7 @@ def activity_detail_from_garmin(
     label_id = str(a.get("activityId", ""))
 
     laps = _build_laps_from_splits(splits) if splits else []
-    zones = _build_hr_zones(hr_zones) if hr_zones else []
+    zones: list[Zone] = []
 
     weather = weather or {}
 
@@ -320,22 +323,6 @@ def _build_laps_from_splits(splits: dict[str, Any]) -> list[Lap]:
             exercise_type=None,
             exercise_name_key=None,
             mode=None,
-        ))
-    return out
-
-
-def _build_hr_zones(hr_zones_data: list[dict[str, Any]]) -> list[Zone]:
-    """Garmin HR zones list → list[Zone]."""
-    out: list[Zone] = []
-    for entry in hr_zones_data:
-        out.append(Zone(
-            zone_type="heartRate",
-            zone_index=int(entry.get("zoneNumber", 0)),
-            range_min=entry.get("zoneLowBoundary"),
-            range_max=None,  # Garmin only gives the lower boundary
-            range_unit="bpm",
-            duration_s=int(entry.get("secsInZone") or 0),
-            percent=0.0,  # caller can compute from secsInZone / total if needed
         ))
     return out
 

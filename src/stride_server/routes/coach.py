@@ -1,17 +1,14 @@
-"""Coach Q&A + cross-thread history endpoints — see plan §1.1 S3, §3.4.
+"""Coach chat + cross-thread history endpoints.
 
-Two endpoints today:
+Public conversation entry point:
 
-* ``POST /api/users/me/coach/conversations/qa/messages`` — S3 daily Q&A.
-  Server **generates** ``thread_id`` from ``f"{user_id}:qa:{today_shanghai()}"``;
-  the body must NOT contain a thread_id, and any client-supplied value is
-  ignored (defense against cross-user thread injection).
+* ``POST /api/users/me/coach/chat`` — session-threaded orchestrator chat.
+
+Audit/history endpoint:
 
 * ``GET /api/users/me/coach/threads/{thread_id}/messages`` — chat history.
   ``thread_id`` is split on ``:`` and the leading segment must equal the
   JWT ``sub`` claim, else 403; malformed ids → 400.
-
-Plan-versions endpoints (US-007) land in a follow-up commit.
 """
 
 from __future__ import annotations
@@ -45,7 +42,7 @@ from ..coach_adapters.persistence.weekly_version_store import (
 from coach.orchestrator import coach_thread_id
 
 from ..coach_adapters.orchestrator import run_coach_turn
-from ..coach_runtime import build_conversation_graph_for_user, get_checkpointer
+from ..coach_runtime import get_checkpointer
 from ..deps import get_plan_state_store
 from ..master_plan_store import get_master_plan_store
 
@@ -56,29 +53,6 @@ router = APIRouter()
 # ---------------------------------------------------------------------------
 # request / response models
 # ---------------------------------------------------------------------------
-
-
-class QAMessageRequest(BaseModel):
-    """Body for POST qa/messages.
-
-    Any ``thread_id`` field a client sends is dropped silently — the server
-    always derives it from ``user_id + today_shanghai()`` to prevent
-    cross-user thread takeover.
-    """
-
-    message: str = Field(min_length=1)
-    model_config = {"extra": "ignore"}  # silently drop client-supplied thread_id
-
-
-class QAMessageResponse(BaseModel):
-    thread_id: str
-    # Renderable assistant parts (text / reasoning / refusal / tool_meta).
-    # See coach.schemas.conversation.AssistantPart for the per-kind contract.
-    # Always at least one part for a successful turn; empty list when the
-    # turn only produced a draft tool call (in which case `last_diff` carries
-    # the proposed change — wired in a follow-up commit).
-    parts: list[AssistantPart]
-    iteration: int
 
 
 # Length is enforced by the Field constraint; fullmatch() anchors both ends, so
@@ -95,8 +69,7 @@ class ChatRequest(BaseModel):
 
     ``session_id`` is constrained to ``[A-Za-z0-9_-]`` so a client cannot embed
     ``:`` and manufacture a thread_id that collides with another user's thread
-    (the thread id format is colon-delimited). This mirrors the qa endpoint,
-    whose thread_id is fully server-generated from colon-free UUIDs/dates.
+    (the thread id format is colon-delimited).
     """
 
     session_id: str = Field(min_length=1, max_length=128)
@@ -177,14 +150,12 @@ class PlanVersionDetailResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _short_thread_id_for_qa(user_id: str) -> str:
-    from coach.graphs.conversation.scope import Scope, thread_id_for
-
-    return thread_id_for(user_id, Scope.QA)
-
-
 def _parse_thread_id(thread_id: str) -> tuple[str, str, str]:
     """Return (user_id, short_scope, key); raise ValueError on malformed."""
+    parts = thread_id.split(":", 2)
+    if len(parts) == 3 and parts[1] == "coach":
+        return parts[0], "coach", parts[2]
+
     from coach.graphs.conversation.scope import parse_short_thread_id
 
     return parse_short_thread_id(thread_id)
@@ -218,59 +189,6 @@ def _to_chat_message(m: BaseMessage) -> ChatMessage | None:
 
 
 # ---------------------------------------------------------------------------
-# POST /api/users/me/coach/conversations/qa/messages
-# ---------------------------------------------------------------------------
-
-
-@router.post(
-    "/api/users/me/coach/conversations/qa/messages",
-    response_model=QAMessageResponse,
-)
-def post_qa_message(
-    body: QAMessageRequest,
-    payload: dict = Depends(require_bearer),
-) -> QAMessageResponse:
-    """S3 daily Q&A: send a message; server-generated thread_id."""
-    user_id: str = payload["sub"]
-    thread_id = _short_thread_id_for_qa(user_id)
-    graph = build_conversation_graph_for_user(user_id=user_id, scope="qa")
-
-    config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
-    state_in = {
-        "history": [HumanMessage(content=body.message)],
-        "scope": "qa",
-        "user_id": user_id,
-        "thread_id": thread_id,
-        "folder": None,
-        "plan_id": None,
-        "constraints": [],
-        "last_diff": None,
-        "iteration": 0,
-    }
-    try:
-        state = graph.invoke(state_in, config=config)
-    except Exception:  # noqa: BLE001 — coach endpoint boundary
-        # Full exception stays in the log; the client gets a generic message so
-        # internal service URLs / resource names don't leak in the 503 detail.
-        logger.exception("coach qa graph invocation failed")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI coach temporarily unavailable. Please try again.",
-        )
-
-    history = state.get("history") or []
-    last = history[-1] if history else None
-    parts: list[AssistantPart] = []
-    if last is not None:
-        parts = assistant_parts_from_message(last)
-    return QAMessageResponse(
-        thread_id=thread_id,
-        parts=parts,
-        iteration=int(state.get("iteration") or 0),
-    )
-
-
-# ---------------------------------------------------------------------------
 # POST /api/users/me/coach/chat  (orchestrator brain — §4, §8 A1)
 # ---------------------------------------------------------------------------
 
@@ -282,9 +200,9 @@ def post_chat_message(
 ) -> ChatResponse:
     """Session-threaded coach chat: intent-routed through the orchestrator brain.
 
-    Unlike the per-scope qa endpoint, this drives the full pipeline
-    (Resolver → Supervisor → specialists → Aggregator) so one session carries
-    context across intents (§5.1). The thread is keyed ``{user}:coach:{session}``.
+    This drives the full pipeline (Resolver → Supervisor → specialists →
+    Aggregator) so one session carries context across intents (§5.1). The
+    thread is keyed ``{user}:coach:{session}``.
     """
     user_id: str = payload["sub"]
     thread_id = coach_thread_id(user_id, body.session_id)

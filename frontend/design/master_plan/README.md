@@ -14,4 +14,4 @@
 
 ## [existing_user/](./existing_user/) — 存量用户修改赛季训练计划
 
-存量用户调整计划的主线（当前计划 → 生成中 → 变化审阅 → 启用成功）与边界状态（更新中、生成失败、无有效变化、流程恢复），共 8 页。详见 [existing_user/README.md](./existing_user/README.md)。
+存量用户调整计划的主线（当前计划 → Coach 追问 → 生成中 → 调整后计划审阅）与边界状态（更新中、生成失败、无有效变化、流程恢复），共 8 页。详见 [existing_user/README.md](./existing_user/README.md)。

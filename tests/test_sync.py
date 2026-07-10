@@ -197,6 +197,27 @@ class TestActivityDetailJobs:
         assert db.activity_exists("stuck")
         assert db.activity_exists("new")
 
+    def test_sync_activities_scans_past_old_thousand_activity_cap(self, db, monkeypatch):
+        monkeypatch.setenv("COROS_DETAIL_STALL_TIMEOUT_SECONDS", "1")
+        pages_seen: list[int] = []
+
+        class FakeClient:
+            def list_activities(self, page: int = 1, size: int = 20):
+                pages_seen.append(page)
+                if page > 51:
+                    return {"data": {"dataList": []}}
+                return {"data": {"dataList": [_activity_summary(f"a{page}", f"2024{page:04d}")]}}
+
+            def get_activity_detail(self, label_id: str, _sport_type: int):
+                return _activity_detail(label_id)
+
+        synced, activity_label_ids = sync_activities(FakeClient(), db, jobs=1, page_size=1)
+
+        assert pages_seen[-1] == 52
+        assert synced == 51
+        assert len(activity_label_ids) == 51
+        assert db.activity_exists("a51")
+
 
 class TestAbilityHook:
     def test_empty_new_activities_does_not_fail(self, db, capsys):

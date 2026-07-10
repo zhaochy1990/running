@@ -3,7 +3,7 @@
 <html lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>本周课表 - STRIDE Weekly Workbench</title>
+<title>本周训练课表 - STRIDE Weekly Workbench</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
@@ -184,28 +184,28 @@
 <header class="fixed top-0 right-0 h-topbar-height w-[calc(100%-220px)] bg-background border-b border-border-default flex justify-between items-center px-container-padding z-30">
 <!-- Header Content -->
 <div class="flex items-center gap-4 border-r border-border-default pr-6 mr-6">
-<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-primary-container text-on-primary-container mono-data">W08</span>
-<span class="text-sm font-semibold text-text-primary">P1 基础期</span>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-primary-container text-on-primary-container mono-data">W1</span>
+<span class="text-sm font-semibold text-text-primary">速度周期</span>
 <div class="h-4 w-px bg-border-default mx-2"></div>
 <div class="flex items-center text-text-muted text-xs gap-1.5 mono-data">
 <span class="material-symbols-outlined text-[14px]">calendar_today</span>
-        2026-06-23 - 06-29
+        2026-05-04 - 05-10
     </div>
 </div>
 <div class="flex items-center gap-6 mr-auto">
 <div class="flex flex-col">
 <span class="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-0.5">Planned Volume</span>
 <div class="flex items-baseline gap-1">
-<span class="text-base font-bold text-text-primary mono-data">48</span>
+<span class="text-base font-bold text-text-primary mono-data">65</span>
 <span class="text-[10px] text-text-muted">km</span>
 </div>
 </div>
 <div class="flex flex-col">
 <span class="text-[10px] font-semibold text-text-muted uppercase tracking-wider mb-0.5">Completion</span>
 <div class="flex items-center gap-2">
-<span class="text-base font-bold text-text-primary mono-data">33%</span>
+<span class="text-base font-bold text-text-primary mono-data">0%</span>
 <div class="w-16 bg-surface-dim h-1.5 rounded-full overflow-hidden">
-<div class="bg-primary h-full rounded-full" style="width: 33%"></div>
+<div class="bg-primary h-full rounded-full" style="width: 0%"></div>
 </div>
 </div>
 </div>
@@ -232,100 +232,69 @@
 <!-- Main Content Area -->
 <main class="ml-[220px] mt-[64px] p-container-padding max-w-[1400px] mx-auto pb-24">
 <!-- Alert -->
-<div class="mb-6 bg-warning-container/50 border border-warning/30 rounded-xl p-4 flex items-start gap-3 shadow-sm">
-<span class="material-symbols-outlined text-warning mt-0.5">warning</span>
+<div class="mb-6 bg-info-container/60 border border-info/25 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+<span class="material-symbols-outlined text-info mt-0.5">flag</span>
 <div>
-<h4 class="text-sm font-bold text-on-warning-container">昨晚 HRV 略低，建议关注体感</h4>
-<p class="text-xs text-on-warning-container/80 mt-1">Consider scaling back intensity today if perceived exertion is higher than usual.</p>
+<h4 class="text-sm font-bold text-on-info-container">速度周期 W1：高区渐进起步</h4>
+<p class="text-xs text-on-info-container/80 mt-1">本周周量 65km，保留 1 次 VO2max 质量课；其余跑步维持 Z2，避免第一周高区负荷过快。</p>
 </div>
 </div>
 <!-- Core Modules (Two-row Overview) -->
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-<!-- 上周总结 Card -->
 <div class="bg-surface border border-border-default rounded-2xl p-6 shadow-sm flex flex-col justify-between">
 <div>
 <div class="flex items-center justify-between mb-4">
 <h3 class="text-sm font-semibold text-text-muted uppercase tracking-wider flex items-center gap-2">
-<span class="material-symbols-outlined text-base">history</span>
-                            上周总结
+<span class="material-symbols-outlined text-base">analytics</span>
+                            本周结构
                         </h3>
-<a class="text-xs font-medium text-primary hover:underline" href="#">View Details →</a>
+<span class="text-xs font-medium text-text-muted mono-data">season_bundle · W1</span>
 </div>
-<div class="flex items-center gap-6 mb-6">
-<div class="flex flex-col">
-<span class="text-xs text-text-muted mb-1">Mileage</span>
-<div class="flex items-baseline gap-1">
-<span class="text-xl font-bold text-text-primary mono-data">45.2</span>
-<span class="text-xs text-text-muted">/ 45km</span>
-</div>
-</div>
-<div class="flex flex-col">
-<span class="text-xs text-text-muted mb-1">Time</span>
-<div class="flex items-baseline gap-1">
-<span class="text-xl font-bold text-text-primary mono-data">4h 12m</span>
-</div>
-</div>
-<div class="flex flex-col">
-<span class="text-xs text-text-muted mb-1">Completion</span>
-<div class="flex items-baseline gap-1">
-<span class="text-xl font-bold text-success mono-data">100%</span>
-</div>
-</div>
+<div class="grid grid-cols-4 gap-4 mb-6">
+<div><span class="text-xs text-text-muted mb-1 block">Mileage</span><span class="text-xl font-bold text-text-primary mono-data">65</span><span class="text-xs text-text-muted ml-1">km</span></div>
+<div><span class="text-xs text-text-muted mb-1 block">Sessions</span><span class="text-xl font-bold text-text-primary mono-data">8</span></div>
+<div><span class="text-xs text-text-muted mb-1 block">Runs</span><span class="text-xl font-bold text-text-primary mono-data">5</span></div>
+<div><span class="text-xs text-text-muted mb-1 block">Nutrition</span><span class="text-xl font-bold text-success mono-data">2</span><span class="text-xs text-text-muted ml-1">days</span></div>
 </div>
 <div class="bg-surface-variant/50 rounded-lg p-3 text-sm text-text-secondary">
-<strong class="font-semibold text-text-primary block mb-1">Key Lesson:</strong>
-                        Pacing in Z2 was much more consistent on rolling hills. Keep this effort level for base building.
+<strong class="font-semibold text-text-primary block mb-1">Week Note:</strong>
+                        周量 65km，单次最长 17.6km，质量课只保留 1 次 VO2max，符合速度周期高区渐进起步。
                     </div>
 </div>
 <div class="mt-4 pt-4 border-t border-border-default flex items-center justify-between">
-<span class="text-xs text-text-muted font-medium">Recovery Signal</span>
-<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-success-container text-on-success-container border border-success/20">
-<span class="material-symbols-outlined text-[14px] mr-1">check_circle</span>
-                        HRV Stable
+<span class="text-xs text-text-muted font-medium">Multi-session day</span>
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-warning-container text-on-warning-container border border-warning/20">
+<span class="material-symbols-outlined text-[14px] mr-1">stacked_bar_chart</span>
+                        05-06 跑步 + 力量
                     </span>
 </div>
 </div>
-<!-- 本周训练重点 Card -->
 <div class="bg-surface border border-border-default rounded-2xl p-6 shadow-sm flex flex-col">
 <h3 class="text-sm font-semibold text-text-muted mb-4 uppercase tracking-wider flex items-center gap-2">
 <span class="material-symbols-outlined text-base">flag</span>
                         本周训练重点
                     </h3>
 <div class="mb-4">
-<p class="text-lg font-bold text-text-primary leading-tight">
-                            巩固有氧基础，保留一次阈值刺激
-                        </p>
+<p class="text-lg font-bold text-text-primary leading-tight">VO2max 质量课 + 有氧承接 + 两次力量维护</p>
 </div>
-<div class="flex gap-4 mb-5 pb-5 border-b border-border-default">
-<div class="flex-1">
-<span class="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Key Workouts</span>
-<div class="flex flex-wrap gap-2">
-<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-threshold/10 text-phase-threshold border border-phase-threshold/20">T-Run (Fri)</span>
-<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-base/10 text-phase-base border border-phase-base/20">LSD (Sun)</span>
-</div>
-</div>
-<div class="flex-1">
-<span class="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Guardrail</span>
-<span class="text-sm text-text-secondary mono-data font-medium">Max Z4</span>
-</div>
+<div class="grid grid-cols-3 gap-3 mb-5 pb-5 border-b border-border-default">
+<div><span class="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Quality</span><span class="px-2 py-0.5 rounded text-[10px] font-bold bg-phase-interval/10 text-phase-interval border border-phase-interval/20">1k × 5</span></div>
+<div><span class="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Longest</span><span class="text-sm text-text-secondary mono-data font-medium">17.6 km</span></div>
+<div><span class="text-[10px] font-semibold text-text-muted uppercase tracking-wider block mb-1">Guardrail</span><span class="text-sm text-text-secondary mono-data font-medium">Z2 承接</span></div>
 </div>
 <div class="flex items-start gap-3 bg-[#fdfcf8] p-3 rounded-xl border border-[#e8e4d8]">
 <img alt="Coach" class="w-8 h-8 rounded-full border border-border-default mt-1" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDYIwb9-qVFOssEE4VY7ty_m2BeWsdRyd5gQN-6S7QIyvaCF6fVTSNDkVkN0y4OvczQa_a3jOjLjHLb4PXdG6o7Y5c1d2fs47rsNRlA-tTw8p4_A30mYT9YkiU-lAP5aS7Q_DHZ5p7rEOG5BzfOzSlEJGFYhGhtLqTuRx7c0nATYnmQG8wEIv3ajaCYISxxF_u4bCLU8XEl256s2fU67G-NwBMSEDHSMSipGpJLYwpZExXAylUf2VWcFuJcrhbhfQwKEHpLfFJDCB8"/>
-<p class="font-serif text-sm text-text-secondary leading-relaxed italic">
-                        "This week serves as a crucial bridge in our P1 base phase. By keeping the overall volume moderate, we allow adaptation to last week's load. The tempo session on Friday is intended to lightly touch threshold without accumulating excessive fatigue before the weekend long run. Keep the E-runs strictly conversational."
-                    </p>
+<p class="font-serif text-sm text-text-secondary leading-relaxed italic">"先把速度周期第一周跑稳。周二做高质量但不冲刺的 VO2max，周三双 session 用轻松跑承接并补髋稳定，周六中长跑只跑 Z2。"</p>
 </div>
 </div>
 </div>
 <!-- Segmented/Tab Control -->
 <div class="flex items-center justify-between border-b border-border-default mb-6">
 <div class="flex gap-6 overflow-x-auto scrollbar-hide">
-<button class="pb-3 text-sm font-bold text-primary border-b-2 border-primary whitespace-nowrap">本周训练课表</button>
-<button class="pb-3 text-sm font-medium text-text-muted hover:text-text-primary transition-colors whitespace-nowrap flex items-center gap-1.5">方案 <span class="bg-surface-dim text-text-secondary text-[10px] px-1.5 py-0.5 rounded-full">1</span></button>
-<button class="pb-3 text-sm font-medium text-text-muted hover:text-text-primary transition-colors whitespace-nowrap flex items-center gap-1.5">本周力量训练 <span class="bg-surface-dim text-text-secondary text-[10px] px-1.5 py-0.5 rounded-full">2</span></button>
-<button class="pb-3 text-sm font-medium text-text-muted hover:text-text-primary transition-colors whitespace-nowrap">日历</button>
-<button class="pb-3 text-sm font-medium text-text-muted hover:text-text-primary transition-colors whitespace-nowrap flex items-center gap-1.5">本周训练记录 <span class="bg-surface-dim text-text-secondary text-[10px] px-1.5 py-0.5 rounded-full">5</span></button>
-<button class="pb-3 text-sm font-medium text-text-muted hover:text-text-primary transition-colors whitespace-nowrap">本周反馈</button>
+<a class="pb-3 text-sm whitespace-nowrap font-bold text-primary border-b-2 border-primary" href="1_weekly-plan-current-home.html">本周训练课表</a>
+<a class="pb-3 text-sm whitespace-nowrap font-medium text-text-muted hover:text-text-primary transition-colors flex items-center gap-1.5" href="2_weekly-plan-tab-strength.html">本周力量训练 <span class="bg-surface-dim text-text-secondary text-[10px] px-1.5 py-0.5 rounded-full">2</span></a>
+<a class="pb-3 text-sm whitespace-nowrap font-medium text-text-muted hover:text-text-primary transition-colors flex items-center gap-1.5" href="3_weekly-plan-tab-records.html">本周训练记录 <span class="bg-surface-dim text-text-secondary text-[10px] px-1.5 py-0.5 rounded-full">5</span></a>
+<a class="pb-3 text-sm whitespace-nowrap font-medium text-text-muted hover:text-text-primary transition-colors" href="4_weekly-plan-tab-feedback.html">本周反馈</a>
 </div>
 <button class="mb-2 px-4 py-1.5 bg-surface text-text-secondary border border-border-default rounded-lg text-xs font-semibold hover:bg-surface-hover transition-colors shadow-sm flex items-center gap-2">
 <span class="material-symbols-outlined text-[14px]">watch</span>
@@ -333,234 +302,18 @@
     </button>
 </div>
 <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-<!-- Main List: Schedule (Span 8) -->
 <div class="lg:col-span-8">
 <div class="bg-surface border border-border-default rounded-2xl p-1 shadow-sm overflow-hidden">
 <div class="divide-y divide-border-default">
-<!-- Mon -->
-<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
-<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
-<span class="text-xs text-text-muted font-medium uppercase">Mon</span>
-<span class="text-lg font-bold text-text-primary mono-data">23</span>
-</div>
-<div class="pl-4 flex flex-col justify-center">
-<div class="flex items-center gap-2 mb-1">
-<span class="material-symbols-outlined text-phase-base text-lg">directions_run</span>
-<span class="font-semibold text-text-primary text-sm">E-Run 轻松跑</span>
-<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-dim text-text-secondary">Z2</span>
-<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-success-container/50 text-on-success-container border border-success/20">已解析</span>
-</div>
-<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">timer</span> 45 min</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">monitor_heart</span> 130-145 bpm</span>
-<span class="flex items-center gap-1 text-text-secondary"><span class="material-symbols-outlined text-[14px]">notes</span> 鼻呼吸</span>
-</div>
-</div>
-<div class="text-right flex flex-col items-end gap-1">
-<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface-variant text-text-secondary border border-border-default">
-<span class="material-symbols-outlined text-[14px] text-success">check_circle</span> 已推送
-                                </span>
-</div>
-</div>
-<!-- Tue -->
-<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
-<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
-<span class="text-xs text-text-muted font-medium uppercase">Tue</span>
-<span class="text-lg font-bold text-text-primary mono-data">24</span>
-</div>
-<div class="pl-4 flex flex-col justify-center">
-<div class="flex items-center gap-2 mb-1">
-<span class="material-symbols-outlined text-phase-interval text-lg">directions_run</span>
-<span class="font-semibold text-text-primary text-sm">I-Run 间歇跑</span>
-<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-error-container text-on-error-container">Z5</span>
-<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-warning-container/50 text-on-warning-container border border-warning/20">需要重新解析</span>
-</div>
-<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">route</span> 6x800m</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">speed</span> 3:45/km</span>
-<span class="flex items-center gap-1 text-text-secondary"><span class="material-symbols-outlined text-[14px]">notes</span> 场地方 3道</span>
-</div>
-</div>
-<div class="text-right flex flex-col items-end gap-1">
-<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-primary border border-primary hover:bg-primary/5 cursor-pointer">
-<span class="material-symbols-outlined text-[14px]">watch</span> 推送到手表
-                                </span>
-</div>
-</div>
-<!-- Wed -->
-<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
-<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
-<span class="text-xs text-text-muted font-medium uppercase">Wed</span>
-<span class="text-lg font-bold text-text-primary mono-data">25</span>
-</div>
-<div class="pl-4 flex flex-col justify-center">
-<div class="flex items-center gap-2 mb-1">
-<span class="material-symbols-outlined text-phase-base text-lg">directions_run</span>
-<span class="font-semibold text-text-primary text-sm">Recovery 恢复跑</span>
-<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-dim text-text-secondary">Z1</span>
-<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-success-container/50 text-on-success-container border border-success/20">已解析</span>
-</div>
-<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">timer</span> 30 min</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">monitor_heart</span> &lt;125 bpm</span>
-</div>
-</div>
-<div class="text-right flex flex-col items-end gap-1">
-<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-primary border border-primary hover:bg-primary/5 cursor-pointer">
-<span class="material-symbols-outlined text-[14px]">watch</span> 推送到手表
-                                </span>
-</div>
-</div>
-<!-- Thu -->
-<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
-<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
-<span class="text-xs text-text-muted font-medium uppercase">Thu</span>
-<span class="text-lg font-bold text-text-primary mono-data">26</span>
-</div>
-<div class="pl-4 flex flex-col justify-center">
-<div class="flex items-center gap-2 mb-1">
-<span class="material-symbols-outlined text-phase-strength text-lg">fitness_center</span>
-<span class="font-semibold text-text-primary text-sm">Strength 力量训练</span>
-</div>
-<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">timer</span> 45 min</span>
-<span class="flex items-center gap-1 text-text-secondary"><span class="material-symbols-outlined text-[14px]">notes</span> 核心+臀中肌</span>
-</div>
-</div>
-<div class="text-right flex flex-col items-end gap-1">
-<span class="text-[10px] text-text-muted border border-border-default px-2 py-0.5 rounded">无需推送</span>
-</div>
-</div>
-<!-- Fri -->
-<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
-<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
-<span class="text-xs text-text-muted font-medium uppercase">Fri</span>
-<span class="text-lg font-bold text-text-primary mono-data">27</span>
-</div>
-<div class="pl-4 flex flex-col justify-center">
-<div class="flex items-center gap-2 mb-1">
-<span class="material-symbols-outlined text-phase-threshold text-lg">directions_run</span>
-<span class="font-semibold text-text-primary text-sm">T-Run 节奏跑</span>
-<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-warning-container text-on-warning-container">Z4</span>
-<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-success-container/50 text-on-success-container border border-success/20">已解析</span>
-</div>
-<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">timer</span> 20 min</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">speed</span> 4:15/km</span>
-</div>
-</div>
-<div class="text-right flex flex-col items-end gap-1">
-<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-primary border border-primary hover:bg-primary/5 cursor-pointer">
-<span class="material-symbols-outlined text-[14px]">watch</span> 推送到手表
-                                </span>
-</div>
-</div>
-<!-- Sat -->
-<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 bg-surface-variant/30 opacity-70">
-<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
-<span class="text-xs text-text-muted font-medium uppercase">Sat</span>
-<span class="text-lg font-bold text-text-muted mono-data">28</span>
-</div>
-<div class="pl-4 flex flex-col justify-center">
-<div class="flex items-center gap-2">
-<span class="material-symbols-outlined text-phase-rest text-lg">self_improvement</span>
-<span class="font-medium text-text-muted text-sm">Rest 休息</span>
-</div>
-</div>
-<div class="text-right">
-</div>
-</div>
-<!-- Sun -->
-<div class="grid grid-cols-[80px_1fr_auto] items-center p-4 hover:bg-surface-hover transition-colors group">
-<div class="flex flex-col items-center justify-center pr-4 border-r border-border-default">
-<span class="text-xs text-text-muted font-medium uppercase text-primary">Sun</span>
-<span class="text-lg font-bold text-text-primary mono-data">29</span>
-</div>
-<div class="pl-4 flex flex-col justify-center">
-<div class="flex items-center gap-2 mb-1">
-<span class="material-symbols-outlined text-phase-base text-lg">directions_run</span>
-<span class="font-semibold text-text-primary text-sm">LSD 长距离</span>
-<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-dim text-text-secondary">Z2</span>
-<span class="ml-2 inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-success-container/50 text-on-success-container border border-success/20">已解析</span>
-</div>
-<div class="flex items-center gap-4 text-xs text-text-muted mono-data">
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">straighten</span> 22 km</span>
-<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">monitor_heart</span> 135-150 bpm</span>
-<span class="flex items-center gap-1 text-text-secondary"><span class="material-symbols-outlined text-[14px]">notes</span> 模拟比赛日装备</span>
-</div>
-</div>
-<div class="text-right flex flex-col items-end gap-1">
-<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-primary border border-primary hover:bg-primary/5 cursor-pointer">
-<span class="material-symbols-outlined text-[14px]">watch</span> 推送到手表
-                                </span>
-</div>
-</div>
-</div>
-</div>
-</div>
-<!-- Data Modules (Right Rail) -->
-<div class="lg:col-span-4 flex flex-col gap-6">
-<!-- 本周力量训练 -->
-<div class="bg-surface border border-border-default rounded-xl p-5 shadow-sm">
-<div class="flex items-center justify-between mb-4">
-<h4 class="text-sm font-semibold text-text-primary">本周力量训练</h4>
-<a class="text-xs text-text-muted hover:text-primary transition-colors" href="#">查看全部</a>
-</div>
-<div class="space-y-3">
-<div class="flex items-center gap-3 text-sm">
-<div class="w-10 h-10 bg-surface-dim rounded flex items-center justify-center text-text-secondary">
-<span class="material-symbols-outlined text-lg">fitness_center</span>
-</div>
-<div class="flex-1">
-<p class="font-medium text-text-primary">核心基础力量</p>
-<p class="text-xs text-text-muted">4 组动作 · 约 20 分钟</p>
-</div>
-</div>
-<div class="flex items-center gap-3 text-sm">
-<div class="w-10 h-10 bg-surface-dim rounded flex items-center justify-center text-text-secondary">
-<span class="material-symbols-outlined text-lg">accessibility_new</span>
-</div>
-<div class="flex-1">
-<p class="font-medium text-text-primary">臀中肌激活</p>
-<p class="text-xs text-text-muted">3 组动作 · 约 15 分钟</p>
-</div>
-</div>
-</div>
-</div>
-<!-- 训练记录 Preview -->
-<div class="bg-surface border border-border-default rounded-xl p-5 shadow-sm">
-<div class="flex items-center justify-between mb-4">
-<h4 class="text-sm font-semibold text-text-primary">本周训练记录</h4>
-</div>
-<div class="space-y-3">
-<div class="flex items-center justify-between py-2 border-b border-border-default/50">
-<div class="flex flex-col">
-<span class="text-xs font-semibold text-text-primary">E-Run 轻松跑 (周一)</span>
-<span class="text-[10px] text-text-muted mono-data mt-0.5">Plan: 45m | Actual: 46m 12s</span>
-</div>
-<span class="px-2 py-0.5 bg-success-container/30 text-success text-[10px] font-bold rounded">102%</span>
-</div>
-<div class="flex items-center justify-between py-2">
-<div class="flex flex-col">
-<span class="text-xs font-semibold text-text-primary">LSD 长距离 (上周日)</span>
-<span class="text-[10px] text-text-muted mono-data mt-0.5">Plan: 20km | Actual: 20.1km</span>
-</div>
-<span class="px-2 py-0.5 bg-success-container/30 text-success text-[10px] font-bold rounded">100%</span>
-</div>
-</div>
-</div>
-<!-- 本周用户反馈 -->
-<div class="bg-surface border border-border-default rounded-xl p-5 shadow-sm flex flex-col">
-<h4 class="text-sm font-semibold text-text-primary mb-3">本周用户反馈</h4>
-<p class="text-xs text-text-muted mb-4">记录你的体感、疲劳度或任何想要告诉 Coach 的信息。</p>
-<div class="relative flex-1 min-h-[100px]">
-<textarea class="w-full h-full p-3 bg-surface-variant/50 border border-border-default rounded-lg text-sm text-text-primary focus:ring-1 focus:ring-primary focus:border-primary resize-none placeholder-text-muted/70 font-mono text-xs" placeholder="开始写反馈... (支持 Markdown)"></textarea>
-</div>
-<div class="mt-3 flex justify-end">
-<button class="px-3 py-1.5 bg-surface text-text-secondary border border-border-default rounded-md text-xs font-medium hover:bg-surface-hover transition-colors shadow-sm">保存反馈</button>
-</div>
-</div>
-</div>
+<div class="grid grid-cols-[80px_1fr] p-4 bg-surface-variant/30 opacity-80"><div class="flex flex-col items-center justify-center pr-4 border-r border-border-default"><span class="text-xs text-text-muted font-medium uppercase">Mon</span><span class="text-lg font-bold text-text-muted mono-data">04</span></div><div class="pl-4"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-phase-rest text-lg">self_improvement</span><span class="font-semibold text-text-primary text-sm">完全休息</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-dim text-text-secondary">Rest</span></div><p class="text-xs text-text-muted">速度周期第 1 周先保留完整休息日，避免从上一阶段切入时高区负荷过快。</p></div></div>
+<div class="grid grid-cols-[80px_1fr_auto] p-4 hover:bg-surface-hover transition-colors"><div class="flex flex-col items-center justify-center pr-4 border-r border-border-default"><span class="text-xs text-text-muted font-medium uppercase">Tue</span><span class="text-lg font-bold text-text-primary mono-data">05</span></div><div class="pl-4"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-phase-interval text-lg">directions_run</span><span class="font-semibold text-text-primary text-sm">VO2max：1k × 5，总13km</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-error-container text-on-error-container">Quality</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-success-container text-on-success-container">营养日</span></div><div class="flex flex-wrap items-center gap-4 text-xs text-text-muted mono-data"><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">straighten</span> 13.0 km</span><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">speed</span> rep 3:37/km</span><span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">directions_walk</span> 2-3 min jog/walk</span></div><p class="text-xs text-text-secondary mt-2">热身约3km + 1km × 5，冷身补足总量；快段高质量但不冲刺，其余慢跑 z2 4:51-5:40/km。</p></div><div class="text-right"><span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-primary border border-primary"><span class="material-symbols-outlined text-[14px]">watch</span> 推送到手表</span></div></div>
+<div class="grid grid-cols-[80px_1fr] p-4 hover:bg-surface-hover transition-colors"><div class="flex flex-col items-center justify-center pr-4 border-r border-border-default"><span class="text-xs text-text-muted font-medium uppercase">Wed</span><span class="text-lg font-bold text-text-primary mono-data">06</span><span class="mt-1 text-[10px] px-1.5 py-0.5 rounded-full bg-warning-container text-on-warning-container font-bold">2 sessions</span></div><div class="pl-4 space-y-3"><div class="border border-border-default rounded-xl p-3 bg-white"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-phase-base text-lg">directions_run</span><span class="font-semibold text-text-primary text-sm">轻松跑 10km</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-dim text-text-secondary">Z2</span></div><div class="flex items-center gap-4 text-xs text-text-muted mono-data"><span>10.0 km</span><span>4:51-5:40/km</span></div><p class="text-xs text-text-secondary mt-1">保持能完整说话；不追加加速。</p></div><div class="border border-border-default rounded-xl p-3 bg-white"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-phase-strength text-lg">fitness_center</span><span class="font-semibold text-text-primary text-sm">髋稳定 + 核心 30min</span></div><div class="flex items-center gap-4 text-xs text-text-muted mono-data"><span>30 min</span><span>5 组动作</span></div><p class="text-xs text-text-secondary mt-1">蚌式开合、弹力带髋外展、单腿臀桥、平板支撑、侧桥；动作质量优先。</p></div></div></div>
+<div class="grid grid-cols-[80px_1fr_auto] p-4 hover:bg-surface-hover transition-colors"><div class="flex flex-col items-center justify-center pr-4 border-r border-border-default"><span class="text-xs text-text-muted font-medium uppercase">Thu</span><span class="text-lg font-bold text-text-primary mono-data">07</span></div><div class="pl-4"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-phase-base text-lg">directions_run</span><span class="font-semibold text-text-primary text-sm">恢复轻松跑 8km</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-dim text-text-secondary">Z2 easy</span></div><div class="flex items-center gap-4 text-xs text-text-muted mono-data"><span>8.0 km</span><span>4:51-5:40/km 下限偏轻松</span></div><p class="text-xs text-text-secondary mt-1">若小腿紧张，缩短步幅、提高触地轻快感。</p></div><div class="text-right"><span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-primary border border-primary"><span class="material-symbols-outlined text-[14px]">watch</span> 推送到手表</span></div></div>
+<div class="grid grid-cols-[80px_1fr] p-4 hover:bg-surface-hover transition-colors"><div class="flex flex-col items-center justify-center pr-4 border-r border-border-default"><span class="text-xs text-text-muted font-medium uppercase">Fri</span><span class="text-lg font-bold text-text-primary mono-data">08</span></div><div class="pl-4"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-phase-strength text-lg">fitness_center</span><span class="font-semibold text-text-primary text-sm">小腿离心 + 胸椎活动度</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-phase-strength/10 text-phase-strength">Strength</span></div><div class="flex items-center gap-4 text-xs text-text-muted mono-data"><span>25 min</span><span>跟腱 + 核心准备</span></div><p class="text-xs text-text-secondary mt-1">小腿提踵离心慢放 3s，胸椎旋转、猫牛、死虫；不做爆发跳跃。</p></div></div>
+<div class="grid grid-cols-[80px_1fr_auto] p-4 hover:bg-surface-hover transition-colors"><div class="flex flex-col items-center justify-center pr-4 border-r border-border-default"><span class="text-xs text-text-muted font-medium uppercase">Sat</span><span class="text-lg font-bold text-text-primary mono-data">09</span></div><div class="pl-4"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-phase-base text-lg">directions_run</span><span class="font-semibold text-text-primary text-sm">中长跑 17.6km</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-dim text-text-secondary">Z2</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-success-container text-on-success-container">营养日</span></div><div class="flex items-center gap-4 text-xs text-text-muted mono-data"><span>17.6 km</span><span>4:51-5:40/km</span></div><p class="text-xs text-text-secondary mt-1">后半程只允许自然提到 Z2 上沿，不进入阈值；补水与碳水按长跑日执行。</p></div><div class="text-right"><span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-primary border border-primary"><span class="material-symbols-outlined text-[14px]">watch</span> 推送到手表</span></div></div>
+<div class="grid grid-cols-[80px_1fr_auto] p-4 hover:bg-surface-hover transition-colors"><div class="flex flex-col items-center justify-center pr-4 border-r border-border-default"><span class="text-xs text-text-muted font-medium uppercase text-primary">Sun</span><span class="text-lg font-bold text-text-primary mono-data">10</span></div><div class="pl-4"><div class="flex items-center gap-2 mb-1"><span class="material-symbols-outlined text-phase-base text-lg">directions_run</span><span class="font-semibold text-text-primary text-sm">轻松有氧 16.4km</span><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-surface-dim text-text-secondary">Z2</span></div><div class="flex items-center gap-4 text-xs text-text-muted mono-data"><span>16.4 km</span><span>可拆 10km + 6.4km</span></div><p class="text-xs text-text-secondary mt-1">作为有氧承接，不追配速；若前一日疲劳明显可拆分。</p></div><div class="text-right"><span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-medium bg-surface text-primary border border-primary"><span class="material-symbols-outlined text-[14px]">watch</span> 推送到手表</span></div></div>
+</div></div></div>
+<aside class="lg:col-span-4 flex flex-col gap-6"><div class="bg-surface border border-border-default rounded-xl p-5 shadow-sm"><div class="flex items-center justify-between mb-4"><h4 class="text-sm font-semibold text-text-primary">营养日</h4><a class="text-xs text-text-muted hover:text-primary" href="1_weekly-plan-current-home.html">查看课表</a></div><div class="space-y-3"><div class="rounded-lg bg-success-container/30 border border-success/20 p-3"><p class="font-bold text-sm text-text-primary">Tue VO2max 日</p><p class="text-xs text-text-muted mono-data mt-1">2900 kcal · C420/P135/F75 · 3000ml</p></div><div class="rounded-lg bg-success-container/30 border border-success/20 p-3"><p class="font-bold text-sm text-text-primary">Sat 中长跑日</p><p class="text-xs text-text-muted mono-data mt-1">3000 kcal · C450/P135/F75 · 3200ml</p></div></div></div><div class="bg-surface border border-border-default rounded-xl p-5 shadow-sm"><div class="flex items-center justify-between mb-4"><h4 class="text-sm font-semibold text-text-primary">本周力量训练</h4><a class="text-xs text-text-muted hover:text-primary" href="2_weekly-plan-tab-strength.html">查看全部</a></div><div class="space-y-3"><div class="flex items-center gap-3 text-sm"><div class="w-10 h-10 bg-surface-dim rounded flex items-center justify-center text-text-secondary"><span class="material-symbols-outlined text-lg">fitness_center</span></div><div><p class="font-medium text-text-primary">髋稳定 + 核心</p><p class="text-xs text-text-muted">周三 · 30 分钟</p></div></div><div class="flex items-center gap-3 text-sm"><div class="w-10 h-10 bg-surface-dim rounded flex items-center justify-center text-text-secondary"><span class="material-symbols-outlined text-lg">accessibility_new</span></div><div><p class="font-medium text-text-primary">小腿离心 + 胸椎</p><p class="text-xs text-text-muted">周五 · 25 分钟</p></div></div></div></div><div class="bg-surface border border-border-default rounded-xl p-5 shadow-sm"><h4 class="text-sm font-semibold text-text-primary mb-3">本周反馈</h4><p class="text-xs text-text-muted mb-4">重点记录 VO2max 后腿部反应、周六中长跑补给和周三双 session 恢复情况。</p><textarea class="w-full min-h-[90px] p-3 bg-surface-variant/50 border border-border-default rounded-lg text-xs text-text-primary resize-none font-mono" placeholder="记录本周体感..."></textarea></div></aside>
 </div>
 </main>
 </body></html>

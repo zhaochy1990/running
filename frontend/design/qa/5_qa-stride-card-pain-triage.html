@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html class="light" lang="zh-CN"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>STRIDE - QA 疼痛风险分流卡</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,typography"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet"/>
+<style>
+  body { font-family: Outfit, sans-serif; }
+  .serif { font-family: Newsreader, serif; }
+  .mono { font-family: JetBrains Mono, monospace; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .filled-icon { font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .chat-scroll::-webkit-scrollbar { width: 4px; }
+  .chat-scroll::-webkit-scrollbar-thumb { background: #d8dae5; border-radius: 4px; }
+</style>
+</head>
+
+<body class="bg-[#f8f9fb] text-[#1a1c2e] min-h-screen">
+<header class="fixed top-0 right-0 h-[50px] left-[220px] bg-white border-b border-[#d8dae5] flex justify-between items-center px-6 z-10">
+  <div class="flex items-center space-x-4"><span class="mono text-[10px] font-bold tracking-widest text-[#3d4a3f]">COACH / QA RENDERING</span></div>
+  <div class="flex items-center space-x-6"><button class="text-[#3d4a3f] hover:text-[#006d38]"><span class="material-symbols-outlined text-[20px]">notifications</span></button><button class="text-[#3d4a3f] hover:text-[#006d38]"><span class="material-symbols-outlined text-[20px]">help_outline</span></button><div class="w-8 h-8 rounded-full bg-[#e7e8ea] border border-[#d8dae5]"></div></div>
+</header>
+<aside class="w-[220px] h-screen fixed left-0 top-0 bg-[#f2f4f6] border-r border-[#d8dae5] flex flex-col py-6 z-50">
+  <div class="px-6 mb-10 flex items-center gap-3"><div class="w-8 h-8 bg-[#006d38] rounded flex items-center justify-center text-white font-bold">S</div><div><h1 class="text-[20px] leading-tight font-bold text-[#006d38]">STRIDE</h1><p class="mono text-[9px] text-[#555570] tracking-widest">训练中心</p></div></div>
+  <nav class="flex-1 space-y-1">
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">dashboard</span><span class="mono text-[10px] tracking-[0.14em]">仪表盘</span></a>
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">calendar_month</span><span class="mono text-[10px] tracking-[0.14em]">训练计划</span></a>
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">view_week</span><span class="mono text-[10px] tracking-[0.14em]">周历</span></a>
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">fitness_center</span><span class="mono text-[10px] tracking-[0.14em]">活动记录</span></a>
+    <a class="flex items-center px-6 py-3 text-[#1a1c2e] bg-[#f5f6fa] relative" href="#"><div class="absolute left-0 top-0 bottom-0 w-[4px] bg-[#006d38]"></div><span class="material-symbols-outlined filled-icon mr-3 text-[#006d38]">psychology</span><span class="mono text-[10px] tracking-[0.14em] font-bold">COACH</span></a>
+    <a class="flex items-center px-6 py-3 text-[#555570] hover:bg-[#f5f6fa]" href="#"><span class="material-symbols-outlined mr-3">settings</span><span class="mono text-[10px] tracking-[0.14em]">设置</span></a>
+  </nav>
+  <div class="mt-auto px-6"><div class="p-4 bg-white border border-[#d8dae5] rounded-lg"><p class="mono text-[8px] text-[#8888a0] mb-2 uppercase">运动员档案</p><div class="flex items-center gap-3"><div class="w-8 h-8 rounded-full bg-[#e7e8ea] border border-[#e8eaf0]"></div><div><p class="text-sm font-bold">高级跑者</p><p class="mono text-[9px] text-[#006d38]">STRIDE PRO</p></div></div></div></div>
+</aside>
+<main class="ml-[220px] mt-[50px] flex flex-col h-[calc(100vh-50px)] bg-[#f8f9fb]">
+  <div class="px-8 py-4 border-b border-[#d8dae5] bg-white flex items-center justify-between shrink-0"><h2 class="text-[18px] font-semibold text-[#1a1c2e]">Coach 问答</h2><div class="flex items-center gap-2"><span class="w-2 h-2 bg-[#00a85a] rounded-full"></span><span class="mono text-[9px] text-[#555570] uppercase">两栏聊天布局</span></div></div>
+  <div class="flex-1 overflow-y-auto chat-scroll p-8 space-y-8">
+
+    <div class="flex justify-center"><span class="mono text-[9px] tracking-[0.1em] px-2 py-1 rounded-full bg-[#f2f4f6] border border-[#e8eaf0] text-[#555570]">IDEAL OUTPUT · ui_blocks.pain_triage</span></div>
+    <div class="flex justify-end"><div class="bg-[#e7e8ea] border border-[#d8dae5] px-4 py-3 rounded-xl rounded-tr-none max-w-[70%]"><p>我跟腱疼。</p></div></div>
+
+    <div class="flex items-start gap-4 max-w-5xl"><div class="w-10 h-10 rounded-full bg-[#00a85a] flex items-center justify-center text-white shrink-0"><span class="material-symbols-outlined">psychology</span></div><div class="space-y-4 w-full">
+      <div class="bg-white border border-[#d8dae5] p-6 rounded-xl rounded-tl-none shadow-sm"><p class="text-[18px] font-semibold mb-2">跟腱疼痛先按风险分流处理。</p><p class="serif text-[16px] leading-relaxed">疼痛类 stride card 默认更保守：风险提示、医学免责声明、训练避让动作都在同一条 Coach 消息里完成。</p></div>
+      <div class="bg-[#fde8e8] border border-[#f3c8c8] rounded-lg p-4 max-w-5xl"><div class="mono text-[10px] tracking-[0.14em] text-[#ba1a1a] mb-2">SAFETY CONTEXT</div><div class="grid grid-cols-3 gap-3 text-sm"><div><p class="text-[#555570]">近期负荷</p><p class="font-semibold">坡道冲刺后</p></div><div><p class="text-[#555570]">下一课</p><p class="font-semibold">5x1km 阈值</p></div><div><p class="text-[#555570]">风险提示</p><p class="font-semibold text-[#ba1a1a]">跟腱不适</p></div></div></div>
+      <div class="bg-white border border-[#d8dae5] rounded-lg overflow-hidden max-w-5xl"><div class="px-4 py-3 border-b border-[#d8dae5] bg-[#f2f4f6] flex items-center justify-between"><h3 class="text-[18px] font-semibold">疼痛评估量表</h3><span class="mono text-[9px] px-2 py-1 rounded bg-[#fde8e8] text-[#ba1a1a] border border-[#f3c8c8]">pain_triage</span></div><div class="p-5 space-y-5"><div><p class="mono text-[10px] tracking-[0.14em] text-[#555570] mb-3">疼痛位置</p><div class="grid grid-cols-3 gap-3"><button class="border border-[#d8dae5] rounded p-3">小腿肚</button><button class="bg-[#fde8e8] border-2 border-[#d32f2f] rounded p-3 font-semibold text-[#ba1a1a]">跟腱</button><button class="border border-[#d8dae5] rounded p-3">足底</button></div></div><div><div class="flex justify-between mono text-[10px] tracking-[0.14em] text-[#555570] mb-2"><span>疼痛程度</span><span>6/10</span></div><input class="w-full accent-[#d32f2f]" max="10" min="0" type="range" value="6" /></div><div class="grid grid-cols-2 gap-3"><label class="border border-[#d8dae5] rounded p-3 flex gap-2"><input type="checkbox" /> <span>24 小时内发生</span></label><label class="border border-[#d8dae5] rounded p-3 flex gap-2"><input type="checkbox" /> <span>红肿发热</span></label><label class="col-span-2 border border-[#d8dae5] rounded p-3 flex gap-2"><input checked type="checkbox" /> <span>跑步时加剧</span></label></div></div></div>
+    </div></div>
+
+
+  </div>
+  <div class="p-6 bg-white border-t border-[#d8dae5] shrink-0">
+  <div class="max-w-4xl mx-auto relative">
+    <textarea class="w-full bg-[#f2f4f6] border border-[#d8dae5] rounded-xl px-4 py-4 pr-32 text-[#1a1c2e] focus:outline-none focus:ring-1 focus:ring-[#006d38] focus:border-[#006d38] resize-none" placeholder="向 Coach 继续提问..." rows="2"></textarea>
+    <button class="absolute right-3 bottom-3 bg-[#00a85a] text-white px-6 py-2 rounded-lg font-semibold hover:opacity-90 transition-all shadow-sm">发送给 Coach</button>
+  </div>
+</div>
+</main>
+</body></html>

@@ -88,6 +88,17 @@ def _save_keyvault_config(user: str, vault_url: str, data: dict[str, Any]) -> No
     )
 
 
+def _delete_keyvault_config(user: str, vault_url: str) -> None:
+    try:
+        _keyvault_secret_client(vault_url).begin_delete_secret(
+            _keyvault_secret_name(user)
+        )
+    except Exception as exc:
+        if _is_keyvault_not_found(exc):
+            return
+        raise
+
+
 def _load_file_config(user: str | None) -> dict[str, Any] | None:
     path = _config_path(user)
     if not path.exists():
@@ -150,6 +161,34 @@ class Credentials:
         if data is None:
             return cls()
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    @classmethod
+    def delete(cls, user: str | None = None) -> None:
+        vault_url = _keyvault_url(user)
+        if vault_url and user:
+            _delete_keyvault_config(user, vault_url)
+            return
+
+        path = _config_path(user)
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                data = {}
+        except (OSError, json.JSONDecodeError):
+            data = {}
+
+        # Preserve provider metadata but remove COROS credentials.
+        for key in tuple(cls.__dataclass_fields__.keys()):
+            data.pop(key, None)
+        if data:
+            path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        else:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
 
     @property
     def is_logged_in(self) -> bool:

@@ -10,7 +10,11 @@ from coach_eval.judge_s1 import (
     _compact_generated_plan,
     build_s1_judge_prompt_metadata,
 )
-from coach_eval.runner import RunMode, run_s1_judge_artifact_evaluation
+from coach_eval.runner import (
+    RunMode,
+    run_s1_judge_artifact_evaluation,
+    run_s2_judge_artifact_evaluation,
+)
 from coach_eval.schemas import EvalReport, FixtureRunOutcome, JudgeScore
 
 
@@ -31,6 +35,100 @@ def _fixture() -> dict:
             "season_window": {"start_date": "2026-05-25", "end_date": "2026-10-18"},
         },
         "expected": {"soft_rubric": {"schema_validity": {"min_score": 5}}},
+    }
+
+
+def _s2_fixture() -> dict:
+    return {
+        "fixture_id": "s2-artifact-fixture",
+        "scope": "s2",
+        "description": "bad recovery signals with user pushback",
+        "input": {
+            "user_profile": {
+                "phase": "build",
+                "threshold_pace_s_km": 240,
+                "injuries": [],
+            },
+            "target_week_start": "2026-05-18",
+            "week_folder": "2026-05-18_05-24(S2)",
+            "target_weekly_km": 50,
+            "recent_signals": {
+                "hrv_7d": [62, 60, 58, 56, 55, 54, 53],
+                "rhr_7d": [48, 50, 51, 52, 53, 54, 54],
+                "sleep_score_7d": [78, 73, 70, 66, 62, 60, 58],
+                "ctl": 50,
+                "atl": 64,
+                "prev_week_km": 52,
+            },
+            "user_request_md": "keep quality",
+        },
+        "expected": {
+            "hard_constraints": {
+                "target_week_start": "2026-05-18",
+                "week_folder": "2026-05-18_05-24(S2)",
+                "target_weekly_km": 50,
+                "weekly_km_tolerance_pct": 0.1,
+                "prev_week_km": 52,
+                "prev_ctl": 50,
+                "z45_pace_threshold_s_km": 240,
+                "bad_recovery_signal": True,
+                "max_hard_sessions": 1,
+                "max_hard_sessions_when_bad_signals": 1,
+                "nutrition_daily": True,
+                "required_note_tokens": ["HRV"],
+            },
+            "soft_rubric": {"schema_validity": {"min_score": 5}},
+        },
+    }
+
+
+def _nutrition(start_day: int = 18) -> list[dict]:
+    return [
+        {
+            "schema": "plan-nutrition/v1",
+            "date": f"2026-05-{day:02d}",
+            "kcal_target": 2400,
+            "carbs_g": 300,
+            "protein_g": 130,
+            "fat_g": 70,
+            "water_ml": 2500,
+            "meals": [],
+            "notes_md": "基础补给",
+        }
+        for day in range(start_day, start_day + 7)
+    ]
+
+
+def _s2_weekly_plan(*, notes: str = "HRV/RHR downshift") -> dict:
+    sessions = [
+        ("2026-05-18", "run", "easy 8km", 8000),
+        ("2026-05-19", "run", "threshold intervals 10km", 10000),
+        ("2026-05-20", "rest", "rest", None),
+        ("2026-05-21", "run", "VO2 intervals 8km", 8000),
+        ("2026-05-22", "run", "easy 9km", 9000),
+        ("2026-05-23", "strength", "core stability", None),
+        ("2026-05-24", "run", "long run 15km", 15000),
+    ]
+    return {
+        "schema": "weekly-plan/v1",
+        "week_folder": "2026-05-18_05-24(S2)",
+        "sessions": [
+            {
+                "schema": "plan-session/v1",
+                "date": date,
+                "session_index": 0,
+                "kind": kind,
+                "summary": summary,
+                "spec": None,
+                "notes_md": notes,
+                "total_distance_m": distance,
+                "total_duration_s": None,
+                "scheduled_workout_id": None,
+            }
+            for date, kind, summary, distance in sessions
+        ],
+        "nutrition": _nutrition(),
+        "notes_md": notes,
     }
 
 
@@ -255,6 +353,102 @@ def test_run_s1_judge_artifact_evaluation_reuses_saved_plan(monkeypatch, tmp_pat
     assert outcome.timings["judge_user_prompt_chars"] > 0
     assert outcome.timings["judge_compact_plan_chars"] > 0
     assert outcome.timings["judge_original_plan_chars"] > 0
+
+
+def test_run_s2_judge_artifact_l1_blocks_bad_signal_double_hard(
+    monkeypatch, tmp_path
+):
+    artifact = _s2_weekly_plan()
+    artifact_path = tmp_path / "weekly-plan.json"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    monkeypatch.setattr("coach_eval.runner.load_fixtures", lambda scope, ids: [_s2_fixture()])
+
+    report = run_s2_judge_artifact_evaluation(
+        mode=RunMode.FROZEN_FIXTURE,
+        fixture_id="s2-artifact-fixture",
+        artifact_path=artifact_path,
+        judge_llm=SimpleNamespace(model="fake"),
+        run_judge=False,
+    )
+
+    assert report.scope == "s2"
+    assert report.fixtures_failed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.l1_passed is False
+    assert {v["rule"] for v in outcome.l1_violations} >= {
+        "hard_session_count",
+        "signal_response_hard_sessions",
+    }
+
+
+def test_run_s2_judge_artifact_evaluation_reuses_saved_weekly_plan(
+    monkeypatch, tmp_path
+):
+    artifact = _s2_weekly_plan()
+    artifact["sessions"][3]["summary"] = "easy 8km"
+    artifact_path = tmp_path / "weekly-plan.json"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    captured: dict = {}
+    monkeypatch.setattr("coach_eval.runner.load_fixtures", lambda scope, ids: [_s2_fixture()])
+
+    def fake_make_judge(_llm):
+        def judge(plan, fixture):
+            captured["judge"] = {"plan": plan, "fixture_id": fixture["fixture_id"]}
+            return JudgeScore(
+                fixture_id=fixture["fixture_id"],
+                scope="s2",
+                axes=[],
+                overall_verdict="pass",
+                overall_rationale="ok",
+                judge_model="fake",
+                judge_prompt_version="s2-vtest",
+            )
+
+        return judge
+
+    monkeypatch.setattr("coach_eval.runner.make_s2_judge", fake_make_judge)
+
+    report = run_s2_judge_artifact_evaluation(
+        mode=RunMode.FROZEN_FIXTURE,
+        fixture_id="s2-artifact-fixture",
+        artifact_path=artifact_path,
+        judge_llm=SimpleNamespace(model="fake"),
+    )
+
+    assert report.scope == "s2"
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.generated_artifact == artifact
+    assert outcome.l1_passed is True
+    assert outcome.judge_score is not None
+    assert captured["judge"] == {"plan": artifact, "fixture_id": "s2-artifact-fixture"}
+    assert outcome.timings["judge_system_prompt_chars"] > 0
+    assert outcome.timings["judge_user_prompt_chars"] > 0
+
+
+def test_run_s2_judge_artifact_l1_only_pass_counts_as_pass(monkeypatch, tmp_path):
+    artifact = _s2_weekly_plan()
+    artifact["sessions"][3]["summary"] = "easy 8km"
+    artifact_path = tmp_path / "weekly-plan.json"
+    artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+
+    monkeypatch.setattr("coach_eval.runner.load_fixtures", lambda scope, ids: [_s2_fixture()])
+
+    report = run_s2_judge_artifact_evaluation(
+        mode=RunMode.FROZEN_FIXTURE,
+        fixture_id="s2-artifact-fixture",
+        artifact_path=artifact_path,
+        judge_llm=SimpleNamespace(model="fake"),
+        run_judge=False,
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.l1_passed is True
+    assert outcome.judge_score is not None
+    assert outcome.judge_score.judge_model == "none"
 
 
 def test_run_s1_judge_artifact_backfills_source_generation_metadata(

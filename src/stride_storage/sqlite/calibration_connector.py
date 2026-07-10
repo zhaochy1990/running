@@ -325,6 +325,23 @@ class SQLiteRunningCalibrationRepository:
             source=str(provider) if provider is not None else None,
         )
 
+    def fetch_activity_samples(
+        self,
+        label_id: str,
+        *,
+        provider: Any = None,
+        activity_distance_m: float | None = None,
+    ) -> tuple[RunningSample, ...]:
+        """Public: an activity's timeseries as unit-normalized RunningSample rows.
+
+        Stable surface for callers outside calibration (e.g. the post-sync
+        activity-zones handler) that need per-sample speed_mps / heart_rate_bpm /
+        elapsed_s without re-implementing the unit conversions.
+        """
+        return self._fetch_samples(
+            label_id, provider=provider, activity_distance_m=activity_distance_m
+        )
+
     def _fetch_samples(
         self,
         label_id: str,

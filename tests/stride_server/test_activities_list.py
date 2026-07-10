@@ -125,3 +125,24 @@ def test_activity_list_total_is_not_limited_by_current_page(app_client):
     assert body["limit"] == 2
     assert len(body["activities"]) == 2
 
+
+def test_activity_list_monthly_summary_is_not_limited_by_current_page(app_client):
+    client, token, tmp_path = app_client
+    _seed_activities(tmp_path)
+
+    resp = client.get(
+        f"/api/{USER_UUID}/activities?limit=2&offset=2",
+        headers=_auth(token),
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [activity["label_id"] for activity in body["activities"]] == ["strength", "bike"]
+    assert body["monthly_summaries"] == {
+        "2026-05": {
+            "activity_count": 4,
+            "total_run_km": 15.0,
+            "duration_s": 10600,
+        }
+    }
+

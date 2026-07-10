@@ -116,12 +116,17 @@ def sync_activities(
     client: CorosClient,
     db: Database,
     full: bool = False,
-    max_pages: int = 50,
+    max_pages: int | None = None,
     page_size: int = 20,
     jobs: int = 1,
     progress_callback: SyncProgressCallback | None = None,
 ) -> tuple[int, tuple[str, ...]]:
-    """Sync activities from COROS to local DB. Returns count and saved labels."""
+    """Sync activities from COROS to local DB. Returns count and saved labels.
+
+    By default the activity scan is unbounded and stops only when COROS returns
+    an empty page or incremental sync reaches a locally-known activity. Tests
+    and diagnostics may pass ``max_pages`` to cap pagination explicitly.
+    """
     synced = 0
 
     with Progress(
@@ -140,7 +145,8 @@ def sync_activities(
             percent=10,
         )
 
-        for page in range(1, max_pages + 1):
+        page = 1
+        while max_pages is None or page <= max_pages:
             data = client.list_activities(page=page, size=page_size)
             data_list = data.get("data", {}).get("dataList", [])
             if not data_list:
@@ -162,6 +168,7 @@ def sync_activities(
                     percent=min(30, 10 + page * 2),
                     current=len(new_activities),
                 )
+                page += 1
                 continue
             break  # Inner loop broke, stop pagination
 
