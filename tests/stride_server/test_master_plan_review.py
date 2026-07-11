@@ -938,6 +938,7 @@ class TestCurrentMasterPlan:
         today = today_shanghai()
         this_monday = today - timedelta(days=today.weekday())
         week_start = this_monday - timedelta(days=14)
+        current_week = this_monday
         future_week = this_monday + timedelta(days=7)
         phase_id = str(uuid4())
         phase = Phase(
@@ -974,6 +975,14 @@ class TestCurrentMasterPlan:
                     target_weekly_km_low=30.0,
                     target_weekly_km_high=40.0,
                     key_sessions=[KeySession(type="long_run", distance_km=16.0)],
+                ),
+                MasterPlanWeek(
+                    week_index=3,
+                    week_start=current_week.isoformat(),
+                    phase_id=phase_id,
+                    target_weekly_km_low=40.0,
+                    target_weekly_km_high=50.0,
+                    key_sessions=[KeySession(type="tempo", distance_km=12.0)],
                 ),
                 MasterPlanWeek(
                     week_index=4,
@@ -1020,6 +1029,14 @@ class TestCurrentMasterPlan:
                 sport_type=200,
                 sport_name="Bike",
             ))
+            db.upsert_activity(_activity(
+                "current-run",
+                date=f"{today.isoformat()}T01:00:00+00:00",
+                distance_km=7.0,
+                duration_s=2100,
+                pace_s_km=300,
+                avg_hr=145,
+            ))
         finally:
             db.close()
 
@@ -1032,6 +1049,7 @@ class TestCurrentMasterPlan:
         data = resp.json()
         weeks_by_index = {week["week_index"]: week for week in data["weeks"]}
         completed = weeks_by_index[1]
+        current = weeks_by_index[3]
         future = weeks_by_index[4]
         assert completed["is_completed"] is True
         assert completed["planned_distance_km"] == 40.0
@@ -1040,6 +1058,13 @@ class TestCurrentMasterPlan:
         assert completed["actual_avg_pace_fmt"] == "5:12"
         assert completed["actual_avg_hr"] == 146
         assert completed["actual_run_count"] == 2
+        assert current["is_completed"] is False
+        assert current["planned_distance_km"] == 50.0
+        assert current["actual_distance_km"] == 7.0
+        assert current["actual_avg_pace_s_km"] == 300
+        assert current["actual_avg_pace_fmt"] == "5:00"
+        assert current["actual_avg_hr"] == 145
+        assert current["actual_run_count"] == 1
         assert future["is_completed"] is False
         assert "actual_distance_km" not in future
 
@@ -1149,7 +1174,8 @@ class TestCurrentMasterPlan:
         assert weeks[3]["phase_id"] == future_phase_id
         assert weeks[3]["planned_distance_km"] == 55.0
         assert weeks[3]["is_completed"] is False
-        assert "actual_distance_km" not in weeks[3]
+        assert weeks[3]["actual_distance_km"] == 0.0
+        assert weeks[3]["actual_run_count"] == 0
 
     def test_current_phase_id_correct(self, app_client):
         """current_phase_id is set when today falls within a phase."""
