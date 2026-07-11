@@ -1160,7 +1160,11 @@ function buildMileageBars(plan: MasterPlan, spans: PhaseSpan[], totalWeeks: numb
     const targetPhase = target ? phaseForWeekTarget(target, spans) : null
     const phase = targetPhase?.phase ?? span.phase
     const phaseIndex = targetPhase?.index ?? span.index
-    const plannedKm = numberOrNull(target?.planned_distance_km ?? target?.target_weekly_km_high ?? target?.target_weekly_km_low ?? interpolateWeeklyKm(span.phase, localIndex, span.weekCount))
+    const plannedKm = target
+      ? numberOrNull(target.planned_distance_km ?? target.target_weekly_km_high ?? target.target_weekly_km_low)
+      : span.phase.is_completed
+        ? null
+        : interpolateWeeklyKm(span.phase, localIndex, span.weekCount)
     const actualKm = numberOrNull(target?.actual_distance_km)
     const isCompleted = Boolean(target?.is_completed) || actualKm != null
     return {

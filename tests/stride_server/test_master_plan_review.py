@@ -1030,8 +1030,9 @@ class TestCurrentMasterPlan:
 
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        completed = data["weeks"][0]
-        future = data["weeks"][1]
+        weeks_by_index = {week["week_index"]: week for week in data["weeks"]}
+        completed = weeks_by_index[1]
+        future = weeks_by_index[4]
         assert completed["is_completed"] is True
         assert completed["planned_distance_km"] == 40.0
         assert completed["actual_distance_km"] == 20.5
@@ -1041,6 +1042,114 @@ class TestCurrentMasterPlan:
         assert completed["actual_run_count"] == 2
         assert future["is_completed"] is False
         assert "actual_distance_km" not in future
+
+    def test_current_synthesizes_completed_lead_in_weeks(self, app_client):
+        """Completed lead-in phases without weekly skeletons still expose actual weeks."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+
+        today = today_shanghai()
+        this_monday = today - timedelta(days=today.weekday())
+        lead_start = this_monday - timedelta(weeks=3)
+        future_week = this_monday
+        completed_phase_id = str(uuid4())
+        future_phase_id = str(uuid4())
+        completed_phase = Phase(
+            id=completed_phase_id,
+            name="已完成基础期",
+            start_date=lead_start.isoformat(),
+            end_date=(lead_start + timedelta(days=20)).isoformat(),
+            focus="历史基础期，不展开周课表",
+            weekly_distance_km_low=120.0,
+            weekly_distance_km_high=190.0,
+            key_session_types=[],
+            milestone_ids=[],
+            is_completed=True,
+        )
+        future_phase = Phase(
+            id=future_phase_id,
+            name="速度期",
+            start_date=future_week.isoformat(),
+            end_date=(future_week + timedelta(days=6)).isoformat(),
+            focus="未来周",
+            weekly_distance_km_low=45.0,
+            weekly_distance_km_high=55.0,
+            key_session_types=["间歇"],
+            milestone_ids=[],
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        plan = MasterPlan(
+            plan_id=str(uuid4()),
+            user_id=USER_UUID,
+            status=MasterPlanStatus.ACTIVE,
+            goal=MasterPlanGoal(
+                goal_id=str(uuid4()),
+                race_date=(today + timedelta(days=30)).isoformat(),
+                target_time="",
+            ),
+            start_date=lead_start.isoformat(),
+            end_date=(future_week + timedelta(days=6)).isoformat(),
+            total_weeks=4,
+            phases=[completed_phase, future_phase],
+            milestones=[],
+            weeks=[
+                MasterPlanWeek(
+                    week_index=4,
+                    week_start=future_week.isoformat(),
+                    phase_id=future_phase_id,
+                    target_weekly_km_low=45.0,
+                    target_weekly_km_high=55.0,
+                    key_sessions=[KeySession(type="interval", distance_km=10.0)],
+                ),
+            ],
+            training_principles=[],
+            generated_by="gpt-4.1",
+            version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        store.save_plan(plan)
+
+        db = Database(user=USER_UUID)
+        try:
+            db.upsert_activity(_activity(
+                "lead-run-a",
+                date=f"{lead_start.isoformat()}T01:00:00+00:00",
+                distance_km=10.0,
+                duration_s=3000,
+                pace_s_km=300,
+                avg_hr=140,
+            ))
+            db.upsert_activity(_activity(
+                "lead-run-b",
+                date=f"{(lead_start + timedelta(days=7)).isoformat()}T01:00:00+00:00",
+                distance_km=12.0,
+                duration_s=3840,
+                pace_s_km=320,
+                avg_hr=150,
+            ))
+        finally:
+            db.close()
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        weeks = resp.json()["weeks"]
+        assert [week["week_index"] for week in weeks] == [1, 2, 3, 4]
+        assert weeks[0]["phase_id"] == completed_phase_id
+        assert weeks[0]["is_completed"] is True
+        assert weeks[0]["planned_distance_km"] is None
+        assert weeks[0]["actual_distance_km"] == 10.0
+        assert weeks[0]["actual_avg_pace_fmt"] == "5:00"
+        assert weeks[1]["actual_distance_km"] == 12.0
+        assert weeks[2]["actual_distance_km"] == 0.0
+        assert weeks[3]["phase_id"] == future_phase_id
+        assert weeks[3]["planned_distance_km"] == 55.0
+        assert weeks[3]["is_completed"] is False
+        assert "actual_distance_km" not in weeks[3]
 
     def test_current_phase_id_correct(self, app_client):
         """current_phase_id is set when today falls within a phase."""
