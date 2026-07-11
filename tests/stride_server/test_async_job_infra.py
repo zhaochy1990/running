@@ -114,6 +114,32 @@ def _worker(store, queue, poison, **cfg):
     return JobWorker(store=store, queue=queue, poison_queue=poison, config=config)
 
 
+def test_worker_completion_hook_failure_keeps_message(store, queue):
+    """A failing on_completed hook must NOT ack the message — it stays queued so
+    the job is re-delivered and the hook (which advances a pipeline) can retry.
+    The job row is still marked DONE; only the ack is withheld."""
+    @job_handler("hooked")
+    def _h(job, *, heartbeat):
+        return {"ok": True}
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="hooked")
+    poison = InMemoryJobQueue()
+
+    def boom(_job):
+        raise RuntimeError("transient advance error")
+
+    config = QueueStorageConfig(visibility_timeout_s=300, poison_max_attempts=3)
+    worker = JobWorker(
+        store=store, queue=queue, poison_queue=poison, config=config,
+        on_completed=boom,
+    )
+    worker.process_once(max_messages=5)
+
+    assert store.get("u1", jid).status is JobStatus.DONE  # row finalized
+    assert queue.depth() == 1  # message NOT acked — left for re-delivery
+
+
 def test_worker_runs_handler_to_done(store, queue):
     seen = {}
 

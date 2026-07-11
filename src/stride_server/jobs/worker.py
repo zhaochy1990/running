@@ -69,14 +69,38 @@ class JobWorker:
         self._on_completed = on_completed
         self._on_failed = on_failed
 
-    def _fire(self, hook: "Callable[[JobRecord], None] | None", job: JobRecord) -> None:
-        """Invoke a lifecycle hook; a hook failure must never break job handling."""
+    def _fire(self, hook: "Callable[[JobRecord], None] | None", job: JobRecord) -> bool:
+        """Invoke a lifecycle hook. Returns True on success (or no hook).
+
+        A hook failure must never raise into job handling, but the caller needs
+        to know whether it succeeded: the completion hook advances the pipeline
+        and is fired BEFORE the message is acked, so a False return tells the
+        caller to leave the message for re-delivery instead of deleting it.
+        """
         if hook is None:
-            return
+            return True
         try:
             hook(job)
+            return True
         except Exception:  # noqa: BLE001 — hook boundary
             logger.exception("job %s lifecycle hook failed", job.job_id)
+            return False
+
+    def _finalize_failed(self, failed: JobRecord, msg: QueueMessage) -> None:
+        """Fire the failure hook, then ack — same ordering as the DONE path.
+
+        The fail hook marks the pipeline run FAILED; if it can't (transient
+        error / crash), leave the message so re-delivery retries the
+        finalization rather than losing the FAILED signal. ``on_job_failed`` is
+        idempotent, so a repeat is safe.
+        """
+        if not self._fire(self._on_failed, failed):
+            logger.warning(
+                "job %s: failure hook failed; leaving message for re-delivery",
+                failed.job_id,
+            )
+            return
+        self._queue.delete(msg)
 
     def process_once(self, *, max_messages: int = 1) -> int:
         """Receive and process up to ``max_messages``. Returns the count handled."""
@@ -111,8 +135,7 @@ class JobWorker:
                 completed_at=_now_iso(),
                 heartbeat_at=_now_iso(),
             )
-            self._queue.delete(msg)
-            self._fire(self._on_failed, failed)
+            self._finalize_failed(failed, msg)
             return
 
         self._store.update(
@@ -164,8 +187,20 @@ class JobWorker:
         if result is not None:
             fields["result_json"] = json.dumps(result, ensure_ascii=False, default=str)
         done = self._store.update(job.job_id, job.partition_key, **fields)
+        # Advance the pipeline BEFORE acking the message. If the completion hook
+        # fails (transient store/queue error) or the worker crashes here, the
+        # message is NOT deleted → its lease expires → the job is re-delivered
+        # and the (idempotent) handler + hook run again. Acking first would drop
+        # the only signal that advances the pipeline, stranding the run. The
+        # hook is idempotent (see orchestrator.on_job_completed), so re-delivery
+        # is safe.
+        if not self._fire(self._on_completed, done):
+            logger.warning(
+                "job %s: completion hook failed; leaving message for re-delivery",
+                job.job_id,
+            )
+            return
         self._queue.delete(current["msg"])
-        self._fire(self._on_completed, done)
 
     def _on_handler_error(self, job: JobRecord, msg: QueueMessage, exc: Exception) -> None:
         """Record a handler failure. Non-terminal while retries remain.
@@ -197,8 +232,7 @@ class JobWorker:
                 completed_at=_now_iso(),
                 heartbeat_at=_now_iso(),
             )
-            self._queue.delete(msg)
-            self._fire(self._on_failed, failed)
+            self._finalize_failed(failed, msg)
             return
         self._store.update(
             job.job_id, job.partition_key,
@@ -222,8 +256,7 @@ class JobWorker:
             completed_at=_now_iso(),
             heartbeat_at=_now_iso(),
         )
-        self._queue.delete(msg)
-        self._fire(self._on_failed, failed)
+        self._finalize_failed(failed, msg)
 
     def run_forever(self, *, poll_interval_s: float = 2.0, max_messages: int = 4) -> None:
         logger.info("job worker started (queue=%s)", self._config.queue_name)

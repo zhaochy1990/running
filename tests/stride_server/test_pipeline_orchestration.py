@@ -118,9 +118,11 @@ def test_pipeline_run_store_roundtrip(tmp_path):
 # --- orchestrator end-to-end (via worker + dev backends) --------------------
 
 
-def _wire_dev_backends(tmp_path, monkeypatch):
+def _wire_dev_backends(tmp_path, monkeypatch, *, visibility_timeout_s=0):
     cfg = QueueStorageConfig(
-        file_backend_dir=str(tmp_path), visibility_timeout_s=0, poison_max_attempts=3
+        file_backend_dir=str(tmp_path),
+        visibility_timeout_s=visibility_timeout_s,
+        poison_max_attempts=3,
     )
     store = FileJobStore(tmp_path / "state")
     queue = InMemoryJobQueue()
@@ -222,11 +224,13 @@ pipelines:
       - {name: s2, job_type: b, depends: [s1]}
 """)
     load_pipelines(p)
-    worker, prstore, queue = _wire_dev_backends(tmp_path, monkeypatch)
-
-    # Make enqueue drain the queue synchronously — the worst-case race where the
-    # first job runs to completion *inside* the enqueue call, before
-    # start_pipeline's own bookkeeping finishes.
+    # Leased visibility (>0) so the reentrant drain inside racing_enqueue can't
+    # re-receive the still-un-acked parent message — the worker fires the
+    # completion hook before acking, so a 0-timeout queue would hand the same
+    # in-flight message back to the nested process_once and recurse.
+    worker, prstore, queue = _wire_dev_backends(
+        tmp_path, monkeypatch, visibility_timeout_s=300
+    )
     real_client = J.get_job_client()
     real_enqueue = real_client.enqueue
 
@@ -246,3 +250,89 @@ pipelines:
     run = prstore.get("u1", run_id)
     assert run is not None  # run existed when the first job completed
     assert run.status is JobStatus.DONE  # advanced past both steps, not stalled
+
+
+def test_completion_hook_failure_leaves_message_for_redelivery(tmp_path, monkeypatch):
+    """If the completion hook (pipeline advance) fails, the step's message must
+    NOT be acked — its lease expires and the job is re-delivered, so the
+    pipeline can still advance on retry instead of stranding at this step."""
+    job_handler("a")(lambda job, *, heartbeat: {"ok": True})
+    job_handler("b")(lambda job, *, heartbeat: {"ok": True})
+    p = _write_yaml(tmp_path, """
+pipelines:
+  demo:
+    steps:
+      - {name: s1, job_type: a}
+      - {name: s2, job_type: b, depends: [s1]}
+""")
+    load_pipelines(p)
+    # timeout=0 so a re-delivery is observable within the same drain loop.
+    worker, prstore, queue = _wire_dev_backends(tmp_path, monkeypatch)
+
+    run_id = orchestrator.start_pipeline("demo", partition_key="u1")
+
+    calls = {"n": 0}
+    real_hook = orchestrator.on_job_completed
+
+    def flaky_hook(job):
+        # Fail the first advance of s1, then behave normally.
+        if job.job_type == "a" and calls["n"] == 0:
+            calls["n"] += 1
+            raise RuntimeError("transient store error")
+        return real_hook(job)
+
+    worker._on_completed = flaky_hook
+
+    for _ in range(12):
+        if worker.process_once(max_messages=5) == 0:
+            break
+
+    # The first advance failed, but s1's message survived and re-delivered, so
+    # the run still reached the end rather than stalling at s1.
+    assert calls["n"] == 1  # the hook did fail once
+    run = prstore.get("u1", run_id)
+    assert run.status is JobStatus.DONE
+
+
+def test_on_job_completed_is_idempotent(tmp_path, monkeypatch):
+    """Firing the completion hook twice for the same step must not enqueue the
+    next step twice (the worker fires before ack, so a redelivery re-runs it)."""
+    job_handler("a")(lambda job, *, heartbeat: {"ok": True})
+    job_handler("b")(lambda job, *, heartbeat: {"ok": True})
+    p = _write_yaml(tmp_path, """
+pipelines:
+  demo:
+    steps:
+      - {name: s1, job_type: a}
+      - {name: s2, job_type: b, depends: [s1]}
+""")
+    load_pipelines(p)
+    worker, prstore, queue = _wire_dev_backends(tmp_path, monkeypatch)
+
+    enqueued: list[str] = []
+    real_enqueue = J.enqueue
+
+    def counting_enqueue(**kw):
+        enqueued.append(kw["job_type"])
+        return real_enqueue(**kw)
+
+    monkeypatch.setattr(J, "enqueue", counting_enqueue)
+
+    run_id = orchestrator.start_pipeline("demo", partition_key="u1")
+    # Process only s1 (one message), then replay its completion hook by hand.
+    worker.process_once(max_messages=1)
+    s1_job = _find_job(worker, "u1", "a")
+    before = enqueued.count("b")
+    orchestrator.on_job_completed(s1_job)  # second delivery of the same step
+    orchestrator.on_job_completed(s1_job)  # third, for good measure
+    after = enqueued.count("b")
+
+    assert before == 1  # s2 enqueued exactly once during normal processing
+    assert after == before  # replays did NOT enqueue s2 again
+
+
+def _find_job(worker, partition_key, job_type):
+    for rec in worker._store.list_by_partition(partition_key):
+        if rec.job_type == job_type:
+            return rec
+    raise AssertionError(f"no {job_type} job for {partition_key}")

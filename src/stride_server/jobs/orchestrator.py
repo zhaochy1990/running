@@ -152,10 +152,26 @@ def _enqueue_step(
     )
 
 
+def _step_state(steps_json: str | None, step_name: str) -> dict[str, Any] | None:
+    for st in json.loads(steps_json) if steps_json else []:
+        if st.get("name") == step_name:
+            return st
+    return None
+
+
 def on_job_completed(job: JobRecord) -> None:
     """Worker hook: a step job finished DONE — advance its pipeline run.
 
     No-op if the job isn't part of a pipeline (no run metadata).
+
+    **Idempotent.** The worker fires this hook BEFORE deleting the queue
+    message (so pipeline advancement is covered by at-least-once retry — a
+    transient store/queue error or a crash here leaves the message to be
+    re-delivered rather than stranding the run). That means this can run more
+    than once for the same completed step, so it must not enqueue the next step
+    twice: if the recorded next step has already left ``pending`` (a prior run
+    already enqueued it), we only re-assert the current step's DONE state and
+    return without a second enqueue.
     """
     meta = _pipeline_meta(job)
     if meta is None:
@@ -168,15 +184,26 @@ def on_job_completed(job: JobRecord) -> None:
     if run is None:
         logger.warning("pipeline run %s missing for completed step %s", run_id, step_name)
         return
+    if run.status in (JobStatus.DONE, JobStatus.FAILED):
+        # Run already terminal (this step was the last, or a prior delivery
+        # finished/failed the run). Nothing to advance.
+        return
     pipeline = get_pipeline(run.pipeline_name)
     if pipeline is None:
         logger.error("pipeline def %s missing at runtime", run.pipeline_name)
         return
 
+    nxt = pipeline.next_step(step_name)
+    if nxt is not None:
+        # Idempotency guard: if the next step was already enqueued by an earlier
+        # delivery of this same completion, don't enqueue it again.
+        nxt_state = _step_state(run.steps_json, nxt.name)
+        if nxt_state is not None and nxt_state.get("status") != "pending":
+            return
+
     steps_json = _update_step_states(
         run.steps_json, step_name, status=JobStatus.DONE.value, job_id=job.job_id
     )
-    nxt = pipeline.next_step(step_name)
     if nxt is None:
         store.update(
             run_id, job.partition_key,
