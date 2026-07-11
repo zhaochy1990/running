@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Literal
@@ -67,6 +68,42 @@ def _write_onboarding(uuid: str, data: dict[str, Any]) -> None:
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _start_onboarding_pipeline(uuid: str) -> None:
+    """Kick off the onboarding pipeline (full sync → calibration → backfill) and
+    record its run_id in onboarding.json so the frontend can poll progress.
+
+    Best-effort at the trigger boundary: a failure to enqueue must not fail the
+    watch-login response (the user is bound); it is logged and can be retried.
+    Skips if a run is already in flight for this user (idempotent re-login).
+    """
+    try:
+        from stride_server.jobs.orchestrator import start_pipeline
+
+        onboarding = _read_onboarding(uuid)
+        existing = onboarding.get("onboarding_pipeline_run_id")
+        if existing:
+            store = _pipeline_run_store()
+            run = store.get(uuid, existing) if store else None
+            if run is not None and run.status.value in ("queued", "running"):
+                return  # already in flight
+        run_id = start_pipeline("onboarding", partition_key=uuid)
+        onboarding = _read_onboarding(uuid)
+        onboarding["onboarding_pipeline_run_id"] = run_id
+        _write_onboarding(uuid, onboarding)
+        logger.info("onboarding pipeline run %s started for %s", run_id, uuid)
+    except Exception:
+        logger.exception("failed to start onboarding pipeline for %s", uuid)
+
+
+def _pipeline_run_store():
+    try:
+        from stride_server.jobs import get_pipeline_run_store
+
+        return get_pipeline_run_store()
+    except Exception:
+        return None
 
 
 def sync_stale_after_seconds_from_config(config: SyncConfig) -> int:
@@ -221,6 +258,8 @@ def coros_login(
     onboarding["coros_ready"] = True
     _write_onboarding(uuid, onboarding)
 
+    _start_onboarding_pipeline(uuid)
+
     return {"ok": True, "region": result.region, "user_id": result.user_id}
 
 
@@ -287,6 +326,8 @@ def garmin_login(
     onboarding = _read_onboarding(uuid)
     onboarding["coros_ready"] = True
     _write_onboarding(uuid, onboarding)
+
+    _start_onboarding_pipeline(uuid)
 
     return {"ok": True, "region": result.region, "user_id": result.user_id}
 
@@ -473,7 +514,31 @@ def sync_status(payload: dict = Depends(require_bearer)):
     return result
 
 
-# ─── Full sync (training plan setup) ────────────────────────────────────────
+@router.get("/api/users/me/onboarding/pipeline-status")
+def onboarding_pipeline_status(payload: dict = Depends(require_bearer)):
+    """Aggregate status of this user's onboarding pipeline run.
+
+    The frontend polls this after watch-login to show "数据同步中" progress. The
+    run_id is stored in onboarding.json by the watch-login trigger; returns
+    ``{state: "none"}`` when no pipeline has been started.
+    """
+    uuid = _validate_uuid(payload["sub"])
+    onboarding = _read_onboarding(uuid)
+    run_id = onboarding.get("onboarding_pipeline_run_id")
+    if not run_id:
+        return {"state": "none"}
+    store = _pipeline_run_store()
+    run = store.get(uuid, run_id) if store else None
+    if run is None:
+        return {"state": "none", "run_id": run_id}
+    steps = json.loads(run.steps_json) if run.steps_json else []
+    return {
+        "state": run.status.value,
+        "run_id": run.run_id,
+        "current_step": run.current_step,
+        "steps": steps,
+        "error": run.error_message,
+    }
 
 
 @router.post("/api/users/me/full-sync")

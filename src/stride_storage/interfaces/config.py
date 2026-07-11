@@ -93,6 +93,7 @@ class QueueStorageConfig:
     poison_queue_name: str = "stridejobs-poison"
     table_account_url: str = ""
     jobs_table_name: str = "stridejobs"
+    pipeline_runs_table_name: str = "stridepipelineruns"
     file_backend_dir: str = "data/_jobs_dev"
     visibility_timeout_s: int = 300
     poison_max_attempts: int = 5

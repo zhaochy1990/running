@@ -26,6 +26,8 @@ from stride_storage.interfaces.jobs import (
     JobRecord,
     JobStatus,
     JobStore,
+    PipelineRunRecord,
+    PipelineRunStore,
     QueueMessage,
 )
 from stride_storage.interfaces.likes import LikeEntity, LikesBackend
@@ -47,6 +49,8 @@ __all__ = [
     "MasterPlanStorageConfig",
     "NotificationConfig",
     "NotificationStorageConfig",
+    "PipelineRunRecord",
+    "PipelineRunStore",
     "QueueMessage",
     "QueueStorageConfig",
     "StorageConfig",

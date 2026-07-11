@@ -28,9 +28,15 @@ def _register_handlers() -> None:
 
 def main() -> None:
     from stride_server.jobs import build_worker, registered_types
+    from stride_server.jobs.pipelines import load_pipelines, registered_pipelines
 
     _register_handlers()
     logger.info("registered job handlers: %s", registered_types())
+    # Load + validate pipeline defs AFTER handlers register (so the job_type
+    # check sees them). Fail-fast: a bad definition must abort the worker, not
+    # silently run without pipelines.
+    load_pipelines()
+    logger.info("loaded pipelines: %s", registered_pipelines())
     build_worker().run_forever()
 
 

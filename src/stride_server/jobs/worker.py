@@ -28,7 +28,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from stride_storage.interfaces.jobs import (
     JobQueue,
@@ -56,11 +56,27 @@ class JobWorker:
         queue: JobQueue,
         poison_queue: JobQueue,
         config: QueueStorageConfig,
+        on_completed: "Callable[[JobRecord], None] | None" = None,
+        on_failed: "Callable[[JobRecord], None] | None" = None,
     ) -> None:
         self._store = store
         self._queue = queue
         self._poison = poison_queue
         self._config = config
+        # Optional lifecycle hooks (injected by build_worker to advance
+        # pipelines). Kept optional so the worker stays generic — the job infra
+        # itself has no pipeline dependency.
+        self._on_completed = on_completed
+        self._on_failed = on_failed
+
+    def _fire(self, hook: "Callable[[JobRecord], None] | None", job: JobRecord) -> None:
+        """Invoke a lifecycle hook; a hook failure must never break job handling."""
+        if hook is None:
+            return
+        try:
+            hook(job)
+        except Exception:  # noqa: BLE001 — hook boundary
+            logger.exception("job %s lifecycle hook failed", job.job_id)
 
     def process_once(self, *, max_messages: int = 1) -> int:
         """Receive and process up to ``max_messages``. Returns the count handled."""
@@ -87,7 +103,7 @@ class JobWorker:
         if handler is None:
             # No handler is a permanent failure — retrying can't help. Terminal.
             logger.error("job worker: no handler for job_type=%s (job %s)", job.job_type, job.job_id)
-            self._store.update(
+            failed = self._store.update(
                 job.job_id, job.partition_key,
                 status=JobStatus.FAILED,
                 error_code="no_handler",
@@ -96,6 +112,7 @@ class JobWorker:
                 heartbeat_at=_now_iso(),
             )
             self._queue.delete(msg)
+            self._fire(self._on_failed, failed)
             return
 
         self._store.update(
@@ -132,8 +149,9 @@ class JobWorker:
         }
         if result is not None:
             fields["result_json"] = json.dumps(result, ensure_ascii=False, default=str)
-        self._store.update(job.job_id, job.partition_key, **fields)
+        done = self._store.update(job.job_id, job.partition_key, **fields)
         self._queue.delete(msg)
+        self._fire(self._on_completed, done)
 
     def _on_handler_error(self, job: JobRecord, msg: QueueMessage, exc: Exception) -> None:
         """Record a handler failure. Non-terminal while retries remain.
@@ -157,7 +175,7 @@ class JobWorker:
                 job.job_id, job.job_type, msg.dequeue_count,
             )
             self._poison.enqueue(job_id=job.job_id, partition_key=job.partition_key)
-            self._store.update(
+            failed = self._store.update(
                 job.job_id, job.partition_key,
                 status=JobStatus.FAILED,
                 error_code=code,
@@ -166,6 +184,7 @@ class JobWorker:
                 heartbeat_at=_now_iso(),
             )
             self._queue.delete(msg)
+            self._fire(self._on_failed, failed)
             return
         self._store.update(
             job.job_id, job.partition_key,
@@ -181,7 +200,7 @@ class JobWorker:
             job.job_id, job.job_type, self._config.poison_max_attempts,
         )
         self._poison.enqueue(job_id=job.job_id, partition_key=job.partition_key)
-        self._store.update(
+        failed = self._store.update(
             job.job_id, job.partition_key,
             status=JobStatus.FAILED,
             error_code="poison",
@@ -190,6 +209,7 @@ class JobWorker:
             heartbeat_at=_now_iso(),
         )
         self._queue.delete(msg)
+        self._fire(self._on_failed, failed)
 
     def run_forever(self, *, poll_interval_s: float = 2.0, max_messages: int = 4) -> None:
         logger.info("job worker started (queue=%s)", self._config.queue_name)

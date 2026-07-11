@@ -9,3 +9,4 @@ the onboarding-pipeline handler lands separately.
 from __future__ import annotations
 
 from . import hello  # noqa: F401  (registers the hello_world handler)
+from . import onboarding  # noqa: F401  (registers the onboarding pipeline steps)

@@ -1,0 +1,21 @@
+# Async-job pipeline definitions.
+#
+# Each pipeline is an ordered set of steps; each step is a job whose `job_type`
+# must have a registered `@job_handler`. `depends` declares which earlier steps
+# must finish first (linear for now; the field exists to make the dependency
+# explicit and to leave room for future parallel/DAG execution).
+#
+# Loaded fail-fast at startup by both the API and worker processes
+# (stride_server.jobs.pipelines.load_pipelines).
+
+pipelines:
+  onboarding:
+    steps:
+      - name: full_sync
+        job_type: onboarding_full_sync
+      - name: calibration
+        job_type: onboarding_calibration
+        depends: [full_sync]
+      - name: backfill
+        job_type: onboarding_backfill
+        depends: [calibration]
