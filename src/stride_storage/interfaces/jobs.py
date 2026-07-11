@@ -75,8 +75,14 @@ class JobStore(Protocol):
 class QueueMessage:
     """A dequeued message: the job coordinates + queue bookkeeping.
 
-    ``receipt`` is the backend-specific handle needed to delete/extend the
-    message; ``dequeue_count`` drives poison detection (retry ceiling).
+    ``receipt`` is an **opaque, backend-specific** handle used to ack/extend
+    this exact delivery. Only the backend that produced it may interpret it
+    (Azure Queue: ``(msg_id, pop_receipt)``; in-memory: a sequence int; a
+    future Service Bus / Kafka backend: a lock token / partition-offset). Upper
+    layers (``JobClient``, ``JobWorker``) MUST treat it as a black box — pass
+    the whole ``QueueMessage`` back to ``JobQueue.delete``; never inspect
+    ``receipt``'s shape. ``dequeue_count`` is the delivery attempt number and
+    drives poison detection (retry ceiling).
     """
 
     job_id: str
@@ -87,11 +93,33 @@ class QueueMessage:
 
 @runtime_checkable
 class JobQueue(Protocol):
-    """Queue layer: at-least-once delivery with visibility-timeout retries.
+    """The queue abstraction — the only seam between the job infra and the
+    underlying message broker.
 
-    ``enqueue`` publishes a job pointer. ``receive`` leases up to ``max`` messages
-    (hidden for ``visibility_timeout_s``); an un-``delete``d message reappears
-    after the timeout (automatic retry). ``delete`` acks a done message.
+    Everything above this Protocol (``JobClient``, ``JobWorker``, every handler)
+    depends on ``JobQueue`` alone and never imports a concrete backend. To swap
+    the broker (Azure Storage Queue → Azure Service Bus / Kafka / RabbitMQ /
+    SQS), implement these three methods against the new broker and add one
+    branch in the ``queue_from_config`` factory — no upper-layer change.
+
+    Contract every backend must honour:
+
+    - **At-least-once delivery.** ``receive`` leases up to ``max`` messages,
+      hiding each for ``visibility_timeout_s``. A leased message that is not
+      ``delete``d before the lease expires reappears on a later ``receive``
+      (automatic retry) with an incremented ``dequeue_count``. Handlers are
+      therefore expected to be idempotent.
+    - **Ack on success only.** ``delete`` removes a message; the worker calls it
+      only after the job reaches a terminal state, so a crash mid-handling
+      re-delivers rather than drops.
+    - **Opaque receipts.** ``receive`` stamps each ``QueueMessage.receipt`` with
+      whatever handle ``delete`` needs; the caller round-trips it unread.
+    - **``delay_s``** optionally defers first visibility (used for ret/backoff or
+      scheduled enqueue); ``0`` means visible immediately.
+
+    Poison/dead-letter routing is policy owned by the worker (it inspects
+    ``dequeue_count`` against a configured ceiling), NOT by this Protocol — so a
+    backend with native DLQ support and one without both satisfy this interface.
     """
 
     def enqueue(self, *, job_id: str, user_id: str, delay_s: int = 0) -> None: ...

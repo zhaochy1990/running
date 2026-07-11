@@ -88,6 +88,11 @@ def queue_from_config(
 
     ``poison=True`` returns the dead-letter queue instead of the main one.
     In-memory dev mode shares one process-wide instance per (config, poison).
+
+    This factory is the ONLY place that names a concrete ``JobQueue`` backend.
+    To add a broker (Service Bus / Kafka / RabbitMQ), implement ``JobQueue``
+    against it in ``stride_storage/azure`` (or a sibling), add a config field
+    selecting it, and add a branch here — nothing above this function changes.
     """
     name = config.poison_queue_name if poison else config.queue_name
 
