@@ -103,6 +103,25 @@ const masterPlan = {
   training_principles: ['逐步加量', '每 4 周保留恢复周'],
   weeks: [
     {
+      week_index: 1,
+      week_start: '2026-05-04',
+      week_end: '2026-05-10',
+      phase_id: 'phase-1',
+      target_weekly_km_low: null,
+      target_weekly_km_high: null,
+      planned_distance_km: null,
+      is_completed: true,
+      actual_distance_km: 46.5,
+      actual_avg_pace_s_km: 315,
+      actual_avg_pace_fmt: '5:15',
+      actual_avg_hr: 140,
+      actual_run_count: 4,
+      actual_duration_s: 14648,
+      key_sessions: [],
+      is_recovery_week: false,
+      is_taper_week: false,
+    },
+    {
       week_index: 4,
       week_start: '2026-05-25',
       week_end: '2026-05-31',
@@ -226,6 +245,8 @@ describe('TrainingPlanPage', () => {
     expect(screen.getByText('已完成周实际跑量')).toBeInTheDocument()
     expect(screen.getByText('计划跑量标记')).toBeInTheDocument()
     expect(screen.getAllByText('计划跑量')[0]).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W01 实际 46.5 km · 计划 -- · 基础期' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W01 估算 42 km · 基础期' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'W04 实际 68 km · 计划 54 km · 基础期' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'W04 计划 54 km · 基础期' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'W12 计划 104 km · 专项期 · 调整周' })).toBeInTheDocument()

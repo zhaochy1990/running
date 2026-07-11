@@ -563,8 +563,8 @@ export interface MasterPlanWeek {
   week_start: string
   week_end?: string | null
   phase_id: string
-  target_weekly_km_low: number
-  target_weekly_km_high: number
+  target_weekly_km_low: number | null
+  target_weekly_km_high: number | null
   key_sessions: MasterPlanKeySession[]
   is_recovery_week?: boolean
   is_taper_week?: boolean

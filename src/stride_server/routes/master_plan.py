@@ -713,14 +713,13 @@ def _build_current_response(plan: Any, user_id: str | None = None) -> dict[str, 
 
 
 def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> list[dict[str, Any]]:
-    weeks = list(getattr(plan, "weeks", []) or [])
-    if not weeks:
+    week_rows = _expanded_week_rows(plan, today)
+    if not week_rows:
         return []
 
     rows: list[dict[str, Any]] = []
     windows: list[tuple[int, str, str]] = []
-    for week in weeks:
-        row = week.model_dump()
+    for row in week_rows:
         week_index = int(row.get("week_index") or 0)
         start = _parse_date(row.get("week_start"))
         end = start + timedelta(days=6) if start is not None else None
@@ -759,6 +758,69 @@ def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> 
         row["actual_run_count"] = actual.get("run_count", 0)
         row["actual_duration_s"] = actual.get("total_duration_s", 0)
     return rows
+
+
+def _expanded_week_rows(plan: Any, today: date_cls) -> list[dict[str, Any]]:
+    """Return explicit week skeletons plus synthetic completed lead-in weeks."""
+    explicit_by_index: dict[int, dict[str, Any]] = {}
+    for week in list(getattr(plan, "weeks", []) or []):
+        row = week.model_dump()
+        try:
+            week_index = int(row.get("week_index") or 0)
+        except (TypeError, ValueError):
+            continue
+        if week_index > 0:
+            explicit_by_index[week_index] = row
+
+    plan_start = _parse_date(getattr(plan, "start_date", None))
+    total_weeks = _plan_total_weeks(plan, explicit_by_index)
+    if plan_start is None or total_weeks <= 0:
+        return [explicit_by_index[index] for index in sorted(explicit_by_index)]
+
+    rows: list[dict[str, Any]] = []
+    for week_index in range(1, total_weeks + 1):
+        explicit = explicit_by_index.get(week_index)
+        if explicit is not None:
+            rows.append(explicit)
+            continue
+
+        start = plan_start + timedelta(days=(week_index - 1) * 7)
+        end = start + timedelta(days=6)
+        phase = _phase_for_week(plan, start, end)
+        if phase is None:
+            continue
+        if not (bool(getattr(phase, "is_completed", False)) or end < today):
+            continue
+        rows.append({
+            "week_index": week_index,
+            "week_start": start.isoformat(),
+            "phase_id": getattr(phase, "id", ""),
+            "target_weekly_km_low": None,
+            "target_weekly_km_high": None,
+            "key_sessions": [],
+            "is_recovery_week": False,
+            "is_taper_week": False,
+        })
+    return rows
+
+
+def _plan_total_weeks(plan: Any, explicit_by_index: dict[int, dict[str, Any]]) -> int:
+    try:
+        total_weeks = int(getattr(plan, "total_weeks", 0) or 0)
+    except (TypeError, ValueError):
+        total_weeks = 0
+    return max(total_weeks, max(explicit_by_index, default=0))
+
+
+def _phase_for_week(plan: Any, week_start: date_cls, week_end: date_cls) -> Any | None:
+    for phase in list(getattr(plan, "phases", []) or []):
+        phase_start = _parse_date(getattr(phase, "start_date", None))
+        phase_end = _parse_date(getattr(phase, "end_date", None))
+        if phase_start is None or phase_end is None:
+            continue
+        if phase_start <= week_end and phase_end >= week_start:
+            return phase
+    return None
 
 
 def _parse_date(value: Any) -> date_cls | None:
