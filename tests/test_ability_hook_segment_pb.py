@@ -24,17 +24,17 @@ def _seed_activity_with_timeseries(
         "INSERT INTO activities (label_id, sport_type, date, distance_m, "
         "duration_s, avg_hr, max_hr, provider, pauses) "
         "VALUES (?, ?, '2026-05-27T10:00:00+00:00', ?, ?, 150, 175, 'coros', ?)",
-        (label_id, sport_type, total_dist_km, total_dur_s, pauses_json),
+        (label_id, sport_type, total_dist_km * 1000.0, total_dur_s, pauses_json),
     )
-    total_dist_cm = int(total_dist_km * 1000 * 100)
+    total_dist_m = total_dist_km * 1000.0
     n = int(total_dur_s) + 1
     for i in range(n):
         t_tick = 100_000_000 + i * 100
-        dist_cm = int(total_dist_cm * (i / max(1, n - 1)))
+        dist_m = total_dist_m * (i / max(1, n - 1))
         db._conn.execute(
             "INSERT INTO timeseries (label_id, timestamp, distance) "
             "VALUES (?, ?, ?)",
-            (label_id, t_tick, dist_cm),
+            (label_id, t_tick, dist_m),
         )
     db._conn.commit()
 
@@ -87,7 +87,7 @@ def test_hook_skips_activity_without_timeseries(tmp_path):
     db._conn.execute(
         "INSERT INTO activities (label_id, sport_type, date, distance_m, "
         "duration_s, provider) "
-        "VALUES ('NOTS', ?, '2026-05-27T10:00:00+00:00', 5.0, 1200, 'coros')",
+        "VALUES ('NOTS', ?, '2026-05-27T10:00:00+00:00', 5000.0, 1200, 'coros')",
         (RUN_SPORT_ID,),
     )
     db._conn.commit()

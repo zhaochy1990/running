@@ -87,7 +87,7 @@ def backfill(db: Database, *, dry_run: bool = False) -> dict[str, int]:
 
     placeholders = ",".join("?" * len(RUN_SPORT_IDS))
     rows = list(db._conn.execute(
-        f"SELECT label_id, sport_type, date, pauses FROM activities "
+        f"SELECT label_id, sport_type, date, distance_m, pauses FROM activities "
         f"WHERE sport_type IN ({placeholders}) ORDER BY date ASC",
         tuple(RUN_SPORT_IDS),
     ))
@@ -100,7 +100,7 @@ def backfill(db: Database, *, dry_run: bool = False) -> dict[str, int]:
         ts_rows = db.fetch_timeseries(label_id)
         if not ts_rows or len(ts_rows) < 2:
             continue
-        ts_norm = _normalize_ts_units(ts_rows)
+        ts_norm = _normalize_ts_units(ts_rows, activity_distance_m=row["distance_m"])
         if len(ts_norm) < 2:
             continue
         t0_tick = ts_rows[0]["timestamp"]

@@ -168,9 +168,8 @@ def _distance_scale_for_timeseries(
         return 1.0
     max_distance = max(distances)
     if activity_distance_m and activity_distance_m > 0:
-        # COROS frequencyList stores distance in centimeters; Garmin details
-        # stores meters. Compare against normalized activity distance so local
-        # test fixtures that already use meters are preserved.
+        # Current DBs store timeseries distance in metres. Keep the ratio check
+        # so pre-migration COROS centimetre rows remain readable.
         if max_distance / activity_distance_m > 20.0:
             return 0.01
         return 1.0

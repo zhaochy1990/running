@@ -1243,10 +1243,8 @@ def _best_sustained_pace_s_km(
     if sport_type is not None:
         normalized_km = [_distance_to_km(d, sport_type) for d in dists]
     else:
-        # Legacy heuristic: laps in COROS models historically store distance
-        # in km units (Lap.from_api divides by 100_000). Inferring scale from
-        # magnitude works for that case but breaks for Garmin meters-scale
-        # short segments — callers should pass sport_type when they have it.
+        # Legacy heuristic for old fixtures/DB rows that predate canonical
+        # metre storage. Real callers should pass sport_type when they have it.
         km_scale = all(d < 200 for d in dists if d)
         normalized_km = [d if km_scale else d / 1000.0 for d in dists]
     for i in range(n):

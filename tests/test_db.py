@@ -78,7 +78,7 @@ class TestDatabaseActivities:
         # one sparse (start-of-run, only GPS+timestamp). Both must persist
         # cleanly with NULLs preserved on the sparse one.
         full = TimeseriesPoint(
-            timestamp=177823754500, distance=321300, heart_rate=145, speed=319,
+            timestamp=177823754500, distance=3213.0, heart_rate=145, speed=319,
             adjusted_pace=319.0, cadence=178, altitude=4.0, power=236,
             ground_contact_time_ms=240, vertical_oscillation_mm=85,
             vertical_ratio_pct=8.0, cadence_length_cm=106,

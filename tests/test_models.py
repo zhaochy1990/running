@@ -161,6 +161,7 @@ class TestTimeseriesPointFromApi:
             "heartLevel": 3,
         })
         assert p.heart_rate == 145
+        assert p.distance == 3213.0
         assert p.power == 236
         assert p.ground_contact_time_ms == 240
         assert p.vertical_oscillation_mm == 85

@@ -118,6 +118,160 @@ def test_migration_handles_legacy_schema_without_provider_column(tmp_path):
     conn.close()
 
 
+def test_migrate_activity_distance_when_laps_are_already_meters(tmp_path):
+    db = Database(db_path=tmp_path / "coros.db")
+    conn = db._conn
+    conn.execute(
+        """INSERT INTO activities
+           (label_id, name, sport_type, sport_name, date, distance_m, duration_s, provider)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("mixed", "mixed", 100, "Run", "2026-05-04T00:00:00+00:00", 30.19, 11757.97, "coros"),
+    )
+    conn.executemany(
+        """INSERT INTO laps
+           (label_id, lap_index, lap_type, distance_m, duration_s)
+           VALUES (?, ?, ?, ?, ?)""",
+        [
+            ("mixed", 1, "type2", 20000.0, 6315.57),
+            ("mixed", 2, "type2", 10000.0, 3413.91),
+            ("mixed", 3, "type2", 190.0, 60.0),
+        ],
+    )
+    conn.commit()
+
+    assert _candidate_counts(conn)[0] == 1
+    result = _migrate(conn)
+    assert result["activities_updated"] == 1
+    assert conn.execute(
+        "SELECT distance_m FROM activities WHERE label_id='mixed'"
+    ).fetchone()[0] == 30190.0
+    db.close()
+
+
+def test_migrate_repairs_remaining_candidates_even_when_flag_exists(tmp_path):
+    db = Database(db_path=tmp_path / "coros.db")
+    conn = db._conn
+    conn.execute(
+        """INSERT INTO activities
+           (label_id, name, sport_type, sport_name, date, distance_m, duration_s, provider)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("flagged", "flagged", 100, "Run", "2026-05-04T00:00:00+00:00", 30.19, 11757.97, "coros"),
+    )
+    conn.execute(
+        "INSERT INTO timeseries (label_id, timestamp, distance) VALUES ('flagged', 100, 30190.0)"
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, '1')",
+        (_MIGRATION_FLAG,),
+    )
+    conn.commit()
+
+    result = _migrate(conn)
+    assert result["status"] == "migrated_remaining"
+    assert result["activities_updated"] == 1
+    assert conn.execute(
+        "SELECT distance_m FROM activities WHERE label_id='flagged'"
+    ).fetchone()[0] == 30190.0
+    db.close()
+
+
+def test_migrate_is_idempotent_for_short_paused_activity_after_timeseries_migration(tmp_path):
+    db = Database(db_path=tmp_path / "coros.db")
+    conn = db._conn
+    conn.execute(
+        """INSERT INTO activities
+           (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
+            avg_pace_s_km, provider)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "paused-400m",
+            "paused 400m",
+            100,
+            "Run",
+            "2022-01-14T07:48:04+00:00",
+            400.0,
+            59012.0,
+            148.18,
+            "coros",
+        ),
+    )
+    conn.execute(
+        """INSERT INTO laps
+           (label_id, lap_index, lap_type, distance_m, duration_s, avg_pace)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        ("paused-400m", 1, "type2", 400.0, 60.0, 148.18),
+    )
+    conn.execute(
+        "INSERT INTO timeseries (label_id, timestamp, distance) VALUES (?, ?, ?)",
+        ("paused-400m", 100, 404.9),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, '1')",
+        (_MIGRATION_FLAG,),
+    )
+    conn.commit()
+
+    assert _candidate_counts(conn)[0] == 0
+    result = _migrate(conn)
+    assert result["status"] == "already_migrated"
+    assert result["activities_updated"] == 0
+    assert conn.execute(
+        "SELECT distance_m FROM activities WHERE label_id='paused-400m'"
+    ).fetchone()[0] == 400.0
+    db.close()
+
+
+def test_migrate_short_activity_and_lap_using_timeseries_distance_evidence(tmp_path):
+    db = Database(db_path=tmp_path / "coros.db")
+    conn = db._conn
+    conn.execute(
+        """INSERT INTO activities
+           (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
+            avg_pace_s_km, provider)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "short-legacy",
+            "short legacy",
+            100,
+            "Run",
+            "2022-08-08T11:36:30+00:00",
+            0.01,
+            40.0,
+            2074.7,
+            "coros",
+        ),
+    )
+    conn.execute(
+        """INSERT INTO laps
+           (label_id, lap_index, lap_type, distance_m, duration_s, avg_pace)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        ("short-legacy", 1, "type2", 0.01, 30.0, 2074.7),
+    )
+    conn.execute(
+        "INSERT INTO timeseries (label_id, timestamp, distance) VALUES (?, ?, ?)",
+        ("short-legacy", 100, 14.46),
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, '1')",
+        (_MIGRATION_FLAG,),
+    )
+    conn.commit()
+
+    assert _candidate_counts(conn) == (1, 1)
+    result = _migrate(conn)
+    assert result["status"] == "migrated_remaining"
+    assert result["activities_updated"] == 1
+    assert result["laps_updated"] == 1
+    assert conn.execute(
+        "SELECT distance_m FROM activities WHERE label_id='short-legacy'"
+    ).fetchone()[0] == 10.0
+    assert conn.execute(
+        "SELECT distance_m FROM laps WHERE label_id='short-legacy'"
+    ).fetchone()[0] == 10.0
+    assert _candidate_counts(conn) == (0, 0)
+    db.close()
+
+
 def test_backup_uses_sqlite_snapshot_for_wal_databases(tmp_path):
     db_path = tmp_path / "wal.db"
     conn = sqlite3.connect(db_path)

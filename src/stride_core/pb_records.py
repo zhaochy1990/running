@@ -331,9 +331,9 @@ def normalize_timeseries_units(
 ) -> list[tuple[float, float]]:
     """Convert raw timeseries rows to ``(elapsed_s, distance_m)`` tuples.
 
-    Timestamp is stored as centiseconds. COROS distance is centimetres, while
-    Garmin detail rows use metres; ``activity_distance_m`` lets us distinguish
-    the distance unit without provider-specific branches.
+    Timestamp is stored as centiseconds. Current DBs store distance in metres;
+    the activity-total check keeps older pre-migration COROS centimetre rows
+    readable until every environment has been migrated.
     """
     filtered = [(r["timestamp"], r["distance"]) for r in rows
                 if r["timestamp"] is not None and r["distance"] is not None]
@@ -358,12 +358,12 @@ def _distance_scale(
     activity_distance_m: float | None,
 ) -> float:
     if not monotonic:
-        return 100.0
+        return 1.0
     if activity_distance_m is None or activity_distance_m <= 0:
-        return 100.0
+        return 1.0
     raw_span = monotonic[-1][1] - monotonic[0][1]
     if raw_span <= 0:
-        return 100.0
+        return 1.0
     ratio = raw_span / activity_distance_m
     return 100.0 if ratio > 10.0 else 1.0
 
