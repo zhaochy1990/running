@@ -53,7 +53,13 @@ def handle_full_sync(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
 
 @job_handler("onboarding_calibration")
 def handle_calibration(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
-    """Step 2 — persist running-calibration snapshot (writes HRmax)."""
+    """Step 2 — persist running-calibration snapshot (writes HRmax) + PBs.
+
+    Personal bests only depend on the synced activities (not on calibration or
+    ability), so they're computed here alongside calibration rather than waiting
+    for the backfill step.
+    """
+    from stride_core.pb_records import persist_personal_bests
     from stride_core.training_load import refresh_training_load_calibration
     from stride_storage.sqlite.database import Database
 
@@ -61,6 +67,11 @@ def handle_calibration(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
     heartbeat(stage="calibrating", progress_pct=50)
     with Database(user=uuid) as db:
         cal = refresh_training_load_calibration(db, lookback_days=180)
+        heartbeat(stage="personal_bests", progress_pct=60)
+        try:
+            persist_personal_bests(db)
+        except Exception:
+            logger.warning("onboarding PB backfill failed for %s", uuid, exc_info=True)
     return {
         "hrmax_estimate": cal.hrmax_estimate,
         "threshold_hr": cal.threshold_hr,
@@ -70,22 +81,16 @@ def handle_calibration(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
 
 @job_handler("onboarding_backfill")
 def handle_backfill(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
-    """Step 3 — unified derived-data compute (ability + zones + PBs).
+    """Step 3 — ability snapshot backfill.
 
     Calibration exists now, so ability reads a real HRmax. No commentary
     (expensive; generated lazily elsewhere).
     """
     from stride_core.ability_hook import backfill_ability_snapshots
-    from stride_core.pb_records import persist_personal_bests
     from stride_storage.sqlite.database import Database
 
     uuid = job.partition_key
     heartbeat(stage="scoring", progress_pct=70)
     with Database(user=uuid) as db:
         ability = backfill_ability_snapshots(db, days=180)
-        heartbeat(stage="personal_bests", progress_pct=90)
-        try:
-            persist_personal_bests(db)
-        except Exception:
-            logger.warning("onboarding PB backfill failed for %s", uuid, exc_info=True)
     return {"ability": ability}
