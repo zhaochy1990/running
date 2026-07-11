@@ -561,13 +561,21 @@ export interface MasterPlanKeySession {
 export interface MasterPlanWeek {
   week_index: number
   week_start: string
+  week_end?: string | null
   phase_id: string
   target_weekly_km_low: number
   target_weekly_km_high: number
-  actual_distance_km?: number | null
   key_sessions: MasterPlanKeySession[]
   is_recovery_week?: boolean
   is_taper_week?: boolean
+  planned_distance_km?: number | null
+  is_completed?: boolean
+  actual_distance_km?: number | null
+  actual_avg_pace_s_km?: number | null
+  actual_avg_pace_fmt?: string
+  actual_avg_hr?: number | null
+  actual_run_count?: number
+  actual_duration_s?: number
 }
 
 export interface MasterPlanNextMilestone {

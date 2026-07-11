@@ -1471,6 +1471,57 @@ class Database:
             for row in summary_rows
         }
 
+    def get_running_week_summaries(
+        self,
+        week_windows: list[tuple[int, str, str]],
+    ) -> dict[int, dict]:
+        """Return actual running summaries for Shanghai-local week windows.
+
+        ``week_windows`` items are ``(week_index, date_from, date_to)`` with
+        date bounds in ``YYYY-MM-DD`` Shanghai calendar days. Running rows use
+        the same sport predicate as the activity list API, and pace / HR are
+        weighted by duration so one short jog does not skew the week.
+        """
+        if not week_windows:
+            return {}
+
+        run_sql, run_params = self._running_activity_sql()
+        summaries: dict[int, dict] = {}
+        for week_index, date_from, date_to in week_windows:
+            row = self._conn.execute(
+                f"""SELECT count(*) AS run_count,
+                          round(coalesce(sum(distance_m), 0) / 1000.0, 1) AS actual_distance_km,
+                          round(coalesce(sum(duration_s), 0), 0) AS total_duration_s,
+                          round(
+                              sum(CASE WHEN avg_pace_s_km IS NOT NULL AND duration_s IS NOT NULL AND duration_s > 0
+                                  THEN avg_pace_s_km * duration_s ELSE 0 END)
+                              / nullif(sum(CASE WHEN avg_pace_s_km IS NOT NULL AND duration_s IS NOT NULL AND duration_s > 0
+                                  THEN duration_s ELSE 0 END), 0),
+                              0
+                          ) AS avg_pace_s_km,
+                          round(
+                              sum(CASE WHEN avg_hr IS NOT NULL AND duration_s IS NOT NULL AND duration_s > 0
+                                  THEN avg_hr * duration_s ELSE 0 END)
+                              / nullif(sum(CASE WHEN avg_hr IS NOT NULL AND duration_s IS NOT NULL AND duration_s > 0
+                                  THEN duration_s ELSE 0 END), 0),
+                              0
+                          ) AS avg_hr
+                   FROM activities
+                  WHERE {run_sql}
+                    AND {SHANGHAI_DAY_SQL} BETWEEN ? AND ?""",
+                (*run_params, date_from, date_to),
+            ).fetchone()
+            if not row or int(row["run_count"] or 0) == 0:
+                continue
+            summaries[int(week_index)] = {
+                "run_count": int(row["run_count"] or 0),
+                "actual_distance_km": round(float(row["actual_distance_km"] or 0), 1),
+                "total_duration_s": int(row["total_duration_s"] or 0),
+                "avg_pace_s_km": int(row["avg_pace_s_km"]) if row["avg_pace_s_km"] is not None else None,
+                "avg_hr": int(row["avg_hr"]) if row["avg_hr"] is not None else None,
+            }
+        return summaries
+
     def get_activity_count(self) -> int:
         row = self._conn.execute("SELECT count(*) FROM activities").fetchone()
         return row[0]

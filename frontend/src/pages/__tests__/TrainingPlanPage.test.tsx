@@ -105,10 +105,18 @@ const masterPlan = {
     {
       week_index: 4,
       week_start: '2026-05-25',
+      week_end: '2026-05-31',
       phase_id: 'phase-1',
       target_weekly_km_low: 48,
       target_weekly_km_high: 54,
+      planned_distance_km: 54,
+      is_completed: true,
       actual_distance_km: 68,
+      actual_avg_pace_s_km: 312,
+      actual_avg_pace_fmt: '5:12',
+      actual_avg_hr: 142,
+      actual_run_count: 5,
+      actual_duration_s: 14227,
       key_sessions: [{ type: 'long_run', distance_km: 20, duration_min: null }],
       is_recovery_week: false,
       is_taper_week: false,
@@ -213,12 +221,18 @@ describe('TrainingPlanPage', () => {
 
     expect(await screen.findByRole('heading', { name: '真实目标马拉松' })).toBeInTheDocument()
     expect(screen.getByText(/从 2026\/05\/04 到 2026\/10\/11，共 23 周/)).toBeInTheDocument()
-    expect(screen.getByText('预计周跑量（KM/周）')).toBeInTheDocument()
-    expect(screen.getByText('W06')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'W04 实际 68km · 基础期' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'W04 计划 54km · 基础期' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'W12 计划 104km · 专项期 · 调整周' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'W12 估算 66km · 专项期' })).not.toBeInTheDocument()
+    expect(screen.getByText('周跑量（KM/周）')).toBeInTheDocument()
+    expect(screen.getAllByText('W06').length).toBeGreaterThan(0)
+    expect(screen.getByText('已完成周实际跑量')).toBeInTheDocument()
+    expect(screen.getByText('计划跑量标记')).toBeInTheDocument()
+    expect(screen.getAllByText('计划跑量')[0]).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W04 实际 68 km · 计划 54 km · 基础期' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W04 计划 54 km · 基础期' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W12 计划 104 km · 专项期 · 调整周' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W12 估算 66 km · 专项期' })).not.toBeInTheDocument()
+    expect(screen.getByText('68 km')).toBeInTheDocument()
+    expect(screen.getByText('5:12/km')).toBeInTheDocument()
+    expect(screen.getByText('142 bpm')).toBeInTheDocument()
     expect(screen.getByText(/目标赛事：全马 · 2026\/10\/11/)).toBeInTheDocument()
     expect(screen.getByText('2026/10/11 · 全马')).toBeInTheDocument()
     expect(screen.getByText('03:15:00')).toBeInTheDocument()

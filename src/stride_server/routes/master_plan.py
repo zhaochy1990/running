@@ -34,8 +34,7 @@ from stride_core.master_plan_diff import (
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
 )
-from stride_core.models import RUN_SPORT_SQL_LIST
-from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai
+from stride_core.timefmt import today_shanghai
 
 from ..bearer import require_bearer
 from ..content_store import read_json
@@ -689,9 +688,7 @@ def _build_current_response(plan: Any, user_id: str | None = None) -> dict[str, 
         except (ValueError, TypeError):
             pass
 
-    weeks = [w.model_dump() for w in plan.weeks]
-    if user_id:
-        weeks = _inject_actual_weekly_distances(user_id, weeks, today)
+    weeks = _build_week_response(plan, user_id=user_id, today=today)
 
     return {
         "plan_id": plan.plan_id,
@@ -715,58 +712,82 @@ def _build_current_response(plan: Any, user_id: str | None = None) -> dict[str, 
     }
 
 
-def _inject_actual_weekly_distances(
-    user_id: str,
-    weeks: list[dict[str, Any]],
-    today: date_cls,
-) -> list[dict[str, Any]]:
-    """Add actual running distance for completed Shanghai-calendar weeks.
-
-    Planned targets still drive current/future weeks. Completed weeks get an
-    ``actual_distance_km`` field so the frontend can render what the athlete
-    really ran instead of phase/target mileage.
-    """
+def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> list[dict[str, Any]]:
+    weeks = list(getattr(plan, "weeks", []) or [])
     if not weeks:
-        return weeks
-    completed: list[tuple[dict[str, Any], date_cls, date_cls]] = []
+        return []
+
+    rows: list[dict[str, Any]] = []
+    windows: list[tuple[int, str, str]] = []
     for week in weeks:
+        row = week.model_dump()
+        week_index = int(row.get("week_index") or 0)
+        start = _parse_date(row.get("week_start"))
+        end = start + timedelta(days=6) if start is not None else None
+        row["week_end"] = end.isoformat() if end is not None else None
+        row["planned_distance_km"] = _planned_weekly_km(row)
+        row["is_completed"] = bool(end is not None and end < today)
+        row["actual_avg_pace_s_km"] = None
+        row["actual_avg_pace_fmt"] = ""
+        row["actual_avg_hr"] = None
+        row["actual_run_count"] = 0
+        row["actual_duration_s"] = 0
+        if row["is_completed"]:
+            row["actual_distance_km"] = 0.0
+        if user_id and row["is_completed"] and week_index > 0 and start is not None and end is not None:
+            windows.append((week_index, start.isoformat(), end.isoformat()))
+        rows.append(row)
+
+    actuals: dict[int, dict] = {}
+    if user_id and windows:
+        db = get_db(user_id)
         try:
-            start = date_cls.fromisoformat(str(week.get("week_start") or ""))
-        except (TypeError, ValueError):
+            actuals = db.get_running_week_summaries(windows)
+        finally:
+            db.close()
+
+    for row in rows:
+        week_index = int(row.get("week_index") or 0)
+        actual = actuals.get(week_index)
+        if not actual:
             continue
-        end = start + timedelta(days=6)
-        if end < today:
-            completed.append((week, start, end))
-    if not completed:
-        return weeks
+        pace = actual.get("avg_pace_s_km")
+        row["actual_distance_km"] = actual.get("actual_distance_km")
+        row["actual_avg_pace_s_km"] = pace
+        row["actual_avg_pace_fmt"] = _format_pace(pace)
+        row["actual_avg_hr"] = actual.get("avg_hr")
+        row["actual_run_count"] = actual.get("run_count", 0)
+        row["actual_duration_s"] = actual.get("total_duration_s", 0)
+    return rows
 
-    date_from = min(start for _, start, _ in completed).isoformat()
-    date_to = max(end for _, _, end in completed).isoformat()
-    db = get_db(user_id)
+
+def _parse_date(value: Any) -> date_cls | None:
     try:
-        rows = db.query(
-            f"""
-            SELECT
-              date({SHANGHAI_DAY_SQL}, '-' || ((CAST(strftime('%w', {SHANGHAI_DAY_SQL}) AS INTEGER) + 6) % 7) || ' days') AS week_start,
-              ROUND(SUM(distance_m) / 1000.0, 1) AS distance_km
-            FROM activities
-            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
-              AND {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
-            GROUP BY week_start
-            """,
-            (date_from, date_to),
-        )
-    finally:
-        db.close()
+        return date_cls.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
 
-    actual_by_start = {
-        str(row["week_start"]): float(row["distance_km"] or 0.0)
-        for row in rows
-    }
-    for week, start, _ in completed:
-        week["actual_distance_km"] = actual_by_start.get(start.isoformat(), 0.0)
-    return weeks
 
+def _planned_weekly_km(row: dict[str, Any]) -> float | None:
+    high = row.get("target_weekly_km_high")
+    low = row.get("target_weekly_km_low")
+    value = high if high not in (None, 0) else low
+    try:
+        return round(float(value), 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_pace(seconds: Any) -> str:
+    if seconds is None:
+        return ""
+    try:
+        total = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return ""
+    return f"{total // 60}:{total % 60:02d}"
 
 def _current_week_number(plan: Any, today: date_cls) -> int | None:
     """Return the current canonical week number, or None outside plan range."""
