@@ -56,7 +56,7 @@ async def _lifespan(app: FastAPI):
         logger.exception("lifespan startup reconcile failed; continuing without sweep")
     yield
     # Shutdown: nothing special.
-from .routes import account, ability, activities, body_composition, coach, feedback, generate, health, home, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, stride, sync, teams, training_goal, training_load, training_plan, users, watch, weeks, workouts
+from .routes import account, ability, activities, body_composition, coach, feedback, generate, health, home, jobs, likes, master_plan, notifications, nutrition_daily, nutrition_meals, nutrition_prefs, onboarding, plan, plan_variants, pbs, predictions, profile, public, review, running_profile, strength, stride, sync, teams, training_goal, training_load, training_plan, users, watch, weeks, workouts
 from .static import mount_frontend
 
 
@@ -157,6 +157,7 @@ def create_app(
     app.include_router(plan.internal_router)
     app.include_router(training_load.internal_router)
     app.include_router(sync.internal_router)
+    app.include_router(jobs.internal_router)
 
     # Curated strength-illustration library — public static assets baked
     # into the image. Mount BEFORE the SPA fallback so the catch-all in
