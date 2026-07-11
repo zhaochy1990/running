@@ -12,8 +12,8 @@ Single-source discipline (CLAUDE.md HARD):
 - The injury → contraindicated-exercise keyword map is reused from
   ``coach.graphs.generation.rule_filter.INJURY_CONTRAINDICATION_KEYWORDS``,
   not re-invented.
-- Running-row matching uses ``RUN_SPORT_SQL_LIST`` and the misnamed-``distance_m``
-  km-normalization established in ``master_plan_generator`` / ``continuity_analyzer``.
+- Running-row matching uses ``RUN_SPORT_SQL_LIST`` and converts canonical
+  metre storage to kilometres at query boundaries.
 - Timezone: ``activities.date`` is UTC ISO; weekly buckets use Shanghai-day
   (``SHANGHAI_DAY_SQL`` from ``stride_core.timefmt``).
 """
@@ -38,9 +38,7 @@ from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai
 
 logger = logging.getLogger(__name__)
 
-# Same km-normalization fragment used across the adapter layer: activities.distance_m
-# is misnamed — it stores KILOMETERS when < 500, legacy rows store meters (>= 500).
-_KM_EXPR = "CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END"
+_KM_EXPR = "distance_m / 1000.0"
 
 _FM_DISTANCE_KM = 42.195
 

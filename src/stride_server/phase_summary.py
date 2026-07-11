@@ -11,9 +11,8 @@ aggregation touches the per-user SQLite DB; the pydantic result models stay in
 invokes this once per ``is_completed`` phase and caches the result on
 ``Phase.summary`` — reads never recompute it.
 
-Distance / timezone discipline (CLAUDE.md HARD rules):
-  * ``activities.distance_m`` actually stores KILOMETERS, so ``SUM(distance_m)``
-    is already total km — never divide by 1000.
+Distance / timezone discipline (AGENTS.md HARD rules):
+  * ``activities.distance_m`` stores metres; divide by 1000 for km summaries.
   * The window is matched on Shanghai-local days via
     :data:`stride_core.timefmt.SHANGHAI_DAY_SQL`, never a bare UTC compare.
 """
@@ -89,7 +88,7 @@ def aggregate_phase_summary(
     agg_rows = db.query(
         f"""
         SELECT
-            COALESCE(SUM(distance_m), 0.0) AS total_km,
+            COALESCE(SUM(distance_m), 0.0) / 1000.0 AS total_km,
             COUNT(*) AS run_count,
             SUM(CASE WHEN avg_pace_s_km IS NOT NULL AND duration_s > 0
                      THEN avg_pace_s_km * duration_s ELSE 0 END) AS pace_wsum,

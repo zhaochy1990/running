@@ -35,8 +35,10 @@ from stride_core.master_plan import (
     Phase,
 )
 from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOp, MasterPlanDiffOpKind
+from stride_core.timefmt import today_shanghai
 from stride_server.master_plan_store import FileMasterPlanStore, reset_master_plan_store_cache
 import stride_server.routes.master_plan as mp_mod
+from stride_storage.sqlite.database import Database
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 OTHER_UUID = "b1b2c3d4-e5f6-4aaa-89ab-123456789012"
@@ -170,6 +172,7 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
     # Isolate file store to tmp_path
     import stride_core.db as core_db_mod
     monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(mp_mod, "get_db", lambda user: Database(user=user))
 
     # Reset the lru_cache so we get a fresh store using tmp_path
     reset_master_plan_store_cache()
@@ -876,6 +879,92 @@ class TestCurrentMasterPlan:
         assert data["weeks"][0]["key_sessions"][0]["type"] == "long_run"
         assert data["current_week_number"] == 1
         assert data["current_phase_id"] == phase_id
+
+    def test_current_injects_actual_distance_for_completed_weeks(self, app_client):
+        """Completed weeks expose actual running km for the season overview chart."""
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+
+        today = today_shanghai()
+        this_monday = today - timedelta(days=today.weekday())
+        week_start = this_monday - timedelta(days=14)
+        future_week = this_monday + timedelta(days=7)
+        phase_id = str(uuid4())
+        phase = Phase(
+            id=phase_id,
+            name="测试期",
+            start_date=week_start.isoformat(),
+            end_date=(future_week + timedelta(days=6)).isoformat(),
+            focus="测试实际周跑量",
+            weekly_distance_km_low=30.0,
+            weekly_distance_km_high=60.0,
+            key_session_types=["长距离"],
+            milestone_ids=[],
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        plan = MasterPlan(
+            plan_id=str(uuid4()),
+            user_id=USER_UUID,
+            status=MasterPlanStatus.ACTIVE,
+            goal=MasterPlanGoal(
+                goal_id=str(uuid4()),
+                race_date=(today + timedelta(days=30)).isoformat(),
+                target_time="",
+            ),
+            start_date=week_start.isoformat(),
+            end_date=(future_week + timedelta(days=6)).isoformat(),
+            total_weeks=4,
+            phases=[phase],
+            milestones=[],
+            weeks=[
+                MasterPlanWeek(
+                    week_index=1,
+                    week_start=week_start.isoformat(),
+                    phase_id=phase_id,
+                    target_weekly_km_low=30.0,
+                    target_weekly_km_high=40.0,
+                    key_sessions=[KeySession(type="long_run", distance_km=16.0)],
+                ),
+                MasterPlanWeek(
+                    week_index=4,
+                    week_start=future_week.isoformat(),
+                    phase_id=phase_id,
+                    target_weekly_km_low=45.0,
+                    target_weekly_km_high=55.0,
+                    key_sessions=[KeySession(type="long_run", distance_km=20.0)],
+                ),
+            ],
+            training_principles=[],
+            generated_by="gpt-4.1",
+            version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        store.save_plan(plan)
+
+        db = Database(user=USER_UUID)
+        db._conn.executemany(
+            """INSERT INTO activities
+               (label_id, name, sport_type, sport_name, date, distance_m, duration_s)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [
+                ("run-a", "Run A", 100, "Run", f"{week_start.isoformat()}T01:00:00+00:00", 12300.0, 3600.0),
+                ("run-b", "Run B", 101, "Indoor Run", f"{(week_start + timedelta(days=2)).isoformat()}T01:00:00+00:00", 8200.0, 2400.0),
+                ("bike", "Bike", 200, "Bike", f"{(week_start + timedelta(days=3)).isoformat()}T01:00:00+00:00", 40000.0, 3600.0),
+            ],
+        )
+        db._conn.commit()
+        db.close()
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["weeks"][0]["actual_distance_km"] == 20.5
+        assert "actual_distance_km" not in data["weeks"][1]
 
     def test_current_phase_id_correct(self, app_client):
         """current_phase_id is set when today falls within a phase."""

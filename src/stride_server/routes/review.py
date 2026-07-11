@@ -143,7 +143,7 @@ def get_week_review(user: str, folder: str):
             a for a in activities if a.get("sport_type") in _RUN_SPORT_TYPES
         ]
         total_distance_km = round(
-            sum(a.get("distance_m") or 0 for a in run_acts), 2
+            sum(a.get("distance_m") or 0 for a in run_acts) / 1000.0, 2
         )
         total_duration_sec = int(sum(a.get("duration_s") or 0 for a in run_acts))
 

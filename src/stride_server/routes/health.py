@@ -54,7 +54,7 @@ def get_dashboard(user: str):
     if dashboard.get("threshold_pace_s_km"):
         dashboard["threshold_pace_fmt"] = pace_str(dashboard["threshold_pace_s_km"])
     if dashboard.get("weekly_distance_m"):
-        dashboard["weekly_distance_km"] = round(dashboard["weekly_distance_m"], 1)
+        dashboard["weekly_distance_km"] = round(dashboard["weekly_distance_m"] / 1000.0, 1)
 
     predictions = db.query(
         "SELECT race_type, duration_s, avg_pace FROM race_predictions ORDER BY duration_s"
@@ -331,7 +331,7 @@ def get_stats(user: str):
         SELECT
             strftime('%Y-W%W', date(substr(date,1,4)||'-'||substr(date,5,2)||'-'||substr(date,7,2))) as week,
             count(*) as runs,
-            round(sum(distance_m), 1) as distance_km,
+            round(sum(distance_m) / 1000.0, 1) as distance_km,
             round(sum(duration_s), 0) as duration_s,
             round(avg(avg_pace_s_km), 1) as avg_pace,
             round(avg(avg_hr), 0) as avg_hr

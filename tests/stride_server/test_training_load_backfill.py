@@ -32,7 +32,7 @@ def _activity(label_id: str, date_iso: str) -> ActivityDetail:
         sport_type=100,
         sport_name="Run",
         date=date_iso,
-        distance_m=14.4,
+        distance_m=14400,
         duration_s=3600.0,
         avg_pace_s_km=250.0,
         adjusted_pace=None,

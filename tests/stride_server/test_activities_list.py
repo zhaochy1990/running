@@ -79,10 +79,10 @@ def _seed_activities(tmp_path):
     from stride_storage.sqlite.database import Database
     db = Database(user=USER_UUID)
     rows = [
-        ("run10", "10K Run", 100, "Run", "2026-05-10T00:00:00+00:00", 10.0, 3000.0),
-        ("run5", "5K Run", 100, "Run", "2026-05-09T00:00:00+00:00", 5.0, 1600.0),
+        ("run10", "10K Run", 100, "Run", "2026-05-10T00:00:00+00:00", 10000.0, 3000.0),
+        ("run5", "5K Run", 100, "Run", "2026-05-09T00:00:00+00:00", 5000.0, 1600.0),
         ("strength", "Strength", 402, "Strength Training", "2026-05-08T00:00:00+00:00", 0.0, 2400.0),
-        ("bike", "Bike", 200, "Bike", "2026-05-07T00:00:00+00:00", 30.0, 3600.0),
+        ("bike", "Bike", 200, "Bike", "2026-05-07T00:00:00+00:00", 30000.0, 3600.0),
     ]
     db._conn.executemany(
         """INSERT INTO activities

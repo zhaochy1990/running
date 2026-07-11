@@ -101,6 +101,59 @@ const masterPlan = {
     },
   ],
   training_principles: ['逐步加量', '每 4 周保留恢复周'],
+  weeks: [
+    {
+      week_index: 4,
+      week_start: '2026-05-25',
+      phase_id: 'phase-1',
+      target_weekly_km_low: 48,
+      target_weekly_km_high: 54,
+      actual_distance_km: 68,
+      key_sessions: [{ type: 'long_run', distance_km: 20, duration_min: null }],
+      is_recovery_week: false,
+      is_taper_week: false,
+    },
+    {
+      week_index: 9,
+      week_start: '2026-06-29',
+      phase_id: 'phase-2',
+      target_weekly_km_low: 110,
+      target_weekly_km_high: 120,
+      key_sessions: [{ type: 'threshold', distance_km: 12, duration_min: null }],
+      is_recovery_week: false,
+      is_taper_week: false,
+    },
+    {
+      week_index: 10,
+      week_start: '2026-07-06',
+      phase_id: 'phase-2',
+      target_weekly_km_low: 118,
+      target_weekly_km_high: 128,
+      key_sessions: [{ type: 'long_run', distance_km: 22, duration_min: null }],
+      is_recovery_week: false,
+      is_taper_week: false,
+    },
+    {
+      week_index: 11,
+      week_start: '2026-07-13',
+      phase_id: 'phase-2',
+      target_weekly_km_low: 128,
+      target_weekly_km_high: 138,
+      key_sessions: [{ type: 'interval', distance_km: 10, duration_min: null }],
+      is_recovery_week: false,
+      is_taper_week: false,
+    },
+    {
+      week_index: 12,
+      week_start: '2026-07-20',
+      phase_id: 'phase-2',
+      target_weekly_km_low: 94,
+      target_weekly_km_high: 104,
+      key_sessions: [{ type: 'long_run', distance_km: 18, duration_min: null }],
+      is_recovery_week: true,
+      is_taper_week: false,
+    },
+  ],
   generated_by: 'gpt-4.1',
   version: 2,
   created_at: '2026-05-01T00:00:00Z',
@@ -162,6 +215,10 @@ describe('TrainingPlanPage', () => {
     expect(screen.getByText(/从 2026\/05\/04 到 2026\/10\/11，共 23 周/)).toBeInTheDocument()
     expect(screen.getByText('预计周跑量（KM/周）')).toBeInTheDocument()
     expect(screen.getByText('W06')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W04 实际 68km · 基础期' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W04 计划 54km · 基础期' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W12 计划 104km · 专项期 · 调整周' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W12 估算 66km · 专项期' })).not.toBeInTheDocument()
     expect(screen.getByText(/目标赛事：全马 · 2026\/10\/11/)).toBeInTheDocument()
     expect(screen.getByText('2026/10/11 · 全马')).toBeInTheDocument()
     expect(screen.getByText('03:15:00')).toBeInTheDocument()

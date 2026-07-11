@@ -34,9 +34,12 @@ from stride_core.master_plan_diff import (
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
 )
+from stride_core.models import RUN_SPORT_SQL_LIST
+from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai
 
 from ..bearer import require_bearer
 from ..content_store import read_json
+from ..deps import get_db
 from .. import job_runner
 from ..job_runner import JobStatus, JobStage, STAGE_LABEL_MAP
 from .. import llm_client as _llm_client_mod
@@ -647,9 +650,9 @@ def confirm_master_plan(
 # ===========================================================================
 
 
-def _build_current_response(plan: Any) -> dict[str, Any]:
+def _build_current_response(plan: Any, user_id: str | None = None) -> dict[str, Any]:
     """Build the enriched response dict for the current-plan endpoint."""
-    today = datetime.now(timezone.utc).date()
+    today = today_shanghai()
 
     # current_phase_id: find which phase contains today
     current_phase_id: str | None = None
@@ -686,6 +689,10 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         except (ValueError, TypeError):
             pass
 
+    weeks = [w.model_dump() for w in plan.weeks]
+    if user_id:
+        weeks = _inject_actual_weekly_distances(user_id, weeks, today)
+
     return {
         "plan_id": plan.plan_id,
         "user_id": plan.user_id,
@@ -696,7 +703,7 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         "total_weeks": total_weeks,
         "phases": [p.model_dump() for p in plan.phases],
         "milestones": [m.model_dump() for m in plan.milestones],
-        "weeks": [w.model_dump() for w in plan.weeks],
+        "weeks": weeks,
         "training_principles": plan.training_principles,
         "generated_by": plan.generated_by,
         "version": plan.version,
@@ -706,6 +713,59 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         "current_week_number": current_week_number,
         "next_milestone": next_milestone,
     }
+
+
+def _inject_actual_weekly_distances(
+    user_id: str,
+    weeks: list[dict[str, Any]],
+    today: date_cls,
+) -> list[dict[str, Any]]:
+    """Add actual running distance for completed Shanghai-calendar weeks.
+
+    Planned targets still drive current/future weeks. Completed weeks get an
+    ``actual_distance_km`` field so the frontend can render what the athlete
+    really ran instead of phase/target mileage.
+    """
+    if not weeks:
+        return weeks
+    completed: list[tuple[dict[str, Any], date_cls, date_cls]] = []
+    for week in weeks:
+        try:
+            start = date_cls.fromisoformat(str(week.get("week_start") or ""))
+        except (TypeError, ValueError):
+            continue
+        end = start + timedelta(days=6)
+        if end < today:
+            completed.append((week, start, end))
+    if not completed:
+        return weeks
+
+    date_from = min(start for _, start, _ in completed).isoformat()
+    date_to = max(end for _, _, end in completed).isoformat()
+    db = get_db(user_id)
+    try:
+        rows = db.query(
+            f"""
+            SELECT
+              date({SHANGHAI_DAY_SQL}, '-' || ((CAST(strftime('%w', {SHANGHAI_DAY_SQL}) AS INTEGER) + 6) % 7) || ' days') AS week_start,
+              ROUND(SUM(distance_m) / 1000.0, 1) AS distance_km
+            FROM activities
+            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
+              AND {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
+            GROUP BY week_start
+            """,
+            (date_from, date_to),
+        )
+    finally:
+        db.close()
+
+    actual_by_start = {
+        str(row["week_start"]): float(row["distance_km"] or 0.0)
+        for row in rows
+    }
+    for week, start, _ in completed:
+        week["actual_distance_km"] = actual_by_start.get(start.isoformat(), 0.0)
+    return weeks
 
 
 def _current_week_number(plan: Any, today: date_cls) -> int | None:
@@ -746,7 +806,7 @@ def get_current_master_plan(
             detail="当前没有激活的训练总纲",
         )
 
-    return _build_current_response(plan)
+    return _build_current_response(plan, user_id)
 
 
 @router.get("/api/users/me/master-plan/draft")
@@ -768,7 +828,7 @@ def get_latest_draft_master_plan(
         )
 
     drafts.sort(key=lambda p: p.updated_at or p.created_at, reverse=True)
-    return _build_current_response(drafts[0])
+    return _build_current_response(drafts[0], user_id)
 
 
 @router.get("/api/users/me/master-plan/{plan_id}")
@@ -792,7 +852,7 @@ def get_master_plan_by_id(
             detail="Access denied: plan belongs to a different user",
         )
 
-    return _build_current_response(plan)
+    return _build_current_response(plan, user_id)
 
 
 # ===========================================================================
@@ -1201,7 +1261,7 @@ def get_version_snapshot(
     try:
         from stride_core.master_plan import MasterPlan as _MasterPlan
         snapshot_plan = _MasterPlan.model_validate_json(matched.snapshot_json)
-        return _build_current_response(snapshot_plan)
+        return _build_current_response(snapshot_plan, user_id)
     except Exception as exc:
         logger.error("get_version_snapshot: failed to parse snapshot_json: %s", exc)
         raise HTTPException(

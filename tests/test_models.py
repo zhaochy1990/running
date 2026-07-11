@@ -62,7 +62,7 @@ class TestActivityDetailFromApi:
                     "name": "Long Run",
                     "sportType": 100,
                     "startTimestamp": 170000000000,  # centiseconds-ish
-                    "distance": 2100000000,  # cm * 1000 = 21km
+                    "distance": 2100000,     # centimeters = 21km
                     "totalTime": 600000,     # centiseconds = 6000s
                     "avgSpeed": 286,
                     "avgHr": 150,
@@ -93,8 +93,8 @@ class TestActivityDetailFromApi:
                 "lapList": [{
                     "type": 10,
                     "lapItemList": [
-                        {"distance": 100000000, "time": 30000, "avgPace": 300, "avgHr": 145},
-                        {"distance": 100000000, "time": 29500, "avgPace": 295, "avgHr": 148},
+                        {"distance": 100000, "time": 30000, "avgPace": 300, "avgHr": 145},
+                        {"distance": 100000, "time": 29500, "avgPace": 295, "avgHr": 148},
                     ],
                 }],
                 "zoneList": [],

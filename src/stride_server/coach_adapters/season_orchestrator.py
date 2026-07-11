@@ -267,9 +267,7 @@ def _last_completed_week_actual(
         db = Database(user=user_id)
         km_row = db._conn.execute(
             f"""
-            SELECT COALESCE(SUM(
-                CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END
-            ), 0.0) AS total_km
+            SELECT COALESCE(SUM(distance_m), 0.0) / 1000.0 AS total_km
             FROM activities
             WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
               AND {SHANGHAI_DAY_SQL} BETWEEN ? AND ?

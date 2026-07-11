@@ -17,6 +17,7 @@ import {
   type MasterPlanAdjustMessage,
   type MasterPlanDiff,
   type MasterPlanDiffOp,
+  type MasterPlanWeek,
   type MasterPlanMilestone,
   type MasterPlanPhase,
   type MyProfile,
@@ -52,7 +53,10 @@ interface MileageBar {
   heightPct: number
   phase: MasterPlanPhase
   phaseIndex: number
+  source: 'actual' | 'planned' | 'estimated'
   isCurrent: boolean
+  isRecoveryWeek: boolean
+  isTaperWeek: boolean
   title: string
 }
 
@@ -608,6 +612,7 @@ function SeasonOverviewBody({
     <div className="space-y-6">
       {spans.length > 0 && (
         <MileageCycleCard
+          plan={plan}
           spans={spans}
           totalWeeks={totalWeeks}
           currentWeek={currentWeek}
@@ -746,17 +751,19 @@ function PlanTabButton({ active, onClick, children }: { active: boolean; onClick
 }
 
 function MileageCycleCard({
+  plan,
   spans,
   totalWeeks,
   currentWeek,
   onSelectPhase,
 }: {
+  plan: MasterPlan
   spans: PhaseSpan[]
   totalWeeks: number
   currentWeek: number
   onSelectPhase: (id: string) => void
 }) {
-  const bars = useMemo(() => buildMileageBars(spans, totalWeeks, currentWeek), [spans, totalWeeks, currentWeek])
+  const bars = useMemo(() => buildMileageBars(plan, spans, totalWeeks, currentWeek), [plan, spans, totalWeeks, currentWeek])
   const columns = Math.max(bars.length, 1)
 
   return (
@@ -784,7 +791,7 @@ function MileageCycleCard({
                 className={`relative min-h-[10px] rounded-t transition-all hover:opacity-90 ${bar.isCurrent ? 'ring-2 ring-accent-green ring-offset-2 ring-offset-bg-primary' : ''}`}
                 style={{
                   height: `${bar.heightPct}%`,
-                  backgroundColor: bar.isCurrent ? visual.color : `color-mix(in oklab, ${visual.color} 42%, var(--surface))`,
+                  backgroundColor: mileageBarColor(bar, visual),
                 }}
               >
                 {bar.isCurrent && (
@@ -1096,19 +1103,70 @@ function buildPhaseSpans(phases: MasterPlanPhase[], totalWeeks: number | null): 
   return spans
 }
 
-function buildMileageBars(spans: PhaseSpan[], totalWeeks: number, currentWeek: number): MileageBar[] {
+function buildMileageBars(plan: MasterPlan, spans: PhaseSpan[], totalWeeks: number, currentWeek: number): MileageBar[] {
+  const weeklyTargets = masterPlanWeeksByIndex(plan)
   const raw = spans.flatMap((span) => Array.from({ length: span.weekCount }, (_, localIndex) => {
     const week = span.weekStart + localIndex
-    const km = interpolateWeeklyKm(span.phase, localIndex, span.weekCount)
-    return { week, km, phase: span.phase, phaseIndex: span.index }
+    const target = weeklyTargets.get(week)
+    const targetPhase = target ? phaseForWeekTarget(target, spans) : null
+    const phase = targetPhase?.phase ?? span.phase
+    const phaseIndex = targetPhase?.index ?? span.index
+    const actualKm = target?.actual_distance_km
+    const hasActual = typeof actualKm === 'number' && Number.isFinite(actualKm)
+    const km = hasActual
+      ? Math.round(actualKm)
+      : target
+        ? Math.round(target.target_weekly_km_high)
+        : interpolateWeeklyKm(span.phase, localIndex, span.weekCount)
+    return {
+      week,
+      km,
+      phase,
+      phaseIndex,
+      source: hasActual ? 'actual' as const : target ? 'planned' as const : 'estimated' as const,
+      isRecoveryWeek: Boolean(target?.is_recovery_week),
+      isTaperWeek: Boolean(target?.is_taper_week),
+    }
   })).filter((bar) => !totalWeeks || bar.week <= totalWeeks)
   const maxKm = Math.max(...raw.map((bar) => bar.km ?? 0), 1)
   return raw.map((bar) => ({
     ...bar,
     heightPct: bar.km == null ? 42 : Math.max(8, Math.round((bar.km / maxKm) * 100)),
     isCurrent: bar.week === currentWeek,
-    title: bar.km == null ? `W${padWeek(bar.week)} 暂无周量数据` : `W${padWeek(bar.week)} ${bar.km}km · ${bar.phase.name}`,
+    title: mileageBarTitle(bar),
   }))
+}
+
+function masterPlanWeeksByIndex(plan: MasterPlan): Map<number, MasterPlanWeek> {
+  const weeks = (plan.weeks && plan.weeks.length > 0) ? plan.weeks : (plan.weekly_key_sessions ?? [])
+  const out = new Map<number, MasterPlanWeek>()
+  for (const week of weeks) {
+    if (Number.isFinite(week.week_index)) out.set(week.week_index, week)
+  }
+  return out
+}
+
+function phaseForWeekTarget(week: MasterPlanWeek, spans: PhaseSpan[]): PhaseSpan | null {
+  return spans.find((span) => span.phase.id === week.phase_id)
+    ?? spans.find((span) => week.week_index >= span.weekStart && week.week_index <= span.weekEnd)
+    ?? null
+}
+
+function mileageBarTitle(bar: Omit<MileageBar, 'heightPct' | 'isCurrent' | 'title'>): string {
+  if (bar.km == null) return `W${padWeek(bar.week)} 暂无周量数据`
+  const sourceLabel = bar.source === 'actual' ? '实际' : bar.source === 'planned' ? '计划' : '估算'
+  const labels = []
+  if (bar.isRecoveryWeek) labels.push('调整周')
+  if (bar.isTaperWeek) labels.push('减量周')
+  const suffix = labels.length > 0 ? ` · ${labels.join(' · ')}` : ''
+  return `W${padWeek(bar.week)} ${sourceLabel} ${bar.km}km · ${bar.phase.name}${suffix}`
+}
+
+function mileageBarColor(bar: MileageBar, visual: PhaseVisual): string {
+  if (bar.isCurrent) return visual.color
+  if (bar.isRecoveryWeek) return `color-mix(in oklab, ${visual.color} 28%, var(--surface))`
+  if (bar.isTaperWeek) return `color-mix(in oklab, ${visual.color} 34%, var(--surface))`
+  return `color-mix(in oklab, ${visual.color} 42%, var(--surface))`
 }
 
 function interpolateWeeklyKm(phase: MasterPlanPhase, localIndex: number, weekCount: number): number | null {

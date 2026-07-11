@@ -11,7 +11,7 @@ from stride_core.pb_records import _activity_level_candidates
 
 def _fm(distance_km: float, dur_s: float):
     return _activity_level_candidates(
-        {"distance_m": distance_km, "duration_s": dur_s, "name": "x"},
+        {"distance_m": distance_km * 1000.0, "duration_s": dur_s, "name": "x"},
         "2026-03-21", "lbl", {"FM"},
     )
 
@@ -33,7 +33,7 @@ def test_fm_rejects_clearly_non_marathon_distance():
 
 def test_hm_admits_gps_long_half():
     cands = _activity_level_candidates(
-        {"distance_m": 21.5, "duration_s": 5000.0, "name": "x"},
+        {"distance_m": 21500.0, "duration_s": 5000.0, "name": "x"},
         "2026-04-12", "lbl", {"HM"},
     )
     assert cands, "21.5 km should match HM (GPS-long half marathon)"

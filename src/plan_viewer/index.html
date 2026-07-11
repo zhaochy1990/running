@@ -163,8 +163,7 @@ const esc = (s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':
 const PT_LABEL={base:'基础期',build:'专项期',speed:'速度周期',peak:'巅峰期',taper:'减量期',recovery:'恢复期'};
 const KIND_ICON={run:'🏃',strength:'🏋️',rest:'😴',cross:'🚴',note:'📝'};
 
-// activities.distance_m is misnamed: stores km when <500, legacy meters otherwise.
-function toKm(m){if(m==null)return 0;return m<500?m:m/1000;}
+function toKm(m){if(m==null)return 0;return m/1000;}
 function fmtDur(s){if(!s)return '';const h=Math.floor(s/3600),m=Math.round((s%3600)/60);return h?`${h}h${String(m).padStart(2,'0')}`:`${m}min`;}
 function pace(m,s){const km=toKm(m);if(!km||!s)return '';const p=s/km;return `${Math.floor(p/60)}:${String(Math.round(p%60)).padStart(2,'0')}/km`;}
 function weekKm(w){return (w.sessions||[]).filter(s=>s.kind==='run').reduce((a,s)=>a+toKm(s.total_distance_m),0);}
