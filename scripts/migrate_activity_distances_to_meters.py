@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -385,7 +384,8 @@ def _backup(path: Path) -> Path:
     while backup.exists():
         backup = path.with_suffix(path.suffix + f".distance-units-backup-{i}")
         i += 1
-    shutil.copy2(path, backup)
+    with sqlite3.connect(str(path)) as source, sqlite3.connect(str(backup)) as dest:
+        source.backup(dest)
     return backup
 
 

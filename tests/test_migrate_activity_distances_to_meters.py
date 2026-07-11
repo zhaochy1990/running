@@ -3,6 +3,7 @@ import sqlite3
 
 from scripts.migrate_activity_distances_to_meters import (
     _MIGRATION_FLAG,
+    _backup,
     _candidate_counts,
     _migrate,
     _summarize,
@@ -114,4 +115,21 @@ def test_migration_handles_legacy_schema_without_provider_column(tmp_path):
         "SELECT value FROM sync_meta WHERE key = ?",
         (_MIGRATION_FLAG,),
     ).fetchone()[0] == "1"
+    conn.close()
+
+
+def test_backup_uses_sqlite_snapshot_for_wal_databases(tmp_path):
+    db_path = tmp_path / "wal.db"
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("CREATE TABLE marker (id INTEGER PRIMARY KEY, value TEXT)")
+    conn.execute("INSERT INTO marker (value) VALUES ('committed-in-wal')")
+    conn.commit()
+    assert db_path.with_name(db_path.name + "-wal").exists()
+
+    backup_path = _backup(db_path)
+    with sqlite3.connect(backup_path) as backup:
+        value = backup.execute("SELECT value FROM marker WHERE id = 1").fetchone()[0]
+
+    assert value == "committed-in-wal"
     conn.close()
