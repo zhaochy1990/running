@@ -7,7 +7,17 @@ const appUrl = (process.env.STRIDE_LOCAL_URL || 'http://127.0.0.1:5173').replace
 const screenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-local-smoke.png')
 
 function readCredentials() {
-  const file = path.join(repoRoot, '.credentials.local')
+  const candidates = [
+    path.join(repoRoot, '.credentials.local'),
+    process.env.STRIDE_CREDENTIALS_FILE,
+    process.env.USERPROFILE
+      ? path.join(process.env.USERPROFILE, 'workspace', 'running', '.credentials.local')
+      : null,
+  ].filter(Boolean)
+  const file = candidates.find((candidate) => fs.existsSync(candidate))
+  if (!file) {
+    throw new Error('.credentials.local not found')
+  }
   const raw = fs.readFileSync(file, 'utf8')
   const values = {}
   for (const line of raw.split(/\r?\n/)) {
@@ -41,6 +51,9 @@ async function main() {
   })
   page.on('requestfailed', (request) => {
     const url = request.url()
+    if (request.failure()?.errorText === 'net::ERR_ABORTED') {
+      return
+    }
     if (url.includes('/api/') || url.includes('/auth/')) {
       issues.push(`request failed: ${sanitizeUrl(url)} ${request.failure()?.errorText || ''}`)
     }

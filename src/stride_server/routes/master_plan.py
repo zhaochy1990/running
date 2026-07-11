@@ -40,7 +40,7 @@ from ..bearer import require_bearer
 from ..content_store import read_json
 from ..deps import get_db
 from .. import job_runner
-from ..job_runner import JobStatus, JobStage, STAGE_LABEL_MAP
+from ..job_runner import JobStatus, STAGE_LABEL_MAP
 from .. import llm_client as _llm_client_mod
 from ..llm_client import LLMClient, LLMError, LLMUnavailable
 from .. import master_plan_generator
@@ -178,7 +178,7 @@ def generate_master_plan(
     profile = _read_current_profile(user_id)
 
     # --- Create job ---
-    job_id = job_runner.create_job(user_id, kind="master_plan_generation")
+    job_id = job_runner.create_job(user_id)
 
     # --- Launch daemon thread ---
     t = threading.Thread(

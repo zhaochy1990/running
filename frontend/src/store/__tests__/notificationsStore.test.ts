@@ -29,7 +29,7 @@ describe('notificationsStore server-backed read state', () => {
   it('hydrates read ids from the API instead of localStorage', async () => {
     localStorage.setItem('stride.dismissedNotifications', JSON.stringify(NOTIFICATIONS.map(n => n.id)))
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ read_ids: [newestNotificationId], notifications: [] }), {
+      new Response(JSON.stringify({ read_ids: [newestNotificationId] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -41,7 +41,7 @@ describe('notificationsStore server-backed read state', () => {
 
     await useNotificationsStore.getState().hydrate()
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/notifications', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/users/me/notifications/read-state', {
       method: 'GET',
       headers: {},
       body: undefined,
@@ -52,11 +52,11 @@ describe('notificationsStore server-backed read state', () => {
 
   it('marks a notification read through the API and keeps local render state in sync', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ read_ids: [], notifications: [] }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ read_ids: [] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ read_ids: [newestNotificationId], notifications: [] }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ read_ids: [newestNotificationId] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }))
@@ -77,7 +77,7 @@ describe('notificationsStore server-backed read state', () => {
 
   it('hydrates before marking read when called from an idle store', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ read_ids: [newestNotificationId], notifications: [] }), {
+      .mockResolvedValueOnce(new Response(JSON.stringify({ read_ids: [newestNotificationId] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }))
@@ -90,7 +90,7 @@ describe('notificationsStore server-backed read state', () => {
 
     await useNotificationsStore.getState().markRead(secondNotificationId)
 
-    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/users/me/notifications', {
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/users/me/notifications/read-state', {
       method: 'GET',
       headers: {},
       body: undefined,
@@ -104,81 +104,4 @@ describe('notificationsStore server-backed read state', () => {
     expect(useNotificationsStore.getState().isRead(secondNotificationId)).toBe(true)
   })
 
-  it('hydrates server inbox notifications and treats updated unread state as authoritative', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({
-        read_ids: [],
-        notifications: [
-          {
-            id: 'master-plan:job-1',
-            severity: 'success',
-            title: '训练计划已生成',
-            body: '可以进入训练计划页审核。',
-            published_at: '2026-07-11T08:00:00+00:00',
-            updated_at: '2026-07-11T08:03:00+00:00',
-            action_url: '/plan',
-            progress_pct: 100,
-            metadata: { type: 'master_plan_generation', state: 'done' },
-            read: false,
-          },
-        ],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
-
-    const { useNotificationsStore } = await import('../notificationsStore')
-
-    await useNotificationsStore.getState().hydrate()
-
-    expect(useNotificationsStore.getState().serverNotifications).toHaveLength(1)
-    expect(useNotificationsStore.getState().isRead('master-plan:job-1')).toBe(false)
-    expect(useNotificationsStore.getState().unreadCount([
-      useNotificationsStore.getState().serverNotifications[0],
-    ])).toBe(1)
-  })
-
-  it('marks hydrated server inbox notifications read immediately after API success', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        read_ids: [],
-        notifications: [
-          {
-            id: 'sync:full',
-            severity: 'info',
-            title: '正在同步数据',
-            body: '正在准备同步历史训练数据',
-            published_at: '2026-07-11T08:00:00+00:00',
-            updated_at: '2026-07-11T08:00:00+00:00',
-            progress_pct: 10,
-            metadata: { type: 'sync', state: 'running' },
-            read: false,
-          },
-        ],
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ read_ids: ['sync:full'] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }))
-
-    const { useNotificationsStore } = await import('../notificationsStore')
-
-    await useNotificationsStore.getState().hydrate()
-    await useNotificationsStore.getState().markRead('sync:full')
-
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/users/me/notifications/sync%3Afull/read', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: undefined,
-    })
-    expect(useNotificationsStore.getState().serverNotifications[0].read).toBe(true)
-    expect(useNotificationsStore.getState().isRead('sync:full')).toBe(true)
-    expect(useNotificationsStore.getState().unreadCount([
-      useNotificationsStore.getState().serverNotifications[0],
-    ])).toBe(0)
-  })
 })

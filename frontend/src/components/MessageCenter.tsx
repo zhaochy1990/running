@@ -1,9 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  type AppNotification,
-  getNotificationsForUser,
-  getNotificationsNewestFirst,
-} from '../data/notifications'
+import { getNotificationsForUser, getNotificationsNewestFirst } from '../data/notifications'
 import { shanghaiDate } from '../lib/shanghai'
 import { useNotificationsStore } from '../store/notificationsStore'
 import { useUser } from '../UserContextValue'
@@ -12,23 +8,6 @@ const SEVERITY_DOT: Record<string, string> = {
   info: 'bg-accent-cyan',
   success: 'bg-accent-green',
   warning: 'bg-accent-amber',
-  error: 'bg-accent-red',
-}
-
-function mergeMessages(staticMessages: AppNotification[], serverMessages: AppNotification[]) {
-  const seen = new Set<string>()
-  const merged: AppNotification[] = []
-  for (const message of [...serverMessages, ...staticMessages]) {
-    if (seen.has(message.id)) continue
-    seen.add(message.id)
-    merged.push(message)
-  }
-  return getNotificationsNewestFirst(merged)
-}
-
-function isTerminalNotification(message: AppNotification) {
-  const state = message.metadata?.state
-  return state === 'done' || state === 'failed'
 }
 
 export default function MessageCenter() {
@@ -38,30 +17,20 @@ export default function MessageCenter() {
   const isRead = useNotificationsStore((s) => s.isRead)
   const unreadCount = useNotificationsStore((s) => s.unreadCount)
   const loadState = useNotificationsStore((s) => s.loadState)
-  const refresh = useNotificationsStore((s) => s.refresh)
-  const serverNotifications = useNotificationsStore((s) => s.serverNotifications)
   // Subscribe to readIds so the panel re-renders when server-backed state changes.
   useNotificationsStore((s) => s.readIds)
 
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const staticMessages = profileReady && onboardingCompletedAt
-    ? getNotificationsForUser(onboardingCompletedAt)
+  const messages = profileReady && onboardingCompletedAt
+    ? getNotificationsNewestFirst(getNotificationsForUser(onboardingCompletedAt))
     : []
-  const messages = mergeMessages(staticMessages, profileReady ? serverNotifications : [])
   const unread = loadState === 'loading' || loadState === 'idle' ? 0 : unreadCount(messages)
 
   useEffect(() => {
     void hydrate()
   }, [hydrate])
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void refresh()
-    }, 15000)
-    return () => window.clearInterval(timer)
-  }, [refresh])
 
   useEffect(() => {
     if (!open) return
@@ -156,25 +125,6 @@ export default function MessageCenter() {
                           <p className="mt-1 text-xs leading-relaxed text-text-secondary whitespace-pre-line">
                             {m.body}
                           </p>
-                          {m.progressPct != null && !isTerminalNotification(m) && (
-                            <div className="mt-2 h-1.5 rounded-full bg-bg-secondary overflow-hidden">
-                              <div
-                                className="h-full rounded-full bg-accent-green transition-all"
-                                style={{ width: `${Math.max(0, Math.min(100, m.progressPct))}%` }}
-                              />
-                            </div>
-                          )}
-                          {m.actionUrl && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                window.location.href = m.actionUrl || '/'
-                              }}
-                              className="mt-2 mr-3 text-[11px] font-mono text-accent-cyan hover:underline cursor-pointer"
-                            >
-                              查看
-                            </button>
-                          )}
                           {!read && (
                             <button
                               type="button"

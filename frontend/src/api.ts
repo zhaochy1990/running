@@ -236,30 +236,8 @@ export interface NotificationReadState {
   read_ids: string[]
 }
 
-export interface ServerNotification {
-  id: string
-  severity?: 'info' | 'success' | 'warning' | 'error'
-  title: string
-  body: string
-  published_at?: string
-  updated_at?: string
-  action_url?: string | null
-  progress_pct?: number | null
-  metadata?: Record<string, unknown>
-  read?: boolean
-  read_at?: string | null
-}
-
-export interface NotificationsResponse extends NotificationReadState {
-  notifications: ServerNotification[]
-}
-
 export function getNotificationReadState() {
   return fetchJSON<NotificationReadState>('/users/me/notifications/read-state')
-}
-
-export function getNotifications() {
-  return fetchJSON<NotificationsResponse>('/users/me/notifications')
 }
 
 export async function markNotificationRead(notificationId: string) {

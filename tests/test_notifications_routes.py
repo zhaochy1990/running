@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 USER_A = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 USER_B = "b1b2c3d4-e5f6-4aaa-89ab-222222222222"
+INTERNAL_TOKEN = "test-internal-token-12345678"
 
 
 @pytest.fixture
@@ -54,9 +55,11 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
         "STRIDE_AUTH_AUDIENCE",
         "STRIDE_NOTIFICATIONS_TABLE_ACCOUNT_URL",
         "STRIDE_LIKES_TABLE_ACCOUNT_URL",
+        "STRIDE_INTERNAL_TOKEN",
     ):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("STRIDE_AUTH_PUBLIC_KEY_PEM", public_pem)
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
 
     from stride_core import db as core_db_mod
     from stride_server.notifications import store as nstore
@@ -64,10 +67,11 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
     nstore.reset_backend_cache()
 
     from stride_server.bearer import require_bearer
-    from stride_server.routes.notifications import router
+    from stride_server.routes.notifications import internal_router, router
 
     app = FastAPI()
     app.include_router(router, dependencies=[Depends(require_bearer)])
+    app.include_router(internal_router)
 
     yield TestClient(app, raise_server_exceptions=False), private_pem
 
@@ -115,53 +119,92 @@ def test_notification_read_state_rejects_invalid_notification_id(app_client):
     assert response.status_code == 422
 
 
-def test_notifications_inbox_lists_user_scoped_items_and_read_state(app_client):
+def test_internal_notification_upsert_requires_internal_token(app_client):
+    client, _private_pem = app_client
+
+    response = client.post(
+        "/internal/notifications",
+        json={
+            "user_id": USER_A,
+            "notification_id": "sync:onboarding",
+            "title": "正在同步数据",
+            "body": "正在同步健康数据",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_internal_notification_upsert_persists_generic_item(app_client):
     client, private_pem = app_client
-    token_a = _token(private_pem, USER_A)
-    token_b = _token(private_pem, USER_B)
+    token = _token(private_pem, USER_A)
 
-    from stride_server.notifications import store as nstore
-
-    nstore.upsert_notification(
-        USER_A,
-        "sync:onboarding",
-        severity="info",
-        title="正在同步数据",
-        body="正在同步健康数据，马上就好",
-        progress_pct=0,
-        metadata={"type": "sync", "state": "running", "mode": "health_only"},
+    response = client.post(
+        "/internal/notifications",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+        json={
+            "user_id": USER_A,
+            "notification_id": "sync:onboarding",
+            "severity": "info",
+            "title": "正在同步数据",
+            "body": "正在同步健康数据，马上就好",
+            "action_url": "/plan",
+            "progress_pct": 0,
+            "metadata": {"type": "sync", "state": "running", "mode": "health_only"},
+        },
     )
-    nstore.upsert_notification(
-        USER_B,
-        "sync:onboarding",
-        severity="success",
-        title="数据同步完成",
-        body="初始化完成",
-        progress_pct=100,
-        metadata={"type": "sync", "state": "done"},
-    )
-
-    response = client.get("/api/users/me/notifications", headers=_auth(token_a))
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["read_ids"] == []
-    assert [item["id"] for item in body["notifications"]] == ["sync:onboarding"]
-    item = body["notifications"][0]
-    assert "status" not in item
-    assert "kind" not in item
-    assert "source_type" not in item
+    item = response.json()["notification"]
+    assert item["id"] == "sync:onboarding"
     assert item["metadata"] == {"type": "sync", "state": "running", "mode": "health_only"}
     assert item["progress_pct"] == 0
     assert item["read"] is False
     assert item["read_at"] is None
+    assert "status" not in item
+    assert "kind" not in item
+    assert "source_type" not in item
+    assert "source_id" not in item
 
-    other = client.get("/api/users/me/notifications", headers=_auth(token_b))
-    assert other.status_code == 200
-    assert other.json()["notifications"][0]["metadata"]["state"] == "done"
+    from stride_server.notifications import store as nstore
+
+    stored = nstore.list_notifications(USER_A)
+    assert [notification["id"] for notification in stored] == ["sync:onboarding"]
+    assert nstore.list_notifications(USER_B) == []
+
+    marked = client.post(
+        "/api/users/me/notifications/sync:onboarding/read",
+        headers=_auth(token),
+    )
+    assert marked.status_code == 200
+    assert marked.json()["read_ids"] == ["sync:onboarding"]
+
+    updated = client.post(
+        "/internal/notifications",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+        json={
+            "user_id": USER_A,
+            "notification_id": "sync:onboarding",
+            "severity": "success",
+            "title": "数据同步完成",
+            "body": "初始化完成",
+            "action_url": "/plan",
+            "progress_pct": 100,
+            "metadata": {"type": "sync", "state": "done", "mode": "health_only"},
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["notification"]["read"] is False
+
+    read_state = client.get(
+        "/api/users/me/notifications/read-state",
+        headers=_auth(token),
+    )
+    assert read_state.status_code == 200
+    assert read_state.json() == {"read_ids": []}
 
 
-def test_updated_dynamic_notification_becomes_unread_again(app_client):
+def test_updated_dynamic_notification_becomes_unread_again_in_store(app_client):
     client, private_pem = app_client
     token = _token(private_pem, USER_A)
 
@@ -183,9 +226,9 @@ def test_updated_dynamic_notification_becomes_unread_again(app_client):
     )
     assert marked.status_code == 200
     assert marked.json()["read_ids"] == ["master-plan:job-1"]
-    read_inbox = client.get("/api/users/me/notifications", headers=_auth(token)).json()
-    assert read_inbox["notifications"][0]["read"] is True
-    assert read_inbox["notifications"][0]["read_at"] is not None
+    read_inbox = nstore.list_notifications(USER_A)
+    assert read_inbox[0]["read"] is True
+    assert read_inbox[0]["read_at"] is not None
 
     nstore.upsert_notification(
         USER_A,
@@ -204,6 +247,6 @@ def test_updated_dynamic_notification_becomes_unread_again(app_client):
     assert read_state.status_code == 200
     assert read_state.json() == {"read_ids": []}
 
-    inbox = client.get("/api/users/me/notifications", headers=_auth(token)).json()
-    assert inbox["notifications"][0]["read"] is False
-    assert inbox["notifications"][0]["metadata"]["state"] == "done"
+    inbox = nstore.list_notifications(USER_A)
+    assert inbox[0]["read"] is False
+    assert inbox[0]["metadata"]["state"] == "done"
