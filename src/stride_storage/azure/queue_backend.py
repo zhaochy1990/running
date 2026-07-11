@@ -12,7 +12,6 @@ poison queue (handled by the worker, which owns the ceiling policy).
 
 from __future__ import annotations
 
-import base64
 import json
 from functools import lru_cache
 from typing import Any
@@ -42,20 +41,6 @@ def reset_queue_client_cache() -> None:
     _get_queue_client.cache_clear()
 
 
-def _encode(job_id: str, user_id: str) -> str:
-    # Base64 keeps the body safe regardless of the queue's message-encoding policy.
-    raw = json.dumps({"job_id": job_id, "user_id": user_id}, ensure_ascii=False)
-    return base64.b64encode(raw.encode("utf-8")).decode("ascii")
-
-
-def _decode(body: str) -> dict[str, str]:
-    try:
-        raw = base64.b64decode(body).decode("utf-8")
-    except (ValueError, UnicodeDecodeError):
-        raw = body  # tolerate a plain-JSON body
-    return json.loads(raw)
-
-
 class AzureStorageQueue:
     """``JobQueue`` over Azure Storage Queue."""
 
@@ -67,8 +52,9 @@ class AzureStorageQueue:
         return _get_queue_client(self._account_url, self._queue_name)
 
     def enqueue(self, *, job_id: str, user_id: str, delay_s: int = 0) -> None:
+        body = json.dumps({"job_id": job_id, "user_id": user_id}, ensure_ascii=False)
         self._client().send_message(
-            _encode(job_id, user_id),
+            body,
             visibility_timeout=delay_s if delay_s > 0 else None,
         )
 
@@ -80,7 +66,7 @@ class AzureStorageQueue:
         )
         out: list[QueueMessage] = []
         for m in msgs:
-            data = _decode(m.content)
+            data = json.loads(m.content)
             out.append(
                 QueueMessage(
                     job_id=data["job_id"],
