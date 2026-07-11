@@ -122,6 +122,11 @@ class JobWorker:
             heartbeat_at=_now_iso(),
         )
 
+        # Mutable holder for the in-flight message so heartbeat can renew the
+        # lease and rotate the receipt (Azure returns a fresh pop_receipt on
+        # extend); the final delete must use the latest receipt.
+        current = {"msg": msg}
+
         def heartbeat(*, stage: str | None = None, progress_pct: int | None = None) -> None:
             fields: dict[str, Any] = {"heartbeat_at": _now_iso()}
             if stage is not None:
@@ -129,12 +134,21 @@ class JobWorker:
             if progress_pct is not None:
                 fields["progress_pct"] = max(0, min(100, int(progress_pct)))
             self._store.update(job.job_id, job.partition_key, **fields)
+            # Renew the queue lease so a long-running handler doesn't have its
+            # message re-delivered mid-flight (duplicate run + stale-receipt
+            # delete). Best-effort: a failed renewal must not break the handler.
+            try:
+                current["msg"] = self._queue.extend_visibility(
+                    current["msg"], visibility_timeout_s=self._config.visibility_timeout_s
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("job %s: visibility renewal failed", job.job_id, exc_info=True)
 
         try:
             result = handler(job, heartbeat=heartbeat)
         except Exception as exc:  # noqa: BLE001 — job boundary
             logger.exception("job %s (%s) failed", job.job_id, job.job_type)
-            self._on_handler_error(job, msg, exc)
+            self._on_handler_error(job, current["msg"], exc)
             return
 
         fields: dict[str, Any] = {
@@ -150,7 +164,7 @@ class JobWorker:
         if result is not None:
             fields["result_json"] = json.dumps(result, ensure_ascii=False, default=str)
         done = self._store.update(job.job_id, job.partition_key, **fields)
-        self._queue.delete(msg)
+        self._queue.delete(current["msg"])
         self._fire(self._on_completed, done)
 
     def _on_handler_error(self, job: JobRecord, msg: QueueMessage, exc: Exception) -> None:

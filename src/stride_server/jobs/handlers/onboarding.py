@@ -40,13 +40,33 @@ def _registry():
 
 @job_handler("onboarding_full_sync")
 def handle_full_sync(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
-    """Step 1 — full historical watch sync. Pure sync, no post-sync chain."""
+    """Step 1 — full historical watch sync. Pure sync, no post-sync chain.
+
+    Full sync of 3+ years is minutes-long — longer than a single queue
+    visibility window. We drive ``heartbeat`` from the sync's own progress
+    callback so every synced page both reports progress AND renews the queue
+    lease (the worker's heartbeat extends visibility), preventing mid-sync
+    re-delivery + a duplicate run.
+    """
     uuid = job.partition_key
     heartbeat(stage="syncing", progress_pct=10)
     source = _registry().for_user(uuid)
     if not source.is_logged_in(uuid):
         raise RuntimeError(f"user {uuid} not logged in to watch provider")
-    result = source.sync_user(uuid, full=True)
+
+    def _progress(payload: dict) -> None:
+        # Every sync progress tick renews the queue lease (the worker's
+        # heartbeat extends visibility) so a multi-minute full sync isn't
+        # re-delivered mid-flight. Best-effort — a progress update must never
+        # abort the sync. The sync engine emits ``phase``/``message`` (no
+        # percent), so we surface ``phase`` as the stage and hold pct at 50.
+        try:
+            phase = payload.get("phase")
+            heartbeat(stage=str(phase) if phase else "syncing", progress_pct=50)
+        except Exception:  # noqa: BLE001
+            pass
+
+    result = source.sync_user(uuid, full=True, progress=_progress)
     logger.info("onboarding full_sync %s: %s activities", uuid, result.activities)
     return {"activities": result.activities, "health": result.health}
 

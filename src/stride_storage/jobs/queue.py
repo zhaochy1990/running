@@ -73,6 +73,16 @@ class InMemoryJobQueue(JobQueue):
         with self._lock:
             self._msgs.pop(message.receipt, None)
 
+    def extend_visibility(
+        self, message: QueueMessage, *, visibility_timeout_s: int
+    ) -> QueueMessage:
+        with self._lock:
+            msg = self._msgs.get(message.receipt)
+            if msg is not None:
+                msg.visible_at = self._clock() + visibility_timeout_s
+        # The in-memory receipt (seq) is stable across renewals.
+        return message
+
     # Test/introspection helper — not part of the JobQueue protocol.
     def depth(self) -> int:
         with self._lock:

@@ -180,3 +180,17 @@ class JobQueue(Protocol):
         self, *, max: int = 1, visibility_timeout_s: int = 300
     ) -> list[QueueMessage]: ...
     def delete(self, message: QueueMessage) -> None: ...
+    def extend_visibility(
+        self, message: QueueMessage, *, visibility_timeout_s: int
+    ) -> QueueMessage:
+        """Renew a leased message's visibility timeout (lease extension).
+
+        Long-running handlers call this (via the worker's heartbeat) so a job
+        that outlives the initial timeout isn't re-delivered and run twice. Some
+        backends rotate the ack handle on renewal (Azure returns a fresh
+        pop_receipt), so this RETURNS an updated ``QueueMessage`` whose
+        ``receipt`` must be used for any subsequent ``extend_visibility`` /
+        ``delete`` — the caller must replace its held message with the returned
+        one.
+        """
+        ...

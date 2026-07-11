@@ -78,6 +78,12 @@ def start_pipeline(
 ) -> str:
     """Create a pipeline run and enqueue its first step. Returns run_id.
 
+    Store-first: the PipelineRun row is persisted BEFORE the first step job is
+    enqueued, so a worker that dequeues the step (possibly before this call
+    returns) always finds the run in ``on_job_completed``. If we enqueued first,
+    a fast worker — or a failed ``create`` after a successful ``enqueue`` — would
+    leave an orphan job whose completion can't advance a nonexistent run.
+
     ``input_payload`` is merged into every step job's payload (alongside the
     ``pipeline_run_id`` / ``step_name`` metadata) so steps can read run-level
     inputs.
@@ -90,21 +96,38 @@ def start_pipeline(
 
     run_id = str(uuid4())
     first = pipeline.first_step()
-    first_job_id = _enqueue_step(
-        enqueue, pipeline, first, run_id=run_id, partition_key=partition_key,
-        input_payload=input_payload,
-    )
     now = _now_iso()
-    get_pipeline_run_store().create(PipelineRunRecord(
+    store = get_pipeline_run_store()
+    # 1. Persist the run first (first step's job_id not known yet → None).
+    store.create(PipelineRunRecord(
         run_id=run_id,
         partition_key=partition_key,
         pipeline_name=name,
         status=JobStatus.RUNNING,
         current_step=first.name,
-        steps_json=_step_states(pipeline, first_job_id=first_job_id),
+        steps_json=_step_states(pipeline, first_job_id=None),
         created_at=now,
         updated_at=now,
     ))
+    # 2. Now enqueue the first step — the run is already durable.
+    first_job_id = _enqueue_step(
+        enqueue, pipeline, first, run_id=run_id, partition_key=partition_key,
+        input_payload=input_payload,
+    )
+    # 3. Backfill the first step's job_id (best-effort — completion advancement
+    #    keys off the run/step, not this id, so a race here is harmless). Re-read
+    #    the run so we don't clobber a fast worker that already advanced it.
+    try:
+        current = store.get(partition_key, run_id)
+        if current is not None:
+            store.update(
+                run_id, partition_key,
+                steps_json=_update_step_states(
+                    current.steps_json, first.name, job_id=first_job_id
+                ),
+            )
+    except Exception:  # noqa: BLE001
+        logger.warning("pipeline run %s: first-step job_id backfill failed", run_id, exc_info=True)
     logger.info("pipeline %s run %s started for %s", name, run_id, partition_key)
     return run_id
 

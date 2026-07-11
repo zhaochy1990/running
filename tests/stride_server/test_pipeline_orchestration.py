@@ -206,3 +206,43 @@ def test_non_pipeline_job_ignored_by_hook(tmp_path, monkeypatch):
     assert client.get(GLOBAL_PARTITION, jid).status is JobStatus.DONE
     # no pipeline runs created
     assert prstore.list_by_partition(GLOBAL_PARTITION) == []
+
+
+def test_run_persisted_before_first_job_enqueued(tmp_path, monkeypatch):
+    """Store-first invariant: if a worker consumes + completes the first step
+    the instant it's enqueued (before start_pipeline returns), the run must
+    already exist so on_job_completed can advance it — not silently stall."""
+    for jt in ("a", "b"):
+        job_handler(jt)(lambda job, *, heartbeat: {"ok": True})
+    p = _write_yaml(tmp_path, """
+pipelines:
+  demo:
+    steps:
+      - {name: s1, job_type: a}
+      - {name: s2, job_type: b, depends: [s1]}
+""")
+    load_pipelines(p)
+    worker, prstore, queue = _wire_dev_backends(tmp_path, monkeypatch)
+
+    # Make enqueue drain the queue synchronously — the worst-case race where the
+    # first job runs to completion *inside* the enqueue call, before
+    # start_pipeline's own bookkeeping finishes.
+    real_client = J.get_job_client()
+    real_enqueue = real_client.enqueue
+
+    def racing_enqueue(**kw):
+        jid = real_enqueue(**kw)
+        worker.process_once(max_messages=5)  # consume immediately
+        return jid
+
+    monkeypatch.setattr(J, "enqueue", racing_enqueue)
+
+    run_id = orchestrator.start_pipeline("demo", partition_key="u1")
+    # drain any remaining
+    for _ in range(6):
+        if worker.process_once(max_messages=5) == 0:
+            break
+
+    run = prstore.get("u1", run_id)
+    assert run is not None  # run existed when the first job completed
+    assert run.status is JobStatus.DONE  # advanced past both steps, not stalled
