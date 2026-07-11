@@ -12,7 +12,12 @@ from stride_storage.interfaces.config import QueueStorageConfig
 
 
 def _import_handlers():
-    import stride_server.jobs.handlers  # noqa: F401 — registers hello_world
+    # Idempotent (re)registration — other test files clear the registry between
+    # cases while handler modules stay import-cached, so a plain re-import
+    # wouldn't re-run the @job_handler decorators.
+    from stride_server.jobs.handlers import ensure_handlers_registered
+
+    ensure_handlers_registered()
 
 
 def test_hello_handler_registered_and_echoes():

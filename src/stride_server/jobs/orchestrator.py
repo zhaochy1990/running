@@ -211,6 +211,7 @@ def on_job_completed(job: JobRecord) -> None:
             steps_json=steps_json, completed_at=_now_iso(),
         )
         logger.info("pipeline run %s DONE", run_id)
+        _notify_run_transition(run, job, step_name, next_step=None)
         return
 
     next_job_id = _enqueue_step(
@@ -225,6 +226,40 @@ def on_job_completed(job: JobRecord) -> None:
         current_step=nxt.name, steps_json=steps_json,
     )
     logger.info("pipeline run %s advanced %s -> %s", run_id, step_name, nxt.name)
+    _notify_run_transition(run, job, step_name, next_step=nxt.name)
+
+
+def _notify_run_transition(
+    run: PipelineRunRecord, job: JobRecord, step_name: str, *, next_step: str | None
+) -> None:
+    """Emit onboarding progress notifications on a real step/run transition.
+
+    Only for the onboarding pipeline; other pipelines don't surface here. This
+    is called AFTER the idempotency guard has already advanced the run, so a
+    hook replay (which returns early at that guard) won't re-emit. Best-effort —
+    the notify helpers swallow their own errors.
+    """
+    if run.pipeline_name != "onboarding":
+        return
+    from stride_server.jobs import onboarding_notify
+
+    user_id = job.partition_key
+    if next_step is None:
+        onboarding_notify.publish_complete(user_id)
+        return
+    if step_name == "full_sync":
+        onboarding_notify.publish_sync_done(user_id, _synced_activities(job))
+        onboarding_notify.publish_analyzing(user_id)
+
+
+def _synced_activities(job: JobRecord) -> int:
+    """Read the full_sync step's activity count from its result payload."""
+    if not job.result_json:
+        return 0
+    try:
+        return int(json.loads(job.result_json).get("activities", 0))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return 0
 
 
 def on_job_failed(job: JobRecord) -> None:
@@ -239,6 +274,7 @@ def on_job_failed(job: JobRecord) -> None:
     run = store.get(job.partition_key, run_id)
     if run is None:
         return
+    already_failed = run.status is JobStatus.FAILED
     steps_json = _update_step_states(
         run.steps_json, step_name, status=JobStatus.FAILED.value, job_id=job.job_id
     )
@@ -250,6 +286,10 @@ def on_job_failed(job: JobRecord) -> None:
         completed_at=_now_iso(),
     )
     logger.warning("pipeline run %s FAILED at step %s", run_id, step_name)
+    if not already_failed and run.pipeline_name == "onboarding":
+        from stride_server.jobs import onboarding_notify
+
+        onboarding_notify.publish_failed(job.partition_key, step_name)
 
 
 def _run_input(run: PipelineRunRecord) -> dict[str, Any] | None:
