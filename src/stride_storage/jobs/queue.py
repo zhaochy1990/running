@@ -22,7 +22,7 @@ from stride_storage.interfaces.jobs import JobQueue, QueueMessage, QueueStorageC
 class _Msg:
     seq: int
     job_id: str
-    user_id: str
+    partition_key: str
     visible_at: float
     dequeue_count: int = 0
 
@@ -36,13 +36,13 @@ class InMemoryJobQueue(JobQueue):
         self._msgs: dict[int, _Msg] = {}
         self._clock = clock or time.monotonic
 
-    def enqueue(self, *, job_id: str, user_id: str, delay_s: int = 0) -> None:
+    def enqueue(self, *, job_id: str, partition_key: str, delay_s: int = 0) -> None:
         with self._lock:
             seq = next(self._seq)
             self._msgs[seq] = _Msg(
                 seq=seq,
                 job_id=job_id,
-                user_id=user_id,
+                partition_key=partition_key,
                 visible_at=self._clock() + max(0, delay_s),
             )
 
@@ -62,7 +62,7 @@ class InMemoryJobQueue(JobQueue):
                 out.append(
                     QueueMessage(
                         job_id=msg.job_id,
-                        user_id=msg.user_id,
+                        partition_key=msg.partition_key,
                         receipt=msg.seq,
                         dequeue_count=msg.dequeue_count,
                     )

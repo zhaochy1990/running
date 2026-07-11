@@ -14,6 +14,7 @@ from typing import Any
 from uuid import uuid4
 
 from stride_storage.interfaces.jobs import (
+    GLOBAL_PARTITION,
     JobQueue,
     JobRecord,
     JobStatus,
@@ -36,16 +37,18 @@ class JobClient:
     def enqueue(
         self,
         *,
-        user_id: str,
         job_type: str,
+        partition_key: str = GLOBAL_PARTITION,
         input_payload: dict[str, Any] | None = None,
         delay_s: int = 0,
     ) -> str:
+        """Enqueue a job. ``partition_key`` is the owning scope — a user_id for
+        user-scoped jobs, or ``GLOBAL_PARTITION`` (default) for global ones."""
         job_id = str(uuid4())
         now = _now_iso()
         record = JobRecord(
             job_id=job_id,
-            user_id=user_id,
+            partition_key=partition_key,
             job_type=job_type,
             status=JobStatus.QUEUED,
             heartbeat_at=now,
@@ -58,11 +61,11 @@ class JobClient:
             updated_at=now,
         )
         self._store.create(record)
-        self._queue.enqueue(job_id=job_id, user_id=user_id, delay_s=delay_s)
+        self._queue.enqueue(job_id=job_id, partition_key=partition_key, delay_s=delay_s)
         return job_id
 
-    def get(self, user_id: str, job_id: str) -> JobRecord | None:
-        return self._store.get(user_id, job_id)
+    def get(self, partition_key: str, job_id: str) -> JobRecord | None:
+        return self._store.get(partition_key, job_id)
 
     @property
     def store(self) -> JobStore:
@@ -76,8 +79,8 @@ class JobClient:
 def enqueue_job(
     config: QueueStorageConfig,
     *,
-    user_id: str,
     job_type: str,
+    partition_key: str = GLOBAL_PARTITION,
     input_payload: dict[str, Any] | None = None,
     delay_s: int = 0,
 ) -> str:
@@ -91,8 +94,8 @@ def enqueue_job(
 
     client = JobClient(job_store_from_config(config), queue_from_config(config))
     return client.enqueue(
-        user_id=user_id,
         job_type=job_type,
+        partition_key=partition_key,
         input_payload=input_payload,
         delay_s=delay_s,
     )

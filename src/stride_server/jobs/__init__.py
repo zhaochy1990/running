@@ -12,6 +12,7 @@ from functools import lru_cache
 from typing import Any
 
 from stride_storage.interfaces.config import ConfigError, QueueStorageConfig
+from stride_storage.interfaces.jobs import GLOBAL_PARTITION
 from stride_storage.jobs import JobClient, job_store_from_config, queue_from_config
 
 from stride_server.config import clear_server_config_cache, load_server_config
@@ -56,15 +57,19 @@ def get_job_client() -> JobClient:
 
 def enqueue(
     *,
-    user_id: str,
     job_type: str,
+    partition_key: str = GLOBAL_PARTITION,
     input_payload: dict[str, Any] | None = None,
     delay_s: int = 0,
 ) -> str:
-    """Enqueue a job and return its job_id. The single event/chain entrypoint."""
+    """Enqueue a job and return its job_id. The single event/chain entrypoint.
+
+    ``partition_key`` is the owning scope — a user_id for user-scoped jobs, or
+    ``GLOBAL_PARTITION`` (default) for global ones.
+    """
     return get_job_client().enqueue(
-        user_id=user_id,
         job_type=job_type,
+        partition_key=partition_key,
         input_payload=input_payload,
         delay_s=delay_s,
     )
@@ -87,6 +92,7 @@ def reset_jobs_cache_for_tests() -> None:
 
 
 __all__ = [
+    "GLOBAL_PARTITION",
     "JobWorker",
     "build_worker",
     "enqueue",

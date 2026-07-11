@@ -21,6 +21,7 @@ from stride_storage.interfaces.config import (
     validate_required_when,
 )
 from stride_storage.interfaces.jobs import (
+    GLOBAL_PARTITION,
     JobQueue,
     JobRecord,
     JobStatus,
@@ -34,6 +35,7 @@ __all__ = [
     "CoachPersistenceConfig",
     "ConfigError",
     "ContentStorageConfig",
+    "GLOBAL_PARTITION",
     "JobQueue",
     "JobRecord",
     "JobStatus",

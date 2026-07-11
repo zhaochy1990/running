@@ -18,6 +18,11 @@ from typing import Any, Protocol, runtime_checkable
 
 from stride_storage.interfaces.config import QueueStorageConfig  # noqa: F401  (re-export)
 
+# Partition key for jobs that belong to no single user (periodic sweeps,
+# site-wide aggregations, cleanup). User-scoped jobs use the user_id as their
+# partition key; global jobs use this sentinel.
+GLOBAL_PARTITION = "Global"
+
 
 class JobStatus(str, Enum):
     QUEUED = "queued"
@@ -28,15 +33,18 @@ class JobStatus(str, Enum):
 
 @dataclass(frozen=True)
 class JobRecord:
-    """A single async job's state row (PartitionKey=user_id, RowKey=job_id).
+    """A single async job's state row (PartitionKey=partition_key, RowKey=job_id).
 
     Domain-neutral: ``job_type`` is an open string keyed to a handler in the
-    worker's registry. ``input_json`` / ``result_json`` carry the per-type
-    payload so this row never needs type-specific columns.
+    worker's registry. ``partition_key`` is the job's owning scope — a user_id
+    for user-scoped jobs, or ``GLOBAL_PARTITION`` for global ones — and maps
+    directly to the storage partition, so "list a partition's jobs" is an
+    efficient point-partition scan. ``input_json`` / ``result_json`` carry the
+    per-type payload so this row never needs type-specific columns.
     """
 
     job_id: str
-    user_id: str
+    partition_key: str
     job_type: str
     status: JobStatus
     progress_pct: int = 0
@@ -61,14 +69,17 @@ class JobStore(Protocol):
 
     Kept intentionally narrow. ``create`` writes the QUEUED row before the
     message is enqueued; ``update`` mutates named fields atomically per row.
+    Jobs are addressed by ``(partition_key, job_id)``.
     """
 
     def create(self, job: JobRecord) -> JobRecord: ...
-    def update(self, job_id: str, user_id: str, **fields: Any) -> JobRecord: ...
-    def get(self, user_id: str, job_id: str) -> JobRecord | None: ...
+    def update(self, job_id: str, partition_key: str, **fields: Any) -> JobRecord: ...
+    def get(self, partition_key: str, job_id: str) -> JobRecord | None: ...
     def list_running(self) -> list[JobRecord]: ...
-    def list_by_user(self, user_id: str, *, limit: int | None = None) -> list[JobRecord]: ...
-    def delete_user(self, user_id: str) -> int: ...
+    def list_by_partition(
+        self, partition_key: str, *, limit: int | None = None
+    ) -> list[JobRecord]: ...
+    def delete_partition(self, partition_key: str) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -86,7 +97,7 @@ class QueueMessage:
     """
 
     job_id: str
-    user_id: str
+    partition_key: str
     receipt: Any
     dequeue_count: int = 1
 
@@ -122,7 +133,7 @@ class JobQueue(Protocol):
     backend with native DLQ support and one without both satisfy this interface.
     """
 
-    def enqueue(self, *, job_id: str, user_id: str, delay_s: int = 0) -> None: ...
+    def enqueue(self, *, job_id: str, partition_key: str, delay_s: int = 0) -> None: ...
     def receive(
         self, *, max: int = 1, visibility_timeout_s: int = 300
     ) -> list[QueueMessage]: ...

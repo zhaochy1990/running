@@ -64,10 +64,10 @@ class JobWorker:
         return len(msgs)
 
     def _handle(self, msg: QueueMessage) -> None:
-        job = self._store.get(msg.user_id, msg.job_id)
+        job = self._store.get(msg.partition_key, msg.job_id)
         if job is None:
             # Orphan message (state row gone) — drop it so it can't loop forever.
-            logger.warning("job worker: no state row for %s/%s, dropping", msg.user_id, msg.job_id)
+            logger.warning("job worker: no state row for %s/%s, dropping", msg.partition_key, msg.job_id)
             self._queue.delete(msg)
             return
 
@@ -83,7 +83,7 @@ class JobWorker:
             return
 
         self._store.update(
-            job.job_id, job.user_id,
+            job.job_id, job.partition_key,
             status=JobStatus.RUNNING,
             attempts=msg.dequeue_count,
             heartbeat_at=_now_iso(),
@@ -95,7 +95,7 @@ class JobWorker:
                 fields["stage"] = stage
             if progress_pct is not None:
                 fields["progress_pct"] = max(0, min(100, int(progress_pct)))
-            self._store.update(job.job_id, job.user_id, **fields)
+            self._store.update(job.job_id, job.partition_key, **fields)
 
         try:
             result = handler(job, heartbeat=heartbeat)
@@ -115,12 +115,12 @@ class JobWorker:
         }
         if result is not None:
             fields["result_json"] = json.dumps(result, ensure_ascii=False, default=str)
-        self._store.update(job.job_id, job.user_id, **fields)
+        self._store.update(job.job_id, job.partition_key, **fields)
         self._queue.delete(msg)
 
     def _fail(self, job: JobRecord, *, code: str, message: str) -> None:
         self._store.update(
-            job.job_id, job.user_id,
+            job.job_id, job.partition_key,
             status=JobStatus.FAILED,
             error_code=code,
             error_message=message,
@@ -132,9 +132,9 @@ class JobWorker:
             "job %s (%s) exceeded %d attempts — poisoning",
             job.job_id, job.job_type, self._config.poison_max_attempts,
         )
-        self._poison.enqueue(job_id=job.job_id, user_id=job.user_id)
+        self._poison.enqueue(job_id=job.job_id, partition_key=job.partition_key)
         self._store.update(
-            job.job_id, job.user_id,
+            job.job_id, job.partition_key,
             status=JobStatus.FAILED,
             error_code="poison",
             error_message=f"exceeded {self._config.poison_max_attempts} attempts",

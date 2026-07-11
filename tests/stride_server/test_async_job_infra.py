@@ -37,7 +37,7 @@ def _clean_registry():
 
 def test_store_create_get_roundtrip(store):
     rec = JobRecord(
-        job_id="j1", user_id="u1", job_type="t", status=JobStatus.QUEUED,
+        job_id="j1", partition_key="u1", job_type="t", status=JobStatus.QUEUED,
         created_at="now", updated_at="now",
     )
     store.create(rec)
@@ -48,14 +48,14 @@ def test_store_create_get_roundtrip(store):
 
 
 def test_store_update_unknown_field_raises(store):
-    store.create(JobRecord(job_id="j1", user_id="u1", job_type="t", status=JobStatus.QUEUED))
+    store.create(JobRecord(job_id="j1", partition_key="u1", job_type="t", status=JobStatus.QUEUED))
     with pytest.raises(AttributeError):
         store.update("j1", "u1", not_a_field=1)
 
 
 def test_store_list_running_filters(store):
-    store.create(JobRecord(job_id="a", user_id="u1", job_type="t", status=JobStatus.RUNNING))
-    store.create(JobRecord(job_id="b", user_id="u1", job_type="t", status=JobStatus.DONE))
+    store.create(JobRecord(job_id="a", partition_key="u1", job_type="t", status=JobStatus.RUNNING))
+    store.create(JobRecord(job_id="b", partition_key="u1", job_type="t", status=JobStatus.DONE))
     running = store.list_running()
     assert [r.job_id for r in running] == ["a"]
 
@@ -64,7 +64,7 @@ def test_store_list_running_filters(store):
 
 
 def test_queue_receive_hides_then_retries_until_deleted(queue):
-    queue.enqueue(job_id="j1", user_id="u1")
+    queue.enqueue(job_id="j1", partition_key="u1")
     first = queue.receive(max=5, visibility_timeout_s=300)
     assert len(first) == 1 and first[0].dequeue_count == 1
     # still leased (vis=300) → not visible again
@@ -72,7 +72,7 @@ def test_queue_receive_hides_then_retries_until_deleted(queue):
 
 
 def test_queue_message_reappears_after_visibility(queue):
-    queue.enqueue(job_id="j1", user_id="u1")
+    queue.enqueue(job_id="j1", partition_key="u1")
     queue.receive(max=5, visibility_timeout_s=0)  # immediately visible again
     again = queue.receive(max=5, visibility_timeout_s=0)
     assert len(again) == 1 and again[0].dequeue_count == 2
@@ -85,11 +85,25 @@ def test_queue_message_reappears_after_visibility(queue):
 
 def test_client_enqueue_writes_queued_row_and_message(store, queue):
     client = JobClient(store, queue)
-    jid = client.enqueue(user_id="u1", job_type="t", input_payload={"x": 1})
+    jid = client.enqueue(partition_key="u1", job_type="t", input_payload={"x": 1})
     rec = store.get("u1", jid)
     assert rec.status is JobStatus.QUEUED
     assert '"x": 1' in (rec.input_json or "")
     assert queue.depth() == 1
+
+
+def test_client_enqueue_defaults_to_global_partition(store, queue):
+    from stride_storage.interfaces.jobs import GLOBAL_PARTITION
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(job_type="periodic")  # no partition_key
+    rec = store.get(GLOBAL_PARTITION, jid)
+    assert rec is not None
+    assert rec.partition_key == GLOBAL_PARTITION
+    # global + user jobs are isolated by partition
+    client.enqueue(partition_key="u1", job_type="periodic")
+    assert len(store.list_by_partition(GLOBAL_PARTITION)) == 1
+    assert len(store.list_by_partition("u1")) == 1
 
 
 # --- worker -----------------------------------------------------------------
@@ -106,10 +120,10 @@ def test_worker_runs_handler_to_done(store, queue):
     @job_handler("ok_job")
     def _h(job, *, heartbeat):
         heartbeat(stage="s", progress_pct=50)
-        return {"user": job.user_id}
+        return {"user": job.partition_key}
 
     client = JobClient(store, queue)
-    jid = client.enqueue(user_id="u1", job_type="ok_job")
+    jid = client.enqueue(partition_key="u1", job_type="ok_job")
     poison = InMemoryJobQueue()
     _worker(store, queue, poison).process_once(max_messages=5)
 
@@ -122,7 +136,7 @@ def test_worker_runs_handler_to_done(store, queue):
 
 def test_worker_no_handler_fails_job(store, queue):
     client = JobClient(store, queue)
-    jid = client.enqueue(user_id="u1", job_type="unregistered")
+    jid = client.enqueue(partition_key="u1", job_type="unregistered")
     poison = InMemoryJobQueue()
     _worker(store, queue, poison).process_once(max_messages=5)
     rec = store.get("u1", jid)
@@ -136,7 +150,7 @@ def test_worker_poisons_after_ceiling(store, queue):
         raise RuntimeError("kaboom")
 
     client = JobClient(store, queue)
-    jid = client.enqueue(user_id="u1", job_type="boom")
+    jid = client.enqueue(partition_key="u1", job_type="boom")
     poison = InMemoryJobQueue()
     worker = _worker(store, queue, poison)
     for _ in range(6):

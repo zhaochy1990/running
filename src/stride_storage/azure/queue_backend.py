@@ -4,10 +4,10 @@ Mirrors ``azure/blob_backend.py`` / ``azure/table_backend.py``: all ``azure.*``
 imports are lazy (inside functions) so importing this module stays azure-free,
 and the shared :func:`get_credential` is reused.
 
-Message body is a small JSON pointer ``{"job_id", "user_id"}`` — the full state
-lives in the JobStore. Retry is native: an un-deleted message reappears after
-the visibility timeout; ``dequeue_count`` past the poison ceiling routes to the
-poison queue (handled by the worker, which owns the ceiling policy).
+Message body is a small JSON pointer ``{"job_id", "partition_key"}`` — the full
+state lives in the JobStore. Retry is native: an un-deleted message reappears
+after the visibility timeout; ``dequeue_count`` past the poison ceiling routes
+to the poison queue (handled by the worker, which owns the ceiling policy).
 """
 
 from __future__ import annotations
@@ -51,8 +51,10 @@ class AzureStorageQueue:
     def _client(self) -> Any:
         return _get_queue_client(self._account_url, self._queue_name)
 
-    def enqueue(self, *, job_id: str, user_id: str, delay_s: int = 0) -> None:
-        body = json.dumps({"job_id": job_id, "user_id": user_id}, ensure_ascii=False)
+    def enqueue(self, *, job_id: str, partition_key: str, delay_s: int = 0) -> None:
+        body = json.dumps(
+            {"job_id": job_id, "partition_key": partition_key}, ensure_ascii=False
+        )
         self._client().send_message(
             body,
             visibility_timeout=delay_s if delay_s > 0 else None,
@@ -70,7 +72,7 @@ class AzureStorageQueue:
             out.append(
                 QueueMessage(
                     job_id=data["job_id"],
-                    user_id=data["user_id"],
+                    partition_key=data["partition_key"],
                     receipt=(m.id, m.pop_receipt),
                     dequeue_count=int(getattr(m, "dequeue_count", 1) or 1),
                 )

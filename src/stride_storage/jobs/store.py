@@ -1,7 +1,7 @@
 """Generic JobStore backends — dev (JSON files) + prod (Azure Table).
 
 State layer for the async-job infra. Domain-neutral: stores ``JobRecord`` rows
-keyed (user_id, job_id). Mirrors the dual-backend shape of
+keyed (partition_key, job_id). Mirrors the dual-backend shape of
 ``coach_persistence.jobs_store`` but with no coach coupling. Azure imports are
 lazy per the Tier-C azure-free invariant.
 """
@@ -53,7 +53,7 @@ _FIELDS = (
 
 def _to_entity(job: JobRecord) -> dict[str, Any]:
     return {
-        "PartitionKey": job.user_id,
+        "PartitionKey": job.partition_key,
         "RowKey": job.job_id,
         "job_type": job.job_type,
         "status": job.status.value,
@@ -74,7 +74,7 @@ def _to_entity(job: JobRecord) -> dict[str, Any]:
 def _from_entity(entity: dict[str, Any]) -> JobRecord:
     return JobRecord(
         job_id=entity["RowKey"],
-        user_id=entity["PartitionKey"],
+        partition_key=entity["PartitionKey"],
         job_type=entity["job_type"],
         status=JobStatus(entity["status"]),
         progress_pct=int(entity.get("progress_pct") or 0),
@@ -104,23 +104,25 @@ class FileJobStore(JobStore):
         self._base = Path(base_dir)
         self._base.mkdir(parents=True, exist_ok=True)
 
-    def _path(self, user_id: str, job_id: str) -> Path:
-        return self._base / _path_safe(user_id) / f"{_path_safe(job_id)}.json"
+    def _path(self, partition_key: str, job_id: str) -> Path:
+        return self._base / _path_safe(partition_key) / f"{_path_safe(job_id)}.json"
 
     def create(self, job: JobRecord) -> JobRecord:
-        p = self._path(job.user_id, job.job_id)
+        p = self._path(job.partition_key, job.job_id)
         if p.exists():
-            raise ValueError(f"job {job.job_id} already exists for user {job.user_id}")
+            raise ValueError(
+                f"job {job.job_id} already exists in partition {job.partition_key}"
+            )
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(
             json.dumps(_to_entity(job), ensure_ascii=False, sort_keys=True, default=str)
         )
         return job
 
-    def update(self, job_id: str, user_id: str, **fields: Any) -> JobRecord:
-        p = self._path(user_id, job_id)
+    def update(self, job_id: str, partition_key: str, **fields: Any) -> JobRecord:
+        p = self._path(partition_key, job_id)
         if not p.exists():
-            raise KeyError(f"no job {job_id} for user {user_id}")
+            raise KeyError(f"no job {job_id} in partition {partition_key}")
         entity = json.loads(p.read_text())
         for k, v in fields.items():
             if k not in _FIELDS:
@@ -130,44 +132,46 @@ class FileJobStore(JobStore):
         p.write_text(json.dumps(entity, ensure_ascii=False, sort_keys=True, default=str))
         return _from_entity(entity)
 
-    def get(self, user_id: str, job_id: str) -> JobRecord | None:
-        p = self._path(user_id, job_id)
+    def get(self, partition_key: str, job_id: str) -> JobRecord | None:
+        p = self._path(partition_key, job_id)
         if not p.exists():
             return None
         return _from_entity(json.loads(p.read_text()))
 
     def list_running(self) -> list[JobRecord]:
         out: list[JobRecord] = []
-        for user_dir in self._base.iterdir():
-            if not user_dir.is_dir():
+        for part_dir in self._base.iterdir():
+            if not part_dir.is_dir():
                 continue
-            for f in user_dir.glob("*.json"):
+            for f in part_dir.glob("*.json"):
                 entity = json.loads(f.read_text())
                 if entity.get("status") == JobStatus.RUNNING.value:
                     out.append(_from_entity(entity))
         return out
 
-    def list_by_user(self, user_id: str, *, limit: int | None = None) -> list[JobRecord]:
-        user_dir = self._base / _path_safe(user_id)
-        if not user_dir.exists():
+    def list_by_partition(
+        self, partition_key: str, *, limit: int | None = None
+    ) -> list[JobRecord]:
+        part_dir = self._base / _path_safe(partition_key)
+        if not part_dir.exists():
             return []
         out: list[JobRecord] = []
-        for f in sorted(user_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        for f in sorted(part_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
             out.append(_from_entity(json.loads(f.read_text())))
             if limit is not None and len(out) >= limit:
                 break
         return out
 
-    def delete_user(self, user_id: str) -> int:
-        user_dir = self._base / _path_safe(user_id)
-        if not user_dir.exists():
+    def delete_partition(self, partition_key: str) -> int:
+        part_dir = self._base / _path_safe(partition_key)
+        if not part_dir.exists():
             return 0
         count = 0
-        for f in user_dir.glob("*.json"):
+        for f in part_dir.glob("*.json"):
             f.unlink()
             count += 1
         try:
-            user_dir.rmdir()
+            part_dir.rmdir()
         except OSError:
             pass
         return count
@@ -197,13 +201,13 @@ class AzureTableJobStore(JobStore):
         self._client.create_entity(_to_entity(job))
         return job
 
-    def update(self, job_id: str, user_id: str, **fields: Any) -> JobRecord:
+    def update(self, job_id: str, partition_key: str, **fields: Any) -> JobRecord:
         from azure.core.exceptions import ResourceNotFoundError
 
         try:
-            entity = self._client.get_entity(user_id, job_id)
+            entity = self._client.get_entity(partition_key, job_id)
         except ResourceNotFoundError as exc:
-            raise KeyError(f"no job {job_id} for user {user_id}") from exc
+            raise KeyError(f"no job {job_id} in partition {partition_key}") from exc
         e = dict(entity)
         for k, v in fields.items():
             if k not in _FIELDS:
@@ -213,11 +217,11 @@ class AzureTableJobStore(JobStore):
         self._client.upsert_entity(e)
         return _from_entity(e)
 
-    def get(self, user_id: str, job_id: str) -> JobRecord | None:
+    def get(self, partition_key: str, job_id: str) -> JobRecord | None:
         from azure.core.exceptions import ResourceNotFoundError
 
         try:
-            entity = self._client.get_entity(user_id, job_id)
+            entity = self._client.get_entity(partition_key, job_id)
         except ResourceNotFoundError:
             return None
         return _from_entity(dict(entity))
@@ -226,17 +230,19 @@ class AzureTableJobStore(JobStore):
         rows = self._client.query_entities(f"status eq '{_q(JobStatus.RUNNING.value)}'")
         return [_from_entity(dict(r)) for r in rows]
 
-    def list_by_user(self, user_id: str, *, limit: int | None = None) -> list[JobRecord]:
-        rows = list(self._client.query_entities(f"PartitionKey eq '{_q(user_id)}'"))
+    def list_by_partition(
+        self, partition_key: str, *, limit: int | None = None
+    ) -> list[JobRecord]:
+        rows = list(self._client.query_entities(f"PartitionKey eq '{_q(partition_key)}'"))
         rows.sort(key=lambda r: r.get("updated_at", ""), reverse=True)
         if limit is not None:
             rows = rows[:limit]
         return [_from_entity(dict(r)) for r in rows]
 
-    def delete_user(self, user_id: str) -> int:
-        rows = list(self._client.query_entities(f"PartitionKey eq '{_q(user_id)}'"))
+    def delete_partition(self, partition_key: str) -> int:
+        rows = list(self._client.query_entities(f"PartitionKey eq '{_q(partition_key)}'"))
         for r in rows:
-            self._client.delete_entity(user_id, r["RowKey"])
+            self._client.delete_entity(partition_key, r["RowKey"])
         return len(rows)
 
 
