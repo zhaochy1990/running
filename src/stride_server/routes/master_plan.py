@@ -29,6 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from stride_core.master_plan import MasterPlanStatus, _apply_review_diff
+from stride_core.timefmt import today_shanghai
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
@@ -43,6 +44,7 @@ from .. import llm_client as _llm_client_mod
 from ..llm_client import LLMClient, LLMError, LLMUnavailable
 from .. import master_plan_generator
 from ..master_plan_store import get_master_plan_store
+from ..deps import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -647,9 +649,9 @@ def confirm_master_plan(
 # ===========================================================================
 
 
-def _build_current_response(plan: Any) -> dict[str, Any]:
+def _build_current_response(plan: Any, *, include_actuals: bool = True) -> dict[str, Any]:
     """Build the enriched response dict for the current-plan endpoint."""
-    today = datetime.now(timezone.utc).date()
+    today = today_shanghai()
 
     # current_phase_id: find which phase contains today
     current_phase_id: str | None = None
@@ -696,7 +698,7 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         "total_weeks": total_weeks,
         "phases": [p.model_dump() for p in plan.phases],
         "milestones": [m.model_dump() for m in plan.milestones],
-        "weeks": [w.model_dump() for w in plan.weeks],
+        "weeks": _build_week_response(plan, today=today, include_actuals=include_actuals),
         "training_principles": plan.training_principles,
         "generated_by": plan.generated_by,
         "version": plan.version,
@@ -706,6 +708,88 @@ def _build_current_response(plan: Any) -> dict[str, Any]:
         "current_week_number": current_week_number,
         "next_milestone": next_milestone,
     }
+
+
+def _build_week_response(plan: Any, *, today: date_cls, include_actuals: bool) -> list[dict[str, Any]]:
+    weeks = list(getattr(plan, "weeks", []) or [])
+    if not weeks:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    windows: list[tuple[int, str, str]] = []
+    for week in weeks:
+        row = week.model_dump()
+        week_index = int(row.get("week_index") or 0)
+        start = _parse_date(row.get("week_start"))
+        end = start + timedelta(days=6) if start is not None else None
+        planned = _planned_weekly_km(row)
+        row["week_end"] = end.isoformat() if end is not None else None
+        row["planned_distance_km"] = planned
+        row["is_completed"] = bool(end is not None and end < today)
+        row["actual_distance_km"] = None
+        row["actual_avg_pace_s_km"] = None
+        row["actual_avg_pace_fmt"] = ""
+        row["actual_avg_hr"] = None
+        row["actual_run_count"] = 0
+        row["actual_duration_s"] = 0
+        if include_actuals and row["is_completed"] and week_index > 0 and start is not None and end is not None:
+            windows.append((week_index, start.isoformat(), end.isoformat()))
+        rows.append(row)
+
+    actuals: dict[int, dict] = {}
+    if include_actuals and windows:
+        try:
+            db = get_db(plan.user_id)
+        except HTTPException:
+            db = None
+        if db is not None:
+            try:
+                actuals = db.get_running_week_summaries(windows)
+            finally:
+                db.close()
+
+    for row in rows:
+        week_index = int(row.get("week_index") or 0)
+        actual = actuals.get(week_index)
+        if not actual:
+            continue
+        pace = actual.get("avg_pace_s_km")
+        row["actual_distance_km"] = actual.get("actual_distance_km")
+        row["actual_avg_pace_s_km"] = pace
+        row["actual_avg_pace_fmt"] = _format_pace(pace)
+        row["actual_avg_hr"] = actual.get("avg_hr")
+        row["actual_run_count"] = actual.get("run_count", 0)
+        row["actual_duration_s"] = actual.get("total_duration_s", 0)
+    return rows
+
+
+def _parse_date(value: Any) -> date_cls | None:
+    try:
+        return date_cls.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _planned_weekly_km(row: dict[str, Any]) -> float | None:
+    high = row.get("target_weekly_km_high")
+    low = row.get("target_weekly_km_low")
+    value = high if high not in (None, 0) else low
+    try:
+        return round(float(value), 1)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_pace(seconds: Any) -> str:
+    if seconds is None:
+        return ""
+    try:
+        total = int(round(float(seconds)))
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return ""
+    return f"{total // 60}:{total % 60:02d}"
 
 
 def _current_week_number(plan: Any, today: date_cls) -> int | None:

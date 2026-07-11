@@ -62,6 +62,44 @@ class TestDatabaseActivities:
         db.upsert_activity(_make_detail("a2", date="20260315"))
         assert db.get_latest_activity_date() == "20260315"
 
+    def test_running_week_summaries_weight_actual_metrics_by_duration(self, db):
+        db.upsert_activity(_make_detail(
+            "run1",
+            date="2026-05-04T00:00:00+00:00",
+            distance=10.0,
+        ))
+        db.upsert_activity(_make_detail(
+            "run2",
+            date="2026-05-05T00:00:00+00:00",
+            distance=5.0,
+        ))
+        db.upsert_activity(_make_detail(
+            "bike",
+            sport_type=200,
+            date="2026-05-05T00:00:00+00:00",
+            distance=80.0,
+        ))
+        db._conn.execute(
+            "UPDATE activities SET duration_s = 6000, avg_pace_s_km = 360, avg_hr = 150 WHERE label_id = 'run1'"
+        )
+        db._conn.execute(
+            "UPDATE activities SET duration_s = 1500, avg_pace_s_km = 300, avg_hr = 130 WHERE label_id = 'run2'"
+        )
+        db._conn.execute(
+            "UPDATE activities SET sport_name = 'Bike' WHERE label_id = 'bike'"
+        )
+        db._conn.commit()
+
+        summaries = db.get_running_week_summaries([(1, "2026-05-04", "2026-05-10")])
+
+        assert summaries[1] == {
+            "run_count": 2,
+            "actual_distance_km": 15.0,
+            "total_duration_s": 7500,
+            "avg_pace_s_km": 348,
+            "avg_hr": 146,
+        }
+
     def test_laps_stored(self, db):
         db.upsert_activity(_make_detail())
         rows = db.query("SELECT * FROM laps WHERE label_id = 'test1'")

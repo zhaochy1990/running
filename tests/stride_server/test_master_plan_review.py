@@ -35,6 +35,7 @@ from stride_core.master_plan import (
     Phase,
 )
 from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOp, MasterPlanDiffOpKind
+from stride_core.models import ActivityDetail
 from stride_server.master_plan_store import FileMasterPlanStore, reset_master_plan_store_cache
 import stride_server.routes.master_plan as mp_mod
 
@@ -103,6 +104,45 @@ def _make_diff(plan_id: str) -> MasterPlanDiff:
         new_value={"end_date": "2026-07-20"},
         spec_patch={"end_date": "2026-07-20"},
         accepted=None,
+    )
+
+
+def _activity(label_id: str, *, date: str, distance_km: float, duration_s: float, pace_s_km: int, avg_hr: int) -> ActivityDetail:
+    return ActivityDetail(
+        label_id=label_id,
+        name="Test Run",
+        sport_type=100,
+        sport_name="Run",
+        date=date,
+        distance_m=distance_km,
+        duration_s=duration_s,
+        avg_pace_s_km=pace_s_km,
+        adjusted_pace=None,
+        best_km_pace=None,
+        max_pace=None,
+        avg_hr=avg_hr,
+        max_hr=170,
+        avg_cadence=180,
+        max_cadence=190,
+        avg_power=None,
+        max_power=None,
+        avg_step_len_cm=None,
+        ascent_m=0,
+        descent_m=0,
+        calories_kcal=300,
+        aerobic_effect=None,
+        anaerobic_effect=None,
+        training_load=None,
+        vo2max=None,
+        performance=None,
+        train_type="Aerobic Endurance",
+        temperature=None,
+        humidity=None,
+        feels_like=None,
+        wind_speed=None,
+        laps=[],
+        zones=[],
+        timeseries=[],
     )
     return MasterPlanDiff(
         diff_id=str(uuid4()),
@@ -876,6 +916,88 @@ class TestCurrentMasterPlan:
         assert data["weeks"][0]["key_sessions"][0]["type"] == "long_run"
         assert data["current_week_number"] == 1
         assert data["current_phase_id"] == phase_id
+
+    def test_current_week_includes_completed_actual_running_summary(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        week_start = mp_mod.today_shanghai() - timedelta(days=14)
+        phase_id = str(uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        phase = Phase(
+            id=phase_id,
+            name="已完成基础周",
+            start_date=week_start.isoformat(),
+            end_date=(week_start + timedelta(days=6)).isoformat(),
+            focus="核对实际跑量",
+            weekly_distance_km_low=42.0,
+            weekly_distance_km_high=50.0,
+            key_session_types=["有氧"],
+            milestone_ids=[],
+        )
+        plan = MasterPlan(
+            plan_id=str(uuid4()),
+            user_id=USER_UUID,
+            status=MasterPlanStatus.ACTIVE,
+            goal=MasterPlanGoal(goal_id=str(uuid4()), target_time=""),
+            start_date=week_start.isoformat(),
+            end_date=(week_start + timedelta(days=6)).isoformat(),
+            total_weeks=1,
+            phases=[phase],
+            milestones=[],
+            weeks=[
+                MasterPlanWeek(
+                    week_index=1,
+                    week_start=week_start.isoformat(),
+                    phase_id=phase_id,
+                    target_weekly_km_low=42.0,
+                    target_weekly_km_high=50.0,
+                    key_sessions=[],
+                )
+            ],
+            training_principles=[],
+            generated_by="gpt-4.1",
+            version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        store.save_plan(plan)
+
+        from stride_storage.sqlite.database import Database
+        db = Database(user=USER_UUID)
+        try:
+            db.upsert_activity(_activity(
+                "run1",
+                date=f"{week_start.isoformat()}T00:00:00+00:00",
+                distance_km=10.0,
+                duration_s=3000,
+                pace_s_km=300,
+                avg_hr=140,
+            ))
+            db.upsert_activity(_activity(
+                "run2",
+                date=f"{(week_start + timedelta(days=1)).isoformat()}T00:00:00+00:00",
+                distance_km=8.5,
+                duration_s=2550,
+                pace_s_km=330,
+                avg_hr=150,
+            ))
+        finally:
+            db.close()
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        week = resp.json()["weeks"][0]
+        assert week["is_completed"] is True
+        assert week["planned_distance_km"] == 50.0
+        assert week["actual_distance_km"] == 18.5
+        assert week["actual_avg_pace_s_km"] == 314
+        assert week["actual_avg_pace_fmt"] == "5:14"
+        assert week["actual_avg_hr"] == 145
+        assert week["actual_run_count"] == 2
 
     def test_current_phase_id_correct(self, app_client):
         """current_phase_id is set when today falls within a phase."""

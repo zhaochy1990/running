@@ -100,6 +100,42 @@ const masterPlan = {
       completed_actual: null,
     },
   ],
+  weeks: [
+    {
+      week_index: 1,
+      week_start: '2026-05-04',
+      week_end: '2026-05-10',
+      phase_id: 'phase-1',
+      target_weekly_km_low: 42,
+      target_weekly_km_high: 48,
+      key_sessions: [],
+      planned_distance_km: 48,
+      is_completed: true,
+      actual_distance_km: 45.6,
+      actual_avg_pace_s_km: 312,
+      actual_avg_pace_fmt: '5:12',
+      actual_avg_hr: 142,
+      actual_run_count: 5,
+      actual_duration_s: 14227,
+    },
+    {
+      week_index: 6,
+      week_start: '2026-06-08',
+      week_end: '2026-06-14',
+      phase_id: 'phase-1',
+      target_weekly_km_low: 48,
+      target_weekly_km_high: 54,
+      key_sessions: [],
+      planned_distance_km: 54,
+      is_completed: false,
+      actual_distance_km: null,
+      actual_avg_pace_s_km: null,
+      actual_avg_pace_fmt: '',
+      actual_avg_hr: null,
+      actual_run_count: 0,
+      actual_duration_s: 0,
+    },
+  ],
   training_principles: ['逐步加量', '每 4 周保留恢复周'],
   generated_by: 'gpt-4.1',
   version: 2,
@@ -160,8 +196,14 @@ describe('TrainingPlanPage', () => {
 
     expect(await screen.findByRole('heading', { name: '真实目标马拉松' })).toBeInTheDocument()
     expect(screen.getByText(/从 2026\/05\/04 到 2026\/10\/11，共 23 周/)).toBeInTheDocument()
-    expect(screen.getByText('预计周跑量（KM/周）')).toBeInTheDocument()
+    expect(screen.getByText('周跑量（KM/周）')).toBeInTheDocument()
     expect(screen.getByText('W06')).toBeInTheDocument()
+    expect(screen.getByText('已完成周实际跑量')).toBeInTheDocument()
+    expect(screen.getByText('计划跑量标记')).toBeInTheDocument()
+    expect(screen.getAllByText('计划跑量')[0]).toBeInTheDocument()
+    expect(screen.getByText('45.6 km')).toBeInTheDocument()
+    expect(screen.getByText('5:12/km')).toBeInTheDocument()
+    expect(screen.getByText('142 bpm')).toBeInTheDocument()
     expect(screen.getByText(/目标赛事：全马 · 2026\/10\/11/)).toBeInTheDocument()
     expect(screen.getByText('2026/10/11 · 全马')).toBeInTheDocument()
     expect(screen.getByText('03:15:00')).toBeInTheDocument()
