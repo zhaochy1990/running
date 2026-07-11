@@ -90,3 +90,51 @@ jobs:
           name: onboarding-negatives-screenshot
           path: stride-onboarding-negatives.png
           if-no-files-found: ignore
+
+  job-infra-smoke:
+    name: Async job infra smoke (enqueue → worker → DONE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Enqueue a hello job and poll it to DONE
+        env:
+          PROD_URL: ${{ secrets.STRIDE_PROD_URL }}
+          INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PROD_URL:-}" ] || [ -z "${INTERNAL_TOKEN:-}" ]; then
+            echo "::error::STRIDE_PROD_URL or STRIDE_INTERNAL_TOKEN secret missing"
+            exit 1
+          fi
+
+          echo "Enqueueing hello_world job..."
+          RESP=$(curl -sS -X POST "$PROD_URL/internal/jobs/hello" \
+            -H "X-Internal-Token: $INTERNAL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"source":"e2e-prod"}')
+          echo "enqueue response: $RESP"
+          JOB_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+          PART=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['partition_key'])")
+          echo "job_id=$JOB_ID partition=$PART"
+
+          # Poll until the worker takes it to a terminal state. The worker polls
+          # every ~2s; give it up to ~60s (dead worker / no consumer → timeout).
+          for i in $(seq 1 30); do
+            J=$(curl -sS "$PROD_URL/internal/jobs/$PART/$JOB_ID" \
+              -H "X-Internal-Token: $INTERNAL_TOKEN")
+            STATUS=$(echo "$J" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','?'))")
+            echo "  attempt $i: status=$STATUS"
+            case "$STATUS" in
+              done)
+                echo "job done: $J"
+                echo "$J" | python3 -c "import sys,json; r=json.load(sys.stdin); assert 'hello' in (r.get('result_json') or ''), 'result missing hello'; print('result verified')"
+                exit 0 ;;
+              failed)
+                echo "::error::job reached FAILED: $J"; exit 1 ;;
+            esac
+            sleep 2
+          done
+          echo "::error::job never reached DONE within timeout — worker not consuming?"
+          exit 1
+
