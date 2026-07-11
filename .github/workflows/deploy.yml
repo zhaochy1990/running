@@ -163,16 +163,50 @@ jobs:
         # Same image as stride-app, different command: runs the queue-consumer
         # worker (`python -m stride_server.jobs`) instead of uvicorn. Separate
         # Container App (ingress disabled, min=max=1) so long-running jobs never
-        # contend with the API's CPU/memory. continue-on-error so a first deploy
-        # before the worker app exists doesn't block the main app deploy.
-        continue-on-error: true
+        # contend with the API's CPU/memory.
+        #
+        # NOT continue-on-error: a silently-failed worker deploy means jobs
+        # enqueue but nothing consumes them. We only skip when the worker app
+        # doesn't exist yet (legitimate first-deploy) — every other failure
+        # (bad command, permissions, crash-loop on boot) fails the deploy loudly.
         run: |
+          set -e
+          if ! az containerapp show \
+              --name ${{ env.WORKER_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} >/dev/null 2>&1; then
+            echo "::warning::${{ env.WORKER_NAME }} does not exist yet — skipping worker deploy (create it, then re-run)."
+            exit 0
+          fi
+
           az containerapp update \
             --name ${{ env.WORKER_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
             --command "python" "-m" "stride_server.jobs" \
             --set-env-vars STRIDE_CONFIG_ENV=prod
+
+          # A worker has no ingress to probe, so verify the new revision reaches
+          # runningState=Running (i.e. it didn't crash-loop on boot). Poll briefly.
+          LATEST=$(az containerapp show \
+            --name ${{ env.WORKER_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.latestRevisionName" -o tsv)
+          echo "Verifying worker revision: $LATEST"
+          for i in $(seq 1 20); do
+            STATE=$(az containerapp revision show \
+              --name ${{ env.WORKER_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --revision "$LATEST" \
+              --query "properties.runningState" -o tsv 2>/dev/null || echo "Unknown")
+            echo "  attempt $i: runningState=$STATE"
+            case "$STATE" in
+              Running|RunningAtMaxScale) echo "worker healthy"; exit 0 ;;
+              Failed|Degraded) echo "::error::worker revision $LATEST is $STATE"; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "::error::worker revision $LATEST never reached Running"
+          exit 1
 
       - name: Health check (new revision must reach Running + serve /api/health)
         # Hitting /api/health alone is not enough: in single-revision mode

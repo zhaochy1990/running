@@ -144,7 +144,9 @@ def test_worker_no_handler_fails_job(store, queue):
     assert rec.error_code == "no_handler"
 
 
-def test_worker_poisons_after_ceiling(store, queue):
+def test_worker_retrying_job_stays_queued_not_failed(store, queue):
+    """A handler error while retries remain must leave the job QUEUED (in
+    flight), not FAILED — else a poller sees a transient failure as terminal."""
     @job_handler("boom")
     def _h(job, *, heartbeat):
         raise RuntimeError("kaboom")
@@ -152,15 +154,65 @@ def test_worker_poisons_after_ceiling(store, queue):
     client = JobClient(store, queue)
     jid = client.enqueue(partition_key="u1", job_type="boom")
     poison = InMemoryJobQueue()
-    worker = _worker(store, queue, poison)
+    worker = _worker(store, queue, poison)  # poison_max_attempts=3
+
+    worker.process_once(max_messages=5)  # attempt 1 fails, retries remain
+    rec = store.get("u1", jid)
+    assert rec.status is JobStatus.QUEUED  # NOT FAILED — still retrying
+    assert rec.error_code == "RuntimeError"  # last error stamped for diagnostics
+    assert queue.depth() == 1  # message left for redelivery
+    assert poison.depth() == 0
+
+
+def test_worker_permanent_failure_goes_terminal_and_dead_letters(store, queue):
+    @job_handler("boom")
+    def _h(job, *, heartbeat):
+        raise RuntimeError("kaboom")
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="boom")
+    poison = InMemoryJobQueue()
+    worker = _worker(store, queue, poison)  # ceiling=3
     for _ in range(6):
         worker.process_once(max_messages=5)
-        if store.get("u1", jid).error_code == "poison":
+        if store.get("u1", jid).status is JobStatus.FAILED:
             break
     rec = store.get("u1", jid)
-    assert rec.status is JobStatus.FAILED
-    assert rec.error_code == "poison"
-    assert poison.depth() == 1
+    assert rec.status is JobStatus.FAILED  # terminal after retries exhausted
+    assert rec.error_code == "RuntimeError"  # the real error, not a generic tag
+    assert rec.completed_at  # terminal state stamped
+    assert poison.depth() == 1  # dead-lettered
+    assert queue.depth() == 0  # main queue drained
+
+
+def test_worker_flaky_handler_succeeds_and_clears_error(store, queue):
+    """Regression: a handler that fails once then succeeds must end DONE with
+    NO leftover error_code/error_message from the failed attempt."""
+    calls = {"n": 0}
+
+    @job_handler("flaky")
+    def _h(job, *, heartbeat):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient")
+        return {"ok": True}
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="flaky")
+    poison = InMemoryJobQueue()
+    worker = _worker(store, queue, poison)
+
+    worker.process_once(max_messages=5)  # attempt 1 fails → QUEUED
+    mid = store.get("u1", jid)
+    assert mid.status is JobStatus.QUEUED
+    assert mid.error_code == "RuntimeError"
+
+    worker.process_once(max_messages=5)  # attempt 2 succeeds → DONE
+    rec = store.get("u1", jid)
+    assert rec.status is JobStatus.DONE
+    assert rec.error_code is None  # cleared — not stale from attempt 1
+    assert rec.error_message is None
+    assert '"ok": true' in (rec.result_json or "")
     assert queue.depth() == 0
 
 

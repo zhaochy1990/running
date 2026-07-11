@@ -4,10 +4,18 @@ Runs as a separate process (same image, different command; see
 ``stride_server.jobs.__main__``). The loop:
 
   1. receive up to N messages (leased for ``visibility_timeout_s``)
-  2. poison check: dequeue_count > ceiling → move to poison queue, mark FAILED
-  3. mark RUNNING + heartbeat, look up handler by job_type
-  4. run handler(job, heartbeat=...) → DONE (+ result) or FAILED
-  5. delete the message (ack) only after terminal state
+  2. safety net: dequeue_count over ceiling → dead-letter, mark FAILED
+  3. no handler for job_type → terminal FAILED (retrying can't help)
+  4. mark RUNNING + heartbeat, run handler(job, heartbeat=...)
+  5. on success → DONE (+ result, error fields cleared), ack the message
+  6. on handler error → record the error; if retries remain put the job BACK
+     to QUEUED and leave the message so its lease expiry re-delivers it; on the
+     final allowed attempt go terminal FAILED and dead-letter it
+
+Status is honest about retries: a job mid-retry reads QUEUED (with the last
+error stamped for diagnostics), not FAILED — so pollers waiting for a terminal
+state (DONE/FAILED) don't see a transient failure as final. The message is
+deleted (acked) only when the job reaches a terminal state or succeeds.
 
 Crash safety is native to the queue: if the worker dies mid-handler, the lease
 expires and the message reappears for another attempt (at-least-once). Handlers
@@ -77,8 +85,16 @@ class JobWorker:
 
         handler = get_handler(job.job_type)
         if handler is None:
+            # No handler is a permanent failure — retrying can't help. Terminal.
             logger.error("job worker: no handler for job_type=%s (job %s)", job.job_type, job.job_id)
-            self._fail(job, code="no_handler", message=f"no handler for {job.job_type}")
+            self._store.update(
+                job.job_id, job.partition_key,
+                status=JobStatus.FAILED,
+                error_code="no_handler",
+                error_message=f"no handler for {job.job_type}",
+                completed_at=_now_iso(),
+                heartbeat_at=_now_iso(),
+            )
             self._queue.delete(msg)
             return
 
@@ -101,10 +117,7 @@ class JobWorker:
             result = handler(job, heartbeat=heartbeat)
         except Exception as exc:  # noqa: BLE001 — job boundary
             logger.exception("job %s (%s) failed", job.job_id, job.job_type)
-            # Leave the message un-deleted so the lease expires and it retries,
-            # UNLESS the next attempt would exceed the poison ceiling — then the
-            # subsequent receive will poison it. Record the failure meanwhile.
-            self._fail(job, code=type(exc).__name__, message=str(exc))
+            self._on_handler_error(job, msg, exc)
             return
 
         fields: dict[str, Any] = {
@@ -112,16 +125,51 @@ class JobWorker:
             "progress_pct": 100,
             "completed_at": _now_iso(),
             "heartbeat_at": _now_iso(),
+            # Clear any error recorded by a prior failed attempt — a retry that
+            # now succeeds must not leave a stale error_code/message on a DONE job.
+            "error_code": None,
+            "error_message": None,
         }
         if result is not None:
             fields["result_json"] = json.dumps(result, ensure_ascii=False, default=str)
         self._store.update(job.job_id, job.partition_key, **fields)
         self._queue.delete(msg)
 
-    def _fail(self, job: JobRecord, *, code: str, message: str) -> None:
+    def _on_handler_error(self, job: JobRecord, msg: QueueMessage, exc: Exception) -> None:
+        """Record a handler failure. Non-terminal while retries remain.
+
+        The message is left un-deleted so its lease expires and it is
+        re-delivered. Until the poison ceiling is reached the job is put BACK to
+        QUEUED (it is genuinely waiting for another attempt) with the latest
+        error stamped for diagnostics — callers polling for a terminal state
+        (DONE/FAILED) correctly see it as still in flight. The final allowed
+        attempt flips it to terminal FAILED and dead-letters it, so a job that
+        exhausts its retries does not sit forever as QUEUED with a live message.
+        """
+        code = type(exc).__name__
+        message = str(exc)
+        # ``msg.dequeue_count`` is this delivery's attempt number; the next
+        # receive would be dequeue_count+1. If that would exceed the ceiling,
+        # this attempt is the last — go terminal now instead of re-queuing.
+        if msg.dequeue_count >= self._config.poison_max_attempts:
+            logger.error(
+                "job %s (%s) failed on final attempt %d — dead-lettering",
+                job.job_id, job.job_type, msg.dequeue_count,
+            )
+            self._poison.enqueue(job_id=job.job_id, partition_key=job.partition_key)
+            self._store.update(
+                job.job_id, job.partition_key,
+                status=JobStatus.FAILED,
+                error_code=code,
+                error_message=message,
+                completed_at=_now_iso(),
+                heartbeat_at=_now_iso(),
+            )
+            self._queue.delete(msg)
+            return
         self._store.update(
             job.job_id, job.partition_key,
-            status=JobStatus.FAILED,
+            status=JobStatus.QUEUED,
             error_code=code,
             error_message=message,
             heartbeat_at=_now_iso(),
