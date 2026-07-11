@@ -21,7 +21,9 @@ def _register_handlers() -> None:
     broken handler doesn't take the whole worker down.
     """
     try:
-        import stride_server.jobs.handlers  # noqa: F401
+        from stride_server.jobs.handlers import ensure_handlers_registered
+
+        ensure_handlers_registered()
     except Exception:  # noqa: BLE001
         logger.exception("failed importing job handlers")
 

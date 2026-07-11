@@ -48,6 +48,17 @@ def register(job_type: str, fn: JobHandler) -> None:
     _REGISTRY[job_type] = fn
 
 
+def ensure_registered(job_type: str, fn: JobHandler) -> None:
+    """Idempotent registration — no-op if ``job_type`` is already registered.
+
+    Import-time ``@job_handler`` only fires once per process, but tests wipe the
+    registry via ``clear_registry_for_tests`` between cases while the handler
+    modules stay import-cached (so a re-import won't re-run the decorator). App
+    startup calls this to repopulate the registry regardless of import state.
+    """
+    _REGISTRY.setdefault(job_type, fn)
+
+
 def get_handler(job_type: str) -> JobHandler | None:
     return _REGISTRY.get(job_type)
 

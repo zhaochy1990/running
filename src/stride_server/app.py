@@ -64,12 +64,14 @@ def _load_job_pipelines() -> None:
     """Register job handlers + load/validate pipeline defs. Fail-fast.
 
     Shared by API startup so the API can trigger + report pipelines with the
-    same validated definitions the worker uses. Handlers must import first so
-    the pipeline loader's job_type→handler check can see them.
+    same validated definitions the worker uses. Handlers register first so the
+    pipeline loader's job_type→handler check can see them (idempotent, so it
+    survives tests that clear the registry between cases).
     """
-    import stride_server.jobs.handlers  # noqa: F401 — registration side effects
+    from stride_server.jobs.handlers import ensure_handlers_registered
     from stride_server.jobs.pipelines import load_pipelines
 
+    ensure_handlers_registered()
     load_pipelines()
 
 
