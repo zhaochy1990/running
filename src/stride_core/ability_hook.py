@@ -294,3 +294,80 @@ def _fmt_time_delta(before_s: int | None, after_s: int | None) -> str:
     abs_s = abs(delta)
     m, sec = divmod(abs_s, 60)
     return f"{'-' if neg else '+'}{m}:{sec:02d}"
+
+
+def backfill_ability_snapshots(db: Database, *, days: int = 180) -> dict:
+    """Recompute + persist ``ability_snapshot`` for the last ``days`` days.
+
+    Idempotent (upserts). Used to seed history from an empty table after a
+    fresh sync + calibration — the same per-day loop the ``ability/backfill``
+    route runs, extracted so the onboarding pipeline can call it directly.
+    Requires a persisted running-calibration snapshot (HRmax); otherwise
+    ``compute_ability_snapshot`` returns all-zero rows.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from stride_core.ability import (
+        ABILITY_MODEL_VERSION,
+        L4_WEIGHTS,
+        compute_ability_snapshot,
+    )
+
+    sh = timezone(timedelta(hours=8))
+    end = datetime.now(sh)
+    start = end - timedelta(days=days)
+    dates = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days + 1)]
+
+    wrote = 0
+    skipped = 0
+    for d_iso in dates:
+        try:
+            snap = compute_ability_snapshot(db, date=d_iso)
+        except Exception:
+            skipped += 1
+            continue
+        db.upsert_ability_snapshot(
+            date=d_iso, level="meta", dimension="model_version",
+            value=float(ABILITY_MODEL_VERSION),
+        )
+        l2 = snap.get("l2_freshness") or {}
+        if l2.get("total") is not None:
+            db.upsert_ability_snapshot(
+                date=d_iso, level="L2", dimension="total", value=l2.get("total"),
+            )
+        for dim in L4_WEIGHTS.keys():
+            cell = (snap.get("l3_dimensions") or {}).get(dim) or {}
+            db.upsert_ability_snapshot(
+                date=d_iso, level="L3", dimension=dim,
+                value=cell.get("score"),
+                evidence_activity_ids=cell.get("evidence"),
+            )
+        db.upsert_ability_snapshot(
+            date=d_iso, level="L4", dimension="composite",
+            value=snap.get("l4_composite"),
+            evidence_activity_ids=snap.get("evidence_activity_ids"),
+        )
+        estimates = snap.get("marathon_estimates") or {}
+        for dim_name, key in (
+            ("marathon_training_s", "training_s"),
+            ("marathon_race_s", "race_s"),
+            ("marathon_best_case_s", "best_case_s"),
+        ):
+            val = estimates.get(key)
+            if val is not None:
+                db.upsert_ability_snapshot(
+                    date=d_iso, level="L4", dimension=dim_name, value=float(val),
+                )
+        hm_estimates = snap.get("half_marathon_estimates") or {}
+        for dim_name, key in (
+            ("hm_training_s", "training_s"),
+            ("hm_race_s", "race_s"),
+            ("hm_best_case_s", "best_case_s"),
+        ):
+            val = hm_estimates.get(key)
+            if val is not None:
+                db.upsert_ability_snapshot(
+                    date=d_iso, level="L4", dimension=dim_name, value=float(val),
+                )
+        wrote += 1
+    return {"days_requested": days, "written": wrote, "skipped": skipped}

@@ -8,6 +8,11 @@ the shared azure factories. It has NO coach coupling and is not imported by
 from __future__ import annotations
 
 from stride_storage.jobs.client import JobClient, enqueue_job
+from stride_storage.jobs.pipeline_store import (
+    AzureTablePipelineRunStore,
+    FilePipelineRunStore,
+    pipeline_run_store_from_config,
+)
 from stride_storage.jobs.queue import (
     InMemoryJobQueue,
     queue_from_config,
@@ -21,11 +26,14 @@ from stride_storage.jobs.store import (
 
 __all__ = [
     "AzureTableJobStore",
+    "AzureTablePipelineRunStore",
     "FileJobStore",
+    "FilePipelineRunStore",
     "InMemoryJobQueue",
     "JobClient",
     "enqueue_job",
     "job_store_from_config",
+    "pipeline_run_store_from_config",
     "queue_from_config",
     "reset_dev_queues",
 ]

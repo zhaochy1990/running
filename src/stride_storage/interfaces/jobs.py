@@ -83,6 +83,48 @@ class JobStore(Protocol):
 
 
 @dataclass(frozen=True)
+class PipelineRunRecord:
+    """A single pipeline-run instance's aggregate state.
+
+    A pipeline run orchestrates several step jobs in dependency order. This row
+    is the aggregate view a client polls for overall progress. ``steps_json``
+    holds the per-step state as a JSON string:
+    ``[{"name","job_type","status","job_id"}, ...]``. Addressed by
+    ``(partition_key, run_id)`` — partition_key is the owning scope (a user_id).
+    """
+
+    run_id: str
+    partition_key: str
+    pipeline_name: str
+    status: JobStatus
+    current_step: str | None = None
+    steps_json: str | None = None
+    error_message: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+    completed_at: str | None = None
+
+    def with_updates(self, **updates: Any) -> PipelineRunRecord:
+        return replace(self, **updates)
+
+
+@runtime_checkable
+class PipelineRunStore(Protocol):
+    """State layer for pipeline runs — parallel to ``JobStore``.
+
+    Addressed by ``(partition_key, run_id)``. ``update`` mutates named fields
+    atomically per row.
+    """
+
+    def create(self, run: PipelineRunRecord) -> PipelineRunRecord: ...
+    def update(self, run_id: str, partition_key: str, **fields: Any) -> PipelineRunRecord: ...
+    def get(self, partition_key: str, run_id: str) -> PipelineRunRecord | None: ...
+    def list_by_partition(
+        self, partition_key: str, *, limit: int | None = None
+    ) -> list[PipelineRunRecord]: ...
+
+
+@dataclass(frozen=True)
 class QueueMessage:
     """A dequeued message: the job coordinates + queue bookkeeping.
 
@@ -138,3 +180,17 @@ class JobQueue(Protocol):
         self, *, max: int = 1, visibility_timeout_s: int = 300
     ) -> list[QueueMessage]: ...
     def delete(self, message: QueueMessage) -> None: ...
+    def extend_visibility(
+        self, message: QueueMessage, *, visibility_timeout_s: int
+    ) -> QueueMessage:
+        """Renew a leased message's visibility timeout (lease extension).
+
+        Long-running handlers call this (via the worker's heartbeat) so a job
+        that outlives the initial timeout isn't re-delivered and run twice. Some
+        backends rotate the ack handle on renewal (Azure returns a fresh
+        pop_receipt), so this RETURNS an updated ``QueueMessage`` whose
+        ``receipt`` must be used for any subsequent ``extend_visibility`` /
+        ``delete`` — the caller must replace its held message with the returned
+        one.
+        """
+        ...

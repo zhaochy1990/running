@@ -35,16 +35,24 @@ def _register_handlers() -> None:
     broken handler doesn't take the whole worker down.
     """
     try:
-        import stride_server.jobs.handlers  # noqa: F401
+        from stride_server.jobs.handlers import ensure_handlers_registered
+
+        ensure_handlers_registered()
     except Exception:  # noqa: BLE001
         logger.exception("failed importing job handlers")
 
 
 def main() -> None:
     from stride_server.jobs import build_worker, registered_types
+    from stride_server.jobs.pipelines import load_pipelines, registered_pipelines
 
     _register_handlers()
     logger.info("registered job handlers: %s", registered_types())
+    # Load + validate pipeline defs AFTER handlers register (so the job_type
+    # check sees them). Fail-fast: a bad definition must abort the worker, not
+    # silently run without pipelines.
+    load_pipelines()
+    logger.info("loaded pipelines: %s", registered_pipelines())
     build_worker().run_forever()
 
 

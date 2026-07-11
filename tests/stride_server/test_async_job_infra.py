@@ -114,6 +114,32 @@ def _worker(store, queue, poison, **cfg):
     return JobWorker(store=store, queue=queue, poison_queue=poison, config=config)
 
 
+def test_worker_completion_hook_failure_keeps_message(store, queue):
+    """A failing on_completed hook must NOT ack the message — it stays queued so
+    the job is re-delivered and the hook (which advances a pipeline) can retry.
+    The job row is still marked DONE; only the ack is withheld."""
+    @job_handler("hooked")
+    def _h(job, *, heartbeat):
+        return {"ok": True}
+
+    client = JobClient(store, queue)
+    jid = client.enqueue(partition_key="u1", job_type="hooked")
+    poison = InMemoryJobQueue()
+
+    def boom(_job):
+        raise RuntimeError("transient advance error")
+
+    config = QueueStorageConfig(visibility_timeout_s=300, poison_max_attempts=3)
+    worker = JobWorker(
+        store=store, queue=queue, poison_queue=poison, config=config,
+        on_completed=boom,
+    )
+    worker.process_once(max_messages=5)
+
+    assert store.get("u1", jid).status is JobStatus.DONE  # row finalized
+    assert queue.depth() == 1  # message NOT acked — left for re-delivery
+
+
 def test_worker_runs_handler_to_done(store, queue):
     seen = {}
 
@@ -132,6 +158,50 @@ def test_worker_runs_handler_to_done(store, queue):
     assert rec.progress_pct == 100
     assert '"user": "u1"' in (rec.result_json or "")
     assert queue.depth() == 0
+
+
+def test_worker_heartbeat_renews_queue_lease(store, queue):
+    """Each heartbeat call extends the in-flight message's visibility.
+
+    A long handler that outlives the initial visibility must not have its
+    message re-delivered; the worker renews the lease on every heartbeat.
+    """
+    renewals: list[int] = []
+
+    class _SpyQueue:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def receive(self, **kw):
+            return self._inner.receive(**kw)
+
+        def delete(self, message):
+            return self._inner.delete(message)
+
+        def enqueue(self, **kw):
+            return self._inner.enqueue(**kw)
+
+        def extend_visibility(self, message, *, visibility_timeout_s):
+            renewals.append(visibility_timeout_s)
+            return self._inner.extend_visibility(
+                message, visibility_timeout_s=visibility_timeout_s
+            )
+
+    @job_handler("beat_job")
+    def _h(job, *, heartbeat):
+        heartbeat(stage="a", progress_pct=10)
+        heartbeat(stage="b", progress_pct=90)
+        return None
+
+    spy = _SpyQueue(queue)
+    client = JobClient(store, spy)
+    jid = client.enqueue(partition_key="u1", job_type="beat_job")
+    poison = InMemoryJobQueue()
+    _worker(store, spy, poison).process_once(max_messages=5)
+
+    assert store.get("u1", jid).status is JobStatus.DONE
+    assert len(renewals) == 2  # one renewal per heartbeat
+    assert queue.depth() == 0  # message acked despite renewals
 
 
 def test_worker_no_handler_fails_job(store, queue):

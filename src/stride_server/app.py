@@ -60,6 +60,21 @@ from .routes import account, ability, activities, body_composition, coach, feedb
 from .static import mount_frontend
 
 
+def _load_job_pipelines() -> None:
+    """Register job handlers + load/validate pipeline defs. Fail-fast.
+
+    Shared by API startup so the API can trigger + report pipelines with the
+    same validated definitions the worker uses. Handlers register first so the
+    pipeline loader's job_type→handler check can see them (idempotent, so it
+    survives tests that clear the registry between cases).
+    """
+    from stride_server.jobs.handlers import ensure_handlers_registered
+    from stride_server.jobs.pipelines import load_pipelines
+
+    ensure_handlers_registered()
+    load_pipelines()
+
+
 def create_app(
     source_or_registry: DataSource | ProviderRegistry,
     config: ServerConfig | None = None,
@@ -71,6 +86,11 @@ def create_app(
             "STRIDE auth not configured: set auth.public_key_pem/path or "
             "allow_insecure_without_key=true for local development."
         )
+
+    # Load + validate pipeline definitions fail-fast (handlers must be
+    # registered first so the job_type check sees them). A bad definition aborts
+    # startup rather than surfacing at first pipeline trigger.
+    _load_job_pipelines()
 
     # Normalize to a registry. Single-adapter callers (existing tests + the
     # current main.py until rolled over) get auto-wrapped in a one-entry

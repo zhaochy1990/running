@@ -14,6 +14,7 @@ from typing import Any
 from stride_storage.interfaces.config import ConfigError, QueueStorageConfig
 from stride_storage.interfaces.jobs import GLOBAL_PARTITION
 from stride_storage.jobs import JobClient, job_store_from_config, queue_from_config
+from stride_storage.jobs.pipeline_store import pipeline_run_store_from_config
 
 from stride_server.config import clear_server_config_cache, load_server_config
 from stride_server.config.loader import resolve_config_env
@@ -55,6 +56,12 @@ def get_job_client() -> JobClient:
     return JobClient(job_store_from_config(config), queue_from_config(config))
 
 
+@lru_cache(maxsize=1)
+def get_pipeline_run_store():
+    """Cached ``PipelineRunStore`` (pipeline-run aggregate state)."""
+    return pipeline_run_store_from_config(jobs_config())
+
+
 def enqueue(
     *,
     job_type: str,
@@ -76,18 +83,28 @@ def enqueue(
 
 
 def build_worker() -> JobWorker:
-    """Construct the worker from resolved config (used by the worker process)."""
+    """Construct the worker from resolved config (used by the worker process).
+
+    Injects the pipeline orchestrator's lifecycle hooks so a completed/failed
+    step job advances (or fails) its pipeline run. The worker infra itself stays
+    generic — the hooks are the only coupling to the pipeline layer.
+    """
+    from .orchestrator import on_job_completed, on_job_failed
+
     config = jobs_config()
     return JobWorker(
         store=job_store_from_config(config),
         queue=queue_from_config(config),
         poison_queue=queue_from_config(config, poison=True),
         config=config,
+        on_completed=on_job_completed,
+        on_failed=on_job_failed,
     )
 
 
 def reset_jobs_cache_for_tests() -> None:
     get_job_client.cache_clear()
+    get_pipeline_run_store.cache_clear()
     clear_server_config_cache()
 
 
@@ -97,6 +114,7 @@ __all__ = [
     "build_worker",
     "enqueue",
     "get_job_client",
+    "get_pipeline_run_store",
     "get_handler",
     "job_handler",
     "jobs_config",

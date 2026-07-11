@@ -43,6 +43,7 @@ web = [
     "azure-storage-blob>=12.20",
     "azure-data-tables>=12.5",
     "azure-storage-queue>=12.10",
+    "pyyaml>=6.0",
 ]
 dev = [
     "pytest>=8.0",

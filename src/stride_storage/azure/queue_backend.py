@@ -82,3 +82,18 @@ class AzureStorageQueue:
     def delete(self, message: QueueMessage) -> None:
         msg_id, pop_receipt = message.receipt
         self._client().delete_message(msg_id, pop_receipt)
+
+    def extend_visibility(
+        self, message: QueueMessage, *, visibility_timeout_s: int
+    ) -> QueueMessage:
+        import dataclasses
+
+        msg_id, pop_receipt = message.receipt
+        # update_message rotates the pop_receipt; the returned message carries
+        # the new one, which every later delete/extend must use.
+        updated = self._client().update_message(
+            msg_id, pop_receipt, visibility_timeout=visibility_timeout_s
+        )
+        new_receipt = getattr(updated, "pop_receipt", None) or pop_receipt
+        return dataclasses.replace(message, receipt=(msg_id, new_receipt))
+
