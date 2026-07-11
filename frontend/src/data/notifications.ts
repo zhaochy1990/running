@@ -13,6 +13,18 @@ export interface AppNotification {
   severity?: NotificationSeverity
 }
 
+function parseNotificationTime(value: string | null | undefined): number | null {
+  if (!value) return null
+  let normalized = value
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    normalized = `${value}T00:00:00+08:00`
+  } else if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?$/.test(value)) {
+    normalized = `${value}+08:00`
+  }
+  const parsed = Date.parse(normalized)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
 // Newest-first ordering is enforced at render time, but keeping the source
 // list in published order makes diffs readable.
 export const NOTIFICATIONS: AppNotification[] = [
@@ -42,15 +54,28 @@ export const NOTIFICATIONS: AppNotification[] = [
   },
 ]
 
-export function getLatestNotification(): AppNotification | undefined {
-  if (NOTIFICATIONS.length === 0) return undefined
-  return [...NOTIFICATIONS].sort(
+export function getNotificationsForUser(userStartedAt?: string | null): AppNotification[] {
+  const startedAt = parseNotificationTime(userStartedAt)
+  if (startedAt === null) return [...NOTIFICATIONS]
+  return NOTIFICATIONS.filter((notification) => {
+    const publishedAt = parseNotificationTime(notification.publishedAt)
+    return publishedAt === null || publishedAt > startedAt
+  })
+}
+
+export function getLatestNotification(
+  notifications: readonly AppNotification[] = NOTIFICATIONS,
+): AppNotification | undefined {
+  if (notifications.length === 0) return undefined
+  return [...notifications].sort(
     (a, b) => b.publishedAt.localeCompare(a.publishedAt),
   )[0]
 }
 
-export function getNotificationsNewestFirst(): AppNotification[] {
-  return [...NOTIFICATIONS].sort(
+export function getNotificationsNewestFirst(
+  notifications: readonly AppNotification[] = NOTIFICATIONS,
+): AppNotification[] {
+  return [...notifications].sort(
     (a, b) => b.publishedAt.localeCompare(a.publishedAt),
   )
 }

@@ -34,7 +34,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 2. 用 Playwright 跑：`cd frontend && npm run smoke:local`。
 3. 如果 Vite 不在默认 `http://127.0.0.1:5173`，设置 `STRIDE_LOCAL_URL` 为实际地址。
 
-`smoke:local` 从仓库根目录 `.credentials.local` 读取真实账号，但不能把 email / password / token 打到回复或日志里。它必须完成登录、打开 `/activities`、并点进一个 `/activity/:id` 详情页确认数据可见。若登录失败，先查浏览器 console/network；本地 auth 必须经 `VITE_DEV_AUTH_PROXY` 走 Vite `/api/auth/*` 代理，避免浏览器 CORS。
+`smoke:local` 从仓库根目录 `.credentials.local` 读取真实账号；如果当前 checkout 是 git worktree 且 worktree 根目录没有 `.credentials.local`，去主仓库目录找同名文件。不能把 email / password / token 打到回复或日志里。它必须完成登录、打开 `/activities`、并点进一个 `/activity/:id` 详情页确认数据可见。若登录失败，先查浏览器 console/network；本地 auth 必须经 `VITE_DEV_AUTH_PROXY` 走 Vite `/api/auth/*` 代理，避免浏览器 CORS。
 
 
 ---

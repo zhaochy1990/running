@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
-import { getNotificationsNewestFirst } from '../data/notifications'
+import { getNotificationsForUser, getNotificationsNewestFirst } from '../data/notifications'
 import { shanghaiDate } from '../lib/shanghai'
 import { useNotificationsStore } from '../store/notificationsStore'
+import { useUser } from '../UserContextValue'
 
 const SEVERITY_DOT: Record<string, string> = {
   info: 'bg-accent-cyan',
@@ -10,6 +11,7 @@ const SEVERITY_DOT: Record<string, string> = {
 }
 
 export default function MessageCenter() {
+  const { onboardingCompletedAt, profileReady } = useUser()
   const hydrate = useNotificationsStore((s) => s.hydrate)
   const markRead = useNotificationsStore((s) => s.markRead)
   const isRead = useNotificationsStore((s) => s.isRead)
@@ -21,8 +23,10 @@ export default function MessageCenter() {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const messages = getNotificationsNewestFirst()
-  const unread = loadState === 'loading' || loadState === 'idle' ? 0 : unreadCount()
+  const messages = profileReady && onboardingCompletedAt
+    ? getNotificationsNewestFirst(getNotificationsForUser(onboardingCompletedAt))
+    : []
+  const unread = loadState === 'loading' || loadState === 'idle' ? 0 : unreadCount(messages)
 
   useEffect(() => {
     void hydrate()
