@@ -1,9 +1,9 @@
 """Notification storage — public interface (Tier A).
 
-``DeviceEntity`` is the device row shape; ``NotificationEntity`` is a
+``DeviceEntity`` is the device row shape; ``NotificationEntity`` is a generic
 user-scoped inbox item, and ``NotificationsBackend`` is the Protocol the file +
-Azure Table backends satisfy (devices + prefs + inbox + read state). Pure
-typing — no I/O import.
+Azure Table backends satisfy (devices + prefs + inbox + legacy static-message
+read state). Pure typing — no I/O import.
 """
 
 from __future__ import annotations
@@ -26,15 +26,12 @@ class DeviceEntity:
 class NotificationEntity:
     user_id: str
     notification_id: str
-    kind: str
-    status: str
     severity: str
     title: str
     body: str
     published_at: str
     updated_at: str
-    source_type: str | None = None
-    source_id: str | None = None
+    read_at: str | None = None
     action_url: str | None = None
     progress_pct: int | None = None
     metadata: dict[str, Any] | None = None
@@ -50,10 +47,6 @@ class NotificationsBackend(Protocol):
     def set_read_notification_ids(
         self, user_id: str, notification_ids: list[str],
     ) -> list[str]: ...
-    def get_read_notification_marks(self, user_id: str) -> dict[str, str]: ...
-    def set_read_notification_marks(
-        self, user_id: str, notification_marks: dict[str, str],
-    ) -> dict[str, str]: ...
     def upsert_notification(self, entity: NotificationEntity) -> NotificationEntity: ...
     def get_notification(
         self, user_id: str, notification_id: str,

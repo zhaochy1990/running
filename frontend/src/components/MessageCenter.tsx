@@ -26,6 +26,11 @@ function mergeMessages(staticMessages: AppNotification[], serverMessages: AppNot
   return getNotificationsNewestFirst(merged)
 }
 
+function isTerminalNotification(message: AppNotification) {
+  const state = message.metadata?.state
+  return state === 'done' || state === 'failed'
+}
+
 export default function MessageCenter() {
   const { onboardingCompletedAt, profileReady } = useUser()
   const hydrate = useNotificationsStore((s) => s.hydrate)
@@ -151,7 +156,7 @@ export default function MessageCenter() {
                           <p className="mt-1 text-xs leading-relaxed text-text-secondary whitespace-pre-line">
                             {m.body}
                           </p>
-                          {m.progressPct != null && m.status !== 'done' && m.status !== 'failed' && (
+                          {m.progressPct != null && !isTerminalNotification(m) && (
                             <div className="mt-2 h-1.5 rounded-full bg-bg-secondary overflow-hidden">
                               <div
                                 className="h-full rounded-full bg-accent-green transition-all"

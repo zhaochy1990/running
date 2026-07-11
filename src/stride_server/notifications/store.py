@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta
+from dataclasses import replace
 from functools import lru_cache
 from typing import Any
 
@@ -144,71 +145,62 @@ def get_prefs(user_id: str) -> dict[str, Any]:
 def get_read_notification_ids(user_id: str) -> list[str]:
     _validate_user_id(user_id)
     backend = _get_backend()
-    marks = backend.get_read_notification_marks(user_id)
-    visible_read: list[str] = []
-    for notification_id, read_at in marks.items():
-        entity = backend.get_notification(user_id, notification_id)
-        if entity is None or read_at >= (entity.updated_at or entity.published_at):
-            visible_read.append(notification_id)
-    return visible_read
-
-
-def get_read_notification_marks(user_id: str) -> dict[str, str]:
-    _validate_user_id(user_id)
-    return _get_backend().get_read_notification_marks(user_id)
+    read_ids = backend.get_read_notification_ids(user_id)
+    seen = set(read_ids)
+    for entity in backend.list_notifications(user_id):
+        if _is_notification_read(entity) and entity.notification_id not in seen:
+            read_ids.append(entity.notification_id)
+            seen.add(entity.notification_id)
+    return read_ids
 
 
 def mark_notification_read(user_id: str, notification_id: str) -> list[str]:
     _validate_user_id(user_id)
     notification_id = _validate_notification_id(notification_id)
-    marks = _get_backend().get_read_notification_marks(user_id)
-    entity = _get_backend().get_notification(user_id, notification_id)
-    marks[notification_id] = entity.updated_at if entity is not None else _now_iso()
-    _get_backend().set_read_notification_marks(user_id, marks)
+    backend = _get_backend()
+    entity = backend.get_notification(user_id, notification_id)
+    if entity is not None:
+        backend.upsert_notification(replace(entity, read_at=entity.updated_at))
+        return get_read_notification_ids(user_id)
+
+    current = backend.get_read_notification_ids(user_id)
+    if notification_id in current:
+        return current
+    backend.set_read_notification_ids(user_id, [*current, notification_id])
     return get_read_notification_ids(user_id)
 
 
-def _is_notification_read(
-    entity: NotificationEntity,
-    read_marks: dict[str, str],
-) -> tuple[bool, str | None]:
-    read_at = read_marks.get(entity.notification_id)
+def _is_notification_read(entity: NotificationEntity) -> bool:
+    read_at = entity.read_at
     if not read_at:
-        return False, None
+        return False
     updated_at = entity.updated_at or entity.published_at
-    return read_at >= updated_at, read_at
+    return read_at >= updated_at
 
 
 def _notification_to_dict(
     entity: NotificationEntity,
-    read_marks: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    read, read_at = _is_notification_read(entity, read_marks or {})
     return {
         "id": entity.notification_id,
-        "kind": entity.kind,
-        "status": entity.status,
         "severity": entity.severity,
         "title": entity.title,
         "body": entity.body,
         "published_at": entity.published_at,
         "updated_at": entity.updated_at,
-        "source_type": entity.source_type,
-        "source_id": entity.source_id,
         "action_url": entity.action_url,
         "progress_pct": entity.progress_pct,
         "metadata": entity.metadata or {},
-        "read": read,
-        "read_at": read_at,
+        "read": _is_notification_read(entity),
+        "read_at": entity.read_at,
     }
 
 
 def list_notifications(user_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
     _validate_user_id(user_id)
     backend = _get_backend()
-    read_marks = backend.get_read_notification_marks(user_id)
     return [
-        _notification_to_dict(entity, read_marks)
+        _notification_to_dict(entity)
         for entity in backend.list_notifications(user_id, limit=limit)
     ]
 
@@ -234,21 +226,15 @@ def upsert_notification(
     user_id: str,
     notification_id: str,
     *,
-    kind: str,
-    status: str,
     title: str,
     body: str,
     severity: str = "info",
-    source_type: str | None = None,
-    source_id: str | None = None,
     action_url: str | None = None,
     progress_pct: int | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     _validate_user_id(user_id)
     notification_id = _validate_notification_id(notification_id)
-    if status not in {"queued", "running", "done", "failed", "info"}:
-        raise ValueError(f"invalid notification status: {status!r}")
     if severity not in {"info", "success", "warning", "error"}:
         raise ValueError(f"invalid notification severity: {severity!r}")
     if not title.strip():
@@ -266,21 +252,18 @@ def upsert_notification(
     entity = NotificationEntity(
         user_id=user_id,
         notification_id=notification_id,
-        kind=kind,
-        status=status,
         severity=severity,
         title=title.strip()[:200],
         body=body.strip()[:2000],
         published_at=existing.published_at if existing is not None else now,
         updated_at=updated_at,
-        source_type=source_type,
-        source_id=source_id,
+        read_at=existing.read_at if existing is not None else None,
         action_url=action_url,
         progress_pct=_coerce_progress(progress_pct),
         metadata=metadata or {},
     )
     saved = backend.upsert_notification(entity)
-    return _notification_to_dict(saved, backend.get_read_notification_marks(user_id))
+    return _notification_to_dict(saved)
 
 
 def upsert_sync_notification(
@@ -306,6 +289,8 @@ def upsert_sync_notification(
         title = "正在同步数据"
 
     metadata = {
+        "type": "sync",
+        "state": status,
         "mode": mode,
         "synced_activities": synced_activities,
         "synced_health": synced_health,
@@ -314,13 +299,9 @@ def upsert_sync_notification(
     return upsert_notification(
         user_id,
         notification_id,
-        kind="sync",
-        status=status,
         severity=severity,
         title=title,
         body=message,
-        source_type="sync",
-        source_id=mode,
         action_url="/plan" if mode == "full" else "/",
         progress_pct=progress_pct,
         metadata={k: v for k, v in metadata.items() if v is not None},
@@ -357,18 +338,16 @@ def upsert_master_plan_job_notification(
     return upsert_notification(
         user_id,
         f"master-plan:{job_id}",
-        kind="master_plan_generation",
-        status=status,
         severity=severity,
         title=title,
         body=body,
-        source_type="master_plan_job",
-        source_id=job_id,
         action_url="/plan",
         progress_pct=progress_pct,
         metadata={
             k: v
             for k, v in {
+                "type": "master_plan_generation",
+                "state": status,
                 "job_id": job_id,
                 "result_plan_id": result_plan_id,
                 "error": error,

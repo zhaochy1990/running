@@ -78,15 +78,12 @@ def _now_iso() -> str:
 
 def _notification_to_record(entity: NotificationEntity) -> dict[str, Any]:
     return {
-        "kind": entity.kind,
-        "status": entity.status,
         "severity": entity.severity,
         "title": entity.title,
         "body": entity.body,
         "published_at": entity.published_at,
         "updated_at": entity.updated_at,
-        "source_type": entity.source_type,
-        "source_id": entity.source_id,
+        "read_at": entity.read_at,
         "action_url": entity.action_url,
         "progress_pct": entity.progress_pct,
         "metadata": entity.metadata or {},
@@ -106,6 +103,11 @@ def _notification_from_record(
             metadata = {}
     if not isinstance(metadata, dict):
         metadata = {}
+    metadata = dict(metadata)
+    for legacy_key in ("kind", "status", "source_type", "source_id"):
+        value = record.get(legacy_key)
+        if value not in (None, "") and legacy_key not in metadata:
+            metadata[legacy_key] = value
 
     progress = record.get("progress_pct")
     try:
@@ -116,15 +118,12 @@ def _notification_from_record(
     return NotificationEntity(
         user_id=user_id,
         notification_id=notification_id,
-        kind=str(record.get("kind") or "general"),
-        status=str(record.get("status") or "info"),
         severity=str(record.get("severity") or "info"),
         title=str(record.get("title") or ""),
         body=str(record.get("body") or ""),
         published_at=str(record.get("published_at") or record.get("updated_at") or ""),
         updated_at=str(record.get("updated_at") or record.get("published_at") or ""),
-        source_type=record.get("source_type") or None,
-        source_id=record.get("source_id") or None,
+        read_at=record.get("read_at") or None,
         action_url=record.get("action_url") or None,
         progress_pct=progress_pct,
         metadata=metadata,
@@ -261,29 +260,18 @@ class FileNotificationsBackend(NotificationsBackend):
         return self.get_prefs(user_id)
 
     def get_read_notification_ids(self, user_id: str) -> list[str]:
-        return list(self.get_read_notification_marks(user_id).keys())
-
-    def get_read_notification_marks(self, user_id: str) -> dict[str, str]:
         data = self._read()
         rec = data["read_state"].get(user_id, {})
         if not isinstance(rec, dict):
-            return {}
-        return _read_marks_from_record(rec)
+            return []
+        return list(_read_marks_from_record(rec).keys())
 
     def set_read_notification_ids(self, user_id: str, notification_ids: list[str]) -> list[str]:
         now = _now_iso()
-        self.set_read_notification_marks(
-            user_id,
-            {item: now for item in notification_ids if isinstance(item, str)},
-        )
-        return self.get_read_notification_ids(user_id)
-
-    def set_read_notification_marks(self, user_id: str, notification_marks: dict[str, str]) -> dict[str, str]:
         with self._lock:
             data = self._read()
             marks = {
-                k: v for k, v in notification_marks.items()
-                if isinstance(k, str) and isinstance(v, str)
+                item: now for item in notification_ids if isinstance(item, str)
             }
             data["read_state"][user_id] = {
                 "read_ids": list(marks.keys()),
@@ -291,7 +279,7 @@ class FileNotificationsBackend(NotificationsBackend):
                 "updated_at": _now_iso(),
             }
             self._write(data)
-        return self.get_read_notification_marks(user_id)
+        return self.get_read_notification_ids(user_id)
 
     def upsert_notification(self, entity: NotificationEntity) -> NotificationEntity:
         with self._lock:
@@ -403,17 +391,14 @@ class AzureTableNotificationsBackend(NotificationsBackend):
         }
 
     def get_read_notification_ids(self, user_id: str) -> list[str]:
-        return list(self.get_read_notification_marks(user_id).keys())
-
-    def get_read_notification_marks(self, user_id: str) -> dict[str, str]:
         from azure.core.exceptions import ResourceNotFoundError
         try:
             row = self._prefs().get_entity(
                 partition_key=user_id, row_key=READ_STATE_ROW_KEY,
             )
         except ResourceNotFoundError:
-            return {}
-        return _read_marks_from_record(dict(row))
+            return []
+        return list(_read_marks_from_record(dict(row)).keys())
 
     def set_prefs(self, user_id: str, prefs: dict[str, Any]) -> dict[str, Any]:
         from azure.data.tables import UpdateMode
@@ -431,18 +416,10 @@ class AzureTableNotificationsBackend(NotificationsBackend):
         return self.get_prefs(user_id)
 
     def set_read_notification_ids(self, user_id: str, notification_ids: list[str]) -> list[str]:
-        now = _now_iso()
-        self.set_read_notification_marks(
-            user_id,
-            {item: now for item in notification_ids if isinstance(item, str)},
-        )
-        return self.get_read_notification_ids(user_id)
-
-    def set_read_notification_marks(self, user_id: str, notification_marks: dict[str, str]) -> dict[str, str]:
         from azure.data.tables import UpdateMode
+        now = _now_iso()
         marks = {
-            k: v for k, v in notification_marks.items()
-            if isinstance(k, str) and isinstance(v, str)
+            item: now for item in notification_ids if isinstance(item, str)
         }
         record = {
             "PartitionKey": user_id,
@@ -452,7 +429,7 @@ class AzureTableNotificationsBackend(NotificationsBackend):
             "updated_at": _now_iso(),
         }
         self._prefs().upsert_entity(record, mode=UpdateMode.REPLACE)
-        return self.get_read_notification_marks(user_id)
+        return self.get_read_notification_ids(user_id)
 
     def upsert_notification(self, entity: NotificationEntity) -> NotificationEntity:
         from azure.data.tables import UpdateMode
@@ -460,15 +437,12 @@ class AzureTableNotificationsBackend(NotificationsBackend):
         record = {
             "PartitionKey": entity.user_id,
             "RowKey": NOTIFICATION_ROW_PREFIX + entity.notification_id,
-            "kind": entity.kind,
-            "status": entity.status,
             "severity": entity.severity,
             "title": entity.title,
             "body": entity.body,
             "published_at": entity.published_at,
             "updated_at": entity.updated_at,
-            "source_type": entity.source_type or "",
-            "source_id": entity.source_id or "",
+            "read_at": entity.read_at or "",
             "action_url": entity.action_url or "",
             "metadata_json": json.dumps(entity.metadata or {}, ensure_ascii=False, default=str),
         }

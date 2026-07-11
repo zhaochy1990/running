@@ -125,24 +125,20 @@ def test_notifications_inbox_lists_user_scoped_items_and_read_state(app_client):
     nstore.upsert_notification(
         USER_A,
         "sync:onboarding",
-        kind="sync",
-        status="running",
         severity="info",
         title="正在同步数据",
         body="正在同步健康数据，马上就好",
         progress_pct=0,
-        source_type="sync",
-        source_id="health_only",
+        metadata={"type": "sync", "state": "running", "mode": "health_only"},
     )
     nstore.upsert_notification(
         USER_B,
         "sync:onboarding",
-        kind="sync",
-        status="done",
         severity="success",
         title="数据同步完成",
         body="初始化完成",
         progress_pct=100,
+        metadata={"type": "sync", "state": "done"},
     )
 
     response = client.get("/api/users/me/notifications", headers=_auth(token_a))
@@ -152,13 +148,17 @@ def test_notifications_inbox_lists_user_scoped_items_and_read_state(app_client):
     assert body["read_ids"] == []
     assert [item["id"] for item in body["notifications"]] == ["sync:onboarding"]
     item = body["notifications"][0]
-    assert item["status"] == "running"
+    assert "status" not in item
+    assert "kind" not in item
+    assert "source_type" not in item
+    assert item["metadata"] == {"type": "sync", "state": "running", "mode": "health_only"}
     assert item["progress_pct"] == 0
     assert item["read"] is False
+    assert item["read_at"] is None
 
     other = client.get("/api/users/me/notifications", headers=_auth(token_b))
     assert other.status_code == 200
-    assert other.json()["notifications"][0]["status"] == "done"
+    assert other.json()["notifications"][0]["metadata"]["state"] == "done"
 
 
 def test_updated_dynamic_notification_becomes_unread_again(app_client):
@@ -170,12 +170,11 @@ def test_updated_dynamic_notification_becomes_unread_again(app_client):
     nstore.upsert_notification(
         USER_A,
         "master-plan:job-1",
-        kind="master_plan_generation",
-        status="running",
         severity="info",
         title="训练计划正在生成",
         body="正在读取历史训练数据",
         progress_pct=10,
+        metadata={"type": "master_plan_generation", "state": "running"},
     )
 
     marked = client.post(
@@ -184,16 +183,18 @@ def test_updated_dynamic_notification_becomes_unread_again(app_client):
     )
     assert marked.status_code == 200
     assert marked.json()["read_ids"] == ["master-plan:job-1"]
+    read_inbox = client.get("/api/users/me/notifications", headers=_auth(token)).json()
+    assert read_inbox["notifications"][0]["read"] is True
+    assert read_inbox["notifications"][0]["read_at"] is not None
 
     nstore.upsert_notification(
         USER_A,
         "master-plan:job-1",
-        kind="master_plan_generation",
-        status="done",
         severity="success",
         title="训练计划已生成",
         body="你的训练总纲已经生成好了，可以进入训练计划页审核。",
         progress_pct=100,
+        metadata={"type": "master_plan_generation", "state": "done"},
     )
 
     read_state = client.get(
@@ -205,4 +206,4 @@ def test_updated_dynamic_notification_becomes_unread_again(app_client):
 
     inbox = client.get("/api/users/me/notifications", headers=_auth(token)).json()
     assert inbox["notifications"][0]["read"] is False
-    assert inbox["notifications"][0]["status"] == "done"
+    assert inbox["notifications"][0]["metadata"]["state"] == "done"

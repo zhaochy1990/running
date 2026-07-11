@@ -111,8 +111,6 @@ describe('notificationsStore server-backed read state', () => {
         notifications: [
           {
             id: 'master-plan:job-1',
-            kind: 'master_plan_generation',
-            status: 'done',
             severity: 'success',
             title: '训练计划已生成',
             body: '可以进入训练计划页审核。',
@@ -120,6 +118,7 @@ describe('notificationsStore server-backed read state', () => {
             updated_at: '2026-07-11T08:03:00+00:00',
             action_url: '/plan',
             progress_pct: 100,
+            metadata: { type: 'master_plan_generation', state: 'done' },
             read: false,
           },
         ],
@@ -147,14 +146,13 @@ describe('notificationsStore server-backed read state', () => {
         notifications: [
           {
             id: 'sync:full',
-            kind: 'sync',
-            status: 'running',
             severity: 'info',
             title: '正在同步数据',
             body: '正在准备同步历史训练数据',
             published_at: '2026-07-11T08:00:00+00:00',
             updated_at: '2026-07-11T08:00:00+00:00',
             progress_pct: 10,
+            metadata: { type: 'sync', state: 'running' },
             read: false,
           },
         ],

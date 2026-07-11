@@ -238,15 +238,11 @@ export interface NotificationReadState {
 
 export interface ServerNotification {
   id: string
-  kind?: string
-  status?: 'queued' | 'running' | 'done' | 'failed' | 'info'
   severity?: 'info' | 'success' | 'warning' | 'error'
   title: string
   body: string
   published_at?: string
   updated_at?: string
-  source_type?: string | null
-  source_id?: string | null
   action_url?: string | null
   progress_pct?: number | null
   metadata?: Record<string, unknown>
