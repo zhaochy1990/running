@@ -43,6 +43,7 @@ from .. import job_runner
 from ..job_runner import JobStatus, STAGE_LABEL_MAP
 from .. import llm_client as _llm_client_mod
 from ..llm_client import LLMClient, LLMError, LLMUnavailable
+from .. import master_plan_intake
 from .. import master_plan_generator
 from ..master_plan_store import get_master_plan_store
 
@@ -92,6 +93,10 @@ class GenerateRequest(BaseModel):
     profile_id: str | None = None   # 不填时用当前 running-profile
 
 
+class IntakeExtractRequest(BaseModel):
+    message: str
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -122,6 +127,55 @@ def _read_current_profile(user_id: str) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 # POST /api/users/me/master-plan/generate
 # ---------------------------------------------------------------------------
+
+
+@router.get("/api/users/me/master-plan/intake")
+def get_master_plan_intake(
+    payload: dict = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Return current pre-generation intake fields and deterministic history."""
+    user_id: str = payload["sub"]
+    context = master_plan_intake.build_intake_context(user_id)
+    return {
+        "goal": context.get("goal"),
+        "profile": context.get("profile"),
+        "history": context.get("history"),
+    }
+
+
+@router.post("/api/users/me/master-plan/intake/extract")
+def extract_master_plan_intake(
+    body: IntakeExtractRequest,
+    payload: dict = Depends(require_bearer),
+) -> dict[str, Any]:
+    """Extract structured setup fields from a free-form athlete message.
+
+    This is a helper for the intake UI only. LLM extraction failure degrades to
+    deterministic pattern extraction so the user can continue with the form.
+    """
+    user_id: str = payload["sub"]
+    text = body.message.strip()
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="message is required",
+        )
+    context = master_plan_intake.build_intake_context(user_id)
+    try:
+        fields = master_plan_intake.extract_intake_fields(text, context)
+        source = "lightweight_model"
+        warning = None
+    except Exception as exc:  # noqa: BLE001 - helper must degrade gracefully
+        logger.info("intake extraction fell back to rules user=%s: %s", user_id, exc)
+        fields = master_plan_intake.fallback_extract_intake_fields(text)
+        source = "rules"
+        warning = "轻量模型暂时不可用，已使用规则提取可识别字段"
+    return {
+        "fields": fields,
+        "source": source,
+        "warning": warning,
+        "history": context.get("history"),
+    }
 
 
 @router.post("/api/users/me/master-plan/generate", status_code=status.HTTP_201_CREATED)

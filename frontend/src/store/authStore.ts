@@ -3,7 +3,8 @@ import { setAuthUser, clearAuthUser } from '../telemetry/appInsights'
 
 const AUTH_BASE = import.meta.env.VITE_AUTH_BASE_URL || ''
 const AUTH_REQUEST_BASE = import.meta.env.DEV ? '' : AUTH_BASE
-const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || ''
+const DEFAULT_AUTH_CLIENT_ID = 'app_62978bf2803346878a2e4805'
+const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || DEFAULT_AUTH_CLIENT_ID
 
 interface JwtPayload {
   sub: string

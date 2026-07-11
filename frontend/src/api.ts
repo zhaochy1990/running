@@ -827,6 +827,78 @@ export interface GenerateMasterPlanResponse {
   eta_seconds: number
 }
 
+export interface MasterPlanIntakePb {
+  distance: '5K' | '10K' | 'HM' | 'FM'
+  time: string | null
+  time_seconds: number | null
+  achieved_at: string | null
+  days_since: number | null
+  source: string | null
+  label_id: string | null
+  activity_name: string | null
+}
+
+export interface MasterPlanIntakeRaceEffort {
+  label_id: string
+  name: string | null
+  date: string
+  days_since: number | null
+  distance_km: number
+  distance_label: string
+  duration: string | null
+  duration_seconds: number | null
+  pace: string | null
+  avg_hr: number | null
+  max_hr: number | null
+  training_load: number | null
+  train_kind: string | null
+}
+
+export interface MasterPlanIntakeHistory {
+  data_available: boolean
+  as_of_date: string
+  pbs: MasterPlanIntakePb[]
+  recent_races: MasterPlanIntakeRaceEffort[]
+  summary: string
+}
+
+export interface MasterPlanIntakeContext {
+  goal: TrainingGoal | null
+  profile: RunningProfile | null
+  history: MasterPlanIntakeHistory
+}
+
+export interface MasterPlanIntakeExtractFields {
+  race_name?: string
+  race_distance?: RaceDistance
+  race_date?: string
+  target_finish_time?: string | null
+  weekly_training_days?: WeeklyTrainingDays
+  running_age?: RunningAge
+  current_weekly_km?: CurrentWeeklyKm
+  pb_distance?: RunningPbDistance
+  pb_time?: string
+  injuries?: string[]
+}
+
+export interface MasterPlanIntakeExtractResponse {
+  fields: MasterPlanIntakeExtractFields
+  source: 'lightweight_model' | 'rules'
+  warning: string | null
+  history: MasterPlanIntakeHistory
+}
+
+export function getMasterPlanIntake() {
+  return fetchJSON<MasterPlanIntakeContext>('/users/me/master-plan/intake')
+}
+
+export function extractMasterPlanIntake(message: string) {
+  return postJSON<MasterPlanIntakeExtractResponse & { detail?: unknown }>(
+    '/users/me/master-plan/intake/extract',
+    { message },
+  )
+}
+
 export function generateMasterPlan(goalId?: string) {
   return postJSON<GenerateMasterPlanResponse & { error?: string; detail?: unknown }>(
     '/users/me/master-plan/generate',

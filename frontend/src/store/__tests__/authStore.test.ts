@@ -64,4 +64,26 @@ describe('authStore local auth routing', () => {
       body: JSON.stringify({ email: 'runner@example.test', password: 'password' }),
     })
   })
+
+  it('falls back to the public STRIDE client id when env injection is absent', async () => {
+    vi.resetModules()
+    vi.stubEnv('VITE_AUTH_CLIENT_ID', '')
+    const accessToken = makeJwt({ sub: 'user-1', exp: Math.floor(Date.now() / 1000) + 3600 })
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ access_token: accessToken, refresh_token: 'refresh-token' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    const { useAuthStore } = await import('../authStore')
+
+    await useAuthStore.getState().login('runner@example.test', 'password')
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Client-Id': 'app_62978bf2803346878a2e4805' },
+      body: JSON.stringify({ email: 'runner@example.test', password: 'password' }),
+    })
+  })
 })

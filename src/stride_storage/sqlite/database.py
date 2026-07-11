@@ -1450,6 +1450,49 @@ class Database:
             ),
         }
 
+    def list_race_effort_activities(
+        self,
+        *,
+        limit: int = 6,
+        min_distance_km: float = 3.0,
+    ) -> list[sqlite3.Row]:
+        """Return recent race-like running efforts for coach intake analysis.
+
+        This is a semantic storage-layer reader so route / adapter code does
+        not grow direct SQL. It intentionally combines explicit race labels
+        (``train_kind='race'``) with race-distance efforts because many watch
+        providers do not mark races consistently.
+        """
+        from stride_core.models import RUN_SPORT_SQL_LIST
+        from stride_core.timefmt import SHANGHAI_DAY_SQL
+
+        return self._conn.execute(
+            f"""SELECT label_id, name, sport_type, sport_name, date,
+                      {SHANGHAI_DAY_SQL} AS shanghai_date,
+                      distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
+                      training_load, vo2max, train_type, train_kind
+                 FROM activities
+                WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
+                  AND duration_s IS NOT NULL
+                  AND duration_s > 0
+                  AND distance_m IS NOT NULL
+                  AND distance_m >= ?
+                  AND (
+                        lower(COALESCE(train_kind, '')) = 'race'
+                     OR lower(COALESCE(train_type, '')) = 'race'
+                     OR lower(COALESCE(name, '')) LIKE '%race%'
+                     OR name LIKE '%赛%'
+                     OR name LIKE '%马拉松%'
+                     OR distance_m BETWEEN 4800 AND 5300
+                     OR distance_m BETWEEN 9800 AND 10500
+                     OR distance_m BETWEEN 20800 AND 21800
+                     OR distance_m BETWEEN 41800 AND 43500
+                  )
+                ORDER BY date DESC, label_id DESC
+                LIMIT ?""",
+            (min_distance_km * 1000.0, int(limit)),
+        ).fetchall()
+
     def _build_activity_list_filter(
         self,
         *,

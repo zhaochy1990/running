@@ -35,6 +35,7 @@ from .continuity_analyzer import analyze_continuity
 from .phase_detector import detect_current_phase
 from ..job_runner import JobStage, update_job
 from ..llm_client import LLMClient
+from ..master_plan_intake import build_history_analysis, format_history_prompt_block
 from ..master_plan_generator import (
     _build_master_plan,
     _format_history_summary,
@@ -267,6 +268,12 @@ def load_master_context(state: GenState) -> dict:
         logger.warning("load_master_context: continuity failed: %s", exc)
 
     history_summary = _format_history_summary(_history_with_pb_seconds(history, pb_seconds))
+    intake_history: dict = {}
+    try:
+        intake_history = build_history_analysis(user_id, as_of=as_of)
+        history_summary = history_summary + "\n" + format_history_prompt_block(intake_history)
+    except Exception as exc:  # noqa: BLE001 — preflight hints must not block gen
+        logger.warning("load_master_context: intake history failed user=%s: %s", user_id, exc)
     load_tool_result = EstimateMasterPlanLoadImpl(user_id)(
         as_of_date=as_of.isoformat(),
     )
@@ -312,6 +319,7 @@ def load_master_context(state: GenState) -> dict:
         "as_of_date": as_of.isoformat(),
         "training_load_tool": training_load_tool,
         "training_load_tool_summary": training_load_tool_summary,
+        "intake_history": intake_history,
         "continuity": continuity.model_dump() if continuity is not None else None,
         "current_phase": current_phase.model_dump() if current_phase is not None else None,
         "body_composition": body_composition,
