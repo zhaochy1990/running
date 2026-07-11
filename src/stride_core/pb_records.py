@@ -427,7 +427,7 @@ def _activity_level_candidates(
 def _activity_distance_to_meters(distance: float) -> float:
     if distance <= 0:
         return 0.0
-    return distance * 1000.0 if distance < 500 else distance
+    return distance
 
 
 def _normalise_date(raw: str) -> str:

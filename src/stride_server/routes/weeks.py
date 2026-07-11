@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Body, HTTPException
 
+from stride_core.distance import meters_to_km_zero
 from stride_core.models import pace_str
 from stride_core.timefmt import (
     SHANGHAI_DAY_SQL,
@@ -93,7 +94,7 @@ def list_weeks(user: str):
             # Shanghai calendar (see stride_core/timefmt.py).
             rows = db.query(
                 f"""SELECT count(*) as cnt,
-                    round(coalesce(sum(distance_m), 0), 1) as total_km,
+                    round(coalesce(sum(distance_m), 0) / 1000.0, 1) as total_km,
                     round(coalesce(sum(duration_s), 0), 0) as total_duration_s
                 FROM activities WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?""",
                 (date_from, date_to),
@@ -176,7 +177,7 @@ def get_week(user: str, folder: str):
         # all read correctly. The instant is preserved (offset is +08:00, not
         # stripped) so new Date(d.date) still resolves to the same moment.
         d["date"] = utc_iso_to_shanghai_iso(d["date"])
-        d["distance_km"] = round(d["distance_m"], 2) if d["distance_m"] else 0
+        d["distance_km"] = meters_to_km_zero(d.get("distance_m"), digits=2)
         d["duration_fmt"] = format_duration(d["duration_s"])
         d["pace_fmt"] = pace_str(d["avg_pace_s_km"]) or "—"
         # Decode pre-computed route thumbnail (NULL for indoor/strength).

@@ -100,43 +100,68 @@ const masterPlan = {
       completed_actual: null,
     },
   ],
+  training_principles: ['逐步加量', '每 4 周保留恢复周'],
   weeks: [
     {
-      week_index: 1,
-      week_start: '2026-05-04',
-      week_end: '2026-05-10',
+      week_index: 4,
+      week_start: '2026-05-25',
+      week_end: '2026-05-31',
       phase_id: 'phase-1',
-      target_weekly_km_low: 42,
-      target_weekly_km_high: 48,
-      key_sessions: [],
-      planned_distance_km: 48,
+      target_weekly_km_low: 48,
+      target_weekly_km_high: 54,
+      planned_distance_km: 54,
       is_completed: true,
-      actual_distance_km: 45.6,
+      actual_distance_km: 68,
       actual_avg_pace_s_km: 312,
       actual_avg_pace_fmt: '5:12',
       actual_avg_hr: 142,
       actual_run_count: 5,
       actual_duration_s: 14227,
+      key_sessions: [{ type: 'long_run', distance_km: 20, duration_min: null }],
+      is_recovery_week: false,
+      is_taper_week: false,
     },
     {
-      week_index: 6,
-      week_start: '2026-06-08',
-      week_end: '2026-06-14',
-      phase_id: 'phase-1',
-      target_weekly_km_low: 48,
-      target_weekly_km_high: 54,
-      key_sessions: [],
-      planned_distance_km: 54,
-      is_completed: false,
-      actual_distance_km: null,
-      actual_avg_pace_s_km: null,
-      actual_avg_pace_fmt: '',
-      actual_avg_hr: null,
-      actual_run_count: 0,
-      actual_duration_s: 0,
+      week_index: 9,
+      week_start: '2026-06-29',
+      phase_id: 'phase-2',
+      target_weekly_km_low: 110,
+      target_weekly_km_high: 120,
+      key_sessions: [{ type: 'threshold', distance_km: 12, duration_min: null }],
+      is_recovery_week: false,
+      is_taper_week: false,
+    },
+    {
+      week_index: 10,
+      week_start: '2026-07-06',
+      phase_id: 'phase-2',
+      target_weekly_km_low: 118,
+      target_weekly_km_high: 128,
+      key_sessions: [{ type: 'long_run', distance_km: 22, duration_min: null }],
+      is_recovery_week: false,
+      is_taper_week: false,
+    },
+    {
+      week_index: 11,
+      week_start: '2026-07-13',
+      phase_id: 'phase-2',
+      target_weekly_km_low: 128,
+      target_weekly_km_high: 138,
+      key_sessions: [{ type: 'interval', distance_km: 10, duration_min: null }],
+      is_recovery_week: false,
+      is_taper_week: false,
+    },
+    {
+      week_index: 12,
+      week_start: '2026-07-20',
+      phase_id: 'phase-2',
+      target_weekly_km_low: 94,
+      target_weekly_km_high: 104,
+      key_sessions: [{ type: 'long_run', distance_km: 18, duration_min: null }],
+      is_recovery_week: true,
+      is_taper_week: false,
     },
   ],
-  training_principles: ['逐步加量', '每 4 周保留恢复周'],
   generated_by: 'gpt-4.1',
   version: 2,
   created_at: '2026-05-01T00:00:00Z',
@@ -197,11 +222,15 @@ describe('TrainingPlanPage', () => {
     expect(await screen.findByRole('heading', { name: '真实目标马拉松' })).toBeInTheDocument()
     expect(screen.getByText(/从 2026\/05\/04 到 2026\/10\/11，共 23 周/)).toBeInTheDocument()
     expect(screen.getByText('周跑量（KM/周）')).toBeInTheDocument()
-    expect(screen.getByText('W06')).toBeInTheDocument()
+    expect(screen.getAllByText('W06').length).toBeGreaterThan(0)
     expect(screen.getByText('已完成周实际跑量')).toBeInTheDocument()
     expect(screen.getByText('计划跑量标记')).toBeInTheDocument()
     expect(screen.getAllByText('计划跑量')[0]).toBeInTheDocument()
-    expect(screen.getByText('45.6 km')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W04 实际 68 km · 计划 54 km · 基础期' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W04 计划 54 km · 基础期' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'W12 计划 104 km · 专项期 · 调整周' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'W12 估算 66 km · 专项期' })).not.toBeInTheDocument()
+    expect(screen.getByText('68 km')).toBeInTheDocument()
     expect(screen.getByText('5:12/km')).toBeInTheDocument()
     expect(screen.getByText('142 bpm')).toBeInTheDocument()
     expect(screen.getByText(/目标赛事：全马 · 2026\/10\/11/)).toBeInTheDocument()

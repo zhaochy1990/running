@@ -313,7 +313,7 @@ class TestL1Quality:
             "avg_cadence": 180,
             "laps": [
                 {"lap_index": i + 1, "avg_pace": 320, "avg_hr": 145,
-                 "avg_cadence": 180, "duration_s": 320, "distance_m": 1.0}
+                 "avg_cadence": 180, "duration_s": 320, "distance_m": 1000.0}
                 for i in range(5)
             ],
             "zones": [],
@@ -336,7 +336,7 @@ class TestL1Quality:
             "avg_pace_s_km": 255,
             "laps": [
                 {"avg_pace": 255, "avg_hr": 165, "avg_cadence": 185,
-                 "duration_s": 255, "distance_m": 1.0}
+                 "duration_s": 255, "distance_m": 1000.0}
                 for _ in range(5)
             ],
             "zones": [],
@@ -362,14 +362,14 @@ class TestL1Quality:
             "laps": [
                 # First half: HR 160, pace 320s/km
                 {"avg_pace": 320, "avg_hr": 160, "avg_cadence": 180,
-                 "duration_s": 320, "distance_m": 1.0, "exercise_type": 2},
+                 "duration_s": 320, "distance_m": 1000.0, "exercise_type": 2},
                 {"avg_pace": 320, "avg_hr": 160, "avg_cadence": 180,
-                 "duration_s": 320, "distance_m": 1.0, "exercise_type": 2},
+                 "duration_s": 320, "distance_m": 1000.0, "exercise_type": 2},
                 # Second half: HR drops to 140 at same pace → raw drift very negative
                 {"avg_pace": 320, "avg_hr": 140, "avg_cadence": 180,
-                 "duration_s": 320, "distance_m": 1.0, "exercise_type": 2},
+                 "duration_s": 320, "distance_m": 1000.0, "exercise_type": 2},
                 {"avg_pace": 320, "avg_hr": 140, "avg_cadence": 180,
-                 "duration_s": 320, "distance_m": 1.0, "exercise_type": 2},
+                 "duration_s": 320, "distance_m": 1000.0, "exercise_type": 2},
             ],
             "zones": [],
             "timeseries": [],
@@ -425,24 +425,24 @@ class TestL1Quality:
             "laps": [
                 # warmup
                 {"avg_pace": 360, "avg_hr": 130, "avg_cadence": 175,
-                 "duration_s": 360, "distance_m": 1.0, "exercise_type": 1},
+                 "duration_s": 360, "distance_m": 1000.0, "exercise_type": 1},
                 # work × 4 @ 250s/km, near-identical → CV ≈ 0
                 {"avg_pace": 250, "avg_hr": 175, "avg_cadence": 188,
-                 "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+                 "duration_s": 250, "distance_m": 1000.0, "exercise_type": 2},
                 {"avg_pace": 252, "avg_hr": 175, "avg_cadence": 188,
-                 "duration_s": 252, "distance_m": 1.0, "exercise_type": 2},
+                 "duration_s": 252, "distance_m": 1000.0, "exercise_type": 2},
                 {"avg_pace": 248, "avg_hr": 176, "avg_cadence": 188,
-                 "duration_s": 248, "distance_m": 1.0, "exercise_type": 2},
+                 "duration_s": 248, "distance_m": 1000.0, "exercise_type": 2},
                 {"avg_pace": 250, "avg_hr": 176, "avg_cadence": 188,
-                 "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+                 "duration_s": 250, "distance_m": 1000.0, "exercise_type": 2},
                 # rest × 2 @ 350s/km recovery
                 {"avg_pace": 350, "avg_hr": 140, "avg_cadence": 170,
-                 "duration_s": 350, "distance_m": 1.0, "exercise_type": 4},
+                 "duration_s": 350, "distance_m": 1000.0, "exercise_type": 4},
                 {"avg_pace": 350, "avg_hr": 140, "avg_cadence": 170,
-                 "duration_s": 350, "distance_m": 1.0, "exercise_type": 4},
+                 "duration_s": 350, "distance_m": 1000.0, "exercise_type": 4},
                 # cooldown
                 {"avg_pace": 380, "avg_hr": 130, "avg_cadence": 172,
-                 "duration_s": 380, "distance_m": 1.0, "exercise_type": 3},
+                 "duration_s": 380, "distance_m": 1000.0, "exercise_type": 3},
             ],
             "zones": [],
             "timeseries": [],
@@ -467,19 +467,19 @@ class TestL1Quality:
         rest_paces = [350, 350, 350]
         laps = (
             [{"avg_pace": 360, "avg_hr": 130, "avg_cadence": 175,
-              "duration_s": 360, "distance_m": 1.0, "exercise_type": 1}]  # warmup
+              "duration_s": 360, "distance_m": 1000.0, "exercise_type": 1}]  # warmup
             + [
                 {"avg_pace": p, "avg_hr": 175, "avg_cadence": 188,
-                 "duration_s": p, "distance_m": 1.0, "exercise_type": 2}
+                 "duration_s": p, "distance_m": 1000.0, "exercise_type": 2}
                 for p in work_paces
             ]
             + [
                 {"avg_pace": p, "avg_hr": 140, "avg_cadence": 170,
-                 "duration_s": p, "distance_m": 1.0, "exercise_type": 4}
+                 "duration_s": p, "distance_m": 1000.0, "exercise_type": 4}
                 for p in rest_paces
             ]
             + [{"avg_pace": 380, "avg_hr": 130, "avg_cadence": 172,
-                "duration_s": 380, "distance_m": 1.0, "exercise_type": 3}]  # cooldown
+                "duration_s": 380, "distance_m": 1000.0, "exercise_type": 3}]  # cooldown
         )
         act = {
             "label_id": "T_INTERVAL_ADHER",
@@ -519,12 +519,12 @@ class TestL1Quality:
             laps.append({
                 "lap_index": i, "lap_type": "autoKm",
                 "avg_pace": ak, "avg_hr": 175, "avg_cadence": 188,
-                "duration_s": ak, "distance_m": 1.0, "exercise_type": 2,
+                "duration_s": ak, "distance_m": 1000.0, "exercise_type": 2,
             })
             laps.append({
                 "lap_index": i, "lap_type": "type2",
                 "avg_pace": t2, "avg_hr": 175, "avg_cadence": 188,
-                "duration_s": 3 * t2, "distance_m": 3.0, "exercise_type": 2,
+                "duration_s": 3 * t2, "distance_m": 3000.0, "exercise_type": 2,
             })
         act = {
             "label_id": "T_DEDUPE",
@@ -552,17 +552,17 @@ class TestL1Quality:
         laps = [
             {"lap_index": 1, "lap_type": "type2", "avg_pace": 250,
              "avg_hr": 175, "avg_cadence": 188,
-             "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+             "duration_s": 250, "distance_m": 1000.0, "exercise_type": 2},
             {"lap_index": 2, "lap_type": "type2", "avg_pace": 250,
              "avg_hr": 175, "avg_cadence": 188,
-             "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+             "duration_s": 250, "distance_m": 1000.0, "exercise_type": 2},
             {"lap_index": 3, "lap_type": "type2", "avg_pace": 250,
              "avg_hr": 175, "avg_cadence": 188,
-             "duration_s": 250, "distance_m": 1.0, "exercise_type": 2},
+             "duration_s": 250, "distance_m": 1000.0, "exercise_type": 2},
             # outlier fragment — exercise_type=0 so neither rest filter catches it
             {"lap_index": 4, "lap_type": "type2", "avg_pace": 494,
              "avg_hr": 175, "avg_cadence": 188,
-             "duration_s": 27.66, "distance_m": 0.06, "exercise_type": 0},
+             "duration_s": 27.66, "distance_m": 60.0, "exercise_type": 0},
         ]
         act = {
             "label_id": "T_FRAGMENT",
@@ -601,7 +601,7 @@ class TestL1Quality:
                 laps.append({
                     "lap_index": idx, "lap_type": "autoKm",
                     "avg_pace": slice_pace, "avg_hr": 175, "avg_cadence": 188,
-                    "duration_s": slice_pace, "distance_m": 1.0,
+                    "duration_s": slice_pace, "distance_m": 1000.0,
                     "exercise_type": 2,
                 })
                 idx += 1
@@ -611,13 +611,13 @@ class TestL1Quality:
             laps.append({
                 "lap_index": mid_idx, "lap_type": "type2",
                 "avg_pace": t2, "avg_hr": 175, "avg_cadence": 188,
-                "duration_s": 3 * t2, "distance_m": 3.0, "exercise_type": 2,
+                "duration_s": 3 * t2, "distance_m": 3000.0, "exercise_type": 2,
             })
         # Add a fragment outlier (matches the actual 5/06 artifact)
         laps.append({
             "lap_index": idx, "lap_type": "type2",
             "avg_pace": 494, "avg_hr": 170, "avg_cadence": 180,
-            "duration_s": 27.66, "distance_m": 0.06, "exercise_type": 0,
+            "duration_s": 27.66, "distance_m": 60.0, "exercise_type": 0,
         })
         act = {
             "label_id": "T_REAL_INTERVAL",
@@ -649,7 +649,7 @@ class TestL1Quality:
             "avg_pace_s_km": 320,
             "laps": [
                 {"avg_pace": 250, "avg_hr": 145, "avg_cadence": 180,
-                 "duration_s": 250, "distance_m": 1.0, "exercise_type": 2}
+                 "duration_s": 250, "distance_m": 1000.0, "exercise_type": 2}
                 for _ in range(5)
             ],
             "zones": [],
@@ -775,7 +775,7 @@ class TestL3:
             {"label_id": "A1", "sport_type": 100, "avg_pace_s_km": 250,
              "distance_m": 30000, "duration_s": 7500,
              "laps": [
-                 {"distance_m": 1.0, "duration_s": 250, "avg_pace": 250,
+                 {"distance_m": 1000.0, "duration_s": 250, "avg_pace": 250,
                   "avg_hr": 168, "avg_cadence": 184}
                  for _ in range(30)
              ],
@@ -807,7 +807,7 @@ class TestL3:
         activities = [
             {"label_id": "A1", "sport_type": 100,
              "laps": [
-                 {"avg_pace": 320, "avg_cadence": 178, "distance_m": 1.0,
+                 {"avg_pace": 320, "avg_cadence": 178, "distance_m": 1000.0,
                   "duration_s": 320}
                  for _ in range(5)
              ]}
@@ -819,7 +819,7 @@ class TestL3:
         activities = [
             {"label_id": "A1", "sport_type": 100,
              "laps": [
-                 {"avg_pace": 290, "avg_cadence": 184, "distance_m": 1.0,
+                 {"avg_pace": 290, "avg_cadence": 184, "distance_m": 1000.0,
                   "duration_s": 290}
                  for _ in range(5)
              ]}
@@ -1024,13 +1024,13 @@ class TestExtractIntervalReps:
                 laps.append({
                     "lap_index": rep * 4 + slice_i + 1,
                     "lap_type": "autoKm",
-                    "distance_m": 1.0, "duration_s": base_pace,
+                    "distance_m": 1000.0, "duration_s": base_pace,
                     "avg_pace": base_pace, "exercise_type": 2,
                 })
             laps.append({
                 "lap_index": rep * 4 + 4,
                 "lap_type": "type2",
-                "distance_m": 3.0, "duration_s": 3 * base_pace,
+                "distance_m": 3000.0, "duration_s": 3 * base_pace,
                 "avg_pace": base_pace, "exercise_type": 2,
             })
         act = {"label_id": "T_DEDUP", "sport_type": 100, "laps": laps}
@@ -1053,7 +1053,7 @@ class TestExtractIntervalReps:
 
         laps = [
             {"lap_index": i, "lap_type": "autoKm",
-             "distance_m": 1.0, "duration_s": 240,
+             "distance_m": 1000.0, "duration_s": 240,
              "avg_pace": 240, "exercise_type": 2}
             for i in range(1, 7)
         ]
@@ -1071,11 +1071,11 @@ class TestExtractIntervalReps:
         laps = [
             # Real work rep
             {"lap_index": 5, "lap_type": "autoKm",
-             "distance_m": 1.0, "duration_s": 243.5,
+             "distance_m": 1000.0, "duration_s": 243.5,
              "avg_pace": 243.5, "exercise_type": 2},
             # Fragment artifact at the SAME lap_index — must be dropped first
             {"lap_index": 5, "lap_type": "type2",
-             "distance_m": 0.06, "duration_s": 27.66,
+             "distance_m": 60.0, "duration_s": 27.66,
              "avg_pace": 494.65, "exercise_type": 0},
         ]
         act = {"label_id": "T_FRAG", "sport_type": 100, "laps": laps}
@@ -1091,10 +1091,10 @@ class TestExtractIntervalReps:
 
         laps = [
             {"lap_index": 1, "lap_type": "type2",
-             "distance_m": 3.0, "duration_s": 750,
+             "distance_m": 3000.0, "duration_s": 750,
              "avg_pace": 250, "exercise_type": 2},
             {"lap_index": 2, "lap_type": "type2",
-             "distance_m": 0.5, "duration_s": 180,
+             "distance_m": 500.0, "duration_s": 180,
              "avg_pace": 360, "exercise_type": 4},
         ]
         act = {"label_id": "T_REST", "sport_type": 100, "laps": laps}
@@ -1119,25 +1119,25 @@ class TestVo2maxRaceLikeGate:
         laps = []
         # warmup (continuous, not "rest" by ex_type=1)
         laps.append({"lap_index": 0, "lap_type": "type2",
-                     "distance_m": 1.0, "duration_s": 360,
+                     "distance_m": 1000.0, "duration_s": 360,
                      "avg_pace": 360, "exercise_type": 1})
         # 4 work reps + 3 rest jogs in between
         for i in range(4):
             laps.append({"lap_index": i * 2 + 1, "lap_type": "type2",
-                         "distance_m": 3.0, "duration_s": 720,
+                         "distance_m": 3000.0, "duration_s": 720,
                          "avg_pace": 240, "exercise_type": 2})
             if i < 3:
                 laps.append({"lap_index": i * 2 + 2, "lap_type": "type2",
-                             "distance_m": 0.4, "duration_s": 180,
+                             "distance_m": 400.0, "duration_s": 180,
                              "avg_pace": 450, "exercise_type": 4})
         # cooldown
         laps.append({"lap_index": 99, "lap_type": "type2",
-                     "distance_m": 1.6, "duration_s": 480,
+                     "distance_m": 1600.0, "duration_s": 480,
                      "avg_pace": 300, "exercise_type": 3})
         act = {
             "label_id": "T_MIXED",
             "sport_type": 100,
-            "distance_m": 15.0,
+            "distance_m": 15000.0,
             "duration_s": 4500,
             "train_type": "Interval",
             "laps": laps,
@@ -1160,7 +1160,7 @@ class TestVo2maxRaceLikeGate:
         act = {
             "label_id": "T_5K_TT",
             "sport_type": 100,
-            "distance_m": 5.0,
+            "distance_m": 5000.0,
             "duration_s": 19 * 60 + 30,
             "train_type": "Threshold",
             "laps": [],  # no laps → no rep path, no rest segments
@@ -1275,10 +1275,10 @@ class TestEconomyDedupe:
         # of 185 should win. With both counted, median lands at ~177.5.
         laps = [
             {"lap_index": 1, "lap_type": "autoKm",
-             "distance_m": 1.0, "duration_s": 290, "avg_pace": 290,
+             "distance_m": 1000.0, "duration_s": 290, "avg_pace": 290,
              "avg_cadence": 170, "exercise_type": 2},
             {"lap_index": 1, "lap_type": "type2",
-             "distance_m": 3.0, "duration_s": 870, "avg_pace": 290,
+             "distance_m": 3000.0, "duration_s": 870, "avg_pace": 290,
              "avg_cadence": 185, "exercise_type": 2},
         ]
         act = {"label_id": "T_ECON", "sport_type": 100, "laps": laps}
@@ -1306,14 +1306,14 @@ class TestA1_4_IntervalEvidence:
         # estimate to improve. 3:20/km is physiologically realistic for a
         # sub-2:50 trainee (race pace ~4:00/km, intervals 30-40s/km faster).
         reps_laps = [
-            {"lap_type": "autoKm", "distance_m": 1.0, "duration_s": 200,
+            {"lap_type": "autoKm", "distance_m": 1000.0, "duration_s": 200,
              "avg_pace": 200, "avg_hr": 175, "max_hr": 180, "avg_cadence": 188,
              "exercise_type": 2}
             for _ in range(6)
         ]
         # Rest laps (exercise_type=4 = recovery) — excluded from rep pool.
         rest_laps = [
-            {"lap_type": "autoKm", "distance_m": 0.4, "duration_s": 120,
+            {"lap_type": "autoKm", "distance_m": 400.0, "duration_s": 120,
              "avg_pace": 300, "avg_hr": 140, "max_hr": 150, "avg_cadence": 170,
              "exercise_type": 4}
             for _ in range(5)
@@ -1364,7 +1364,7 @@ class TestA1_5_LongRunEvidence:
         for i in range(30):
             hr = 150 if i < 15 else 156
             long_laps.append({
-                "lap_type": "autoKm", "distance_m": 1.0, "duration_s": 270,
+                "lap_type": "autoKm", "distance_m": 1000.0, "duration_s": 270,
                 "avg_pace": 270, "avg_hr": hr, "max_hr": hr + 4,
                 "avg_cadence": 182, "exercise_type": None,
             })
@@ -1451,7 +1451,7 @@ class TestA1_6_MarathonVdotLinearity:
                 "avg_cadence": 185,
                 "train_type": "Interval",
                 "laps": [
-                    {"lap_type": "autoKm", "distance_m": 1.0, "duration_s": 210,
+                    {"lap_type": "autoKm", "distance_m": 1000.0, "duration_s": 210,
                      "avg_pace": 210, "avg_hr": 175, "max_hr": 180,
                      "avg_cadence": 188, "exercise_type": 2}
                     for _ in range(6)

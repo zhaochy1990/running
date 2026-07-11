@@ -590,7 +590,7 @@ def _as_activity_distance_meters(value: Any) -> float | None:
     distance = _float_or_none(value)
     if distance is None or distance <= 0:
         return None
-    return distance * 1000.0 if distance < 500 else distance
+    return distance
 
 
 def _normalize_elapsed_seconds(rows: Sequence[Any]) -> tuple[float | None, ...]:

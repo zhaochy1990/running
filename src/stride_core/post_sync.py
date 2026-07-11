@@ -209,14 +209,10 @@ class ActivityZonesHandler:
                 if not zone_set.pace_zones and not zone_set.heart_rate_zones:
                     continue
 
-                # activities.distance_m is stored in km; the sample loader's
-                # distance-scale heuristic expects meters (matters for Garmin,
-                # where the timeseries distance unit differs from COROS).
-                distance_km = row.get("distance_m")
                 running_samples = repo.fetch_activity_samples(
                     lid,
                     provider=row.get("provider"),
-                    activity_distance_m=distance_km * 1000 if distance_km else None,
+                    activity_distance_m=row.get("distance_m"),
                 )
                 if not running_samples:
                     continue

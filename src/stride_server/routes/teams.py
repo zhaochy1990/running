@@ -36,6 +36,7 @@ from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 from stride_core.db import USER_DATA_DIR
 from stride_storage.sqlite.database import Database
 from stride_core.models import RUN_SPORT_SQL_LIST, pace_str
+from stride_core.distance import meters_to_km_zero
 from stride_core.post_sync import run_post_sync_for_result
 from stride_core.registry import ProviderRegistry, UnknownProvider
 from stride_core.timefmt import (
@@ -292,7 +293,7 @@ def _read_member_activities(user_id: str, limit_per_user: int, days: int) -> lis
     for r in rows:
         d = dict(r)
         d["date"] = utc_iso_to_shanghai_iso(d.get("date"))
-        d["distance_km"] = round(d.get("distance_m") or 0, 2)
+        d["distance_km"] = meters_to_km_zero(d.get("distance_m"), digits=2)
         d["duration_fmt"] = format_duration(d.get("duration_s"))
         d["pace_fmt"] = pace_str(d.get("avg_pace_s_km")) or "—"
         # Decode pre-computed route thumbnail (NULL for indoor/strength).
@@ -572,10 +573,7 @@ def _sum_member_mileage(user_id: str, period_start_shanghai: str) -> tuple[float
     ``datetime(date, '+8 hours')`` on the stored value to compare apples to
     apples.
 
-    Note: the ``activities.distance_m`` column is misnamed — it stores
-    kilometers (see ``stride_core/models.py`` ``Activity.from_api`` which
-    divides the COROS raw value by 100_000). We sum it as-is and treat the
-    result as km, hence the ``total_km`` return value.
+    Activity distances are stored in metres and converted to kilometres here.
     """
     db_path = USER_DATA_DIR / user_id / "coros.db"
     if not db_path.exists():
@@ -587,7 +585,7 @@ def _sum_member_mileage(user_id: str, period_start_shanghai: str) -> tuple[float
         return 0.0, 0
     try:
         rows = db.query(
-            f"""SELECT COALESCE(SUM(distance_m), 0) AS total_km,
+            f"""SELECT COALESCE(SUM(distance_m), 0) / 1000.0 AS total_km,
                        COUNT(*) AS cnt
                 FROM activities
                 WHERE sport_type IN ({RUN_SPORT_SQL_LIST})

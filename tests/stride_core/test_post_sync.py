@@ -28,7 +28,7 @@ def _make_run(label_id: str, date_iso: str, *, training_load: float | None = 123
         sport_type=100,
         sport_name="Run",
         date=date_iso,
-        distance_m=5.0,
+        distance_m=5000.0,
         duration_s=1800.0,
         avg_pace_s_km=360.0,
         adjusted_pace=None,
@@ -296,9 +296,8 @@ def test_pb_candidates_drop_impossible_speed():
         def fetch_timeseries(self, _label_id):
             return []
 
-    # distance_m=1.0 → 1000 m (the <500 = km convention).
     glitch = {"label_id": "g", "date": "2026-05-01T08:00:00+00:00",
-              "distance_m": 1.0, "duration_s": 60.0}    # 16.7 m/s
+              "distance_m": 1000.0, "duration_s": 60.0}    # 16.7 m/s
     cands = best_effort_candidates_for_activity(
         _NoTimeseriesDb(), glitch, distances=PB_DISPLAY_DISTANCES
     )
@@ -306,7 +305,7 @@ def test_pb_candidates_drop_impossible_speed():
     assert "1K" not in {c.distance for c in cands}
 
     real = {"label_id": "r", "date": "2026-05-01T08:00:00+00:00",
-            "distance_m": 1.0, "duration_s": 300.0}     # 3.3 m/s
+            "distance_m": 1000.0, "duration_s": 300.0}     # 3.3 m/s
     cands2 = best_effort_candidates_for_activity(
         _NoTimeseriesDb(), real, distances=PB_DISPLAY_DISTANCES
     )

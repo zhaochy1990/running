@@ -7,11 +7,7 @@ already exposes the dataclasses, we just provide builder functions here
 rather than redefining the dataclasses.
 
 Unit conventions (Garmin vs our internal):
-- distance: meters       (Garmin) → kilometers (us) → m / 1000
-   ↑ The DB column is named ``distance_m`` for legacy reasons but actually
-     stores km — see ``stride_core/models.py`` ActivityDetail.from_api which
-     also lands in km. Display code (frontend, weeks routes, team mileage
-     leaderboard) treats this column as km. Garmin must match.
+- distance: meters       (Garmin) → meters     (us) ✅ no conversion
 - duration: seconds      (Garmin) → seconds    (us) ✅ no conversion
 - speed:    m/s          (Garmin) → s/km       (us) → 1000 / m_s
 - calories: kcal         (Garmin) → kcal       (us) ✅ no conversion
@@ -257,8 +253,7 @@ def activity_detail_from_garmin(
         sport_type=synthetic_sport_type(type_key),
         sport_name=type_key or "Unknown",
         date=_gmt_to_iso(a.get("startTimeGMT")),
-        # Garmin returns meters; column stores km (see module docstring).
-        distance_m=round(float(a.get("distance") or 0.0) / 1000, 2),
+        distance_m=round(float(a.get("distance") or 0.0), 2),
         duration_s=float(a.get("duration") or 0.0),
         avg_pace_s_km=_ms_to_pace_s_km(a.get("averageSpeed")),
         adjusted_pace=None,
@@ -309,8 +304,7 @@ def _build_laps_from_splits(splits: dict[str, Any]) -> list[Lap]:
         out.append(Lap(
             lap_index=int(lap.get("lapIndex", i)),
             lap_type="autoKm",   # Garmin auto-laps ~ 1km
-            # Garmin lap distance is meters; column stores km.
-            distance_m=round(float(lap.get("distance") or 0.0) / 1000, 2),
+            distance_m=round(float(lap.get("distance") or 0.0), 2),
             duration_s=float(lap.get("duration") or 0.0),
             avg_pace=_ms_to_pace_s_km(lap.get("averageSpeed")),
             adjusted_pace=_ms_to_pace_s_km(lap.get("avgGradeAdjustedSpeed")),
@@ -434,8 +428,7 @@ def daily_health_from_garmin(
         ati=float(ati) if ati is not None else None,
         cti=float(cti) if cti is not None else None,
         rhr=int(rhr) if rhr is not None else None,
-        # totalDistanceMeters → km (column is misnamed but stores km).
-        distance_m=(round(us["totalDistanceMeters"] / 1000, 2)
+        distance_m=(round(us["totalDistanceMeters"], 2)
                     if us.get("totalDistanceMeters") else None),
         duration_s=None,
         training_load_ratio=float(ratio) if ratio is not None else None,

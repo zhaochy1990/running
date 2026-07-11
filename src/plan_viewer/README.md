@@ -48,7 +48,7 @@ entry in place rather than duplicating it.
 - `file://` is fine for the picker/drop. If a browser blocks `file://` for a
   helper flow, serve the repo: `python -m http.server` then open
   `http://localhost:8000/src/plan_viewer/index.html`.
-- Handles the misnamed `activities.distance_m` convention (`<500` = km, else
-  meters) when computing weekly km + pace, matching the backend.
+- Treats all `*_distance_m` fields as literal meters and converts to km only
+  for display.
 - Generate the inputs with `scripts/gen_my_master_plan.py` (master plan) and
   `scripts/gen_my_season.py` (season bundle).

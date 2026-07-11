@@ -2399,8 +2399,7 @@ class TestPromptPerPhaseMilestones:
 # Real-DB regression tests for _query_history
 # Locks the already-applied fix for:
 #   1. sport_type filter uses RUN_SPORT_SQL_LIST (not the wrong literal "= 1")
-#   2. distance_m is km-valued for magnitude < 500, meters for >= 500 —
-#      normalised via CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END
+#   2. distance_m stores literal meters and is converted to km at query time
 # ---------------------------------------------------------------------------
 
 
@@ -2410,17 +2409,17 @@ class TestQueryHistoryRealDB:
 
         db = Database(db_path=tmp_path / "coros.db")
         c = db._conn
-        # Running: COROS sport_type 100, distance in km (21.1 km)
+        # Running: COROS sport_type 100, distance in meters (21.1 km)
         c.execute(
             "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
-            "VALUES ('a1', 100, '2026-05-01T08:00:00+00:00', 21.1, 5400)"
+            "VALUES ('a1', 100, '2026-05-01T08:00:00+00:00', 21100, 5400)"
         )
-        # Running: Garmin sport_type 8001, distance in km (10.0 km)
+        # Running: Garmin sport_type 8001, distance in meters (10.0 km)
         c.execute(
             "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
-            "VALUES ('a2', 8001, '2026-05-08T08:00:00+00:00', 10.0, 2550)"
+            "VALUES ('a2', 8001, '2026-05-08T08:00:00+00:00', 10000, 2550)"
         )
-        # Running: COROS sport_type 101, legacy meters row (15000 m → 15 km)
+        # Running: COROS sport_type 101, distance in meters (15 km)
         c.execute(
             "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
             "VALUES ('a3', 101, '2026-05-15T08:00:00+00:00', 15000, 4000)"
@@ -2441,7 +2440,7 @@ class TestQueryHistoryRealDB:
         assert result["total_activities"] == 3
 
     def test_distance_normalized_to_km(self, tmp_path, monkeypatch):
-        """Monthly km for 2026-05: 21.1 + 10.0 + 15000→15.0 = 46.1 km;
+        """Monthly km for 2026-05: 21.1 + 10.0 + 15.0 = 46.1 km;
         hours from duration_s: (5400 + 2550 + 4000) / 3600 = 3.32 h
         (strength row excluded)."""
         db = self._seed(tmp_path)
@@ -2490,7 +2489,7 @@ class TestWeeklyProfile:
         c.execute(
             "INSERT INTO activities (label_id, sport_type, date, distance_m, "
             "duration_s, avg_hr, train_kind, name) VALUES (?,?,?,?,?,?,?,?)",
-            (label, sport_type, date_iso, km, dur_s, avg_hr, train_kind, name),
+            (label, sport_type, date_iso, km * 1000.0, dur_s, avg_hr, train_kind, name),
         )
 
     def _profile(self, db, **kw):
@@ -2567,15 +2566,15 @@ class TestWeeklyProfile:
         assert w["dose"] == 50 + 60 + 80  # additive
 
     def test_n_long_and_pace_and_hr_weighting(self, tmp_path):
-        """n_long counts runs >= 20km (incl. legacy meters heuristic).
+        """n_long counts runs >= 20km.
         avg_pace = total_s/total_km; avg_hr is duration-weighted."""
         db = self._db(tmp_path)
         c = db._conn
         # Same week (Mon 2026-06-15). Run1: 21.1km/5400s, HR 140.
-        # Run2: legacy 15000m → 15km/4000s, HR 160. Run3: 5km/1500s, no HR.
+        # Run2: 15km/4000s, HR 160. Run3: 5km/1500s, no HR.
         self._add_run(c, "a1", "2026-06-15T08:00:00+00:00", km=21.1, dur_s=5400,
                       avg_hr=140)
-        self._add_run(c, "a2", "2026-06-16T08:00:00+00:00", km=15000, dur_s=4000,
+        self._add_run(c, "a2", "2026-06-16T08:00:00+00:00", km=15.0, dur_s=4000,
                       avg_hr=160)
         self._add_run(c, "a3", "2026-06-17T08:00:00+00:00", km=5.0, dur_s=1500)
         c.commit()

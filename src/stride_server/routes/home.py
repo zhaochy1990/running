@@ -18,6 +18,7 @@ from typing import Literal
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
+from stride_core.distance import meters_to_km
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
 from stride_core.registry import read_user_provider, user_has_config
 from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
@@ -210,7 +211,7 @@ def _build_recent_activities(db, days: int) -> list[RecentActivity]:
             date=utc_iso_to_shanghai_iso(r["date"]) or r["date"],
             name=r["name"],
             sport_type=r["sport_type"],
-            distance_km=round(distance_m, 2) if distance_m else None,
+            distance_km=meters_to_km(distance_m, digits=2),
             duration_sec=r["duration_s"],
             avg_pace_sec_per_km=r["avg_pace_s_km"],
             avg_hr=r["avg_hr"],
@@ -241,10 +242,10 @@ def _build_weekly_stats(db) -> WeeklyStats:
     for r in rows:
         d = r["distance_m"] or 0
         s = r["duration_s"] or 0
-        total_km += d
+        total_km += d / 1000.0
         total_sec += s
-        if d > long_km:
-            long_km = d
+        if d / 1000.0 > long_km:
+            long_km = d / 1000.0
         count += 1
     return WeeklyStats(
         week_start=week_start_iso,
@@ -257,7 +258,7 @@ def _build_weekly_stats(db) -> WeeklyStats:
 
 def _build_lifetime_stats(db) -> LifetimeStats:
     row = db.query(
-        "SELECT count(*) AS cnt, coalesce(sum(distance_m), 0) AS km FROM activities"
+        "SELECT count(*) AS cnt, coalesce(sum(distance_m), 0) / 1000.0 AS km FROM activities"
     )
     if not row:
         return LifetimeStats(total_distance_km=0.0, total_activities=0)

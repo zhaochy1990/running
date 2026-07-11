@@ -9,6 +9,7 @@ from typing import Literal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 
 from stride_core.models import EXERCISE_TYPES, pace_str
+from stride_core.distance import meters_to_km_zero
 from stride_core.post_sync import run_post_sync_for_labels
 from stride_core.source import DataSource
 from stride_core.timefmt import utc_iso_to_shanghai_iso
@@ -91,7 +92,7 @@ def list_activities(
         d.pop("shanghai_month", None)
         # UTC → Shanghai ISO at the API boundary; see stride_core/timefmt.py.
         d["date"] = utc_iso_to_shanghai_iso(d["date"])
-        d["distance_km"] = round(d["distance_m"], 2) if d["distance_m"] else 0
+        d["distance_km"] = meters_to_km_zero(d.get("distance_m"), digits=2)
         d["duration_fmt"] = format_duration(d["duration_s"])
         d["pace_fmt"] = pace_str(d["avg_pace_s_km"]) or "—"
         # Decode route_thumb JSON server-side so the client can drop the
@@ -131,7 +132,7 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     activity = dict(rows[0])
     # UTC → Shanghai ISO at the API boundary; see stride_core/timefmt.py.
     activity["date"] = utc_iso_to_shanghai_iso(activity["date"])
-    activity["distance_km"] = round(activity["distance_m"], 2) if activity["distance_m"] else 0
+    activity["distance_km"] = meters_to_km_zero(activity.get("distance_m"), digits=2)
     activity["duration_fmt"] = format_duration(activity["duration_s"])
     activity["pace_fmt"] = pace_str(activity["avg_pace_s_km"]) or "—"
     # `pauses` is stored as a JSON string (or NULL); decode for the client
@@ -168,7 +169,7 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     laps = []
     for lr in laps_rows:
         ld = dict(lr)
-        ld["distance_km"] = round(ld["distance_m"], 2) if ld["distance_m"] else 0
+        ld["distance_km"] = meters_to_km_zero(ld.get("distance_m"), digits=2)
         ld["duration_fmt"] = format_duration(ld["duration_s"])
         ld["pace_fmt"] = pace_str(ld["avg_pace"]) or "—"
         laps.append(ld)
@@ -184,7 +185,7 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     segments = []
     for sr in seg_rows:
         sd = dict(sr)
-        sd["distance_km"] = round(sd["distance_m"], 2) if sd["distance_m"] else 0
+        sd["distance_km"] = meters_to_km_zero(sd.get("distance_m"), digits=2)
         sd["duration_fmt"] = format_duration(sd["duration_s"])
         sd["pace_fmt"] = pace_str(sd["avg_pace"]) or "—"
         name_key = sd.get("exercise_name_key")

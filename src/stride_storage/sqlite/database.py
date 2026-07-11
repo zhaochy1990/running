@@ -1394,11 +1394,8 @@ class Database:
             )
             params.extend(["strength", "%strength%"])
         if min_distance_km is not None and min_distance_km > 0:
-            # The legacy column is named distance_m, but synced activity rows
-            # store kilometers here. The API's distance_km field preserves
-            # that contract.
             conditions.append("coalesce(distance_m, 0) >= ?")
-            params.append(min_distance_km)
+            params.append(min_distance_km * 1000.0)
         if date_from:
             conditions.append(f"{SHANGHAI_DAY_SQL} >= ?")
             params.append(date_from)
@@ -1459,7 +1456,7 @@ class Database:
         summary_rows = self._conn.execute(
             f"""SELECT {month_sql} AS month,
                       count(*) AS activity_count,
-                      coalesce(sum(CASE WHEN {run_sql} THEN coalesce(distance_m, 0) ELSE 0 END), 0) AS total_run_km,
+                      coalesce(sum(CASE WHEN {run_sql} THEN coalesce(distance_m, 0) ELSE 0 END), 0) / 1000.0 AS total_run_km,
                       coalesce(sum(coalesce(duration_s, 0)), 0) AS duration_s
                  FROM activities {summary_where}
                 GROUP BY month""",
@@ -1491,10 +1488,9 @@ class Database:
         run_sql, run_params = self._running_activity_sql()
         summaries: dict[int, dict] = {}
         for week_index, date_from, date_to in week_windows:
-            km_expr = "CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END"
             row = self._conn.execute(
                 f"""SELECT count(*) AS run_count,
-                          round(coalesce(sum({km_expr}), 0), 1) AS actual_distance_km,
+                          round(coalesce(sum(distance_m), 0) / 1000.0, 1) AS actual_distance_km,
                           round(coalesce(sum(duration_s), 0), 0) AS total_duration_s,
                           round(
                               sum(CASE WHEN avg_pace_s_km IS NOT NULL AND duration_s IS NOT NULL AND duration_s > 0

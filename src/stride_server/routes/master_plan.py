@@ -29,22 +29,22 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from stride_core.master_plan import MasterPlanStatus, _apply_review_diff
-from stride_core.timefmt import today_shanghai
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
 )
+from stride_core.timefmt import today_shanghai
 
 from ..bearer import require_bearer
 from ..content_store import read_json
+from ..deps import get_db
 from .. import job_runner
 from ..job_runner import JobStatus, JobStage, STAGE_LABEL_MAP
 from .. import llm_client as _llm_client_mod
 from ..llm_client import LLMClient, LLMError, LLMUnavailable
 from .. import master_plan_generator
 from ..master_plan_store import get_master_plan_store
-from ..deps import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -649,7 +649,7 @@ def confirm_master_plan(
 # ===========================================================================
 
 
-def _build_current_response(plan: Any, *, include_actuals: bool = True) -> dict[str, Any]:
+def _build_current_response(plan: Any, user_id: str | None = None) -> dict[str, Any]:
     """Build the enriched response dict for the current-plan endpoint."""
     today = today_shanghai()
 
@@ -688,6 +688,8 @@ def _build_current_response(plan: Any, *, include_actuals: bool = True) -> dict[
         except (ValueError, TypeError):
             pass
 
+    weeks = _build_week_response(plan, user_id=user_id, today=today)
+
     return {
         "plan_id": plan.plan_id,
         "user_id": plan.user_id,
@@ -698,7 +700,7 @@ def _build_current_response(plan: Any, *, include_actuals: bool = True) -> dict[
         "total_weeks": total_weeks,
         "phases": [p.model_dump() for p in plan.phases],
         "milestones": [m.model_dump() for m in plan.milestones],
-        "weeks": _build_week_response(plan, today=today, include_actuals=include_actuals),
+        "weeks": weeks,
         "training_principles": plan.training_principles,
         "generated_by": plan.generated_by,
         "version": plan.version,
@@ -710,7 +712,7 @@ def _build_current_response(plan: Any, *, include_actuals: bool = True) -> dict[
     }
 
 
-def _build_week_response(plan: Any, *, today: date_cls, include_actuals: bool) -> list[dict[str, Any]]:
+def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> list[dict[str, Any]]:
     weeks = list(getattr(plan, "weeks", []) or [])
     if not weeks:
         return []
@@ -722,31 +724,27 @@ def _build_week_response(plan: Any, *, today: date_cls, include_actuals: bool) -
         week_index = int(row.get("week_index") or 0)
         start = _parse_date(row.get("week_start"))
         end = start + timedelta(days=6) if start is not None else None
-        planned = _planned_weekly_km(row)
         row["week_end"] = end.isoformat() if end is not None else None
-        row["planned_distance_km"] = planned
+        row["planned_distance_km"] = _planned_weekly_km(row)
         row["is_completed"] = bool(end is not None and end < today)
-        row["actual_distance_km"] = None
         row["actual_avg_pace_s_km"] = None
         row["actual_avg_pace_fmt"] = ""
         row["actual_avg_hr"] = None
         row["actual_run_count"] = 0
         row["actual_duration_s"] = 0
-        if include_actuals and row["is_completed"] and week_index > 0 and start is not None and end is not None:
+        if row["is_completed"]:
+            row["actual_distance_km"] = 0.0
+        if user_id and row["is_completed"] and week_index > 0 and start is not None and end is not None:
             windows.append((week_index, start.isoformat(), end.isoformat()))
         rows.append(row)
 
     actuals: dict[int, dict] = {}
-    if include_actuals and windows:
+    if user_id and windows:
+        db = get_db(user_id)
         try:
-            db = get_db(plan.user_id)
-        except HTTPException:
-            db = None
-        if db is not None:
-            try:
-                actuals = db.get_running_week_summaries(windows)
-            finally:
-                db.close()
+            actuals = db.get_running_week_summaries(windows)
+        finally:
+            db.close()
 
     for row in rows:
         week_index = int(row.get("week_index") or 0)
@@ -791,7 +789,6 @@ def _format_pace(seconds: Any) -> str:
         return ""
     return f"{total // 60}:{total % 60:02d}"
 
-
 def _current_week_number(plan: Any, today: date_cls) -> int | None:
     """Return the current canonical week number, or None outside plan range."""
     weeks = list(getattr(plan, "weeks", []) or [])
@@ -830,7 +827,7 @@ def get_current_master_plan(
             detail="当前没有激活的训练总纲",
         )
 
-    return _build_current_response(plan)
+    return _build_current_response(plan, user_id)
 
 
 @router.get("/api/users/me/master-plan/draft")
@@ -852,7 +849,7 @@ def get_latest_draft_master_plan(
         )
 
     drafts.sort(key=lambda p: p.updated_at or p.created_at, reverse=True)
-    return _build_current_response(drafts[0])
+    return _build_current_response(drafts[0], user_id)
 
 
 @router.get("/api/users/me/master-plan/{plan_id}")
@@ -876,7 +873,7 @@ def get_master_plan_by_id(
             detail="Access denied: plan belongs to a different user",
         )
 
-    return _build_current_response(plan)
+    return _build_current_response(plan, user_id)
 
 
 # ===========================================================================
@@ -1285,7 +1282,7 @@ def get_version_snapshot(
     try:
         from stride_core.master_plan import MasterPlan as _MasterPlan
         snapshot_plan = _MasterPlan.model_validate_json(matched.snapshot_json)
-        return _build_current_response(snapshot_plan)
+        return _build_current_response(snapshot_plan, user_id)
     except Exception as exc:
         logger.error("get_version_snapshot: failed to parse snapshot_json: %s", exc)
         raise HTTPException(

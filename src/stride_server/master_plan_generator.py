@@ -1218,9 +1218,8 @@ def _monday_expr(date_expr: str) -> str:
     return f"date({date_expr}, '-' || ((strftime('%w', {date_expr}) + 6) % 7) || ' days')"
 
 
-# Per-run km from the misnamed ``distance_m`` column (stores km when < 500,
-# meters when >= 500) — the per-row form of ``_KM_EXPR``.
-_PER_RUN_KM = "CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END"
+# Per-run km from canonical metre storage.
+_PER_RUN_KM = "distance_m / 1000.0"
 
 # train_kind values that are unambiguously hard/speed work. ``base`` (= easy)
 # and ``aerobic`` are deliberately excluded. NULL train_kind falls through to
@@ -1444,12 +1443,9 @@ def _query_history(user_id: str, *, as_of: date_cls | None = None) -> dict[str, 
 
         as_of = as_of or today_shanghai()
 
-        # Monthly running km (last 36 months). NOTE: activities.distance_m is
-        # misnamed — it stores KILOMETERS (magnitude < 500), with legacy rows
-        # in meters (>= 500). Normalise per-row with the same heuristic as
-        # stride_core.ability._distance_to_km; a plain ``/1000`` would be
-        # ~1000x too small for the common km-valued rows.
-        _KM_EXPR = "SUM(CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END)"
+        # Monthly running km (last 36 months). Activity distances are stored in
+        # metres and converted to kilometres here.
+        _KM_EXPR = "SUM(distance_m) / 1000.0"
         _HR_EXPR = "SUM(COALESCE(duration_s, 0)) / 3600.0"
         # Bucket by Shanghai calendar (UTC+8), per the Timezone discipline HARD
         # rule: a run finishing 23:30 UTC on the 31st is 07:30 CST the next day

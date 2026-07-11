@@ -66,18 +66,18 @@ class TestDatabaseActivities:
         db.upsert_activity(_make_detail(
             "run1",
             date="2026-05-04T00:00:00+00:00",
-            distance=10.0,
+            distance=10_000.0,
         ))
         db.upsert_activity(_make_detail(
             "run2",
             date="2026-05-05T00:00:00+00:00",
-            distance=5.0,
+            distance=5_000.0,
         ))
         db.upsert_activity(_make_detail(
             "bike",
             sport_type=200,
             date="2026-05-05T00:00:00+00:00",
-            distance=80.0,
+            distance=80_000.0,
         ))
         db._conn.execute(
             "UPDATE activities SET duration_s = 6000, avg_pace_s_km = 360, avg_hr = 150 WHERE label_id = 'run1'"
