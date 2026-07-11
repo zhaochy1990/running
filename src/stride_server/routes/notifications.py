@@ -136,6 +136,15 @@ def get_read_state(claims: dict = Depends(require_bearer)):
     return {"read_ids": nstore.get_read_notification_ids(user_id)}
 
 
+@router.get("/api/users/me/notifications")
+def list_notifications(claims: dict = Depends(require_bearer)):
+    user_id = _caller_id(claims)
+    return {
+        "notifications": nstore.list_notifications(user_id),
+        "read_ids": nstore.get_read_notification_ids(user_id),
+    }
+
+
 @router.post("/api/users/me/notifications/{notification_id}/read")
 def mark_notification_read(
     notification_id: str,
