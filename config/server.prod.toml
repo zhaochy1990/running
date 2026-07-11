@@ -40,6 +40,13 @@ table_account_url = "https://authstorage2026.table.core.windows.net/"
 [storage.master_plan]
 table_account_url = "https://authstorage2026.table.core.windows.net/"
 
+[storage.jobs]
+queue_account_url = "https://authstorage2026.queue.core.windows.net/"
+queue_name = "stridejobs"
+poison_queue_name = "stridejobs-poison"
+table_account_url = "https://authstorage2026.table.core.windows.net/"
+jobs_table_name = "stridejobs"
+
 [coach_persistence]
 table_account_url = "https://authstorage2026.table.core.windows.net/"
 blob_account_url = "https://authstorage2026.blob.core.windows.net/"

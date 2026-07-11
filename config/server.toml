@@ -41,6 +41,21 @@ table_name = "stridelikes"
 table_account_url = ""
 table_name = "stridemasterplan"
 
+# Async-job infra (queue layer + state store). Empty URLs → dev in-memory
+# queue + file state store. Prod sets these to Azure Storage Queue + Table
+# in server.prod.toml. Consumed by the worker (`python -m stride_server.jobs`)
+# and the enqueue facade.
+[storage.jobs]
+queue_account_url = ""
+queue_name = "stridejobs"
+poison_queue_name = "stridejobs-poison"
+table_account_url = ""
+jobs_table_name = "stridejobs"
+file_backend_dir = "data/_jobs_dev"
+visibility_timeout_s = 300
+poison_max_attempts = 5
+stale_after_seconds = 600
+
 [coach_persistence]
 table_account_url = ""
 blob_account_url = ""

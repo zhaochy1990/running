@@ -29,6 +29,7 @@ env:
   GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/stride
   APP_NAME: stride-app
   RESOURCE_GROUP: rg-running-prod
+  WORKER_NAME: stride-job-worker
 
 jobs:
   deploy:
@@ -157,6 +158,21 @@ jobs:
             --name stride-plan-reminder \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }}
+
+      - name: Deploy async-job worker
+        # Same image as stride-app, different command: runs the queue-consumer
+        # worker (`python -m stride_server.jobs`) instead of uvicorn. Separate
+        # Container App (ingress disabled, min=max=1) so long-running jobs never
+        # contend with the API's CPU/memory. continue-on-error so a first deploy
+        # before the worker app exists doesn't block the main app deploy.
+        continue-on-error: true
+        run: |
+          az containerapp update \
+            --name ${{ env.WORKER_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
+            --command "python" "-m" "stride_server.jobs" \
+            --set-env-vars STRIDE_CONFIG_ENV=prod
 
       - name: Health check (new revision must reach Running + serve /api/health)
         # Hitting /api/health alone is not enough: in single-revision mode
