@@ -9,7 +9,21 @@ from __future__ import annotations
 
 import logging
 
-logging.basicConfig(level=logging.INFO)
+
+def _configure_logging() -> None:
+    """INFO for our code, WARNING for chatty Azure SDK HTTP logging.
+
+    The azure-* SDKs log every request/response (URL + all headers) at INFO via
+    ``azure.core.pipeline.policies.http_logging_policy``. On a worker that polls
+    the queue every couple seconds that floods the logs and buries our own
+    startup / job lines, so we raise those loggers to WARNING.
+    """
+    logging.basicConfig(level=logging.INFO)
+    for noisy in ("azure", "azure.core.pipeline.policies.http_logging_policy", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
+_configure_logging()
 logger = logging.getLogger("stride_server.jobs")
 
 
