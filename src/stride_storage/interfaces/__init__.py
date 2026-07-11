@@ -14,10 +14,18 @@ from stride_storage.interfaces.config import (
     MasterPlanStorageConfig,
     NotificationConfig,
     NotificationStorageConfig,
+    QueueStorageConfig,
     StorageConfig,
     validate_optional_url,
     validate_positive,
     validate_required_when,
+)
+from stride_storage.interfaces.jobs import (
+    JobQueue,
+    JobRecord,
+    JobStatus,
+    JobStore,
+    QueueMessage,
 )
 from stride_storage.interfaces.likes import LikeEntity, LikesBackend
 
@@ -26,6 +34,10 @@ __all__ = [
     "CoachPersistenceConfig",
     "ConfigError",
     "ContentStorageConfig",
+    "JobQueue",
+    "JobRecord",
+    "JobStatus",
+    "JobStore",
     "JPushConfig",
     "LikeEntity",
     "LikesBackend",
@@ -33,6 +45,8 @@ __all__ = [
     "MasterPlanStorageConfig",
     "NotificationConfig",
     "NotificationStorageConfig",
+    "QueueMessage",
+    "QueueStorageConfig",
     "StorageConfig",
     "validate_optional_url",
     "validate_positive",

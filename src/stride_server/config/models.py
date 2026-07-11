@@ -16,6 +16,7 @@ from stride_storage.interfaces.config import (  # noqa: F401  (re-export)
     MasterPlanStorageConfig,
     NotificationConfig,
     NotificationStorageConfig,
+    QueueStorageConfig,
     StorageConfig,
     validate_optional_url,
     validate_positive,
@@ -128,6 +129,8 @@ class ServerConfig:
         validate_optional_url("storage.content.account_url", self.storage.content.account_url)
         validate_optional_url("storage.likes.table_account_url", self.storage.likes.table_account_url)
         validate_optional_url("storage.master_plan.table_account_url", self.storage.master_plan.table_account_url)
+        validate_optional_url("storage.jobs.queue_account_url", self.storage.jobs.queue_account_url)
+        validate_optional_url("storage.jobs.table_account_url", self.storage.jobs.table_account_url)
         validate_optional_url("coach_persistence.table_account_url", self.coach_persistence.table_account_url)
         validate_optional_url("coach_persistence.blob_account_url", self.coach_persistence.blob_account_url)
         validate_optional_url("notifications.table_account_url", self.notifications.table_account_url)
