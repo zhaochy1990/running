@@ -65,6 +65,14 @@ def pace_str(s_per_km: float | None) -> str | None:
     return f"{m}:{s:02d}/km"
 
 
+def _coros_distance_cm_to_meters(value: object) -> float:
+    """COROS detail/lap distances are centimetres; store literal metres."""
+    try:
+        return float(value or 0) / 100.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @dataclass
 class Activity:
     """Activity summary from /activity/query list endpoint."""
@@ -84,13 +92,16 @@ class Activity:
 
     @classmethod
     def from_api(cls, data: dict) -> Activity:
+        distance = data.get("distance", 0)
         return cls(
             label_id=data["labelId"],
             name=data.get("name"),
             sport_type=data.get("sportType", 0),
             sport_name=sport_name(data.get("sportType", 0)),
             date=str(data.get("date", "")),
-            distance_m=data.get("distance", 0),
+            # The list endpoint reports metres in observed payloads. Details
+            # use a different COROS unit and are normalized below.
+            distance_m=float(distance or 0),
             duration_s=data.get("totalTime", 0),
             avg_pace_s_km=data.get("avgSpeed"),
             avg_hr=data.get("avgHr"),
@@ -132,7 +143,7 @@ class Lap:
         return cls(
             lap_index=index,
             lap_type=lap_type,
-            distance_m=round((data.get("distance", 0)) / 100_000, 2),
+            distance_m=round(_coros_distance_cm_to_meters(data.get("distance")), 2),
             duration_s=round((data.get("time", 0)) / 100, 2),
             avg_pace=data.get("avgPace"),
             adjusted_pace=data.get("adjustedPace"),
@@ -335,7 +346,7 @@ class ActivityDetail:
             sport_type=st,
             sport_name=sport_name(st),
             date=date,
-            distance_m=round((s.get("distance", 0)) / 100_000, 2),
+            distance_m=round(_coros_distance_cm_to_meters(s.get("distance")), 2),
             duration_s=round((s.get("totalTime", 0)) / 100, 2),
             avg_pace_s_km=s.get("avgSpeed"),
             adjusted_pace=s.get("adjustedPace"),

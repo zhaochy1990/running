@@ -255,7 +255,7 @@ def get_weekly_volume_trend(db: Database, weeks: int = 4) -> list[dict[str, Any]
     rows = db.query(
         f"""SELECT
                 strftime('%Y-W%W', datetime(date, '+8 hours')) AS week,
-                ROUND(SUM(distance_m), 1) AS km,
+                ROUND(SUM(distance_m) / 1000.0, 1) AS km,
                 COUNT(*) AS runs,
                 ROUND(AVG(avg_hr), 0) AS avg_hr
             FROM activities
@@ -447,7 +447,7 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
     act.append(f"- 名称：{activity.get('name') or '(无)'}")
     act.append(f"- 运动类型：{sport_name(activity.get('sport_type', 0))}")
     if activity.get("distance_m"):
-        act.append(f"- 距离：{activity['distance_m']:.2f} km")
+        act.append(f"- 距离：{activity['distance_m'] / 1000.0:.2f} km")
     if activity.get("duration_s"):
         mins = int(activity["duration_s"]) // 60
         secs = int(activity["duration_s"]) % 60
@@ -490,7 +490,7 @@ def build_prompt(user: str, label_id: str, db: Database) -> list[dict[str, Any]]
         act.append("## 训练分段（type2 laps，非 autoKm）")
         for l in training_laps:
             act.append(
-                f"- #{l['lap_index']}：{l.get('distance_m', 0):.2f} km，"
+                f"- #{l['lap_index']}：{(l.get('distance_m', 0) or 0) / 1000.0:.2f} km，"
                 f"{_fmt_pace(l.get('avg_pace'))}，HR {l.get('avg_hr', '—')}/{l.get('max_hr', '—')}"
             )
 

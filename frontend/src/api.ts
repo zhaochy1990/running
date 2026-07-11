@@ -550,6 +550,26 @@ export interface MasterPlanPhase {
   summary?: CompletedPhaseSummary | null
 }
 
+export interface MasterPlanKeySession {
+  type: string
+  distance_km: number | null
+  duration_min: number | null
+  intensity?: string | null
+  purpose?: string | null
+}
+
+export interface MasterPlanWeek {
+  week_index: number
+  week_start: string
+  phase_id: string
+  target_weekly_km_low: number
+  target_weekly_km_high: number
+  actual_distance_km?: number | null
+  key_sessions: MasterPlanKeySession[]
+  is_recovery_week?: boolean
+  is_taper_week?: boolean
+}
+
 export interface MasterPlanNextMilestone {
   id: string
   date: string
@@ -574,6 +594,8 @@ export interface MasterPlan {
   end_date: string
   phases: MasterPlanPhase[]
   milestones: MasterPlanMilestone[]
+  weeks?: MasterPlanWeek[]
+  weekly_key_sessions?: MasterPlanWeek[]
   training_principles: string[]
   generated_by: string
   version: number

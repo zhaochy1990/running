@@ -24,7 +24,7 @@ def _add_activity(
     *,
     label_id: str,
     date: str,            # UTC ISO 8601
-    distance_m: float,    # NOTE: column stores KILOMETERS
+    distance_m: float,
     duration_s: int,
     sport_type: int = 100,
     avg_pace_s_km: float | None = None,
@@ -53,11 +53,11 @@ def _add_zone(db, *, label_id: str, zone_index: int, duration_s: int, zone_type:
 def test_total_km_excludes_strength(tmp_path):
     db = _db(tmp_path)
     _add_activity(db, label_id="r1", date="2026-05-05T08:00:00+00:00",
-                  distance_m=10.0, duration_s=3000, sport_type=100)
+                  distance_m=10000.0, duration_s=3000, sport_type=100)
     _add_activity(db, label_id="r2", date="2026-05-06T08:00:00+00:00",
-                  distance_m=5.0, duration_s=1800, sport_type=101)  # indoor run
+                  distance_m=5000.0, duration_s=1800, sport_type=101)  # indoor run
     _add_activity(db, label_id="r3", date="2026-05-07T08:00:00+00:00",
-                  distance_m=8.0, duration_s=2400, sport_type=103)  # track run
+                  distance_m=8000.0, duration_s=2400, sport_type=103)  # track run
     # Strength training — distance 0, must be excluded from km + count.
     _add_activity(db, label_id="s1", date="2026-05-08T08:00:00+00:00",
                   distance_m=0.0, duration_s=2700, sport_type=402)
@@ -79,9 +79,9 @@ def test_duration_weighted_pace_and_hr(tmp_path):
     # Weighted pace = (300*3600 + 360*1200) / 4800 = (1080000+432000)/4800 = 315
     # Weighted hr   = (140*3600 + 160*1200) / 4800 = (504000+192000)/4800 = 145
     _add_activity(db, label_id="A", date="2026-05-05T08:00:00+00:00",
-                  distance_m=12.0, duration_s=3600, avg_pace_s_km=300, avg_hr=140)
+                  distance_m=12000.0, duration_s=3600, avg_pace_s_km=300, avg_hr=140)
     _add_activity(db, label_id="B", date="2026-05-06T08:00:00+00:00",
-                  distance_m=4.0, duration_s=1200, avg_pace_s_km=360, avg_hr=160)
+                  distance_m=4000.0, duration_s=1200, avg_pace_s_km=360, avg_hr=160)
     db._conn.commit()
 
     s = aggregate_phase_summary(db, "2026-05-04", "2026-05-31")
@@ -94,7 +94,7 @@ def test_pace_and_hr_none_when_absent(tmp_path):
     db = _db(tmp_path)
     # Run with no pace / no hr — weighted means must be None, not 0.
     _add_activity(db, label_id="A", date="2026-05-05T08:00:00+00:00",
-                  distance_m=10.0, duration_s=3000, avg_pace_s_km=None, avg_hr=None)
+                  distance_m=10000.0, duration_s=3000, avg_pace_s_km=None, avg_hr=None)
     db._conn.commit()
 
     s = aggregate_phase_summary(db, "2026-05-04", "2026-05-31")
@@ -112,7 +112,7 @@ def test_pace_and_hr_none_when_absent(tmp_path):
 def test_hr_zone_distribution_percent(tmp_path):
     db = _db(tmp_path)
     _add_activity(db, label_id="A", date="2026-05-05T08:00:00+00:00",
-                  distance_m=12.0, duration_s=3600, avg_hr=145)
+                  distance_m=12000.0, duration_s=3600, avg_hr=145)
     # Z1=600s, Z2=2400s, Z3=1000s  => total 4000s
     _add_zone(db, label_id="A", zone_index=1, duration_s=600)
     _add_zone(db, label_id="A", zone_index=2, duration_s=2400)
@@ -141,7 +141,7 @@ def test_empty_window(tmp_path):
     db = _db(tmp_path)
     # An activity OUTSIDE the queried window.
     _add_activity(db, label_id="A", date="2026-01-05T08:00:00+00:00",
-                  distance_m=10.0, duration_s=3000, avg_hr=145)
+                  distance_m=10000.0, duration_s=3000, avg_hr=145)
     db._conn.commit()
 
     s = aggregate_phase_summary(db, "2026-05-04", "2026-05-31")
@@ -165,11 +165,11 @@ def test_shanghai_day_windowing(tmp_path):
     # that starts 2026-05-04. A naive UTC `date >= '2026-05-04'` compare would
     # wrongly exclude it.
     _add_activity(db, label_id="edge_in", date="2026-05-03T18:00:00+00:00",
-                  distance_m=7.0, duration_s=2000, avg_hr=140)
+                  distance_m=7000.0, duration_s=2000, avg_hr=140)
     # 2026-05-31T17:00:00Z == 2026-06-01T01:00 Shanghai → OUTSIDE a window
     # that ends 2026-05-31. Naive UTC compare would wrongly include it.
     _add_activity(db, label_id="edge_out", date="2026-05-31T17:00:00+00:00",
-                  distance_m=99.0, duration_s=2000, avg_hr=140)
+                  distance_m=99000.0, duration_s=2000, avg_hr=140)
     db._conn.commit()
 
     s = aggregate_phase_summary(db, "2026-05-04", "2026-05-31")
@@ -181,7 +181,7 @@ def test_weekly_avg_uses_phase_weeks(tmp_path):
     db = _db(tmp_path)
     # 56 days = exactly 8 weeks; 400 km / 8 = 50.0
     _add_activity(db, label_id="A", date="2026-05-10T08:00:00+00:00",
-                  distance_m=400.0, duration_s=3000, avg_hr=145)
+                  distance_m=400000.0, duration_s=3000, avg_hr=145)
     db._conn.commit()
 
     s = aggregate_phase_summary(db, "2026-05-04", "2026-06-28")

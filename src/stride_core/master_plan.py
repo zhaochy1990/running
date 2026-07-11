@@ -102,7 +102,7 @@ class CompletedPhaseSummary(BaseModel):
 
     Computed once at master-plan generation time over the phase's
     Shanghai-day window (NOT recomputed on read) and cached on ``Phase.summary``.
-    Distance is kilometers (``activities.distance_m`` already stores km).
+    Distances are reported in kilometres; activity storage remains metres.
     Pace / HR are duration-weighted across runs; ``None`` when no run carried
     that metric. HR distribution is empty when no zone data exists.
     """

@@ -52,7 +52,7 @@ def test_volume_trend_and_aerobic_weeks(tmp_path):
     base = ["2026-04-27", "2026-05-04", "2026-05-11", "2026-05-18", "2026-05-25", "2026-06-01"]
     for i, d in enumerate(base):
         c.execute("INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
-                  "VALUES (?, 100, ?, ?, 3600)", (f"r{i}", d + "T08:00:00+00:00", 38.0 + i))
+                  "VALUES (?, 100, ?, ?, 3600)", (f"r{i}", d + "T08:00:00+00:00", (38.0 + i) * 1000.0))
     c.commit()
     sig = analyze_continuity(db, goal={"race_date": "2026-10-18"}, profile=None, as_of=date(2026, 6, 7))
     assert sig.recent_aerobic_weeks >= 5
@@ -67,7 +67,7 @@ def test_recent_race_recovering(tmp_path):
     # A recent race 5 days before as_of → recovering (< 21 days).
     c.execute(
         "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s, train_kind) "
-        "VALUES ('race1', 100, '2026-06-05T08:00:00+00:00', 42.2, 14400, 'race')"
+        "VALUES ('race1', 100, '2026-06-05T08:00:00+00:00', 42200.0, 14400, 'race')"
     )
     c.commit()
     sig = analyze_continuity(db, goal={"race_date": "2026-10-18"}, profile=None, as_of=date(2026, 6, 10))

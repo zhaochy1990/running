@@ -9,7 +9,7 @@ from stride_core.models import RUN_SPORT_SQL_LIST
 
 logger = logging.getLogger(__name__)
 
-_KM_EXPR = "CASE WHEN distance_m < 500 THEN distance_m ELSE distance_m / 1000.0 END"
+_KM_EXPR = "distance_m / 1000.0"
 
 
 def _macro_cycle(race_date: str | None) -> str:

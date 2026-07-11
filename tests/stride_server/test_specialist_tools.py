@@ -191,11 +191,10 @@ def _insert_activity(db: Database, label_id: str, *, sport_type: int, date_iso: 
 
 
 def test_recent_training_aggregates_running_rows(db: Database):
-    # Two runs in the same Shanghai week, one km-stored (<500) one legacy meters.
-    _insert_activity(db, "r1", sport_type=100, date_iso="2026-05-26T01:00:00Z", distance_m=10.0)  # 10 km
-    _insert_activity(db, "r2", sport_type=8001, date_iso="2026-05-27T01:00:00Z", distance_m=15000.0)  # 15 km legacy
+    _insert_activity(db, "r1", sport_type=100, date_iso="2026-05-26T01:00:00Z", distance_m=10000.0)
+    _insert_activity(db, "r2", sport_type=8001, date_iso="2026-05-27T01:00:00Z", distance_m=15000.0)
     # A cycling row that must be excluded
-    _insert_activity(db, "c1", sport_type=200, date_iso="2026-05-28T01:00:00Z", distance_m=40.0)
+    _insert_activity(db, "c1", sport_type=200, date_iso="2026-05-28T01:00:00Z", distance_m=40000.0)
 
     summary = recent_training(db, weeks=4, as_of=date(2026, 6, 1))
     total_km = sum(w["total_km"] for w in summary)
@@ -254,7 +253,7 @@ def test_strength_library_tool_defaults_injuries_from_bound_context():
 
 
 def test_recent_training_tool_opens_db_and_wraps(db: Database, monkeypatch):
-    _insert_activity(db, "r1", sport_type=100, date_iso="2026-05-26T01:00:00Z", distance_m=10.0)
+    _insert_activity(db, "r1", sport_type=100, date_iso="2026-05-26T01:00:00Z", distance_m=10000.0)
     import stride_storage.sqlite.database as db_mod
 
     monkeypatch.setattr(db_mod, "Database", lambda **kw: db)

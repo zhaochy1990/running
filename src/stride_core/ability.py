@@ -136,33 +136,17 @@ def _is_garmin_sport(sport_type: Any) -> bool:
 
 
 def _distance_to_meters(dist: float, sport_type: Any) -> float:
-    """Normalize a stored distance value to meters.
-
-    The DB column ``activities.distance_m`` is misnamed — by current
-    convention both COROS (always) and Garmin (since ``d72d69f``) store
-    **kilometers**, not meters. The magnitude heuristic (``< 500`` → assume
-    km, otherwise meters) handles both:
-
-      - new km value (e.g. 21.12) → 21120 m
-      - legacy meters value (e.g. 21100) → 21100 m (unchanged)
-
-    Pre-``d72d69f`` Garmin rows that still hold meters in a local DB will
-    fall through the ``>= 500`` branch correctly. ``sport_type`` is kept
-    in the signature for backwards compatibility with existing callers
-    but is no longer consulted.
-    """
+    """Return the canonical stored distance in metres."""
     if not dist or dist <= 0:
         return 0.0
-    return float(dist) * 1000.0 if dist < 500 else float(dist)
+    return float(dist)
 
 
 def _distance_to_km(dist: float, sport_type: Any) -> float:
-    """Inverse of :func:`_distance_to_meters` — see that docstring for the
-    unit convention and rationale.
-    """
+    """Return the canonical stored distance in kilometres."""
     if not dist or dist <= 0:
         return 0.0
-    return float(dist) / 1000.0 if dist > 500 else float(dist)
+    return float(dist) / 1000.0
 
 
 # ---------------------------------------------------------------------------

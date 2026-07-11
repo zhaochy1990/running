@@ -141,7 +141,7 @@ def test_fetch_samples_normalizes_provider_distance_units(db):
         _make_activity(
             "coros_run",
             "2026-05-01T00:00:00+00:00",
-            distance_m=14.4,
+            distance_m=14400,
             samples=_timeseries(speed_mps=4.0, distance_scale=100.0),
         ),
         provider="coros",
@@ -151,7 +151,7 @@ def test_fetch_samples_normalizes_provider_distance_units(db):
             "garmin_run",
             "2026-05-01T00:00:00+00:00",
             sport_type=8001,
-            distance_m=14.4,
+            distance_m=14400,
             samples=_timeseries(speed_mps=4.0),
         ),
         provider="garmin",
@@ -164,13 +164,13 @@ def test_fetch_samples_normalizes_provider_distance_units(db):
     assert garmin_samples[-1].distance_m == 14400.0
 
 
-def test_recompute_normalizes_activity_distance_stored_as_kilometers(db):
+def test_recompute_uses_activity_distance_stored_as_meters(db):
     db.upsert_daily_health(DailyHealth("2026-05-01", None, None, 50, None, None, None, None, None))
     db.upsert_activity(
         _make_activity(
             "km_run",
             "2026-05-01T00:00:00+00:00",
-            distance_m=14.4,
+            distance_m=14400,
             avg_power=None,
             samples=_timeseries(hr=170, speed_mps=4.0, distance_scale=100.0),
         ),

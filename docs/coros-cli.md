@@ -70,7 +70,7 @@ pytest -k test_pace_str   # 按名字筛选
 ### Data Models (`models.py`)
 
 - Dataclasses + `from_api()` classmethod 是**唯一单位转换边界** —— 所有 API→内部单位映射只在这里
-- COROS API 单位怪点：distance cm*1000（除 100000 得米），time centiseconds（除 100 得秒），calories cal*1000
+- COROS API 单位怪点：activity list summary 的 `distance` 已观察为米；detail/lap 的 `summary.distance` / `lap.distance` 已观察为厘米（除 100 得米）；frequencyList 的累计 `distance` 仍按 provider 原始采样处理，消费端用活动总距离校准；time centiseconds（除 100 得秒），calories cal*1000
 - `Activity`（列表 summary） vs `ActivityDetail`（完整含 laps/zones/timeseries）来自不同端点
 
 ### Database (`db.py`)

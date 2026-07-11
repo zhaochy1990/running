@@ -117,9 +117,7 @@ def _as_activity_distance_meters(value: Any) -> float | None:
         return None
     if distance <= 0:
         return None
-    # activities.distance_m is a legacy name. Current COROS/Garmin sync stores
-    # activity distances in kilometers; older/local tests may still use meters.
-    return distance * 1000.0 if distance < 500 else distance
+    return distance
 
 
 def _row_value(row: Any, key: str) -> Any:

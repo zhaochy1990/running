@@ -17,7 +17,7 @@ def _activity(
     date_iso: str = "2026-05-01T00:00:00+00:00",
     *,
     duration_s: int = 3600,
-    distance_m: float = 14.4,
+    distance_m: float = 14400,
     avg_hr: int = 168,
     max_hr: int = 184,
 ) -> ActivityDetail:
@@ -27,8 +27,6 @@ def _activity(
         sport_type=100,
         sport_name="Run",
         date=date_iso,
-        # Exercise connector normalization for legacy rows that store km in a
-        # column named distance_m.
         distance_m=distance_m,
         duration_s=duration_s,
         avg_pace_s_km=250.0,
