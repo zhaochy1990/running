@@ -624,6 +624,8 @@ def _distance_scale_for_timeseries(
         return 1.0
     max_distance = max(distances)
     if activity_distance_m and activity_distance_m > 0:
+        # Current DBs store timeseries distance in metres; this ratio keeps
+        # older COROS centimetre rows readable during/after migration.
         if max_distance / activity_distance_m > 20.0:
             return 0.01
         return 1.0

@@ -85,6 +85,15 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _near_ratio(value: float | None, target: float, *, source_distance: float) -> bool:
+    if value is None or value <= 0 or target <= 0:
+        return False
+    ratio = value / target
+    if source_distance < 1.0:
+        return 0.5 <= ratio <= 2.0
+    return 0.8 <= ratio <= 1.25
+
+
 def _looks_like_legacy_km(
     row: sqlite3.Row | dict[str, Any],
     *,
@@ -221,10 +230,60 @@ def _activity_candidates(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         """,
         (_KM_UPPER_BOUND,),
     ).fetchall()
-    return [
-        dict(row) for row in rows
-        if _looks_like_legacy_km(row, pace_key="avg_pace_s_km")
-    ]
+    return [dict(row) for row in rows if _activity_row_needs_meter_migration(conn, row)]
+
+
+def _activity_row_needs_meter_migration(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    distance = _to_float(row["distance_m"])
+    label_id = row["label_id"] if "label_id" in row.keys() else None
+    if distance is None or distance <= 0 or distance >= _KM_UPPER_BOUND:
+        return False
+    if not label_id:
+        return _looks_like_legacy_km(row, pace_key="avg_pace_s_km")
+
+    # Legacy COROS timeseries may still be centimetres. Compare the
+    # cumulative max against both legacy shapes so this remains correct whether
+    # the auxiliary timeseries migration has already run or not.
+    # Same-scale checks come first to keep the script idempotent for short reps
+    # and heavily paused activities.
+    ts_cols = _columns(conn, "timeseries")
+    if {"label_id", "distance"}.issubset(ts_cols):
+        ts_row = conn.execute(
+            "SELECT MAX(distance) AS max_distance FROM timeseries WHERE label_id = ?",
+            (label_id,),
+        ).fetchone()
+        ts_max = _to_float(ts_row["max_distance"] if ts_row else None)
+        if ts_max:
+            if (
+                _near_ratio(ts_max, distance, source_distance=distance)
+                or _near_ratio(ts_max, distance * 100.0, source_distance=distance)
+            ):
+                return False
+            if (
+                _near_ratio(ts_max, distance * 100000.0, source_distance=distance)
+                or _near_ratio(ts_max, distance * 1000.0, source_distance=distance)
+            ):
+                return True
+
+    # Some prod rows already had lap distances migrated to metres while the
+    # activity summary remained in kilometres. If laps add up near distance*1000,
+    # the activity row is still legacy km even when pace is absent/misleading.
+    # Conversely, if laps already add up near distance, the activity row is
+    # already metres and must not be multiplied again even if duration includes
+    # long paused time that makes the pace heuristic look km-like.
+    lap_cols = _columns(conn, "laps")
+    if {"label_id", "distance_m"}.issubset(lap_cols):
+        lap_row = conn.execute(
+            "SELECT SUM(distance_m) AS total FROM laps WHERE label_id = ? AND distance_m > 0",
+            (label_id,),
+        ).fetchone()
+        lap_total = _to_float(lap_row["total"] if lap_row else None)
+        if _near_ratio(lap_total, distance * 1000.0, source_distance=distance):
+            return True
+        if _near_ratio(lap_total, distance, source_distance=distance):
+            return False
+
+    return _looks_like_legacy_km(row, pace_key="avg_pace_s_km")
 
 
 def _activity_summary(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -289,8 +348,60 @@ def _lap_candidates(conn: sqlite3.Connection) -> list[dict[str, Any]]:
     ).fetchall()
     return [
         dict(row) for row in rows
-        if _looks_like_legacy_km(row, pace_key="avg_pace")
+        if _lap_row_needs_meter_migration(conn, row)
     ]
+
+
+def _lap_row_needs_meter_migration(conn: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    if _looks_like_legacy_km(row, pace_key="avg_pace"):
+        return True
+    distance = _to_float(row["distance_m"])
+    label_id = row["label_id"] if "label_id" in row.keys() else None
+    if distance is None or distance <= 0 or distance >= _KM_UPPER_BOUND or not label_id:
+        return False
+
+    ts_cols = _columns(conn, "timeseries")
+    if {"label_id", "distance"}.issubset(ts_cols):
+        ts_row = conn.execute(
+            "SELECT COUNT(*) AS samples, MAX(distance) AS max_distance FROM timeseries WHERE label_id = ?",
+            (label_id,),
+        ).fetchone()
+        ts_max = _to_float(ts_row["max_distance"] if ts_row else None)
+        lap_count_row = conn.execute(
+            "SELECT COUNT(*) AS n FROM laps WHERE label_id = ? AND distance_m > 0",
+            (label_id,),
+        ).fetchone()
+        lap_count = int(lap_count_row["n"] or 0) if lap_count_row else 0
+        if ts_max and lap_count == 1:
+            if (
+                _near_ratio(ts_max, distance, source_distance=distance)
+                or _near_ratio(ts_max, distance * 100.0, source_distance=distance)
+            ):
+                return False
+            if (
+                _near_ratio(ts_max, distance * 100000.0, source_distance=distance)
+                or _near_ratio(ts_max, distance * 1000.0, source_distance=distance)
+            ):
+                return True
+
+    activity_cols = _columns(conn, "activities")
+    if {"label_id", "distance_m"}.issubset(activity_cols):
+        activity_row = conn.execute(
+            "SELECT distance_m FROM activities WHERE label_id = ?",
+            (label_id,),
+        ).fetchone()
+        activity_distance = _to_float(activity_row["distance_m"] if activity_row else None)
+        lap_total_row = conn.execute(
+            "SELECT SUM(distance_m) AS total FROM laps WHERE label_id = ? AND distance_m > 0",
+            (label_id,),
+        ).fetchone()
+        lap_total = _to_float(lap_total_row["total"] if lap_total_row else None)
+        if activity_distance and _near_ratio(lap_total * 1000.0 if lap_total else None, activity_distance, source_distance=distance):
+            return True
+        if activity_distance and _near_ratio(lap_total, activity_distance, source_distance=distance):
+            return False
+
+    return False
 
 
 def _lap_summary(conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -317,18 +428,20 @@ def _lap_summary(conn: sqlite3.Connection) -> list[dict[str, Any]]:
 
 
 def _migrate(conn: sqlite3.Connection) -> dict[str, int | str]:
-    if _get_meta(conn, _MIGRATION_FLAG):
-        activity_candidates, lap_candidates = _candidate_counts(conn)
-        return {
-            "status": "already_migrated",
-            "activity_candidates_remaining": activity_candidates,
-            "lap_candidates_remaining": lap_candidates,
-            "activities_updated": 0,
-            "laps_updated": 0,
-        }
-
     activity_candidates = _activity_candidates(conn)
     lap_candidates = _lap_candidates(conn)
+    if _get_meta(conn, _MIGRATION_FLAG):
+        if not activity_candidates and not lap_candidates:
+            return {
+                "status": "already_migrated",
+                "activity_candidates_remaining": 0,
+                "lap_candidates_remaining": 0,
+                "activities_updated": 0,
+                "laps_updated": 0,
+            }
+        status = "migrated_remaining"
+    else:
+        status = "migrated"
     with conn:
         conn.executemany(
             "UPDATE activities SET distance_m = ? WHERE rowid = ? AND distance_m = ?",
@@ -346,7 +459,7 @@ def _migrate(conn: sqlite3.Connection) -> dict[str, int | str]:
         )
         _set_meta(conn, _MIGRATION_FLAG, "1")
     return {
-        "status": "migrated",
+        "status": status,
         "activities_updated": len(activity_candidates),
         "laps_updated": len(lap_candidates),
     }

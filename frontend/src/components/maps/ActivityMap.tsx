@@ -111,8 +111,8 @@ export default function ActivityMap({
         lat = g_lat
       }
       const elapsed = p.timestamp != null ? Math.round((p.timestamp - startTs) / 100) : 0
-      // distance from API is meters×100 (cm). Convert to km.
-      const distance_km = p.distance != null ? p.distance / 100_000 : 0
+      // API distance is canonical metres. Convert to km for labels/markers.
+      const distance_km = p.distance != null ? p.distance / 1000 : 0
       return {
         lng,
         lat,

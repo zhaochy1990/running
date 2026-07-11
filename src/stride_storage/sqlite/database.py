@@ -17,6 +17,30 @@ from stride_core.models import (
 from stride_core.timefmt import SHANGHAI_DAY_SQL
 
 
+_VO2MAX_PB_DISTANCE_METERS_FLAG = "distance_units_vo2max_pb_meters_v1"
+
+
+def _fetch_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    try:
+        row = conn.execute("SELECT value FROM sync_meta WHERE key = ?", (key,)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    return str(row[0]) if row else None
+
+
+def _store_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS sync_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )"""
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)",
+        (key, value),
+    )
+
+
 def _paths():
     """Lazy handle to the path constants (``USER_DATA_DIR`` / ``DB_PATH`` /
     ``_parse_week_folder_dates``).
@@ -1166,6 +1190,7 @@ class Database:
         # + UNIQUE(race_type, label_id)) so we can keep a row per source
         # activity instead of clobbering on race_type.
         self._migrate_vo2max_pb_to_v2()
+        self._migrate_vo2max_pb_distance_units()
 
     def _migrate_vo2max_pb_to_v2(self) -> None:
         """Migrate ``vo2max_pb`` from v1 (race_type PRIMARY KEY) to v2
@@ -1209,6 +1234,49 @@ class Database:
                 "CREATE INDEX IF NOT EXISTS idx_vo2max_pb_vdot "
                 "ON vo2max_pb(race_type, vdot DESC)"
             )
+
+    def _migrate_vo2max_pb_distance_units(self) -> None:
+        """Normalize legacy ``vo2max_pb.distance_m`` rows from km to metres.
+
+        Old segment-PB backfills ran while some activity distances were stored
+        as kilometres, leaving rows like ``5.0`` or ``42.45`` in a ``*_m``
+        column. The race type already encodes the canonical distance, so map
+        only sub-1000 legacy rows for known race types to their metre values.
+        """
+        cols = {r[1] for r in self._conn.execute("PRAGMA table_info(vo2max_pb)").fetchall()}
+        if not {"race_type", "distance_m"}.issubset(cols):
+            return
+        canonical = {
+            "1k": 1000.0,
+            "3k": 3000.0,
+            "5k": 5000.0,
+            "10k": 10000.0,
+            "half": 21097.5,
+            "hm": 21097.5,
+            "full": 42195.0,
+            "fm": 42195.0,
+        }
+        legacy_row = self._conn.execute(
+            """SELECT 1 FROM vo2max_pb
+               WHERE distance_m > 0
+                 AND distance_m < 1000
+                 AND lower(race_type) IN ({})
+               LIMIT 1""".format(",".join("?" for _ in canonical)),
+            tuple(canonical.keys()),
+        ).fetchone()
+        if _fetch_meta(self._conn, _VO2MAX_PB_DISTANCE_METERS_FLAG) == "1" and legacy_row is None:
+            return
+        with self._conn:
+            for race_type_key, distance_m in canonical.items():
+                self._conn.execute(
+                    """UPDATE vo2max_pb
+                       SET distance_m = ?
+                       WHERE lower(race_type) = ?
+                         AND distance_m > 0
+                         AND distance_m < 1000""",
+                    (distance_m, race_type_key),
+                )
+            _store_meta(self._conn, _VO2MAX_PB_DISTANCE_METERS_FLAG, "1")
 
     def close(self) -> None:
         self._conn.close()
@@ -2027,8 +2095,8 @@ class Database:
         label_id or activity with no timeseries.
 
         Units are NOT normalized here — see
-        `stride_core.pb_records.normalize_timeseries_units` for the PB segment
-        scanner's provider-tolerant conversion.
+        `stride_core.pb_records.normalize_timeseries_units` for compatibility
+        with pre-migration COROS rows that still store centimetres.
         """
         return list(self._conn.execute(
             "SELECT timestamp, distance FROM timeseries "

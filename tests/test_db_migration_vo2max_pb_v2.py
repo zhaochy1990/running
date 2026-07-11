@@ -142,3 +142,71 @@ def test_existing_v1_db_auto_migrates_on_open(tmp_path):
     assert "id" in cols
     rows = list(db._conn.execute("SELECT race_type, label_id FROM vo2max_pb"))
     assert len(rows) == 1
+
+
+def test_existing_vo2max_pb_km_distances_auto_normalize_on_open(tmp_path):
+    db_path = tmp_path / "coros.db"
+    con = sqlite3.connect(db_path)
+    con.executescript(
+        """
+        CREATE TABLE sync_meta (key TEXT PRIMARY KEY, value TEXT);
+        CREATE TABLE vo2max_pb (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_type       TEXT NOT NULL,
+            distance_m      REAL NOT NULL,
+            duration_s      REAL NOT NULL,
+            vdot            REAL NOT NULL,
+            pb_date         TEXT NOT NULL,
+            label_id        TEXT NOT NULL,
+            even_paced      INTEGER NOT NULL DEFAULT 1,
+            updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(race_type, label_id)
+        );
+        """
+    )
+    con.execute(
+        "INSERT INTO vo2max_pb (race_type, distance_m, duration_s, vdot, pb_date, label_id) "
+        "VALUES ('full', 42.45, 10800, 53.0, '2026-05-01', 'A')"
+    )
+    con.commit()
+    con.close()
+
+    db = Database(db_path=db_path)
+    row = db._conn.execute("SELECT distance_m FROM vo2max_pb WHERE label_id='A'").fetchone()
+    assert row["distance_m"] == 42195.0
+    assert db.get_meta("distance_units_vo2max_pb_meters_v1") == "1"
+
+
+def test_vo2max_pb_distance_normalize_repairs_rows_even_when_flag_exists(tmp_path):
+    db_path = tmp_path / "coros.db"
+    con = sqlite3.connect(db_path)
+    con.executescript(
+        """
+        CREATE TABLE sync_meta (key TEXT PRIMARY KEY, value TEXT);
+        INSERT INTO sync_meta (key, value)
+        VALUES ('distance_units_vo2max_pb_meters_v1', '1');
+        CREATE TABLE vo2max_pb (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_type       TEXT NOT NULL,
+            distance_m      REAL NOT NULL,
+            duration_s      REAL NOT NULL,
+            vdot            REAL NOT NULL,
+            pb_date         TEXT NOT NULL,
+            label_id        TEXT NOT NULL,
+            even_paced      INTEGER NOT NULL DEFAULT 1,
+            updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(race_type, label_id)
+        );
+        """
+    )
+    con.execute(
+        "INSERT INTO vo2max_pb (race_type, distance_m, duration_s, vdot, pb_date, label_id) "
+        "VALUES ('half', 21.3, 5200, 52.0, '2026-05-01', 'A')"
+    )
+    con.commit()
+    con.close()
+
+    db = Database(db_path=db_path)
+    row = db._conn.execute("SELECT distance_m FROM vo2max_pb WHERE label_id='A'").fetchone()
+    assert row["distance_m"] == 21097.5
+    assert db.get_meta("distance_units_vo2max_pb_meters_v1") == "1"

@@ -7,7 +7,7 @@ from stride_storage.sqlite.database import Database
 def _insert_activity(db, label_id="X"):
     db._conn.execute(
         "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s, provider) "
-        "VALUES (?, 100, '2026-05-27T10:00:00+00:00', 5.0, 1200, 'coros')",
+        "VALUES (?, 100, '2026-05-27T10:00:00+00:00', 5000.0, 1200, 'coros')",
         (label_id,),
     )
 

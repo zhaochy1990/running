@@ -73,6 +73,16 @@ def _coros_distance_cm_to_meters(value: object) -> float:
         return 0.0
 
 
+def _coros_optional_distance_cm_to_meters(value: object) -> float | None:
+    """COROS frequencyList cumulative distance is centimetres; store metres."""
+    if value is None:
+        return None
+    try:
+        return float(value) / 100.0
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass
 class Activity:
     """Activity summary from /activity/query list endpoint."""
@@ -204,7 +214,7 @@ class TimeseriesPoint:
         lon_raw = data.get("gpsLon")
         return cls(
             timestamp=data.get("timestamp"),
-            distance=data.get("distance"),
+            distance=_coros_optional_distance_cm_to_meters(data.get("distance")),
             heart_rate=data.get("heart"),
             speed=data.get("speed"),
             adjusted_pace=data.get("adjustedPace"),
