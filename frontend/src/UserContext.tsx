@@ -1,36 +1,57 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useAuthStore } from './store/authStore'
-import { getMyProfile } from './api'
+import { getMyProfile, type MyProfile } from './api'
 import { UserContext } from './UserContextValue'
 
-async function loadDisplayName(userId: string): Promise<string> {
+interface UserProfileState {
+  displayName: string
+  onboardingCompletedAt: string | null
+}
+
+async function loadUserProfile(userId: string): Promise<UserProfileState> {
   try {
     const profile = await getMyProfile()
-    return profile.display_name || userId
+    return profileToState(profile, userId)
   } catch {
-    return userId
+    return { displayName: userId, onboardingCompletedAt: null }
+  }
+}
+
+function profileToState(profile: MyProfile, userId: string): UserProfileState {
+  return {
+    displayName: profile.display_name || userId,
+    onboardingCompletedAt: profile.onboarding.completed_at,
   }
 }
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const userId = useAuthStore((s) => s.userId)
   const [displayName, setDisplayName] = useState<string>('')
+  const [onboardingCompletedAt, setOnboardingCompletedAt] = useState<string | null>(null)
+  const [profileReady, setProfileReady] = useState(false)
+
+  const applyProfile = useCallback((state: UserProfileState) => {
+    setDisplayName(state.displayName)
+    setOnboardingCompletedAt(state.onboardingCompletedAt)
+    setProfileReady(true)
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!userId) return
-    setDisplayName(await loadDisplayName(userId))
-  }, [userId])
+    applyProfile(await loadUserProfile(userId))
+  }, [applyProfile, userId])
 
   useEffect(() => {
     if (!userId) return
     let cancelled = false
-    void loadDisplayName(userId).then((name) => {
-      if (!cancelled) setDisplayName(name)
+    setProfileReady(false)
+    void loadUserProfile(userId).then((state) => {
+      if (!cancelled) applyProfile(state)
     })
     return () => {
       cancelled = true
     }
-  }, [userId])
+  }, [applyProfile, userId])
 
   if (!userId) {
     return (
@@ -41,7 +62,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <UserContext.Provider value={{ user: userId, displayName: displayName || userId, refresh }}>
+    <UserContext.Provider value={{ user: userId, displayName: displayName || userId, profileReady, onboardingCompletedAt, refresh }}>
       {children}
     </UserContext.Provider>
   )

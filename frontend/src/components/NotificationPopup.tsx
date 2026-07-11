@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { getNotificationsForUser } from '../data/notifications'
 import { shanghaiDate } from '../lib/shanghai'
 import { useNotificationsStore } from '../store/notificationsStore'
+import { useUser } from '../UserContextValue'
 
 const SEVERITY_ACCENT: Record<string, string> = {
   info: 'border-accent-cyan/40 bg-accent-cyan/5',
@@ -15,6 +17,7 @@ const SEVERITY_DOT: Record<string, string> = {
 }
 
 export default function NotificationPopup() {
+  const { onboardingCompletedAt, profileReady } = useUser()
   const hydrate = useNotificationsStore((s) => s.hydrate)
   const pendingPopup = useNotificationsStore((s) => s.pendingPopup)
   const markRead = useNotificationsStore((s) => s.markRead)
@@ -22,7 +25,8 @@ export default function NotificationPopup() {
   useNotificationsStore((s) => s.readIds)
 
   const [visible, setVisible] = useState(false)
-  const message = pendingPopup()
+  const messages = profileReady && onboardingCompletedAt ? getNotificationsForUser(onboardingCompletedAt) : []
+  const message = pendingPopup(messages)
 
   const messageId = message?.id
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { getNotificationReadState, markNotificationRead } from '../api'
-import { NOTIFICATIONS, type AppNotification, getNotificationsNewestFirst } from '../data/notifications'
+import { NOTIFICATIONS, type AppNotification, getLatestNotification } from '../data/notifications'
 
 type LoadState = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -14,9 +14,9 @@ interface NotificationsState {
   markRead: (id: string) => Promise<void>
   isRead: (id: string) => boolean
   // The first message that hasn't been read (newest-first); shown in popup.
-  pendingPopup: () => AppNotification | undefined
+  pendingPopup: (notifications?: readonly AppNotification[]) => AppNotification | undefined
   // Number of unread (= not-read) messages, for the bell badge.
-  unreadCount: () => number
+  unreadCount: (notifications?: readonly AppNotification[]) => number
 }
 
 function normalizeReadIds(ids: unknown): Set<string> {
@@ -70,16 +70,16 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
 
   isRead: (id: string) => get().readIds.has(id),
 
-  pendingPopup: () => {
+  pendingPopup: (notifications = NOTIFICATIONS) => {
     if (get().loadState !== 'ready') return undefined
     const readIds = get().readIds
-    const latest = getNotificationsNewestFirst()[0]
+    const latest = getLatestNotification(notifications)
     if (!latest) return undefined
     return readIds.has(latest.id) ? undefined : latest
   },
 
-  unreadCount: () => {
+  unreadCount: (notifications = NOTIFICATIONS) => {
     const readIds = get().readIds
-    return NOTIFICATIONS.reduce((acc, notification) => acc + (readIds.has(notification.id) ? 0 : 1), 0)
+    return notifications.reduce((acc, notification) => acc + (readIds.has(notification.id) ? 0 : 1), 0)
   },
 }))
