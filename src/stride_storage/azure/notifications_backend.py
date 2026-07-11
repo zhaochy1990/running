@@ -1,9 +1,10 @@
 """Notification storage backends (JSON file + Azure Table) + selection.
 
-Devices + preferences + read state. Per the SQLite scope rule notification
-data is not watch-synced, so it lives in Azure Table (prod) / JSON file (dev).
+Devices + preferences + inbox items + read state. Per the SQLite scope rule
+notification data is not watch-synced, so it lives in Azure Table (prod) /
+JSON file (dev).
 Two tables, one PartitionKey scheme (PK=user_id; RK=registration_id for
-devices, "prefs"/"notification-read-state" for prefs).
+devices, "prefs"/"notification-read-state"/"notification:{id}" for prefs).
 
 Config *loading* (incl. the STRIDE_LIKES legacy account-url fallback) stays in
 ``stride_server``; this module takes a resolved ``NotificationStorageConfig``.
@@ -24,7 +25,11 @@ from stride_core import db as core_db
 from stride_storage.azure.backend_select import choose_backend
 from stride_storage.azure.table_backend import AzureTableConnection
 from stride_storage.interfaces.config import NotificationStorageConfig
-from stride_storage.interfaces.notifications import DeviceEntity, NotificationsBackend
+from stride_storage.interfaces.notifications import (
+    DeviceEntity,
+    NotificationEntity,
+    NotificationsBackend,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,7 @@ DEFAULT_PREFS_TABLE = "strideprefs"
 
 PREFS_ROW_KEY = "prefs"
 READ_STATE_ROW_KEY = "notification-read-state"
+NOTIFICATION_ROW_PREFIX = "notification:"
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -67,7 +73,87 @@ _DEFAULT_PREFS: dict[str, Any] = {
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
+def _notification_to_record(entity: NotificationEntity) -> dict[str, Any]:
+    return {
+        "kind": entity.kind,
+        "status": entity.status,
+        "severity": entity.severity,
+        "title": entity.title,
+        "body": entity.body,
+        "published_at": entity.published_at,
+        "updated_at": entity.updated_at,
+        "source_type": entity.source_type,
+        "source_id": entity.source_id,
+        "action_url": entity.action_url,
+        "progress_pct": entity.progress_pct,
+        "metadata": entity.metadata or {},
+    }
+
+
+def _notification_from_record(
+    user_id: str,
+    notification_id: str,
+    record: dict[str, Any],
+) -> NotificationEntity:
+    metadata = record.get("metadata")
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except (TypeError, ValueError):
+            metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    progress = record.get("progress_pct")
+    try:
+        progress_pct = int(progress) if progress is not None else None
+    except (TypeError, ValueError):
+        progress_pct = None
+
+    return NotificationEntity(
+        user_id=user_id,
+        notification_id=notification_id,
+        kind=str(record.get("kind") or "general"),
+        status=str(record.get("status") or "info"),
+        severity=str(record.get("severity") or "info"),
+        title=str(record.get("title") or ""),
+        body=str(record.get("body") or ""),
+        published_at=str(record.get("published_at") or record.get("updated_at") or ""),
+        updated_at=str(record.get("updated_at") or record.get("published_at") or ""),
+        source_type=record.get("source_type") or None,
+        source_id=record.get("source_id") or None,
+        action_url=record.get("action_url") or None,
+        progress_pct=progress_pct,
+        metadata=metadata,
+    )
+
+
+def _read_marks_from_record(record: dict[str, Any]) -> dict[str, str]:
+    raw_marks = record.get("read_marks") or record.get("read_marks_json")
+    if isinstance(raw_marks, str):
+        try:
+            raw_marks = json.loads(raw_marks)
+        except (TypeError, ValueError):
+            raw_marks = {}
+    if isinstance(raw_marks, dict):
+        return {
+            str(k): str(v)
+            for k, v in raw_marks.items()
+            if isinstance(k, str) and isinstance(v, str)
+        }
+
+    raw_ids = record.get("read_ids") or record.get("read_ids_json")
+    if isinstance(raw_ids, str):
+        try:
+            raw_ids = json.loads(raw_ids)
+        except (TypeError, ValueError):
+            raw_ids = []
+    if isinstance(raw_ids, list):
+        return {item: "" for item in raw_ids if isinstance(item, str)}
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -88,14 +174,15 @@ class FileNotificationsBackend(NotificationsBackend):
     def _read(self) -> dict[str, dict]:
         path = _file_path()
         if not path.exists():
-            return {"devices": {}, "prefs": {}, "read_state": {}}
+            return {"devices": {}, "prefs": {}, "read_state": {}, "notifications": {}}
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return {"devices": {}, "prefs": {}, "read_state": {}}
+            return {"devices": {}, "prefs": {}, "read_state": {}, "notifications": {}}
         data.setdefault("devices", {})
         data.setdefault("prefs", {})
         data.setdefault("read_state", {})
+        data.setdefault("notifications", {})
         return data
 
     def _write(self, data: dict[str, dict]) -> None:
@@ -174,22 +261,66 @@ class FileNotificationsBackend(NotificationsBackend):
         return self.get_prefs(user_id)
 
     def get_read_notification_ids(self, user_id: str) -> list[str]:
+        return list(self.get_read_notification_marks(user_id).keys())
+
+    def get_read_notification_marks(self, user_id: str) -> dict[str, str]:
         data = self._read()
         rec = data["read_state"].get(user_id, {})
-        ids = rec.get("read_ids", [])
-        if not isinstance(ids, list):
-            return []
-        return [item for item in ids if isinstance(item, str)]
+        if not isinstance(rec, dict):
+            return {}
+        return _read_marks_from_record(rec)
 
     def set_read_notification_ids(self, user_id: str, notification_ids: list[str]) -> list[str]:
+        now = _now_iso()
+        self.set_read_notification_marks(
+            user_id,
+            {item: now for item in notification_ids if isinstance(item, str)},
+        )
+        return self.get_read_notification_ids(user_id)
+
+    def set_read_notification_marks(self, user_id: str, notification_marks: dict[str, str]) -> dict[str, str]:
         with self._lock:
             data = self._read()
+            marks = {
+                k: v for k, v in notification_marks.items()
+                if isinstance(k, str) and isinstance(v, str)
+            }
             data["read_state"][user_id] = {
-                "read_ids": notification_ids,
+                "read_ids": list(marks.keys()),
+                "read_marks": marks,
                 "updated_at": _now_iso(),
             }
             self._write(data)
-        return self.get_read_notification_ids(user_id)
+        return self.get_read_notification_marks(user_id)
+
+    def upsert_notification(self, entity: NotificationEntity) -> NotificationEntity:
+        with self._lock:
+            data = self._read()
+            user_items = data["notifications"].setdefault(entity.user_id, {})
+            user_items[entity.notification_id] = _notification_to_record(entity)
+            self._write(data)
+        return entity
+
+    def get_notification(self, user_id: str, notification_id: str) -> NotificationEntity | None:
+        data = self._read()
+        record = data["notifications"].get(user_id, {}).get(notification_id)
+        if not isinstance(record, dict):
+            return None
+        return _notification_from_record(user_id, notification_id, record)
+
+    def list_notifications(
+        self, user_id: str, *, limit: int | None = None
+    ) -> list[NotificationEntity]:
+        data = self._read()
+        rows = data["notifications"].get(user_id, {})
+        out: list[NotificationEntity] = []
+        for notification_id, record in rows.items():
+            if isinstance(notification_id, str) and isinstance(record, dict):
+                out.append(_notification_from_record(user_id, notification_id, record))
+        out.sort(key=lambda n: (n.updated_at or n.published_at, n.notification_id), reverse=True)
+        if limit is not None:
+            return out[: max(0, limit)]
+        return out
 
     def list_users_with_prefs(self) -> list[str]:
         return list(self._read()["prefs"].keys())
@@ -272,21 +403,17 @@ class AzureTableNotificationsBackend(NotificationsBackend):
         }
 
     def get_read_notification_ids(self, user_id: str) -> list[str]:
+        return list(self.get_read_notification_marks(user_id).keys())
+
+    def get_read_notification_marks(self, user_id: str) -> dict[str, str]:
         from azure.core.exceptions import ResourceNotFoundError
         try:
             row = self._prefs().get_entity(
                 partition_key=user_id, row_key=READ_STATE_ROW_KEY,
             )
         except ResourceNotFoundError:
-            return []
-        raw = row.get("read_ids_json", "[]")
-        try:
-            ids = json.loads(raw)
-        except (TypeError, ValueError):
-            return []
-        if not isinstance(ids, list):
-            return []
-        return [item for item in ids if isinstance(item, str)]
+            return {}
+        return _read_marks_from_record(dict(row))
 
     def set_prefs(self, user_id: str, prefs: dict[str, Any]) -> dict[str, Any]:
         from azure.data.tables import UpdateMode
@@ -304,15 +431,85 @@ class AzureTableNotificationsBackend(NotificationsBackend):
         return self.get_prefs(user_id)
 
     def set_read_notification_ids(self, user_id: str, notification_ids: list[str]) -> list[str]:
+        now = _now_iso()
+        self.set_read_notification_marks(
+            user_id,
+            {item: now for item in notification_ids if isinstance(item, str)},
+        )
+        return self.get_read_notification_ids(user_id)
+
+    def set_read_notification_marks(self, user_id: str, notification_marks: dict[str, str]) -> dict[str, str]:
         from azure.data.tables import UpdateMode
+        marks = {
+            k: v for k, v in notification_marks.items()
+            if isinstance(k, str) and isinstance(v, str)
+        }
         record = {
             "PartitionKey": user_id,
             "RowKey": READ_STATE_ROW_KEY,
-            "read_ids_json": json.dumps(notification_ids, ensure_ascii=False),
+            "read_ids_json": json.dumps(list(marks.keys()), ensure_ascii=False),
+            "read_marks_json": json.dumps(marks, ensure_ascii=False),
             "updated_at": _now_iso(),
         }
         self._prefs().upsert_entity(record, mode=UpdateMode.REPLACE)
-        return self.get_read_notification_ids(user_id)
+        return self.get_read_notification_marks(user_id)
+
+    def upsert_notification(self, entity: NotificationEntity) -> NotificationEntity:
+        from azure.data.tables import UpdateMode
+
+        record = {
+            "PartitionKey": entity.user_id,
+            "RowKey": NOTIFICATION_ROW_PREFIX + entity.notification_id,
+            "kind": entity.kind,
+            "status": entity.status,
+            "severity": entity.severity,
+            "title": entity.title,
+            "body": entity.body,
+            "published_at": entity.published_at,
+            "updated_at": entity.updated_at,
+            "source_type": entity.source_type or "",
+            "source_id": entity.source_id or "",
+            "action_url": entity.action_url or "",
+            "metadata_json": json.dumps(entity.metadata or {}, ensure_ascii=False, default=str),
+        }
+        if entity.progress_pct is not None:
+            record["progress_pct"] = entity.progress_pct
+        self._prefs().upsert_entity(record, mode=UpdateMode.REPLACE)
+        return entity
+
+    def get_notification(self, user_id: str, notification_id: str) -> NotificationEntity | None:
+        from azure.core.exceptions import ResourceNotFoundError
+        try:
+            row = self._prefs().get_entity(
+                partition_key=user_id,
+                row_key=NOTIFICATION_ROW_PREFIX + notification_id,
+            )
+        except ResourceNotFoundError:
+            return None
+        record = dict(row)
+        record["metadata"] = record.get("metadata_json")
+        return _notification_from_record(user_id, notification_id, record)
+
+    def list_notifications(
+        self, user_id: str, *, limit: int | None = None
+    ) -> list[NotificationEntity]:
+        rows = list(self._prefs().query_entities(
+            "PartitionKey eq @pk",
+            parameters={"pk": user_id},
+        ))
+        out: list[NotificationEntity] = []
+        for row in rows:
+            row_key = row.get("RowKey") or ""
+            if not isinstance(row_key, str) or not row_key.startswith(NOTIFICATION_ROW_PREFIX):
+                continue
+            notification_id = row_key[len(NOTIFICATION_ROW_PREFIX):]
+            record = dict(row)
+            record["metadata"] = record.get("metadata_json")
+            out.append(_notification_from_record(user_id, notification_id, record))
+        out.sort(key=lambda n: (n.updated_at or n.published_at, n.notification_id), reverse=True)
+        if limit is not None:
+            return out[: max(0, limit)]
+        return out
 
     def list_users_with_prefs(self) -> list[str]:
         # Each user has exactly one prefs row (RowKey="prefs"), so filter to

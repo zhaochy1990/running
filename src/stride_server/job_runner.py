@@ -66,6 +66,7 @@ class Job:
     job_id: str
     user_id: str
     status: JobStatus
+    kind: str
     stage: Optional[JobStage]
     progress: int                   # 0-100
     result_plan_id: Optional[str]
@@ -94,7 +95,7 @@ _JOB_TTL_SECONDS = 3600  # 1 hour
 # ---------------------------------------------------------------------------
 
 
-def create_job(user_id: str) -> str:
+def create_job(user_id: str, *, kind: str = "generic") -> str:
     """Create a new job for user_id, return the job_id (uuid4 string)."""
     job_id = str(uuid4())
     now = time.monotonic()
@@ -102,6 +103,7 @@ def create_job(user_id: str) -> str:
         job_id=job_id,
         user_id=user_id,
         status=JobStatus.QUEUED,
+        kind=kind,
         stage=None,
         progress=0,
         result_plan_id=None,
@@ -113,6 +115,7 @@ def create_job(user_id: str) -> str:
     )
     with _LOCK:
         _JOBS[job_id] = job
+    _notify_job_update(job)
     return job_id
 
 
@@ -128,6 +131,7 @@ def get_job(job_id: str) -> Optional[Job]:
 
 def update_job(job_id: str, **kwargs) -> None:
     """Thread-safe update of any Job fields by keyword argument."""
+    updated_job: Job | None = None
     with _LOCK:
         job = _JOBS.get(job_id)
         if job is None:
@@ -138,6 +142,35 @@ def update_job(job_id: str, **kwargs) -> None:
             else:
                 raise AttributeError(f"Job has no field {key!r}")
         object.__setattr__(job, "updated_at", time.monotonic())
+        updated_job = job
+    if updated_job is not None:
+        _notify_job_update(updated_job)
+
+
+def _notify_job_update(job: Job) -> None:
+    if job.kind != "master_plan_generation":
+        return
+    try:
+        from stride_server.notifications import store as notification_store
+    except Exception:
+        return
+
+    try:
+        notification_store.upsert_master_plan_job_notification(
+            job.user_id,
+            job.job_id,
+            status=job.status.value,
+            progress_pct=job.progress,
+            stage_label=STAGE_LABEL_MAP.get(job.stage) if job.stage is not None else None,
+            result_plan_id=job.result_plan_id,
+            error=job.error,
+        )
+    except Exception:
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "master-plan job notification update failed job=%s", job.job_id,
+        )
 
 
 def cleanup_expired() -> None:

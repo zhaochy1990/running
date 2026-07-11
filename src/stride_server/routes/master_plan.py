@@ -178,7 +178,7 @@ def generate_master_plan(
     profile = _read_current_profile(user_id)
 
     # --- Create job ---
-    job_id = job_runner.create_job(user_id)
+    job_id = job_runner.create_job(user_id, kind="master_plan_generation")
 
     # --- Launch daemon thread ---
     t = threading.Thread(

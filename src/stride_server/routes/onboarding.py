@@ -19,6 +19,7 @@ from ..config import load_server_config
 from ..config.models import SyncConfig
 from ..content_store import read_json, write_json
 from ..deps import get_source
+from ..notifications import store as notification_store
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,37 @@ def _write_sync_progress(
     onboarding[progress_key] = progress
     _write_onboarding(uuid, onboarding)
     return progress
+
+
+def _sync_notification_id(mode: str) -> str:
+    return "sync:onboarding" if mode == "health_only" else "sync:full"
+
+
+def _upsert_sync_notification(
+    uuid: str,
+    *,
+    mode: str,
+    status: str,
+    message: str,
+    progress_pct: int | None = None,
+    synced_activities: int | None = None,
+    synced_health: int | None = None,
+    error: str | None = None,
+) -> None:
+    try:
+        notification_store.upsert_sync_notification(
+            uuid,
+            notification_id=_sync_notification_id(mode),
+            mode=mode,
+            status=status,
+            message=message,
+            progress_pct=progress_pct,
+            synced_activities=synced_activities,
+            synced_health=synced_health,
+            error=error,
+        )
+    except Exception:
+        logger.exception("sync notification update failed user=%s mode=%s", uuid, mode)
 
 
 class CorosLoginBody(BaseModel):
@@ -317,6 +349,13 @@ def _run_background_sync(
 
     def report_progress(progress: SyncProgress) -> None:
         _write_sync_progress(uuid, state_key=state_key, progress_key=progress_key, **progress)
+        _upsert_sync_notification(
+            uuid,
+            mode=mode,
+            status="running",
+            message=progress.get("message") or "正在同步数据",
+            progress_pct=progress.get("percent"),
+        )
 
     connecting_msg = (
         "正在连接手表，准备同步健康数据"
@@ -331,6 +370,13 @@ def _run_background_sync(
         percent=3,
         state_key=state_key,
         progress_key=progress_key,
+    )
+    _upsert_sync_notification(
+        uuid,
+        mode=mode,
+        status="running",
+        message=connecting_msg,
+        progress_pct=3,
     )
 
     try:
@@ -368,6 +414,14 @@ def _run_background_sync(
         )
         onboarding[progress_key] = progress
         _write_onboarding(uuid, onboarding)
+        _upsert_sync_notification(
+            uuid,
+            mode=mode,
+            status="failed",
+            message="同步失败，请重试",
+            progress_pct=progress.get("percent", 0),
+            error=str(exc),
+        )
         return
 
     onboarding = _read_onboarding(uuid)
@@ -397,6 +451,15 @@ def _run_background_sync(
     onboarding.pop(error_key, None)
     onboarding.pop(failed_at_key, None)
     _write_onboarding(uuid, onboarding)
+    _upsert_sync_notification(
+        uuid,
+        mode=mode,
+        status="done",
+        message=done_msg,
+        progress_pct=100,
+        synced_activities=result.activities,
+        synced_health=result.health,
+    )
 
 
 @router.post("/api/users/me/onboarding/complete")
@@ -450,6 +513,13 @@ def onboarding_complete(
         "updated_at": now,
     }
     _write_onboarding(uuid, onboarding)
+    _upsert_sync_notification(
+        uuid,
+        mode="health_only",
+        status="queued",
+        message="正在同步健康数据，马上就好",
+        progress_pct=0,
+    )
 
     background_tasks.add_task(
         _run_background_sync, uuid, source, mode="health_only",
@@ -528,6 +598,13 @@ def full_sync(
         "updated_at": now,
     }
     _write_onboarding(uuid, onboarding)
+    _upsert_sync_notification(
+        uuid,
+        mode="full",
+        status="queued",
+        message="正在准备同步历史训练数据，这可能需要几分钟",
+        progress_pct=0,
+    )
 
     background_tasks.add_task(
         _run_background_sync, uuid, source, mode="full", full=True,

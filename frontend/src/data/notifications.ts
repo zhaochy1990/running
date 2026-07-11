@@ -1,9 +1,10 @@
 // Static notification messages shown to users after login.
 // Edit this file locally and re-deploy — the new messages will appear in the
-// popup + message center.  Messages are immutable: once published, never
+// message center. Messages are immutable: once published, never
 // rewrite the same `id` with different content.  Add a new entry instead.
 
-export type NotificationSeverity = 'info' | 'success' | 'warning'
+export type NotificationSeverity = 'info' | 'success' | 'warning' | 'error'
+export type NotificationStatus = 'queued' | 'running' | 'done' | 'failed' | 'info'
 
 export interface AppNotification {
   id: string
@@ -11,6 +12,16 @@ export interface AppNotification {
   body: string
   publishedAt: string // ISO date string
   severity?: NotificationSeverity
+  status?: NotificationStatus
+  kind?: string
+  updatedAt?: string
+  sourceType?: string | null
+  sourceId?: string | null
+  actionUrl?: string | null
+  progressPct?: number | null
+  read?: boolean
+  readAt?: string | null
+  metadata?: Record<string, unknown>
 }
 
 function parseNotificationTime(value: string | null | undefined): number | null {
@@ -63,19 +74,48 @@ export function getNotificationsForUser(userStartedAt?: string | null): AppNotif
   })
 }
 
-export function getLatestNotification(
-  notifications: readonly AppNotification[] = NOTIFICATIONS,
-): AppNotification | undefined {
-  if (notifications.length === 0) return undefined
-  return [...notifications].sort(
-    (a, b) => b.publishedAt.localeCompare(a.publishedAt),
-  )[0]
-}
-
 export function getNotificationsNewestFirst(
   notifications: readonly AppNotification[] = NOTIFICATIONS,
 ): AppNotification[] {
   return [...notifications].sort(
-    (a, b) => b.publishedAt.localeCompare(a.publishedAt),
+    (a, b) => (b.updatedAt ?? b.publishedAt).localeCompare(a.updatedAt ?? a.publishedAt),
   )
+}
+
+export interface ServerNotification {
+  id: string
+  title: string
+  body: string
+  kind?: string
+  status?: NotificationStatus
+  severity?: NotificationSeverity
+  published_at?: string
+  updated_at?: string
+  source_type?: string | null
+  source_id?: string | null
+  action_url?: string | null
+  progress_pct?: number | null
+  metadata?: Record<string, unknown>
+  read?: boolean
+  read_at?: string | null
+}
+
+export function fromServerNotification(item: ServerNotification): AppNotification {
+  return {
+    id: item.id,
+    title: item.title,
+    body: item.body,
+    kind: item.kind,
+    status: item.status,
+    severity: item.severity,
+    publishedAt: item.published_at ?? item.updated_at ?? '',
+    updatedAt: item.updated_at,
+    sourceType: item.source_type,
+    sourceId: item.source_id,
+    actionUrl: item.action_url,
+    progressPct: item.progress_pct,
+    metadata: item.metadata,
+    read: item.read,
+    readAt: item.read_at,
+  }
 }
