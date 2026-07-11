@@ -392,7 +392,7 @@ def _insert_run(db: Database, label_id: str, *, date_iso: str, km: float) -> Non
     db._conn.execute(
         "INSERT INTO activities (label_id, sport_type, date, distance_m, duration_s) "
         "VALUES (?, ?, ?, ?, ?)",
-        (label_id, 100, date_iso, km, km * 330.0),
+        (label_id, 100, date_iso, km * 1000.0, km * 330.0),
     )
     db._conn.commit()
 

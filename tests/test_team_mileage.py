@@ -60,7 +60,7 @@ def _seed_activity(user_data_dir, user_id: str, label_id: str, date_iso: str,
              duration_s, avg_pace_s_km, avg_hr, max_hr, training_load,
              vo2max, train_type)
             VALUES (?, 'Run', ?, 'Run', ?, ?, 3000, 300, 150, 170, 100, 50, 'easy')""",
-        (label_id, sport_type, date_iso, distance_km),
+        (label_id, sport_type, date_iso, distance_km * 1000.0),
     )
     db._conn.commit()
     db.close()
