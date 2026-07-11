@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
 import TopNav from './TopNav'
-import NotificationPopup from './NotificationPopup'
 import NavSection from './sidebar/NavSection'
 import NavItem from './sidebar/NavItem'
 import SidebarFoot from './sidebar/SidebarFoot'
@@ -161,8 +160,6 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
-
-      <NotificationPopup />
     </div>
   )
 }

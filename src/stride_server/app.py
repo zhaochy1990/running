@@ -157,6 +157,7 @@ def create_app(
     app.include_router(plan.internal_router)
     app.include_router(training_load.internal_router)
     app.include_router(sync.internal_router)
+    app.include_router(notifications.internal_router)
     app.include_router(jobs.internal_router)
 
     # Curated strength-illustration library — public static assets baked

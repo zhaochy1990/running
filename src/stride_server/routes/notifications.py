@@ -12,15 +12,18 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..bearer import require_bearer
 from ..notifications import store as nstore
+from .plan import require_internal_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+internal_router = APIRouter()
 
 _REG_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{8,200}$")
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -91,6 +94,17 @@ class PrefsBody(BaseModel):
     plan_reminder_time: str | None = None
 
 
+class UpsertNotificationBody(BaseModel):
+    user_id: str = Field(..., min_length=36, max_length=36)
+    notification_id: str = Field(..., min_length=1, max_length=128)
+    title: str = Field(..., min_length=1, max_length=200)
+    body: str = Field(..., min_length=1, max_length=2000)
+    severity: str = Field(default="info", pattern=r"^(info|success|warning|error)$")
+    action_url: str | None = Field(default=None, max_length=512)
+    progress_pct: int | None = Field(default=None, ge=0, le=100)
+    metadata: dict[str, Any] | None = None
+
+
 @router.get("/api/users/me/notification-prefs")
 def get_prefs(claims: dict = Depends(require_bearer)):
     user_id = _caller_id(claims)
@@ -122,6 +136,15 @@ def get_read_state(claims: dict = Depends(require_bearer)):
     return {"read_ids": nstore.get_read_notification_ids(user_id)}
 
 
+@router.get("/api/users/me/notifications")
+def list_notifications(claims: dict = Depends(require_bearer)):
+    user_id = _caller_id(claims)
+    return {
+        "notifications": nstore.list_notifications(user_id),
+        "read_ids": nstore.get_read_notification_ids(user_id),
+    }
+
+
 @router.post("/api/users/me/notifications/{notification_id}/read")
 def mark_notification_read(
     notification_id: str,
@@ -135,3 +158,27 @@ def mark_notification_read(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"read_ids": read_ids}
+
+
+# ── Internal notification publishing API ──────────────────────────────────
+
+
+@internal_router.post("/internal/notifications")
+def internal_upsert_notification(
+    body: UpsertNotificationBody,
+    _token: None = Depends(require_internal_token),
+):
+    try:
+        notification = nstore.upsert_notification(
+            body.user_id,
+            body.notification_id,
+            severity=body.severity,
+            title=body.title,
+            body=body.body,
+            action_url=body.action_url,
+            progress_pct=body.progress_pct,
+            metadata=body.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"notification": notification}
