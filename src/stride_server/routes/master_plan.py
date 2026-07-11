@@ -723,6 +723,7 @@ def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> 
         week_index = int(row.get("week_index") or 0)
         start = _parse_date(row.get("week_start"))
         end = start + timedelta(days=6) if start is not None else None
+        has_started = bool(start is not None and start <= today)
         row["week_end"] = end.isoformat() if end is not None else None
         row["planned_distance_km"] = _planned_weekly_km(row)
         row["is_completed"] = bool(end is not None and end < today)
@@ -731,10 +732,11 @@ def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> 
         row["actual_avg_hr"] = None
         row["actual_run_count"] = 0
         row["actual_duration_s"] = 0
-        if row["is_completed"]:
+        if has_started:
             row["actual_distance_km"] = 0.0
-        if user_id and row["is_completed"] and week_index > 0 and start is not None and end is not None:
-            windows.append((week_index, start.isoformat(), end.isoformat()))
+        if user_id and has_started and week_index > 0 and start is not None and end is not None:
+            actual_end = min(end, today)
+            windows.append((week_index, start.isoformat(), actual_end.isoformat()))
         rows.append(row)
 
     actuals: dict[int, dict] = {}
@@ -761,7 +763,7 @@ def _build_week_response(plan: Any, *, user_id: str | None, today: date_cls) -> 
 
 
 def _expanded_week_rows(plan: Any, today: date_cls) -> list[dict[str, Any]]:
-    """Return explicit week skeletons plus synthetic completed lead-in weeks."""
+    """Return explicit week skeletons plus synthetic started lead-in weeks."""
     explicit_by_index: dict[int, dict[str, Any]] = {}
     for week in list(getattr(plan, "weeks", []) or []):
         row = week.model_dump()
@@ -789,7 +791,7 @@ def _expanded_week_rows(plan: Any, today: date_cls) -> list[dict[str, Any]]:
         phase = _phase_for_week(plan, start, end)
         if phase is None:
             continue
-        if not (bool(getattr(phase, "is_completed", False)) or end < today):
+        if not (bool(getattr(phase, "is_completed", False)) or start <= today):
             continue
         rows.append({
             "week_index": week_index,

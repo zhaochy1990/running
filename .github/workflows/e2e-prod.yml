@@ -90,3 +90,69 @@ jobs:
           name: onboarding-negatives-screenshot
           path: stride-onboarding-negatives.png
           if-no-files-found: ignore
+
+  job-infra-smoke:
+    name: Async job infra smoke (enqueue → worker → DONE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Enqueue a hello job and poll it to DONE
+        env:
+          PROD_URL: ${{ secrets.STRIDE_PROD_URL }}
+          INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PROD_URL:-}" ] || [ -z "${INTERNAL_TOKEN:-}" ]; then
+            echo "::error::STRIDE_PROD_URL or STRIDE_INTERNAL_TOKEN secret missing"
+            exit 1
+          fi
+
+          enqueue() {
+            curl -sS -X POST "$PROD_URL/internal/jobs/hello" \
+              -H "X-Internal-Token: $INTERNAL_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"source":"e2e-prod"}'
+          }
+          poll() {  # $1=partition $2=job_id → prints terminal JSON or empty
+            for _ in $(seq 1 20); do
+              J=$(curl -sS "$PROD_URL/internal/jobs/$1/$2" -H "X-Internal-Token: $INTERNAL_TOKEN")
+              S=$(echo "$J" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','?'))")
+              case "$S" in done|failed) echo "$J"; return 0 ;; esac
+              sleep 2
+            done
+            return 0
+          }
+
+          # This job runs right after Deploy, so the worker may still be rolling
+          # its new revision — a job dequeued by the OLD revision (before this
+          # PR's handlers) fails with no_handler. That's transient: re-enqueue a
+          # fresh job and try again. A DONE ends success; a non-transient FAILED
+          # (or exhausting attempts) fails the smoke.
+          for attempt in 1 2 3 4 5; do
+            echo "=== attempt $attempt: enqueue + poll ==="
+            RESP=$(enqueue); echo "enqueue: $RESP"
+            JOB_ID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+            PART=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['partition_key'])")
+            J=$(poll "$PART" "$JOB_ID")
+            if [ -z "$J" ]; then
+              echo "  no terminal state within timeout — worker may not be consuming"
+            else
+              STATUS=$(echo "$J" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+              CODE=$(echo "$J" | python3 -c "import sys,json; print(json.load(sys.stdin).get('error_code') or '')")
+              echo "  terminal: status=$STATUS error_code=$CODE"
+              if [ "$STATUS" = "done" ]; then
+                echo "$J" | python3 -c "import sys,json; r=json.load(sys.stdin); assert 'hello' in (r.get('result_json') or ''), 'result missing hello'; print('result verified')"
+                echo "job infra smoke PASSED"
+                exit 0
+              fi
+              if [ "$STATUS" = "failed" ] && [ "$CODE" != "no_handler" ]; then
+                echo "::error::job FAILED (non-transient): $J"; exit 1
+              fi
+              echo "  transient failure (worker revision rollover) — retrying"
+            fi
+            sleep 15
+          done
+          echo "::error::hello job never reached DONE after retries — worker not consuming?"
+          exit 1
+

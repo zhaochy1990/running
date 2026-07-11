@@ -161,7 +161,7 @@ jobs:
 
       - name: Deploy async-job worker
         # Same image as stride-app, different command: runs the queue-consumer
-        # worker (`python -m stride_server.jobs`) instead of uvicorn. Separate
+        # worker (the `stride-job-worker` console script) instead of uvicorn. Separate
         # Container App (ingress disabled, min=max=1) so long-running jobs never
         # contend with the API's CPU/memory.
         #
@@ -182,7 +182,7 @@ jobs:
             --name ${{ env.WORKER_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
-            --command "python" "-m" "stride_server.jobs" \
+            --command "stride-job-worker" \
             --set-env-vars STRIDE_CONFIG_ENV=prod
 
           # A worker has no ingress to probe, so verify the new revision reaches
