@@ -131,6 +131,35 @@ def test_notifications_jpush_timeout_validation_names_config_path() -> None:
         cfg.validate()
 
 
+def _cfg_with_jobs(queue_url: str, table_url: str) -> ServerConfig:
+    from stride_storage.interfaces.config import QueueStorageConfig
+
+    base = ServerConfig.default(env="dev")
+    return base.with_updates(
+        storage=base.storage.with_updates(
+            jobs=QueueStorageConfig(
+                queue_account_url=queue_url, table_account_url=table_url
+            )
+        )
+    )
+
+
+def test_jobs_queue_and_table_must_both_be_set_or_both_empty() -> None:
+    q = "https://x.queue.core.windows.net/"
+    t = "https://x.table.core.windows.net/"
+
+    # Both empty (dev) and both set (prod) are valid.
+    _cfg_with_jobs("", "").validate()
+    _cfg_with_jobs(q, t).validate()
+
+    # A one-sided config would pair an Azure queue with a file state store (or
+    # vice-versa) — the API and worker processes wouldn't share state.
+    with pytest.raises(ConfigError, match="storage.jobs.table_account_url"):
+        _cfg_with_jobs(q, "").validate()
+    with pytest.raises(ConfigError, match="storage.jobs.queue_account_url"):
+        _cfg_with_jobs("", t).validate()
+
+
 def test_notifications_jpush_url_validation_names_config_path() -> None:
     cfg = ServerConfig.default(env="dev").with_updates(
         notifications=NotificationConfig(jpush=JPushConfig(url="not-a-url"))

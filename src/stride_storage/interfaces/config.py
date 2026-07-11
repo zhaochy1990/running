@@ -80,10 +80,34 @@ class MasterPlanStorageConfig:
 
 
 @dataclass(frozen=True)
+class QueueStorageConfig:
+    """Resolved config for the async-job queue + state store.
+
+    ``queue_account_url`` empty → dev in-memory/file backends; set → Azure
+    Storage Queue + Azure Table. ``poison_max_attempts`` is the dequeue-count
+    ceiling past which a message is dead-lettered instead of retried.
+    """
+
+    queue_account_url: str = ""
+    queue_name: str = "stridejobs"
+    poison_queue_name: str = "stridejobs-poison"
+    table_account_url: str = ""
+    jobs_table_name: str = "stridejobs"
+    file_backend_dir: str = "data/_jobs_dev"
+    visibility_timeout_s: int = 300
+    poison_max_attempts: int = 5
+    stale_after_seconds: int = 600
+
+    def with_updates(self, **updates: object) -> QueueStorageConfig:
+        return replace(self, **updates)
+
+
+@dataclass(frozen=True)
 class StorageConfig:
     content: ContentStorageConfig = field(default_factory=ContentStorageConfig)
     likes: LikesStorageConfig = field(default_factory=LikesStorageConfig)
     master_plan: MasterPlanStorageConfig = field(default_factory=MasterPlanStorageConfig)
+    jobs: QueueStorageConfig = field(default_factory=QueueStorageConfig)
 
     def with_updates(self, **updates: object) -> StorageConfig:
         return replace(self, **updates)

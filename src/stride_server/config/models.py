@@ -16,6 +16,7 @@ from stride_storage.interfaces.config import (  # noqa: F401  (re-export)
     MasterPlanStorageConfig,
     NotificationConfig,
     NotificationStorageConfig,
+    QueueStorageConfig,
     StorageConfig,
     validate_optional_url,
     validate_positive,
@@ -128,6 +129,24 @@ class ServerConfig:
         validate_optional_url("storage.content.account_url", self.storage.content.account_url)
         validate_optional_url("storage.likes.table_account_url", self.storage.likes.table_account_url)
         validate_optional_url("storage.master_plan.table_account_url", self.storage.master_plan.table_account_url)
+        validate_optional_url("storage.jobs.queue_account_url", self.storage.jobs.queue_account_url)
+        validate_optional_url("storage.jobs.table_account_url", self.storage.jobs.table_account_url)
+        # The jobs queue + state store must live on the same side: either both
+        # Azure (queue_account_url AND table_account_url set) or both dev (both
+        # empty). A mismatch would pair an Azure queue with a file state store
+        # (or vice-versa), so the API and worker processes wouldn't share state.
+        validate_required_when(
+            "storage.jobs.table_account_url",
+            self.storage.jobs.table_account_url,
+            when_path="storage.jobs.queue_account_url",
+            when_value=self.storage.jobs.queue_account_url,
+        )
+        validate_required_when(
+            "storage.jobs.queue_account_url",
+            self.storage.jobs.queue_account_url,
+            when_path="storage.jobs.table_account_url",
+            when_value=self.storage.jobs.table_account_url,
+        )
         validate_optional_url("coach_persistence.table_account_url", self.coach_persistence.table_account_url)
         validate_optional_url("coach_persistence.blob_account_url", self.coach_persistence.blob_account_url)
         validate_optional_url("notifications.table_account_url", self.notifications.table_account_url)
