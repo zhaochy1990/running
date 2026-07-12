@@ -241,5 +241,7 @@ def test_end_to_end_single_notification_row(tmp_path, monkeypatch):
     row = onboarding_rows[0]
     assert row["severity"] == "success"
     assert row["progress_pct"] == 100
+    assert row["action_url"] == "/activities"
+    assert row["metadata"] == {"type": "onboarding_sync", "state": "done"}
     assert "已完成初始化" in row["body"]
 

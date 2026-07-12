@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import shutil
 import sqlite3
 import tempfile
@@ -18,6 +19,46 @@ from stride_core.timefmt import SHANGHAI_DAY_SQL
 
 
 _VO2MAX_PB_DISTANCE_METERS_FLAG = "distance_units_vo2max_pb_meters_v1"
+_DEFAULT_SQLITE_BUSY_TIMEOUT_MS = 10_000
+_SQLITE_JOURNAL_MODES = {"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"}
+
+
+def _sqlite_busy_timeout_ms() -> int:
+    raw = os.environ.get("STRIDE_SQLITE_BUSY_TIMEOUT_MS")
+    if raw is None or raw.strip() == "":
+        return _DEFAULT_SQLITE_BUSY_TIMEOUT_MS
+    try:
+        timeout = int(raw)
+    except ValueError as exc:
+        raise ValueError("STRIDE_SQLITE_BUSY_TIMEOUT_MS must be an integer") from exc
+    if timeout < 0:
+        raise ValueError("STRIDE_SQLITE_BUSY_TIMEOUT_MS must be >= 0")
+    return timeout
+
+
+def _sqlite_journal_mode() -> str:
+    raw = os.environ.get("STRIDE_SQLITE_JOURNAL_MODE")
+    if raw is not None and raw.strip():
+        mode = raw.strip().upper()
+        if mode not in _SQLITE_JOURNAL_MODES:
+            allowed = ", ".join(sorted(_SQLITE_JOURNAL_MODES))
+            raise ValueError(f"STRIDE_SQLITE_JOURNAL_MODE must be one of: {allowed}")
+        return mode
+    env = (os.environ.get("STRIDE_CONFIG_ENV") or os.environ.get("STRIDE_ENV") or "").lower()
+    # Azure Container Apps mounts /app/data through Azure Files (SMB). SQLite
+    # WAL relies on shared-memory sidecars and is not reliable on this mount;
+    # rollback journaling trades some write/read concurrency for correctness.
+    return "DELETE" if env == "prod" else "WAL"
+
+
+def _connect_sqlite(path: Path, *, isolation_level: str | None = "") -> sqlite3.Connection:
+    busy_timeout_ms = _sqlite_busy_timeout_ms()
+    timeout_s = busy_timeout_ms / 1000
+    conn = sqlite3.connect(str(path), timeout=timeout_s, isolation_level=isolation_level)
+    conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
+    desired = _sqlite_journal_mode()
+    conn.execute(f"PRAGMA journal_mode={desired}")
+    return conn
 
 
 def _fetch_meta(conn: sqlite3.Connection, key: str) -> str | None:
@@ -57,8 +98,6 @@ def _paths():
     return _coredb
 
 SCHEMA = """
-PRAGMA journal_mode=WAL;
-
 CREATE TABLE IF NOT EXISTS activities (
     label_id        TEXT PRIMARY KEY,
     name            TEXT,
@@ -755,17 +794,14 @@ class Database:
             self._path = _paths().DB_PATH
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Workaround for Azure Files SMB: the SCHEMA's `PRAGMA
-        # journal_mode=WAL` transition deadlocks on first init when the
-        # DB lives on an SMB-mounted share, leaving a 0-byte file and
-        # subsequent retries failing with "database is locked".
-        # For brand-new DBs, build the schema + WAL state in a local
-        # tmp directory (regular FS), then move the fully-formed file
-        # into place. After that, all writes are row-level INSERT/UPDATE
-        # which work fine over SMB. Existing DBs are opened directly.
+        # Workaround for Azure Files SMB: schema bootstrap can hold file locks
+        # long enough to leave a 0-byte placeholder on first init. For brand-new
+        # DBs, build the schema in a local tmp directory (regular FS), then move
+        # the fully-formed file into place. The live connection below applies
+        # the environment-specific journal mode.
         seeded = self._seed_if_needed()
 
-        self._conn = sqlite3.connect(str(self._path))
+        self._conn = _connect_sqlite(self._path)
         self._conn.row_factory = sqlite3.Row
         if seeded:
             # SCHEMA was already applied during the seed; just run the
@@ -787,13 +823,14 @@ class Database:
 
         with tempfile.TemporaryDirectory() as tmp:
             seed = Path(tmp) / "coros.db"
-            conn = sqlite3.connect(str(seed))
+            conn = _connect_sqlite(seed)
             try:
                 conn.executescript(SCHEMA)
                 conn.commit()
-                # Checkpoint so the moved file is self-contained — no
-                # leftover -wal / -shm sidecars to chase.
-                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                if _sqlite_journal_mode() == "WAL":
+                    # Checkpoint so the moved file is self-contained — no
+                    # leftover -wal / -shm sidecars to chase.
+                    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             finally:
                 conn.close()
             if self._path.exists():
@@ -2442,7 +2479,7 @@ class Database:
         409 retry-after) instead of an immediate hard failure on transient
         races.
         """
-        conn = sqlite3.connect(str(self._path), isolation_level=None)
+        conn = _connect_sqlite(self._path, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout = 100")
         conn.execute("BEGIN IMMEDIATE")

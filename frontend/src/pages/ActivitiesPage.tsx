@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import {
@@ -11,6 +11,7 @@ import {
 } from '../api'
 import ViewHead from '../components/ViewHead'
 import { shanghaiToday } from '../lib/shanghai'
+import { useNotificationsStore } from '../store/notificationsStore'
 import { useUser } from '../UserContextValue'
 import {
   ACTIVITY_PAGE_SIZE,
@@ -27,8 +28,11 @@ import {
 
 type LoadState = 'idle' | 'loading' | 'error' | 'ready'
 
+const ONBOARDING_SYNC_NOTIFICATION_ID = 'onboarding-progress'
+
 export default function ActivitiesPage() {
   const { user } = useUser()
+  const previousQueryKeyRef = useRef<string | null>(null)
   const monthRange = useMemo(() => monthRangeFromShanghaiToday(shanghaiToday()), [])
   const [activityPage, setActivityPage] = useState<ActivitiesListResponse>({
     total: 0,
@@ -46,12 +50,38 @@ export default function ActivitiesPage() {
   const [appliedRange, setAppliedRange] = useState<{ dateFrom?: string; dateTo?: string }>({})
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(ACTIVITY_PAGE_SIZE)
+  const syncRefreshToken = useNotificationsStore((state) => {
+    const notification = state.serverNotifications.find((item) => item.id === ONBOARDING_SYNC_NOTIFICATION_ID)
+    if (!notification) return ''
+    const notificationState = notification.metadata?.state
+    if (notificationState === 'failed') return ''
+    return [
+      notification.updatedAt ?? notification.publishedAt,
+      notification.progressPct ?? '',
+      notification.body,
+    ].join('|')
+  })
+
+  const queryKey = useMemo(() => JSON.stringify({
+    appliedRange,
+    minDistanceKm,
+    monthRange,
+    page,
+    pageSize,
+    sportFilter,
+    user,
+  }), [appliedRange, minDistanceKm, monthRange, page, pageSize, sportFilter, user])
 
   useEffect(() => {
     if (!user) return
     let cancelled = false
-    setLoadState('loading')
-    setError('')
+    const queryChanged = previousQueryKeyRef.current !== queryKey
+    previousQueryKeyRef.current = queryKey
+    void Promise.resolve().then(() => {
+      if (cancelled) return
+      if (queryChanged) setLoadState('loading')
+      setError('')
+    })
 
     Promise.all([
       getActivities(user, {
@@ -72,13 +102,13 @@ export default function ActivitiesPage() {
       .catch((err) => {
         if (cancelled) return
         setError(err instanceof Error ? err.message : String(err))
-        setLoadState('error')
+        setLoadState((current) => (queryChanged || current !== 'ready' ? 'error' : current))
       })
 
     return () => {
       cancelled = true
     }
-  }, [appliedRange, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, sportFilter, user])
+  }, [appliedRange, minDistanceKm, monthRange.dateFrom, monthRange.dateTo, page, pageSize, queryKey, sportFilter, syncRefreshToken, user])
 
   const summary = useMemo(() => summarizeActivities(monthActivities), [monthActivities])
   const monthGroups = useMemo(
