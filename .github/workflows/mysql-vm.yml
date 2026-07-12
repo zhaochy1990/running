@@ -1,0 +1,171 @@
+name: MySQL VM Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Deployment action to run.'
+        type: choice
+        required: true
+        default: what-if
+        options:
+          - validate
+          - what-if
+          - deploy
+      resourceGroup:
+        description: 'Azure resource group that will own the VM resources.'
+        required: true
+        default: rg-running-prod
+      location:
+        description: 'Azure region for new resources.'
+        required: true
+        default: southeastasia
+      namePrefix:
+        description: 'Stable resource name prefix.'
+        required: true
+        default: stride-mysql
+      adminUsername:
+        description: 'Linux VM admin username.'
+        required: true
+        default: azureuser
+      adminSshPublicKey:
+        description: 'SSH public key for the VM admin user. Public key only; private keys never go here.'
+        required: true
+      vmSize:
+        description: 'Azure VM size.'
+        required: true
+        default: Standard_D2as_v7
+      dataDiskSizeGb:
+        description: 'Managed MySQL data disk size in GiB.'
+        required: true
+        default: '128'
+      mysqlDatabaseName:
+        description: 'Initial MySQL database name.'
+        required: true
+        default: stride
+      mysqlAppUser:
+        description: 'Initial MySQL application username.'
+        required: true
+        default: stride_app
+      mysqlAllowedHost:
+        description: 'MySQL host pattern allowed for the app user. Keep it private to the VM VNet.'
+        required: true
+        default: '10.90.%'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  mysql-vm:
+    name: ${{ inputs.action }} MySQL VM
+    runs-on: ubuntu-latest
+    env:
+      TEMPLATE_FILE: infra/mysql-vm/main.bicep
+      RESOURCE_GROUP: ${{ inputs.resourceGroup }}
+      LOCATION: ${{ inputs.location }}
+      NAME_PREFIX: ${{ inputs.namePrefix }}
+      ADMIN_USERNAME: ${{ inputs.adminUsername }}
+      ADMIN_SSH_PUBLIC_KEY: ${{ inputs.adminSshPublicKey }}
+      VM_SIZE: ${{ inputs.vmSize }}
+      DATA_DISK_SIZE_GB: ${{ inputs.dataDiskSizeGb }}
+      MYSQL_DATABASE_NAME: ${{ inputs.mysqlDatabaseName }}
+      MYSQL_APP_USER: ${{ inputs.mysqlAppUser }}
+      MYSQL_ALLOWED_HOST: ${{ inputs.mysqlAllowedHost }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Compile Bicep template
+        run: az bicep build --file "$TEMPLATE_FILE"
+
+      - name: Run deployment validation
+        if: ${{ inputs.action == 'validate' }}
+        run: |
+          az deployment group validate \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters \
+              location="$LOCATION" \
+              namePrefix="$NAME_PREFIX" \
+              adminUsername="$ADMIN_USERNAME" \
+              adminSshPublicKey="$ADMIN_SSH_PUBLIC_KEY" \
+              vmSize="$VM_SIZE" \
+              dataDiskSizeGb="$DATA_DISK_SIZE_GB" \
+              mysqlDatabaseName="$MYSQL_DATABASE_NAME" \
+              mysqlAppUser="$MYSQL_APP_USER" \
+              mysqlAllowedHost="$MYSQL_ALLOWED_HOST"
+
+      - name: Run deployment what-if
+        if: ${{ inputs.action == 'what-if' }}
+        run: |
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters \
+              location="$LOCATION" \
+              namePrefix="$NAME_PREFIX" \
+              adminUsername="$ADMIN_USERNAME" \
+              adminSshPublicKey="$ADMIN_SSH_PUBLIC_KEY" \
+              vmSize="$VM_SIZE" \
+              dataDiskSizeGb="$DATA_DISK_SIZE_GB" \
+              mysqlDatabaseName="$MYSQL_DATABASE_NAME" \
+              mysqlAppUser="$MYSQL_APP_USER" \
+              mysqlAllowedHost="$MYSQL_ALLOWED_HOST"
+
+      - name: Deploy MySQL VM
+        id: deploy
+        if: ${{ inputs.action == 'deploy' }}
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "mysql-vm-${GITHUB_RUN_ID}" \
+            --template-file "$TEMPLATE_FILE" \
+            --parameters \
+              location="$LOCATION" \
+              namePrefix="$NAME_PREFIX" \
+              adminUsername="$ADMIN_USERNAME" \
+              adminSshPublicKey="$ADMIN_SSH_PUBLIC_KEY" \
+              vmSize="$VM_SIZE" \
+              dataDiskSizeGb="$DATA_DISK_SIZE_GB" \
+              mysqlDatabaseName="$MYSQL_DATABASE_NAME" \
+              mysqlAppUser="$MYSQL_APP_USER" \
+              mysqlAllowedHost="$MYSQL_ALLOWED_HOST"
+
+          VM_NAME=$(az deployment group show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "mysql-vm-${GITHUB_RUN_ID}" \
+            --query "properties.outputs.vmName.value" \
+            -o tsv)
+          PRIVATE_IP=$(az deployment group show \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "mysql-vm-${GITHUB_RUN_ID}" \
+            --query "properties.outputs.privateIp.value" \
+            -o tsv)
+          echo "vm_name=$VM_NAME" >> "$GITHUB_OUTPUT"
+          echo "private_ip=$PRIVATE_IP" >> "$GITHUB_OUTPUT"
+          echo "MySQL VM: $VM_NAME ($PRIVATE_IP:3306)"
+
+      - name: Smoke test MySQL on the VM
+        if: ${{ inputs.action == 'deploy' }}
+        run: |
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "${{ steps.deploy.outputs.vm_name }}" \
+            --command-id RunShellScript \
+            --scripts '
+              set -euo pipefail
+              cloud-init status --wait --long
+              systemctl is-active --quiet mysql
+              sudo test -f /etc/stride/mysql-client.cnf
+              sudo mysql --defaults-extra-file=/etc/stride/mysql-client.cnf \
+                -e "SELECT VERSION() AS mysql_version, @@require_secure_transport AS require_secure_transport;"
+            ' \
+            --query "value[0].message" \
+            -o tsv

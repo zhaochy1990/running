@@ -45,7 +45,16 @@ server 端没设 → route 返 401；两端都没设 → workflow step 静默跳
 - **Container**：Azure Container Apps（`stride-app` in `rg-running-prod`）
 - **Registry**：GitHub Container Registry（`ghcr.io`）
 - **Storage**：Azure Files share `stride-data` on `authstorage2026`（RG `rg-common-prod`），挂到 `/app/data` —— 含 per-user SQLite databases / credentials / logs / training plans
+- **Future MySQL host**：Bicep template in [`infra/mysql-vm/`](../infra/mysql-vm/) creates a private Ubuntu VM with MySQL on a managed data disk. Current runtime still uses SQLite; this VM is for the staged migration path only.
 - **Auth**：Entra ID OIDC for deployment；独立 auth-service（见 [auth-wiring.md](./auth-wiring.md)）做 API-level authn/authz
+
+### MySQL VM bootstrap
+
+The `MySQL VM Infrastructure` workflow is manual-only. Run `validate`, then
+`what-if`, then `deploy`. It creates no public IP on the VM NIC, allows MySQL
+only from the private VNet, and verifies MySQL with Azure VM Run Command after
+cloud-init finishes. See [`infra/mysql-vm/README.md`](../infra/mysql-vm/README.md)
+for parameters, smoke commands, and secret-handling notes.
 
 ## Build Commands
 

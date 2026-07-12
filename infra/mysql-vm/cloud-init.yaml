@@ -1,0 +1,15 @@
+#cloud-config
+package_update: false
+package_upgrade: false
+
+write_files:
+  - path: /usr/local/sbin/stride-mysql-setup
+    owner: root:root
+    permissions: '0750'
+    encoding: b64
+    content: __MYSQL_SETUP_SCRIPT_B64__
+
+runcmd:
+  - [bash, /usr/local/sbin/stride-mysql-setup]
+
+final_message: "STRIDE MySQL VM bootstrap finished after $UPTIME seconds"
