@@ -51,7 +51,14 @@ def reset_throttle(user_id: str | None = None) -> None:
             _last_pct.pop(user_id, None)
 
 
-def _publish(user_id: str, *, body: str, severity: str, progress_pct: int) -> None:
+def _publish(
+    user_id: str,
+    *,
+    body: str,
+    severity: str,
+    progress_pct: int,
+    state: str,
+) -> None:
     """Upsert the single onboarding notification row. Best-effort."""
     from stride_server.notifications import store as nstore
 
@@ -62,7 +69,9 @@ def _publish(user_id: str, *, body: str, severity: str, progress_pct: int) -> No
             title=_TITLE,
             body=body,
             severity=severity,
+            action_url="/activities",
             progress_pct=progress_pct,
+            metadata={"type": "onboarding_sync", "state": state},
         )
     except Exception:  # noqa: BLE001 — notifications must never break the pipeline
         logger.warning("onboarding notification publish failed for %s", user_id, exc_info=True)
@@ -89,6 +98,7 @@ def publish_syncing(user_id: str, current: int, total: int) -> None:
         body=f"STRIDE 正在同步你的数据，当前进度 {current}/{total}",
         severity="info",
         progress_pct=pct,
+        state="syncing",
     )
 
 
@@ -100,6 +110,7 @@ def publish_sync_done(user_id: str, activities: int) -> None:
         body=f"STRIDE 已完成数据同步，共同步 {activities} 条运动记录",
         severity="info",
         progress_pct=_SYNC_DONE_PCT,
+        state="sync_done",
     )
 
 
@@ -110,6 +121,7 @@ def publish_analyzing(user_id: str) -> None:
         body="STRIDE 正在分析你的数据",
         severity="info",
         progress_pct=_ANALYZING_PCT,
+        state="analyzing",
     )
 
 
@@ -121,6 +133,7 @@ def publish_complete(user_id: str) -> None:
         body="STRIDE 已完成初始化，快去看看你的训练状态吧",
         severity="success",
         progress_pct=_COMPLETE_PCT,
+        state="done",
     )
 
 
@@ -133,4 +146,5 @@ def publish_failed(user_id: str, step_name: str) -> None:
         body="STRIDE 初始化未完成，请稍后重试",
         severity="error",
         progress_pct=0,
+        state="failed",
     )

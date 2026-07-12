@@ -1,8 +1,9 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import { getActivities, getAllActivities, type Activity } from '../../api'
+import { useNotificationsStore } from '../../store/notificationsStore'
 import { UserContext } from '../../UserContextValue'
 import ActivitiesPage from '../ActivitiesPage'
 
@@ -93,6 +94,12 @@ function renderActivitiesPage(path = '/activities') {
 describe('ActivitiesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useNotificationsStore.setState({
+      readIds: new Set(),
+      serverNotifications: [],
+      loadState: 'idle',
+      error: null,
+    })
     vi.mocked(getActivities).mockImplementation((_user, opts) => {
       let activities = [...defaultActivities]
       if (opts?.dateFrom) activities = activities.filter(activity => activity.date.slice(0, 10) >= opts.dateFrom!)
@@ -272,5 +279,38 @@ describe('ActivitiesPage', () => {
       minDistanceKm: 40,
     }))
     expect(await screen.findByText('该范围暂无活动记录。')).toBeInTheDocument()
+  })
+
+  it('refreshes the list when onboarding sync progress advances', async () => {
+    const syncedActivity = makeActivity({ label_id: 'synced-run', name: 'Synced Run' })
+    vi.mocked(getActivities)
+      .mockResolvedValueOnce({ total: 0, offset: 0, limit: 25, activities: [] })
+      .mockResolvedValueOnce({ total: 1, offset: 0, limit: 25, activities: [syncedActivity] })
+    vi.mocked(getAllActivities)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([syncedActivity])
+
+    renderActivitiesPage()
+
+    expect(await screen.findByText('该范围暂无活动记录。')).toBeInTheDocument()
+
+    act(() => {
+      useNotificationsStore.setState({
+        serverNotifications: [
+          {
+            id: 'onboarding-progress',
+            title: 'STRIDE 初始化',
+            body: 'STRIDE 正在同步你的数据，当前进度 25/100',
+            publishedAt: '2026-05-08T00:00:00Z',
+            updatedAt: '2026-05-08T00:01:00Z',
+            progressPct: 15,
+            metadata: { type: 'onboarding_sync', state: 'syncing' },
+          },
+        ],
+      })
+    })
+
+    await waitFor(() => expect(getActivities).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('Synced Run')).toBeInTheDocument()
   })
 })
