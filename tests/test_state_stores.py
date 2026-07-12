@@ -110,6 +110,28 @@ class TestSqlitePlanStateStore:
         assert single is not None
         assert single["date"] == "2026-04-20"
 
+    def test_planned_sessions_filter_by_date_with_limit(self, db):
+        store = SqlitePlanStateStore(db)
+        store.apply_weekly_plan_atomic(
+            "2026-04-20_04-26(W0)", "# Week",
+            generated_by="user",
+            sessions=[
+                _make_run_session("2026-04-20", idx=0),
+                _make_run_session("2026-04-20", idx=1),
+                _make_run_session("2026-04-21", idx=0),
+            ],
+            nutrition=[],
+            structured_status="fresh",
+            structured_source="fresh",
+            parsed_from_md_hash="abc",
+        )
+
+        sessions = store.get_planned_sessions_for_date("2026-04-20", limit=1)
+
+        assert len(sessions) == 1
+        assert sessions[0]["date"] == "2026-04-20"
+        assert sessions[0]["session_index"] == 0
+
     def test_planned_nutrition_filter_by_date(self, db):
         store = SqlitePlanStateStore(db)
         store.apply_weekly_plan_atomic(
