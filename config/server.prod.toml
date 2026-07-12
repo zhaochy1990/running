@@ -46,6 +46,14 @@ queue_name = "stridejobs"
 poison_queue_name = "stridejobs-poison"
 table_account_url = "https://authstorage2026.table.core.windows.net/"
 jobs_table_name = "stridejobs"
+# Onboarding full_sync is a 20-30 min serial pull (jobs=1). The base 300s
+# visibility timeout expires mid-sync, so the queue re-delivers the job to a
+# second worker (or an overlapping deploy revision) and the two executions
+# write the same coros.db concurrently → "database is locked" → the job fails
+# its retries. A long visibility timeout (heartbeat-renewed per activity) keeps
+# a single execution leased for the whole sync so it is never re-delivered while
+# still running.
+visibility_timeout_s = 2400
 
 [coach_persistence]
 table_account_url = "https://authstorage2026.table.core.windows.net/"
