@@ -1,0 +1,404 @@
+{
+  "schema": "weekly-plan/v1",
+  "week_folder": "2026-07-13_07-19(P2W5专项)",
+  "sessions": [
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-07-13",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复跑 + 灵活性",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 恢复跑 + 灵活性",
+        "date": "2026-07-13",
+        "note": "真轻松",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 7000.0
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 124.0,
+                  "high": 142.0
+                },
+                "note": "真轻松",
+                "hr_cap_bpm": 142
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "真轻松",
+      "total_distance_m": 7000.0,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-07-14",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松跑 + 力量",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 轻松跑 + 力量",
+        "date": "2026-07-14",
+        "note": "下肢+核心",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 10000.0
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 128.0,
+                  "high": 146.0
+                },
+                "note": "下肢+核心",
+                "hr_cap_bpm": 146
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "下肢+核心",
+      "total_distance_m": 10000.0,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-07-14",
+      "session_index": 1,
+      "kind": "strength",
+      "summary": "力量 / 稳定训练",
+      "spec": {
+        "schema": "strength-workout/v1",
+        "name": "[STRIDE] 力量稳定",
+        "date": "2026-07-14",
+        "note": "动作质量优先，不做到力竭。",
+        "exercises": [
+          {
+            "canonical_id": "T1061",
+            "display_name": "徒手深蹲",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 45,
+            "note": "膝盖对齐脚尖",
+            "provider_id": "T1061"
+          },
+          {
+            "canonical_id": "T1275",
+            "display_name": "单腿提踵",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 12,
+            "rest_seconds": 30,
+            "note": "慢速离心",
+            "provider_id": "T1275"
+          },
+          {
+            "canonical_id": "T1150",
+            "display_name": "鸟狗",
+            "sets": 3,
+            "target_kind": "reps",
+            "target_value": 10,
+            "rest_seconds": 30,
+            "note": "核心稳定",
+            "provider_id": "T1150"
+          },
+          {
+            "canonical_id": "T1010",
+            "display_name": "平板支撑",
+            "sets": 3,
+            "target_kind": "time_s",
+            "target_value": 35,
+            "rest_seconds": 30,
+            "note": "臀腰平直",
+            "provider_id": "T1010"
+          }
+        ]
+      },
+      "notes_md": "跑后或单独完成，动作质量优先。",
+      "total_distance_m": null,
+      "total_duration_s": 1500.0,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-07-15",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "强度：5×1600m 阈值",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 强度：5×1600m 阈值",
+        "date": "2026-07-15",
+        "note": "主质量 8K，不快于 4:05",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 14000.0
+                },
+                "target": {
+                  "kind": "pace_s_km",
+                  "low": 255.0,
+                  "high": 248.0
+                },
+                "note": "主质量 8K，不快于 4:05",
+                "hr_cap_bpm": null
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "主质量 8K，不快于 4:05",
+      "total_distance_m": 14000.0,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-07-16",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "轻松有氧",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 轻松有氧",
+        "date": "2026-07-16",
+        "note": "恢复",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 9000.0
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 128.0,
+                  "high": 146.0
+                },
+                "note": "恢复",
+                "hr_cap_bpm": 146
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "恢复",
+      "total_distance_m": 9000.0,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-07-17",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "短松跑 + strides",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 短松跑 + strides",
+        "date": "2026-07-17",
+        "note": "3×20s",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 8000.0
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 127.0,
+                  "high": 145.0
+                },
+                "note": "3×20s",
+                "hr_cap_bpm": 145
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "3×20s",
+      "total_distance_m": 8000.0,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-07-18",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "长距离：22-24K 路面",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 长距离：22-24K 路面",
+        "date": "2026-07-18",
+        "note": "路面重建，后段稳住",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "distance_m",
+                  "value": 22000.0
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 134.0,
+                  "high": 152.0
+                },
+                "note": "路面重建，后段稳住",
+                "hr_cap_bpm": 152
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "路面重建，后段稳住",
+      "total_distance_m": 22000.0,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    },
+    {
+      "schema": "plan-session/v1",
+      "date": "2026-07-19",
+      "session_index": 0,
+      "kind": "run",
+      "summary": "恢复跑或休息",
+      "spec": {
+        "schema": "run-workout/v1",
+        "name": "[STRIDE] 恢复跑或休息",
+        "date": "2026-07-19",
+        "note": "按腿感",
+        "blocks": [
+          {
+            "repeat": 1,
+            "steps": [
+              {
+                "step_kind": "work",
+                "duration": {
+                  "kind": "time_s",
+                  "value": 2100.0
+                },
+                "target": {
+                  "kind": "hr_bpm",
+                  "low": 122.0,
+                  "high": 140.0
+                },
+                "note": "按腿感",
+                "hr_cap_bpm": 140
+              }
+            ]
+          }
+        ]
+      },
+      "notes_md": "按腿感",
+      "total_distance_m": null,
+      "total_duration_s": null,
+      "scheduled_workout_id": null
+    }
+  ],
+  "nutrition": [
+    {
+      "date": "2026-07-13",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": 2200,
+      "meals": [],
+      "notes_md": "正常均衡饮食，保证蛋白和蔬菜；不因轻松日过度节食。"
+    },
+    {
+      "date": "2026-07-14",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": 2200,
+      "meals": [],
+      "notes_md": "正常均衡饮食，保证蛋白和蔬菜；不因轻松日过度节食。"
+    },
+    {
+      "date": "2026-07-15",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": 3000,
+      "meals": [],
+      "notes_md": "硬课/长跑日：课前补碳水，课后 30min 内碳水+蛋白，补电解质。"
+    },
+    {
+      "date": "2026-07-16",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": 2200,
+      "meals": [],
+      "notes_md": "正常均衡饮食，保证蛋白和蔬菜；不因轻松日过度节食。"
+    },
+    {
+      "date": "2026-07-17",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": 2200,
+      "meals": [],
+      "notes_md": "正常均衡饮食，保证蛋白和蔬菜；不因轻松日过度节食。"
+    },
+    {
+      "date": "2026-07-18",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": 3000,
+      "meals": [],
+      "notes_md": "硬课/长跑日：课前补碳水，课后 30min 内碳水+蛋白，补电解质。"
+    },
+    {
+      "date": "2026-07-19",
+      "kcal_target": null,
+      "carbs_g": null,
+      "protein_g": null,
+      "fat_g": null,
+      "water_ml": 2200,
+      "meals": [],
+      "notes_md": "正常均衡饮食，保证蛋白和蔬菜；不因轻松日过度节食。"
+    }
+  ],
+  "notes_md": "周三强度与周六长距离优先；其它训练根据疲劳和天气弹性调整。"
+}
