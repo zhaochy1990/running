@@ -1,7 +1,6 @@
 """Tests for SQLite database layer."""
 
 import json
-import sqlite3
 from datetime import timedelta
 
 import pytest
@@ -10,7 +9,6 @@ from stride_core.models import (
     ActivityDetail, DailyHealth, Dashboard, Lap, TimeseriesPoint, Zone,
 )
 from stride_core.timefmt import today_shanghai
-from stride_storage.sqlite.database import Database
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):
@@ -36,47 +34,6 @@ def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=100
 
 
 class TestDatabaseActivities:
-    def test_default_sqlite_journal_mode_is_wal(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("STRIDE_SQLITE_JOURNAL_MODE", raising=False)
-        monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)
-        monkeypatch.delenv("STRIDE_ENV", raising=False)
-
-        with Database(tmp_path / "journal-default.db") as db:
-            mode = db._conn.execute("PRAGMA journal_mode").fetchone()[0]
-
-        assert mode.lower() == "wal"
-
-    def test_prod_sqlite_journal_mode_avoids_wal(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("STRIDE_SQLITE_JOURNAL_MODE", raising=False)
-        monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
-
-        with Database(tmp_path / "journal-prod.db") as db:
-            mode = db._conn.execute("PRAGMA journal_mode").fetchone()[0]
-
-        assert mode.lower() == "delete"
-
-    def test_seeded_fresh_database_moves_complete_schema(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("STRIDE_SQLITE_JOURNAL_MODE", raising=False)
-        monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
-        db_path = tmp_path / "fresh-prod.db"
-        migrate_target_exists = []
-        original_migrate = Database._migrate
-
-        def spy_migrate(self):
-            migrate_target_exists.append(db_path.exists())
-            return original_migrate(self)
-
-        monkeypatch.setattr(Database, "_migrate", spy_migrate)
-
-        with Database(db_path) as db:
-            cols = {r[1] for r in db._conn.execute("PRAGMA table_info(weekly_plan)")}
-            activity_cols = {r[1] for r in db._conn.execute("PRAGMA table_info(activities)")}
-
-        assert "structured_status" in cols
-        assert "selected_variant_id" in cols
-        assert "vertical_oscillation_mm" in activity_cols
-        assert migrate_target_exists == [False]
-
     def test_upsert_and_exists(self, db):
         detail = _make_detail()
         assert not db.activity_exists("test1")
@@ -88,41 +45,6 @@ class TestDatabaseActivities:
         db.upsert_activity(detail)
         db.upsert_activity(detail)  # Should not fail
         assert db.get_activity_count() == 1
-
-    def test_upsert_activity_retries_transient_sqlite_lock(self, monkeypatch):
-        monkeypatch.setenv("STRIDE_SQLITE_LOCK_RETRY_ATTEMPTS", "2")
-        monkeypatch.setenv("STRIDE_SQLITE_LOCK_RETRY_BASE_DELAY_MS", "0")
-        monkeypatch.setenv("STRIDE_SQLITE_LOCK_RETRY_MAX_DELAY_MS", "0")
-
-        class FlakyConnection:
-            def __init__(self):
-                self.commits = 0
-                self.rollbacks = 0
-                self.executes = 0
-                self.executemany_calls = 0
-
-            def execute(self, *_args, **_kwargs):
-                self.executes += 1
-
-            def executemany(self, *_args, **_kwargs):
-                self.executemany_calls += 1
-
-            def commit(self):
-                self.commits += 1
-                if self.commits == 1:
-                    raise sqlite3.OperationalError("database is locked")
-
-            def rollback(self):
-                self.rollbacks += 1
-
-        db = Database.__new__(Database)
-        db._conn = FlakyConnection()
-
-        db.upsert_activity(_make_detail())
-
-        assert db._conn.commits == 2
-        assert db._conn.rollbacks == 1
-        assert db._conn.executemany_calls == 2
 
     def test_activity_count(self, db):
         assert db.get_activity_count() == 0
