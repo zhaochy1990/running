@@ -54,6 +54,28 @@ class TestDatabaseActivities:
 
         assert mode.lower() == "delete"
 
+    def test_seeded_fresh_database_moves_complete_schema(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("STRIDE_SQLITE_JOURNAL_MODE", raising=False)
+        monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+        db_path = tmp_path / "fresh-prod.db"
+        migrate_target_exists = []
+        original_migrate = Database._migrate
+
+        def spy_migrate(self):
+            migrate_target_exists.append(db_path.exists())
+            return original_migrate(self)
+
+        monkeypatch.setattr(Database, "_migrate", spy_migrate)
+
+        with Database(db_path) as db:
+            cols = {r[1] for r in db._conn.execute("PRAGMA table_info(weekly_plan)")}
+            activity_cols = {r[1] for r in db._conn.execute("PRAGMA table_info(activities)")}
+
+        assert "structured_status" in cols
+        assert "selected_variant_id" in cols
+        assert "vertical_oscillation_mm" in activity_cols
+        assert migrate_target_exists == [False]
+
     def test_upsert_and_exists(self, db):
         detail = _make_detail()
         assert not db.activity_exists("test1")

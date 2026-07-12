@@ -804,9 +804,11 @@ class Database:
         self._conn = _connect_sqlite(self._path)
         self._conn.row_factory = sqlite3.Row
         if seeded:
-            # SCHEMA was already applied during the seed; just run the
-            # idempotent column-add migrations on the live connection.
-            self._migrate()
+            # SCHEMA + migrations were already applied to the local seed before
+            # it was moved into place. Avoid running ALTERs against the freshly
+            # copied Azure Files DB, where SMB can report a self-lock while the
+            # file settles.
+            return
         else:
             self._init_schema()
 
@@ -827,6 +829,15 @@ class Database:
             try:
                 conn.executescript(SCHEMA)
                 conn.commit()
+                original = getattr(self, "_conn", None)
+                self._conn = conn
+                try:
+                    self._migrate()
+                finally:
+                    if original is None:
+                        del self._conn
+                    else:
+                        self._conn = original
                 if _sqlite_journal_mode() == "WAL":
                     # Checkpoint so the moved file is self-contained — no
                     # leftover -wal / -shm sidecars to chase.
