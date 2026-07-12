@@ -99,7 +99,13 @@ class CorosClient:
         if code != RESULT_SUCCESS:
             raise CorosAuthError("Auto re-login failed. Run: coros-sync login")
         token = data["data"]["accessToken"]
-        region = self._detect_region(token)
+        # Region is a stable property of the account — detect it once (at first
+        # login) and reuse the stored value on every re-login. Re-detecting here
+        # fired an extra /account/query probe against each base on every token
+        # refresh, which under concurrent sync produced a churn of WRONG_REGION
+        # round-trips (observed global↔cn flapping in the logs). Only fall back
+        # to detection if we somehow have no stored region.
+        region = self._creds.region or self._detect_region(token)
         self._creds.access_token = token
         self._creds.region = region
         self._creds.save(user=self._user)
