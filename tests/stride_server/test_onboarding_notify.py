@@ -89,6 +89,31 @@ def test_publish_started_copy(monkeypatch):
     assert calls[0]["progress_pct"] == 5
 
 
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: N.publish_started("u1"),
+        lambda: N.publish_syncing("u1", 1, 10),
+        lambda: N.publish_sync_done("u1", 10),
+        lambda: N.publish_analyzing("u1"),
+        lambda: N.publish_complete("u1"),
+        lambda: N.publish_failed("u1", "step"),
+    ],
+)
+def test_publishers_call_real_publish_without_arg_errors(monkeypatch, call):
+    """Guards against a publisher forgetting a required _publish kwarg (e.g.
+    `state`). Mock only the store so _publish's real signature is exercised — a
+    missing/extra kwarg raises TypeError here instead of 500ing in prod."""
+    seen = {}
+    import stride_server.notifications.store as nstore
+    monkeypatch.setattr(
+        nstore, "upsert_notification",
+        lambda user_id, nid, **kw: seen.update(kw) or {},
+    )
+    call()  # must not raise
+    assert "metadata" in seen and "state" in seen["metadata"]
+
+
 def test_publish_failed_is_error_and_hides_detail(monkeypatch):
     calls = []
     monkeypatch.setattr(N, "_publish", lambda user_id, **kw: calls.append(kw))

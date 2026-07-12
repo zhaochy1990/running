@@ -92,6 +92,7 @@ def publish_started(user_id: str) -> None:
         body="STRIDE 正在处理你的数据",
         severity="info",
         progress_pct=5,
+        state="started",
     )
 
 
