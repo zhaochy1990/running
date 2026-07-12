@@ -21,6 +21,7 @@ from typing import Any
 
 from stride_storage.interfaces.jobs import JobRecord
 
+from stride_server.jobs import onboarding_notify
 from stride_server.jobs.registry import job_handler
 
 logger = logging.getLogger(__name__)
@@ -55,14 +56,27 @@ def handle_full_sync(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
         raise RuntimeError(f"user {uuid} not logged in to watch provider")
 
     def _progress(payload: dict) -> None:
-        # Every sync progress tick renews the queue lease (the worker's
-        # heartbeat extends visibility) so a multi-minute full sync isn't
-        # re-delivered mid-flight. Best-effort — a progress update must never
-        # abort the sync. The sync engine emits ``phase``/``message`` (no
-        # percent), so we surface ``phase`` as the stage and hold pct at 50.
+        # Every sync progress tick (a) renews the queue lease via heartbeat so a
+        # multi-minute full sync isn't re-delivered mid-flight, and (b) surfaces
+        # live sync progress to the notification center. Both are best-effort — a
+        # progress update must never abort the sync.
         try:
             phase = payload.get("phase")
-            heartbeat(stage=str(phase) if phase else "syncing", progress_pct=50)
+            percent = payload.get("percent")
+            heartbeat(
+                stage=str(phase) if phase else "syncing",
+                progress_pct=int(percent) if isinstance(percent, (int, float)) else 50,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        # The activity-details phase carries current/total (e.g. 59/783) — the
+        # only place with a real count for the "当前进度 59/783" message.
+        try:
+            if payload.get("phase") == "activity_details":
+                current = payload.get("current")
+                total = payload.get("total")
+                if isinstance(current, int) and isinstance(total, int):
+                    onboarding_notify.publish_syncing(uuid, current, total)
         except Exception:  # noqa: BLE001
             pass
 
