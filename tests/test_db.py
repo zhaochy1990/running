@@ -1,6 +1,7 @@
 """Tests for SQLite database layer."""
 
 import json
+import sqlite3
 from datetime import timedelta
 
 import pytest
@@ -87,6 +88,41 @@ class TestDatabaseActivities:
         db.upsert_activity(detail)
         db.upsert_activity(detail)  # Should not fail
         assert db.get_activity_count() == 1
+
+    def test_upsert_activity_retries_transient_sqlite_lock(self, monkeypatch):
+        monkeypatch.setenv("STRIDE_SQLITE_LOCK_RETRY_ATTEMPTS", "2")
+        monkeypatch.setenv("STRIDE_SQLITE_LOCK_RETRY_BASE_DELAY_MS", "0")
+        monkeypatch.setenv("STRIDE_SQLITE_LOCK_RETRY_MAX_DELAY_MS", "0")
+
+        class FlakyConnection:
+            def __init__(self):
+                self.commits = 0
+                self.rollbacks = 0
+                self.executes = 0
+                self.executemany_calls = 0
+
+            def execute(self, *_args, **_kwargs):
+                self.executes += 1
+
+            def executemany(self, *_args, **_kwargs):
+                self.executemany_calls += 1
+
+            def commit(self):
+                self.commits += 1
+                if self.commits == 1:
+                    raise sqlite3.OperationalError("database is locked")
+
+            def rollback(self):
+                self.rollbacks += 1
+
+        db = Database.__new__(Database)
+        db._conn = FlakyConnection()
+
+        db.upsert_activity(_make_detail())
+
+        assert db._conn.commits == 2
+        assert db._conn.rollbacks == 1
+        assert db._conn.executemany_calls == 2
 
     def test_activity_count(self, db):
         assert db.get_activity_count() == 0

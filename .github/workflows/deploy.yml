@@ -7,6 +7,7 @@ on:
       - 'src/coros_sync/**'
       - 'src/garmin_sync/**'
       - 'src/stride_core/**'
+      - 'src/stride_storage/**'
       - 'src/stride_server/**'
       - 'src/coach/**'
       - 'src/plan_parser/**'

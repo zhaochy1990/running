@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import shutil
 import sqlite3
 import tempfile
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -20,7 +22,12 @@ from stride_core.timefmt import SHANGHAI_DAY_SQL
 
 _VO2MAX_PB_DISTANCE_METERS_FLAG = "distance_units_vo2max_pb_meters_v1"
 _DEFAULT_SQLITE_BUSY_TIMEOUT_MS = 10_000
+_DEFAULT_SQLITE_LOCK_RETRY_ATTEMPTS = 5
+_DEFAULT_SQLITE_LOCK_RETRY_BASE_DELAY_MS = 250
+_DEFAULT_SQLITE_LOCK_RETRY_MAX_DELAY_MS = 2_000
 _SQLITE_JOURNAL_MODES = {"DELETE", "TRUNCATE", "PERSIST", "MEMORY", "WAL", "OFF"}
+
+logger = logging.getLogger(__name__)
 
 
 def _sqlite_busy_timeout_ms() -> int:
@@ -51,13 +58,60 @@ def _sqlite_journal_mode() -> str:
     return "DELETE" if env == "prod" else "WAL"
 
 
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}")
+    return value
+
+
+def _sqlite_lock_retry_attempts() -> int:
+    return _env_int(
+        "STRIDE_SQLITE_LOCK_RETRY_ATTEMPTS",
+        _DEFAULT_SQLITE_LOCK_RETRY_ATTEMPTS,
+    )
+
+
+def _sqlite_lock_retry_base_delay_s() -> float:
+    return _env_int(
+        "STRIDE_SQLITE_LOCK_RETRY_BASE_DELAY_MS",
+        _DEFAULT_SQLITE_LOCK_RETRY_BASE_DELAY_MS,
+    ) / 1000
+
+
+def _sqlite_lock_retry_max_delay_s() -> float:
+    return _env_int(
+        "STRIDE_SQLITE_LOCK_RETRY_MAX_DELAY_MS",
+        _DEFAULT_SQLITE_LOCK_RETRY_MAX_DELAY_MS,
+    ) / 1000
+
+
+def _is_sqlite_lock_error(exc: BaseException) -> bool:
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    message = str(exc).lower()
+    return (
+        "database is locked" in message
+        or "database is busy" in message
+        or "locking protocol" in message
+    )
+
+
 def _connect_sqlite(path: Path, *, isolation_level: str | None = "") -> sqlite3.Connection:
     busy_timeout_ms = _sqlite_busy_timeout_ms()
     timeout_s = busy_timeout_ms / 1000
     conn = sqlite3.connect(str(path), timeout=timeout_s, isolation_level=isolation_level)
     conn.execute(f"PRAGMA busy_timeout = {busy_timeout_ms}")
     desired = _sqlite_journal_mode()
-    conn.execute(f"PRAGMA journal_mode={desired}")
+    current = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).upper()
+    if current != desired:
+        conn.execute(f"PRAGMA journal_mode={desired}")
     return conn
 
 
@@ -1335,6 +1389,33 @@ class Database:
     def __exit__(self, *args) -> None:
         self.close()
 
+    def _run_write_with_lock_retry(self, operation: str, write_fn) -> None:
+        attempts = max(1, _sqlite_lock_retry_attempts())
+        base_delay = _sqlite_lock_retry_base_delay_s()
+        max_delay = _sqlite_lock_retry_max_delay_s()
+        for attempt in range(1, attempts + 1):
+            try:
+                write_fn()
+                return
+            except sqlite3.OperationalError as exc:
+                if not _is_sqlite_lock_error(exc) or attempt >= attempts:
+                    raise
+                try:
+                    self._conn.rollback()
+                except sqlite3.Error:
+                    logger.warning("SQLite rollback failed after locked %s", operation, exc_info=True)
+                delay = min(max_delay, base_delay * (2 ** (attempt - 1)))
+                logger.warning(
+                    "SQLite %s hit %s; retrying %d/%d after %.2fs",
+                    operation,
+                    exc,
+                    attempt + 1,
+                    attempts,
+                    delay,
+                )
+                if delay > 0:
+                    time.sleep(delay)
+
     # --- Activities ---
 
     def upsert_activity(self, a: ActivityDetail, *, provider: str = "coros") -> None:
@@ -1350,42 +1431,46 @@ class Database:
         # Pre-compute the activity-list thumbnail polyline so reads of the
         # list API stay one-table. NULL when no GPS (indoor/strength).
         route_thumb_json = compute_route_thumbnail(a.timeseries)
-        self._conn.execute(
-            """INSERT OR REPLACE INTO activities
-            (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
-             avg_pace_s_km, adjusted_pace, best_km_pace, max_pace,
-             avg_hr, max_hr, avg_cadence, max_cadence, avg_power, max_power,
-             avg_step_len_cm, ascent_m, descent_m, calories_kcal,
-             aerobic_effect, anaerobic_effect, training_load, vo2max, performance, train_type,
-             temperature, humidity, feels_like, wind_speed, feel_type, sport_note,
-             sport, train_kind, feel,
-             vertical_oscillation_mm, ground_contact_time_ms, vertical_ratio_pct,
-             pauses, route_thumb_json, provider)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
-             a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
-             a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
-             a.avg_cadence, a.max_cadence, a.avg_power, a.max_power,
-             a.avg_step_len_cm, a.ascent_m, a.descent_m, a.calories_kcal,
-             a.aerobic_effect, a.anaerobic_effect, a.training_load,
-             a.vo2max, a.performance, a.train_type,
-             a.temperature, a.humidity, a.feels_like, a.wind_speed,
-             a.feel_type, a.sport_note,
-             a.sport, a.train_kind, a.feel,
-             a.vertical_oscillation_mm, a.ground_contact_time_ms, a.vertical_ratio_pct,
-             pauses_json, route_thumb_json, provider),
-        )
-        # Upsert child records
-        for lap in a.laps:
-            self._upsert_lap(a.label_id, lap)
-        # Clear zones before reinserting: a re-sync can change the zone set
-        # (e.g. a misclassified pace group repaired to its own rows), and leftover
-        # rows from a prior parse would otherwise linger as stale zones.
-        self._conn.execute("DELETE FROM zones WHERE label_id = ?", (a.label_id,))
-        for zone in a.zones:
-            self._upsert_zone(a.label_id, zone)
-        self._insert_timeseries(a.label_id, a.timeseries)
-        self._conn.commit()
+
+        def _write() -> None:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO activities
+                (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
+                 avg_pace_s_km, adjusted_pace, best_km_pace, max_pace,
+                 avg_hr, max_hr, avg_cadence, max_cadence, avg_power, max_power,
+                 avg_step_len_cm, ascent_m, descent_m, calories_kcal,
+                 aerobic_effect, anaerobic_effect, training_load, vo2max, performance, train_type,
+                 temperature, humidity, feels_like, wind_speed, feel_type, sport_note,
+                 sport, train_kind, feel,
+                 vertical_oscillation_mm, ground_contact_time_ms, vertical_ratio_pct,
+                 pauses, route_thumb_json, provider)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (a.label_id, a.name, a.sport_type, a.sport_name, a.date,
+                 a.distance_m, a.duration_s, a.avg_pace_s_km, a.adjusted_pace,
+                 a.best_km_pace, a.max_pace, a.avg_hr, a.max_hr,
+                 a.avg_cadence, a.max_cadence, a.avg_power, a.max_power,
+                 a.avg_step_len_cm, a.ascent_m, a.descent_m, a.calories_kcal,
+                 a.aerobic_effect, a.anaerobic_effect, a.training_load,
+                 a.vo2max, a.performance, a.train_type,
+                 a.temperature, a.humidity, a.feels_like, a.wind_speed,
+                 a.feel_type, a.sport_note,
+                 a.sport, a.train_kind, a.feel,
+                 a.vertical_oscillation_mm, a.ground_contact_time_ms, a.vertical_ratio_pct,
+                 pauses_json, route_thumb_json, provider),
+            )
+            # Upsert child records
+            for lap in a.laps:
+                self._upsert_lap(a.label_id, lap)
+            # Clear zones before reinserting: a re-sync can change the zone set
+            # (e.g. a misclassified pace group repaired to its own rows), and leftover
+            # rows from a prior parse would otherwise linger as stale zones.
+            self._conn.execute("DELETE FROM zones WHERE label_id = ?", (a.label_id,))
+            for zone in a.zones:
+                self._upsert_zone(a.label_id, zone)
+            self._insert_timeseries(a.label_id, a.timeseries)
+            self._conn.commit()
+
+        self._run_write_with_lock_retry("upsert_activity", _write)
 
     def _upsert_lap(self, label_id: str, lap: Lap) -> None:
         self._conn.execute(
@@ -1653,61 +1738,70 @@ class Database:
     # --- Health ---
 
     def upsert_daily_health(self, h: DailyHealth, *, provider: str = "coros") -> None:
-        self._conn.execute(
-            """INSERT OR REPLACE INTO daily_health
-            (date, ati, cti, rhr, distance_m, duration_s, training_load_ratio,
-             training_load_state, fatigue,
-             body_battery_high, body_battery_low, stress_avg,
-             sleep_total_s, sleep_deep_s, sleep_light_s, sleep_rem_s, sleep_awake_s, sleep_score,
-             respiration_avg, spo2_avg,
-             provider)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (h.date, h.ati, h.cti, h.rhr, h.distance_m, h.duration_s,
-             h.training_load_ratio, h.training_load_state, h.fatigue,
-             h.body_battery_high, h.body_battery_low, h.stress_avg,
-             h.sleep_total_s, h.sleep_deep_s, h.sleep_light_s, h.sleep_rem_s,
-             h.sleep_awake_s, h.sleep_score,
-             h.respiration_avg, h.spo2_avg,
-             provider),
-        )
-        self._conn.commit()
+        def _write() -> None:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO daily_health
+                (date, ati, cti, rhr, distance_m, duration_s, training_load_ratio,
+                 training_load_state, fatigue,
+                 body_battery_high, body_battery_low, stress_avg,
+                 sleep_total_s, sleep_deep_s, sleep_light_s, sleep_rem_s, sleep_awake_s, sleep_score,
+                 respiration_avg, spo2_avg,
+                 provider)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (h.date, h.ati, h.cti, h.rhr, h.distance_m, h.duration_s,
+                 h.training_load_ratio, h.training_load_state, h.fatigue,
+                 h.body_battery_high, h.body_battery_low, h.stress_avg,
+                 h.sleep_total_s, h.sleep_deep_s, h.sleep_light_s, h.sleep_rem_s,
+                 h.sleep_awake_s, h.sleep_score,
+                 h.respiration_avg, h.spo2_avg,
+                 provider),
+            )
+            self._conn.commit()
+
+        self._run_write_with_lock_retry("upsert_daily_health", _write)
 
     def upsert_daily_hrv(self, h: DailyHrv, *, provider: str = "garmin") -> None:
         """Upsert a per-day HRV detail row (Garmin-rich, COROS-empty for v1)."""
-        self._conn.execute(
-            """INSERT OR REPLACE INTO daily_hrv
-            (date, weekly_avg, last_night_avg, last_night_5min_high, status,
-             baseline_low_upper, baseline_balanced_low, baseline_balanced_upper,
-             feedback_phrase, provider)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (h.date, h.weekly_avg, h.last_night_avg, h.last_night_5min_high, h.status,
-             h.baseline_low_upper, h.baseline_balanced_low, h.baseline_balanced_upper,
-             h.feedback_phrase, provider),
-        )
-        self._conn.commit()
+        def _write() -> None:
+            self._conn.execute(
+                """INSERT OR REPLACE INTO daily_hrv
+                (date, weekly_avg, last_night_avg, last_night_5min_high, status,
+                 baseline_low_upper, baseline_balanced_low, baseline_balanced_upper,
+                 feedback_phrase, provider)
+                VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (h.date, h.weekly_avg, h.last_night_avg, h.last_night_5min_high, h.status,
+                 h.baseline_low_upper, h.baseline_balanced_low, h.baseline_balanced_upper,
+                 h.feedback_phrase, provider),
+            )
+            self._conn.commit()
+
+        self._run_write_with_lock_retry("upsert_daily_hrv", _write)
 
     def upsert_dashboard(self, d: Dashboard, *, provider: str = "coros") -> None:
-        self._conn.execute(
-            """INSERT OR REPLACE INTO dashboard
-            (id, running_level, aerobic_score, lactate_threshold_score,
-             anaerobic_endurance_score, anaerobic_capacity_score,
-             rhr, threshold_hr, threshold_pace_s_km, recovery_pct,
-             avg_sleep_hrv, hrv_normal_low, hrv_normal_high,
-             weekly_distance_m, weekly_duration_s, provider)
-            VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (d.running_level, d.aerobic_score, d.lactate_threshold_score,
-             d.anaerobic_endurance_score, d.anaerobic_capacity_score,
-             d.rhr, d.threshold_hr, d.threshold_pace_s_km, d.recovery_pct,
-             d.avg_sleep_hrv, d.hrv_normal_low, d.hrv_normal_high,
-             d.weekly_distance_m, d.weekly_duration_s, provider),
-        )
-        for pred in d.race_predictions:
+        def _write() -> None:
             self._conn.execute(
-                """INSERT OR REPLACE INTO race_predictions
-                (race_type, duration_s, avg_pace) VALUES (?,?,?)""",
-                (pred.race_type, pred.duration_s, pred.avg_pace),
+                """INSERT OR REPLACE INTO dashboard
+                (id, running_level, aerobic_score, lactate_threshold_score,
+                 anaerobic_endurance_score, anaerobic_capacity_score,
+                 rhr, threshold_hr, threshold_pace_s_km, recovery_pct,
+                 avg_sleep_hrv, hrv_normal_low, hrv_normal_high,
+                 weekly_distance_m, weekly_duration_s, provider)
+                VALUES (1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (d.running_level, d.aerobic_score, d.lactate_threshold_score,
+                 d.anaerobic_endurance_score, d.anaerobic_capacity_score,
+                 d.rhr, d.threshold_hr, d.threshold_pace_s_km, d.recovery_pct,
+                 d.avg_sleep_hrv, d.hrv_normal_low, d.hrv_normal_high,
+                 d.weekly_distance_m, d.weekly_duration_s, provider),
             )
-        self._conn.commit()
+            for pred in d.race_predictions:
+                self._conn.execute(
+                    """INSERT OR REPLACE INTO race_predictions
+                    (race_type, duration_s, avg_pace) VALUES (?,?,?)""",
+                    (pred.race_type, pred.duration_s, pred.avg_pace),
+                )
+            self._conn.commit()
+
+        self._run_write_with_lock_retry("upsert_dashboard", _write)
 
     # --- Sync metadata ---
 
@@ -1716,10 +1810,13 @@ class Database:
         return row[0] if row else None
 
     def set_meta(self, key: str, value: str) -> None:
-        self._conn.execute(
-            "INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)", (key, value)
-        )
-        self._conn.commit()
+        def _write() -> None:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO sync_meta (key, value) VALUES (?, ?)", (key, value)
+            )
+            self._conn.commit()
+
+        self._run_write_with_lock_retry("set_meta", _write)
 
     # --- Activity commentary (AI coach notes) ---
 
