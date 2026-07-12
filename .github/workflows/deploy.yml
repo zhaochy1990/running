@@ -178,6 +178,25 @@ jobs:
             exit 0
           fi
 
+          # The worker writes user SQLite databases during onboarding sync.
+          # It must share the same Azure Files mount as stride-app, otherwise
+          # progress notifications advance while the API keeps reading an
+          # empty /app/data volume.
+          WORKER_DATA_MOUNT=$(az containerapp show \
+            --name ${{ env.WORKER_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.template.containers[0].volumeMounts[?mountPath=='/app/data'].volumeName | [0]" \
+            -o tsv)
+          WORKER_DATA_VOLUME=$(az containerapp show \
+            --name ${{ env.WORKER_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.template.volumes[?name=='$WORKER_DATA_MOUNT' && storageName=='stridestorage' && storageType=='AzureFile'] | [0].name" \
+            -o tsv)
+          if [ -z "$WORKER_DATA_MOUNT" ] || [ -z "$WORKER_DATA_VOLUME" ]; then
+            echo "::error::${{ env.WORKER_NAME }} must mount Azure Files storage 'stridestorage' at /app/data before deploy."
+            exit 1
+          fi
+
           az containerapp update \
             --name ${{ env.WORKER_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
