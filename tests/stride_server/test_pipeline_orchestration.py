@@ -336,3 +336,30 @@ def _find_job(worker, partition_key, job_type):
         if rec.job_type == job_type:
             return rec
     raise AssertionError(f"no {job_type} job for {partition_key}")
+
+
+def test_start_pipeline_emits_started_for_onboarding(tmp_path, monkeypatch):
+    """start_pipeline publishes the 'started' notification for the onboarding
+    pipeline (immediate visibility, API process) but not for other pipelines."""
+    job_handler("a")(lambda job, *, heartbeat: {"ok": True})
+    p = _write_yaml(tmp_path, """
+pipelines:
+  onboarding:
+    steps:
+      - {name: full_sync, job_type: a}
+  other:
+    steps:
+      - {name: s1, job_type: a}
+""")
+    load_pipelines(p)
+    _wire_dev_backends(tmp_path, monkeypatch)
+
+    started: list[str] = []
+    from stride_server.jobs import onboarding_notify
+    monkeypatch.setattr(onboarding_notify, "publish_started", lambda u: started.append(u))
+
+    orchestrator.start_pipeline("other", partition_key="u1")
+    assert started == []  # non-onboarding pipeline → no notification
+
+    orchestrator.start_pipeline("onboarding", partition_key="u2")
+    assert started == ["u2"]

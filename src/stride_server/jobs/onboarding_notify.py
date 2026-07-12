@@ -68,6 +68,24 @@ def _publish(user_id: str, *, body: str, severity: str, progress_pct: int) -> No
         logger.warning("onboarding notification publish failed for %s", user_id, exc_info=True)
 
 
+def publish_started(user_id: str) -> None:
+    """Pipeline kicked off: '正在处理你的数据'.
+
+    Emitted from ``start_pipeline`` (API process) the moment the run is created —
+    BEFORE the worker picks up the first step. This guarantees the user sees the
+    job is running even if the very first step fails immediately (e.g. a watch
+    credential problem), instead of a silent gap until the terminal-failure
+    notification.
+    """
+    reset_throttle(user_id)
+    _publish(
+        user_id,
+        body="STRIDE 正在处理你的数据",
+        severity="info",
+        progress_pct=5,
+    )
+
+
 def publish_syncing(user_id: str, current: int, total: int) -> None:
     """Live sync progress: '正在同步你的数据，当前进度 59/783'. Throttled.
 
