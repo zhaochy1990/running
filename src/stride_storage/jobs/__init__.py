@@ -14,6 +14,7 @@ from stride_storage.jobs.pipeline_store import (
     pipeline_run_store_from_config,
 )
 from stride_storage.jobs.queue import (
+    FileJobQueue,
     InMemoryJobQueue,
     queue_from_config,
     reset_dev_queues,
@@ -28,6 +29,7 @@ __all__ = [
     "AzureTableJobStore",
     "AzureTablePipelineRunStore",
     "FileJobStore",
+    "FileJobQueue",
     "FilePipelineRunStore",
     "InMemoryJobQueue",
     "JobClient",

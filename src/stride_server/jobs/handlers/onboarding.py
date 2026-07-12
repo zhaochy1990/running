@@ -10,13 +10,15 @@ build a registry in-process, open ``Database(user=...)`` directly.
 ``job.partition_key`` is the user_id. Onboarding is pure sync + one unified
 compute pass — the sync step deliberately does NOT run the incremental
 post-sync chain (that逐条 recompute would be wasteful on a full historical
-pull and would compute ability before calibration exists). Daily incremental
-sync keeps its post-sync chain unchanged.
+pull and would compute ability before calibration exists). The backfill step
+then writes training-load + ability rows once the calibration snapshot exists.
+Daily incremental sync keeps its post-sync chain unchanged.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from stride_storage.interfaces.jobs import JobRecord
@@ -115,16 +117,28 @@ def handle_calibration(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
 
 @job_handler("onboarding_backfill")
 def handle_backfill(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
-    """Step 3 — ability snapshot backfill.
+    """Step 3 — training-load and ability snapshot backfill.
 
-    Calibration exists now, so ability reads a real HRmax. No commentary
-    (expensive; generated lazily elsewhere).
+    Calibration exists now, so training status can be materialized and ability
+    reads a real HRmax. No commentary (expensive; generated lazily elsewhere).
     """
     from stride_core.ability_hook import backfill_ability_snapshots
+    from stride_core.training_load import recompute_training_load
+    from stride_core.timefmt import today_shanghai
     from stride_storage.sqlite.database import Database
 
     uuid = job.partition_key
-    heartbeat(stage="scoring", progress_pct=70)
+    heartbeat(stage="training_load", progress_pct=65)
     with Database(user=uuid) as db:
+        today = today_shanghai()
+        load = recompute_training_load(db, start=today - timedelta(days=180), end=today)
+        heartbeat(stage="scoring", progress_pct=80)
         ability = backfill_ability_snapshots(db, days=180)
-    return {"ability": ability}
+    return {
+        "training_load": {
+            "activities_processed": load.activities_processed,
+            "activity_rows_written": load.activity_rows_written,
+            "daily_rows_written": load.daily_rows_written,
+        },
+        "ability": ability,
+    }

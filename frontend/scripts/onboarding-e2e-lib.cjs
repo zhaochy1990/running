@@ -4,8 +4,8 @@
  * real auth + STRIDE backends and runs a scenario in a real browser — no mocks.
  *
  * Credentials come from <repoRoot>/.credentials.local and frontend/.env.local,
- * or env vars (so CI can inject GitHub secrets). Email/password/token/invite
- * values are never printed.
+ * the main workspace fallback, or env vars (so CI can inject GitHub secrets).
+ * Email/password/token/invite values are never printed.
  */
 const { chromium } = require('playwright')
 const fs = require('node:fs')
@@ -13,6 +13,9 @@ const path = require('node:path')
 
 const repoRoot = path.resolve(__dirname, '..', '..')
 const frontendRoot = path.resolve(__dirname, '..')
+const workspaceRoot = process.env.USERPROFILE
+  ? path.join(process.env.USERPROFILE, 'workspace', 'running')
+  : null
 
 // Where to run. Pick a named target with STRIDE_SMOKE_TARGET (prod|local,
 // default prod) or override the URL outright with STRIDE_SMOKE_URL.
@@ -38,6 +41,11 @@ function parseEnvFile(file) {
     if (match) out[match[1]] = match[2]
   }
   return out
+}
+
+function parseFirstEnvFile(files) {
+  const file = files.filter(Boolean).find((candidate) => fs.existsSync(candidate))
+  return file ? parseEnvFile(file) : {}
 }
 
 /**
@@ -71,14 +79,27 @@ function parseCredentials(file) {
   return { sections, flat }
 }
 
+function parseFirstCredentials(files) {
+  const file = files.filter(Boolean).find((candidate) => fs.existsSync(candidate))
+  return parseCredentials(file || '')
+}
+
 /**
  * Resolve config. `requireCoros` defaults true (the happy-path smoke binds a
  * real watch); negative-path scenarios that never reach a successful watch
  * login pass false so absent COROS creds aren't a hard error.
  */
 function loadConfig({ requireCoros = true } = {}) {
-  const { sections, flat } = parseCredentials(path.join(repoRoot, '.credentials.local'))
-  const env = parseEnvFile(path.join(frontendRoot, '.env.local'))
+  const { sections, flat } = parseFirstCredentials([
+    path.join(repoRoot, '.credentials.local'),
+    process.env.STRIDE_CREDENTIALS_FILE,
+    workspaceRoot ? path.join(workspaceRoot, '.credentials.local') : null,
+  ])
+  const env = parseFirstEnvFile([
+    path.join(frontendRoot, '.env.local'),
+    process.env.STRIDE_FRONTEND_ENV_FILE,
+    workspaceRoot ? path.join(workspaceRoot, 'frontend', '.env.local') : null,
+  ])
 
   // Each credential falls back to an env var so CI can inject GitHub secrets
   // without writing a .credentials.local file onto the runner.
@@ -123,6 +144,106 @@ async function postJson(url, body, headers = {}) {
   })
   const data = await res.json().catch(() => ({}))
   return { status: res.status, ok: res.ok, data }
+}
+
+function isLocalAppUrl() {
+  try {
+    const url = new URL(appUrl)
+    return ['127.0.0.1', 'localhost', '::1'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
+
+function safeRemoveInside(baseDir, targetPath) {
+  const base = path.resolve(baseDir)
+  const target = path.resolve(targetPath)
+  const rel = path.relative(base, target)
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`refusing to remove outside ${base}: ${target}`)
+  }
+  if (fs.existsSync(target)) {
+    fs.rmSync(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 1000 })
+  }
+}
+
+async function retryLocalRemove(baseDir, targetPath) {
+  let lastError = null
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    try {
+      safeRemoveInside(baseDir, targetPath)
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+    }
+  }
+  throw lastError
+}
+
+function pruneLocalNotificationRows(userId) {
+  const file = path.join(repoRoot, 'data', '.notifications.json')
+  if (!fs.existsSync(file)) return
+  let data = null
+  try {
+    data = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    return
+  }
+  for (const section of ['devices', 'prefs', 'read_state', 'notifications']) {
+    if (data[section] && typeof data[section] === 'object') delete data[section][userId]
+  }
+  const hasRows = ['devices', 'prefs', 'read_state', 'notifications'].some(
+    (section) => data[section] && typeof data[section] === 'object' && Object.keys(data[section]).length > 0,
+  )
+  if (hasRows) fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8')
+  else fs.rmSync(file, { force: true })
+}
+
+function removeIfEmpty(dir) {
+  if (!fs.existsSync(dir)) return
+  try {
+    if (fs.statSync(dir).isDirectory() && fs.readdirSync(dir).length === 0) fs.rmdirSync(dir)
+  } catch {
+    // Best-effort cleanup only; active local workers may recreate these dirs.
+  }
+}
+
+function pruneLocalQueueMessages(userId) {
+  const queuesDir = path.join(repoRoot, 'data', '_jobs_dev', 'queues')
+  if (!fs.existsSync(queuesDir)) return
+  for (const queueName of fs.readdirSync(queuesDir)) {
+    const queueDir = path.join(queuesDir, queueName)
+    if (!fs.statSync(queueDir).isDirectory()) continue
+    for (const name of fs.readdirSync(queueDir)) {
+      if (!name.endsWith('.json')) continue
+      const file = path.join(queueDir, name)
+      try {
+        const message = JSON.parse(fs.readFileSync(file, 'utf8'))
+        if (message.partition_key === userId) safeRemoveInside(queueDir, file)
+      } catch {
+        // Ignore malformed dev queue files; the worker will skip them too.
+      }
+    }
+  }
+}
+
+async function cleanupLocalThrowawayData(userId) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(userId)) {
+    throw new Error(`refusing local cleanup for invalid user id: ${userId}`)
+  }
+  const dataDir = path.join(repoRoot, 'data')
+  await retryLocalRemove(dataDir, path.join(dataDir, userId))
+  await retryLocalRemove(dataDir, path.join(dataDir, '_jobs_dev', 'state', userId))
+  await retryLocalRemove(dataDir, path.join(dataDir, '_jobs_dev', 'pipeline_runs', userId))
+  pruneLocalQueueMessages(userId)
+  pruneLocalNotificationRows(userId)
+  const jobsDir = path.join(dataDir, '_jobs_dev')
+  removeIfEmpty(path.join(jobsDir, 'state'))
+  removeIfEmpty(path.join(jobsDir, 'pipeline_runs'))
+  for (const queueName of ['stridejobs', 'stridejobs-poison']) removeIfEmpty(path.join(jobsDir, 'queues', queueName))
+  removeIfEmpty(path.join(jobsDir, 'queues'))
+  removeIfEmpty(jobsDir)
 }
 
 /** Admin-login then mint one single-use invite code. */
@@ -171,12 +292,29 @@ async function registerThrowaway(cfg) {
   }
 }
 
-async function deleteThrowaway(accessToken) {
+async function deleteThrowawayViaAuthService(accessToken, cfg) {
+  try {
+    const res = await fetch(`${cfg.authBase}/api/users/me`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'X-Client-Id': cfg.clientId,
+      },
+    })
+    return res.status
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error)
+    return `auth-service error: ${message}`
+  }
+}
+
+async function deleteThrowaway(accessToken, cfg, userId) {
   // Retry: right after a real sync the user's coros.db can be briefly locked,
   // surfacing as a 500 from the local-dir cleanup. The auth user is removed on
   // the first call; the token still authenticates to STRIDE locally, so retries
   // just re-attempt the data-dir delete until it succeeds.
   let lastStatus = 0
+  const local = isLocalAppUrl()
   for (let attempt = 1; attempt <= 4; attempt++) {
     const res = await fetch(`${appUrl}/api/users/me`, {
       method: 'DELETE',
@@ -184,9 +322,19 @@ async function deleteThrowaway(accessToken) {
     })
     lastStatus = res.status
     if (res.status === 204 || res.status === 404) return res.status
+    if (local && res.status === 503) break
     await new Promise((resolve) => setTimeout(resolve, 2000 * attempt))
   }
-  return lastStatus
+  if (!local) return lastStatus
+
+  // Local STRIDE often runs without auth_service.base_url, so its account
+  // delete endpoint cannot forward to auth-service. The E2E harness already
+  // knows that auth URL, so finish cleanup directly and remove only this
+  // throwaway user's local files.
+  const authStatus = await deleteThrowawayViaAuthService(accessToken, cfg)
+  if (![204, 401, 404].includes(authStatus)) return `auth-service ${authStatus}`
+  await cleanupLocalThrowawayData(userId)
+  return 'local-fallback'
 }
 
 /**
@@ -240,8 +388,11 @@ async function runOnboardingScenario(
     }
     if (browser) await browser.close().catch(() => {})
     if (throwaway) {
-      const status = await deleteThrowaway(throwaway.accessToken).catch(() => 'error')
-      if (status === 204 || status === 404) {
+      const status = await deleteThrowaway(throwaway.accessToken, cfg, throwaway.userId).catch((error) => {
+        const message = error && error.message ? error.message : String(error)
+        return `error: ${message}`
+      })
+      if (status === 204 || status === 404 || status === 'local-fallback') {
         console.log(`[${name}] cleanup: throwaway user deleted (${status}).`)
       } else {
         issues.push(`cleanup: DELETE /api/users/me returned ${status} — user ${throwaway.userId} may need manual removal`)
