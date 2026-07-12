@@ -41,7 +41,7 @@ table_name = "stridelikes"
 table_account_url = ""
 table_name = "stridemasterplan"
 
-# Async-job infra (queue layer + state store). Empty URLs → dev in-memory
+# Async-job infra (queue layer + state store). Empty URLs → dev file-backed
 # queue + file state store. Prod sets these to Azure Storage Queue + Table
 # in server.prod.toml. Consumed by the worker (`python -m stride_server.jobs`)
 # and the enqueue facade.

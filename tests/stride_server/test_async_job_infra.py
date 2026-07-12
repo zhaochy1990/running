@@ -6,7 +6,8 @@ import pytest
 
 from stride_storage.interfaces.config import QueueStorageConfig
 from stride_storage.interfaces.jobs import JobRecord, JobStatus
-from stride_storage.jobs import FileJobStore, InMemoryJobQueue, JobClient
+from stride_storage.jobs import FileJobQueue, FileJobStore, InMemoryJobQueue, JobClient
+from stride_storage.jobs.queue import queue_from_config
 from stride_server.jobs.registry import (
     clear_registry_for_tests,
     get_handler,
@@ -78,6 +79,42 @@ def test_queue_message_reappears_after_visibility(queue):
     assert len(again) == 1 and again[0].dequeue_count == 2
     queue.delete(again[0])
     assert queue.receive(max=5, visibility_timeout_s=0) == []
+
+
+def test_file_queue_is_shared_across_instances(tmp_path):
+    first = FileJobQueue(tmp_path / "q")
+    second = FileJobQueue(tmp_path / "q")
+
+    first.enqueue(job_id="j1", partition_key="u1")
+    msg = second.receive(max=1, visibility_timeout_s=300)[0]
+
+    assert msg.job_id == "j1"
+    assert msg.partition_key == "u1"
+    second.delete(msg)
+    assert first.receive(max=1, visibility_timeout_s=0) == []
+
+
+def test_file_queue_rechecks_lease_token_before_delete(tmp_path):
+    queue = FileJobQueue(tmp_path / "q")
+
+    queue.enqueue(job_id="j1", partition_key="u1")
+    stale = queue.receive(max=1, visibility_timeout_s=0)[0]
+    fresh = queue.receive(max=1, visibility_timeout_s=300)[0]
+
+    queue.delete(stale)
+    assert queue.depth() == 1
+    queue.delete(fresh)
+    assert queue.depth() == 0
+
+
+def test_queue_from_config_uses_file_queue_for_dev(tmp_path):
+    config = QueueStorageConfig(file_backend_dir=str(tmp_path))
+    queue = queue_from_config(config)
+
+    assert isinstance(queue, FileJobQueue)
+    queue.enqueue(job_id="j1", partition_key="u1")
+    shared = FileJobQueue(tmp_path / "queues" / config.queue_name)
+    assert shared.receive(max=1, visibility_timeout_s=300)[0].job_id == "j1"
 
 
 # --- client -----------------------------------------------------------------

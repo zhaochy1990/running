@@ -35,6 +35,9 @@ def test_publish_syncing_body_and_progress(monkeypatch):
     assert kw["body"] == "STRIDE 正在同步你的数据，当前进度 59/783"
     assert kw["severity"] == "info"
     assert 0 <= kw["progress_pct"] <= N._SYNC_BAND_MAX
+    assert kw["state"] == "running"
+    assert kw["stage"] == "syncing"
+    assert kw["metadata"] == {"current": 59, "total": 783}
 
 
 def test_publish_syncing_throttles_small_advances(monkeypatch):
@@ -70,6 +73,9 @@ def test_publish_sync_done_copy(monkeypatch):
     N.publish_sync_done("u1", 783)
     assert calls[0]["body"] == "STRIDE 已完成数据同步，共同步 783 条运动记录"
     assert calls[0]["progress_pct"] == N._SYNC_DONE_PCT
+    assert calls[0]["state"] == "running"
+    assert calls[0]["stage"] == "sync_done"
+    assert calls[0]["metadata"] == {"activities": 783}
 
 
 def test_publish_complete_is_success(monkeypatch):
@@ -78,6 +84,8 @@ def test_publish_complete_is_success(monkeypatch):
     N.publish_complete("u1")
     assert calls[0]["severity"] == "success"
     assert calls[0]["progress_pct"] == 100
+    assert calls[0]["state"] == "done"
+    assert calls[0]["stage"] == "complete"
 
 
 def test_publish_started_copy(monkeypatch):
@@ -95,6 +103,7 @@ def test_publish_failed_is_error_and_hides_detail(monkeypatch):
     N.publish_failed("u1", "onboarding_calibration")
     assert calls[0]["severity"] == "error"
     assert "calibration" not in calls[0]["body"]  # no internal step detail leaked
+    assert calls[0]["state"] == "failed"
 
 
 def test_publish_swallows_store_errors(monkeypatch):
@@ -241,5 +250,7 @@ def test_end_to_end_single_notification_row(tmp_path, monkeypatch):
     row = onboarding_rows[0]
     assert row["severity"] == "success"
     assert row["progress_pct"] == 100
-    assert "已完成初始化" in row["body"]
+    assert row["metadata"]["state"] == "done"
+    assert row["metadata"]["stage"] == "complete"
+    assert "已完成数据同步" in row["body"]
 

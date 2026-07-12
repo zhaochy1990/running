@@ -51,7 +51,16 @@ def reset_throttle(user_id: str | None = None) -> None:
             _last_pct.pop(user_id, None)
 
 
-def _publish(user_id: str, *, body: str, severity: str, progress_pct: int) -> None:
+def _publish(
+    user_id: str,
+    *,
+    body: str,
+    severity: str,
+    progress_pct: int,
+    state: str,
+    stage: str,
+    metadata: dict | None = None,
+) -> None:
     """Upsert the single onboarding notification row. Best-effort."""
     from stride_server.notifications import store as nstore
 
@@ -63,6 +72,13 @@ def _publish(user_id: str, *, body: str, severity: str, progress_pct: int) -> No
             body=body,
             severity=severity,
             progress_pct=progress_pct,
+            metadata={
+                "type": "sync",
+                "mode": "onboarding",
+                "state": state,
+                "stage": stage,
+                **(metadata or {}),
+            },
         )
     except Exception:  # noqa: BLE001 — notifications must never break the pipeline
         logger.warning("onboarding notification publish failed for %s", user_id, exc_info=True)
@@ -107,6 +123,9 @@ def publish_syncing(user_id: str, current: int, total: int) -> None:
         body=f"STRIDE 正在同步你的数据，当前进度 {current}/{total}",
         severity="info",
         progress_pct=pct,
+        state="running",
+        stage="syncing",
+        metadata={"current": current, "total": total},
     )
 
 
@@ -118,6 +137,9 @@ def publish_sync_done(user_id: str, activities: int) -> None:
         body=f"STRIDE 已完成数据同步，共同步 {activities} 条运动记录",
         severity="info",
         progress_pct=_SYNC_DONE_PCT,
+        state="running",
+        stage="sync_done",
+        metadata={"activities": activities},
     )
 
 
@@ -128,17 +150,21 @@ def publish_analyzing(user_id: str) -> None:
         body="STRIDE 正在分析你的数据",
         severity="info",
         progress_pct=_ANALYZING_PCT,
+        state="running",
+        stage="analyzing",
     )
 
 
 def publish_complete(user_id: str) -> None:
-    """Whole run done: '已完成初始化，快去看看你的训练状态吧'."""
+    """Whole run done: '已完成数据同步，训练状态已准备好'."""
     reset_throttle(user_id)
     _publish(
         user_id,
-        body="STRIDE 已完成初始化，快去看看你的训练状态吧",
+        body="STRIDE 已完成数据同步，训练状态已准备好",
         severity="success",
         progress_pct=_COMPLETE_PCT,
+        state="done",
+        stage="complete",
     )
 
 
@@ -151,4 +177,6 @@ def publish_failed(user_id: str, step_name: str) -> None:
         body="STRIDE 初始化未完成，请稍后重试",
         severity="error",
         progress_pct=0,
+        state="failed",
+        stage=step_name,
     )
