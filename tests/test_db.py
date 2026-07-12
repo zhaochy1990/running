@@ -9,6 +9,7 @@ from stride_core.models import (
     ActivityDetail, DailyHealth, Dashboard, Lap, TimeseriesPoint, Zone,
 )
 from stride_core.timefmt import today_shanghai
+from stride_storage.sqlite.database import Database
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):
@@ -34,6 +35,25 @@ def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=100
 
 
 class TestDatabaseActivities:
+    def test_default_sqlite_journal_mode_is_wal(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("STRIDE_SQLITE_JOURNAL_MODE", raising=False)
+        monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)
+        monkeypatch.delenv("STRIDE_ENV", raising=False)
+
+        with Database(tmp_path / "journal-default.db") as db:
+            mode = db._conn.execute("PRAGMA journal_mode").fetchone()[0]
+
+        assert mode.lower() == "wal"
+
+    def test_prod_sqlite_journal_mode_avoids_wal(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("STRIDE_SQLITE_JOURNAL_MODE", raising=False)
+        monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+
+        with Database(tmp_path / "journal-prod.db") as db:
+            mode = db._conn.execute("PRAGMA journal_mode").fetchone()[0]
+
+        assert mode.lower() == "delete"
+
     def test_upsert_and_exists(self, db):
         detail = _make_detail()
         assert not db.activity_exists("test1")
