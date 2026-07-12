@@ -72,25 +72,13 @@ def put_feedback(
     """Upsert structured post-activity feedback for an activity."""
     db = get_db(user)
     try:
-        mood_tags_json = json.dumps(body.mood_tags, ensure_ascii=False)
-        db._conn.execute(
-            """
-            INSERT INTO activity_feedback (label_id, rpe, mood_tags, note, created_at, updated_at)
-            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
-            ON CONFLICT(label_id) DO UPDATE SET
-                rpe        = excluded.rpe,
-                mood_tags  = excluded.mood_tags,
-                note       = excluded.note,
-                updated_at = datetime('now')
-            """,
-            (label_id, body.rpe, mood_tags_json, body.note),
+        db.upsert_activity_feedback(
+            label_id,
+            rpe=body.rpe,
+            mood_tags=body.mood_tags,
+            note=body.note,
         )
-        db._conn.commit()
-
-        row = db._conn.execute(
-            "SELECT label_id, rpe, mood_tags, note, updated_at FROM activity_feedback WHERE label_id = ?",
-            (label_id,),
-        ).fetchone()
+        row = db.get_activity_feedback(label_id)
     finally:
         db.close()
 
@@ -114,10 +102,7 @@ def get_feedback(
     """Read post-activity feedback. Returns null fields when no record exists (never 404)."""
     db = get_db(user)
     try:
-        row = db._conn.execute(
-            "SELECT label_id, rpe, mood_tags, note, updated_at FROM activity_feedback WHERE label_id = ?",
-            (label_id,),
-        ).fetchone()
+        row = db.get_activity_feedback(label_id)
     finally:
         db.close()
 
