@@ -104,6 +104,62 @@ def test_credentials_can_backfill_keyvault_from_file(tmp_path, monkeypatch):
     assert "coros-config-a1b2c3d4-e5f6-4aaa-89ab-123456789012" in fake_client.secrets
 
 
+# ── prod: watch creds are KV-only, never file fallback ─────────────────────
+
+_USER = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
+
+
+def test_prod_without_keyvault_url_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+    monkeypatch.delenv("STRIDE_COROS_KEYVAULT_URL", raising=False)
+    monkeypatch.setattr(auth_mod, "USER_DATA_DIR", tmp_path)
+    # Even if a stale local file exists, prod must refuse to read it.
+    (tmp_path / _USER).mkdir(parents=True)
+    (tmp_path / _USER / "config.json").write_text(json.dumps({"access_token": "leaked"}))
+
+    import pytest
+    with pytest.raises(RuntimeError, match="required in prod"):
+        Credentials.load(user=_USER)
+
+
+def test_prod_with_keyvault_missing_secret_returns_empty(monkeypatch):
+    fake_client = FakeSecretClient()
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+    monkeypatch.setenv("STRIDE_COROS_KEYVAULT_URL", "https://stride-kv.vault.azure.net/")
+    monkeypatch.setattr(auth_mod, "_keyvault_secret_client", lambda _url: fake_client)
+
+    # A missing KV secret in prod is a legitimate "not logged in", not an error.
+    assert Credentials.load(user=_USER) == Credentials()
+
+
+def test_prod_never_backfills_from_file(tmp_path, monkeypatch):
+    fake_client = FakeSecretClient()
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+    monkeypatch.setenv("STRIDE_COROS_KEYVAULT_URL", "https://stride-kv.vault.azure.net/")
+    monkeypatch.setenv("STRIDE_COROS_KEYVAULT_BACKFILL_FROM_FILE", "true")  # ignored in prod
+    monkeypatch.setattr(auth_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(auth_mod, "_keyvault_secret_client", lambda _url: fake_client)
+    (tmp_path / _USER).mkdir(parents=True)
+    (tmp_path / _USER / "config.json").write_text(json.dumps({"access_token": "file-token"}))
+
+    # Backfill is disabled in prod → empty creds + KV NOT populated from file.
+    assert Credentials.load(user=_USER) == Credentials()
+    assert fake_client.secrets == {}
+
+
+def test_non_prod_without_keyvault_reads_file(tmp_path, monkeypatch):
+    monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)
+    monkeypatch.delenv("STRIDE_ENV", raising=False)
+    monkeypatch.delenv("STRIDE_COROS_KEYVAULT_URL", raising=False)
+    monkeypatch.setattr(auth_mod, "USER_DATA_DIR", tmp_path)
+
+    creds = Credentials(email="r@e.com", pwd_hash="h", access_token="t")
+    creds.save(user="alice")
+    # Non-prod file-backend behavior is unchanged.
+    assert Credentials.load(user="alice") == creds
+
+
+
 def test_keyvault_secret_name_sanitizes_non_keyvault_chars(monkeypatch):
     monkeypatch.setenv("STRIDE_COROS_KEYVAULT_SECRET_PREFIX", "coros_config")
 

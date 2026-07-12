@@ -80,6 +80,15 @@ def test_publish_complete_is_success(monkeypatch):
     assert calls[0]["progress_pct"] == 100
 
 
+def test_publish_started_copy(monkeypatch):
+    calls = []
+    monkeypatch.setattr(N, "_publish", lambda user_id, **kw: calls.append(kw))
+    N.publish_started("u1")
+    assert calls[0]["body"] == "STRIDE 正在处理你的数据"
+    assert calls[0]["severity"] == "info"
+    assert calls[0]["progress_pct"] == 5
+
+
 def test_publish_failed_is_error_and_hides_detail(monkeypatch):
     calls = []
     monkeypatch.setattr(N, "_publish", lambda user_id, **kw: calls.append(kw))

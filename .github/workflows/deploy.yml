@@ -169,6 +169,12 @@ jobs:
         # enqueue but nothing consumes them. We only skip when the worker app
         # doesn't exist yet (legitimate first-deploy) — every other failure
         # (bad command, permissions, crash-loop on boot) fails the deploy loudly.
+        #
+        # The worker MUST carry the same watch-credential Key Vault env as
+        # stride-app: onboarding_full_sync reads the user's COROS/Garmin creds,
+        # which prod stores in Key Vault (coros-config-{uuid}). Without these the
+        # worker falls back to the file backend, finds no creds, and every
+        # onboarding sync fails "not logged in to watch provider".
         run: |
           set -e
           if ! az containerapp show \
@@ -183,7 +189,11 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
             --command "stride-job-worker" \
-            --set-env-vars STRIDE_CONFIG_ENV=prod
+            --set-env-vars STRIDE_CONFIG_ENV=prod \
+              STRIDE_COROS_KEYVAULT_URL=https://stride-kv-common.vault.azure.net/ \
+              STRIDE_COROS_KEYVAULT_BACKFILL_FROM_FILE=false \
+              STRIDE_GARMIN_KEYVAULT_URL=https://stride-kv-common.vault.azure.net/ \
+              STRIDE_GARMIN_KEYVAULT_BACKFILL_FROM_FILE=false
 
           # A worker has no ingress to probe, so verify the new revision reaches
           # runningState=Running (i.e. it didn't crash-loop on boot). Poll briefly.

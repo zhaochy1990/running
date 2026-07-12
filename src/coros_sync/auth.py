@@ -37,6 +37,19 @@ def _keyvault_url(user: str | None) -> str | None:
     return url or None
 
 
+def _is_prod() -> bool:
+    """True when running in the prod environment.
+
+    Read straight from the environment (same pattern as the KV env vars) so this
+    low-level auth module stays free of any ``stride_server`` import. In prod we
+    refuse to read watch credentials from the local file backend — creds live in
+    Key Vault, and a missing KV URL is a deploy misconfiguration that must fail
+    loudly rather than silently returning empty ("not logged in") credentials.
+    """
+    env = (os.environ.get("STRIDE_CONFIG_ENV") or os.environ.get("STRIDE_ENV") or "").strip().lower()
+    return env == "prod"
+
+
 def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -146,10 +159,24 @@ class Credentials:
     @classmethod
     def load(cls, user: str | None = None) -> Credentials:
         vault_url = _keyvault_url(user)
+        prod = _is_prod()
+
+        if prod and user and not vault_url:
+            # Misconfiguration: prod must serve watch creds from Key Vault. Fail
+            # loudly instead of silently falling back to the local file backend
+            # (which would return empty creds → "not logged in" for every user).
+            raise RuntimeError(
+                f"{KEYVAULT_URL_ENV} is required in prod; refusing to read COROS "
+                "credentials from the local file backend"
+            )
+
         if vault_url and user:
             data = _load_keyvault_config(user, vault_url)
             if data is None:
-                if _truthy_env(KEYVAULT_BACKFILL_ENV):
+                # In prod the file backend is off-limits (creds live only in KV),
+                # so never backfill from file there. A missing KV secret is a
+                # legitimate "not logged in" → empty creds.
+                if not prod and _truthy_env(KEYVAULT_BACKFILL_ENV):
                     data = _load_file_config(user)
                     if data is not None:
                         _save_keyvault_config(user, vault_url, data)

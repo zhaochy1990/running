@@ -129,6 +129,10 @@ def start_pipeline(
     except Exception:  # noqa: BLE001
         logger.warning("pipeline run %s: first-step job_id backfill failed", run_id, exc_info=True)
     logger.info("pipeline %s run %s started for %s", name, run_id, partition_key)
+    if name == "onboarding":
+        from stride_server.jobs import onboarding_notify
+
+        onboarding_notify.publish_started(partition_key)
     return run_id
 
 
