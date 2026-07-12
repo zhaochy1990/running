@@ -34,7 +34,13 @@ def _registry():
     from stride_core.registry import ProviderRegistry
 
     reg = ProviderRegistry()
-    reg.register(CorosDataSource(), default=True)
+    # jobs=1 (serial detail fetch) for onboarding: COROS allows only one valid
+    # access token per account, and the concurrent fetch threads share a single
+    # Credentials object. Parallel fetches each hit an expired token, re-login,
+    # and overwrite each other's token → a re-login storm that stalls the sync
+    # (observed: full_sync wedging ~1/4 of the way through and never finishing).
+    # Serial fetch is slower but avoids the token contention entirely.
+    reg.register(CorosDataSource(jobs=1), default=True)
     reg.register(GarminDataSource())
     return reg
 
