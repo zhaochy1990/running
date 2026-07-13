@@ -133,6 +133,12 @@ def _default_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[st
 
 
 def _coerce_scalar(path: str, current: object, value: object) -> object:
+    if isinstance(current, tuple):
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return tuple(value)
+        if isinstance(value, str):
+            return tuple(item.strip() for item in value.split(",") if item.strip())
+        raise ConfigError(f"{path} must be a string list")
     if isinstance(current, bool):
         if isinstance(value, bool):
             return value

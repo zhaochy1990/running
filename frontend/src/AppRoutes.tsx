@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useAuthStore } from './store/authStore'
 import { UserProvider } from './UserContext'
 import AppLayout from './components/AppLayout'
-import WeekLayout from './pages/WeekLayout'
+import WeeklyPlanRoute from './pages/WeeklyPlanRoute'
 import ActivityDetailPage from './pages/ActivityDetailPage'
 import HealthPage from './pages/HealthPage'
 import BodyCompositionPage from './pages/BodyCompositionPage'
@@ -84,8 +84,8 @@ function Dashboard() {
       <UserProvider>
         <Routes>
           <Route element={<AppLayout />}>
-            <Route path="/" element={<WeekLayout />} />
-            <Route path="/week/:folder" element={<WeekLayout />} />
+            <Route path="/" element={<WeeklyPlanRoute />} />
+            <Route path="/week/:folder" element={<WeeklyPlanRoute />} />
             <Route path="/activity/:id" element={<ActivityDetailPage />} />
             <Route path="/teams/:teamId/activity/:userId/:labelId" element={<ActivityDetailPage />} />
             <Route path="/health" element={<HealthPage />} />

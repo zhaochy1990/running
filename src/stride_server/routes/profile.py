@@ -12,7 +12,9 @@ from pydantic import BaseModel, Field
 
 from .. import auth_service_client as auth_client
 from ..bearer import require_bearer
+from ..config.models import ServerConfig
 from ..content_store import read_json, write_json
+from ..deps import get_server_config
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -195,6 +197,7 @@ class ProfilePatch(BaseModel):
 async def get_profile(
     payload: dict = Depends(require_bearer),
     authorization: str | None = Header(default=None),
+    config: ServerConfig = Depends(get_server_config),
 ):
     uuid = payload["sub"]
     profile = _read_profile(uuid)
@@ -221,6 +224,9 @@ async def get_profile(
         "provider": provider,
         "profile": profile,
         "onboarding": onboarding,
+        "features": {
+            "coach_agent_weekly_plan": uuid in config.plan.coach_agent_weekly_plan_users,
+        },
     }
 
 

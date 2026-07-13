@@ -19,6 +19,7 @@ _ENV_MAPPING: dict[str, tuple[str, str]] = {
     "STRIDE_AUTH_URL": ("auth_service.base_url", "str"),
     "STRIDE_AUTH_SERVICE_TIMEOUT_SECONDS": ("auth_service.timeout_s", "float"),
     "STRIDE_INTERNAL_TOKEN": ("internal.token", "str"),
+    "STRIDE_COACH_AGENT_WEEKLY_PLAN_USERS": ("plan.coach_agent_weekly_plan_users", "str"),
     "STRIDE_COACH_TABLE_ACCOUNT_URL": ("coach_persistence.table_account_url", "str"),
     "STRIDE_COACH_BLOB_ACCOUNT_URL": ("coach_persistence.blob_account_url", "str"),
     "STRIDE_COACH_CHECKPOINTS_TABLE_NAME": ("coach_persistence.checkpoints_table_name", "str"),

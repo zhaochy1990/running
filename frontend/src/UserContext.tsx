@@ -6,6 +6,7 @@ import { UserContext } from './UserContextValue'
 interface UserProfileState {
   displayName: string
   onboardingCompletedAt: string | null
+  coachAgentWeeklyPlan: boolean
 }
 
 async function loadUserProfile(userId: string): Promise<UserProfileState> {
@@ -13,7 +14,7 @@ async function loadUserProfile(userId: string): Promise<UserProfileState> {
     const profile = await getMyProfile()
     return profileToState(profile, userId)
   } catch {
-    return { displayName: userId, onboardingCompletedAt: null }
+    return { displayName: userId, onboardingCompletedAt: null, coachAgentWeeklyPlan: false }
   }
 }
 
@@ -21,6 +22,7 @@ function profileToState(profile: MyProfile, userId: string): UserProfileState {
   return {
     displayName: profile.display_name || userId,
     onboardingCompletedAt: profile.onboarding.completed_at,
+    coachAgentWeeklyPlan: profile.features?.coach_agent_weekly_plan ?? false,
   }
 }
 
@@ -29,10 +31,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [displayName, setDisplayName] = useState<string>('')
   const [onboardingCompletedAt, setOnboardingCompletedAt] = useState<string | null>(null)
   const [profileReady, setProfileReady] = useState(false)
+  const [coachAgentWeeklyPlan, setCoachAgentWeeklyPlan] = useState(false)
 
   const applyProfile = useCallback((state: UserProfileState) => {
     setDisplayName(state.displayName)
     setOnboardingCompletedAt(state.onboardingCompletedAt)
+    setCoachAgentWeeklyPlan(state.coachAgentWeeklyPlan)
     setProfileReady(true)
   }, [])
 
@@ -45,6 +49,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     if (!userId) return
     let cancelled = false
     setProfileReady(false)
+    setCoachAgentWeeklyPlan(false)
     void loadUserProfile(userId).then((state) => {
       if (!cancelled) applyProfile(state)
     })
@@ -62,7 +67,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <UserContext.Provider value={{ user: userId, displayName: displayName || userId, profileReady, onboardingCompletedAt, refresh }}>
+    <UserContext.Provider value={{ user: userId, displayName: displayName || userId, profileReady, onboardingCompletedAt, coachAgentWeeklyPlan, refresh }}>
       {children}
     </UserContext.Provider>
   )
