@@ -1,6 +1,7 @@
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { formatDateShort, weekdayCN, type PlanDay, type WeekDetail } from '../../api'
+import CoachWeeklyPlanEmptyState from './CoachWeeklyPlanEmptyState'
 
 export interface WeeklyScheduleTabProps {
   readonly week: WeekDetail
@@ -8,8 +9,12 @@ export interface WeeklyScheduleTabProps {
 }
 
 export default function WeeklyScheduleTab({ week, days }: WeeklyScheduleTabProps) {
+  if (days.length === 0 && !week.plan?.trim()) {
+    return <CoachWeeklyPlanEmptyState />
+  }
+
   if (days.length === 0) {
-    return <div className="prose rounded-2xl border border-border-subtle bg-bg-card p-6"><ReactMarkdown remarkPlugins={[remarkGfm]}>{week.plan ?? '本周暂无训练计划'}</ReactMarkdown></div>
+    return <div className="prose rounded-2xl border border-border-subtle bg-bg-card p-6"><ReactMarkdown remarkPlugins={[remarkGfm]}>{week.plan}</ReactMarkdown></div>
   }
 
   return (

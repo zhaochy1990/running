@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import CoachWeeklyPlanEmptyState from '../components/weekly-plan/CoachWeeklyPlanEmptyState'
 import WeeklyFeedbackTab from '../components/weekly-plan/WeeklyFeedbackTab'
 import WeeklyPlanSummary from '../components/weekly-plan/WeeklyPlanSummary'
 import WeeklyPlanTabs, { type CoachWeeklyPlanTab } from '../components/weekly-plan/WeeklyPlanTabs'
@@ -17,7 +18,7 @@ export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWe
 
   if (loading) return <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-green/30 border-t-accent-green" /></div>
   if (error) return <div role="alert" className="mx-auto mt-10 max-w-xl rounded-xl border border-accent-red/30 bg-red-soft p-4 text-sm text-accent-red">{error}</div>
-  if (!week) return <div className="py-20 text-center text-sm text-text-muted">请选择一个训练周</div>
+  if (!week) return <div className="px-4 py-12 sm:px-8"><CoachWeeklyPlanEmptyState /></div>
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">

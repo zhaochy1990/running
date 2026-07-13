@@ -28,6 +28,7 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
   const navigate = useNavigate()
   const { user } = useUser()
   const [weeks, setWeeks] = useState<WeekSummary[]>([])
+  const [weeksLoaded, setWeeksLoaded] = useState(false)
   const [week, setWeek] = useState<WeekDetail | null>(null)
   const [planDays, setPlanDays] = useState<PlanDay[]>([])
   const [strength, setStrength] = useState<StrengthTabResponse | null>(null)
@@ -41,12 +42,16 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
       .then((response) => {
         if (cancelled) return
         setWeeks(response.weeks)
+        setWeeksLoaded(true)
         if (!folder && response.weeks[0]) {
           navigate(`/week/${response.weeks[0].folder}`, { replace: true })
         }
       })
       .catch((reason: unknown) => {
-        if (!cancelled) setError(reason instanceof Error ? reason.message : '无法加载训练周')
+        if (!cancelled) {
+          setWeeksLoaded(true)
+          setError(reason instanceof Error ? reason.message : '无法加载训练周')
+        }
       })
     return () => { cancelled = true }
   }, [folder, navigate, user])
@@ -81,6 +86,6 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
     setWeek((current) => current ? { ...current, feedback: content, feedback_source: 'db' } : current)
   }, [folder, user])
 
-  const loading = folder ? loadedFolder !== folder && error === null : weeks.length === 0 && error === null
+  const loading = folder ? loadedFolder !== folder && error === null : !weeksLoaded && error === null
   return { week, weeks, planDays, strength, loading, error, saveFeedback }
 }
