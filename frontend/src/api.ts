@@ -91,6 +91,9 @@ export interface MyProfile {
   // it. Currently the /api/users/me/profile route doesn't return this field,
   // so callers should treat `undefined` as "fall back to coros default".
   provider?: string | null
+  features?: {
+    coach_agent_weekly_plan: boolean
+  }
 }
 
 export function getMyProfile() {

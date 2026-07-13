@@ -489,6 +489,33 @@ prefix = "users-test"
     assert cfg.storage.likes.table_name == "stridelikes"  # default preserved
 
 
+def test_load_server_config_reads_weekly_plan_user_allowlist(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text(
+        'env = "dev"\n[plan]\ncoach_agent_weekly_plan_users = ["user-a", "user-b"]',
+        encoding="utf-8",
+    )
+
+    cfg = load_server_config(project_root=tmp_path, environ={}, use_cache=False)
+
+    assert cfg.plan.coach_agent_weekly_plan_users == ("user-a", "user-b")
+
+
+def test_load_server_config_reads_weekly_plan_user_allowlist_from_env(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text('env = "dev"', encoding="utf-8")
+
+    cfg = load_server_config(
+        project_root=tmp_path,
+        environ={"STRIDE_COACH_AGENT_WEEKLY_PLAN_USERS": "user-a,user-b"},
+        use_cache=False,
+    )
+
+    assert cfg.plan.coach_agent_weekly_plan_users == ("user-a", "user-b")
+
+
 def test_clear_server_config_cache_allows_default_reload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in list(os.environ):
         if name.startswith("STRIDE_") or name in {

@@ -85,6 +85,7 @@ class InternalConfig:
 @dataclass(frozen=True)
 class PlanConfig:
     prefer_authored_json: bool = True
+    coach_agent_weekly_plan_users: tuple[str, ...] = ()
 
     def with_updates(self, **updates: object) -> PlanConfig:
         return replace(self, **updates)

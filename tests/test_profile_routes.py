@@ -101,6 +101,21 @@ def test_get_profile_no_files_returns_defaults(app_client):
     assert onboarding["profile_ready"] is False
     assert onboarding["completed_at"] is None
     assert onboarding["sync_state"] is None
+    assert data["features"]["coach_agent_weekly_plan"] is False
+
+
+def test_get_profile_enables_coach_weekly_plan_for_allowlisted_user(app_client):
+    from stride_server.config.models import PlanConfig, ServerConfig
+
+    client, token = app_client
+    client.app.state.config = ServerConfig.default(env="dev").with_updates(
+        plan=PlanConfig(coach_agent_weekly_plan_users=(USER_UUID,)),
+    )
+
+    resp = client.get("/api/users/me/profile", headers={"Authorization": f"Bearer {token}"})
+
+    assert resp.status_code == 200
+    assert resp.json()["features"]["coach_agent_weekly_plan"] is True
 
 
 def test_post_valid_profile_writes_file(app_client, tmp_path):

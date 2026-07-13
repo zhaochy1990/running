@@ -6,6 +6,11 @@ import { UserContext } from './UserContextValue'
 interface UserProfileState {
   displayName: string
   onboardingCompletedAt: string | null
+  coachAgentWeeklyPlan: boolean
+}
+
+interface LoadedUserProfile extends UserProfileState {
+  userId: string
 }
 
 async function loadUserProfile(userId: string): Promise<UserProfileState> {
@@ -13,7 +18,7 @@ async function loadUserProfile(userId: string): Promise<UserProfileState> {
     const profile = await getMyProfile()
     return profileToState(profile, userId)
   } catch {
-    return { displayName: userId, onboardingCompletedAt: null }
+    return { displayName: userId, onboardingCompletedAt: null, coachAgentWeeklyPlan: false }
   }
 }
 
@@ -21,37 +26,30 @@ function profileToState(profile: MyProfile, userId: string): UserProfileState {
   return {
     displayName: profile.display_name || userId,
     onboardingCompletedAt: profile.onboarding.completed_at,
+    coachAgentWeeklyPlan: profile.features?.coach_agent_weekly_plan ?? false,
   }
 }
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const userId = useAuthStore((s) => s.userId)
-  const [displayName, setDisplayName] = useState<string>('')
-  const [onboardingCompletedAt, setOnboardingCompletedAt] = useState<string | null>(null)
-  const [profileReady, setProfileReady] = useState(false)
-
-  const applyProfile = useCallback((state: UserProfileState) => {
-    setDisplayName(state.displayName)
-    setOnboardingCompletedAt(state.onboardingCompletedAt)
-    setProfileReady(true)
-  }, [])
+  const userId = useAuthStore((state) => state.userId)
+  const [loadedProfile, setLoadedProfile] = useState<LoadedUserProfile | null>(null)
 
   const refresh = useCallback(async () => {
     if (!userId) return
-    applyProfile(await loadUserProfile(userId))
-  }, [applyProfile, userId])
+    const profile = await loadUserProfile(userId)
+    setLoadedProfile({ ...profile, userId })
+  }, [userId])
 
   useEffect(() => {
     if (!userId) return
     let cancelled = false
-    setProfileReady(false)
-    void loadUserProfile(userId).then((state) => {
-      if (!cancelled) applyProfile(state)
+    void loadUserProfile(userId).then((profile) => {
+      if (!cancelled) setLoadedProfile({ ...profile, userId })
     })
     return () => {
       cancelled = true
     }
-  }, [applyProfile, userId])
+  }, [userId])
 
   if (!userId) {
     return (
@@ -61,8 +59,18 @@ export function UserProvider({ children }: { children: ReactNode }) {
     )
   }
 
+  const profileReady = loadedProfile?.userId === userId
   return (
-    <UserContext.Provider value={{ user: userId, displayName: displayName || userId, profileReady, onboardingCompletedAt, refresh }}>
+    <UserContext.Provider
+      value={{
+        user: userId,
+        displayName: profileReady ? loadedProfile.displayName : userId,
+        profileReady,
+        onboardingCompletedAt: profileReady ? loadedProfile.onboardingCompletedAt : null,
+        coachAgentWeeklyPlan: profileReady ? loadedProfile.coachAgentWeeklyPlan : false,
+        refresh,
+      }}
+    >
       {children}
     </UserContext.Provider>
   )
