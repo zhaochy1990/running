@@ -31,6 +31,8 @@ forbidden_modules =
     garmin_sync
     stride_core.db
     fastapi
+    sqlalchemy
+    pymysql
     azure
 
 # -----------------------------------------------------------------------------
@@ -78,6 +80,7 @@ source_modules =
 forbidden_modules =
     stride_core.db
     stride_storage.sqlite
+    stride_storage.mysql
     stride_storage.azure
     stride_storage.content
     stride_storage.keyvault
@@ -87,6 +90,8 @@ forbidden_modules =
     coros_sync
     garmin_sync
     fastapi
+    sqlalchemy
+    pymysql
     azure
 
 # -----------------------------------------------------------------------------
@@ -109,6 +114,7 @@ source_modules =
 forbidden_modules =
     stride_core.db
     stride_storage.sqlite
+    stride_storage.mysql
     stride_storage.azure
     stride_storage.content
     stride_storage.keyvault
@@ -118,6 +124,8 @@ forbidden_modules =
     coros_sync
     garmin_sync
     fastapi
+    sqlalchemy
+    pymysql
     azure
 
 # -----------------------------------------------------------------------------
@@ -140,8 +148,20 @@ source_modules =
     coach
 forbidden_modules =
     stride_storage.sqlite
+    stride_storage.mysql
     stride_storage.azure
     stride_storage.content
     stride_storage.factories
     stride_storage.keyvault
     stride_storage.coach_persistence
+
+# -----------------------------------------------------------------------------
+# Contract 6: storage implementations never load server configuration
+# -----------------------------------------------------------------------------
+[importlinter:contract:storage-no-server-import]
+name = Storage layer must not import server configuration
+type = forbidden
+source_modules =
+    stride_storage
+forbidden_modules =
+    stride_server

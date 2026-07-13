@@ -56,6 +56,28 @@ visibility_timeout_s = 300
 poison_max_attempts = 5
 stale_after_seconds = 600
 
+# Core activity-database migration foundation. Dormant by default: existing
+# production reads/writes continue to use per-user SQLite until the migration
+# gates explicitly enable hybrid mode and dual write.
+[storage.database]
+mode = "sqlite"
+host = ""
+port = 3306
+database = ""
+username = ""
+password = ""
+tls_ca_path = ""
+dual_write_enabled = false
+mysql_read_all = false
+mysql_users = []
+pool_size = 5
+max_overflow = 5
+pool_timeout_s = 5
+pool_recycle_s = 900
+connect_timeout_s = 5
+read_timeout_s = 30
+write_timeout_s = 30
+
 [coach_persistence]
 table_account_url = ""
 blob_account_url = ""

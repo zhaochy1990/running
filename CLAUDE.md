@@ -86,7 +86,7 @@ Operational rules for Stitch MCP:
 | Tier | 路径 | 装什么 | 谁能 import |
 |------|------|--------|-------------|
 | A `interfaces/` | `stride_storage.interfaces` | 纯 Protocol + frozen config dataclass（无 sqlite/azure import）| 任何包，含 `coach` |
-| B `sqlite/` · `content/` | `stride_storage.sqlite` / `.content` | `Database`、state_stores、calibration connector、content 原语；依赖 `sqlite3` + `stride_core` 纯域 | `stride_server` 等；**coach 不可** |
+| B `sqlite/` · `mysql/` · `content/` | `stride_storage.sqlite` / `.mysql` / `.content` | SQL database implementations、state stores、calibration connector、content 原语；依赖 SQL driver/SQLAlchemy + `stride_core` 纯域 | `stride_server` 等；**coach 不可** |
 | C `azure/` · `keyvault/` · `factories/` · `coach_persistence/` | 同名子包 | 仅 Azure SDK（Table/Blob/Key Vault）、coach 持久化 | `stride_server`；**coach 永不** |
 
 **加新 store / 改存储实现**：放进 `stride_storage` 对应 tier，复用共享原语 —— `azure/credentials.py::get_credential`（唯一 `DefaultAzureCredential`）、`azure/table_backend.py::AzureTableConnection`、`azure/blob_backend.py::get_container_client`、`azure/backend_select.py::choose_backend`、`keyvault/secret_client.py::get_secret_client`。**不要**再各自 new `DefaultAzureCredential()` 或重写 dev/prod 后端选择。canonical 样板：likes（`interfaces/likes.py` + `azure/likes_backend.py`），two-backend（dev JSON / prod Azure Table）。

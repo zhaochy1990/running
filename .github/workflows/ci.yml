@@ -19,7 +19,7 @@ jobs:
           cache: 'pip'
 
       - name: Install backend (dev extras)
-        run: pip install -e ".[web,dev]"
+        run: pip install -e ".[web,mysql,dev]"
 
       - name: Verify import contracts
         run: lint-imports

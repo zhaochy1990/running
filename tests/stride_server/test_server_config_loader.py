@@ -650,3 +650,68 @@ def test_repo_prod_config_env_still_overrides_file_and_akv(monkeypatch: pytest.M
     assert cfg.auth.public_key_pem == "prod-public-key-from-env"
     assert cfg.storage.likes.table_account_url == "https://env-table.example/"
     assert cfg.notifications.table_account_url == "https://env-table.example/"
+
+
+def test_database_password_precedence_is_env_over_akv_over_toml(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text(
+        """
+        env = "local"
+        [akv]
+        enabled = true
+        vault_url = "https://vault.example"
+        secret_prefix = "stride-server"
+        [storage.database]
+        mode = "hybrid"
+        host = "mysql.example.com"
+        database = "stride"
+        username = "toml-user"
+        password = "toml-password"
+        """,
+        encoding="utf-8",
+    )
+    observed: dict[str, object] = {}
+
+    def fake_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[str]) -> dict[str, object]:
+        observed["manifest"] = manifest
+        return {"storage": {"database": {"password": "akv-password"}}}
+
+    akv_cfg = load_server_config(
+        project_root=tmp_path,
+        environ={"STRIDE_CONFIG_ENV": "local"},
+        akv_source=fake_akv_source,
+        config_dir=config_dir,
+        use_cache=False,
+    )
+    assert akv_cfg.storage.database.password == "akv-password"
+    assert "storage.database.password" in observed["manifest"]
+
+    env_cfg = load_server_config(
+        project_root=tmp_path,
+        environ={
+            "STRIDE_CONFIG_ENV": "local",
+            "STRIDE_DATABASE_PASSWORD": "env-password",
+        },
+        akv_source=fake_akv_source,
+        config_dir=config_dir,
+        use_cache=False,
+    )
+    assert env_cfg.storage.database.password == "env-password"
+
+
+def test_repo_prod_config_keeps_mysql_dormant(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("STRIDE_CONFIG_ENV", "prod")
+    observed: dict[str, object] = {}
+
+    def fake_akv_source(**kwargs: object) -> dict[str, object]:
+        observed.update(kwargs)
+        return {}
+
+    cfg = load_server_config(akv_source=fake_akv_source, use_cache=False)
+    assert cfg.storage.database.mode == "sqlite"
+    assert cfg.storage.database.dual_write_enabled is False
+    assert cfg.storage.database.mysql_read_all is False
+    assert cfg.storage.database.mysql_users == ()
+    assert "storage.database.username" not in observed["manifest"]
+    assert "storage.database.password" not in observed["manifest"]

@@ -10,8 +10,8 @@ Import tiers (enforced by ``.importlinter`` Contract 5):
 - **Tier A — ``stride_storage.interfaces``**: pure Protocols + frozen config
   dataclasses. No ``sqlite3``/``azure`` import. Safe for *any* package,
   including the pure ``coach`` runtime.
-- **Tier B — ``stride_storage.sqlite`` / ``stride_storage.content``**: storage
-  engines + implementations. Depend on ``sqlite3`` and ``stride_core`` domain
+- **Tier B — ``stride_storage.sqlite`` / ``.mysql`` / ``.content``**: storage
+  engines + implementations. Depend on their SQL driver and pure Tier-A/domain
   types only.
 - **Tier C — ``stride_storage.azure`` / ``.factories`` / ``.keyvault``**: Azure
   SDK only. ``coach`` must never import these.

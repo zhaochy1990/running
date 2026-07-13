@@ -11,6 +11,7 @@ from stride_storage.interfaces.config import (  # noqa: F401  (re-export)
     CoachPersistenceConfig,
     ConfigError,
     ContentStorageConfig,
+    DatabaseStorageConfig,
     JPushConfig,
     LikesStorageConfig,
     MasterPlanStorageConfig,
@@ -132,6 +133,7 @@ class ServerConfig:
         validate_optional_url("storage.master_plan.table_account_url", self.storage.master_plan.table_account_url)
         validate_optional_url("storage.jobs.queue_account_url", self.storage.jobs.queue_account_url)
         validate_optional_url("storage.jobs.table_account_url", self.storage.jobs.table_account_url)
+        self.storage.database.validate()
         # The jobs queue + state store must live on the same side: either both
         # Azure (queue_account_url AND table_account_url set) or both dev (both
         # empty). A mismatch would pair an Azure queue with a file state store
