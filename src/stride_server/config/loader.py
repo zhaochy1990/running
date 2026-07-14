@@ -68,8 +68,8 @@ def resolve_file_layer(
     return files
 
 
-def _known_secret_manifest() -> list[str]:
-    return [
+def _known_secret_manifest(*, include_database: bool = False) -> list[str]:
+    manifest = [
         "auth.public_key_pem",
         "auth.public_key_path",
         "auth.issuer",
@@ -105,6 +105,11 @@ def _known_secret_manifest() -> list[str]:
         "internal.token",
         "plan.prefer_authored_json",
     ]
+    if include_database:
+        manifest.extend(
+            ["storage.database.username", "storage.database.password"]
+        )
+    return manifest
 
 
 def _default_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[str]) -> dict[str, Any]:
@@ -135,10 +140,19 @@ def _default_akv_source(*, vault_url: str, secret_prefix: str, manifest: list[st
 def _coerce_scalar(path: str, current: object, value: object) -> object:
     if isinstance(current, tuple):
         if isinstance(value, list) and all(isinstance(item, str) for item in value):
-            return tuple(value)
-        if isinstance(value, str):
-            return tuple(item.strip() for item in value.split(",") if item.strip())
-        raise ConfigError(f"{path} must be a string list")
+            items = tuple(value)
+        elif isinstance(value, str):
+            items = tuple(item.strip() for item in value.split(",") if item.strip())
+        else:
+            raise ConfigError(f"{path} must be a string list")
+        if path == "storage.database.mysql_users":
+            from stride_core.identifiers import normalize_unique_uuids
+
+            try:
+                return normalize_unique_uuids(items)
+            except ValueError as exc:
+                raise ConfigError(f"{path} {exc}") from exc
+        return items
     if isinstance(current, bool):
         if isinstance(value, bool):
             return value
@@ -219,10 +233,17 @@ def _load_uncached(
         if not bootstrap_cfg.akv.vault_url:
             raise ConfigError("akv.vault_url is required when akv.enabled is true")
         source = akv_source or _default_akv_source
+        database_config = bootstrap_cfg.storage.database
+        mysql_enabled = (
+            database_config.mode == "hybrid"
+            or database_config.dual_write_enabled
+            or database_config.mysql_read_all
+            or bool(database_config.mysql_users)
+        )
         akv_data = source(
             vault_url=bootstrap_cfg.akv.vault_url,
             secret_prefix=bootstrap_cfg.akv.secret_prefix,
-            manifest=_known_secret_manifest(),
+            manifest=_known_secret_manifest(include_database=mysql_enabled),
         )
         merged = deep_merge(merged, akv_data)
 

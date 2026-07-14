@@ -9,7 +9,7 @@ STRIDE 的**统一数据访问层**。API Server (`stride_server`) 与 Coach Age
 | Tier | 子包 | 装什么 | 谁能 import |
 |------|------|--------|-------------|
 | **A** | `interfaces/` | 纯 Protocol + frozen config dataclass（**不** import `sqlite3`/`azure`）| 任何包，含纯运行时 `coach` |
-| **B** | `sqlite/` · `content/` | `Database`、state stores、calibration connector、content 原语；依赖 `sqlite3` + `stride_core` 纯域 | `stride_server` 等；**`coach` 不可** |
+| **B** | `sqlite/` · `mysql/` · `content/` | SQL storage engines、state stores、calibration connector、content 原语；依赖各自 driver + Tier A / `stride_core` 纯域 | `stride_server` 等；**`coach` 不可** |
 | **C** | `azure/` · `keyvault/` · `coach_persistence/` | 仅 Azure SDK（Table/Blob/Key Vault）、LangGraph coach 持久化 | `stride_server`；**`coach` 永不** |
 
 **Azure-free 不变量**：所有 `azure.*` import 都在函数体内（lazy）。`import stride_storage`、`import stride_storage.interfaces`、`import stride_storage.sqlite` 全程不拉 Azure SDK —— 离线/测试无需装 `azure-*`。回归测试见 `tests/stride_storage/test_azure_free_imports.py`。
@@ -29,6 +29,8 @@ stride_storage/
     database.py            #   Database 类（schema / migration / upsert / query；手表同步运动数据）
     state_stores.py        #   PlanStateStore / CommentaryStore / InBodyStore Protocol + Sqlite 实现
     calibration_connector.py  #   SQLiteRunningCalibrationRepository
+  mysql/                   # ── Tier B（dormant migration foundation）──
+    engine.py schema.py    #   SQLAlchemy engine + canonical MySQL metadata
   content/                 # ── Tier B（blob 后端注入）──
     store.py               #   plan.md / feedback.md / plan.json 等 read/write/list（纯函数，注入 container_client）
   azure/                   # ── Tier C ──

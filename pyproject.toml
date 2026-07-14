@@ -45,6 +45,11 @@ web = [
     "azure-storage-queue>=12.10",
     "pyyaml>=6.0",
 ]
+mysql = [
+    # Dormant MySQL backend foundation (no production routing yet).
+    "sqlalchemy>=2.0,<3.0",
+    "pymysql>=1.1,<2.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-httpx>=0.30",
@@ -71,3 +76,6 @@ packages = ["src/coros_sync", "src/garmin_sync", "src/stride_core", "src/stride_
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "mysql_integration: requires an explicitly configured real MySQL 8 instance",
+]

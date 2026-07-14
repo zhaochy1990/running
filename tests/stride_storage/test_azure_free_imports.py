@@ -25,20 +25,22 @@ _AZURE_FREE_MODULES = [
     "stride_storage",
     "stride_storage.interfaces",
     "stride_storage.interfaces.config",
+    "stride_storage.sqlite",
+    "stride_storage.content",
 ]
 
 _PROGRAM = """
 import importlib
 import sys
 
-class _BlockAzure:
+class _BlockOptionalStorageSDKs:
     def find_spec(self, name, path=None, target=None):
         top = name.split(".", 1)[0]
-        if top == "azure":
-            raise ImportError(f"azure import is blocked in this test: {name}")
+        if top in {"azure", "sqlalchemy", "pymysql"}:
+            raise ImportError(f"optional storage SDK import is blocked in this test: {name}")
         return None
 
-sys.meta_path.insert(0, _BlockAzure())
+sys.meta_path.insert(0, _BlockOptionalStorageSDKs())
 
 mods = %r
 for m in mods:
@@ -47,7 +49,7 @@ print("OK")
 """
 
 
-def test_storage_ports_import_without_azure() -> None:
+def test_storage_ports_import_without_optional_storage_sdks() -> None:
     env = dict(os.environ)
     env["PYTHONPATH"] = os.pathsep.join(
         [str(_SRC), env.get("PYTHONPATH", "")],
@@ -62,7 +64,7 @@ def test_storage_ports_import_without_azure() -> None:
     )
 
     assert result.returncode == 0, (
-        "azure-free import of stride_storage.interfaces failed:\n"
+        "optional-SDK-free import of stride_storage.interfaces failed:\n"
         f"stdout:\n{result.stdout}\n\nstderr:\n{result.stderr}"
     )
     assert "OK" in result.stdout

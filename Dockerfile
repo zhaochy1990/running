@@ -68,7 +68,7 @@ RUN rm -f /app/scripts/eval_coach.py || true
 # Single source of truth for deps: pyproject.toml [project.optional-dependencies].
 # Editable install (-e) keeps /app/src as the import location — no file copy
 # into site-packages, so __file__-based path resolution stays correct.
-RUN pip install --no-cache-dir -e ".[web,analysis]"
+RUN pip install --no-cache-dir -e ".[web,analysis,mysql]"
 
 # Copy built frontend from stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist

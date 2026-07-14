@@ -1229,7 +1229,10 @@ class TestCurrentMasterPlan:
         client, token, tmp_path, _ = app_client
         store = _get_store()
 
-        today = datetime.now(timezone.utc).date()
+        # The endpoint computes milestone distance in the Shanghai calendar;
+        # build the fixture from the same canonical day to avoid UTC-boundary
+        # flakiness (13 vs 14 after Shanghai midnight).
+        today = today_shanghai()
         future_date = (today + timedelta(days=14)).isoformat()
 
         phase_id = str(uuid4())

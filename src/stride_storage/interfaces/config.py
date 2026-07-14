@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from urllib.parse import urlparse
 
+from stride_core.identifiers import normalize_unique_uuids
+
 
 class ConfigError(RuntimeError):
     pass
@@ -104,11 +106,86 @@ class QueueStorageConfig:
 
 
 @dataclass(frozen=True)
+class DatabaseStorageConfig:
+    """Resolved connection + traffic controls for the core activity database.
+
+    The foundation is dormant by default (``mode='sqlite'``). ``mysql_users``
+    controls reads only; after the migration gate, ``dual_write_enabled`` makes
+    every write target MySQL first and the SQLite rollback mirror second.
+    """
+
+    mode: str = "sqlite"
+    host: str = ""
+    port: int = 3306
+    database: str = ""
+    username: str = ""
+    password: str = field(default="", repr=False)
+    tls_ca_path: str = ""
+    dual_write_enabled: bool = False
+    mysql_read_all: bool = False
+    mysql_users: tuple[str, ...] = ()
+    pool_size: int = 5
+    max_overflow: int = 5
+    pool_timeout_s: int = 5
+    pool_recycle_s: int = 900
+    connect_timeout_s: int = 5
+    read_timeout_s: int = 30
+    write_timeout_s: int = 30
+
+    def with_updates(self, **updates: object) -> DatabaseStorageConfig:
+        return replace(self, **updates)
+
+    def validate_mysql_connection(self) -> None:
+        """Validate fields needed by an explicit MySQL engine caller."""
+        for path, value in (
+            ("storage.database.host", self.host),
+            ("storage.database.database", self.database),
+            ("storage.database.username", self.username),
+            ("storage.database.password", self.password),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ConfigError(f"{path} is required to create a MySQL engine")
+
+    def validate(self) -> None:
+        if self.mode not in {"sqlite", "hybrid"}:
+            raise ConfigError("storage.database.mode must be 'sqlite' or 'hybrid'")
+        if not 1 <= self.port <= 65535:
+            raise ConfigError("storage.database.port must be between 1 and 65535")
+        for path, value in (
+            ("storage.database.pool_size", self.pool_size),
+            ("storage.database.pool_timeout_s", self.pool_timeout_s),
+            ("storage.database.pool_recycle_s", self.pool_recycle_s),
+            ("storage.database.connect_timeout_s", self.connect_timeout_s),
+            ("storage.database.read_timeout_s", self.read_timeout_s),
+            ("storage.database.write_timeout_s", self.write_timeout_s),
+        ):
+            validate_positive(path, value)
+        if self.max_overflow < 0:
+            raise ConfigError("storage.database.max_overflow must be >= 0")
+        try:
+            normalized_users = normalize_unique_uuids(self.mysql_users)
+        except ValueError as exc:
+            raise ConfigError(f"storage.database.mysql_users {exc}") from exc
+        if normalized_users != self.mysql_users:
+            raise ConfigError("storage.database.mysql_users must contain canonical UUIDs")
+        mysql_routing_enabled = (
+            self.dual_write_enabled or self.mysql_read_all or bool(self.mysql_users)
+        )
+        if mysql_routing_enabled and self.mode != "hybrid":
+            raise ConfigError(
+                "storage.database.mode must be 'hybrid' when MySQL routing is enabled"
+            )
+        if self.mode == "hybrid":
+            self.validate_mysql_connection()
+
+
+@dataclass(frozen=True)
 class StorageConfig:
     content: ContentStorageConfig = field(default_factory=ContentStorageConfig)
     likes: LikesStorageConfig = field(default_factory=LikesStorageConfig)
     master_plan: MasterPlanStorageConfig = field(default_factory=MasterPlanStorageConfig)
     jobs: QueueStorageConfig = field(default_factory=QueueStorageConfig)
+    database: DatabaseStorageConfig = field(default_factory=DatabaseStorageConfig)
 
     def with_updates(self, **updates: object) -> StorageConfig:
         return replace(self, **updates)

@@ -9,12 +9,12 @@
 | Tier | 子包 | 允许依赖 |
 |------|------|----------|
 | A | `interfaces/` | 仅 `typing` / `dataclasses` / `stride_core` 纯域类型。**禁** `sqlite3` / `azure` / 任何 I/O |
-| B | `sqlite/` · `content/` | `sqlite3` + `stride_core` 纯域 + Tier A。content 的 blob 后端**注入**，不直接 import azure |
+| B | `sqlite/` · `mysql/` · `content/` | SQL driver/SQLAlchemy + `stride_core` 纯域 + Tier A。content 的 blob 后端**注入**，不直接 import azure |
 | C | `azure/` · `keyvault/` · `coach_persistence/` | Azure SDK（lazy）+ Tier A/B + `stride_core` |
 
 改完跑 `PYTHONPATH=src lint-imports`，**5 contract 必须全 KEPT**。相关契约：
-- **Contract 3 / 4**：纯公式层 `training_load.{core,calibration,types}`、`running_calibration.{core,…}` 禁止 import `stride_storage.{sqlite,azure,content,keyvault,coach_persistence}`。
-- **Contract 5**：`coach` 禁止 import `stride_storage.{sqlite,azure,content,keyvault,coach_persistence}`（只可 `interfaces`）。
+- **Contract 3 / 4**：纯公式层 `training_load.{core,calibration,types}`、`running_calibration.{core,…}` 禁止 import `stride_storage.{sqlite,mysql,azure,content,keyvault,coach_persistence}`。
+- **Contract 5**：`coach` 禁止 import `stride_storage.{sqlite,mysql,azure,content,keyvault,coach_persistence}`（只可 `interfaces`）。
 
 ### 2. Azure-free 不变量（HARD）
 
