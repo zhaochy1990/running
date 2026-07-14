@@ -32,6 +32,7 @@ from stride_storage.interfaces.jobs import (
     QueueMessage,
 )
 from stride_storage.interfaces.likes import LikeEntity, LikesBackend
+from stride_storage.interfaces.rows import StorageRow
 
 __all__ = [
     "AzureKeyVaultConfig",
@@ -56,6 +57,7 @@ __all__ = [
     "QueueMessage",
     "QueueStorageConfig",
     "StorageConfig",
+    "StorageRow",
     "validate_optional_url",
     "validate_positive",
     "validate_required_when",
