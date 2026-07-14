@@ -42,15 +42,21 @@ STATUS_INSIGHT_CARD = SpecialistCard(
     id="status_insight",
     description=(
         "回答训练状态、疲劳、负荷、训练指标、身体数据相关的问题；解读 PMC/form 趋势、"
-        "判断是否过度训练、给现状诊断。只读，不修改任何计划。"
+        "判断是否过度训练、给现状诊断；查询当前周计划或长期赛季总计划的内容、"
+        "阶段和安排。只读，不修改任何计划。"
     ),
-    tags=["状态", "疲劳", "负荷", "诊断", "指标", "form", "问答"],
+    tags=[
+        "状态", "疲劳", "负荷", "诊断", "指标", "form", "问答",
+        "查询计划", "当前计划", "周计划内容", "赛季总计划",
+    ],
     examples=[
         "我最近状态怎么样",
         "这周训练量够吗",
         "我是不是过度训练了",
         "解释一下我的 form 趋势",
         "昨天那节间歇质量如何",
+        "我当前的总体训练计划是什么",
+        "告诉我本周计划，不要修改",
     ],
     writes=False,
     data_needs=["fatigue", "load", "prediction", "completion"],
@@ -85,9 +91,9 @@ def make_status_insight_runner(
 ) -> SpecialistRunner:
     """Build the status_insight runner.
 
-    ``llm`` is the strong specialist model (the generator role — §4.7 reserves
-    strong models for specialists). ``toolkit`` / ``graph_factory`` are
-    injectable for tests.
+    ``llm`` is the latency-sensitive status model (falling back to the
+    generator role when ``[status_insight]`` is absent). ``toolkit`` /
+    ``graph_factory`` are injectable for tests.
     """
 
     def _run(task: SpecialistTask) -> SpecialistResult:
@@ -99,6 +105,17 @@ def make_status_insight_runner(
         # Long-term memory (injected by Memory Load, §4.0) as background context.
         if task.context and task.context.notes:
             messages.append(HumanMessage(content=f"（已知长期背景，供参考）\n{task.context.notes}"))
+        if task.active_target is not None:
+            messages.append(
+                HumanMessage(
+                    content=(
+                        "【用户指向的计划对象，只读】"
+                        f"{task.active_target.model_dump(exclude_none=True)}。"
+                        "若有 folder，查询周计划时将它传给 get_week_plan；"
+                        "若 kind=master，调用 get_master_plan_current。"
+                    )
+                )
+            )
         messages.extend(_window_to_messages(task.conversation_window))
         messages.append(HumanMessage(content=task.objective))
         logger.debug(

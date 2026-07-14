@@ -100,6 +100,66 @@ class TestDatabaseActivities:
             "avg_hr": 146,
         }
 
+    def test_compact_training_summary_aggregates_range_and_plan(self, db):
+        from stride_storage.sqlite.training_summary import get_training_summary
+
+        db.upsert_activity(_make_detail(
+            "run1", date="2026-05-03T16:30:00+00:00", distance=10_000
+        ))
+        db.upsert_activity(_make_detail(
+            "run2", date="2026-05-05T00:00:00+00:00", distance=5_000
+        ))
+        db._conn.execute(
+            "UPDATE activities SET sport='run_outdoor', train_kind='long_run' WHERE label_id='run1'"
+        )
+        db._conn.execute(
+            "UPDATE activities SET sport='run_outdoor', train_kind='base' WHERE label_id='run2'"
+        )
+        db._conn.execute(
+            """INSERT INTO activity_training_load
+               (label_id, activity_date, sport, session_class, algorithm_version,
+                training_dose, load_confidence, excluded_from_pmc)
+               VALUES ('run1','2026-05-04','run_outdoor','long',1,80,'high',0),
+                      ('run2','2026-05-05','run_outdoor','easy',1,40,'high',0)"""
+        )
+        db._conn.execute(
+            """INSERT INTO planned_session
+               (week_folder,date,session_index,kind,summary,total_distance_m)
+               VALUES ('2026-05-04_05-10(W0)','2026-05-04',0,'run','long',10000),
+                      ('2026-05-04_05-10(W0)','2026-05-06',0,'run','easy',5000)"""
+        )
+        db._conn.execute(
+            """INSERT INTO daily_training_load
+               (date,algorithm_version,training_dose,acute_load,chronic_load,form,load_ratio)
+               VALUES ('2026-05-04',1,80,50,45,-5,1.11),
+                      ('2026-05-05',1,40,52,46,-6,1.13)"""
+        )
+        db._conn.commit()
+
+        result = get_training_summary(
+            db, date_from="2026-05-04", date_to="2026-05-10"
+        )
+
+        assert result["summary"]["run_count"] == 2
+        assert result["summary"]["run_distance_km"] == 15.0
+        assert result["summary"]["training_dose"] == 120.0
+        assert result["plan_adherence"] == {
+            "planned_sessions": 2,
+            "completed_sessions": 1,
+            "completion_rate": 0.5,
+            "planned_distance_km": 15.0,
+        }
+        assert [item["label_id"] for item in result["key_sessions"]] == ["run1"]
+        assert all("timeseries" not in item for item in result["activities"])
+
+    def test_compact_training_summary_rejects_large_range(self, db):
+        from stride_storage.sqlite.training_summary import get_training_summary
+
+        with pytest.raises(ValueError, match="cannot exceed"):
+            get_training_summary(
+                db, date_from="2026-01-01", date_to="2026-03-01"
+            )
+
     def test_laps_stored(self, db):
         db.upsert_activity(_make_detail())
         rows = db.query("SELECT * FROM laps WHERE label_id = 'test1'")

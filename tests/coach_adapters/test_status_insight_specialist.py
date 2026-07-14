@@ -6,7 +6,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from coach.contracts import SpecialistTask, Turn
+from coach.contracts import SpecialistTask, TargetRef, Turn
 from stride_server.coach_adapters.orchestrator.status_insight import (
     STATUS_INSIGHT_CARD,
     make_status_insight_runner,
@@ -43,6 +43,8 @@ def test_card_is_read_only_with_routing_metadata() -> None:
     assert STATUS_INSIGHT_CARD.id == "status_insight"
     assert STATUS_INSIGHT_CARD.writes is False
     assert STATUS_INSIGHT_CARD.examples  # examples anchor routing
+    assert "当前计划" in STATUS_INSIGHT_CARD.tags
+    assert any("总体训练计划" in example for example in STATUS_INSIGHT_CARD.examples)
 
 
 def test_runner_returns_completed_result_with_answer() -> None:
@@ -90,3 +92,22 @@ def test_runner_seeds_window_then_objective() -> None:
     # Current objective is the trailing user message.
     assert isinstance(history[-1], HumanMessage) and history[-1].content == "现在呢"
     assert capture["state_in"]["scope"] == "qa"
+
+
+def test_runner_seeds_concrete_read_only_plan_target() -> None:
+    capture: dict[str, Any] = {}
+    runner = make_status_insight_runner(
+        user_id="u1", llm=object(), toolkit=object(), graph_factory=_factory("ok", capture)
+    )
+
+    runner(
+        SpecialistTask(
+            objective="本周计划是什么",
+            active_target=TargetRef(kind="week", folder="2026-07-13_07-19(W12)"),
+        )
+    )
+
+    seeded = capture["state_in"]["history"][0]
+    assert isinstance(seeded, HumanMessage)
+    assert "2026-07-13_07-19(W12)" in str(seeded.content)
+    assert "get_week_plan" in str(seeded.content)

@@ -78,12 +78,12 @@ def build_orchestrator_graph(
             active_memories, memory_context = load_active_memories(memory_store, user_id)
         injected_ids = [m.id for m in active_memories]
         logger.debug(
-            "turn start | session=%s | window=%d turns | memories=%d | prior_target=%s | utterance=%r",
-            state.get("session_id"),
+            "turn start | window=%d turns | memories=%d | prior_target_kind=%s "
+            "| utterance_chars=%d",
             len(window),
             len(active_memories),
-            prior_raw,
-            utterance,
+            prior_target.kind if prior_target else None,
+            len(utterance),
         )
 
         t_resolve = time.perf_counter()
@@ -97,11 +97,12 @@ def build_orchestrator_graph(
             target_resolver=target_resolver,
         )
         logger.debug(
-            "① resolver %.0fms | intents=%s | compound=%s | target=%s (from %s) | ambiguity=%s",
+            "① resolver %.0fms | intents=%s | compound=%s | target_kind=%s "
+            "(from %s) | ambiguity=%s",
             _ms(t_resolve),
             [(h.specialist_id, round(h.confidence, 2)) for h in resolver_output.intents],
             resolver_output.is_compound,
-            resolver_output.active_target.model_dump(exclude_none=True)
+            resolver_output.active_target.kind
             if resolver_output.active_target
             else None,
             resolver_output.resolved_from,
@@ -109,7 +110,10 @@ def build_orchestrator_graph(
         )
 
         if resolver_output.ambiguity is not None:
-            logger.debug("→ clarify short-circuit (no dispatch) | %s", resolver_output.ambiguity.clarification)
+            logger.debug(
+                "→ clarify short-circuit (no dispatch) | clarification_chars=%d",
+                len(resolver_output.ambiguity.clarification),
+            )
             turn_response = aggregate(
                 [], resolver_output=resolver_output, utterance=utterance, synth_fn=synth_fn
             )

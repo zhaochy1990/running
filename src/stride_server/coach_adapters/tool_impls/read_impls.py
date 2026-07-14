@@ -19,7 +19,7 @@ import functools
 import json
 import logging
 from collections.abc import Callable
-from datetime import date as date_cls
+from datetime import date as date_cls, timedelta
 from datetime import datetime, timezone
 from typing import Any
 
@@ -95,7 +95,44 @@ def _form_zone(form: float | None, chronic: float | None) -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# 1. get_recent_activities
+# 1. get_training_summary
+# ---------------------------------------------------------------------------
+
+
+class GetTrainingSummaryImpl:
+    def __init__(self, user_id: str) -> None:
+        self._user_id = user_id
+
+    @_tool_safe
+    def __call__(
+        self, *, date_from: str | None = None, date_to: str | None = None
+    ) -> ToolResult:
+        from stride_core.timefmt import today_shanghai
+        from stride_storage.sqlite.training_summary import get_training_summary
+
+        if (date_from is None) != (date_to is None):
+            return ToolResult(
+                ok=False,
+                errors=["date_from and date_to must be provided together"],
+            )
+        if date_from is None:
+            this_monday = today_shanghai() - timedelta(days=today_shanghai().weekday())
+            start = this_monday - timedelta(days=7)
+            end = this_monday - timedelta(days=1)
+            date_from, date_to = start.isoformat(), end.isoformat()
+
+        db = _open_db(self._user_id)
+        try:
+            data = get_training_summary(
+                db, date_from=str(date_from), date_to=str(date_to)
+            )
+        finally:
+            db.close()
+        return ToolResult(ok=True, data=data)
+
+
+# ---------------------------------------------------------------------------
+# 2. get_recent_activities
 # ---------------------------------------------------------------------------
 
 

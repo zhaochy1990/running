@@ -1,0 +1,7 @@
+# Coach CLI infrastructure overlay. Loaded after server.toml + server.local.toml
+# by scripts/coach-local.sh. Only master-plan storage points at production;
+# activities, health data, weekly plans, auth, and checkpoints remain local.
+
+[storage.master_plan]
+table_account_url = "https://authstorage2026.table.core.windows.net/"
+table_name = "stridemasterplan"

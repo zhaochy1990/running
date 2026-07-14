@@ -1,8 +1,9 @@
 """Interactive coach REPL (S0+S1 spine) — see package docstring.
 
 Requires:
-- ``az login`` — the orchestrator (gpt-4.1-mini) and specialist (gpt-5.5) LLMs
-  authenticate via AzureCliCredential.
+- Credentials for the models selected by ``STRIDE_COACH_CONFIG_PATH`` (or the
+  default local config). Azure managed-identity configs need ``az login``;
+  API-key configs need their declared ``api_key_env``.
 - A synced ``data/{user_id}/coros.db`` — the status_insight specialist's read
   tools open it. Without it, status_insight degrades to a failure reply (the
   REPL stays alive).
@@ -26,6 +27,9 @@ from pathlib import Path
 from typing import Callable
 
 import click
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.text import Text
 
 import stride_core.db as _coredb
 from stride_core.timefmt import utc_iso_to_shanghai_iso
@@ -33,8 +37,14 @@ from stride_core.timefmt import utc_iso_to_shanghai_iso
 # Our trace loggers (DEBUG when --debug). Third-party stays at WARNING so the
 # httpx / azure / openai request spam doesn't drown the orchestration trace.
 _TRACE_LOGGERS = (
-    "coach.orchestrator",
-    "stride_server.coach_adapters.orchestrator",
+    "coach.runtime.latency",
+    "coach.graphs.conversation.graph",
+    "coach.graphs.conversation.tool_bridge",
+    "coach.orchestrator.graph",
+    "coach.orchestrator.dispatcher",
+    "stride_server.coach_adapters.orchestrator.status_insight",
+    "stride_server.coach_adapters.orchestrator.weekly_plan",
+    "stride_server.coach_adapters.orchestrator.season_plan",
     "coach_cli",
 )
 _NOISY_LOGGERS = ("httpx", "httpcore", "openai", "azure", "urllib3", "langchain", "langgraph")
@@ -159,6 +169,21 @@ def _select_session(
         click.echo(f"请输入 1-{len(sessions)}，或按 Enter 取消。")
 
 
+def _model_banner() -> str:
+    """Describe the configured orchestrator + specialist without stale literals."""
+    from coach.runtime.config import load_config
+
+    cfg = load_config()
+    orchestrator = cfg.for_role("orchestrator")
+    status = cfg.for_role("status_insight")
+    planner = cfg.generator
+    return (
+        f"编排={orchestrator.model} ({orchestrator.api_kind}) · "
+        f"状态={status.model} ({status.api_kind}) · "
+        f"计划={planner.model} ({planner.api_kind})"
+    )
+
+
 def _setup_debug_logging() -> None:
     """Route our orchestration trace loggers to stderr at DEBUG, keep 3rd-party quiet."""
     handler = logging.StreamHandler()
@@ -189,20 +214,71 @@ def _build_checkpointer():
 
 
 def _format_turn(turn) -> str:
-    """Render a TurnResponse for the terminal."""
+    """Render a TurnResponse as stable plain text for pipes/files."""
     lines: list[str] = []
     if turn.clarification:
         lines.append(f"❓ {turn.clarification}")
     else:
         lines.append(turn.reply or "(空回复)")
+    lines.extend(f"  {line}" for line in _turn_metadata(turn))
+    return "\n".join(lines)
+
+
+def _turn_metadata(turn) -> list[str]:
+    """Build the compact non-Markdown lines appended after the reply."""
+    lines: list[str] = []
     for card in turn.proposals:
         proposal = card.proposal
         n_ops = len(getattr(proposal, "ops", []) or [])
         explanation = getattr(proposal, "ai_explanation", "") or ""
-        lines.append(f"  📋 提案[{card.specialist_id}] · {n_ops} 处改动 — {explanation}")
+        lines.append(f"📋 提案[{card.specialist_id}] · {n_ops} 处改动 — {explanation}")
     if turn.active_target:
-        lines.append(f"  · 当前对象: {turn.active_target.model_dump(exclude_none=True)}")
-    return "\n".join(lines)
+        lines.append(f"· 当前对象: {turn.active_target.model_dump(exclude_none=True)}")
+    return lines
+
+
+def _stdout_is_terminal() -> bool:
+    """Return whether stdout is an interactive terminal."""
+    stream = click.get_text_stream("stdout")
+    isatty = getattr(stream, "isatty", None)
+    return bool(isatty and isatty())
+
+
+def _print_turn(
+    turn,
+    *,
+    interactive: bool,
+    render_markdown: bool | None = None,
+    console: Console | None = None,
+) -> None:
+    """Print a turn, rendering Markdown only for an interactive terminal.
+
+    Redirected stdout remains the stable raw Markdown/plain-text contract so
+    shell pipelines and files do not receive terminal layout or ANSI escapes.
+    ``render_markdown`` and ``console`` are injectable for focused tests.
+    """
+    should_render = _stdout_is_terminal() if render_markdown is None else render_markdown
+    if not should_render:
+        prefix = "\n教练 › " if interactive else ""
+        click.echo(f"{prefix}{_format_turn(turn)}")
+        return
+
+    output = console or Console(
+        file=click.get_text_stream("stdout"),
+        highlight=False,
+    )
+    if interactive:
+        output.print()
+        output.print(Text("教练 ›", style="bold cyan"))
+
+    if turn.clarification:
+        output.print(Text("❓ 需要补充信息", style="bold yellow"))
+        output.print(Markdown(turn.clarification))
+    else:
+        output.print(Markdown(turn.reply or "(空回复)"))
+
+    for line in _turn_metadata(turn):
+        output.print(Text(f"  {line}", style="dim"))
 
 
 class _Thinking:
@@ -354,7 +430,7 @@ def main(
             )
         except Exception as exc:  # noqa: BLE001 — surface a friendly error
             raise SystemExit(f"❌ 教练调用失败: {_friendly_error(exc)}")
-        click.echo(_format_turn(turn))
+        _print_turn(turn, interactive=False)
         # Elapsed to stderr so piped stdout stays clean.
         click.echo(f"（用时 {time.perf_counter() - t0:.1f}s）", err=True)
         return
@@ -365,7 +441,7 @@ def main(
     click.echo(f"  user: {user_id}")
     click.echo(f"  session: {session_id}")
     click.echo(f"  data: {db_path}")
-    click.echo("  编排=gpt-4.1-mini · 专家=gpt-5.5 · /help 看命令")
+    click.echo(f"  {_model_banner()} · /help 看命令")
     click.echo("─" * 60)
 
     while True:
@@ -404,7 +480,7 @@ def main(
             click.echo(f"❌ 调用失败: {_friendly_error(exc)}")
             continue
 
-        click.echo(f"\n教练 › {_format_turn(turn)}")
+        _print_turn(turn, interactive=True)
 
 
 if __name__ == "__main__":

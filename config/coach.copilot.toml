@@ -1,0 +1,75 @@
+# Coach LLM Configuration — LOCAL GITHUB COPILOT PROXY
+#
+# Use scripts/coach-local.sh for persistent auth and the local Coach workflow:
+#
+#   scripts/coach-local.sh auth   # first time only
+#   scripts/coach-local.sh start
+#   scripts/coach-local.sh smoke
+#   scripts/coach-local.sh coach
+#   scripts/coach-local.sh stop   # credentials remain saved
+#
+# Local testing only. GPT-5.5/5.6 are Responses-only through this proxy.
+# Read-only status Q&A uses Luna/low; generator + reviewer stay on Sol/high.
+
+[models.copilot_sol]
+provider = "openai-compatible"
+model = "gpt-5.6-sol"
+deployment = "gpt-5.6-sol"
+endpoint = "http://127.0.0.1:44141/v1"
+api_key_env = "COPILOT_PROXY_API_KEY"
+auth = "api-key"
+api_kind = "responses"
+reasoning_effort = "high"
+max_tokens = 16384
+timeout_s = 300
+
+[models.copilot_sol.generator]
+max_tokens = 65536
+timeout_s = 600
+
+[models.copilot_sol.reviewer]
+max_tokens = 16384
+timeout_s = 300
+
+[models.copilot_luna]
+provider = "openai-compatible"
+model = "gpt-5.6-luna"
+deployment = "gpt-5.6-luna"
+endpoint = "http://127.0.0.1:44141/v1"
+api_key_env = "COPILOT_PROXY_API_KEY"
+auth = "api-key"
+api_kind = "responses"
+reasoning_effort = "medium"
+max_tokens = 4096
+timeout_s = 120
+
+[models.copilot_luna.commentary]
+max_tokens = 2048
+
+[models.copilot_luna.status_insight]
+reasoning_effort = "low"
+max_tokens = 2048
+timeout_s = 90
+
+[generator]
+model = "copilot_sol"
+
+[reviewer]
+model = "copilot_sol"
+
+[commentary]
+model = "copilot_luna"
+
+[orchestrator]
+model = "copilot_luna"
+
+[status_insight]
+model = "copilot_luna"
+
+[auth]
+mode = "api-key"
+
+[observability]
+# Real athlete data can pass through local Coach tests. Keep third-party tracing
+# disabled so prompts/responses are not copied to LangSmith.
+langsmith_enabled = false

@@ -35,6 +35,15 @@ def _registry() -> SpecialistRegistry:
             writes=True,
         )
     )
+    reg.register(
+        SpecialistCard(
+            id="season_plan",
+            description="调整总体训练计划",
+            tags=["master", "adjust"],
+            examples=["把基础期延长两周"],
+            writes=True,
+        )
+    )
     return reg
 
 
@@ -198,6 +207,44 @@ def test_write_intent_without_target_clarifies_target() -> None:
     assert out.ambiguity.kind == "target"
 
 
+def test_read_only_master_plan_query_is_corrected_to_status_insight() -> None:
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="season_plan", confidence=0.93)],
+        target_hint=TargetHint(kind="master", ref_phrase="总体训练计划"),
+    )
+    fn, _ = _fixed(draft)
+
+    out = resolve(
+        "我当前的总体训练计划是什么？",
+        registry=_registry(),
+        draft_fn=fn,
+        target_resolver=lambda _target: TargetRef(kind="master", plan_id="mp-1"),
+    )
+
+    assert out.ambiguity is None
+    assert [hit.specialist_id for hit in out.intents] == ["status_insight"]
+    assert out.active_target == TargetRef(kind="master", plan_id="mp-1")
+    assert out.resolved_from == "resolved"
+
+
+def test_explicit_master_plan_edit_stays_on_write_specialist() -> None:
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="season_plan", confidence=0.93)],
+        target_hint=TargetHint(kind="master", ref_phrase="总体训练计划"),
+    )
+    fn, _ = _fixed(draft)
+
+    out = resolve(
+        "把我的总体训练计划基础期延长两周",
+        registry=_registry(),
+        draft_fn=fn,
+        target_resolver=lambda _target: TargetRef(kind="master", plan_id="mp-1"),
+    )
+
+    assert [hit.specialist_id for hit in out.intents] == ["season_plan"]
+    assert out.active_target == TargetRef(kind="master", plan_id="mp-1")
+
+
 def test_write_intent_with_concrete_target_no_clarify() -> None:
     draft = ResolverDraft(
         intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
@@ -313,6 +360,13 @@ def test_prompt_role_split_is_hard_invariant() -> None:
     assert utterance in user
     assert utterance not in system
     assert "昨天我跑了10公里" in user
+
+
+def test_resolver_prompt_distinguishes_reading_from_editing_plans() -> None:
+    system = resolver.build_resolver_system_prompt(_registry())
+
+    assert "询问、查看、总结或解释" in system
+    assert "只有明确要求调整、生成、重排" in system
 
 
 def test_card_catalog_renders_ids_and_descriptions() -> None:

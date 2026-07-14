@@ -52,6 +52,36 @@ CONFIDENCE_FLOOR = 0.35   # below this, the top intent is too weak to dispatch
 TIE_MARGIN = 0.12         # two distinct specialists within this margin = a tie
 MAX_INTENTS = 3           # hallucination / runaway-compound cap
 
+_PLAN_QUERY_MARKERS = (
+    "当前计划",
+    "训练计划",
+    "周计划",
+    "weekly plan",
+    "weekly-plan",
+    "赛季计划",
+    "总体训练计划",
+    "总计划",
+    "总纲",
+    "master plan",
+)
+_PLAN_WRITE_MARKERS = (
+    "调整",
+    "修改",
+    "生成",
+    "重排",
+    "重新安排",
+    "替换",
+    "加一",
+    "增加",
+    "减少",
+    "减量",
+    "改成",
+    "换到",
+    "挪到",
+    "延长",
+    "缩短",
+)
+
 
 # ---------------------------------------------------------------------------
 # Prompt construction (role-split)
@@ -166,6 +196,37 @@ def _valid_intents(draft_intents: list[IntentHit], registry: SpecialistRegistry)
     return valid[:MAX_INTENTS]
 
 
+def _route_read_only_plan_query(
+    utterance: str,
+    intents: list[IntentHit],
+    registry: SpecialistRegistry,
+) -> list[IntentHit]:
+    """Correct write-specialist drift for an unambiguously read-only plan query.
+
+    Model routing remains useful for natural language, but "what is my current
+    plan?" must never require a concrete write target. The read specialist owns
+    ``get_master_plan_current`` / ``get_week_plan`` and is the safe deterministic
+    destination when no mutation verb is present.
+    """
+    lowered = utterance.lower()
+    if not any(marker in lowered for marker in _PLAN_QUERY_MARKERS):
+        return intents
+    if any(marker in lowered for marker in _PLAN_WRITE_MARKERS):
+        return intents
+    if "status_insight" not in registry:
+        return intents
+    confidence = max((hit.confidence for hit in intents), default=0.9)
+    return [IntentHit(specialist_id="status_insight", confidence=max(confidence, 0.9))]
+
+
+def _is_read_only_plan_query(utterance: str) -> bool:
+    lowered = utterance.lower()
+    return (
+        any(marker in lowered for marker in _PLAN_QUERY_MARKERS)
+        and not any(marker in lowered for marker in _PLAN_WRITE_MARKERS)
+    )
+
+
 def _writes(intents: list[IntentHit], registry: SpecialistRegistry) -> bool:
     return any(registry.get_card(h.specialist_id).writes for h in intents)
 
@@ -240,15 +301,30 @@ def resolve(
 
     draft = draft_fn(system_prompt, user_prompt)
     logger.debug(
-        "resolver draft (raw LLM) | intents=%s | compound=%s | target_hint=%s | self_ambiguity=%s",
+        "resolver draft (raw LLM) | intents=%s | compound=%s | "
+        "target_kind=%s | target_anaphora=%s | self_ambiguity=%s",
         [(h.specialist_id, round(h.confidence, 2)) for h in draft.intents],
         draft.is_compound,
-        draft.target_hint.model_dump(exclude_none=True) if draft.target_hint else None,
+        draft.target_hint.kind if draft.target_hint else None,
+        draft.target_hint.is_anaphora if draft.target_hint else False,
         draft.self_ambiguity,
     )
 
     valid = _valid_intents(draft.intents, registry)
+    valid = _route_read_only_plan_query(utterance, valid, registry)
     target, resolved_from = _resolve_target(draft.target_hint, prior_target)
+
+    # A read-only plan query may still need a concrete week folder. Unlike
+    # ordinary status reads, resolve it when the router supplied a plan kind.
+    if (
+        target_resolver is not None
+        and target is not None
+        and _is_read_only_plan_query(utterance)
+        and _needs_target_clarify(target, True)
+    ):
+        upgraded = target_resolver(target)
+        if upgraded is not None:
+            target, resolved_from = upgraded, "resolved"
 
     # Fill a concrete write target (folder) from the DB index before arbitration.
     # Reads default to most-recent (no target needed). Only fire when exactly one

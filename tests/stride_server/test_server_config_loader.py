@@ -561,6 +561,37 @@ def test_repo_server_config_files_load(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.coach_persistence.file_backend_dir == "data/_coach_dev"
 
 
+def test_coach_cli_overlay_only_points_master_plan_at_prod(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    monkeypatch.setenv(
+        "STRIDE_CONFIG_FILES",
+        ";".join(
+            str(repo_root / "config" / name)
+            for name in (
+                "server.toml",
+                "server.local.toml",
+                "server.coach-cli.toml",
+            )
+        ),
+    )
+    monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)
+    monkeypatch.delenv("STRIDE_ENV", raising=False)
+
+    cfg = load_server_config(use_cache=False)
+
+    assert cfg.env == "local"
+    assert cfg.storage.master_plan.table_account_url == (
+        "https://authstorage2026.table.core.windows.net/"
+    )
+    assert cfg.storage.master_plan.table_name == "stridemasterplan"
+    assert cfg.storage.content.account_url == ""
+    assert cfg.storage.likes.table_account_url == ""
+    assert cfg.coach_persistence.table_account_url == ""
+    assert cfg.notifications.table_account_url == ""
+
+
 def test_default_repo_server_config_loads_without_auth_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("STRIDE_CONFIG_FILES", raising=False)
     monkeypatch.delenv("STRIDE_CONFIG_ENV", raising=False)

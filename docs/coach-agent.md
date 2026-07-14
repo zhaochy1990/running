@@ -19,13 +19,15 @@ STRIDE coach 是 LangGraph-based agent，处理三个场景：
 
 `coach.*` 必须 **不** import `stride_server.*`、`coros_sync.*`、`garmin_sync.*`、`azure.*`、`fastapi.*` 或 `stride_core.db`。CI 用 `lint-imports` 强制（跑 `PYTHONPATH=src lint-imports`）。
 
-## Three LLM roles, multiple provider surfaces (anti-commitment-bias)
+## LLM roles, multiple provider surfaces (anti-commitment-bias)
 
 | Role | Default model | Provider tag | LangChain class |
 |------|---------------|--------------|-----------------|
 | Generator (Coach Agent) | GPT-5.4 | `azure-openai` | `AzureChatOpenAI` |
 | Reviewer | Claude Opus 4.7 | `azure-ai-inference` | `AzureAIChatCompletionsModel` |
 | Commentary | GPT-4.1 | `azure-openai` | `AzureChatOpenAI` |
+| Orchestrator | Reviewer fallback | provider-dependent | Resolver / memory extraction |
+| Status insight | Generator fallback | provider-dependent | Read-only status Q&A / weekly summaries |
 
 Role→model 绑定在两个 toml：**dev** `config/coach.local.toml`（gpt-5.5 @ azureai4identity，checked in 共享给所有 dev）+ **prod** `config/coach.prod.toml`（gpt-5.4 @ word-learner-llm；Docker build `cp coach.prod.toml coach.toml` 后这个就是 `coach.toml`）。`coach.runtime.config._resolve_path` 5 步链：(1) 显式 `path=` arg → (2) `STRIDE_COACH_CONFIG_PATH` env → (3) `coach.local.toml` → (4) `coach.toml` (Docker prod) → (5) cwd fallback。dev fresh checkout 自动跑 local；prod 容器里没 local 文件自动 fallback。Azure provider 打 Azure AI Foundry；auth 是 model-level `auth = "managed-identity"` 或 `auth = "api-key"`（旧配置的 `[auth].mode` 仍作为 fallback）。AAD token provider 在 `stride_server.coach_runtime` 构建（azure-identity 不能进 `coach.*`，import-linter 限制），每次按 role 注入。
 
@@ -35,9 +37,21 @@ Provider tags:
 |----------|-----------------|------|-------|
 | `azure-openai` | `AzureChatOpenAI` | MI or `api_key_env` | AOAI chat-completions / responses |
 | `azure-ai-inference` | `AzureAIChatCompletionsModel` | MI or `api_key_env` | Foundry serverless |
-| `openai-compatible` | `ChatOpenAI` | `api_key_env` | Third-party OpenAI-compatible chat endpoints such as DeepSeek V4 |
+| `openai-compatible` | `ChatOpenAI` | `api_key_env` | Third-party Chat Completions or Responses endpoints such as DeepSeek V4 and the local Copilot proxy |
 
 `config/coach.local.toml` carries a single local model registry under `[models.<key>]`, including DeepSeek V4 and Azure dev models. Shared model properties, including auth, live under the model key, while each role only references the key (`model = "deepseekv4pro"`) and can inherit role-specific defaults from `[models.<key>.generator]` / `[models.<key>.reviewer]` / etc. DeepSeek-specific knobs stay in `ModelSpec.extra`: `thinking` is passed via `extra_body`, `response_format` via `model_kwargs`, while graph/business code stays provider-neutral.
+
+`[status_insight]` is optional and falls back to `[generator]` for backward
+compatibility. Latency-sensitive configs should point it at a fast model; the
+Copilot config uses `gpt-5.6-luna` with low reasoning while plan generation and
+review stay on `gpt-5.6-sol`. Weekly summaries should prefer the bounded
+`get_training_summary` tool rather than repeatedly expanding activity queries.
+
+`coach-cli --debug` emits privacy-safe performance metadata: model role/id,
+elapsed time, message/input character counts, token usage, tool names, tool
+elapsed time, and result size. It never logs prompts, tool payloads, or replies.
+
+`coach-cli` 在交互终端中用 Rich 渲染 Coach 回复里的 Markdown（标题、列表、表格、代码块）；stdout 重定向到文件或 pipe 时保留原始 Markdown，避免 ANSI 和终端布局破坏脚本消费。
 
 **Commentary migrated**：自 PR #16 起 `stride_server.commentary_ai.generate_commentary` 通过 `coach_runtime.get_commentary_llm()` 走 `[commentary]` section。改 coach.toml 的 `[commentary]` section **会**直接影响生产 commentary 路径。`server.toml` 里历史 `[commentary]` 块（pre-PR-#16 残留）在 PR #25 删除。
 

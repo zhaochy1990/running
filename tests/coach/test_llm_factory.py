@@ -145,6 +145,7 @@ def test_aoai_chat_completions_disables_responses_flag(monkeypatch):
     monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
     build_chat_model(_spec(api_kind="chat-completions"), credentials=_fake_creds())
     assert captured["use_responses_api"] is False
+    assert len(captured["callbacks"]) == 1
 
 
 def test_aoai_responses_api_kind_routes_to_responses_endpoint(monkeypatch):
@@ -161,6 +162,7 @@ def test_aoai_responses_api_kind_routes_to_responses_endpoint(monkeypatch):
     monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", FakeAOAI)
     build_chat_model(_spec(api_kind="responses"), credentials=_fake_creds())
     assert captured["use_responses_api"] is True
+    assert len(captured["callbacks"]) == 1
 
 
 def test_aoai_reasoning_effort_set_propagates_kwarg(monkeypatch):
@@ -266,10 +268,42 @@ def test_openai_compatible_construction_uses_chat_openai_fields(monkeypatch):
     assert captured["timeout"] == 60
     assert captured["max_tokens"] == 1024
     assert captured["reasoning_effort"] == "max"
+    assert captured["use_responses_api"] is False
     assert captured["extra_body"] == {"thinking": {"type": "enabled"}}
     assert captured["model_kwargs"] == {"response_format": {"type": "json_object"}}
     assert captured["top_p"] == 0.9
     assert "azure_ad_token_provider" not in captured
+
+
+def test_openai_compatible_responses_api_kind_enables_responses(monkeypatch):
+    captured: dict = {}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import langchain_openai
+
+    monkeypatch.setattr(langchain_openai, "ChatOpenAI", FakeChatOpenAI)
+    spec = _spec(
+        provider="openai-compatible",
+        model="gpt-5.6-luna",
+        deployment="gpt-5.6-luna",
+        endpoint="http://127.0.0.1:44141/v1",
+        api_key_env="COPILOT_PROXY_API_KEY",
+        auth_mode="api-key",
+        api_kind="responses",
+        reasoning_effort="medium",
+    )
+    build_chat_model(spec, api_key="local-test-key")
+
+    assert captured["base_url"] == "http://127.0.0.1:44141/v1"
+    assert captured["model"] == "gpt-5.6-luna"
+    assert captured["api_key"] == "local-test-key"
+    assert captured["timeout"] == 60
+    assert captured["max_tokens"] == 1024
+    assert captured["reasoning_effort"] == "medium"
+    assert captured["use_responses_api"] is True
 
 
 def test_openai_compatible_api_key_can_come_from_env(monkeypatch):
@@ -294,7 +328,8 @@ def test_openai_compatible_api_key_can_come_from_env(monkeypatch):
     assert captured["api_key"] == "sk-from-env"
 
 
-def test_openai_compatible_missing_api_key_raises():
+def test_openai_compatible_missing_api_key_raises(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     spec = _spec(
         provider="openai-compatible",
         deployment="deepseek-v4-flash",

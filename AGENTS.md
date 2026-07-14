@@ -47,80 +47,59 @@ For both Web UI and mobile UI, we need to use the Stitch MCP to design with Stit
 
 ## Local GitHub Copilot proxy（仅开发测试）
 
-需要在本地用 GitHub Copilot 订阅测试 Coach 模型时，使用已实测的
+需要在本地把 GitHub Copilot 暴露成 OpenAI-compatible API 时，使用已实测的
 [`voidsteed/copilot-proxy-api`](https://github.com/voidsteed/copilot-proxy-api)。
-它是逆向 Copilot 内部 API 的社区项目，**只允许本地实验，禁止生产部署或共享账号服务**。允许在已获用户授权的本地测试中处理真实训练与健康数据，但必须启用本地 API key，不得把 prompt、response 或健康数据写入日志、回复或仓库文件，测试结束后立即停止服务并清理临时状态。
+它是逆向 Copilot 内部 API 的社区项目，**只允许本地实验，禁止生产部署或共享账号服务**。必须启用本地 API key，不得把 prompt、response 或 token 写入日志、回复或仓库文件。测试结束后立即停止服务；本地 credential 可以按下方规则持久保存。
 
 截至 2026-07-14，已验证 `copilot-proxy-api@0.10.22` 的 `/v1/responses` 可调用
-`gpt-5.5`、`gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`。固定版本以保证可复现；升级前必须重新跑下方 smoke。
+`gpt-5.5`、`gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`。固定版本以保证可复现；升级前必须重新跑下方 Hello World。
 
-### 首次授权（一次）
+### 一次授权，日常一键启停
 
-把 OAuth token 放到仓库外的隔离 HOME，绝不能复用或提交真实 HOME 下的 token：
-
-```bash
-export STRIDE_COPILOT_PROXY_HOME="${TMPDIR:-/tmp}/stride-copilot-proxy"
-mkdir -p "$STRIDE_COPILOT_PROXY_HOME"
-HOME="$STRIDE_COPILOT_PROXY_HOME" \
-  npm_config_cache="${TMPDIR:-/tmp}/stride-copilot-proxy-npm" \
-  npx -y copilot-proxy-api@0.10.22 auth
-```
-
-按终端提示在 `https://github.com/login/device` 完成 Device Flow。禁止使用
-`--show-token`，禁止把 device code、GitHub token、Copilot token 写入日志、回复、`.env` 或仓库文件。
-
-### 启动
-
-每个 shell session 生成一个仅供本机客户端使用的 API key，然后启动代理：
+统一使用 [`scripts/coach-local.sh`](scripts/coach-local.sh)。它把 OAuth
+credential、本地 API key、PID 和非 verbose 日志持久保存到
+`~/.local/share/copilot-proxy/`（目录 `0700`、secret 文件 `0600`），
+不写入仓库。首次运行一次 Device Flow：
 
 ```bash
-export STRIDE_COPILOT_PROXY_HOME="${TMPDIR:-/tmp}/stride-copilot-proxy"
-export COPILOT_PROXY_API_KEY="$(openssl rand -hex 32)"
-export COPILOT_PROXY_BASE_URL="http://127.0.0.1:44141/v1"
-
-NO_PROXY="localhost,127.0.0.1,::1${NO_PROXY:+,$NO_PROXY}" \
-no_proxy="localhost,127.0.0.1,::1${no_proxy:+,$no_proxy}" \
-HOME="$STRIDE_COPILOT_PROXY_HOME" \
-npm_config_cache="${TMPDIR:-/tmp}/stride-copilot-proxy-npm" \
-  npx -y copilot-proxy-api@0.10.22 start \
-  --port 44141 \
-  --api-key "$COPILOT_PROXY_API_KEY" \
-  >"${TMPDIR:-/tmp}/stride-copilot-proxy.log" 2>&1 &
-export COPILOT_PROXY_PID=$!
+scripts/coach-local.sh auth
 ```
 
-该工具会监听所有网卡，不只 `127.0.0.1`，所以 **`--api-key` 是 HARD 要求**；不要把端口暴露到公网、局域网共享或反向代理。测试结束后立即按下方清理步骤停止。
-
-### Hello World smoke（HARD）
-
-启动后先验证 Responses API，再做任何 Coach 长输出测试：
+按终端提示在 `https://github.com/login/device` 完成授权。之后日常无需再次
+auth：
 
 ```bash
-curl -fsS "$COPILOT_PROXY_BASE_URL/responses" \
-  -H "Authorization: Bearer $COPILOT_PROXY_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-5.6-sol","input":"Reply exactly: HELLO_WORLD_OK","max_output_tokens":64}' \
-  | jq -r '.output[] | select(.type == "message") | .content[] | select(.type == "output_text") | .text'
+scripts/coach-local.sh start
+scripts/coach-local.sh smoke
+scripts/coach-local.sh coach
+scripts/coach-local.sh stop
 ```
 
-期望输出严格为 `HELLO_WORLD_OK`。HTTP 200 但没有该文本也视为失败，先检查响应协议和模型权限，不能直接进入 Coach 测试。
+`coach` 自动加载 `config/coach.copilot.toml`（LLM）以及
+`config/server.toml` + `server.local.toml` + `server.coach-cli.toml`（基础设施）。
+其中只有 master-plan store 指向生产 Azure Table；活动、健康数据、weekly plan
+和 checkpoint 仍使用本地数据。用户不需要手工 export 配置环境变量。
 
-**协议边界**：GPT-5.5 / GPT-5.6 必须走 `/v1/responses`。不要因为 `/v1/models` 列出了模型，就用 `/v1/chat/completions` 判断可用；该路径对这些模型会返回 `unsupported_api_for_model`。当前 Coach 的 `openai-compatible` provider 默认使用 Chat Completions，在接入这些模型前必须显式实现并测试 Responses API 路径。
+`smoke` 是进入 Coach 前的 HARD gate，必须输出严格的
+`HELLO_WORLD_OK model=gpt-5.6-sol endpoint=/v1/responses`。HTTP 200 但文本
+不匹配也视为失败。
 
-### 清理
+**协议边界**：GPT-5.5 / GPT-5.6 必须走 `/v1/responses`。不要因为 `/v1/models` 列出了模型，就用 `/v1/chat/completions` 判断可用；该路径对这些模型会返回 `unsupported_api_for_model`。
 
-停止服务后可删除全部隔离凭据、日志和 npm cache：
+Coach 的 Copilot 配置用 `gpt-5.6-luna` 处理编排和只读
+`status_insight`，用 `gpt-5.6-sol` 处理计划生成/reviewer。周总结必须优先走
+`get_training_summary` 单次聚合工具，避免反复扩大活动明细请求。
+
+该工具会监听所有网卡，不只 `127.0.0.1`；脚本始终生成并启用本地 API key，
+端口不得暴露到公网、局域网共享或反向代理。`stop` 只停进程，**保留凭据**。
+只有用户明确要撤销本地状态时才运行：
 
 ```bash
-kill "$COPILOT_PROXY_PID" 2>/dev/null || true
-wait "$COPILOT_PROXY_PID" 2>/dev/null || true
-rm -rf "${TMPDIR:-/tmp}/stride-copilot-proxy" \
-  "${TMPDIR:-/tmp}/stride-copilot-proxy-npm" \
-  "${TMPDIR:-/tmp}/stride-copilot-proxy.log"
-unset COPILOT_PROXY_PID COPILOT_PROXY_API_KEY COPILOT_PROXY_BASE_URL STRIDE_COPILOT_PROXY_HOME
+scripts/coach-local.sh reset
 ```
 
-删除本地文件不会撤销 GitHub OAuth grant；不再使用时还应在 GitHub Settings 的 Authorized OAuth Apps 中撤销对应授权。
+`reset` 会删除本地 credential、API key、日志和 npm cache，但不会撤销 GitHub
+OAuth grant；彻底停用时还应在 GitHub Settings 的 Authorized OAuth Apps 中撤销。
 
 ---
 
