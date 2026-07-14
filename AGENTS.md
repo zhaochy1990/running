@@ -45,6 +45,85 @@ For both Web UI and mobile UI, we need to use the Stitch MCP to design with Stit
 
 ---
 
+## Local GitHub Copilot proxy（仅开发测试）
+
+需要在本地用 GitHub Copilot 订阅测试 Coach 模型时，使用已实测的
+[`voidsteed/copilot-proxy-api`](https://github.com/voidsteed/copilot-proxy-api)。
+它是逆向 Copilot 内部 API 的社区项目，**只允许本地实验，禁止生产部署或共享账号服务**。允许在已获用户授权的本地测试中处理真实训练与健康数据，但必须启用本地 API key，不得把 prompt、response 或健康数据写入日志、回复或仓库文件，测试结束后立即停止服务并清理临时状态。
+
+截至 2026-07-14，已验证 `copilot-proxy-api@0.10.22` 的 `/v1/responses` 可调用
+`gpt-5.5`、`gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`。固定版本以保证可复现；升级前必须重新跑下方 smoke。
+
+### 首次授权（一次）
+
+把 OAuth token 放到仓库外的隔离 HOME，绝不能复用或提交真实 HOME 下的 token：
+
+```bash
+export STRIDE_COPILOT_PROXY_HOME="${TMPDIR:-/tmp}/stride-copilot-proxy"
+mkdir -p "$STRIDE_COPILOT_PROXY_HOME"
+HOME="$STRIDE_COPILOT_PROXY_HOME" \
+  npm_config_cache="${TMPDIR:-/tmp}/stride-copilot-proxy-npm" \
+  npx -y copilot-proxy-api@0.10.22 auth
+```
+
+按终端提示在 `https://github.com/login/device` 完成 Device Flow。禁止使用
+`--show-token`，禁止把 device code、GitHub token、Copilot token 写入日志、回复、`.env` 或仓库文件。
+
+### 启动
+
+每个 shell session 生成一个仅供本机客户端使用的 API key，然后启动代理：
+
+```bash
+export STRIDE_COPILOT_PROXY_HOME="${TMPDIR:-/tmp}/stride-copilot-proxy"
+export COPILOT_PROXY_API_KEY="$(openssl rand -hex 32)"
+export COPILOT_PROXY_BASE_URL="http://127.0.0.1:44141/v1"
+
+NO_PROXY="localhost,127.0.0.1,::1${NO_PROXY:+,$NO_PROXY}" \
+no_proxy="localhost,127.0.0.1,::1${no_proxy:+,$no_proxy}" \
+HOME="$STRIDE_COPILOT_PROXY_HOME" \
+npm_config_cache="${TMPDIR:-/tmp}/stride-copilot-proxy-npm" \
+  npx -y copilot-proxy-api@0.10.22 start \
+  --port 44141 \
+  --api-key "$COPILOT_PROXY_API_KEY" \
+  >"${TMPDIR:-/tmp}/stride-copilot-proxy.log" 2>&1 &
+export COPILOT_PROXY_PID=$!
+```
+
+该工具会监听所有网卡，不只 `127.0.0.1`，所以 **`--api-key` 是 HARD 要求**；不要把端口暴露到公网、局域网共享或反向代理。测试结束后立即按下方清理步骤停止。
+
+### Hello World smoke（HARD）
+
+启动后先验证 Responses API，再做任何 Coach 长输出测试：
+
+```bash
+curl -fsS "$COPILOT_PROXY_BASE_URL/responses" \
+  -H "Authorization: Bearer $COPILOT_PROXY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5.6-sol","input":"Reply exactly: HELLO_WORLD_OK","max_output_tokens":64}' \
+  | jq -r '.output[] | select(.type == "message") | .content[] | select(.type == "output_text") | .text'
+```
+
+期望输出严格为 `HELLO_WORLD_OK`。HTTP 200 但没有该文本也视为失败，先检查响应协议和模型权限，不能直接进入 Coach 测试。
+
+**协议边界**：GPT-5.5 / GPT-5.6 必须走 `/v1/responses`。不要因为 `/v1/models` 列出了模型，就用 `/v1/chat/completions` 判断可用；该路径对这些模型会返回 `unsupported_api_for_model`。当前 Coach 的 `openai-compatible` provider 默认使用 Chat Completions，在接入这些模型前必须显式实现并测试 Responses API 路径。
+
+### 清理
+
+停止服务后可删除全部隔离凭据、日志和 npm cache：
+
+```bash
+kill "$COPILOT_PROXY_PID" 2>/dev/null || true
+wait "$COPILOT_PROXY_PID" 2>/dev/null || true
+rm -rf "${TMPDIR:-/tmp}/stride-copilot-proxy" \
+  "${TMPDIR:-/tmp}/stride-copilot-proxy-npm" \
+  "${TMPDIR:-/tmp}/stride-copilot-proxy.log"
+unset COPILOT_PROXY_PID COPILOT_PROXY_API_KEY COPILOT_PROXY_BASE_URL STRIDE_COPILOT_PROXY_HOME
+```
+
+删除本地文件不会撤销 GitHub OAuth grant；不再使用时还应在 GitHub Settings 的 Authorized OAuth Apps 中撤销对应授权。
+
+---
+
 ## Storage scope rule (HARD)
 
 **The per-user SQLite databases at `data/{user_id}/coros.db` are reserved for watch-synced 运动数据 only** —— activities, laps, zones, timeseries, daily_health, dashboard, race predictions, ability snapshots, structured planned sessions/nutrition, weekly plan/feedback markdown layer, scheduled workouts。任何不属于这个范围的（notifications, devices, social signals, cross-user state, app-level config 等）**绝不能**加成 SQLite 表。
