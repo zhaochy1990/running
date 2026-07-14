@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { PlannedSession, StructuredStatus } from '../types/plan'
 import { isPushable, isPushableStatus } from '../types/plan'
-import { computeWeekPlanIntensity } from '../lib/planIntensity'
+import { pushableSessionsFor } from '../lib/weeklyPlanView'
 
 export interface PushAllPlannedButtonProps {
   sessions: PlannedSession[]
@@ -20,33 +20,7 @@ interface PushResult {
   error?: string
 }
 
-/** Sessions the batch button should attempt to push:
- *   - kind ∈ {run, strength} with a complete spec
- *   - capability gate satisfied for the kind
- *   - not already pushed (re-pushing is reserved for the per-row button so
- *     users explicitly opt into replacing a watch entry).
- */
-export function pushableSessionsFor(
-  sessions: PlannedSession[],
-  canPushRun: boolean,
-  canPushStrength: boolean,
-): PlannedSession[] {
-  return sessions.filter((s) => {
-    if (!isPushable(s)) return false
-    if (s.kind === 'run' && !canPushRun) return false
-    if (s.kind === 'strength' && !canPushStrength) return false
-    if (s.scheduled_workout_id != null) return false
-    return true
-  })
-}
-
-/** Single-row action bar combining:
- *   - Planned weekly mileage breakdown (总跑量 / 低强度 Z1+Z2 / 高强度 Z4+Z5)
- *   - "一键推送" batch action for pushable run/strength sessions
- *
- * Both halves are bound to the same week, so colocating them avoids a
- * second card on the calendar tab.
- */
+/** Batch action for pushable run/strength sessions. */
 export default function PushAllPlannedButton({
   sessions,
   structuredStatus,
@@ -65,7 +39,6 @@ export default function PushAllPlannedButton({
     [sessions, canPushRun, strengthCap],
   )
   const total = targets.length
-  const planned = useMemo(() => computeWeekPlanIntensity(sessions), [sessions])
 
   if (!isPushableStatus(structuredStatus)) return null
 
@@ -78,9 +51,7 @@ export default function PushAllPlannedButton({
     return true
   }).length
 
-  // Hide entirely when there's no run mileage AND no eligible push targets —
-  // an all-rest week has nothing for either half to display.
-  if (planned.total_km <= 0 && eligibleTotal === 0) return null
+  if (eligibleTotal === 0) return null
 
   const disabled = pushing || total === 0
 
@@ -130,32 +101,22 @@ export default function PushAllPlannedButton({
 
   return (
     <div data-testid="push-all-container" className="flex flex-col gap-1.5">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-xl border border-accent-green/30 bg-accent-green/10 px-4 py-2.5">
-        <div
-          data-testid="plan-intensity-stats"
-          className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 text-xs font-mono"
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={handle}
+          disabled={disabled}
+          aria-label={ariaLabel}
+          data-testid="push-all-button"
+          className={
+            'whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ' +
+            (disabled
+              ? 'cursor-not-allowed border-border-subtle text-text-muted opacity-60'
+              : 'cursor-pointer border-accent-green/40 text-accent-green hover:bg-accent-green/15')
+          }
         >
-          <Stat label="计划跑量" value={planned.total_km} />
-          <Stat label="低强度 Z1+Z2" value={planned.low_km} />
-          <Stat label="高强度 Z4+Z5" value={planned.high_km} />
-        </div>
-        {eligibleTotal > 0 && (
-          <button
-            type="button"
-            onClick={handle}
-            disabled={disabled}
-            aria-label={ariaLabel}
-            data-testid="push-all-button"
-            className={
-              'px-3 py-1.5 text-xs font-medium rounded-lg border transition-all whitespace-nowrap ' +
-              (disabled
-                ? 'border-border-subtle text-text-muted cursor-not-allowed opacity-60'
-                : 'border-accent-green/40 text-accent-green hover:bg-accent-green/15 cursor-pointer')
-            }
-          >
-            {label}
-          </button>
-        )}
+          {label}
+        </button>
       </div>
       {results && results.length > 0 && (
         <div
@@ -181,16 +142,5 @@ export default function PushAllPlannedButton({
         </div>
       )}
     </div>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: number }) {
-  return (
-    <span className="whitespace-nowrap">
-      <span className="text-text-muted">{label}</span>
-      <span className="ml-1.5 font-semibold text-accent-green">
-        {value.toFixed(1)} km
-      </span>
-    </span>
   )
 }

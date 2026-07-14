@@ -14,21 +14,38 @@ export interface CoachWeeklyPlanPageProps {
 
 export default function CoachWeeklyPlanPage({ initialTab = 'schedule' }: CoachWeeklyPlanPageProps) {
   const [activeTab, setActiveTab] = useState<CoachWeeklyPlanTab>(initialTab)
-  const { week, planDays, strength, loading, error, saveFeedback } = useCoachWeeklyPlan()
+  const {
+    week,
+    weeks,
+    planDays,
+    strength,
+    structuredStatus,
+    canPushRun,
+    canPushStrength,
+    loading,
+    error,
+    saveFeedback,
+    pushSession,
+  } = useCoachWeeklyPlan()
 
   if (loading) return <div className="flex items-center justify-center py-20"><div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-green/30 border-t-accent-green" /></div>
   if (error) return <div role="alert" className="mx-auto mt-10 max-w-xl rounded-xl border border-accent-red/30 bg-red-soft p-4 text-sm text-accent-red">{error}</div>
   if (!week) return <div className="px-4 py-12 sm:px-8"><CoachWeeklyPlanEmptyState /></div>
+  if (planDays.every((day) => day.sessions.length === 0) && !week.plan?.trim()) return <div className="px-4 py-12 sm:px-8"><CoachWeeklyPlanEmptyState /></div>
+
+  const planTitle = weeks.find((item) => item.folder === week.folder)?.plan_title
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 sm:py-8">
-      <WeeklyPlanSummary week={week} />
-      <WeeklyPlanTabs active={activeTab} strengthCount={strength?.sessions.length ?? 0} recordCount={week.activity_count} onChange={setActiveTab} />
-      <div className="animate-fade-in">
-        {activeTab === 'schedule' && <WeeklyScheduleTab week={week} days={planDays} />}
-        {activeTab === 'strength' && <WeeklyStrengthTab data={strength} />}
-        {activeTab === 'records' && <WeeklyRecordsTab activities={week.activities} />}
-        {activeTab === 'feedback' && <WeeklyFeedbackTab initialValue={week.feedback ?? ''} onSave={saveFeedback} />}
+    <div className="mx-auto max-w-[1180px] space-y-6 px-4 py-6 sm:px-8 sm:py-8">
+      <WeeklyPlanSummary week={week} days={planDays} planTitle={planTitle} />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <WeeklyPlanTabs active={activeTab} strengthCount={strength?.sessions.length ?? 0} recordCount={week.activity_count} onChange={setActiveTab} />
+      </div>
+      <div id="weekly-plan-tabpanel" role="tabpanel" aria-labelledby={`weekly-plan-tab-${activeTab}`} className="animate-fade-in">
+        {activeTab === 'schedule' && <WeeklyScheduleTab week={week} days={planDays} structuredStatus={structuredStatus} canPushRun={canPushRun} canPushStrength={canPushStrength} onPush={pushSession} />}
+        {activeTab === 'strength' && <WeeklyStrengthTab data={strength} days={planDays} />}
+        {activeTab === 'records' && <WeeklyRecordsTab days={planDays} activities={week.activities} />}
+        {activeTab === 'feedback' && <WeeklyFeedbackTab initialValue={week.feedback ?? ''} days={planDays} onSave={saveFeedback} />}
       </div>
     </div>
   )

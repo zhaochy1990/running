@@ -1,5 +1,8 @@
 import type { Activity, ActivityMonthlySummary } from '../api'
+import { isRunActivity, isStrengthActivity } from '../lib/activityKinds'
 import { shanghaiDate } from '../lib/shanghai'
+
+export { isRunActivity, isStrengthActivity } from '../lib/activityKinds'
 
 export const ACTIVITY_PAGE_SIZE = 25
 export const ACTIVITY_PAGE_SIZE_OPTIONS = [25, 50, 75, 100] as const
@@ -28,14 +31,6 @@ export interface ActivityMonthGroup {
 }
 
 export type PageItem = number | 'ellipsis-left' | 'ellipsis-right'
-
-export function isRunActivity(activity: Activity): boolean {
-  return /run|treadmill|trail|track/i.test(activity.sport_name)
-}
-
-export function isStrengthActivity(activity: Activity): boolean {
-  return [402, 800].includes(activity.sport_type) || /strength/i.test(activity.sport_name)
-}
 
 export function activityIconLabel(activity: Activity): '跑' | '力' | '动' {
   if (isRunActivity(activity)) return '跑'

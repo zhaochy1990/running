@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import WeekLayout from '../WeekLayout'
 import type { WeekDetail, WeekSummary, PlanDaysResponse } from '../../api'
+import type { StructuredStatus } from '../../types/plan'
 
 // Hoisted mocks for the api module — each test composes the responses it
 // needs. Keep mock signatures narrow (we only mock the ones WeekLayout uses
@@ -52,9 +53,7 @@ const weeks: WeekSummary[] = [
   },
 ]
 
-function buildWeekDetail(structuredStatus: string | null): WeekDetail & {
-  structured?: { structured_status: string | null }
-} {
+function buildWeekDetail(structuredStatus: StructuredStatus | null): WeekDetail {
   return {
     folder: FOLDER,
     date_from: '2026-04-20',
