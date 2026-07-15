@@ -127,8 +127,9 @@ def test_runner_extracts_valid_proposal(monkeypatch) -> None:
     runner = _runner(capture, last_diff=_diff_dict(end_date="2026-08-15"), monkeypatch=monkeypatch)
     result = runner(_task("把基础期延长两周"))
     assert result.status == "completed"
-    assert isinstance(result.proposal, MasterPlanDiff)
-    assert result.proposal.plan_id == _PLAN_ID
+    assert len(result.proposals) == 1
+    assert isinstance(result.proposals[0], MasterPlanDiff)
+    assert result.proposals[0].plan_id == _PLAN_ID
     assert capture["build"]["scope"] == "master_chat"
     assert capture["build"]["checkpointer"] is None
 
@@ -145,7 +146,6 @@ def test_runner_extracts_and_validates_alternative_proposals(monkeypatch) -> Non
     runner = _runner(capture, reply="", last_diff=alternatives, monkeypatch=monkeypatch)
     result = runner(_task("给我两个调整方向"))
 
-    assert result.proposal is None
     assert [proposal.diff_id for proposal in result.proposals] == ["d1", "d2"]
     assert result.reply_fragment == "我准备了 2 个调整方向，请选择一个方案。"
 
@@ -161,10 +161,10 @@ def test_runner_drops_only_invalid_alternative(monkeypatch) -> None:
     runner = _runner(capture, reply="", last_diff=alternatives, monkeypatch=monkeypatch)
     result = runner(_task("给我两个调整方向"))
 
-    assert isinstance(result.proposal, MasterPlanDiff)
-    assert result.proposal.diff_id == "valid"
-    assert result.proposals == []
-    assert result.reply_fragment == result.proposal.ai_explanation
+    assert len(result.proposals) == 1
+    assert isinstance(result.proposals[0], MasterPlanDiff)
+    assert result.proposals[0].diff_id == "valid"
+    assert result.reply_fragment == result.proposals[0].ai_explanation
 
 
 def test_runner_drops_diff_that_fails_the_gate(monkeypatch) -> None:
@@ -175,7 +175,7 @@ def test_runner_drops_diff_that_fails_the_gate(monkeypatch) -> None:
     )
     result = runner(_task("把基础期缩到上个月"))
     assert result.status == "completed"
-    assert result.proposal is None
+    assert result.proposals == []
     assert "结构问题" in result.reply_fragment
 
 
@@ -184,7 +184,7 @@ def test_runner_question_turn_has_no_proposal(monkeypatch) -> None:
     runner = _runner(capture, reply="你的赛季计划目前 24 周。", last_diff=None, monkeypatch=monkeypatch)
     result = runner(_task("我的赛季计划多长"))
     assert result.status == "completed"
-    assert result.proposal is None
+    assert result.proposals == []
     assert "24 周" in result.reply_fragment
 
 
@@ -218,7 +218,7 @@ def test_runner_empty_reply_falls_back_to_diff_explanation(monkeypatch) -> None:
         capture, reply="", last_diff=_diff_dict(end_date="2026-08-15"), monkeypatch=monkeypatch
     )
     result = runner(_task("延长基础期"))
-    assert result.proposal is not None
+    assert len(result.proposals) == 1
     assert result.reply_fragment == "把基础期延长到 2026-08-15"
 
 
@@ -237,7 +237,7 @@ def test_runner_drops_proposal_when_plan_vanishes_midturn(monkeypatch) -> None:
     )
     result = runner(_task("延长基础期"))
     assert result.status == "completed"
-    assert result.proposal is None
+    assert result.proposals == []
 
 
 # --- master target resolver -------------------------------------------------

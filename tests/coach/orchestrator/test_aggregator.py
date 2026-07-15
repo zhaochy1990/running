@@ -22,7 +22,11 @@ def _resolver(**kw) -> ResolverOutput:
 def _completed(fragment: str, *, sid: str = "status_insight", proposal=None) -> DispatchResult:
     return DispatchResult(
         specialist_id=sid,
-        result=SpecialistResult(status="completed", reply_fragment=fragment, proposal=proposal),
+        result=SpecialistResult(
+            status="completed",
+            reply_fragment=fragment,
+            proposals=[proposal] if proposal is not None else [],
+        ),
     )
 
 

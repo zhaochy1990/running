@@ -49,11 +49,8 @@ def _clarification_text(
 def _proposal_cards(dispatched: list[DispatchResult], resolver_output: ResolverOutput) -> list[ProposalCard]:
     cards: list[ProposalCard] = []
     for item in dispatched:
-        proposals = list(item.result.proposals)
-        if item.result.proposal is not None:
-            proposals.insert(0, item.result.proposal)
-        multiple = len(proposals) > 1
-        for proposal in proposals:
+        multiple = len(item.result.proposals) > 1
+        for proposal in item.result.proposals:
             cards.append(
                 ProposalCard(
                     specialist_id=item.specialist_id,

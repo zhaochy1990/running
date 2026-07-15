@@ -261,10 +261,6 @@ def make_season_plan_runner(
             len(proposals),
             state.get("iteration"),
         )
-        if len(proposals) == 1:
-            return SpecialistResult(
-                status="completed", reply_fragment=reply, proposal=proposals[0]
-            )
         return SpecialistResult(status="completed", reply_fragment=reply, proposals=proposals)
 
     return _run

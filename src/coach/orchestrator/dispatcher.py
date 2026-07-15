@@ -63,7 +63,7 @@ def dispatch(call_plan: CallPlan, *, registry: SpecialistRegistry) -> list[Dispa
             result.status,
             (time.perf_counter() - t) * 1000.0,
             len(result.reply_fragment),
-            len(result.proposals) + (1 if result.proposal is not None else 0),
+            len(result.proposals),
         )
         dispatched.append(DispatchResult(specialist_id=call.specialist_id, result=result))
     return dispatched
