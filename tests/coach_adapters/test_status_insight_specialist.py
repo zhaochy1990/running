@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from coach.contracts import SpecialistTask, TargetRef, Turn
 from stride_server.coach_adapters.orchestrator.status_insight import (
+    CURRENT_WEEK_MISSING_REPLY,
     STATUS_INSIGHT_CARD,
     make_status_insight_runner,
 )
@@ -107,14 +108,13 @@ def test_runner_seeds_concrete_read_only_plan_target() -> None:
         )
     )
 
-    seeded = capture["state_in"]["history"][0]
-    assert isinstance(seeded, HumanMessage)
-    assert "2026-07-13_07-19(W12)" not in str(seeded.content)
-    assert "get_week_plan()" in str(seeded.content)
-    assert "不要传或追问 folder" in str(seeded.content)
+    history = capture["state_in"]["history"]
+    assert len(history) == 1
+    assert isinstance(history[0], HumanMessage)
+    assert history[0].content == "本周计划是什么"
 
 
-def test_runner_tells_model_to_query_current_week_without_folder() -> None:
+def test_week_target_does_not_override_an_unrelated_status_objective() -> None:
     capture: dict[str, Any] = {}
     runner = make_status_insight_runner(
         user_id="u1", llm=object(), toolkit=object(), graph_factory=_factory("ok", capture)
@@ -122,10 +122,51 @@ def test_runner_tells_model_to_query_current_week_without_folder() -> None:
 
     runner(
         SpecialistTask(
+            objective="我今天恢复状态怎么样",
+            active_target=TargetRef(kind="week", folder="2026-07-13_07-19(W12)"),
+        )
+    )
+
+    history = capture["state_in"]["history"]
+    assert len(history) == 1
+    assert history[0].content == "我今天恢复状态怎么样"
+
+
+def test_runner_normalizes_missing_current_week_tool_result() -> None:
+    class _MissingWeekGraph:
+        def invoke(self, state_in: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+            history = list(state_in["history"])
+            history.extend(
+                [
+                    ToolMessage(
+                        name="get_week_plan",
+                        tool_call_id="week-1",
+                        content=(
+                            '{"ok":true,"data":{'
+                            '"available":false,'
+                            '"missing_reason":"no_plan_for_current_shanghai_week"}}'
+                        ),
+                    ),
+                    AIMessage(content="当前没有可读取的结构化计划。"),
+                ]
+            )
+            return {"history": history, "iteration": 1}
+
+    def _missing_factory(**_kwargs):
+        return _MissingWeekGraph()
+
+    runner = make_status_insight_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=_missing_factory,
+    )
+
+    result = runner(
+        SpecialistTask(
             objective="本周计划是什么",
             active_target=TargetRef(kind="week"),
         )
     )
 
-    seeded = str(capture["state_in"]["history"][0].content)
-    assert "无参数 get_week_plan()" in seeded
+    assert result.reply_fragment == CURRENT_WEEK_MISSING_REPLY
