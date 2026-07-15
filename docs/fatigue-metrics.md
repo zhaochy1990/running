@@ -2,6 +2,25 @@
 
 **何时读**：分析 status / 疲劳 / 训练负荷，或写 weekly plan 前评估身体状态时必读。
 
+## Coach 数据来源边界（HARD）
+
+Coach 只允许使用：
+
+- STRIDE 自算：`daily_training_load.training_dose / acute_load / chronic_load / form / load_ratio`
+- 手表原始测量：RHR、HRV、心率、配速、睡眠时长
+
+Coach 禁止读取、引用或回退到手表厂商计算的派生结论：
+
+- `daily_health.fatigue / ati / cti / training_load_ratio / training_load_state`
+- dashboard `recovery_pct / running_level / aerobic_score`
+- 厂商 HRV status / baseline band、训练效果、跑力、比赛预测
+- 当前 `daily_training_load.readiness_gate/reasons` 和 `ability_snapshot` 的 L2、L3
+  recovery、L4（仍依赖 legacy 厂商恢复信号；迁移前 Coach 不使用）
+
+用户问“疲劳/状态”时，用 STRIDE `form / load_ratio` 加原始 RHR/HRV 趋势回答；
+STRIDE 数据缺失时明确说缺失。以下厂商字段说明仅用于 legacy 数据排障和非 Coach
+旧页面维护，不得作为 Coach prompt/context 输入。
+
 ## `daily_health` 关键字段
 
 | Field | 说明 |
@@ -13,7 +32,7 @@
 | `training_load_state` | COROS label：Low / Optimal / High / Very High |
 | `rhr` | 静息心率 |
 
-## 查询近 14 天疲劳趋势
+## 查询 legacy 厂商疲劳趋势（仅排障，禁止用于 Coach）
 
 ```bash
 # 先 sync 拿最新 health
@@ -55,6 +74,6 @@ TSB = CTI − ATI。表示 readiness to perform：
 
 HRV 当前只有 COROS dashboard 的 snapshot（`avg_sleep_hrv`, `hrv_normal_low`, `hrv_normal_high`）。每日 HRV 趋势需要 COROS sleep detail API（未实现 —— tracked as future feature）。
 
-## 综合判断
+## Legacy 综合判断（禁止用于 Coach）
 
 分析 status 时合并所有信号：RHR + HRV + fatigue + TSB + training_load_ratio。单一指标会误导；多信号收敛更可靠。

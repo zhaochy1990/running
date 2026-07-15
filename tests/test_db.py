@@ -134,6 +134,15 @@ class TestDatabaseActivities:
                VALUES ('2026-05-04',1,80,50,45,-5,1.11),
                       ('2026-05-05',1,40,52,46,-6,1.13)"""
         )
+        db._conn.execute(
+            """INSERT INTO daily_health
+               (date, rhr, fatigue, ati, cti, training_load_ratio, training_load_state)
+               VALUES ('20260505', 49, 88, 90, 40, 2.25, 'Very High')"""
+        )
+        db._conn.execute(
+            """INSERT INTO daily_hrv (date, last_night_avg, status)
+               VALUES ('2026-05-05', 42, 'LOW')"""
+        )
         db._conn.commit()
 
         result = get_training_summary(
@@ -151,6 +160,18 @@ class TestDatabaseActivities:
         }
         assert [item["label_id"] for item in result["key_sessions"]] == ["run1"]
         assert all("timeseries" not in item for item in result["activities"])
+        assert result["activities"][0]["stride_training_load"]["source"] == "stride"
+        assert result["activities"][0]["stride_training_load"]["training_dose"] == 80
+        assert "training_dose" not in result["activities"][0]
+        assert all(row["source"] == "stride" for row in result["load_series"])
+        assert all(row["vendor_derived"] is False for row in result["load_series"])
+        assert result["recovery_series"] == [
+            {"day": "2026-05-05", "rhr": 49, "hrv": 42}
+        ]
+        payload = str(result)
+        assert "fatigue" not in payload
+        assert "Very High" not in payload
+        assert "LOW" not in payload
 
     def test_compact_training_summary_rejects_large_range(self, db):
         from stride_storage.sqlite.training_summary import get_training_summary

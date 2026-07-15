@@ -61,7 +61,7 @@ STATUS_INSIGHT_CARD = SpecialistCard(
         "配速 4:30 对应 400 米操场多少时间一圈",
     ],
     writes=False,
-    data_needs=["fatigue", "load", "prediction", "completion"],
+    data_needs=["stride_load", "raw_recovery_signals", "prediction", "completion"],
 )
 
 

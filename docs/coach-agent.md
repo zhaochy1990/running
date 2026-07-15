@@ -47,6 +47,18 @@ Copilot config uses `gpt-5.6-luna` with low reasoning while plan generation and
 review stay on `gpt-5.6-sol`. Weekly summaries should prefer the bounded
 `get_training_summary` tool rather than repeatedly expanding activity queries.
 
+Coach 的 read-tool surface 只暴露 STRIDE 自算指标和手表原始测量值。厂商
+`fatigue / ATI / CTI / training_load_state / recovery_pct`、训练效果、跑力、
+比赛预测等派生分数不得进入 Coach context；状态判断使用 STRIDE
+`training_dose / acute_load / chronic_load / form / load_ratio` + 原始 RHR/HRV。
+当前仍依赖 legacy 厂商恢复信号的 `readiness_gate/reasons`、ability L2、L3
+recovery、L4 也必须在 Coach adapter 层屏蔽，直到算法完成迁移。
+每个返回训练负荷的 Agent tool 都必须输出 `provenance`，且负荷数据放在明确的
+`stride_training_load` / STRIDE PMC 字段中，标记 `source=stride`、
+`vendor_derived=false`。STRIDE 负荷尚未计算时返回 `available=false` 和
+`missing_reason=stride_load_not_computed`，禁止 fallback 到
+`activities.training_load` 或 `daily_health.ati/cti/fatigue`。
+
 `coach-cli --debug` emits privacy-safe performance metadata: model role/id,
 elapsed time, message/input character counts, token usage, tool names, tool
 elapsed time, and result size. It never logs prompts, tool payloads, or replies.

@@ -64,7 +64,10 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
                    FROM activities
                   WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
                )
-               SELECT b.*, atl.session_class, atl.training_dose, af.rpe
+               SELECT b.*, atl.session_class, atl.algorithm_version,
+                      atl.calibration_id, atl.cardio_tss, atl.external_tss,
+                      atl.mechanical_load, atl.training_dose, atl.load_confidence,
+                      atl.excluded_from_pmc, af.rpe
                  FROM bounded b
                  LEFT JOIN activity_training_load atl ON atl.label_id = b.label_id
                  LEFT JOIN activity_feedback af ON af.label_id = b.label_id
@@ -96,7 +99,28 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
                 "duration_s": round(float(row.get("duration_s") or 0)),
                 "avg_pace_s_km": row.get("avg_pace_s_km"),
                 "avg_hr": row.get("avg_hr"),
-                "training_dose": row.get("training_dose"),
+                "stride_training_load": {
+                    "source": "stride",
+                    "vendor_derived": False,
+                    "available": row.get("algorithm_version") is not None,
+                    "algorithm_version": row.get("algorithm_version"),
+                    "calibration_id": row.get("calibration_id"),
+                    "cardio_tss": row.get("cardio_tss"),
+                    "external_tss": row.get("external_tss"),
+                    "mechanical_load": row.get("mechanical_load"),
+                    "training_dose": row.get("training_dose"),
+                    "load_confidence": row.get("load_confidence"),
+                    "excluded_from_pmc": (
+                        bool(row["excluded_from_pmc"])
+                        if row.get("excluded_from_pmc") is not None
+                        else None
+                    ),
+                    "missing_reason": (
+                        None
+                        if row.get("algorithm_version") is not None
+                        else "stride_load_not_computed"
+                    ),
+                },
                 "rpe": row.get("rpe"),
                 "feel": row.get("feel") or row.get("feel_type"),
             }
@@ -121,8 +145,7 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
             completed += 1
 
     load_rows = db._conn.execute(
-        """SELECT date, training_dose, acute_load, chronic_load, form, load_ratio,
-                  readiness_gate
+        """SELECT date, training_dose, acute_load, chronic_load, form, load_ratio
              FROM daily_training_load
             WHERE algorithm_version = (SELECT max(algorithm_version) FROM daily_training_load)
               AND date BETWEEN ? AND ?
@@ -132,14 +155,14 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
 
     day_sql = _health_day_sql()
     health_rows = db._conn.execute(
-        f"""SELECT {day_sql} AS day, rhr, fatigue
+        f"""SELECT {day_sql} AS day, rhr
                FROM daily_health
               WHERE {day_sql} BETWEEN ? AND ?
               ORDER BY day""",
         (date_from, date_to),
     ).fetchall()
     hrv_rows = db._conn.execute(
-        """SELECT date, last_night_avg, status
+        """SELECT date, last_night_avg
              FROM (""" + HRV_PREFERRED_PER_DATE_SQL + """)
             WHERE date BETWEEN ? AND ?
             ORDER BY date""",
@@ -148,15 +171,25 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
     recovery_by_day = {row["day"]: dict(row) for row in health_rows}
     for row in hrv_rows:
         recovery_by_day.setdefault(row["date"], {"day": row["date"]}).update(
-            {"hrv": row["last_night_avg"], "hrv_status": row["status"]}
+            {"hrv": row["last_night_avg"]}
         )
 
     key_sessions = [item for item in activities if item["session_class"] in _KEY_CLASSES]
     key_sessions.sort(
-        key=lambda item: (float(item.get("training_dose") or 0), item["duration_s"]),
+        key=lambda item: (
+            float((item.get("stride_training_load") or {}).get("training_dose") or 0),
+            item["duration_s"],
+        ),
         reverse=True,
     )
-    load_series = [dict(row) for row in load_rows]
+    load_series = [
+        {
+            **dict(row),
+            "source": "stride",
+            "vendor_derived": False,
+        }
+        for row in load_rows
+    ]
     return {
         "date_from": date_from,
         "date_to": date_to,
