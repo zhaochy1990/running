@@ -180,7 +180,13 @@ def test_stop_signals_only_matching_process_identity(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     proxy_name = fake_bin / "copilot-proxy-api@0.10.22"
-    proxy_name.write_text("#!/bin/sh\nsleep 30\n", encoding="utf-8")
+    # Keep the executable path and proxy arguments visible in ``ps`` on every
+    # platform. Linux /bin/sh may exec a final ``sleep`` directly, which would
+    # replace the command line and correctly make the identity guard reject it.
+    proxy_name.write_text(
+        "#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n",
+        encoding="utf-8",
+    )
     proxy_name.chmod(0o755)
     process = subprocess.Popen(
         [str(proxy_name), "start", "--port", "45998", "--api-key", "fake", "30"],
