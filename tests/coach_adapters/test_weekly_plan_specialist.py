@@ -236,3 +236,7 @@ def test_target_resolver_uses_calendar_folder_when_current_week_missing(
         TargetRef(kind="week"),
         TargetHint(kind="week", ref_phrase="下周"),
     ) is None
+    assert resolver(
+        TargetRef(kind="session", date="2026-07-15"),
+        TargetHint(kind="session", ref_phrase="本周三的间歇"),
+    ) is None

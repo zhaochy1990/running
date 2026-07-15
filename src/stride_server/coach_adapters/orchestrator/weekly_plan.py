@@ -112,7 +112,7 @@ def make_current_week_target_resolver(
             )
             if (
                 target is None
-                or target.kind not in ("week", "session")
+                or target.kind != "week"
                 or not names_current_week
             ):
                 return None
