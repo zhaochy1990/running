@@ -406,6 +406,29 @@ S1 速度实验还会在 `timings` 中记录 `generator_system_prompt_chars`、`
 - `2` = 有 marginal 但没 fail
 - `64` = LLM 不可用 / config 缺失 / Azure 容量或 transient 服务失败（区别于 plan 质量 eval failure）
 
+### Resolver 真实 LLM 回归
+
+Resolver 是 typed classifier，预期结果（specialist、read/write、compound、target、
+clarify）可以精确断言，不需要再调用第二个 LLM judge。手动运行：
+
+```bash
+# 推荐：自动启动本地 Copilot proxy、跑 smoke，再用 orchestrator 模型执行全部 fixture
+scripts/coach-local.sh eval-resolver
+
+# 只跑一条 fixture
+scripts/coach-local.sh eval-resolver resolver-master-read
+
+# 也可直接使用当前 STRIDE_COACH_CONFIG_PATH / credential 环境
+python scripts/eval_resolver.py --fixture resolver-master-read
+```
+
+全部 Resolver fixtures 集中在 `tests/fixtures/coach_eval/resolver.yaml` 的
+顶层 `fixtures` 列表中；命令会调用 production
+`make_llm_draft_fn + resolve`，并把 JSON/Markdown 报告写入
+`.omc/eval/reports/<run>.resolver.*`。DB-backed target lookup 用 fixture 内冻结的
+`target_resolution` 代替，避免结果随当前周或真实用户数据漂移。该评测依赖真实模型，
+因此只手动执行，不进入默认 pytest/CI；pytest 只验证 fixture contract、评分器和报告器。
+
 ## L3: Human spot-check 流程
 
 用户随时挑某条 fixture 跑 `python -m coach.eval --fixture <id> --emit-spot-check`，得到一个 markdown：

@@ -418,3 +418,13 @@ def test_card_catalog_renders_ids_and_descriptions() -> None:
     assert "回答训练状态" in catalog
     assert "id: weekly_plan" in catalog
     assert "action: write" in catalog
+
+
+def test_production_status_card_declares_training_calculation_queries() -> None:
+    from stride_server.coach_adapters.orchestrator.status_insight import (
+        STATUS_INSIGHT_CARD,
+    )
+
+    assert "训练计算" in STATUS_INSIGHT_CARD.description
+    assert "配速换算" in STATUS_INSIGHT_CARD.tags
+    assert any("400 米" in example for example in STATUS_INSIGHT_CARD.examples)

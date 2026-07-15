@@ -62,6 +62,7 @@ def test_help_exposes_coach_workflow(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert "smoke [model]" in result.stdout
+    assert "eval-resolver [id]" in result.stdout
     assert "coach [message]" in result.stdout
     assert "smoke [model]" in result.stdout
 
@@ -74,6 +75,16 @@ def test_coach_command_loads_both_config_layers() -> None:
     assert "server.coach-cli.toml" in source
     assert "STRIDE_CONFIG_FILES" in source
     assert "coros_sync" in source
+
+
+def test_eval_resolver_uses_copilot_orchestrator_config_without_sync() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    body = source.split("cmd_eval_resolver() {", 1)[1].split("cmd_logs() {", 1)[0]
+
+    assert "scripts.eval_resolver" in body
+    assert 'STRIDE_COACH_CONFIG_PATH="$REPO_ROOT/config/coach.copilot.toml"' in body
+    assert "COPILOT_PROXY_API_KEY" in body
+    assert "coros_sync" not in body
 
 
 def test_status_reports_missing_persistent_credentials(tmp_path: Path) -> None:
