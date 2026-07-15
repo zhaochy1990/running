@@ -1,0 +1,258 @@
+fixtures:
+  - fixture_id: resolver-status-read
+    description: 直接询问疲劳或训练状态，应路由到只读状态专家。
+    tags: [read, status, single_intent]
+    input:
+      utterance: 我最近是不是有点过度训练了？
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target: null
+      ambiguity_kind: null
+      resolved_from: default
+      self_ambiguity: false
+
+  - fixture_id: resolver-master-read
+    description: 查询当前赛季总计划时，不应路由到写计划专家。
+    tags: [read, master, read_write_boundary]
+    input:
+      utterance: 我当前的总体训练计划是什么？
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: master
+      ambiguity_kind: null
+      resolved_from: explicit
+      self_ambiguity: false
+
+  - fixture_id: resolver-week-read
+    description: 直接询问本周计划，应路由到只读状态专家。
+    tags: [read, week, read_write_boundary]
+    input:
+      utterance: 我这周的训练计划是什么？
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: week
+      ambiguity_kind: null
+      resolved_from: explicit
+      self_ambiguity: false
+
+  - fixture_id: resolver-week-write
+    description: 明确修改本周训练时，应路由到周计划写专家并解析当前周目标。
+    tags: [write, week, target_resolution]
+    input:
+      utterance: 把本周三的间歇改成 45 分钟轻松跑。
+      target_resolution: &current_week
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target: *current_week
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+
+  - fixture_id: resolver-master-write
+    description: 修改赛季阶段时，应路由到赛季计划写专家。
+    tags: [write, master, target_resolution]
+    input:
+      utterance: 把赛季总计划的基础期延长两周。
+      target_resolution: &active_master
+        kind: master
+        plan_id: eval-master-plan
+    expected:
+      intents:
+        - specialist_id: season_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target: *active_master
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+
+  - fixture_id: resolver-diagnose-then-adjust
+    description: 先诊断再执行一个调整，仍应视为单一写意图。
+    tags: [write, week, diagnose_then_act, compound_boundary]
+    input:
+      utterance: 我最近是不是太累了？如果是，把明天的强度降一档。
+      target_resolution: *current_week
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target: *current_week
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+
+  - fixture_id: resolver-compound-read-and-write
+    description: 两个独立诉求应产生一个只读和一个写入的复合路由。
+    tags: [read, write, week, compound]
+    input:
+      utterance: 先告诉我最近四周的负荷趋势；另外，把本周五加一节力量训练。
+      target_resolution: *current_week
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: true
+      active_target: *current_week
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+
+  - fixture_id: resolver-anaphora-write
+    description: 后续修改使用指代词时，应复用上一轮的周计划目标。
+    tags: [write, week, anaphora, conversation]
+    input:
+      utterance: 那就把它周三的间歇换成轻松跑。
+      conversation_window:
+        - role: user
+          content: 给我看看下周的训练安排。
+        - role: assistant
+          content: 下周安排包含周三间歇、周末长跑。
+      prior_target: &next_week
+        kind: week
+        folder: 2026-07-20_07-26(EVAL)
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target: *next_week
+      ambiguity_kind: null
+      resolved_from: anaphora
+      self_ambiguity: false
+
+  - fixture_id: resolver-out-of-domain
+    description: 不支持的酒店请求应被拒绝，不能编造专家。
+    tags: [out_of_domain, ambiguity, hallucination_guard]
+    input:
+      utterance: 帮我订一间周末去杭州的酒店。
+    expected:
+      intents: []
+      is_compound: false
+      active_target: null
+      ambiguity_kind: intent
+      resolved_from: default
+      self_ambiguity: true
+
+  - fixture_id: resolver-high-rhr-read
+    description: 静息心率偏高的应对咨询，应路由到只读状态专家。
+    tags: [read, status, rhr]
+    input:
+      utterance: 我最近静息心率很高，怎么办？
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target: null
+      ambiguity_kind: null
+      resolved_from: default
+      self_ambiguity: false
+
+  - fixture_id: resolver-high-rhr-adjust
+    description: 因静息心率偏高而明确要求调整训练，应路由到周计划写专家。
+    tags: [write, week, rhr, diagnose_then_act]
+    input:
+      utterance: 我最近静息心率很高，帮我调整一下训练
+      target_resolution: *current_week
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target: *current_week
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+
+  - fixture_id: resolver-low-hrv-read
+    description: HRV 偏低的应对咨询，应路由到只读状态专家。
+    tags: [read, status, hrv]
+    input:
+      utterance: 我最近HRV很低，怎么办？
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target: null
+      ambiguity_kind: null
+      resolved_from: default
+      self_ambiguity: false
+
+  - fixture_id: resolver-low-hrv-adjust
+    description: 因 HRV 偏低而明确要求调整训练，应路由到周计划写专家。
+    tags: [write, week, hrv, diagnose_then_act]
+    input:
+      utterance: 我最近HRV很低，帮我调整一下训练
+      target_resolution: *current_week
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target: *current_week
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+
+  - fixture_id: resolver-weather-out-of-domain
+    description: 天气查询不属于当前训练专家能力，应返回意图澄清，但仍抽取明天的训练课目标。
+    tags: [out_of_domain, weather, ambiguity]
+    input:
+      utterance: 明天要跑间歇了，什么天气？
+    expected:
+      intents: []
+      is_compound: false
+      active_target:
+        kind: session
+      ambiguity_kind: intent
+      resolved_from: explicit
+      self_ambiguity: true
+
+  - fixture_id: resolver-track-lap-calculation-read
+    description: 跑步配速与操场单圈时间换算，应路由到只读训练问答专家。
+    tags: [read, calculation, pace]
+    input:
+      utterance: 配速430对应400米操场多少时间一圈
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target: null
+      ambiguity_kind: null
+      resolved_from: default
+      self_ambiguity: false

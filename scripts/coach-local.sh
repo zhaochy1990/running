@@ -33,6 +33,7 @@
 # 其他常用命令
 # ------------
 #   scripts/coach-local.sh smoke                 # 验证 gpt-5.6-sol Responses API
+#   scripts/coach-local.sh eval-resolver         # 真实 LLM 跑 Resolver 冻结 fixtures
 #   scripts/coach-local.sh coach "我当前的总体训练计划是什么？"
 #   scripts/coach-local.sh status                # 查看代理和授权状态
 #   scripts/coach-local.sh logs                  # 查看最近 50 行代理日志
@@ -92,6 +93,7 @@ Commands:
   start            Start the authenticated local proxy
   status           Show proxy and credential status
   smoke [model]     Verify /v1/responses (default: gpt-5.6-sol)
+  eval-resolver [id]  Run real-LLM Resolver fixtures (optional fixture id)
   coach [message]   Start Coach CLI; no message opens the interactive REPL
   logs             Show the last 50 non-verbose proxy log lines
   stop             Stop the proxy but keep credentials and API key
@@ -500,6 +502,30 @@ cmd_coach() {
     "$python" "${args[@]}"
 }
 
+cmd_eval_resolver() {
+  cmd_start
+  cmd_smoke "gpt-5.6-sol"
+
+  local main_root python bypass
+  main_root="$(main_checkout_root)"
+  python="$(coach_python "$main_root")"
+  bypass="$(local_no_proxy)"
+
+  [[ -x "$python" ]] || fail "Coach Python is not executable: $python"
+  [[ -f "$REPO_ROOT/config/coach.copilot.toml" ]] || fail "missing Coach Copilot config"
+
+  local args=(-m scripts.eval_resolver)
+  if [[ $# -gt 0 ]]; then
+    args+=(--fixture "$1")
+  fi
+
+  COPILOT_PROXY_API_KEY="$(<"$KEY_FILE")" \
+  STRIDE_COACH_CONFIG_PATH="$REPO_ROOT/config/coach.copilot.toml" \
+  PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
+  NO_PROXY="$bypass" no_proxy="$bypass" \
+    "$python" "${args[@]}"
+}
+
 cmd_logs() {
   [[ -f "$LOG_FILE" ]] || fail "no proxy log exists yet"
   tail -n 50 "$LOG_FILE"
@@ -558,6 +584,7 @@ case "$command_name" in
   start) [[ $# -eq 0 ]] || fail "start takes no arguments"; cmd_start ;;
   status) [[ $# -eq 0 ]] || fail "status takes no arguments"; cmd_status ;;
   smoke) [[ $# -le 1 ]] || fail "smoke accepts at most one model"; cmd_smoke "$@" ;;
+  eval-resolver) [[ $# -le 1 ]] || fail "eval-resolver accepts at most one fixture id"; cmd_eval_resolver "$@" ;;
   coach) cmd_coach "$@" ;;
   logs) [[ $# -eq 0 ]] || fail "logs takes no arguments"; cmd_logs ;;
   stop) [[ $# -eq 0 ]] || fail "stop takes no arguments"; cmd_stop ;;
