@@ -27,7 +27,7 @@ coach/
 │   ├── review.py                 ReviewReport + ReviewIssue + Verdict
 │   └── tool_result.py            ToolResult envelope
 ├── tools/
-│   ├── protocols.py              25 callable Protocols (12 read + 13 draft)
+│   ├── protocols.py              29 callable Protocols (15 read + 14 draft)
 │   └── registry.py               ToolSpec + ToolRegistry
 ├── runtime/
 │   ├── llm_factory.py            AOAI + Anthropic factories (CoachLLMUnavailable)

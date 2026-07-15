@@ -186,11 +186,14 @@ def make_season_plan_runner(
     user_id: str,
     llm: Any,
     toolkit: Any | None = None,
+    plan_store: Any | None = None,
+    state_observer: Callable[[dict[str, Any]], None] | None = None,
     graph_factory: GraphFactory = build_conversation_graph,
 ) -> SpecialistRunner:
     """Build the season_plan runner (wraps the master_chat conversation graph)."""
 
     def _run(task: SpecialistTask) -> SpecialistResult:
+        active_plan_store = plan_store or get_master_plan_store()
         plan_id = task.active_target.plan_id if task.active_target else None
         if not plan_id:
             # No active plan to amend — the Resolver should have filled this.
@@ -235,12 +238,15 @@ def make_season_plan_runner(
             "plan_id": plan_id,
             "constraints": [],
             "consulted_tools": [],
+            "tool_trace": [],
             "master_adjustment_request": task.objective.strip(),
             "master_adjustment_assessment": None,
             "last_diff": None,
             "iteration": 0,
         }
         state = graph.invoke(state_in, config={})
+        if state_observer is not None:
+            state_observer(state)
 
         reply = _extract_reply(state.get("history") or [])
         proposals: list[MasterPlanDiff] = []
@@ -253,7 +259,7 @@ def make_season_plan_runner(
         # malformed choice cannot hide another valid one.
         invalid_details: list[str] = []
         if proposals:
-            plan = get_master_plan_store().get_plan(user_id, plan_id)
+            plan = active_plan_store.get_plan(user_id, plan_id)
             if plan is None:
                 # Plan vanished between target resolution and now — don't surface
                 # an un-gated proposal for a plan that no longer exists.

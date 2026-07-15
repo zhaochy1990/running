@@ -82,6 +82,7 @@ def build_conversation_graph(
     llm: BaseChatModel,
     checkpointer: BaseCheckpointSaver | None,
     scope: str,
+    tool_names: tuple[str, ...] | None = None,
 ) -> Any:
     """Construct a compiled langgraph for the given scope.
 
@@ -92,7 +93,7 @@ def build_conversation_graph(
     if scope not in _SCOPE_PROMPTS:
         raise ValueError(f"unknown scope {scope!r}")
 
-    tools = build_langchain_tools(toolkit, scope)
+    tools = build_langchain_tools(toolkit, scope, selected_names=tool_names)
     llm_with_tools = llm.bind_tools(tools)
     tool_map: dict[str, Any] = {t.name: t for t in tools}
 
@@ -128,11 +129,15 @@ def build_conversation_graph(
             state.get("master_adjustment_assessment") if same_request else None
         )
         assessment_after = assessment_before
+        tool_trace = list(state.get("tool_trace") or []) if same_request else []
         for tc in tool_calls:
             name = tc["name"]
             args = tc.get("args") or {}
             impl = tool_map.get(name)
             if impl is None:
+                tool_trace.append(
+                    {"name": name, "outcome": "blocked", "reason": "unknown_tool"}
+                )
                 new_messages.append(
                     ToolMessage(
                         content=json.dumps({"ok": False, "errors": [f"unknown tool {name}"]}),
@@ -152,6 +157,13 @@ def build_conversation_graph(
                         )
                     if request_mismatch:
                         errors.append("assessment_request_does_not_match_current_user_request")
+                    tool_trace.append(
+                        {
+                            "name": name,
+                            "outcome": "blocked",
+                            "reason": "assessment_gate",
+                        }
+                    )
                     payload = json.dumps(
                         {"ok": False, "errors": errors},
                         ensure_ascii=False,
@@ -168,6 +180,13 @@ def build_conversation_graph(
                 verdict = (assessment_before or {}).get("verdict")
                 assessed_request = (assessment_before or {}).get("adjustment_request")
                 if verdict != "reasonable" or assessed_request != current_request:
+                    tool_trace.append(
+                        {
+                            "name": name,
+                            "outcome": "blocked",
+                            "reason": "proposal_gate",
+                        }
+                    )
                     payload = json.dumps(
                         {
                             "ok": False,
@@ -197,6 +216,16 @@ def build_conversation_graph(
                 parsed_payload = json.loads(payload) if isinstance(payload, str) else payload
             except (json.JSONDecodeError, TypeError):
                 pass
+            tool_trace.append(
+                {
+                    "name": name,
+                    "outcome": (
+                        "ok"
+                        if isinstance(parsed_payload, dict) and parsed_payload.get("ok")
+                        else "error"
+                    ),
+                }
+            )
             if (
                 name in READ_TOOL_NAMES
                 and isinstance(parsed_payload, dict)
@@ -220,6 +249,7 @@ def build_conversation_graph(
         update: dict[str, Any] = {
             "history": new_messages,
             "consulted_tools": sorted(consulted_after),
+            "tool_trace": tool_trace,
             "master_adjustment_request": current_request,
             "master_adjustment_assessment": assessment_after,
         }

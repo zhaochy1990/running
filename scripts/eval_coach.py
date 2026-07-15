@@ -101,6 +101,14 @@ def main(argv: list[str] | None = None) -> int:
         help="L1 = rule_filter only (fast, no LLM). L2 = adds judge. (default: all)",
     )
     parser.add_argument(
+        "--conversation",
+        action="store_true",
+        help=(
+            "For --scope s1, run frozen master_chat conversation fixtures instead "
+            "of full-plan generation fixtures."
+        ),
+    )
+    parser.add_argument(
         "--emit-spot-check",
         action="store_true",
         help="Also write per-fixture spot-check markdown to tests/fixtures/coach_eval/spot_checks/",
@@ -318,6 +326,20 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_FAIL
     if args.scope == "all":
         print("--scope all not implemented yet; specify --scope s1 or --scope s2", file=sys.stderr)
+        return EXIT_FAIL
+    if args.conversation and args.scope != "s1":
+        print("--conversation currently supports only --scope s1", file=sys.stderr)
+        return EXIT_FAIL
+    if args.conversation and (
+        args.judge_artifact is not None
+        or args.resume_report is not None
+        or args.master_max_tokens is not None
+    ):
+        print(
+            "--conversation cannot be combined with --judge-artifact, "
+            "--resume-report, or --master-max-tokens",
+            file=sys.stderr,
+        )
         return EXIT_FAIL
     if args.master_max_tokens is not None and args.master_max_tokens <= 0:
         print("--master-max-tokens must be a positive integer", file=sys.stderr)
@@ -1277,6 +1299,7 @@ def _run_full(args: argparse.Namespace) -> int:
     """L1 + L2 (full eval with LLM judge)."""
     from coach_eval.runner import (
         RunMode,
+        run_s1_conversation_evaluation,
         run_s1_evaluation,
         run_s2_evaluation,
         write_report,
@@ -1286,12 +1309,17 @@ def _run_full(args: argparse.Namespace) -> int:
 
     try:
         if args.scope == "s1":
-            report = run_s1_evaluation(
-                mode=mode,
-                fixture_ids=args.fixture_ids,
-                master_max_tokens=args.master_max_tokens,
-                resume_report_path=args.resume_report,
-            )
+            if args.conversation:
+                report = run_s1_conversation_evaluation(
+                    fixture_ids=args.fixture_ids
+                )
+            else:
+                report = run_s1_evaluation(
+                    mode=mode,
+                    fixture_ids=args.fixture_ids,
+                    master_max_tokens=args.master_max_tokens,
+                    resume_report_path=args.resume_report,
+                )
         elif args.scope == "s2":
             report = run_s2_evaluation(
                 mode=mode,
@@ -1326,6 +1354,10 @@ def _run_l1_only(args: argparse.Namespace) -> int:
     --layer L1 currently just runs the full pipe and drops the judge results.
     A future PR can add a `--from-cached-draft path/to/plan.json` flag.
     """
+    if args.conversation:
+        # Conversation fixtures already use deterministic contract scoring
+        # (no separate L2 judge), though concrete cases still need the Agent LLM.
+        return _run_full(args)
     print(
         "--layer L1 currently still runs generation (LLM needed). "
         "Skipping judge LLM call but rule_filter results require a generated draft.",

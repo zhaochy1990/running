@@ -1,4 +1,4 @@
-"""US-009: 6 master-scope draft tools emit valid MasterPlanDiff."""
+"""Master-scope draft tools emit valid MasterPlanDiff values."""
 
 from __future__ import annotations
 
@@ -262,6 +262,93 @@ def test_change_target_empty_fails(seeded_plan):
 # ---------------------------------------------------------------------------
 # propose_alternatives
 # ---------------------------------------------------------------------------
+
+
+def test_set_phase_weekly_range_returns_exact_typed_diff(seeded_plan, monkeypatch):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda plan_id: plan if plan_id == plan.plan_id else None
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weekly_distance_km_low=55,
+        weekly_distance_km_high=65,
+        reason="用户明确要求且训练负荷支持",
+    )
+
+    assert result.ok is True
+    diff = MasterPlanDiff.model_validate(result.data)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE
+    assert op.phase_id == phase1.id
+    assert op.old_value == {
+        "weekly_distance_km_low": phase1.weekly_distance_km_low,
+        "weekly_distance_km_high": phase1.weekly_distance_km_high,
+    }
+    assert op.new_value == {
+        "weekly_distance_km_low": 55.0,
+        "weekly_distance_km_high": 65.0,
+    }
+
+
+def test_set_phase_weekly_range_rejects_inverted_range(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weekly_distance_km_low=70,
+        weekly_distance_km_high=60,
+        reason="bad input",
+    )
+
+    assert result.ok is False
+    assert "low <= high" in result.errors[0]
+
+
+@pytest.mark.parametrize("low,high", [(float("nan"), 60), (50, float("inf"))])
+def test_set_phase_weekly_range_rejects_non_finite_values(
+    seeded_plan, low: float, high: float
+):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weekly_distance_km_low=low,
+        weekly_distance_km_high=high,
+        reason="bad input",
+    )
+
+    assert result.ok is False
+    assert "finite" in result.errors[0]
+
+
+def test_set_phase_weekly_range_rejects_noop(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weekly_distance_km_low=phase1.weekly_distance_km_low,
+        weekly_distance_km_high=phase1.weekly_distance_km_high,
+        reason="same range",
+    )
+
+    assert result.ok is False
+    assert "no proposal is needed" in result.errors[0]
 
 
 def test_propose_alternatives_returns_two_diffs(seeded_plan, monkeypatch):

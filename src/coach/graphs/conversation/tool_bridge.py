@@ -22,6 +22,11 @@ from pydantic import BaseModel, create_model
 
 from coach.runtime.toolkit import Toolkit
 from coach.schemas import ToolResult
+from coach.tools.protocols import (
+    MASTER_DRAFT_TOOL_NAMES,
+    READ_TOOL_NAMES,
+    WEEK_DRAFT_TOOL_NAMES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +92,16 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "compress_phase": "Propose shortening a master-plan phase by N weeks.",
     "shift_milestone": "Propose moving a milestone to `new_date`.",
     "change_target": "Propose changing a milestone target time.",
-    "propose_alternatives": "Generate alternative master-plan adjustments matching the user's intent.",
+    "set_phase_weekly_range": (
+        "Propose one exact weekly-distance range for a named master-plan phase. "
+        "Use when the user requests concrete low/high kilometres or when the evidence-based "
+        "assessment supports one specific range. This emits a typed diff and does not apply it."
+    ),
+    "propose_alternatives": (
+        "Generate exactly two load-reduction alternatives (5% and 10%) for the current or "
+        "next adjustable phase. Use only when the user asks to compare reduction options; "
+        "do not use for an exact requested range or for increases/date/target changes."
+    ),
     "regenerate_master": "Propose regenerating the whole master plan given `reason`.",
 }
 
@@ -162,43 +176,6 @@ def _wrap(name: str, callable_: Callable[..., ToolResult]) -> StructuredTool:
     )
 
 
-READ_TOOL_NAMES = (
-    "get_training_summary",
-    "get_recent_activities",
-    "get_health_snapshot",
-    "get_health_series",
-    "get_pmc_series",
-    "get_body_composition_latest",
-    "get_ability_snapshot",
-    "get_race_predictions",
-    "get_pbs",
-    "get_master_plan_current",
-    "get_master_plan_versions",
-    "get_week_plan",
-    "get_activity_detail",
-    "get_training_environment",
-    "estimate_master_plan_load",
-)
-
-WEEK_DRAFT_TOOL_NAMES = (
-    "swap_sessions",
-    "shift_session",
-    "reduce_intensity",
-    "replace_session",
-    "add_strength_session",
-    "change_pace_target",
-    "regenerate_week",
-)
-
-MASTER_DRAFT_TOOL_NAMES = (
-    "extend_phase",
-    "compress_phase",
-    "shift_milestone",
-    "change_target",
-    "propose_alternatives",
-    "regenerate_master",
-)
-
 MASTER_ASSESSMENT_TOOL_NAME = "assess_master_adjustment"
 
 
@@ -251,9 +228,15 @@ def tool_names_for_scope(scope: str) -> tuple[str, ...]:
     raise ValueError(f"unknown scope {scope!r}")
 
 
-def build_langchain_tools(toolkit: Toolkit, scope: str) -> list[StructuredTool]:
-    """Pack the (read + scope-specific draft) tools into a list of langchain tools."""
-    names = tool_names_for_scope(scope)
+def build_langchain_tools(
+    toolkit: Toolkit, scope: str, *, selected_names: tuple[str, ...] | None = None
+) -> list[StructuredTool]:
+    """Pack scope tools, optionally restricting the exposed surface for eval."""
+    available = tool_names_for_scope(scope)
+    names = available if selected_names is None else selected_names
+    unknown = set(names) - set(available)
+    if unknown:
+        raise ValueError(f"tools not available in scope {scope!r}: {sorted(unknown)}")
     return [
         _build_master_adjustment_assessment_tool()
         if name == MASTER_ASSESSMENT_TOOL_NAME

@@ -109,6 +109,7 @@ class ConversationState(TypedDict, total=False):
     history: Annotated[list[BaseMessage], add_messages]
     constraints: list[str]
     consulted_tools: list[str]
+    tool_trace: list[dict]
     master_adjustment_request: str | None
     master_adjustment_assessment: dict | None
     last_diff: dict | None

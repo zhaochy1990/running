@@ -5,10 +5,10 @@ Tools come in two flavours:
 * **Read tools (15)** — pull data out of STRIDE state. They are safe to call
   any time and their ``ToolResult.data`` contains the read payload.
 
-* **Draft tools (13)** — emit a proposed change. They never apply it. Their
+* **Draft tools (14)** — emit a proposed change. They never apply it. Their
   ``ToolResult.data`` is the serialised form of a typed diff:
   - 7 week-scope draft tools → ``stride_core.plan_diff.PlanDiff`` shape
-  - 6 master-scope draft tools → ``stride_core.master_plan_diff.MasterPlanDiff`` shape
+  - 7 master-scope draft tools → ``stride_core.master_plan_diff.MasterPlanDiff`` shape
 
 There are intentionally **no execute tools**: every side effect (push to
 watch, apply diff, sync, etc.) is triggered by a deterministic UI chip
@@ -182,6 +182,19 @@ class ChangeTarget(Protocol):
 
 
 @runtime_checkable
+class SetPhaseWeeklyRange(Protocol):
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        phase_id: str,
+        weekly_distance_km_low: float,
+        weekly_distance_km_high: float,
+        reason: str,
+    ) -> ToolResult: ...
+
+
+@runtime_checkable
 class ProposeAlternatives(Protocol):
     def __call__(self, *, plan_id: str, intent: str) -> ToolResult: ...
 
@@ -229,6 +242,7 @@ MASTER_DRAFT_TOOL_NAMES: tuple[str, ...] = (
     "compress_phase",
     "shift_milestone",
     "change_target",
+    "set_phase_weekly_range",
     "propose_alternatives",
     "regenerate_master",
 )

@@ -1,0 +1,36 @@
+{
+  "fixture_id": "s1c-vague-adjustment-clarify",
+  "scope": "s1",
+  "evaluation_path": "master_chat",
+  "description": "User only says they want to adjust the overall training plan. Coach must clarify direction before loading athlete data.",
+  "tags": ["conversation", "clarification", "no_premature_proposal"],
+  "input": {
+    "message": "我想要调整我的整体训练计划",
+    "active_plan": {
+      "plan_id": "s1c-plan-001",
+      "user_id": "s1c-user-001",
+      "status": "active",
+      "goal": {"goal_id": "goal-001", "race_date": "2026-10-25", "target_time": "3:15:00", "timezone": "Asia/Shanghai"},
+      "start_date": "2026-07-01",
+      "end_date": "2026-10-25",
+      "phases": [
+        {"id": "phase-base", "name": "基础期", "phase_type": "base", "start_date": "2026-07-01", "end_date": "2026-08-15", "focus": "有氧基础", "weekly_distance_km_low": 70, "weekly_distance_km_high": 80, "key_session_types": ["long_run", "threshold"], "milestone_ids": []},
+        {"id": "phase-build", "name": "专项期", "phase_type": "build", "start_date": "2026-08-16", "end_date": "2026-10-10", "focus": "马拉松专项", "weekly_distance_km_low": 75, "weekly_distance_km_high": 88, "key_session_types": ["long_run", "race_pace"], "milestone_ids": []},
+        {"id": "phase-taper", "name": "调整期", "phase_type": "taper", "start_date": "2026-10-11", "end_date": "2026-10-25", "focus": "减量与比赛", "weekly_distance_km_low": 35, "weekly_distance_km_high": 55, "key_session_types": ["race_pace", "race"], "milestone_ids": ["race-001"]}
+      ],
+      "milestones": [{"id": "race-001", "type": "race", "date": "2026-10-25", "phase_id": "phase-taper", "target": "全马 3:15"}],
+      "training_principles": ["渐进负荷", "保留两周 taper"],
+      "generated_by": "fixture",
+      "version": 1,
+      "created_at": "2026-07-01T00:00:00Z",
+      "updated_at": "2026-07-01T00:00:00Z"
+    },
+    "read_results": {}
+  },
+  "expected": {
+    "status": "needs_clarification",
+    "clarification_required": true,
+    "proposal_count": 0,
+    "tool_trace_empty": true
+  }
+}

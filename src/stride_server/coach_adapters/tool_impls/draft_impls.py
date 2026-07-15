@@ -1,8 +1,7 @@
 """Draft-tool implementations — see plan §5.2.
 
 * 7 week-scope tools (return ``PlanDiff``) — real impls (US-007).
-* 6 master-scope tools (return ``MasterPlanDiff``) — still placeholders
-  pending US-009.
+* 7 master-scope tools (return ``MasterPlanDiff``).
 
 A draft tool's job is to propose a change as a typed diff; it never applies
 the change. The route handler accepts the diff back (Pattern Y) and runs
@@ -18,6 +17,8 @@ it None.
 from __future__ import annotations
 
 import logging
+import math
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -425,7 +426,7 @@ class RegenerateWeekImpl:
 
 
 # ---------------------------------------------------------------------------
-# Master-scope (6) — emit MasterPlanDiff
+# Master-scope (7) — emit MasterPlanDiff
 # ---------------------------------------------------------------------------
 
 from datetime import date as _date, timedelta as _timedelta
@@ -441,6 +442,12 @@ def _open_master_plan(user_id: str, plan_id: str):
     from stride_server.master_plan_store import get_master_plan_store
 
     return get_master_plan_store().get_plan(user_id, plan_id)
+
+
+def _resolve_master_plan_loader(
+    user_id: str, plan_loader: Callable[[str], Any] | None
+) -> Callable[[str], Any]:
+    return plan_loader or (lambda plan_id: _open_master_plan(user_id, plan_id))
 
 
 def _empty_master_diff(plan_id: str, explanation: str) -> MasterPlanDiff:
@@ -463,13 +470,15 @@ def _shift_phase_end(end_date: str, weeks: int) -> str:
 
 
 class ExtendPhaseImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult:
         if weeks <= 0:
             return _fail(f"weeks must be positive, got {weeks}")
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         phase = next((p for p in plan.phases if p.id == phase_id), None)
@@ -489,13 +498,15 @@ class ExtendPhaseImpl:
 
 
 class CompressPhaseImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult:
         if weeks <= 0:
             return _fail(f"weeks must be positive, got {weeks}")
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         phase = next((p for p in plan.phases if p.id == phase_id), None)
@@ -525,8 +536,10 @@ class CompressPhaseImpl:
 
 
 class ShiftMilestoneImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(
         self, *, plan_id: str, milestone_id: str, new_date: str
@@ -535,7 +548,7 @@ class ShiftMilestoneImpl:
             _date.fromisoformat(new_date)
         except ValueError:
             return _fail(f"new_date must be ISO YYYY-MM-DD, got {new_date!r}")
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         ms = next((m for m in plan.milestones if m.id == milestone_id), None)
@@ -554,15 +567,17 @@ class ShiftMilestoneImpl:
 
 
 class ChangeTargetImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(
         self, *, plan_id: str, milestone_id: str, new_target_time: str
     ) -> ToolResult:
         if not new_target_time:
             return _fail("new_target_time must be non-empty")
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         ms = next((m for m in plan.milestones if m.id == milestone_id), None)
@@ -580,8 +595,77 @@ class ChangeTargetImpl:
         return _ok_master(diff.model_copy(update={"ops": [op]}))
 
 
+class SetPhaseWeeklyRangeImpl:
+    """Propose one exact weekly-distance range for a master-plan phase."""
+
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
+
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        phase_id: str,
+        weekly_distance_km_low: float,
+        weekly_distance_km_high: float,
+        reason: str,
+    ) -> ToolResult:
+        low = float(weekly_distance_km_low)
+        high = float(weekly_distance_km_high)
+        if (
+            not math.isfinite(low)
+            or not math.isfinite(high)
+            or low < 0
+            or high <= 0
+            or low > high
+        ):
+            return _fail(
+                "weekly distance range must be finite and satisfy "
+                "0 <= low <= high and high > 0"
+            )
+        plan = self._load_plan(plan_id)
+        if plan is None:
+            return _fail(f"master plan {plan_id!r} not found")
+        phase = next((item for item in plan.phases if item.id == phase_id), None)
+        if phase is None:
+            return _fail(f"phase {phase_id!r} not in plan")
+        if (
+            round(low, 1) == round(float(phase.weekly_distance_km_low), 1)
+            and round(high, 1) == round(float(phase.weekly_distance_km_high), 1)
+        ):
+            return _fail(
+                f"phase {phase_id!r} already has weekly distance range "
+                f"{low:g}-{high:g} km; no proposal is needed"
+            )
+        old_range = {
+            "weekly_distance_km_low": phase.weekly_distance_km_low,
+            "weekly_distance_km_high": phase.weekly_distance_km_high,
+        }
+        new_range = {
+            "weekly_distance_km_low": round(low, 1),
+            "weekly_distance_km_high": round(high, 1),
+        }
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+            phase_id=phase_id,
+            old_value=old_range,
+            new_value=new_range,
+            spec_patch=new_range,
+        )
+        explanation = (
+            f"将「{phase.name}」周跑量从 "
+            f"{phase.weekly_distance_km_low:g}–{phase.weekly_distance_km_high:g} km "
+            f"调整为 {low:g}–{high:g} km（原因：{reason}）"
+        )
+        diff = _empty_master_diff(plan_id, explanation)
+        return _ok_master(diff.model_copy(update={"ops": [op]}))
+
+
 class ProposeAlternativesImpl:
-    """Return 2 distinct MasterPlanDiff alternatives matching the user's intent.
+    """Return 2 distinct load-reduction alternatives (5% and 10%).
 
     Preserve the final taper/adjustment phase and offer two load-reduction
     magnitudes for the current Shanghai-day phase (or the nearest upcoming
@@ -590,11 +674,13 @@ class ProposeAlternativesImpl:
     rewriting completed history.
     """
 
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(self, *, plan_id: str, intent: str) -> ToolResult:
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         if not plan.phases:
@@ -690,11 +776,13 @@ class RegenerateMasterImpl:
     is a draft-only signal — the generation pipeline (US-008/Phase 5) runs
     separately."""
 
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(self, *, plan_id: str, reason: str) -> ToolResult:
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         ops: list[MasterPlanDiffOp] = []

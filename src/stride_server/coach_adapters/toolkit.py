@@ -1,14 +1,15 @@
 """``build_stride_toolkit(user_id)`` — adapter-layer factory that materialises
 a :class:`coach.runtime.toolkit.Toolkit` for one user.
 
-Read impls hit the per-user SQLite DB + master_plan_store. Draft impls are
-placeholders today (US-005); real impls land in US-007 (week) and US-009
-(master).
+Read impls hit the per-user SQLite DB + master_plan_store. Draft impls emit
+typed diffs and never apply them.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from coach.runtime.toolkit import Toolkit
 
@@ -23,6 +24,7 @@ from .tool_impls.draft_impls import (
     RegenerateMasterImpl,
     RegenerateWeekImpl,
     ReplaceSessionImpl,
+    SetPhaseWeeklyRangeImpl,
     ShiftMilestoneImpl,
     ShiftSessionImpl,
     SwapSessionsImpl,
@@ -48,9 +50,9 @@ from .tool_impls.read_impls import (
 
 @dataclass(frozen=True)
 class StrideToolkit:
-    """Frozen container holding callable instances for all 28 tools."""
+    """Frozen container holding callable instances for all 29 tools."""
 
-    # read (14)
+    # read (15)
     get_training_summary: GetTrainingSummaryImpl
     get_recent_activities: GetRecentActivitiesImpl
     get_health_snapshot: GetHealthSnapshotImpl
@@ -76,16 +78,19 @@ class StrideToolkit:
     change_pace_target: ChangePaceTargetImpl
     regenerate_week: RegenerateWeekImpl
 
-    # master-scope draft (6) — placeholders until US-009
+    # master-scope draft (7)
     extend_phase: ExtendPhaseImpl
     compress_phase: CompressPhaseImpl
     shift_milestone: ShiftMilestoneImpl
     change_target: ChangeTargetImpl
+    set_phase_weekly_range: SetPhaseWeeklyRangeImpl
     propose_alternatives: ProposeAlternativesImpl
     regenerate_master: RegenerateMasterImpl
 
 
-def build_stride_toolkit(user_id: str) -> Toolkit:
+def build_stride_toolkit(
+    user_id: str, *, master_plan_loader: Callable[[str], Any] | None = None
+) -> Toolkit:
     """Return a :class:`StrideToolkit` (satisfying :class:`Toolkit` Protocol)
     bound to ``user_id``. The instance is cheap to construct (no I/O); each
     individual tool opens its own short-lived DB connection on call."""
@@ -112,10 +117,15 @@ def build_stride_toolkit(user_id: str) -> Toolkit:
         add_strength_session=AddStrengthSessionImpl(user_id),
         change_pace_target=ChangePaceTargetImpl(user_id),
         regenerate_week=RegenerateWeekImpl(user_id),
-        extend_phase=ExtendPhaseImpl(user_id),
-        compress_phase=CompressPhaseImpl(user_id),
-        shift_milestone=ShiftMilestoneImpl(user_id),
-        change_target=ChangeTargetImpl(user_id),
-        propose_alternatives=ProposeAlternativesImpl(user_id),
-        regenerate_master=RegenerateMasterImpl(user_id),
+        extend_phase=ExtendPhaseImpl(user_id, plan_loader=master_plan_loader),
+        compress_phase=CompressPhaseImpl(user_id, plan_loader=master_plan_loader),
+        shift_milestone=ShiftMilestoneImpl(user_id, plan_loader=master_plan_loader),
+        change_target=ChangeTargetImpl(user_id, plan_loader=master_plan_loader),
+        set_phase_weekly_range=SetPhaseWeeklyRangeImpl(
+            user_id, plan_loader=master_plan_loader
+        ),
+        propose_alternatives=ProposeAlternativesImpl(
+            user_id, plan_loader=master_plan_loader
+        ),
+        regenerate_master=RegenerateMasterImpl(user_id, plan_loader=master_plan_loader),
     )

@@ -154,6 +154,9 @@ def test_assessment_is_rejected_until_required_data_has_been_read() -> None:
 
     assert state.get("master_adjustment_assessment") is None
     assert state.get("last_diff") is None
+    assert state.get("tool_trace") == [
+        {"name": "assess_master_adjustment", "outcome": "blocked", "reason": "assessment_gate"}
+    ]
 
 
 def test_draft_is_rejected_without_a_reasonable_assessment() -> None:

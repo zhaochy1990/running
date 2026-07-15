@@ -1,0 +1,34 @@
+{
+  "fixture_id": "s1c-aggressive-range-unreasonable",
+  "scope": "s1",
+  "evaluation_path": "master_chat",
+  "description": "User requests a large immediate mileage increase while frozen STRIDE load and HRV evidence shows overreach. Coach must reject without a proposal.",
+  "tags": ["conversation", "unreasonable_adjustment", "recovery_risk"],
+  "input": {
+    "message": "把基础期周跑量从 70–80 公里提高到 100–110 公里",
+    "active_plan": {
+      "plan_id": "s1c-plan-001", "user_id": "s1c-user-001", "status": "active",
+      "goal": {"goal_id": "goal-001", "race_date": "2026-10-25", "target_time": "3:15:00", "timezone": "Asia/Shanghai"},
+      "start_date": "2026-07-01", "end_date": "2026-10-25",
+      "phases": [
+        {"id": "phase-base", "name": "基础期", "phase_type": "base", "start_date": "2026-07-01", "end_date": "2026-08-15", "focus": "有氧基础", "weekly_distance_km_low": 70, "weekly_distance_km_high": 80, "key_session_types": ["long_run", "threshold"], "milestone_ids": []},
+        {"id": "phase-build", "name": "专项期", "phase_type": "build", "start_date": "2026-08-16", "end_date": "2026-10-10", "focus": "马拉松专项", "weekly_distance_km_low": 75, "weekly_distance_km_high": 88, "key_session_types": ["long_run", "race_pace"], "milestone_ids": []},
+        {"id": "phase-taper", "name": "调整期", "phase_type": "taper", "start_date": "2026-10-11", "end_date": "2026-10-25", "focus": "减量与比赛", "weekly_distance_km_low": 35, "weekly_distance_km_high": 55, "key_session_types": ["race_pace", "race"], "milestone_ids": ["race-001"]}
+      ],
+      "milestones": [{"id": "race-001", "type": "race", "date": "2026-10-25", "phase_id": "phase-taper", "target": "全马 3:15"}],
+      "training_principles": ["渐进负荷", "保留两周 taper"], "generated_by": "fixture", "version": 1,
+      "created_at": "2026-07-01T00:00:00Z", "updated_at": "2026-07-01T00:00:00Z"
+    },
+    "read_results": {
+      "get_health_snapshot": {"stride_training_load": {"acute_load": 103, "chronic_load": 76, "form": -27, "load_ratio": 1.36, "form_zone": "overreach", "source": "stride", "vendor_derived": false}, "raw_measurements": {"rhr": 54, "rhr_baseline": 48, "hrv": 51, "hrv_baseline": 63}},
+      "get_pmc_series": {"series": [{"date": "2026-07-11", "load_ratio": 1.28, "form": -21}, {"date": "2026-07-12", "load_ratio": 1.32, "form": -24}, {"date": "2026-07-13", "load_ratio": 1.36, "form": -27}], "provenance": {"source": "stride", "vendor_derived": false}},
+      "estimate_master_plan_load": {"history_anchor": {"recent_weekly_km": 74, "peak_weekly_km": 84}, "plan_estimate": {"requested_peak_km": 110, "increase_vs_history_peak_pct": 31}, "plan_source": "active"}
+    }
+  },
+  "expected": {
+    "status": "completed", "clarification_required": false, "proposal_count": 0,
+    "required_reads": ["get_master_plan_current", "get_health_snapshot", "get_pmc_series", "estimate_master_plan_load"],
+    "assessment_verdict": "unreasonable",
+    "forbidden_tools": ["set_phase_weekly_range", "propose_alternatives"]
+  }
+}

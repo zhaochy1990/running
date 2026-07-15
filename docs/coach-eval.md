@@ -23,7 +23,7 @@ Coach agent 三个 scope，对应三类用户场景。每个 scope 在 `src/coac
   - **Conversation 路径** —— 用户多轮聊天讨论调整（`master_chat` / `week_chat` scope）。AI 工具 emit typed `PlanDiff` / `MasterPlanDiff`，server 经 **Pattern Y** 落盘。
   - **Pattern Y** = "stateless propose → apply"：AI 在 propose 阶段只产出 typed diff（结构化、schema-validated 的字段级 patch），不直接改 DB；server 在 propose 和 apply endpoint 之间 **不留任何内存中的 pending-diff 状态**，diff 经 HTTP request body 由前端在 apply 调用时送回。完整性靠 path-match validation（`diff.folder == path_folder`、`accepted_op_ids ⊆ diff.ops.id`）+ post-apply rule_filter rerun + schema validation 保证。完整定义见 [`coach-agent.md`](coach-agent.md) § v1 architectural patterns。
   - **Generation 路径** —— 一次性整体生成。S1 / S2 都走 `build_generation_graph`（`load_context → generator → rule_filter → reviewer → verdict`，输出 schema-可校验的完整 plan）；S1 的 master-plan adapter 复用同一套 rule_filter / reviewer / verdict 机制。
-  - **Eval 优先评估 generation 路径** —— 它是 plan 的 source；conversation 只是基于 generation 输出做字段级微调。
+  - **Eval 主套件评估 generation 路径** —— 它是 plan 的 source；S1 另有 `s1_conversation` 子套件评估 master-plan 调整协议（先澄清、再读数据、评估合理性、最后才 proposal），避免 generation 全绿却让 conversation 提前提案。
 - **S3 只走 conversation graph** —— `reason → tools? → reason`，输出自由文字（无 schema 可校验，evaluation 必须靠 hallucination check + LLM judge）
 - **S1 / S2 偶发**，**S3 高频** —— eval coverage 重心不同：S1 / S2 追深度（每条 fixture 验证细节），S3 追覆盖（多条 fixture 验证不出 hallucination）
 
@@ -249,6 +249,13 @@ python scripts/eval_coach.py --scope s1 \
 
 # 跑指定 fixture
 python scripts/eval_coach.py --scope s1 --fixture s1-summer-base-build
+
+# 跑 S1 master_chat conversation fixtures（frozen plan + frozen tool results）
+python scripts/eval_coach.py --scope s1 --conversation
+
+# 只跑一条 conversation fixture
+python scripts/eval_coach.py --scope s1 --conversation \
+  --fixture s1c-exact-range-reasonable
 
 # v1 暂只实现 S1；其他 scope 等 S1 baseline 稳定后接入
 python scripts/eval_coach.py --scope s1
