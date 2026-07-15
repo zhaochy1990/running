@@ -11,6 +11,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    PhaseType,
 )
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
@@ -99,7 +100,7 @@ def test_short_final_taper_cannot_be_compressed() -> None:
             "milestone_ids": [],
         }
     )
-    plan = plan.model_copy(update={"phases": [taper]})
+    plan = plan.model_copy(update={"phases": [_phase(), taper]})
     op = _op(
         MasterPlanDiffOpKind.RESIZE_PHASE,
         phase_id="taper",
@@ -123,13 +124,85 @@ def test_short_final_taper_cannot_be_removed() -> None:
             "milestone_ids": [],
         }
     )
-    plan = plan.model_copy(update={"phases": [taper]})
+    plan = plan.model_copy(update={"phases": [_phase(), taper]})
     op = _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="taper")
 
     violations = validate_master_diff(plan, _diff(op))
 
     assert len(violations) == 1
     assert "不能删除" in violations[0]
+
+
+def test_short_final_non_taper_phase_can_be_removed() -> None:
+    plan = _plan()
+    recovery = _phase().model_copy(
+        update={
+            "id": "recovery",
+            "name": "调整恢复期",
+            "focus": "主动恢复",
+            "phase_type": PhaseType.RECOVERY,
+            "start_date": "2026-11-09",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), recovery]})
+    op = _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="recovery")
+
+    assert validate_master_diff(plan, _diff(op)) == []
+
+
+def test_full_regeneration_can_remove_short_final_taper() -> None:
+    plan = _plan()
+    taper = _phase().model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "start_date": "2026-11-02",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), taper]})
+    diff = _diff(
+        _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="phase-1"),
+        _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="taper"),
+        _op(MasterPlanDiffOpKind.REMOVE_MILESTONE, milestone_id="ms-1"),
+    )
+
+    assert validate_master_diff(plan, diff) == []
+
+
+def test_removing_all_phases_without_all_milestones_is_not_regeneration() -> None:
+    plan = _plan()
+    taper = _phase().model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "start_date": "2026-11-02",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), taper]})
+    diff = _diff(
+        _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="phase-1"),
+        _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="taper"),
+    )
+
+    violations = validate_master_diff(plan, diff)
+
+    assert len(violations) == 1
+    assert "不能删除" in violations[0]
+
+
+def test_diff_for_another_plan_is_rejected() -> None:
+    diff = _diff().model_copy(update={"plan_id": "another-plan"})
+
+    violations = validate_master_diff(_plan(), diff)
+
+    assert len(violations) == 1
+    assert "不是当前计划" in violations[0]
 
 
 def test_resize_inverting_phase_is_rejected() -> None:
@@ -248,6 +321,32 @@ def test_weekly_range_valid_passes() -> None:
         spec_patch={"weekly_distance_km_low": 40.0, "weekly_distance_km_high": 80.0},
     )
     assert validate_master_diff(_plan(), _diff(op)) == []
+
+
+def test_weekly_range_partial_update_checks_current_other_bound() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={"weekly_distance_km_low": 70.0},
+    )
+
+    violations = validate_master_diff(_plan(), _diff(op))
+
+    assert len(violations) == 1
+    assert "下限" in violations[0]
+
+
+def test_weekly_range_requires_nonempty_patch() -> None:
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+        phase_id="phase-1",
+        spec_patch={},
+    )
+
+    violations = validate_master_diff(_plan(), _diff(op))
+
+    assert len(violations) == 1
+    assert "缺少 spec_patch" in violations[0]
 
 
 def test_malformed_iso_date_is_rejected() -> None:

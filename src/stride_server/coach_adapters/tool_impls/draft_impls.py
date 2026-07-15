@@ -23,7 +23,9 @@ from typing import Any
 from uuid import uuid4
 
 from coach.schemas import ToolResult
+from coach.graphs.conversation.master_diff_gate import is_short_taper_phase
 from stride_core.plan_diff import DiffOp, DiffOpKind, PlanDiff
+from stride_core.timefmt import today_shanghai
 
 logger = logging.getLogger(__name__)
 
@@ -472,16 +474,11 @@ class CompressPhaseImpl:
         phase = next((p for p in plan.phases if p.id == phase_id), None)
         if phase is None:
             return _fail(f"phase {phase_id!r} not in plan")
-        if phase is plan.phases[-1]:
-            phase_days = (
-                _date.fromisoformat(phase.end_date)
-                - _date.fromisoformat(phase.start_date)
-            ).days + 1
-            if phase_days <= 14:
-                return _fail(
-                    f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短；"
-                    "请调整更早阶段的周跑量，或拒绝这次要求"
-                )
+        if phase is plan.phases[-1] and is_short_taper_phase(phase):
+            return _fail(
+                f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短；"
+                "请调整更早阶段的周跑量，或拒绝这次要求"
+            )
         new_end = _shift_phase_end(phase.end_date, -weeks)
         # Refuse a compress that would collapse the phase below its start
         if _date.fromisoformat(new_end) <= _date.fromisoformat(phase.start_date):
@@ -560,9 +557,10 @@ class ProposeAlternativesImpl:
     """Return 2 distinct MasterPlanDiff alternatives matching the user's intent.
 
     Preserve the final taper/adjustment phase and offer two load-reduction
-    magnitudes for the nearest earlier unfinished phase.  If no earlier active
-    phase has a usable weekly-distance range, refusing is safer than removing
-    the taper or rewriting completed history.
+    magnitudes for the current Shanghai-day phase (or the nearest upcoming
+    phase when the plan has a gap).  If no current/upcoming phase has a usable
+    weekly-distance range, refusing is safer than removing the taper or
+    rewriting completed history.
     """
 
     def __init__(self, user_id: str) -> None:
@@ -575,25 +573,41 @@ class ProposeAlternativesImpl:
         if not plan.phases:
             return _fail("plan has no phases to alternate over")
         final_phase = plan.phases[-1]
-        final_days = (
-            _date.fromisoformat(final_phase.end_date)
-            - _date.fromisoformat(final_phase.start_date)
-        ).days + 1
-        candidates = plan.phases[:-1] if final_days <= 14 else plan.phases
-        target = next(
-            (
-                phase
-                for phase in reversed(candidates)
-                if not phase.is_completed
+        candidates = (
+            plan.phases[:-1]
+            if is_short_taper_phase(final_phase)
+            else plan.phases
+        )
+        today = today_shanghai()
+        adjustable: list[tuple[_date, _date, Any]] = []
+        for phase in candidates:
+            try:
+                phase_start = _date.fromisoformat(phase.start_date)
+                phase_end = _date.fromisoformat(phase.end_date)
+            except ValueError:
+                continue
+            if (
+                not phase.is_completed
+                and phase_end >= today
                 and 0 <= phase.weekly_distance_km_low <= phase.weekly_distance_km_high
                 and phase.weekly_distance_km_high > 0
-            ),
-            None,
+            ):
+                adjustable.append((phase_start, phase_end, phase))
+
+        current = [
+            item for item in adjustable if item[0] <= today <= item[1]
+        ]
+        upcoming = [item for item in adjustable if item[0] > today]
+        selected = (
+            max(current, key=lambda item: item[0])
+            if current
+            else (min(upcoming, key=lambda item: item[0]) if upcoming else None)
         )
+        target = selected[2] if selected is not None else None
         if target is None:
             return _fail(
                 "为保护最后 1–2 周必须保留的调整期，当前计划没有可安全降低周跑量的"
-                "更早阶段；无法生成可应用的替代方案，请保留现有计划或重新评估该要求"
+                "当前或后续阶段；无法生成可应用的替代方案，请保留现有计划或重新评估该要求"
             )
 
         alternatives: list[dict] = []

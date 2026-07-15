@@ -25,7 +25,7 @@ from __future__ import annotations
 import math
 from datetime import date as _date
 
-from stride_core.master_plan import MasterPlan, MilestoneType
+from stride_core.master_plan import MasterPlan, MilestoneType, PhaseType
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
@@ -145,9 +145,41 @@ def _check_phase_add(
 
 
 def _check_weekly_range(op: MasterPlanDiffOp, phases: dict) -> str | None:
-    if op.phase_id not in phases:
+    phase = phases.get(op.phase_id)
+    if phase is None:
         return f"操作引用的阶段（id={op.phase_id}）不存在"
-    return _weekly_bounds_violation(op.spec_patch or {})
+    patch = op.spec_patch or {}
+    if not patch:
+        return "调整周跑量区间缺少 spec_patch"
+    merged = {
+        "weekly_distance_km_low": patch.get(
+            "weekly_distance_km_low", phase.weekly_distance_km_low
+        ),
+        "weekly_distance_km_high": patch.get(
+            "weekly_distance_km_high", phase.weekly_distance_km_high
+        ),
+    }
+    return _weekly_bounds_violation(merged)
+
+
+def is_short_taper_phase(phase: object) -> bool:
+    """Recognize a protected 1–2 week taper, including legacy plans."""
+    phase_type = getattr(phase, "phase_type", None)
+    if phase_type is not None:
+        is_taper = phase_type == PhaseType.TAPER
+    else:
+        label = f"{getattr(phase, 'name', '')} {getattr(phase, 'focus', '')}".lower()
+        is_taper = any(
+            token in label for token in ("taper", "减量", "调整")
+        )
+    start = _parse(getattr(phase, "start_date", None))
+    end = _parse(getattr(phase, "end_date", None))
+    return bool(
+        is_taper
+        and start is not None
+        and end is not None
+        and 0 < (end - start).days + 1 <= 14
+    )
 
 
 def _check_milestone_date(
@@ -238,16 +270,31 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
     milestones = {m.id: m for m in plan.milestones}
     plan_lo, plan_hi = _parse(plan.start_date), _parse(plan.end_date)
     violations: list[str] = []
+    if diff.plan_id != plan.plan_id:
+        violations.append(
+            f"调整提案属于 plan_id={diff.plan_id}，不是当前计划 {plan.plan_id}"
+        )
+
+    active_ops = [op for op in diff.ops if op.accepted is not False]
+    removed_phase_ids = {
+        op.phase_id
+        for op in active_ops
+        if op.op == _Kind.REMOVE_PHASE and op.phase_id is not None
+    }
+    removed_milestone_ids = {
+        op.milestone_id
+        for op in active_ops
+        if op.op == _Kind.REMOVE_MILESTONE and op.milestone_id is not None
+    }
+    is_full_regeneration = (
+        bool(phases)
+        and removed_phase_ids == set(phases)
+        and removed_milestone_ids == set(milestones)
+    )
     protected_final_phase_id: str | None = None
     if plan.phases:
         final_phase = plan.phases[-1]
-        final_start = _parse(final_phase.start_date)
-        final_end = _parse(final_phase.end_date)
-        if (
-            final_start is not None
-            and final_end is not None
-            and (final_end - final_start).days + 1 <= 14
-        ):
+        if is_short_taper_phase(final_phase):
             protected_final_phase_id = final_phase.id
 
     for op in diff.ops:
@@ -261,6 +308,7 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
         elif (
             op.op == _Kind.REMOVE_PHASE
             and op.phase_id == protected_final_phase_id
+            and not is_full_regeneration
         ):
             phase = phases[op.phase_id]
             v = f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能删除"

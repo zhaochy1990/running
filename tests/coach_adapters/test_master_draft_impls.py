@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 import pytest
@@ -16,6 +16,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    PhaseType,
 )
 from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOpKind
 from stride_server.coach_adapters.tool_impls import draft_impls
@@ -184,6 +185,32 @@ def test_compress_phase_refuses_to_shorten_final_two_week_taper(seeded_plan):
     assert "必须完整保留" in res.errors[0]
 
 
+def test_compress_phase_allows_short_final_recovery(seeded_plan):
+    plan, phase1, phase2, _ = seeded_plan
+    from stride_server.master_plan_store import get_master_plan_store
+
+    recovery = phase2.model_copy(
+        update={
+            "name": "调整恢复期",
+            "focus": "主动恢复",
+            "phase_type": PhaseType.RECOVERY,
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-14",
+        }
+    )
+    get_master_plan_store().save_plan(
+        plan.model_copy(update={"phases": [phase1, recovery]})
+    )
+
+    res = draft_impls.CompressPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id, phase_id=recovery.id, weeks=1
+    )
+
+    assert res.ok
+    diff = MasterPlanDiff.model_validate(res.data)
+    assert diff.ops[0].spec_patch["end_date"] == "2026-09-07"
+
+
 # ---------------------------------------------------------------------------
 # shift_milestone / change_target
 # ---------------------------------------------------------------------------
@@ -237,8 +264,11 @@ def test_change_target_empty_fails(seeded_plan):
 # ---------------------------------------------------------------------------
 
 
-def test_propose_alternatives_returns_two_diffs(seeded_plan):
+def test_propose_alternatives_returns_two_diffs(seeded_plan, monkeypatch):
     plan, phase1, phase2, _ = seeded_plan
+    monkeypatch.setattr(
+        draft_impls, "today_shanghai", lambda: date(2026, 7, 15)
+    )
     res = draft_impls.ProposeAlternativesImpl(USER_ID)(
         plan_id=plan.plan_id, intent="想加大强度但又怕受伤"
     )
@@ -262,9 +292,62 @@ def test_propose_alternatives_returns_two_diffs(seeded_plan):
     assert phase2.end_date == "2026-09-14"
 
 
-def test_propose_alternatives_targets_build_before_short_taper(seeded_plan):
+def test_propose_alternatives_targets_current_phase_before_future_phases(
+    seeded_plan, monkeypatch
+):
     plan, phase1, phase2, _ = seeded_plan
     from stride_server.master_plan_store import get_master_plan_store
+
+    monkeypatch.setattr(
+        draft_impls, "today_shanghai", lambda: date(2026, 7, 15)
+    )
+    current = phase2.model_copy(
+        update={"end_date": "2026-07-31", "name": "昆明高原训练期"}
+    )
+    future = phase2.model_copy(
+        update={
+            "id": "future-peak",
+            "name": "未来专项期",
+            "start_date": "2026-08-01",
+            "end_date": "2026-08-31",
+        }
+    )
+    taper = phase2.model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-14",
+        }
+    )
+    get_master_plan_store().save_plan(
+        plan.model_copy(update={"phases": [phase1, current, future, taper]})
+    )
+
+    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, intent="我在昆明高原待到 7 月 26 日，调整当前阶段周跑量"
+    )
+
+    assert res.ok
+    assert all(
+        alt["ops"][0]["phase_id"] == current.id
+        for alt in res.data["alternatives"]
+    )
+    assert all(
+        "昆明高原训练期" in alt["ai_explanation"]
+        for alt in res.data["alternatives"]
+    )
+
+
+def test_propose_alternatives_targets_build_before_short_taper(
+    seeded_plan, monkeypatch
+):
+    plan, phase1, phase2, _ = seeded_plan
+    from stride_server.master_plan_store import get_master_plan_store
+
+    monkeypatch.setattr(
+        draft_impls, "today_shanghai", lambda: date(2026, 6, 15)
+    )
 
     taper = phase2.model_copy(
         update={
@@ -288,6 +371,39 @@ def test_propose_alternatives_targets_build_before_short_taper(seeded_plan):
         assert validate_master_diff(short_taper_plan, diff) == []
     assert taper.start_date == "2026-09-01"
     assert taper.end_date == "2026-09-14"
+
+
+def test_propose_alternatives_does_not_treat_short_recovery_as_taper(
+    seeded_plan, monkeypatch
+):
+    plan, phase1, phase2, _ = seeded_plan
+    from stride_server.master_plan_store import get_master_plan_store
+
+    monkeypatch.setattr(
+        draft_impls, "today_shanghai", lambda: date(2026, 9, 10)
+    )
+    recovery = phase2.model_copy(
+        update={
+            "name": "调整恢复期",
+            "focus": "主动恢复",
+            "phase_type": PhaseType.RECOVERY,
+            "start_date": "2026-09-08",
+            "end_date": "2026-09-14",
+        }
+    )
+    get_master_plan_store().save_plan(
+        plan.model_copy(update={"phases": [phase1, recovery]})
+    )
+
+    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, intent="降低当前恢复期周跑量"
+    )
+
+    assert res.ok
+    assert all(
+        alt["ops"][0]["phase_id"] == recovery.id
+        for alt in res.data["alternatives"]
+    )
 
 
 def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
@@ -318,9 +434,15 @@ def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
     assert "无法生成" in res.errors[0]
 
 
-def test_propose_alternatives_ignores_completed_phase_before_taper(seeded_plan):
+def test_propose_alternatives_ignores_completed_phase_before_taper(
+    seeded_plan, monkeypatch
+):
     plan, phase1, phase2, _ = seeded_plan
     from stride_server.master_plan_store import get_master_plan_store
+
+    monkeypatch.setattr(
+        draft_impls, "today_shanghai", lambda: date(2026, 6, 15)
+    )
 
     completed = phase1.model_copy(update={"is_completed": True})
     taper = phase2.model_copy(
@@ -339,12 +461,18 @@ def test_propose_alternatives_ignores_completed_phase_before_taper(seeded_plan):
     )
 
     assert not res.ok
-    assert "没有可安全降低周跑量的更早阶段" in res.errors[0]
+    assert "没有可安全降低周跑量的当前或后续阶段" in res.errors[0]
 
 
-def test_propose_alternatives_can_reduce_single_long_phase(seeded_plan):
+def test_propose_alternatives_can_reduce_single_long_phase(
+    seeded_plan, monkeypatch
+):
     plan, phase1, _, _ = seeded_plan
     from stride_server.master_plan_store import get_master_plan_store
+
+    monkeypatch.setattr(
+        draft_impls, "today_shanghai", lambda: date(2026, 6, 15)
+    )
 
     single_phase = plan.model_copy(
         update={"phases": [phase1], "end_date": phase1.end_date}

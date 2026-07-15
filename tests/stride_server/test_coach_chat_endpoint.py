@@ -466,6 +466,48 @@ def test_master_apply_rejects_invalid_diff_via_gate(chat_client, monkeypatch):
     assert "结构非法" in resp.json()["detail"]
 
 
+def test_master_apply_validates_only_selected_ops_for_taper_safety(
+    chat_client, monkeypatch
+):
+    """Unselected regeneration ops cannot make a selected taper deletion safe."""
+    client, private_pem, coach_routes = chat_client
+    plan = _master_plan()
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "start_date": "2026-11-02",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [plan.phases[0], taper]})
+    _stub_master(coach_routes, monkeypatch, plan=plan)
+    body = {
+        "diff": {
+            "diff_id": "regenerate",
+            "plan_id": _PLAN_ID,
+            "ops": [
+                {"id": "remove-base", "op": "remove_phase", "phase_id": "phase-1"},
+                {"id": "remove-taper", "op": "remove_phase", "phase_id": "taper"},
+                {"id": "remove-ms", "op": "remove_milestone", "milestone_id": "ms-1"},
+            ],
+            "ai_explanation": "清空重排",
+            "created_at": "2026-07-15T00:00:00Z",
+        },
+        "accepted_op_ids": ["remove-taper"],
+    }
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 400
+    assert "不能删除" in resp.json()["detail"]
+
+
 def test_master_apply_404_when_plan_missing(chat_client, monkeypatch):
     client, private_pem, coach_routes = chat_client
     _stub_master(coach_routes, monkeypatch, plan=None)
