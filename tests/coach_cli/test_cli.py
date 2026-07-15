@@ -10,6 +10,7 @@ from rich.console import Console
 
 from coach_cli.cli import (
     _CHECKPOINT_DIR,
+    _InputHistory,
     _model_banner,
     _print_turn,
     _select_session,
@@ -50,9 +51,48 @@ class _Checkpointer:
         self.store = _Store(rows)
 
 
+class _ReadlineBackend:
+    def __init__(self, history: list[str] | None = None) -> None:
+        self.history = list(history or [])
+        self.added: list[str] = []
+        self.auto_history = True
+
+    def get_current_history_length(self) -> int:
+        return len(self.history)
+
+    def get_history_item(self, index: int) -> str:
+        return self.history[index - 1]
+
+    def clear_history(self) -> None:
+        self.history.clear()
+
+    def set_auto_history(self, enabled: bool) -> None:
+        self.auto_history = enabled
+
+    def add_history(self, line: str) -> None:
+        self.history.append(line)
+        self.added.append(line)
+
+
 def test_checkpoints_live_under_coach_cli_home() -> None:
     assert _CHECKPOINT_DIR == _CHECKPOINT_DIR.home() / ".coach-cli" / "checkpoints"
     assert _CHECKPOINT_DIR.is_absolute()
+
+
+def test_input_history_recalls_coach_messages_and_restores_process_history() -> None:
+    backend = _ReadlineBackend(["existing-shell-input"])
+    history = _InputHistory(backend)
+
+    history.start()
+    history.remember("我今天应该怎么训练？")
+
+    assert backend.auto_history is False
+    assert backend.history == ["我今天应该怎么训练？"]
+
+    history.close()
+
+    assert backend.auto_history is True
+    assert backend.history == ["existing-shell-input"]
 
 
 def test_session_picker_lists_current_and_restores_selected(capsys) -> None:
@@ -105,8 +145,10 @@ def test_repl_uses_restored_session_for_next_turn(monkeypatch, tmp_path) -> None
         ]
     )
     seen_session_ids: list[str] = []
+    readline_backend = _ReadlineBackend()
 
     monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: checkpointer)
+    monkeypatch.setattr("coach_cli.cli._readline", readline_backend)
 
     def fake_turn(*, user_id, session_id, message, checkpointer):
         seen_session_ids.append(session_id)
@@ -135,6 +177,7 @@ def test_repl_uses_restored_session_for_next_turn(monkeypatch, tmp_path) -> None
     assert result.exit_code == 0, result.output
     assert "已恢复会话: cli-old" in result.output
     assert seen_session_ids == ["cli-old"]
+    assert readline_backend.added == ["继续聊"]
 
 
 def _turn(reply: str):
