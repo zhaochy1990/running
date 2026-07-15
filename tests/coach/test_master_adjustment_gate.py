@@ -184,9 +184,9 @@ def test_unreasonable_assessment_never_allows_a_proposal() -> None:
             _tool_calls(
                 (
                     "assess_master_adjustment",
-                        {
-                            "adjustment_request": "我想降低基础期周跑量",
-                            "verdict": "unreasonable",
+                    {
+                        "adjustment_request": "我想降低基础期周跑量",
+                        "verdict": "unreasonable",
                         "rationale": "会压缩必要的赛前调整期",
                     },
                 )
@@ -226,9 +226,9 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
             _tool_calls(
                 (
                     "assess_master_adjustment",
-                        {
-                            "adjustment_request": "我想降低基础期周跑量",
-                            "verdict": "reasonable",
+                    {
+                        "adjustment_request": "我想降低基础期周跑量",
+                        "verdict": "reasonable",
                         "rationale": "近期负荷和恢复数据支持温和下调",
                     },
                 )

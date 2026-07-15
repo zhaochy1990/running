@@ -231,6 +231,26 @@ def test_runner_without_adjustment_direction_asks_before_loading_data(monkeypatc
     assert "build" not in capture
 
 
+@pytest.mark.parametrize(
+    "objective",
+    [
+        "把基础期周跑量降到 100 公里",
+        "把专项期周跑量加到 120 公里",
+        "将比赛目标设为 2:55",
+    ],
+)
+def test_runner_recognizes_common_concrete_adjustment_directions(
+    objective: str, monkeypatch
+) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=None, monkeypatch=monkeypatch)
+
+    result = runner(_task(objective))
+
+    assert result.status == "completed"
+    assert "build" in capture
+
+
 def test_runner_empty_reply_falls_back_to_diff_explanation(monkeypatch) -> None:
     capture: dict[str, Any] = {}
     runner = _runner(
