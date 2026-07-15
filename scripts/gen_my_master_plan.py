@@ -2,7 +2,7 @@
 """Generate a master plan (赛季备战总纲) locally from your own coros.db.
 
 Invokes the coach generation graph DIRECTLY (no job_runner) against
-``data/{USER_ID}/coros.db``. The graph runs
+``data/{user_id}/coros.db``. The graph runs
 ``load_context → generator → rule_filter → reviewer → verdict``: it queries
 your 36-month running history + latest fitness state (CTL/ATL/TSB) and asks
 gpt-5.5 to produce a MasterPlan, then validates it against the 10 S1 L1
@@ -31,7 +31,7 @@ Run
 
 Output
 ------
-The draft MasterPlan is written to ``data/{USER_ID}/master_plan_draft.json``
+Each draft MasterPlan is written to ``data/{user_id}/master_plan_draft.json``
 for inspection. Nothing is persisted to the master-plan store and no job row
 is created — this is a pure agent invocation.
 """
@@ -43,8 +43,10 @@ import logging
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 # Allow running as `python scripts/gen_my_master_plan.py` (no -m): inject src/.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -69,31 +71,40 @@ from stride_server.master_plan_generator import _normalize_for_prompt
 
 
 # ---------------------------------------------------------------------------
-# EDIT ME — your athlete id + season goal
+# EDIT ME — users + season goals
 # ---------------------------------------------------------------------------
 
+# Each user entry needs its own goal. Do not copy a race target across athletes
+# unless that is intentionally the same target for that athlete.
+#
 # Local runs accept the friendly slug; strict/prod paths use the JWT `sub` UUID.
-USER_ID = "f10bc353-01ab-4db1-af9f-d9305ea9a532"
-
-# Season goal. Field names match routes/training_goal.py::TrainingGoal — the
-# generator normalises target_finish_time / race_distance internally, so keep
-# these exact key names.
-GOAL = {
-    "goal_id": "my-2026-fall",        # stable source training-goal id; stored in plan.goal.goal_id
-    "race_distance": "FM",            # one of: 5K | 10K | HM | FM | trail
-    "target_finish_time": "2:50:00",  # "H:MM:SS"; set to None for finish-only
-    "race_date": "2026-10-18",        # YYYY-MM-DD; plan end_date won't exceed this
-    "weekly_training_days": 5,        # max run days/week — caps key-session density
-}
-
-# Optional running profile. Leave as None to let the generator infer ability
-# from coros.db history + race_predictions. Provide a dict to override, e.g.:
-#   PROFILE = {
+# Goal field names match routes/training_goal.py::TrainingGoal — the generator
+# normalises target_finish_time / race_distance internally, so keep these exact
+# key names.
+#
+# Optional profile: leave as None to let the generator infer ability from
+# coros.db history + race_predictions. Provide a dict to override, e.g.:
+#   "profile": {
 #       "pbs": [{"distance": "FM", "time": "3:40:00"},
 #               {"distance": "HM", "time": "1:45:00"}],
 #       "weekly_training_days": 5,
 #   }
-PROFILE: dict | None = None
+users: list[dict[str, Any]] = [
+    {
+        "user_id": "f10bc353-01ab-4db1-af9f-d9305ea9a532",
+        "goal": {
+            "goal_id": "my-2026-fall",        # stable source training-goal id; stored in plan.goal.goal_id
+            "race_distance": "FM",            # one of: 5K | 10K | HM | FM | trail
+            "target_finish_time": "2:50:00",  # "H:MM:SS"; set to None for finish-only
+            "race_date": "2026-10-18",        # YYYY-MM-DD; plan end_date won't exceed this
+            "weekly_training_days": 5,        # max run days/week — caps key-session density
+        },
+        "profile": None,
+        # Optional per-user output override. Defaults to
+        # data/{user_id}/master_plan_draft.json.
+        # "master_plan_out": "data/f10bc353-01ab-4db1-af9f-d9305ea9a532/master_plan_draft.json",
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -101,8 +112,21 @@ PROFILE: dict | None = None
 # ---------------------------------------------------------------------------
 
 DEBUG = os.environ.get("COACH_DEBUG") == "1"
-DEBUG = True  # hardcoded on for now since the graph + rule filter are still being iterated on; set to False to test the final flow without all the debug prints
 logger = logging.getLogger(__name__)
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"Ignoring invalid {name}={raw!r}; using {default}")
+        return default
+
+
+MAX_WORKERS = max(1, _env_int("MASTER_PLAN_MAX_WORKERS", 2))
 
 class _LLMTap(BaseCallbackHandler):
     """Clean framed view of each LLM request + response as the graph runs."""
@@ -178,22 +202,36 @@ def _build_rule_filter_kwargs(goal: dict, profile: dict | None) -> dict:
     return rfk
 
 
-def main() -> int:
-    print(f"Generating master plan for user={USER_ID!r} ...")
-    print(f"  goal: {json.dumps(GOAL, ensure_ascii=False)}\n------------------------------")
+def _output_path_for_user(user_id: str, user_config: dict[str, Any]) -> Path:
+    """Resolve the draft output path for a user.
+
+    Per-user ``master_plan_out`` wins. ``MASTER_PLAN_OUT`` is kept for backward
+    compatibility with one-user model sweeps; it is rejected for multi-user runs
+    in ``main`` to avoid every user clobbering the same file.
+    """
+    configured = user_config.get("master_plan_out") or os.environ.get("MASTER_PLAN_OUT")
+    if configured:
+        return Path(str(configured)).resolve()
+    return _REPO_ROOT / "data" / user_id / "master_plan_draft.json"
+
+
+def _generate_for_user(user_config: dict[str, Any], *, callbacks: list) -> int:
+    user_id = str(user_config["user_id"])
+    goal = user_config["goal"]
+    profile = user_config.get("profile")
+
+    print(f"Generating master plan for user={user_id!r} ...")
+    print(f"  goal: {json.dumps(goal, ensure_ascii=False)}\n------------------------------")
     
 
-    callbacks = _enable_debug() if DEBUG else []
     config: dict | None = {"callbacks": callbacks} if callbacks else None
-    # Empty job_id → the adapter's `if job_id:` stage-update calls are skipped,
-    # so no job_runner row is created or mutated.
     # Empty job_id → the adapter's `if job_id:` stage-update calls are skipped,
     # so no job_runner row is created or mutated.
     state: dict = {
         "job_id": "",
-        "user_id": USER_ID,
+        "user_id": user_id,
         "plan_type": "master",
-        "input_payload": {"goal": GOAL, "profile": PROFILE},
+        "input_payload": {"goal": goal, "profile": profile},
     }
     _t0 = time.perf_counter()
     print(f"[gen] starting generation graph at {datetime.now(tz=SHANGHAI_TZ).isoformat(timespec='seconds')}", flush=True)
@@ -227,7 +265,7 @@ def main() -> int:
         reviewer=master_reviewer,
         apply_patches=apply_master_patches,
         rule_filter=run_master_rule_filter,
-        rule_filter_kwargs=_build_rule_filter_kwargs(GOAL, PROFILE),
+        rule_filter_kwargs=_build_rule_filter_kwargs(goal, profile),
     )
 
     try:
@@ -284,15 +322,7 @@ def main() -> int:
     # Round-trip validate + reconstruct the typed instance (safety net).
     plan = MasterPlan.model_validate(parsed)
 
-    # MASTER_PLAN_OUT env override lets a parallel model-sweep write each run to
-    # its own suffixed file (e.g. .../testing/master_plan_gpt-4.1.json) instead
-    # of clobbering the shared draft. Falls back to the canonical draft path.
-    _out_env = os.environ.get("MASTER_PLAN_OUT")
-    # Resolve to absolute so a relative MASTER_PLAN_OUT (e.g. a sweep writing to
-    # data/.../testing/runs/...) still works and the success print below can
-    # take relative_to(_REPO_ROOT) without raising.
-    out_path = (Path(_out_env).resolve() if _out_env
-                else (_REPO_ROOT / "data" / USER_ID / "master_plan_draft.json"))
+    out_path = _output_path_for_user(user_id, user_config)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(plan.model_dump(mode="json"), ensure_ascii=False, indent=2),
@@ -312,6 +342,69 @@ def main() -> int:
     for ph in plan.phases:
         print(f"    [{ph.name}] {ph.start_date}~{ph.end_date}  "
               f"{ph.weekly_distance_km_low}-{ph.weekly_distance_km_high} km/wk")
+    return 0
+
+
+def _run_user_config(user_config: dict[str, Any], *, callbacks: list) -> tuple[str, int]:
+    """Run one configured user and normalize expected/unexpected failures."""
+    user_label = str(user_config.get("user_id") or "unknown")
+    try:
+        return user_label, _generate_for_user(user_config, callbacks=callbacks)
+    except KeyError as exc:
+        print(f"\n  Bad users entry for {user_label}: missing key {exc!s}")
+        return user_label, 1
+    except Exception as exc:
+        print(f"\n  Unexpected error for {user_label}: {type(exc).__name__}: {exc}")
+        logger.exception("master-plan generation failed for %s", user_label)
+        return user_label, 1
+
+
+def main() -> int:
+    if not users:
+        print("No users configured. Add entries to the users list.")
+        return 1
+
+    if len(users) > 1 and os.environ.get("MASTER_PLAN_OUT"):
+        print("MASTER_PLAN_OUT cannot be used with multiple users; set per-user master_plan_out instead.")
+        return 1
+
+    failures: list[str] = []
+
+    # Debug tracing is intentionally serial: LangChain's global debug flag and
+    # prompt/response dumps are process-wide, so parallel debug output becomes
+    # unreadable and can interleave one athlete's prompts with another's.
+    if DEBUG or MAX_WORKERS == 1 or len(users) == 1:
+        callbacks = _enable_debug() if DEBUG else []
+        for index, user_config in enumerate(users, start=1):
+            print(f"\n========== USER {index}/{len(users)} ==========")
+            user_label, rc = _run_user_config(user_config, callbacks=callbacks)
+            if rc != 0:
+                failures.append(user_label)
+    else:
+        worker_count = min(MAX_WORKERS, len(users))
+        print(f"Running {len(users)} user(s) with max_workers={worker_count}")
+        with ThreadPoolExecutor(max_workers=worker_count) as pool:
+            future_to_index = {
+                pool.submit(_run_user_config, user_config, callbacks=[]): index
+                for index, user_config in enumerate(users, start=1)
+            }
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    user_label, rc = future.result()
+                except Exception as exc:
+                    user_label = f"index={index}"
+                    print(f"\n  Unexpected worker error for {user_label}: {type(exc).__name__}: {exc}")
+                    logger.exception("master-plan worker failed for %s", user_label)
+                    rc = 1
+                if rc != 0:
+                    failures.append(user_label)
+
+    if failures:
+        print(f"\nCompleted with {len(failures)} failure(s): {', '.join(failures)}")
+        return 1
+
+    print(f"\nCompleted successfully for {len(users)} user(s).")
     return 0
 
 
