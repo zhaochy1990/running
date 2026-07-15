@@ -278,7 +278,9 @@ def test_explicit_master_plan_edit_stays_on_write_specialist() -> None:
         "把我的总体训练计划基础期延长两周",
         registry=_registry(),
         draft_fn=fn,
-        target_resolver=lambda _target: TargetRef(kind="master", plan_id="mp-1"),
+        target_resolver=lambda _target, _hint: TargetRef(
+            kind="master", plan_id="mp-1"
+        ),
     )
 
     assert [hit.specialist_id for hit in out.intents] == ["season_plan"]
@@ -305,10 +307,16 @@ def test_target_resolver_fills_current_week_for_write_no_clarify() -> None:
     folder, so the turn dispatches instead of asking '哪一周?'."""
     draft = ResolverDraft(
         intents=[IntentHit(specialist_id="weekly_plan", action="write", confidence=0.9)],
+        target_hint=TargetHint(kind="week", ref_phrase="本周"),
     )
     fn, _ = _fixed(draft)
 
-    def _resolver(target: TargetRef | None) -> TargetRef | None:
+    seen_hints: list[TargetHint | None] = []
+
+    def _resolver(
+        target: TargetRef | None, hint: TargetHint | None
+    ) -> TargetRef | None:
+        seen_hints.append(hint)
         return TargetRef(kind="week", folder="2026-06-22_06-28(W8)")
 
     out = resolve(
@@ -320,6 +328,7 @@ def test_target_resolver_fills_current_week_for_write_no_clarify() -> None:
     assert out.ambiguity is None
     assert out.active_target == TargetRef(kind="week", folder="2026-06-22_06-28(W8)")
     assert out.resolved_from == "resolved"
+    assert seen_hints == [TargetHint(kind="week", ref_phrase="本周")]
 
 
 def test_target_resolver_returning_none_still_clarifies() -> None:
@@ -332,7 +341,7 @@ def test_target_resolver_returning_none_still_clarifies() -> None:
         "帮我改一下",
         registry=_registry(),
         draft_fn=fn,
-        target_resolver=lambda _t: None,
+        target_resolver=lambda _target, _hint: None,
     )
     assert out.ambiguity is not None
     assert out.ambiguity.kind == "target"
@@ -346,7 +355,9 @@ def test_target_resolver_not_called_for_read_intent() -> None:
     fn, _ = _fixed(draft)
     calls: list[TargetRef | None] = []
 
-    def _resolver(target: TargetRef | None) -> TargetRef | None:
+    def _resolver(
+        target: TargetRef | None, _hint: TargetHint | None
+    ) -> TargetRef | None:
         calls.append(target)
         return TargetRef(kind="week", folder="x")
 
@@ -364,7 +375,9 @@ def test_target_resolver_skipped_when_target_already_concrete() -> None:
     fn, _ = _fixed(draft)
     calls: list[TargetRef | None] = []
 
-    def _resolver(target: TargetRef | None) -> TargetRef | None:
+    def _resolver(
+        target: TargetRef | None, _hint: TargetHint | None
+    ) -> TargetRef | None:
         calls.append(target)
         return None
 

@@ -227,7 +227,9 @@ def run_resolver_fixture(
 
     target_resolution = fixture.input.target_resolution
     target_resolver = (
-        (lambda _target: target_resolution) if target_resolution is not None else None
+        (lambda _target, _hint: target_resolution)
+        if target_resolution is not None
+        else None
     )
     started = time.monotonic()
     try:

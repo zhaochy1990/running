@@ -7,7 +7,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from coach.contracts import SpecialistTask, TargetRef, Turn
+from coach.contracts import SpecialistTask, TargetHint, TargetRef, Turn
 from stride_core.plan_diff import PlanDiff
 from stride_server.coach_adapters.orchestrator import weekly_plan as wp
 from stride_server.coach_adapters.orchestrator.weekly_plan import (
@@ -226,6 +226,13 @@ def test_target_resolver_uses_calendar_folder_when_current_week_missing(
     monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
     resolver = make_current_week_target_resolver("u1")
     assert resolver(None) is None
-    assert resolver(TargetRef(kind="week")) == TargetRef(
+    assert resolver(
+        TargetRef(kind="week"),
+        TargetHint(kind="week", ref_phrase="本周"),
+    ) == TargetRef(
         kind="week", folder="2026-07-13_07-19"
     )
+    assert resolver(
+        TargetRef(kind="week"),
+        TargetHint(kind="week", ref_phrase="下周"),
+    ) is None

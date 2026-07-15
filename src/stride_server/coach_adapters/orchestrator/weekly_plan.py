@@ -33,6 +33,7 @@ from coach.contracts import (
     SpecialistResult,
     SpecialistRunner,
     SpecialistTask,
+    TargetHint,
     TargetRef,
     Turn,
 )
@@ -84,7 +85,9 @@ def resolve_current_week_folder(user_id: str) -> str | None:
     return current.week_folder if current is not None else None
 
 
-def make_current_week_target_resolver(user_id: str) -> Callable[[TargetRef | None], TargetRef | None]:
+def make_current_week_target_resolver(
+    user_id: str,
+) -> Callable[[TargetRef | None, TargetHint | None], TargetRef | None]:
     """Build the Resolver's ``target_resolver``: "本周" → current-week TargetRef.
 
     Existing plans keep their canonical display folder. If the user explicitly
@@ -95,12 +98,23 @@ def make_current_week_target_resolver(user_id: str) -> Callable[[TargetRef | Non
     writes continue to clarify.
     """
 
-    def _resolve(target: TargetRef | None) -> TargetRef | None:
+    def _resolve(
+        target: TargetRef | None, hint: TargetHint | None = None
+    ) -> TargetRef | None:
         if target is not None and target.kind == "master":
             return None
         folder = resolve_current_week_folder(user_id)
         if folder is None:
-            if target is None or target.kind not in ("week", "session"):
+            phrase = (hint.ref_phrase if hint is not None else "") or ""
+            names_current_week = any(
+                marker in phrase
+                for marker in ("本周", "这周", "这一周", "当前周", "本星期", "这个星期")
+            )
+            if (
+                target is None
+                or target.kind not in ("week", "session")
+                or not names_current_week
+            ):
                 return None
             today = today_shanghai()
             folder = week_folder(today - timedelta(days=today.weekday()))

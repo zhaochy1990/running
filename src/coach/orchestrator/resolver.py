@@ -40,12 +40,14 @@ logger = logging.getLogger(__name__)
 # a fake.
 ResolverDraftFn = Callable[[str, str], ResolverDraft]
 
-# A concrete-target resolver: (kind-only/None TargetRef) -> concrete TargetRef
+# A concrete-target resolver: (kind-only/None TargetRef, original TargetHint)
+# -> concrete TargetRef. The hint preserves phrases such as "本周" vs "下周"
+# that collapse to the same kind-only TargetRef but require different lookup.
 # (with folder/plan_id filled) or None. The core can only derive a *kind* from
 # the referring phrase; turning "本周" into a real folder needs the DB index, so
 # the adapter injects this (DB-backed) to keep ``coach.*`` pure. Returning None
 # means "couldn't resolve" → the arbitrator falls back to a target clarify.
-TargetResolverFn = Callable[[TargetRef | None], TargetRef | None]
+TargetResolverFn = Callable[[TargetRef | None, TargetHint | None], TargetRef | None]
 
 # --- Arbitration thresholds (§4.1 "clarify only when ambiguity changes result")
 CONFIDENCE_FLOOR = 0.35   # below this, the top intent is too weak to dispatch
@@ -270,7 +272,7 @@ def resolve(
         and len(write_ids) == 1
         and _needs_target_clarify(target, True)
     ):
-        upgraded = target_resolver(target)
+        upgraded = target_resolver(target, draft.target_hint)
         if upgraded is not None:
             target, resolved_from = upgraded, "resolved"
 
