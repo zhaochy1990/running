@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from coach.graphs.conversation.graph import build_conversation_graph
@@ -263,8 +264,18 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
     assert "assess_master_adjustment" in llm.bound_tool_names
 
 
-def test_alternatives_are_rejected_without_an_explicit_comparison_request() -> None:
-    request = "我想降低基础期周跑量"
+@pytest.mark.parametrize(
+    "user_request",
+    [
+        "我想降低基础期周跑量",
+        "不要给我两个方案，只给一个降低基础期周跑量的建议",
+        "我不需要比较，直接给一个降低基础期周跑量的方案",
+    ],
+)
+def test_alternatives_are_rejected_without_an_explicit_comparison_request(
+    user_request: str,
+) -> None:
+    request = user_request
     toolkit = _toolkit()
     llm = _ScriptedLLM(
         [

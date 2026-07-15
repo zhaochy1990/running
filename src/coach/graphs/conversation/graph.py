@@ -64,6 +64,21 @@ _ALTERNATIVES_REQUEST_RE = re.compile(
     r"(?:两个|两种|2\s*个|比较|对比|备选|alternatives?|options?|compare)",
     re.IGNORECASE,
 )
+_ALTERNATIVES_REJECTION_RE = re.compile(
+    r"(?:不要|别|无需|不需要|不想|拒绝|只(?:要|给)?(?:一|1)个)"
+    r".{0,16}(?:两个|两种|2\s*个|比较|对比|备选|方案|建议)"
+    r"|(?:两个|两种|2\s*个|比较|对比|备选)"
+    r".{0,16}(?:不要|别|无需|不需要|不想|拒绝|只(?:要|给)?(?:一|1)个)"
+    r"|(?:do\s+not|don't|no|without|only\s+(?:one|1))"
+    r".{0,24}(?:alternatives?|options?|compare|comparison)",
+    re.IGNORECASE,
+)
+
+
+def _explicitly_requests_alternatives(request: str) -> bool:
+    return bool(_ALTERNATIVES_REQUEST_RE.search(request)) and not bool(
+        _ALTERNATIVES_REJECTION_RE.search(request)
+    )
 
 
 def _current_user_request(state: ConversationState) -> str:
@@ -211,7 +226,7 @@ def build_conversation_graph(
                     continue
                 if (
                     name == "propose_alternatives"
-                    and not _ALTERNATIVES_REQUEST_RE.search(current_request)
+                    and not _explicitly_requests_alternatives(current_request)
                 ):
                     tool_trace.append(
                         {
