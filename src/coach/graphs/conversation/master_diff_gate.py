@@ -288,6 +288,10 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
     }
     is_full_regeneration = (
         bool(phases)
+        and all(
+            op.op in {_Kind.REMOVE_PHASE, _Kind.REMOVE_MILESTONE}
+            for op in active_ops
+        )
         and removed_phase_ids == set(phases)
         and removed_milestone_ids == set(milestones)
     )

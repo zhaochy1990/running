@@ -196,6 +196,41 @@ def test_removing_all_phases_without_all_milestones_is_not_regeneration() -> Non
     assert "不能删除" in violations[0]
 
 
+def test_full_removal_plus_addition_is_not_regeneration() -> None:
+    plan = _plan()
+    taper = _phase().model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "start_date": "2026-11-02",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), taper]})
+    diff = _diff(
+        _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="phase-1"),
+        _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="taper"),
+        _op(MasterPlanDiffOpKind.REMOVE_MILESTONE, milestone_id="ms-1"),
+        _op(
+            MasterPlanDiffOpKind.ADD_PHASE,
+            spec_patch={
+                "id": "replacement",
+                "name": "替代期",
+                "start_date": "2026-08-01",
+                "end_date": "2026-09-01",
+                "weekly_distance_km_low": 40,
+                "weekly_distance_km_high": 50,
+            },
+        ),
+    )
+
+    violations = validate_master_diff(plan, diff)
+
+    assert len(violations) == 1
+    assert "不能删除" in violations[0]
+
+
 def test_diff_for_another_plan_is_rejected() -> None:
     diff = _diff().model_copy(update={"plan_id": "another-plan"})
 

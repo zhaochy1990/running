@@ -404,6 +404,10 @@ def test_propose_alternatives_does_not_treat_short_recovery_as_taper(
         alt["ops"][0]["phase_id"] == recovery.id
         for alt in res.data["alternatives"]
     )
+    assert all(
+        "保留最后的调整期" not in alt["ai_explanation"]
+        for alt in res.data["alternatives"]
+    )
 
 
 def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):

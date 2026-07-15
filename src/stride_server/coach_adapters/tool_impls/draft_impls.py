@@ -573,9 +573,10 @@ class ProposeAlternativesImpl:
         if not plan.phases:
             return _fail("plan has no phases to alternate over")
         final_phase = plan.phases[-1]
+        has_protected_taper = is_short_taper_phase(final_phase)
         candidates = (
             plan.phases[:-1]
-            if is_short_taper_phase(final_phase)
+            if has_protected_taper
             else plan.phases
         )
         today = today_shanghai()
@@ -605,13 +606,17 @@ class ProposeAlternativesImpl:
         )
         target = selected[2] if selected is not None else None
         if target is None:
+            prefix = (
+                "为保护最后 1–2 周必须保留的调整期，"
+                if has_protected_taper
+                else ""
+            )
             return _fail(
-                "为保护最后 1–2 周必须保留的调整期，当前计划没有可安全降低周跑量的"
-                "当前或后续阶段；无法生成可应用的替代方案，请保留现有计划或重新评估该要求"
+                f"{prefix}当前计划没有可安全降低周跑量的当前或后续阶段；"
+                "无法生成可应用的替代方案，请保留现有计划或重新评估该要求"
             )
 
         alternatives: list[dict] = []
-        preserves_taper = target.id != final_phase.id
         old_range = {
             "weekly_distance_km_low": target.weekly_distance_km_low,
             "weekly_distance_km_high": target.weekly_distance_km_high,
@@ -642,7 +647,7 @@ class ProposeAlternativesImpl:
                 ops=[op],
                 ai_explanation=(
                     f"{label}："
-                    f"{'保留最后的调整期不变，' if preserves_taper else ''}"
+                    f"{'保留最后的调整期不变，' if has_protected_taper else ''}"
                     f"将「{target.name}」周跑量降低"
                     f" {int(reduction * 100)}%（用户意图：{intent}）"
                 ),
