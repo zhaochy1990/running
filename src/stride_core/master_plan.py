@@ -16,7 +16,9 @@ Design notes:
 
 from __future__ import annotations
 
+import math
 from datetime import date as _date
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Literal
 
@@ -198,15 +200,61 @@ class WeeklyKeySessions(BaseModel):
     phase_id: str                  # owning phase (uuid4 from Phase.id)
     target_weekly_km_low: float
     target_weekly_km_high: float
+    # Deterministic STRIDE dose projection populated after the LLM-authored
+    # weekly skeleton is parsed. Optional for legacy plans and plans whose
+    # weekly skeleton cannot be projected.
+    target_training_dose_low: float | None = None
+    target_training_dose_high: float | None = None
     key_sessions: list[KeySession]
     is_recovery_week: bool = False
     is_taper_week: bool = False
+
+    @model_validator(mode="after")
+    def _validate_training_dose_range(self) -> "WeeklyKeySessions":
+        low = self.target_training_dose_low
+        high = self.target_training_dose_high
+        if (low is None) != (high is None):
+            raise ValueError("weekly training dose low/high must both be set or both be omitted")
+        if low is not None and high is not None:
+            if not math.isfinite(low) or not math.isfinite(high):
+                raise ValueError("weekly training dose values must be finite")
+            if low < 0 or high < low:
+                raise ValueError("weekly training dose must satisfy 0 <= low <= high")
+        return self
 
 
 # Canonical public name for the weekly skeleton. ``WeeklyKeySessions`` stays
 # as a compatibility alias because the existing S1 rule filter and stored
 # snapshots still use that field name.
 MasterPlanWeek = WeeklyKeySessions
+
+
+class TrainingLoadProjection(BaseModel):
+    """Availability metadata for deterministic weekly STRIDE dose values."""
+
+    status: Literal["available", "unavailable"]
+    unavailable_reason: Literal["weekly_skeleton_unavailable"] | None = None
+    calculated_at: str
+
+    @field_validator("calculated_at")
+    @classmethod
+    def _validate_calculated_at(cls, value: str) -> str:
+        cleaned = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
+        try:
+            parsed = datetime.fromisoformat(cleaned)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("calculated_at must be an ISO 8601 UTC timestamp") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+            raise ValueError("calculated_at must be an ISO 8601 UTC timestamp")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_status_reason(self) -> "TrainingLoadProjection":
+        if self.status == "available" and self.unavailable_reason is not None:
+            raise ValueError("available training-load projection cannot have unavailable_reason")
+        if self.status == "unavailable" and self.unavailable_reason is None:
+            raise ValueError("unavailable training-load projection requires unavailable_reason")
+        return self
 
 
 class MasterPlanGoal(BaseModel):
@@ -267,6 +315,7 @@ class MasterPlan(BaseModel):
     phases: list[Phase]
     milestones: list[Milestone]
     weeks: list[MasterPlanWeek] = Field(default_factory=list)
+    training_load_projection: TrainingLoadProjection | None = None
     # Weekly key-session skeleton — list ordered by week_index. Default empty
     # so plans authored before Batch B (existing fixtures, test stubs, legacy
     # MasterPlanVersion snapshots) still validate. New plans MUST populate it
@@ -331,6 +380,24 @@ class MasterPlan(BaseModel):
             self.weekly_key_sessions = list(self.weeks)
         elif self.weekly_key_sessions and not self.weeks:
             self.weeks = list(self.weekly_key_sessions)
+
+        projection = self.training_load_projection
+        if projection is not None:
+            projected_weeks = self.weeks or self.weekly_key_sessions
+            if projection.status == "available":
+                if not projected_weeks:
+                    raise ValueError("available training-load projection requires weekly skeletons")
+                if any(
+                    week.target_training_dose_low is None
+                    or week.target_training_dose_high is None
+                    for week in projected_weeks
+                ):
+                    raise ValueError("available training-load projection requires dose on every week")
+            else:
+                if projected_weeks:
+                    raise ValueError(
+                        "weekly_skeleton_unavailable projection requires an empty weekly skeleton"
+                    )
         return self
 
 
@@ -382,8 +449,6 @@ def _apply_review_diff(
         A new MasterPlan instance (immutable model_copy) with the accepted
         ops applied; ``version`` and ``status`` are unchanged.
     """
-    from datetime import datetime, timezone
-
     from stride_core.master_plan_diff import MasterPlanDiffOpKind as _K
 
     accepted_set = set(accepted_op_ids)
@@ -507,4 +572,5 @@ def _apply_review_diff(
         # skeleton generation before the plan is /confirmed.
         update["weeks"] = []
         update["weekly_key_sessions"] = []
+        update["training_load_projection"] = None
     return plan.model_copy(update=update)

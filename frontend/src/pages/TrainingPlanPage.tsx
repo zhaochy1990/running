@@ -49,7 +49,10 @@ interface PhaseSpan {
 
 interface MileageBar {
   week: number
+  plannedKmLow: number | null
   plannedKm: number | null
+  plannedDoseLow: number | null
+  plannedDoseHigh: number | null
   actualKm: number | null
   displayKm: number | null
   heightPct: number
@@ -70,6 +73,8 @@ interface MileageBar {
   isTaperWeek: boolean
   title: string
 }
+
+type CycleMetric = 'mileage' | 'load'
 
 interface PhaseVisual {
   color: string
@@ -774,17 +779,26 @@ function MileageCycleCard({
   currentWeek: number
   onSelectPhase: (id: string) => void
 }) {
+  const [metric, setMetric] = useState<CycleMetric>('mileage')
   const bars = useMemo(() => buildMileageBars(plan, spans, totalWeeks, currentWeek), [plan, spans, totalWeeks, currentWeek])
   const columns = Math.max(bars.length, 1)
+  const loadAvailable = plan.training_load_projection?.status === 'available'
+    && bars.some((bar) => bar.plannedDoseLow != null && bar.plannedDoseHigh != null)
+  const activeMetric: CycleMetric = metric === 'load' && loadAvailable ? 'load' : 'mileage'
+  const maxDose = Math.max(...bars.map((bar) => bar.plannedDoseHigh ?? 0), 1)
 
   return (
     <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-card">
-      <div className="border-b border-border-subtle px-5 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-5 py-4">
         <h2 className="text-lg font-semibold text-text-primary">训练周期</h2>
+        <div className="inline-flex rounded-lg border border-border-subtle bg-bg-secondary p-0.5" aria-label="训练周期指标">
+          <CycleMetricButton active={activeMetric === 'mileage'} onClick={() => setMetric('mileage')}>跑量</CycleMetricButton>
+          <CycleMetricButton active={activeMetric === 'load'} disabled={!loadAvailable} onClick={() => setMetric('load')}>负荷</CycleMetricButton>
+        </div>
       </div>
       <div className="px-5 py-5 sm:px-6">
         <p className="mb-4 font-mono text-[10px] font-semibold tracking-[0.14em] text-text-muted uppercase">
-          周跑量（KM/周）
+          {activeMetric === 'load' ? '预计周负荷（STRIDE DOSE）' : '周跑量（KM/周）'}
         </p>
         <div
           className="grid h-40 items-end gap-1.5"
@@ -792,6 +806,13 @@ function MileageCycleCard({
         >
           {bars.map((bar) => {
             const visual = phaseVisual(bar.phase, bar.phaseIndex)
+            const hasLoadRange = bar.plannedDoseLow != null && bar.plannedDoseHigh != null
+            const loadHighPct = hasLoadRange
+              ? Math.max(8, Math.round((bar.plannedDoseHigh! / maxDose) * 100))
+              : 0
+            const loadLowPct = bar.plannedDoseHigh && bar.plannedDoseLow != null
+              ? Math.max(0, Math.min(100, Math.round((bar.plannedDoseLow / bar.plannedDoseHigh) * 100)))
+              : 0
             return (
               <button
                 key={bar.week}
@@ -799,9 +820,9 @@ function MileageCycleCard({
                 title={bar.title}
                 aria-label={bar.title}
                 onClick={() => onSelectPhase(bar.phase.id)}
-                className={`group relative min-h-[10px] rounded-t border border-transparent transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary ${bar.isCurrent ? 'ring-2 ring-accent-green ring-offset-2 ring-offset-bg-primary' : ''}`}
+                className={`group relative rounded-t border border-transparent transition-all hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-green focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary ${activeMetric === 'load' && !hasLoadRange ? 'min-h-0' : 'min-h-[10px]'} ${bar.isCurrent ? 'ring-2 ring-accent-green ring-offset-2 ring-offset-bg-primary' : ''}`}
                 style={{
-                  height: `${bar.heightPct}%`,
+                  height: activeMetric === 'load' ? loadHighPct + '%' : bar.heightPct + '%',
                   backgroundColor: `color-mix(in oklab, ${visual.color} 12%, var(--surface))`,
                   borderColor: bar.isCompleted ? `color-mix(in oklab, ${visual.color} 38%, transparent)` : 'transparent',
                 }}
@@ -809,12 +830,12 @@ function MileageCycleCard({
                 <span
                   className="absolute inset-x-0 bottom-0 rounded-t"
                   style={{
-                    height: `${bar.fillPct}%`,
-                    backgroundColor: mileageBarFillColor(bar, visual),
+                    height: activeMetric === 'load' ? loadLowPct + '%' : bar.fillPct + '%',
+                    backgroundColor: activeMetric === 'load' ? visual.color : mileageBarFillColor(bar, visual),
                   }}
                   aria-hidden="true"
                 />
-                {bar.plannedLinePct != null && (
+                {activeMetric === 'mileage' && bar.plannedLinePct != null && (
                   <span
                     className="pointer-events-none absolute left-0 right-0 border-t-2 border-dashed border-text-primary/80"
                     style={{ bottom: `${bar.plannedLinePct}%` }}
@@ -831,10 +852,25 @@ function MileageCycleCard({
             )
           })}
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-text-muted">
-          <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-accent-green" />已完成周实际跑量</span>
-          <span className="inline-flex items-center gap-2"><span className="h-0 w-4 border-t-2 border-dashed border-text-primary/70" />计划跑量标记</span>
-        </div>
+        {activeMetric === 'load' ? (
+          <div className="mt-3 space-y-2 font-mono text-[10px] text-text-muted">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-accent-green" />负荷区间下限</span>
+              <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm border border-accent-green/30 bg-accent-green/15" />至负荷区间上限</span>
+            </div>
+            <p>STRIDE dose 是根据计划跑量与关键课估算的每周负荷区间。</p>
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] text-text-muted">
+            <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-accent-green" />已完成周实际跑量</span>
+            <span className="inline-flex items-center gap-2"><span className="h-0 w-4 border-t-2 border-dashed border-text-primary/70" />计划跑量标记</span>
+          </div>
+        )}
+        {!loadAvailable && (
+          <p className="mt-3 rounded border border-border-subtle bg-bg-secondary px-3 py-2 text-xs text-text-muted">
+            该计划尚无可用的周负荷数据
+          </p>
+        )}
         <div
           className="mt-3 grid font-mono text-[10px] text-text-muted"
           style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
@@ -856,6 +892,27 @@ function MileageCycleCard({
   )
 }
 
+function CycleMetricButton({ active, disabled = false, onClick, children }: {
+  active: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  const classes = active
+    ? 'border border-green-edge bg-green-soft text-accent-green'
+    : 'border border-transparent text-text-muted hover:text-text-primary'
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={'rounded-md px-3 py-1.5 font-mono text-[10px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ' + classes}
+    >
+      {children}
+    </button>
+  )
+}
+
 function MileageTooltip({ bar }: { bar: MileageBar }) {
   return (
     <span className="pointer-events-none absolute left-1/2 bottom-[calc(100%+12px)] z-20 hidden w-52 -translate-x-1/2 rounded-md border border-border-subtle bg-bg-card p-3 text-left shadow-lg group-hover:block group-focus-visible:block">
@@ -863,7 +920,8 @@ function MileageTooltip({ bar }: { bar: MileageBar }) {
         W{padWeek(bar.week)}{bar.weekStart ? ` · ${formatShort(bar.weekStart)}` : ''}
       </span>
       <span className="grid gap-1.5 font-mono text-[10px] leading-4 text-text-secondary">
-        <span className="flex justify-between gap-3"><span>计划跑量</span><span className="text-text-primary">{formatKm(bar.plannedKm)}</span></span>
+        <span className="flex justify-between gap-3"><span>计划跑量</span><span className="text-text-primary">{formatRange(bar.plannedKmLow, bar.plannedKm, 'km')}</span></span>
+        <span className="flex justify-between gap-3"><span>计划负荷</span><span className="text-text-primary">{formatRange(bar.plannedDoseLow, bar.plannedDoseHigh, 'dose')}</span></span>
         <span className="flex justify-between gap-3"><span>实际跑量</span><span className="text-text-primary">{bar.isCompleted ? formatKm(bar.actualKm ?? 0) : '未完成'}</span></span>
         <span className="flex justify-between gap-3"><span>实际均配</span><span className="text-text-primary">{bar.isCompleted ? formatPace(bar) : '--'}</span></span>
         <span className="flex justify-between gap-3"><span>实际均心率</span><span className="text-text-primary">{bar.isCompleted ? formatHr(bar) : '--'}</span></span>
@@ -1160,6 +1218,9 @@ function buildMileageBars(plan: MasterPlan, spans: PhaseSpan[], totalWeeks: numb
     const targetPhase = target ? phaseForWeekTarget(target, spans) : null
     const phase = targetPhase?.phase ?? span.phase
     const phaseIndex = targetPhase?.index ?? span.index
+    const plannedKmLow = target
+      ? numberOrNull(target.target_weekly_km_low ?? target.target_weekly_km_high)
+      : null
     const plannedKm = target
       ? numberOrNull(target.planned_distance_km ?? target.target_weekly_km_high ?? target.target_weekly_km_low)
       : span.phase.is_completed
@@ -1169,7 +1230,10 @@ function buildMileageBars(plan: MasterPlan, spans: PhaseSpan[], totalWeeks: numb
     const isCompleted = Boolean(target?.is_completed) || actualKm != null
     return {
       week,
+      plannedKmLow,
       plannedKm,
+      plannedDoseLow: numberOrNull(target?.target_training_dose_low),
+      plannedDoseHigh: numberOrNull(target?.target_training_dose_high),
       actualKm,
       displayKm: isCompleted ? (actualKm ?? 0) : plannedKm,
       phase,
@@ -1314,6 +1378,12 @@ function formatDistanceValue(phase: MasterPlanPhase): string {
 function formatKm(value: number | null): string {
   if (value == null) return '--'
   return `${value.toFixed(value % 1 === 0 ? 0 : 1)} km`
+}
+
+function formatRange(low: number | null, high: number | null, suffix: string): string {
+  if (low == null || high == null) return '--'
+  const fmt = (value: number) => value.toFixed(value % 1 === 0 ? 0 : 1)
+  return low === high ? fmt(low) + ' ' + suffix : fmt(low) + '-' + fmt(high) + ' ' + suffix
 }
 
 function formatPace(bar: MileageBar): string {

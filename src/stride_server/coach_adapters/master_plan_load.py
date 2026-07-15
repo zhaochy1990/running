@@ -10,9 +10,11 @@ tools, or rule-filter feedback.
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from datetime import datetime, timezone
 from statistics import mean, median
 from typing import Any
 
+from stride_core.master_plan import MasterPlan, TrainingLoadProjection
 from stride_core.training_load import estimate_planned_run_load
 from stride_core.workout_spec import (
     Duration,
@@ -241,6 +243,31 @@ def _estimate_run_dose(*, km: float | None, duration_min: float | None, pace_s_k
     return _estimate_step_dose(minutes=duration_min, intensity_factor=intensity_factor)
 
 
+def _estimate_week_at_target_km(
+    *,
+    target_km: float,
+    key_km: float,
+    key_dose: float,
+    pace_s_km: float,
+    dose_scale: float,
+) -> tuple[float, float, float]:
+    """Run the existing weekly formula for one mileage boundary.
+
+    The helper deliberately preserves the estimator's existing semantics:
+    key-session dose is unchanged, and only the remaining easy mileage varies
+    between the low and high projections.
+    """
+    remaining_easy_km = max(0.0, target_km - key_km)
+    easy_dose = _estimate_run_dose(
+        km=remaining_easy_km,
+        duration_min=None,
+        pace_s_km=pace_s_km,
+        intensity_factor=0.78,
+    )
+    raw_total_dose = key_dose + easy_dose
+    return remaining_easy_km, raw_total_dose, raw_total_dose * dose_scale
+
+
 def estimate_master_plan_training_load(
     plan: Any,
     *,
@@ -266,6 +293,7 @@ def estimate_master_plan_training_load(
     race_distance = _extract_goal_distance(plan, target_race)
     weeks_out: list[dict[str, Any]] = []
     for week in _extract_weeks(plan):
+        low = _float(_get(week, "target_weekly_km_low")) or 0.0
         high = _float(_get(week, "target_weekly_km_high")) or 0.0
         is_recovery = bool(_get(week, "is_recovery_week", False))
         is_taper = bool(_get(week, "is_taper_week", False))
@@ -293,22 +321,32 @@ def estimate_master_plan_training_load(
             if stype == "long_run":
                 long_run_km = max(long_run_km, max(0.0, km or 0.0))
                 long_run_dose = max(long_run_dose, session_dose)
-        remaining_easy_km = max(0.0, high - key_km)
-        easy_dose = _estimate_run_dose(
-            km=remaining_easy_km,
-            duration_min=None,
+        low_remaining_easy_km, low_raw_total_dose, low_total_dose = _estimate_week_at_target_km(
+            target_km=low,
+            key_km=key_km,
+            key_dose=key_dose,
             pace_s_km=pace_s_km,
-            intensity_factor=0.78,
+            dose_scale=dose_scale,
         )
-        raw_total_dose = key_dose + easy_dose
-        total_dose = raw_total_dose * dose_scale
+        remaining_easy_km, raw_total_dose, total_dose = _estimate_week_at_target_km(
+            target_km=high,
+            key_km=key_km,
+            key_dose=key_dose,
+            pace_s_km=pace_s_km,
+            dose_scale=dose_scale,
+        )
         weeks_out.append({
             "week_index": _get(week, "week_index"),
             "week_start": _get(week, "week_start"),
+            "target_weekly_km_low": _round(low),
             "target_weekly_km_high": _round(high),
+            "target_training_dose_low": _round(low_total_dose),
+            "target_training_dose_high": _round(total_dose),
             "estimated_dose": _round(total_dose),
             "estimated_raw_tss": _round(raw_total_dose),
+            "estimated_raw_tss_low": _round(low_raw_total_dose),
             "key_session_km": _round(key_km),
+            "remaining_easy_km_low": _round(low_remaining_easy_km),
             "remaining_easy_km": _round(remaining_easy_km),
             "long_run_km": _round(long_run_km),
             "long_run_dose": _round(long_run_dose * dose_scale),
@@ -359,6 +397,76 @@ def estimate_master_plan_training_load(
         "weeks": weeks_out,
         "alignment": alignment,
     }
+
+
+def apply_master_plan_training_load_projection(
+    plan: MasterPlan,
+    estimate: Mapping[str, Any] | None,
+    *,
+    calculated_at: str | None = None,
+    allow_unavailable_without_weeks: bool = True,
+) -> MasterPlan:
+    """Persist a deterministic load estimate onto a typed MasterPlan.
+
+    Legacy plans without a weekly skeleton receive an explicit unavailable
+    marker. A plan with skeletons must have one valid estimate for every week;
+    partial projections are rejected instead of being persisted.
+    """
+    timestamp = calculated_at or datetime.now(timezone.utc).isoformat()
+    if not plan.weeks:
+        if not allow_unavailable_without_weeks:
+            raise ValueError("weekly skeleton unavailable")
+        projection = TrainingLoadProjection(
+            status="unavailable",
+            unavailable_reason="weekly_skeleton_unavailable",
+            calculated_at=timestamp,
+        )
+        return plan.model_copy(update={
+            "weeks": [],
+            "weekly_key_sessions": [],
+            "training_load_projection": projection,
+        })
+
+    estimated_weeks = list((estimate or {}).get("weeks") or [])
+    by_index: dict[int, Mapping[str, Any]] = {}
+    for row in estimated_weeks:
+        if not isinstance(row, Mapping):
+            continue
+        try:
+            index = int(row.get("week_index"))
+        except (TypeError, ValueError):
+            continue
+        if index in by_index:
+            raise ValueError(f"duplicate load estimate for week {index}")
+        by_index[index] = row
+
+    projected = []
+    for week in plan.weeks:
+        row = by_index.get(week.week_index)
+        if row is None:
+            raise ValueError(f"missing load estimate for week {week.week_index}")
+        low = _float(row.get("target_training_dose_low"))
+        high = _float(row.get("target_training_dose_high"))
+        if low is None or high is None:
+            raise ValueError(f"incomplete load estimate for week {week.week_index}")
+        projected.append(week.model_copy(update={
+            "target_training_dose_low": low,
+            "target_training_dose_high": high,
+        }))
+
+    if set(by_index) != {week.week_index for week in plan.weeks}:
+        raise ValueError("load estimate week set does not match master plan")
+
+    projection = TrainingLoadProjection(
+        status="available",
+        unavailable_reason=None,
+        calculated_at=timestamp,
+    )
+    return MasterPlan.model_validate(plan.model_copy(update={
+        "weeks": projected,
+        "weekly_key_sessions": list(projected),
+        "training_load_projection": projection,
+    }).model_dump(mode="json"))
 
 
 def _has_injury_or_gap(injuries: list[str] | None) -> bool:

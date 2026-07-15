@@ -261,6 +261,34 @@ def patch_history(monkeypatch):
     import stride_server.coach_adapters.master_plan_adapter as adapter_mod
     monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
 
+    # These integration tests cover parser/job lifecycle behavior. Their
+    # historical fixture intentionally has no weekly skeleton; the weekly-dose
+    # contract is covered by dedicated projection tests with canonical weeks.
+    original_projection = adapter_mod.apply_master_plan_training_load_projection
+
+    def _compat_projection(plan, estimate, **kwargs):
+        return original_projection(
+            plan,
+            estimate,
+            allow_unavailable_without_weeks=True,
+        )
+
+    monkeypatch.setattr(
+        adapter_mod,
+        "apply_master_plan_training_load_projection",
+        _compat_projection,
+    )
+
+
+def _patch_projection_compat(monkeypatch) -> None:
+    """Allow the historical no-weeks fixture in direct adapter unit tests."""
+    original = adapter_mod.apply_master_plan_training_load_projection
+
+    def _compat(plan, estimate, **kwargs):
+        return original(plan, estimate, allow_unavailable_without_weeks=True)
+
+    monkeypatch.setattr(adapter_mod, "apply_master_plan_training_load_projection", _compat)
+
 
 def _make_fake_llm(response: str):
     """Return a FakeLLMClient class that returns response from chat_sync."""
@@ -281,6 +309,7 @@ def _run_job_sync(job_id: str, goal: dict = GOAL, profile: dict | None = PROFILE
 
 
 def test_generate_master_plan_returns_prompt_size_metadata(monkeypatch):
+    _patch_projection_compat(monkeypatch)
     raw_response = _sentinel_wrap(_VALID_JSON_STR)
 
     class CapturingLLMClient:
@@ -319,6 +348,7 @@ def test_generate_master_plan_returns_prompt_size_metadata(monkeypatch):
 
 
 def test_generate_master_plan_returns_load_tool_estimate(monkeypatch):
+    _patch_projection_compat(monkeypatch)
     raw_response = _sentinel_wrap(_VALID_JSON_STR)
     calls: list[dict[str, Any]] = []
 
@@ -362,6 +392,7 @@ def test_generate_master_plan_returns_load_tool_estimate(monkeypatch):
 
 
 def test_generate_master_plan_passes_context_pb_seconds_to_builder(monkeypatch):
+    _patch_projection_compat(monkeypatch)
     raw_response = _sentinel_wrap(_VALID_JSON_STR)
     seen: dict[str, Any] = {}
 
@@ -1573,6 +1604,32 @@ class TestRunGenerateJob:
         assert job.raw_output is not None
         assert len(job.raw_output) > 0
         assert len(patch_store.saved_plans) == 0
+
+    def test_load_estimation_failure_does_not_persist_draft(
+        self, monkeypatch, patch_store, patch_history
+    ):
+        """A technical estimator failure fails the job before save_plan."""
+        from coach.schemas import ToolResult
+
+        raw_response = _sentinel_wrap(_VALID_JSON_STR)
+        monkeypatch.setattr(adapter_mod, "LLMClient", _make_fake_llm(raw_response))
+
+        class FailingLoadTool:
+            def __init__(self, user_id: str) -> None:
+                self.user_id = user_id
+
+            def __call__(self, **kwargs: Any) -> ToolResult:
+                return ToolResult(ok=False, errors=["estimator crashed"])
+
+        monkeypatch.setattr(adapter_mod, "EstimateMasterPlanLoadImpl", FailingLoadTool)
+
+        job_id = create_job(USER_ID)
+        _run_job_sync(job_id)
+
+        job = get_job(job_id)
+        assert job.status == JobStatus.FAILED
+        assert job.error == "load_estimation_failed: estimator crashed"
+        assert patch_store.saved_plans == []
 
     def test_parse_failed_first_attempt_recovers_on_retry(
         self, monkeypatch, patch_store, patch_history

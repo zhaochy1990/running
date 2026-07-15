@@ -278,6 +278,28 @@ def test_list_plans_empty_user(store):
     assert store.list_plans(USER_A) == []
 
 
+def test_list_active_plans_returns_active_across_users_only(store):
+    active_a = _make_plan(user_id=USER_A, status=MasterPlanStatus.ACTIVE)
+    active_b = _make_plan(
+        plan_id=PLAN_ID_2,
+        user_id=USER_B,
+        status=MasterPlanStatus.ACTIVE,
+    )
+    draft = _make_plan(
+        plan_id="plan-draft",
+        user_id=USER_A,
+        status=MasterPlanStatus.DRAFT,
+    )
+    store.save_plan(active_a)
+    store.save_plan(active_b)
+    store.save_plan(draft)
+
+    assert {plan.plan_id for plan in store.list_active_plans()} == {
+        active_a.plan_id,
+        active_b.plan_id,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Tests: versions — save / list / get
 # ---------------------------------------------------------------------------

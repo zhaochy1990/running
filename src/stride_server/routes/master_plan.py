@@ -701,6 +701,11 @@ def _build_current_response(plan: Any, user_id: str | None = None) -> dict[str, 
         "phases": [p.model_dump() for p in plan.phases],
         "milestones": [m.model_dump() for m in plan.milestones],
         "weeks": weeks,
+        "training_load_projection": (
+            plan.training_load_projection.model_dump(mode="json")
+            if getattr(plan, "training_load_projection", None) is not None
+            else None
+        ),
         "training_principles": plan.training_principles,
         "generated_by": plan.generated_by,
         "version": plan.version,

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
@@ -8,6 +8,7 @@ import {
   getMyProfile,
   getTrainingGoal,
   getTrainingPlan,
+  type MasterPlan,
 } from '../../api'
 import { UserContext } from '../../UserContextValue'
 import TrainingPlanPage from '../TrainingPlanPage'
@@ -32,7 +33,7 @@ vi.mock('../../api', async () => {
   }
 })
 
-const masterPlan = {
+const masterPlan: MasterPlan = {
   plan_id: 'plan-1',
   user_id: 'user-1',
   status: 'active',
@@ -101,6 +102,11 @@ const masterPlan = {
     },
   ],
   training_principles: ['逐步加量', '每 4 周保留恢复周'],
+  training_load_projection: {
+    status: 'available',
+    unavailable_reason: null,
+    calculated_at: '2026-07-15T08:30:00Z',
+  },
   weeks: [
     {
       week_index: 1,
@@ -109,6 +115,8 @@ const masterPlan = {
       phase_id: 'phase-1',
       target_weekly_km_low: null,
       target_weekly_km_high: null,
+      target_training_dose_low: 180,
+      target_training_dose_high: 210,
       planned_distance_km: null,
       is_completed: true,
       actual_distance_km: 46.5,
@@ -128,6 +136,8 @@ const masterPlan = {
       phase_id: 'phase-1',
       target_weekly_km_low: 48,
       target_weekly_km_high: 54,
+      target_training_dose_low: 240,
+      target_training_dose_high: 275,
       planned_distance_km: 54,
       is_completed: true,
       actual_distance_km: 68,
@@ -147,6 +157,8 @@ const masterPlan = {
       phase_id: 'phase-1',
       target_weekly_km_low: 78,
       target_weekly_km_high: 88,
+      target_training_dose_low: 390,
+      target_training_dose_high: 440,
       planned_distance_km: 88,
       is_completed: false,
       actual_distance_km: 12.4,
@@ -165,6 +177,8 @@ const masterPlan = {
       phase_id: 'phase-2',
       target_weekly_km_low: 110,
       target_weekly_km_high: 120,
+      target_training_dose_low: 520,
+      target_training_dose_high: 570,
       key_sessions: [{ type: 'threshold', distance_km: 12, duration_min: null }],
       is_recovery_week: false,
       is_taper_week: false,
@@ -175,6 +189,8 @@ const masterPlan = {
       phase_id: 'phase-2',
       target_weekly_km_low: 118,
       target_weekly_km_high: 128,
+      target_training_dose_low: 560,
+      target_training_dose_high: 610,
       key_sessions: [{ type: 'long_run', distance_km: 22, duration_min: null }],
       is_recovery_week: false,
       is_taper_week: false,
@@ -185,6 +201,8 @@ const masterPlan = {
       phase_id: 'phase-2',
       target_weekly_km_low: 128,
       target_weekly_km_high: 138,
+      target_training_dose_low: 610,
+      target_training_dose_high: 665,
       key_sessions: [{ type: 'interval', distance_km: 10, duration_min: null }],
       is_recovery_week: false,
       is_taper_week: false,
@@ -195,6 +213,8 @@ const masterPlan = {
       phase_id: 'phase-2',
       target_weekly_km_low: 94,
       target_weekly_km_high: 104,
+      target_training_dose_low: 440,
+      target_training_dose_high: 490,
       key_sessions: [{ type: 'long_run', distance_km: 18, duration_min: null }],
       is_recovery_week: true,
       is_taper_week: false,
@@ -260,6 +280,7 @@ describe('TrainingPlanPage', () => {
     expect(await screen.findByRole('heading', { name: '真实目标马拉松' })).toBeInTheDocument()
     expect(screen.getByText(/从 2026\/05\/04 到 2026\/10\/11，共 23 周/)).toBeInTheDocument()
     expect(screen.getByText('周跑量（KM/周）')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '负荷' })).toBeEnabled()
     expect(screen.getAllByText('W06').length).toBeGreaterThan(0)
     expect(screen.getByText('已完成周实际跑量')).toBeInTheDocument()
     expect(screen.getByText('计划跑量标记')).toBeInTheDocument()
@@ -283,6 +304,30 @@ describe('TrainingPlanPage', () => {
     expect(screen.getByText('已完成 26km 长跑')).toBeInTheDocument()
     expect(screen.getByText('逐步加量')).toBeInTheDocument()
     expect(screen.queryByText('2026 西安马拉松')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '负荷' }))
+    expect(screen.getByText('预计周负荷（STRIDE DOSE）')).toBeInTheDocument()
+    expect(screen.getByText('STRIDE dose 是根据计划跑量与关键课估算的每周负荷区间。')).toBeInTheDocument()
+    expect(screen.getAllByText('计划负荷')[0]).toBeInTheDocument()
+    expect(screen.getAllByText('390-440 dose')[0]).toBeInTheDocument()
+  })
+
+  it('keeps mileage usable and disables load for a legacy plan', async () => {
+    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce({
+      ...masterPlan,
+      training_load_projection: null,
+      weeks: (masterPlan.weeks ?? []).map((week) => ({
+        ...week,
+        target_training_dose_low: null,
+        target_training_dose_high: null,
+      })),
+    })
+
+    renderPlanPage()
+
+    expect(await screen.findByText('周跑量（KM/周）')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '负荷' })).toBeDisabled()
+    expect(screen.getByText('该计划尚无可用的周负荷数据')).toBeInTheDocument()
   })
 
   it('falls back to profile target fields when the training goal is unavailable', async () => {
