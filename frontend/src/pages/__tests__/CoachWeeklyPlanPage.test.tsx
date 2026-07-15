@@ -63,7 +63,7 @@ describe('CoachWeeklyPlanPage', () => {
       week: {
         folder: '2026-07-13_07-19', date_from: '2026-07-13', date_to: '2026-07-19', plan: '# plan', activities: [], activity_count: 0, total_km: 0, total_duration_s: 0, total_duration_fmt: '0m',
       },
-      planDays: [{ date: '2026-07-13', nutrition: null, sessions: [{ id: 1, pushable: false, schema: 'plan-session/v1', date: '2026-07-13', session_index: 0, kind: 'run', summary: '轻松跑', spec: null, notes_md: '保持 Z2', total_distance_m: 8000, total_duration_s: 3000, scheduled_workout_id: null }] }],
+      planDays: [{ date: '2026-07-13', nutrition: { schema: 'plan-nutrition/v1', date: '2026-07-13', kcal_target: null, carbs_g: null, protein_g: 130, fat_g: null, water_ml: null, meals: [], notes_md: '训练后补充蛋白质' }, sessions: [{ id: 1, pushable: false, schema: 'plan-session/v1', date: '2026-07-13', session_index: 0, kind: 'run', summary: '轻松跑', spec: null, notes_md: '保持 Z2', total_distance_m: 8000, total_duration_s: 3000, scheduled_workout_id: null }] }],
       strength: {
         folder: '2026-07-13_07-19',
         sessions: [{
@@ -87,6 +87,8 @@ describe('CoachWeeklyPlanPage', () => {
     expect(screen.getByText('跑步课')).toBeInTheDocument()
     expect(screen.queryByText('Sessions')).not.toBeInTheDocument()
     expect(screen.queryByText('Runs')).not.toBeInTheDocument()
+    expect(screen.getAllByText('蛋白质目标 130 g')).toHaveLength(2)
+    expect(screen.queryByText(/P130/)).not.toBeInTheDocument()
     expect(screen.getByText('实际跑量')).toBeInTheDocument()
     expect(screen.getByText('完成度')).toBeInTheDocument()
     expect(screen.queryByText('Planned volume')).not.toBeInTheDocument()

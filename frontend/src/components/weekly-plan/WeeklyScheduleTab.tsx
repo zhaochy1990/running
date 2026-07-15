@@ -95,9 +95,9 @@ export default function WeeklyScheduleTab({
                   <p className="mt-1 font-mono text-[11px] text-text-secondary">
                     {nutrition.kcal_target != null ? `${Math.round(nutrition.kcal_target)} kcal` : '热量待定'}
                     {nutrition.carbs_g != null && ` · C${Math.round(nutrition.carbs_g)}`}
-                    {nutrition.protein_g != null && `/P${Math.round(nutrition.protein_g)}`}
                     {nutrition.fat_g != null && `/F${Math.round(nutrition.fat_g)}`}
                   </p>
+                  {nutrition.protein_g != null && <p className="mt-1 text-xs font-semibold text-accent-green">蛋白质目标 {Math.round(nutrition.protein_g)} g</p>}
                 </div>
               ))}
             </div>
@@ -153,6 +153,7 @@ function NutritionLine({ nutrition }: NutritionLineProps) {
     <div className="flex flex-wrap items-center gap-2 border-t border-border-subtle pt-3 text-[11px] text-text-muted">
       <span className="rounded bg-green-soft px-2 py-0.5 font-bold text-accent-green">营养日</span>
       {nutrition.kcal_target != null && <span className="font-mono">{Math.round(nutrition.kcal_target)} kcal</span>}
+      {nutrition.protein_g != null && <span className="font-mono font-semibold text-accent-green">蛋白质目标 {Math.round(nutrition.protein_g)} g</span>}
       {nutrition.water_ml != null && <span className="font-mono">补水 {Math.round(nutrition.water_ml)} ml</span>}
       {nutrition.notes_md && <span>{nutrition.notes_md}</span>}
     </div>
