@@ -126,6 +126,35 @@ class AzureCheckpointStore(CheckpointStore):
             results = results[:limit]
         return [CheckpointRow.from_dict(dict(r)) for r in results]
 
+    def list_latest_checkpoint_rows(
+        self,
+        thread_id_prefix: str,
+        *,
+        limit: int | None = None,
+    ) -> list[CheckpointRow]:
+        if not thread_id_prefix:
+            raise ValueError("thread_id_prefix is required")
+        # The exclusive upper bound is the prefix with its last code point
+        # incremented (for example ``user:coach:`` -> ``user:coach;``).
+        upper = thread_id_prefix[:-1] + chr(ord(thread_id_prefix[-1]) + 1)
+        entities = self._checkpoints_table.query_entities(
+            f"PartitionKey ge '{_q(thread_id_prefix)}' "
+            f"and PartitionKey lt '{_q(upper)}'"
+        )
+        latest_by_thread: dict[str, dict[str, Any]] = {}
+        for entity in entities:
+            row = dict(entity)
+            thread_id = str(row["PartitionKey"])
+            previous = latest_by_thread.get(thread_id)
+            if previous is None or row["RowKey"] > previous["RowKey"]:
+                latest_by_thread[thread_id] = row
+        latest = [CheckpointRow.from_dict(row) for row in latest_by_thread.values()]
+        latest.sort(
+            key=lambda row: (row.created_at, row.checkpoint_id),
+            reverse=True,
+        )
+        return latest[:limit] if limit is not None else latest
+
     # ------------------------------------------------------------------
     # pending writes
     # ------------------------------------------------------------------
