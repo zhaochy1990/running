@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -21,6 +23,8 @@ from pydantic import BaseModel, create_model
 from coach.runtime.toolkit import Toolkit
 from coach.schemas import ToolResult
 
+logger = logging.getLogger(__name__)
+
 
 def _serialize_result(result: ToolResult) -> str:
     return json.dumps(result.model_dump(), ensure_ascii=False, default=str)
@@ -28,6 +32,13 @@ def _serialize_result(result: ToolResult) -> str:
 
 _TOOL_DESCRIPTIONS: dict[str, str] = {
     # read
+    "get_training_summary": (
+        "Compact deterministic summary for a Shanghai calendar date range: "
+        "activities, running totals, training dose/PMC, recovery, key sessions, "
+        "and plan completion. Omit dates for the previous Monday-Sunday week. "
+        "Prefer this single bounded tool for weekly summaries instead of "
+        "repeatedly calling activity/detail tools."
+    ),
     "get_recent_activities": "List the most recent training activities. Use 'limit' (default 14) to bound rows.",
     "get_health_snapshot": "Latest STRIDE training-load snapshot (acute_load/chronic_load/form/load_ratio + form_zone, rhr), dashboard (HRV/recovery_pct), and STRIDE calibration (threshold_hr/threshold_pace_s_km). Threshold is STRIDE self-computed (running_calibration), NOT the COROS dashboard value.",
     "get_health_series": "General recent daily health series over the last `days` (default 14, max 365). Whitelisted metrics include rhr, hrv_last_night_avg, hrv_status, fatigue, ati/cti, training_load_ratio/state, training_dose, acute_load, chronic_load, form, load_ratio, readiness_gate/reasons. Use aliases like metrics=['recovery'], ['hrv'], ['load'], or explicit metrics.",
@@ -107,8 +118,17 @@ def _wrap(name: str, callable_: Callable[..., ToolResult]) -> StructuredTool:
 
     def wrapper(**kwargs: Any) -> str:
         kwargs.pop("_no_args", None)
+        started = time.perf_counter()
         result = callable_(**kwargs)
-        return _serialize_result(result)
+        payload = _serialize_result(result)
+        logger.debug(
+            "tool call | name=%s elapsed=%.0fms result_chars=%d ok=%s",
+            name,
+            (time.perf_counter() - started) * 1000.0,
+            len(payload),
+            result.ok,
+        )
+        return payload
 
     wrapper.__name__ = name
     wrapper.__doc__ = _TOOL_DESCRIPTIONS.get(name, f"Tool {name}")
@@ -122,6 +142,7 @@ def _wrap(name: str, callable_: Callable[..., ToolResult]) -> StructuredTool:
 
 
 READ_TOOL_NAMES = (
+    "get_training_summary",
     "get_recent_activities",
     "get_health_snapshot",
     "get_health_series",

@@ -35,6 +35,15 @@ def _registry() -> SpecialistRegistry:
             writes=True,
         )
     )
+    reg.register(
+        SpecialistCard(
+            id="season_plan",
+            description="调整总体训练计划",
+            tags=["master", "adjust"],
+            examples=["把基础期延长两周"],
+            writes=True,
+        )
+    )
     return reg
 
 
@@ -52,7 +61,7 @@ def _fixed(draft: ResolverDraft):
 
 def test_single_read_intent_dispatches_no_clarify() -> None:
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
     )
     fn, _ = _fixed(draft)
     out = resolve("我最近状态如何", registry=_registry(), draft_fn=fn)
@@ -63,7 +72,7 @@ def test_single_read_intent_dispatches_no_clarify() -> None:
 
 
 def test_hallucinated_specialist_dropped_then_clarify() -> None:
-    draft = ResolverDraft(intents=[IntentHit(specialist_id="hotel_booking", confidence=0.9)])
+    draft = ResolverDraft(intents=[IntentHit(specialist_id="hotel_booking", action="read", confidence=0.9)])
     fn, _ = _fixed(draft)
     out = resolve("帮我订酒店", registry=_registry(), draft_fn=fn)
     assert out.intents == []
@@ -72,7 +81,7 @@ def test_hallucinated_specialist_dropped_then_clarify() -> None:
 
 
 def test_low_confidence_triggers_intent_clarify() -> None:
-    draft = ResolverDraft(intents=[IntentHit(specialist_id="status_insight", confidence=0.2)])
+    draft = ResolverDraft(intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.2)])
     fn, _ = _fixed(draft)
     out = resolve("嗯", registry=_registry(), draft_fn=fn)
     assert out.ambiguity is not None
@@ -82,8 +91,8 @@ def test_low_confidence_triggers_intent_clarify() -> None:
 def test_tie_between_distinct_specialists_clarifies() -> None:
     draft = ResolverDraft(
         intents=[
-            IntentHit(specialist_id="status_insight", confidence=0.6),
-            IntentHit(specialist_id="weekly_plan", confidence=0.58),
+            IntentHit(specialist_id="status_insight", action="read", confidence=0.6),
+            IntentHit(specialist_id="weekly_plan", action="write", confidence=0.58),
         ],
         is_compound=False,
     )
@@ -96,8 +105,8 @@ def test_tie_between_distinct_specialists_clarifies() -> None:
 def test_tie_clarification_uses_card_descriptions() -> None:
     draft = ResolverDraft(
         intents=[
-            IntentHit(specialist_id="status_insight", confidence=0.6),
-            IntentHit(specialist_id="weekly_plan", confidence=0.58),
+            IntentHit(specialist_id="status_insight", action="read", confidence=0.6),
+            IntentHit(specialist_id="weekly_plan", action="write", confidence=0.58),
         ],
     )
     fn, _ = _fixed(draft)
@@ -148,8 +157,8 @@ def test_make_llm_draft_fn_propagates_infra_error() -> None:
 def test_compound_two_distinct_intents_no_tie_clarify() -> None:
     draft = ResolverDraft(
         intents=[
-            IntentHit(specialist_id="status_insight", confidence=0.8),
-            IntentHit(specialist_id="weekly_plan", confidence=0.78),
+            IntentHit(specialist_id="status_insight", action="read", confidence=0.8),
+            IntentHit(specialist_id="weekly_plan", action="write", confidence=0.78),
         ],
         is_compound=True,
     )
@@ -167,7 +176,7 @@ def test_compound_two_distinct_intents_no_tie_clarify() -> None:
 
 def test_anaphora_reuses_prior_target() -> None:
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
         target_hint=TargetHint(is_anaphora=True, ref_phrase="它"),
     )
     fn, _ = _fixed(draft)
@@ -179,7 +188,7 @@ def test_anaphora_reuses_prior_target() -> None:
 
 def test_explicit_kind_hint_yields_kind_only_target() -> None:
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
         target_hint=TargetHint(kind="master", ref_phrase="赛季计划"),
     )
     fn, _ = _fixed(draft)
@@ -190,7 +199,7 @@ def test_explicit_kind_hint_yields_kind_only_target() -> None:
 
 def test_write_intent_without_target_clarifies_target() -> None:
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+        intents=[IntentHit(specialist_id="weekly_plan", action="write", confidence=0.9)],
     )
     fn, _ = _fixed(draft)
     out = resolve("帮我改一下", registry=_registry(), draft_fn=fn)
@@ -198,9 +207,87 @@ def test_write_intent_without_target_clarifies_target() -> None:
     assert out.ambiguity.kind == "target"
 
 
+def test_read_only_master_plan_query_routes_to_status_insight_from_model() -> None:
+    draft = ResolverDraft(
+        intents=[
+            IntentHit(
+                specialist_id="status_insight", action="read", confidence=0.93
+            )
+        ],
+        target_hint=TargetHint(kind="master", ref_phrase="总体训练计划"),
+    )
+    fn, _ = _fixed(draft)
+
+    out = resolve(
+        "我当前的总体训练计划是什么？",
+        registry=_registry(),
+        draft_fn=fn,
+    )
+
+    assert out.ambiguity is None
+    assert [hit.specialist_id for hit in out.intents] == ["status_insight"]
+    assert out.active_target == TargetRef(kind="master")
+    assert out.resolved_from == "explicit"
+
+
+def test_action_mismatch_is_rejected_instead_of_rewriting_specialist() -> None:
+    draft = ResolverDraft(
+        intents=[
+            IntentHit(
+                specialist_id="season_plan", action="read", confidence=0.93
+            )
+        ],
+        target_hint=TargetHint(kind="master", ref_phrase="总体训练计划"),
+    )
+    fn, _ = _fixed(draft)
+
+    out = resolve(
+        "我当前的总体训练计划是什么？", registry=_registry(), draft_fn=fn
+    )
+
+    assert out.intents == []
+    assert out.ambiguity is not None
+    assert out.ambiguity.kind == "intent"
+
+
+def test_write_action_on_read_specialist_is_rejected() -> None:
+    draft = ResolverDraft(
+        intents=[
+            IntentHit(
+                specialist_id="status_insight", action="write", confidence=0.91
+            )
+        ]
+    )
+    fn, _ = _fixed(draft)
+
+    out = resolve("修改我的状态", registry=_registry(), draft_fn=fn)
+
+    assert out.intents == []
+    assert out.ambiguity is not None
+    assert out.ambiguity.kind == "intent"
+
+
+def test_explicit_master_plan_edit_stays_on_write_specialist() -> None:
+    draft = ResolverDraft(
+        intents=[IntentHit(specialist_id="season_plan", action="write", confidence=0.93)],
+        target_hint=TargetHint(kind="master", ref_phrase="总体训练计划"),
+    )
+    fn, _ = _fixed(draft)
+
+    out = resolve(
+        "把我的总体训练计划基础期延长两周",
+        registry=_registry(),
+        draft_fn=fn,
+        target_resolver=lambda _target: TargetRef(kind="master", plan_id="mp-1"),
+    )
+
+    assert [hit.specialist_id for hit in out.intents] == ["season_plan"]
+    assert out.active_target == TargetRef(kind="master", plan_id="mp-1")
+
+
 def test_write_intent_with_concrete_target_no_clarify() -> None:
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+        intents=[IntentHit(specialist_id="weekly_plan", action="write", confidence=0.9)],
     )
     fn, _ = _fixed(draft)
     out = resolve(
@@ -217,7 +304,7 @@ def test_target_resolver_fills_current_week_for_write_no_clarify() -> None:
     """A write intent with no target → injected resolver fills the current-week
     folder, so the turn dispatches instead of asking '哪一周?'."""
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+        intents=[IntentHit(specialist_id="weekly_plan", action="write", confidence=0.9)],
     )
     fn, _ = _fixed(draft)
 
@@ -238,7 +325,7 @@ def test_target_resolver_fills_current_week_for_write_no_clarify() -> None:
 def test_target_resolver_returning_none_still_clarifies() -> None:
     """If the resolver can't find a current week, fall back to a target clarify."""
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+        intents=[IntentHit(specialist_id="weekly_plan", action="write", confidence=0.9)],
     )
     fn, _ = _fixed(draft)
     out = resolve(
@@ -254,7 +341,7 @@ def test_target_resolver_returning_none_still_clarifies() -> None:
 def test_target_resolver_not_called_for_read_intent() -> None:
     """Reads default to most-recent; the resolver must not fire for them."""
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
     )
     fn, _ = _fixed(draft)
     calls: list[TargetRef | None] = []
@@ -272,7 +359,7 @@ def test_target_resolver_not_called_for_read_intent() -> None:
 def test_target_resolver_skipped_when_target_already_concrete() -> None:
     """A write that already has a folder (anaphora / prior turn) skips the resolver."""
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+        intents=[IntentHit(specialist_id="weekly_plan", action="write", confidence=0.9)],
     )
     fn, _ = _fixed(draft)
     calls: list[TargetRef | None] = []
@@ -295,7 +382,7 @@ def test_target_resolver_skipped_when_target_already_concrete() -> None:
 
 def test_prompt_role_split_is_hard_invariant() -> None:
     """System = persona + Card catalog (no utterance); User = utterance (no catalog)."""
-    draft = ResolverDraft(intents=[IntentHit(specialist_id="status_insight", confidence=0.9)])
+    draft = ResolverDraft(intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)])
     fn, captured = _fixed(draft)
     utterance = "我最近状态如何且这是一句很独特的话XYZ"
     resolve(
@@ -315,8 +402,19 @@ def test_prompt_role_split_is_hard_invariant() -> None:
     assert "昨天我跑了10公里" in user
 
 
+def test_resolver_prompt_distinguishes_reading_from_editing_plans() -> None:
+    system = resolver.build_resolver_system_prompt(_registry())
+
+    assert "询问、查看、总结或解释" in system
+    assert "只有明确要求调整、生成、重排" in system
+    assert "我当前的总体训练计划是什么？" in system
+    assert "不要仅凭句子出现" in system
+
+
 def test_card_catalog_renders_ids_and_descriptions() -> None:
     catalog = resolver.render_card_catalog(_registry())
     assert "id: status_insight" in catalog
+    assert "action: read" in catalog
     assert "回答训练状态" in catalog
     assert "id: weekly_plan" in catalog
+    assert "action: write" in catalog

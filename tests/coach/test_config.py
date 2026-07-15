@@ -84,6 +84,7 @@ def test_for_role_returns_matching_spec(tmp_path: Path) -> None:
     assert cfg.for_role("generator") is cfg.generator
     assert cfg.for_role("reviewer") is cfg.reviewer
     assert cfg.for_role("commentary") is cfg.commentary
+    assert cfg.for_role("status_insight") is cfg.generator
     with pytest.raises(ValueError):
         cfg.for_role("bogus")  # type: ignore[arg-type]
 
@@ -218,6 +219,34 @@ def test_local_config_generator_max_tokens_is_128k(monkeypatch) -> None:
     assert cfg.reviewer.max_tokens == 8192
     assert cfg.commentary.max_tokens == 2048
     assert cfg.for_role("orchestrator").model == "deepseek-v4-flash"
+
+
+def test_copilot_config_uses_responses_models_and_disables_tracing() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg = load_config(repo_root / "config" / "coach.copilot.toml")
+
+    assert cfg.generator.model == "gpt-5.6-sol"
+    assert cfg.reviewer.model == "gpt-5.6-sol"
+    assert cfg.commentary.model == "gpt-5.6-luna"
+    assert cfg.for_role("orchestrator").model == "gpt-5.6-luna"
+    assert cfg.for_role("status_insight").model == "gpt-5.6-luna"
+    assert cfg.for_role("status_insight").reasoning_effort == "low"
+    assert cfg.for_role("status_insight").max_tokens == 2048
+
+    for spec in (
+        cfg.generator,
+        cfg.reviewer,
+        cfg.commentary,
+        cfg.for_role("orchestrator"),
+        cfg.for_role("status_insight"),
+    ):
+        assert spec.provider == "openai-compatible"
+        assert spec.api_kind == "responses"
+        assert spec.auth_mode == "api-key"
+        assert spec.api_key_env == "COPILOT_PROXY_API_KEY"
+        assert spec.endpoint == "http://127.0.0.1:44141/v1"
+
+    assert cfg.observability.langsmith_enabled is False
 
 
 def test_endpoint_must_be_http_url(tmp_path: Path) -> None:
@@ -501,7 +530,7 @@ def test_role_api_key_env_implies_api_key_auth_for_legacy_configs(tmp_path: Path
     assert cfg.commentary.auth_mode == "api-key"
 
 
-def test_openai_compatible_rejects_responses_api_kind(tmp_path: Path) -> None:
+def test_openai_compatible_accepts_responses_api_kind(tmp_path: Path) -> None:
     toml = _valid_toml().replace('provider     = "azure-openai"', 'provider     = "openai-compatible"', 1)
     toml = toml.replace('model        = "gpt-5.4"', 'model        = "deepseek-v4-pro"', 1)
     toml = toml.replace('deployment   = "<PLACEHOLDER_X>"', 'deployment   = "deepseek-v4-pro"', 1)
@@ -509,8 +538,10 @@ def test_openai_compatible_rejects_responses_api_kind(tmp_path: Path) -> None:
     toml = toml.replace('api_version  = "2024-10-01-preview"', 'api_key_env  = "DEEPSEEK_API_KEY"\napi_kind     = "responses"', 1)
     p = tmp_path / "coach.toml"
     p.write_text(toml)
-    with pytest.raises(CoachConfigError, match="supports only api_kind"):
-        load_config(p)
+    cfg = load_config(p)
+    assert cfg.generator.provider == "openai-compatible"
+    assert cfg.generator.api_kind == "responses"
+    assert cfg.generator.api_key_env == "DEEPSEEK_API_KEY"
 
 
 # ---------------------------------------------------------------------------

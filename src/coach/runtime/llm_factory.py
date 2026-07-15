@@ -7,8 +7,9 @@ Three providers are supported:
 * ``azure-ai-inference`` — Azure AI Foundry serverless endpoints (Claude,
   Gemini, Llama, etc.) via
   ``langchain_azure_ai.chat_models.AzureAIChatCompletionsModel``.
-* ``openai-compatible`` — third-party OpenAI-compatible chat-completions
-  endpoints (DeepSeek V4, etc.) via ``langchain_openai.ChatOpenAI``.
+* ``openai-compatible`` — third-party OpenAI-compatible chat-completions or
+  Responses API endpoints (DeepSeek V4, local Copilot proxy, etc.) via
+  ``langchain_openai.ChatOpenAI``.
 
 Three roles consume those providers:
 
@@ -37,6 +38,7 @@ from typing import Any
 
 from .config import CoachConfig, load_config
 from .model_spec import ModelSpec, Role
+from .latency import latency_callbacks
 
 
 class CoachLLMUnavailable(RuntimeError):
@@ -143,6 +145,23 @@ def build_orchestrator_llm(
     return build_chat_model(cfg.for_role("orchestrator"), credentials=credentials, api_key=api_key)
 
 
+def build_status_insight_llm(
+    *,
+    credentials: AzureCredentials | None = None,
+    api_key: str | None = None,
+    config: CoachConfig | None = None,
+) -> Any:
+    """Fast read-only status / weekly-summary specialist.
+
+    Existing configs without ``[status_insight]`` fall back to the generator,
+    so this role can be introduced without changing production behaviour.
+    """
+    cfg = config or load_config()
+    return build_chat_model(
+        cfg.for_role("status_insight"), credentials=credentials, api_key=api_key
+    )
+
+
 def build_commentary_llm(
     *,
     credentials: AzureCredentials | None = None,
@@ -187,6 +206,7 @@ def _build_aoai(
         # Responses API (some newer model families are only served there);
         # default stays on chat completions for back-compat.
         "use_responses_api": spec.api_kind == "responses",
+        "callbacks": latency_callbacks(spec),
     }
     if spec.temperature is not None:
         kwargs["temperature"] = spec.temperature
@@ -230,6 +250,7 @@ def _build_azure_ai_inference(
         "model_name": spec.deployment,
         "api_version": spec.api_version,
         "request_timeout": spec.timeout_s,
+        "callbacks": latency_callbacks(spec),
     }
     if spec.temperature is not None:
         kwargs["temperature"] = spec.temperature
@@ -273,6 +294,12 @@ def _build_openai_compatible(
         "model": spec.deployment,
         "api_key": api_key,
         "timeout": spec.timeout_s,
+        # Newer OpenAI-compatible models (including GPT-5.5/5.6 through the
+        # local Copilot proxy) are Responses-only.  ChatOpenAI normalises
+        # max_completion_tokens to max_output_tokens on this path and keeps
+        # tool calling / structured output behind the same BaseChatModel API.
+        "use_responses_api": spec.api_kind == "responses",
+        "callbacks": latency_callbacks(spec),
     }
     if spec.temperature is not None:
         kwargs["temperature"] = spec.temperature

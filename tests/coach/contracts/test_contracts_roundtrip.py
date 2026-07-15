@@ -121,7 +121,7 @@ def test_specialist_result_needs_clarification() -> None:
 
 def test_resolver_draft_and_output_roundtrip() -> None:
     draft = ResolverDraft(
-        intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
         is_compound=False,
         target_hint=TargetHint(kind="week", ref_phrase="这周", is_anaphora=False),
         self_ambiguity=False,

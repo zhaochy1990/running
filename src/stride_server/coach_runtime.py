@@ -33,6 +33,8 @@ _GENERATOR_LLM_LOCK = threading.Lock()
 _GENERATOR_LLM: Any = None
 _ORCHESTRATOR_LLM_LOCK = threading.Lock()
 _ORCHESTRATOR_LLM: Any = None
+_STATUS_INSIGHT_LLM_LOCK = threading.Lock()
+_STATUS_INSIGHT_LLM: Any = None
 _REVIEWER_LLM_LOCK = threading.Lock()
 _REVIEWER_LLM: Any = None
 _COMMENTARY_LLM_LOCK = threading.Lock()
@@ -151,18 +153,21 @@ def set_athlete_memory_store_for_tests(store: Any) -> None:
 
 def reset_for_tests() -> None:
     """Clear cached LLMs + checkpointer (test-only)."""
-    global _CHECKPOINTER, _GENERATOR_LLM, _ORCHESTRATOR_LLM, _REVIEWER_LLM, _COMMENTARY_LLM
+    global _CHECKPOINTER, _GENERATOR_LLM, _ORCHESTRATOR_LLM, _STATUS_INSIGHT_LLM
+    global _REVIEWER_LLM, _COMMENTARY_LLM
     global _ATHLETE_MEMORY_STORE, _OBSERVABILITY_CONFIGURED
     with (
         _CHECKPOINTER_LOCK,
         _GENERATOR_LLM_LOCK,
         _ORCHESTRATOR_LLM_LOCK,
+        _STATUS_INSIGHT_LLM_LOCK,
         _REVIEWER_LLM_LOCK,
         _COMMENTARY_LLM_LOCK,
     ):
         _CHECKPOINTER = None
         _GENERATOR_LLM = None
         _ORCHESTRATOR_LLM = None
+        _STATUS_INSIGHT_LLM = None
         _REVIEWER_LLM = None
         _COMMENTARY_LLM = None
         _ATHLETE_MEMORY_STORE = None
@@ -292,6 +297,31 @@ def get_orchestrator_llm() -> Any:
     return _ORCHESTRATOR_LLM
 
 
+def get_status_insight_llm() -> Any:
+    """Return the read-only status / weekly-summary specialist model."""
+    configure_observability()
+    global _STATUS_INSIGHT_LLM
+    if _STATUS_INSIGHT_LLM is None:
+        with _STATUS_INSIGHT_LLM_LOCK:
+            if _STATUS_INSIGHT_LLM is None:
+                from coach.runtime.config import load_config
+                from coach.runtime.llm_factory import build_status_insight_llm
+
+                cfg = load_config()
+                spec = cfg.for_role("status_insight")
+                credentials, api_key = _credentials_for_spec(spec)
+                _STATUS_INSIGHT_LLM = build_status_insight_llm(
+                    credentials=credentials, api_key=api_key, config=cfg
+                )
+    return _STATUS_INSIGHT_LLM
+
+
+def set_status_insight_llm_for_tests(llm: Any) -> None:
+    global _STATUS_INSIGHT_LLM
+    with _STATUS_INSIGHT_LLM_LOCK:
+        _STATUS_INSIGHT_LLM = llm
+
+
 def set_orchestrator_llm_for_tests(llm: Any) -> None:
     """Inject a test orchestrator LLM (must support with_structured_output)."""
     global _ORCHESTRATOR_LLM
@@ -367,7 +397,7 @@ def build_conversation_graph_for_user(*, user_id: str, scope: str) -> Any:
     from .coach_adapters.toolkit import build_stride_toolkit
 
     toolkit = build_stride_toolkit(user_id)
-    llm = get_generator_llm()
+    llm = get_status_insight_llm() if scope == "qa" else get_generator_llm()
     checkpointer = get_checkpointer()
     return build_conversation_graph(
         toolkit=toolkit, llm=llm, checkpointer=checkpointer, scope=scope

@@ -52,7 +52,6 @@ CONFIDENCE_FLOOR = 0.35   # below this, the top intent is too weak to dispatch
 TIE_MARGIN = 0.12         # two distinct specialists within this margin = a tie
 MAX_INTENTS = 3           # hallucination / runaway-compound cap
 
-
 # ---------------------------------------------------------------------------
 # Prompt construction (role-split)
 # ---------------------------------------------------------------------------
@@ -67,6 +66,7 @@ def render_card_catalog(registry: SpecialistRegistry) -> str:
     lines: list[str] = []
     for card in registry.cards():
         lines.append(f"- id: {card.id}")
+        lines.append(f"  action: {'write' if card.writes else 'read'}")
         lines.append(f"  description: {card.description}")
         if card.tags:
             lines.append(f"  tags: {', '.join(card.tags)}")
@@ -159,9 +159,16 @@ def _resolve_target(
     return prior_target, "default"
 
 
-def _valid_intents(draft_intents: list[IntentHit], registry: SpecialistRegistry) -> list[IntentHit]:
-    """Drop hallucinated ids, cap count, sort by confidence desc (§4.1 hardening)."""
-    valid = [hit for hit in draft_intents if hit.specialist_id in registry]
+def _valid_intents(
+    draft_intents: list[IntentHit], registry: SpecialistRegistry
+) -> list[IntentHit]:
+    """Keep registered intents whose action matches specialist capability."""
+    valid = [
+        hit
+        for hit in draft_intents
+        if hit.specialist_id in registry
+        and (hit.action == "write") == registry.get_card(hit.specialist_id).writes
+    ]
     valid.sort(key=lambda h: h.confidence, reverse=True)
     return valid[:MAX_INTENTS]
 
@@ -240,10 +247,12 @@ def resolve(
 
     draft = draft_fn(system_prompt, user_prompt)
     logger.debug(
-        "resolver draft (raw LLM) | intents=%s | compound=%s | target_hint=%s | self_ambiguity=%s",
-        [(h.specialist_id, round(h.confidence, 2)) for h in draft.intents],
+        "resolver draft (raw LLM) | intents=%s | compound=%s | "
+        "target_kind=%s | target_anaphora=%s | self_ambiguity=%s",
+        [(h.specialist_id, h.action, round(h.confidence, 2)) for h in draft.intents],
         draft.is_compound,
-        draft.target_hint.model_dump(exclude_none=True) if draft.target_hint else None,
+        draft.target_hint.kind if draft.target_hint else None,
+        draft.target_hint.is_anaphora if draft.target_hint else False,
         draft.self_ambiguity,
     )
 

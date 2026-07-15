@@ -23,6 +23,7 @@ from coach.tools.protocols import (
     GetPmcSeries,
     GetRacePredictions,
     GetRecentActivities,
+    GetTrainingSummary,
     GetWeekPlan,
 )
 from stride_server.coach_adapters import tool_impls
@@ -58,6 +59,7 @@ def test_all_impls_satisfy_protocols() -> None:
     """``isinstance(impl, ProtocolClass)`` should pass for every read tool."""
     uid = "test-user"
     pairs: list[tuple[Any, type]] = [
+        (read_impls.GetTrainingSummaryImpl(uid), GetTrainingSummary),
         (read_impls.GetRecentActivitiesImpl(uid), GetRecentActivities),
         (read_impls.GetHealthSnapshotImpl(uid), GetHealthSnapshot),
         (read_impls.GetHealthSeriesImpl(uid), GetHealthSeries),
@@ -92,6 +94,27 @@ def test_recent_activities_empty(patched_db) -> None:
     assert isinstance(res, ToolResult)
     assert res.ok
     assert res.data == {"activities": []}
+
+
+def test_training_summary_defaults_to_previous_shanghai_week(
+    patched_db, monkeypatch
+) -> None:
+    from stride_core import timefmt
+
+    monkeypatch.setattr(timefmt, "today_shanghai", lambda: date_cls(2026, 7, 14))
+
+    res = read_impls.GetTrainingSummaryImpl("uid")()
+
+    assert res.ok
+    assert res.data["date_from"] == "2026-07-06"
+    assert res.data["date_to"] == "2026-07-12"
+
+
+def test_training_summary_rejects_one_sided_date_range(patched_db) -> None:
+    res = read_impls.GetTrainingSummaryImpl("uid")(date_from="2026-07-06")
+
+    assert not res.ok
+    assert res.errors == ["date_from and date_to must be provided together"]
 
 
 def test_health_snapshot_empty(patched_db) -> None:

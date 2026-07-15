@@ -41,15 +41,17 @@ from .tool_impls.read_impls import (
     GetHealthSeriesImpl,
     GetRecentActivitiesImpl,
     GetTrainingEnvironmentImpl,
+    GetTrainingSummaryImpl,
     GetWeekPlanImpl,
 )
 
 
 @dataclass(frozen=True)
 class StrideToolkit:
-    """Frozen container holding callable instances for all 26 tools."""
+    """Frozen container holding callable instances for all 28 tools."""
 
-    # read (13)
+    # read (14)
+    get_training_summary: GetTrainingSummaryImpl
     get_recent_activities: GetRecentActivitiesImpl
     get_health_snapshot: GetHealthSnapshotImpl
     get_health_series: GetHealthSeriesImpl
@@ -88,6 +90,7 @@ def build_stride_toolkit(user_id: str) -> Toolkit:
     bound to ``user_id``. The instance is cheap to construct (no I/O); each
     individual tool opens its own short-lived DB connection on call."""
     return StrideToolkit(
+        get_training_summary=GetTrainingSummaryImpl(user_id),
         get_recent_activities=GetRecentActivitiesImpl(user_id),
         get_health_snapshot=GetHealthSnapshotImpl(user_id),
         get_health_series=GetHealthSeriesImpl(user_id),

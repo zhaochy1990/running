@@ -39,12 +39,20 @@ def dispatch(call_plan: CallPlan, *, registry: SpecialistRegistry) -> list[Dispa
     dispatched: list[DispatchResult] = []
     for call in call_plan.calls:
         t = time.perf_counter()
-        logger.debug("→ %s start | objective=%r", call.specialist_id, call.task.objective)
+        logger.debug(
+            "→ %s start | objective_chars=%d",
+            call.specialist_id,
+            len(call.task.objective),
+        )
         try:
             runner = registry.get_runner(call.specialist_id)
             result = runner(call.task)
         except Exception as exc:  # noqa: BLE001 — contain one failure, keep the plan alive
-            logger.debug("✗ %s raised: %s", call.specialist_id, exc)
+            logger.debug(
+                "✗ %s raised | error_type=%s",
+                call.specialist_id,
+                type(exc).__name__,
+            )
             result = SpecialistResult(
                 status="failed",
                 reply_fragment=f"专家 {call.specialist_id} 处理失败：{exc}",

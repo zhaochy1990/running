@@ -37,13 +37,22 @@ from .weekly_plan import (
 )
 
 
-def build_specialist_registry(*, user_id: str, specialist_llm: Any) -> SpecialistRegistry:
+def build_specialist_registry(
+    *,
+    user_id: str,
+    specialist_llm: Any,
+    status_insight_llm: Any | None = None,
+) -> SpecialistRegistry:
     """Register the S1 specialist set. Adding a specialist = one more register()."""
     registry = SpecialistRegistry()
     toolkit = build_stride_toolkit(user_id)
     registry.register(
         STATUS_INSIGHT_CARD,
-        make_status_insight_runner(user_id=user_id, llm=specialist_llm, toolkit=toolkit),
+        make_status_insight_runner(
+            user_id=user_id,
+            llm=status_insight_llm or specialist_llm,
+            toolkit=toolkit,
+        ),
     )
     registry.register(
         WEEKLY_PLAN_CARD,
@@ -80,25 +89,32 @@ def run_coach_turn(
     registry: SpecialistRegistry | None = None,
     checkpointer: Any | None = None,
     specialist_llm: Any | None = None,
+    status_insight_llm: Any | None = None,
     memory_store: Any | None = None,
     memory_extract_fn: Any | None = None,
 ) -> TurnResponse:
     """Run one orchestrator turn and return the TurnResponse (§8 A1).
 
     Dependencies default to the process singletons but are all injectable for
-    tests. The specialist runs on the strong generator model; the Resolver runs
-    on the cheap orchestrator model.
+    tests. Plan specialists use the generator, status insight uses its optional
+    fast model, and the Resolver uses the orchestrator model.
     """
     from stride_server.coach_runtime import (
         get_athlete_memory_store,
         get_checkpointer,
         get_generator_llm,
         get_orchestrator_llm,
+        get_status_insight_llm,
     )
 
     resolved_specialist_llm = specialist_llm or get_generator_llm()
+    resolved_status_llm = status_insight_llm or (
+        specialist_llm if specialist_llm is not None else get_status_insight_llm()
+    )
     resolved_registry = registry or build_specialist_registry(
-        user_id=user_id, specialist_llm=resolved_specialist_llm
+        user_id=user_id,
+        specialist_llm=resolved_specialist_llm,
+        status_insight_llm=resolved_status_llm,
     )
     orchestrator_llm = get_orchestrator_llm()
     resolved_draft_fn = draft_fn or make_llm_draft_fn(orchestrator_llm)

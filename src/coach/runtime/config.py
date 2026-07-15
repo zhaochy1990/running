@@ -63,6 +63,9 @@ class CoachConfig:
     # model). Point this at a cheap deployment (gpt-4.1-mini) to realise the
     # low-latency main path (§4.7).
     orchestrator: ModelSpec | None = None
+    # Optional fast model for read-only status Q&A / weekly summaries. Absent
+    # ``[status_insight]`` -> generator, preserving existing deployments.
+    status_insight: ModelSpec | None = None
     # Optional LangSmith tracing toggle; absent ``[observability]`` → disabled.
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
 
@@ -75,6 +78,8 @@ class CoachConfig:
             return self.commentary
         if role == "orchestrator":
             return self.orchestrator or self.reviewer
+        if role == "status_insight":
+            return self.status_insight or self.generator
         raise ValueError(f"unknown role {role!r}")
 
 
@@ -141,7 +146,13 @@ _COMMON_REQUIRED_FIELDS = (
     "endpoint",
     "timeout_s",
 )
-_ROLE_TABLE_NAMES = {"generator", "reviewer", "commentary", "orchestrator"}
+_ROLE_TABLE_NAMES = {
+    "generator",
+    "reviewer",
+    "commentary",
+    "orchestrator",
+    "status_insight",
+}
 
 
 def _legacy_auth_mode(raw: dict[str, Any]) -> AuthMode:
@@ -269,10 +280,6 @@ def _build_spec(role: Role, raw: dict[str, Any]) -> ModelSpec:
         raise CoachConfigError(
             f"[{role}] unknown api_kind {api_kind!r}; valid: {sorted(_VALID_API_KINDS)}"
         )
-    if provider == "openai-compatible" and api_kind != "chat-completions":
-        raise CoachConfigError(
-            f"[{role}] openai-compatible provider supports only api_kind='chat-completions'"
-        )
     endpoint = str(raw["endpoint"])
     if not endpoint.startswith(("https://", "http://")):
         raise CoachConfigError(
@@ -331,6 +338,19 @@ def load_config(path: str | Path | None = None) -> CoachConfig:
         if "orchestrator" in raw
         else None
     )
+    status_insight = (
+        _build_spec(
+            "status_insight",
+            _with_default_auth(
+                _resolve_model_reference(
+                    "status_insight", raw["status_insight"], models
+                ),
+                auth_mode,
+            ),
+        )
+        if "status_insight" in raw
+        else None
+    )
 
     obs_raw = raw.get("observability", {})
     observability = ObservabilityConfig(
@@ -366,5 +386,6 @@ def load_config(path: str | Path | None = None) -> CoachConfig:
         ),
         auth_mode=auth_mode,  # type: ignore[arg-type]
         orchestrator=orchestrator,
+        status_insight=status_insight,
         observability=observability,
     )

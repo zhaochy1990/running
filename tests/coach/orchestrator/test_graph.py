@@ -36,7 +36,7 @@ def _echo_runner(task: SpecialistTask) -> SpecialistResult:
 
 
 def _draft_fn_status(_system: str, _user: str) -> ResolverDraft:
-    return ResolverDraft(intents=[IntentHit(specialist_id="status_insight", confidence=0.95)])
+    return ResolverDraft(intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.95)])
 
 
 def _invoke(graph, *, user_id: str, session_id: str, message: str) -> TurnResponse:
@@ -90,11 +90,11 @@ def test_anaphora_reuses_promoted_active_target() -> None:
     drafts = iter(
         [
             ResolverDraft(
-                intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+                intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
                 target_hint=TargetHint(kind="master", ref_phrase="赛季计划"),
             ),
             ResolverDraft(
-                intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+                intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
                 target_hint=TargetHint(is_anaphora=True, ref_phrase="它"),
             ),
         ]
@@ -119,7 +119,7 @@ def test_clarify_turn_short_circuits_no_dispatch() -> None:
         raise AssertionError("specialist must not run on a clarify turn")
 
     def _draft_low(_s: str, _u: str) -> ResolverDraft:
-        return ResolverDraft(intents=[IntentHit(specialist_id="status_insight", confidence=0.1)])
+        return ResolverDraft(intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.1)])
 
     graph = build_orchestrator_graph(registry=_registry(_boom), draft_fn=_draft_low)
     resp = _invoke(graph, user_id="u1", session_id="s1", message="嗯")

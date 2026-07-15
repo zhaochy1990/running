@@ -10,4 +10,4 @@ def test_health_series_tool_is_bound_in_all_conversation_scopes() -> None:
         names = tool_names_for_scope(scope)
         assert "get_health_series" in names
         assert "get_health_snapshot" in names
-
+        assert "get_training_summary" in names

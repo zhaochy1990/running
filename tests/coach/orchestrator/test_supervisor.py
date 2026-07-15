@@ -25,7 +25,7 @@ def _registry() -> SpecialistRegistry:
 
 def test_single_intent_fast_path_one_call() -> None:
     out = ResolverOutput(
-        intents=[IntentHit(specialist_id="status_insight", confidence=0.9)],
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)],
         active_target=TargetRef(kind="week", folder="2026-W26"),
     )
     plan = build_call_plan(
@@ -44,14 +44,14 @@ def test_single_intent_fast_path_one_call() -> None:
 
 
 def test_read_specialist_gets_readonly_boundaries() -> None:
-    out = ResolverOutput(intents=[IntentHit(specialist_id="status_insight", confidence=0.9)])
+    out = ResolverOutput(intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)])
     plan = build_call_plan(out, registry=_registry(), utterance="x")
     assert "不要产出修改提案" in plan.calls[0].task.boundaries
 
 
 def test_write_specialist_gets_write_boundaries() -> None:
     out = ResolverOutput(
-        intents=[IntentHit(specialist_id="weekly_plan", confidence=0.9)],
+        intents=[IntentHit(specialist_id="weekly_plan", action="write", confidence=0.9)],
         active_target=TargetRef(kind="week", folder="2026-W26"),
     )
     plan = build_call_plan(out, registry=_registry(), utterance="改周三")
@@ -60,7 +60,7 @@ def test_write_specialist_gets_write_boundaries() -> None:
 
 def test_ambiguity_yields_empty_plan() -> None:
     out = ResolverOutput(
-        intents=[IntentHit(specialist_id="status_insight", confidence=0.2)],
+        intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.2)],
         ambiguity=Ambiguity(kind="intent", clarification="想了解什么？"),
     )
     plan = build_call_plan(out, registry=_registry(), utterance="嗯")
@@ -76,8 +76,8 @@ def test_no_intents_yields_empty_plan() -> None:
 def test_multi_intent_degrades_to_independent_serial_calls() -> None:
     out = ResolverOutput(
         intents=[
-            IntentHit(specialist_id="status_insight", confidence=0.8),
-            IntentHit(specialist_id="weekly_plan", confidence=0.78),
+            IntentHit(specialist_id="status_insight", action="read", confidence=0.8),
+            IntentHit(specialist_id="weekly_plan", action="write", confidence=0.78),
         ],
         is_compound=True,
         active_target=TargetRef(kind="week", folder="2026-W26"),

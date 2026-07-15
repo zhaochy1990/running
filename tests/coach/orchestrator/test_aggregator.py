@@ -15,7 +15,7 @@ from stride_core.plan_diff import PlanDiff
 
 
 def _resolver(**kw) -> ResolverOutput:
-    kw.setdefault("intents", [IntentHit(specialist_id="status_insight", confidence=0.9)])
+    kw.setdefault("intents", [IntentHit(specialist_id="status_insight", action="read", confidence=0.9)])
     return ResolverOutput(**kw)
 
 

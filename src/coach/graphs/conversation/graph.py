@@ -26,6 +26,8 @@ so each thread can resume mid-multi-turn.
 from __future__ import annotations
 
 import json
+import logging
+import time
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -40,6 +42,8 @@ from .prompts.master_chat import MASTER_CHAT_PROMPT
 from .prompts.qa import QA_PROMPT
 from .prompts.week_chat import WEEK_CHAT_PROMPT
 from .tool_bridge import build_langchain_tools, is_draft_tool
+
+logger = logging.getLogger(__name__)
 
 
 _SCOPE_PROMPTS = {
@@ -73,8 +77,17 @@ def build_conversation_graph(
 
     def reason(state: ConversationState) -> dict[str, Any]:
         msgs = [SystemMessage(content=system_prompt), *state.get("history", [])]
+        started = time.perf_counter()
         resp = llm_with_tools.invoke(msgs)
-        return {"history": [resp], "iteration": state.get("iteration", 0) + 1}
+        iteration = state.get("iteration", 0) + 1
+        logger.debug(
+            "qa reason | iteration=%d elapsed=%.0fms messages=%d tool_calls=%s",
+            iteration,
+            (time.perf_counter() - started) * 1000.0,
+            len(msgs),
+            [call.get("name") for call in (getattr(resp, "tool_calls", None) or [])],
+        )
+        return {"history": [resp], "iteration": iteration}
 
     def tools_node(state: ConversationState) -> dict[str, Any]:
         history = state.get("history", [])
