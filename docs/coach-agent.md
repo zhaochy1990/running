@@ -90,6 +90,8 @@ specialist；确定性后处理只验证 `action == write` 是否与 SpecialistC
 `WeeklyPlanStore` 是运行时周计划的唯一来源，按周起始日期唯一存储。`folder`
 只保留为展示和旧 API 兼容字段，不参与某周是否存在的判断。`plan.md` /
 `plan.json` 仅作为迁移期导入输入；新生成和 Review 不依赖它们。
+Coach 的当前周读取工具是无参数 `get_week_plan()`，按上海当天调用
+`WeeklyPlanStore.get_current_plan(...)`；不读取 Blob/Markdown 或 SQLite fallback。
 `strideweeklyversions` 只做版本审计，不能作为 current-state 查询表。
 Local/file backend 是 `data/.weekly_plans.json`。
 日历、今日计划、PlanDiff、营养和推手表都从 `WeeklyPlanStore` 读取；

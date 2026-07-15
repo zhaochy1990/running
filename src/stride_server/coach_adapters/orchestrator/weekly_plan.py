@@ -11,9 +11,9 @@ Two adapter-only concerns this module owns:
 * **folder resolution** — the draft tools take an explicit ``folder`` arg, so the
   current week's folder (from ``task.active_target``) is seeded into the model's
   context. With no folder we can't act → ``needs_clarification``.
-* **current-week lookup** — :func:`resolve_current_week_folder` maps "本周" to a
-  concrete folder via the per-user week index; injected into the Resolver as the
-  ``target_resolver`` so a routine "调整本周" dispatches without re-asking.
+* **current-week lookup** — :func:`resolve_current_week_folder` maps "本周" to the
+  display/PlanDiff folder carried by the current canonical ``WeeklyPlanStore`` row;
+  injected into the Resolver so a routine "调整本周" dispatches without re-asking.
 
 Stateless per call (the graph is built ``checkpointer=None``): session memory
 lives at the orchestrator level (the ``conversation_window`` arrives in the task).
@@ -40,8 +40,6 @@ from coach.schemas import assistant_parts_from_message
 from stride_core.plan_diff import PlanDiff
 from stride_core.timefmt import today_shanghai
 
-from ...content_store import list_week_folders
-from ...deps import parse_week_dates
 from ...weekly_plan_store import get_weekly_plan_store
 from ..toolkit import build_stride_toolkit
 
@@ -70,33 +68,18 @@ WEEKLY_PLAN_CARD = SpecialistCard(
 
 
 def resolve_current_week_folder(user_id: str) -> str | None:
-    """Return the week folder whose [date_from, date_to] contains today (Shanghai).
+    """Return the current canonical plan's compatibility/display folder.
 
-    Folders are ``YYYY-MM-DD_MM-DD(tag)``; ``parse_week_dates`` yields the
-    Shanghai-local inclusive bounds, so a plain ISO string compare is correct.
-    Returns ``None`` when no week covers today (the caller falls back to clarify).
+    Current-week identity is resolved exclusively by ``WeeklyPlanStore`` using
+    today's Shanghai date. Blob/file folder indexes are not a runtime source.
     """
     today = today_shanghai().isoformat()
     try:
         current = get_weekly_plan_store().get_current_plan(user_id, today)
     except Exception:
-        logger.warning(
-            "weekly_plan: canonical current-week lookup failed; using legacy folders",
-            exc_info=True,
-        )
-    else:
-        if current is not None:
-            return current.week_folder
-
-    # Compatibility for pre-WeeklyPlanStore Markdown/plan.json artifacts.
-    for folder in list_week_folders(user_id):
-        dates = parse_week_dates(folder)
-        if dates is None:
-            continue
-        date_from, date_to = dates
-        if date_from <= today <= date_to:
-            return folder
-    return None
+        logger.exception("weekly_plan: canonical current-week lookup failed")
+        return None
+    return current.week_folder if current is not None else None
 
 
 def make_current_week_target_resolver(user_id: str) -> Callable[[TargetRef | None], TargetRef | None]:

@@ -13,11 +13,12 @@ to the legacy ``{user}:qa:{date}`` daily thread.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from coach.contracts import (
     SpecialistCard,
@@ -32,6 +33,8 @@ from coach.schemas import assistant_parts_from_message
 from ..toolkit import build_stride_toolkit
 
 logger = logging.getLogger(__name__)
+
+CURRENT_WEEK_MISSING_REPLY = "当前周还没有训练计划，你要创建本周的训练计划吗？"
 
 # Builds the qa conversation graph; injectable so the runner is unit-testable
 # without a real toolkit / LLM.
@@ -77,6 +80,20 @@ def _window_to_messages(window: list[Turn]) -> list[Any]:
 
 def _extract_answer(state: dict[str, Any]) -> str:
     history = state.get("history") or []
+    for message in reversed(history):
+        if not isinstance(message, ToolMessage) or message.name != "get_week_plan":
+            continue
+        try:
+            payload = json.loads(str(message.content))
+        except (TypeError, ValueError):
+            continue
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if (
+            isinstance(data, dict)
+            and data.get("available") is False
+            and data.get("missing_reason") == "no_plan_for_current_shanghai_week"
+        ):
+            return CURRENT_WEEK_MISSING_REPLY
     last = history[-1] if history else None
     if last is None:
         return ""
@@ -107,13 +124,12 @@ def make_status_insight_runner(
         # Long-term memory (injected by Memory Load, §4.0) as background context.
         if task.context and task.context.notes:
             messages.append(HumanMessage(content=f"（已知长期背景，供参考）\n{task.context.notes}"))
-        if task.active_target is not None:
+        if task.active_target is not None and task.active_target.kind == "master":
             messages.append(
                 HumanMessage(
                     content=(
                         "【用户指向的计划对象，只读】"
                         f"{task.active_target.model_dump(exclude_none=True)}。"
-                        "若有 folder，查询周计划时将它传给 get_week_plan；"
                         "若 kind=master，调用 get_master_plan_current。"
                     )
                 )

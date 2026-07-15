@@ -564,7 +564,7 @@ def test_repo_server_config_files_load(monkeypatch: pytest.MonkeyPatch) -> None:
     assert cfg.coach_persistence.file_backend_dir == "data/_coach_dev"
 
 
-def test_coach_cli_overlay_only_points_master_plan_at_prod(
+def test_coach_cli_overlay_points_canonical_plan_stores_at_prod(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[2]
@@ -589,6 +589,10 @@ def test_coach_cli_overlay_only_points_master_plan_at_prod(
         "https://authstorage2026.table.core.windows.net/"
     )
     assert cfg.storage.master_plan.table_name == "stridemasterplan"
+    assert cfg.storage.weekly_plan.table_account_url == (
+        "https://authstorage2026.table.core.windows.net/"
+    )
+    assert cfg.storage.weekly_plan.table_name == "strideweeklyplan"
     assert cfg.storage.content.account_url == ""
     assert cfg.storage.likes.table_account_url == ""
     assert cfg.coach_persistence.table_account_url == ""

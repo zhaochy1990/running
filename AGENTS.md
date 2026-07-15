@@ -81,8 +81,8 @@ scripts/coach-local.sh stop
 
 `coach` 自动加载 `config/coach.copilot.toml`（LLM）以及
 `config/server.toml` + `server.local.toml` + `server.coach-cli.toml`（基础设施）。
-其中只有 master-plan store 指向生产 Azure Table；活动、健康数据、weekly plan
-和 checkpoint 仍使用本地数据。用户不需要手工 export 配置环境变量。
+其中 master-plan 与 weekly-plan store 指向生产 Azure Table；活动、健康数据和
+checkpoint 仍使用本地数据。用户不需要手工 export 配置环境变量。
 
 `smoke` 是进入 Coach 前的 HARD gate，必须输出严格的
 `HELLO_WORLD_OK model=gpt-5.6-sol endpoint=/v1/responses`。HTTP 200 但文本
