@@ -177,13 +177,22 @@ wait_until_ready() {
 
 cmd_auth() {
   ensure_dirs
+  [[ "${1:-}" == "" || "${1:-}" == "--force" ]] || fail "auth accepts only --force"
   if [[ -s "$AUTH_FILE" && "${1:-}" != "--force" ]]; then
     chmod 600 "$AUTH_FILE"
     echo "GitHub Copilot credentials already exist. No authorization needed."
     echo "Stored at: $AUTH_FILE"
     return
   fi
-  [[ "${1:-}" == "" || "${1:-}" == "--force" ]] || fail "auth accepts only --force"
+
+  local restart_proxy=0 pgid
+  pgid="$(read_pgid || true)"
+  if process_group_alive "$pgid"; then
+    restart_proxy=1
+    echo "Stopping the running proxy so refreshed credentials take effect..."
+    cmd_stop
+  fi
+
   require_command npx
   rm -f "$AUTH_FILE"
   echo "Starting GitHub Device Flow (one-time setup)..."
@@ -193,6 +202,10 @@ cmd_auth() {
   [[ -s "$AUTH_FILE" ]] || fail "authorization finished without creating credentials"
   chmod 600 "$AUTH_FILE"
   echo "Authorization saved locally. Future starts will not ask again."
+  if [[ $restart_proxy -eq 1 ]]; then
+    echo "Restarting the proxy with the refreshed credentials..."
+    cmd_start
+  fi
 }
 
 ensure_api_key() {
@@ -317,12 +330,23 @@ cmd_status() {
 cmd_smoke() {
   local model="${1:-gpt-5.6-sol}"
   proxy_ready || fail "proxy is not running; run: $0 start"
-  local payload response text
+  local payload result response status text
   payload="$(node -e 'process.stdout.write(JSON.stringify({model: process.argv[1], input: "Reply exactly: HELLO_WORLD_OK", max_output_tokens: 64}))' "$model")"
-  response="$(curl --noproxy '*' -fsS "$PROXY_BASE_URL/responses" \
+  if ! result="$(curl --noproxy '*' -sS -w $'\n%{http_code}' \
+    "$PROXY_BASE_URL/responses" \
     -H "Authorization: Bearer $(<"$KEY_FILE")" \
     -H "Content-Type: application/json" \
-    -d "$payload")"
+    -d "$payload")"; then
+    fail "could not reach the local proxy; check: $0 logs"
+  fi
+  status="${result##*$'\n'}"
+  response="${result%$'\n'*}"
+  if [[ "$status" == "401" ]]; then
+    fail "Copilot upstream token is unauthorized. Run '$0 auth --force'; it will now stop and restart a running proxy automatically."
+  fi
+  if [[ "$status" != "200" ]]; then
+    fail "Responses smoke failed with HTTP $status; check: $0 logs"
+  fi
   text="$(printf '%s' "$response" | node -e '
 let raw = "";
 process.stdin.setEncoding("utf8");

@@ -124,6 +124,25 @@ def test_auth_is_persistent_and_second_run_skips_device_flow(tmp_path: Path) -> 
     assert "fake-token" not in first.stdout + first.stderr + second.stdout + second.stderr
 
 
+def test_force_auth_restarts_a_running_managed_proxy() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    auth_body = source.split("cmd_auth() {", 1)[1].split("ensure_api_key() {", 1)[0]
+
+    assert "process_group_alive" in auth_body
+    assert "cmd_stop" in auth_body
+    assert "cmd_start" in auth_body
+    assert "refreshed credentials" in auth_body
+
+
+def test_smoke_401_has_actionable_reauth_message() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+    smoke_body = source.split("cmd_smoke() {", 1)[1].split("main_checkout_root() {", 1)[0]
+
+    assert '[[ "$status" == "401" ]]' in smoke_body
+    assert "auth --force" in smoke_body
+    assert "stop and restart" in smoke_body
+
+
 def test_stop_keeps_credentials_and_reset_deletes_them(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     credential = state_dir / "home" / ".local/share/copilot-proxy-api/github_token"

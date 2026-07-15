@@ -75,6 +75,10 @@ scripts/coach-local.sh coach
 scripts/coach-local.sh stop
 ```
 
+如果 `smoke` 返回上游 401，运行 `scripts/coach-local.sh auth --force`。脚本会
+自动停止正在运行的代理、重新授权并重启；只更新 credential 文件而不重启进程，
+不会替换进程内存里已经过期的 Copilot 短期 token。
+
 `coach` 自动加载 `config/coach.copilot.toml`（LLM）以及
 `config/server.toml` + `server.local.toml` + `server.coach-cli.toml`（基础设施）。
 其中只有 master-plan store 指向生产 Azure Table；活动、健康数据、weekly plan
