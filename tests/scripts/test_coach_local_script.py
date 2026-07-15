@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import stat
 import subprocess
@@ -141,6 +142,77 @@ def test_smoke_401_has_actionable_reauth_message() -> None:
     assert '[[ "$status" == "401" ]]' in smoke_body
     assert "auth --force" in smoke_body
     assert "stop and restart" in smoke_body
+
+
+def test_stop_refuses_to_signal_reused_process_group(tmp_path: Path) -> None:
+    process = subprocess.Popen(
+        ["sleep", "30"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "proxy.pgid").write_text(f"{process.pid}\n", encoding="utf-8")
+        (state_dir / "proxy.identity").write_text(
+            f"nonce|{'0' * 64}\n", encoding="utf-8"
+        )
+        env = os.environ.copy()
+        env["COPILOT_PROXY_STATE_DIR"] = str(state_dir)
+        env["COPILOT_PROXY_CACHE_DIR"] = str(tmp_path / "cache")
+        env["COPILOT_PROXY_PORT"] = _free_port()
+
+        result = _run("stop", env=env)
+
+        assert result.returncode == 0, result.stderr
+        assert "Refusing to signal stale or unverified process-group" in result.stdout
+        assert process.poll() is None
+        assert not (state_dir / "proxy.pgid").exists()
+        assert not (state_dir / "proxy.identity").exists()
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+        process.wait(timeout=5)
+
+
+def test_stop_signals_only_matching_process_identity(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    proxy_name = fake_bin / "copilot-proxy-api@0.10.22"
+    proxy_name.write_text("#!/bin/sh\nsleep 30\n", encoding="utf-8")
+    proxy_name.chmod(0o755)
+    process = subprocess.Popen(
+        [str(proxy_name), "start", "--port", "45998", "--api-key", "fake", "30"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        (state_dir / "proxy.pgid").write_text(f"{process.pid}\n", encoding="utf-8")
+        env = os.environ.copy()
+        env["COPILOT_PROXY_STATE_DIR"] = str(state_dir)
+        env["COPILOT_PROXY_CACHE_DIR"] = str(tmp_path / "cache")
+        env["COPILOT_PROXY_PORT"] = "45998"
+        started = subprocess.run(
+            ["ps", "-p", str(process.pid), "-o", "lstart="],
+            text=True, capture_output=True, check=True,
+        ).stdout.strip()
+        (state_dir / "proxy.identity").write_text(f"{started}\n", encoding="utf-8")
+
+        result = _run("stop", env=env)
+
+        assert result.returncode == 0, result.stderr
+        process.wait(timeout=5)
+        assert "Copilot proxy stopped" in result.stdout
+        assert not (state_dir / "proxy.pgid").exists()
+        assert not (state_dir / "proxy.identity").exists()
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=5)
 
 
 def test_stop_keeps_credentials_and_reset_deletes_them(tmp_path: Path) -> None:

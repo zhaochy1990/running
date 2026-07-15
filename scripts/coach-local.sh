@@ -80,6 +80,7 @@ PROXY_HOME="$STATE_DIR/home"
 AUTH_FILE="$PROXY_HOME/.local/share/copilot-proxy-api/github_token"
 KEY_FILE="$STATE_DIR/api-key"
 PID_FILE="$STATE_DIR/proxy.pgid"
+IDENTITY_FILE="$STATE_DIR/proxy.identity"
 LOG_FILE="$STATE_DIR/proxy.log"
 
 usage() {
@@ -137,6 +138,68 @@ process_group_alive() {
     "$pgid" >/dev/null 2>&1
 }
 
+cleanup_process_state() {
+  rm -f "$PID_FILE" "$IDENTITY_FILE"
+}
+
+process_start_identity() {
+  local pgid="${1:-}"
+  [[ -n "$pgid" ]] || return 1
+  LC_ALL=C ps -p "$pgid" -o lstart= 2>/dev/null \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+proxy_process_matches() {
+  local pgid="${1:-}" command
+  [[ -n "$pgid" ]] || return 1
+  command="$(ps -p "$pgid" -o command= 2>/dev/null || true)"
+  [[ "$command" == *"copilot-proxy-api@$PROXY_VERSION"* \
+    && "$command" == *" start "* \
+    && "$command" == *"--port $PROXY_PORT"* \
+    && "$command" == *"--api-key"* ]]
+}
+
+adopt_process_identity() {
+  local pgid="${1:-}" started
+  [[ -n "$pgid" && ! -e "$IDENTITY_FILE" ]] || return 1
+  proxy_process_matches "$pgid" || return 1
+  started="$(process_start_identity "$pgid")"
+  [[ -n "$started" ]] || return 1
+  printf '%s\n' "$started" >"$IDENTITY_FILE"
+  chmod 600 "$IDENTITY_FILE"
+}
+
+process_identity_matches() {
+  local pgid="${1:-}" identity current
+  [[ -n "$pgid" && -s "$IDENTITY_FILE" ]] || return 1
+  identity="$(<"$IDENTITY_FILE")"
+  current="$(process_start_identity "$pgid")"
+  [[ -n "$current" && "$current" == "$identity" ]] \
+    && proxy_process_matches "$pgid"
+}
+
+managed_process_group_alive() {
+  local pgid="${1:-}"
+  process_group_alive "$pgid" || return 1
+  if [[ ! -e "$IDENTITY_FILE" ]]; then
+    adopt_process_identity "$pgid" || return 1
+  fi
+  process_identity_matches "$pgid"
+}
+
+signal_process_group() {
+  local pgid="$1" signal="$2"
+  node -e '
+const pgid = Number(process.argv[1]);
+const signal = process.argv[2];
+try {
+  process.kill(-pgid, signal);
+} catch (error) {
+  if (error.code !== "ESRCH") throw error;
+}
+' "$pgid" "$signal"
+}
+
 local_no_proxy() {
   local existing="${NO_PROXY:-${no_proxy:-}}"
   if [[ -n "$existing" ]]; then
@@ -187,7 +250,7 @@ cmd_auth() {
 
   local restart_proxy=0 pgid
   pgid="$(read_pgid || true)"
-  if process_group_alive "$pgid"; then
+  if managed_process_group_alive "$pgid"; then
     restart_proxy=1
     echo "Stopping the running proxy so refreshed credentials take effect..."
     cmd_stop
@@ -226,6 +289,7 @@ cmd_start() {
   ensure_api_key
 
   if proxy_ready; then
+    managed_process_group_alive "$(read_pgid || true)" >/dev/null 2>&1 || true
     echo "Copilot proxy is already running at $PROXY_BASE_URL"
     return
   fi
@@ -235,10 +299,10 @@ cmd_start() {
 
   local old_pgid
   old_pgid="$(read_pgid || true)"
-  if process_group_alive "$old_pgid"; then
+  if managed_process_group_alive "$old_pgid"; then
     fail "proxy process exists but is not ready; run '$0 stop' and inspect '$LOG_FILE'"
   fi
-  rm -f "$PID_FILE"
+  cleanup_process_state
   : >"$LOG_FILE"
   chmod 600 "$LOG_FILE"
 
@@ -296,6 +360,8 @@ JS
     cmd_stop >/dev/null 2>&1 || true
     return 1
   fi
+  adopt_process_identity "$(read_pgid || true)" \
+    || fail "proxy became ready but its process identity could not be recorded"
   echo "Copilot proxy started: $PROXY_BASE_URL"
   echo "Credentials will persist after stop."
 }
@@ -311,11 +377,15 @@ cmd_status() {
   fi
   local pgid
   pgid="$(read_pgid || true)"
-  if process_group_alive "$pgid"; then
+  if managed_process_group_alive "$pgid"; then
     echo "unhealthy/startup  process-group=$pgid"
     echo "auth               $auth_status"
     echo "log                $LOG_FILE"
     return 2
+  fi
+  if process_group_alive "$pgid"; then
+    cleanup_process_state
+    echo "stale-state  refused to manage reused process-group=$pgid"
   fi
   if port_in_use; then
     echo "occupied  port=$PROXY_PORT (not managed by this script)"
@@ -437,31 +507,35 @@ cmd_stop() {
   local pgid
   pgid="$(read_pgid || true)"
   if [[ -z "$pgid" ]] || ! process_group_alive "$pgid"; then
-    rm -f "$PID_FILE"
+    cleanup_process_state
     echo "Copilot proxy is already stopped. Credentials remain saved."
     return
   fi
-  node - "$pgid" <<'JS'
-const pgid = Number(process.argv[2]);
-const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-try {
-  process.kill(-pgid, "SIGTERM");
-} catch (error) {
-  if (error.code === "ESRCH") process.exit(0);
-  throw error;
-}
-for (let i = 0; i < 50; i += 1) {
-  try {
-    process.kill(-pgid, 0);
-  } catch (error) {
-    if (error.code === "ESRCH") process.exit(0);
-    throw error;
-  }
-  sleep(100);
-}
-process.kill(-pgid, "SIGKILL");
-JS
-  rm -f "$PID_FILE"
+  if ! managed_process_group_alive "$pgid"; then
+    cleanup_process_state
+    echo "Refusing to signal stale or unverified process-group=$pgid. Removed stale state."
+    return
+  fi
+
+  signal_process_group "$pgid" SIGTERM
+  local i
+  for ((i = 0; i < 50; i++)); do
+    if ! process_group_alive "$pgid"; then
+      cleanup_process_state
+      echo "Copilot proxy stopped. Credentials remain saved for the next start."
+      return
+    fi
+    if ! process_identity_matches "$pgid"; then
+      cleanup_process_state
+      echo "Copilot proxy exited; refusing to signal a changed process identity."
+      return
+    fi
+    sleep 0.1
+  done
+  if process_identity_matches "$pgid"; then
+    signal_process_group "$pgid" SIGKILL
+  fi
+  cleanup_process_state
   echo "Copilot proxy stopped. Credentials remain saved for the next start."
 }
 
