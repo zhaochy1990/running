@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 from datetime import date, timedelta
 from typing import Any, Iterable, Sequence
@@ -13,6 +12,7 @@ from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_sha
 
 from .core import compute_activity_load, compute_daily_load_series
 from .types import (
+    TRAINING_LOAD_MODEL_VERSION,
     ActivityLoadInput,
     ActivitySample,
     CalibrationSnapshot,
@@ -363,13 +363,10 @@ _K_CHRONIC = 1.0 - math.exp(-1.0 / 42.0)
 def _last_persisted_daily_date(db: Any, *, before: date) -> date | None:
     """Date of the most recent persisted daily_training_load row strictly
     before ``before`` (None when none exists)."""
-    rows = db.query(
-        "SELECT date FROM daily_training_load WHERE date < ? ORDER BY date DESC LIMIT 1",
-        (before.isoformat(),),
+    row = db.fetch_previous_daily_training_load(
+        before.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
     )
-    if not rows:
-        return None
-    return _parse_date(rows[0]["date"])
+    return _parse_date(row["date"]) if row is not None else None
 
 
 def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
@@ -382,14 +379,11 @@ def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
     steps. The decay loop here matches the recursion in
     `compute_daily_load_series` for a dose of 0.
     """
-    rows = db.query(
-        "SELECT date, acute_load, chronic_load FROM daily_training_load "
-        "WHERE date < ? ORDER BY date DESC LIMIT 1",
-        (series_start.isoformat(),),
+    row = db.fetch_previous_daily_training_load(
+        series_start.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
     )
-    if not rows:
+    if row is None:
         return None
-    row = rows[0]
     acute = float(row["acute_load"]) if row["acute_load"] is not None else 0.0
     chronic = float(row["chronic_load"]) if row["chronic_load"] is not None else 0.0
     prior_date = _parse_date(row["date"])
@@ -432,50 +426,27 @@ def _build_activity_input(db: Any, row: Any) -> ActivityLoadInput | None:
     )
 
 
-def _json_dict(value: Any) -> dict[str, Any]:
-    if not value:
-        return {}
-    try:
-        data = json.loads(str(value))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _calibration_from_running_snapshot_row(row: Any) -> CalibrationSnapshot:
-    """Map a running_calibration_snapshot row to the training-load CalibrationSnapshot."""
-    def _get(key: str) -> Any:
-        try:
-            return row[key]
-        except (KeyError, IndexError):
-            return None
-
-    return CalibrationSnapshot(
-        as_of_date=_parse_date(_get("as_of_date")) or today_shanghai(),
-        rhr_baseline=float(_get("rhr_baseline")) if _get("rhr_baseline") is not None else None,
-        hrmax_estimate=float(_get("hrmax_estimate")) if _get("hrmax_estimate") is not None else None,
-        threshold_hr=float(_get("threshold_hr")) if _get("threshold_hr") is not None else None,
-        threshold_speed_mps=float(_get("threshold_speed_mps")) if _get("threshold_speed_mps") is not None else None,
-        critical_power_w=None,  # not tracked in running_calibration
-        source=_json_dict(_get("source_json")),
-        id=int(_get("id")) if _get("id") is not None else None,
-        algorithm_version=int(_get("algorithm_version")) if _get("algorithm_version") is not None else 1,
-    )
-
-
-def _fetch_latest_calibration(db: Any) -> CalibrationSnapshot | None:
-    from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
+def _fetch_latest_calibration(
+    db: Any, *, as_of_date: date | None = None
+) -> CalibrationSnapshot | None:
     from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
-    # Ensure the running_calibration_snapshot table exists (idempotent).
-    SQLiteRunningCalibrationRepository(db).ensure_schema()
-    rows = db.query(
-        "SELECT * FROM running_calibration_snapshot "
-        "WHERE algorithm_version = ? "
-        "ORDER BY as_of_date DESC, id DESC LIMIT 1",
-        (RUNNING_CALIBRATION_MODEL_VERSION,),
+
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.ensure_schema()
+    snapshot = repo.fetch_latest(as_of_date=as_of_date)
+    if snapshot is None:
+        return None
+    return CalibrationSnapshot(
+        as_of_date=snapshot.as_of_date,
+        rhr_baseline=snapshot.rhr_baseline,
+        hrmax_estimate=snapshot.hrmax_estimate,
+        threshold_hr=snapshot.threshold_hr,
+        threshold_speed_mps=snapshot.threshold_speed_mps,
+        critical_power_w=snapshot.critical_power_w,
+        source=snapshot.source if isinstance(snapshot.source, dict) else {},
+        id=int(snapshot.id) if snapshot.id is not None else None,
+        algorithm_version=snapshot.algorithm_version,
     )
-    row = rows[0] if rows else None
-    return _calibration_from_running_snapshot_row(row) if row is not None else None
 
 
 def refresh_training_load_calibration(
@@ -517,44 +488,6 @@ def refresh_training_load_calibration(
     )
 
 
-def _defaulted_calibration(
-    calibration: CalibrationSnapshot,
-    activity_inputs: Sequence[ActivityLoadInput],
-) -> CalibrationSnapshot:
-    rhr = calibration.rhr_baseline
-    hrmax = calibration.hrmax_estimate
-    used_runtime_defaults = False
-    if hrmax is None:
-        max_values = [a.max_hr for a in activity_inputs if a.max_hr is not None]
-        hrmax = max(max_values) if max_values else None
-        used_runtime_defaults = hrmax is not None
-
-    threshold_hr = calibration.threshold_hr
-    threshold_speed = calibration.threshold_speed_mps
-    source = dict(calibration.source)
-    if threshold_speed is None:
-        speeds: list[float] = []
-        for activity in activity_inputs:
-            if activity.duration_s and activity.distance_m and activity.duration_s > 0 and activity.distance_m > 500:
-                speeds.append(activity.distance_m / activity.duration_s)
-            speeds.extend(s.speed_mps for s in activity.samples if s.speed_mps is not None and s.speed_mps > 0)
-        if speeds:
-            threshold_speed = max(speeds)
-            source.setdefault("adapter_defaults", {"used": True})
-            used_runtime_defaults = True
-    return CalibrationSnapshot(
-        as_of_date=calibration.as_of_date,
-        rhr_baseline=rhr,
-        hrmax_estimate=hrmax,
-        threshold_hr=threshold_hr,
-        threshold_speed_mps=threshold_speed,
-        critical_power_w=calibration.critical_power_w,
-        source=source,
-        id=None if used_runtime_defaults else calibration.id,
-        algorithm_version=calibration.algorithm_version,
-    )
-
-
 def recompute_training_load(
     db: Any,
     *,
@@ -567,8 +500,8 @@ def recompute_training_load(
 ) -> TrainingLoadRunSummary:
     """Recompute objective activity and daily training-load rows.
 
-    This is the only DB adapter entry point for v1; it does not hook into sync
-    and does not alter vendor-provided training-load fields.
+    This is the DB adapter entry point for the current model; it does not alter
+    vendor-provided training-load fields.
 
     When ``start`` is provided without an explicit ``prior_state``, the most
     recent persisted ``daily_training_load`` row before the window is loaded
@@ -603,10 +536,9 @@ def recompute_training_load(
             ]
 
     as_of = series_end
-    calibration = calibration_override or _fetch_latest_calibration(db) or CalibrationSnapshot(
+    calibration = calibration_override or _fetch_latest_calibration(db, as_of_date=as_of) or CalibrationSnapshot(
         as_of_date=as_of,
     )
-    calibration = _defaulted_calibration(calibration, activity_inputs)
     calibration_id = calibration.id
     activity_results = [compute_activity_load(activity, calibration) for activity in activity_inputs]
     health_rows = _fetch_health_rows(db, start=series_start, end=series_end)
@@ -622,8 +554,16 @@ def recompute_training_load(
         series_start,
         series_end,
         prior_state=prior_state,
+        activity_history_complete=labels is None,
     )
     if persist:
+        # The current model is canonical for a calendar date. Remove stale
+        # versions in the recomputed window so weekly sums/read APIs cannot
+        # accidentally double-count v1 + v2 rows for the same day.
+        db.delete_daily_training_load_versions(
+            series_start.isoformat(), series_end.isoformat(),
+            keep_algorithm_version=activity_results[0].algorithm_version if activity_results else 1,
+        )
         for result in activity_results:
             db.upsert_activity_training_load(result, commit=False)
         for result in daily_results:

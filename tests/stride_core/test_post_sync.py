@@ -57,8 +57,11 @@ def _make_run(label_id: str, date_iso: str, *, training_load: float | None = 123
         sport="run_outdoor",
         train_kind="aerobic",
         timeseries=[
-            TimeseriesPoint(0, 0.0, 145, 360.0, None, 178, 0.0, None),
-            TimeseriesPoint(3000, 5000.0, 150, 360.0, None, 180, 0.0, None),
+            TimeseriesPoint(
+                second * 100, 5000.0 * second / 1800.0, 150, 360.0,
+                None, 180, 0.0, None,
+            )
+            for second in range(0, 1801, 30)
         ],
     )
 
@@ -89,7 +92,7 @@ def test_runner_orders_handlers_skips_inapplicable_and_isolates_failures(db, cap
     assert "broken" in caplog.text
 
 
-def test_stride_training_load_handler_recomputes_shanghai_label_window(db, monkeypatch):
+def test_stride_training_load_handler_recomputes_shanghai_tail(db, monkeypatch):
     from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
 
     # UTC 2026-05-01 16:30 is Shanghai 2026-05-02. The handler must derive
@@ -101,6 +104,7 @@ def test_stride_training_load_handler_recomputes_shanghai_label_window(db, monke
         calls.append(kwargs)
 
     monkeypatch.setattr("stride_core.post_sync.recompute_training_load", fake_recompute)
+    monkeypatch.setattr("stride_core.post_sync.today_shanghai", lambda: __import__("datetime").date(2026, 5, 10))
 
     context = PostSyncContext(
         user="u",
@@ -111,12 +115,21 @@ def test_stride_training_load_handler_recomputes_shanghai_label_window(db, monke
     )
     StrideTrainingLoadHandler(backoff_s=0).run(context)
 
-    assert calls == [{"start": "2026-05-02", "end": "2026-05-02"}]
+    assert calls == [{"start": "2026-05-02", "end": "2026-05-10"}]
 
 
 def test_stride_training_load_handler_recomputes_full_days_for_daily_totals(db):
     from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
+    from datetime import date
+    from stride_core.running_calibration import RunningCalibrationSnapshot
     from stride_core.training_load import recompute_training_load
+    from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
+
+    SQLiteRunningCalibrationRepository(db).save_snapshot(
+        RunningCalibrationSnapshot(
+            as_of_date=date(2026, 5, 1), threshold_speed_mps=3.0
+        )
+    )
 
     db.upsert_activity(_make_run("run1", "2026-05-01T00:00:00+00:00"), provider="coros")
     db.upsert_activity(_make_run("run2", "2026-05-01T08:00:00+00:00"), provider="coros")

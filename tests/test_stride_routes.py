@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from stride_storage.sqlite.database import Database
 from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
+from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
 
 
 USER_ID = "00000000-0000-4000-8000-000000000001"
@@ -122,7 +123,10 @@ def _seed_calibration(db_path: Path):
                 threshold_hr_confidence, threshold_speed_confidence,
                 rhr_baseline, observed_max_hr, hrmax_estimate, hrmax_confidence)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("2026-05-15", 1, 175.0, 4.65, "medium", "medium", 47.0, 188.0, 188.0, "medium"),
+            (
+                "2026-05-15", RUNNING_CALIBRATION_MODEL_VERSION,
+                175.0, 4.65, "medium", "medium", 47.0, 188.0, 188.0, "medium",
+            ),
         )
         snap_id = cur.lastrowid
         # Use the canonical zone names + zone_kinds emitted by

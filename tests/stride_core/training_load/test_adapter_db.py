@@ -275,10 +275,7 @@ def test_recompute_ignores_calibration_snapshot_from_other_algorithm_version(db)
     assert row["calibration_id"] == current_id
 
 
-def test_recompute_does_not_attach_cached_calibration_id_when_runtime_defaults_change_it(db):
-    """When the cached snapshot lacks threshold_speed_mps, _defaulted_calibration
-    fills it in from activity data and clears the calibration_id to signal the
-    result is not purely snapshot-derived."""
+def test_recompute_never_defaults_threshold_speed_from_activity_max(db):
     snapshot_id = _save_running_snapshot(
         db,
         as_of_date=date(2026, 5, 1),
@@ -296,20 +293,19 @@ def test_recompute_does_not_attach_cached_calibration_id_when_runtime_defaults_c
 
     summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
 
-    assert summary.calibration_id is None
+    assert summary.calibration_id == snapshot_id
     cached = db.query(
         "SELECT threshold_speed_mps FROM running_calibration_snapshot WHERE id = ?", (snapshot_id,)
     )[0]
     assert cached["threshold_speed_mps"] is None
     row = db.fetch_activity_training_load("run1")
     assert row is not None
-    assert row["calibration_id"] is None
-    assert row["external_tss"] is not None
+    assert row["calibration_id"] == snapshot_id
+    assert row["external_tss"] is None
+    assert row["training_dose_source"] == "cardio"
 
 
-def test_recompute_does_not_attach_cached_calibration_id_when_hrmax_is_defaulted(db):
-    """When the cached snapshot lacks hrmax_estimate, _defaulted_calibration fills
-    it from activity max_hr and clears the calibration_id."""
+def test_recompute_never_defaults_hrmax_from_activity_max(db):
     snapshot_id = _save_running_snapshot(
         db,
         as_of_date=date(2026, 5, 1),
@@ -328,15 +324,16 @@ def test_recompute_does_not_attach_cached_calibration_id_when_hrmax_is_defaulted
 
     summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
 
-    assert summary.calibration_id is None
+    assert summary.calibration_id == snapshot_id
     cached = db.query(
         "SELECT hrmax_estimate FROM running_calibration_snapshot WHERE id = ?", (snapshot_id,)
     )[0]
     assert cached["hrmax_estimate"] is None
     row = db.fetch_activity_training_load("run1")
     assert row is not None
-    assert row["calibration_id"] is None
-    assert row["cardio_tss"] is not None
+    assert row["calibration_id"] == snapshot_id
+    assert row["cardio_tss"] is None
+    assert row["training_dose_source"] == "external"
 
 
 def test_recompute_without_cached_calibration_does_not_create_running_snapshot(db):
@@ -358,7 +355,8 @@ def test_recompute_without_cached_calibration_does_not_create_running_snapshot(d
     assert db.query("SELECT COUNT(*) AS n FROM running_calibration_snapshot")[0]["n"] == 0
     row = db.fetch_activity_training_load("run1")
     assert row is not None
-    assert row["training_dose"] is not None
+    assert row["training_dose"] is None
+    assert row["coverage_status"] == "unknown"
 
 
 def test_backfill_refreshes_calibration_then_recomputes_recent_load_window(db):
@@ -503,6 +501,33 @@ def test_recompute_persists_activity_and_daily_load_idempotently(db):
     daily_rows = db.fetch_daily_training_load("2026-05-01", "2026-05-01")
     assert len(daily_rows) == 1
     assert json.loads(activity_row["reasons_json"]) == []
+
+
+def test_recompute_removes_superseded_daily_model_version(db):
+    db._conn.execute(
+        "INSERT INTO daily_training_load "
+        "(date, algorithm_version, training_dose, acute_load, chronic_load) "
+        "VALUES ('2026-05-01', 1, 999, 999, 999)"
+    )
+    db.upsert_activity(
+        _make_activity(
+            "run1", "2026-05-01T00:00:00+00:00",
+            samples=_timeseries(hr=None, speed_mps=4.0),
+        )
+    )
+    calibration = CalibrationSnapshot(
+        as_of_date=date(2026, 5, 1), threshold_speed_mps=4.0
+    )
+
+    recompute_training_load(
+        db, start="2026-05-01", end="2026-05-01",
+        calibration_override=calibration,
+    )
+
+    rows = db.query(
+        "SELECT algorithm_version FROM daily_training_load WHERE date = '2026-05-01'"
+    )
+    assert [row["algorithm_version"] for row in rows] == [2]
 
 
 def test_recompute_persist_false_returns_summary_without_writes(db):

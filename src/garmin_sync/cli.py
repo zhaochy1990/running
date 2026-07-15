@@ -75,8 +75,12 @@ def login(ctx: click.Context, email: str | None, pwd: str | None, region: str) -
     default=None,
     help="Pull activities back to this date (YYYY-MM-DD); overrides --full's default window.",
 )
+@click.option(
+    "--health-days", default=28, type=click.IntRange(1, 365), show_default=True,
+    help="Number of daily Garmin health/load-ratio rows to refresh.",
+)
 @click.pass_context
-def sync(ctx: click.Context, full: bool, since_date: str | None) -> None:
+def sync(ctx: click.Context, full: bool, since_date: str | None, health_days: int) -> None:
     """Sync activities and health data from Garmin Connect."""
     profile = ctx.obj["profile"]
     if profile is None:
@@ -95,7 +99,10 @@ def sync(ctx: click.Context, full: bool, since_date: str | None) -> None:
         raise SystemExit(1)
 
     with Database(user=profile) as db:
-        activities, health, activity_label_ids = run_sync(client, db, full=full, since_date=since_date)
+        activities, health, activity_label_ids = run_sync(
+            client, db, full=full or since_date is not None,
+            since_date=since_date, health_days=health_days,
+        )
     console.print(
         f"\n[green]Synced {activities} activities, {health} daily health records[/green]"
     )

@@ -2734,6 +2734,7 @@ class TestQueryFitnessStateStride:
         assert "HRV 42ms" in state["summary"]
 
     def test_prefers_calibration_rhr_baseline_over_raw(self, tmp_path, monkeypatch):
+        from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
         from stride_storage.sqlite.database import Database
         from stride_storage.sqlite.calibration_connector import (
             SQLiteRunningCalibrationRepository,
@@ -2751,7 +2752,8 @@ class TestQueryFitnessStateStride:
             "(as_of_date, algorithm_version, threshold_hr, threshold_speed_mps, "
             " threshold_hr_confidence, threshold_speed_confidence, rhr_baseline, "
             " observed_max_hr, hrmax_estimate, hrmax_confidence) "
-            "VALUES ('2026-06-10', 1, 175.0, 4.65, 'medium', 'medium', 45.0, 188.0, 188.0, 'medium')"
+            "VALUES ('2026-06-10', ?, 175.0, 4.65, 'medium', 'medium', 45.0, 188.0, 188.0, 'medium')",
+            (RUNNING_CALIBRATION_MODEL_VERSION,),
         )
         c.commit()
         monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)

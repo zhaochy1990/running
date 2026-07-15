@@ -355,7 +355,7 @@ CREATE TABLE IF NOT EXISTS daily_hrv (
     PRIMARY KEY (date, provider)
 );
 
--- Objective training-load v1. Vendor black-box fields stay in activities /
+-- Objective training-load v2. Vendor black-box fields stay in activities /
 -- daily_health; these tables hold STRIDE-computed TSS-like load. Mapping:
 -- cardio_load_raw = Banister TRIMP; external_tss = rTSS/RSS/power TSS;
 -- acute_load = ATL; chronic_load = CTL; form = TSB.
@@ -369,9 +369,15 @@ CREATE TABLE IF NOT EXISTS activity_training_load (
     cardio_load_raw          REAL,
     cardio_tss               REAL,
     external_tss             REAL,
+    high_intensity_tss       REAL,
     mechanical_load          REAL,
     subjective_internal_load REAL,
     training_dose            REAL,
+    training_dose_source     TEXT,
+    cardio_coverage          REAL NOT NULL DEFAULT 0,
+    external_coverage        REAL NOT NULL DEFAULT 0,
+    high_intensity_coverage  REAL NOT NULL DEFAULT 0,
+    coverage_status          TEXT NOT NULL DEFAULT 'unknown',
     load_confidence          TEXT,
     excluded_from_pmc        INTEGER NOT NULL DEFAULT 1,
     reasons_json             TEXT,
@@ -388,6 +394,7 @@ CREATE TABLE IF NOT EXISTS daily_training_load (
     chronic_load            REAL,
     form                    REAL,
     load_ratio              REAL,
+    coverage_status         TEXT NOT NULL DEFAULT 'unknown',
     readiness_gate          TEXT,
     readiness_reasons_json  TEXT,
     computed_at             TEXT NOT NULL DEFAULT (datetime('now')),
@@ -955,6 +962,13 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_scheduled_workout_plan_session "
             "ON scheduled_workout(week_folder, planned_date, session_index, id)"
         )
+        _add("activity_training_load", "training_dose_source", "TEXT")
+        _add("activity_training_load", "cardio_coverage", "REAL NOT NULL DEFAULT 0")
+        _add("activity_training_load", "external_coverage", "REAL NOT NULL DEFAULT 0")
+        _add("activity_training_load", "high_intensity_tss", "REAL")
+        _add("activity_training_load", "high_intensity_coverage", "REAL NOT NULL DEFAULT 0")
+        _add("activity_training_load", "coverage_status", "TEXT NOT NULL DEFAULT 'unknown'")
+        _add("daily_training_load", "coverage_status", "TEXT NOT NULL DEFAULT 'unknown'")
 
         def _rename(old: str, new: str) -> None:
             """Rename table if old exists and new doesn't. Idempotent."""
@@ -1025,9 +1039,15 @@ class Database:
             "    cardio_load_raw REAL,"
             "    cardio_tss REAL,"
             "    external_tss REAL,"
+            "    high_intensity_tss REAL,"
             "    mechanical_load REAL,"
             "    subjective_internal_load REAL,"
             "    training_dose REAL,"
+            "    training_dose_source TEXT,"
+            "    cardio_coverage REAL NOT NULL DEFAULT 0,"
+            "    external_coverage REAL NOT NULL DEFAULT 0,"
+            "    high_intensity_coverage REAL NOT NULL DEFAULT 0,"
+            "    coverage_status TEXT NOT NULL DEFAULT 'unknown',"
             "    load_confidence TEXT,"
             "    excluded_from_pmc INTEGER NOT NULL DEFAULT 1,"
             "    reasons_json TEXT,"
@@ -1044,6 +1064,7 @@ class Database:
             "    chronic_load REAL,"
             "    form REAL,"
             "    load_ratio REAL,"
+            "    coverage_status TEXT NOT NULL DEFAULT 'unknown',"
             "    readiness_gate TEXT,"
             "    readiness_reasons_json TEXT,"
             "    computed_at TEXT NOT NULL DEFAULT (datetime('now')),"
@@ -1779,10 +1800,11 @@ class Database:
         self._conn.execute(
             """INSERT INTO activity_training_load
                (label_id, activity_date, sport, session_class, algorithm_version,
-                calibration_id, cardio_load_raw, cardio_tss, external_tss,
+                calibration_id, cardio_load_raw, cardio_tss, external_tss, high_intensity_tss,
                 mechanical_load, subjective_internal_load, training_dose,
-                load_confidence, excluded_from_pmc, reasons_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                training_dose_source, cardio_coverage, external_coverage, high_intensity_coverage,
+                coverage_status, load_confidence, excluded_from_pmc, reasons_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(label_id) DO UPDATE SET
                    activity_date = excluded.activity_date,
                    sport = excluded.sport,
@@ -1792,9 +1814,15 @@ class Database:
                    cardio_load_raw = excluded.cardio_load_raw,
                    cardio_tss = excluded.cardio_tss,
                    external_tss = excluded.external_tss,
+                   high_intensity_tss = excluded.high_intensity_tss,
                    mechanical_load = excluded.mechanical_load,
                    subjective_internal_load = excluded.subjective_internal_load,
                    training_dose = excluded.training_dose,
+                   training_dose_source = excluded.training_dose_source,
+                   cardio_coverage = excluded.cardio_coverage,
+                   external_coverage = excluded.external_coverage,
+                   high_intensity_coverage = excluded.high_intensity_coverage,
+                   coverage_status = excluded.coverage_status,
                    load_confidence = excluded.load_confidence,
                    excluded_from_pmc = excluded.excluded_from_pmc,
                    reasons_json = excluded.reasons_json,
@@ -1809,9 +1837,15 @@ class Database:
                 result.cardio_load_raw,
                 result.cardio_tss,
                 result.external_tss,
+                result.high_intensity_tss,
                 result.mechanical_load,
                 result.subjective_internal_load,
                 result.training_dose,
+                result.training_dose_source,
+                result.cardio_coverage,
+                result.external_coverage,
+                result.high_intensity_coverage,
+                result.coverage_status.value,
                 result.load_confidence.value,
                 1 if result.excluded_from_pmc else 0,
                 reasons_json,
@@ -1826,8 +1860,8 @@ class Database:
             """INSERT INTO daily_training_load
                (date, algorithm_version, calibration_id, training_dose, acute_load,
                 chronic_load, form, load_ratio, readiness_gate,
-                readiness_reasons_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                coverage_status, readiness_reasons_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(date, algorithm_version) DO UPDATE SET
                    calibration_id = excluded.calibration_id,
                    training_dose = excluded.training_dose,
@@ -1836,6 +1870,7 @@ class Database:
                    form = excluded.form,
                    load_ratio = excluded.load_ratio,
                    readiness_gate = excluded.readiness_gate,
+                   coverage_status = excluded.coverage_status,
                    readiness_reasons_json = excluded.readiness_reasons_json,
                    computed_at = excluded.computed_at""",
             (
@@ -1848,6 +1883,7 @@ class Database:
                 result.form,
                 result.load_ratio,
                 result.readiness_gate,
+                result.coverage_status.value,
                 reasons_json,
             ),
         )
@@ -1858,6 +1894,27 @@ class Database:
         return self._conn.execute(
             "SELECT * FROM activity_training_load WHERE label_id = ?",
             (label_id,),
+        ).fetchone()
+
+    def delete_daily_training_load_versions(
+        self, start: str, end: str, *, keep_algorithm_version: int
+    ) -> None:
+        """Delete superseded model rows in a recomputed calendar window."""
+        self._conn.execute(
+            "DELETE FROM daily_training_load "
+            "WHERE date >= ? AND date <= ? AND algorithm_version <> ?",
+            (start, end, keep_algorithm_version),
+        )
+
+    def fetch_previous_daily_training_load(
+        self, before: str, *, algorithm_version: int
+    ) -> sqlite3.Row | None:
+        """Return the latest model row strictly before a calendar date."""
+        return self._conn.execute(
+            "SELECT * FROM daily_training_load "
+            "WHERE date < ? AND algorithm_version = ? "
+            "ORDER BY date DESC LIMIT 1",
+            (before, algorithm_version),
         ).fetchone()
 
     def fetch_daily_training_load(

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from garmin_sync.models import (
     activity_detail_from_garmin,
     timeseries_points_from_activity_details,
@@ -282,19 +284,28 @@ class TestDailyHealthBuilder:
         assert h.date == "2026-04-30"
         assert h.ati == 856
         assert h.cti == 905
-        assert h.training_load_ratio == 0.9
+        # Garmin's reported ratio is only one decimal; ATI / CTI preserves the
+        # precise value and is therefore canonical when both inputs exist.
+        assert h.training_load_ratio == pytest.approx(856 / 905)
         assert h.training_load_state == "OPTIMAL"
         assert h.rhr == 49
 
     def test_fatigue_from_acwr_ratio(self):
-        # Sample fixture has dailyAcuteChronicWorkloadRatio = 0.9 →
-        # 45 + (0.9 - 1.0) * 30 = 42.0 (slightly recovered, normal range).
+        # Precise ACWR is 856 / 905; the payload's 0.9 is rounded.
         h = daily_health_from_garmin(
             date_iso="2026-04-30",
             training_status=_sample_training_status(),
             user_summary={"restingHeartRate": 49},
         )
-        assert h.fatigue == 42.0
+        assert h.fatigue == pytest.approx(round(45 + (856 / 905 - 1) * 30, 1))
+
+    def test_ratio_falls_back_to_reported_value_without_ati_cti(self):
+        ts = _sample_training_status()
+        load = ts["mostRecentTrainingStatus"]["latestTrainingStatusData"]["3478181222"]["acuteTrainingLoadDTO"]
+        load["dailyTrainingLoadAcute"] = None
+        load["dailyTrainingLoadChronic"] = None
+        h = daily_health_from_garmin(date_iso="2026-04-30", training_status=ts)
+        assert h.training_load_ratio == 0.9
 
     def test_fatigue_clamps_at_high_acwr(self):
         # Very-high overload (ratio 2.0) should saturate at 75, not blow past it.

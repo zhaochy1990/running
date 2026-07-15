@@ -45,6 +45,7 @@ def run_sync(
     progress: SyncProgressCallback | None = None,
     activity_limit: int = 200,
     since_date: str | None = None,
+    health_days: int = 28,
 ) -> tuple[int, int, tuple[str, ...]]:
     """Sync the user's Garmin data into `db`.
 
@@ -74,7 +75,7 @@ def run_sync(
         client, db, full=full, progress=progress, limit=effective_limit,
         since_date=since_date,
     )
-    health_synced = _sync_health(client, db, progress=progress)
+    health_synced = _sync_health(client, db, progress=progress, days=health_days)
 
     return activities_synced, health_synced, tuple(new_label_ids)
 

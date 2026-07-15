@@ -1513,6 +1513,7 @@ def _query_history(user_id: str, *, as_of: date_cls | None = None) -> dict[str, 
                 snap = SQLiteRunningCalibrationRepository(db).fetch_latest(as_of)
                 if snap is not None:
                     threshold_speed_mps = snap.threshold_speed_mps
+                    result["threshold_speed_mps"] = threshold_speed_mps
             except Exception:  # noqa: BLE001 — calibration read must not block
                 logger.warning(
                     "_query_history: threshold_speed read failed for %s", user_id, exc_info=True

@@ -15,7 +15,8 @@ from statistics import mean, median
 from typing import Any
 
 from stride_core.master_plan import MasterPlan, TrainingLoadProjection
-from stride_core.training_load import estimate_planned_run_load
+from stride_core.running_calibration.zones import PACE_ZONE_SPEED_RATIOS
+from stride_core.training_load import estimate_planned_run_load_details
 from stride_core.workout_spec import (
     Duration,
     NormalizedRunWorkout,
@@ -116,6 +117,7 @@ def build_training_history_load_anchor(history: Mapping[str, Any] | None) -> dic
         "dose_anchor": _round(dose_anchor),
         "avg_runs_per_active_week": _round(avg_runs),
         "avg_pace_s_km": _round(avg_pace_s_km, 0),
+        "threshold_speed_mps": _round(_float(history.get("threshold_speed_mps")), 4),
         "advanced_history": advanced,
     }
 
@@ -189,83 +191,153 @@ def _is_deload_week(week: Mapping[str, Any]) -> bool:
     return bool(week.get("is_recovery_week") or week.get("is_taper_week"))
 
 
-def _session_intensity_factor(session: Any, race_distance: str) -> float:
+def _parse_time_seconds(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and float(value) > 0:
+        return float(value)
+    if not isinstance(value, str):
+        return None
+    parts = value.strip().split(":")
+    try:
+        nums = [float(part) for part in parts]
+    except ValueError:
+        return None
+    if len(nums) == 3:
+        return nums[0] * 3600.0 + nums[1] * 60.0 + nums[2]
+    if len(nums) == 2:
+        return nums[0] * 60.0 + nums[1]
+    return None
+
+
+_RACE_DISTANCE_M = {
+    "5k": 5_000.0,
+    "10k": 10_000.0,
+    "hm": 21_097.5,
+    "fm": 42_195.0,
+}
+
+
+def _goal_race_if(
+    plan: Any,
+    target_race: Mapping[str, Any] | None,
+    threshold_speed_mps: float | None,
+) -> float | None:
+    if not threshold_speed_mps or threshold_speed_mps <= 0:
+        return None
+    goal = _get(plan, "goal") or {}
+    distance = _extract_goal_distance(plan, target_race)
+    distance_m = _RACE_DISTANCE_M.get(distance)
+    source = target_race or {}
+    seconds = next((
+        parsed
+        for value in (
+            source.get("goal_time_s"),
+            source.get("target_time"),
+            source.get("target_finish_time"),
+            _get(goal, "goal_time_s"),
+            _get(goal, "target_time"),
+            _get(goal, "target_finish_time"),
+        )
+        if (parsed := _parse_time_seconds(value)) is not None
+    ), None)
+    if not distance_m or not seconds:
+        return None
+    return max(0.0, min(2.0, (distance_m / seconds) / threshold_speed_mps))
+
+
+def _zone_range(name: str) -> tuple[float, float]:
+    low, high = PACE_ZONE_SPEED_RATIOS[name]
+    return float(low or 0.50), float(high or 1.20)
+
+
+def _session_if_range(
+    session: Any,
+    *,
+    goal_race_if: float | None,
+) -> tuple[float, float, list[str]] | None:
     stype = _session_type(session)
     text = " ".join(
         str(_get(session, key, "") or "")
         for key in ("intensity", "purpose", "note")
     ).lower()
     if stype in {"strength_key", "strength"}:
-        return 0.0
-    if stype in {"interval", "vo2max", "time_trial", "race"}:
-        return 1.05 if stype != "vo2max" else 1.08
+        return None
+    for token, zone in (("z1", "recovery"), ("z2", "easy"), ("z3", "marathon"), ("z4", "threshold"), ("z5", "interval")):
+        if token in text:
+            low, high = _zone_range(zone)
+            return low, high, [f"{token}_pace_zone_range"]
     if stype == "threshold":
-        return 0.98
-    if stype in {"tempo", "hill"}:
-        return 0.90 if stype == "tempo" else 0.95
-    if stype in {"race_pace", "tune_up_race"}:
-        if race_distance in {"5k", "10k"}:
-            return 1.02
-        if race_distance == "hm":
-            return 0.94
-        return 0.90
+        low, high = _zone_range("threshold")
+        return low, high, ["threshold_zone_range"]
+    if stype in {"interval", "vo2max", "time_trial"}:
+        low, high = _zone_range("interval")
+        return low, high, [f"{stype}_zone_range"]
+    if stype == "tempo":
+        low, high = _zone_range("marathon")
+        return low, high, ["tempo_marathon_to_threshold_range"]
+    if stype == "hill":
+        low, high = _zone_range("threshold")
+        return low, high, ["hill_effort_flat_equivalent_range"]
+    if stype in {"race", "race_pace"}:
+        if goal_race_if is None:
+            return None
+        return goal_race_if, goal_race_if, ["goal_time_race_pace"]
+    if stype == "tune_up_race":
+        duration = _session_duration_min(session)
+        distance = _session_distance_km(session)
+        if not duration or not distance:
+            return None
+        # The caller converts this session-specific speed to IF after receiving
+        # the sentinel via explicit duration+distance; never borrow A-race IF.
+        return 0.0, 0.0, ["tune_up_uses_own_distance_and_duration"]
     if stype == "long_run":
         if any(token in text for token in ("mp", "hmp", "rp", "比赛配速", "马拉松配速", "半马配速")):
-            return 0.88 if race_distance == "fm" else 0.92
-        return 0.78
-    return 0.82
+            easy_low, _easy_high = _zone_range("easy")
+            if goal_race_if is None:
+                return None
+            return min(easy_low, goal_race_if), max(easy_low, goal_race_if), [
+                "mp_fraction_unspecified_range_easy_to_goal_pace"
+            ]
+        low, high = _zone_range("easy")
+        return low, high, ["long_run_easy_zone_range"]
+    return None
 
 
-def _estimate_step_dose(*, minutes: float, intensity_factor: float) -> float:
-    if minutes <= 0 or intensity_factor <= 0:
-        return 0.0
-    # threshold_speed_mps=1.0 makes target pace encode IF directly:
-    # speed/threshold_speed = IF.
-    pace_s_km = 1000.0 / max(intensity_factor, 0.01)
+def _is_embedded_session(session: Any) -> bool:
+    text = " ".join(
+        str(_get(session, key, "") or "")
+        for key in ("intensity", "purpose", "note")
+    ).lower()
+    return any(token in text for token in (
+        "embedded", "within long", "inside long", "part of long",
+        "其中", "内含", "长跑内", "末段", "后段",
+    ))
+
+
+def _estimate_session(
+    *,
+    km: float | None,
+    duration_min: float | None,
+    low_if: float,
+    high_if: float,
+    threshold_speed_mps: float,
+):
+    expected_if = (low_if + high_if) / 2.0
+    if low_if == high_if == 0.0 and km and duration_min:
+        expected_if = (km * 1000.0 / (duration_min * 60.0)) / threshold_speed_mps
+        low_if = high_if = expected_if
+    pace_low = 1000.0 / max(threshold_speed_mps * low_if, 0.01)
+    pace_high = 1000.0 / max(threshold_speed_mps * high_if, 0.01)
     step = WorkoutStep(
         step_kind=StepKind.WORK,
-        duration=Duration.of_time_min(minutes),
-        target=Target.pace_range_s_km(pace_s_km, pace_s_km),
+        duration=(Duration.of_time_min(duration_min) if duration_min is not None else Duration.of_distance_km(km or 0.0)),
+        target=Target.pace_range_s_km(pace_low, pace_high),
     )
     workout = NormalizedRunWorkout(
         name="master-plan-load-estimate",
         date="2026-01-01",
         blocks=(WorkoutBlock(steps=(step,)),),
     )
-    return float(estimate_planned_run_load(workout, threshold_speed_mps=1.0) or 0.0)
-
-
-def _estimate_run_dose(*, km: float | None, duration_min: float | None, pace_s_km: float, intensity_factor: float) -> float:
-    if duration_min is None:
-        if km is None or km <= 0:
-            return 0.0
-        duration_min = km * pace_s_km / 60.0
-    return _estimate_step_dose(minutes=duration_min, intensity_factor=intensity_factor)
-
-
-def _estimate_week_at_target_km(
-    *,
-    target_km: float,
-    key_km: float,
-    key_dose: float,
-    pace_s_km: float,
-    dose_scale: float,
-) -> tuple[float, float, float]:
-    """Run the existing weekly formula for one mileage boundary.
-
-    The helper deliberately preserves the estimator's existing semantics:
-    key-session dose is unchanged, and only the remaining easy mileage varies
-    between the low and high projections.
-    """
-    remaining_easy_km = max(0.0, target_km - key_km)
-    easy_dose = _estimate_run_dose(
-        km=remaining_easy_km,
-        duration_min=None,
-        pace_s_km=pace_s_km,
-        intensity_factor=0.78,
-    )
-    raw_total_dose = key_dose + easy_dose
-    return remaining_easy_km, raw_total_dose, raw_total_dose * dose_scale
+    return estimate_planned_run_load_details(workout, threshold_speed_mps=threshold_speed_mps)
 
 
 def estimate_master_plan_training_load(
@@ -275,22 +347,15 @@ def estimate_master_plan_training_load(
     target_race: Mapping[str, Any] | None = None,
     weekly_run_days_max: int | None = None,
     injuries: list[str] | None = None,
+    threshold_speed_mps: float | None = None,
 ) -> dict[str, Any]:
     """Estimate planned weekly km and STRIDE dose from an S1 skeleton."""
     anchor = dict(history_anchor or {})
-    pace_s_km = float(anchor.get("avg_pace_s_km") or 300.0)
+    if threshold_speed_mps is None:
+        threshold_speed_mps = _float(anchor.get("threshold_speed_mps"))
     baseline_km = _float(anchor.get("distance_anchor_km"))
     baseline_dose = _float(anchor.get("dose_anchor"))
-    easy_raw_dose_per_km = _estimate_run_dose(
-        km=1.0,
-        duration_min=None,
-        pace_s_km=pace_s_km,
-        intensity_factor=0.78,
-    )
-    dose_scale = 1.0
-    if baseline_km and baseline_dose and easy_raw_dose_per_km > 0:
-        dose_scale = baseline_dose / (baseline_km * easy_raw_dose_per_km)
-    race_distance = _extract_goal_distance(plan, target_race)
+    goal_race_if = _goal_race_if(plan, target_race, threshold_speed_mps)
     weeks_out: list[dict[str, Any]] = []
     for week in _extract_weeks(plan):
         low = _float(_get(week, "target_weekly_km_low")) or 0.0
@@ -300,59 +365,94 @@ def estimate_master_plan_training_load(
         sessions = _get(week, "key_sessions", []) or []
         key_km = 0.0
         key_dose = 0.0
+        key_dose_low = 0.0
+        key_dose_high = 0.0
+        week_assumptions: list[str] = []
+        load_computable = bool(threshold_speed_mps and threshold_speed_mps > 0)
         long_run_km = 0.0
         long_run_dose = 0.0
         for session in sessions:
             stype = _session_type(session)
             if stype in {"strength_key", "strength"}:
                 continue
+            if stype in {"race_pace", "threshold", "tempo"} and _is_embedded_session(session):
+                week_assumptions.append(f"{stype}_embedded_in_parent_not_double_counted")
+                continue
             km = _session_distance_km(session)
             duration = _session_duration_min(session)
+            intensity = _session_if_range(session, goal_race_if=goal_race_if)
+            estimate = None
+            if load_computable and intensity is not None and (km or duration):
+                low_if, high_if, assumptions = intensity
+                estimate = _estimate_session(
+                    km=km, duration_min=duration, low_if=low_if, high_if=high_if,
+                    threshold_speed_mps=float(threshold_speed_mps),
+                )
+                week_assumptions.extend(assumptions)
+                if estimate.expected_dose is not None:
+                    key_dose += estimate.expected_dose
+                    key_dose_low += estimate.low_dose or estimate.expected_dose
+                    key_dose_high += estimate.high_dose or estimate.expected_dose
+                else:
+                    load_computable = False
+            elif stype not in {"strength_key", "strength"}:
+                load_computable = False
+            estimated_km = estimate.estimated_distance_km if estimate is not None else None
             if km is not None:
                 key_km += max(0.0, km)
-            intensity = _session_intensity_factor(session, race_distance)
-            session_dose = _estimate_run_dose(
-                km=km,
-                duration_min=duration,
-                pace_s_km=pace_s_km,
-                intensity_factor=intensity,
-            )
-            key_dose += session_dose
+            elif estimated_km is not None:
+                key_km += max(0.0, estimated_km)
             if stype == "long_run":
                 long_run_km = max(long_run_km, max(0.0, km or 0.0))
-                long_run_dose = max(long_run_dose, session_dose)
-        low_remaining_easy_km, low_raw_total_dose, low_total_dose = _estimate_week_at_target_km(
-            target_km=low,
-            key_km=key_km,
-            key_dose=key_dose,
-            pace_s_km=pace_s_km,
-            dose_scale=dose_scale,
-        )
-        remaining_easy_km, raw_total_dose, total_dose = _estimate_week_at_target_km(
-            target_km=high,
-            key_km=key_km,
-            key_dose=key_dose,
-            pace_s_km=pace_s_km,
-            dose_scale=dose_scale,
-        )
+                long_run_dose = max(long_run_dose, estimate.expected_dose or 0.0) if estimate else 0.0
+        low_remaining_easy_km = max(0.0, low - key_km)
+        remaining_easy_km = max(0.0, high - key_km)
+        low_easy_dose = 0.0
+        easy_dose = easy_low = easy_high = 0.0
+        if load_computable and (low_remaining_easy_km > 0 or remaining_easy_km > 0):
+            low_if, high_if = _zone_range("easy")
+            if low_remaining_easy_km > 0:
+                low_easy_estimate = _estimate_session(
+                    km=low_remaining_easy_km, duration_min=None, low_if=low_if, high_if=high_if,
+                    threshold_speed_mps=float(threshold_speed_mps),
+                )
+                low_easy_dose = low_easy_estimate.expected_dose or 0.0
+            if remaining_easy_km > 0:
+                easy_estimate = _estimate_session(
+                    km=remaining_easy_km, duration_min=None, low_if=low_if, high_if=high_if,
+                    threshold_speed_mps=float(threshold_speed_mps),
+                )
+                easy_dose = easy_estimate.expected_dose or 0.0
+                easy_low = easy_estimate.low_dose or easy_dose
+                easy_high = easy_estimate.high_dose or easy_dose
+            week_assumptions.append("remaining_weekly_distance_in_easy_zone")
+        low_raw_total_dose = key_dose + low_easy_dose if load_computable else None
+        raw_total_dose = key_dose + easy_dose if load_computable else None
+        total_dose_low = key_dose_low + easy_low if load_computable else None
+        total_dose_high = key_dose_high + easy_high if load_computable else None
+        total_dose = raw_total_dose
         weeks_out.append({
             "week_index": _get(week, "week_index"),
             "week_start": _get(week, "week_start"),
             "target_weekly_km_low": _round(low),
             "target_weekly_km_high": _round(high),
-            "target_training_dose_low": _round(low_total_dose),
+            "target_training_dose_low": _round(low_raw_total_dose),
             "target_training_dose_high": _round(total_dose),
             "estimated_dose": _round(total_dose),
+            "estimated_dose_low": _round(total_dose_low),
+            "estimated_dose_high": _round(total_dose_high),
             "estimated_raw_tss": _round(raw_total_dose),
             "estimated_raw_tss_low": _round(low_raw_total_dose),
+            "load_computable": load_computable,
+            "load_assumptions": list(dict.fromkeys(week_assumptions)),
             "key_session_km": _round(key_km),
             "remaining_easy_km_low": _round(low_remaining_easy_km),
             "remaining_easy_km": _round(remaining_easy_km),
             "long_run_km": _round(long_run_km),
-            "long_run_dose": _round(long_run_dose * dose_scale),
+            "long_run_dose": _round(long_run_dose) if load_computable else None,
             "key_session_km_ratio": _round(key_km / high if high > 0 else None, 2),
             "long_run_km_ratio": _round(long_run_km / high if high > 0 else None, 2),
-            "long_run_dose_ratio": _round((long_run_dose * dose_scale) / total_dose if total_dose > 0 else None, 2),
+            "long_run_dose_ratio": _round(long_run_dose / total_dose if total_dose and total_dose > 0 else None, 2),
             "is_recovery_week": is_recovery,
             "is_taper_week": is_taper,
         })
@@ -360,7 +460,7 @@ def estimate_master_plan_training_load(
     load_weeks = [w for w in weeks_out if not _is_deload_week(w) and (w["target_weekly_km_high"] or 0) > 0]
     first4 = load_weeks[:4]
     km_values = [float(w["target_weekly_km_high"] or 0.0) for w in load_weeks]
-    dose_values = [float(w["estimated_dose"] or 0.0) for w in load_weeks]
+    dose_values = [float(w["estimated_dose"]) for w in load_weeks if w["estimated_dose"] is not None]
     summary = {
         "planned_week_count": len(weeks_out),
         "load_week_count": len(load_weeks),
@@ -371,11 +471,11 @@ def estimate_master_plan_training_load(
         "max_long_run_km_ratio": _round(max((float(w["long_run_km_ratio"] or 0.0) for w in load_weeks), default=0.0) if load_weeks else None, 2),
         "max_long_run_dose_ratio": _round(max((float(w["long_run_dose_ratio"] or 0.0) for w in load_weeks), default=0.0) if load_weeks else None, 2),
         "max_key_session_km_ratio": _round(max((float(w["key_session_km_ratio"] or 0.0) for w in load_weeks), default=0.0) if load_weeks else None, 2),
-        "first4_load_avg_dose": _round(mean([float(w["estimated_dose"] or 0.0) for w in first4]) if first4 else None),
+        "first4_load_avg_dose": _round(mean([float(w["estimated_dose"]) for w in first4 if w["estimated_dose"] is not None]) if any(w["estimated_dose"] is not None for w in first4) else None),
         "avg_load_week_dose": _round(mean(dose_values) if dose_values else None),
         "peak_weekly_dose": _round(max(dose_values) if dose_values else None),
     }
-    summary["dose_scale"] = _round(dose_scale, 3)
+    summary["load_computable"] = bool(dose_values) and all(w["load_computable"] for w in weeks_out)
     if baseline_km:
         for key in ("first4_load_avg_km", "avg_load_week_km", "peak_weekly_km"):
             summary[f"{key}_ratio_to_anchor"] = _round((_float(summary.get(key)) or 0.0) / baseline_km, 2)

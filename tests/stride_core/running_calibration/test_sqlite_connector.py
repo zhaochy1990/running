@@ -274,7 +274,7 @@ def test_fetch_health_rows_reads_daily_health(tmp_path):
         CREATE TABLE daily_health (date TEXT PRIMARY KEY, rhr INTEGER);
         INSERT INTO daily_health (date, rhr) VALUES
             ('20260501', 50),
-            ('20260510', 48),
+            ('2026-05-10', 48),
             ('20260520', 47),
             ('20260101', 60),
             ('20260515', NULL);

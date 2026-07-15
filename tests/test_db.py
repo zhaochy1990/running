@@ -397,7 +397,9 @@ class TestActivitiesIndexes:
         from stride_core.timefmt import SHANGHAI_DAY_SQL
 
         for sql, params in [
-            (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} >= ?", ("2026-05-09",)),
+            # Keep the lower-bound query selective. SQLite correctly prefers a
+            # table scan when most rows match, which is not an index regression.
+            (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} >= ?", ("2026-05-20",)),
             (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?", ("2026-05-04", "2026-05-10")),
             (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} = ?", ("2026-05-09",)),
         ]:
@@ -410,7 +412,7 @@ class TestActivitiesIndexes:
         for sql, params in [
             ("SELECT label_id, date FROM activities ORDER BY date DESC LIMIT 5", ()),
             ("SELECT MAX(date) FROM activities", ()),
-            ("SELECT label_id FROM activities WHERE date >= ?", ("2026-05-09T00:00:00+00:00",)),
+            ("SELECT label_id FROM activities WHERE date >= ?", ("2026-05-20T00:00:00+00:00",)),
         ]:
             joined = self._plan(seeded_db, sql, params)
             assert "idx_activities_date" in joined, (

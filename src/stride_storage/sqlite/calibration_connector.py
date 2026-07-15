@@ -11,6 +11,7 @@ from typing import Any, Sequence
 from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
 
 from stride_core.running_calibration.types import (
+    RUNNING_CALIBRATION_MODEL_VERSION,
     CalibrationConfidence,
     CalibrationEvidence,
     HeartRateZone,
@@ -144,20 +145,21 @@ class SQLiteRunningCalibrationRepository:
         CLAUDE.md Timezone discipline whitelist. We convert each row's date
         to a Python `date` before returning. Rows with NULL `rhr` are skipped.
         """
-        start_compact = start.strftime("%Y%m%d")
-        end_compact = end.strftime("%Y%m%d")
         rows = self._conn.execute(
-            "SELECT date, rhr FROM daily_health "
-            "WHERE rhr IS NOT NULL AND date >= ? AND date <= ?",
-            (start_compact, end_compact),
+            "SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL"
         ).fetchall()
         out: list[RunningHealthRow] = []
         for row in rows or []:
             date_str = str(_row_value(row, "date"))
             rhr_val = _row_value(row, "rhr")
             try:
-                d = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
+                if len(date_str) >= 10 and date_str[4] == "-":
+                    d = date.fromisoformat(date_str[:10])
+                else:
+                    d = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
             except (ValueError, IndexError):
+                continue
+            if not start <= d <= end:
                 continue
             out.append(RunningHealthRow(date=d, rhr=float(rhr_val) if rhr_val is not None else None))
         return out
@@ -228,11 +230,19 @@ class SQLiteRunningCalibrationRepository:
     def fetch_latest(self, as_of_date: date | None = None) -> RunningCalibrationSnapshot | None:
         params: tuple[Any, ...]
         if as_of_date is None:
-            sql = "SELECT * FROM running_calibration_snapshot ORDER BY as_of_date DESC, id DESC LIMIT 1"
-            params = ()
+            sql = (
+                "SELECT * FROM running_calibration_snapshot "
+                "WHERE algorithm_version = ? "
+                "ORDER BY as_of_date DESC, id DESC LIMIT 1"
+            )
+            params = (RUNNING_CALIBRATION_MODEL_VERSION,)
         else:
-            sql = "SELECT * FROM running_calibration_snapshot WHERE as_of_date <= ? ORDER BY as_of_date DESC, id DESC LIMIT 1"
-            params = (as_of_date.isoformat(),)
+            sql = (
+                "SELECT * FROM running_calibration_snapshot "
+                "WHERE algorithm_version = ? AND as_of_date <= ? "
+                "ORDER BY as_of_date DESC, id DESC LIMIT 1"
+            )
+            params = (RUNNING_CALIBRATION_MODEL_VERSION, as_of_date.isoformat())
         row = self._conn.execute(sql, params).fetchone()
         if row is None:
             return None
@@ -263,9 +273,9 @@ class SQLiteRunningCalibrationRepository:
     ) -> RunningCalibrationSnapshot | None:
         row = self._conn.execute(
             "SELECT * FROM running_calibration_snapshot "
-            "WHERE hrmax_estimate IS NOT NULL AND "
+            "WHERE algorithm_version = ? AND hrmax_estimate IS NOT NULL AND "
             f"{where_and_order}",
-            params,
+            (RUNNING_CALIBRATION_MODEL_VERSION, *params),
         ).fetchone()
         if row is None:
             return None

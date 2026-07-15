@@ -19,6 +19,7 @@ from stride_core.ability_hook import run_ability_hook
 from stride_storage.sqlite.database import Database
 from stride_core.source import SyncProgressCallback, SyncResult
 from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.timefmt import today_shanghai
 from stride_core.training_load import recompute_training_load
 
 logger = logging.getLogger(__name__)
@@ -101,7 +102,11 @@ class StrideTrainingLoadHandler:
         window = _activity_shanghai_window(context.db, label_ids)
         if window is None:
             return
-        start, end = window
+        start, changed_end = window
+        # ATL/CTL are recursive: changing a historical activity changes every
+        # later day, not only the activity's own date. Recompute the full tail
+        # through today so persisted PMC state cannot retain stale descendants.
+        end = max(changed_end, today_shanghai().isoformat())
         _emit(
             context.progress,
             phase="stride_training_load",
