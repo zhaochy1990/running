@@ -3,14 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   getWeeks: vi.fn(),
+  getMyProfile: vi.fn(),
 }))
 
 vi.mock('../../api', () => ({
   getWeeks: apiMocks.getWeeks,
+  getMyProfile: apiMocks.getMyProfile,
   getWeek: vi.fn(),
   getWeekStrength: vi.fn(),
   getPlanDays: vi.fn(),
   updateWeeklyFeedback: vi.fn(),
+  pushPlannedSession: vi.fn(),
 }))
 vi.mock('../../UserContextValue', () => ({ useUser: () => ({ user: 'user-id' }) }))
 vi.mock('react-router-dom', () => ({
@@ -23,6 +26,8 @@ import { useCoachWeeklyPlan } from '../useCoachWeeklyPlan'
 describe('useCoachWeeklyPlan', () => {
   beforeEach(() => {
     apiMocks.getWeeks.mockReset()
+    apiMocks.getMyProfile.mockReset()
+    apiMocks.getMyProfile.mockResolvedValue({ provider: 'coros' })
   })
 
   it('finishes loading when the user has no training weeks', async () => {

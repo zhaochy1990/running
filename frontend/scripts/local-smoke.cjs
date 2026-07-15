@@ -5,13 +5,15 @@ const path = require('node:path')
 const repoRoot = path.resolve(__dirname, '..', '..')
 const appUrl = (process.env.STRIDE_LOCAL_URL || 'http://127.0.0.1:5173').replace(/\/$/, '')
 const screenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-local-smoke.png')
+const weeklyScreenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-weekly-plan-smoke.png')
+const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 function readCredentials() {
   const candidates = [
     path.join(repoRoot, '.credentials.local'),
     process.env.STRIDE_CREDENTIALS_FILE,
-    process.env.USERPROFILE
-      ? path.join(process.env.USERPROFILE, 'workspace', 'running', '.credentials.local')
+    process.env.HOME
+      ? path.join(process.env.HOME, 'workspace', 'running', '.credentials.local')
       : null,
   ].filter(Boolean)
   const file = candidates.find((candidate) => fs.existsSync(candidate))
@@ -24,10 +26,12 @@ function readCredentials() {
     const match = line.match(/^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*?)\s*$/)
     if (match) values[match[1].toLowerCase()] = match[2]
   }
-  if (!values.email || !values.password) {
-    throw new Error('.credentials.local must contain email and password')
+  const email = values.email || values.user_email
+  const password = values.password || values.user_password
+  if (!email || !password) {
+    throw new Error('.credentials.local must contain email/password or user_email/user_password')
   }
-  return values
+  return { email, password }
 }
 
 function sanitizeUrl(url) {
@@ -36,7 +40,15 @@ function sanitizeUrl(url) {
 
 async function main() {
   const { email, password } = readCredentials()
-  const browser = await chromium.launch({ headless: true })
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true })
+  } catch (error) {
+    if (!String(error).includes("Executable doesn't exist") || !fs.existsSync(systemChrome)) {
+      throw error
+    }
+    browser = await chromium.launch({ headless: true, executablePath: systemChrome })
+  }
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
   const issues = []
   const responses = []
@@ -82,7 +94,20 @@ async function main() {
   if (!hasToken) throw new Error('login completed without access_token')
 
   await page.goto(`${appUrl}/activities`, { waitUntil: 'domcontentloaded' })
-  await page.getByRole('heading', { name: '活动列表' }).waitFor({ timeout: 20_000 })
+  try {
+    await page.getByRole('heading', { name: '活动列表' }).waitFor({ timeout: 20_000 })
+  } catch {
+    await page.screenshot({ path: screenshotPath, fullPage: false })
+    const state = await page.evaluate(() => ({
+      path: window.location.pathname,
+      loadingError: document.body.innerText.includes('加载失败，请检查网络后重试'),
+      onboarding: window.location.pathname.startsWith('/onboarding'),
+    }))
+    throw new Error(
+      `activity page did not load: path=${state.path}, loading_error=${state.loadingError}, onboarding=${state.onboarding}; ` +
+      `responses=${responses.join(', ') || 'none'}; issues=${issues.join(' | ') || 'none'}; screenshot=${screenshotPath}`,
+    )
+  }
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
 
   const notificationClose = page.getByRole('button', { name: '关闭' })
@@ -101,6 +126,38 @@ async function main() {
   await page.locator('text=距离').first().waitFor({ timeout: 20_000 })
 
   await page.screenshot({ path: screenshotPath, fullPage: false })
+
+  await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
+  await page.getByRole('heading', { name: '本周课表' }).waitFor({ timeout: 20_000 })
+  await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
+
+  const weeklyTabs = page.getByRole('tab')
+  if (await weeklyTabs.count() !== 4) {
+    throw new Error('weekly plan did not render exactly four tabs')
+  }
+  const tabChecks = [
+    ['weekly-plan-tab-schedule', null],
+    ['weekly-plan-tab-strength', null],
+    ['weekly-plan-tab-records', '本周训练记录'],
+    ['weekly-plan-tab-feedback', '围绕本周关键课记录体感'],
+  ]
+  for (const [id, expectedHeading] of tabChecks) {
+    const tab = page.locator(`#${id}`)
+    if (await tab.count() !== 1) throw new Error(`weekly plan tab missing: ${id}`)
+    await tab.click()
+    if (await tab.getAttribute('aria-selected') !== 'true') {
+      throw new Error(`weekly plan tab did not activate: ${id}`)
+    }
+    const panel = page.getByRole('tabpanel')
+    await panel.waitFor({ timeout: 10_000 })
+    if (!(await panel.innerText()).trim()) {
+      throw new Error(`weekly plan tab rendered no content: ${id}`)
+    }
+    if (expectedHeading) {
+      await page.getByRole('heading', { name: expectedHeading }).waitFor({ timeout: 10_000 })
+    }
+  }
+  await page.screenshot({ path: weeklyScreenshotPath, fullPage: false })
   await browser.close()
 
   if (issues.length > 0) {
@@ -110,6 +167,7 @@ async function main() {
   console.log(`Local smoke OK: ${appUrl}`)
   console.log(`Responses checked: ${responses.length}`)
   console.log(`Screenshot: ${screenshotPath}`)
+  console.log(`Weekly screenshot: ${weeklyScreenshotPath}`)
 }
 
 main().catch(async (error) => {

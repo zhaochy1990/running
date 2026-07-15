@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import PushAllPlannedButton, { pushableSessionsFor } from '../PushAllPlannedButton'
+import PushAllPlannedButton from '../PushAllPlannedButton'
+import { pushableSessionsFor } from '../../lib/weeklyPlanView'
 import type {
   NormalizedRunWorkout,
   NormalizedStrengthWorkout,
@@ -145,16 +146,14 @@ describe('PushAllPlannedButton', () => {
     ).toHaveTextContent('一键推送 (2)')
   })
 
-  it('renders inline planned mileage stats next to the button', () => {
+  it('does not duplicate planned mileage stats next to the button', () => {
     render(
       <PushAllPlannedButton
         sessions={[
-          // No spec → text fallback uses the summary keywords.
-          makeRun({ summary: '轻松 10km', spec: null, total_distance_m: 10000 }),
+          makeRun({ summary: '轻松 10km', total_distance_m: 10000 }),
           makeRun({
             date: '2026-04-22',
             summary: '间歇 5km',
-            spec: null,
             total_distance_m: 5000,
           }),
         ]}
@@ -163,18 +162,12 @@ describe('PushAllPlannedButton', () => {
         onPush={() => Promise.resolve()}
       />,
     )
-    const stats = screen.getByTestId('plan-intensity-stats')
-    expect(stats).toHaveTextContent('计划跑量')
-    expect(stats).toHaveTextContent('15.0 km')
-    expect(stats).toHaveTextContent('低强度 Z1+Z2')
-    expect(stats).toHaveTextContent('10.0 km')
-    expect(stats).toHaveTextContent('高强度 Z4+Z5')
-    expect(stats).toHaveTextContent('5.0 km')
+    expect(screen.queryByTestId('plan-intensity-stats')).not.toBeInTheDocument()
+    expect(screen.queryByText('计划跑量')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '一键推送本周训练' })).toBeInTheDocument()
   })
 
-  it('still shows stats even when there is nothing to push', () => {
-    // All run sessions already pushed → eligible=1, total=0. Bar should
-    // remain visible so the user can see planned mileage.
+  it('still shows the disabled action when every eligible session is already pushed', () => {
     render(
       <PushAllPlannedButton
         sessions={[
@@ -189,7 +182,6 @@ describe('PushAllPlannedButton', () => {
         onPush={() => Promise.resolve()}
       />,
     )
-    expect(screen.getByTestId('plan-intensity-stats')).toHaveTextContent('10.0 km')
     expect(screen.getByRole('button', { name: '全部已推送' })).toBeDisabled()
   })
 

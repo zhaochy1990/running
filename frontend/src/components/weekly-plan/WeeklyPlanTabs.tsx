@@ -16,7 +16,7 @@ const tabs: ReadonlyArray<{ id: CoachWeeklyPlanTab; label: string }> = [
 
 export default function WeeklyPlanTabs({ active, strengthCount, recordCount, onChange }: WeeklyPlanTabsProps) {
   return (
-    <div className="flex gap-6 overflow-x-auto border-b border-border-subtle" role="tablist" aria-label="本周计划视图">
+    <div className="flex items-end gap-6 overflow-x-auto border-b border-border-subtle" role="tablist" aria-label="本周计划视图">
       {tabs.map((tab) => {
         const count = tab.id === 'strength' ? strengthCount : tab.id === 'records' ? recordCount : null
         return (
@@ -24,9 +24,11 @@ export default function WeeklyPlanTabs({ active, strengthCount, recordCount, onC
             key={tab.id}
             type="button"
             role="tab"
+            id={`weekly-plan-tab-${tab.id}`}
+            aria-controls="weekly-plan-tabpanel"
             aria-selected={active === tab.id}
             onClick={() => onChange(tab.id)}
-            className={`pb-3 text-sm whitespace-nowrap transition-colors ${active === tab.id ? 'font-bold text-accent-green border-b-2 border-accent-green' : 'font-medium text-text-muted hover:text-text-primary'}`}
+            className={`pb-3 text-sm whitespace-nowrap transition-colors ${active === tab.id ? 'font-bold text-accent-green border-b-2 border-accent-green' : 'font-medium text-text-muted hover:text-text-primary border-b-2 border-transparent'}`}
           >
             {tab.label}
             {count !== null && <span className="ml-1.5 rounded-full bg-bg-secondary px-1.5 py-0.5 text-[10px] text-text-secondary">{count}</span>}

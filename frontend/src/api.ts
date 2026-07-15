@@ -404,6 +404,12 @@ export interface WeekDetail {
   total_duration_s: number
   total_duration_fmt: string
   activity_count: number
+  structured?: {
+    structured_status: StructuredStatus | null
+    structured_parsed_at?: string | null
+    sessions?: PlannedSessionRow[]
+    nutrition?: PlannedNutrition[]
+  }
   // Multi-variant additions (Step 4 backend additive fields).
   variants_summary?: VariantsSummary
   abandoned_scheduled_workouts?: AbandonedScheduledWorkout[]
