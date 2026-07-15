@@ -158,6 +158,57 @@ class TestLegacyMigration:
         finally:
             db.close()
 
+    def test_scheduled_workout_plan_identity_columns_added_before_index(
+        self, tmp_path: Path,
+    ):
+        """A pre-plan-identity table migrates before its new index is built."""
+        legacy_path = tmp_path / "legacy-scheduled-workout.db"
+        conn = sqlite3.connect(str(legacy_path))
+        conn.executescript(
+            """
+            CREATE TABLE scheduled_workout (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                date                  TEXT NOT NULL,
+                kind                  TEXT NOT NULL,
+                name                  TEXT NOT NULL,
+                spec_json             TEXT NOT NULL,
+                status                TEXT NOT NULL DEFAULT 'draft',
+                provider              TEXT,
+                provider_workout_id   TEXT,
+                pushed_at             TEXT,
+                completed_label_id    TEXT,
+                note                  TEXT,
+                created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at            TEXT NOT NULL DEFAULT (datetime('now')),
+                abandoned_by_promote_at TEXT
+            );
+            INSERT INTO scheduled_workout
+                (date, kind, name, spec_json)
+            VALUES
+                ('2026-07-15', 'run', 'Legacy run', '{}');
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        db = Database(db_path=legacy_path)
+        try:
+            assert {"week_folder", "planned_date", "session_index"}.issubset(
+                _scheduled_workout_columns(db)
+            )
+            indexes = {
+                row[1]
+                for row in db._conn.execute(
+                    "PRAGMA index_list(scheduled_workout)"
+                ).fetchall()
+            }
+            assert "idx_scheduled_workout_plan_session" in indexes
+            assert db.query("SELECT name FROM scheduled_workout")[0]["name"] == "Legacy run"
+
+            db._migrate()
+        finally:
+            db.close()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # scheduled_workout table CRUD

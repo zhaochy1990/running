@@ -414,8 +414,9 @@ CREATE TABLE IF NOT EXISTS scheduled_workout (
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_workout_date ON scheduled_workout(date);
 CREATE INDEX IF NOT EXISTS idx_scheduled_workout_status ON scheduled_workout(status);
-CREATE INDEX IF NOT EXISTS idx_scheduled_workout_plan_session
-    ON scheduled_workout(week_folder, planned_date, session_index, id);
+-- ``idx_scheduled_workout_plan_session`` is created by ``_migrate`` after
+-- legacy scheduled_workout tables receive the three plan-identity columns.
+-- Creating it here would make SCHEMA fail before migrations can run.
 
 -- Structured weekly-plan layer (derived from weekly_plan.content_md via LLM
 -- reverse parsing). Date-keyed; session_index disambiguates double-session
