@@ -152,7 +152,9 @@ process_start_identity() {
 proxy_process_matches() {
   local pgid="${1:-}" command
   [[ -n "$pgid" ]] || return 1
-  command="$(ps -p "$pgid" -o command= 2>/dev/null || true)"
+  # procps truncates ``command`` to the terminal width unless wide output is
+  # requested; the port and API-key flags can otherwise disappear on Linux.
+  command="$(ps -ww -p "$pgid" -o command= 2>/dev/null || true)"
   [[ "$command" == *"copilot-proxy-api@$PROXY_VERSION"* \
     && "$command" == *" start "* \
     && "$command" == *"--port $PROXY_PORT"* \
