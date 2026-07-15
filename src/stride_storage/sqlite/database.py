@@ -1453,18 +1453,55 @@ class Database:
     def list_race_effort_activities(
         self,
         *,
+        as_of_date: str,
         limit: int = 6,
         min_distance_km: float = 3.0,
     ) -> list[sqlite3.Row]:
         """Return recent race-like running efforts for coach intake analysis.
 
         This is a semantic storage-layer reader so route / adapter code does
-        not grow direct SQL. It intentionally combines explicit race labels
-        (``train_kind='race'``) with race-distance efforts because many watch
-        providers do not mark races consistently.
+        not grow direct SQL. Explicit provider race labels are authoritative.
+        When a provider omits one, a canonical distance must be paired with a
+        strong event-name marker; distance alone is not race evidence.
         """
-        from stride_core.models import RUN_SPORT_SQL_LIST
-        from stride_core.timefmt import SHANGHAI_DAY_SQL
+        canonical_distance = """(
+            distance_m BETWEEN 4800 AND 5300
+            OR distance_m BETWEEN 9800 AND 10500
+            OR distance_m BETWEEN 20800 AND 21800
+            OR distance_m BETWEEN 41800 AND 43500
+        )"""
+        name_words = "(' ' || lower(COALESCE(name, '')) || ' ')"
+        event_name = """(
+            lower(COALESCE(name, '')) LIKE '%marathon%'
+            OR {name_words} GLOB '*[^a-z0-9]race[^a-z0-9]*'
+            OR name LIKE '%比赛%'
+            OR name LIKE '%赛事%'
+            OR name LIKE '%半马%'
+            OR name LIKE '%全马%'
+            OR name LIKE '%马拉松%'
+            OR name LIKE '%越野赛%'
+            OR name LIKE '%路跑赛%'
+            OR name LIKE '%接力赛%'
+        )"""
+        training_name = """(
+            {name_words} GLOB '*[^a-z0-9]pace[^a-z0-9]*'
+            OR {name_words} GLOB '*[^a-z0-9]training[^a-z0-9]*'
+            OR {name_words} GLOB '*[^a-z0-9]workout[^a-z0-9]*'
+            OR {name_words} GLOB '*[^a-z0-9]rehearsal[^a-z0-9]*'
+            OR {name_words} GLOB '*[^a-z0-9]tune[^a-z0-9]*'
+            OR {name_words} GLOB '*[^a-z0-9]tempo[^a-z0-9]*'
+            OR {name_words} GLOB '*[^a-z0-9]interval[^a-z0-9]*'
+            OR {name_words} GLOB '*[^a-z0-9]easy[^a-z0-9]*'
+            OR name LIKE '%备赛%'
+            OR name LIKE '%配速%'
+            OR name LIKE '%训练%'
+            OR name LIKE '%测试%'
+            OR name LIKE '%模拟%'
+            OR name LIKE '%长距%'
+            OR name LIKE '%长跑%'
+            OR lower(COALESCE(name, '')) LIKE '%long run%'
+            OR lower(COALESCE(name, '')) LIKE '%simulation%'
+        )"""
 
         return self._conn.execute(
             f"""SELECT label_id, name, sport_type, sport_name, date,
@@ -1477,20 +1514,16 @@ class Database:
                   AND duration_s > 0
                   AND distance_m IS NOT NULL
                   AND distance_m >= ?
+                  AND {SHANGHAI_DAY_SQL} <= ?
                   AND (
                         lower(COALESCE(train_kind, '')) = 'race'
                      OR lower(COALESCE(train_type, '')) = 'race'
-                     OR lower(COALESCE(name, '')) LIKE '%race%'
-                     OR name LIKE '%赛%'
-                     OR name LIKE '%马拉松%'
-                     OR distance_m BETWEEN 4800 AND 5300
-                     OR distance_m BETWEEN 9800 AND 10500
-                     OR distance_m BETWEEN 20800 AND 21800
-                     OR distance_m BETWEEN 41800 AND 43500
+                     OR ({canonical_distance} AND {event_name.format(name_words=name_words)}
+                         AND NOT {training_name.format(name_words=name_words)})
                   )
                 ORDER BY date DESC, label_id DESC
                 LIMIT ?""",
-            (min_distance_km * 1000.0, int(limit)),
+            (min_distance_km * 1000.0, as_of_date, int(limit)),
         ).fetchall()
 
     def _build_activity_list_filter(

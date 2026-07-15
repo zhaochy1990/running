@@ -24,6 +24,16 @@ import {
 } from '../api'
 
 type SetupPhase = 'goals' | 'syncing' | 'generating' | 'ready'
+type IntakeField =
+  | 'raceDistance'
+  | 'raceName'
+  | 'raceDate'
+  | 'weeklyDays'
+  | 'targetTime'
+  | 'runningAge'
+  | 'currentWeeklyKm'
+  | 'pb'
+  | 'injuries'
 
 const POLL_INTERVAL_MS = 1500
 const MAX_POLL_ATTEMPTS = 400 // 400 * 1.5s = 10 min
@@ -106,6 +116,8 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
   const handledSyncDoneRef = useRef(false)
   const handledDoneRef = useRef(false)
   const mountedRef = useRef(true)
+  const formRevisionRef = useRef(0)
+  const dirtyIntakeFieldsRef = useRef(new Set<IntakeField>())
 
   useEffect(() => {
     mountedRef.current = true
@@ -130,69 +142,106 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
     return () => { cancelled = true }
   }, [])
 
+  const markFormEdited = (...fields: IntakeField[]) => {
+    formRevisionRef.current += 1
+    for (const field of fields) dirtyIntakeFieldsRef.current.add(field)
+  }
+
   const applyStoredIntake = (data: MasterPlanIntakeContext) => {
     const goal = data.goal
     if (goal) {
-      setRaceDistance(goal.race_distance ?? '')
-      setRaceName(goal.race_name ?? '')
-      setRaceDate(goal.race_date ?? '')
-      setWeeklyDays(goal.weekly_training_days ?? '')
-      setFinishOnly(!goal.target_finish_time)
-      setTargetTime(goal.target_finish_time ?? '')
+      if (!dirtyIntakeFieldsRef.current.has('raceDistance')) setRaceDistance(goal.race_distance ?? '')
+      if (!dirtyIntakeFieldsRef.current.has('raceName')) setRaceName(goal.race_name ?? '')
+      if (!dirtyIntakeFieldsRef.current.has('raceDate')) setRaceDate(goal.race_date ?? '')
+      if (!dirtyIntakeFieldsRef.current.has('weeklyDays')) setWeeklyDays(goal.weekly_training_days ?? '')
+      if (!dirtyIntakeFieldsRef.current.has('targetTime')) {
+        setFinishOnly(!goal.target_finish_time)
+        setTargetTime(goal.target_finish_time ?? '')
+      }
     }
     const profile = data.profile
     if (profile) {
-      setRunningAge(profile.running_age)
-      setCurrentWeeklyKm(profile.current_weekly_km)
+      if (!dirtyIntakeFieldsRef.current.has('runningAge')) setRunningAge(profile.running_age)
+      if (!dirtyIntakeFieldsRef.current.has('currentWeeklyKm')) setCurrentWeeklyKm(profile.current_weekly_km)
       const firstPb = profile.pbs?.[0]
-      if (firstPb) {
+      if (firstPb && !dirtyIntakeFieldsRef.current.has('pb')) {
         setPbDistance(firstPb.distance)
         setPbTime(firstPb.time)
       }
-      const injuries = profile.injuries ?? []
-      const hasInjuries = injuries.length > 0 && !injuries.includes('none')
-      setInjuryFree(!hasInjuries)
-      setInjuryText(hasInjuries ? injuries.join('，') : '')
+      if (!dirtyIntakeFieldsRef.current.has('injuries')) {
+        const injuries = profile.injuries ?? []
+        const hasInjuries = injuries.length > 0 && !injuries.includes('none')
+        setInjuryFree(!hasInjuries)
+        setInjuryText(hasInjuries ? injuries.join('，') : '')
+      }
     }
   }
 
   const applyExtractedFields = (fields: MasterPlanIntakeExtractFields) => {
-    if (fields.race_distance) setRaceDistance(fields.race_distance)
-    if (fields.race_name) setRaceName(fields.race_name)
-    if (fields.race_date) setRaceDate(fields.race_date)
-    if (fields.weekly_training_days) setWeeklyDays(fields.weekly_training_days)
+    const touched: IntakeField[] = []
+    if (fields.race_distance) {
+      touched.push('raceDistance')
+      setRaceDistance(fields.race_distance)
+    }
+    if (fields.race_name) {
+      touched.push('raceName')
+      setRaceName(fields.race_name)
+    }
+    if (fields.race_date) {
+      touched.push('raceDate')
+      setRaceDate(fields.race_date)
+    }
+    if (fields.weekly_training_days) {
+      touched.push('weeklyDays')
+      setWeeklyDays(fields.weekly_training_days)
+    }
     if (fields.target_finish_time !== undefined) {
+      touched.push('targetTime')
       const value = fields.target_finish_time ?? ''
       setFinishOnly(!value)
       setTargetTime(value)
     }
-    if (fields.running_age) setRunningAge(fields.running_age)
-    if (fields.current_weekly_km) setCurrentWeeklyKm(fields.current_weekly_km)
+    if (fields.running_age) {
+      touched.push('runningAge')
+      setRunningAge(fields.running_age)
+    }
+    if (fields.current_weekly_km) {
+      touched.push('currentWeeklyKm')
+      setCurrentWeeklyKm(fields.current_weekly_km)
+    }
+    if (fields.pb_distance || fields.pb_time) touched.push('pb')
     if (fields.pb_distance) setPbDistance(fields.pb_distance)
     if (fields.pb_time) setPbTime(fields.pb_time)
     if (fields.injuries?.length) {
+      touched.push('injuries')
       const hasInjuries = !fields.injuries.includes('none')
       setInjuryFree(!hasInjuries)
       setInjuryText(hasInjuries ? fields.injuries.join('，') : '')
     }
+    if (touched.length) markFormEdited(...touched)
   }
 
   const handleIntakeSubmit = async () => {
     const message = intakeMessage.trim()
-    if (!message || intakeExtracting) return
+    if (!message || intakeLoading || intakeExtracting) return
+    const requestRevision = formRevisionRef.current
     setError('')
     setIntakeNotice(null)
     setIntakeExtracting(true)
     try {
       const res = await extractMasterPlanIntake(message)
       if (!res.ok) throw new Error('Coach 暂时无法解析这段描述，请直接填写卡片')
-      applyExtractedFields(res.data.fields)
       setIntakeContext((prev) => ({
         goal: prev?.goal ?? null,
         profile: prev?.profile ?? null,
         history: res.data.history,
       }))
-      setIntakeNotice(res.data.warning || 'Coach 已把可识别的信息回填到卡片')
+      if (formRevisionRef.current === requestRevision) {
+        applyExtractedFields(res.data.fields)
+        setIntakeNotice(res.data.warning || 'Coach 已把可识别的信息回填到卡片')
+      } else {
+        setIntakeNotice('你已修改卡片，Coach 结果未覆盖手动输入')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '解析失败，请直接填写卡片')
     } finally {
@@ -261,6 +310,7 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
 
   const handleGoalSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (saving || intakeLoading || intakeExtracting) return
     setError('')
 
     if (!raceDistance) {
@@ -471,7 +521,7 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
               <button
                 type="button"
                 onClick={handleIntakeSubmit}
-                disabled={intakeExtracting || !intakeMessage.trim()}
+                disabled={intakeLoading || intakeExtracting || !intakeMessage.trim()}
                 className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-accent-green px-4 text-sm font-semibold text-white transition-colors hover:bg-accent-green-dim disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <SendGlyph />
@@ -509,7 +559,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setRaceDistance(opt.value)}
+                    onClick={() => {
+                      markFormEdited('raceDistance')
+                      setRaceDistance(opt.value)
+                    }}
                     aria-pressed={active}
                     className={`py-2 px-2 rounded-lg text-sm font-medium border transition-colors ${
                       active
@@ -534,7 +587,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
                 required
                 placeholder="例：上海马拉松 2026"
                 value={raceName}
-                onChange={(e) => setRaceName(e.target.value)}
+                onChange={(e) => {
+                  markFormEdited('raceName')
+                  setRaceName(e.target.value)
+                }}
                 className={inputCls}
               />
             </div>
@@ -545,7 +601,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
                 type="date"
                 required
                 value={raceDate}
-                onChange={(e) => setRaceDate(e.target.value)}
+                onChange={(e) => {
+                  markFormEdited('raceDate')
+                  setRaceDate(e.target.value)
+                }}
                 className={inputCls}
               />
             </div>
@@ -561,7 +620,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
                   <button
                     key={days}
                     type="button"
-                    onClick={() => setWeeklyDays(days)}
+                    onClick={() => {
+                      markFormEdited('weeklyDays')
+                      setWeeklyDays(days)
+                    }}
                     aria-pressed={active}
                     className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
                       active
@@ -581,13 +643,19 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
               label="跑龄"
               options={RUNNING_AGE_OPTIONS}
               value={runningAge}
-              onChange={setRunningAge}
+              onChange={(value) => {
+                markFormEdited('runningAge')
+                setRunningAge(value)
+              }}
             />
             <SegmentedField
               label="近期周跑量"
               options={WEEKLY_KM_OPTIONS}
               value={currentWeeklyKm}
-              onChange={setCurrentWeeklyKm}
+              onChange={(value) => {
+                markFormEdited('currentWeeklyKm')
+                setCurrentWeeklyKm(value)
+              }}
             />
           </div>
 
@@ -596,7 +664,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
               label="PB 类型"
               options={PB_OPTIONS}
               value={pbDistance}
-              onChange={setPbDistance}
+              onChange={(value) => {
+                markFormEdited('pb')
+                setPbDistance(value)
+              }}
             />
             <div>
               <label htmlFor="master-plan-pb-time" className={labelCls}>PB 成绩（可选）</label>
@@ -605,7 +676,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
                 type="text"
                 placeholder="例：3:25:00"
                 value={pbTime}
-                onChange={(e) => setPbTime(e.target.value)}
+                onChange={(e) => {
+                  markFormEdited('pb')
+                  setPbTime(e.target.value)
+                }}
                 className={`${inputCls} font-mono tracking-wider`}
               />
             </div>
@@ -618,7 +692,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
                 <input
                   type="checkbox"
                   checked={injuryFree}
-                  onChange={(e) => setInjuryFree(e.target.checked)}
+                  onChange={(e) => {
+                    markFormEdited('injuries')
+                    setInjuryFree(e.target.checked)
+                  }}
                   className="w-4 h-4 rounded border-border-subtle accent-accent-green"
                 />
                 <span className="text-xs text-text-muted">没有伤病史</span>
@@ -631,7 +708,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
               placeholder="例：跟腱、小腿、膝盖"
               value={injuryFree ? '' : injuryText}
               disabled={injuryFree}
-              onChange={(e) => setInjuryText(e.target.value)}
+              onChange={(e) => {
+                markFormEdited('injuries')
+                setInjuryText(e.target.value)
+              }}
               className={`${inputCls} disabled:opacity-40 disabled:cursor-not-allowed`}
             />
           </div>
@@ -644,7 +724,10 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
                 <input
                   type="checkbox"
                   checked={finishOnly}
-                  onChange={(e) => setFinishOnly(e.target.checked)}
+                  onChange={(e) => {
+                    markFormEdited('targetTime')
+                    setFinishOnly(e.target.checked)
+                  }}
                   className="w-4 h-4 rounded border-border-subtle accent-accent-green"
                 />
                 <span className="text-xs text-text-muted">仅完赛即可</span>
@@ -657,20 +740,23 @@ export default function TrainingPlanSetup({ onDraftReady }: Props) {
               placeholder="例：3:30:00"
               value={finishOnly ? '' : targetTime}
               disabled={finishOnly}
-              onChange={(e) => setTargetTime(e.target.value)}
+              onChange={(e) => {
+                markFormEdited('targetTime')
+                setTargetTime(e.target.value)
+              }}
               className={`${inputCls} font-mono tracking-wider disabled:opacity-40 disabled:cursor-not-allowed`}
             />
           </div>
 
           <button
             type="submit"
-            disabled={saving}
-            className="w-full rounded-lg bg-accent-green/90 px-4 py-2.5 text-sm font-semibold text-bg-base hover:bg-accent-green disabled:opacity-50 transition-colors cursor-pointer flex items-center justify-center gap-2"
+            disabled={saving || intakeLoading || intakeExtracting}
+            className="w-full rounded-lg bg-accent-green/90 px-4 py-2.5 text-sm font-semibold text-bg-base hover:bg-accent-green disabled:cursor-not-allowed disabled:opacity-50 transition-colors cursor-pointer flex items-center justify-center gap-2"
           >
-            {saving ? (
+            {saving || intakeLoading ? (
               <>
                 <span className="w-4 h-4 border-2 border-bg-base/30 border-t-bg-base rounded-full animate-spin" />
-                准备中...
+                {saving ? '准备中...' : '读取资料中...'}
               </>
             ) : (
               '生成我的赛季计划'

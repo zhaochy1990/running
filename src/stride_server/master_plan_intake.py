@@ -19,7 +19,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from coach.runtime.llm_factory import CoachLLMUnavailable
 from coach.runtime.messages import extract_text
-from stride_core.pb_records import DISTANCE_ORDER, load_personal_bests
+from stride_core.pb_records import (
+    DISTANCE_ORDER,
+    load_personal_bests,
+    personal_bests_at_or_before,
+)
 from stride_core.timefmt import today_shanghai
 
 from .content_store import read_json
@@ -87,9 +91,15 @@ def build_history_analysis(user_id: str, *, as_of: date_cls | None = None) -> di
         from stride_storage.sqlite.database import Database
 
         db = Database(user=user_id)
-        pb_map = load_personal_bests(db)
+        pb_map = personal_bests_at_or_before(load_personal_bests(db), as_of)
         pbs = _personal_bests_to_response(pb_map, as_of=as_of)
-        races = [_race_row_to_response(row, as_of=as_of) for row in db.list_race_effort_activities(limit=6)]
+        races = [
+            _race_row_to_response(row, as_of=as_of)
+            for row in db.list_race_effort_activities(
+                as_of_date=as_of.isoformat(),
+                limit=6,
+            )
+        ]
         summary = _history_summary(pbs, races)
         return {
             "data_available": bool(pbs or races),
@@ -153,8 +163,11 @@ race_name string, race_distance one of 5K/10K/HM/FM/trail, race_date YYYY-MM-DD,
 target_finish_time H:MM:SS or null, weekly_training_days integer 3-6,
 running_age one of lt_6m/6m_1y/1y_3y/3y_plus,
 current_weekly_km one of lt_20/20_40/40_60/60_plus,
-pb_distance one of 5K/10K/HM/FM, pb_time H:MM:SS, injuries array of short strings.
-Use null for unknown values and do not invent facts."""
+pb_distance one of 5K/10K/HM/FM, pb_time H:MM:SS, injuries array of short strings,
+finish_only boolean or null, injury_free boolean or null.
+Set finish_only=true only when the athlete explicitly says they only want to finish
+or have no time goal. Set injury_free=true only when they explicitly say they have
+no injuries. Use null for unknown values and do not invent facts."""
     compact_context = {
         "current_goal": (context or {}).get("goal"),
         "current_profile": (context or {}).get("profile"),
@@ -192,9 +205,30 @@ def fallback_extract_intake_fields(message: str) -> dict[str, Any]:
     if time_match:
         h, m, s = time_match.groups()
         out["target_finish_time"] = f"{int(h)}:{int(m):02d}:{int(s or 0):02d}"
-    if re.search(r"没有(?:任何)?伤病|无伤病|injury[-\s]?free", text, re.I):
-        out["injuries"] = ["none"]
-    return out
+    if _has_non_negated_match(
+        text,
+        r"仅(?:需|求)?完赛|只(?:要|求)?完赛|完赛即可|不设.{0,6}(?:成绩|时间)|finish[-\s]?only|no time goal",
+    ):
+        out["finish_only"] = True
+    if _has_non_negated_match(
+        text,
+        r"没有(?:任何)?伤病|无伤病|injury[-\s]?free",
+    ):
+        out["injury_free"] = True
+    return _normalise_extracted_fields(out)
+
+
+def _has_non_negated_match(text: str, pattern: str) -> bool:
+    for match in re.finditer(pattern, text, re.I):
+        clause_start = max(
+            text.rfind(mark, 0, match.start())
+            for mark in ("。", "！", "？", ";", "；", ",", "，")
+        )
+        prefix = text[clause_start + 1:match.start()]
+        if re.search(r"不|没|未|非|否|无|\bnot\b|n't\b", prefix, re.I):
+            continue
+        return True
+    return False
 
 
 def _get_lightweight_llm() -> Any:
@@ -262,9 +296,11 @@ def _history_summary(pbs: list[dict[str, Any]], races: list[dict[str, Any]]) -> 
     fm = next((pb for pb in pbs if pb.get("distance") == "FM"), None)
     hm = next((pb for pb in pbs if pb.get("distance") == "HM"), None)
     if fm:
-        bits.append(f"全马 PB {fm.get('time')}（{fm.get('achieved_at')}，距今 {fm.get('days_since') or '?'} 天）")
+        age = fm.get("days_since")
+        bits.append(f"全马 PB {fm.get('time')}（{fm.get('achieved_at')}，距今 {age if age is not None else '?'} 天）")
     if hm:
-        bits.append(f"半马 PB {hm.get('time')}（{hm.get('achieved_at')}，距今 {hm.get('days_since') or '?'} 天）")
+        age = hm.get("days_since")
+        bits.append(f"半马 PB {hm.get('time')}（{hm.get('achieved_at')}，距今 {age if age is not None else '?'} 天）")
     if races:
         r = races[0]
         bits.append(
@@ -276,10 +312,21 @@ def _history_summary(pbs: list[dict[str, Any]], races: list[dict[str, Any]]) -> 
 
 def _normalise_extracted_fields(data: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
-    for key in ("race_name", "race_date", "target_finish_time", "pb_time"):
-        value = data.get(key)
-        if isinstance(value, str) and value.strip():
-            out[key] = value.strip()
+    race_name = data.get("race_name")
+    if isinstance(race_name, str) and race_name.strip():
+        out["race_name"] = race_name.strip()
+    race_date = _normalise_iso_date(data.get("race_date"))
+    if race_date is not None:
+        out["race_date"] = race_date
+    target_finish_time = _normalise_hms(
+        data.get("target_finish_time"),
+        allow_hour_minute=True,
+    )
+    if target_finish_time is not None:
+        out["target_finish_time"] = target_finish_time
+    pb_time = _normalise_hms(data.get("pb_time"))
+    if pb_time is not None:
+        out["pb_time"] = pb_time
     running_age = data.get("running_age")
     if isinstance(running_age, str) and running_age.strip() in _RUNNING_AGES:
         out["running_age"] = running_age.strip()
@@ -302,7 +349,39 @@ def _normalise_extracted_fields(data: dict[str, Any]) -> dict[str, Any]:
         clean = [str(item).strip() for item in injuries if str(item).strip()]
         if clean:
             out["injuries"] = clean[:6]
+    if data.get("finish_only") is True:
+        out["target_finish_time"] = None
+    if data.get("injury_free") is True:
+        out["injuries"] = ["none"]
     return out
+
+
+def _normalise_iso_date(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return date_cls.fromisoformat(value.strip()).isoformat()
+    except ValueError:
+        return None
+
+
+def _normalise_hms(value: Any, *, allow_hour_minute: bool = False) -> str | None:
+    if not isinstance(value, str):
+        return None
+    pattern = (
+        r"(\d{1,2}):(\d{2})(?::(\d{2}))?"
+        if allow_hour_minute
+        else r"(\d{1,2}):(\d{2}):(\d{2})"
+    )
+    match = re.fullmatch(pattern, value.strip())
+    if match is None:
+        return None
+    hours = int(match.group(1))
+    minutes = int(match.group(2))
+    seconds = int(match.group(3) or 0)
+    if minutes >= 60 or seconds >= 60 or hours + minutes + seconds == 0:
+        return None
+    return f"{hours}:{minutes:02d}:{seconds:02d}"
 
 
 def _normalise_distance(raw: str) -> str | None:
@@ -409,7 +488,8 @@ def _days_since(value: str | None, as_of: date_cls) -> int | None:
     if not value:
         return None
     try:
-        return max(0, (as_of - date_cls.fromisoformat(value[:10])).days)
+        days = (as_of - date_cls.fromisoformat(value[:10])).days
+        return days if days >= 0 else None
     except ValueError:
         return None
 

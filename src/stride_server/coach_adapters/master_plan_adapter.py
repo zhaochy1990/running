@@ -133,12 +133,14 @@ _PB_HISTORY_KEYS = {
 }
 
 
-def _load_pb_seconds(db) -> dict[str, float]:
+def _load_pb_seconds(db, *, as_of: date_cls | None = None) -> dict[str, float]:
     """Load achieved PB seconds from personal_bests, self-healing via the
     canonical PB reader when needed."""
-    from stride_core.pb_records import load_personal_bests
+    from stride_core.pb_records import load_personal_bests, personal_bests_at_or_before
 
     pb_map = load_personal_bests(db)
+    if as_of is not None:
+        pb_map = personal_bests_at_or_before(pb_map, as_of)
     raw = {}
     for display, key in (("5K", "5k"), ("10K", "10k"), ("HM", "hm"), ("FM", "fm")):
         entry = pb_map.get(display)
@@ -240,7 +242,7 @@ def load_master_context(state: GenState) -> dict:
         from stride_storage.sqlite.database import Database
         db = Database(user=user_id)
         try:
-            pb_seconds = _load_pb_seconds(db)
+            pb_seconds = _load_pb_seconds(db, as_of=as_of)
         except Exception as exc:  # noqa: BLE001 — PB read must not block gen
             logger.warning("load_master_context: PB read failed for %s: %s", user_id, exc)
         continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)

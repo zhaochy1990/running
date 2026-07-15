@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import RegisterPage from '../RegisterPage'
+import { AUTH_CLIENT_ID } from '../../authConfig'
 
 const authStoreMock = vi.hoisted(() => ({
   registerSuccess: vi.fn(),
@@ -79,5 +80,27 @@ describe('RegisterPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '创建账号' }))
 
     expect(await screen.findByText('密码必须包含至少一个特殊字符')).toBeInTheDocument()
+  })
+
+  it('uses the public STRIDE client id fallback for registration', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: 'invite invalid' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    renderPage()
+    fillRegisterForm('Abcdef1!')
+
+    fireEvent.click(screen.getByRole('button', { name: '创建账号' }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Client-Id': AUTH_CLIENT_ID,
+      },
+    })
   })
 })

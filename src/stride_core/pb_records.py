@@ -11,6 +11,7 @@ import json
 import logging
 import sqlite3
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Mapping, Sequence
 
 from stride_core.models import RUN_SPORT_IDS
@@ -233,6 +234,69 @@ def load_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
     return persist_personal_bests(db)
 
 
+def personal_bests_at_or_before(
+    pb_map: Mapping[str, Mapping[str, Any]],
+    as_of_date: date,
+) -> dict[str, dict[str, Any]]:
+    """Return the PB snapshot that existed on ``as_of_date``.
+
+    Persisted rows carry the current best plus chronological best-so-far
+    history. Replays must select the latest historical point at or before their
+    frozen date instead of leaking a later PB.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for distance, raw_entry in pb_map.items():
+        if not isinstance(raw_entry, Mapping):
+            continue
+        entry = dict(raw_entry)
+        history = entry.get("history")
+        if isinstance(history, list):
+            eligible: list[tuple[date, int, float, dict[str, Any]]] = []
+            for index, raw_point in enumerate(history):
+                if not isinstance(raw_point, Mapping):
+                    continue
+                point = dict(raw_point)
+                point_date = _date_or_none(point.get("date"))
+                raw_seconds = point.get("best_so_far_sec")
+                if raw_seconds is None:
+                    continue
+                try:
+                    seconds = float(raw_seconds)
+                except (TypeError, ValueError):
+                    continue
+                if point_date is None or point_date > as_of_date or seconds <= 0:
+                    continue
+                eligible.append((point_date, index, seconds, point))
+            if eligible:
+                _, _, selected_seconds, selected = max(
+                    eligible,
+                    key=lambda item: (item[0], item[1]),
+                )
+                snapshot = dict(entry)
+                snapshot["pb_time_sec"] = selected_seconds
+                selected_date = _date_or_none(selected["date"])
+                if selected_date is None:
+                    continue
+                snapshot["achieved_at"] = selected_date.isoformat()
+                snapshot["label_id"] = selected.get("label_id")
+                snapshot["source"] = selected.get("source")
+                snapshot["history"] = [item[3] for item in eligible]
+                if selected.get("label_id") != entry.get("label_id"):
+                    snapshot["name"] = None
+                for key in ("segment_start_s", "segment_end_s"):
+                    if key in selected:
+                        snapshot[key] = selected[key]
+                    else:
+                        snapshot.pop(key, None)
+                out[str(distance)] = snapshot
+                continue
+
+        achieved_at = _date_or_none(entry.get("achieved_at"))
+        if achieved_at is not None and achieved_at <= as_of_date:
+            out[str(distance)] = entry
+    return out
+
+
 def fetch_personal_bests(db: Any) -> dict[str, dict[str, Any]]:
     """Read persisted PBs from ``personal_bests`` keyed by display distance.
 
@@ -442,6 +506,15 @@ def _normalise_date(raw: str) -> str:
     return raw[:10]
 
 
+def _date_or_none(raw: Any) -> date | None:
+    if raw is None:
+        return None
+    try:
+        return date.fromisoformat(_normalise_date(str(raw)))
+    except ValueError:
+        return None
+
+
 def _get(obj: Mapping[str, Any] | Any, key: str) -> Any:
     if isinstance(obj, Mapping):
         return obj.get(key)
@@ -461,6 +534,7 @@ __all__ = [
     "detect_personal_bests",
     "fetch_personal_bests",
     "load_personal_bests",
+    "personal_bests_at_or_before",
     "personal_bests_scanned",
     "normalize_timeseries_units",
     "parse_pauses",

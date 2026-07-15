@@ -1,10 +1,9 @@
 import { create } from 'zustand'
+import { AUTH_CLIENT_ID } from '../authConfig'
 import { setAuthUser, clearAuthUser } from '../telemetry/appInsights'
 
 const AUTH_BASE = import.meta.env.VITE_AUTH_BASE_URL || ''
 const AUTH_REQUEST_BASE = import.meta.env.DEV ? '' : AUTH_BASE
-const DEFAULT_AUTH_CLIENT_ID = 'app_62978bf2803346878a2e4805'
-const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || DEFAULT_AUTH_CLIENT_ID
 
 interface JwtPayload {
   sub: string
@@ -41,7 +40,7 @@ async function refreshAccessToken(): Promise<string> {
 
   const res = await fetch(`${AUTH_REQUEST_BASE}/api/auth/refresh`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
+    headers: { 'Content-Type': 'application/json', 'X-Client-Id': AUTH_CLIENT_ID },
     body: JSON.stringify({ refresh_token: refreshToken }),
   })
 
@@ -121,7 +120,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (email: string, password: string) => {
     const res = await fetch(`${AUTH_REQUEST_BASE}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
+      headers: { 'Content-Type': 'application/json', 'X-Client-Id': AUTH_CLIENT_ID },
       body: JSON.stringify({ email, password }),
     })
 
@@ -168,7 +167,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       try {
         await fetch(`${AUTH_REQUEST_BASE}/api/auth/logout`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': AUTH_CLIENT_ID },
           body: JSON.stringify({ refresh_token: refreshToken }),
         })
       } catch { /* best-effort: server-side revocation may fail; local cleanup still runs */ }
