@@ -19,7 +19,7 @@ import dataclasses
 import json
 import logging
 import secrets as _secrets
-from datetime import date as date_cls, datetime, timedelta, timezone
+from datetime import date as date_cls, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
@@ -38,9 +38,10 @@ _PUSH_DATE_WINDOW_DAYS = 7
 from stride_storage.sqlite.database import Database
 from stride_core.plan_spec import SUPPORTED_SCHEMA_VERSION, SessionKind, WeeklyPlan
 from stride_core.source import Capability, DataSource, FeatureNotSupported
+from stride_core.timefmt import today_shanghai
 from stride_core.workout_spec import NormalizedRunWorkout, NormalizedStrengthWorkout
 
-from plan_parser import apply_weekly_plan, parse_plan_md
+from plan_parser import parse_plan_md
 from ..content_store import read_json as content_read_json
 from ..content_store import read_text as content_read_text
 from ..config import load_server_config
@@ -52,6 +53,14 @@ from ..deps import (
     get_source_for_user,
     get_server_config,
     parse_week_dates,
+)
+from ..weekly_plan_store import (
+    find_session,
+    get_weekly_plan_store,
+    nutrition_to_api,
+    plans_in_range,
+    save_weekly_plan,
+    session_to_api,
 )
 
 logger = logging.getLogger(__name__)
@@ -109,59 +118,26 @@ def prefer_authored_json_from_config(config: PlanConfig) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def _serialize_session(row: Any) -> dict[str, Any]:
-    spec_json = row["spec_json"]
-    spec = json.loads(spec_json) if spec_json else None
-    pushable = row["kind"] in (SessionKind.RUN.value, SessionKind.STRENGTH.value) and spec is not None
-    return {
-        "id": row["id"],
-        "date": row["date"],
-        "session_index": row["session_index"],
-        "kind": row["kind"],
-        "summary": row["summary"],
-        "spec": spec,
-        "notes_md": row["notes_md"],
-        "total_distance_m": row["total_distance_m"],
-        "total_duration_s": row["total_duration_s"],
-        "scheduled_workout_id": row["scheduled_workout_id"],
-        "pushable": pushable,
-    }
-
-
-def _serialize_nutrition(row: Any) -> dict[str, Any]:
-    meals_json = row["meals_json"]
-    return {
-        "date": row["date"],
-        "kcal_target": row["kcal_target"],
-        "carbs_g": row["carbs_g"],
-        "protein_g": row["protein_g"],
-        "fat_g": row["fat_g"],
-        "water_ml": row["water_ml"],
-        "meals": json.loads(meals_json) if meals_json else [],
-        "notes_md": row["notes_md"],
-    }
-
-
 def _shanghai_today_iso() -> str:
-    """Local Shanghai date — DB rows use Asia/Shanghai semantics (see CLAUDE.md)."""
-    return (datetime.now(timezone.utc) + timedelta(hours=8)).date().isoformat()
+    return today_shanghai().isoformat()
 
 
-def _planned_vs_actual(db: Database, plan_store, day: str) -> list[dict[str, Any]]:
+def _scheduled_id(db: Database, folder: str, session) -> int | None:
+    row = db.get_latest_scheduled_workout_for_plan_session(
+        folder, session.date, session.session_index
+    )
+    return int(row["id"]) if row is not None else None
+
+
+def _planned_vs_actual(db: Database, plan: WeeklyPlan | None, day: str) -> list[dict[str, Any]]:
     """Cross-reference planned sessions for ``day`` with synced activities.
 
     Activities are matched by date prefix only. We expose a tiny shape
     (planned summary + per-activity actuals) so the frontend can colour-code
     adherence without the server enforcing a single rubric.
     """
-    sessions = plan_store.get_planned_sessions(date_from=day, date_to=day)
-    rows = db.query(
-        """SELECT label_id, name, sport_name, sport, date,
-            distance_m, duration_s, avg_pace_s_km, avg_hr, train_kind, sport_type
-        FROM activities WHERE date >= ? AND date < ?
-        ORDER BY date ASC, label_id ASC""",
-        (day, day + "T99"),
-    )
+    sessions = [s for s in plan.sessions if s.date == day] if plan else []
+    rows = db.get_activities_for_shanghai_day(day)
     activities = [dict(r) for r in rows]
 
     out: list[dict[str, Any]] = []
@@ -170,21 +146,68 @@ def _planned_vs_actual(db: Database, plan_store, day: str) -> list[dict[str, Any
         # if normalized, else sport_type==100); kind=strength with strength
         # activities (sport_type==4). Anything else: leave actual=None.
         actual = None
-        if s["kind"] == SessionKind.RUN.value:
+        if s.kind == SessionKind.RUN:
             for a in activities:
                 if a.get("sport") == "run" or a.get("sport_type") == 100:
                     actual = a
                     break
-        elif s["kind"] == SessionKind.STRENGTH.value:
+        elif s.kind == SessionKind.STRENGTH:
             for a in activities:
                 if a.get("sport") == "strength" or a.get("sport_type") == 4:
                     actual = a
                     break
         out.append({
-            "planned": _serialize_session(s),
+            "planned": session_to_api(
+                plan.week_folder, s,
+                scheduled_workout_id=_scheduled_id(db, plan.week_folder, s),
+            ),
             "actual": actual,
         })
     return out
+
+
+def _legacy_plans_in_range(
+    user: str, date_from: str, date_to: str, *,
+    canonical_folders: set[str] | None = None,
+) -> list[WeeklyPlan]:
+    """Read historical SQLite plans when no canonical plan covers the week.
+
+    This is a migration-only compatibility path. It never promotes or mutates
+    the legacy rows, and canonical ``WeeklyPlanStore`` entries always win.
+    """
+    canonical_folders = canonical_folders or set()
+    canonical_bounds = {
+        bounds for folder in canonical_folders
+        if (bounds := parse_week_dates(folder)) is not None
+    }
+    legacy = get_plan_state_store(user)
+    try:
+        session_rows = legacy.get_planned_sessions(
+            date_from=date_from, date_to=date_to
+        )
+        nutrition_rows = legacy.get_planned_nutrition(
+            date_from=date_from, date_to=date_to
+        )
+        folders = {
+            row["week_folder"] for row in (*session_rows, *nutrition_rows)
+            if row["week_folder"] not in canonical_folders
+            and parse_week_dates(row["week_folder"]) not in canonical_bounds
+        }
+        plans: list[WeeklyPlan] = []
+        for folder in sorted(folders):
+            try:
+                plan = legacy.get_structured_weekly_plan(folder)
+            except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+                logger.warning(
+                    "ignoring invalid legacy structured plan user=%s folder=%s",
+                    user, folder, exc_info=True,
+                )
+                continue
+            if plan is not None:
+                plans.append(plan)
+        return plans
+    finally:
+        legacy.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,12 +242,13 @@ def get_plan_days(
             detail=f"date range cannot exceed {_MAX_DAYS_RANGE} days",
         )
 
-    plan_store = get_plan_state_store(user)
-    try:
-        session_rows = plan_store.get_planned_sessions(date_from=date_from, date_to=date_to)
-        nutrition_rows = plan_store.get_planned_nutrition(date_from=date_from, date_to=date_to)
-    finally:
-        plan_store.close()
+    plans = plans_in_range(user, date_from, date_to)
+    plans.extend(
+        _legacy_plans_in_range(
+            user, date_from, date_to,
+            canonical_folders={plan.week_folder for plan in plans},
+        )
+    )
 
     by_date: dict[str, dict[str, Any]] = {}
     cur = d_from
@@ -232,10 +256,24 @@ def get_plan_days(
         iso = cur.isoformat()
         by_date[iso] = {"date": iso, "sessions": [], "nutrition": None}
         cur += timedelta(days=1)
-    for r in session_rows:
-        by_date[r["date"]]["sessions"].append(_serialize_session(r))
-    for r in nutrition_rows:
-        by_date[r["date"]]["nutrition"] = _serialize_nutrition(r)
+    db = get_db(user)
+    try:
+        for plan in plans:
+            for session in plan.sessions:
+                if session.date in by_date:
+                    by_date[session.date]["sessions"].append(
+                        session_to_api(
+                            plan.week_folder, session,
+                            scheduled_workout_id=_scheduled_id(
+                                db, plan.week_folder, session
+                            ),
+                        )
+                    )
+            for item in plan.nutrition:
+                if item.date in by_date:
+                    by_date[item.date]["nutrition"] = nutrition_to_api(item)
+    finally:
+        db.close()
 
     return {"days": [by_date[k] for k in sorted(by_date.keys())]}
 
@@ -244,47 +282,95 @@ def get_plan_days(
 def get_plan_today(user: str):
     today = _shanghai_today_iso()
     db = get_db(user)
-    plan_store = get_plan_state_store(user)
+    plan = get_weekly_plan_store().get_current_plan(user, today)
+    if plan is None:
+        legacy = _legacy_plans_in_range(user, today, today)
+        plan = legacy[0] if legacy else None
     try:
-        session_rows = plan_store.get_planned_sessions(date_from=today, date_to=today)
-        nutrition_rows = plan_store.get_planned_nutrition(date_from=today, date_to=today)
-        planned_vs_actual = _planned_vs_actual(db, plan_store, today)
+        session_rows = [s for s in plan.sessions if s.date == today] if plan else []
+        nutrition_rows = [n for n in plan.nutrition if n.date == today] if plan else []
+        planned_vs_actual = _planned_vs_actual(db, plan, today)
+        sessions_payload = [
+            session_to_api(
+                plan.week_folder, session,
+                scheduled_workout_id=_scheduled_id(db, plan.week_folder, session),
+            )
+            for session in session_rows
+        ] if plan else []
     finally:
-        plan_store.close()
         db.close()
     return {
         "date": today,
-        "sessions": [_serialize_session(r) for r in session_rows],
-        "nutrition": _serialize_nutrition(nutrition_rows[0]) if nutrition_rows else None,
+        "sessions": sessions_payload,
+        "nutrition": nutrition_to_api(nutrition_rows[0]) if nutrition_rows else None,
         "planned_vs_actual": planned_vs_actual,
     }
 
 
-def _push_guard_or_raise(plan_store, week_folder: str) -> None:
-    """409 unless the week's structured layer is ``fresh`` or ``authored``.
-
-    ``authored`` is canonical (came directly from a human-authored plan.json
-    that passed schema validation), so it is equivalent to ``fresh`` for push
-    purposes.
-
-    ``backfilled`` is intentionally rejected: historical re-parses can hallucinate
-    interval structures that should be human-reviewed before going to the watch.
-    """
-    row = plan_store.get_weekly_plan_row(week_folder)
-    structured_status = None
-    if row is not None:
-        try:
-            structured_status = row["structured_status"]
-        except (IndexError, KeyError):
-            structured_status = None
-    if structured_status not in ("fresh", "authored"):
+def _push_guard_or_raise(plan: WeeklyPlan | None, week_folder: str) -> None:
+    """Reject a missing structured plan; canonical plans are pushable."""
+    if plan is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error": "structured plan not fresh, click 重新解析 first",
-                "structured_status": structured_status,
+                "structured_status": None,
             },
         )
+
+
+def _legacy_session_for_push(
+    user: str, date: str, session_index: int, db: Database,
+) -> tuple[WeeklyPlan, Any] | None:
+    """Read-only transition fallback for pre-migration SQLite plans."""
+    row = db.get_planned_session_by_date_index(date, session_index)
+    if row is None:
+        return None
+    plan = get_weekly_plan_store().get_plan(user, row["week_folder"])
+    if plan is not None:
+        return find_session(
+            user, date, session_index, folder=row["week_folder"]
+        )
+    parent = db.get_weekly_plan_row(row["week_folder"])
+    legacy_status = parent["structured_status"] if parent is not None else None
+    if legacy_status not in ("fresh", "authored"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "structured plan not fresh, click 重新解析 first",
+                "structured_status": legacy_status,
+            },
+        )
+    try:
+        kind = SessionKind(row["kind"])
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Stored session has unsupported kind: {row['kind']!r}",
+        ) from exc
+    spec = None
+    if row["spec_json"] and kind in (SessionKind.RUN, SessionKind.STRENGTH):
+        try:
+            spec_data = json.loads(row["spec_json"])
+            spec = (
+                NormalizedRunWorkout.from_dict(spec_data)
+                if kind == SessionKind.RUN
+                else NormalizedStrengthWorkout.from_dict(spec_data)
+            )
+        except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stored spec is not a valid normalized workout: {exc}",
+            ) from exc
+    from stride_core.plan_spec import PlannedSession
+
+    session = PlannedSession(
+        date=row["date"], session_index=row["session_index"], kind=kind,
+        summary=row["summary"], spec=spec, notes_md=row["notes_md"],
+        total_distance_m=row["total_distance_m"],
+        total_duration_s=row["total_duration_s"],
+    )
+    return WeeklyPlan(week_folder=row["week_folder"], sessions=(session,)), session
 
 
 def push_single_session(
@@ -332,20 +418,6 @@ def push_single_session(
         return {"success": False, "error": str(exc), "retryable": True}
 
 
-def _week_folder_for_date(db: Database, day: str) -> str | None:
-    """Best-effort: locate the week_folder a planned session lives under by
-    walking the ``weekly_plan`` table. We don't store week_folder on the
-    session row directly via the public API surface, but the DB does — so we
-    reuse that.
-    """
-    row = db.query(
-        "SELECT week_folder FROM planned_session WHERE date = ? LIMIT 1", (day,)
-    )
-    if row:
-        return row[0]["week_folder"]
-    return None
-
-
 @router.post("/api/{user}/plan/sessions/{date}/{session_index}/push")
 def push_planned_session(
     user: str,
@@ -369,9 +441,9 @@ def push_planned_session(
     watch entry so the session is moved, not duplicated.
 
     Path:
-      - 404 when the planned_session row doesn't exist
-      - 409 when the parent week's ``structured_status != 'fresh'`` (e.g.
-        ``backfilled`` or ``parse_failed``)
+      - 404 when no canonical or historical planned session exists
+      - 409 when a historical SQLite fallback has an unreviewed
+        ``structured_status`` (e.g. ``backfilled`` or ``parse_failed``)
       - 400 when ``target_date`` is malformed or outside the ±7-day window
       - 400 when the session is not RUN/STRENGTH, has no spec, or the provider
         lacks the matching ``PUSH_RUN_WORKOUT`` / ``PUSH_STRENGTH_WORKOUT``
@@ -382,30 +454,40 @@ def push_planned_session(
 
     On success: a new ``scheduled_workout`` row is created with
     ``status='pushed'`` (``date=target_date or planned date``); any prior row
-    attached via FK is marked ``status='superseded'`` after its watch-side
-    template is removed.
+    for the canonical session is marked ``status='superseded'`` after its
+    watch-side template is removed.
     """
     db = get_db(user)
-    plan_store = get_plan_state_store(user)
     try:
-        session_row = plan_store.get_planned_session_by_date_index(date, session_index)
-        if session_row is None:
+        canonical = get_weekly_plan_store().get_current_plan(user, date)
+        session = next(
+            (
+                item for item in canonical.sessions
+                if item.date == date and item.session_index == session_index
+            ),
+            None,
+        ) if canonical is not None else None
+        found = (canonical, session) if canonical is not None and session is not None else None
+        if canonical is None:
+            found = _legacy_session_for_push(user, date, session_index, db)
+        if found is None:
             raise HTTPException(status_code=404, detail="Planned session not found")
+        plan, session = found
 
-        session_kind = session_row["kind"]
+        session_kind = session.kind.value
         if session_kind not in (SessionKind.RUN.value, SessionKind.STRENGTH.value):
             raise HTTPException(
                 status_code=400,
                 detail=f"Push only supports kind=run or kind=strength; got {session_kind!r}",
             )
-        if not session_row["spec_json"]:
+        if session.spec is None:
             raise HTTPException(
                 status_code=400,
                 detail="Planned session has no spec (aspirational); cannot push",
             )
 
-        week_folder = session_row["week_folder"]
-        _push_guard_or_raise(plan_store, week_folder)
+        week_folder = plan.week_folder
+        _push_guard_or_raise(plan, week_folder)
 
         if session_kind == SessionKind.RUN.value:
             required_cap = Capability.PUSH_RUN_WORKOUT
@@ -423,7 +505,7 @@ def push_planned_session(
 
         workout: NormalizedRunWorkout | NormalizedStrengthWorkout
         try:
-            spec_data = json.loads(session_row["spec_json"])
+            spec_data = session.spec.to_dict()
             if session_kind == SessionKind.RUN.value:
                 workout = NormalizedRunWorkout.from_dict(spec_data)
             else:
@@ -461,26 +543,20 @@ def push_planned_session(
             # so adapter-side YYYYMMDD translation lands on the right day.
             workout = dataclasses.replace(workout, date=push_date)
 
-        # Compute prior pointer first so we know whether to mark superseded
-        # after the new push lands. Note: the *delete sweep* below is no
-        # longer gated on having a tracked prior — it always runs when the
-        # provider supports deletion. This handles two cases the old branch
-        # missed:
-        #   (a) re-push: prior_was_pushed=True → existing superseded behavior
-        #   (b) orphan cleanup: prior planned_session was rebuilt by the
-        #       cross-week upsert (so scheduled_workout_id is now NULL) but
-        #       the watch entry from a *previous* push is still on the
-        #       watch. Without an unconditional sweep the user ends up with
-        #       duplicate [STRIDE]-prefixed entries on the same date.
+        # Resolve prior execution state from the canonical reverse identity.
+        # The delete sweep below is not gated on finding a tracked prior: it
+        # also clears an untracked stale [STRIDE] entry left on the watch.
         # The adapter's delete_scheduled_workout filters to ``[STRIDE]``-
         # prefixed entries internally, so we never delete user-authored
         # workouts.
-        prior_id = session_row["scheduled_workout_id"]
+        prior = db.get_latest_scheduled_workout_for_plan_session(
+            week_folder, date, session_index
+        )
+        prior_id = prior["id"] if prior is not None else None
         prior_was_pushed = False
         prior_pushed_date: str | None = None
-        if prior_id is not None:
-            prior = db.get_scheduled_workout(prior_id)
-            if prior is not None and prior["status"] == "pushed":
+        if prior is not None:
+            if prior["status"] == "pushed":
                 prior_was_pushed = True
                 prior_pushed_date = prior["date"]
 
@@ -560,11 +636,9 @@ def push_planned_session(
                 detail="Could not push workout to watch service",
             )
 
-        # Push succeeded — atomically commit the local state transition:
-        # insert new scheduled_workout row → mark pushed → mark old row
-        # superseded → back-stamp planned_session.scheduled_workout_id. The
-        # ``with db._conn:`` block uses sqlite3's connection-as-context-manager
-        # to commit on success and rollback on exception.
+        # Push succeeded — atomically commit device execution state only:
+        # insert the new scheduled_workout row, mark it pushed, and supersede
+        # the prior row. The canonical WeeklyPlan remains unchanged.
         #
         # spec_json: when push_date was overridden we re-serialize the workout
         # so the stored spec's internal ``date`` matches the row's ``date``
@@ -572,54 +646,43 @@ def push_planned_session(
         # planned date is unchanged we reuse the original payload to avoid
         # touching whitespace / field ordering.
         spec_json_to_store = (
-            session_row["spec_json"] if push_date == date
+            json.dumps(session.spec.to_dict(), ensure_ascii=False) if push_date == date
             else json.dumps(workout.to_dict(), ensure_ascii=False)
         )
-        with db._conn:
-            cur = db._conn.execute(
-                """INSERT INTO scheduled_workout
-                   (date, kind, name, spec_json, status, provider,
-                    provider_workout_id, pushed_at)
-                   VALUES (?, ?, ?, ?, 'pushed', ?, ?, datetime('now'))""",
-                (
-                    push_date, session_kind, workout.name, spec_json_to_store,
-                    source.info.name, provider_workout_id,
-                ),
-            )
-            new_sw_id = cur.lastrowid
-            if prior_was_pushed:
-                db._conn.execute(
-                    "UPDATE scheduled_workout SET status='superseded', "
-                    "updated_at=datetime('now') WHERE id=?",
-                    (prior_id,),
-                )
-            db._conn.execute(
-                "UPDATE planned_session SET scheduled_workout_id=?, "
-                "updated_at=datetime('now') WHERE id=?",
-                (new_sw_id, session_row["id"]),
-            )
+        new_sw_id = db.record_pushed_scheduled_workout(
+            week_folder=week_folder,
+            planned_date=date,
+            session_index=session_index,
+            push_date=push_date,
+            kind=session_kind,
+            name=workout.name,
+            spec_json=spec_json_to_store,
+            provider=source.info.name,
+            provider_workout_id=provider_workout_id,
+            prior_id=prior_id if prior_was_pushed else None,
+        )
 
         return {
             "ok": True,
-            "planned_session_id": session_row["id"],
+            "planned_session_id": session_to_api(week_folder, session)["id"],
             "scheduled_workout_id": new_sw_id,
             "provider": source.info.name,
             "provider_workout_id": provider_workout_id,
             "push_date": push_date,
         }
     finally:
-        plan_store.close()
         db.close()
 
 
 def _try_authored_reparse(
     user: str, folder: str, content_md: str, generated_by: str | None,
+    *, source_hash: str | None = None,
 ) -> dict[str, Any] | None:
     """Try plan.json-first reparse path. Returns response dict on success, None to fall through.
 
     Phase 1 plan.json-priority logic. Gated by server config. The legacy
     ``STRIDE_PLAN_JSON_PRIORITY`` env var maps to ``plan.prefer_authored_json``.
-    When plan.json exists at the canonical content store path
+    When plan.json exists at the legacy content-store import path
     and parses against ``SUPPORTED_SCHEMA_VERSION``, we promote it directly to the
     structured layer with ``structured_source='authored'`` — bypassing the LLM
     reverse parser entirely. Any failure (missing file, malformed JSON, schema
@@ -666,12 +729,14 @@ def _try_authored_reparse(
             plan_json_path, exc, type(exc).__name__,
         )
         return None
-    apply_weekly_plan(
-        user, folder, content_md,
-        generated_by=generated_by,
-        structured=weekly_plan,
-        structured_source="authored",
-    )
+    try:
+        save_weekly_plan(
+            user, weekly_plan, expected_folder=folder, generated_by=generated_by,
+            source_hash=source_hash,
+        )
+    except ValueError as exc:
+        logger.warning("plan.json identity invalid at %s: %s", plan_json_path, exc)
+        return None
     logger.info(
         "plan.json authored path: user=%s folder=%s schema=v%d",
         user, folder, schema_version,
@@ -717,22 +782,25 @@ def reparse_plan(
         disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
         if disk_md:
             content_md = disk_md.content
-    if not content_md:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No stored plan for week {folder!r}; nothing to reparse",
-        )
-
     # Phase 1 plan.json-priority short-circuit. When plan.json is present and
     # parses against the supported schema, promote it as ``authored`` and skip
-    # the LLM call entirely.
-    authored = _try_authored_reparse(user, folder, content_md, existing_generated_by)
+    # the LLM call entirely. This deliberately precedes the Markdown
+    # precondition: a valid structured plan is independently importable.
+    authored = _try_authored_reparse(
+        user, folder, content_md, existing_generated_by
+    )
     if authored is not None:
         return {
             "ok": True,
             "folder": folder,
             **authored,
         }
+
+    if not content_md:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No stored plan for week {folder!r}; nothing to reparse",
+        )
 
     if len(content_md.encode("utf-8")) > _MAX_PLAN_MD_BYTES:
         raise HTTPException(
@@ -744,12 +812,11 @@ def reparse_plan(
         )
 
     result = parse_plan_md(folder=folder, md_text=content_md)
-    apply_weekly_plan(
-        user, folder, content_md,
-        generated_by=existing_generated_by,
-        structured=result.structured,
-        structured_source="fresh",
-    )
+    if result.structured is not None:
+        save_weekly_plan(
+            user, result.structured, expected_folder=folder,
+            generated_by=existing_generated_by,
+        )
     structured_status = "fresh" if result.structured is not None else "parse_failed"
     return {
         "ok": True,
@@ -813,29 +880,37 @@ def internal_reparse_plan(
         disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
         if disk_md:
             content_md = disk_md.content
+    # Phase 1 plan.json-priority short-circuit. plan.json supersedes the hash
+    # idempotency check because the schema-validated JSON is its own source of
+    # truth — even when plan.md is absent or unchanged, plan.json may have been
+    # created or updated.
+    md_hash = (
+        hashlib.sha256(content_md.encode("utf-8")).hexdigest()
+        if content_md else None
+    )
+    authored = _try_authored_reparse(
+        user, folder, content_md, existing_generated_by, source_hash=md_hash
+    )
+    if authored is not None:
+        return {
+            "ok": True, "noop": False, "user": user, "folder": folder,
+            **authored,
+        }
     if not content_md:
         raise HTTPException(
             status_code=404,
             detail=f"No stored plan for week {folder!r}",
         )
-
-    # Phase 1 plan.json-priority short-circuit. plan.json supersedes the hash
-    # idempotency check because the schema-validated JSON is its own source of
-    # truth — even when plan.md is unchanged, plan.json may have been updated.
-    authored = _try_authored_reparse(user, folder, content_md, existing_generated_by)
-    if authored is not None:
+    if get_weekly_plan_store().get_source_hash(user, folder) == md_hash:
         return {
-            "ok": True,
-            "noop": False,
-            "user": user,
-            "folder": folder,
-            **authored,
+            "ok": True, "noop": True, "user": user, "folder": folder,
+            "structured_status": "canonical", "source": "canonical",
+            "llm_calls": 0, "schema_version": None, "parse_error": None,
         }
-
-    md_hash = hashlib.sha256(content_md.encode("utf-8")).hexdigest()
     if (
         prior_hash == md_hash
         and prior_status in ("fresh", "authored")
+        and get_weekly_plan_store().get_plan(user, folder) is not None
     ):
         # Idempotent re-run: same plan.md + last parse already in a canonical
         # state (LLM-fresh or plan.json-authored). Skip the LLM call and echo
@@ -863,12 +938,11 @@ def internal_reparse_plan(
         )
 
     result = parse_plan_md(folder=folder, md_text=content_md)
-    apply_weekly_plan(
-        user, folder, content_md,
-        generated_by=existing_generated_by,
-        structured=result.structured,
-        structured_source="fresh",
-    )
+    if result.structured is not None:
+        save_weekly_plan(
+            user, result.structured, expected_folder=folder,
+            generated_by=existing_generated_by, source_hash=md_hash,
+        )
     structured_status = "fresh" if result.structured is not None else "parse_failed"
     return {
         "ok": True,

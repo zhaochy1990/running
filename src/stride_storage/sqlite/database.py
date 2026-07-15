@@ -406,11 +406,16 @@ CREATE TABLE IF NOT EXISTS scheduled_workout (
     pushed_at             TEXT,
     completed_label_id    TEXT REFERENCES activities(label_id),
     note                  TEXT,
+    week_folder           TEXT,                                   -- canonical plan identity
+    planned_date          TEXT,                                   -- canonical session date
+    session_index         INTEGER,                                -- canonical session index
     created_at            TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_scheduled_workout_date ON scheduled_workout(date);
 CREATE INDEX IF NOT EXISTS idx_scheduled_workout_status ON scheduled_workout(status);
+CREATE INDEX IF NOT EXISTS idx_scheduled_workout_plan_session
+    ON scheduled_workout(week_folder, planned_date, session_index, id);
 
 -- Structured weekly-plan layer (derived from weekly_plan.content_md via LLM
 -- reverse parsing). Date-keyed; session_index disambiguates double-session
@@ -942,6 +947,13 @@ class Database:
         _add("weekly_plan", "selected_variant_id", "INTEGER")
         _add("weekly_plan", "selected_at", "TEXT")
         _add("scheduled_workout", "abandoned_by_promote_at", "TEXT")
+        _add("scheduled_workout", "week_folder", "TEXT")
+        _add("scheduled_workout", "planned_date", "TEXT")
+        _add("scheduled_workout", "session_index", "INTEGER")
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_scheduled_workout_plan_session "
+            "ON scheduled_workout(week_folder, planned_date, session_index, id)"
+        )
 
         def _rename(old: str, new: str) -> None:
             """Rename table if old exists and new doesn't. Idempotent."""
@@ -2105,6 +2117,16 @@ class Database:
             (str(label_id),),
         ))
 
+    def get_activities_for_shanghai_day(self, day: str) -> list[sqlite3.Row]:
+        """Minimal activity rows used to compare a plan with actual work."""
+        return self._conn.execute(
+            f"""SELECT label_id, name, sport_name, sport, date, distance_m,
+                       duration_s, avg_pace_s_km, avg_hr, train_kind, sport_type
+                FROM activities WHERE {SHANGHAI_DAY_SQL} = ?
+                ORDER BY date ASC, label_id ASC""",
+            (day,),
+        ).fetchall()
+
     # --- Scheduled workouts (provider-agnostic structured calendar) ---
     #
     # Authored locally as `NormalizedRunWorkout` / `NormalizedStrengthWorkout`,
@@ -2139,6 +2161,89 @@ class Database:
         return self._conn.execute(
             "SELECT * FROM scheduled_workout WHERE id = ?", (workout_id,)
         ).fetchone()
+
+    def get_latest_scheduled_workout_for_plan_session(
+        self, week_folder: str, planned_date: str, session_index: int,
+    ) -> sqlite3.Row | None:
+        """Latest local execution row for one canonical plan session."""
+        row = self._conn.execute(
+            """SELECT * FROM scheduled_workout
+               WHERE week_folder = ? AND planned_date = ? AND session_index = ?
+               ORDER BY id DESC LIMIT 1""",
+            (week_folder, planned_date, session_index),
+        ).fetchone()
+        if row is not None:
+            return row
+        # Read-only migration fallback for rows created before execution state
+        # carried the canonical plan identity. Never back-stamp plan tables.
+        return self._conn.execute(
+            """SELECT sw.* FROM scheduled_workout sw
+               JOIN planned_session ps ON ps.scheduled_workout_id = sw.id
+               WHERE ps.week_folder = ? AND ps.date = ? AND ps.session_index = ?
+               ORDER BY sw.id DESC LIMIT 1""",
+            (week_folder, planned_date, session_index),
+        ).fetchone()
+
+    def list_scheduled_workouts_for_plan(
+        self, week_folder: str, *, active_only: bool = False,
+    ) -> list[sqlite3.Row]:
+        sql = "SELECT * FROM scheduled_workout WHERE week_folder = ?"
+        if active_only:
+            sql += " AND status NOT IN ('superseded', 'abandoned')"
+        sql += " ORDER BY planned_date, session_index, id"
+        rows = self._conn.execute(sql, (week_folder,)).fetchall()
+        legacy_sql = (
+            "SELECT sw.* FROM scheduled_workout sw "
+            "JOIN planned_session ps ON ps.scheduled_workout_id = sw.id "
+            "WHERE ps.week_folder = ? AND sw.week_folder IS NULL"
+        )
+        if active_only:
+            legacy_sql += " AND sw.status NOT IN ('superseded', 'abandoned')"
+        legacy_sql += " ORDER BY ps.date, ps.session_index, sw.id"
+        legacy = self._conn.execute(legacy_sql, (week_folder,)).fetchall()
+        return [*rows, *legacy]
+
+    def record_pushed_scheduled_workout(
+        self, *, week_folder: str, planned_date: str, session_index: int,
+        push_date: str, kind: str, name: str, spec_json: str, provider: str,
+        provider_workout_id: str | None, prior_id: int | None = None,
+    ) -> int:
+        """Atomically record a successful push and supersede its prior row."""
+        with self._conn:
+            cur = self._conn.execute(
+                """INSERT INTO scheduled_workout
+                   (date, kind, name, spec_json, status, provider,
+                    provider_workout_id, pushed_at, week_folder, planned_date,
+                    session_index)
+                   VALUES (?, ?, ?, ?, 'pushed', ?, ?, datetime('now'), ?, ?, ?)""",
+                (
+                    push_date, kind, name, spec_json, provider, provider_workout_id,
+                    week_folder, planned_date, session_index,
+                ),
+            )
+            if prior_id is not None:
+                self._conn.execute(
+                    "UPDATE scheduled_workout SET status='superseded', "
+                    "updated_at=datetime('now') WHERE id=? AND status='pushed'",
+                    (prior_id,),
+                )
+        return int(cur.lastrowid)
+
+    def abandon_scheduled_workouts_for_plan(self, week_folder: str) -> list[int]:
+        """Mark active device state stale after canonical plan replacement."""
+        rows = self.list_scheduled_workouts_for_plan(week_folder, active_only=True)
+        ids = [int(row["id"]) for row in rows]
+        if not ids:
+            return []
+        placeholders = ",".join("?" for _ in ids)
+        with self._conn:
+            self._conn.execute(
+                f"UPDATE scheduled_workout SET status='abandoned', "
+                f"abandoned_by_promote_at=datetime('now'), "
+                f"updated_at=datetime('now') WHERE id IN ({placeholders})",
+                tuple(ids),
+            )
+        return ids
 
     def list_scheduled_workouts(
         self,
@@ -2243,8 +2348,10 @@ class Database:
 
     # --- Structured weekly plan (planned_session / planned_nutrition) ---
     #
-    # The markdown in weekly_plan.content_md is the canonical source of truth.
-    # This layer is a derived JSON cache produced by the LLM reverse parser.
+    # WeeklyPlanStore is the canonical structured source. These tables remain
+    # only for historical read compatibility and low-level migration tests;
+    # active generation, import, calendar, Coach, and watch-push paths do not
+    # write them.
     # Helpers here are intentionally idempotent — every upsert wipes the
     # existing rows for the affected week before reinserting, so a re-parse
     # never leaves stale rows behind.

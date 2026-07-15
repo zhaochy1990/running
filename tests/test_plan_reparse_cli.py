@@ -83,19 +83,23 @@ def test_plan_reparse_single_folder_writes_backfilled(tmp_path, monkeypatch):
     assert res.exit_code == 0, res.output
     assert "backfilled" in res.output
 
-    # DB row should carry status='backfilled' (NOT 'fresh').
+    # Backfill writes only the canonical store, never SQLite plan tables.
     db = Database(tmp_path / USER_UUID / "coros.db")
     try:
-        row = dict(db._conn.execute(
+        row = db._conn.execute(
             "SELECT structured_status FROM weekly_plan WHERE week=?",
             ("2026-04-20_04-26(W0)",),
-        ).fetchone())
-        assert row["structured_status"] == "backfilled"
-        sessions = db.get_planned_sessions(week_folder="2026-04-20_04-26(W0)")
-        assert len(sessions) == 1
-        assert sessions[0]["kind"] == "rest"
+        ).fetchone()
+        assert row is None
+        assert db.get_planned_sessions(week_folder="2026-04-20_04-26(W0)") == []
     finally:
         db.close()
+    import stride_core.db as core_db
+    from stride_storage.azure.weekly_plan_backend import FileWeeklyPlanStore
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    plan = FileWeeklyPlanStore().get_plan(USER_UUID, "2026-04-20_04-26(W0)")
+    assert plan is not None
+    assert plan.sessions[0].kind == SessionKind.REST
 
 
 def test_plan_reparse_parse_failure_marks_failed(tmp_path, monkeypatch):
@@ -114,12 +118,7 @@ def test_plan_reparse_parse_failure_marks_failed(tmp_path, monkeypatch):
 
     db = Database(tmp_path / USER_UUID / "coros.db")
     try:
-        row = dict(db._conn.execute(
-            "SELECT structured_status FROM weekly_plan WHERE week=?",
-            ("2026-04-20_04-26(W0)",),
-        ).fetchone())
-        # apply_weekly_plan(structured=None) marks parse_failed regardless of source
-        assert row["structured_status"] == "parse_failed"
+        assert db.get_weekly_plan_row("2026-04-20_04-26(W0)") is None
     finally:
         db.close()
 
@@ -188,13 +187,9 @@ def test_plan_reparse_all_processes_multiple_weeks(tmp_path, monkeypatch):
     assert res.exit_code == 0, res.output
     assert "2/2 weeks backfilled" in res.output
 
-    db = Database(tmp_path / USER_UUID / "coros.db")
-    try:
-        for wf in ("2026-04-20_04-26(W0)", "2026-04-27_05-03(W1)"):
-            row = dict(db._conn.execute(
-                "SELECT structured_status FROM weekly_plan WHERE week=?",
-                (wf,),
-            ).fetchone())
-            assert row["structured_status"] == "backfilled"
-    finally:
-        db.close()
+    import stride_core.db as core_db
+    from stride_storage.azure.weekly_plan_backend import FileWeeklyPlanStore
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    store = FileWeeklyPlanStore()
+    for wf in ("2026-04-20_04-26(W0)", "2026-04-27_05-03(W1)"):
+        assert store.get_plan(USER_UUID, wf) is not None

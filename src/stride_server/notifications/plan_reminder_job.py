@@ -23,8 +23,7 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 
-from stride_core.db import USER_DATA_DIR
-from stride_storage.sqlite.database import Database
+from stride_server.weekly_plan_store import get_weekly_plan_store
 
 from . import jpush_client
 from . import store as nstore
@@ -48,19 +47,23 @@ def _now_hhmm() -> str:
     return datetime.now(SHANGHAI_TZ).strftime("%H:%M")
 
 
-def _has_local_db(user_id: str) -> bool:
-    return (USER_DATA_DIR / user_id / "coros.db").exists()
-
-
-def _todays_sessions(db: Database, today: str) -> list[dict]:
+def _todays_sessions(user_id: str, today: str) -> list[dict]:
     """Read today's planned sessions for this user."""
-    rows = db._conn.execute(
-        "SELECT kind, title, total_distance_m, total_duration_s,"
-        "       target_pace, target_hr_zone"
-        " FROM planned_session WHERE date = ? ORDER BY session_index",
-        (today,),
-    ).fetchall()
-    return [dict(r) for r in rows]
+    plan = get_weekly_plan_store().get_current_plan(user_id, today)
+    if plan is None:
+        return []
+    return [
+        {
+            "kind": session.kind.value,
+            "title": session.summary,
+            "total_distance_m": session.total_distance_m,
+            "total_duration_s": session.total_duration_s,
+            "target_pace": None,
+            "target_hr_zone": None,
+        }
+        for session in sorted(plan.sessions, key=lambda item: item.session_index)
+        if session.date == today
+    ]
 
 
 def _format_message(sessions: list[dict]) -> tuple[str, str]:
@@ -103,13 +106,7 @@ def run_for_user(user_id: str, *, today: str, current_hhmm: str) -> str:
     if not devices:
         return "no_devices"
 
-    if not _has_local_db(user_id):
-        # Prefs row exists but the watch DB doesn't — we can't read planned
-        # sessions, so skip cleanly.
-        return "no_local_db"
-
-    db = Database(user=user_id)
-    sessions = _todays_sessions(db, today)
+    sessions = _todays_sessions(user_id, today)
     title, body = _format_message(sessions)
 
     resp = jpush_client.push_to_registration_ids(

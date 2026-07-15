@@ -60,6 +60,11 @@ jobs:
             --account-key "$ACCOUNT_KEY" \
             --name "$BLOB_CONTAINER" \
             --output none
+          az storage table create \
+            --account-name authstorage2026 \
+            --account-key "$ACCOUNT_KEY" \
+            --name strideweeklyplan \
+            --output none
 
           for user_dir in data/*/; do
             user=$(basename "$user_dir")
@@ -247,9 +252,10 @@ jobs:
           echo "==> Data sync complete"
 
       - name: Trigger structured-plan reparse for changed plan.md files
-        # Best-effort: never fails the workflow. The structured layer is a
-        # derived cache — markdown is canonical and reaches prod via the
-        # storage upload step above regardless of webhook outcome.
+        # Best-effort: never fails the workflow. The webhook validates the
+        # authored plan.json and updates canonical WeeklyPlanStore state.
+        # Markdown still reaches prod
+        # independently via the storage upload step above.
         continue-on-error: true
         env:
           STRIDE_PROD_URL: ${{ secrets.STRIDE_PROD_URL }}
@@ -262,24 +268,31 @@ jobs:
             exit 0
           fi
 
-          # Diff against the previous commit to find which plan.md files
-          # actually changed. workflow_dispatch / first-push fall back to
-          # HEAD only — list will be empty, step is a no-op.
-          if git rev-parse HEAD~1 >/dev/null 2>&1; then
+          # A manual run is the explicit migration path: re-import every
+          # authored JSON plan into WeeklyPlanStore. Normal pushes remain
+          # incremental and only reparse changed weekly plan artifacts.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            CHANGED=$(find data -type f -path '*/logs/*/plan.json' -print \
+              | awk -F/ '{print $1 "/" $2 "/" $3 "/" $4}' \
+              | sort -u || true)
+          elif git rev-parse HEAD~1 >/dev/null 2>&1; then
             # core.quotepath=false: keep non-ASCII paths unquoted so the
             # grep regex matches Chinese folder names like
             # "2026-05-04_05-10(W2基础重建)" — without this flag git outputs
             # them as `"data/.../W2\345\237\272...)/plan.md"` (quoted +
             # octal-escaped) and the regex's `^data/` anchor fails.
-            CHANGED=$(git -c core.quotepath=false diff --name-only HEAD~1 HEAD | grep -E '^data/[^/]+/logs/[^/]+/plan\.(md|json)$' || true)
+            CHANGED=$(git -c core.quotepath=false diff --name-only HEAD~1 HEAD \
+              | grep -E '^data/[^/]+/logs/[^/]+/plan\.(md|json)$' \
+              | awk -F/ '{print $1 "/" $2 "/" $3 "/" $4}' \
+              | sort -u || true)
           else
             CHANGED=""
           fi
 
           if [ -z "$CHANGED" ]; then
-            echo "No plan.md changes — nothing to reparse"
+            echo "No weekly plan changes — nothing to reparse"
             echo "## structured-plan reparse" >> "$GITHUB_STEP_SUMMARY"
-            echo "_no plan.md changes in this push._" >> "$GITHUB_STEP_SUMMARY"
+            echo "_no weekly plan changes in this push._" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
@@ -289,7 +302,7 @@ jobs:
           echo "|------|--------|------|--------|----------|" >> "$GITHUB_STEP_SUMMARY"
 
           while IFS= read -r path; do
-            # path is like  data/<user>/logs/<folder>/plan.md
+            # path is the deduplicated directory data/<user>/logs/<folder>
             user=$(echo "$path" | awk -F/ '{print $2}')
             folder=$(echo "$path" | awk -F/ '{print $4}')
             user_enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$user")

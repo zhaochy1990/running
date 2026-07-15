@@ -73,11 +73,6 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
     monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
     monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
 
-    # Patch content_store to return no folders (so next_week_preview lookup
-    # doesn't try to open files on disk).
-    import stride_server.content_store as cs_mod
-    monkeypatch.setattr(cs_mod, "list_week_folders", lambda user: iter([]))
-
     from stride_server.bearer import require_bearer, verify_path_user
     from stride_server.routes.review import router
 
@@ -104,22 +99,26 @@ def _open_db(tmp_path):
 
 
 def _seed_standard(tmp_path):
-    """Seed a standard week: 2 planned sessions + 1 actual + 1 feedback + PMC."""
+    """Seed a canonical WeeklyPlan + actual, feedback, and PMC data."""
     _user_dir(tmp_path)
     db = _open_db(tmp_path)
 
-    # Planned sessions: 2 run sessions in W1
-    db._conn.execute(
-        """INSERT INTO planned_session
-           (week_folder, date, session_index, kind, summary, total_distance_m, total_duration_s)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (FOLDER, "2026-05-05", 0, "run", "E 10K 有氧", 10000, 3600),
-    )
-    db._conn.execute(
-        """INSERT INTO planned_session
-           (week_folder, date, session_index, kind, summary, total_distance_m, total_duration_s)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (FOLDER, "2026-05-08", 0, "run", "节奏跑 8K", 8000, 2400),
+    from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+    from stride_server.weekly_plan_store import get_weekly_plan_store
+    get_weekly_plan_store().save_plan(
+        USER_UUID,
+        WeeklyPlan(week_folder=FOLDER, sessions=(
+            PlannedSession(
+                date="2026-05-05", session_index=0, kind=SessionKind.RUN,
+                summary="E 10K 有氧", total_distance_m=10000,
+                total_duration_s=3600,
+            ),
+            PlannedSession(
+                date="2026-05-08", session_index=0, kind=SessionKind.RUN,
+                summary="节奏跑 8K", total_distance_m=8000,
+                total_duration_s=2400,
+            ),
+        )),
     )
 
     # 1 actual activity matching first planned session date
@@ -164,14 +163,17 @@ def _seed_standard(tmp_path):
 
 
 def _seed_no_pmc(tmp_path):
-    """Seed a week with planned/actual but NO daily_health rows."""
+    """Seed a canonical week with actual data but no daily_health rows."""
     _user_dir(tmp_path)
     db = _open_db(tmp_path)
-    db._conn.execute(
-        """INSERT INTO planned_session
-           (week_folder, date, session_index, kind, summary, total_distance_m, total_duration_s)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (FOLDER, "2026-05-05", 0, "run", "E 10K", 10000, 3600),
+    from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+    from stride_server.weekly_plan_store import get_weekly_plan_store
+    get_weekly_plan_store().save_plan(
+        USER_UUID,
+        WeeklyPlan(week_folder=FOLDER, sessions=(PlannedSession(
+            date="2026-05-05", session_index=0, kind=SessionKind.RUN,
+            summary="E 10K", total_distance_m=10000, total_duration_s=3600,
+        ),)),
     )
     db._conn.execute(
         """INSERT INTO activities
@@ -194,6 +196,28 @@ class TestReviewStandardWeek:
         _seed_standard(tmp_path)
         resp = client.get(f"/api/{USER_UUID}/weeks/{FOLDER}/review", headers=_auth(token))
         assert resp.status_code == 200, resp.text
+
+    def test_review_ignores_legacy_sqlite_planned_sessions(self, app_client):
+        client, token, tmp_path, _ = app_client
+        _user_dir(tmp_path)
+        db = _open_db(tmp_path)
+        try:
+            db._conn.execute(
+                """INSERT INTO planned_session
+                   (week_folder, date, session_index, kind, summary)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (FOLDER, "2026-05-05", 0, "run", "legacy only"),
+            )
+            db._conn.commit()
+        finally:
+            db.close()
+
+        data = client.get(
+            f"/api/{USER_UUID}/weeks/{FOLDER}/review", headers=_auth(token)
+        ).json()
+
+        assert data["summary"]["total_sessions_planned"] == 0
+        assert data["sessions"] == []
 
     def test_summary_fields(self, app_client):
         client, token, tmp_path, _ = app_client
@@ -277,8 +301,28 @@ class TestReviewStandardWeek:
         data = client.get(
             f"/api/{USER_UUID}/weeks/{FOLDER}/review", headers=_auth(token)
         ).json()
-        # content_store patched to return no folders → next_week_preview = null
+        # No canonical plan exists for the following week.
         assert data["next_week_preview"] is None
+
+    def test_next_week_preview_uses_canonical_weekly_plan(self, app_client):
+        client, token, tmp_path, _ = app_client
+        _seed_standard(tmp_path)
+        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+        get_weekly_plan_store().save_plan(
+            USER_UUID,
+            WeeklyPlan(week_folder=NEXT_FOLDER, sessions=(PlannedSession(
+                date=NEXT_DATE_FROM, session_index=0, kind=SessionKind.RUN,
+                summary="Next long run", total_distance_m=12000,
+            ),)),
+        )
+
+        data = client.get(
+            f"/api/{USER_UUID}/weeks/{FOLDER}/review", headers=_auth(token)
+        ).json()
+
+        assert data["next_week_preview"]["folder"] == NEXT_FOLDER
+        assert data["next_week_preview"]["total_planned_distance_km"] == 12.0
 
     def test_envelope_fields(self, app_client):
         client, token, tmp_path, _ = app_client
@@ -325,14 +369,20 @@ class TestInsightCompletionBranches:
         completed = int(planned * rate)
         _user_dir(tmp_path)
         db = _open_db(tmp_path)
+        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+        sessions = []
         for i in range(planned):
             d = f"2026-05-{4 + i:02d}"
-            db._conn.execute(
-                """INSERT INTO planned_session
-                   (week_folder, date, session_index, kind, summary, total_distance_m)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (FOLDER, d, 0, "run", f"Session {i}", 8000),
+            sessions.append(
+                PlannedSession(
+                    date=d, session_index=0, kind=SessionKind.RUN,
+                    summary=f"Session {i}", total_distance_m=8000,
+                )
             )
+        get_weekly_plan_store().save_plan(
+            USER_UUID, WeeklyPlan(week_folder=FOLDER, sessions=tuple(sessions))
+        )
         # Insert `completed` actual run activities matching the first `completed` dates
         for i in range(completed):
             d_act = f"2026-05-{4 + i:02d}T07:00:00"

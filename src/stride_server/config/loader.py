@@ -84,6 +84,8 @@ def _known_secret_manifest() -> list[str]:
         "storage.likes.table_name",
         "storage.master_plan.table_account_url",
         "storage.master_plan.table_name",
+        "storage.weekly_plan.table_account_url",
+        "storage.weekly_plan.table_name",
         "coach_persistence.table_account_url",
         "coach_persistence.blob_account_url",
         "coach_persistence.checkpoints_table_name",

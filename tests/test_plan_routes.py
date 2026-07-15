@@ -338,6 +338,37 @@ class TestPlanDays:
         assert run_session["pushable"] is True
         assert run_session["spec"] is not None
 
+    def test_canonical_week_suppresses_same_dates_under_legacy_folder_alias(
+        self, app_client, monkeypatch,
+    ):
+        client, token, tmp_path, _, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK)
+        finally:
+            db.close()
+
+        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+        import stride_server.routes.plan as plan_mod
+
+        canonical = WeeklyPlan(
+            week_folder="2026-04-20_04-26(canonical)",
+            sessions=(PlannedSession(
+                date="2026-04-22", session_index=0, kind=SessionKind.REST,
+                summary="canonical rest",
+            ),),
+        )
+        store = plan_mod.get_weekly_plan_store()
+        store.save_plan(USER_UUID, canonical)
+
+        resp = client.get(
+            f"/api/{USER_UUID}/plan/days?from=2026-04-20&to=2026-04-26",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 200
+        day = next(d for d in resp.json()["days"] if d["date"] == "2026-04-22")
+        assert [s["summary"] for s in day["sessions"]] == ["canonical rest"]
+
     def test_invalid_date_400(self, app_client):
         client, token, _, _, _ = app_client
         resp = client.get(
@@ -430,7 +461,8 @@ class TestPushSession:
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["ok"] is True
-        assert body["planned_session_id"] == ps_id
+        assert body["planned_session_id"] != ps_id
+        assert isinstance(body["planned_session_id"], int)
         assert body["scheduled_workout_id"]
         assert body["provider"] == "fake"
         assert body["provider_workout_id"] == "provider-id-1"
@@ -446,14 +478,18 @@ class TestPushSession:
         # (different name) are preserved.
         assert fake.delete_calls[0] == (USER_UUID, "2026-04-22", "[STRIDE] Easy 10K")
 
-        # FK on planned_session was filled in.
+        # Device state reverse-references the canonical identity; the legacy
+        # planned_session row remains untouched.
         db = _db(tmp_path)
         try:
             row = db.get_planned_session(ps_id)
-            assert row["scheduled_workout_id"] == body["scheduled_workout_id"]
+            assert row["scheduled_workout_id"] is None
             sw = db.get_scheduled_workout(body["scheduled_workout_id"])
             assert sw["status"] == "pushed"
             assert sw["provider"] == "fake"
+            assert sw["week_folder"] == WEEK
+            assert sw["planned_date"] == "2026-04-22"
+            assert sw["session_index"] == 0
         finally:
             db.close()
 
@@ -469,6 +505,33 @@ class TestPushSession:
             headers=_auth(token),
         )
         assert resp.status_code == 404
+
+    def test_canonical_week_blocks_stale_legacy_session_fallback(self, app_client):
+        client, token, tmp_path, fake, _ = app_client
+        db = _db(tmp_path)
+        try:
+            _seed_plan(db, WEEK)
+        finally:
+            db.close()
+
+        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+
+        canonical = WeeklyPlan(
+            week_folder="2026-04-20_04-26(canonical)",
+            sessions=(PlannedSession(
+                date="2026-04-21", session_index=0, kind=SessionKind.REST,
+                summary="rest",
+            ),),
+        )
+        get_weekly_plan_store().save_plan(USER_UUID, canonical)
+
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 404
+        assert fake.push_calls == []
 
     def test_409_when_structured_status_backfilled(self, app_client):
         client, token, tmp_path, _, _ = app_client
@@ -511,6 +574,26 @@ class TestPushSession:
         )
         assert resp.status_code == 400
         assert "kind=run or kind=strength" in resp.json()["detail"]
+
+    def test_legacy_malformed_spec_returns_400(self, app_client):
+        client, token, tmp_path, _, _ = app_client
+        db = _db(tmp_path)
+        try:
+            session_id = _seed_plan(db, WEEK)
+            db._conn.execute(
+                "UPDATE planned_session SET spec_json = ? WHERE id = ?",
+                ("{bad-json", session_id),
+            )
+            db._conn.commit()
+        finally:
+            db.close()
+
+        resp = client.post(
+            f"/api/{USER_UUID}/plan/sessions/2026-04-22/0/push",
+            headers=_auth(token),
+        )
+        assert resp.status_code == 400
+        assert "not a valid normalized workout" in resp.json()["detail"]
 
     def test_400_when_provider_lacks_capability(self, tmp_path, monkeypatch, rsa_keypair):
         # Build an app with a no-push fake source. Mirrors app_client fixture.
@@ -828,8 +911,8 @@ class TestPushSession:
         assert len(fake.push_calls) == 1
         assert fake.push_calls[0].date == "2026-04-25"
 
-        # DB state: scheduled_workout sits on 2026-04-25; planned_session
-        # keeps its original 2026-04-22 anchor and points to the new row.
+        # DB state: scheduled_workout sits on 2026-04-25 and reverse-references
+        # the canonical identity; the historical planned_session is read-only.
         db = _db(tmp_path)
         try:
             sw = db.get_scheduled_workout(body["scheduled_workout_id"])
@@ -837,7 +920,11 @@ class TestPushSession:
             assert sw["status"] == "pushed"
             ps = db.get_planned_session(ps_id)
             assert ps["date"] == "2026-04-22"
-            assert ps["scheduled_workout_id"] == body["scheduled_workout_id"]
+            assert ps["scheduled_workout_id"] is None
+            linked = db.get_latest_scheduled_workout_for_plan_session(
+                WEEK, "2026-04-22", 0
+            )
+            assert linked["id"] == body["scheduled_workout_id"]
             # spec_json was re-serialized so its internal date matches the row.
             spec = json.loads(sw["spec_json"])
             assert spec["date"] == "2026-04-25"
@@ -1140,7 +1227,7 @@ class TestInternalReparse:
         assert second.status_code == 200, second.text
         body = second.json()
         assert body["noop"] is True
-        assert body["structured_status"] == "fresh"
+        assert body["structured_status"] == "canonical"
         assert sentinel["called"] is False
 
 

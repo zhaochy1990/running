@@ -122,13 +122,13 @@ def parse_week_folder_dates(folder_name: str) -> tuple[str, str] | None:
     parse_week_dates`` delegates here; ``coach.*`` / ``stride_core`` callers that
     can't import the server use this directly). ``re.fullmatch`` anchors both
     ends so path-traversal-flavored inputs (``..%2f``) are rejected, and the
-    optional ``(...)`` tag may hold anything but a path separator. The end month
-    reuses the start year — matching how week folders are interpreted everywhere
-    else (no year-boundary inference)."""
+    optional ``(...)`` tag may hold anything but a path separator. Weeks that
+    cross New Year infer the end year from the month/day rollover."""
     m = _WEEK_FOLDER_RE.fullmatch(folder_name)
     if not m:
         return None
     year = int(m.group(1))
     sm, sd = int(m.group(2)), int(m.group(3))
     em, ed = int(m.group(4)), int(m.group(5))
-    return f"{year}-{sm:02d}-{sd:02d}", f"{year}-{em:02d}-{ed:02d}"
+    end_year = year + 1 if (em, ed) < (sm, sd) else year
+    return f"{year}-{sm:02d}-{sd:02d}", f"{end_year}-{em:02d}-{ed:02d}"

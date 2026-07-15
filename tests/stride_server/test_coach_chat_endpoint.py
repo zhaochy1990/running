@@ -220,19 +220,39 @@ def _apply_body(folder: str = _APPLY_FOLDER, op_ids=("op1",)) -> dict:
 
 
 def _stub_apply(coach_routes, monkeypatch) -> dict:
-    """Isolate the apply route from the DB; capture what it would land."""
+    """Isolate the apply route from storage; capture its single save."""
     captured: dict[str, object] = {}
+    from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
 
     class _Store:
-        def close(self):
-            captured["closed"] = True
+        def get_plan(self, user_id, folder):
+            return WeeklyPlan(
+                week_folder=folder,
+                sessions=(PlannedSession(
+                    date="2026-06-24", session_index=0,
+                    kind=SessionKind.RUN, summary="run",
+                ),),
+            )
 
-    monkeypatch.setattr(coach_routes, "get_plan_state_store", lambda _u: _Store())
+    monkeypatch.setattr(coach_routes, "get_weekly_plan_store", lambda: _Store())
 
-    def _fake_apply(plan_store, folder, diff, accepted_op_ids):
-        captured.update(folder=folder, diff=diff, accepted=list(accepted_op_ids))
+    real_apply = coach_routes.apply_diff_to_weekly_plan
 
-    monkeypatch.setattr(coach_routes, "apply_diff", _fake_apply)
+    def _fake_apply(plan, diff, accepted_op_ids):
+        captured.update(folder=diff.folder, diff=diff, accepted=list(accepted_op_ids))
+        return real_apply(plan, diff, accepted_op_ids)
+
+    monkeypatch.setattr(coach_routes, "apply_diff_to_weekly_plan", _fake_apply)
+
+    def _fake_save(user_id, plan, *, expected_folder=None, generated_by=None):
+        captured.update(
+            projection_user=user_id,
+            projection_folder=expected_folder,
+            projection_generated_by=generated_by,
+            saved_plan=plan,
+        )
+
+    monkeypatch.setattr(coach_routes, "save_weekly_plan", _fake_save)
     return captured
 
 
@@ -251,7 +271,8 @@ def test_apply_lands_accepted_ops(chat_client, monkeypatch):
     assert body["folder"] == _APPLY_FOLDER
     assert captured["accepted"] == ["op1"]
     assert captured["folder"] == _APPLY_FOLDER
-    assert captured["closed"] is True
+    assert captured["projection_folder"] == _APPLY_FOLDER
+    assert captured["saved_plan"].sessions[0].date == "2026-06-25"
 
 
 def test_apply_drops_unknown_op_ids(chat_client, monkeypatch):

@@ -31,6 +31,7 @@ from stride_core.models import BodyCompositionScan
 from stride_core.plan_spec import (
     PlannedNutrition,
     PlannedSession,
+    WeeklyPlan,
 )
 
 
@@ -50,6 +51,8 @@ class PlanStateStore(Protocol):
     # weekly_plan ---------------------------------------------------------
 
     def get_weekly_plan_row(self, week: str) -> Mapping[str, Any] | None: ...
+
+    def get_structured_weekly_plan(self, week: str) -> WeeklyPlan | None: ...
 
     def upsert_weekly_plan(
         self, week: str, content_md: str, *, generated_by: str | None = None,
@@ -233,6 +236,48 @@ class SqlitePlanStateStore:
 
     def get_weekly_plan_row(self, week: str) -> Mapping[str, Any] | None:
         return self._db.get_weekly_plan_row(week)
+
+    def get_structured_weekly_plan(self, week: str) -> WeeklyPlan | None:
+        """Materialise the local SQLite projection as a validated WeeklyPlan."""
+        import json
+
+        plan_row = self._db.get_weekly_plan_row(week)
+        sessions = self._db.get_planned_sessions(week_folder=week)
+        nutrition = self._db.get_planned_nutrition(week_folder=week)
+        if plan_row is None and not sessions and not nutrition:
+            return None
+        return WeeklyPlan.from_dict(
+            {
+                "week_folder": week,
+                "sessions": [
+                    {
+                        "date": row["date"],
+                        "session_index": row["session_index"],
+                        "kind": row["kind"],
+                        "summary": row["summary"],
+                        "spec": json.loads(row["spec_json"]) if row["spec_json"] else None,
+                        "notes_md": row["notes_md"],
+                        "total_distance_m": row["total_distance_m"],
+                        "total_duration_s": row["total_duration_s"],
+                        "scheduled_workout_id": row["scheduled_workout_id"],
+                    }
+                    for row in sessions
+                ],
+                "nutrition": [
+                    {
+                        "date": row["date"],
+                        "kcal_target": row["kcal_target"],
+                        "carbs_g": row["carbs_g"],
+                        "protein_g": row["protein_g"],
+                        "fat_g": row["fat_g"],
+                        "water_ml": row["water_ml"],
+                        "meals": json.loads(row["meals_json"]) if row["meals_json"] else [],
+                        "notes_md": row["notes_md"],
+                    }
+                    for row in nutrition
+                ],
+            }
+        )
 
     def upsert_weekly_plan(
         self, week: str, content_md: str, *,

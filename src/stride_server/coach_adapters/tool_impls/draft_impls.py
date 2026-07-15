@@ -55,18 +55,19 @@ def _fail(*errors: str) -> ToolResult:
 # ---------------------------------------------------------------------------
 
 
-def _open_plan_store(user_id: str) -> tuple[Any, Any]:
-    """Return ``(db, plan_store)`` — caller owns ``db.close()``."""
-    from stride_storage.sqlite.database import Database
-    from stride_storage.sqlite.state_stores import SqlitePlanStateStore
+def _get_plan(user_id: str, folder: str):
+    from stride_server.weekly_plan_store import get_weekly_plan_store
 
-    db = Database(user=user_id)
-    return db, SqlitePlanStateStore(db)
+    return get_weekly_plan_store().get_plan(user_id, folder)
 
 
-def _lookup_session(plan_store: Any, date: str, session_index: int) -> dict | None:
-    row = plan_store.get_planned_session_by_date_index(date, session_index)
-    return dict(row) if row is not None else None
+def _lookup_session(plan: Any, date: str, session_index: int) -> dict | None:
+    if plan is None:
+        return None
+    for session in plan.sessions:
+        if session.date == date and session.session_index == session_index:
+            return session.to_dict()
+    return None
 
 
 def _session_summary(row: dict | None) -> dict | None:
@@ -94,12 +95,9 @@ class SwapSessionsImpl:
 
     def __call__(self, *, folder: str, date_a: str, date_b: str) -> ToolResult:
         try:
-            db, plan_store = _open_plan_store(self._user_id)
-            try:
-                sess_a = _lookup_session(plan_store, date_a, 0)
-                sess_b = _lookup_session(plan_store, date_b, 0)
-            finally:
-                db.close()
+            plan = _get_plan(self._user_id, folder)
+            sess_a = _lookup_session(plan, date_a, 0)
+            sess_b = _lookup_session(plan, date_b, 0)
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
 
@@ -153,11 +151,9 @@ class ShiftSessionImpl:
         self, *, folder: str, date: str, to_date: str, session_index: int = 0
     ) -> ToolResult:
         try:
-            db, plan_store = _open_plan_store(self._user_id)
-            try:
-                sess = _lookup_session(plan_store, date, session_index)
-            finally:
-                db.close()
+            sess = _lookup_session(
+                _get_plan(self._user_id, folder), date, session_index
+            )
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
         if sess is None:
@@ -194,11 +190,8 @@ class ReduceIntensityImpl:
             return _fail(f"factor must be in (0.1, 1.0], got {factor}")
 
         try:
-            db, plan_store = _open_plan_store(self._user_id)
-            try:
-                sessions = list(plan_store.get_planned_sessions(week_folder=folder))
-            finally:
-                db.close()
+            plan = _get_plan(self._user_id, folder)
+            sessions = [session.to_dict() for session in plan.sessions] if plan else []
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
 
@@ -250,11 +243,9 @@ class ReplaceSessionImpl:
         if new_kind not in ("run", "strength", "rest", "cross", "note"):
             return _fail(f"unknown session kind {new_kind!r}")
         try:
-            db, plan_store = _open_plan_store(self._user_id)
-            try:
-                sess = _lookup_session(plan_store, date, session_index)
-            finally:
-                db.close()
+            sess = _lookup_session(
+                _get_plan(self._user_id, folder), date, session_index
+            )
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
         if sess is None:
@@ -291,11 +282,8 @@ class AddStrengthSessionImpl:
 
     def __call__(self, *, folder: str, date: str, focus: str) -> ToolResult:
         try:
-            db, plan_store = _open_plan_store(self._user_id)
-            try:
-                existing = list(plan_store.get_planned_sessions(week_folder=folder))
-            finally:
-                db.close()
+            plan = _get_plan(self._user_id, folder)
+            existing = [session.to_dict() for session in plan.sessions] if plan else []
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
         on_day = [s for s in existing if dict(s).get("date") == date]
@@ -339,11 +327,9 @@ class ChangePaceTargetImpl:
         if new_pace_s_per_km <= 0:
             return _fail(f"new_pace_s_per_km must be > 0, got {new_pace_s_per_km}")
         try:
-            db, plan_store = _open_plan_store(self._user_id)
-            try:
-                sess = _lookup_session(plan_store, date, session_index)
-            finally:
-                db.close()
+            sess = _lookup_session(
+                _get_plan(self._user_id, folder), date, session_index
+            )
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
         if sess is None:
@@ -383,11 +369,8 @@ class RegenerateWeekImpl:
         self, *, folder: str, reason: str, constraints: list[str]
     ) -> ToolResult:
         try:
-            db, plan_store = _open_plan_store(self._user_id)
-            try:
-                sessions = list(plan_store.get_planned_sessions(week_folder=folder))
-            finally:
-                db.close()
+            plan = _get_plan(self._user_id, folder)
+            sessions = [session.to_dict() for session in plan.sessions] if plan else []
         except Exception as exc:  # noqa: BLE001
             return _fail(f"db lookup failed: {exc}")
         ops: list[DiffOp] = []

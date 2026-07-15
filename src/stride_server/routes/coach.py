@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from coach.schemas import AssistantPart, assistant_parts_from_message
 
-from stride_core.plan_diff import PlanDiff, apply_diff
+from stride_core.plan_diff import PlanDiff, apply_diff_to_weekly_plan
 from stride_core.master_plan import MasterPlanStatus
 from stride_core.master_plan_diff import MasterPlanDiff, apply_master_plan_diff
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
@@ -43,8 +43,8 @@ from coach.orchestrator import coach_thread_id
 
 from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import get_checkpointer
-from ..deps import get_plan_state_store
 from ..master_plan_store import get_master_plan_store
+from ..weekly_plan_store import get_weekly_plan_store, save_weekly_plan
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -266,11 +266,21 @@ def apply_coach_week_diff(
     known_ids = {op.id for op in diff.ops}
     accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
 
-    plan_store = get_plan_state_store(user_id)
+    plan_store = get_weekly_plan_store()
+    current = plan_store.get_plan(user_id, folder)
+    if current is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"weekly plan {folder!r} not found",
+        )
     try:
-        apply_diff(plan_store, folder, diff, accepted_op_ids)
-    finally:
-        plan_store.close()
+        adjusted = apply_diff_to_weekly_plan(current, diff, accepted_op_ids)
+        save_weekly_plan(
+            user_id, adjusted, expected_folder=folder,
+            generated_by="coach-adjustment",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     from datetime import datetime, timezone
 

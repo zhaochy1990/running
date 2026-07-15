@@ -4,7 +4,7 @@
 
 ## 概念
 
-Variants 是 append-only 的 side rows；选定某个会把它的 markdown + structured layer 提升到 canonical `weekly_plan` / `planned_session` / `planned_nutrition` 表 —— 跟现有 UI / push / commentary 代码读的是同一条路径。
+Variants 是 append-only 的 side rows；选定某个只把完整 `WeeklyPlan` 提升到 canonical `WeeklyPlanStore`。不会写 SQLite `weekly_plan` / `planned_session` / `planned_nutrition`。手表执行状态独立保存在 `scheduled_workout`。
 
 ## Canonical happy path
 
@@ -26,7 +26,7 @@ coros-sync plan select -P zhaochaoyi --week 2026-05-04_05-10 --variant-id <N>
 
 ## Change-of-mind / 改选场景
 
-如果已经把 variant A 的某个 session 推到了手表、然后改选 variant B，原来推过的 `scheduled_workout` 行就丢了 plan-side back-pointer：
+如果已经把 variant A 的某个 session 推到了手表、然后改选 variant B，原来推过的 `scheduled_workout` 会按 `(week_folder, planned_date, session_index)` 被识别为旧执行状态：
 
 - `coros-sync plan select`（或 UI 改选）在 force 为 false 时返回 **HTTP 409 selection_conflict**，带 `already_pushed_count`。
 - 传 `--force`（UI 是确认 dialog）覆盖。response 给出 `dropped_scheduled_workout_ids: [...]` —— 这些行的 `scheduled_workout.abandoned_by_promote_at = now`。

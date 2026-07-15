@@ -202,6 +202,35 @@ def test_get_week_plan_invalid_folder(patched_db) -> None:
     assert any("invalid week folder" in e for e in res.errors)
 
 
+def test_get_week_plan_prefers_canonical_weekly_plan(patched_db, monkeypatch) -> None:
+    from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+    from stride_server import weekly_plan_store
+
+    folder = "2026-07-13_07-19(P2W4)"
+    plan = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+            PlannedSession(
+                date="2026-07-15",
+                session_index=0,
+                kind=SessionKind.RUN,
+                summary="Canonical run",
+            ),
+        ),
+    )
+
+    class _Store:
+        def get_plan(self, _user_id, _folder):
+            return plan
+
+    monkeypatch.setattr(weekly_plan_store, "get_weekly_plan_store", lambda: _Store())
+    res = read_impls.GetWeekPlanImpl("uid")(folder=folder)
+
+    assert res.ok
+    assert res.data["structured_source"] == "weekly_plan_store"
+    assert res.data["sessions"][0]["summary"] == "Canonical run"
+
+
 def test_activity_detail_missing(patched_db) -> None:
     res = read_impls.GetActivityDetailImpl("uid")(label_id="nope")
     assert not res.ok

@@ -52,6 +52,7 @@ def test_server_config_default_shape_keeps_current_defaults() -> None:
     assert cfg.storage.content.prefix == "users"
     assert cfg.storage.likes.table_name == "stridelikes"
     assert cfg.storage.master_plan.table_name == "stridemasterplan"
+    assert cfg.storage.weekly_plan.table_name == "strideweeklyplan"
     assert cfg.coach_persistence.checkpoints_table_name == "stridecoachcheckpoints"
     assert cfg.coach_persistence.checkpoint_writes_table_name == "stridecoachcheckpointwrites"
     assert cfg.coach_persistence.jobs_table_name == "stridecoachjobs"
@@ -226,6 +227,7 @@ def test_env_source_maps_legacy_names_and_specific_names(monkeypatch: pytest.Mon
     monkeypatch.setenv("STRIDE_STORAGE_LIKES_TABLE_NAME", "customlikes")
     monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", "")
     monkeypatch.setenv("STRIDE_PLAN_JSON_PRIORITY", "false")
+    monkeypatch.setenv("STRIDE_WEEKLY_PLAN_TABLE_NAME", "customweekly")
 
     data = env_source(os.environ)
 
@@ -233,6 +235,7 @@ def test_env_source_maps_legacy_names_and_specific_names(monkeypatch: pytest.Mon
     assert data["storage"]["likes"]["table_name"] == "customlikes"
     assert data["internal"]["token"] == ""
     assert data["plan"]["prefer_authored_json"] is False
+    assert data["storage"]["weekly_plan"]["table_name"] == "customweekly"
 
 
 @pytest.mark.parametrize(
@@ -657,6 +660,7 @@ def test_repo_prod_config_file_loads_prod_values_without_env_secrets(
     assert cfg.storage.content.prefix == "users"
     assert cfg.storage.likes.table_account_url == "https://authstorage2026.table.core.windows.net/"
     assert cfg.storage.master_plan.table_account_url == "https://authstorage2026.table.core.windows.net/"
+    assert cfg.storage.weekly_plan.table_account_url == "https://authstorage2026.table.core.windows.net/"
     assert cfg.coach_persistence.table_account_url == "https://authstorage2026.table.core.windows.net/"
     assert cfg.coach_persistence.blob_account_url == "https://authstorage2026.blob.core.windows.net/"
     assert cfg.notifications.table_account_url == "https://authstorage2026.table.core.windows.net/"

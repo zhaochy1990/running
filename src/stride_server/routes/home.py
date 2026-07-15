@@ -325,16 +325,11 @@ def _compute_plan_state(user_id: str) -> Literal["none", "active_no_week", "acti
     monday = today - timedelta(days=today.weekday())
     sunday = monday + timedelta(days=6)
     try:
-        from ..deps import get_plan_state_store
-        plan_store = get_plan_state_store(user_id)
-        try:
-            sessions = plan_store.get_planned_sessions(
-                date_from=monday.isoformat(),
-                date_to=sunday.isoformat(),
-            )
-        finally:
-            plan_store.close()
-        if sessions:
+        from ..weekly_plan_store import get_weekly_plan_store
+        plan = get_weekly_plan_store().get_current_plan(
+            user_id, today.isoformat()
+        )
+        if plan and plan.sessions:
             return "active"
         return "active_no_week"
     except Exception:  # noqa: BLE001

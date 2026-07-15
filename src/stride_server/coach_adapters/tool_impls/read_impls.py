@@ -898,26 +898,31 @@ class GetWeekPlanImpl:
         from stride_storage.sqlite.state_stores import SqlitePlanStateStore
         from stride_server import content_store
         from stride_server.deps import parse_week_dates
+        from stride_server.weekly_plan_store import get_weekly_plan_store
 
         dates = parse_week_dates(folder)
         if not dates:
             return ToolResult(ok=False, errors=[f"invalid week folder {folder!r}"])
         date_from, date_to = dates
 
+        try:
+            canonical_plan = get_weekly_plan_store().get_plan(self._user_id, folder)
+        except Exception:
+            logger.warning(
+                "get_week_plan: canonical store unavailable; using legacy projection",
+                exc_info=True,
+            )
+            canonical_plan = None
+
         db = _open_db(self._user_id)
         try:
             plan_store = SqlitePlanStateStore(db)
             plan_md = None
             plan_source = "none"
-            plan_row = plan_store.get_weekly_plan_row(folder)
-            if plan_row is not None:
-                plan_md = plan_row["content_md"]
-                plan_source = "db"
-            else:
-                plan_item = content_store.read_text(f"{self._user_id}/logs/{folder}/plan.md")
-                if plan_item is not None:
-                    plan_md = plan_item.content
-                    plan_source = plan_item.source
+            plan_item = content_store.read_text(f"{self._user_id}/logs/{folder}/plan.md")
+            if plan_item is not None:
+                plan_md = plan_item.content
+                plan_source = plan_item.source
 
             feedback_md = None
             feedback_source = "none"
@@ -931,8 +936,20 @@ class GetWeekPlanImpl:
                     feedback_md = fb_item.content
                     feedback_source = fb_item.source
 
-            sessions = plan_store.get_planned_sessions(week_folder=folder)
-            nutrition = plan_store.get_planned_nutrition(week_folder=folder)
+            if canonical_plan is not None:
+                sessions = [session.to_dict() for session in canonical_plan.sessions]
+                nutrition = [item.to_dict() for item in canonical_plan.nutrition]
+                structured_source = "weekly_plan_store"
+            else:
+                sessions = [
+                    dict(session)
+                    for session in plan_store.get_planned_sessions(week_folder=folder)
+                ]
+                nutrition = [
+                    dict(item)
+                    for item in plan_store.get_planned_nutrition(week_folder=folder)
+                ]
+                structured_source = "sqlite" if sessions or nutrition else "none"
         finally:
             db.close()
 
@@ -944,10 +961,11 @@ class GetWeekPlanImpl:
                 "date_to": date_to,
                 "plan_md": plan_md,
                 "plan_source": plan_source,
+                "structured_source": structured_source,
                 "feedback_md": feedback_md,
                 "feedback_source": feedback_source,
-                "sessions": [dict(s) for s in sessions],
-                "nutrition": [dict(n) for n in nutrition],
+                "sessions": sessions,
+                "nutrition": nutrition,
             },
         )
 

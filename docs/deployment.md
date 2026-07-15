@@ -31,7 +31,10 @@ Pipeline：Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy
 
 ### Structured-plan reparse webhook
 
-每次 push `data/*/logs/*/plan.md` 后，`sync-data.yml` 调 `POST /internal/plan/reparse?user=&folder=`，header `X-Internal-Token: $STRIDE_INTERNAL_TOKEN`。server 重跑 LLM reverse parser 刷 `planned_session` / `planned_nutrition` cache。
+迁移期每次 push `data/*/logs/*/plan.md` 或 `plan.json` 后，`sync-data.yml` 调 `POST /internal/plan/reparse?user=&folder=`，header `X-Internal-Token: $STRIDE_INTERNAL_TOKEN`，把旧 authoring artifact 导入 `WeeklyPlanStore`（prod `strideweeklyplan`）。新计划直接生成并保存为 `WeeklyPlan`，不再创建或 review `plan.md`；SQLite 也不保存新的结构化周计划。
+首次上线 `strideweeklyplan` 后，手工触发一次 `sync-data.yml` 的
+`workflow_dispatch`。workflow 会先幂等创建 Azure Table，再枚举全部历史
+`plan.json` 并通过同一 webhook 回填；普通 push 仍只处理本次变更的周目录。
 
 要工作必须配两件事：
 

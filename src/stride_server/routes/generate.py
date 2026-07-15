@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from types import SimpleNamespace
 from datetime import date as date_cls, timedelta
 from typing import Any
 
@@ -18,9 +19,9 @@ from pydantic import BaseModel
 from stride_core.plan_spec import SessionKind
 from stride_core.source import DataSource
 from stride_core.timefmt import SHANGHAI_DAY_SQL, shanghai_day_str
-
 from ..deps import get_db, get_plan_state_store, get_source_for_user, parse_week_dates
 from ..week_generator import generate_week_plan, week_folder
+from ..weekly_plan_store import get_weekly_plan_store, save_weekly_plan, session_api_id
 
 # Imported at module level so tests can patch it via
 # ``patch("stride_server.routes.generate.push_single_session")``.
@@ -49,16 +50,7 @@ class GenerateWeekRequest(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _folder_exists(plan_store, folder: str) -> bool:
-    """Return True if this week already has a weekly_plan row OR planned_session rows."""
-    row = plan_store.get_weekly_plan_row(folder)
-    if row is not None:
-        return True
-    sessions = plan_store.get_planned_sessions(week_folder=folder)
-    return len(sessions) > 0
-
-
-def _get_last_week_summary(db, plan_store, week_start: date_cls) -> dict | None:
+def _get_last_week_summary(user: str, db, week_start: date_cls) -> dict | None:
     """Query the previous week for completion rate and avg RPE.
 
     Returns a dict with:
@@ -68,10 +60,11 @@ def _get_last_week_summary(db, plan_store, week_start: date_cls) -> dict | None:
     """
     prev_start = week_start - timedelta(days=7)
     prev_end = prev_start + timedelta(days=6)
-    prev_folder = week_folder(prev_start)
-
     # Total planned sessions for prev week
-    planned_rows = plan_store.get_planned_sessions(week_folder=prev_folder)
+    previous = get_weekly_plan_store().get_current_plan(
+        user, prev_start.isoformat()
+    )
+    planned_rows = list(previous.sessions) if previous else []
     if not planned_rows:
         return None
 
@@ -93,15 +86,15 @@ def _get_last_week_summary(db, plan_store, week_start: date_cls) -> dict | None:
 
     # Collect planned run distances for last week
     run_distances = [
-        float(r["total_distance_m"] or 0)
+        float(getattr(r, "total_distance_m", 0) or 0)
         for r in planned_rows
-        if r["kind"] == SessionKind.RUN.value
+        if r.kind == SessionKind.RUN
     ]
     total_planned_km = sum(run_distances) / 1000.0
 
     # Count activity dates that overlap with planned-run dates
     planned_run_dates = {
-        r["date"] for r in planned_rows if r["kind"] == SessionKind.RUN.value
+        r.date for r in planned_rows if r.kind == SessionKind.RUN
     }
     completed = 0
     actual_distance_m = 0.0
@@ -133,27 +126,23 @@ def _get_last_week_summary(db, plan_store, week_start: date_cls) -> dict | None:
     }
 
 
-def _write_plan(plan_store, folder: str, weekly_plan) -> None:
-    """Persist WeeklyPlan via apply_weekly_plan_atomic."""
-    from stride_core.plan_spec import PlannedNutrition
+def _write_plan(user: str, weekly_plan) -> None:
+    save_weekly_plan(
+        user, weekly_plan, generated_by=_GENERATED_BY
+    )
 
-    # Build a minimal markdown representation
-    lines = [f"# 训练计划 {folder}", ""]
-    lines.append(f"> 由{_GENERATED_BY}自动生成。")
-    lines.append("")
-    for s in weekly_plan.sessions:
-        lines.append(f"- **{s.date}** ({s.kind.value}): {s.summary}")
-    content_md = "\n".join(lines)
 
-    plan_store.apply_weekly_plan_atomic(
-        folder,
-        content_md,
-        generated_by=_GENERATED_BY,
-        sessions=list(weekly_plan.sessions),
-        nutrition=list(weekly_plan.nutrition),
-        structured_status="authored",
-        structured_source="authored",
-        parsed_from_md_hash=None,
+def _legacy_row_to_session(row) -> SimpleNamespace:
+    """Read-only identity view for legacy whole-week push enumeration."""
+    kind = SessionKind(row["kind"])
+    return SimpleNamespace(
+        date=row["date"], session_index=row["session_index"], kind=kind,
+        summary=row["summary"],
+        total_distance_m=row["total_distance_m"],
+        pushable=(
+            kind in (SessionKind.RUN, SessionKind.STRENGTH)
+            and bool(row["spec_json"])
+        ),
     )
 
 
@@ -170,7 +159,7 @@ def generate_week(
 
     - 400 when week_start is not a Monday.
     - 409 when the week already exists (unless ?force=true).
-    - On force=true: deletes existing planned_session rows then re-generates.
+    - On force=true: replaces the canonical WeeklyPlan for that week.
     """
     # ── Validate week_start ──────────────────────────────────────────────────
     try:
@@ -192,27 +181,31 @@ def generate_week(
     if not parse_week_dates(folder):
         raise HTTPException(status_code=500, detail="Internal: invalid folder generated")
 
-    plan_store = get_plan_state_store(user)
     db = get_db(user)
 
     try:
         # ── Conflict check ───────────────────────────────────────────────────
-        if _folder_exists(plan_store, folder):
+        existing = get_weekly_plan_store().get_current_plan(
+            user, week_start.isoformat()
+        )
+        if existing is not None:
             if not force:
                 raise HTTPException(
                     status_code=409,
                     detail={
                         "error": "week_already_exists",
-                        "folder": folder,
+                        "folder": existing.week_folder,
                         "hint": "Pass ?force=true to overwrite the existing plan",
                     },
                 )
-            # force=true: wipe existing planned_session rows for this week.
-            # apply_weekly_plan_atomic with sessions=[] deletes them atomically.
-            logger.info("generate_week: force overwrite folder=%s user=%s", folder, user)
+            # force=true replaces the canonical WeeklyPlanStore entry below.
+            logger.info(
+                "generate_week: force overwrite week_start=%s user=%s",
+                week_start, user,
+            )
 
         # ── Compute last-week summary ────────────────────────────────────────
-        last_week_summary = _get_last_week_summary(db, plan_store, week_start)
+        last_week_summary = _get_last_week_summary(user, db, week_start)
 
         # ── Generate ─────────────────────────────────────────────────────────
         weekly_plan, base_km = generate_week_plan(
@@ -223,10 +216,9 @@ def generate_week(
         )
 
         # ── Persist ──────────────────────────────────────────────────────────
-        _write_plan(plan_store, folder, weekly_plan)
+        _write_plan(user, weekly_plan)
 
     finally:
-        plan_store.close()
         db.close()
 
     # ── Build response ───────────────────────────────────────────────────────
@@ -299,13 +291,17 @@ def push_week(
     if not parse_week_dates(folder):
         raise HTTPException(status_code=400, detail="Invalid folder format")
 
-    plan_store = get_plan_state_store(user)
-    db = get_db(user)
-    try:
-        sessions = plan_store.get_planned_sessions(week_folder=folder)
-    finally:
-        plan_store.close()
-        db.close()
+    plan = get_weekly_plan_store().get_plan(user, folder)
+    sessions = list(plan.sessions) if plan else []
+    if not sessions:
+        legacy = get_plan_state_store(user)
+        try:
+            sessions = [
+                _legacy_row_to_session(row)
+                for row in legacy.get_planned_sessions(week_folder=folder)
+            ]
+        finally:
+            legacy.close()
 
     if not sessions:
         raise HTTPException(
@@ -316,8 +312,7 @@ def push_week(
     # Filter to pushable session kinds only (exclude rest/custom without spec)
     pushable = [
         s for s in sessions
-        if s["kind"] in (SessionKind.RUN.value, SessionKind.STRENGTH.value)
-        and s["spec_json"]
+        if s.pushable
     ]
 
     total = len(pushable)
@@ -326,11 +321,11 @@ def push_week(
         # Preview mode: return what would be pushed, no actual API calls
         preview_items = [
             {
-                "session_id": s["id"],
-                "date": s["date"],
-                "session_index": s["session_index"],
-                "kind": s["kind"],
-                "summary": s["summary"] or "",
+                "session_id": session_api_id(folder, s.date, s.session_index),
+                "date": s.date,
+                "session_index": s.session_index,
+                "kind": s.kind.value,
+                "summary": s.summary or "",
                 "success": None,
                 "scheduled_workout_id": None,
                 "error": None,
@@ -359,12 +354,7 @@ def push_week(
         plan_store2 = get_plan_state_store(user)
         try:
             result = push_single_session(
-                user,
-                session["date"],
-                session["session_index"],
-                source,
-                db2,
-                plan_store2,
+                user, session.date, session.session_index, source, db2, plan_store2
             )
         finally:
             plan_store2.close()

@@ -18,6 +18,7 @@ from stride_storage.interfaces.config import (  # noqa: F401  (re-export)
     NotificationStorageConfig,
     QueueStorageConfig,
     StorageConfig,
+    WeeklyPlanStorageConfig,
     validate_optional_url,
     validate_positive,
     validate_required_when,
@@ -61,7 +62,7 @@ class AuthServiceConfig:
 # `stride_server.coach_runtime.get_generator_llm`.
 #
 # Storage config dataclasses (ContentStorageConfig / LikesStorageConfig /
-# MasterPlanStorageConfig / StorageConfig / CoachPersistenceConfig /
+# MasterPlanStorageConfig / WeeklyPlanStorageConfig / StorageConfig / CoachPersistenceConfig /
 # JPushConfig / NotificationConfig / AzureKeyVaultConfig) now live in
 # `stride_storage.interfaces.config` and are re-exported at the top of this module.
 
@@ -130,6 +131,7 @@ class ServerConfig:
         validate_optional_url("storage.content.account_url", self.storage.content.account_url)
         validate_optional_url("storage.likes.table_account_url", self.storage.likes.table_account_url)
         validate_optional_url("storage.master_plan.table_account_url", self.storage.master_plan.table_account_url)
+        validate_optional_url("storage.weekly_plan.table_account_url", self.storage.weekly_plan.table_account_url)
         validate_optional_url("storage.jobs.queue_account_url", self.storage.jobs.queue_account_url)
         validate_optional_url("storage.jobs.table_account_url", self.storage.jobs.table_account_url)
         # The jobs queue + state store must live on the same side: either both

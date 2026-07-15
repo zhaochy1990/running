@@ -810,7 +810,8 @@ def plan_reparse_cmd(
 
     # Local imports — keep the heavy LLM stack lazy so unrelated CLI commands
     # (login/sync/etc.) start fast.
-    from plan_parser import apply_weekly_plan, parse_plan_md
+    from plan_parser import parse_plan_md
+    from stride_server.weekly_plan_store import save_weekly_plan
 
     table = Table(title=f"Plan reparse for {profile}")
     table.add_column("folder")
@@ -823,29 +824,14 @@ def plan_reparse_cmd(
     failed: list[tuple[str, str]] = []
     for f, path in rows:
         md = path.read_text(encoding="utf-8")
-        # Seed/refresh the markdown row before the structured upsert so
-        # apply_weekly_plan's get_weekly_plan_row check has something to read.
-        with Database(user=profile) as db:
-            db.upsert_weekly_plan(f, md, generated_by="claude-opus-4-7-backfill")
         try:
             result = parse_plan_md(folder=f, md_text=md)
         except Exception as exc:
             console.print(f"[red]LLM call failed for {f}: {exc}[/red]")
             failed.append((f, f"llm error: {exc}"))
-            apply_weekly_plan(
-                profile, f, md,
-                generated_by="claude-opus-4-7-backfill",
-                structured=None, structured_source="backfilled",
-            )
             table.add_row(f, "[red]error[/red]", "—", "—", str(exc)[:80])
             continue
 
-        apply_weekly_plan(
-            profile, f, md,
-            generated_by="claude-opus-4-7-backfill",
-            structured=result.structured,
-            structured_source="backfilled",
-        )
         if result.structured is None:
             failed.append((f, result.parse_error or "unknown parse error"))
             table.add_row(
@@ -853,6 +839,10 @@ def plan_reparse_cmd(
                 (result.parse_error or "")[:80],
             )
         else:
+            save_weekly_plan(
+                profile, result.structured, expected_folder=f,
+                generated_by="claude-opus-4-7-backfill",
+            )
             n_sessions = len(result.structured.sessions)
             n_nutrition = len(result.structured.nutrition)
             succeeded += 1

@@ -33,6 +33,12 @@ class TestParseWeekFolderDates:
             "2026-04-19",
         )
 
+    def test_cross_year_rollover(self):
+        assert parse_week_folder_dates("2026-12-29_01-04(NewYear)") == (
+            "2026-12-29",
+            "2027-01-04",
+        )
+
     def test_path_traversal_rejected(self):
         assert parse_week_folder_dates("2026-05-04_05-10/../../etc/passwd") is None
         assert parse_week_folder_dates("2026-05-04_05-10(../x)") is None

@@ -285,6 +285,28 @@ class TestScheduledWorkoutTable:
         ).fetchall()}
         assert "idx_scheduled_workout_date" in idx
         assert "idx_scheduled_workout_status" in idx
+        assert "idx_scheduled_workout_plan_session" in idx
+
+    def test_record_push_uses_reverse_plan_identity(self, db):
+        first = db.record_pushed_scheduled_workout(
+            week_folder="2026-05-04_05-10", planned_date="2026-05-05",
+            session_index=0, push_date="2026-05-05", kind="run",
+            name="easy", spec_json="{}", provider="coros",
+            provider_workout_id="p1",
+        )
+        second = db.record_pushed_scheduled_workout(
+            week_folder="2026-05-04_05-10", planned_date="2026-05-05",
+            session_index=0, push_date="2026-05-06", kind="run",
+            name="easy", spec_json="{}", provider="coros",
+            provider_workout_id="p2", prior_id=first,
+        )
+
+        assert db.get_scheduled_workout(first)["status"] == "superseded"
+        latest = db.get_latest_scheduled_workout_for_plan_session(
+            "2026-05-04_05-10", "2026-05-05", 0
+        )
+        assert latest["id"] == second
+        assert latest["date"] == "2026-05-06"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

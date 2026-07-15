@@ -18,6 +18,7 @@ from stride_core.registry import ProviderRegistry, UnknownProvider
 from .. import auth_service_client as auth_client
 from ..bearer import current_user_id, require_bearer
 from ..deps import get_registry
+from ..weekly_plan_store import get_weekly_plan_store
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,7 @@ async def delete_my_account(
 
     try:
         _delete_watch_credentials(user_id, registry)
+        get_weekly_plan_store().delete_user(user_id)
         _delete_local_user_data(user_id)
     except OSError as exc:
         logger.exception("failed to delete local user data for %s", user_id)

@@ -36,6 +36,8 @@ _ENV_MAPPING: dict[str, tuple[str, str]] = {
     "STRIDE_STORAGE_LIKES_TABLE_NAME": ("storage.likes.table_name", "str"),
     "STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL": ("storage.master_plan.table_account_url", "str"),
     "STRIDE_MASTER_PLAN_TABLE_NAME": ("storage.master_plan.table_name", "str"),
+    "STRIDE_WEEKLY_PLAN_TABLE_ACCOUNT_URL": ("storage.weekly_plan.table_account_url", "str"),
+    "STRIDE_WEEKLY_PLAN_TABLE_NAME": ("storage.weekly_plan.table_name", "str"),
     "STRIDE_JOBS_QUEUE_ACCOUNT_URL": ("storage.jobs.queue_account_url", "str"),
     "STRIDE_JOBS_QUEUE_NAME": ("storage.jobs.queue_name", "str"),
     "STRIDE_JOBS_POISON_QUEUE_NAME": ("storage.jobs.poison_queue_name", "str"),

@@ -2,51 +2,42 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from coach.schemas import ToolResult
 from stride_core.plan_diff import DiffOpKind, PlanDiff
+from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
 from stride_server.coach_adapters.tool_impls import draft_impls
 
 
 # ---------------------------------------------------------------------------
-# Fixture: seed a tmp DB with sample planned_session rows
+# Fixture: seed a canonical WeeklyPlan
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
 def patched_plan(tmp_path, monkeypatch):
-    """Open a real Database under tmp_path and monkeypatch ``_open_plan_store``
-    so every draft impl uses it. Seeds two run sessions + one strength."""
-    from stride_storage.sqlite.database import Database
-    from stride_storage.sqlite.state_stores import SqlitePlanStateStore
-
-    db_path = tmp_path / "draft_test.db"
-    db = Database(db_path)
-    plan_store = SqlitePlanStateStore(db)
-
+    """Patch the canonical read seam with two runs and one strength."""
     folder = "2026-05-11_05-17(P1W3)"
-    db._conn.executemany(
-        """INSERT INTO planned_session
-           (week_folder, date, session_index, kind, summary, total_distance_m, total_duration_s)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        [
-            (folder, "2026-05-13", 0, "run", "周三轻松跑", 8000, 2700),
-            (folder, "2026-05-14", 0, "run", "周四节奏跑", 12000, 3900),
-            (folder, "2026-05-15", 0, "strength", "全身力量", None, 3000),
-        ],
+    plan = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+            PlannedSession(
+                date="2026-05-13", session_index=0, kind=SessionKind.RUN,
+                summary="周三轻松跑", total_distance_m=8000, total_duration_s=2700,
+            ),
+            PlannedSession(
+                date="2026-05-14", session_index=0, kind=SessionKind.RUN,
+                summary="周四节奏跑", total_distance_m=12000, total_duration_s=3900,
+            ),
+            PlannedSession(
+                date="2026-05-15", session_index=0, kind=SessionKind.STRENGTH,
+                summary="全身力量", total_duration_s=3000,
+            ),
+        ),
     )
-    db._conn.commit()
-
-    def _factory(_uid: str):
-        d = Database(db_path)
-        return d, SqlitePlanStateStore(d)
-
-    monkeypatch.setattr(draft_impls, "_open_plan_store", _factory)
-    yield folder, db
-    db.close()
+    monkeypatch.setattr(draft_impls, "_get_plan", lambda _uid, f: plan if f == folder else None)
+    yield folder, plan
 
 
 def _assert_plan_diff(res: ToolResult) -> PlanDiff:

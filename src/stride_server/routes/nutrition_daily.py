@@ -6,6 +6,7 @@ nutrition_prefs.json and the planned_session table.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -13,7 +14,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
 from ..content_store import read_json
-from ..deps import get_db, _validate_uuid
+from ..deps import _validate_uuid, get_plan_state_store
+from ..weekly_plan_store import get_weekly_plan_store
 
 logger = logging.getLogger(__name__)
 
@@ -97,21 +99,31 @@ def _load_prefs(user_id: str) -> dict[str, Any] | None:
 
 
 def _get_session_for_date(user_id: str, date_str: str) -> dict[str, Any] | None:
-    """Return the first non-rest planned_session row for date_str, or None."""
-    db = get_db(user_id)
-    try:
-        rows = db._conn.execute(
-            "SELECT kind, spec_json FROM planned_session "
-            "WHERE date = ? ORDER BY session_index LIMIT 10",
-            (date_str,),
-        ).fetchall()
-        for row in rows:
-            d = dict(row)
-            if (d.get("kind") or "rest").lower() not in ("rest", "note"):
-                return d
+    """Return the first non-rest canonical planned session for a date."""
+    plan = get_weekly_plan_store().get_current_plan(user_id, date_str)
+    if plan is None:
+        legacy = get_plan_state_store(user_id)
+        try:
+            for row in legacy.get_planned_sessions(
+                date_from=date_str, date_to=date_str
+            ):
+                if row["kind"] not in ("rest", "note"):
+                    raw = row["spec_json"]
+                    return {
+                        "kind": row["kind"],
+                        "spec": json.loads(raw) if raw else None,
+                    }
+        finally:
+            legacy.close()
         return None
-    finally:
-        db.close()
+    for session in sorted(plan.sessions, key=lambda item: item.session_index):
+        if session.date != date_str or session.kind.value in ("rest", "note"):
+            continue
+        return {
+            "kind": session.kind.value,
+            "spec": session.spec.to_dict() if session.spec else None,
+        }
+    return None
 
 
 class MacroOut(BaseModel):
@@ -208,11 +220,10 @@ def nutrition_daily(
         elif kind == "run":
             # Try to read the run type from spec_json
             import json as _json
-            spec_json = session.get("spec_json")
+            spec = session.get("spec")
             run_type: str | None = None
-            if spec_json:
+            if spec:
                 try:
-                    spec = _json.loads(spec_json)
                     run_type = spec.get("run_type") or spec.get("type")
                 except Exception:
                     pass

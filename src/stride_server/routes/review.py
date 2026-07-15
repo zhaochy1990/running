@@ -8,7 +8,7 @@ Aggregates:
   - sessions  (planned × actual LEFT JOIN + feedback)
   - activity_highlights (up to 3 recent activities with commentary)
   - insights  (rule-based, see review_insights.py)
-  - next_week_preview (if next week folder exists)
+  - next_week_preview (if the next canonical WeeklyPlan exists)
 """
 
 from __future__ import annotations
@@ -19,16 +19,16 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException
 
+from stride_core.plan_spec import PlannedSession, WeeklyPlan
 from stride_core.timefmt import SHANGHAI_DAY_SQL, shanghai_day_str
 
-from ..content_store import list_week_folders
 from ..deps import (
     format_duration,
     get_db,
-    get_plan_state_store,
     parse_week_dates,
 )
 from ..review_insights import generate_insights
+from ..weekly_plan_store import get_weekly_plan_store
 
 router = APIRouter()
 
@@ -36,8 +36,14 @@ router = APIRouter()
 _RUN_SPORT_TYPES = (100, 101, 102, 103, 110, 111, 112)
 
 
-def _next_week_folder(current_folder: str, user: str) -> str | None:
-    """Return the folder name for the week immediately after current_folder, or None."""
+def _sessions_for_week(user: str, folder: str) -> list[PlannedSession]:
+    """Read planned sessions exclusively from canonical WeeklyPlanStore."""
+    plan = get_weekly_plan_store().get_plan(user, folder)
+    return list(plan.sessions) if plan is not None else []
+
+
+def _next_week_plan(current_folder: str, user: str) -> WeeklyPlan | None:
+    """Return the canonical plan immediately following ``current_folder``."""
     dates = parse_week_dates(current_folder)
     if not dates:
         return None
@@ -47,71 +53,51 @@ def _next_week_folder(current_folder: str, user: str) -> str | None:
     except ValueError:
         return None
 
-    # Walk all known folders and find the one whose date_from == next_monday
-    try:
-        all_folders = list(list_week_folders(user))
-    except Exception:
-        return None
-    target = next_monday.isoformat()
-    for f in all_folders:
-        d = parse_week_dates(f)
-        if d and d[0] == target:
-            return f
-    return None
+    return get_weekly_plan_store().get_current_plan(user, next_monday.isoformat())
 
 
 def _completion_rate_history(user: str, current_folder: str, n: int = 4) -> list[float]:
     """Return completion rates for the N weeks prior to current_folder (oldest first).
 
     Used for streak detection in the insight engine. Returns an empty list when
-    there are not enough planned_session rows to compute meaningful rates.
+    there are not enough canonical WeeklyPlans to compute meaningful rates.
     """
-    try:
-        all_folders = sorted(list(list_week_folders(user)))
-    except Exception:
+    current_dates = parse_week_dates(current_folder)
+    if current_dates is None:
         return []
-
-    try:
-        idx = all_folders.index(current_folder)
-    except ValueError:
-        return []
-
-    prior_folders = all_folders[max(0, idx - n): idx]
+    current_start = current_dates[0]
+    prior_plans = []
+    for plan in get_weekly_plan_store().list_plans(user):
+        dates = parse_week_dates(plan.week_folder)
+        if dates is not None and dates[0] < current_start:
+            prior_plans.append((dates[0], plan))
+    prior_plans.sort(key=lambda item: item[0])
+    prior_plans = prior_plans[-n:]
     rates: list[float] = []
 
-    plan_store = get_plan_state_store(user)
-    try:
-        for folder in prior_folders:
-            dates = parse_week_dates(folder)
-            if not dates:
-                continue
-            date_from, date_to = dates
-            sessions = plan_store.get_planned_sessions(week_folder=folder)
-            if not sessions:
-                continue
-            db = get_db(user)
-            try:
-                act_rows = db.query(
-                    f"""SELECT label_id, {SHANGHAI_DAY_SQL} AS shanghai_date
-                        FROM activities
-                        WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
-                        ORDER BY shanghai_date""",
-                    (date_from, date_to),
-                )
-            finally:
-                db.close()
-            # Simple heuristic: completed = planned sessions whose Shanghai
-            # calendar day has >=1 actual activity. Match against the SQL-
-            # computed shanghai_date column rather than slicing the raw UTC
-            # `activities.date`, which would be off by 8 hours.
-            act_dates = {r["shanghai_date"] for r in act_rows}
-            completed = sum(1 for s in sessions if s["date"] in act_dates)
-            planned = len(sessions)
-            if planned > 0:
-                rates.append(completed / planned)
-    finally:
-        plan_store.close()
-
+    for _, plan in prior_plans:
+        dates = parse_week_dates(plan.week_folder)
+        assert dates is not None
+        date_from, date_to = dates
+        sessions = list(plan.sessions)
+        if not sessions:
+            continue
+        db = get_db(user)
+        try:
+            act_rows = db.query(
+                f"""SELECT label_id, {SHANGHAI_DAY_SQL} AS shanghai_date
+                    FROM activities
+                    WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
+                    ORDER BY shanghai_date""",
+                (date_from, date_to),
+            )
+        finally:
+            db.close()
+        act_dates = {r["shanghai_date"] for r in act_rows}
+        completed = sum(1 for s in sessions if s.date in act_dates)
+        planned = len(sessions)
+        if planned > 0:
+            rates.append(completed / planned)
     return rates
 
 
@@ -125,8 +111,6 @@ def get_week_review(user: str, folder: str):
     date_from, date_to = dates
 
     db = get_db(user)
-    plan_store = get_plan_state_store(user)
-
     try:
         # ── 1. Actual activities this week ────────────────────────────────
         act_rows = db.query(
@@ -148,7 +132,7 @@ def get_week_review(user: str, folder: str):
         total_duration_sec = int(sum(a.get("duration_s") or 0 for a in run_acts))
 
         # ── 2. Planned sessions ───────────────────────────────────────────
-        planned_sessions = plan_store.get_planned_sessions(week_folder=folder)
+        planned_sessions = _sessions_for_week(user, folder)
 
         total_planned = len(planned_sessions)
 
@@ -178,9 +162,9 @@ def get_week_review(user: str, folder: str):
         rpe_values: list[float] = []
 
         for ps in planned_sessions:
-            ps_date = ps["date"]
-            ps_kind = ps["kind"] or "run"
-            ps_dist = ps["total_distance_m"]
+            ps_date = ps.date
+            ps_kind = ps.kind.value
+            ps_dist = ps.total_distance_m
 
             # Match: find the first actual run on the same date (simple heuristic).
             day_acts = acts_by_date.get(ps_date, [])
@@ -220,8 +204,8 @@ def get_week_review(user: str, folder: str):
 
             sessions_payload.append({
                 "date": ps_date,
-                "session_index": ps["session_index"],
-                "planned_summary": ps["summary"] or "",
+                "session_index": ps.session_index,
+                "planned_summary": ps.summary or "",
                 "planned_kind": ps_kind,
                 "planned_distance_m": ps_dist,
                 "completed": completed,
@@ -308,28 +292,23 @@ def get_week_review(user: str, folder: str):
         ]
 
         # ── 8. Next week preview ──────────────────────────────────────────
-        next_folder = _next_week_folder(folder, user)
+        next_plan = _next_week_plan(folder, user)
         next_week_preview: dict | None = None
-        if next_folder:
-            next_dates = parse_week_dates(next_folder)
-            next_sessions = plan_store.get_planned_sessions(week_folder=next_folder)
-            next_plan_row = plan_store.get_weekly_plan_row(next_folder)
+        if next_plan is not None:
+            next_folder = next_plan.week_folder
+            next_sessions = list(next_plan.sessions)
 
-            plan_title: str | None = None
-            if next_plan_row:
-                first_line = (next_plan_row["content_md"] or "").splitlines()
-                plan_title = first_line[0].lstrip("# ").strip() if first_line else None
-
-            if next_sessions or next_plan_row:
+            plan_title: str | None = next_folder if next_sessions else None
+            if next_sessions:
                 total_next_dist = sum(
-                    (s["total_distance_m"] or 0) for s in next_sessions
+                    (s.total_distance_m or 0) for s in next_sessions
                 ) / 1000.0
 
                 # Key session: the session with the longest distance in the week
                 key_session: str | None = None
                 if next_sessions:
-                    best = max(next_sessions, key=lambda s: s.get("total_distance_m") or 0)
-                    key_session = best.get("summary") or None
+                    best = max(next_sessions, key=lambda s: s.total_distance_m or 0)
+                    key_session = best.summary or None
 
                 next_week_preview = {
                     "folder": next_folder,
@@ -340,7 +319,6 @@ def get_week_review(user: str, folder: str):
                 }
 
     finally:
-        plan_store.close()
         db.close()
 
     return {

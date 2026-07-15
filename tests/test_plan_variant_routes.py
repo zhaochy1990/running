@@ -470,25 +470,20 @@ class TestSelect:
             f"/api/{USER_UUID}/plan/{WEEK}/select",
             json={"variant_id": v1}, headers=_auth(token),
         )
-        # Simulate a push: stitch a scheduled_workout to the planned_session.
+        # Simulate a pushed canonical session via execution-state identity.
         db = _db(tmp_path)
         try:
             cur = db._conn.execute(
                 """INSERT INTO scheduled_workout
                    (date, kind, name, spec_json, status, provider,
-                    provider_workout_id, pushed_at, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?, datetime('now'),
+                    provider_workout_id, pushed_at, week_folder, planned_date,
+                    session_index, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?, datetime('now'), ?, ?, 0,
                            datetime('now'), datetime('now'))""",
                 ("2026-05-04", "run", "[STRIDE]", "{}", "pushed",
-                 "coros", "prov-1"),
+                 "coros", "prov-1", WEEK, "2026-05-04"),
             )
             sw_id = cur.lastrowid
-            db._conn.execute(
-                """UPDATE planned_session
-                       SET scheduled_workout_id = ?
-                     WHERE week_folder = ? AND date = ? AND session_index = 0""",
-                (sw_id, WEEK, "2026-05-04"),
-            )
             db._conn.commit()
         finally:
             db.close()
@@ -594,16 +589,8 @@ class TestDelete:
             f"/api/{USER_UUID}/plan/{WEEK}/select",
             json={"variant_id": vid}, headers=_auth(token),
         )
-        # weekly_plan.selected_variant_id should now be vid.
-        db = _db(tmp_path)
-        try:
-            wp_pre = db._conn.execute(
-                "SELECT selected_variant_id FROM weekly_plan WHERE week=?",
-                (WEEK,),
-            ).fetchone()
-            assert wp_pre["selected_variant_id"] == vid
-        finally:
-            db.close()
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+        assert get_weekly_plan_store().get_plan(USER_UUID, WEEK) == plan
 
         resp = client.delete(
             f"/api/{USER_UUID}/plan/{WEEK}/variants",
@@ -611,15 +598,8 @@ class TestDelete:
         )
         assert resp.status_code == 200
 
-        db = _db(tmp_path)
-        try:
-            wp_post = db._conn.execute(
-                "SELECT selected_variant_id FROM weekly_plan WHERE week=?",
-                (WEEK,),
-            ).fetchone()
-            assert wp_post["selected_variant_id"] is None
-        finally:
-            db.close()
+        # Deleting audit variants does not delete or rewrite the canonical plan.
+        assert get_weekly_plan_store().get_plan(USER_UUID, WEEK) == plan
 
 
 # ── weeks.py extension: variants_summary ───────────────────────────────
@@ -781,20 +761,14 @@ class TestAbandonedScheduledWorkouts:
             cur = db._conn.execute(
                 """INSERT INTO scheduled_workout
                        (date, kind, name, spec_json, status, provider,
-                        provider_workout_id, pushed_at,
-                        created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?, datetime('now'),
+                        provider_workout_id, pushed_at, week_folder, planned_date,
+                        session_index, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?, datetime('now'), ?, ?, 0,
                                datetime('now'), datetime('now'))""",
                 ("2026-05-04", "run", "[STRIDE] watch-pushed",
-                 "{}", "pushed", "coros", "prov-X"),
+                 "{}", "pushed", "coros", "prov-X", WEEK, "2026-05-04"),
             )
             sw_id = cur.lastrowid
-            db._conn.execute(
-                """UPDATE planned_session
-                       SET scheduled_workout_id = ?
-                     WHERE week_folder = ? AND date = ? AND session_index = 0""",
-                (sw_id, WEEK, "2026-05-04"),
-            )
             db._conn.commit()
         finally:
             db.close()

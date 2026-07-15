@@ -41,6 +41,10 @@ table_name = "stridelikes"
 table_account_url = ""
 table_name = "stridemasterplan"
 
+[storage.weekly_plan]
+table_account_url = ""
+table_name = "strideweeklyplan"
+
 # Async-job infra (queue layer + state store). Empty URLs → dev in-memory
 # queue + file state store. Prod sets these to Azure Storage Queue + Table
 # in server.prod.toml. Consumed by the worker (`python -m stride_server.jobs`)

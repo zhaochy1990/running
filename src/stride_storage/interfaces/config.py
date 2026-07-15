@@ -80,6 +80,15 @@ class MasterPlanStorageConfig:
 
 
 @dataclass(frozen=True)
+class WeeklyPlanStorageConfig:
+    table_account_url: str = ""
+    table_name: str = "strideweeklyplan"
+
+    def with_updates(self, **updates: object) -> WeeklyPlanStorageConfig:
+        return replace(self, **updates)
+
+
+@dataclass(frozen=True)
 class QueueStorageConfig:
     """Resolved config for the async-job queue + state store.
 
@@ -108,6 +117,7 @@ class StorageConfig:
     content: ContentStorageConfig = field(default_factory=ContentStorageConfig)
     likes: LikesStorageConfig = field(default_factory=LikesStorageConfig)
     master_plan: MasterPlanStorageConfig = field(default_factory=MasterPlanStorageConfig)
+    weekly_plan: WeeklyPlanStorageConfig = field(default_factory=WeeklyPlanStorageConfig)
     jobs: QueueStorageConfig = field(default_factory=QueueStorageConfig)
 
     def with_updates(self, **updates: object) -> StorageConfig:

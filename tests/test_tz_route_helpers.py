@@ -19,6 +19,7 @@ refactors of those functions can't drift back to the UTC bucket.
 from __future__ import annotations
 
 from datetime import date as date_cls
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -79,14 +80,34 @@ class _StubPlanStore:
     def __init__(self, sessions: list[dict[str, Any]]):
         self._sessions = sessions
 
-    def get_planned_sessions(self, *, week_folder: str | None = None, **_kw):
-        return list(self._sessions)
+    def get_plan(self, _user: str, folder: str):
+        return SimpleNamespace(
+            week_folder=folder,
+            sessions=tuple(
+                SimpleNamespace(
+                    kind=SessionKind(row["kind"]),
+                    date=row["date"],
+                    total_distance_m=row.get("total_distance_m"),
+                )
+                for row in self._sessions
+            ),
+        )
+
+    def get_current_plan(self, user: str, _on_date: str):
+        return self.get_plan(user, "2026-05-04_05-10")
 
 
 @pytest.fixture
-def last_week_summary():
-    from stride_server.routes.generate import _get_last_week_summary
-    return _get_last_week_summary
+def last_week_summary(monkeypatch):
+    import stride_server.routes.generate as generate_mod
+
+    def call(db, plan_store, week_start):
+        monkeypatch.setattr(generate_mod, "get_weekly_plan_store", lambda: plan_store)
+        return generate_mod._get_last_week_summary(
+            "a1b2c3d4-e5f6-4aaa-89ab-123456789012", db, week_start
+        )
+
+    return call
 
 
 @pytest.fixture
