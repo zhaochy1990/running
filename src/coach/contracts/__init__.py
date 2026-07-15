@@ -2,7 +2,7 @@
 
 The typed handshake between the orchestrator brain (Resolver / Supervisor /
 dispatcher / Aggregator) and the domain specialists. No infrastructure imports;
-``proposal`` reuses the ``stride_core`` diff primitives only.
+``proposals`` reuses the ``stride_core`` diff primitives only.
 """
 
 from __future__ import annotations

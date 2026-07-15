@@ -17,6 +17,7 @@ from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from coach.contracts import ProposalCard, TargetRef, TurnResponse
+from stride_core.master_plan_diff import MasterPlanDiff
 from stride_core.plan_diff import PlanDiff
 from stride_server.config.models import AuthConfig, ServerConfig
 
@@ -129,6 +130,58 @@ def test_chat_surfaces_proposal_cards(chat_client, monkeypatch):
     assert len(proposals) == 1
     assert proposals[0]["specialist_id"] == "weekly_plan"
     assert proposals[0]["proposal"]["folder"] == "2026-W26"
+
+
+def test_chat_surfaces_multiple_master_plan_choices(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    choices = [
+        MasterPlanDiff(
+            diff_id="conservative",
+            plan_id="plan-1",
+            ops=[],
+            ai_explanation="方案 A（温和减量）",
+            created_at="t",
+        ),
+        MasterPlanDiff(
+            diff_id="aggressive",
+            plan_id="plan-1",
+            ops=[],
+            ai_explanation="方案 B（明显减量）",
+            created_at="t",
+        ),
+    ]
+
+    def _fake_turn(**_kw) -> TurnResponse:
+        return TurnResponse(
+            reply="请选择一个调整方向",
+            proposals=[
+                ProposalCard(
+                    specialist_id="season_plan",
+                    proposal=choice,
+                    summary=choice.ai_explanation,
+                )
+                for choice in choices
+            ],
+            active_target=TargetRef(kind="master", plan_id="plan-1"),
+        )
+
+    monkeypatch.setattr(coach_routes, "run_coach_turn", _fake_turn)
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={"session_id": "s-alternatives", "message": "给我两个方向"},
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [card["proposal"]["diff_id"] for card in body["proposals"]] == [
+        "conservative",
+        "aggressive",
+    ]
+    assert [card["summary"] for card in body["proposals"]] == [
+        "方案 A（温和减量）",
+        "方案 B（明显减量）",
+    ]
 
 
 def test_chat_clarify_turn_has_no_proposals(chat_client, monkeypatch):
@@ -411,6 +464,48 @@ def test_master_apply_rejects_invalid_diff_via_gate(chat_client, monkeypatch):
     )
     assert resp.status_code == 400
     assert "结构非法" in resp.json()["detail"]
+
+
+def test_master_apply_validates_only_selected_ops_for_taper_safety(
+    chat_client, monkeypatch
+):
+    """Unselected regeneration ops cannot make a selected taper deletion safe."""
+    client, private_pem, coach_routes = chat_client
+    plan = _master_plan()
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "start_date": "2026-11-02",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [plan.phases[0], taper]})
+    _stub_master(coach_routes, monkeypatch, plan=plan)
+    body = {
+        "diff": {
+            "diff_id": "regenerate",
+            "plan_id": _PLAN_ID,
+            "ops": [
+                {"id": "remove-base", "op": "remove_phase", "phase_id": "phase-1"},
+                {"id": "remove-taper", "op": "remove_phase", "phase_id": "taper"},
+                {"id": "remove-ms", "op": "remove_milestone", "milestone_id": "ms-1"},
+            ],
+            "ai_explanation": "清空重排",
+            "created_at": "2026-07-15T00:00:00Z",
+        },
+        "accepted_op_ids": ["remove-taper"],
+    }
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 400
+    assert "不能删除" in resp.json()["detail"]
 
 
 def test_master_apply_404_when_plan_missing(chat_client, monkeypatch):

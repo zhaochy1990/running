@@ -359,13 +359,24 @@ def apply_coach_master_diff(
             detail="该赛季计划尚未确认（status≠active），不能应用调整",
         )
 
+    # Only land ops the diff actually carries (skip unknown / stale ids). Build
+    # the exact accepted subset before validation: safety rules such as the
+    # full-regeneration taper exception must be evaluated against what will
+    # actually land, not against unselected sibling ops in the same diff.
+    known_ids = {op.id for op in diff.ops}
+    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
+    accepted_ids = set(accepted_op_ids)
+    accepted_diff = diff.model_copy(
+        update={"ops": [op for op in diff.ops if op.id in accepted_ids]}
+    )
+
     # Re-run the validation gate: the client supplies the diff body, so don't
     # trust it blindly — refuse a structurally broken diff (defense in depth).
     # The gate is wrapped too: it coerces untyped spec_patch values (float() etc.),
     # so a pathological value that makes the gate itself raise becomes a 400, not
     # a 500.
     try:
-        violations = validate_master_diff(plan, diff)
+        violations = validate_master_diff(plan, accepted_diff)
     except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
         logger.warning("coach master apply: gate raised on malformed diff: %s", exc)
         raise HTTPException(
@@ -377,9 +388,6 @@ def apply_coach_master_diff(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="赛季调整结构非法：" + "；".join(violations),
         )
-
-    known_ids = {op.id for op in diff.ops}
-    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
 
     bridge = _MasterStoreBridge(store, user_id)
     try:

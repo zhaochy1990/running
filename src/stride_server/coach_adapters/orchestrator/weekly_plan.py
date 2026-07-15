@@ -4,7 +4,7 @@ The weekly_plan expert adjusts *this week's* planned sessions. It already exists
 as the ``week_chat`` scope of the conversation graph (7 real draft tools that emit
 a ``PlanDiff``), so this adapter dresses it in the SpecialistContract:
 ``SpecialistTask`` → ``SpecialistResult`` (carrying the proposed ``PlanDiff`` as
-``proposal`` — Pattern Y: the diff rides the response, ``/apply`` lands it).
+``proposals`` — Pattern Y: the diff rides the response, ``/apply`` lands it).
 
 Two adapter-only concerns this module owns:
 
@@ -188,29 +188,32 @@ def make_weekly_plan_runner(
         state = graph.invoke(state_in, config={})
 
         reply = _extract_reply(state.get("history") or [])
-        proposal: PlanDiff | None = None
+        proposals: list[PlanDiff] = []
         last_diff = state.get("last_diff")
         if last_diff is not None:
             try:
-                proposal = PlanDiff.model_validate(last_diff)
+                proposals.append(PlanDiff.model_validate(last_diff))
             except Exception:  # noqa: BLE001 — a malformed draft must not crash the turn
                 logger.warning("weekly_plan: last_diff did not validate as PlanDiff", exc_info=True)
-                proposal = None
         # A tool-call-only AIMessage (no accompanying text) leaves an empty reply
         # next to a real proposal. Surface the diff's own explanation so the user
         # never sees a blank bubble beside a change card.
-        if not reply and proposal is not None:
+        if not reply and proposals:
             logger.warning(
                 "weekly_plan: empty reply with a non-null proposal — "
                 "falling back to the diff explanation"
             )
-            reply = proposal.ai_explanation
+            reply = proposals[0].ai_explanation
         logger.debug(
-            "weekly_plan: week_chat done | reply=%dc | proposal=%s | iters=%s",
+            "weekly_plan: week_chat done | reply=%dc | proposals=%d | iters=%s",
             len(reply),
-            "yes" if proposal is not None else "no",
+            len(proposals),
             state.get("iteration"),
         )
-        return SpecialistResult(status="completed", reply_fragment=reply, proposal=proposal)
+        return SpecialistResult(
+            status="completed",
+            reply_fragment=reply,
+            proposals=proposals,
+        )
 
     return _run

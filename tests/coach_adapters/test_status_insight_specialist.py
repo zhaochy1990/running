@@ -59,7 +59,7 @@ def test_runner_returns_completed_result_with_answer() -> None:
     result = runner(SpecialistTask(objective="我状态如何"))
     assert result.status == "completed"
     assert result.reply_fragment == "你最近负荷偏高，注意恢复。"
-    assert result.proposal is None
+    assert result.proposals == []
 
 
 def test_runner_runs_stateless_qa_scope() -> None:

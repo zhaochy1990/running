@@ -777,6 +777,7 @@ class StrideApi {
         String threadId,
         String reply,
         String? clarification,
+        List<Map<String, dynamic>> proposals,
       })> postCoachChat({
     required String sessionId,
     required String message,
@@ -785,11 +786,33 @@ class StrideApi {
       '/api/users/me/coach/chat',
       body: {'session_id': sessionId, 'message': message},
     );
+    final proposals = <Map<String, dynamic>>[];
+    for (final item in (r['proposals'] as List? ?? const [])) {
+      if (item is Map<String, dynamic>) proposals.add(item);
+    }
     return (
       sessionId: r['session_id'] as String? ?? sessionId,
       threadId: r['thread_id'] as String? ?? '',
       reply: r['reply'] as String? ?? '',
       clarification: r['clarification'] as String?,
+      proposals: proposals,
+    );
+  }
+
+  /// Apply every accepted operation in a stateless Coach season proposal.
+  Future<Map<String, dynamic>> applyCoachMasterPlanDiff({
+    required String planId,
+    required Map<String, dynamic> diff,
+    required List<String> acceptedOpIds,
+    String changeReason = 'coach adjustment',
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/users/me/coach/master-plan/$planId/apply',
+      body: {
+        'diff': diff,
+        'accepted_op_ids': acceptedOpIds,
+        'change_reason': changeReason,
+      },
     );
   }
 

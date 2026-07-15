@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from click.testing import CliRunner
 from rich.console import Console
 
+from coach.contracts import ProposalCard
 from coach_cli.cli import (
     _CHECKPOINT_DIR,
     _InputHistory,
@@ -16,6 +17,8 @@ from coach_cli.cli import (
     _select_session,
     main,
 )
+from stride_core.master_plan_diff import MasterPlanDiff
+from stride_core.plan_diff import PlanDiff
 from stride_storage.coach_persistence.store import CheckpointRow
 
 
@@ -244,3 +247,114 @@ def test_print_turn_keeps_raw_markdown_for_redirected_stdout(capsys) -> None:
     )
 
     assert capsys.readouterr().out == f"{reply}\n"
+
+
+def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
+    choices = [
+        MasterPlanDiff(
+            diff_id="a",
+            plan_id="plan-1",
+            ops=[],
+            ai_explanation="方案 A（温和减量）",
+            created_at="t",
+        ),
+        MasterPlanDiff(
+            diff_id="b",
+            plan_id="plan-1",
+            ops=[],
+            ai_explanation="方案 B（明显减量）",
+            created_at="t",
+        ),
+    ]
+    turn = SimpleNamespace(
+        reply="请选择一个调整方向",
+        clarification=None,
+        proposals=[
+            ProposalCard(specialist_id="season_plan", proposal=choice)
+            for choice in choices
+        ],
+        active_target=None,
+    )
+
+    _print_turn(turn, interactive=False, render_markdown=False)
+
+    output = capsys.readouterr().out
+    assert "方案 A（温和减量）" in output
+    assert "方案 B（明显减量）" in output
+    assert "📋 提案 1[season_plan]" in output
+    assert "📋 提案 2[season_plan]" in output
+
+
+def test_print_turn_only_numbers_cli_applicable_master_proposals(capsys) -> None:
+    weekly = PlanDiff(
+        diff_id="week",
+        folder="2026-W29",
+        ops=[],
+        ai_explanation="调整周三训练",
+        created_at="t",
+    )
+    master = MasterPlanDiff(
+        diff_id="master",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="降低强化期跑量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="这里有两个不同范围的提案",
+        clarification=None,
+        proposals=[
+            ProposalCard(specialist_id="weekly_plan", proposal=weekly),
+            ProposalCard(specialist_id="season_plan", proposal=master),
+        ],
+        active_target=None,
+    )
+
+    _print_turn(turn, interactive=False, render_markdown=False)
+
+    output = capsys.readouterr().out
+    assert "📋 提案[weekly_plan]" in output
+    assert "📋 提案 1[season_plan]" in output
+    assert "提案 2" not in output
+
+
+def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> None:
+    choices = [
+        MasterPlanDiff(
+            diff_id=diff_id,
+            plan_id="plan-1",
+            ops=[],
+            ai_explanation=label,
+            created_at="t",
+        )
+        for diff_id, label in (("a", "温和减量"), ("b", "明显减量"))
+    ]
+    turn = SimpleNamespace(
+        reply="请选择一个调整方向",
+        clarification=None,
+        proposals=[
+            ProposalCard(specialist_id="season_plan", proposal=choice)
+            for choice in choices
+        ],
+        active_target=None,
+    )
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_master_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="给我两个方案\n/apply 2\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert applied == ["b"]
+    assert "方案 2 已应用" in result.output
+    assert "v2" in result.output

@@ -80,8 +80,9 @@ def test_runner_extracts_proposal_from_draft_turn() -> None:
     result = runner(_task("把周三换到周四"))
     assert result.status == "completed"
     assert result.reply_fragment == "已把周三换到周四。"
-    assert isinstance(result.proposal, PlanDiff)
-    assert result.proposal.folder == _FOLDER
+    assert len(result.proposals) == 1
+    assert isinstance(result.proposals[0], PlanDiff)
+    assert result.proposals[0].folder == _FOLDER
     assert capture["build"]["scope"] == "week_chat"
     assert capture["build"]["checkpointer"] is None
 
@@ -97,7 +98,7 @@ def test_runner_question_turn_has_no_proposal() -> None:
     result = runner(_task("这周跑量多少"))
     assert result.status == "completed"
     assert result.reply_fragment == "本周一共 45 公里。"
-    assert result.proposal is None
+    assert result.proposals == []
 
 
 def test_runner_falls_back_to_diff_explanation_when_reply_empty() -> None:
@@ -112,7 +113,7 @@ def test_runner_falls_back_to_diff_explanation_when_reply_empty() -> None:
     )
     result = runner(_task("把周三换到周四"))
     assert result.status == "completed"
-    assert result.proposal is not None
+    assert len(result.proposals) == 1
     assert result.reply_fragment == "把周三换到周四"  # == diff.ai_explanation
 
 

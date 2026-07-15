@@ -9,12 +9,13 @@ The contract has three pieces, each a separate concern:
   (objective + scoped data + boundaries + filtered conversation window). Thin
   one-line tasks cause experts to redo work (Anthropic), so the brief is rich.
 * :class:`SpecialistResult` — the *output* every expert returns. Carries only the
-  compressed ``reply_fragment`` + optional ``proposal`` back to the orchestrator
+  compressed ``reply_fragment`` + a proposal list back to the orchestrator
   (context isolation — raw tool returns / reasoning never flow back).
 
-``proposal`` reuses the existing ``PlanDiff`` / ``MasterPlanDiff`` domain
-primitives (Pattern Y): the expert never persists; the diff rides the HTTP
-response and ``/apply`` lands it.
+``proposals`` reuses the existing ``PlanDiff`` / ``MasterPlanDiff`` domain
+primitives (Pattern Y): the expert never persists; the diffs ride the HTTP
+response and ``/apply`` lands the one the user selects. Zero, one, and multiple
+proposals all use the same list shape.
 """
 
 from __future__ import annotations
@@ -93,12 +94,11 @@ class SpecialistResult(BaseModel):
 
     status: SpecialistStatus
     reply_fragment: str = ""
-    proposal: PlanDiff | MasterPlanDiff | None = None
+    proposals: list[PlanDiff | MasterPlanDiff] = Field(default_factory=list)
     clarification: str | None = None
     artifacts: list[ArtifactRef] | None = None
     handoff_hint: str | None = None
     usage: UsageStats | None = None
-
 
 # ---------------------------------------------------------------------------
 # Card — static capability descriptor

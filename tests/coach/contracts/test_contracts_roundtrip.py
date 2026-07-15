@@ -95,19 +95,31 @@ def test_specialist_result_carries_plan_diff_proposal() -> None:
     result = SpecialistResult(
         status="completed",
         reply_fragment="把周三改成轻松跑",
-        proposal=_plan_diff(),
+        proposals=[_plan_diff()],
     )
     dumped = result.model_dump()
     restored = SpecialistResult.model_validate(dumped)
-    assert isinstance(restored.proposal, PlanDiff)
-    assert restored.proposal.folder == "2026-W26"
+    assert len(restored.proposals) == 1
+    assert isinstance(restored.proposals[0], PlanDiff)
+    assert restored.proposals[0].folder == "2026-W26"
 
 
 def test_specialist_result_carries_master_diff_proposal() -> None:
-    result = SpecialistResult(status="completed", proposal=_master_diff())
+    result = SpecialistResult(status="completed", proposals=[_master_diff()])
     restored = SpecialistResult.model_validate(result.model_dump())
-    assert isinstance(restored.proposal, MasterPlanDiff)
-    assert restored.proposal.plan_id == "plan-abc"
+    assert len(restored.proposals) == 1
+    assert isinstance(restored.proposals[0], MasterPlanDiff)
+    assert restored.proposals[0].plan_id == "plan-abc"
+
+
+def test_specialist_result_carries_multiple_master_diff_proposals() -> None:
+    result = SpecialistResult(
+        status="completed",
+        proposals=[_master_diff(), _master_diff().model_copy(update={"diff_id": "md2"})],
+    )
+    restored = SpecialistResult.model_validate(result.model_dump())
+    assert [proposal.diff_id for proposal in restored.proposals] == ["md1", "md2"]
+    assert all(isinstance(proposal, MasterPlanDiff) for proposal in restored.proposals)
 
 
 def test_specialist_result_needs_clarification() -> None:
@@ -115,7 +127,7 @@ def test_specialist_result_needs_clarification() -> None:
         status="needs_clarification",
         clarification="你说的是哪一周？",
     )
-    assert result.proposal is None
+    assert result.proposals == []
     assert result.status == "needs_clarification"
 
 

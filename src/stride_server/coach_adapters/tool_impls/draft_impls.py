@@ -23,7 +23,9 @@ from typing import Any
 from uuid import uuid4
 
 from coach.schemas import ToolResult
+from coach.graphs.conversation.master_diff_gate import is_short_taper_phase
 from stride_core.plan_diff import DiffOp, DiffOpKind, PlanDiff
+from stride_core.timefmt import today_shanghai
 
 logger = logging.getLogger(__name__)
 
@@ -472,6 +474,11 @@ class CompressPhaseImpl:
         phase = next((p for p in plan.phases if p.id == phase_id), None)
         if phase is None:
             return _fail(f"phase {phase_id!r} not in plan")
+        if phase is plan.phases[-1] and is_short_taper_phase(phase):
+            return _fail(
+                f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短；"
+                "请调整更早阶段的周跑量，或拒绝这次要求"
+            )
         new_end = _shift_phase_end(phase.end_date, -weeks)
         # Refuse a compress that would collapse the phase below its start
         if _date.fromisoformat(new_end) <= _date.fromisoformat(phase.start_date):
@@ -549,9 +556,11 @@ class ChangeTargetImpl:
 class ProposeAlternativesImpl:
     """Return 2 distinct MasterPlanDiff alternatives matching the user's intent.
 
-    The deterministic baseline: alt-A trims the last training phase by 2 weeks
-    (conservative), alt-B extends it by 2 weeks (aggressive). The LLM picks
-    between them based on the user's intent text; we don't try to infer.
+    Preserve the final taper/adjustment phase and offer two load-reduction
+    magnitudes for the current Shanghai-day phase (or the nearest upcoming
+    phase when the plan has a gap).  If no current/upcoming phase has a usable
+    weekly-distance range, refusing is safer than removing the taper or
+    rewriting completed history.
     """
 
     def __init__(self, user_id: str) -> None:
@@ -563,40 +572,88 @@ class ProposeAlternativesImpl:
             return _fail(f"master plan {plan_id!r} not found")
         if not plan.phases:
             return _fail("plan has no phases to alternate over")
-        target = plan.phases[-1]
-        alternatives: list[dict] = []
-        for label, weeks, note in (
-            ("方案 A (保守)", -2, "缩短 2 周, 减少训练总量"),
-            ("方案 B (激进)", +2, "延长 2 周, 强化巩固"),
-        ):
+        final_phase = plan.phases[-1]
+        has_protected_taper = is_short_taper_phase(final_phase)
+        candidates = (
+            plan.phases[:-1]
+            if has_protected_taper
+            else plan.phases
+        )
+        today = today_shanghai()
+        adjustable: list[tuple[_date, _date, Any]] = []
+        for phase in candidates:
             try:
-                new_end = _shift_phase_end(target.end_date, weeks)
-                if (
-                    weeks < 0
-                    and _date.fromisoformat(new_end)
-                    <= _date.fromisoformat(target.start_date)
-                ):
-                    continue
+                phase_start = _date.fromisoformat(phase.start_date)
+                phase_end = _date.fromisoformat(phase.end_date)
             except ValueError:
                 continue
+            if (
+                not phase.is_completed
+                and phase_end >= today
+                and 0 <= phase.weekly_distance_km_low <= phase.weekly_distance_km_high
+                and phase.weekly_distance_km_high > 0
+            ):
+                adjustable.append((phase_start, phase_end, phase))
+
+        current = [
+            item for item in adjustable if item[0] <= today <= item[1]
+        ]
+        upcoming = [item for item in adjustable if item[0] > today]
+        selected = (
+            max(current, key=lambda item: item[0])
+            if current
+            else (min(upcoming, key=lambda item: item[0]) if upcoming else None)
+        )
+        target = selected[2] if selected is not None else None
+        if target is None:
+            prefix = (
+                "为保护最后 1–2 周必须保留的调整期，"
+                if has_protected_taper
+                else ""
+            )
+            return _fail(
+                f"{prefix}当前计划没有可安全降低周跑量的当前或后续阶段；"
+                "无法生成可应用的替代方案，请保留现有计划或重新评估该要求"
+            )
+
+        alternatives: list[dict] = []
+        old_range = {
+            "weekly_distance_km_low": target.weekly_distance_km_low,
+            "weekly_distance_km_high": target.weekly_distance_km_high,
+        }
+        for label, reduction in (
+            ("方案 A（温和减量）", 0.05),
+            ("方案 B（明显减量）", 0.10),
+        ):
+            new_range = {
+                "weekly_distance_km_low": round(
+                    target.weekly_distance_km_low * (1 - reduction), 1
+                ),
+                "weekly_distance_km_high": round(
+                    target.weekly_distance_km_high * (1 - reduction), 1
+                ),
+            }
             op = MasterPlanDiffOp(
                 id=str(uuid4()),
-                op=MasterPlanDiffOpKind.RESIZE_PHASE,
+                op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
                 phase_id=target.id,
-                old_value={"end_date": target.end_date},
-                new_value={"end_date": new_end},
-                spec_patch={"end_date": new_end},
+                old_value=old_range,
+                new_value=new_range,
+                spec_patch=new_range,
             )
             diff = MasterPlanDiff(
                 diff_id=str(uuid4()),
                 plan_id=plan_id,
                 ops=[op],
-                ai_explanation=f"{label} — {note} (用户意图: {intent})",
+                ai_explanation=(
+                    f"{label}："
+                    f"{'保留最后的调整期不变，' if has_protected_taper else ''}"
+                    f"将「{target.name}」周跑量降低"
+                    f" {int(reduction * 100)}%（用户意图：{intent}）"
+                ),
                 created_at=_now_iso(),
             )
             alternatives.append(diff.model_dump())
-        if not alternatives:
-            return _fail("could not synthesise any viable alternative")
         return ToolResult(ok=True, data={"alternatives": alternatives, "intent": intent})
 
 

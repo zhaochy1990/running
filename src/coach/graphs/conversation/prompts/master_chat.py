@@ -27,8 +27,13 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - compress_phase(plan_id, phase_id, weeks) — 缩短一个阶段 N 周
 - shift_milestone(plan_id, milestone_id, new_date) — 改里程碑日期
 - change_target(plan_id, milestone_id, new_target_time) — 改目标成绩
-- propose_alternatives(plan_id, intent) — 给 2 个对比方案 (保守 vs 激进)
+- propose_alternatives(plan_id, intent) — 给 2 个可应用的对比方向，让用户选择
 - regenerate_master(plan_id, reason) — 清空总纲, 由生成管线重排 (后续走 POST /master-plan/generate)
+
+**安全边界（必须遵守）**
+- 最后 1–2 周的 taper / 调整期是必须保留的安全阶段，不得通过缩短日期满足用户要求。
+- 需要减少总量时，优先降低更早阶段的周跑量，并保持最后调整期日期不变。
+- 如果没有可安全调整的更早阶段，明确拒绝不合理要求并解释原因；不得编造不可应用的 Diff。
 
 ## 行为规则
 
