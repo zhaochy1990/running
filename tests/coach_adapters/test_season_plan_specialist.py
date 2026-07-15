@@ -186,13 +186,13 @@ def test_runner_drops_diff_that_fails_the_gate(monkeypatch) -> None:
     assert "结构问题" in result.reply_fragment
 
 
-def test_runner_question_turn_has_no_proposal(monkeypatch) -> None:
+def test_runner_misrouted_read_question_does_not_enter_write_graph(monkeypatch) -> None:
     capture: dict[str, Any] = {}
     runner = _runner(capture, reply="你的赛季计划目前 24 周。", last_diff=None, monkeypatch=monkeypatch)
     result = runner(_task("我的赛季计划多长"))
-    assert result.status == "completed"
+    assert result.status == "needs_clarification"
     assert result.proposals == []
-    assert "24 周" in result.reply_fragment
+    assert "build" not in capture
 
 
 def test_runner_seeds_plan_id_into_context(monkeypatch) -> None:

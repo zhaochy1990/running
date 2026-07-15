@@ -64,12 +64,6 @@ _CONCRETE_DIRECTION_RE = re.compile(
     r"change\s+(?:the\s+)?target|regenerate)",
     re.IGNORECASE,
 )
-_ADJUSTMENT_REQUEST_RE = re.compile(
-    r"(?:调整|修改|优化|改(?:一?下|动)?(?:我的|这个|当前)?(?:整体|长期|赛季|总纲)?训练计划|"
-    r"adjust|modify|revise|optimi[sz]e)",
-    re.IGNORECASE,
-)
-
 _DIRECTION_CLARIFICATION = (
     "你希望具体怎么调整整体训练计划？请先告诉我你的调整方向，例如想增加或减少"
     "哪个阶段的训练量、延长或缩短哪个阶段、移动比赛日期，或者修改目标。"
@@ -143,10 +137,14 @@ def _extract_reply(history: list[Any]) -> str:
 
 
 def _needs_direction_clarification(objective: str) -> bool:
-    """Whether this is an adjustment request with no user-chosen direction."""
-    return bool(_ADJUSTMENT_REQUEST_RE.search(objective)) and not bool(
-        _CONCRETE_DIRECTION_RE.search(objective)
-    )
+    """Default-deny proposal work until the user chooses a direction.
+
+    The resolver contract routes read-only master-plan questions to
+    ``status_insight``. Reaching this write specialist without a concrete
+    direction is therefore always a clarification turn, including unusual
+    vague wording that no keyword list could enumerate safely.
+    """
+    return not bool(_CONCRETE_DIRECTION_RE.search(objective))
 
 
 def _parse_proposals(last_diff: Any) -> list[MasterPlanDiff]:
