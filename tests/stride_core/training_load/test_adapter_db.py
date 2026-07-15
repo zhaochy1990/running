@@ -22,7 +22,7 @@ from stride_core.training_load.adapter import (
     refresh_training_load_calibration,
     recompute_training_load,
 )
-from stride_core.training_load.types import CalibrationSnapshot
+from stride_core.training_load.types import TRAINING_LOAD_MODEL_VERSION, CalibrationSnapshot
 
 
 def _save_running_snapshot(
@@ -733,6 +733,41 @@ def test_partial_window_recompute_backfills_rest_day_gap_rows(db):
     # The gap row must match what a contiguous recompute produces.
     assert gap_row["acute_load"] == pytest.approx(full["2026-05-02"]["acute_load"], abs=1e-3)
     assert gap_row["chronic_load"] == pytest.approx(full["2026-05-02"]["chronic_load"], abs=1e-3)
+
+
+def test_explicit_rest_only_window_persists_zero_dose_and_decays_load(db):
+    _save_running_snapshot(
+        db,
+        as_of_date=date(2026, 5, 1),
+        threshold_hr=170.0,
+        threshold_speed_mps=4.0,
+    )
+    db.upsert_activity(
+        _make_activity(
+            "d1",
+            "2026-05-01T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+    recompute_training_load(db, start="2026-05-01", end="2026-05-01")
+    training_day = dict(db.fetch_daily_training_load("2026-05-01", "2026-05-01")[0])
+
+    db.upsert_daily_health(
+        DailyHealth("2026-05-02", None, None, 50, None, None, None, None, None)
+    )
+    summary = recompute_training_load(db, start="2026-05-02", end="2026-05-02")
+
+    rows = db.fetch_daily_training_load("2026-05-02", "2026-05-02")
+    assert summary.daily_rows_written == 1
+    assert len(rows) == 1
+    rest_day = dict(rows[0])
+    assert rest_day["algorithm_version"] == TRAINING_LOAD_MODEL_VERSION
+    assert rest_day["coverage_status"] == "rest_confirmed"
+    assert rest_day["training_dose"] == 0
+    assert rest_day["acute_load"] < training_day["acute_load"]
+    assert rest_day["chronic_load"] < training_day["chronic_load"]
 
 
 def test_fetch_health_rows_handles_compact_yyyymmdd_dates(db):

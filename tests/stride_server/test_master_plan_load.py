@@ -308,3 +308,72 @@ def test_fm_race_load_uses_goal_pace_not_fixed_if() -> None:
     expected_if = (42195 / (4 * 3600)) / 4.0
     expected = (4.0 * expected_if**2) * 100.0
     assert estimate["weeks"][0]["estimated_dose"] == pytest.approx(expected, rel=0.01)
+
+
+def test_distance_only_tune_up_race_keeps_week_load_computable() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "4:00:00"},
+            "weeks": [{
+                "week_index": 1,
+                "week_start": "2026-07-01",
+                "target_weekly_km_low": 40,
+                "target_weekly_km_high": 50,
+                "key_sessions": [{"type": "tune_up_race", "distance_km": 21.0975}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["load_computable"] is True
+    assert week["target_training_dose_low"] is not None
+    assert week["target_training_dose_high"] is not None
+    assert "tune_up_distance_only_hm_marathon_to_threshold_range" in week["load_assumptions"]
+
+
+def test_long_run_mp_marker_does_not_match_inside_ordinary_words() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    common_week = {
+        "week_index": 1,
+        "week_start": "2026-07-01",
+        "target_weekly_km_high": 50,
+    }
+
+    ordinary = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "4:00:00"},
+            "weeks": [{
+                **common_week,
+                "key_sessions": [{
+                    "type": "long_run",
+                    "distance_km": 24,
+                    "purpose": "improve aerobic endurance",
+                }],
+            }],
+        },
+        history_anchor=anchor,
+    )
+    explicit_mp = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "4:00:00"},
+            "weeks": [{
+                **common_week,
+                "key_sessions": [{
+                    "type": "long_run",
+                    "distance_km": 24,
+                    "intensity": "MP",
+                }],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    ordinary_assumptions = ordinary["weeks"][0]["load_assumptions"]
+    assert "long_run_easy_zone_range" in ordinary_assumptions
+    assert "mp_fraction_unspecified_range_easy_to_goal_pace" not in ordinary_assumptions
+    assert (
+        "mp_fraction_unspecified_range_easy_to_goal_pace"
+        in explicit_mp["weeks"][0]["load_assumptions"]
+    )

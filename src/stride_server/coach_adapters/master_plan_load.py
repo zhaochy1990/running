@@ -9,6 +9,7 @@ tools, or rule-filter feedback.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from statistics import mean, median
@@ -249,6 +250,39 @@ def _zone_range(name: str) -> tuple[float, float]:
     return float(low or 0.50), float(high or 1.20)
 
 
+def _has_race_pace_marker(text: str) -> bool:
+    if any(phrase in text for phrase in (
+        "race pace", "marathon pace", "half marathon pace",
+        "比赛配速", "马拉松配速", "半马配速",
+    )):
+        return True
+    # Match the common ASCII abbreviations as standalone markers. Using plain
+    # substring checks makes words such as "improve" look like MP sessions.
+    # ASCII-only boundaries also preserve compact forms such as "MP配速".
+    return re.search(r"(?<![a-z])(?:hmp|mp|rp)(?![a-z])", text, re.IGNORECASE) is not None
+
+
+def _distance_only_tune_up_if_range(distance_km: float) -> tuple[float, float, str]:
+    """Return a conservative race-intensity range when no finish time exists.
+
+    The range stays personalized because every value is relative to the
+    athlete's threshold speed. It is deliberately wider than an estimate based
+    on an explicit finish time.
+    """
+    if distance_km <= 7.5:
+        low, high = _zone_range("interval")
+        return low, high, "tune_up_distance_only_short_race_interval_range"
+    if distance_km <= 15.0:
+        low, high = _zone_range("threshold")
+        return low, high, "tune_up_distance_only_10k_threshold_range"
+    if distance_km <= 30.0:
+        marathon_low, _ = _zone_range("marathon")
+        _, threshold_high = _zone_range("threshold")
+        return marathon_low, threshold_high, "tune_up_distance_only_hm_marathon_to_threshold_range"
+    low, high = _zone_range("marathon")
+    return low, high, "tune_up_distance_only_long_race_marathon_range"
+
+
 def _session_if_range(
     session: Any,
     *,
@@ -284,13 +318,16 @@ def _session_if_range(
     if stype == "tune_up_race":
         duration = _session_duration_min(session)
         distance = _session_distance_km(session)
-        if not duration or not distance:
+        if not distance:
             return None
-        # The caller converts this session-specific speed to IF after receiving
-        # the sentinel via explicit duration+distance; never borrow A-race IF.
-        return 0.0, 0.0, ["tune_up_uses_own_distance_and_duration"]
+        if duration:
+            # The caller converts this session-specific speed to IF after
+            # receiving the sentinel; never borrow the A-race IF.
+            return 0.0, 0.0, ["tune_up_uses_own_distance_and_duration"]
+        low, high, assumption = _distance_only_tune_up_if_range(distance)
+        return low, high, [assumption]
     if stype == "long_run":
-        if any(token in text for token in ("mp", "hmp", "rp", "比赛配速", "马拉松配速", "半马配速")):
+        if _has_race_pace_marker(text):
             easy_low, _easy_high = _zone_range("easy")
             if goal_race_if is None:
                 return None

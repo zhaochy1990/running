@@ -181,7 +181,8 @@ v2 规则不读取课型标签：
 - 心率目标在有 RHR/LTHR 时作为 IF² 代理。
 - `WORK + OPEN target` 不使用固定课型 IF，直接标记该步不可估算。
 - 缺个人阈值速度时保留明确的计划距离，但 `estimated_dose = NULL`；绝不回退到固定 `5:00/km`。
-- FM race 使用目标完赛时间推导 MP；tune-up race 使用自己的距离与时长。
+- FM race 使用目标完赛时间推导 MP；tune-up race 有时长时使用自己的距离与时长，
+  只有距离时按比赛距离映射到个人阈值配速区间并显式记录该估算假设。
 - 输出 `expected_dose`、`low_dose`、`high_dose`、预计时长/距离、coverage、confidence、assumptions 和未估算步骤数。
 
 ## Rolling Load And Readiness

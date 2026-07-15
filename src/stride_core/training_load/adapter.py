@@ -513,7 +513,23 @@ def recompute_training_load(
     activity_rows = _fetch_activity_rows(db, start=start_date, end=end_date, label_ids=labels)
     activity_inputs = [a for row in activity_rows if (a := _build_activity_input(db, row)) is not None]
     if not activity_inputs:
-        return TrainingLoadRunSummary(0, 0, 0, None, start_date, end_date, persist)
+        # An explicit calendar window can legitimately contain only confirmed
+        # rest days. Continue when a health row confirms coverage or an earlier
+        # v2 PMC state exists to decay. A completely empty database still has no
+        # evidence from which to manufacture a calendar series, so backfill
+        # remains a no-op there.
+        has_health_coverage = bool(
+            start_date is not None
+            and _fetch_health_rows(db, start=start_date, end=end_date)
+        )
+        has_prior_state = bool(
+            start_date is not None
+            and db.fetch_previous_daily_training_load(
+                start_date.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
+            )
+        )
+        if start_date is None or not (has_health_coverage or has_prior_state):
+            return TrainingLoadRunSummary(0, 0, 0, None, start_date, end_date, persist)
 
     series_start = start_date or min(a.activity_date for a in activity_inputs)
     series_end = end_date or today_shanghai()
@@ -562,7 +578,7 @@ def recompute_training_load(
         # accidentally double-count v1 + v2 rows for the same day.
         db.delete_daily_training_load_versions(
             series_start.isoformat(), series_end.isoformat(),
-            keep_algorithm_version=activity_results[0].algorithm_version if activity_results else 1,
+            keep_algorithm_version=TRAINING_LOAD_MODEL_VERSION,
         )
         for result in activity_results:
             db.upsert_activity_training_load(result, commit=False)
