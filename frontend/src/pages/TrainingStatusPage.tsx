@@ -930,7 +930,7 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
               label="竞技状态(Form)"
               value={cur.form != null ? (cur.form > 0 ? `+${cur.form.toFixed(1)}` : cur.form.toFixed(1)) : '—'}
               color={classifyForm(cur.form, cur.chronic_load) === 'overload' ? '#d32f2f' : '#00a85a'}
-              help={<><strong>Form = 慢性负荷 − 急性负荷</strong>。衡量已从近期训练中恢复多少。{'\n\n'}阈值按当日慢性负荷 (CTL) 比例划分：{'\n'}• +10% ~ +25% × CTL = 比赛就绪，竞技甜区{'\n'}• −10% ~ +10% × CTL = 维持期，acute ≈ chronic，体能持平{'\n'}• −25% ~ −10% × CTL = 提升期，acute &gt; chronic，驱动体能进步{'\n'}• 低于 −25% × CTL = 过度负荷，必须减量{'\n'}• 高于 +25% × CTL = 减量过多，开始流失体能{'\n\n'}（经典 TSB 固定阈值是为 CTL 80-120 校准的，跑者 CTL 通常 40-70，按比例缩放更贴合实际刺激）</>}
+              help={<><strong>Form = 慢性负荷 − 急性负荷</strong>。衡量已从近期训练中恢复多少。{'\n\n'}阈值按当日慢性负荷 (CTL) 比例划分：{'\n'}• +10% ~ +25% × CTL = 比赛就绪，竞技甜区{'\n'}• −10% ~ +10% × CTL = 维持期，acute ≈ chronic，体能持平{'\n'}• −25% ~ −10% × CTL = 提升期，acute &gt; chronic，驱动体能进步{'\n'}• 低于 −25% × CTL = 过度负荷，必须减量{'\n'}• 高于 +25% × CTL = 减量过多，开始流失体能</>}
             />
             <LoadStat
               label="负荷比(Ratio)"
