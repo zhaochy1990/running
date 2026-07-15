@@ -529,7 +529,7 @@ cmd_stop() {
     fi
     if ! process_identity_matches "$pgid"; then
       cleanup_process_state
-      echo "Copilot proxy exited; refusing to signal a changed process identity."
+      echo "Copilot proxy stopped; refusing to signal a changed process identity. Credentials remain saved."
       return
     fi
     sleep 0.1
