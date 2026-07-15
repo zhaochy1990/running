@@ -147,7 +147,7 @@ def test_runner_extracts_and_validates_alternative_proposals(monkeypatch) -> Non
     result = runner(_task("给我两个调整方向"))
 
     assert [proposal.diff_id for proposal in result.proposals] == ["d1", "d2"]
-    assert result.reply_fragment == "我准备了 2 个调整方向，请选择一个方案。"
+    assert result.reply_fragment == "我准备了 2 个通过安全校验的调整方向，请选择一个方案。"
 
 
 def test_runner_drops_only_invalid_alternative(monkeypatch) -> None:
@@ -158,13 +158,20 @@ def test_runner_drops_only_invalid_alternative(monkeypatch) -> None:
             {**_diff_dict(end_date="2026-08-29"), "diff_id": "valid"},
         ]
     }
-    runner = _runner(capture, reply="", last_diff=alternatives, monkeypatch=monkeypatch)
+    runner = _runner(
+        capture,
+        reply="我准备了两个方案，请选择。",
+        last_diff=alternatives,
+        monkeypatch=monkeypatch,
+    )
     result = runner(_task("给我两个调整方向"))
 
     assert len(result.proposals) == 1
     assert isinstance(result.proposals[0], MasterPlanDiff)
     assert result.proposals[0].diff_id == "valid"
-    assert result.reply_fragment == result.proposals[0].ai_explanation
+    assert "只剩 1 个可应用" in result.reply_fragment
+    assert "两个方案" not in result.reply_fragment
+    assert result.proposals[0].ai_explanation in result.reply_fragment
 
 
 def test_runner_drops_diff_that_fails_the_gate(monkeypatch) -> None:

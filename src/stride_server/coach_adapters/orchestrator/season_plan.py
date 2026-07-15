@@ -208,6 +208,7 @@ def make_season_plan_runner(
         reply = _extract_reply(state.get("history") or [])
         proposals: list[MasterPlanDiff] = []
         last_diff = state.get("last_diff")
+        is_alternatives = isinstance(last_diff, dict) and "alternatives" in last_diff
         if last_diff is not None:
             proposals = _parse_proposals(last_diff)
 
@@ -249,11 +250,16 @@ def make_season_plan_runner(
                 ),
             )
 
-        if not reply and proposals:
+        if is_alternatives and proposals:
             if len(proposals) == 1:
-                reply = proposals[0].ai_explanation
+                reply = (
+                    "安全校验后只剩 1 个可应用的调整方向，请确认是否采用："
+                    f"{proposals[0].ai_explanation}"
+                )
             else:
-                reply = f"我准备了 {len(proposals)} 个调整方向，请选择一个方案。"
+                reply = f"我准备了 {len(proposals)} 个通过安全校验的调整方向，请选择一个方案。"
+        elif not reply and proposals:
+            reply = proposals[0].ai_explanation
 
         logger.debug(
             "season_plan: master_chat done | reply=%dc | proposals=%d | iters=%s",

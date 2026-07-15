@@ -30,6 +30,11 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - propose_alternatives(plan_id, intent) — 给 2 个可应用的对比方向，让用户选择
 - regenerate_master(plan_id, reason) — 清空总纲, 由生成管线重排 (后续走 POST /master-plan/generate)
 
+**安全边界（必须遵守）**
+- 最后 1–2 周的 taper / 调整期是必须保留的安全阶段，不得通过缩短日期满足用户要求。
+- 需要减少总量时，优先降低更早阶段的周跑量，并保持最后调整期日期不变。
+- 如果没有可安全调整的更早阶段，明确拒绝不合理要求并解释原因；不得编造不可应用的 Diff。
+
 ## 行为规则
 
 1. **吃透 status**: 总纲分 draft / active 两态。draft 调整只是 review pass；active 调整会发布新版本 + 影响已推送的周计划 (前端会有 cleanup 提示)。判读用户在哪一态再决定语气。

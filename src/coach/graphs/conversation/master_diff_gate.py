@@ -91,7 +91,11 @@ def _weekly_bounds_violation(patch: dict) -> str | None:
 
 
 def _check_phase_resize(
-    op: MasterPlanDiffOp, phases: dict, plan_lo: _date | None, plan_hi: _date | None
+    op: MasterPlanDiffOp,
+    phases: dict,
+    plan_lo: _date | None,
+    plan_hi: _date | None,
+    protected_final_phase_id: str | None,
 ) -> str | None:
     phase = phases.get(op.phase_id)
     if phase is None:
@@ -106,6 +110,15 @@ def _check_phase_resize(
             f"阶段「{phase.name}」调整后起始 {start.isoformat()} 不早于结束 "
             f"{end.isoformat()}，阶段长度为零或为负"
         )
+    if op.phase_id == protected_final_phase_id:
+        current_start = _parse(phase.start_date)
+        current_end = _parse(phase.end_date)
+        if (
+            current_start is not None
+            and current_end is not None
+            and (start > current_start or end < current_end)
+        ):
+            return f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短"
     if not _within(start, plan_lo, plan_hi) or not _within(end, plan_lo, plan_hi):
         return f"阶段「{phase.name}」调整后的日期超出赛季范围"
     return None
@@ -223,13 +236,26 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
     milestones = {m.id: m for m in plan.milestones}
     plan_lo, plan_hi = _parse(plan.start_date), _parse(plan.end_date)
     violations: list[str] = []
+    protected_final_phase_id: str | None = None
+    if plan.phases:
+        final_phase = plan.phases[-1]
+        final_start = _parse(final_phase.start_date)
+        final_end = _parse(final_phase.end_date)
+        if (
+            final_start is not None
+            and final_end is not None
+            and (final_end - final_start).days + 1 <= 14
+        ):
+            protected_final_phase_id = final_phase.id
 
     for op in diff.ops:
         if op.accepted is False:
             continue  # an explicitly rejected op can't land
 
         if op.op == _Kind.RESIZE_PHASE:
-            v = _check_phase_resize(op, phases, plan_lo, plan_hi)
+            v = _check_phase_resize(
+                op, phases, plan_lo, plan_hi, protected_final_phase_id
+            )
         elif op.op == _Kind.ADD_PHASE:
             v = _check_phase_add(op, phases, plan_lo, plan_hi)
         elif op.op == _Kind.REPLACE_WEEKLY_RANGE:

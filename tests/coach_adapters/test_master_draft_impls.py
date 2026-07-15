@@ -161,6 +161,29 @@ def test_compress_phase_below_start_fails(seeded_plan):
     assert not res.ok
 
 
+def test_compress_phase_refuses_to_shorten_final_two_week_taper(seeded_plan):
+    plan, phase1, phase2, _ = seeded_plan
+    from stride_server.master_plan_store import get_master_plan_store
+
+    taper = phase2.model_copy(
+        update={
+            "name": "调整期",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-14",
+        }
+    )
+    get_master_plan_store().save_plan(
+        plan.model_copy(update={"phases": [phase1, taper]})
+    )
+
+    res = draft_impls.CompressPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id, phase_id=taper.id, weeks=1
+    )
+
+    assert not res.ok
+    assert "必须完整保留" in res.errors[0]
+
+
 # ---------------------------------------------------------------------------
 # shift_milestone / change_target
 # ---------------------------------------------------------------------------
@@ -215,7 +238,7 @@ def test_change_target_empty_fails(seeded_plan):
 
 
 def test_propose_alternatives_returns_two_diffs(seeded_plan):
-    plan, _, _, _ = seeded_plan
+    plan, phase1, phase2, _ = seeded_plan
     res = draft_impls.ProposeAlternativesImpl(USER_ID)(
         plan_id=plan.plan_id, intent="想加大强度但又怕受伤"
     )
@@ -227,12 +250,92 @@ def test_propose_alternatives_returns_two_diffs(seeded_plan):
     for alt in alts:
         diff = MasterPlanDiff.model_validate(alt)
         assert len(diff.ops) == 1
-        assert diff.ops[0].op == MasterPlanDiffOpKind.RESIZE_PHASE
+        assert diff.ops[0].op == MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE
+        assert diff.ops[0].phase_id == phase2.id
         assert validate_master_diff(plan, diff) == []
     # The two alternatives must differ (保守 vs 激进)
     assert (
-        alts[0]["ops"][0]["spec_patch"]["end_date"]
-        != alts[1]["ops"][0]["spec_patch"]["end_date"]
+        alts[0]["ops"][0]["spec_patch"]["weekly_distance_km_high"]
+        != alts[1]["ops"][0]["spec_patch"]["weekly_distance_km_high"]
+    )
+    assert phase2.start_date == "2026-07-07"
+    assert phase2.end_date == "2026-09-14"
+
+
+def test_propose_alternatives_targets_build_before_short_taper(seeded_plan):
+    plan, phase1, phase2, _ = seeded_plan
+    from stride_server.master_plan_store import get_master_plan_store
+
+    taper = phase2.model_copy(
+        update={
+            "name": "调整期",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-14",
+        }
+    )
+    short_taper_plan = plan.model_copy(update={"phases": [phase1, taper]})
+    get_master_plan_store().save_plan(short_taper_plan)
+
+    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, intent="降低训练量"
+    )
+
+    assert res.ok
+    for alt in res.data["alternatives"]:
+        diff = MasterPlanDiff.model_validate(alt)
+        assert diff.ops[0].phase_id == phase1.id
+        assert "保留最后的调整期不变" in diff.ai_explanation
+        assert validate_master_diff(short_taper_plan, diff) == []
+    assert taper.start_date == "2026-09-01"
+    assert taper.end_date == "2026-09-14"
+
+
+def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
+    plan, _, phase2, _ = seeded_plan
+    from stride_server.master_plan_store import get_master_plan_store
+
+    taper_only = plan.model_copy(
+        update={
+            "phases": [
+                phase2.model_copy(
+                    update={
+                        "name": "调整期",
+                        "start_date": "2026-09-08",
+                        "end_date": "2026-09-14",
+                    }
+                )
+            ]
+        }
+    )
+    get_master_plan_store().save_plan(taper_only)
+
+    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, intent="再少练一周"
+    )
+
+    assert not res.ok
+    assert "保护最后 1–2 周" in res.errors[0]
+    assert "无法生成" in res.errors[0]
+
+
+def test_propose_alternatives_can_reduce_single_long_phase(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    from stride_server.master_plan_store import get_master_plan_store
+
+    single_phase = plan.model_copy(
+        update={"phases": [phase1], "end_date": phase1.end_date}
+    )
+    get_master_plan_store().save_plan(single_phase)
+
+    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, intent="降低训练量"
+    )
+
+    assert res.ok
+    assert len(res.data["alternatives"]) == 2
+    assert all(
+        alt["ops"][0]["phase_id"] == phase1.id
+        for alt in res.data["alternatives"]
     )
 
 

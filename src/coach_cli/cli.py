@@ -37,6 +37,7 @@ from rich.markdown import Markdown
 from rich.text import Text
 
 import stride_core.db as _coredb
+from stride_core.master_plan_diff import MasterPlanDiff
 from stride_core.timefmt import utc_iso_to_shanghai_iso
 
 # Our trace loggers (DEBUG when --debug). Third-party stays at WARNING so the
@@ -74,6 +75,9 @@ _HELP = """\
 命令:
   /new       开一个新会话（清空上下文）
   /session   列出历史会话，选择并恢复其中一个
+  /proposals 查看当前待选的赛季调整方案
+  /apply N   应用第 N 个赛季调整方案的全部改动
+  /dismiss   放弃当前待选方案
   /help      显示这个帮助
   /exit /quit 退出
   ↑          加载上一条发送给教练的输入
@@ -276,11 +280,13 @@ def _format_turn(turn) -> str:
 def _turn_metadata(turn) -> list[str]:
     """Build the compact non-Markdown lines appended after the reply."""
     lines: list[str] = []
-    for card in turn.proposals:
+    for index, card in enumerate(turn.proposals, start=1):
         proposal = card.proposal
         n_ops = len(getattr(proposal, "ops", []) or [])
         explanation = getattr(proposal, "ai_explanation", "") or ""
-        lines.append(f"📋 提案[{card.specialist_id}] · {n_ops} 处改动 — {explanation}")
+        lines.append(
+            f"📋 提案 {index}[{card.specialist_id}] · {n_ops} 处改动 — {explanation}"
+        )
     if turn.active_target:
         lines.append(f"· 当前对象: {turn.active_target.model_dump(exclude_none=True)}")
     return lines
@@ -402,6 +408,34 @@ def _run_turn(*, user_id: str, session_id: str, message: str, checkpointer):
     )
 
 
+def _master_proposals(turn) -> list[MasterPlanDiff]:
+    """Return only season-plan proposals that the CLI can apply directly."""
+    return [
+        card.proposal
+        for card in turn.proposals
+        if card.specialist_id == "season_plan"
+        and isinstance(card.proposal, MasterPlanDiff)
+    ]
+
+
+def _apply_master_proposal(*, user_id: str, proposal: MasterPlanDiff) -> dict:
+    """Apply every op in a selected stateless season proposal."""
+    from stride_server.routes.coach import (
+        CoachMasterApplyRequest,
+        apply_coach_master_diff,
+    )
+
+    return apply_coach_master_diff(
+        proposal.plan_id,
+        CoachMasterApplyRequest(
+            diff=proposal,
+            accepted_op_ids=[op.id for op in proposal.ops],
+            change_reason="coach CLI selected proposal",
+        ),
+        payload={"sub": user_id},
+    )
+
+
 @click.command()
 @click.option(
     "-P",
@@ -495,6 +529,7 @@ def main(
 
     input_history = _InputHistory(_readline)
     input_history.start()
+    pending_proposals: list[MasterPlanDiff] = []
     try:
         while True:
             try:
@@ -517,10 +552,49 @@ def main(
                     user_id=user_id,
                     current_session_id=session_id,
                 )
+                pending_proposals = []
                 continue
             if line == "/new":
                 session_id = _new_session_id()
+                pending_proposals = []
                 click.echo(f"已开新会话: {session_id}")
+                continue
+            if line == "/proposals":
+                if not pending_proposals:
+                    click.echo("当前没有待选的赛季调整方案。")
+                else:
+                    for index, proposal in enumerate(pending_proposals, start=1):
+                        click.echo(
+                            f"{index}. {proposal.ai_explanation}（{len(proposal.ops)} 处改动）"
+                        )
+                continue
+            if line == "/dismiss":
+                pending_proposals = []
+                click.echo("已放弃当前待选方案。")
+                continue
+            if line.startswith("/apply"):
+                parts = line.split()
+                if len(parts) != 2 or not parts[1].isdigit():
+                    click.echo("用法: /apply N（例如 /apply 2）")
+                    continue
+                if not pending_proposals:
+                    click.echo("当前没有待选的赛季调整方案。")
+                    continue
+                selected = int(parts[1])
+                if selected < 1 or selected > len(pending_proposals):
+                    click.echo(f"方案编号无效，请输入 1-{len(pending_proposals)}。")
+                    continue
+                try:
+                    result = _apply_master_proposal(
+                        user_id=user_id, proposal=pending_proposals[selected - 1]
+                    )
+                except Exception as exc:  # noqa: BLE001 — keep the REPL alive
+                    click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
+                    continue
+                pending_proposals = []
+                click.echo(
+                    f"✅ 方案 {selected} 已应用，训练计划已更新至 v{result.get('version', '?')}。"
+                )
                 continue
 
             input_history.remember(line)
@@ -537,6 +611,7 @@ def main(
                 continue
 
             _print_turn(turn, interactive=True)
+            pending_proposals = _master_proposals(turn)
     finally:
         input_history.close()
 

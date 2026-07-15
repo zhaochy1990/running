@@ -472,6 +472,16 @@ class CompressPhaseImpl:
         phase = next((p for p in plan.phases if p.id == phase_id), None)
         if phase is None:
             return _fail(f"phase {phase_id!r} not in plan")
+        if phase is plan.phases[-1]:
+            phase_days = (
+                _date.fromisoformat(phase.end_date)
+                - _date.fromisoformat(phase.start_date)
+            ).days + 1
+            if phase_days <= 14:
+                return _fail(
+                    f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短；"
+                    "请调整更早阶段的周跑量，或拒绝这次要求"
+                )
         new_end = _shift_phase_end(phase.end_date, -weeks)
         # Refuse a compress that would collapse the phase below its start
         if _date.fromisoformat(new_end) <= _date.fromisoformat(phase.start_date):
@@ -549,10 +559,9 @@ class ChangeTargetImpl:
 class ProposeAlternativesImpl:
     """Return 2 distinct MasterPlanDiff alternatives matching the user's intent.
 
-    The deterministic baseline offers two load-reduction magnitudes for the last
-    training phase.  That phase commonly ends on the master plan's end date, so
-    extending it would produce an invalid diff outside the season window.  The
-    LLM frames the two valid choices using the user's intent text.
+    Preserve the final taper/adjustment phase and offer two load-reduction
+    magnitudes for the nearest earlier phase.  If no earlier phase has a usable
+    weekly-distance range, refusing is safer than removing the taper.
     """
 
     def __init__(self, user_id: str) -> None:
@@ -564,40 +573,66 @@ class ProposeAlternativesImpl:
             return _fail(f"master plan {plan_id!r} not found")
         if not plan.phases:
             return _fail("plan has no phases to alternate over")
-        target = plan.phases[-1]
+        final_phase = plan.phases[-1]
+        final_days = (
+            _date.fromisoformat(final_phase.end_date)
+            - _date.fromisoformat(final_phase.start_date)
+        ).days + 1
+        candidates = plan.phases[:-1] if final_days <= 14 else plan.phases
+        target = next(
+            (
+                phase
+                for phase in reversed(candidates)
+                if 0 <= phase.weekly_distance_km_low <= phase.weekly_distance_km_high
+                and phase.weekly_distance_km_high > 0
+            ),
+            None,
+        )
+        if target is None:
+            return _fail(
+                "为保护最后 1–2 周必须保留的调整期，当前计划没有可安全降低周跑量的"
+                "更早阶段；无法生成可应用的替代方案，请保留现有计划或重新评估该要求"
+            )
+
         alternatives: list[dict] = []
-        for label, weeks, note in (
-            ("方案 A (温和减量)", -1, "缩短 1 周, 小幅减少训练总量"),
-            ("方案 B (明显减量)", -2, "缩短 2 周, 更明显地减少训练总量"),
+        preserves_taper = target.id != final_phase.id
+        old_range = {
+            "weekly_distance_km_low": target.weekly_distance_km_low,
+            "weekly_distance_km_high": target.weekly_distance_km_high,
+        }
+        for label, reduction in (
+            ("方案 A（温和减量）", 0.05),
+            ("方案 B（明显减量）", 0.10),
         ):
-            try:
-                new_end = _shift_phase_end(target.end_date, weeks)
-                if (
-                    weeks < 0
-                    and _date.fromisoformat(new_end)
-                    <= _date.fromisoformat(target.start_date)
-                ):
-                    continue
-            except ValueError:
-                continue
+            new_range = {
+                "weekly_distance_km_low": round(
+                    target.weekly_distance_km_low * (1 - reduction), 1
+                ),
+                "weekly_distance_km_high": round(
+                    target.weekly_distance_km_high * (1 - reduction), 1
+                ),
+            }
             op = MasterPlanDiffOp(
                 id=str(uuid4()),
-                op=MasterPlanDiffOpKind.RESIZE_PHASE,
+                op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
                 phase_id=target.id,
-                old_value={"end_date": target.end_date},
-                new_value={"end_date": new_end},
-                spec_patch={"end_date": new_end},
+                old_value=old_range,
+                new_value=new_range,
+                spec_patch=new_range,
             )
             diff = MasterPlanDiff(
                 diff_id=str(uuid4()),
                 plan_id=plan_id,
                 ops=[op],
-                ai_explanation=f"{label} — {note} (用户意图: {intent})",
+                ai_explanation=(
+                    f"{label}："
+                    f"{'保留最后的调整期不变，' if preserves_taper else ''}"
+                    f"将「{target.name}」周跑量降低"
+                    f" {int(reduction * 100)}%（用户意图：{intent}）"
+                ),
                 created_at=_now_iso(),
             )
             alternatives.append(diff.model_dump())
-        if not alternatives:
-            return _fail("could not synthesise any viable alternative")
         return ToolResult(ok=True, data={"alternatives": alternatives, "intent": intent})
 
 
