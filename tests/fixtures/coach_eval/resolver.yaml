@@ -49,6 +49,88 @@ fixtures:
       resolved_from: explicit
       self_ambiguity: false
 
+  - fixture_id: resolver-today-calendar-read
+    description: 询问今天的自然日期属于训练日历上下文，应路由到只读训练问答专家。
+    tags: [read, calendar, simple_question]
+    input:
+      utterance: 今天是哪天？
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target: null
+      ambiguity_kind: null
+      resolved_from: default
+      self_ambiguity: false
+
+  - fixture_id: resolver-current-week-boundaries-read
+    description: 询问本周周一和周日日期属于训练周日历查询，应路由到只读训练问答专家。
+    tags: [read, week, calendar, simple_question]
+    input:
+      utterance: 这周周一是哪天？周日是哪天？
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: week
+      ambiguity_kind: null
+      resolved_from: explicit
+      self_ambiguity: false
+
+  - fixture_id: resolver-create-current-week-followup
+    description: 教练询问是否创建本周计划后，用户用短回复确认，应继承周目标并路由到周计划写专家。
+    tags: [write, week, conversation, short_followup, target_resolution]
+    input:
+      utterance: 创建
+      conversation_window:
+        - role: user
+          content: 我这周的训练计划是什么？
+        - role: assistant
+          content: 当前周还没有训练计划，你要创建本周的训练计划吗？
+      prior_target:
+        kind: week
+      target_resolution:
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+
+  - fixture_id: resolver-create-current-week-explicit
+    description: 用户明确要求创建这周训练计划时，即使计划尚不存在，也已给出无歧义的周目标。
+    tags: [write, week, explicit_target, missing_plan]
+    input:
+      utterance: 创建我这周的训练计划
+      target_resolution:
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+
   - fixture_id: resolver-week-write
     description: 明确修改本周训练时，应路由到周计划写专家并解析当前周目标。
     tags: [write, week, target_resolution]

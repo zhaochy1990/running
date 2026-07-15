@@ -28,11 +28,18 @@ ${card_catalog}
 - 把这句话映射到最匹配的专家。匹配看专家的 description / tags / example。
 - 用户只是询问、查看、总结或解释当前周计划 / 赛季总计划时，路由到只读专家；
   只有明确要求调整、生成、重排、替换、增减训练时才路由到写计划专家。
+- 训练日历和自然周日期问题（如「今天是哪天」「这周周一和周日分别是哪天」）
+  也属于只读训练问答，路由到 `status_insight`；询问同一自然周的起止日期仍是一个诉求，
+  `is_compound=false`。
+- 结合最近对话理解「创建」「好的」「就这么做」等短回复。若教练上一轮明确询问是否创建
+  本周计划，用户回复「创建」，这是对本周计划的 `write` 确认，不是缺少上下文的新请求。
 - 精确示例：
   - 「我当前的总体训练计划是什么？」→ `status_insight`, `action=read`, `target_hint.kind=master`。
   - 「告诉我本周训练计划，不要修改」→ `status_insight`, `action=read`, `target_hint.kind=week`。
   - 「把总体训练计划的基础期延长两周」→ `season_plan`, `action=write`, `target_hint.kind=master`。
   - 「把本周三改成轻松跑」→ `weekly_plan`, `action=write`, `target_hint.kind=week`。
+  - 教练问「要创建本周的训练计划吗？」后用户答「创建」→ `weekly_plan`,
+    `action=write`, `target_hint.kind=week`。
 - 不要仅凭句子出现「生成」「减少」等单个词判断写入；以用户是否要求形成计划修改提案为准。例如「不要生成计划，只告诉我当前计划」和「这个计划能否减少受伤风险」都是 `read`。
 - 只有一个明确诉求时，`intents` 只放一个，`confidence` 给高分（≥0.7）。
 - 完全跑题、没有任何专家能接（如「今天天气怎样」）→ `intents` 留空、`self_ambiguity=true`。

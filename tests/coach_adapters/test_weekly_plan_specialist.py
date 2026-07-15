@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
@@ -218,7 +219,13 @@ def test_target_resolver_fills_week_folder(monkeypatch) -> None:
     assert resolver(TargetRef(kind="master")) is None
 
 
-def test_target_resolver_none_when_no_current_week(monkeypatch) -> None:
+def test_target_resolver_uses_calendar_folder_when_current_week_missing(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(wp, "resolve_current_week_folder", lambda _u: None)
+    monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
     resolver = make_current_week_target_resolver("u1")
     assert resolver(None) is None
+    assert resolver(TargetRef(kind="week")) == TargetRef(
+        kind="week", folder="2026-07-13_07-19"
+    )

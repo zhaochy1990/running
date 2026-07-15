@@ -82,6 +82,15 @@ def test_committed_resolver_fixtures_cover_routing_boundaries() -> None:
         fixture for fixture in fixtures if fixture.fixture_id == "resolver-week-read"
     )
     assert week_read.input.utterance == "我这周的训练计划是什么？"
+    create_followup = next(
+        fixture
+        for fixture in fixtures
+        if fixture.fixture_id == "resolver-create-current-week-followup"
+    )
+    assert create_followup.input.conversation_window[-1].content.endswith(
+        "要创建本周的训练计划吗？"
+    )
+    assert create_followup.input.target_resolution is not None
     tags = {tag for fixture in fixtures for tag in fixture.tags}
     assert {
         "read_write_boundary",
@@ -90,6 +99,9 @@ def test_committed_resolver_fixtures_cover_routing_boundaries() -> None:
         "anaphora",
         "out_of_domain",
         "target_resolution",
+        "simple_question",
+        "short_followup",
+        "missing_plan",
     } <= tags
 
     registry_ids = set(build_resolver_eval_registry().ids())

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -41,6 +42,7 @@ from stride_core.plan_diff import PlanDiff
 from stride_core.timefmt import today_shanghai
 
 from ...weekly_plan_store import get_weekly_plan_store
+from ...week_generator import week_folder
 from ..toolkit import build_stride_toolkit
 
 logger = logging.getLogger(__name__)
@@ -85,9 +87,12 @@ def resolve_current_week_folder(user_id: str) -> str | None:
 def make_current_week_target_resolver(user_id: str) -> Callable[[TargetRef | None], TargetRef | None]:
     """Build the Resolver's ``target_resolver``: "本周" → current-week TargetRef.
 
-    Only week/session targets (or a bare None) are auto-filled; a ``master`` kind
-    can't be resolved here (no plan_id index), so it returns None and the Resolver
-    falls back to a target clarify.
+    Existing plans keep their canonical display folder. If the user explicitly
+    identified the current week/session but no plan exists yet, the natural
+    Shanghai week still has an unambiguous calendar folder; return that instead
+    of confusing a missing resource with a missing target. A bare ``None`` still
+    resolves only through an existing current plan, so genuinely targetless
+    writes continue to clarify.
     """
 
     def _resolve(target: TargetRef | None) -> TargetRef | None:
@@ -95,7 +100,10 @@ def make_current_week_target_resolver(user_id: str) -> Callable[[TargetRef | Non
             return None
         folder = resolve_current_week_folder(user_id)
         if folder is None:
-            return None
+            if target is None or target.kind not in ("week", "session"):
+                return None
+            today = today_shanghai()
+            folder = week_folder(today - timedelta(days=today.weekday()))
         kind = target.kind if (target is not None and target.kind in ("week", "session")) else "week"
         return TargetRef(
             kind=kind,
