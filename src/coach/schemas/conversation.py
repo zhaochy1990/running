@@ -108,6 +108,9 @@ class ConversationState(TypedDict, total=False):
     plan_id: str | None
     history: Annotated[list[BaseMessage], add_messages]
     constraints: list[str]
+    consulted_tools: list[str]
+    master_adjustment_request: str | None
+    master_adjustment_assessment: dict | None
     last_diff: dict | None
     iteration: int
 

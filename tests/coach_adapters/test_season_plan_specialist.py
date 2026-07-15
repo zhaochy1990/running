@@ -144,7 +144,7 @@ def test_runner_extracts_and_validates_alternative_proposals(monkeypatch) -> Non
         "intent": "比较保守和激进方向",
     }
     runner = _runner(capture, reply="", last_diff=alternatives, monkeypatch=monkeypatch)
-    result = runner(_task("给我两个调整方向"))
+    result = runner(_task("给我两个降低基础期周跑量的方向"))
 
     assert [proposal.diff_id for proposal in result.proposals] == ["d1", "d2"]
     assert result.reply_fragment == "我准备了 2 个通过安全校验的调整方向，请选择一个方案。"
@@ -164,7 +164,7 @@ def test_runner_drops_only_invalid_alternative(monkeypatch) -> None:
         last_diff=alternatives,
         monkeypatch=monkeypatch,
     )
-    result = runner(_task("给我两个调整方向"))
+    result = runner(_task("给我两个降低基础期周跑量的方向"))
 
     assert len(result.proposals) == 1
     assert isinstance(result.proposals[0], MasterPlanDiff)
@@ -217,6 +217,18 @@ def test_runner_without_plan_asks_clarification() -> None:
     assert result.status == "needs_clarification"
     assert result.clarification
     assert "build" not in capture  # graph never built without a plan
+
+
+def test_runner_without_adjustment_direction_asks_before_loading_data(monkeypatch) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=_diff_dict(), monkeypatch=monkeypatch)
+
+    result = runner(_task("我想要调整我的整体训练计划"))
+
+    assert result.status == "needs_clarification"
+    assert result.proposals == []
+    assert "具体怎么调整" in (result.clarification or "")
+    assert "build" not in capture
 
 
 def test_runner_empty_reply_falls_back_to_diff_explanation(monkeypatch) -> None:

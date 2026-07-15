@@ -31,7 +31,7 @@ import time
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
@@ -41,9 +41,32 @@ from coach.schemas import ConversationState
 from .prompts.master_chat import MASTER_CHAT_PROMPT
 from .prompts.qa import QA_PROMPT
 from .prompts.week_chat import WEEK_CHAT_PROMPT
-from .tool_bridge import build_langchain_tools, is_draft_tool
+from .tool_bridge import (
+    MASTER_ASSESSMENT_TOOL_NAME,
+    MASTER_DRAFT_TOOL_NAMES,
+    READ_TOOL_NAMES,
+    build_langchain_tools,
+    is_draft_tool,
+)
 
 logger = logging.getLogger(__name__)
+
+_MASTER_ASSESSMENT_REQUIRED_READS = frozenset(
+    {
+        "get_master_plan_current",
+        "get_health_snapshot",
+        "get_pmc_series",
+        "estimate_master_plan_load",
+    }
+)
+
+
+def _current_user_request(state: ConversationState) -> str:
+    for message in reversed(state.get("history") or []):
+        if isinstance(message, HumanMessage):
+            content = message.content
+            return content.strip() if isinstance(content, str) else str(content).strip()
+    return ""
 
 
 _SCOPE_PROMPTS = {
@@ -95,6 +118,16 @@ def build_conversation_graph(
         tool_calls = getattr(last, "tool_calls", None) or []
         new_messages: list[Any] = []
         last_diff: dict | None = None
+        current_request = _current_user_request(state)
+        same_request = state.get("master_adjustment_request") == current_request
+        consulted_before = (
+            set(state.get("consulted_tools") or []) if same_request else set()
+        )
+        consulted_after = set(consulted_before)
+        assessment_before = (
+            state.get("master_adjustment_assessment") if same_request else None
+        )
+        assessment_after = assessment_before
         for tc in tool_calls:
             name = tc["name"]
             args = tc.get("args") or {}
@@ -108,6 +141,50 @@ def build_conversation_graph(
                     )
                 )
                 continue
+            if scope == "master_chat" and name == MASTER_ASSESSMENT_TOOL_NAME:
+                missing = sorted(_MASTER_ASSESSMENT_REQUIRED_READS - consulted_before)
+                request_mismatch = str(args.get("adjustment_request") or "").strip() != current_request
+                if missing or request_mismatch:
+                    errors = []
+                    if missing:
+                        errors.append(
+                            "assessment_requires_prior_read_results: " + ", ".join(missing)
+                        )
+                    if request_mismatch:
+                        errors.append("assessment_request_does_not_match_current_user_request")
+                    payload = json.dumps(
+                        {"ok": False, "errors": errors},
+                        ensure_ascii=False,
+                    )
+                    new_messages.append(
+                        ToolMessage(
+                            content=payload,
+                            tool_call_id=tc["id"],
+                            name=name,
+                        )
+                    )
+                    continue
+            if scope == "master_chat" and name in MASTER_DRAFT_TOOL_NAMES:
+                verdict = (assessment_before or {}).get("verdict")
+                assessed_request = (assessment_before or {}).get("adjustment_request")
+                if verdict != "reasonable" or assessed_request != current_request:
+                    payload = json.dumps(
+                        {
+                            "ok": False,
+                            "errors": [
+                                "proposal_requires_prior_reasonable_assessment"
+                            ],
+                        },
+                        ensure_ascii=False,
+                    )
+                    new_messages.append(
+                        ToolMessage(
+                            content=payload,
+                            tool_call_id=tc["id"],
+                            name=name,
+                        )
+                    )
+                    continue
             try:
                 payload = impl.invoke(args)
             except Exception as exc:  # noqa: BLE001 — tool boundary
@@ -115,15 +192,37 @@ def build_conversation_graph(
             new_messages.append(
                 ToolMessage(content=str(payload), tool_call_id=tc["id"], name=name)
             )
+            parsed_payload: Any = None
+            try:
+                parsed_payload = json.loads(payload) if isinstance(payload, str) else payload
+            except (json.JSONDecodeError, TypeError):
+                pass
+            if (
+                name in READ_TOOL_NAMES
+                and isinstance(parsed_payload, dict)
+                and parsed_payload.get("ok")
+            ):
+                consulted_after.add(name)
+            if name == MASTER_ASSESSMENT_TOOL_NAME:
+                try:
+                    data = parsed_payload.get("data")
+                    if parsed_payload.get("ok") and isinstance(data, dict):
+                        assessment_after = data
+                except AttributeError:
+                    pass
             if is_draft_tool(name):
                 try:
-                    parsed = json.loads(payload) if isinstance(payload, str) else payload
-                    if parsed.get("ok") and parsed.get("data") is not None:
-                        last_diff = parsed["data"]
-                except (json.JSONDecodeError, AttributeError, TypeError):
+                    if parsed_payload.get("ok") and parsed_payload.get("data") is not None:
+                        last_diff = parsed_payload["data"]
+                except AttributeError:
                     pass
 
-        update: dict[str, Any] = {"history": new_messages}
+        update: dict[str, Any] = {
+            "history": new_messages,
+            "consulted_tools": sorted(consulted_after),
+            "master_adjustment_request": current_request,
+            "master_adjustment_assessment": assessment_after,
+        }
         if last_diff is not None:
             update["last_diff"] = last_diff
         return update

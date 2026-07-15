@@ -15,7 +15,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, create_model
@@ -60,6 +60,15 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_activity_detail": "Activity detail by label_id — raw activity facts/timeseries, laps/segments, explicit stride_training_load, and provenance. Vendor scores/zones and prior AI commentary are excluded; missing STRIDE load never falls back to vendor load.",
     "get_training_environment": "Training environment: STRIDE-detected current altitude + band, whether at altitude, and signal-informed acclimatization status (disturbed/recovering/stabilized from RHR/HRV vs baseline) after a recent altitude gain. Consult when assessing status; if a recent gain looks unconfirmed, ask the user to confirm the environment change. (weather TBD).",
     "estimate_master_plan_load": "Estimate historical weekly km/dose anchors and planned master-plan weekly load. Pass a MasterPlan-shaped `plan` draft to check underload/overload alignment; omit it to estimate the active master plan and still get the history anchor.",
+    "assess_master_adjustment": (
+        "Record the evidence-based verdict on the user's concrete master-plan adjustment "
+        "idea. Call only after reading the active master plan, current health snapshot, "
+        "recent STRIDE PMC series, and master-plan load estimate. Use verdict=reasonable "
+        "only when those data support creating a proposal; otherwise use unreasonable or "
+        "needs_clarification. adjustment_request must exactly repeat the current user's "
+        "request so the verdict cannot be reused for another idea. This tool does not create "
+        "or apply a proposal."
+    ),
     # week-scope draft
     "swap_sessions": "Propose swapping the run scheduled on date_a with the one on date_b (PlanDiff).",
     "shift_session": "Propose moving a single session from `date` to `to_date` (PlanDiff).",
@@ -190,6 +199,42 @@ MASTER_DRAFT_TOOL_NAMES = (
     "regenerate_master",
 )
 
+MASTER_ASSESSMENT_TOOL_NAME = "assess_master_adjustment"
+
+
+class _MasterAdjustmentAssessmentInput(BaseModel):
+    adjustment_request: str
+    verdict: Literal["reasonable", "unreasonable", "needs_clarification"]
+    rationale: str
+
+
+def _build_master_adjustment_assessment_tool() -> StructuredTool:
+    """Build the structured, side-effect-free assessment checkpoint tool."""
+
+    def assess_master_adjustment(
+        *,
+        adjustment_request: str,
+        verdict: Literal["reasonable", "unreasonable", "needs_clarification"],
+        rationale: str,
+    ) -> str:
+        return _serialize_result(
+            ToolResult(
+                ok=True,
+                data={
+                    "adjustment_request": adjustment_request,
+                    "verdict": verdict,
+                    "rationale": rationale,
+                },
+            )
+        )
+
+    return StructuredTool.from_function(
+        assess_master_adjustment,
+        name=MASTER_ASSESSMENT_TOOL_NAME,
+        description=_TOOL_DESCRIPTIONS[MASTER_ASSESSMENT_TOOL_NAME],
+        args_schema=_MasterAdjustmentAssessmentInput,
+    )
+
 
 def tool_names_for_scope(scope: str) -> tuple[str, ...]:
     """Return the (read + scope-specific draft) tool names exposed to the LLM."""
@@ -198,14 +243,23 @@ def tool_names_for_scope(scope: str) -> tuple[str, ...]:
     if scope == "week_chat":
         return READ_TOOL_NAMES + WEEK_DRAFT_TOOL_NAMES
     if scope == "master_chat":
-        return READ_TOOL_NAMES + MASTER_DRAFT_TOOL_NAMES
+        return (
+            READ_TOOL_NAMES
+            + (MASTER_ASSESSMENT_TOOL_NAME,)
+            + MASTER_DRAFT_TOOL_NAMES
+        )
     raise ValueError(f"unknown scope {scope!r}")
 
 
 def build_langchain_tools(toolkit: Toolkit, scope: str) -> list[StructuredTool]:
     """Pack the (read + scope-specific draft) tools into a list of langchain tools."""
     names = tool_names_for_scope(scope)
-    return [_wrap(name, getattr(toolkit, name)) for name in names]
+    return [
+        _build_master_adjustment_assessment_tool()
+        if name == MASTER_ASSESSMENT_TOOL_NAME
+        else _wrap(name, getattr(toolkit, name))
+        for name in names
+    ]
 
 
 def is_draft_tool(name: str) -> bool:

@@ -30,6 +30,7 @@ the orchestrator level.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -54,6 +55,25 @@ from ..toolkit import build_stride_toolkit
 logger = logging.getLogger(__name__)
 
 GraphFactory = Callable[..., Any]
+
+_CONCRETE_DIRECTION_RE = re.compile(
+    r"(?:延长|缩短|缩到|增加|加大|降低|减少|减量|减轻|提高|提升|调高|调低|"
+    r"调整到|设为|前移|后移|往前|往后|提前|推迟|延后|改为|改成|改到|挪到|"
+    r"取消|删除|保留|重排|重新生成|清空|"
+    r"extend|shorten|increase|decrease|reduce|raise|lower|move|shift|postpone|"
+    r"change\s+(?:the\s+)?target|regenerate)",
+    re.IGNORECASE,
+)
+_ADJUSTMENT_REQUEST_RE = re.compile(
+    r"(?:调整|修改|优化|改(?:一?下|动)?(?:我的|这个|当前)?(?:整体|长期|赛季|总纲)?训练计划|"
+    r"adjust|modify|revise|optimi[sz]e)",
+    re.IGNORECASE,
+)
+
+_DIRECTION_CLARIFICATION = (
+    "你希望具体怎么调整整体训练计划？请先告诉我你的调整方向，例如想增加或减少"
+    "哪个阶段的训练量、延长或缩短哪个阶段、移动比赛日期，或者修改目标。"
+)
 
 
 SEASON_PLAN_CARD = SpecialistCard(
@@ -122,6 +142,13 @@ def _extract_reply(history: list[Any]) -> str:
     return ""
 
 
+def _needs_direction_clarification(objective: str) -> bool:
+    """Whether this is an adjustment request with no user-chosen direction."""
+    return bool(_ADJUSTMENT_REQUEST_RE.search(objective)) and not bool(
+        _CONCRETE_DIRECTION_RE.search(objective)
+    )
+
+
 def _parse_proposals(last_diff: Any) -> list[MasterPlanDiff]:
     """Decode a single diff or a ``propose_alternatives`` result envelope.
 
@@ -176,6 +203,12 @@ def make_season_plan_runner(
                 ),
             )
 
+        if _needs_direction_clarification(task.objective):
+            return SpecialistResult(
+                status="needs_clarification",
+                clarification=_DIRECTION_CLARIFICATION,
+            )
+
         active_toolkit = toolkit or build_stride_toolkit(user_id)
         graph = graph_factory(
             toolkit=active_toolkit, llm=llm, checkpointer=None, scope="master_chat"
@@ -202,6 +235,9 @@ def make_season_plan_runner(
             "folder": None,
             "plan_id": plan_id,
             "constraints": [],
+            "consulted_tools": [],
+            "master_adjustment_request": task.objective.strip(),
+            "master_adjustment_assessment": None,
             "last_diff": None,
             "iteration": 0,
         }
