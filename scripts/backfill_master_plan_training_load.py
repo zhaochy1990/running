@@ -6,8 +6,9 @@ scope.
 
 Examples:
 
-    python scripts/backfill_master_plan_training_load.py -P zhaochaoyi
-    python scripts/backfill_master_plan_training_load.py --all --execute
+    python scripts/backfill_master_plan_training_load.py --prod -P zhaochaoyi
+    python scripts/backfill_master_plan_training_load.py --prod --all --execute
+    python scripts/backfill_master_plan_training_load.py --local --all
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 _REPO = Path(__file__).resolve().parents[1]
@@ -42,6 +44,40 @@ def _select_plans(store, profiles: list[str], all_plans: bool):
             continue
         selected.append(plan)
     return selected
+
+
+def _build_store(target: str):
+    """Build an explicitly selected store and return it with a safe label."""
+    from stride_storage.azure.master_plan_backend import (
+        DEFAULT_TABLE_NAME,
+        AzureTableMasterPlanStore,
+        FileMasterPlanStore,
+    )
+
+    if target == "local":
+        return FileMasterPlanStore(), f"local file {_REPO / 'data' / '.master_plans.json'}"
+    if target != "prod":
+        raise ValueError(f"unsupported migration target: {target}")
+
+    config_path = _REPO / "config" / "server.prod.toml"
+    with config_path.open("rb") as fh:
+        config = tomllib.load(fh)
+    try:
+        master_plan = config["storage"]["master_plan"]
+        account_url = str(master_plan["table_account_url"]).strip()
+    except (KeyError, TypeError) as exc:
+        raise RuntimeError(
+            f"missing storage.master_plan.table_account_url in {config_path}"
+        ) from exc
+    if not account_url.startswith("https://"):
+        raise RuntimeError(
+            f"invalid production master-plan table_account_url in {config_path}"
+        )
+    table_name = str(master_plan.get("table_name") or DEFAULT_TABLE_NAME)
+    return (
+        AzureTableMasterPlanStore(account_url, table_name),
+        f"production Azure Table {account_url} table={table_name}",
+    )
 
 
 def _project(plan):
@@ -97,6 +133,17 @@ def _project(plan):
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    target = parser.add_mutually_exclusive_group(required=True)
+    target.add_argument(
+        "--prod",
+        action="store_true",
+        help="Use the production Azure Table configured in config/server.prod.toml",
+    )
+    target.add_argument(
+        "--local",
+        action="store_true",
+        help="Use the local data/.master_plans.json file store",
+    )
     parser.add_argument("-P", "--profile", action="append", default=[], help="User UUID or slug")
     parser.add_argument("--all", action="store_true", help="Process every active master plan")
     parser.add_argument("--execute", action="store_true", help="Persist changes; default is dry-run")
@@ -106,9 +153,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.all and args.profile:
         parser.error("--all cannot be combined with -P/--profile")
 
-    from stride_server.master_plan_store import get_master_plan_store
-
-    store = get_master_plan_store()
+    store, target_label = _build_store("prod" if args.prod else "local")
+    print(f"target: {target_label}")
     plans = _select_plans(store, args.profile, args.all)
     failed = 0
     for plan in plans:
