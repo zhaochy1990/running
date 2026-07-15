@@ -228,6 +228,8 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
     * **REPLACE_MILESTONE_DATE / ADD_MILESTONE** — the date stays within the
       season's ``[start_date, end_date]`` window.
     * **REPLACE_WEEKLY_RANGE** — ``low <= high``.
+    * **Protected final taper** — a final phase of at most 14 inclusive days
+      cannot be shortened or removed.
     * **Reference integrity** — REMOVE/REPLACE ops target an existing phase /
       milestone (a stale id can't be applied).
     * Any unparseable ISO date in a relevant patch is itself a violation.
@@ -256,6 +258,12 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
             v = _check_phase_resize(
                 op, phases, plan_lo, plan_hi, protected_final_phase_id
             )
+        elif (
+            op.op == _Kind.REMOVE_PHASE
+            and op.phase_id == protected_final_phase_id
+        ):
+            phase = phases[op.phase_id]
+            v = f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能删除"
         elif op.op == _Kind.ADD_PHASE:
             v = _check_phase_add(op, phases, plan_lo, plan_hi)
         elif op.op == _Kind.REPLACE_WEEKLY_RANGE:

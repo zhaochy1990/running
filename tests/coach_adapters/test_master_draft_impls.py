@@ -318,6 +318,30 @@ def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
     assert "无法生成" in res.errors[0]
 
 
+def test_propose_alternatives_ignores_completed_phase_before_taper(seeded_plan):
+    plan, phase1, phase2, _ = seeded_plan
+    from stride_server.master_plan_store import get_master_plan_store
+
+    completed = phase1.model_copy(update={"is_completed": True})
+    taper = phase2.model_copy(
+        update={
+            "name": "调整期",
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-14",
+        }
+    )
+    get_master_plan_store().save_plan(
+        plan.model_copy(update={"phases": [completed, taper]})
+    )
+
+    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, intent="降低接下来的训练量"
+    )
+
+    assert not res.ok
+    assert "没有可安全降低周跑量的更早阶段" in res.errors[0]
+
+
 def test_propose_alternatives_can_reduce_single_long_phase(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     from stride_server.master_plan_store import get_master_plan_store

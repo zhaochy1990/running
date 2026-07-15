@@ -560,8 +560,9 @@ class ProposeAlternativesImpl:
     """Return 2 distinct MasterPlanDiff alternatives matching the user's intent.
 
     Preserve the final taper/adjustment phase and offer two load-reduction
-    magnitudes for the nearest earlier phase.  If no earlier phase has a usable
-    weekly-distance range, refusing is safer than removing the taper.
+    magnitudes for the nearest earlier unfinished phase.  If no earlier active
+    phase has a usable weekly-distance range, refusing is safer than removing
+    the taper or rewriting completed history.
     """
 
     def __init__(self, user_id: str) -> None:
@@ -583,7 +584,8 @@ class ProposeAlternativesImpl:
             (
                 phase
                 for phase in reversed(candidates)
-                if 0 <= phase.weekly_distance_km_low <= phase.weekly_distance_km_high
+                if not phase.is_completed
+                and 0 <= phase.weekly_distance_km_low <= phase.weekly_distance_km_high
                 and phase.weekly_distance_km_high > 0
             ),
             None,

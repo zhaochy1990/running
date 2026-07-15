@@ -18,6 +18,7 @@ from coach_cli.cli import (
     main,
 )
 from stride_core.master_plan_diff import MasterPlanDiff
+from stride_core.plan_diff import PlanDiff
 from stride_storage.coach_persistence.store import CheckpointRow
 
 
@@ -282,6 +283,39 @@ def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
     assert "方案 B（明显减量）" in output
     assert "📋 提案 1[season_plan]" in output
     assert "📋 提案 2[season_plan]" in output
+
+
+def test_print_turn_only_numbers_cli_applicable_master_proposals(capsys) -> None:
+    weekly = PlanDiff(
+        diff_id="week",
+        folder="2026-W29",
+        ops=[],
+        ai_explanation="调整周三训练",
+        created_at="t",
+    )
+    master = MasterPlanDiff(
+        diff_id="master",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="降低强化期跑量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="这里有两个不同范围的提案",
+        clarification=None,
+        proposals=[
+            ProposalCard(specialist_id="weekly_plan", proposal=weekly),
+            ProposalCard(specialist_id="season_plan", proposal=master),
+        ],
+        active_target=None,
+    )
+
+    _print_turn(turn, interactive=False, render_markdown=False)
+
+    output = capsys.readouterr().out
+    assert "📋 提案[weekly_plan]" in output
+    assert "📋 提案 1[season_plan]" in output
+    assert "提案 2" not in output
 
 
 def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> None:

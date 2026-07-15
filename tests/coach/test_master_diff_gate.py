@@ -112,6 +112,26 @@ def test_short_final_taper_cannot_be_compressed() -> None:
     assert "必须完整保留" in violations[0]
 
 
+def test_short_final_taper_cannot_be_removed() -> None:
+    plan = _plan()
+    taper = _phase().model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "start_date": "2026-11-02",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [taper]})
+    op = _op(MasterPlanDiffOpKind.REMOVE_PHASE, phase_id="taper")
+
+    violations = validate_master_diff(plan, _diff(op))
+
+    assert len(violations) == 1
+    assert "不能删除" in violations[0]
+
+
 def test_resize_inverting_phase_is_rejected() -> None:
     op = _op(
         MasterPlanDiffOpKind.RESIZE_PHASE,

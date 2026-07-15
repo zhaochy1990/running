@@ -280,12 +280,22 @@ def _format_turn(turn) -> str:
 def _turn_metadata(turn) -> list[str]:
     """Build the compact non-Markdown lines appended after the reply."""
     lines: list[str] = []
-    for index, card in enumerate(turn.proposals, start=1):
+    master_index = 0
+    for card in turn.proposals:
         proposal = card.proposal
         n_ops = len(getattr(proposal, "ops", []) or [])
         explanation = getattr(proposal, "ai_explanation", "") or ""
+        if card.specialist_id == "season_plan" and isinstance(
+            proposal, MasterPlanDiff
+        ):
+            master_index += 1
+            label = f"提案 {master_index}[season_plan]"
+        else:
+            # Only season-plan proposals are accepted by `/apply N`; keep all
+            # other specialist cards visible without assigning an apply index.
+            label = f"提案[{card.specialist_id}]"
         lines.append(
-            f"📋 提案 {index}[{card.specialist_id}] · {n_ops} 处改动 — {explanation}"
+            f"📋 {label} · {n_ops} 处改动 — {explanation}"
         )
     if turn.active_target:
         lines.append(f"· 当前对象: {turn.active_target.model_dump(exclude_none=True)}")
