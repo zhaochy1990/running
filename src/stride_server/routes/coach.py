@@ -45,6 +45,7 @@ from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import get_checkpointer
 from ..deps import get_plan_state_store
 from ..master_plan_store import get_master_plan_store
+from ..weekly_plan_store import save_weekly_plan_projection
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -269,6 +270,9 @@ def apply_coach_week_diff(
     plan_store = get_plan_state_store(user_id)
     try:
         apply_diff(plan_store, folder, diff, accepted_op_ids)
+        save_weekly_plan_projection(
+            user_id, folder, plan_store, generated_by="coach-adjustment"
+        )
     finally:
         plan_store.close()
 

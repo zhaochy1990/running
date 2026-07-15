@@ -16,6 +16,7 @@ from stride_storage.interfaces.config import (
     NotificationStorageConfig,
     QueueStorageConfig,
     StorageConfig,
+    WeeklyPlanStorageConfig,
     validate_optional_url,
     validate_positive,
     validate_required_when,
@@ -31,6 +32,7 @@ from stride_storage.interfaces.jobs import (
     QueueMessage,
 )
 from stride_storage.interfaces.likes import LikeEntity, LikesBackend
+from stride_storage.interfaces.weekly_plan import WeeklyPlanStore
 
 __all__ = [
     "AzureKeyVaultConfig",
@@ -54,6 +56,8 @@ __all__ = [
     "QueueMessage",
     "QueueStorageConfig",
     "StorageConfig",
+    "WeeklyPlanStorageConfig",
+    "WeeklyPlanStore",
     "validate_optional_url",
     "validate_positive",
     "validate_required_when",

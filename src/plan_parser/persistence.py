@@ -28,8 +28,8 @@ def apply_weekly_plan(
 ) -> dict[str, Any]:
     """Persist a weekly plan markdown + (optional) structured layer.
 
-    Markdown always lands in ``weekly_plan.content_md`` (the canonical source).
-    When ``structured`` is supplied we additionally upsert the planned_session
+    Markdown always lands in ``weekly_plan.content_md`` as the legacy authoring
+    layer. When ``structured`` is supplied we additionally upsert the planned_session
     + planned_nutrition rows for ``folder`` and stamp ``structured_status``
     (``fresh`` for live LLM output, ``backfilled`` for historical re-parse).
     When ``structured`` is ``None`` we mark the row ``parse_failed`` so the UI

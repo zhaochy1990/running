@@ -184,15 +184,10 @@ class TestAuthoredReparse:
         assert body["llm_calls"] == 1
         assert sentinel["called"] == 1
 
-    def test_reparse_with_missing_plan_md_returns_404(
+    def test_reparse_with_plan_json_only_imports_authored_plan(
         self, app_client, monkeypatch,
     ):
-        """plan.json present but plan.md + DB row both missing → 404.
-
-        Mirrors existing strict behavior in ``test_reparse_404_when_no_plan``:
-        the authored path never short-circuits when there's no markdown row at
-        all, since the read-md-or-fall-back-to-disk precondition runs first.
-        """
+        """A valid JSON WeeklyPlan is importable without legacy Markdown."""
         client, _, tmp_path, _, _ = app_client
         # Only plan.json — no plan.md, no DB row.
         _week_dir(tmp_path).mkdir(parents=True, exist_ok=True)
@@ -205,7 +200,9 @@ class TestAuthoredReparse:
             f"/internal/plan/reparse?user={USER_UUID}&folder={FIXTURE_WEEK}",
             headers={"X-Internal-Token": INTERNAL_TOKEN},
         )
-        assert resp.status_code == 404
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["source"] == "authored"
+        assert resp.json()["llm_calls"] == 0
         assert sentinel["called"] == 0
 
     def test_reparse_with_feature_flag_off_skips_plan_json(

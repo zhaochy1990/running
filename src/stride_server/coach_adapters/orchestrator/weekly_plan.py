@@ -42,6 +42,7 @@ from stride_core.timefmt import today_shanghai
 
 from ...content_store import list_week_folders
 from ...deps import parse_week_dates
+from ...weekly_plan_store import get_weekly_plan_store
 from ..toolkit import build_stride_toolkit
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,18 @@ def resolve_current_week_folder(user_id: str) -> str | None:
     Returns ``None`` when no week covers today (the caller falls back to clarify).
     """
     today = today_shanghai().isoformat()
+    try:
+        current = get_weekly_plan_store().get_current_plan(user_id, today)
+    except Exception:
+        logger.warning(
+            "weekly_plan: canonical current-week lookup failed; using legacy folders",
+            exc_info=True,
+        )
+    else:
+        if current is not None:
+            return current.week_folder
+
+    # Compatibility for pre-WeeklyPlanStore Markdown/plan.json artifacts.
     for folder in list_week_folders(user_id):
         dates = parse_week_dates(folder)
         if dates is None:

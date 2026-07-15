@@ -53,6 +53,7 @@ from ..deps import (
     get_server_config,
     parse_week_dates,
 )
+from ..weekly_plan_store import get_weekly_plan_store, save_weekly_plan_projection
 
 logger = logging.getLogger(__name__)
 
@@ -619,7 +620,7 @@ def _try_authored_reparse(
 
     Phase 1 plan.json-priority logic. Gated by server config. The legacy
     ``STRIDE_PLAN_JSON_PRIORITY`` env var maps to ``plan.prefer_authored_json``.
-    When plan.json exists at the canonical content store path
+    When plan.json exists at the legacy content-store import path
     and parses against ``SUPPORTED_SCHEMA_VERSION``, we promote it directly to the
     structured layer with ``structured_source='authored'`` — bypassing the LLM
     reverse parser entirely. Any failure (missing file, malformed JSON, schema
@@ -672,6 +673,9 @@ def _try_authored_reparse(
         structured=weekly_plan,
         structured_source="authored",
     )
+    get_weekly_plan_store().save_plan(
+        user, weekly_plan, generated_by=generated_by
+    )
     logger.info(
         "plan.json authored path: user=%s folder=%s schema=v%d",
         user, folder, schema_version,
@@ -717,15 +721,10 @@ def reparse_plan(
         disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
         if disk_md:
             content_md = disk_md.content
-    if not content_md:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No stored plan for week {folder!r}; nothing to reparse",
-        )
-
     # Phase 1 plan.json-priority short-circuit. When plan.json is present and
     # parses against the supported schema, promote it as ``authored`` and skip
-    # the LLM call entirely.
+    # the LLM call entirely. This deliberately precedes the Markdown
+    # precondition: a valid structured plan is independently importable.
     authored = _try_authored_reparse(user, folder, content_md, existing_generated_by)
     if authored is not None:
         return {
@@ -733,6 +732,12 @@ def reparse_plan(
             "folder": folder,
             **authored,
         }
+
+    if not content_md:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No stored plan for week {folder!r}; nothing to reparse",
+        )
 
     if len(content_md.encode("utf-8")) > _MAX_PLAN_MD_BYTES:
         raise HTTPException(
@@ -750,6 +755,10 @@ def reparse_plan(
         structured=result.structured,
         structured_source="fresh",
     )
+    if result.structured is not None:
+        get_weekly_plan_store().save_plan(
+            user, result.structured, generated_by=existing_generated_by
+        )
     structured_status = "fresh" if result.structured is not None else "parse_failed"
     return {
         "ok": True,
@@ -813,15 +822,10 @@ def internal_reparse_plan(
         disk_md = content_read_text(f"{user}/logs/{folder}/plan.md")
         if disk_md:
             content_md = disk_md.content
-    if not content_md:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No stored plan for week {folder!r}",
-        )
-
     # Phase 1 plan.json-priority short-circuit. plan.json supersedes the hash
     # idempotency check because the schema-validated JSON is its own source of
-    # truth — even when plan.md is unchanged, plan.json may have been updated.
+    # truth — even when plan.md is absent or unchanged, plan.json may have been
+    # created or updated.
     authored = _try_authored_reparse(user, folder, content_md, existing_generated_by)
     if authored is not None:
         return {
@@ -832,11 +836,26 @@ def internal_reparse_plan(
             **authored,
         }
 
+    if not content_md:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No stored plan for week {folder!r}",
+        )
+
     md_hash = hashlib.sha256(content_md.encode("utf-8")).hexdigest()
     if (
         prior_hash == md_hash
         and prior_status in ("fresh", "authored")
     ):
+        # Backfill the canonical store during the rollout even when the legacy
+        # SQLite projection is already current and no parser call is needed.
+        plan_store = get_plan_state_store(user)
+        try:
+            save_weekly_plan_projection(
+                user, folder, plan_store, generated_by=existing_generated_by
+            )
+        finally:
+            plan_store.close()
         # Idempotent re-run: same plan.md + last parse already in a canonical
         # state (LLM-fresh or plan.json-authored). Skip the LLM call and echo
         # the prior status. ``source`` mirrors ``structured_status`` directly
@@ -869,6 +888,10 @@ def internal_reparse_plan(
         structured=result.structured,
         structured_source="fresh",
     )
+    if result.structured is not None:
+        get_weekly_plan_store().save_plan(
+            user, result.structured, generated_by=existing_generated_by
+        )
     structured_status = "fresh" if result.structured is not None else "parse_failed"
     return {
         "ok": True,

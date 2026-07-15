@@ -21,6 +21,7 @@ from stride_core.timefmt import SHANGHAI_DAY_SQL, shanghai_day_str
 
 from ..deps import get_db, get_plan_state_store, get_source_for_user, parse_week_dates
 from ..week_generator import generate_week_plan, week_folder
+from ..weekly_plan_store import get_weekly_plan_store
 
 # Imported at module level so tests can patch it via
 # ``patch("stride_server.routes.generate.push_single_session")``.
@@ -133,7 +134,7 @@ def _get_last_week_summary(db, plan_store, week_start: date_cls) -> dict | None:
     }
 
 
-def _write_plan(plan_store, folder: str, weekly_plan) -> None:
+def _write_plan(user: str, plan_store, folder: str, weekly_plan) -> None:
     """Persist WeeklyPlan via apply_weekly_plan_atomic."""
     from stride_core.plan_spec import PlannedNutrition
 
@@ -154,6 +155,9 @@ def _write_plan(plan_store, folder: str, weekly_plan) -> None:
         structured_status="authored",
         structured_source="authored",
         parsed_from_md_hash=None,
+    )
+    get_weekly_plan_store().save_plan(
+        user, weekly_plan, generated_by=_GENERATED_BY
     )
 
 
@@ -223,7 +227,7 @@ def generate_week(
         )
 
         # ── Persist ──────────────────────────────────────────────────────────
-        _write_plan(plan_store, folder, weekly_plan)
+        _write_plan(user, plan_store, folder, weekly_plan)
 
     finally:
         plan_store.close()

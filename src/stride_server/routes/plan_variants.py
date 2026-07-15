@@ -424,6 +424,14 @@ def select_variant(
         if not result.get("ok"):
             raise _http_for_select_error(result)
 
+        from ..weekly_plan_store import save_weekly_plan_projection
+
+        # Also backfills an already-selected legacy variant into the canonical
+        # store during rollout.
+        save_weekly_plan_projection(
+            user, folder, plan_store, generated_by="selected-variant"
+        )
+
         # Happy path. Includes no_change=true on idempotent re-select.
         return {
             "ok": True,

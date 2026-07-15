@@ -23,6 +23,7 @@ stride_storage/
     config.py              #   存储 config dataclass（StorageConfig / *StorageConfig / CoachPersistenceConfig …）+ 校验
     likes.py               #   LikeEntity + LikesBackend
     master_plan.py         #   MasterPlanStore
+    weekly_plan.py         #   WeeklyPlanStore（当前结构化周计划）
     notifications.py       #   DeviceEntity + NotificationsBackend
     athlete_memory.py      #   AthleteMemoryBackend
   sqlite/                  # ── Tier B ──
@@ -36,7 +37,7 @@ stride_storage/
     table_backend.py       #   AzureTableConnection —— lazy/线程安全/create-table-once
     blob_backend.py        #   get_container_client()
     backend_select.py      #   choose_backend() —— 统一 "account_url 有则 azure 否则 file"
-    likes_backend.py master_plan_backend.py athlete_memory_backend.py notifications_backend.py
+    likes_backend.py master_plan_backend.py weekly_plan_backend.py athlete_memory_backend.py notifications_backend.py
   keyvault/                # ── Tier C ──
     secret_client.py       #   get_secret_client() —— 共享 SecretClient
   coach_persistence/       # ── Tier C（langgraph + azure）──

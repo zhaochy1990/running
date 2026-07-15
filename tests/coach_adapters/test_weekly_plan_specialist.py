@@ -173,6 +173,7 @@ def test_runner_seeds_window_and_memory_notes() -> None:
 
 
 def test_resolve_current_week_folder_picks_covering_week(monkeypatch) -> None:
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
     monkeypatch.setattr(wp, "list_week_folders", lambda _u: ["2026-06-15_06-21(W7)", _FOLDER])
     monkeypatch.setattr(
         wp,
@@ -189,7 +190,26 @@ def test_resolve_current_week_folder_picks_covering_week(monkeypatch) -> None:
     assert resolve_current_week_folder("u1") == _FOLDER
 
 
+class _FakeWeeklyPlanStore:
+    def __init__(self, current=None):
+        self.current = current
+
+    def get_current_plan(self, _user_id, _today):
+        return self.current
+
+
+def test_resolve_current_week_folder_prefers_canonical_store(monkeypatch) -> None:
+    from stride_core.plan_spec import WeeklyPlan
+
+    current = WeeklyPlan(week_folder=_FOLDER)
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore(current))
+    monkeypatch.setattr(wp, "list_week_folders", lambda _u: (_ for _ in ()).throw(AssertionError))
+
+    assert resolve_current_week_folder("u1") == _FOLDER
+
+
 def test_resolve_current_week_folder_none_when_no_cover(monkeypatch) -> None:
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
     monkeypatch.setattr(wp, "list_week_folders", lambda _u: [_FOLDER])
     monkeypatch.setattr(wp, "parse_week_dates", lambda _f: ("2026-06-22", "2026-06-28"))
 

@@ -4,7 +4,7 @@
 
 ## 概念
 
-Variants 是 append-only 的 side rows；选定某个会把它的 markdown + structured layer 提升到 canonical `weekly_plan` / `planned_session` / `planned_nutrition` 表 —— 跟现有 UI / push / commentary 代码读的是同一条路径。
+Variants 是 append-only 的 side rows；选定某个会把 structured layer 提升到 canonical `WeeklyPlanStore`，并同步更新 SQLite `weekly_plan` / `planned_session` / `planned_nutrition` 手表与 UI 投影。
 
 ## Canonical happy path
 

@@ -2243,8 +2243,9 @@ class Database:
 
     # --- Structured weekly plan (planned_session / planned_nutrition) ---
     #
-    # The markdown in weekly_plan.content_md is the canonical source of truth.
-    # This layer is a derived JSON cache produced by the LLM reverse parser.
+    # WeeklyPlanStore is the canonical structured source. These rows are the
+    # local watch/calendar projection; legacy Markdown may still populate them
+    # through the reverse parser.
     # Helpers here are intentionally idempotent — every upsert wipes the
     # existing rows for the affected week before reinserting, so a re-parse
     # never leaves stale rows behind.

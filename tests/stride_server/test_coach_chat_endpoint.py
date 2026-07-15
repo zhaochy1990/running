@@ -233,6 +233,15 @@ def _stub_apply(coach_routes, monkeypatch) -> dict:
         captured.update(folder=folder, diff=diff, accepted=list(accepted_op_ids))
 
     monkeypatch.setattr(coach_routes, "apply_diff", _fake_apply)
+
+    def _fake_save(user_id, folder, plan_store, *, generated_by=None):
+        captured.update(
+            projection_user=user_id,
+            projection_folder=folder,
+            projection_generated_by=generated_by,
+        )
+
+    monkeypatch.setattr(coach_routes, "save_weekly_plan_projection", _fake_save)
     return captured
 
 
@@ -251,6 +260,7 @@ def test_apply_lands_accepted_ops(chat_client, monkeypatch):
     assert body["folder"] == _APPLY_FOLDER
     assert captured["accepted"] == ["op1"]
     assert captured["folder"] == _APPLY_FOLDER
+    assert captured["projection_folder"] == _APPLY_FOLDER
     assert captured["closed"] is True
 
 

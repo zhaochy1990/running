@@ -112,7 +112,15 @@ def test_delete_account_deletes_local_data_after_auth_delete(app_client, monkeyp
         seen["bearer"] = bearer
 
     import stride_server.auth_service_client as ac
+    import stride_server.routes.account as account_mod
     monkeypatch.setattr(ac, "delete_my_account", fake_delete_my_account)
+
+    class _WeeklyStore:
+        def delete_user(self, user_id):
+            seen["weekly_deleted"] = user_id
+            return 1
+
+    monkeypatch.setattr(account_mod, "get_weekly_plan_store", lambda: _WeeklyStore())
 
     resp = client.delete("/api/users/me", headers=_auth(token))
 
@@ -120,6 +128,7 @@ def test_delete_account_deletes_local_data_after_auth_delete(app_client, monkeyp
     assert not user_dir.exists()
     assert seen["bearer"] == token
     assert source.logout_calls == [USER_UUID]
+    assert seen["weekly_deleted"] == USER_UUID
 
 
 def test_delete_account_keeps_local_data_when_auth_service_blocks(app_client, monkeypatch):
