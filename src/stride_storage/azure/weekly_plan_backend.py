@@ -55,6 +55,12 @@ def _bounds(plan: WeeklyPlan) -> tuple[str, str]:
     return bounds
 
 
+def _week_key(folder: str) -> str | None:
+    """Stable storage identity for one week, independent of folder labels."""
+    bounds = parse_week_folder_dates(folder)
+    return bounds[0] if bounds is not None else None
+
+
 def _canonical_plan(plan: WeeklyPlan) -> WeeklyPlan:
     """Validate invariants shared by every canonical storage backend."""
     date_from, date_to = _bounds(plan)
@@ -108,7 +114,13 @@ class FileWeeklyPlanStore(WeeklyPlanStore):
         date_from, date_to = _bounds(plan)
         with self._lock:
             data = _read_json(_plans_file())
-            data.setdefault(user_id, {})[plan.week_folder] = {
+            bucket = data.setdefault(user_id, {})
+            # Remove migration-era folder-keyed aliases for the same week so
+            # one Shanghai week has exactly one canonical current row.
+            for key, raw in list(bucket.items()):
+                if isinstance(raw, dict) and raw.get("date_from") == date_from:
+                    bucket.pop(key, None)
+            bucket[date_from] = {
                 "date_from": date_from,
                 "date_to": date_to,
                 "generated_by": generated_by,
@@ -119,20 +131,32 @@ class FileWeeklyPlanStore(WeeklyPlanStore):
             _write_json(_plans_file(), data)
 
     def get_plan(self, user_id: str, folder: str) -> WeeklyPlan | None:
-        raw = _read_json(_plans_file()).get(user_id, {}).get(folder)
+        rows = _read_json(_plans_file()).get(user_id, {})
+        key = _week_key(folder)
+        raw = rows.get(key) if key is not None else None
+        if raw is None:
+            raw = rows.get(folder)  # migration fallback for old local files
         if not isinstance(raw, dict) or not isinstance(raw.get("plan"), dict):
             return None
         return WeeklyPlan.from_dict(raw["plan"])
 
     def get_generated_by(self, user_id: str, folder: str) -> str | None:
-        raw = _read_json(_plans_file()).get(user_id, {}).get(folder)
+        rows = _read_json(_plans_file()).get(user_id, {})
+        key = _week_key(folder)
+        raw = rows.get(key) if key is not None else None
+        if raw is None:
+            raw = rows.get(folder)
         if not isinstance(raw, dict):
             return None
         value = raw.get("generated_by")
         return str(value) if value is not None else None
 
     def get_source_hash(self, user_id: str, folder: str) -> str | None:
-        raw = _read_json(_plans_file()).get(user_id, {}).get(folder)
+        rows = _read_json(_plans_file()).get(user_id, {})
+        key = _week_key(folder)
+        raw = rows.get(key) if key is not None else None
+        if raw is None:
+            raw = rows.get(folder)
         if not isinstance(raw, dict):
             return None
         value = raw.get("source_hash")
@@ -159,8 +183,16 @@ class FileWeeklyPlanStore(WeeklyPlanStore):
             for raw in rows.values()
             if isinstance(raw, dict) and isinstance(raw.get("plan"), dict)
         ]
-        valid.sort(key=lambda raw: str(raw.get("date_from", "")), reverse=True)
-        return [WeeklyPlan.from_dict(raw["plan"]) for raw in valid]
+        valid.sort(key=lambda raw: str(raw.get("updated_at", "")), reverse=True)
+        by_week: dict[str, dict[str, Any]] = {}
+        for raw in valid:
+            by_week.setdefault(str(raw.get("date_from", "")), raw)
+        ordered = sorted(
+            by_week.values(),
+            key=lambda raw: str(raw.get("date_from", "")),
+            reverse=True,
+        )
+        return [WeeklyPlan.from_dict(raw["plan"]) for raw in ordered]
 
     def delete_user(self, user_id: str) -> int:
         with self._lock:
@@ -172,7 +204,7 @@ class FileWeeklyPlanStore(WeeklyPlanStore):
 
 
 class AzureTableWeeklyPlanStore(WeeklyPlanStore):
-    """Azure Table backend: PartitionKey=user_id, RowKey=week_folder."""
+    """Azure Table backend: PartitionKey=user_id, RowKey=week start date."""
 
     def __init__(self, account_url: str, table_name: str) -> None:
         self._plans = AzureTableConnection(account_url, table_name)
@@ -187,8 +219,9 @@ class AzureTableWeeklyPlanStore(WeeklyPlanStore):
         date_from, date_to = _bounds(plan)
         entity = {
             "PartitionKey": user_id,
-            "RowKey": plan.week_folder,
+            "RowKey": date_from,
             "kind": "plan",
+            "week_folder": plan.week_folder,
             "date_from": date_from,
             "date_to": date_to,
             "plan_json": _plan_json(plan),
@@ -203,35 +236,61 @@ class AzureTableWeeklyPlanStore(WeeklyPlanStore):
     def get_plan(self, user_id: str, folder: str) -> WeeklyPlan | None:
         from azure.core.exceptions import ResourceNotFoundError
 
+        key = _week_key(folder)
+        if key is None:
+            return None
         try:
             entity = self._plans.table().get_entity(
-                partition_key=user_id, row_key=folder
+                partition_key=user_id, row_key=key
             )
         except ResourceNotFoundError:
-            return None
+            try:
+                # Migration fallback for entities created before RowKey moved
+                # from the full folder label to the week-start date.
+                entity = self._plans.table().get_entity(
+                    partition_key=user_id, row_key=folder
+                )
+            except ResourceNotFoundError:
+                return None
         return WeeklyPlan.from_dict(json.loads(entity["plan_json"]))
 
     def get_generated_by(self, user_id: str, folder: str) -> str | None:
         from azure.core.exceptions import ResourceNotFoundError
 
+        key = _week_key(folder)
+        if key is None:
+            return None
         try:
             entity = self._plans.table().get_entity(
-                partition_key=user_id, row_key=folder
+                partition_key=user_id, row_key=key
             )
         except ResourceNotFoundError:
-            return None
+            try:
+                entity = self._plans.table().get_entity(
+                    partition_key=user_id, row_key=folder
+                )
+            except ResourceNotFoundError:
+                return None
         value = entity.get("generated_by")
         return str(value) if value is not None else None
 
     def get_source_hash(self, user_id: str, folder: str) -> str | None:
         from azure.core.exceptions import ResourceNotFoundError
 
+        key = _week_key(folder)
+        if key is None:
+            return None
         try:
             entity = self._plans.table().get_entity(
-                partition_key=user_id, row_key=folder
+                partition_key=user_id, row_key=key
             )
         except ResourceNotFoundError:
-            return None
+            try:
+                entity = self._plans.table().get_entity(
+                    partition_key=user_id, row_key=folder
+                )
+            except ResourceNotFoundError:
+                return None
         value = entity.get("source_hash")
         return str(value) if value is not None else None
 
@@ -257,8 +316,16 @@ class AzureTableWeeklyPlanStore(WeeklyPlanStore):
                 parameters={"pk": user_id, "kind": "plan"},
             )
         )
-        entities.sort(key=lambda row: str(row.get("date_from", "")), reverse=True)
-        return [WeeklyPlan.from_dict(json.loads(row["plan_json"])) for row in entities]
+        entities.sort(key=lambda row: str(row.get("updated_at", "")), reverse=True)
+        by_week: dict[str, Any] = {}
+        for row in entities:
+            by_week.setdefault(str(row.get("date_from", "")), row)
+        ordered = sorted(
+            by_week.values(),
+            key=lambda row: str(row.get("date_from", "")),
+            reverse=True,
+        )
+        return [WeeklyPlan.from_dict(json.loads(row["plan_json"])) for row in ordered]
 
     def delete_user(self, user_id: str) -> int:
         rows = list(

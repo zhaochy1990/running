@@ -93,6 +93,9 @@ class _StubPlanStore:
             ),
         )
 
+    def get_current_plan(self, user: str, _on_date: str):
+        return self.get_plan(user, "2026-05-04_05-10")
+
 
 @pytest.fixture
 def last_week_summary(monkeypatch):

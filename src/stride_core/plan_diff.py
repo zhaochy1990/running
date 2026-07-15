@@ -96,12 +96,15 @@ def apply_diff_to_weekly_plan(
         if op.op != DiffOpKind.REMOVE_SESSION and op.spec_patch is None:
             continue
         source_key = (op.date, op.session_index)
-        source = original.get(source_key)
+        # Compose accepted operations against the result of earlier operations
+        # on the same source identity. Reading from ``original`` here would
+        # make the last op silently undo every field changed by prior ops.
+        source = changed.get(source_key)
         if op.op == DiffOpKind.ADD_SESSION:
             _require_within(bounds, op.date)
             additions.append(_session_from_patch(op))
             continue
-        if source is None:
+        if source_key not in original or source is None:
             raise ValueError(f"source session {source_key!r} does not exist")
         if op.op == DiffOpKind.REMOVE_SESSION:
             changed[source_key] = None

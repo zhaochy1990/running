@@ -99,6 +99,19 @@ def test_replace_ops(kind, patch, attr, expected):
     assert getattr(changed, attr) == expected
 
 
+def test_multiple_ops_for_same_session_compose_in_order():
+    distance = _op(
+        DiffOpKind.REPLACE_DISTANCE, patch={"total_distance_m": 7000}
+    )
+    note = _op(DiffOpKind.REPLACE_NOTE, patch={"notes_md": "new note"})
+
+    result = _apply(_plan(), distance, note)
+
+    changed = next(s for s in result.sessions if s.date == "2026-05-05")
+    assert changed.total_distance_m == 7000
+    assert changed.notes_md == "new note"
+
+
 def test_unaccepted_and_missing_patch_are_noops():
     op = _op(DiffOpKind.REPLACE_NOTE, patch={"notes_md": "new"})
     assert _apply(_plan(), op, accepted=[]) == _plan()

@@ -2,7 +2,7 @@
 
 **何时读**：写或改 `data/{user}/logs/{week}/plan.json` 之前必读。这是 HARD gate —— 不合规就 commit 不动。
 
-每次写完 plan.md 必须**同时**写一个 schema-valid 的 `plan.json` 放在同目录。这个文件是 authoring/import artifact；Server 端的 `/internal/plan/reparse` webhook（`sync-data.yml` 触发）会优先尝试 plan.json-authored 路径：plan.json 能过 `WeeklyPlan.from_dict` 校验且 `week_folder` 与 webhook folder 完全一致 → 只写 canonical `WeeklyPlanStore`（prod Azure Table `strideweeklyplan`）；否则 fallback 到 LLM 反向解析 plan.md。**plan.json 不合规 → server 静默退回 LLM → 复杂 plan.md 可能解析失败 → 用户日历空白 + "重新解析" 按钮无效。**
+本文件描述迁移期 `plan.json` 的导入 schema。新计划应直接构造并保存 `WeeklyPlan`，不再生成 `plan.md`。已有 `plan.json` 由 `/internal/plan/reparse` 导入 canonical `WeeklyPlanStore`（prod Azure Table `strideweeklyplan`）；缺少有效 JSON 的旧周才 fallback 到 LLM 解析 `plan.md`。
 
 ## Source of truth
 
@@ -20,7 +20,7 @@
 }
 ```
 
-不允许的多余顶层字段（authoring 历史漂移过的）：`user`, `user_id`, `phase`, `theme`, `weekly_mileage_km`, `weekly_mileage_cap_km`, `monitoring`, `structured_status`, `generated_by`。这些信息应该在 plan.md 里，不要塞进 plan.json。
+不允许的多余顶层字段（authoring 历史漂移过的）：`user`, `user_id`, `phase`, `theme`, `weekly_mileage_km`, `weekly_mileage_cap_km`, `monitoring`, `structured_status`, `generated_by`。运行时元数据应放在 WeeklyPlanStore entity 属性中；计划说明使用 `notes_md`，不要扩展顶层 schema。
 
 ## `PlannedSession`
 

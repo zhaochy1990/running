@@ -50,10 +50,6 @@ class GenerateWeekRequest(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _folder_exists(user: str, folder: str) -> bool:
-    return get_weekly_plan_store().get_plan(user, folder) is not None
-
-
 def _get_last_week_summary(user: str, db, week_start: date_cls) -> dict | None:
     """Query the previous week for completion rate and avg RPE.
 
@@ -64,20 +60,11 @@ def _get_last_week_summary(user: str, db, week_start: date_cls) -> dict | None:
     """
     prev_start = week_start - timedelta(days=7)
     prev_end = prev_start + timedelta(days=6)
-    prev_folder = week_folder(prev_start)
-
     # Total planned sessions for prev week
-    previous = get_weekly_plan_store().get_plan(user, prev_folder)
+    previous = get_weekly_plan_store().get_current_plan(
+        user, prev_start.isoformat()
+    )
     planned_rows = list(previous.sessions) if previous else []
-    if not planned_rows:
-        legacy = get_plan_state_store(user)
-        try:
-            planned_rows = [
-                _legacy_row_to_session(row)
-                for row in legacy.get_planned_sessions(week_folder=prev_folder)
-            ]
-        finally:
-            legacy.close()
     if not planned_rows:
         return None
 
@@ -139,9 +126,9 @@ def _get_last_week_summary(user: str, db, week_start: date_cls) -> dict | None:
     }
 
 
-def _write_plan(user: str, folder: str, weekly_plan) -> None:
+def _write_plan(user: str, weekly_plan) -> None:
     save_weekly_plan(
-        user, weekly_plan, expected_folder=folder, generated_by=_GENERATED_BY
+        user, weekly_plan, generated_by=_GENERATED_BY
     )
 
 
@@ -172,7 +159,7 @@ def generate_week(
 
     - 400 when week_start is not a Monday.
     - 409 when the week already exists (unless ?force=true).
-    - On force=true: deletes existing planned_session rows then re-generates.
+    - On force=true: replaces the canonical WeeklyPlan for that week.
     """
     # ── Validate week_start ──────────────────────────────────────────────────
     try:
@@ -198,18 +185,24 @@ def generate_week(
 
     try:
         # ── Conflict check ───────────────────────────────────────────────────
-        if _folder_exists(user, folder):
+        existing = get_weekly_plan_store().get_current_plan(
+            user, week_start.isoformat()
+        )
+        if existing is not None:
             if not force:
                 raise HTTPException(
                     status_code=409,
                     detail={
                         "error": "week_already_exists",
-                        "folder": folder,
+                        "folder": existing.week_folder,
                         "hint": "Pass ?force=true to overwrite the existing plan",
                     },
                 )
             # force=true replaces the canonical WeeklyPlanStore entry below.
-            logger.info("generate_week: force overwrite folder=%s user=%s", folder, user)
+            logger.info(
+                "generate_week: force overwrite week_start=%s user=%s",
+                week_start, user,
+            )
 
         # ── Compute last-week summary ────────────────────────────────────────
         last_week_summary = _get_last_week_summary(user, db, week_start)
@@ -223,7 +216,7 @@ def generate_week(
         )
 
         # ── Persist ──────────────────────────────────────────────────────────
-        _write_plan(user, folder, weekly_plan)
+        _write_plan(user, weekly_plan)
 
     finally:
         db.close()

@@ -63,6 +63,27 @@ def test_file_store_round_trip_current_lookup_and_isolation(tmp_path, monkeypatc
     assert store.list_plans(USER_A) == [plan]
 
 
+def test_file_store_replaces_same_week_even_when_folder_label_changes(
+    tmp_path, monkeypatch,
+) -> None:
+    import stride_core.db as core_db
+    from dataclasses import replace
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    store = FileWeeklyPlanStore()
+    original = _plan("2026-07-13_07-19(P2W4)")
+    renamed = replace(
+        original, week_folder="2026-07-13_07-19(recovery)",
+        sessions=(replace(original.sessions[0], summary="Recovery run"),),
+    )
+
+    store.save_plan(USER_A, original)
+    store.save_plan(USER_A, renamed)
+
+    assert store.list_plans(USER_A) == [renamed]
+    assert store.get_plan(USER_A, original.week_folder) == renamed
+
+
 def test_file_store_rejects_invalid_folder(tmp_path, monkeypatch) -> None:
     import stride_core.db as core_db
     import pytest
@@ -171,6 +192,23 @@ def test_azure_current_lookup_uses_partition_and_date_bounds() -> None:
     assert "PartitionKey eq @pk" in captured["query"]
     assert "date_from le @day" in captured["query"]
     assert "date_to ge @day" in captured["query"]
+
+
+def test_azure_save_keys_entity_by_week_start() -> None:
+    plan = _plan()
+    captured = {}
+
+    class _Table:
+        def upsert_entity(self, entity, *, mode):
+            captured.update(entity=entity, mode=mode)
+
+    store = AzureTableWeeklyPlanStore.__new__(AzureTableWeeklyPlanStore)
+    store._plans = type("Connection", (), {"table": lambda self: _Table()})()
+
+    store.save_plan(USER_A, plan)
+
+    assert captured["entity"]["RowKey"] == "2026-07-13"
+    assert captured["entity"]["week_folder"] == plan.week_folder
 
 
 def test_table_property_size_limit_is_checked(monkeypatch) -> None:

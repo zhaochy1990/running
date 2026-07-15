@@ -82,15 +82,16 @@ specialist；确定性后处理只验证 `action == write` 是否与 SpecialistC
 | `stridecoachcheckpoints` | `thread_id` | `checkpoint_id` (zero-padded ns) | Metadata 指向 `coach-checkpoints` blob |
 | `stridecoachcheckpointwrites` | `thread_id\|checkpoint_id` | `task_id\|write_idx` | LangGraph pending writes |
 | `stridecoachjobs` | `user_id` | `job_id` | Pattern A job lifecycle + heartbeat |
-| `strideweeklyplan` | `user_id` | `week_folder` | 当前完整 `WeeklyPlan` JSON（S2 canonical structured state） |
+| `strideweeklyplan` | `user_id` | `date_from` (`YYYY-MM-DD`) | 当前完整 `WeeklyPlan` JSON（S2 canonical structured state） |
 | `strideweeklyversions` | `user_id\|folder` | reverse-time `\|` version_id | S2 PlanDiff apply 审计 |
 | `coach-checkpoints` blob | — | `{thread_id}/{checkpoint_id}.json.gz` | 完整 state envelope（gzip + sha256） |
 | `stridemasterplan` / `stridemasterplanversions` | (现有，复用) | | C module 审计 |
 
-`WeeklyPlanStore` 与旧 authoring artifact 分工明确：结构化当前周计划优先从
-`strideweeklyplan` 读取；`plan.md` / `feedback.md` 继续走 content store；历史
-`plan.json` 是导入/兼容输入。`strideweeklyversions` 只做版本审计，不能作为
-current-state 查询表。Local/file backend 是 `data/.weekly_plans.json`。
+`WeeklyPlanStore` 是运行时周计划的唯一来源，按周起始日期唯一存储。`folder`
+只保留为展示和旧 API 兼容字段，不参与某周是否存在的判断。`plan.md` /
+`plan.json` 仅作为迁移期导入输入；新生成和 Review 不依赖它们。
+`strideweeklyversions` 只做版本审计，不能作为 current-state 查询表。
+Local/file backend 是 `data/.weekly_plans.json`。
 日历、今日计划、PlanDiff、营养和推手表都从 `WeeklyPlanStore` 读取；
 `scheduled_workout` 仅保存本地设备执行状态，并以
 `(week_folder, planned_date, session_index)` 反向引用 canonical session。

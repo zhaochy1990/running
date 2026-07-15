@@ -9,7 +9,7 @@ from stride_core.plan_spec import WeeklyPlan
 
 @runtime_checkable
 class WeeklyPlanStore(Protocol):
-    """Current ``WeeklyPlan`` state, separate from Markdown and version audit."""
+    """Current ``WeeklyPlan`` state, uniquely keyed by its week-start date."""
 
     def save_plan(
         self, user_id: str, plan: WeeklyPlan, *, generated_by: str | None = None,

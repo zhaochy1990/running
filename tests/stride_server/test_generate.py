@@ -169,11 +169,12 @@ class TestProgressionFromLastWeek:
     """When last week has sessions, progression rules apply."""
 
     def _seed_last_week(self, tmp_path, monkeypatch, completed_km: float = 40.0):
-        """Insert planned sessions + activities for the week of 2026-05-04."""
+        """Save a WeeklyPlan + activities for the week of 2026-05-04."""
         import stride_core.db as core_db_mod
         monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
         from stride_storage.sqlite.database import Database
-        from stride_core.plan_spec import PlannedSession, SessionKind
+        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+        from stride_server.weekly_plan_store import get_weekly_plan_store
 
         db = Database(user=USER_UUID)
         prev_folder = "2026-05-04_05-10"
@@ -192,7 +193,9 @@ class TestProgressionFromLastWeek:
                     total_distance_m=8000.0,
                 )
             )
-        db.upsert_planned_sessions(prev_folder, sessions)
+        get_weekly_plan_store().save_plan(
+            USER_UUID, WeeklyPlan(week_folder=prev_folder, sessions=tuple(sessions))
+        )
 
         # Insert activities matching those dates (simulating completion).
         # activities.date is UTC ISO 8601 in prod (see stride_core/timefmt.py);
@@ -235,7 +238,8 @@ class TestProgressionFromLastWeek:
         monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
 
         from stride_storage.sqlite.database import Database
-        from stride_core.plan_spec import PlannedSession, SessionKind
+        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+        from stride_server.weekly_plan_store import get_weekly_plan_store
 
         db = Database(user=USER_UUID)
         prev_folder = "2026-05-04_05-10"
@@ -251,7 +255,9 @@ class TestProgressionFromLastWeek:
             )
             for i in range(5)
         ]
-        db.upsert_planned_sessions(prev_folder, sessions)
+        get_weekly_plan_store().save_plan(
+            USER_UUID, WeeklyPlan(week_folder=prev_folder, sessions=tuple(sessions))
+        )
 
         # Only 2 activities completed (40% of 5)
         for i in range(2):
@@ -311,6 +317,27 @@ class TestConflictHandling:
         assert r2.status_code == 409
         detail = r2.json()["detail"]
         assert "week_already_exists" in str(detail)
+
+    def test_labeled_folder_for_same_dates_returns_409(self, app_client):
+        client, token, _, _ = app_client
+        from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+
+        get_weekly_plan_store().save_plan(
+            USER_UUID,
+            WeeklyPlan(
+                week_folder="2026-05-11_05-17(P1W2)",
+                sessions=(PlannedSession(
+                    date=MONDAY, session_index=0, kind=SessionKind.REST,
+                    summary="rest",
+                ),),
+            ),
+        )
+
+        resp = _post(client, token, {"week_start": MONDAY})
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["folder"] == "2026-05-11_05-17(P1W2)"
 
     def test_force_overwrites_existing(self, app_client):
         client, token, _, _ = app_client
