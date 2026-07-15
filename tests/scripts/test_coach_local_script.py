@@ -7,6 +7,7 @@ import signal
 import socket
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -180,16 +181,24 @@ def test_stop_signals_only_matching_process_identity(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     proxy_name = fake_bin / "copilot-proxy-api@0.10.22"
-    # Keep the executable path and proxy arguments visible in ``ps`` on every
-    # platform. Linux /bin/sh may exec a final ``sleep`` directly, which would
-    # replace the command line and correctly make the identity guard reject it.
+    # Keep the proxy path and arguments visible in ``ps`` on every platform.
+    # Invoke the current interpreter directly so Linux does not have an
+    # intermediate shebang process that can race the identity snapshot.
     proxy_name.write_text(
-        "#!/usr/bin/env python3\nimport time\ntime.sleep(30)\n",
+        "import time\ntime.sleep(30)\n",
         encoding="utf-8",
     )
-    proxy_name.chmod(0o755)
     process = subprocess.Popen(
-        [str(proxy_name), "start", "--port", "45998", "--api-key", "fake", "30"],
+        [
+            sys.executable,
+            str(proxy_name),
+            "start",
+            "--port",
+            "45998",
+            "--api-key",
+            "fake",
+            "30",
+        ],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
