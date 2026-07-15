@@ -894,78 +894,56 @@ class GetWeekPlanImpl:
         self._user_id = user_id
 
     @_tool_safe
-    def __call__(self, *, folder: str) -> ToolResult:
-        from stride_storage.sqlite.state_stores import SqlitePlanStateStore
-        from stride_server import content_store
-        from stride_server.deps import parse_week_dates
+    def __call__(self) -> ToolResult:
+        from stride_core.timefmt import today_shanghai
         from stride_server.weekly_plan_store import get_weekly_plan_store
 
-        dates = parse_week_dates(folder)
-        if not dates:
-            return ToolResult(ok=False, errors=[f"invalid week folder {folder!r}"])
-        date_from, date_to = dates
-
-        try:
-            canonical_plan = get_weekly_plan_store().get_plan(self._user_id, folder)
-        except Exception:
-            logger.warning(
-                "get_week_plan: canonical store unavailable; using legacy projection",
-                exc_info=True,
+        on_date = today_shanghai().isoformat()
+        canonical_plan = get_weekly_plan_store().get_current_plan(
+            self._user_id, on_date
+        )
+        if canonical_plan is None:
+            return ToolResult(
+                ok=True,
+                data={
+                    "week_folder": None,
+                    "on_date": on_date,
+                    "date_from": None,
+                    "date_to": None,
+                    "structured_source": "weekly_plan_store",
+                    "available": False,
+                    "missing_reason": "no_plan_for_current_shanghai_week",
+                    "user_message": "当前周还没有训练计划，你要创建本周的训练计划吗？",
+                    "sessions": [],
+                    "nutrition": [],
+                    "notes_md": None,
+                },
             )
-            canonical_plan = None
 
-        db = _open_db(self._user_id)
-        try:
-            plan_store = SqlitePlanStateStore(db)
-            plan_md = None
-            plan_source = "none"
-            plan_item = content_store.read_text(f"{self._user_id}/logs/{folder}/plan.md")
-            if plan_item is not None:
-                plan_md = plan_item.content
-                plan_source = plan_item.source
+        from stride_core.timefmt import parse_week_folder_dates
 
-            feedback_md = None
-            feedback_source = "none"
-            fb_row = plan_store.get_weekly_feedback_row(folder)
-            if fb_row is not None:
-                feedback_md = fb_row["content_md"]
-                feedback_source = "db"
-            else:
-                fb_item = content_store.read_text(f"{self._user_id}/logs/{folder}/feedback.md")
-                if fb_item is not None:
-                    feedback_md = fb_item.content
-                    feedback_source = fb_item.source
-
-            if canonical_plan is not None:
-                sessions = [session.to_dict() for session in canonical_plan.sessions]
-                nutrition = [item.to_dict() for item in canonical_plan.nutrition]
-                structured_source = "weekly_plan_store"
-            else:
-                sessions = [
-                    dict(session)
-                    for session in plan_store.get_planned_sessions(week_folder=folder)
-                ]
-                nutrition = [
-                    dict(item)
-                    for item in plan_store.get_planned_nutrition(week_folder=folder)
-                ]
-                structured_source = "sqlite" if sessions or nutrition else "none"
-        finally:
-            db.close()
+        dates = parse_week_folder_dates(canonical_plan.week_folder)
+        if dates is None:  # defensive: canonical stores validate this on write
+            return ToolResult(
+                ok=False,
+                errors=[f"invalid canonical week folder {canonical_plan.week_folder!r}"],
+            )
+        date_from, date_to = dates
 
         return ToolResult(
             ok=True,
             data={
-                "folder": folder,
+                "week_folder": canonical_plan.week_folder,
+                "on_date": on_date,
                 "date_from": date_from,
                 "date_to": date_to,
-                "plan_md": plan_md,
-                "plan_source": plan_source,
-                "structured_source": structured_source,
-                "feedback_md": feedback_md,
-                "feedback_source": feedback_source,
-                "sessions": sessions,
-                "nutrition": nutrition,
+                "structured_source": "weekly_plan_store",
+                "available": True,
+                "missing_reason": None,
+                "user_message": None,
+                "sessions": [session.to_dict() for session in canonical_plan.sessions],
+                "nutrition": [item.to_dict() for item in canonical_plan.nutrition],
+                "notes_md": canonical_plan.notes_md,
             },
         )
 

@@ -109,5 +109,23 @@ def test_runner_seeds_concrete_read_only_plan_target() -> None:
 
     seeded = capture["state_in"]["history"][0]
     assert isinstance(seeded, HumanMessage)
-    assert "2026-07-13_07-19(W12)" in str(seeded.content)
-    assert "get_week_plan" in str(seeded.content)
+    assert "2026-07-13_07-19(W12)" not in str(seeded.content)
+    assert "get_week_plan()" in str(seeded.content)
+    assert "不要传或追问 folder" in str(seeded.content)
+
+
+def test_runner_tells_model_to_query_current_week_without_folder() -> None:
+    capture: dict[str, Any] = {}
+    runner = make_status_insight_runner(
+        user_id="u1", llm=object(), toolkit=object(), graph_factory=_factory("ok", capture)
+    )
+
+    runner(
+        SpecialistTask(
+            objective="本周计划是什么",
+            active_target=TargetRef(kind="week"),
+        )
+    )
+
+    seeded = str(capture["state_in"]["history"][0].content)
+    assert "无参数 get_week_plan()" in seeded

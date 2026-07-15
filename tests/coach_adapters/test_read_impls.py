@@ -196,13 +196,8 @@ def test_pbs_empty(patched_db) -> None:
     assert "computed_at" in res.data
 
 
-def test_get_week_plan_invalid_folder(patched_db) -> None:
-    res = read_impls.GetWeekPlanImpl("uid")(folder="not-a-week-folder")
-    assert not res.ok
-    assert any("invalid week folder" in e for e in res.errors)
-
-
-def test_get_week_plan_prefers_canonical_weekly_plan(patched_db, monkeypatch) -> None:
+def test_get_week_plan_reads_current_canonical_week(monkeypatch) -> None:
+    from stride_core import timefmt
     from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
     from stride_server import weekly_plan_store
 
@@ -214,21 +209,75 @@ def test_get_week_plan_prefers_canonical_weekly_plan(patched_db, monkeypatch) ->
                 date="2026-07-15",
                 session_index=0,
                 kind=SessionKind.RUN,
-                summary="Canonical run",
+                summary="Current Azure run",
             ),
         ),
+        notes_md="本周保持提升期负荷。",
     )
+    calls: list[tuple[str, str]] = []
 
     class _Store:
-        def get_plan(self, _user_id, _folder):
+        def get_current_plan(self, user_id, on_date):
+            calls.append((user_id, on_date))
             return plan
 
+    monkeypatch.setattr(timefmt, "today_shanghai", lambda: date_cls(2026, 7, 15))
     monkeypatch.setattr(weekly_plan_store, "get_weekly_plan_store", lambda: _Store())
-    res = read_impls.GetWeekPlanImpl("uid")(folder=folder)
+
+    res = read_impls.GetWeekPlanImpl("uid")()
 
     assert res.ok
+    assert calls == [("uid", "2026-07-15")]
+    assert res.data["week_folder"] == folder
     assert res.data["structured_source"] == "weekly_plan_store"
-    assert res.data["sessions"][0]["summary"] == "Canonical run"
+    assert res.data["available"] is True
+    assert res.data["missing_reason"] is None
+    assert res.data["user_message"] is None
+    assert res.data["sessions"][0]["summary"] == "Current Azure run"
+    assert res.data["notes_md"] == "本周保持提升期负荷。"
+
+
+def test_get_week_plan_reports_no_current_plan(monkeypatch) -> None:
+    from stride_core import timefmt
+    from stride_server import weekly_plan_store
+
+    class _Store:
+        def get_current_plan(self, _user_id, _on_date):
+            return None
+
+    monkeypatch.setattr(timefmt, "today_shanghai", lambda: date_cls(2026, 7, 15))
+    monkeypatch.setattr(weekly_plan_store, "get_weekly_plan_store", lambda: _Store())
+
+    res = read_impls.GetWeekPlanImpl("uid")()
+
+    assert res.ok
+    assert res.data["week_folder"] is None
+    assert res.data["on_date"] == "2026-07-15"
+    assert res.data["structured_source"] == "weekly_plan_store"
+    assert res.data["available"] is False
+    assert res.data["missing_reason"] == "no_plan_for_current_shanghai_week"
+    assert res.data["user_message"] == "当前周还没有训练计划，你要创建本周的训练计划吗？"
+    assert res.data["sessions"] == []
+
+
+def test_get_week_plan_does_not_fallback_when_canonical_store_fails(
+    monkeypatch, tmp_path
+) -> None:
+    from stride_server import weekly_plan_store
+
+    class _Store:
+        def get_current_plan(self, _user_id, _on_date):
+            raise RuntimeError("azure unavailable")
+
+    legacy_plan = tmp_path / "uid" / "logs" / "2026-07-13_07-19" / "plan.md"
+    legacy_plan.parent.mkdir(parents=True)
+    legacy_plan.write_text("# Legacy plan must not be read", encoding="utf-8")
+    monkeypatch.setattr(weekly_plan_store, "get_weekly_plan_store", lambda: _Store())
+
+    res = read_impls.GetWeekPlanImpl("uid")()
+
+    assert not res.ok
+    assert res.errors == ["RuntimeError: azure unavailable"]
 
 
 def test_activity_detail_missing(patched_db) -> None:

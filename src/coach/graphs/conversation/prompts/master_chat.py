@@ -20,7 +20,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - estimate_master_plan_load(plan?) — 历史周量/剂量锚点 + 总纲计划负荷估算; 讨论总纲训练量、强度、阶段峰值或能否达标时必须用
 - get_race_predictions / get_pbs — 比赛预测与历史 PB
 - get_body_composition_latest — 体测数据
-- get_week_plan(folder) — 本周计划 (查阅当前阶段执行情况)
+- get_week_plan() — 按上海当天从 WeeklyPlanStore 读取本周计划 (查阅当前阶段执行情况)
 
 **Draft tools** (输出 MasterPlanDiff —— 等用户在 UI 上点"采纳")
 - extend_phase(plan_id, phase_id, weeks) — 延长一个阶段 N 周

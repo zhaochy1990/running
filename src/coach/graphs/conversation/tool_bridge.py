@@ -50,7 +50,12 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_pbs": "Personal bests for 5K/10K/HM/FM, including history points.",
     "get_master_plan_current": "Active master plan (phases + milestones + training principles) or None.",
     "get_master_plan_versions": "Version history of a master plan id.",
-    "get_week_plan": "This week's canonical structured WeeklyPlan (sessions + nutrition).",
+    "get_week_plan": (
+        "Current canonical structured WeeklyPlan (sessions + nutrition + notes), "
+        "resolved by today's Shanghai calendar date from WeeklyPlanStore. Takes no arguments. "
+        "When no row covers today it returns available=false with an explicit missing_reason; "
+        "answer exactly in Chinese: 当前周还没有训练计划，你要创建本周的训练计划吗？"
+    ),
     "get_activity_detail": "Activity detail by label_id — raw activity facts/timeseries, laps/segments, explicit stride_training_load, and provenance. Vendor scores/zones and prior AI commentary are excluded; missing STRIDE load never falls back to vendor load.",
     "get_training_environment": "Training environment: STRIDE-detected current altitude + band, whether at altitude, and signal-informed acclimatization status (disturbed/recovering/stabilized from RHR/HRV vs baseline) after a recent altitude gain. Consult when assessing status; if a recent gain looks unconfirmed, ask the user to confirm the environment change. (weather TBD).",
     "estimate_master_plan_load": "Estimate historical weekly km/dose anchors and planned master-plan weekly load. Pass a MasterPlan-shaped `plan` draft to check underload/overload alignment; omit it to estimate the active master plan and still get the history anchor.",

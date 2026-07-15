@@ -172,24 +172,6 @@ def test_runner_seeds_window_and_memory_notes() -> None:
 # --- current-week folder resolution -----------------------------------------
 
 
-def test_resolve_current_week_folder_picks_covering_week(monkeypatch) -> None:
-    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
-    monkeypatch.setattr(wp, "list_week_folders", lambda _u: ["2026-06-15_06-21(W7)", _FOLDER])
-    monkeypatch.setattr(
-        wp,
-        "parse_week_dates",
-        lambda f: ("2026-06-22", "2026-06-28") if f == _FOLDER else ("2026-06-15", "2026-06-21"),
-    )
-
-    class _D:
-        @staticmethod
-        def isoformat() -> str:
-            return "2026-06-25"
-
-    monkeypatch.setattr(wp, "today_shanghai", lambda: _D())
-    assert resolve_current_week_folder("u1") == _FOLDER
-
-
 class _FakeWeeklyPlanStore:
     def __init__(self, current=None):
         self.current = current
@@ -203,22 +185,24 @@ def test_resolve_current_week_folder_prefers_canonical_store(monkeypatch) -> Non
 
     current = WeeklyPlan(week_folder=_FOLDER)
     monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore(current))
-    monkeypatch.setattr(wp, "list_week_folders", lambda _u: (_ for _ in ()).throw(AssertionError))
 
     assert resolve_current_week_folder("u1") == _FOLDER
 
 
 def test_resolve_current_week_folder_none_when_no_cover(monkeypatch) -> None:
     monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
-    monkeypatch.setattr(wp, "list_week_folders", lambda _u: [_FOLDER])
-    monkeypatch.setattr(wp, "parse_week_dates", lambda _f: ("2026-06-22", "2026-06-28"))
+    assert resolve_current_week_folder("u1") is None
 
-    class _D:
-        @staticmethod
-        def isoformat() -> str:
-            return "2026-07-10"
 
-    monkeypatch.setattr(wp, "today_shanghai", lambda: _D())
+def test_resolve_current_week_folder_does_not_fallback_on_store_error(
+    monkeypatch
+) -> None:
+    class _BrokenStore:
+        def get_current_plan(self, _user_id, _today):
+            raise RuntimeError("azure unavailable")
+
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _BrokenStore())
+
     assert resolve_current_week_folder("u1") is None
 
 

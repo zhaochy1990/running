@@ -107,13 +107,18 @@ def make_status_insight_runner(
         # Long-term memory (injected by Memory Load, §4.0) as background context.
         if task.context and task.context.notes:
             messages.append(HumanMessage(content=f"（已知长期背景，供参考）\n{task.context.notes}"))
-        if task.active_target is not None:
+        if task.active_target is not None and task.active_target.kind == "week":
+            messages.append(
+                HumanMessage(
+                    content="【当前周计划只读查询】调用无参数 get_week_plan()；不要传或追问 folder。"
+                )
+            )
+        elif task.active_target is not None:
             messages.append(
                 HumanMessage(
                     content=(
                         "【用户指向的计划对象，只读】"
                         f"{task.active_target.model_dump(exclude_none=True)}。"
-                        "若有 folder，查询周计划时将它传给 get_week_plan；"
                         "若 kind=master，调用 get_master_plan_current。"
                     )
                 )

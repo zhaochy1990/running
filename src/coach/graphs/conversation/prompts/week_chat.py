@@ -14,7 +14,7 @@ WEEK_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 用户在本周训练计划界面提出调整诉求。可用工具：
 
 **Read tools** (取上下文)
-- get_week_plan(folder) — 本周 canonical WeeklyPlan（sessions + nutrition）及可用的旧版 Markdown/feedback
+- get_week_plan() — 按上海当天从 WeeklyPlanStore 读取本周 canonical WeeklyPlan（sessions + nutrition + notes）
 - get_health_snapshot / get_health_series / get_pmc_series — TSB / 疲劳 / RHR / HRV / 日序列趋势
 - get_recent_activities — 最近完成的训练
 - get_body_composition_latest — 体测数据
