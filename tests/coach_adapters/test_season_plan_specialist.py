@@ -234,6 +234,29 @@ def test_runner_without_adjustment_direction_asks_before_loading_data(monkeypatc
 @pytest.mark.parametrize(
     "objective",
     [
+        "我还没想好是增加还是减少周跑量",
+        "我不确定要延长还是缩短基础期",
+        "你觉得我是应该增加还是减少周跑量？",
+        "帮我决定要延长还是缩短基础期",
+    ],
+)
+def test_runner_does_not_treat_undecided_options_as_a_direction(
+    objective: str, monkeypatch
+) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=_diff_dict(), monkeypatch=monkeypatch)
+
+    result = runner(_task(objective))
+
+    assert result.status == "needs_clarification"
+    assert result.proposals == []
+    assert "具体怎么调整" in (result.clarification or "")
+    assert "build" not in capture
+
+
+@pytest.mark.parametrize(
+    "objective",
+    [
         "把基础期周跑量降到 100 公里",
         "把专项期周跑量加到 120 公里",
         "将比赛目标设为 2:55",

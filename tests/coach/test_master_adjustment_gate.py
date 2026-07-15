@@ -109,8 +109,9 @@ def _invoke(
     llm: _ScriptedLLM,
     toolkit: FakeToolkit,
     *,
+    request: str = "我想降低基础期周跑量",
     consulted_tools: list[str] | None = None,
-    tracked_request: str | None = "我想降低基础期周跑量",
+    tracked_request: str | None = None,
     assessment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     graph = build_conversation_graph(
@@ -118,12 +119,12 @@ def _invoke(
     )
     return graph.invoke(
         {
-            "history": [HumanMessage(content="我想降低基础期周跑量")],
+            "history": [HumanMessage(content=request)],
             "scope": "master_chat",
             "user_id": "u1",
             "plan_id": "plan-1",
             "consulted_tools": consulted_tools or [],
-            "master_adjustment_request": tracked_request,
+            "master_adjustment_request": tracked_request or request,
             "master_adjustment_assessment": assessment,
             "last_diff": None,
             "iteration": 0,
@@ -212,6 +213,7 @@ def test_unreasonable_assessment_never_allows_a_proposal() -> None:
 
 
 def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
+    request = "给我两个降低基础期周跑量的方案"
     toolkit = _toolkit()
     diff = {
         "diff_id": "d1",
@@ -230,7 +232,7 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
                 (
                     "assess_master_adjustment",
                     {
-                        "adjustment_request": "我想降低基础期周跑量",
+                        "adjustment_request": request,
                         "verdict": "reasonable",
                         "rationale": "近期负荷和恢复数据支持温和下调",
                     },
@@ -245,7 +247,7 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
         ]
     )
 
-    state = _invoke(llm, toolkit)
+    state = _invoke(llm, toolkit, request=request)
 
     assert {
         "get_master_plan_current",
@@ -259,6 +261,41 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
     ]
     assert state["last_diff"]["alternatives"][0]["diff_id"] == "d1"
     assert "assess_master_adjustment" in llm.bound_tool_names
+
+
+def test_alternatives_are_rejected_without_an_explicit_comparison_request() -> None:
+    request = "我想降低基础期周跑量"
+    toolkit = _toolkit()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                (
+                    "propose_alternatives",
+                    {"plan_id": "plan-1", "intent": request},
+                )
+            ),
+            AIMessage(content="你没有要求比较多个方案，我只会提出一个方向。"),
+        ]
+    )
+
+    state = _invoke(
+        llm,
+        toolkit,
+        request=request,
+        assessment={
+            "adjustment_request": request,
+            "verdict": "reasonable",
+            "rationale": "近期负荷和恢复数据支持温和下调",
+        },
+    )
+
+    assert toolkit.propose_alternatives.calls == []
+    assert state.get("last_diff") is None
+    assert state["tool_trace"][-1] == {
+        "name": "propose_alternatives",
+        "outcome": "blocked",
+        "reason": "alternatives_gate",
+    }
 
 
 def test_reasonable_assessment_for_an_old_request_cannot_authorize_a_new_draft() -> None:

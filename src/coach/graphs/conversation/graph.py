@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -58,6 +59,10 @@ _MASTER_ASSESSMENT_REQUIRED_READS = frozenset(
         "get_pmc_series",
         "estimate_master_plan_load",
     }
+)
+_ALTERNATIVES_REQUEST_RE = re.compile(
+    r"(?:两个|两种|2\s*个|比较|对比|备选|alternatives?|options?|compare)",
+    re.IGNORECASE,
 )
 
 
@@ -192,6 +197,34 @@ def build_conversation_graph(
                             "ok": False,
                             "errors": [
                                 "proposal_requires_prior_reasonable_assessment"
+                            ],
+                        },
+                        ensure_ascii=False,
+                    )
+                    new_messages.append(
+                        ToolMessage(
+                            content=payload,
+                            tool_call_id=tc["id"],
+                            name=name,
+                        )
+                    )
+                    continue
+                if (
+                    name == "propose_alternatives"
+                    and not _ALTERNATIVES_REQUEST_RE.search(current_request)
+                ):
+                    tool_trace.append(
+                        {
+                            "name": name,
+                            "outcome": "blocked",
+                            "reason": "alternatives_gate",
+                        }
+                    )
+                    payload = json.dumps(
+                        {
+                            "ok": False,
+                            "errors": [
+                                "alternatives_require_explicit_comparison_request"
                             ],
                         },
                         ensure_ascii=False,

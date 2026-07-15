@@ -65,6 +65,26 @@ _CONCRETE_DIRECTION_RE = re.compile(
     r"change\s+(?:the\s+)?target|regenerate)",
     re.IGNORECASE,
 )
+_UNDECIDED_DIRECTION_RE = re.compile(
+    r"(?:还?没想好|还?没决定|不确定|不知道|拿不准|not\s+sure|undecided)"
+    r".{0,24}(?:还是|或者|或|要不要|是否|该不该|whether|or)",
+    re.IGNORECASE,
+)
+_CONFLICTING_DIRECTIONS_RE = re.compile(
+    r"(?:增加|加大|提高|提升|延长|前移|提前|保留)"
+    r".{0,12}(?:还是|或者|或)"
+    r"(?:减少|降低|减量|缩短|后移|推迟|删除)"
+    r"|(?:减少|降低|减量|缩短|后移|推迟|删除)"
+    r".{0,12}(?:还是|或者|或)"
+    r"(?:增加|加大|提高|提升|延长|前移|提前|保留)"
+    r"|(?:increase|raise|extend|advance|keep)"
+    r".{0,24}\b(?:or|versus|vs\.?)\b.{0,24}"
+    r"(?:decrease|reduce|lower|shorten|postpone|remove)"
+    r"|(?:decrease|reduce|lower|shorten|postpone|remove)"
+    r".{0,24}\b(?:or|versus|vs\.?)\b.{0,24}"
+    r"(?:increase|raise|extend|advance|keep)",
+    re.IGNORECASE,
+)
 _DIRECTION_CLARIFICATION = (
     "你希望具体怎么调整整体训练计划？请先告诉我你的调整方向，例如想增加或减少"
     "哪个阶段的训练量、延长或缩短哪个阶段、移动比赛日期，或者修改目标。"
@@ -145,6 +165,11 @@ def _needs_direction_clarification(objective: str) -> bool:
     direction is therefore always a clarification turn, including unusual
     vague wording that no keyword list could enumerate safely.
     """
+    if (
+        _UNDECIDED_DIRECTION_RE.search(objective)
+        or _CONFLICTING_DIRECTIONS_RE.search(objective)
+    ):
+        return True
     return not bool(_CONCRETE_DIRECTION_RE.search(objective))
 
 
