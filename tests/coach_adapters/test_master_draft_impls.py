@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 
 from coach.schemas import ToolResult
+from coach.graphs.conversation.master_diff_gate import validate_master_diff
 from stride_core.master_plan import (
     MasterPlan,
     MasterPlanGoal,
@@ -227,6 +228,7 @@ def test_propose_alternatives_returns_two_diffs(seeded_plan):
         diff = MasterPlanDiff.model_validate(alt)
         assert len(diff.ops) == 1
         assert diff.ops[0].op == MasterPlanDiffOpKind.RESIZE_PHASE
+        assert validate_master_diff(plan, diff) == []
     # The two alternatives must differ (保守 vs 激进)
     assert (
         alts[0]["ops"][0]["spec_patch"]["end_date"]

@@ -156,7 +156,8 @@ class RegenerateWeek(Protocol):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Master-scope draft tools (6) — ToolResult.data = MasterPlanDiff.model_dump()
+# Master-scope draft tools (6) — ToolResult.data is one MasterPlanDiff dump, or
+# for ProposeAlternatives an envelope containing multiple MasterPlanDiff dumps.
 # ─────────────────────────────────────────────────────────────────────────────
 
 

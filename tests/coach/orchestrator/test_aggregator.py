@@ -26,6 +26,17 @@ def _completed(fragment: str, *, sid: str = "status_insight", proposal=None) -> 
     )
 
 
+def _completed_with_proposals(
+    fragment: str, *, sid: str, proposals: list[PlanDiff]
+) -> DispatchResult:
+    return DispatchResult(
+        specialist_id=sid,
+        result=SpecialistResult(
+            status="completed", reply_fragment=fragment, proposals=proposals
+        ),
+    )
+
+
 def _diff() -> PlanDiff:
     return PlanDiff(diff_id="d1", folder="2026-W26", ops=[], ai_explanation="x", created_at="t")
 
@@ -104,6 +115,31 @@ def test_completed_with_proposal_builds_card() -> None:
     assert card.specialist_id == "weekly_plan"
     assert card.target == TargetRef(kind="week", folder="2026-W26")
     assert isinstance(card.proposal, PlanDiff)
+
+
+def test_completed_with_multiple_proposals_builds_one_card_per_choice() -> None:
+    conservative = _diff().model_copy(
+        update={"diff_id": "conservative", "ai_explanation": "保守方案"}
+    )
+    aggressive = _diff().model_copy(
+        update={"diff_id": "aggressive", "ai_explanation": "激进方案"}
+    )
+    item = _completed_with_proposals(
+        "请选择一个方向",
+        sid="season_plan",
+        proposals=[conservative, aggressive],
+    )
+    resp = aggregate(
+        [item],
+        resolver_output=_resolver(active_target=TargetRef(kind="master", plan_id="plan-1")),
+        utterance="给我两个方向",
+    )
+    assert [card.proposal.diff_id for card in resp.proposals] == [
+        "conservative",
+        "aggressive",
+    ]
+    assert [card.summary for card in resp.proposals] == ["保守方案", "激进方案"]
+    assert all(card.specialist_id == "season_plan" for card in resp.proposals)
 
 
 def test_multi_result_uses_synth_fn() -> None:

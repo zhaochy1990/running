@@ -549,9 +549,10 @@ class ChangeTargetImpl:
 class ProposeAlternativesImpl:
     """Return 2 distinct MasterPlanDiff alternatives matching the user's intent.
 
-    The deterministic baseline: alt-A trims the last training phase by 2 weeks
-    (conservative), alt-B extends it by 2 weeks (aggressive). The LLM picks
-    between them based on the user's intent text; we don't try to infer.
+    The deterministic baseline offers two load-reduction magnitudes for the last
+    training phase.  That phase commonly ends on the master plan's end date, so
+    extending it would produce an invalid diff outside the season window.  The
+    LLM frames the two valid choices using the user's intent text.
     """
 
     def __init__(self, user_id: str) -> None:
@@ -566,8 +567,8 @@ class ProposeAlternativesImpl:
         target = plan.phases[-1]
         alternatives: list[dict] = []
         for label, weeks, note in (
-            ("方案 A (保守)", -2, "缩短 2 周, 减少训练总量"),
-            ("方案 B (激进)", +2, "延长 2 周, 强化巩固"),
+            ("方案 A (温和减量)", -1, "缩短 1 周, 小幅减少训练总量"),
+            ("方案 B (明显减量)", -2, "缩短 2 周, 更明显地减少训练总量"),
         ):
             try:
                 new_end = _shift_phase_end(target.end_date, weeks)

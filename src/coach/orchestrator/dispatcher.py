@@ -58,12 +58,12 @@ def dispatch(call_plan: CallPlan, *, registry: SpecialistRegistry) -> list[Dispa
                 reply_fragment=f"专家 {call.specialist_id} 处理失败：{exc}",
             )
         logger.debug(
-            "← %s %s %.0fms | %dc%s",
+            "← %s %s %.0fms | %dc proposals=%d",
             call.specialist_id,
             result.status,
             (time.perf_counter() - t) * 1000.0,
             len(result.reply_fragment),
-            " +proposal" if result.proposal is not None else "",
+            len(result.proposals) + (1 if result.proposal is not None else 0),
         )
         dispatched.append(DispatchResult(specialist_id=call.specialist_id, result=result))
     return dispatched

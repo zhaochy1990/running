@@ -9,19 +9,19 @@ The contract has three pieces, each a separate concern:
   (objective + scoped data + boundaries + filtered conversation window). Thin
   one-line tasks cause experts to redo work (Anthropic), so the brief is rich.
 * :class:`SpecialistResult` — the *output* every expert returns. Carries only the
-  compressed ``reply_fragment`` + optional ``proposal`` back to the orchestrator
+  compressed ``reply_fragment`` + optional proposal(s) back to the orchestrator
   (context isolation — raw tool returns / reasoning never flow back).
 
-``proposal`` reuses the existing ``PlanDiff`` / ``MasterPlanDiff`` domain
-primitives (Pattern Y): the expert never persists; the diff rides the HTTP
-response and ``/apply`` lands it.
+``proposal`` / ``proposals`` reuse the existing ``PlanDiff`` /
+``MasterPlanDiff`` domain primitives (Pattern Y): the expert never persists;
+the diffs ride the HTTP response and ``/apply`` lands the one the user selects.
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from stride_core.plan_diff import PlanDiff
 from stride_core.master_plan_diff import MasterPlanDiff
@@ -93,11 +93,21 @@ class SpecialistResult(BaseModel):
 
     status: SpecialistStatus
     reply_fragment: str = ""
+    # ``proposal`` is retained for the common single-diff path.  A specialist
+    # that intentionally offers mutually exclusive choices (for example, a
+    # conservative and an aggressive season adjustment) uses ``proposals``.
     proposal: PlanDiff | MasterPlanDiff | None = None
+    proposals: list[PlanDiff | MasterPlanDiff] = Field(default_factory=list)
     clarification: str | None = None
     artifacts: list[ArtifactRef] | None = None
     handoff_hint: str | None = None
     usage: UsageStats | None = None
+
+    @model_validator(mode="after")
+    def _proposal_shape_is_unambiguous(self) -> "SpecialistResult":
+        if self.proposal is not None and self.proposals:
+            raise ValueError("use either proposal or proposals, not both")
+        return self
 
 
 # ---------------------------------------------------------------------------

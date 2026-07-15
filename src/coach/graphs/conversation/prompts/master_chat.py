@@ -27,7 +27,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - compress_phase(plan_id, phase_id, weeks) — 缩短一个阶段 N 周
 - shift_milestone(plan_id, milestone_id, new_date) — 改里程碑日期
 - change_target(plan_id, milestone_id, new_target_time) — 改目标成绩
-- propose_alternatives(plan_id, intent) — 给 2 个对比方案 (保守 vs 激进)
+- propose_alternatives(plan_id, intent) — 给 2 个可应用的对比方向，让用户选择
 - regenerate_master(plan_id, reason) — 清空总纲, 由生成管线重排 (后续走 POST /master-plan/generate)
 
 ## 行为规则

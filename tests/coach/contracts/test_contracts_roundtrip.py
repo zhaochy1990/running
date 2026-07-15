@@ -110,6 +110,26 @@ def test_specialist_result_carries_master_diff_proposal() -> None:
     assert restored.proposal.plan_id == "plan-abc"
 
 
+def test_specialist_result_carries_multiple_master_diff_proposals() -> None:
+    result = SpecialistResult(
+        status="completed",
+        proposals=[_master_diff(), _master_diff().model_copy(update={"diff_id": "md2"})],
+    )
+    restored = SpecialistResult.model_validate(result.model_dump())
+    assert restored.proposal is None
+    assert [proposal.diff_id for proposal in restored.proposals] == ["md1", "md2"]
+    assert all(isinstance(proposal, MasterPlanDiff) for proposal in restored.proposals)
+
+
+def test_specialist_result_rejects_ambiguous_single_and_multiple_proposals() -> None:
+    with pytest.raises(ValueError, match="either proposal or proposals"):
+        SpecialistResult(
+            status="completed",
+            proposal=_master_diff(),
+            proposals=[_master_diff()],
+        )
+
+
 def test_specialist_result_needs_clarification() -> None:
     result = SpecialistResult(
         status="needs_clarification",
