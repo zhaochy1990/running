@@ -18,11 +18,13 @@ from .target import TargetKind, TargetRef
 class IntentHit(BaseModel):
     """One recognised intent, locked to a registered specialist id.
 
-    ``specialist_id`` is constrained to the ``SpecialistRegistry`` id set at
-    decode/validation time — the model cannot invent an unregistered expert.
+    ``action`` captures whether this particular request is read-only or asks
+    for a proposed mutation. Deterministic post-processing validates it against
+    the selected specialist card's ``writes`` capability.
     """
 
     specialist_id: str
+    action: Literal["read", "write"]
     confidence: float
 
 

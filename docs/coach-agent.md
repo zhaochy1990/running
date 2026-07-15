@@ -53,6 +53,12 @@ elapsed time, and result size. It never logs prompts, tool payloads, or replies.
 
 `coach-cli` 在交互终端中用 Rich 渲染 Coach 回复里的 Markdown（标题、列表、表格、代码块）；stdout 重定向到文件或 pipe 时保留原始 Markdown，避免 ANSI 和终端布局破坏脚本消费。
 
+Resolver 的每个结构化 intent 都必须输出
+`{specialist_id, action: read|write, confidence}`。模型根据语义选择 action 和
+specialist；确定性后处理只验证 `action == write` 是否与 SpecialistCard 的
+`writes` 一致，不用关键词重写模型选择。只读查询当前周计划或赛季总计划必须
+路由到 `status_insight/read`，要求形成修改提案才路由到计划写专家。
+
 **Commentary migrated**：自 PR #16 起 `stride_server.commentary_ai.generate_commentary` 通过 `coach_runtime.get_commentary_llm()` 走 `[commentary]` section。改 coach.toml 的 `[commentary]` section **会**直接影响生产 commentary 路径。`server.toml` 里历史 `[commentary]` 块（pre-PR-#16 残留）在 PR #25 删除。
 
 两者在以下情况 raise `CoachLLMUnavailable`：(a) 配置文件缺失；(b) deployment id 是 placeholder（`<PLACEHOLDER_*>`）；(c) endpoint env var 缺失；(d) auth credentials 缺失。

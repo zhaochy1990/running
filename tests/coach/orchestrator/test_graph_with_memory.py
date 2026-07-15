@@ -42,7 +42,7 @@ def test_detect_confirm_remember_inject_loop():
     reg.register(SpecialistCard(id="status_insight", description="状态", writes=False), _runner)
 
     def _draft(_s, _u):
-        return ResolverDraft(intents=[IntentHit(specialist_id="status_insight", confidence=0.9)])
+        return ResolverDraft(intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)])
 
     def _extract(_s, _u):
         return MemoryExtraction(
@@ -87,7 +87,7 @@ def test_no_memory_store_is_a_noop():
     graph = build_orchestrator_graph(
         registry=reg,
         draft_fn=lambda _s, _u: ResolverDraft(
-            intents=[IntentHit(specialist_id="status_insight", confidence=0.9)]
+            intents=[IntentHit(specialist_id="status_insight", action="read", confidence=0.9)]
         ),
     )
     r = _invoke(graph, user_id="u1", session_id="s1", message="我搬昆明了")

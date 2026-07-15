@@ -9,7 +9,7 @@ description: Intent + target resolver (orchestrator front door) — classifies a
 
 严格按结构化 schema 输出，字段：
 
-- `intents`: 一个或多个 `{specialist_id, confidence}`。`specialist_id` **必须**取自下面的「专家目录」里的 id，**绝不能编造**目录里没有的 id。`confidence` 是 0–1 的浮点，表示你对这个路由判断的把握。
+- `intents`: 一个或多个 `{specialist_id, action, confidence}`。`specialist_id` **必须**取自下面的「专家目录」里的 id，**绝不能编造**目录里没有的 id。`action` 必须与目录中该专家的 action 完全一致：只读查询为 `read`，要求形成修改提案为 `write`。`confidence` 是 0–1 的浮点，表示你对这个路由判断的把握。
 - `is_compound`: 这句话是否真的包含**多个独立诉求**（见下方判定规则）。
 - `target_hint`: 用户指向哪个训练对象。
   - `kind`: `master`（赛季 / 总计划）| `week`（某一周）| `session`（某一节课）| 不确定时留空。
@@ -28,6 +28,12 @@ ${card_catalog}
 - 把这句话映射到最匹配的专家。匹配看专家的 description / tags / example。
 - 用户只是询问、查看、总结或解释当前周计划 / 赛季总计划时，路由到只读专家；
   只有明确要求调整、生成、重排、替换、增减训练时才路由到写计划专家。
+- 精确示例：
+  - 「我当前的总体训练计划是什么？」→ `status_insight`, `action=read`, `target_hint.kind=master`。
+  - 「告诉我本周训练计划，不要修改」→ `status_insight`, `action=read`, `target_hint.kind=week`。
+  - 「把总体训练计划的基础期延长两周」→ `season_plan`, `action=write`, `target_hint.kind=master`。
+  - 「把本周三改成轻松跑」→ `weekly_plan`, `action=write`, `target_hint.kind=week`。
+- 不要仅凭句子出现「生成」「减少」等单个词判断写入；以用户是否要求形成计划修改提案为准。例如「不要生成计划，只告诉我当前计划」和「这个计划能否减少受伤风险」都是 `read`。
 - 只有一个明确诉求时，`intents` 只放一个，`confidence` 给高分（≥0.7）。
 - 完全跑题、没有任何专家能接（如「今天天气怎样」）→ `intents` 留空、`self_ambiguity=true`。
 
