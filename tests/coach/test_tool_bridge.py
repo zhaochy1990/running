@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from coach.graphs.conversation.tool_bridge import tool_names_for_scope
+from coach.graphs.conversation.tool_bridge import _TOOL_DESCRIPTIONS, tool_names_for_scope
 
 
 def test_health_series_tool_is_bound_in_all_conversation_scopes() -> None:
@@ -11,3 +11,18 @@ def test_health_series_tool_is_bound_in_all_conversation_scopes() -> None:
         assert "get_health_series" in names
         assert "get_health_snapshot" in names
         assert "get_training_summary" in names
+
+
+def test_coach_prompt_and_tools_enforce_vendor_metric_boundary() -> None:
+    health_series = _TOOL_DESCRIPTIONS["get_health_series"]
+    for metric in ("training_dose", "acute_load", "chronic_load", "form", "load_ratio"):
+        assert metric in health_series
+    for vendor_metric in ("fatigue,", "ati/cti", "training_load_ratio", "hrv_status"):
+        assert vendor_metric not in health_series
+
+    recent = _TOOL_DESCRIPTIONS["get_recent_activities"]
+    assert "stride_training_load" in recent
+    assert "never falls back" in recent
+    snapshot = _TOOL_DESCRIPTIONS["get_health_snapshot"]
+    assert "provenance" in snapshot
+    assert "stride_training_load" in snapshot

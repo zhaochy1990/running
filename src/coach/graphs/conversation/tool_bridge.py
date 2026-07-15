@@ -34,23 +34,24 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     # read
     "get_training_summary": (
         "Compact deterministic summary for a Shanghai calendar date range: "
-        "activities, running totals, training dose/PMC, recovery, key sessions, "
+        "activities, running totals, STRIDE training dose/PMC, raw RHR/HRV, key sessions, "
         "and plan completion. Omit dates for the previous Monday-Sunday week. "
         "Prefer this single bounded tool for weekly summaries instead of "
-        "repeatedly calling activity/detail tools."
+        "repeatedly calling activity/detail tools. Computed load is always marked source=stride; "
+        "there is no fallback to vendor load."
     ),
-    "get_recent_activities": "List the most recent training activities. Use 'limit' (default 14) to bound rows.",
-    "get_health_snapshot": "Latest STRIDE training-load snapshot (acute_load/chronic_load/form/load_ratio + form_zone, rhr), dashboard (HRV/recovery_pct), and STRIDE calibration (threshold_hr/threshold_pace_s_km). Threshold is STRIDE self-computed (running_calibration), NOT the COROS dashboard value.",
-    "get_health_series": "General recent daily health series over the last `days` (default 14, max 365). Whitelisted metrics include rhr, hrv_last_night_avg, hrv_status, fatigue, ati/cti, training_load_ratio/state, training_dose, acute_load, chronic_load, form, load_ratio, readiness_gate/reasons. Use aliases like metrics=['recovery'], ['hrv'], ['load'], or explicit metrics.",
+    "get_recent_activities": "List recent raw activity facts plus per-activity stride_training_load (cardio_tss/external_tss/mechanical_load/training_dose/confidence). Missing STRIDE load is explicit and never falls back to a vendor training_load score.",
+    "get_health_snapshot": "Latest vendor-neutral context with explicit blocks: stride_training_load (training_dose/acute_load/chronic_load/form/load_ratio + form_zone), raw_measurements (RHR/HRV), stride_calibration, and provenance. Do not infer or report watch-vendor fatigue/recovery scores.",
+    "get_health_series": "Recent vendor-neutral status series over the last `days` (default 14, max 365). Whitelisted values are raw rhr/HRV measurements plus STRIDE training_dose, acute_load, chronic_load, form, and load_ratio. Use aliases metrics=['recovery'], ['hrv'], ['load'], or explicit metrics. Vendor fatigue/readiness/load scores are intentionally unavailable.",
     "get_pmc_series": "Daily STRIDE PMC series over the last `days` (default 42): acute_load, chronic_load, form, load_ratio per day (STRIDE self-computed, not COROS ati/cti).",
     "get_body_composition_latest": "Latest body-composition scan + delta from prior scan (weight_kg/body_fat_pct/smm_kg).",
-    "get_ability_snapshot": "Latest ability_snapshot rows by dimension (e.g. endurance, speed).",
-    "get_race_predictions": "Race time predictions from the dashboard (5K/10K/HM/FM).",
+    "get_ability_snapshot": "Latest STRIDE ability_snapshot rows by dimension. Legacy readiness-dependent L2/L3 recovery/L4 rows are intentionally excluded.",
+    "get_race_predictions": "STRIDE race-time predictions derived from STRIDE L3 VO2max (5K/10K/HM/FM), not watch dashboard predictions.",
     "get_pbs": "Personal bests for 5K/10K/HM/FM, including history points.",
     "get_master_plan_current": "Active master plan (phases + milestones + training principles) or None.",
     "get_master_plan_versions": "Version history of a master plan id.",
     "get_week_plan": "This week's plan.md, feedback.md, planned_session and planned_nutrition rows.",
-    "get_activity_detail": "Full activity detail by label_id — laps, zones, segments, AI commentary.",
+    "get_activity_detail": "Activity detail by label_id — raw activity facts/timeseries, laps/segments, explicit stride_training_load, and provenance. Vendor scores/zones and prior AI commentary are excluded; missing STRIDE load never falls back to vendor load.",
     "get_training_environment": "Training environment: STRIDE-detected current altitude + band, whether at altitude, and signal-informed acclimatization status (disturbed/recovering/stabilized from RHR/HRV vs baseline) after a recent altitude gain. Consult when assessing status; if a recent gain looks unconfirmed, ask the user to confirm the environment change. (weather TBD).",
     "estimate_master_plan_load": "Estimate historical weekly km/dose anchors and planned master-plan weekly load. Pass a MasterPlan-shaped `plan` draft to check underload/overload alignment; omit it to estimate the active master plan and still get the history anchor.",
     # week-scope draft

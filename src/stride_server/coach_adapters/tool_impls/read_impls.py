@@ -16,7 +16,6 @@ can't satisfy from a coach tool context.
 from __future__ import annotations
 
 import functools
-import json
 import logging
 from collections.abc import Callable
 from datetime import date as date_cls, timedelta
@@ -61,7 +60,9 @@ def _open_db(user_id: str) -> Any:
 
 
 def _activity_payload(row: Any) -> dict[str, Any]:
-    """Return the compact activity shape consumed by coach prompts."""
+    """Return raw activity facts plus an explicitly STRIDE-computed load."""
+    import json
+
     from stride_core.models import pace_str
     from stride_server.deps import format_duration
 
@@ -69,6 +70,33 @@ def _activity_payload(row: Any) -> dict[str, Any]:
     d["distance_km"] = round(d["distance_m"] / 1000.0, 2) if d.get("distance_m") else 0
     d["duration_fmt"] = format_duration(d.get("duration_s"))
     d["pace_fmt"] = pace_str(d.get("avg_pace_s_km")) or "—"
+    raw_reasons = d.pop("stride_reasons_json", None)
+    try:
+        reasons = json.loads(raw_reasons) if raw_reasons else []
+    except (TypeError, ValueError):
+        reasons = []
+    stride_load = {
+        "source": "stride",
+        "vendor_derived": False,
+        "algorithm_version": d.pop("stride_algorithm_version", None),
+        "calibration_id": d.pop("stride_calibration_id", None),
+        "session_class": d.pop("stride_session_class", None),
+        "cardio_load_raw": d.pop("stride_cardio_load_raw", None),
+        "cardio_tss": d.pop("stride_cardio_tss", None),
+        "external_tss": d.pop("stride_external_tss", None),
+        "mechanical_load": d.pop("stride_mechanical_load", None),
+        "subjective_internal_load": d.pop("stride_subjective_internal_load", None),
+        "training_dose": d.pop("stride_training_dose", None),
+        "load_confidence": d.pop("stride_load_confidence", None),
+        "excluded_from_pmc": (
+            bool(value) if (value := d.pop("stride_excluded_from_pmc", None)) is not None else None
+        ),
+        "reasons": reasons,
+    }
+    stride_load["available"] = stride_load["algorithm_version"] is not None
+    if not stride_load["available"]:
+        stride_load["missing_reason"] = "stride_load_not_computed"
+    d["stride_training_load"] = stride_load
     return d
 
 
@@ -108,6 +136,7 @@ class GetTrainingSummaryImpl:
         self, *, date_from: str | None = None, date_to: str | None = None
     ) -> ToolResult:
         from stride_core.timefmt import today_shanghai
+        from stride_storage.sqlite.coach_metrics import coach_metric_provenance
         from stride_storage.sqlite.training_summary import get_training_summary
 
         if (date_from is None) != (date_to is None):
@@ -128,6 +157,7 @@ class GetTrainingSummaryImpl:
             )
         finally:
             db.close()
+        data["provenance"] = coach_metric_provenance()
         return ToolResult(ok=True, data=data)
 
 
@@ -142,23 +172,22 @@ class GetRecentActivitiesImpl:
 
     @_tool_safe
     def __call__(self, *, limit: int = 14) -> ToolResult:
+        from stride_storage.sqlite.coach_metrics import (
+            coach_metric_provenance,
+            fetch_recent_activities,
+        )
+
         db = _open_db(self._user_id)
         try:
-            rows = db.query(
-                """SELECT label_id, name, sport_type, sport_name, date,
-                    distance_m, duration_s, avg_pace_s_km, avg_hr, max_hr,
-                    avg_cadence, calories_kcal, vo2max, train_type,
-                    feel_type, sport_note
-                FROM activities
-                ORDER BY date DESC, label_id DESC
-                LIMIT ?""",
-                (max(1, int(limit)),),
-            )
+            rows = fetch_recent_activities(db, limit=limit)
         finally:
             db.close()
         return ToolResult(
             ok=True,
-            data={"activities": [_activity_payload(r) for r in rows]},
+            data={
+                "activities": [_activity_payload(r) for r in rows],
+                "provenance": coach_metric_provenance(),
+            },
         )
 
 
@@ -173,40 +202,28 @@ class GetHealthSnapshotImpl:
 
     @_tool_safe
     def __call__(self) -> ToolResult:
+        from stride_storage.sqlite.coach_metrics import (
+            coach_metric_provenance,
+            fetch_latest_health_context,
+        )
+
         db = _open_db(self._user_id)
         try:
-            # STRIDE self-computed training load (vendor-agnostic) — NOT COROS
-            # ati/cti. Lets the coach reason on one scale across watch brands.
-            rows = db.query(
-                """SELECT date, acute_load, chronic_load, form, load_ratio
-                FROM daily_training_load
-                WHERE algorithm_version = (
-                    SELECT MAX(algorithm_version) FROM daily_training_load
+            context = fetch_latest_health_context(db)
+            stride_training_load = context["load"]
+            if stride_training_load is not None:
+                zone, label = _form_zone(
+                    stride_training_load.get("form"),
+                    stride_training_load.get("chronic_load"),
                 )
-                ORDER BY date DESC
-                LIMIT 1"""
-            )
-            latest = dict(rows[0]) if rows else None
-            if latest is not None:
-                zone, label = _form_zone(latest.get("form"), latest.get("chronic_load"))
-                latest["form_zone"] = zone
-                latest["form_zone_label"] = label
-                # Resting HR is a measured signal (not a vendor-computed load
-                # metric), so it stays — sourced from daily_health.
-                rhr_rows = db.query(
-                    "SELECT rhr FROM daily_health ORDER BY date DESC LIMIT 1"
-                )
-                if rhr_rows:
-                    latest["rhr"] = dict(rhr_rows[0]).get("rhr")
-
-            # Dashboard keeps raw signals (HRV) + vendor readiness; threshold
-            # HR/pace are NOT taken from here — those are STRIDE-calibrated below.
-            dash_rows = db.query(
-                """SELECT avg_sleep_hrv, hrv_normal_low, hrv_normal_high, recovery_pct,
-                    running_level, aerobic_score
-                FROM dashboard WHERE id = 1"""
-            )
-            dashboard = dict(dash_rows[0]) if dash_rows else {}
+                stride_training_load["form_zone"] = zone
+                stride_training_load["form_zone_label"] = label
+                stride_training_load["source"] = "stride"
+                stride_training_load["vendor_derived"] = False
+            raw_measurements = {
+                "rhr": context["rhr"],
+                "hrv": context["hrv"],
+            }
 
             # STRIDE self-computed threshold (LTHR + threshold pace) — single
             # source per CLAUDE.md (RunningCalibrationRepository), NOT the COROS
@@ -242,7 +259,12 @@ class GetHealthSnapshotImpl:
             db.close()
         return ToolResult(
             ok=True,
-            data={"latest": latest, "dashboard": dashboard, "calibration": calibration},
+            data={
+                "stride_training_load": stride_training_load,
+                "raw_measurements": raw_measurements,
+                "stride_calibration": calibration,
+                "provenance": coach_metric_provenance(),
+            },
         )
 
 
@@ -257,41 +279,23 @@ _HEALTH_SERIES_LOAD_METRICS = (
     "chronic_load",
     "form",
     "load_ratio",
-    "readiness_gate",
-    "readiness_reasons",
 )
 _HEALTH_SERIES_HRV_METRICS = (
-    "hrv_weekly_avg",
     "hrv_last_night_avg",
     "hrv_last_night_5min_high",
-    "hrv_status",
-    "hrv_daily_balanced_low",
-    "hrv_daily_balanced_upper",
-    "hrv_provider",
 )
 _SUPPORTED_HEALTH_SERIES_METRICS = (
     "rhr",
-    "fatigue",
-    "ati",
-    "cti",
-    "training_load_ratio",
-    "training_load_state",
-    "distance_m",
-    "duration_s",
     *_HEALTH_SERIES_HRV_METRICS,
     *_HEALTH_SERIES_LOAD_METRICS,
 )
 _DEFAULT_HEALTH_SERIES_METRICS = (
     "rhr",
     "hrv_last_night_avg",
-    "hrv_status",
-    "fatigue",
     "acute_load",
     "chronic_load",
     "form",
     "load_ratio",
-    "readiness_gate",
-    "readiness_reasons",
 )
 _HEALTH_SERIES_ALIASES: dict[str, tuple[str, ...]] = {
     "all": _SUPPORTED_HEALTH_SERIES_METRICS,
@@ -302,11 +306,10 @@ _HEALTH_SERIES_ALIASES: dict[str, tuple[str, ...]] = {
     "recovery": (
         "rhr",
         "hrv_last_night_avg",
-        "hrv_status",
-        "hrv_provider",
-        "fatigue",
-        "readiness_gate",
-        "readiness_reasons",
+        "acute_load",
+        "chronic_load",
+        "form",
+        "load_ratio",
     ),
 }
 
@@ -333,7 +336,8 @@ class GetHealthSeriesImpl:
     """General daily health series reader for bounded, whitelisted metrics.
 
     This gives the coach one flexible read tool for questions such as "最近 7 天
-    RHR/HRV", "近 14 天疲劳", or "最近一个月负荷趋势" without exposing arbitrary SQL.
+    RHR/HRV", "近 14 天恢复状态", or "最近一个月负荷趋势" without
+    exposing arbitrary SQL or provider-derived health/load scores.
     """
 
     def __init__(self, user_id: str) -> None:
@@ -341,7 +345,10 @@ class GetHealthSeriesImpl:
 
     @_tool_safe
     def __call__(self, *, days: int = 14, metrics: list[str] | None = None) -> ToolResult:
-        from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
+        from stride_storage.sqlite.coach_metrics import (
+            coach_metric_provenance,
+            fetch_health_series_context,
+        )
 
         limit = max(1, min(int(days), 365))
         selected, invalid = _normalise_health_series_metrics(metrics)
@@ -360,91 +367,35 @@ class GetHealthSeriesImpl:
 
         db = _open_db(self._user_id)
         try:
-            health_rows = db.query(
-                """SELECT date, ati, cti, rhr, distance_m, duration_s,
-                    training_load_ratio, training_load_state, fatigue
-                FROM daily_health
-                ORDER BY CASE
-                    WHEN length(date) = 8 AND date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-                        THEN substr(date, 1, 4) || '-' || substr(date, 5, 2) || '-' || substr(date, 7, 2)
-                    ELSE substr(date, 1, 10)
-                END DESC
-                LIMIT ?""",
-                (limit,),
-            )
-            hrv_rows = db.query(
-                """SELECT date, weekly_avg, last_night_avg, last_night_5min_high, status,
-                    baseline_balanced_low AS daily_balanced_low,
-                    baseline_balanced_upper AS daily_balanced_upper,
-                    provider
-                FROM (""" + HRV_PREFERRED_PER_DATE_SQL + """)
-                WHERE last_night_avg IS NOT NULL
-                ORDER BY date DESC
-                LIMIT ?""",
-                (limit,),
-            )
-            load_rows = db.query(
-                """SELECT date, training_dose, acute_load, chronic_load, form,
-                    load_ratio, readiness_gate, readiness_reasons_json
-                FROM daily_training_load
-                WHERE algorithm_version = (
-                    SELECT MAX(algorithm_version) FROM daily_training_load
-                )
-                ORDER BY date DESC
-                LIMIT ?""",
-                (limit,),
-            )
+            context = fetch_health_series_context(db, limit=limit)
         finally:
             db.close()
 
         by_date: dict[str, dict[str, Any]] = {}
-        for row in health_rows:
+        for row in context["health"]:
             day = _norm_day(row["date"])
             merged = by_date.setdefault(day, {"date": day})
-            for metric in (
-                "rhr",
-                "fatigue",
-                "ati",
-                "cti",
-                "training_load_ratio",
-                "training_load_state",
-                "distance_m",
-                "duration_s",
-            ):
-                if metric in selected:
-                    merged[metric] = row[metric]
+            if "rhr" in selected:
+                merged["rhr"] = row["rhr"]
 
-        for row in hrv_rows:
+        for row in context["hrv"]:
             day = _norm_day(row["date"])
             merged = by_date.setdefault(day, {"date": day})
             hrv_metric_map = {
-                "hrv_weekly_avg": row["weekly_avg"],
                 "hrv_last_night_avg": row["last_night_avg"],
                 "hrv_last_night_5min_high": row["last_night_5min_high"],
-                "hrv_status": row["status"],
-                "hrv_daily_balanced_low": row["daily_balanced_low"],
-                "hrv_daily_balanced_upper": row["daily_balanced_upper"],
-                "hrv_provider": row["provider"],
             }
             for metric, value in hrv_metric_map.items():
                 if metric in selected:
                     merged[metric] = value
 
-        for row in load_rows:
+        for row in context["load"]:
             day = _norm_day(row["date"])
             merged = by_date.setdefault(day, {"date": day})
             for metric in _HEALTH_SERIES_LOAD_METRICS:
                 if metric not in selected:
                     continue
-                if metric == "readiness_reasons":
-                    raw = row["readiness_reasons_json"]
-                    try:
-                        value = json.loads(raw) if raw else []
-                    except (TypeError, ValueError):
-                        value = []
-                    merged[metric] = value
-                else:
-                    merged[metric] = row[metric]
+                merged[metric] = row[metric]
 
         # Return chart/chat-friendly oldest -> newest order.
         series = sorted(by_date.values(), key=lambda item: item["date"])[-limit:]
@@ -461,6 +412,7 @@ class GetHealthSeriesImpl:
                 "coverage": coverage,
                 "supported_metrics": list(_SUPPORTED_HEALTH_SERIES_METRICS),
                 "aliases": {k: list(v) for k, v in _HEALTH_SERIES_ALIASES.items()},
+                "provenance": coach_metric_provenance(),
             },
         )
 
@@ -476,6 +428,11 @@ class GetPmcSeriesImpl:
 
     @_tool_safe
     def __call__(self, *, days: int = 42, granularity: str = "daily") -> ToolResult:
+        from stride_storage.sqlite.coach_metrics import (
+            coach_metric_provenance,
+            fetch_stride_pmc_series,
+        )
+
         if granularity not in ("daily", "weekly"):
             return ToolResult(
                 ok=False,
@@ -483,23 +440,21 @@ class GetPmcSeriesImpl:
             )
         db = _open_db(self._user_id)
         try:
-            # STRIDE self-computed PMC (acute/chronic/form/load_ratio), NOT COROS
-            # ati/cti — ``form`` is already ``chronic - acute``, no recompute.
-            rows = db.query(
-                """SELECT date, acute_load, chronic_load, form, load_ratio
-                FROM daily_training_load
-                WHERE algorithm_version = (
-                    SELECT MAX(algorithm_version) FROM daily_training_load
-                )
-                ORDER BY date DESC LIMIT ?""",
-                (max(1, int(days)),),
-            )
-            records = [dict(r) for r in rows]
+            rows = fetch_stride_pmc_series(db, limit=days)
+            records = [
+                {**dict(r), "source": "stride", "vendor_derived": False}
+                for r in rows
+            ]
         finally:
             db.close()
         return ToolResult(
             ok=True,
-            data={"granularity": granularity, "days": days, "series": records},
+            data={
+                "granularity": granularity,
+                "days": days,
+                "series": records,
+                "provenance": coach_metric_provenance(include_raw_measurements=False),
+            },
         )
 
 
@@ -581,7 +536,20 @@ class GetTrainingEnvironmentImpl:
             db.close()
 
         if not altitude_series:
-            return ToolResult(ok=True, data={"environment": None})
+            return ToolResult(
+                ok=True,
+                data={
+                    "environment": None,
+                    "provenance": {
+                        "environment": {
+                            "source": "stride",
+                            "kind": "computed",
+                            "inputs": ["raw_altitude", "raw_rhr", "raw_hrv"],
+                            "vendor_derived": False,
+                        }
+                    },
+                },
+            )
 
         env = build_training_environment(
             altitude_series=altitude_series,
@@ -590,7 +558,20 @@ class GetTrainingEnvironmentImpl:
             rhr_baseline=rhr_baseline,
             as_of=as_of,
         )
-        return ToolResult(ok=True, data={"environment": env.model_dump()})
+        return ToolResult(
+            ok=True,
+            data={
+                "environment": env.model_dump(),
+                "provenance": {
+                    "environment": {
+                        "source": "stride",
+                        "kind": "computed",
+                        "inputs": ["raw_altitude", "raw_rhr", "raw_hrv"],
+                        "vendor_derived": False,
+                    }
+                },
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -716,14 +697,14 @@ class GetAbilitySnapshotImpl:
 
     @_tool_safe
     def __call__(self) -> ToolResult:
+        from stride_storage.sqlite.coach_metrics import (
+            coach_metric_provenance,
+            fetch_coach_ability_rows,
+        )
+
         db = _open_db(self._user_id)
         try:
-            rows = db.query(
-                """SELECT date, level, dimension, value, evidence_activity_ids, computed_at
-                FROM ability_snapshot
-                ORDER BY date DESC, level, dimension
-                LIMIT 80"""
-            )
+            rows = fetch_coach_ability_rows(db)
             records = [dict(r) for r in rows]
             latest_date = records[0]["date"] if records else None
             latest = [r for r in records if r["date"] == latest_date] if latest_date else []
@@ -731,7 +712,14 @@ class GetAbilitySnapshotImpl:
             db.close()
         return ToolResult(
             ok=True,
-            data={"latest_date": latest_date, "latest": latest, "history": records},
+            data={
+                "latest_date": latest_date,
+                "latest": latest,
+                "history": records,
+                "provenance": coach_metric_provenance(
+                    include_raw_measurements=False, include_ability=True
+                ),
+            },
         )
 
 
@@ -746,15 +734,52 @@ class GetRacePredictionsImpl:
 
     @_tool_safe
     def __call__(self) -> ToolResult:
+        from stride_server.routes.predictions import (
+            _predictions_from_vdot,
+            _vdot_from_score,
+        )
+        from stride_storage.sqlite.coach_metrics import (
+            fetch_latest_coach_vo2max_score,
+        )
+
         db = _open_db(self._user_id)
         try:
-            rows = db.query(
-                "SELECT race_type, duration_s, avg_pace FROM race_predictions ORDER BY duration_s"
-            )
-            predictions = [dict(r) for r in rows]
+            row = fetch_latest_coach_vo2max_score(db)
         finally:
             db.close()
-        return ToolResult(ok=True, data={"predictions": predictions})
+        score = float(row["value"]) if row is not None and row["value"] is not None else None
+        if score is None or score <= 0:
+            return ToolResult(
+                ok=True,
+                data={
+                    "predictions": [],
+                    "provenance": {
+                        "predictions": {
+                            "source": "stride",
+                            "kind": "computed",
+                            "model": "ability_vdot_race_prediction",
+                            "vendor_derived": False,
+                        }
+                    },
+                },
+            )
+        vdot = _vdot_from_score(score)
+        return ToolResult(
+            ok=True,
+            data={
+                "predictions": _predictions_from_vdot(vdot),
+                "vo2max": round(vdot, 1),
+                "computed_at": row["date"],
+                "provenance": {
+                    "predictions": {
+                        "source": "stride",
+                        "kind": "computed",
+                        "model": "ability_vdot_race_prediction",
+                        "vendor_derived": False,
+                    }
+                },
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -788,6 +813,15 @@ class GetPbsImpl:
             data={
                 "pbs": pbs,
                 "computed_at": datetime.now(timezone.utc).isoformat(),
+                "provenance": {
+                    "personal_bests": {
+                        "source": "stride",
+                        "kind": "computed",
+                        "model": "best_effort_activity_detector",
+                        "inputs": ["raw_activity_distance", "raw_activity_duration"],
+                        "vendor_derived": False,
+                    }
+                },
             },
         )
 
@@ -940,4 +974,51 @@ class GetActivityDetailImpl:
             db.close()
         if detail is None:
             return ToolResult(ok=False, errors=[f"activity {label_id!r} not found"])
+        activity = detail.get("activity") or {}
+        for field in (
+            "training_load",
+            "vo2max",
+            "performance",
+            "train_type",
+            "aerobic_effect",
+            "anaerobic_effect",
+            "calories_kcal",
+            "adjusted_pace",
+            "commentary",
+            "commentary_generated_by",
+            "commentary_generated_at",
+        ):
+            activity.pop(field, None)
+        for row in [*(detail.get("laps") or []), *(detail.get("segments") or [])]:
+            row.pop("adjusted_pace", None)
+        for row in detail.get("timeseries") or []:
+            row.pop("adjusted_pace", None)
+        # Provider-defined zones and existing commentary can carry derived
+        # watch metrics. Coach gets raw series + STRIDE calibration/load instead.
+        detail.pop("zones", None)
+        stride_load = detail.get("stride_training_load")
+        if stride_load is None:
+            detail["stride_training_load"] = {
+                "source": "stride",
+                "vendor_derived": False,
+                "available": False,
+                "missing_reason": "stride_load_not_computed",
+            }
+        else:
+            stride_load["source"] = "stride"
+            stride_load["vendor_derived"] = False
+            stride_load["available"] = True
+        detail["provenance"] = {
+            "activity": {
+                "source": "watch_raw",
+                "kind": "measurement",
+                "vendor_derived": False,
+            },
+            "training_load": {
+                "source": "stride",
+                "kind": "computed",
+                "model": "objective_training_load",
+                "vendor_derived": False,
+            },
+        }
         return ToolResult(ok=True, data=detail)

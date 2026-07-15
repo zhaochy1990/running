@@ -93,7 +93,8 @@ def test_recent_activities_empty(patched_db) -> None:
     res = read_impls.GetRecentActivitiesImpl("uid")()
     assert isinstance(res, ToolResult)
     assert res.ok
-    assert res.data == {"activities": []}
+    assert res.data["activities"] == []
+    assert res.data["provenance"]["training_load"]["source"] == "stride"
 
 
 def test_training_summary_defaults_to_previous_shanghai_week(
@@ -120,7 +121,10 @@ def test_training_summary_rejects_one_sided_date_range(patched_db) -> None:
 def test_health_snapshot_empty(patched_db) -> None:
     res = read_impls.GetHealthSnapshotImpl("uid")()
     assert res.ok
-    assert res.data == {"latest": None, "dashboard": {}, "calibration": None}
+    assert res.data["stride_training_load"] is None
+    assert res.data["raw_measurements"] == {"rhr": None, "hrv": None}
+    assert res.data["stride_calibration"] is None
+    assert res.data["provenance"]["training_load"]["source"] == "stride"
 
 
 def test_health_series_empty(patched_db) -> None:
@@ -163,7 +167,26 @@ def test_ability_empty(patched_db) -> None:
 def test_race_predictions_empty(patched_db) -> None:
     res = read_impls.GetRacePredictionsImpl("uid")()
     assert res.ok
-    assert res.data == {"predictions": []}
+    assert res.data["predictions"] == []
+    assert res.data["provenance"]["predictions"]["source"] == "stride"
+
+
+@pytest.mark.parametrize("score", [0.0, -1.0])
+def test_race_predictions_reject_non_positive_stride_vo2max(
+    patched_db, score
+) -> None:
+    patched_db._conn.execute(
+        "INSERT INTO ability_snapshot (date, level, dimension, value) VALUES (?, ?, ?, ?)",
+        ("2026-07-15", "L3", "vo2max", score),
+    )
+    patched_db._conn.commit()
+
+    res = read_impls.GetRacePredictionsImpl("uid")()
+
+    assert res.ok
+    assert res.data["predictions"] == []
+    assert "vo2max" not in res.data
+    assert res.data["provenance"]["predictions"]["source"] == "stride"
 
 
 def test_pbs_empty(patched_db) -> None:
@@ -271,6 +294,15 @@ def test_recent_activities_populated(patched_db) -> None:
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         ("a1", "Morning run", 100, "Run", "2026-05-13T08:00:00+00:00", 10000, 3000, 300),
     )
+    patched_db._conn.execute(
+        """INSERT INTO activity_training_load
+           (label_id, activity_date, sport, session_class, algorithm_version,
+            cardio_tss, external_tss, mechanical_load, training_dose,
+            load_confidence, excluded_from_pmc, reasons_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("a1", "2026-05-13", "run_outdoor", "easy", 3,
+         55.0, 50.0, 10.0, 53.5, "high", 0, '[]'),
+    )
     patched_db._conn.commit()
     res = read_impls.GetRecentActivitiesImpl("uid")(limit=5)
     assert res.ok
@@ -279,6 +311,23 @@ def test_recent_activities_populated(patched_db) -> None:
     assert a["label_id"] == "a1"
     assert a["distance_km"] == 10.0
     assert a["pace_fmt"] == "5:00/km"
+    assert a["stride_training_load"] == {
+        "source": "stride",
+        "vendor_derived": False,
+        "algorithm_version": 3,
+        "calibration_id": None,
+        "session_class": "easy",
+        "cardio_load_raw": None,
+        "cardio_tss": 55.0,
+        "external_tss": 50.0,
+        "mechanical_load": 10.0,
+        "subjective_internal_load": None,
+        "training_dose": 53.5,
+        "load_confidence": "high",
+        "excluded_from_pmc": False,
+        "reasons": [],
+        "available": True,
+    }
 
 
 def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
@@ -290,22 +339,45 @@ def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
         ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
     )
     patched_db._conn.execute(
-        "INSERT INTO daily_health (date, rhr) VALUES (?, ?)", ("20260513", 52)
+        """INSERT INTO daily_health
+           (date, rhr, fatigue, ati, cti, training_load_ratio, training_load_state)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        ("20260513", 52, 77.0, 91.0, 63.0, 1.44, "Very High"),
+    )
+    patched_db._conn.execute(
+        "INSERT INTO daily_hrv (date, last_night_avg, status) VALUES (?, ?, ?)",
+        ("2026-05-13", 41, "LOW"),
+    )
+    patched_db._conn.execute(
+        """INSERT INTO dashboard
+           (id, recovery_pct, running_level, aerobic_score) VALUES (1, 76, 88, 92)"""
     )
     patched_db._conn.commit()
     res = read_impls.GetHealthSnapshotImpl("uid")()
     assert res.ok
-    latest = res.data["latest"]
+    latest = res.data["stride_training_load"]
     assert latest is not None
     assert latest["chronic_load"] == 62.0
     assert latest["acute_load"] == 50.0
     assert latest["form"] == 12.0
     # form/chronic = 12/62 = 0.19 → 比赛就绪 (ratio-based, not fixed TSB threshold)
     assert latest["form_zone"] == "race_ready"
-    assert latest["rhr"] == 52  # raw signal still surfaced
+    assert latest["source"] == "stride"
+    assert latest["vendor_derived"] is False
+    assert res.data["raw_measurements"] == {
+        "rhr": {"date": "20260513", "rhr": 52},
+        "hrv": {"date": "2026-05-13", "last_night_avg": 41},
+    }
     # No vendor-computed load fields leak to the LLM.
-    for vendor in ("ati", "cti", "tsb", "fatigue", "training_load_state"):
-        assert vendor not in latest
+    exposed_keys = set(res.data) | set(latest) | set(res.data["raw_measurements"])
+    exposed_keys |= set(res.data["raw_measurements"]["rhr"])
+    exposed_keys |= set(res.data["raw_measurements"]["hrv"])
+    for vendor in (
+        "ati", "cti", "tsb", "fatigue", "training_load_state",
+        "recovery_pct", "running_level", "aerobic_score",
+    ):
+        assert vendor not in exposed_keys
+    assert "LOW" not in str(res.data)
 
 
 def test_health_snapshot_threshold_from_stride_calibration(patched_db) -> None:
@@ -323,16 +395,14 @@ def test_health_snapshot_threshold_from_stride_calibration(patched_db) -> None:
     )
     res = read_impls.GetHealthSnapshotImpl("uid")()
     assert res.ok
-    cal = res.data["calibration"]
+    cal = res.data["stride_calibration"]
     assert cal is not None
     assert cal["threshold_hr"] == 169.0
     assert cal["threshold_pace_s_km"] == 250  # 1000 / 4.0 m/s
-    # The COROS dashboard threshold must NOT be surfaced.
-    assert "threshold_hr" not in res.data["dashboard"]
-    assert "threshold_pace_s_km" not in res.data["dashboard"]
+    assert "dashboard" not in res.data
 
 
-def test_health_series_merges_requested_metrics_by_date(patched_db) -> None:
+def test_health_series_uses_raw_measurements_and_stride_load_only(patched_db) -> None:
     conn = patched_db._conn
     conn.executemany(
         "INSERT INTO daily_health (date, rhr, fatigue) VALUES (?, ?, ?)",
@@ -365,16 +435,14 @@ def test_health_series_merges_requested_metrics_by_date(patched_db) -> None:
 
     res = read_impls.GetHealthSeriesImpl("uid")(
         days=7,
-        metrics=["rhr", "hrv_last_night_avg", "hrv_status", "fatigue", "form", "readiness_reasons"],
+        metrics=["rhr", "hrv_last_night_avg", "form", "load_ratio"],
     )
     assert res.ok
     assert res.data["metrics"] == [
         "rhr",
         "hrv_last_night_avg",
-        "hrv_status",
-        "fatigue",
         "form",
-        "readiness_reasons",
+        "load_ratio",
     ]
     assert res.data["coverage"]["rhr"] == 3
     assert res.data["coverage"]["hrv_last_night_avg"] == 2
@@ -384,25 +452,26 @@ def test_health_series_merges_requested_metrics_by_date(patched_db) -> None:
             "date": "2026-07-01",
             "rhr": 49,
             "hrv_last_night_avg": 42,
-            "hrv_status": "BALANCED",
-            "fatigue": 42.0,
             "form": 5.0,
-            "readiness_reasons": ["ok"],
+            "load_ratio": 0.91,
         },
-        {"date": "2026-07-02", "rhr": 50, "fatigue": 45.0},
+        {"date": "2026-07-02", "rhr": 50},
         {
             "date": "2026-07-03",
             "rhr": 51,
             "hrv_last_night_avg": 38,
-            "hrv_status": "LOW",
-            "fatigue": 50.0,
             "form": -2.0,
-            "readiness_reasons": ["low_hrv"],
+            "load_ratio": 1.04,
         },
     ]
+    payload = str(res.data)
+    assert "fatigue" not in payload
+    assert "BALANCED" not in payload
+    assert "LOW" not in payload
+    assert "readiness" not in payload
 
 
-def test_health_series_prefers_garmin_when_dual_provider_hrv(patched_db) -> None:
+def test_health_series_prefers_one_raw_hrv_measurement_when_dual_provider(patched_db) -> None:
     conn = patched_db._conn
     conn.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260704', 48)")
     conn.executemany(
@@ -416,7 +485,7 @@ def test_health_series_prefers_garmin_when_dual_provider_hrv(patched_db) -> None
 
     res = read_impls.GetHealthSeriesImpl("uid")(
         days=7,
-        metrics=["rhr", "hrv_last_night_avg", "hrv_provider"],
+        metrics=["rhr", "hrv_last_night_avg"],
     )
     assert res.ok
     assert res.data["series"] == [
@@ -424,9 +493,22 @@ def test_health_series_prefers_garmin_when_dual_provider_hrv(patched_db) -> None
             "date": "2026-07-04",
             "rhr": 48,
             "hrv_last_night_avg": 44,
-            "hrv_provider": "garmin",
         }
     ]
+
+
+@pytest.mark.parametrize(
+    "metric",
+    [
+        "fatigue", "ati", "cti", "training_load_ratio",
+        "training_load_state", "hrv_status", "hrv_provider",
+        "readiness_gate", "readiness_reasons",
+    ],
+)
+def test_health_series_rejects_vendor_derived_metrics(patched_db, metric) -> None:
+    res = read_impls.GetHealthSeriesImpl("uid")(metrics=[metric])
+    assert not res.ok
+    assert any("unsupported metrics" in error for error in res.errors)
 
 
 def test_health_series_rejects_unknown_metrics(patched_db) -> None:
@@ -449,21 +531,125 @@ def test_pmc_series_uses_stride_load(patched_db) -> None:
     assert len(series) == 1
     assert series[0]["chronic_load"] == 62.0
     assert series[0]["form"] == 12.0
+    assert series[0]["source"] == "stride"
+    assert series[0]["vendor_derived"] is False
+    assert res.data["provenance"]["training_load"]["source"] == "stride"
     assert "ati" not in series[0] and "cti" not in series[0]
+
+
+def test_ability_snapshot_excludes_legacy_vendor_dependent_dimensions(patched_db) -> None:
+    conn = patched_db._conn
+    rows = [
+        ("2026-07-01", "L2", "total", 88.0),
+        ("2026-07-01", "L3", "recovery", 91.0),
+        ("2026-07-01", "L3", "endurance", 82.0),
+        ("2026-07-01", "L3", "vo2max", 75.0),
+        ("2026-07-01", "L4", "composite", 84.0),
+    ]
+    conn.executemany(
+        "INSERT INTO ability_snapshot (date, level, dimension, value) VALUES (?, ?, ?, ?)",
+        rows,
+    )
+    conn.commit()
+
+    res = read_impls.GetAbilitySnapshotImpl("uid")()
+
+    assert res.ok
+    visible = {(row["level"], row["dimension"]) for row in res.data["latest"]}
+    assert visible == {("L3", "endurance"), ("L3", "vo2max")}
+
+
+def test_race_predictions_use_stride_ability_not_vendor_table(patched_db) -> None:
+    conn = patched_db._conn
+    conn.execute(
+        "INSERT INTO ability_snapshot (date, level, dimension, value) VALUES (?, ?, ?, ?)",
+        ("2026-07-01", "L3", "vo2max", 75.0),
+    )
+    conn.execute(
+        "INSERT INTO race_predictions (race_type, duration_s, avg_pace) VALUES (?, ?, ?)",
+        ("Marathon", 9999.0, 237.0),
+    )
+    conn.commit()
+
+    res = read_impls.GetRacePredictionsImpl("uid")()
+
+    assert res.ok
+    assert res.data["provenance"]["predictions"]["source"] == "stride"
+    assert res.data["computed_at"] == "2026-07-01"
+    assert res.data["predictions"]["FM"]["predicted_time_sec"] != 9999
+
+
+def test_activity_detail_drops_vendor_scores_zones_and_existing_commentary(patched_db) -> None:
+    conn = patched_db._conn
+    conn.execute(
+        """INSERT INTO activities
+           (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
+            training_load, vo2max, performance, train_type, aerobic_effect, anaerobic_effect,
+            calories_kcal, adjusted_pace)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("a1", "run", 100, "Run", "2026-07-01T00:00:00+00:00", 10000, 3000,
+         222, 61, 90, "Aerobic Endurance", 4.0, 2.0, 800, 299),
+    )
+    conn.execute(
+        """INSERT INTO zones
+           (label_id, zone_type, zone_index, range_min, range_max, range_unit, duration_s, percent)
+           VALUES ('a1', 'heartRate', 1, 100, 120, 'bpm', 500, 10)"""
+    )
+    conn.execute(
+        "INSERT INTO activity_commentary (label_id, commentary) VALUES (?, ?)",
+        ("a1", "厂商疲劳值 70"),
+    )
+    conn.commit()
+
+    res = read_impls.GetActivityDetailImpl("uid")(label_id="a1")
+
+    assert res.ok
+    activity = res.data["activity"]
+    for field in (
+        "training_load", "vo2max", "performance", "train_type",
+        "aerobic_effect", "anaerobic_effect", "calories_kcal",
+        "adjusted_pace", "commentary",
+    ):
+        assert field not in activity
+    assert "zones" not in res.data
+    assert "厂商疲劳值" not in str(res.data)
 
 
 def test_recent_activities_drops_vendor_training_load(patched_db) -> None:
     patched_db._conn.execute(
         """INSERT INTO activities
-           (label_id, name, sport_type, sport_name, date, distance_m, duration_s, training_load)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("a1", "run", 100, "Run", "2026-05-13T08:00:00+00:00", 10000, 3000, 400),
+           (label_id, name, sport_type, sport_name, date, distance_m, duration_s,
+            training_load, vo2max, train_type, calories_kcal)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("a1", "run", 100, "Run", "2026-05-13T08:00:00+00:00", 10000, 3000,
+         400, 62, "Aerobic Endurance", 700),
     )
     patched_db._conn.commit()
     res = read_impls.GetRecentActivitiesImpl("uid")(limit=5)
     assert res.ok
     # The vendor per-activity load must not reach the coach context.
     assert "training_load" not in res.data["activities"][0]
+    assert "vo2max" not in res.data["activities"][0]
+    assert "train_type" not in res.data["activities"][0]
+    assert "calories_kcal" not in res.data["activities"][0]
+    assert res.data["activities"][0]["stride_training_load"] == {
+        "source": "stride",
+        "vendor_derived": False,
+        "algorithm_version": None,
+        "calibration_id": None,
+        "session_class": None,
+        "cardio_load_raw": None,
+        "cardio_tss": None,
+        "external_tss": None,
+        "mechanical_load": None,
+        "subjective_internal_load": None,
+        "training_dose": None,
+        "load_confidence": None,
+        "excluded_from_pmc": None,
+        "reasons": [],
+        "available": False,
+        "missing_reason": "stride_load_not_computed",
+    }
 
 
 def test_training_environment_detects_altitude(patched_db, monkeypatch) -> None:

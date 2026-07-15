@@ -59,7 +59,7 @@ STATUS_INSIGHT_CARD = SpecialistCard(
         "告诉我本周计划，不要修改",
     ],
     writes=False,
-    data_needs=["fatigue", "load", "prediction", "completion"],
+    data_needs=["stride_load", "raw_recovery_signals", "prediction", "completion"],
 )
 
 
