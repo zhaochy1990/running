@@ -596,6 +596,8 @@ export interface MasterPlanWeek {
   phase_id: string
   target_weekly_km_low: number | null
   target_weekly_km_high: number | null
+  target_training_dose_low?: number | null
+  target_training_dose_high?: number | null
   key_sessions: MasterPlanKeySession[]
   is_recovery_week?: boolean
   is_taper_week?: boolean
@@ -607,6 +609,12 @@ export interface MasterPlanWeek {
   actual_avg_hr?: number | null
   actual_run_count?: number
   actual_duration_s?: number
+}
+
+export interface MasterPlanTrainingLoadProjection {
+  status: 'available' | 'unavailable'
+  unavailable_reason: 'weekly_skeleton_unavailable' | null
+  calculated_at: string
 }
 
 export interface MasterPlanNextMilestone {
@@ -635,6 +643,7 @@ export interface MasterPlan {
   milestones: MasterPlanMilestone[]
   weeks?: MasterPlanWeek[]
   weekly_key_sessions?: MasterPlanWeek[]
+  training_load_projection?: MasterPlanTrainingLoadProjection | null
   training_principles: string[]
   generated_by: string
   version: number

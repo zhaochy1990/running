@@ -44,7 +44,10 @@ from ..master_plan_generator import (
     _query_history,
     build_master_prompts,
 )
-from .master_plan_load import format_training_load_anchor_for_prompt
+from .master_plan_load import (
+    apply_master_plan_training_load_projection,
+    format_training_load_anchor_for_prompt,
+)
 from .tool_impls.read_impls import EstimateMasterPlanLoadImpl
 
 logger = logging.getLogger(__name__)
@@ -543,11 +546,19 @@ def generate_master_plan(state: GenState) -> dict:
     if load_tool_result.ok and isinstance(load_tool_result.data, dict):
         load_estimate = load_tool_result.data.get("plan_estimate")
     else:
-        logger.warning(
-            "generate_master_plan: estimate_master_plan_load draft failed user=%s errors=%s",
-            user_id,
-            load_tool_result.errors,
+        raise ValueError(
+            "load_estimation_failed: "
+            + "; ".join(str(error) for error in load_tool_result.errors)
         )
+
+    try:
+        plan = apply_master_plan_training_load_projection(
+            plan,
+            load_estimate,
+            allow_unavailable_without_weeks=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - normalize projection failures for the job boundary
+        raise ValueError(f"load_estimation_failed: {exc}") from exc
 
     out = {
         "current_draft": plan.model_dump(mode="json"),

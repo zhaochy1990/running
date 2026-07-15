@@ -2299,6 +2299,7 @@ def _run_generate_job_inner(
         # generate_master_plan raises two prefixed ValueError kinds:
         #   "parse_failed: ..." — all 3 parse tiers missed (raw_output attached)
         #   "bad_schema: ..."    — _build_master_plan rejected the parsed JSON
+        #   "load_estimation_failed: ..." — deterministic weekly dose failed
         msg = str(exc)
         if msg.startswith("parse_failed"):
             raw_output = getattr(exc, "raw_output", None)
@@ -2312,6 +2313,10 @@ def _run_generate_job_inner(
             return
         if msg.startswith("bad_schema"):
             logger.warning("job=%s plan build failed: %s", job_id, exc)
+            update_job(job_id, status=JobStatus.FAILED, error=msg)
+            return
+        if msg.startswith("load_estimation_failed"):
+            logger.warning("job=%s weekly load projection failed: %s", job_id, exc)
             update_job(job_id, status=JobStatus.FAILED, error=msg)
             return
         raise

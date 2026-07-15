@@ -167,6 +167,7 @@ def apply_master_plan_diff(
     if phase_affecting_applied:
         update["weeks"] = []
         update["weekly_key_sessions"] = []
+        update["training_load_projection"] = None
     updated_plan = plan.model_copy(update=update)
     store.save_plan(updated_plan)
     return updated_plan

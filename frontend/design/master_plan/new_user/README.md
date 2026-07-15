@@ -6,6 +6,7 @@
 - 范围: Web Desktop
 - 格式: HTML-only
 - 页面数量: 6
+- 补充状态稿: [7_master-plan-load-view.html](./7_master-plan-load-view.html) — 当前页训练周期的周负荷视图
 
 ## 故事线
 

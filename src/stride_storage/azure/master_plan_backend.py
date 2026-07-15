@@ -90,6 +90,17 @@ class FileMasterPlanStore:
                 return MasterPlan.model_validate(raw)
         return None
 
+    def list_active_plans(self) -> list[MasterPlan]:
+        data = _read_json(_plans_file())
+        return [
+            MasterPlan.model_validate(raw)
+            for user_bucket in data.values()
+            if isinstance(user_bucket, dict)
+            for raw in user_bucket.values()
+            if isinstance(raw, dict)
+            and raw.get("status") == MasterPlanStatus.ACTIVE.value
+        ]
+
     def list_plans(self, user_id: str) -> list[MasterPlan]:
         data = _read_json(_plans_file())
         return [
@@ -190,6 +201,16 @@ class AzureTableMasterPlanStore:
         if not entities:
             return None
         return MasterPlan.model_validate_json(entities[0]["plan_json"])
+
+    def list_active_plans(self) -> list[MasterPlan]:
+        entities = list(self._plans.table().query_entities(
+            "kind eq @kind and status eq @status",
+            parameters={
+                "kind": "plan",
+                "status": MasterPlanStatus.ACTIVE.value,
+            },
+        ))
+        return [MasterPlan.model_validate_json(e["plan_json"]) for e in entities]
 
     def list_plans(self, user_id: str) -> list[MasterPlan]:
         entities = list(self._plans.table().query_entities(

@@ -33,6 +33,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    TrainingLoadProjection,
 )
 from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOp, MasterPlanDiffOpKind
 from stride_core.models import ActivityDetail
@@ -902,9 +903,15 @@ class TestCurrentMasterPlan:
                     phase_id=phase_id,
                     target_weekly_km_low=30.0,
                     target_weekly_km_high=40.0,
+                    target_training_dose_low=180.0,
+                    target_training_dose_high=230.0,
                     key_sessions=[KeySession(type="long_run", distance_km=18.0)],
                 )
             ],
+            training_load_projection=TrainingLoadProjection(
+                status="available",
+                calculated_at=now,
+            ),
             training_principles=[],
             generated_by="gpt-4.1",
             version=1,
@@ -927,8 +934,42 @@ class TestCurrentMasterPlan:
         assert data["total_weeks"] == 1
         assert data["weeks"][0]["week_index"] == 1
         assert data["weeks"][0]["key_sessions"][0]["type"] == "long_run"
+        assert data["weeks"][0]["target_training_dose_low"] == 180.0
+        assert data["weeks"][0]["target_training_dose_high"] == 230.0
+        assert data["training_load_projection"]["status"] == "available"
         assert data["current_week_number"] == 1
         assert data["current_phase_id"] == phase_id
+
+    def test_current_returns_unavailable_projection_for_legacy_plan(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        now = datetime.now(timezone.utc).isoformat()
+        plan = _make_plan(status=MasterPlanStatus.ACTIVE).model_copy(update={
+            "training_load_projection": TrainingLoadProjection(
+                status="unavailable",
+                unavailable_reason="weekly_skeleton_unavailable",
+                calculated_at=now,
+            ),
+        })
+        store.save_plan(plan)
+
+        resp = client.get(
+            "/api/users/me/master-plan/current",
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 200, resp.text
+        projection = resp.json()["training_load_projection"]
+        assert projection == {
+            "status": "unavailable",
+            "unavailable_reason": "weekly_skeleton_unavailable",
+            "calculated_at": now,
+        }
+        assert all(
+            week.get("target_training_dose_low") is None
+            and week.get("target_training_dose_high") is None
+            for week in resp.json()["weeks"]
+        )
 
     def test_current_injects_completed_week_running_summary(self, app_client):
         """Completed weeks expose actual running km and aggregate metrics."""
@@ -1296,6 +1337,7 @@ class TestCurrentMasterPlan:
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["plan_id"] == plan.plan_id
+        assert resp.json()["training_load_projection"] is None
 
     def test_get_by_id_unknown_returns_404(self, app_client):
         """GET /{plan_id} with unknown id → 404."""
@@ -1348,6 +1390,7 @@ class TestCurrentMasterPlan:
         data = resp.json()
         assert data["plan_id"] == newer.plan_id
         assert data["status"] == "draft"
+        assert data["training_load_projection"] is None
 
     def test_draft_endpoint_returns_404_without_draft(self, app_client):
         """GET /draft returns 404 when only active/archived plans exist."""
