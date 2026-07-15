@@ -103,6 +103,48 @@ def test_store_drops_local_scheduled_workout_id(tmp_path, monkeypatch) -> None:
     )
 
 
+def test_store_preserves_top_level_notes(tmp_path, monkeypatch) -> None:
+    import stride_core.db as core_db
+    from dataclasses import replace
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    plan = replace(_plan(), notes_md="coach rationale")
+    store = FileWeeklyPlanStore()
+    store.save_plan(USER_A, plan)
+
+    assert store.get_plan(USER_A, plan.week_folder).notes_md == "coach rationale"
+
+
+def test_store_rejects_session_outside_folder(tmp_path, monkeypatch) -> None:
+    import stride_core.db as core_db
+    import pytest
+    from dataclasses import replace
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    plan = _plan()
+    invalid = replace(
+        plan, sessions=(replace(plan.sessions[0], date="2026-07-20"),)
+    )
+    with pytest.raises(ValueError, match="outside"):
+        FileWeeklyPlanStore().save_plan(USER_A, invalid)
+
+
+def test_cross_year_folder_bounds(tmp_path, monkeypatch) -> None:
+    import stride_core.db as core_db
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    plan = WeeklyPlan(
+        week_folder="2026-12-29_01-04(NewYear)",
+        sessions=(PlannedSession(
+            date="2027-01-03", session_index=0, kind=SessionKind.REST,
+            summary="rest",
+        ),),
+    )
+    store = FileWeeklyPlanStore()
+    store.save_plan(USER_A, plan)
+    assert store.get_current_plan(USER_A, "2027-01-03") == plan
+
+
 def test_azure_current_lookup_uses_partition_and_date_bounds() -> None:
     plan = _plan()
     captured = {}

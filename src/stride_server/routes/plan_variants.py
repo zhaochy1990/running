@@ -19,10 +19,9 @@ from __future__ import annotations
 
 import json
 import logging
-import sqlite3
 from typing import Any
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Body, HTTPException, Query
 
 from stride_core.plan_spec import (
     SUPPORTED_SCHEMA_VERSION,
@@ -30,6 +29,7 @@ from stride_core.plan_spec import (
 )
 
 from ..deps import get_db, get_plan_state_store
+from ..weekly_plan_store import get_weekly_plan_store, save_weekly_plan
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -241,13 +241,12 @@ def list_variants(
         rows = plan_store.get_weekly_plan_variants(
             folder, include_superseded=include_superseded,
         )
-        wp = plan_store.get_weekly_plan_row(folder)
-        selected_variant_id = None
-        if wp is not None:
-            try:
-                selected_variant_id = wp["selected_variant_id"]
-            except (IndexError, KeyError):
-                selected_variant_id = None
+        source = get_weekly_plan_store().get_generated_by(user, folder)
+        selected_variant_id = (
+            int(source.split(":", 1)[1])
+            if source and source.startswith("selected-variant:")
+            else None
+        )
 
         # Compute variant_index across ACTIVE rows only — superseded rows
         # don't get a position; mark theirs as None so UI can hide it.
@@ -391,7 +390,6 @@ def _http_for_select_error(result: dict) -> HTTPException:
 def select_variant(
     user: str,
     folder: str,
-    response: Response,
     payload: dict = Body(...),
 ):
     variant_id = payload.get("variant_id")
@@ -402,47 +400,65 @@ def select_variant(
         raise HTTPException(status_code=422, detail="force must be bool")
 
     plan_store = get_plan_state_store(user)
+    db = get_db(user)
     try:
-        try:
-            result = plan_store.select_weekly_plan_variant(
-                user=user, week_folder=folder, variant_id=variant_id, force=force,
+        variant = plan_store.get_weekly_plan_variant(variant_id)
+        if variant is None:
+            raise _http_for_select_error(
+                {"error": "variant_not_found", "variant_id": variant_id}
             )
-        except sqlite3.OperationalError as e:
-            if "locked" in str(e).lower():
-                # Phase B exp 3 path — surface as 409 with Retry-After.
-                response.headers["Retry-After"] = "1"
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "error": "concurrent_select",
-                        "retry_after_s": 1,
-                        "hint": "another select is in progress — retry shortly",
-                    },
-                )
-            raise
-
-        if not result.get("ok"):
-            raise _http_for_select_error(result)
-
-        from ..weekly_plan_store import save_weekly_plan_projection
-
-        # Also backfills an already-selected legacy variant into the canonical
-        # store during rollout.
-        save_weekly_plan_projection(
-            user, folder, plan_store, generated_by="selected-variant"
+        if variant["week_folder"] != folder:
+            raise _http_for_select_error({"error": "variant_wrong_week"})
+        selectable, reason = _selectability(variant)
+        if not selectable:
+            error = (
+                "variant_schema_outdated" if reason == "schema_outdated"
+                else f"variant_{reason}"
+            )
+            raise _http_for_select_error(
+                {
+                    "error": error,
+                    "variant_id": variant_id,
+                    "variant_version": variant["schema_version"],
+                    "server_version": SUPPORTED_SCHEMA_VERSION,
+                }
+            )
+        prior = db.list_scheduled_workouts_for_plan(folder, active_only=True)
+        if prior and not force:
+            raise _http_for_select_error(
+                {
+                    "error": "selection_conflict",
+                    "already_pushed_count": len(prior),
+                    "hint": "传 force=true 二次确认 — 已 push session 将标 abandoned",
+                }
+            )
+        plan = WeeklyPlan.from_dict(json.loads(variant["structured_json"]))
+        source = get_weekly_plan_store().get_generated_by(user, folder)
+        if source == f"selected-variant:{variant_id}":
+            return {
+                "ok": True,
+                "no_change": True,
+                "week_folder": folder,
+                "selected_variant_id": variant_id,
+                "dropped_scheduled_workout_ids": [],
+            }
+        save_weekly_plan(
+            user, plan, expected_folder=folder,
+            generated_by=f"selected-variant:{variant_id}",
         )
+        dropped = db.abandon_scheduled_workouts_for_plan(folder) if force else []
 
         # Happy path. Includes no_change=true on idempotent re-select.
         return {
             "ok": True,
-            "no_change": result.get("no_change", False),
+            "no_change": False,
             "week_folder": folder,
-            "selected_variant_id": result["selected_variant_id"],
-            "dropped_scheduled_workout_ids":
-                result.get("dropped_scheduled_workout_ids", []),
+            "selected_variant_id": variant_id,
+            "dropped_scheduled_workout_ids": dropped,
         }
     finally:
         plan_store.close()
+        db.close()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -455,32 +471,6 @@ def delete_variants(user: str, folder: str):
     db = get_db(user)
     plan_store = get_plan_state_store(user)
     try:
-        # If the currently selected variant for this week is one of the
-        # variants we're about to delete, null it out first so the
-        # `weekly_plan.selected_variant_id` doesn't dangle.
-        wp = plan_store.get_weekly_plan_row(folder)
-        selected_id = None
-        if wp is not None:
-            try:
-                selected_id = wp["selected_variant_id"]
-            except (IndexError, KeyError):
-                selected_id = None
-        if selected_id is not None:
-            row = db._conn.execute(
-                "SELECT week_folder FROM weekly_plan_variant WHERE id = ?",
-                (selected_id,),
-            ).fetchone()
-            if row is not None and row["week_folder"] == folder:
-                db._conn.execute(
-                    """UPDATE weekly_plan
-                           SET selected_variant_id = NULL,
-                               selected_at = NULL,
-                               updated_at = datetime('now')
-                       WHERE week = ?""",
-                    (folder,),
-                )
-                db._conn.commit()
-
         deleted = plan_store.delete_weekly_plan_variants(folder)
         return {"deleted_variants": deleted}
     finally:

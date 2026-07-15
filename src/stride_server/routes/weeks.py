@@ -18,6 +18,7 @@ from ..content_store import (
     list_files_in_folder,
     list_week_folders,
     read_text,
+    write_text,
 )
 
 
@@ -42,6 +43,9 @@ from ..deps import (
     get_plan_state_store,
     parse_week_dates,
 )
+from ..weekly_plan_store import (
+    get_weekly_plan_store, nutrition_to_api, session_to_api,
+)
 
 router = APIRouter()
 
@@ -58,7 +62,12 @@ def list_weeks(user: str):
     plan_store = get_plan_state_store(user)
     weeks = []
     try:
-        for folder_name in list_week_folders(user):
+        canonical = {
+            plan.week_folder: plan
+            for plan in get_weekly_plan_store().list_plans(user)
+        }
+        folders = set(list_week_folders(user)) | set(canonical)
+        for folder_name in sorted(folders, reverse=True):
             dates = parse_week_dates(folder_name)
             if not dates:
                 continue
@@ -66,10 +75,10 @@ def list_weeks(user: str):
             date_from, date_to = dates
             plan_rel = f"{user}/logs/{folder_name}/plan.md"
             feedback_rel = f"{user}/logs/{folder_name}/feedback.md"
-            db_plan_row = plan_store.get_weekly_plan_row(folder_name)
             db_feedback_row = plan_store.get_weekly_feedback_row(folder_name)
-            plan_item = None if db_plan_row is not None else read_text(plan_rel)
-            has_plan = db_plan_row is not None or plan_item is not None
+            plan_item = read_text(plan_rel)
+            structured_plan = canonical.get(folder_name)
+            has_plan = structured_plan is not None or plan_item is not None
             week: dict = {
                 "folder": folder_name,
                 "date_from": date_from,
@@ -79,15 +88,13 @@ def list_weeks(user: str):
                 "has_body_composition": _has_body_composition_file(
                     list_files_in_folder(f"{user}/logs/{folder_name}")
                 ),
-                "plan_source": "db" if db_plan_row is not None else (plan_item.source if plan_item else "none"),
+                "plan_source": plan_item.source if plan_item else ("weekly_plan_store" if structured_plan else "none"),
             }
 
-            if db_plan_row is not None:
-                week["plan_title"] = _markdown_title(db_plan_row["content_md"])
-                week["plan_updated_at"] = db_plan_row["updated_at"]
-                week["plan_generated_by"] = db_plan_row["generated_by"]
-            elif plan_item is not None:
+            if plan_item is not None:
                 week["plan_title"] = _markdown_title(plan_item.content)
+            elif structured_plan is not None:
+                week["plan_title"] = folder_name
 
             # date_from / date_to are Shanghai-local YYYY-MM-DD; activities.date
             # is UTC ISO. Use SHANGHAI_DAY_SQL so the comparison happens in the
@@ -124,21 +131,12 @@ def get_week(user: str, folder: str):
     db = get_db(user)
     plan_store = get_plan_state_store(user)
 
-    # DB-edited/agent-adjusted plans win over the markdown file. The file
-    # remains the seed/fallback for git-synced canonical weekly plans.
-    db_plan_row = plan_store.get_weekly_plan_row(folder)
-    if db_plan_row is not None:
-        result["plan"] = db_plan_row["content_md"]
-        result["plan_source"] = "db"
-        result["plan_updated_at"] = db_plan_row["updated_at"]
-        result["plan_generated_by"] = db_plan_row["generated_by"]
+    plan_item = read_text(f"{user}/logs/{folder}/plan.md")
+    if plan_item is not None:
+        result["plan"] = plan_item.content
+        result["plan_source"] = plan_item.source
     else:
-        plan_item = read_text(f"{user}/logs/{folder}/plan.md")
-        if plan_item is not None:
-            result["plan"] = plan_item.content
-            result["plan_source"] = plan_item.source
-        else:
-            result["plan_source"] = "none"
+        result["plan_source"] = "none"
 
     # DB-edited feedback wins over the markdown file. The file remains as
     # a seed/fallback so legacy weeks still display until edited in-app.
@@ -226,53 +224,38 @@ def get_week(user: str, folder: str):
 
     # Additive: structured-plan layer (sessions + nutrition + status). Old
     # frontends ignore unknown keys; new ones can light up the calendar tab.
-    structured_status = None
-    structured_parsed_at = None
-    if db_plan_row is not None:
+    canonical_plan = get_weekly_plan_store().get_plan(user, folder)
+    legacy_row = None
+    legacy_plan = None
+    if canonical_plan is None:
+        legacy_row = plan_store.get_weekly_plan_row(folder)
         try:
-            structured_status = db_plan_row["structured_status"]
-            structured_parsed_at = db_plan_row["structured_parsed_at"]
-        except (IndexError, KeyError):
-            pass
-    session_rows = plan_store.get_planned_sessions(week_folder=folder)
-    nutrition_rows = plan_store.get_planned_nutrition(week_folder=folder)
+            legacy_plan = plan_store.get_structured_weekly_plan(folder)
+        except (ValueError, TypeError, KeyError):
+            legacy_plan = None
+    display_plan = canonical_plan or legacy_plan
     sessions_payload = []
-    for r in session_rows:
-        spec_blob = r["spec_json"]
-        spec = None
-        if spec_blob:
-            import json as _json
-            spec = _json.loads(spec_blob)
-        sessions_payload.append({
-            "id": r["id"],
-            "date": r["date"],
-            "session_index": r["session_index"],
-            "kind": r["kind"],
-            "summary": r["summary"],
-            "spec": spec,
-            "notes_md": r["notes_md"],
-            "total_distance_m": r["total_distance_m"],
-            "total_duration_s": r["total_duration_s"],
-            "scheduled_workout_id": r["scheduled_workout_id"],
-            "pushable": r["kind"] in ("run", "strength") and spec is not None,
-        })
     nutrition_payload = []
-    for r in nutrition_rows:
-        meals_blob = r["meals_json"]
-        import json as _json
-        nutrition_payload.append({
-            "date": r["date"],
-            "kcal_target": r["kcal_target"],
-            "carbs_g": r["carbs_g"],
-            "protein_g": r["protein_g"],
-            "fat_g": r["fat_g"],
-            "water_ml": r["water_ml"],
-            "meals": _json.loads(meals_blob) if meals_blob else [],
-            "notes_md": r["notes_md"],
-        })
+    if display_plan is not None:
+        for session in display_plan.sessions:
+            sw = db.get_latest_scheduled_workout_for_plan_session(
+                folder, session.date, session.session_index
+            )
+            sessions_payload.append(
+                session_to_api(
+                    folder, session,
+                    scheduled_workout_id=int(sw["id"]) if sw else None,
+                )
+            )
+        nutrition_payload = [nutrition_to_api(item) for item in display_plan.nutrition]
     result["structured"] = {
-        "structured_status": structured_status,
-        "structured_parsed_at": structured_parsed_at,
+        "structured_status": (
+            "canonical" if canonical_plan else
+            legacy_row["structured_status"] if legacy_row is not None else None
+        ),
+        "structured_parsed_at": (
+            legacy_row["structured_parsed_at"] if legacy_row is not None else None
+        ),
         "sessions": sessions_payload,
         "nutrition": nutrition_payload,
     }
@@ -283,11 +266,9 @@ def get_week(user: str, folder: str):
     # weekly_plan; null when nothing's been promoted yet.
     variant_rows = plan_store.get_weekly_plan_variants(folder)
     selected_vid = None
-    if db_plan_row is not None:
-        try:
-            selected_vid = db_plan_row["selected_variant_id"]
-        except (IndexError, KeyError):
-            selected_vid = None
+    source = get_weekly_plan_store().get_generated_by(user, folder)
+    if source and source.startswith("selected-variant:"):
+        selected_vid = int(source.split(":", 1)[1])
     result["variants_summary"] = {
         "total": len(variant_rows),
         "selected_variant_id": selected_vid,
@@ -380,17 +361,12 @@ def update_weekly_plan(user: str, folder: str, payload: dict = Body(...)):
     if generated_by is not None and not isinstance(generated_by, str):
         raise HTTPException(status_code=422, detail="generated_by must be a string or null")
 
-    plan_store = get_plan_state_store(user)
-    try:
-        plan_store.upsert_weekly_plan(folder, content, generated_by=generated_by)
-        row = plan_store.get_weekly_plan_row(folder)
-    finally:
-        plan_store.close()
+    write_text(f"{user}/logs/{folder}/plan.md", content)
 
     return {
         "success": True,
         "week": folder,
-        "plan_source": "db",
-        "plan_updated_at": row["updated_at"] if row else None,
-        "plan_generated_by": row["generated_by"] if row else None,
+        "plan_source": "content_store",
+        "plan_updated_at": None,
+        "plan_generated_by": generated_by,
     }

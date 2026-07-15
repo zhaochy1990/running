@@ -2,7 +2,7 @@
 
 **何时读**：写或改 `data/{user}/logs/{week}/plan.json` 之前必读。这是 HARD gate —— 不合规就 commit 不动。
 
-每次写完 plan.md 必须**同时**写一个 schema-valid 的 `plan.json` 放在同目录。这个文件是 authoring/import artifact；Server 端的 `/internal/plan/reparse` webhook（`sync-data.yml` 触发）会优先尝试 plan.json-authored 路径：plan.json 能过 `WeeklyPlan.from_dict` 校验 → 写入 canonical `WeeklyPlanStore`（prod Azure Table `strideweeklyplan`）并更新 SQLite 手表投影层；否则 fallback 到 LLM 反向解析 plan.md。**plan.json 不合规 → server 静默退回 LLM → 复杂 plan.md 可能解析失败 → 用户日历空白 + "重新解析" 按钮无效。**
+每次写完 plan.md 必须**同时**写一个 schema-valid 的 `plan.json` 放在同目录。这个文件是 authoring/import artifact；Server 端的 `/internal/plan/reparse` webhook（`sync-data.yml` 触发）会优先尝试 plan.json-authored 路径：plan.json 能过 `WeeklyPlan.from_dict` 校验且 `week_folder` 与 webhook folder 完全一致 → 只写 canonical `WeeklyPlanStore`（prod Azure Table `strideweeklyplan`）；否则 fallback 到 LLM 反向解析 plan.md。**plan.json 不合规 → server 静默退回 LLM → 复杂 plan.md 可能解析失败 → 用户日历空白 + "重新解析" 按钮无效。**
 
 ## Source of truth
 

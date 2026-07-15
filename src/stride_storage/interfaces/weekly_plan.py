@@ -12,10 +12,15 @@ class WeeklyPlanStore(Protocol):
     """Current ``WeeklyPlan`` state, separate from Markdown and version audit."""
 
     def save_plan(
-        self, user_id: str, plan: WeeklyPlan, *, generated_by: str | None = None
+        self, user_id: str, plan: WeeklyPlan, *, generated_by: str | None = None,
+        source_hash: str | None = None,
     ) -> None: ...
 
     def get_plan(self, user_id: str, folder: str) -> WeeklyPlan | None: ...
+
+    def get_generated_by(self, user_id: str, folder: str) -> str | None: ...
+
+    def get_source_hash(self, user_id: str, folder: str) -> str | None: ...
 
     def get_current_plan(self, user_id: str, on_date: str) -> WeeklyPlan | None: ...
 

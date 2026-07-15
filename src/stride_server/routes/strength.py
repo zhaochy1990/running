@@ -21,6 +21,7 @@ from fastapi import APIRouter, HTTPException
 from stride_core.plan_spec import SessionKind
 
 from ..deps import get_plan_state_store, parse_week_dates
+from ..weekly_plan_store import get_weekly_plan_store
 from ..strength_library import lookup as library_lookup
 
 logger = logging.getLogger(__name__)
@@ -66,37 +67,43 @@ def get_week_strength(user: str, folder: str):
     if not parse_week_dates(folder):
         raise HTTPException(status_code=400, detail="Invalid folder")
 
-    plan_store = get_plan_state_store(user)
-    try:
-        date_from, date_to = parse_week_dates(folder)  # type: ignore[misc]
-        rows = plan_store.get_planned_sessions(date_from=date_from, date_to=date_to)
-    finally:
-        plan_store.close()
+    plan = get_weekly_plan_store().get_plan(user, folder)
+    rows = list(plan.sessions) if plan else []
+    if not rows:
+        legacy = get_plan_state_store(user)
+        try:
+            rows = list(legacy.get_planned_sessions(week_folder=folder))
+        finally:
+            legacy.close()
 
     sessions = []
     for row in rows:
-        if row["kind"] != SessionKind.STRENGTH.value:
+        legacy_row = not hasattr(row, "kind")
+        row_kind = row["kind"] if legacy_row else row.kind.value
+        if row_kind != SessionKind.STRENGTH.value:
             continue
-        spec_json = row["spec_json"]
-        if not spec_json:
+        spec_json = row["spec_json"] if legacy_row else None
+        spec_obj = None if legacy_row else row.spec
+        if spec_obj is None and not spec_json:
             # Aspirational strength session — still surface the row so the
             # tab isn't empty when only a summary was authored.
             sessions.append({
-                "date": row["date"],
-                "session_index": row["session_index"],
-                "summary": row["summary"],
-                "notes_md": row["notes_md"],
+                "date": row["date"] if legacy_row else row.date,
+                "session_index": row["session_index"] if legacy_row else row.session_index,
+                "summary": row["summary"] if legacy_row else row.summary,
+                "notes_md": row["notes_md"] if legacy_row else row.notes_md,
                 "exercises": [],
             })
             continue
 
         try:
-            spec = json.loads(spec_json)
+            spec = json.loads(spec_json) if legacy_row else spec_obj.to_dict()
             raw_exercises = spec.get("exercises", []) or []
         except (ValueError, TypeError):
             logger.warning(
-                "strength: bad spec_json on planned_session id=%s, skipping exercises",
-                row["id"],
+                "strength: bad spec on planned session %s/%s, skipping exercises",
+                row["date"] if legacy_row else row.date,
+                row["session_index"] if legacy_row else row.session_index,
             )
             raw_exercises = []
 
@@ -124,10 +131,10 @@ def get_week_strength(user: str, folder: str):
             })
 
         sessions.append({
-            "date": row["date"],
-            "session_index": row["session_index"],
-            "summary": row["summary"],
-            "notes_md": row["notes_md"],
+            "date": row["date"] if legacy_row else row.date,
+            "session_index": row["session_index"] if legacy_row else row.session_index,
+            "summary": row["summary"] if legacy_row else row.summary,
+            "notes_md": row["notes_md"] if legacy_row else row.notes_md,
             "exercises": rendered,
         })
 

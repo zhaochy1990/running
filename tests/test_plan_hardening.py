@@ -302,9 +302,14 @@ class TestRepushTransaction:
             # No new row inserted.
             rows = db.list_scheduled_workouts()
             assert len(rows) == 1, [dict(r) for r in rows]
-            # planned_session FK still points at the original row.
+            # Execution identity lives on scheduled_workout; the legacy plan
+            # row is deliberately never back-stamped.
             ps = db.get_planned_session_by_date_index("2026-04-22", 0)
-            assert ps["scheduled_workout_id"] == first_sw_id
+            assert ps["scheduled_workout_id"] is None
+            linked = db.get_latest_scheduled_workout_for_plan_session(
+                WEEK, "2026-04-22", 0
+            )
+            assert linked["id"] == first_sw_id
         finally:
             db.close()
 

@@ -919,15 +919,10 @@ class GetWeekPlanImpl:
             plan_store = SqlitePlanStateStore(db)
             plan_md = None
             plan_source = "none"
-            plan_row = plan_store.get_weekly_plan_row(folder)
-            if plan_row is not None:
-                plan_md = plan_row["content_md"]
-                plan_source = "db"
-            else:
-                plan_item = content_store.read_text(f"{self._user_id}/logs/{folder}/plan.md")
-                if plan_item is not None:
-                    plan_md = plan_item.content
-                    plan_source = plan_item.source
+            plan_item = content_store.read_text(f"{self._user_id}/logs/{folder}/plan.md")
+            if plan_item is not None:
+                plan_md = plan_item.content
+                plan_source = plan_item.source
 
             feedback_md = None
             feedback_source = "none"

@@ -82,7 +82,9 @@ class PlannedSession:
     notes_md: str | None = None
     total_distance_m: float | None = None
     total_duration_s: float | None = None
-    scheduled_workout_id: int | None = None                                    # FK back to scheduled_workout(id) after push
+    # Deprecated compatibility field. Canonical WeeklyPlanStore backends always
+    # strip it; device execution state belongs to local scheduled_workout rows.
+    scheduled_workout_id: int | None = None
 
     def __post_init__(self) -> None:
         if not _is_iso_date(self.date):

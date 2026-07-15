@@ -1,8 +1,4 @@
-"""Unit tests for stride_core.plan_diff.
-
-Uses an in-memory SQLite DB (via the shared ``db`` fixture from conftest.py)
-wrapped in a minimal stub that satisfies the interface expected by apply_diff.
-"""
+"""Pure WeeklyPlan PlanDiff transformation tests."""
 
 from __future__ import annotations
 
@@ -11,470 +7,149 @@ import uuid
 import pytest
 
 from stride_core.plan_diff import (
-    DiffOp,
-    DiffOpKind,
-    PlanDiff,
-    apply_diff,
+    DiffOp, DiffOpKind, PlanDiff, apply_diff_to_weekly_plan,
 )
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+from stride_core.plan_spec import PlannedNutrition, PlannedSession, SessionKind, WeeklyPlan
 
 FOLDER = "2026-05-04_05-10(W2)"
 
 
-def _op_id() -> str:
-    return str(uuid.uuid4())
-
-
-def _insert_session(db, *, date: str, session_index: int, kind: str = "run",
-                    summary: str = "Easy 10km", notes_md: str | None = None,
-                    total_distance_m: float | None = 10000.0) -> int:
-    """Insert a planned_session row and return its id."""
-    cur = db._conn.execute(
-        """INSERT INTO planned_session
-           (week_folder, date, session_index, kind, summary, notes_md, total_distance_m)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (FOLDER, date, session_index, kind, summary, notes_md, total_distance_m),
+def _op(kind: DiffOpKind, date: str = "2026-05-05", index: int = 0,
+        patch: dict | None = None) -> DiffOp:
+    return DiffOp(
+        id=str(uuid.uuid4()), op=kind, date=date, session_index=index,
+        old_value=None, new_value=None, spec_patch=patch, accepted=None,
     )
-    db._conn.commit()
-    return cur.lastrowid
 
 
-def _get_session(db, row_id: int) -> dict | None:
-    rows = db._conn.execute(
-        "SELECT * FROM planned_session WHERE id = ?", (row_id,)
-    ).fetchall()
-    return dict(rows[0]) if rows else None
-
-
-def _all_sessions(db) -> list[dict]:
-    rows = db._conn.execute(
-        "SELECT * FROM planned_session WHERE week_folder = ? ORDER BY date, session_index",
-        (FOLDER,),
-    ).fetchall()
-    return [dict(r) for r in rows]
-
-
-class _StoreStub:
-    """Minimal PlanStateStore-compatible stub wrapping the test DB."""
-
-    def __init__(self, db):
-        self._db = db
-
-    def get_planned_session_by_date_index(self, date: str, session_index: int):
-        rows = self._db._conn.execute(
-            "SELECT * FROM planned_session WHERE date = ? AND session_index = ?",
-            (date, session_index),
-        ).fetchall()
-        return dict(rows[0]) if rows else None
-
-
-def _make_diff(ops: list[DiffOp]) -> PlanDiff:
+def _diff(*ops: DiffOp, folder: str = FOLDER) -> PlanDiff:
     return PlanDiff(
-        diff_id=str(uuid.uuid4()),
-        folder=FOLDER,
-        ops=ops,
-        ai_explanation="Test diff",
-        created_at="2026-05-12T08:00:00Z",
+        diff_id=str(uuid.uuid4()), folder=folder, ops=list(ops),
+        ai_explanation="test", created_at="2026-05-01T00:00:00Z",
     )
 
 
-# ---------------------------------------------------------------------------
-# REMOVE_SESSION
-# ---------------------------------------------------------------------------
-
-
-def test_remove_session(db):
-    row_id = _insert_session(db, date="2026-05-05", session_index=0)
-    assert _get_session(db, row_id) is not None
-
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.REMOVE_SESSION,
-            date="2026-05-05",
-            session_index=0,
-            old_value={"summary": "Easy 10km"},
-            new_value=None,
-            spec_patch=None,   # REMOVE doesn't need spec_patch
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    assert _get_session(db, row_id) is None
-
-
-def test_remove_session_not_in_accepted_list_is_noop(db):
-    row_id = _insert_session(db, date="2026-05-05", session_index=0)
-
-    diff = _make_diff([
-        DiffOp(
-            id="some-op-id",
-            op=DiffOpKind.REMOVE_SESSION,
-            date="2026-05-05",
-            session_index=0,
-            old_value=None,
-            new_value=None,
-            spec_patch=None,
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    # Pass an empty accepted list — op should be skipped
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[])
-
-    # Row must still be there
-    assert _get_session(db, row_id) is not None
-
-
-# ---------------------------------------------------------------------------
-# ADD_SESSION
-# ---------------------------------------------------------------------------
-
-
-def test_add_session(db):
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.ADD_SESSION,
-            date="2026-05-08",
-            session_index=0,
-            old_value=None,
-            new_value={"summary": "Tempo 8km"},
-            spec_patch={"kind": "run", "summary": "Tempo 8km", "total_distance_m": 8000.0},
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    sessions = _all_sessions(db)
-    assert len(sessions) == 1
-    assert sessions[0]["date"] == "2026-05-08"
-    assert sessions[0]["summary"] == "Tempo 8km"
-    assert sessions[0]["kind"] == "run"
-    assert sessions[0]["total_distance_m"] == 8000.0
-
-
-def test_add_session_spec_patch_none_is_skipped(db):
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.ADD_SESSION,
-            date="2026-05-08",
-            session_index=0,
-            old_value=None,
-            new_value={"summary": "Tempo 8km"},
-            spec_patch=None,   # no patch → should be skipped
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    # Nothing should be inserted
-    assert _all_sessions(db) == []
-
-
-# ---------------------------------------------------------------------------
-# MOVE_SESSION
-# ---------------------------------------------------------------------------
-
-
-def test_move_session(db):
-    row_id = _insert_session(db, date="2026-05-05", session_index=0)
-
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.MOVE_SESSION,
-            date="2026-05-05",
-            session_index=0,
-            old_value={"date": "2026-05-05"},
-            new_value={"date": "2026-05-06"},
-            spec_patch={"new_date": "2026-05-06", "new_session_index": 0},
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    row = _get_session(db, row_id)
-    assert row is not None
-    assert row["date"] == "2026-05-06"
-    assert row["session_index"] == 0
-
-
-# ---------------------------------------------------------------------------
-# REPLACE_KIND
-# ---------------------------------------------------------------------------
-
-
-def test_replace_kind(db):
-    row_id = _insert_session(db, date="2026-05-06", session_index=0, kind="run")
-
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.REPLACE_KIND,
-            date="2026-05-06",
-            session_index=0,
-            old_value={"kind": "run"},
-            new_value={"kind": "strength"},
-            spec_patch={"kind": "strength", "summary": "力量训练 A"},
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    row = _get_session(db, row_id)
-    assert row["kind"] == "strength"
-    assert row["summary"] == "力量训练 A"
-
-
-# ---------------------------------------------------------------------------
-# REPLACE_DISTANCE
-# ---------------------------------------------------------------------------
-
-
-def test_replace_distance(db):
-    row_id = _insert_session(db, date="2026-05-07", session_index=0,
-                              total_distance_m=10000.0)
-
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.REPLACE_DISTANCE,
-            date="2026-05-07",
-            session_index=0,
-            old_value={"total_distance_m": 10000.0},
-            new_value={"total_distance_m": 12000.0},
-            spec_patch={"total_distance_m": 12000.0},
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    row = _get_session(db, row_id)
-    assert row["total_distance_m"] == 12000.0
-
-
-# ---------------------------------------------------------------------------
-# REPLACE_NOTE
-# ---------------------------------------------------------------------------
-
-
-def test_replace_note(db):
-    row_id = _insert_session(db, date="2026-05-08", session_index=0,
-                              notes_md="Old notes")
-
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.REPLACE_NOTE,
-            date="2026-05-08",
-            session_index=0,
-            old_value={"notes_md": "Old notes"},
-            new_value={"notes_md": "New notes with detail"},
-            spec_patch={"notes_md": "New notes with detail"},
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    row = _get_session(db, row_id)
-    assert row["notes_md"] == "New notes with detail"
-
-
-# ---------------------------------------------------------------------------
-# Partial acceptance — only accepted_op_ids list entries are applied
-# ---------------------------------------------------------------------------
-
-
-def test_partial_acceptance(db):
-    """Only ops in accepted_op_ids should be applied; others are ignored."""
-    row_id_mon = _insert_session(db, date="2026-05-04", session_index=0,
-                                  kind="run", summary="Easy 10km")
-    row_id_tue = _insert_session(db, date="2026-05-05", session_index=0,
-                                  kind="run", summary="Tempo 8km")
-
-    op_accept = _op_id()   # this one will be accepted
-    op_reject = _op_id()   # this one will NOT be accepted
-
-    diff = _make_diff([
-        DiffOp(
-            id=op_accept,
-            op=DiffOpKind.REPLACE_NOTE,
-            date="2026-05-04",
-            session_index=0,
-            old_value=None,
-            new_value=None,
-            spec_patch={"notes_md": "Accepted note"},
-            accepted=None,
+def _plan() -> WeeklyPlan:
+    return WeeklyPlan(
+        week_folder=FOLDER,
+        sessions=(
+            PlannedSession(
+                date="2026-05-05", session_index=0, kind=SessionKind.RUN,
+                summary="Easy 10km", notes_md="keep", total_distance_m=10000,
+            ),
+            PlannedSession(
+                date="2026-05-06", session_index=0, kind=SessionKind.STRENGTH,
+                summary="Strength",
+            ),
         ),
-        DiffOp(
-            id=op_reject,
-            op=DiffOpKind.REPLACE_NOTE,
-            date="2026-05-05",
-            session_index=0,
-            old_value=None,
-            new_value=None,
-            spec_patch={"notes_md": "Rejected note"},
-            accepted=None,
-        ),
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_accept])
-
-    mon = _get_session(db, row_id_mon)
-    tue = _get_session(db, row_id_tue)
-
-    assert mon["notes_md"] == "Accepted note"
-    assert tue["notes_md"] is None   # unchanged
-
-
-# ---------------------------------------------------------------------------
-# Empty ops list → no-op
-# ---------------------------------------------------------------------------
-
-
-def test_empty_ops_list_is_noop(db):
-    row_id = _insert_session(db, date="2026-05-05", session_index=0)
-
-    diff = _make_diff([])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[])
-
-    assert _get_session(db, row_id) is not None
-
-
-# ---------------------------------------------------------------------------
-# spec_patch None for non-REMOVE op is skipped
-# ---------------------------------------------------------------------------
-
-
-def test_replace_kind_spec_patch_none_is_skipped(db):
-    row_id = _insert_session(db, date="2026-05-06", session_index=0, kind="run")
-
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.REPLACE_KIND,
-            date="2026-05-06",
-            session_index=0,
-            old_value={"kind": "run"},
-            new_value={"kind": "strength"},
-            spec_patch=None,   # no patch → should be skipped
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    row = _get_session(db, row_id)
-    # kind must NOT have changed
-    assert row["kind"] == "run"
-
-
-# ---------------------------------------------------------------------------
-# Folder guard — an op whose session lives in a different week is skipped
-# ---------------------------------------------------------------------------
-
-
-def _insert_session_in(db, *, folder: str, date: str, session_index: int = 0,
-                       kind: str = "run", summary: str = "Easy 10km") -> int:
-    cur = db._conn.execute(
-        """INSERT INTO planned_session
-           (week_folder, date, session_index, kind, summary, total_distance_m)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (folder, date, session_index, kind, summary, 10000.0),
+        nutrition=(PlannedNutrition(date="2026-05-05", kcal_target=2400),),
+        notes_md="top-level notes must survive",
     )
-    db._conn.commit()
-    return cur.lastrowid
 
 
-def test_apply_skips_session_in_another_folder(db):
-    """A crafted op targeting a date that belongs to a different week must not
-    mutate that other week's session (the apply endpoint takes a client diff)."""
-    other_folder = "2026-04-13_04-19(W-1)"
-    row_id = _insert_session_in(db, folder=other_folder, date="2026-04-15", kind="run")
+def _apply(plan: WeeklyPlan, *ops: DiffOp, accepted: list[str] | None = None):
+    accepted = accepted if accepted is not None else [op.id for op in ops]
+    return apply_diff_to_weekly_plan(plan, _diff(*ops), accepted)
 
-    op_id = _op_id()
-    diff = _make_diff([  # diff.folder == FOLDER, but the op date is in other_folder
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.REMOVE_SESSION,
-            date="2026-04-15",
-            session_index=0,
-            old_value=None,
-            new_value=None,
-            spec_patch=None,
-            accepted=None,
+
+def test_remove_session_preserves_plan_metadata_and_nutrition():
+    op = _op(DiffOpKind.REMOVE_SESSION, patch=None)
+    result = _apply(_plan(), op)
+    assert [(s.date, s.kind) for s in result.sessions] == [
+        ("2026-05-06", SessionKind.STRENGTH)
+    ]
+    assert result.nutrition == _plan().nutrition
+    assert result.notes_md == "top-level notes must survive"
+
+
+def test_add_session():
+    op = _op(
+        DiffOpKind.ADD_SESSION, date="2026-05-08",
+        patch={"kind": "run", "summary": "Tempo", "total_distance_m": 8000},
+    )
+    result = _apply(_plan(), op)
+    added = next(s for s in result.sessions if s.date == "2026-05-08")
+    assert added.summary == "Tempo"
+    assert added.total_distance_m == 8000
+
+
+def test_move_session():
+    op = _op(
+        DiffOpKind.MOVE_SESSION,
+        patch={"new_date": "2026-05-07", "new_session_index": 1},
+    )
+    result = _apply(_plan(), op)
+    moved = next(s for s in result.sessions if s.summary == "Easy 10km")
+    assert (moved.date, moved.session_index) == ("2026-05-07", 1)
+
+
+@pytest.mark.parametrize(
+    ("kind", "patch", "attr", "expected"),
+    [
+        (DiffOpKind.REPLACE_DISTANCE, {"total_distance_m": 7000},
+         "total_distance_m", 7000),
+        (DiffOpKind.REPLACE_NOTE, {"notes_md": "new"}, "notes_md", "new"),
+        (DiffOpKind.REPLACE_KIND, {"kind": "rest", "summary": "Rest"},
+         "kind", SessionKind.REST),
+    ],
+)
+def test_replace_ops(kind, patch, attr, expected):
+    result = _apply(_plan(), _op(kind, patch=patch))
+    changed = next(s for s in result.sessions if s.date == "2026-05-05")
+    assert getattr(changed, attr) == expected
+
+
+def test_unaccepted_and_missing_patch_are_noops():
+    op = _op(DiffOpKind.REPLACE_NOTE, patch={"notes_md": "new"})
+    assert _apply(_plan(), op, accepted=[]) == _plan()
+    missing = _op(DiffOpKind.REPLACE_NOTE, patch=None)
+    assert _apply(_plan(), missing) == _plan()
+
+
+def test_source_must_exist():
+    op = _op(DiffOpKind.REMOVE_SESSION, date="2026-05-07")
+    with pytest.raises(ValueError, match="does not exist"):
+        _apply(_plan(), op)
+
+
+@pytest.mark.parametrize("kind", [DiffOpKind.ADD_SESSION, DiffOpKind.MOVE_SESSION])
+def test_target_must_stay_in_week(kind):
+    patch = {"kind": "run", "summary": "x"}
+    date = "2026-05-20"
+    if kind == DiffOpKind.MOVE_SESSION:
+        date = "2026-05-05"
+        patch = {"new_date": "2026-05-20"}
+    op = _op(kind, date=date, patch=patch)
+    with pytest.raises(ValueError, match="outside plan bounds"):
+        _apply(_plan(), op)
+
+
+def test_duplicate_target_is_rejected():
+    op = _op(
+        DiffOpKind.MOVE_SESSION,
+        patch={"new_date": "2026-05-06", "new_session_index": 0},
+    )
+    with pytest.raises(ValueError, match="duplicate"):
+        _apply(_plan(), op)
+
+
+def test_diff_folder_must_match_plan():
+    with pytest.raises(ValueError, match="folder"):
+        apply_diff_to_weekly_plan(
+            _plan(), _diff(folder="2026-05-11_05-17"), []
         )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    # The other week's session must survive — the guard refused the cross-folder hit.
-    assert _get_session(db, row_id) is not None
 
 
-def test_move_to_date_outside_week_is_skipped(db):
-    """MOVE destination must stay within the folder's week (FOLDER = 05-04..05-10)."""
-    row_id = _insert_session(db, date="2026-05-05", session_index=0)
-
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.MOVE_SESSION,
-            date="2026-05-05",
-            session_index=0,
-            old_value=None,
-            new_value={"date": "2026-05-18"},
-            spec_patch={"new_date": "2026-05-18", "new_session_index": 0},  # next week
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    # Unmoved — the out-of-week destination was refused.
-    assert _get_session(db, row_id)["date"] == "2026-05-05"
-
-
-def test_add_session_outside_week_is_skipped(db):
-    """ADD date must fall within the folder's week."""
-    op_id = _op_id()
-    diff = _make_diff([
-        DiffOp(
-            id=op_id,
-            op=DiffOpKind.ADD_SESSION,
-            date="2026-05-20",  # outside FOLDER's 05-04..05-10 week
-            session_index=0,
-            old_value=None,
-            new_value={"summary": "X"},
-            spec_patch={"kind": "run", "summary": "X"},
-            accepted=None,
-        )
-    ])
-    store = _StoreStub(db)
-    apply_diff(store, FOLDER, diff, accepted_op_ids=[op_id])
-
-    assert _all_sessions(db) == []  # nothing inserted
+def test_swap_is_order_independent():
+    left = _op(
+        DiffOpKind.MOVE_SESSION, date="2026-05-05",
+        patch={"new_date": "2026-05-06", "new_session_index": 0},
+    )
+    right = _op(
+        DiffOpKind.MOVE_SESSION, date="2026-05-06",
+        patch={"new_date": "2026-05-05", "new_session_index": 0},
+    )
+    result = _apply(_plan(), left, right)
+    assert [(s.date, s.summary) for s in result.sessions] == [
+        ("2026-05-05", "Strength"), ("2026-05-06", "Easy 10km")
+    ]

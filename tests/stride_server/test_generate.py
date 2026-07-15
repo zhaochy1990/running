@@ -146,7 +146,7 @@ class TestNewUserDefaultKm:
         resp = _post(client, token, {"week_start": MONDAY, "source": "manual"})
         assert resp.json()["source"] == "manual"
 
-    def test_sessions_persisted_in_db(self, app_client, tmp_path, monkeypatch):
+    def test_sessions_persisted_only_in_canonical_store(self, app_client, tmp_path, monkeypatch):
         import stride_core.db as core_db_mod
         monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
         client, token, _, _ = app_client
@@ -158,7 +158,11 @@ class TestNewUserDefaultKm:
             ("2026-05-11_05-17",),
         )
         db.close()
-        assert len(rows) == 7
+        assert rows == []
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+        plan = get_weekly_plan_store().get_plan(USER_UUID, "2026-05-11_05-17")
+        assert plan is not None
+        assert len(plan.sessions) == 7
 
 
 class TestProgressionFromLastWeek:
@@ -319,7 +323,7 @@ class TestConflictHandling:
         assert r2.status_code == 200
         assert r2.json()["folder"] == "2026-05-11_05-17"
 
-    def test_force_replaces_sessions_in_db(self, app_client, tmp_path, monkeypatch):
+    def test_force_replaces_sessions_only_in_canonical_store(self, app_client, tmp_path, monkeypatch):
         import stride_core.db as core_db_mod
         monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
         client, token, _, _ = app_client
@@ -334,8 +338,11 @@ class TestConflictHandling:
             ("2026-05-11_05-17",),
         )
         db.close()
-        # Should still be exactly 7 (not doubled)
-        assert len(rows) == 7
+        assert rows == []
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+        plan = get_weekly_plan_store().get_plan(USER_UUID, "2026-05-11_05-17")
+        assert plan is not None
+        assert len(plan.sessions) == 7
 
 
 class TestAuthEnforcement:

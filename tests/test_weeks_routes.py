@@ -136,7 +136,7 @@ def test_get_week_plan_falls_back_to_file(app_client):
     assert data["plan"] == "# Week 0 plan\n\nRun easy."
 
 
-def test_get_week_plan_db_overrides_file(app_client):
+def test_get_week_plan_ignores_legacy_db_override(app_client):
     client, token, tmp_path = app_client
     plan_md = tmp_path / USER_UUID / "logs" / WEEK / "plan.md"
     plan_md.write_text("FROM PLAN FILE", encoding="utf-8")
@@ -149,12 +149,11 @@ def test_get_week_plan_db_overrides_file(app_client):
     resp = client.get(f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token))
     assert resp.status_code == 200
     data = resp.json()
-    assert data["plan_source"] == "db"
-    assert data["plan"] == "FROM DB PLAN"
-    assert data["plan_generated_by"] == "gpt-5.5"
+    assert data["plan_source"] == "file"
+    assert data["plan"] == "FROM PLAN FILE"
 
 
-def test_list_weeks_uses_db_plan_title(app_client):
+def test_list_weeks_ignores_legacy_db_plan_title(app_client):
     client, token, tmp_path = app_client
 
     from stride_storage.sqlite.database import Database
@@ -165,10 +164,8 @@ def test_list_weeks_uses_db_plan_title(app_client):
     resp = client.get(f"/api/{USER_UUID}/weeks", headers=_auth(token))
     assert resp.status_code == 200
     week = resp.json()["weeks"][0]
-    assert week["has_plan"] is True
-    assert week["plan_source"] == "db"
-    assert week["plan_title"] == "Agent Plan"
-    assert week["plan_generated_by"] == "gpt-5.5"
+    assert week["has_plan"] is False
+    assert week["plan_source"] == "none"
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +240,7 @@ def test_put_feedback_overwrites_previous(app_client):
     assert get_resp.json()["feedback"] == "draft 2 final"
 
 
-def test_put_plan_writes_db_row(app_client):
+def test_put_plan_writes_content_store(app_client):
     client, token, _ = app_client
 
     resp = client.put(
@@ -254,14 +251,14 @@ def test_put_plan_writes_db_row(app_client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["success"] is True
-    assert body["plan_source"] == "db"
+    assert body["plan_source"] == "content_store"
     assert body["plan_generated_by"] == "gpt-5.5"
 
     get_resp = client.get(f"/api/{USER_UUID}/weeks/{WEEK}", headers=_auth(token))
     assert get_resp.status_code == 200
     data = get_resp.json()
     assert data["plan"] == "# Adjusted plan"
-    assert data["plan_source"] == "db"
+    assert data["plan_source"] == "file"
 
 
 def test_put_plan_validates_content(app_client):

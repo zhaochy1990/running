@@ -1,8 +1,8 @@
 """plan.md ↔ plan.json — pure parsing, validation, and persistence.
 
 Decoupled from the coach agent: this package does no LLM coaching work, only
-the reverse-engineering of an authored markdown plan into the structured
-``WeeklyPlan`` schema (and the inverse — persisting a parsed result to DB).
+the reverse-engineering of authored markdown into the structured
+``WeeklyPlan`` schema. Persistence belongs to ``WeeklyPlanStore``.
 """
 
 from .extraction import (

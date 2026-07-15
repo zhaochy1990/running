@@ -56,7 +56,24 @@ def _bounds(plan: WeeklyPlan) -> tuple[str, str]:
 
 
 def _canonical_plan(plan: WeeklyPlan) -> WeeklyPlan:
-    """Drop local watch-projection identifiers before cross-environment storage."""
+    """Validate invariants shared by every canonical storage backend."""
+    date_from, date_to = _bounds(plan)
+    identities: set[tuple[str, int]] = set()
+    for session in plan.sessions:
+        if not date_from <= session.date <= date_to:
+            raise ValueError(
+                f"session {session.date}/{session.session_index} is outside "
+                f"weekly plan {plan.week_folder!r}"
+            )
+        identity = (session.date, session.session_index)
+        if identity in identities:
+            raise ValueError(f"duplicate planned session identity {identity!r}")
+        identities.add(identity)
+    for nutrition in plan.nutrition:
+        if not date_from <= nutrition.date <= date_to:
+            raise ValueError(
+                f"nutrition {nutrition.date} is outside weekly plan {plan.week_folder!r}"
+            )
     return replace(
         plan,
         sessions=tuple(
@@ -84,7 +101,8 @@ class FileWeeklyPlanStore(WeeklyPlanStore):
         self._lock = threading.Lock()
 
     def save_plan(
-        self, user_id: str, plan: WeeklyPlan, *, generated_by: str | None = None
+        self, user_id: str, plan: WeeklyPlan, *, generated_by: str | None = None,
+        source_hash: str | None = None,
     ) -> None:
         plan = _canonical_plan(plan)
         date_from, date_to = _bounds(plan)
@@ -94,6 +112,7 @@ class FileWeeklyPlanStore(WeeklyPlanStore):
                 "date_from": date_from,
                 "date_to": date_to,
                 "generated_by": generated_by,
+                "source_hash": source_hash,
                 "updated_at": _now_iso(),
                 "plan": json.loads(_plan_json(plan)),
             }
@@ -104,6 +123,20 @@ class FileWeeklyPlanStore(WeeklyPlanStore):
         if not isinstance(raw, dict) or not isinstance(raw.get("plan"), dict):
             return None
         return WeeklyPlan.from_dict(raw["plan"])
+
+    def get_generated_by(self, user_id: str, folder: str) -> str | None:
+        raw = _read_json(_plans_file()).get(user_id, {}).get(folder)
+        if not isinstance(raw, dict):
+            return None
+        value = raw.get("generated_by")
+        return str(value) if value is not None else None
+
+    def get_source_hash(self, user_id: str, folder: str) -> str | None:
+        raw = _read_json(_plans_file()).get(user_id, {}).get(folder)
+        if not isinstance(raw, dict):
+            return None
+        value = raw.get("source_hash")
+        return str(value) if value is not None else None
 
     def get_current_plan(self, user_id: str, on_date: str) -> WeeklyPlan | None:
         rows = _read_json(_plans_file()).get(user_id, {})
@@ -145,7 +178,8 @@ class AzureTableWeeklyPlanStore(WeeklyPlanStore):
         self._plans = AzureTableConnection(account_url, table_name)
 
     def save_plan(
-        self, user_id: str, plan: WeeklyPlan, *, generated_by: str | None = None
+        self, user_id: str, plan: WeeklyPlan, *, generated_by: str | None = None,
+        source_hash: str | None = None,
     ) -> None:
         from azure.data.tables import UpdateMode
 
@@ -162,6 +196,8 @@ class AzureTableWeeklyPlanStore(WeeklyPlanStore):
         }
         if generated_by is not None:
             entity["generated_by"] = generated_by
+        if source_hash is not None:
+            entity["source_hash"] = source_hash
         self._plans.table().upsert_entity(entity, mode=UpdateMode.REPLACE)
 
     def get_plan(self, user_id: str, folder: str) -> WeeklyPlan | None:
@@ -174,6 +210,30 @@ class AzureTableWeeklyPlanStore(WeeklyPlanStore):
         except ResourceNotFoundError:
             return None
         return WeeklyPlan.from_dict(json.loads(entity["plan_json"]))
+
+    def get_generated_by(self, user_id: str, folder: str) -> str | None:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            entity = self._plans.table().get_entity(
+                partition_key=user_id, row_key=folder
+            )
+        except ResourceNotFoundError:
+            return None
+        value = entity.get("generated_by")
+        return str(value) if value is not None else None
+
+    def get_source_hash(self, user_id: str, folder: str) -> str | None:
+        from azure.core.exceptions import ResourceNotFoundError
+
+        try:
+            entity = self._plans.table().get_entity(
+                partition_key=user_id, row_key=folder
+            )
+        except ResourceNotFoundError:
+            return None
+        value = entity.get("source_hash")
+        return str(value) if value is not None else None
 
     def get_current_plan(self, user_id: str, on_date: str) -> WeeklyPlan | None:
         entities = list(

@@ -134,7 +134,7 @@ class TestAuthoredReparse:
         assert body["structured_status"] == "authored"
         assert sentinel["called"] == 0
 
-        # Validate that the structured layer landed: w2_authored has 7 sessions.
+        # Structured state lands only in the canonical store, never SQLite.
         db = _db(tmp_path)
         try:
             sessions = db.get_planned_sessions(
@@ -142,7 +142,11 @@ class TestAuthoredReparse:
             )
         finally:
             db.close()
-        assert len(sessions) == 7
+        assert sessions == []
+        from stride_server.weekly_plan_store import get_weekly_plan_store
+        canonical = get_weekly_plan_store().get_plan(USER_UUID, FIXTURE_WEEK)
+        assert canonical is not None
+        assert len(canonical.sessions) == 7
 
     def test_reparse_without_plan_json_falls_through_to_llm(
         self, app_client, monkeypatch,
@@ -204,6 +208,26 @@ class TestAuthoredReparse:
         assert resp.json()["source"] == "authored"
         assert resp.json()["llm_calls"] == 0
         assert sentinel["called"] == 0
+
+    def test_plan_json_folder_mismatch_falls_back_without_saving(
+        self, app_client, monkeypatch,
+    ):
+        client, _, tmp_path, _, _ = app_client
+        _copy_fixture("w2_authored", _week_dir(tmp_path))
+        plan_path = _week_dir(tmp_path) / "plan.json"
+        payload = json.loads(plan_path.read_text(encoding="utf-8"))
+        payload["week_folder"] = "2026-05-11_05-17(W3)"
+        plan_path.write_text(json.dumps(payload), encoding="utf-8")
+        _seed_db_md(tmp_path)
+        sentinel = _mock_run_agent(monkeypatch, structured=True)
+
+        resp = client.post(
+            f"/internal/plan/reparse?user={USER_UUID}&folder={FIXTURE_WEEK}",
+            headers={"X-Internal-Token": INTERNAL_TOKEN},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["source"] == "fresh"
+        assert sentinel["called"] == 1
 
     def test_reparse_with_feature_flag_off_skips_plan_json(
         self, app_client, monkeypatch,
