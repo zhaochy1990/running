@@ -22,8 +22,9 @@ lives at the orchestrator level (the ``conversation_window`` arrives in the task
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import date as date_cls, timedelta
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -49,13 +50,16 @@ from ..toolkit import build_stride_toolkit
 logger = logging.getLogger(__name__)
 
 GraphFactory = Callable[..., Any]
+_WEEK_NUMBER_RE = re.compile(r"第\s*(\d{1,3})\s*周")
 
 
 WEEKLY_PLAN_CARD = SpecialistCard(
     id="weekly_plan",
     description=(
-        "调整本周训练计划：调换/挪动课时、整周或单日减量、替换课时类型、加力量、"
-        "改配速目标、清空重排。产出 typed 修改提案（diff），等用户确认后落地。"
+        "生成或调整某一周的 weekly plan：包括本周，以及总体/赛季计划的第 N 周。"
+        "可调换/挪动课时、整周或单日减量、替换课时类型、加力量、改配速目标、"
+        "清空重排。目标是 week，不是修改总纲阶段。产出 typed 修改提案（diff），"
+        "等用户确认后落地。"
     ),
     tags=["本周", "周计划", "调整", "换课", "减量", "挪动", "改训练"],
     examples=[
@@ -64,6 +68,7 @@ WEEKLY_PLAN_CARD = SpecialistCard(
         "周五加一节力量",
         "把明天的配速放慢到 5:30",
         "这周重新安排一下",
+        "生成总体训练计划第 11 周的 weekly plan",
     ],
     writes=True,
     data_needs=[],
@@ -85,6 +90,69 @@ def resolve_current_week_folder(user_id: str) -> str | None:
     return current.week_folder if current is not None else None
 
 
+def resolve_master_week_folder(user_id: str, week_index: int) -> str | None:
+    """Resolve a global master-plan week number to its weekly-plan folder.
+
+    ``MasterPlan.weeks`` is the canonical week-index/date mapping. Reuse an
+    existing WeeklyPlanStore folder when one covers that date; otherwise return
+    the natural Monday→Sunday folder that a new weekly plan would use.
+    """
+    from ...master_plan_store import get_master_plan_store
+
+    try:
+        master = get_master_plan_store().get_active_plan(user_id)
+    except Exception:
+        logger.exception("weekly_plan: active master-plan lookup failed")
+        return None
+    if master is None:
+        return None
+
+    weeks = list(master.weeks or master.weekly_key_sessions or [])
+    match = next((week for week in weeks if week.week_index == week_index), None)
+    if match is not None:
+        try:
+            week_start = date_cls.fromisoformat(match.week_start)
+        except (TypeError, ValueError):
+            logger.warning(
+                "weekly_plan: master week %s has invalid week_start %r",
+                week_index,
+                match.week_start,
+            )
+            return None
+    elif not weeks and 1 <= week_index <= master.total_weeks:
+        # Legacy plans predate the canonical week skeleton. Their start_date +
+        # total_weeks still defines a deterministic global week mapping.
+        try:
+            plan_start = date_cls.fromisoformat(master.start_date)
+        except (TypeError, ValueError):
+            logger.warning(
+                "weekly_plan: legacy master has invalid start_date %r",
+                master.start_date,
+            )
+            return None
+        week_start = plan_start + timedelta(days=(week_index - 1) * 7)
+    else:
+        return None
+
+    try:
+        existing = get_weekly_plan_store().get_current_plan(
+            user_id, week_start.isoformat()
+        )
+    except Exception:
+        logger.exception(
+            "weekly_plan: canonical lookup failed for master week %s", week_index
+        )
+        return None
+    return existing.week_folder if existing is not None else week_folder(week_start)
+
+
+def _explicit_week_index(hint: TargetHint | None) -> int | None:
+    if hint is None or hint.kind != "week" or not hint.ref_phrase:
+        return None
+    match = _WEEK_NUMBER_RE.search(hint.ref_phrase)
+    return int(match.group(1)) if match else None
+
+
 def make_current_week_target_resolver(
     user_id: str,
 ) -> Callable[[TargetRef | None, TargetHint | None], TargetRef | None]:
@@ -103,6 +171,10 @@ def make_current_week_target_resolver(
     ) -> TargetRef | None:
         if target is not None and target.kind == "master":
             return None
+        explicit_week_index = _explicit_week_index(hint)
+        if explicit_week_index is not None:
+            folder = resolve_master_week_folder(user_id, explicit_week_index)
+            return TargetRef(kind="week", folder=folder) if folder else None
         folder = resolve_current_week_folder(user_id)
         if folder is None:
             phrase = (hint.ref_phrase if hint is not None else "") or ""

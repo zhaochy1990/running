@@ -131,6 +131,67 @@ fixtures:
       resolved_from: resolved
       self_ambiguity: false
 
+  - fixture_id: resolver-create-current-master-week-followup
+    description: 教练已回答当前处于总纲第11周后，后续生成本周计划应利用历史并路由到周计划写专家。
+    tags: [write, week, conversation, master_week, followup, target_resolution]
+    input:
+      utterance: 我希望生成本周的训练计划
+      conversation_window:
+        - role: user
+          content: 我当前处于总体训练计划的第几周？
+        - role: assistant
+          content: 你当前处于总体训练计划的第 11 周（共 24 周）。日期：2026 年 7 月 13 日至 7 月 19 日。
+      prior_target:
+        kind: master
+        plan_id: eval-master-plan
+      target_resolution:
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+      target_hint_kind: week
+
+  - fixture_id: resolver-create-explicit-master-week
+    description: 明确要求生成总体计划第11周 weekly plan 时，必须保留第11周短语供确定性映射。
+    tags: [write, week, master_week, explicit_target, target_resolution]
+    input:
+      utterance: 生成总体训练计划的第11周的weekly plan
+      conversation_window:
+        - role: user
+          content: 我当前处于总体训练计划的第几周？
+        - role: assistant
+          content: 你当前处于总体训练计划的第 11 周（共 24 周）。日期：2026 年 7 月 13 日至 7 月 19 日。
+      prior_target:
+        kind: master
+        plan_id: eval-master-plan
+      target_resolution:
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: week
+        folder: 2026-07-13_07-19(EVAL)
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+      target_hint_kind: week
+      target_ref_phrase_contains: 第11周
+
   - fixture_id: resolver-week-write
     description: 明确修改本周训练时，应路由到周计划写专家并解析当前周目标。
     tags: [write, week, target_resolution]

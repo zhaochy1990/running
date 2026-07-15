@@ -8,13 +8,21 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from coach.contracts import SpecialistTask, TargetHint, TargetRef, Turn
+from stride_core.master_plan import (
+    MasterPlan,
+    MasterPlanGoal,
+    MasterPlanStatus,
+    MasterPlanWeek,
+)
 from stride_core.plan_diff import PlanDiff
+from stride_core.plan_spec import WeeklyPlan
 from stride_server.coach_adapters.orchestrator import weekly_plan as wp
 from stride_server.coach_adapters.orchestrator.weekly_plan import (
     WEEKLY_PLAN_CARD,
     make_current_week_target_resolver,
     make_weekly_plan_runner,
     resolve_current_week_folder,
+    resolve_master_week_folder,
 )
 
 _FOLDER = "2026-06-22_06-28(W8)"
@@ -182,6 +190,88 @@ class _FakeWeeklyPlanStore:
         return self.current
 
 
+def _master_plan_with_week(week_index: int = 11) -> MasterPlan:
+    week = MasterPlanWeek(
+        week_index=week_index,
+        week_start="2026-07-13",
+        phase_id="phase-1",
+        target_weekly_km_low=68,
+        target_weekly_km_high=74,
+        key_sessions=[],
+    )
+    return MasterPlan(
+        plan_id="master-1",
+        user_id="u1",
+        status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="goal-1",
+            race_date="2026-10-18",
+            target_time="2:50:00",
+        ),
+        start_date="2026-05-04",
+        end_date="2026-10-18",
+        total_weeks=24,
+        phases=[],
+        milestones=[],
+        weeks=[week],
+        training_principles=[],
+        generated_by="test",
+        version=1,
+        created_at="2026-05-01T00:00:00Z",
+        updated_at="2026-05-01T00:00:00Z",
+    )
+
+
+class _MasterStore:
+    def __init__(self, plan=None):
+        self.plan = plan
+
+    def get_active_plan(self, _user_id):
+        return self.plan
+
+
+def test_resolve_master_week_folder_from_active_plan(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: _MasterStore(_master_plan_with_week()),
+    )
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+
+    assert resolve_master_week_folder("u1", 11) == "2026-07-13_07-19"
+    assert resolve_master_week_folder("u1", 12) is None
+
+
+def test_resolve_master_week_folder_reuses_existing_canonical_folder(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: _MasterStore(_master_plan_with_week()),
+    )
+    existing = WeeklyPlan(week_folder="2026-07-13_07-19(W3)")
+    monkeypatch.setattr(
+        wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore(existing)
+    )
+
+    assert resolve_master_week_folder("u1", 11) == existing.week_folder
+
+
+def test_resolve_master_week_folder_supports_legacy_plan_without_weeks(
+    monkeypatch,
+) -> None:
+    legacy = _master_plan_with_week().model_copy(
+        update={"weeks": [], "weekly_key_sessions": []}
+    )
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: _MasterStore(legacy),
+    )
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+
+    assert resolve_master_week_folder("u1", 11) == "2026-07-13_07-19"
+    assert resolve_master_week_folder("u1", 25) is None
+
+
 def test_resolve_current_week_folder_prefers_canonical_store(monkeypatch) -> None:
     from stride_core.plan_spec import WeeklyPlan
 
@@ -240,3 +330,19 @@ def test_target_resolver_uses_calendar_folder_when_current_week_missing(
         TargetRef(kind="session", date="2026-07-15"),
         TargetHint(kind="session", ref_phrase="本周三的间歇"),
     ) is None
+
+
+def test_target_resolver_maps_master_week_number_to_folder(monkeypatch) -> None:
+    monkeypatch.setattr(
+        wp,
+        "resolve_master_week_folder",
+        lambda _user_id, week_index: (
+            "2026-07-13_07-19(W11)" if week_index == 11 else None
+        ),
+    )
+    resolver = make_current_week_target_resolver("u1")
+
+    assert resolver(
+        TargetRef(kind="week"),
+        TargetHint(kind="week", ref_phrase="总体训练计划的第11周"),
+    ) == TargetRef(kind="week", folder="2026-07-13_07-19(W11)")

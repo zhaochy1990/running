@@ -68,6 +68,45 @@ def test_session_memory_accumulates_across_turns() -> None:
     assert "窗口 2 轮" in resp2.reply
 
 
+def test_resolver_receives_prior_user_and_assistant_history() -> None:
+    prompts: list[str] = []
+
+    def _draft(_system: str, user_prompt: str) -> ResolverDraft:
+        prompts.append(user_prompt)
+        return ResolverDraft(
+            intents=[
+                IntentHit(
+                    specialist_id="status_insight",
+                    action="read",
+                    confidence=0.95,
+                )
+            ]
+        )
+
+    graph = build_orchestrator_graph(
+        registry=_registry(_echo_runner),
+        draft_fn=_draft,
+        checkpointer=InMemorySaver(),
+    )
+    _invoke(
+        graph,
+        user_id="u1",
+        session_id="s1",
+        message="我当前处于总体训练计划的第几周？",
+    )
+    _invoke(
+        graph,
+        user_id="u1",
+        session_id="s1",
+        message="我希望生成本周的训练计划",
+    )
+
+    assert len(prompts) == 2
+    assert "用户: 我当前处于总体训练计划的第几周？" in prompts[1]
+    assert "教练: 诊断结果（窗口 0 轮）" in prompts[1]
+    assert "# 本轮用户消息\n我希望生成本周的训练计划" in prompts[1]
+
+
 def test_separate_sessions_do_not_share_memory() -> None:
     graph = build_orchestrator_graph(
         registry=_registry(_echo_runner),

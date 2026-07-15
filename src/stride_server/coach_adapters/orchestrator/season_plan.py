@@ -60,7 +60,9 @@ SEASON_PLAN_CARD = SpecialistCard(
     id="season_plan",
     description=(
         "调整长期赛季计划/总纲：延长或缩短某个阶段、改里程碑日期或目标、给备选方案、"
-        "清空重排。产出 typed 修改提案（diff），等用户确认后落地。不负责从零生成新赛季计划。"
+        "修改阶段级周量范围、清空重排。产出 typed 修改提案（diff），等用户确认后落地。"
+        "不负责生成总体计划第 N 周的 weekly plan；那是 weekly_plan 专家的 week 目标。"
+        "不负责从零生成新赛季计划。"
     ),
     tags=["赛季", "总纲", "赛季计划", "阶段", "里程碑", "周期", "macro"],
     examples=[

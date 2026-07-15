@@ -38,6 +38,9 @@ ${card_catalog}
   - 「告诉我本周训练计划，不要修改」→ `status_insight`, `action=read`, `target_hint.kind=week`。
   - 「把总体训练计划的基础期延长两周」→ `season_plan`, `action=write`, `target_hint.kind=master`。
   - 「把本周三改成轻松跑」→ `weekly_plan`, `action=write`, `target_hint.kind=week`。
+  - 「生成总体训练计划的第11周 weekly plan」→ `weekly_plan`, `action=write`,
+    `target_hint.kind=week`, `target_hint.ref_phrase="第11周"`。句子提到「总体训练计划」
+    不会改变目标仍是其中某一周；不要误路由到 `season_plan`。
   - 教练问「要创建本周的训练计划吗？」后用户答「创建」→ `weekly_plan`,
     `action=write`, `target_hint.kind=week`。
 - 不要仅凭句子出现「生成」「减少」等单个词判断写入；以用户是否要求形成计划修改提案为准。例如「不要生成计划，只告诉我当前计划」和「这个计划能否减少受伤风险」都是 `read`。
@@ -56,6 +59,8 @@ ${card_catalog}
 **目标抽取**
 
 - 只抽**用户指代对象的短语**，不要自己去解析成具体哪一周 / 哪个计划（那是系统代码的事）。
+- 「总体/赛季计划第 N 周」「第 N 周的 weekly plan」都属于 `kind=week`；
+  `ref_phrase` 必须保留完整的「第 N 周」原文，让系统代码按 active master plan 的 weeks 映射日期。
 - 用代词（「它/这个/那个」）→ `is_anaphora=true`，`kind` 尽量推断。
 - 没提任何对象 → `target_hint` 留空。
 
