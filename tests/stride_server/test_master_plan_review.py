@@ -865,7 +865,7 @@ class TestCurrentMasterPlan:
         client, token, tmp_path, _ = app_client
         store = _get_store()
 
-        today = datetime.now(timezone.utc).date()
+        today = today_shanghai()
         phase_id = str(uuid4())
         goal_id = str(uuid4())
         phase = Phase(
@@ -1270,7 +1270,7 @@ class TestCurrentMasterPlan:
         client, token, tmp_path, _ = app_client
         store = _get_store()
 
-        today = datetime.now(timezone.utc).date()
+        today = today_shanghai()
         future_date = (today + timedelta(days=14)).isoformat()
 
         phase_id = str(uuid4())
