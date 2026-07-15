@@ -26,6 +26,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+try:
+    import readline as _readline
+except ImportError:  # pragma: no cover - unavailable on some platforms
+    _readline = None
+
 import click
 from rich.console import Console
 from rich.markdown import Markdown
@@ -71,6 +76,7 @@ _HELP = """\
   /session   列出历史会话，选择并恢复其中一个
   /help      显示这个帮助
   /exit /quit 退出
+  ↑          加载上一条发送给教练的输入
 直接输入文字 = 跟教练对话。
 """
 
@@ -99,6 +105,49 @@ def _new_session_id() -> str:
 class _SessionSummary:
     session_id: str
     updated_at: str | None
+
+
+class _InputHistory:
+    """Enable arrow-key history containing only messages sent to Coach."""
+
+    def __init__(self, backend) -> None:
+        self._backend = backend
+        self._manual_history = False
+        self._previous_entries: list[str] = []
+
+    def start(self) -> None:
+        required_methods = (
+            "add_history",
+            "clear_history",
+            "get_current_history_length",
+            "get_history_item",
+            "set_auto_history",
+        )
+        if self._backend is None or not all(
+            hasattr(self._backend, method) for method in required_methods
+        ):
+            return
+        history_length = self._backend.get_current_history_length()
+        self._previous_entries = [
+            self._backend.get_history_item(index)
+            for index in range(1, history_length + 1)
+        ]
+        self._backend.clear_history()
+        self._backend.set_auto_history(False)
+        self._manual_history = True
+
+    def remember(self, line: str) -> None:
+        if self._manual_history:
+            self._backend.add_history(line)
+
+    def close(self) -> None:
+        if not self._manual_history:
+            return
+        self._backend.clear_history()
+        for entry in self._previous_entries:
+            self._backend.add_history(entry)
+        self._backend.set_auto_history(True)
+        self._manual_history = False
 
 
 def _list_sessions(
@@ -444,43 +493,52 @@ def main(
     click.echo(f"  {_model_banner()} · /help 看命令")
     click.echo("─" * 60)
 
-    while True:
-        try:
-            line = input("\n你 › ").strip()
-        except (EOFError, KeyboardInterrupt):
-            click.echo("\n再见 👋")
-            return
+    input_history = _InputHistory(_readline)
+    input_history.start()
+    try:
+        while True:
+            try:
+                line = input("\n你 › ").strip()
+            except (EOFError, KeyboardInterrupt):
+                click.echo("\n再见 👋")
+                return
 
-        if not line:
-            continue
-        if line in ("/exit", "/quit"):
-            click.echo("再见 👋")
-            return
-        if line == "/help":
-            click.echo(_HELP)
-            continue
-        if line == "/session":
-            session_id = _select_session(
-                checkpointer=checkpointer,
-                user_id=user_id,
-                current_session_id=session_id,
-            )
-            continue
-        if line == "/new":
-            session_id = _new_session_id()
-            click.echo(f"已开新会话: {session_id}")
-            continue
-
-        try:
-            with _Thinking(debug=debug):
-                turn = _run_turn(
-                    user_id=user_id, session_id=session_id, message=line, checkpointer=checkpointer
+            if not line:
+                continue
+            if line in ("/exit", "/quit"):
+                click.echo("再见 👋")
+                return
+            if line == "/help":
+                click.echo(_HELP)
+                continue
+            if line == "/session":
+                session_id = _select_session(
+                    checkpointer=checkpointer,
+                    user_id=user_id,
+                    current_session_id=session_id,
                 )
-        except Exception as exc:  # noqa: BLE001 — keep the REPL alive
-            click.echo(f"❌ 调用失败: {_friendly_error(exc)}")
-            continue
+                continue
+            if line == "/new":
+                session_id = _new_session_id()
+                click.echo(f"已开新会话: {session_id}")
+                continue
 
-        _print_turn(turn, interactive=True)
+            input_history.remember(line)
+            try:
+                with _Thinking(debug=debug):
+                    turn = _run_turn(
+                        user_id=user_id,
+                        session_id=session_id,
+                        message=line,
+                        checkpointer=checkpointer,
+                    )
+            except Exception as exc:  # noqa: BLE001 — keep the REPL alive
+                click.echo(f"❌ 调用失败: {_friendly_error(exc)}")
+                continue
+
+            _print_turn(turn, interactive=True)
+    finally:
+        input_history.close()
 
 
 if __name__ == "__main__":
