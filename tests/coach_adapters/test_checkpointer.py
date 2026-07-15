@@ -103,6 +103,32 @@ def test_list_returns_reverse_chronological(tmp_path: Path) -> None:
     assert [t.metadata["step"] for t in tuples] == [4, 3, 2, 1, 0]
 
 
+def test_list_latest_checkpoint_rows_by_thread_prefix(tmp_path: Path) -> None:
+    saver = _saver(tmp_path)
+    for thread_id in (
+        "user-x:coach:cli-old",
+        "user-x:coach:cli-new",
+        "user-x:qa:internal",
+        "user-y:coach:cli-other-user",
+    ):
+        saver.put(_config(thread_id), _checkpoint("ck0"), _metadata(), {})
+    saver.put(
+        _config("user-x:coach:cli-old"),
+        _checkpoint("ck1"),
+        _metadata() | {"step": 1},
+        {},
+    )
+
+    rows = saver.store.list_latest_checkpoint_rows("user-x:coach:")
+
+    assert {row.thread_id for row in rows} == {
+        "user-x:coach:cli-old",
+        "user-x:coach:cli-new",
+    }
+    old = next(row for row in rows if row.thread_id.endswith("cli-old"))
+    assert old.checkpoint_id == "ck1"
+
+
 # ---------------------------------------------------------------------------
 # 2. large state
 # ---------------------------------------------------------------------------

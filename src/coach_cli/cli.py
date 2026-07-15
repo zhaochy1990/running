@@ -8,8 +8,8 @@ Requires:
   REPL stays alive).
 
 Session state persists to a local file checkpointer under
-``data/_coach_dev/cli_checkpoints`` so multi-turn context survives within a
-session id (and across runs that reuse ``--session``).
+``~/.coach-cli/checkpoints`` so multi-turn context survives within a session
+id (and across runs that reuse ``--session``).
 """
 
 from __future__ import annotations
@@ -21,11 +21,14 @@ import threading
 import time
 import uuid
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import click
 
 import stride_core.db as _coredb
+from stride_core.timefmt import utc_iso_to_shanghai_iso
 
 # Our trace loggers (DEBUG when --debug). Third-party stays at WARNING so the
 # httpx / azure / openai request spam doesn't drown the orchestration trace.
@@ -49,12 +52,13 @@ warnings.filterwarnings(
 _UUID4_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
-_CHECKPOINT_DIR = Path("data/_coach_dev/cli_checkpoints")
+_COACH_CLI_HOME = Path.home() / ".coach-cli"
+_CHECKPOINT_DIR = _COACH_CLI_HOME / "checkpoints"
 
 _HELP = """\
 命令:
   /new       开一个新会话（清空上下文）
-  /session   显示当前 session id
+  /session   列出历史会话，选择并恢复其中一个
   /help      显示这个帮助
   /exit /quit 退出
 直接输入文字 = 跟教练对话。
@@ -79,6 +83,80 @@ def _resolve_profile(profile: str, data_dir: Path | None = None) -> str:
 
 def _new_session_id() -> str:
     return f"cli-{uuid.uuid4().hex[:8]}"
+
+
+@dataclass(frozen=True)
+class _SessionSummary:
+    session_id: str
+    updated_at: str | None
+
+
+def _list_sessions(
+    *,
+    checkpointer,
+    user_id: str,
+    current_session_id: str,
+) -> list[_SessionSummary]:
+    """Return this user's coach sessions, most recently used first."""
+    thread_prefix = f"{user_id}:coach:"
+    rows = checkpointer.store.list_latest_checkpoint_rows(thread_prefix)
+    sessions = [
+        _SessionSummary(
+            session_id=row.thread_id.removeprefix(thread_prefix),
+            updated_at=row.created_at,
+        )
+        for row in rows
+    ]
+    if all(session.session_id != current_session_id for session in sessions):
+        sessions.insert(0, _SessionSummary(current_session_id, None))
+    return sessions
+
+
+def _format_session_time(value: str | None) -> str:
+    if value is None:
+        return "尚无消息"
+    local = utc_iso_to_shanghai_iso(value) or value
+    return f"{local[:16].replace('T', ' ')} 上海"
+
+
+def _select_session(
+    *,
+    checkpointer,
+    user_id: str,
+    current_session_id: str,
+    prompt: Callable[[str], str] = input,
+) -> str:
+    """Show the session picker and return the selected session id."""
+    sessions = _list_sessions(
+        checkpointer=checkpointer,
+        user_id=user_id,
+        current_session_id=current_session_id,
+    )
+    click.echo("会话列表（最近使用优先）:")
+    for index, session in enumerate(sessions, start=1):
+        current = "  ← 当前" if session.session_id == current_session_id else ""
+        click.echo(
+            f"  {index}. {session.session_id}  "
+            f"{_format_session_time(session.updated_at)}{current}"
+        )
+
+    while True:
+        try:
+            answer = prompt("选择编号恢复（Enter 取消） › ").strip()
+        except (EOFError, KeyboardInterrupt):
+            click.echo("\n已取消")
+            return current_session_id
+        if not answer:
+            click.echo("已取消")
+            return current_session_id
+        if answer.isdigit() and 1 <= int(answer) <= len(sessions):
+            selected = sessions[int(answer) - 1].session_id
+            if selected == current_session_id:
+                click.echo(f"继续当前会话: {selected}")
+            else:
+                click.echo(f"已恢复会话: {selected}")
+            return selected
+        click.echo(f"请输入 1-{len(sessions)}，或按 Enter 取消。")
 
 
 def _setup_debug_logging() -> None:
@@ -306,7 +384,11 @@ def main(
             click.echo(_HELP)
             continue
         if line == "/session":
-            click.echo(f"session: {session_id}")
+            session_id = _select_session(
+                checkpointer=checkpointer,
+                user_id=user_id,
+                current_session_id=session_id,
+            )
             continue
         if line == "/new":
             session_id = _new_session_id()

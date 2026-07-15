@@ -101,6 +101,29 @@ class FileCheckpointStore(CheckpointStore):
                 break
         return rows
 
+    def list_latest_checkpoint_rows(
+        self,
+        thread_id_prefix: str,
+        *,
+        limit: int | None = None,
+    ) -> list[CheckpointRow]:
+        rows_dir = self._base / "rows"
+        latest: list[CheckpointRow] = []
+        for thread_dir in rows_dir.iterdir():
+            if not thread_dir.is_dir():
+                continue
+            files = sorted(thread_dir.glob("*.json"), reverse=True)
+            if not files:
+                continue
+            row = CheckpointRow.from_dict(json.loads(files[0].read_text()))
+            if row.thread_id.startswith(thread_id_prefix):
+                latest.append(row)
+        latest.sort(
+            key=lambda row: (row.created_at, row.checkpoint_id),
+            reverse=True,
+        )
+        return latest[:limit] if limit is not None else latest
+
     # ------------------------------------------------------------------
     # pending writes
     # ------------------------------------------------------------------
@@ -154,5 +177,4 @@ class FileCheckpointStore(CheckpointStore):
                     deleted = sum(1 for _ in d.glob("*.json"))
                 shutil.rmtree(d)
         return deleted
-
 

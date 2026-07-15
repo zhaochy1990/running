@@ -128,6 +128,15 @@ class CheckpointStore(Protocol):
         limit: int | None = None,
     ) -> list[CheckpointRow]: ...
 
+    def list_latest_checkpoint_rows(
+        self,
+        thread_id_prefix: str,
+        *,
+        limit: int | None = None,
+    ) -> list[CheckpointRow]:
+        """List the newest checkpoint for each thread matching a prefix."""
+        ...
+
     def put_write(self, write: CheckpointWrite) -> None: ...
 
     def list_writes(self, thread_id: str, checkpoint_id: str) -> list[CheckpointWrite]: ...
