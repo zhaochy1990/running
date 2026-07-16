@@ -197,6 +197,7 @@ class TestAdjustMessages:
 
         def fake_factory(**kwargs):
             kwargs["state_observer"]({
+                "master_adjustment_request": "把基础期延长两周",
                 "master_adjustment_assessment": {
                     "adjustment_request": "把基础期延长两周",
                     "verdict": "reasonable",
@@ -334,6 +335,9 @@ class TestAdjustMessages:
             def run(task):
                 captured["task"] = task
                 kwargs["state_observer"]({
+                    "master_adjustment_request": (
+                        "专项期：训练重点改成上坡力量与跑姿经济性"
+                    ),
                     "master_adjustment_assessment": {
                         "adjustment_request": "专项期：训练重点改成上坡力量与跑姿经济性",
                         "verdict": "unreasonable",
@@ -389,6 +393,7 @@ class TestAdjustMessages:
 
         def fake_factory(**kwargs):
             kwargs["state_observer"]({
+                "master_adjustment_request": "把基础期周跑量加到 150 公里",
                 "master_adjustment_assessment": {
                     "adjustment_request": "把基础期周跑量加到 150 公里",
                     "verdict": "unreasonable",
@@ -411,6 +416,54 @@ class TestAdjustMessages:
         assert resp.status_code == 200, resp.text
         assert resp.json()["stage"] == "assessment"
         assert resp.json()["assessment"]["verdict"] == "unreasonable"
+        assert resp.json()["diff"] is None
+        assert mp_mod._PENDING_MP_DIFFS == {}
+
+    def test_stale_reasonable_assessment_never_returns_diff(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+        stale_diff = MasterPlanDiff(
+            diff_id=str(uuid4()),
+            plan_id=plan.plan_id,
+            ops=[MasterPlanDiffOp(
+                id=str(uuid4()),
+                op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+                phase_id=plan.phases[0].id,
+                old_value={"weekly_distance_km_high": 50},
+                new_value={"weekly_distance_km_high": 60},
+                spec_patch={"weekly_distance_km_high": 60},
+            )],
+            ai_explanation="不应泄漏的旧请求方案",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        def fake_factory(**kwargs):
+            kwargs["state_observer"]({
+                "master_adjustment_request": "把基础期周跑量加到 60 公里",
+                "master_adjustment_assessment": {
+                    "adjustment_request": "把基础期延长两周",
+                    "verdict": "reasonable",
+                    "rationale": "这是上一条请求的评估。",
+                },
+            })
+            return lambda task: SpecialistResult(
+                status="completed",
+                reply_fragment="旧请求评估不应授权新方案。",
+                proposals=[stale_diff],
+            )
+
+        with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
+                json={"message": "把基础期周跑量加到 60 公里", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["stage"] == "assessment"
+        assert resp.json()["assessment"] is None
         assert resp.json()["diff"] is None
         assert mp_mod._PENDING_MP_DIFFS == {}
 
@@ -440,6 +493,7 @@ class TestAdjustApply:
 
         def fake_factory(**kwargs):
             kwargs["state_observer"]({
+                "master_adjustment_request": "把基础期延长两周",
                 "master_adjustment_assessment": {
                     "adjustment_request": "把基础期延长两周",
                     "verdict": "reasonable",

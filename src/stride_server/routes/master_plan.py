@@ -1198,6 +1198,14 @@ def adjust_messages(
     assessment = observed_state.get("master_adjustment_assessment")
     if not isinstance(assessment, dict):
         assessment = None
+    effective_request = observed_state.get("master_adjustment_request")
+    assessment_matches = (
+        isinstance(effective_request, str)
+        and isinstance(assessment, dict)
+        and assessment.get("adjustment_request") == effective_request
+    )
+    if not assessment_matches:
+        assessment = None
     verdict = assessment.get("verdict") if assessment else None
     proposals = [
         proposal
@@ -1207,7 +1215,7 @@ def adjust_messages(
     if verdict != "reasonable":
         # Defense in depth at the HTTP boundary. The conversation graph already
         # enforces this, but no legacy response may surface or cache a diff
-        # without the matching reasonable assessment.
+        # without the matching reasonable assessment for this effective request.
         proposals = []
     for proposal in proposals:
         _mp_diff_store(user_id, plan_id, proposal)
