@@ -27,6 +27,7 @@ S1_CONVERSATION_INPUT_SHA256 = {
     "s1c-focus-phase-followup-reasonable": "9bed8e3c399e0d0cdfb653a9f9c529b99d7f891d7afb2317f8d91fb614440e51",
     "s1c-increase-details-followup-reasonable": "d0ad8f40d3801fa119d688e8f834eebf9634b64b0dbdb066f129c013554bc90b",
     "s1c-increase-missing-details-clarify": "7f2864ebd73f9eed21177d26bdd7c0c959a9127d1e1807e8efe8e3e87292650e",
+    "s1c-increase-percentage-missing-phase-clarify": "d8dab5b18209ee27fa0badcf76af6b5f4d8c5ac2f2480a6342e4df15fb393b69",
     "s1c-race-postponed-atomic": "ae2c9d7a12347e44fd15e7a684b827627a55db1263759ce572c78e229d305303",
     "s1c-target-time-reasonable-atomic": "6e016c9222f18450e9d7eda42fbc8a94939c8168339aabd6c69c1f1fc542939e",
     "s1c-vague-adjustment-clarify": "a9c4467eb8c4ce6458ab418a8870f99e8ae7d851cdfc0773909ddb137fd05d9d",
@@ -151,6 +152,21 @@ def test_increase_missing_details_fixture_clarifies_without_llm_or_tools() -> No
     result = outcome.generated_artifact["result"]
     assert result["status"] == "needs_clarification"
     assert "调整哪个阶段" in result["clarification"]
+    assert result["proposals"] == []
+
+
+def test_percentage_increase_missing_phase_fixture_clarifies_without_llm_or_tools() -> None:
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-increase-percentage-missing-phase-clarify"],
+        llm=_NeverCalledLLM(),
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.generated_artifact["tool_trace"] == []
+    result = outcome.generated_artifact["result"]
+    assert result["status"] == "needs_clarification"
+    assert "哪个阶段" in result["clarification"]
     assert result["proposals"] == []
 
 

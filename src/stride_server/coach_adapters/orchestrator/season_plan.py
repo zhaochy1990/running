@@ -93,7 +93,7 @@ _CONFLICTING_DIRECTIONS_RE = re.compile(
 )
 _PHASE_TARGET_REQUIRED_RE = re.compile(
     r"(?:训练重点|重点(?:改|调|放)|侧重|聚焦|专注|"
-    r"周跑量|周量区间|训练量|减量|加量|weekly\s+(?:distance|volume|range)|"
+    r"周跑量|周量区间|跑量|训练量|里程|减量|加量|weekly\s+(?:distance|volume|range)|"
     r"延长|缩短|extend|shorten|compress|"
     r"focus|emphasi[sz]e|prioriti[sz]e)",
     re.IGNORECASE,
@@ -161,11 +161,11 @@ _VOLUME_TARGET_CLARIFICATION = (
 )
 _MASTER_ADJUSTMENT_CONTEXT_RE = re.compile(
     r"(?:总计划|整体训练计划|总纲|赛季计划|master\s*plan|"
-    r"训练重点|周跑量|周量区间|训练量|加量|减量|(?:延长|缩短).{0,12}阶段)",
+    r"训练重点|周跑量|周量区间|跑量|训练量|里程|加量|减量|(?:延长|缩短).{0,12}阶段)",
     re.IGNORECASE,
 )
 _MASTER_WRITE_CUE_RE = re.compile(
-    r"(?:调整|修改|改成|改为|优化|重排|重新生成|增加|加大|加量|降低|减少|减量|"
+    r"(?:调整|修改|改成|改为|优化|重排|重新生成|增加|加大|加量|提高|提升|调高|降低|减少|减量|调低|"
     r"延长|缩短|前移|后移|推迟|延期|侧重|聚焦|专注|"
     r"adjust|change|modify|regenerate|increase|decrease|reduce|extend|shorten|shift)",
     re.IGNORECASE,
@@ -281,6 +281,8 @@ def _clarification_for_objective(objective: str) -> str | None:
         return _VOLUME_DETAILS_CLARIFICATION
     if volume_change and missing_volume_target:
         return _VOLUME_TARGET_CLARIFICATION
+    if volume_change and missing_phase:
+        return _PHASE_TARGET_CLARIFICATION
     if (
         _PHASE_TARGET_REQUIRED_RE.search(objective)
         and missing_phase

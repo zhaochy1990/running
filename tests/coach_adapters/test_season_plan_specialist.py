@@ -420,6 +420,13 @@ def test_orchestrator_preflight_asks_only_amount_when_increase_phase_is_known() 
     assert "百分比" in (result.clarification or "")
 
 
+def test_orchestrator_preflight_asks_phase_when_only_increase_percentage_is_known() -> None:
+    result = preflight_season_plan_turn("把跑量提高 10%", [])
+
+    assert result is not None
+    assert "哪个阶段" in (result.clarification or "")
+
+
 def test_run_coach_turn_preflight_does_not_construct_any_llm(monkeypatch) -> None:
     import stride_server.coach_runtime as coach_runtime
 

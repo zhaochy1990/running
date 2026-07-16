@@ -1172,8 +1172,9 @@ function composeAdjustMessage(answers: FlowAnswers): string {
 }
 
 function adjustmentNeedsPhase(direction: string): boolean {
-  if (VOLUME_CHANGE_RE.test(direction) && !EXPLICIT_VOLUME_TARGET_RE.test(direction)) {
-    return false
+  if (VOLUME_CHANGE_RE.test(direction)) {
+    if (!EXPLICIT_VOLUME_TARGET_RE.test(direction)) return false
+    return !EXPLICIT_PHASE_TARGET_RE.test(direction)
   }
   return PHASE_TARGET_REQUIRED_RE.test(direction) && !EXPLICIT_PHASE_TARGET_RE.test(direction)
 }

@@ -20,6 +20,8 @@ from .stubs.fake_toolkit import FakeToolkit
     [
         ("我想要加量", "increase"),
         ("专项期增加到 82–96 公里", "increase"),
+        ("我想把跑量提高 10%", "increase"),
+        ("接下来里程降低一些", "decrease"),
         ("把基础期周跑量降到 45 公里", "decrease"),
         ("把基础期周跑量从 70–80 公里调整到 65–75 公里", "decrease"),
     ],

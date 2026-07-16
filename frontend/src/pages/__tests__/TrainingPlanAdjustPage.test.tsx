@@ -428,6 +428,19 @@ describe('TrainingPlanAdjustPage', () => {
     expect(getActivities).toHaveBeenCalledTimes(1)
   })
 
+  it('asks for a phase before sending a percentage-only volume increase', async () => {
+    renderAdjustPage()
+
+    fireEvent.change(await screen.findByLabelText('这次具体想怎么调整训练计划？'), {
+      target: { value: '把跑量提高 10%' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '确认调整方向' }))
+
+    expect(await screen.findByText('你希望调整哪个阶段？')).toBeInTheDocument()
+    expect(sendMasterPlanAdjustMessage).not.toHaveBeenCalled()
+    expect(getActivities).not.toHaveBeenCalled()
+  })
+
   it('keeps scan data locked when Coach asks for missing increase details', async () => {
     vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce({
       ok: true,
