@@ -84,10 +84,6 @@ class PlanStateStore(Protocol):
         week_folder: str | None = None,
     ) -> list[Mapping[str, Any]]: ...
 
-    def get_planned_sessions_for_date(
-        self, date: str, *, limit: int = 10,
-    ) -> list[Mapping[str, Any]]: ...
-
     def get_planned_nutrition(
         self, *, date_from: str | None = None,
         date_to: str | None = None,
@@ -323,11 +319,6 @@ class SqlitePlanStateStore:
         return self._db.get_planned_sessions(
             date_from=date_from, date_to=date_to, week_folder=week_folder,
         )
-
-    def get_planned_sessions_for_date(
-        self, date: str, *, limit: int = 10,
-    ) -> list[Mapping[str, Any]]:
-        return self._db.get_planned_sessions(date_from=date, date_to=date)[:limit]
 
     def get_planned_nutrition(
         self, *, date_from: str | None = None,
