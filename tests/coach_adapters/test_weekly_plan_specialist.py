@@ -267,6 +267,39 @@ def test_runner_rejects_week_after_next_without_generation(monkeypatch) -> None:
     assert "build" not in capture
 
 
+def test_runner_does_not_create_missing_far_week_for_adjustment(monkeypatch) -> None:
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+    monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
+    runner = make_weekly_plan_runner(
+        user_id="u1", llm=object(), toolkit=object(),
+        graph_factory=lambda **_: pytest.fail("graph must not run"),
+    )
+
+    result = runner(_task("调整下下周的周三", folder="2026-07-27_08-02"))
+
+    assert result.status == "rejected"
+    assert "当前周和下一周" in result.reply_fragment
+
+
+def test_negated_generation_phrase_can_adjust_existing_far_week(monkeypatch) -> None:
+    folder = "2026-07-27_08-02"
+    monkeypatch.setattr(
+        wp, "get_weekly_plan_store",
+        lambda: _FakeWeeklyPlanStore(WeeklyPlan(week_folder=folder)),
+    )
+    monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
+    capture: dict[str, Any] = {}
+    runner = make_weekly_plan_runner(
+        user_id="u1", llm=object(), toolkit=object(),
+        graph_factory=_factory("已调整。", None, capture),
+    )
+
+    result = runner(_task("不要重新生成，只调整下下周的周三", folder=folder))
+
+    assert result.status == "completed"
+    assert capture["build"]["scope"] == "week_chat"
+
+
 def test_runner_rejects_regenerating_existing_week_after_next(monkeypatch) -> None:
     folder = "2026-07-27_08-02"
     monkeypatch.setattr(

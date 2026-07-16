@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import date
 
 import jwt
 import pytest
@@ -94,8 +95,12 @@ def _post(client, token, body: dict, force: bool = False) -> object:
 def _no_active_master_plan(monkeypatch):
     """Legacy route expectations exercise the no-master fallback."""
     import stride_server.weekly_plan_generator as generator
+    import stride_server.routes.generate as generate_route
 
     monkeypatch.setattr(generator, "_master_week_target", lambda *_: None)
+    monkeypatch.setattr(
+        generate_route, "today_shanghai", lambda: date(2026, 5, 12)
+    )
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
@@ -378,6 +383,15 @@ class TestConflictHandling:
         plan = get_weekly_plan_store().get_plan(USER_UUID, "2026-05-11_05-17")
         assert plan is not None
         assert len(plan.sessions) == 7
+
+
+def test_rejects_week_after_next(app_client):
+    client, token, _, _ = app_client
+
+    resp = _post(client, token, {"week_start": "2026-05-25"})
+
+    assert resp.status_code == 400
+    assert "current and next" in resp.json()["detail"]
 
 
 class TestAuthEnforcement:

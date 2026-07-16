@@ -257,7 +257,17 @@ def _creation_rejection(folder: str) -> str | None:
 
 
 def _requests_generation(objective: str) -> bool:
-    return any(marker in objective for marker in ("生成", "创建", "新建"))
+    compact = re.sub(r"\s+", "", objective)
+    negated = (
+        "不要生成",
+        "不生成",
+        "别生成",
+        "无需生成",
+        "不要重新生成",
+    )
+    if any(marker in compact for marker in negated):
+        return False
+    return any(marker in compact for marker in ("生成", "创建", "新建"))
 
 
 def _create_proposal(user_id: str, folder: str) -> WeeklyPlanCreateProposal:
@@ -341,6 +351,9 @@ def make_weekly_plan_runner(
             )
 
         if existing is None:
+            rejection = _creation_rejection(folder)
+            if rejection is not None:
+                return SpecialistResult(status="rejected", reply_fragment=rejection)
             try:
                 proposal = _create_proposal(user_id, folder)
             except WeeklyPlanAlreadyExistsError:

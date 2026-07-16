@@ -18,6 +18,8 @@ from pydantic import BaseModel
 
 from stride_core.plan_spec import SessionKind
 from stride_core.source import DataSource
+from stride_core.timefmt import today_shanghai
+from stride_core.weekly_plan_proposal import is_supported_weekly_plan_generation
 from ..deps import get_db, get_plan_state_store, get_source_for_user, parse_week_dates
 from ..week_generator import week_folder
 from ..weekly_plan_generator import (
@@ -114,6 +116,13 @@ def generate_week(
     # but parse_week_dates is the canonical validator used by other routes).
     if not parse_week_dates(folder):
         raise HTTPException(status_code=500, detail="Internal: invalid folder generated")
+    if not is_supported_weekly_plan_generation(
+        folder, today=today_shanghai()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Only the current and next Shanghai calendar weeks can be generated",
+        )
 
     try:
         generated = build_weekly_plan(
