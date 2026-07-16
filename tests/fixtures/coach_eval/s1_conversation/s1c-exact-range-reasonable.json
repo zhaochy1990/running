@@ -29,7 +29,7 @@
     "status": "completed", "clarification_required": false, "proposal_count": 1,
     "required_reads": ["get_master_plan_current", "get_health_snapshot", "get_pmc_series", "estimate_master_plan_load"],
     "assessment_verdict": "reasonable", "required_draft_tool": "set_phase_weekly_range",
-    "forbidden_tools": ["propose_alternatives"],
+    "forbidden_tools": ["propose_reduction_alternatives"],
     "proposal": {"op": "replace_weekly_range", "phase_id": "phase-base", "new_value": {"weekly_distance_km_low": 65.0, "weekly_distance_km_high": 75.0}}
   }
 }

@@ -393,9 +393,9 @@ class TestAdjustMessages:
 
         def fake_factory(**kwargs):
             kwargs["state_observer"]({
-                "master_adjustment_request": "把基础期周跑量加到 150 公里",
+                "master_adjustment_request": "把基础期周跑量加到 140–150 公里",
                 "master_adjustment_assessment": {
-                    "adjustment_request": "把基础期周跑量加到 150 公里",
+                    "adjustment_request": "把基础期周跑量加到 140–150 公里",
                     "verdict": "unreasonable",
                     "rationale": "远高于近期负荷，受伤风险过高。",
                 }
@@ -409,7 +409,7 @@ class TestAdjustMessages:
         with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
             resp = client.post(
                 f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
-                json={"message": "把基础期周跑量加到 150 公里", "history": []},
+                json={"message": "把基础期周跑量加到 140–150 公里", "history": []},
                 headers=_auth(token),
             )
 
@@ -441,7 +441,7 @@ class TestAdjustMessages:
 
         def fake_factory(**kwargs):
             kwargs["state_observer"]({
-                "master_adjustment_request": "把基础期周跑量加到 60 公里",
+                "master_adjustment_request": "把基础期周跑量加到 55–60 公里",
                 "master_adjustment_assessment": {
                     "adjustment_request": "把基础期延长两周",
                     "verdict": "reasonable",
@@ -457,13 +457,72 @@ class TestAdjustMessages:
         with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
             resp = client.post(
                 f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
-                json={"message": "把基础期周跑量加到 60 公里", "history": []},
+                json={"message": "把基础期周跑量加到 55–60 公里", "history": []},
                 headers=_auth(token),
             )
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["stage"] == "assessment"
         assert resp.json()["assessment"] is None
+        assert resp.json()["diff"] is None
+        assert mp_mod._PENDING_MP_DIFFS == {}
+
+    def test_increase_request_never_returns_or_caches_a_reduction_diff(
+        self, app_client
+    ):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+        wrong_diff = MasterPlanDiff(
+            diff_id=str(uuid4()),
+            plan_id=plan.plan_id,
+            ops=[MasterPlanDiffOp(
+                id=str(uuid4()),
+                op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+                phase_id=plan.phases[0].id,
+                old_value={
+                    "weekly_distance_km_low": 50,
+                    "weekly_distance_km_high": 65,
+                },
+                new_value={
+                    "weekly_distance_km_low": 45,
+                    "weekly_distance_km_high": 58.5,
+                },
+                spec_patch={
+                    "weekly_distance_km_low": 45,
+                    "weekly_distance_km_high": 58.5,
+                },
+            )],
+            ai_explanation="不应泄漏的减量方案",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        request = "把基础期周跑量增加到 55–70 公里"
+
+        def fake_factory(**kwargs):
+            kwargs["state_observer"]({
+                "master_adjustment_request": request,
+                "master_adjustment_assessment": {
+                    "adjustment_request": request,
+                    "verdict": "reasonable",
+                    "rationale": "测试中的错误 runner 声称合理。",
+                },
+            })
+            return lambda task: SpecialistResult(
+                status="completed",
+                reply_fragment="错误的减量方案。",
+                proposals=[wrong_diff],
+            )
+
+        with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
+                json={"message": request, "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["stage"] == "assessment"
         assert resp.json()["diff"] is None
         assert mp_mod._PENDING_MP_DIFFS == {}
 

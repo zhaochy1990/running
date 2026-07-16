@@ -82,6 +82,34 @@ def _diff_dict(*, end_date: str = "2026-08-15") -> dict[str, Any]:
     ).model_dump()
 
 
+def _weekly_range_diff(
+    *, low: float = 47.5, high: float = 61.8, diff_id: str = "d1"
+) -> dict[str, Any]:
+    return MasterPlanDiff(
+        diff_id=diff_id,
+        plan_id=_PLAN_ID,
+        ops=[{
+            "id": f"op-{diff_id}",
+            "op": "replace_weekly_range",
+            "phase_id": "phase-1",
+            "old_value": {
+                "weekly_distance_km_low": 50.0,
+                "weekly_distance_km_high": 65.0,
+            },
+            "new_value": {
+                "weekly_distance_km_low": low,
+                "weekly_distance_km_high": high,
+            },
+            "spec_patch": {
+                "weekly_distance_km_low": low,
+                "weekly_distance_km_high": high,
+            },
+        }],
+        ai_explanation=f"降低基础期周跑量到 {low}–{high} 公里",
+        created_at=_TS,
+    ).model_dump()
+
+
 class _FakeGraph:
     def __init__(self, reply: str, last_diff: dict | None, capture: dict[str, Any]):
         self._reply = reply
@@ -155,10 +183,10 @@ def test_runner_extracts_and_validates_alternative_proposals(monkeypatch) -> Non
     capture: dict[str, Any] = {}
     alternatives = {
         "alternatives": [
-            _diff_dict(end_date="2026-08-15"),
-            {**_diff_dict(end_date="2026-08-29"), "diff_id": "d2"},
+            _weekly_range_diff(),
+            _weekly_range_diff(low=45.0, high=58.5, diff_id="d2"),
         ],
-        "intent": "比较保守和激进方向",
+        "reduction_request": "比较保守和激进减量方向",
     }
     runner = _runner(capture, reply="", last_diff=alternatives, monkeypatch=monkeypatch)
     result = runner(_task("给我两个降低基础期周跑量的方向"))
@@ -171,8 +199,8 @@ def test_runner_drops_only_invalid_alternative(monkeypatch) -> None:
     capture: dict[str, Any] = {}
     alternatives = {
         "alternatives": [
-            _diff_dict(end_date="2026-05-15"),
-            {**_diff_dict(end_date="2026-08-29"), "diff_id": "valid"},
+            _weekly_range_diff(low=70.0, high=80.0),
+            _weekly_range_diff(low=45.0, high=58.5, diff_id="valid"),
         ]
     }
     runner = _runner(
@@ -189,6 +217,27 @@ def test_runner_drops_only_invalid_alternative(monkeypatch) -> None:
     assert "只剩 1 个可应用" in result.reply_fragment
     assert "两个方案" not in result.reply_fragment
     assert result.proposals[0].ai_explanation in result.reply_fragment
+
+
+def test_runner_rejects_reduction_diff_for_increase_request(monkeypatch) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(
+        capture,
+        reply="错误的两个减量方案。",
+        last_diff={
+            "alternatives": [
+                _weekly_range_diff(),
+                _weekly_range_diff(low=45.0, high=58.5, diff_id="d2"),
+            ]
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    result = runner(_task("专项期增加到 70–80 公里：我想要加量"))
+
+    assert result.proposals == []
+    assert "方向不一致" in result.reply_fragment
+    assert "增加周跑量" in result.reply_fragment
 
 
 def test_runner_drops_diff_that_fails_the_gate(monkeypatch) -> None:
@@ -229,7 +278,7 @@ def test_runner_drops_proposal_without_matching_reasonable_assessment(
         graph_factory=lambda **_kwargs: _UngatedGraph(),
     )
 
-    result = runner(_task("把基础期周跑量加到 120 公里"))
+    result = runner(_task("把基础期周跑量加到 110–120 公里"))
 
     assert result.status == "completed"
     assert result.proposals == []
@@ -256,7 +305,7 @@ def test_runner_surfaces_assessment_clarification_as_specialist_status() -> None
         graph_factory=lambda **_kwargs: _ClarifyingGraph(),
     )
 
-    result = runner(_task("减少基础期周跑量"))
+    result = runner(_task("把基础期周跑量降低到 45–55 公里"))
 
     assert result.status == "needs_clarification"
     assert result.clarification == "你希望降低到多少公里？"
@@ -345,6 +394,32 @@ def test_orchestrator_preflight_asks_phase_after_direction_followup() -> None:
     assert "哪个阶段" in (result.clarification or "")
 
 
+def test_orchestrator_preflight_asks_for_increase_phase_and_amount() -> None:
+    result = preflight_season_plan_turn(
+        "我想要加量",
+        [
+            Turn(role="user", content="我想调整整体训练计划"),
+            Turn(
+                role="assistant",
+                content="我准备了两个减量方向：方案 A 降低 5%，方案 B 降低 10%。",
+            ),
+        ],
+    )
+
+    assert result is not None
+    assert "调整哪个阶段" in (result.clarification or "")
+    assert "区间" in (result.clarification or "")
+    assert result.proposals == []
+
+
+def test_orchestrator_preflight_asks_only_amount_when_increase_phase_is_known() -> None:
+    result = preflight_season_plan_turn("专项期加量", [])
+
+    assert result is not None
+    assert "这个阶段" in (result.clarification or "")
+    assert "百分比" in (result.clarification or "")
+
+
 def test_run_coach_turn_preflight_does_not_construct_any_llm(monkeypatch) -> None:
     import stride_server.coach_runtime as coach_runtime
 
@@ -426,6 +501,31 @@ def test_run_coach_turn_restores_adjustment_after_phase_checkpoint(
     )
     assert capture["state_in"]["history"][-1].content == (
         "专项期：训练重点改成上坡力量与跑姿经济性"
+    )
+
+
+def test_runner_restores_increase_direction_after_details_followup(monkeypatch) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=None, monkeypatch=monkeypatch)
+    question = (
+        "你想调整哪个阶段的周跑量，以及希望调整到什么区间或调整多少百分比？"
+        "例如“专项期提高 10%”或“专项期增加到 80–95 公里”。"
+        "确认阶段和幅度后我再加载数据评估这个想法。"
+    )
+
+    result = runner(
+        _task(
+            "专项期，增加到 82–96 公里",
+            conversation_window=[
+                Turn(role="user", content="我想要加量"),
+                Turn(role="assistant", content=question),
+            ],
+        )
+    )
+
+    assert result.status == "completed"
+    assert capture["state_in"]["master_adjustment_request"] == (
+        "专项期，增加到 82–96 公里：我想要加量"
     )
 
 
@@ -590,8 +690,8 @@ def test_runner_does_not_treat_undecided_options_as_a_direction(
 @pytest.mark.parametrize(
     "objective",
     [
-        "把基础期周跑量降到 100 公里",
-        "把专项期周跑量加到 120 公里",
+        "把基础期周跑量降到 90–100 公里",
+        "把专项期周跑量加到 110–120 公里",
         "将比赛目标设为 2:55",
         "目标比赛延期到 2026-11-08，请把计划顺延",
         "专项期更侧重马拉松配速耐力与补给演练",

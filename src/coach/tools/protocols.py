@@ -157,7 +157,7 @@ class RegenerateWeek(Protocol):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Master-scope draft tools (10) — ToolResult.data is one MasterPlanDiff dump, or
-# for ProposeAlternatives an envelope containing multiple MasterPlanDiff dumps.
+# for ProposeReductionAlternatives an envelope containing multiple MasterPlanDiff dumps.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -231,8 +231,8 @@ class SetPhaseFocus(Protocol):
 
 
 @runtime_checkable
-class ProposeAlternatives(Protocol):
-    def __call__(self, *, plan_id: str, intent: str) -> ToolResult: ...
+class ProposeReductionAlternatives(Protocol):
+    def __call__(self, *, plan_id: str, reduction_request: str) -> ToolResult: ...
 
 
 @runtime_checkable
@@ -282,7 +282,7 @@ MASTER_DRAFT_TOOL_NAMES: tuple[str, ...] = (
     "update_target_race_time",
     "set_phase_weekly_range",
     "set_phase_focus",
-    "propose_alternatives",
+    "propose_reduction_alternatives",
     "regenerate_master",
 )
 

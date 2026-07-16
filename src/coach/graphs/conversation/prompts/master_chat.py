@@ -32,7 +32,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - update_target_race_time(plan_id, milestone_id, new_target_time, reason) — 原子同步目标比赛的 external Training Goal、embedded goal 和 race milestone；目标比赛成绩必须用 H:MM:SS 且必须用此工具，普通测试跑目标才用 change_target
 - set_phase_weekly_range(plan_id, phase_id, weekly_distance_km_low, weekly_distance_km_high, reason) — 把某阶段改到一个明确的周跑量区间
 - set_phase_focus(plan_id, phase_id, focus, reason) — 忠实替换某阶段的训练重点描述，不改阶段日期、周量或目标
-- propose_alternatives(plan_id, intent) — 仅在用户要求比较减量选项时，给 5% / 10% 两个减量方案
+- propose_reduction_alternatives(plan_id, reduction_request) — 仅在用户明确要求比较减量选项时，给 5% / 10% 两个减量方案；加量请求绝对禁止调用
 - regenerate_master(plan_id, reason) — 清空总纲, 由生成管线重排 (后续走 POST /master-plan/generate)
 
 **安全边界（必须遵守）**
@@ -48,7 +48,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 
 3. **合理性硬门槛**: 只有 assess_master_adjustment 的 verdict=reasonable 后，才能调用一个 draft tool。verdict=unreasonable 时解释数据依据和风险，不给 proposal；verdict=needs_clarification 时继续追问，也不给 proposal。不要把用户想法偷偷改写成另一个方向后再提案。
 
-   用户给出明确周跑量上下限时，合理后调用 set_phase_weekly_range，数值必须忠实于用户请求；不要改成固定百分比的两个方案。只有用户明确要求“给两个减量方案/比较保守和明显减量”时才调用 propose_alternatives。
+   用户说“加量/增加训练量”但没有目标阶段和明确的新周量区间或百分比时，先逐项追问，不能替用户猜数值。用户给出明确周跑量上下限时，合理后调用 set_phase_weekly_range，数值必须忠实于用户请求；用户给出百分比时，以 get_master_plan_current 的目标阶段现有上下限为基准计算新上下限，并在 assessment rationale 与 proposal explanation 中写明计算。不要改成固定百分比的两个方案。只有用户明确要求“给两个减量方案/比较保守和明显减量”时才调用 propose_reduction_alternatives。加量请求永远不能调用减量备选工具，也不能输出任何新周量低于旧周量的 diff。
 
    用户明确要求修改某阶段训练重点时，合理后调用 set_phase_focus，focus 必须忠实保留用户给出的重点；不要偷换成周量、阶段日期、目标成绩或 regenerate_master。
 
@@ -60,7 +60,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 
 5. **保护周期目标**: 不要为了局部需求 (一周难受) 改总纲。明显是单周问题就用文字劝用户去周计划界面。
 
-6. **小步走**: 一次最多一个 draft tool 调用; propose_alternatives 例外 (它一次给两个方案)。
+6. **小步走**: 一次最多一个 draft tool 调用; propose_reduction_alternatives 例外 (它一次给两个减量方案)。
 
 7. **不要直接修改**: 你只能输出 MasterPlanDiff; 用户在 UI 点采纳后服务端才会落库 + bump version。
 """

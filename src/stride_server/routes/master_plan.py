@@ -29,6 +29,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from coach.contracts import SpecialistTask, TargetRef, Turn
+from coach.graphs.conversation.master_adjustment_direction import (
+    master_diff_matches_volume_direction,
+    requested_weekly_volume_direction,
+)
 
 from stride_core.master_plan import MasterPlanStatus, _apply_review_diff
 from stride_core.master_plan_diff import (
@@ -1211,6 +1215,16 @@ def adjust_messages(
         proposal
         for proposal in result.proposals
         if isinstance(proposal, MasterPlanDiff) and proposal.plan_id == plan_id
+    ]
+    volume_direction = (
+        requested_weekly_volume_direction(effective_request)
+        if isinstance(effective_request, str)
+        else None
+    )
+    proposals = [
+        proposal
+        for proposal in proposals
+        if master_diff_matches_volume_direction(proposal, volume_direction)
     ]
     if verdict != "reasonable":
         # Defense in depth at the HTTP boundary. The conversation graph already

@@ -237,7 +237,10 @@ def test_master_draft_impls_real_and_fail_on_missing_plan():
         (draft_impls.ChangeTargetImpl, {"plan_id": "pid", "milestone_id": "mid", "new_target_time": "10K 40:00"}),
         (draft_impls.UpdateTargetRaceTimeImpl, {"plan_id": "pid", "milestone_id": "mid", "new_target_time": "0:40:00", "reason": "test"}),
         (draft_impls.SetPhaseFocusImpl, {"plan_id": "pid", "phase_id": "phid", "focus": "马拉松配速耐力", "reason": "test"}),
-        (draft_impls.ProposeAlternativesImpl, {"plan_id": "pid", "intent": "test"}),
+        (
+            draft_impls.ProposeReductionAlternativesImpl,
+            {"plan_id": "pid", "reduction_request": "降低训练量"},
+        ),
         (draft_impls.RegenerateMasterImpl, {"plan_id": "pid", "reason": "test"}),
     ):
         impl = cls("uid")

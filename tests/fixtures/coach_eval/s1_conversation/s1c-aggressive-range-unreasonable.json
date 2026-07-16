@@ -29,6 +29,6 @@
     "status": "completed", "clarification_required": false, "proposal_count": 0,
     "required_reads": ["get_master_plan_current", "get_health_snapshot", "get_pmc_series", "estimate_master_plan_load"],
     "assessment_verdict": "unreasonable",
-    "forbidden_tools": ["set_phase_weekly_range", "propose_alternatives"]
+    "forbidden_tools": ["set_phase_weekly_range", "propose_reduction_alternatives"]
   }
 }

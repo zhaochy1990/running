@@ -1,11 +1,15 @@
 {
-  "fixture_id": "s1c-focus-change-reasonable",
+  "fixture_id": "s1c-increase-missing-details-clarify",
   "scope": "s1",
   "evaluation_path": "master_chat",
-  "description": "User requests an exact build-phase focus change. Frozen load and recovery evidence supports race-specific work, so Coach must preserve the requested focus in one typed proposal.",
-  "tags": ["conversation", "phase_focus", "reasonable_adjustment", "request_fidelity"],
+  "description": "After an earlier stale turn offered two reduction proposals, the user says they want more training volume. The current request must override the stale reduction context and Coach must ask for the target phase and explicit range or percentage before invoking any LLM or data tool.",
+  "tags": ["conversation", "clarification", "volume_increase", "stale_proposal_context", "missing_parameters", "no_premature_data_load"],
   "input": {
-    "message": "专项期更侧重马拉松配速耐力与补给演练",
+    "message": "我想要加量",
+    "conversation_window": [
+      {"role": "user", "content": "我想调整整体训练计划"},
+      {"role": "assistant", "content": "我准备了两个减量方向：方案 A 降低 5%，方案 B 降低 10%。"}
+    ],
     "active_plan": {
       "plan_id": "s1c-plan-001", "user_id": "s1c-user-001", "status": "active",
       "goal": {"goal_id": "goal-001", "race_date": "2026-10-25", "target_time": "3:15:00", "timezone": "Asia/Shanghai"},
@@ -19,17 +23,13 @@
       "training_principles": ["渐进负荷", "保留两周 taper"], "generated_by": "fixture", "version": 1,
       "created_at": "2026-07-01T00:00:00Z", "updated_at": "2026-07-01T00:00:00Z"
     },
-    "read_results": {
-      "get_health_snapshot": {"stride_training_load": {"acute_load": 76, "chronic_load": 72, "form": -4, "load_ratio": 1.06, "form_zone": "maintenance", "source": "stride", "vendor_derived": false}, "raw_measurements": {"rhr": 47, "hrv": 65}},
-      "get_pmc_series": {"series": [{"date": "2026-07-13", "acute_load": 76, "chronic_load": 72, "form": -4, "load_ratio": 1.06}], "provenance": {"source": "stride", "vendor_derived": false}},
-      "estimate_master_plan_load": {"history_anchor": {"recent_weekly_km": 74, "peak_weekly_km": 88}, "plan_estimate": {"build_phase_range_km": [75, 88]}, "plan_source": "active"}
-    }
+    "read_results": {}
   },
   "expected": {
-    "status": "completed", "clarification_required": false, "proposal_count": 1,
-    "required_reads": ["get_master_plan_current", "get_health_snapshot", "get_pmc_series", "estimate_master_plan_load"],
-    "assessment_verdict": "reasonable", "required_draft_tool": "set_phase_focus",
-    "forbidden_tools": ["set_phase_weekly_range", "propose_reduction_alternatives", "regenerate_master"],
-    "proposal": {"op_count": 1, "op": "replace_phase_focus", "phase_id": "phase-build", "spec_patch": {"focus": "马拉松配速耐力与补给演练"}}
+    "status": "needs_clarification",
+    "clarification_required": true,
+    "clarification_contains": "调整哪个阶段",
+    "proposal_count": 0,
+    "tool_trace_empty": true
   }
 }

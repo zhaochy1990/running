@@ -150,7 +150,7 @@ async function chooseDirectionAndPhase(
 ) {
   await chooseDirection(direction)
   fireEvent.click(screen.getByRole('button', { name: phase }))
-  await screen.findByText('已完成')
+  await waitFor(() => expect(sendMasterPlanAdjustMessage).toHaveBeenCalled())
 }
 
 function proposalResponse(): {
@@ -358,7 +358,21 @@ describe('TrainingPlanAdjustPage', () => {
         { name: 'Z2', label: '有氧', lower_bpm: 135, upper_bpm: 150 },
       ],
     })
-    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValue({ ok: true, status: 200, data: { ai_response: '已生成调整建议', diff: null } })
+    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        stage: 'assessment',
+        ai_response: '已完成数据评估',
+        clarification: null,
+        assessment: {
+          adjustment_request: '基础期：把周跑量降低到 45–50 公里',
+          verdict: 'unreasonable',
+          rationale: '默认测试评估结果。',
+        },
+        diff: null,
+      },
+    })
     vi.mocked(applyMasterPlanAdjustDiff).mockResolvedValue({
       ok: true,
       status: 200,
@@ -412,6 +426,46 @@ describe('TrainingPlanAdjustPage', () => {
       )
     })
     expect(getActivities).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps scan data locked when Coach asks for missing increase details', async () => {
+    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: {
+        stage: 'clarification',
+        ai_response: '你想调整哪个阶段的周跑量，以及希望调整到什么区间或调整多少百分比？',
+        clarification: '你想调整哪个阶段的周跑量，以及希望调整到什么区间或调整多少百分比？',
+        assessment: null,
+        diff: null,
+      },
+    })
+    renderAdjustPage()
+
+    fireEvent.change(await screen.findByLabelText('这次具体想怎么调整训练计划？'), {
+      target: { value: '我想要加量' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '确认调整方向' }))
+
+    expect(await screen.findByText('请补充调整细节')).toBeInTheDocument()
+    expect(screen.getAllByText(/调整哪个阶段/).length).toBeGreaterThan(0)
+    expect(getActivities).not.toHaveBeenCalled()
+    expect(getHealth).not.toHaveBeenCalled()
+    expect(getPMC).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('请补充调整细节'), {
+      target: { value: '专项期增加到 82–96 公里' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '确认补充信息' }))
+
+    await waitFor(() => {
+      expect(sendMasterPlanAdjustMessage).toHaveBeenLastCalledWith(
+        'plan-1',
+        '我想要加量；专项期增加到 82–96 公里',
+        [],
+      )
+    })
+    await waitFor(() => expect(getActivities).toHaveBeenCalledTimes(1))
   })
 
   it('loads scan data only after the target phase is selected', async () => {

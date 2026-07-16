@@ -26,7 +26,7 @@ from stride_server.coach_adapters.tool_impls.draft_impls import (
     ChangeTargetImpl,
     CompressPhaseImpl,
     ExtendPhaseImpl,
-    ProposeAlternativesImpl,
+    ProposeReductionAlternativesImpl,
     RegenerateMasterImpl,
     RescheduleTargetRaceImpl,
     SetPhaseFocusImpl,
@@ -48,7 +48,7 @@ _DRAFT_TOOLS = (
     "compress_phase",
     "set_phase_weekly_range",
     "set_phase_focus",
-    "propose_alternatives",
+    "propose_reduction_alternatives",
     "shift_milestone",
     "reschedule_target_race",
     "change_target",
@@ -131,7 +131,7 @@ def _build_frozen_toolkit(fixture: dict, plan: MasterPlan) -> Any:
         set_phase_focus=SetPhaseFocusImpl(
             plan.user_id, plan_loader=load_plan
         ),
-        propose_alternatives=ProposeAlternativesImpl(
+        propose_reduction_alternatives=ProposeReductionAlternativesImpl(
             plan.user_id, plan_loader=load_plan
         ),
         shift_milestone=ShiftMilestoneImpl(plan.user_id, plan_loader=load_plan),

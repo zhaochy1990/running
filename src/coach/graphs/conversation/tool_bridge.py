@@ -113,10 +113,11 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "Use when the user explicitly changes what a phase should emphasize; preserve the "
         "requested focus text and do not substitute a volume, date, target, or regeneration op."
     ),
-    "propose_alternatives": (
+    "propose_reduction_alternatives": (
         "Generate exactly two load-reduction alternatives (5% and 10%) for the current or "
-        "next adjustable phase. Use only when the user asks to compare reduction options; "
-        "do not use for an exact requested range or for increases/date/target changes."
+        "next adjustable phase. The reduction_request must explicitly ask to reduce weekly "
+        "volume and compare reduction options. Never use for increases, exact requested "
+        "ranges, dates, targets, or generic requests for multiple proposals."
     ),
     "regenerate_master": "Propose regenerating the whole master plan given `reason`.",
 }

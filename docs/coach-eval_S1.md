@@ -176,6 +176,8 @@ python scripts/eval_coach.py --scope s1 --conversation
 9. 修改阶段训练重点必须使用 `set_phase_focus` 忠实生成一个 `replace_phase_focus` op，不得偷换成周量、日期、目标或全量重排。
 10. 训练重点、周量区间、阶段长短等请求缺少目标阶段时，`season_plan` 必须先追问“哪个阶段”，且在澄清前保持零 specialist LLM/data-tool call。
 11. 用户在下一轮只回答阶段名时，必须把阶段答案与上一轮原请求合成为 canonical adjustment request，再继续读取、评估和提案；不得重新追问方向，也不得只把阶段名绑定到 assessment。
+12. “我想要加量”属于方向明确但参数不完整：必须在任何 LLM/data-tool call 前追问目标阶段和明确区间/百分比；用户补全后才读取与评估。
+13. 周量 proposal 必须与 canonical request 的增减方向一致；加量请求不得调用 `propose_reduction_alternatives`，也不得返回任何上下限下降的 diff。该约束由 prompt、tool、conversation graph、specialist 和 HTTP boundary 共同执行。
 
 ### S1 Required vs Optional
 

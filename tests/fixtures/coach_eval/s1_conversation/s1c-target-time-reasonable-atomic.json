@@ -32,7 +32,7 @@
     "status": "completed", "clarification_required": false, "proposal_count": 1,
     "required_reads": ["get_master_plan_current", "get_health_snapshot", "get_pmc_series", "estimate_master_plan_load", "get_race_predictions", "get_pbs"],
     "assessment_verdict": "reasonable", "required_draft_tool": "update_target_race_time",
-    "forbidden_tools": ["change_target", "set_phase_weekly_range", "propose_alternatives"],
+    "forbidden_tools": ["change_target", "set_phase_weekly_range", "propose_reduction_alternatives"],
     "proposal": {
       "op_count": 1, "op": "update_target_race_time", "milestone_id": "race-001",
       "spec_patch": {"target_time": "3:10:00", "milestone_target": "全马 3:10:00"}

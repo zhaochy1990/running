@@ -33,7 +33,7 @@
     "status": "completed", "clarification_required": false, "proposal_count": 1,
     "required_reads": ["get_master_plan_current", "get_health_snapshot", "get_pmc_series", "estimate_master_plan_load"],
     "assessment_verdict": "reasonable", "effective_request": "专项期：训练重点改成上坡力量与跑姿经济性", "assessment_request": "专项期：训练重点改成上坡力量与跑姿经济性", "required_draft_tool": "set_phase_focus",
-    "forbidden_tools": ["set_phase_weekly_range", "propose_alternatives", "regenerate_master"],
+    "forbidden_tools": ["set_phase_weekly_range", "propose_reduction_alternatives", "regenerate_master"],
     "proposal": {"op_count": 1, "op": "replace_phase_focus", "phase_id": "phase-build", "spec_patch": {"focus": "上坡力量与跑姿经济性"}}
   }
 }

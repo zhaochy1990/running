@@ -19,7 +19,7 @@ from .tool_impls.draft_impls import (
     ChangeTargetImpl,
     CompressPhaseImpl,
     ExtendPhaseImpl,
-    ProposeAlternativesImpl,
+    ProposeReductionAlternativesImpl,
     ReduceIntensityImpl,
     RegenerateMasterImpl,
     RegenerateWeekImpl,
@@ -90,7 +90,7 @@ class StrideToolkit:
     update_target_race_time: UpdateTargetRaceTimeImpl
     set_phase_weekly_range: SetPhaseWeeklyRangeImpl
     set_phase_focus: SetPhaseFocusImpl
-    propose_alternatives: ProposeAlternativesImpl
+    propose_reduction_alternatives: ProposeReductionAlternativesImpl
     regenerate_master: RegenerateMasterImpl
 
 
@@ -139,7 +139,7 @@ def build_stride_toolkit(
         set_phase_focus=SetPhaseFocusImpl(
             user_id, plan_loader=master_plan_loader
         ),
-        propose_alternatives=ProposeAlternativesImpl(
+        propose_reduction_alternatives=ProposeReductionAlternativesImpl(
             user_id, plan_loader=master_plan_loader
         ),
         regenerate_master=RegenerateMasterImpl(user_id, plan_loader=master_plan_loader),

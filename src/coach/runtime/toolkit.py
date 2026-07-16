@@ -33,7 +33,7 @@ from coach.tools.protocols import (
     GetTrainingEnvironment,
     GetTrainingSummary,
     GetWeekPlan,
-    ProposeAlternatives,
+    ProposeReductionAlternatives,
     ReduceIntensity,
     RegenerateMaster,
     RegenerateWeek,
@@ -87,5 +87,5 @@ class Toolkit(Protocol):
     update_target_race_time: UpdateTargetRaceTime
     set_phase_weekly_range: SetPhaseWeeklyRange
     set_phase_focus: SetPhaseFocus
-    propose_alternatives: ProposeAlternatives
+    propose_reduction_alternatives: ProposeReductionAlternatives
     regenerate_master: RegenerateMaster

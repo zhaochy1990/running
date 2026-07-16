@@ -808,7 +808,7 @@ class SetPhaseFocusImpl:
         return _ok_master(diff.model_copy(update={"ops": [op]}))
 
 
-class ProposeAlternativesImpl:
+class ProposeReductionAlternativesImpl:
     """Return 2 distinct load-reduction alternatives (5% and 10%).
 
     Preserve the final taper/adjustment phase and offer two load-reduction
@@ -823,7 +823,16 @@ class ProposeAlternativesImpl:
     ) -> None:
         self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
-    def __call__(self, *, plan_id: str, intent: str) -> ToolResult:
+    def __call__(self, *, plan_id: str, reduction_request: str) -> ToolResult:
+        from coach.graphs.conversation.master_adjustment_direction import (
+            requested_weekly_volume_direction,
+        )
+
+        if requested_weekly_volume_direction(reduction_request) != "decrease":
+            return _fail(
+                "propose_reduction_alternatives requires an explicit weekly-volume "
+                "reduction request; increases are not supported by this tool"
+            )
         plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
@@ -906,12 +915,18 @@ class ProposeAlternativesImpl:
                     f"{label}："
                     f"{'保留最后的调整期不变，' if has_protected_taper else ''}"
                     f"将「{target.name}」周跑量降低"
-                    f" {int(reduction * 100)}%（用户意图：{intent}）"
+                    f" {int(reduction * 100)}%（用户减量请求：{reduction_request}）"
                 ),
                 created_at=_now_iso(),
             )
             alternatives.append(diff.model_dump())
-        return ToolResult(ok=True, data={"alternatives": alternatives, "intent": intent})
+        return ToolResult(
+            ok=True,
+            data={
+                "alternatives": alternatives,
+                "reduction_request": reduction_request,
+            },
+        )
 
 
 class RegenerateMasterImpl:

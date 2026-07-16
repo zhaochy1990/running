@@ -48,6 +48,10 @@ from coach.contracts import (
 )
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
+from coach.graphs.conversation.master_adjustment_direction import (
+    master_diff_matches_volume_direction,
+    requested_weekly_volume_direction,
+)
 from coach.schemas import assistant_parts_from_message
 from stride_core.master_plan_diff import MasterPlanDiff
 
@@ -59,7 +63,7 @@ logger = logging.getLogger(__name__)
 GraphFactory = Callable[..., Any]
 
 _CONCRETE_DIRECTION_RE = re.compile(
-    r"(?:延长|缩短|缩到|增加|加大|加到|降低|降到|减少|减量|减轻|提高|提升|"
+    r"(?:延长|缩短|缩到|增加|加大|加到|加量|降低|降到|减少|减量|减轻|提高|提升|"
     r"调高|调低|调整到|设为|前移|后移|往前|往后|提前|推迟|延期|顺延|延后|改为|改成|"
     r"改到|挪到|侧重|聚焦|专注|重点放在|"
     r"取消|删除|保留|重排|重新生成|清空|"
@@ -94,6 +98,15 @@ _PHASE_TARGET_REQUIRED_RE = re.compile(
     r"focus|emphasi[sz]e|prioriti[sz]e)",
     re.IGNORECASE,
 )
+_EXPLICIT_VOLUME_TARGET_RE = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*(?:公里|km)?\s*[–—\-~至到]\s*"
+    r"\d+(?:\.\d+)?\s*(?:公里|km)|\d+(?:\.\d+)?\s*%)",
+    re.IGNORECASE,
+)
+_MULTIPLE_OPTIONS_RE = re.compile(
+    r"(?:两个|两种|2\s*个|比较|对比|备选|alternatives?|options?|compare)",
+    re.IGNORECASE,
+)
 _EXPLICIT_PHASE_TARGET_RE = re.compile(
     r"(?:基础期|基础阶段|base\s*(?:phase)?|"
     r"专项期|专项阶段|强化期|build\s*(?:phase)?|"
@@ -118,6 +131,16 @@ _PHASE_ONLY_ANSWER_RE = re.compile(
     r"\s*(?:吧)?\s*[。.!！]?\s*",
     re.IGNORECASE,
 )
+_VOLUME_DETAILS_ANSWER_RE = re.compile(
+    r"\s*(?:(?:基础|专项|强化|高峰|赛前|减量|调整|恢复|当前|现|这个|本|下一|下个|后续)"
+    r"(?:期|阶段)?|第\s*[一二三四五六七八九十0-9]+\s*(?:个)?阶段|"
+    r"phase[-_ ]?[a-z0-9]+)?\s*[,，:：]?\s*"
+    r"(?:增加|加大|提高|提升|降低|减少|减量|加量)?\s*(?:到|至)?\s*"
+    r"(?:\d+(?:\.\d+)?\s*(?:公里|km)?\s*[–—\-~至到]\s*"
+    r"\d+(?:\.\d+)?\s*(?:公里|km)|\d+(?:\.\d+)?\s*%)"
+    r"\s*[。.!！]?\s*",
+    re.IGNORECASE,
+)
 _DIRECTION_CLARIFICATION = (
     "你希望具体怎么调整整体训练计划？请先告诉我你的调整方向，例如想增加或减少"
     "哪个阶段的训练量、延长或缩短哪个阶段、移动比赛日期，或者修改目标。"
@@ -126,13 +149,23 @@ _PHASE_TARGET_CLARIFICATION = (
     "你希望调整哪个阶段？请指定阶段，例如基础期、专项期、调整期，"
     "或者明确说当前阶段/下一阶段。确认阶段后我再加载数据评估这个想法。"
 )
+_VOLUME_DETAILS_CLARIFICATION = (
+    "你想调整哪个阶段的周跑量，以及希望调整到什么区间或调整多少百分比？"
+    "例如“专项期提高 10%”或“专项期增加到 80–95 公里”。"
+    "确认阶段和幅度后我再加载数据评估这个想法。"
+)
+_VOLUME_TARGET_CLARIFICATION = (
+    "你希望把这个阶段的周跑量调整到什么区间，或调整多少百分比？"
+    "请给出明确幅度，例如“提高 10%”或“增加到 80–95 公里”。"
+    "确认幅度后我再加载数据评估这个想法。"
+)
 _MASTER_ADJUSTMENT_CONTEXT_RE = re.compile(
     r"(?:总计划|整体训练计划|总纲|赛季计划|master\s*plan|"
-    r"训练重点|周跑量|周量区间|(?:延长|缩短).{0,12}阶段)",
+    r"训练重点|周跑量|周量区间|训练量|加量|减量|(?:延长|缩短).{0,12}阶段)",
     re.IGNORECASE,
 )
 _MASTER_WRITE_CUE_RE = re.compile(
-    r"(?:调整|修改|改成|改为|优化|重排|重新生成|增加|加大|降低|减少|减量|"
+    r"(?:调整|修改|改成|改为|优化|重排|重新生成|增加|加大|加量|降低|减少|减量|"
     r"延长|缩短|前移|后移|推迟|延期|侧重|聚焦|专注|"
     r"adjust|change|modify|regenerate|increase|decrease|reduce|extend|shorten|shift)",
     re.IGNORECASE,
@@ -232,20 +265,37 @@ def _clarification_for_objective(objective: str) -> str | None:
     """Return the pre-data clarification needed for this write request."""
     if _needs_direction_clarification(objective):
         return _DIRECTION_CLARIFICATION
+    volume_direction = requested_weekly_volume_direction(objective)
+    volume_change = volume_direction is not None
+    missing_phase = not _EXPLICIT_PHASE_TARGET_RE.search(objective)
+    reduction_alternatives = bool(
+        volume_direction == "decrease"
+        and _MULTIPLE_OPTIONS_RE.search(objective)
+    )
+    missing_volume_target = bool(
+        volume_change
+        and not reduction_alternatives
+        and not _EXPLICIT_VOLUME_TARGET_RE.search(objective)
+    )
+    if volume_change and missing_phase and missing_volume_target:
+        return _VOLUME_DETAILS_CLARIFICATION
+    if volume_change and missing_volume_target:
+        return _VOLUME_TARGET_CLARIFICATION
     if (
         _PHASE_TARGET_REQUIRED_RE.search(objective)
-        and not _EXPLICIT_PHASE_TARGET_RE.search(objective)
+        and missing_phase
     ):
         return _PHASE_TARGET_CLARIFICATION
     return None
 
 
 def _effective_objective_for_task(task: SpecialistTask) -> str:
-    """Recover the full request behind a phase-only clarification answer."""
+    """Recover the full request behind a short clarification answer."""
     objective = task.objective.strip()
-    if _clarification_for_objective(objective) != _DIRECTION_CLARIFICATION:
-        return objective
-    if not _PHASE_ONLY_ANSWER_RE.fullmatch(objective):
+    if not (
+        _PHASE_ONLY_ANSWER_RE.fullmatch(objective)
+        or _VOLUME_DETAILS_ANSWER_RE.fullmatch(objective)
+    ):
         return objective
 
     turns = list(task.conversation_window)
@@ -253,18 +303,39 @@ def _effective_objective_for_task(task: SpecialistTask) -> str:
         len(turns) < 2
         or turns[-1].role != "assistant"
         or turns[-2].role != "user"
-        or "哪个阶段" not in turns[-1].content
-        or "确认阶段后" not in turns[-1].content
+        or not any(
+            marker in turns[-1].content
+            for marker in (
+                "哪个阶段",
+                "调整到什么区间",
+                "调整多少百分比",
+                "增加到什么区间",
+                "增加多少百分比",
+            )
+        )
+        or "再加载数据评估" not in turns[-1].content
     ):
         return objective
     prior_user = turns[-2].content
+    if not prior_user:
+        return objective
+    prior_effective = _effective_objective_for_task(
+        SpecialistTask(
+            objective=prior_user,
+            active_target=task.active_target,
+            conversation_window=turns[:-2],
+        )
+    )
     if (
-        not prior_user
-        or _clarification_for_objective(prior_user)
-        != _PHASE_TARGET_CLARIFICATION
+        _clarification_for_objective(prior_effective)
+        not in {
+            _PHASE_TARGET_CLARIFICATION,
+            _VOLUME_DETAILS_CLARIFICATION,
+            _VOLUME_TARGET_CLARIFICATION,
+        }
     ):
         return objective
-    return f"{objective}：{prior_user}"
+    return f"{objective}：{prior_effective}"
 
 
 def clarification_for_season_plan_task(task: SpecialistTask) -> str | None:
@@ -286,8 +357,17 @@ def preflight_season_plan_turn(
         and (
             "具体怎么调整" in conversation_window[-1].content
             or (
-                "哪个阶段" in conversation_window[-1].content
-                and "确认阶段后" in conversation_window[-1].content
+                any(
+                    marker in conversation_window[-1].content
+                    for marker in (
+                        "哪个阶段",
+                        "调整到什么区间",
+                        "调整多少百分比",
+                        "增加到什么区间",
+                        "增加多少百分比",
+                    )
+                )
+                and "再加载数据评估" in conversation_window[-1].content
             )
         )
     )
@@ -314,11 +394,11 @@ def preflight_season_plan_turn(
 
 
 def _parse_proposals(last_diff: Any) -> list[MasterPlanDiff]:
-    """Decode a single diff or a ``propose_alternatives`` result envelope.
+    """Decode a single diff or a ``propose_reduction_alternatives`` result envelope.
 
     The conversation graph deliberately keeps draft-tool data opaque.  Most
     master tools return one ``MasterPlanDiff`` mapping, while
-    ``propose_alternatives`` returns ``{"alternatives": [diff, ...]}``.
+    ``propose_reduction_alternatives`` returns ``{"alternatives": [diff, ...]}``.
     Normalising that shape belongs at this typed adapter boundary.
     """
     if not isinstance(last_diff, dict):
@@ -451,6 +531,28 @@ def make_season_plan_runner(
         is_alternatives = isinstance(last_diff, dict) and "alternatives" in last_diff
         if last_diff is not None:
             proposals = _parse_proposals(last_diff)
+            volume_direction = requested_weekly_volume_direction(effective_objective)
+            direction_safe = [
+                proposal
+                for proposal in proposals
+                if master_diff_matches_volume_direction(proposal, volume_direction)
+            ]
+            if len(direction_safe) != len(proposals):
+                logger.warning(
+                    "season_plan: dropping proposal opposite to requested volume direction"
+                )
+                proposals = direction_safe
+                if not proposals:
+                    requested_label = (
+                        "增加" if volume_direction == "increase" else "降低"
+                    )
+                    return SpecialistResult(
+                        status="completed",
+                        reply_fragment=(
+                            f"生成的方案与“{requested_label}周跑量”的方向不一致，"
+                            "已阻止展示和应用。请重新生成这个调整。"
+                        ),
+                    )
 
         # Validation gate (§10 Q#6): validate alternatives independently so one
         # malformed choice cannot hide another valid one.

@@ -27,7 +27,7 @@ import { shanghaiDate, shanghaiToday } from '../lib/shanghai'
 import { findCurrentWeek } from '../lib/weeklyPlanView'
 import { useUser } from '../UserContextValue'
 
-type FlowStep = 'direction' | 'phase' | 'assessment' | 'proposal'
+type FlowStep = 'direction' | 'phase' | 'clarification' | 'assessment' | 'proposal'
 type PreviewMode = 'current' | 'new'
 
 interface FlowAnswers {
@@ -96,6 +96,8 @@ const DIRECTION_SUGGESTIONS = [
 const PHASE_OPTIONS = ['当前阶段', '基础期', '专项期', '调整期', '下一阶段']
 const PHASE_TARGET_REQUIRED_RE = /训练重点|重点(?:改|调|放)|侧重|聚焦|专注|周跑量|周量区间|训练量|减量|加量|延长|缩短/i
 const EXPLICIT_PHASE_TARGET_RE = /基础期|基础阶段|专项期|专项阶段|强化期|高峰期|赛前期|减量期|调整期|恢复期|恢复阶段|当前阶段|现阶段|这个阶段|本阶段|下一阶段|下个阶段|后续阶段|第\s*[一二三四五六七八九十0-9]+\s*(?:个)?阶段|phase[-_ ]?[a-z0-9]+/i
+const VOLUME_CHANGE_RE = /加量|减量|增加|加大|提高|提升|降低|减少/i
+const EXPLICIT_VOLUME_TARGET_RE = /\d+(?:\.\d+)?\s*(?:公里|km)?\s*[–—\-~至到]\s*\d+(?:\.\d+)?\s*(?:公里|km)|\d+(?:\.\d+)?\s*%/i
 
 const PHASE_COLORS = ['#00a85a', '#0097a7', '#e68a00', '#7c4dff', '#d32f2f']
 
@@ -111,6 +113,7 @@ export default function TrainingPlanAdjustPage() {
   const [answers, setAnswers] = useState<FlowAnswers>({})
   const [step, setStep] = useState<FlowStep>('direction')
   const [directionDraft, setDirectionDraft] = useState('')
+  const [clarificationDraft, setClarificationDraft] = useState('')
   const [previewMode, setPreviewMode] = useState<PreviewMode>('current')
   const [diff, setDiff] = useState<MasterPlanDiff | null>(null)
   const [selectedOpIds, setSelectedOpIds] = useState<Set<string>>(new Set())
@@ -201,22 +204,29 @@ export default function TrainingPlanAdjustPage() {
       setStep('phase')
       return
     }
-    setStep('assessment')
-    void loadScan()
     void requestAdjustDiff(nextAnswers)
   }
 
   const confirmPhase = (phase: string) => {
     const nextAnswers = { ...answers, phase }
     setAnswers(nextAnswers)
-    setStep('assessment')
-    void loadScan()
+    void requestAdjustDiff(nextAnswers)
+  }
+
+  const confirmClarification = () => {
+    const detail = clarificationDraft.trim()
+    if (!detail) return
+    const direction = [answers.direction, detail].filter(Boolean).join('；')
+    const nextAnswers = { ...answers, direction }
+    setAnswers(nextAnswers)
+    setClarificationDraft('')
     void requestAdjustDiff(nextAnswers)
   }
 
   const restartFlow = () => {
     setAnswers({})
     setDirectionDraft('')
+    setClarificationDraft('')
     setStep('direction')
     setPreviewMode('current')
     setDiff(null)
@@ -249,9 +259,13 @@ export default function TrainingPlanAdjustPage() {
       setDiff(nextDiff)
       setSelectedOpIds(new Set(nextDiff?.ops.map((op) => op.id) ?? []))
       if (response.data.stage === 'proposal' && nextDiff) {
+        void loadScan()
         setStep('proposal')
         setPreviewMode('new')
+      } else if (response.data.stage === 'clarification') {
+        setStep('clarification')
       } else {
+        void loadScan()
         setStep('assessment')
       }
     } catch (err) {
@@ -335,6 +349,9 @@ export default function TrainingPlanAdjustPage() {
             step={step}
             directionDraft={directionDraft}
             onDirectionDraft={setDirectionDraft}
+            clarificationDraft={clarificationDraft}
+            onClarificationDraft={setClarificationDraft}
+            onConfirmClarification={confirmClarification}
             onConfirmDirection={confirmDirection}
             onPhase={confirmPhase}
             previewReady={previewReady}
@@ -619,6 +636,9 @@ function GuidedFlow({
   step,
   directionDraft,
   onDirectionDraft,
+  clarificationDraft,
+  onClarificationDraft,
+  onConfirmClarification,
   onConfirmDirection,
   onPhase,
   previewReady,
@@ -642,6 +662,9 @@ function GuidedFlow({
   step: FlowStep
   directionDraft: string
   onDirectionDraft: (value: string) => void
+  clarificationDraft: string
+  onClarificationDraft: (value: string) => void
+  onConfirmClarification: () => void
   onConfirmDirection: () => void
   onPhase: (phase: string) => void
   previewReady: boolean
@@ -662,7 +685,7 @@ function GuidedFlow({
   hasPlanId: boolean
 }) {
   const acceptedCount = diff?.ops.filter((op) => selectedOpIds.has(op.id)).length ?? 0
-  const stageIndex = step === 'direction' ? 0 : step === 'phase' ? 1 : step === 'assessment' ? 2 : 3
+  const stageIndex = step === 'direction' ? 0 : step === 'phase' || step === 'clarification' ? 1 : step === 'assessment' ? 2 : 3
   return (
     <section className="pa-convo">
       <ol className="grid grid-cols-4 gap-2" aria-label="调整流程">
@@ -686,6 +709,7 @@ function GuidedFlow({
         <div className="pa-bubble">
           {step === 'direction' && '先告诉我你想怎么调整。此时不会读取训练数据，也不会生成方案。'}
           {step === 'phase' && '方向已经明确。还需要确认要调整哪个阶段，之后我才会加载数据评估。'}
+          {step === 'clarification' && (coachReply || '还需要补充一个细节，确认后我才会加载数据评估。')}
           {step === 'assessment' && (coachReply || '正在读取当前计划、身体状态与 STRIDE 训练负荷，判断这个想法是否合理。')}
           {step === 'proposal' && (coachReply || '这个想法有数据支持，下面是可应用的调整方案。')}
         </div>
@@ -740,6 +764,29 @@ function GuidedFlow({
                 </button>
               ))}
             </div>
+          </>
+        )}
+
+        {step === 'clarification' && (
+          <>
+            <label htmlFor="adjust-clarification" className="aq-q block">请补充调整细节</label>
+            <div className="aq-hint">{coachReply}</div>
+            <textarea
+              id="adjust-clarification"
+              value={clarificationDraft}
+              onChange={(event) => onClarificationDraft(event.target.value)}
+              rows={2}
+              placeholder="例如：专项期增加到 82–96 公里"
+              className="mt-3 w-full resize-y rounded-xl border border-border bg-bg-primary px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent-green"
+            />
+            <button
+              type="button"
+              onClick={onConfirmClarification}
+              disabled={!clarificationDraft.trim()}
+              className="mt-4 inline-flex h-9 items-center rounded-lg bg-accent-green px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              确认补充信息
+            </button>
           </>
         )}
 
@@ -1125,6 +1172,9 @@ function composeAdjustMessage(answers: FlowAnswers): string {
 }
 
 function adjustmentNeedsPhase(direction: string): boolean {
+  if (VOLUME_CHANGE_RE.test(direction) && !EXPLICIT_VOLUME_TARGET_RE.test(direction)) {
+    return false
+  }
   return PHASE_TARGET_REQUIRED_RE.test(direction) && !EXPLICIT_PHASE_TARGET_RE.test(direction)
 }
 

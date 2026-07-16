@@ -42,6 +42,10 @@ from coach.schemas import ConversationState
 from .prompts.master_chat import MASTER_CHAT_PROMPT
 from .prompts.qa import QA_PROMPT
 from .prompts.week_chat import WEEK_CHAT_PROMPT
+from .master_adjustment_direction import (
+    proposal_payload_matches_volume_direction,
+    requested_weekly_volume_direction,
+)
 from .tool_bridge import (
     MASTER_ASSESSMENT_TOOL_NAME,
     MASTER_DRAFT_TOOL_NAMES,
@@ -84,8 +88,10 @@ _ALTERNATIVES_REJECTION_RE = re.compile(
 
 
 def _explicitly_requests_alternatives(request: str) -> bool:
-    return bool(_ALTERNATIVES_REQUEST_RE.search(request)) and not bool(
-        _ALTERNATIVES_REJECTION_RE.search(request)
+    return (
+        requested_weekly_volume_direction(request) == "decrease"
+        and bool(_ALTERNATIVES_REQUEST_RE.search(request))
+        and not bool(_ALTERNATIVES_REJECTION_RE.search(request))
     )
 
 
@@ -296,7 +302,7 @@ def build_conversation_graph(
                     )
                     continue
                 if (
-                    name == "propose_alternatives"
+                    name == "propose_reduction_alternatives"
                     and not _explicitly_requests_alternatives(current_request)
                 ):
                     tool_trace.append(
@@ -310,7 +316,7 @@ def build_conversation_graph(
                         {
                             "ok": False,
                             "errors": [
-                                "alternatives_require_explicit_comparison_request"
+                                "reduction_alternatives_require_explicit_comparison_request"
                             ],
                         },
                         ensure_ascii=False,
@@ -361,7 +367,30 @@ def build_conversation_graph(
             if is_draft_tool(name):
                 try:
                     if parsed_payload.get("ok") and parsed_payload.get("data") is not None:
-                        last_diff = parsed_payload["data"]
+                        candidate = parsed_payload["data"]
+                        if proposal_payload_matches_volume_direction(
+                            candidate, current_request
+                        ):
+                            last_diff = candidate
+                        else:
+                            tool_trace[-1] = {
+                                "name": name,
+                                "outcome": "blocked",
+                                "reason": "proposal_direction_gate",
+                            }
+                            new_messages[-1] = ToolMessage(
+                                content=json.dumps(
+                                    {
+                                        "ok": False,
+                                        "errors": [
+                                            "proposal_opposes_requested_weekly_volume_direction"
+                                        ],
+                                    },
+                                    ensure_ascii=False,
+                                ),
+                                tool_call_id=tc["id"],
+                                name=name,
+                            )
                 except AttributeError:
                     pass
 

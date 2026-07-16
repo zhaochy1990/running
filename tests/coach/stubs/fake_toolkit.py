@@ -77,7 +77,7 @@ class FakeToolkit:
     update_target_race_time: _FakeTool = field(default_factory=_FakeTool)
     set_phase_weekly_range: _FakeTool = field(default_factory=_FakeTool)
     set_phase_focus: _FakeTool = field(default_factory=_FakeTool)
-    propose_alternatives: _FakeTool = field(default_factory=_FakeTool)
+    propose_reduction_alternatives: _FakeTool = field(default_factory=_FakeTool)
     regenerate_master: _FakeTool = field(default_factory=_FakeTool)
 
 
@@ -103,7 +103,7 @@ def _assert_toolkit_protocol() -> None:
         "reschedule_target_race", "change_target", "update_target_race_time",
         "set_phase_weekly_range",
         "set_phase_focus",
-        "propose_alternatives", "regenerate_master",
+        "propose_reduction_alternatives", "regenerate_master",
     ):
         getattr(tk, name)
 

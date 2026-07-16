@@ -491,7 +491,7 @@ def test_update_target_race_time_rejects_noncanonical_time(bad_time: str) -> Non
 
 
 # ---------------------------------------------------------------------------
-# propose_alternatives
+# propose_reduction_alternatives
 # ---------------------------------------------------------------------------
 
 
@@ -622,13 +622,13 @@ def test_set_phase_weekly_range_rejects_noop(seeded_plan):
     assert "no proposal is needed" in result.errors[0]
 
 
-def test_propose_alternatives_returns_two_diffs(seeded_plan, monkeypatch):
+def test_propose_reduction_alternatives_returns_two_diffs(seeded_plan, monkeypatch):
     plan, phase1, phase2, _ = seeded_plan
     monkeypatch.setattr(
         draft_impls, "today_shanghai", lambda: date(2026, 7, 15)
     )
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="想加大强度但又怕受伤"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="给我两个降低训练量的方案"
     )
     assert res.ok
     assert "alternatives" in res.data
@@ -650,7 +650,20 @@ def test_propose_alternatives_returns_two_diffs(seeded_plan, monkeypatch):
     assert phase2.end_date == "2026-09-14"
 
 
-def test_propose_alternatives_targets_current_phase_before_future_phases(
+def test_propose_reduction_alternatives_rejects_an_increase_request(
+    seeded_plan,
+):
+    plan, _, _, _ = seeded_plan
+
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="我想要加量"
+    )
+
+    assert not res.ok
+    assert "requires an explicit weekly-volume reduction request" in res.errors[0]
+
+
+def test_propose_reduction_alternatives_targets_current_phase_before_future_phases(
     seeded_plan, monkeypatch
 ):
     plan, phase1, phase2, _ = seeded_plan
@@ -682,8 +695,8 @@ def test_propose_alternatives_targets_current_phase_before_future_phases(
         plan.model_copy(update={"phases": [phase1, current, future, taper]})
     )
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="我在昆明高原待到 7 月 26 日，调整当前阶段周跑量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="我在昆明高原待到 7 月 26 日，给两个降低当前阶段周跑量的方案"
     )
 
     assert res.ok
@@ -697,7 +710,7 @@ def test_propose_alternatives_targets_current_phase_before_future_phases(
     )
 
 
-def test_propose_alternatives_targets_build_before_short_taper(
+def test_propose_reduction_alternatives_targets_build_before_short_taper(
     seeded_plan, monkeypatch
 ):
     plan, phase1, phase2, _ = seeded_plan
@@ -717,8 +730,8 @@ def test_propose_alternatives_targets_build_before_short_taper(
     short_taper_plan = plan.model_copy(update={"phases": [phase1, taper]})
     get_master_plan_store().save_plan(short_taper_plan)
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="降低训练量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="降低训练量"
     )
 
     assert res.ok
@@ -731,7 +744,7 @@ def test_propose_alternatives_targets_build_before_short_taper(
     assert taper.end_date == "2026-09-14"
 
 
-def test_propose_alternatives_does_not_treat_short_recovery_as_taper(
+def test_propose_reduction_alternatives_does_not_treat_short_recovery_as_taper(
     seeded_plan, monkeypatch
 ):
     plan, phase1, phase2, _ = seeded_plan
@@ -753,8 +766,8 @@ def test_propose_alternatives_does_not_treat_short_recovery_as_taper(
         plan.model_copy(update={"phases": [phase1, recovery]})
     )
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="降低当前恢复期周跑量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="降低当前恢复期周跑量"
     )
 
     assert res.ok
@@ -768,7 +781,7 @@ def test_propose_alternatives_does_not_treat_short_recovery_as_taper(
     )
 
 
-def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
+def test_propose_reduction_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
     plan, _, phase2, _ = seeded_plan
     from stride_server.master_plan_store import get_master_plan_store
 
@@ -787,8 +800,8 @@ def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
     )
     get_master_plan_store().save_plan(taper_only)
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="再少练一周"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="给两个降低周跑量的方案"
     )
 
     assert not res.ok
@@ -796,7 +809,7 @@ def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
     assert "无法生成" in res.errors[0]
 
 
-def test_propose_alternatives_ignores_completed_phase_before_taper(
+def test_propose_reduction_alternatives_ignores_completed_phase_before_taper(
     seeded_plan, monkeypatch
 ):
     plan, phase1, phase2, _ = seeded_plan
@@ -818,15 +831,15 @@ def test_propose_alternatives_ignores_completed_phase_before_taper(
         plan.model_copy(update={"phases": [completed, taper]})
     )
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="降低接下来的训练量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="降低接下来的训练量"
     )
 
     assert not res.ok
     assert "没有可安全降低周跑量的当前或后续阶段" in res.errors[0]
 
 
-def test_propose_alternatives_can_reduce_single_long_phase(
+def test_propose_reduction_alternatives_can_reduce_single_long_phase(
     seeded_plan, monkeypatch
 ):
     plan, phase1, _, _ = seeded_plan
@@ -841,8 +854,8 @@ def test_propose_alternatives_can_reduce_single_long_phase(
     )
     get_master_plan_store().save_plan(single_phase)
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="降低训练量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="降低训练量"
     )
 
     assert res.ok

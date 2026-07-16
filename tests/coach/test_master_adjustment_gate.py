@@ -8,8 +8,26 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from coach.graphs.conversation.graph import build_conversation_graph
+from coach.graphs.conversation.master_adjustment_direction import (
+    requested_weekly_volume_direction,
+)
 from coach.schemas import ToolResult
 from .stubs.fake_toolkit import FakeToolkit
+
+
+@pytest.mark.parametrize(
+    ("user_text", "expected"),
+    [
+        ("我想要加量", "increase"),
+        ("专项期增加到 82–96 公里", "increase"),
+        ("把基础期周跑量降到 45 公里", "decrease"),
+        ("把基础期周跑量从 70–80 公里调整到 65–75 公里", "decrease"),
+    ],
+)
+def test_requested_weekly_volume_direction_covers_natural_phrasing(
+    user_text: str, expected: str
+) -> None:
+    assert requested_weekly_volume_direction(user_text) == expected
 
 
 class _ScriptedLLM:
@@ -64,13 +82,44 @@ class _MasterLoadRead:
         return ToolResult(ok=True, data={})
 
 
-class _ProposeAlternatives:
+class _ProposeReductionAlternatives:
     def __init__(self, result: ToolResult | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
         self.result = result or ToolResult(ok=True, data={})
 
-    def __call__(self, *, plan_id: str, intent: str) -> ToolResult:
-        self.calls.append({"plan_id": plan_id, "intent": intent})
+    def __call__(self, *, plan_id: str, reduction_request: str) -> ToolResult:
+        self.calls.append(
+            {"plan_id": plan_id, "reduction_request": reduction_request}
+        )
+        return self.result
+
+
+class _SetPhaseWeeklyRange:
+    def __init__(self, result: ToolResult | None = None) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.result = result or ToolResult(ok=True, data={})
+
+    def set_result(self, result: ToolResult) -> None:
+        self.result = result
+
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        phase_id: str,
+        weekly_distance_km_low: float,
+        weekly_distance_km_high: float,
+        reason: str,
+    ) -> ToolResult:
+        self.calls.append(
+            {
+                "plan_id": plan_id,
+                "phase_id": phase_id,
+                "weekly_distance_km_low": weekly_distance_km_low,
+                "weekly_distance_km_high": weekly_distance_km_high,
+                "reason": reason,
+            }
+        )
         return self.result
 
 
@@ -80,7 +129,8 @@ def _toolkit() -> FakeToolkit:
     toolkit.get_health_snapshot = _NoArgRead()
     toolkit.get_pmc_series = _PmcRead()
     toolkit.estimate_master_plan_load = _MasterLoadRead()
-    toolkit.propose_alternatives = _ProposeAlternatives()
+    toolkit.set_phase_weekly_range = _SetPhaseWeeklyRange()
+    toolkit.propose_reduction_alternatives = _ProposeReductionAlternatives()
     return toolkit
 
 
@@ -177,8 +227,8 @@ def test_draft_is_rejected_without_a_reasonable_assessment() -> None:
         [
             _tool_calls(
                 (
-                    "propose_alternatives",
-                    {"plan_id": "plan-1", "intent": "降低基础期周跑量"},
+                    "propose_reduction_alternatives",
+                    {"plan_id": "plan-1", "reduction_request": "降低基础期周跑量"},
                 )
             ),
             AIMessage(content="我需要先评估这个想法是否合理。"),
@@ -187,7 +237,7 @@ def test_draft_is_rejected_without_a_reasonable_assessment() -> None:
 
     state = _invoke(llm, toolkit)
 
-    assert toolkit.propose_alternatives.calls == []
+    assert toolkit.propose_reduction_alternatives.calls == []
     assert state.get("last_diff") is None
 
 
@@ -208,8 +258,8 @@ def test_unreasonable_assessment_never_allows_a_proposal() -> None:
             ),
             _tool_calls(
                 (
-                    "propose_alternatives",
-                    {"plan_id": "plan-1", "intent": "降低基础期周跑量"},
+                    "propose_reduction_alternatives",
+                    {"plan_id": "plan-1", "reduction_request": "降低基础期周跑量"},
                 )
             ),
             AIMessage(content="这个调整目前不合理，因此不会生成提案。"),
@@ -219,7 +269,7 @@ def test_unreasonable_assessment_never_allows_a_proposal() -> None:
     state = _invoke(llm, toolkit)
 
     assert state["master_adjustment_assessment"]["verdict"] == "unreasonable"
-    assert toolkit.propose_alternatives.calls == []
+    assert toolkit.propose_reduction_alternatives.calls == []
     assert state.get("last_diff") is None
 
 
@@ -229,12 +279,30 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
     diff = {
         "diff_id": "d1",
         "plan_id": "plan-1",
-        "ops": [],
+        "ops": [
+            {
+                "id": "op-1",
+                "op": "replace_weekly_range",
+                "phase_id": "phase-base",
+                "old_value": {
+                    "weekly_distance_km_low": 70,
+                    "weekly_distance_km_high": 80,
+                },
+                "new_value": {
+                    "weekly_distance_km_low": 66.5,
+                    "weekly_distance_km_high": 76,
+                },
+                "spec_patch": {
+                    "weekly_distance_km_low": 66.5,
+                    "weekly_distance_km_high": 76,
+                },
+            }
+        ],
         "ai_explanation": "降低基础期周跑量",
         "created_at": "2026-07-15T00:00:00+00:00",
     }
-    toolkit.propose_alternatives = _ProposeAlternatives(
-        ToolResult(ok=True, data={"alternatives": [diff], "intent": "降低基础期周跑量"})
+    toolkit.propose_reduction_alternatives = _ProposeReductionAlternatives(
+        ToolResult(ok=True, data={"alternatives": [diff], "reduction_request": "降低基础期周跑量"})
     )
     llm = _ScriptedLLM(
         [
@@ -251,8 +319,8 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
             ),
             _tool_calls(
                 (
-                    "propose_alternatives",
-                    {"plan_id": "plan-1", "intent": "降低基础期周跑量"},
+                    "propose_reduction_alternatives",
+                    {"plan_id": "plan-1", "reduction_request": "降低基础期周跑量"},
                 )
             ),
         ]
@@ -267,8 +335,8 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
         "estimate_master_plan_load",
     }.issubset(state["consulted_tools"])
     assert state["master_adjustment_assessment"]["verdict"] == "reasonable"
-    assert toolkit.propose_alternatives.calls == [
-        {"plan_id": "plan-1", "intent": "降低基础期周跑量"}
+    assert toolkit.propose_reduction_alternatives.calls == [
+        {"plan_id": "plan-1", "reduction_request": "降低基础期周跑量"}
     ]
     assert state["last_diff"]["alternatives"][0]["diff_id"] == "d1"
     assert "assess_master_adjustment" in llm.bound_tool_names
@@ -302,8 +370,8 @@ def test_alternatives_are_rejected_without_an_explicit_comparison_request(
         [
             _tool_calls(
                 (
-                    "propose_alternatives",
-                    {"plan_id": "plan-1", "intent": request},
+                    "propose_reduction_alternatives",
+                    {"plan_id": "plan-1", "reduction_request": request},
                 )
             ),
             AIMessage(content="你没有要求比较多个方案，我只会提出一个方向。"),
@@ -321,12 +389,111 @@ def test_alternatives_are_rejected_without_an_explicit_comparison_request(
         },
     )
 
-    assert toolkit.propose_alternatives.calls == []
+    assert toolkit.propose_reduction_alternatives.calls == []
     assert state.get("last_diff") is None
     assert state["tool_trace"][-1] == {
-        "name": "propose_alternatives",
+        "name": "propose_reduction_alternatives",
         "outcome": "blocked",
         "reason": "alternatives_gate",
+    }
+
+
+def test_reduction_alternatives_are_rejected_for_an_increase_request() -> None:
+    request = "专项期增加到 82–96 公里：我想要加量"
+    toolkit = _toolkit()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                (
+                    "propose_reduction_alternatives",
+                    {"plan_id": "plan-1", "reduction_request": "给两个减量方案"},
+                )
+            ),
+            AIMessage(content="加量请求不能使用减量备选工具。"),
+        ]
+    )
+
+    state = _invoke(
+        llm,
+        toolkit,
+        request=request,
+        assessment={
+            "adjustment_request": request,
+            "verdict": "reasonable",
+            "rationale": "当前数据支持适度增加。",
+        },
+    )
+
+    assert toolkit.propose_reduction_alternatives.calls == []
+    assert state.get("last_diff") is None
+    assert state["tool_trace"][-1]["reason"] == "alternatives_gate"
+
+
+def test_decreasing_weekly_diff_is_rejected_for_an_increase_request() -> None:
+    request = "专项期增加到 82–96 公里：我想要加量"
+    toolkit = _toolkit()
+    toolkit.set_phase_weekly_range.set_result(
+        ToolResult(
+            ok=True,
+            data={
+                "diff_id": "wrong-direction",
+                "plan_id": "plan-1",
+                "ops": [{
+                    "id": "op-1",
+                    "op": "replace_weekly_range",
+                    "phase_id": "phase-build",
+                    "old_value": {
+                        "weekly_distance_km_low": 75,
+                        "weekly_distance_km_high": 88,
+                    },
+                    "new_value": {
+                        "weekly_distance_km_low": 67.5,
+                        "weekly_distance_km_high": 79.2,
+                    },
+                    "spec_patch": {
+                        "weekly_distance_km_low": 67.5,
+                        "weekly_distance_km_high": 79.2,
+                    },
+                }],
+                "ai_explanation": "错误的减量方案",
+                "created_at": "2026-07-16T00:00:00Z",
+            },
+        )
+    )
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                (
+                    "set_phase_weekly_range",
+                    {
+                        "plan_id": "plan-1",
+                        "phase_id": "phase-build",
+                        "weekly_distance_km_low": 67.5,
+                        "weekly_distance_km_high": 79.2,
+                        "reason": "错误方向",
+                    },
+                )
+            ),
+            AIMessage(content="该方案方向与请求不一致，已拒绝。"),
+        ]
+    )
+
+    state = _invoke(
+        llm,
+        toolkit,
+        request=request,
+        assessment={
+            "adjustment_request": request,
+            "verdict": "reasonable",
+            "rationale": "当前数据支持适度增加。",
+        },
+    )
+
+    assert state.get("last_diff") is None
+    assert state["tool_trace"][-1] == {
+        "name": "set_phase_weekly_range",
+        "outcome": "blocked",
+        "reason": "proposal_direction_gate",
     }
 
 
@@ -336,8 +503,8 @@ def test_reasonable_assessment_for_an_old_request_cannot_authorize_a_new_draft()
         [
             _tool_calls(
                 (
-                    "propose_alternatives",
-                    {"plan_id": "plan-1", "intent": "降低基础期周跑量"},
+                    "propose_reduction_alternatives",
+                    {"plan_id": "plan-1", "reduction_request": "降低基础期周跑量"},
                 )
             ),
             AIMessage(content="我需要先评估当前这条调整想法。"),
@@ -354,7 +521,7 @@ def test_reasonable_assessment_for_an_old_request_cannot_authorize_a_new_draft()
         },
     )
 
-    assert toolkit.propose_alternatives.calls == []
+    assert toolkit.propose_reduction_alternatives.calls == []
     assert state.get("last_diff") is None
 
 
