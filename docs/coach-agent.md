@@ -67,6 +67,8 @@ elapsed time, and result size. It never logs prompts, tool payloads, or replies.
 计划 proposal 在 CLI 中显示为带范围、摘要和逐项 diff 的卡片；单 proposal 可直接回复
 “应用这个提案”确认，多个 proposal 必须回复“应用第 N 个提案”或输入 `/apply N`。
 确认由 CLI 调用 deterministic apply endpoint，不把副作用交给 Agent 执行。
+`--message` 一次性模式只展示 proposal 内容，不显示必须留在 REPL 中才能执行的
+确认提示。
 
 Resolver 的每个结构化 intent 都必须输出
 `{specialist_id, action: read|write, confidence}`。模型根据语义选择 action 和

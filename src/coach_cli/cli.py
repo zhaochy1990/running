@@ -397,7 +397,13 @@ def _proposal_change_lines(proposal: object) -> list[str]:
     return lines
 
 
-def _proposal_lines(proposal: object, *, index: int, total: int) -> list[str]:
+def _proposal_lines(
+    proposal: object,
+    *,
+    index: int,
+    total: int,
+    show_apply_hint: bool = True,
+) -> list[str]:
     heading, scope = _proposal_heading(proposal)
     explanation = getattr(proposal, "ai_explanation", "") or "无摘要"
     changes = _proposal_change_lines(proposal)
@@ -406,7 +412,7 @@ def _proposal_lines(proposal: object, *, index: int, total: int) -> list[str]:
         if total == 1
         else f"回复“应用第 {index} 个提案”确认，或输入 /apply {index}"
     )
-    return [
+    lines = [
         f"提案 {index} · {heading}",
         f"范围: {scope}",
         f"摘要: {explanation}",
@@ -419,8 +425,10 @@ def _proposal_lines(proposal: object, *, index: int, total: int) -> list[str]:
                 for change_index, change in enumerate(changes, 1)
             ]
         ),
-        f"操作: {apply_hint}",
     ]
+    if show_apply_hint:
+        lines.append(f"操作: {apply_hint}")
+    return lines
 
 
 def _print_proposals(
@@ -428,19 +436,34 @@ def _print_proposals(
     *,
     console: Console | None = None,
     render_panels: bool | None = None,
+    show_apply_hint: bool = True,
 ) -> None:
     """Render pending proposals consistently for turns and /proposals."""
     should_render = _stdout_is_terminal() if render_panels is None else render_panels
     if not should_render:
         for index, proposal in enumerate(proposals, start=1):
-            click.echo("\n".join(_proposal_lines(proposal, index=index, total=len(proposals))))
+            click.echo(
+                "\n".join(
+                    _proposal_lines(
+                        proposal,
+                        index=index,
+                        total=len(proposals),
+                        show_apply_hint=show_apply_hint,
+                    )
+                )
+            )
         return
 
     output = console or Console(
         file=click.get_text_stream("stdout"), highlight=False
     )
     for index, proposal in enumerate(proposals, start=1):
-        lines = _proposal_lines(proposal, index=index, total=len(proposals))
+        lines = _proposal_lines(
+            proposal,
+            index=index,
+            total=len(proposals),
+            show_apply_hint=show_apply_hint,
+        )
         title = lines[0]
         content = Text("\n".join(lines[1:]))
         output.print(
@@ -454,7 +477,7 @@ def _print_proposals(
         )
 
 
-def _format_turn(turn) -> str:
+def _format_turn(turn, *, show_apply_hint: bool = True) -> str:
     """Render a TurnResponse as stable plain text for pipes/files."""
     lines: list[str] = []
     if turn.clarification:
@@ -465,7 +488,14 @@ def _format_turn(turn) -> str:
     proposals = _applicable_proposals(turn)
     for index, proposal in enumerate(proposals, start=1):
         lines.append("")
-        lines.extend(_proposal_lines(proposal, index=index, total=len(proposals)))
+        lines.extend(
+            _proposal_lines(
+                proposal,
+                index=index,
+                total=len(proposals),
+                show_apply_hint=show_apply_hint,
+            )
+        )
     return "\n".join(lines)
 
 
@@ -500,7 +530,9 @@ def _print_turn(
     should_render = _stdout_is_terminal() if render_markdown is None else render_markdown
     if not should_render:
         prefix = "\n教练 › " if interactive else ""
-        click.echo(f"{prefix}{_format_turn(turn)}")
+        click.echo(
+            f"{prefix}{_format_turn(turn, show_apply_hint=interactive)}"
+        )
         return
 
     output = console or Console(
@@ -523,7 +555,12 @@ def _print_turn(
     proposals = _applicable_proposals(turn)
     if proposals:
         output.print()
-        _print_proposals(proposals, console=output, render_panels=True)
+        _print_proposals(
+            proposals,
+            console=output,
+            render_panels=True,
+            show_apply_hint=interactive,
+        )
 
 
 class _Thinking:
@@ -627,7 +664,7 @@ _CHAT_APPLY_PATTERNS = (
         r"^(?:(?:好|好的)[，, ]*|(?:请|那就|就)\s*)?"
         r"(?:应用|采用|接受|确认|执行)(?:一下)?(?:第\s*)?"
         r"(?P<index>\d+|[一二两三四五六七八九十])\s*"
-        r"(?:个|条|项)?(?:方案|提案)?(?:吧)?[。！!]?$",
+        r"(?:个|条|项)?(?:方案|提案)(?:吧)?[。！!]?$",
         re.IGNORECASE,
     ),
     re.compile(
@@ -641,10 +678,11 @@ _CHAT_APPLY_WITHOUT_INDEX = re.compile(
     r"(?:"
     r"^(?:(?:好|好的)[，, ]*|(?:请|那就|就)\s*)?"
     r"(?:应用|采用|接受|确认|执行)(?:一下)?"
-    r"(?:这个|该|当前|上面|刚才|它)?(?:方案|提案)?(?:吧)?"
+    r"(?:这个|该|当前|上面|刚才|它)?(?:方案|提案)(?:吧)?"
     r"|"
     r"^(?:(?:yes|ok|okay|please)[, ]+)?"
-    r"(?:apply|accept|use)(?:\s+(?:it|this|that|the))?(?:\s+proposal)?"
+    r"(?:apply\s+it|(?:apply|accept|use)\s+(?:"
+    r"(?:this|that|the)\s+)?(?:proposal|option|choice))"
     r")[.!！。]?$",
     re.IGNORECASE,
 )

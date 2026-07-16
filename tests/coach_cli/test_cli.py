@@ -270,6 +270,79 @@ def test_print_turn_keeps_raw_markdown_for_redirected_stdout(capsys) -> None:
     assert capsys.readouterr().out == f"{reply}\n"
 
 
+def test_non_interactive_turn_omits_unusable_proposal_apply_hint() -> None:
+    stream = StringIO()
+    console = Console(
+        file=stream,
+        force_terminal=False,
+        highlight=False,
+        width=80,
+    )
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="已生成提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    _print_turn(
+        turn,
+        interactive=False,
+        render_markdown=True,
+        console=console,
+    )
+
+    rendered = stream.getvalue()
+    assert "提案 1 · 调整赛季计划" in rendered
+    assert "温和减量" in rendered
+    assert "操作:" not in rendered
+    assert "/apply" not in rendered
+
+
+def test_message_mode_omits_unusable_proposal_apply_hint(monkeypatch, tmp_path) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="已生成提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--profile",
+            "user-x",
+            "--data-dir",
+            str(tmp_path),
+            "--message",
+            "帮我减量",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "提案 1 · 调整赛季计划" in result.output
+    assert "温和减量" in result.output
+    assert "操作:" not in result.output
+    assert "/apply" not in result.output
+
+
 def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
     choices = [
         MasterPlanDiff(
@@ -311,7 +384,7 @@ def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
         active_target=None,
     )
 
-    _print_turn(turn, interactive=False, render_markdown=False)
+    _print_turn(turn, interactive=True, render_markdown=False)
 
     output = capsys.readouterr().out
     assert "方案 A（温和减量）" in output
@@ -359,6 +432,7 @@ def test_chat_apply_selection_supports_chinese_and_english_confirmation() -> Non
     assert _chat_apply_selection("应用这个提案") == (True, None)
     assert _chat_apply_selection("应用第 2 个提案") == (True, 2)
     assert _chat_apply_selection("我觉得你的 proposal 很好，apply it") == (True, None)
+    assert _chat_apply_selection("apply this proposal") == (True, None)
     assert _chat_apply_selection("apply proposal 3") == (True, 3)
 
 
@@ -366,6 +440,17 @@ def test_chat_apply_selection_rejects_negation_and_questions() -> None:
     assert _chat_apply_selection("不要应用这个提案") == (False, None)
     assert _chat_apply_selection("不要应用，apply it") == (False, None)
     assert _chat_apply_selection("我应该应用这个提案吗？") == (False, None)
+    for ambiguous_reply in (
+        "确认",
+        "执行",
+        "接受",
+        "应用",
+        "use",
+        "apply",
+        "use it",
+        "accept it",
+    ):
+        assert _chat_apply_selection(ambiguous_reply) == (False, None)
 
 
 def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> None:
@@ -450,6 +535,56 @@ def test_repl_applies_single_proposal_through_chat_confirmation(monkeypatch, tmp
     assert coach_messages == ["帮我减量"]
     assert applied == ["a"]
     assert "方案 1 已应用" in result.output
+
+
+def test_repl_sends_ambiguous_confirmation_to_coach_before_explicit_apply(
+    monkeypatch, tmp_path
+) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turns = iter(
+        [
+            SimpleNamespace(
+                reply="已准备好调整",
+                clarification=None,
+                proposals=[
+                    ProposalCard(specialist_id="season_plan", proposal=proposal)
+                ],
+                active_target=None,
+            ),
+            _turn("已收到你的确认信息。"),
+        ]
+    )
+    coach_messages: list[str] = []
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+
+    def fake_turn(**kwargs):
+        coach_messages.append(kwargs["message"])
+        return next(turns)
+
+    monkeypatch.setattr("coach_cli.cli._run_turn", fake_turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="帮我减量\n确认\n应用这个提案\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert coach_messages == ["帮我减量", "确认"]
+    assert applied == ["a"]
 
 
 def test_repl_requires_number_for_multiple_chat_proposals(monkeypatch, tmp_path) -> None:
