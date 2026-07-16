@@ -577,8 +577,12 @@ def apply_coach_master_diff(
     # the exact accepted subset before validation: safety rules such as the
     # full-regeneration taper exception must be evaluated against what will
     # actually land, not against unselected sibling ops in the same diff.
-    known_ids = {op.id for op in diff.ops}
-    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
+    applicable_ids = {op.id for op in diff.ops if op.accepted is not False}
+    accepted_op_ids = list(
+        dict.fromkeys(
+            oid for oid in body.accepted_op_ids if oid in applicable_ids
+        )
+    )
     accepted_ids = set(accepted_op_ids)
     accepted_diff = diff.model_copy(
         update={"ops": [op for op in diff.ops if op.id in accepted_ids]}

@@ -615,6 +615,26 @@ def test_master_apply_lands_accepted_ops(chat_client, monkeypatch):
     assert captured["accepted"] == ["op1"]
 
 
+def test_master_apply_drops_rejected_and_duplicate_op_ids(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    captured = _stub_master(
+        coach_routes, monkeypatch, plan=_master_plan()
+    )
+    body = _master_diff_body(op_ids=("op1", "op1"))
+    body["diff"]["ops"][0]["accepted"] = False
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=body, headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["applied"] == 0
+    assert captured["accepted"] == []
+
+
 def test_master_apply_reschedules_training_goal_and_plan(
     chat_client, monkeypatch
 ):
