@@ -22,6 +22,7 @@ FIXTURE_DIR = (
 S1_CONVERSATION_INPUT_SHA256 = {
     "s1c-aggressive-range-unreasonable": "9d54fc2cb89baa5263b3e8e0bf08f792807ebb3fb6f602b16266c7376d0aebcc",
     "s1c-exact-range-reasonable": "638adf9fdc4fa4af9884583fb04d97739707ae31bb90ec5e287cb3a4ac092215",
+    "s1c-focus-change-reasonable": "5c05ba87262e5e03c38de4f79bfb802cc1086f7af4801168b97fe277f4ea78a7",
     "s1c-race-postponed-atomic": "ae2c9d7a12347e44fd15e7a684b827627a55db1263759ce572c78e229d305303",
     "s1c-target-time-reasonable-atomic": "6e016c9222f18450e9d7eda42fbc8a94939c8168339aabd6c69c1f1fc542939e",
     "s1c-vague-adjustment-clarify": "a9c4467eb8c4ce6458ab418a8870f99e8ae7d851cdfc0773909ddb137fd05d9d",
@@ -244,6 +245,51 @@ def test_postponed_race_fixture_passes_as_one_atomic_diff() -> None:
         "assess_master_adjustment",
         "reschedule_target_race",
     ]
+
+
+def test_phase_focus_fixture_preserves_exact_user_direction() -> None:
+    request = "专项期更侧重马拉松配速耐力与补给演练"
+    llm = _ScriptedLLM(
+        [
+            _required_read_calls(),
+            _tool_calls(
+                2,
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "stable load supports a more race-specific build focus",
+                    },
+                ),
+            ),
+            _tool_calls(
+                3,
+                (
+                    "set_phase_focus",
+                    {
+                        "plan_id": "s1c-plan-001",
+                        "phase_id": "phase-build",
+                        "focus": "马拉松配速耐力与补给演练",
+                        "reason": "用户明确要求，当前负荷与恢复支持",
+                    },
+                ),
+            ),
+        ]
+    )
+
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-focus-change-reasonable"], llm=llm
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.debug["contract_violations"] == []
+    proposal = outcome.generated_artifact["result"]["proposals"][0]
+    assert proposal["ops"][0]["op"] == "replace_phase_focus"
+    assert proposal["ops"][0]["spec_patch"] == {
+        "focus": "马拉松配速耐力与补给演练"
+    }
 
 
 def test_target_time_fixture_reads_realism_evidence_and_emits_atomic_diff() -> None:

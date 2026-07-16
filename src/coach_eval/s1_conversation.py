@@ -24,8 +24,12 @@ from stride_server.coach_adapters.orchestrator.season_plan import (
 )
 from stride_server.coach_adapters.tool_impls.draft_impls import (
     ChangeTargetImpl,
+    CompressPhaseImpl,
+    ExtendPhaseImpl,
     ProposeAlternativesImpl,
+    RegenerateMasterImpl,
     RescheduleTargetRaceImpl,
+    SetPhaseFocusImpl,
     SetPhaseWeeklyRangeImpl,
     ShiftMilestoneImpl,
     UpdateTargetRaceTimeImpl,
@@ -40,12 +44,16 @@ _REQUIRED_READS = (
     "estimate_master_plan_load",
 )
 _DRAFT_TOOLS = (
+    "extend_phase",
+    "compress_phase",
     "set_phase_weekly_range",
+    "set_phase_focus",
     "propose_alternatives",
     "shift_milestone",
     "reschedule_target_race",
     "change_target",
     "update_target_race_time",
+    "regenerate_master",
 )
 
 
@@ -115,7 +123,12 @@ def _build_frozen_toolkit(fixture: dict, plan: MasterPlan) -> Any:
             dict(read_results.get("get_race_predictions") or {})
         ),
         get_pbs=_FrozenNoArgRead(dict(read_results.get("get_pbs") or {})),
+        extend_phase=ExtendPhaseImpl(plan.user_id, plan_loader=load_plan),
+        compress_phase=CompressPhaseImpl(plan.user_id, plan_loader=load_plan),
         set_phase_weekly_range=SetPhaseWeeklyRangeImpl(
+            plan.user_id, plan_loader=load_plan
+        ),
+        set_phase_focus=SetPhaseFocusImpl(
             plan.user_id, plan_loader=load_plan
         ),
         propose_alternatives=ProposeAlternativesImpl(
@@ -127,6 +140,9 @@ def _build_frozen_toolkit(fixture: dict, plan: MasterPlan) -> Any:
         ),
         change_target=ChangeTargetImpl(plan.user_id, plan_loader=load_plan),
         update_target_race_time=UpdateTargetRaceTimeImpl(
+            plan.user_id, plan_loader=load_plan
+        ),
+        regenerate_master=RegenerateMasterImpl(
             plan.user_id, plan_loader=load_plan
         ),
     )

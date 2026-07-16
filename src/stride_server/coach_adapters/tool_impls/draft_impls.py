@@ -1,7 +1,7 @@
 """Draft-tool implementations — see plan §5.2.
 
 * 7 week-scope tools (return ``PlanDiff``) — real impls (US-007).
-* 9 master-scope tools (return ``MasterPlanDiff``).
+* 10 master-scope tools (return ``MasterPlanDiff``).
 
 A draft tool's job is to propose a change as a typed diff; it never applies
 the change. The route handler accepts the diff back (Pattern Y) and runs
@@ -426,7 +426,7 @@ class RegenerateWeekImpl:
 
 
 # ---------------------------------------------------------------------------
-# Master-scope (9) — emit MasterPlanDiff
+# Master-scope (10) — emit MasterPlanDiff
 # ---------------------------------------------------------------------------
 
 from datetime import date as _date, timedelta as _timedelta
@@ -756,6 +756,55 @@ class SetPhaseWeeklyRangeImpl:
             f"调整为 {low:g}–{high:g} km（原因：{reason}）"
         )
         diff = _empty_master_diff(plan_id, explanation)
+        return _ok_master(diff.model_copy(update={"ops": [op]}))
+
+
+class SetPhaseFocusImpl:
+    """Propose one exact training-focus description for a plan phase."""
+
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
+
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        phase_id: str,
+        focus: str,
+        reason: str,
+    ) -> ToolResult:
+        if not isinstance(focus, str):
+            return _fail("focus must be text")
+        requested_focus = focus.strip()
+        if not requested_focus:
+            return _fail("focus must be non-empty")
+        plan = self._load_plan(plan_id)
+        if plan is None:
+            return _fail(f"master plan {plan_id!r} not found")
+        phase = next((item for item in plan.phases if item.id == phase_id), None)
+        if phase is None:
+            return _fail(f"phase {phase_id!r} not in plan")
+        if requested_focus == phase.focus.strip():
+            return _fail(
+                f"phase {phase_id!r} already uses the requested focus; "
+                "no proposal is needed"
+            )
+
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS,
+            phase_id=phase_id,
+            old_value={"focus": phase.focus},
+            new_value={"focus": requested_focus},
+            spec_patch={"focus": requested_focus},
+        )
+        diff = _empty_master_diff(
+            plan_id,
+            f"将「{phase.name}」训练重点从“{phase.focus}”调整为"
+            f"“{requested_focus}”（原因：{reason}）",
+        )
         return _ok_master(diff.model_copy(update={"ops": [op]}))
 
 

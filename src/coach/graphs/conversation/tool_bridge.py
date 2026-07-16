@@ -108,6 +108,11 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "Use when the user requests concrete low/high kilometres or when the evidence-based "
         "assessment supports one specific range. This emits a typed diff and does not apply it."
     ),
+    "set_phase_focus": (
+        "Propose one exact training-focus description for a master-plan phase. "
+        "Use when the user explicitly changes what a phase should emphasize; preserve the "
+        "requested focus text and do not substitute a volume, date, target, or regeneration op."
+    ),
     "propose_alternatives": (
         "Generate exactly two load-reduction alternatives (5% and 10%) for the current or "
         "next adjustable phase. Use only when the user asks to compare reduction options; "

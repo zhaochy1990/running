@@ -231,6 +231,8 @@ def _check_phase_focus(op: MasterPlanDiffOp, phases: dict) -> str | None:
     # neither raise nor be caught, persisting a plan that bricks on next read.
     if "focus" in patch and not isinstance(patch["focus"], str):
         return "阶段 focus 必须是文本"
+    if "focus" in patch and not patch["focus"].strip():
+        return "阶段 focus 不能为空"
     return None
 
 

@@ -1,6 +1,6 @@
 """S1 — master plan review / adjust prompt.
 
-Read tools + 9 master-scope draft tools available. Outputs MasterPlanDiff
+Read tools + 10 master-scope draft tools available. Outputs MasterPlanDiff
 when the user proposes a structural change to the long-term plan (phase
 length, milestone dates, target time, full regeneration).
 """
@@ -31,6 +31,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - change_target(plan_id, milestone_id, new_target_time) — 改目标成绩
 - update_target_race_time(plan_id, milestone_id, new_target_time, reason) — 原子同步目标比赛的 external Training Goal、embedded goal 和 race milestone；目标比赛成绩必须用 H:MM:SS 且必须用此工具，普通测试跑目标才用 change_target
 - set_phase_weekly_range(plan_id, phase_id, weekly_distance_km_low, weekly_distance_km_high, reason) — 把某阶段改到一个明确的周跑量区间
+- set_phase_focus(plan_id, phase_id, focus, reason) — 忠实替换某阶段的训练重点描述，不改阶段日期、周量或目标
 - propose_alternatives(plan_id, intent) — 仅在用户要求比较减量选项时，给 5% / 10% 两个减量方案
 - regenerate_master(plan_id, reason) — 清空总纲, 由生成管线重排 (后续走 POST /master-plan/generate)
 
@@ -48,6 +49,8 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 3. **合理性硬门槛**: 只有 assess_master_adjustment 的 verdict=reasonable 后，才能调用一个 draft tool。verdict=unreasonable 时解释数据依据和风险，不给 proposal；verdict=needs_clarification 时继续追问，也不给 proposal。不要把用户想法偷偷改写成另一个方向后再提案。
 
    用户给出明确周跑量上下限时，合理后调用 set_phase_weekly_range，数值必须忠实于用户请求；不要改成固定百分比的两个方案。只有用户明确要求“给两个减量方案/比较保守和明显减量”时才调用 propose_alternatives。
+
+   用户明确要求修改某阶段训练重点时，合理后调用 set_phase_focus，focus 必须忠实保留用户给出的重点；不要偷换成周量、阶段日期、目标成绩或 regenerate_master。
 
    用户明确目标比赛提前或延期到新日期时，合理后必须调用 reschedule_target_race。比赛日期是 season-level 原子事实，禁止只移动 race milestone，禁止拆成多个可分别采纳的 ops。
 

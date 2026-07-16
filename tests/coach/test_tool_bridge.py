@@ -18,10 +18,12 @@ def test_health_series_tool_is_bound_in_all_conversation_scopes() -> None:
         assert "get_training_summary" in names
     assert "assess_master_adjustment" in tool_names_for_scope("master_chat")
     assert "set_phase_weekly_range" in tool_names_for_scope("master_chat")
+    assert "set_phase_focus" in tool_names_for_scope("master_chat")
     assert "reschedule_target_race" in tool_names_for_scope("master_chat")
     assert "update_target_race_time" in tool_names_for_scope("master_chat")
     assert "assess_master_adjustment" not in tool_names_for_scope("week_chat")
     assert "set_phase_weekly_range" not in tool_names_for_scope("week_chat")
+    assert "set_phase_focus" not in tool_names_for_scope("week_chat")
     assert "reschedule_target_race" not in tool_names_for_scope("week_chat")
     assert "update_target_race_time" not in tool_names_for_scope("week_chat")
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 from stride_core.master_plan import (
     MasterPlan,
@@ -648,6 +650,18 @@ def test_replace_phase_focus_non_string_is_rejected() -> None:
     violations = validate_master_diff(_plan(), _diff(op))
     assert len(violations) == 1
     assert "focus 必须是文本" in violations[0]
+
+
+@pytest.mark.parametrize("focus", ["", "   "])
+def test_replace_phase_focus_empty_string_is_rejected(focus: str) -> None:
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS,
+        phase_id="phase-1",
+        spec_patch={"focus": focus},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "focus 不能为空" in violations[0]
 
 
 def test_replace_milestone_target_non_string_is_rejected() -> None:

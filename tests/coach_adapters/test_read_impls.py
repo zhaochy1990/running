@@ -908,6 +908,7 @@ def test_master_draft_tools_reject_unknown_plan(patched_db) -> None:
         "extend_phase": {"plan_id": "nope", "phase_id": "phid", "weeks": 1},
         "compress_phase": {"plan_id": "nope", "phase_id": "phid", "weeks": 1},
         "shift_milestone": {"plan_id": "nope", "milestone_id": "mid", "new_date": "2026-08-01"},
+        "set_phase_focus": {"plan_id": "nope", "phase_id": "phid", "focus": "马拉松配速耐力", "reason": "x"},
         "change_target": {"plan_id": "nope", "milestone_id": "mid", "new_target_time": "5K 20:00"},
         "propose_alternatives": {"plan_id": "nope", "intent": "x"},
         "regenerate_master": {"plan_id": "nope", "reason": "x"},

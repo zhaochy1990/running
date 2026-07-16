@@ -60,10 +60,10 @@ GraphFactory = Callable[..., Any]
 _CONCRETE_DIRECTION_RE = re.compile(
     r"(?:延长|缩短|缩到|增加|加大|加到|降低|降到|减少|减量|减轻|提高|提升|"
     r"调高|调低|调整到|设为|前移|后移|往前|往后|提前|推迟|延期|顺延|延后|改为|改成|"
-    r"改到|挪到|"
+    r"改到|挪到|侧重|聚焦|专注|重点放在|"
     r"取消|删除|保留|重排|重新生成|清空|"
     r"extend|shorten|increase|decrease|reduce|raise|lower|move|shift|postpone|"
-    r"change\s+(?:the\s+)?target|regenerate)",
+    r"change\s+(?:the\s+)?target|focus|emphasi[sz]e|prioriti[sz]e|regenerate)",
     re.IGNORECASE,
 )
 _UNDECIDED_DIRECTION_RE = re.compile(

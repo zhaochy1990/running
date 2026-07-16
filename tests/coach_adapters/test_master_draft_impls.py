@@ -543,6 +543,46 @@ def test_set_phase_weekly_range_rejects_inverted_range(seeded_plan):
     assert "low <= high" in result.errors[0]
 
 
+def test_set_phase_focus_returns_exact_typed_diff(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseFocusImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        focus="有氧基础与上坡力量",
+        reason="用户明确要求且当前负荷支持",
+    )
+
+    diff = _assert_master_diff(result)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS
+    assert op.phase_id == phase1.id
+    assert op.old_value == {"focus": "有氧基础"}
+    assert op.new_value == {"focus": "有氧基础与上坡力量"}
+    assert op.spec_patch == {"focus": "有氧基础与上坡力量"}
+    assert validate_master_diff(plan, diff) == []
+
+
+@pytest.mark.parametrize("focus", ["", "   ", "有氧基础", None])
+def test_set_phase_focus_rejects_empty_or_noop(
+    seeded_plan, focus: object
+) -> None:
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseFocusImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, phase_id=phase1.id, focus=focus, reason="test"
+    )
+
+    assert result.ok is False
+
+
 @pytest.mark.parametrize("low,high", [(float("nan"), 60), (50, float("inf"))])
 def test_set_phase_weekly_range_rejects_non_finite_values(
     seeded_plan, low: float, high: float

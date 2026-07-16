@@ -42,7 +42,7 @@ class FakeToolkit:
 
     user_id: str = "fake-user"
 
-    # read (14)
+    # read (15)
     get_training_summary: _FakeTool = field(default_factory=_FakeTool)
     get_recent_activities: _FakeTool = field(default_factory=_FakeTool)
     get_health_snapshot: _FakeTool = field(default_factory=_FakeTool)
@@ -68,7 +68,7 @@ class FakeToolkit:
     change_pace_target: _FakeTool = field(default_factory=_FakeTool)
     regenerate_week: _FakeTool = field(default_factory=_FakeTool)
 
-    # master-scope draft (9)
+    # master-scope draft (10)
     extend_phase: _FakeTool = field(default_factory=_FakeTool)
     compress_phase: _FakeTool = field(default_factory=_FakeTool)
     shift_milestone: _FakeTool = field(default_factory=_FakeTool)
@@ -76,6 +76,7 @@ class FakeToolkit:
     change_target: _FakeTool = field(default_factory=_FakeTool)
     update_target_race_time: _FakeTool = field(default_factory=_FakeTool)
     set_phase_weekly_range: _FakeTool = field(default_factory=_FakeTool)
+    set_phase_focus: _FakeTool = field(default_factory=_FakeTool)
     propose_alternatives: _FakeTool = field(default_factory=_FakeTool)
     regenerate_master: _FakeTool = field(default_factory=_FakeTool)
 
@@ -101,6 +102,7 @@ def _assert_toolkit_protocol() -> None:
         "extend_phase", "compress_phase", "shift_milestone",
         "reschedule_target_race", "change_target", "update_target_race_time",
         "set_phase_weekly_range",
+        "set_phase_focus",
         "propose_alternatives", "regenerate_master",
     ):
         getattr(tk, name)
