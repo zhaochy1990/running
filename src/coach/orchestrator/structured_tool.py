@@ -49,4 +49,3 @@ class StructuredToolRunner:
             )
         args: Any = calls[0].get("args")
         return self._schema.model_validate(args)
-
