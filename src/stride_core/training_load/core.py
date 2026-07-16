@@ -421,7 +421,18 @@ def _compute_high_intensity_tss(
         if hr_if >= 1.0:
             threshold_hr_seconds += delta_s
 
-        if smoothed_if >= _HIGH_INTENSITY_WORK_IF:
+        # A qualifying work bout must be continuous in the observed trace.
+        # Smoothing protects the threshold from one-sample GPS spikes, but it
+        # must not bridge a real low-speed interval and concatenate two short
+        # surges into one >=60-second bout. Require the current raw sample to
+        # remain supra-threshold while accumulating pre-arm work time. Once a
+        # bout is armed, the existing smoothed transition still governs the
+        # recovery window.
+        is_observed_work = (
+            smoothed_if >= _HIGH_INTENSITY_WORK_IF
+            and raw_speed_if >= _HIGH_INTENSITY_WORK_IF
+        )
+        if is_observed_work:
             work_seconds += delta_s
             recovery_seconds = 0.0
             armed_seconds = 0.0
@@ -449,9 +460,9 @@ def _compute_high_intensity_tss(
                 recovery_seconds = 0.0
                 armed_seconds = 0.0
         elif not recovery_armed:
-            # A short GPS/pace excursion cannot arm recovery. Decay partial
-            # work quickly so separate non-qualifying bursts do not combine.
-            work_seconds = max(0.0, work_seconds - 2.0 * delta_s)
+            # Work qualification is continuous: any observed interval below
+            # the threshold ends the unarmed candidate bout.
+            work_seconds = 0.0
 
     coverage = _clamp(covered_seconds / (duration_min * 60.0), 0.0, 1.0)
     confidence = _confidence_for_coverage(coverage)

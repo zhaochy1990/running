@@ -222,6 +222,48 @@ def test_recovered_hr_after_same_intervals_has_no_high_intensity_supplement():
     assert result.training_dose == pytest.approx(min(result.cardio_tss, result.external_tss))
 
 
+def test_separate_short_surges_do_not_combine_into_qualifying_work_bout():
+    samples: list[ActivitySample] = []
+    elapsed = 0
+    distance = 0.0
+    # Neither 40-second surge reaches the 60-second work minimum. The 10-second
+    # easy interval must end the first candidate even though the smoothed speed
+    # remains elevated briefly. Elevated HR after the second surge makes the
+    # old accidental concatenation observable as a false supplement.
+    for seconds, speed in ((40, 5.2), (10, 2.0), (40, 5.2), (180, 2.0)):
+        for _ in range(seconds):
+            distance += speed
+            samples.append(
+                ActivitySample(
+                    elapsed_s=float(elapsed),
+                    distance_m=distance,
+                    heart_rate_bpm=180.0,
+                    speed_mps=speed,
+                )
+            )
+            elapsed += 1
+    last = samples[-1]
+    samples.append(
+        ActivitySample(
+            elapsed_s=float(elapsed),
+            distance_m=last.distance_m,
+            heart_rate_bpm=last.heart_rate_bpm,
+            speed_mps=last.speed_mps,
+        )
+    )
+
+    result = compute_activity_load(
+        _activity(
+            duration_s=float(elapsed),
+            distance_m=distance,
+            samples=tuple(samples),
+        ),
+        _calibration(),
+    )
+
+    assert result.high_intensity_tss == 0.0
+
+
 def test_partial_interval_trace_does_not_add_high_intensity_supplement():
     samples = _interval_samples(recovery_hr=165.0, repeats=1)
     result = compute_activity_load(

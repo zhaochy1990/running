@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -15,6 +16,11 @@ from .plan import require_internal_token
 
 internal_router = APIRouter()
 
+_UUID4_DIR_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+
 
 def _calibration_body(calibration) -> dict:
     return {
@@ -24,6 +30,36 @@ def _calibration_body(calibration) -> dict:
         "threshold_speed_mps": calibration.threshold_speed_mps,
         "critical_power_w": calibration.critical_power_w,
     }
+
+
+def _production_training_load_users() -> list[str]:
+    """Enumerate canonical per-user databases from the live data mount.
+
+    ``data/.slug_aliases.json`` is a convenience mapping and can lag user
+    creation. The UUID directory containing ``coros.db`` is the authoritative
+    per-user storage shape, so rollout jobs must discover users from it.
+    """
+    from stride_core.db import USER_DATA_DIR
+
+    if not USER_DATA_DIR.exists():
+        return []
+    users = [
+        entry.name
+        for entry in USER_DATA_DIR.iterdir()
+        if entry.is_dir()
+        and _UUID4_DIR_RE.fullmatch(entry.name)
+        and (entry / "coros.db").is_file()
+        and (entry / "coros.db").stat().st_size > 0
+    ]
+    return sorted(users)
+
+
+@internal_router.get("/internal/training-load/users")
+def internal_training_load_users(
+    _token: None = Depends(require_internal_token),
+):
+    users = _production_training_load_users()
+    return {"ok": True, "users": users, "count": len(users)}
 
 
 @internal_router.post("/internal/training-load/calibration/refresh")

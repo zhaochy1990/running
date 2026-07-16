@@ -311,13 +311,29 @@ jobs:
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "properties.configuration.ingress.fqdn" -o tsv)
-          python3 -c "
+          users_response=$(mktemp)
+          users_http=$(curl -sS -o "$users_response" -w "%{http_code}" \
+            --max-time 60 \
+            -H "X-Internal-Token: $INTERNAL_TOKEN" \
+            "https://$FQDN/internal/training-load/users") || users_http="000"
+          if [ "$users_http" != "200" ]; then
+            echo "::error::could not enumerate production training-load users (HTTP $users_http)"
+            head -c 500 "$users_response" || true
+            rm -f "$users_response"
+            exit 1
+          fi
+          python3 - "$users_response" > users.txt <<'PY'
           import json
-          from pathlib import Path
-          path = Path('data/.slug_aliases.json')
-          aliases = json.loads(path.read_text()) if path.exists() else {}
-          print('\n'.join(sorted(set(str(value) for value in aliases.values()))))
-          " > users.txt
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              payload = json.load(handle)
+          users = payload.get("users")
+          if not isinstance(users, list) or any(not isinstance(user, str) for user in users):
+              raise SystemExit("invalid response from /internal/training-load/users")
+          print("\n".join(users))
+          PY
+          rm -f "$users_response"
 
           failed=0
           while read -r user; do

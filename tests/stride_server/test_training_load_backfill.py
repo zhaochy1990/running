@@ -7,6 +7,7 @@ from stride_core.models import ActivityDetail, DailyHealth, TimeseriesPoint
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 INTERNAL_TOKEN = "test-internal-token-very-secret"
+UNALIASED_USER_UUID = "b2c3d4e5-f6a7-4bbb-8abc-234567890123"
 
 
 def _timeseries(duration_s: int = 3600) -> list[TimeseriesPoint]:
@@ -62,6 +63,46 @@ def _activity(label_id: str, date_iso: str) -> ActivityDetail:
         train_kind="aerobic",
         timeseries=_timeseries(),
     )
+
+
+def test_internal_training_load_users_scans_live_uuid_databases(tmp_path, monkeypatch):
+    import stride_core.db as core_db_mod
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+
+    from stride_server.config import clear_server_config_cache
+    from stride_server.routes.training_load import internal_router
+    from stride_storage.sqlite.database import Database
+
+    clear_server_config_cache()
+    # Both UUID databases must be found even though no alias file exists.
+    for user_id in (USER_UUID, UNALIASED_USER_UUID):
+        with Database(user=user_id):
+            pass
+    # Non-user directories and empty placeholders are not rollout targets.
+    (tmp_path / "_jobs_dev").mkdir()
+    empty_dir = tmp_path / "c3d4e5f6-a7b8-4ccc-8abc-345678901234"
+    empty_dir.mkdir()
+    (empty_dir / "coros.db").touch()
+
+    app = FastAPI()
+    app.include_router(internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    unauthorized = client.get("/internal/training-load/users")
+    response = client.get(
+        "/internal/training-load/users",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert unauthorized.status_code == 401
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "ok": True,
+        "users": [USER_UUID, UNALIASED_USER_UUID],
+        "count": 2,
+    }
 
 
 def test_internal_training_load_backfill_refreshes_threshold_and_recent_load(tmp_path, monkeypatch):
