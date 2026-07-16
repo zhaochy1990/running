@@ -2,6 +2,13 @@ import type { Activity, PlanDay } from '../api'
 import { isRunActivity, isStrengthActivity } from './activityKinds'
 import { isPushable, type PlannedNutrition, type PlannedSession } from '../types/plan'
 
+export function findCurrentWeek<T extends { readonly date_from: string; readonly date_to: string }>(
+  weeks: readonly T[],
+  today: string,
+): T | null {
+  return weeks.find((week) => week.date_from <= today && today <= week.date_to) ?? null
+}
+
 export interface WeeklyPlanStats {
   readonly sessions: PlannedSession[]
   readonly nutrition: PlannedNutrition[]

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Activity } from '../../api'
-import { actualRunDistanceKm, actualStrengthStats, formatDurationClock } from '../weeklyPlanView'
+import { actualRunDistanceKm, actualStrengthStats, findCurrentWeek, formatDurationClock } from '../weeklyPlanView'
 
 function activity(overrides: Partial<Activity>): Activity {
   return {
@@ -36,6 +36,19 @@ function activity(overrides: Partial<Activity>): Activity {
 }
 
 describe('weeklyPlanView', () => {
+  it('selects the week covering today instead of the first future week', () => {
+    const nextWeek = { date_from: '2026-07-20', date_to: '2026-07-26', folder: 'next' }
+    const currentWeek = { date_from: '2026-07-13', date_to: '2026-07-19', folder: 'current' }
+
+    expect(findCurrentWeek([nextWeek, currentWeek], '2026-07-16')).toBe(currentWeek)
+  })
+
+  it('does not substitute a future week when the current week is missing', () => {
+    const nextWeek = { date_from: '2026-07-20', date_to: '2026-07-26', folder: 'next' }
+
+    expect(findCurrentWeek([nextWeek], '2026-07-16')).toBeNull()
+  })
+
   it('only counts running distance toward weekly mileage completion', () => {
     const activities = [
       activity({ label_id: 'run', distance_km: 8 }),

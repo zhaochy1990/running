@@ -12,6 +12,7 @@ import {
   type PlannedSessionRow, type PlanDay, type MyProfile,
 } from '../api'
 import { shanghaiDate, shanghaiMonthDay, shanghaiToday } from '../lib/shanghai'
+import { findCurrentWeek } from '../lib/weeklyPlanView'
 import type { PlannedNutrition, StructuredStatus } from '../types/plan'
 import type { StrengthTabResponse } from '../types/strength'
 import { useUser } from '../UserContextValue'
@@ -76,7 +77,8 @@ export default function WeekLayout() {
 
   useEffect(() => {
     if (!folder && weeks.length > 0) {
-      navigate(`/week/${weeks[0].folder}`, { replace: true })
+      const currentWeek = findCurrentWeek(weeks, shanghaiToday())
+      if (currentWeek) navigate(`/week/${currentWeek.folder}`, { replace: true })
     }
   }, [weeks, folder, navigate])
 
