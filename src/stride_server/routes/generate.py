@@ -10,7 +10,7 @@ import json
 import logging
 import time
 from types import SimpleNamespace
-from datetime import date as date_cls, timedelta
+from datetime import date as date_cls
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,9 +18,13 @@ from pydantic import BaseModel
 
 from stride_core.plan_spec import SessionKind
 from stride_core.source import DataSource
-from stride_core.timefmt import SHANGHAI_DAY_SQL, shanghai_day_str
 from ..deps import get_db, get_plan_state_store, get_source_for_user, parse_week_dates
-from ..week_generator import generate_week_plan, week_folder
+from ..week_generator import week_folder
+from ..weekly_plan_generator import (
+    WeeklyPlanAlreadyExistsError,
+    build_weekly_plan,
+    get_last_week_summary,
+)
 from ..weekly_plan_store import get_weekly_plan_store, save_weekly_plan, session_api_id
 
 # Imported at module level so tests can patch it via
@@ -49,81 +53,11 @@ class GenerateWeekRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-
 def _get_last_week_summary(user: str, db, week_start: date_cls) -> dict | None:
-    """Query the previous week for completion rate and avg RPE.
-
-    Returns a dict with:
-      ``completed_sessions``, ``total_sessions``,
-      ``total_distance_km``, ``avg_rpe``
-    or None when no data exists for that week.
-    """
-    prev_start = week_start - timedelta(days=7)
-    prev_end = prev_start + timedelta(days=6)
-    # Total planned sessions for prev week
-    previous = get_weekly_plan_store().get_current_plan(
-        user, prev_start.isoformat()
+    """Compatibility wrapper around the reusable generation service."""
+    return get_last_week_summary(
+        user, db, week_start, plan_store=get_weekly_plan_store()
     )
-    planned_rows = list(previous.sessions) if previous else []
-    if not planned_rows:
-        return None
-
-    total_sessions = len(planned_rows)
-
-    # Sum up completed sessions from activities in that week.
-    # activities.date is UTC ISO; compare in the Shanghai calendar via
-    # SHANGHAI_DAY_SQL so a 00:30 Shanghai workout (16:30 UTC the previous
-    # day) lands on the correct planned-session date.
-    date_from = prev_start.isoformat()
-    date_to = prev_end.isoformat()
-    activity_rows = db.query(
-        f"""SELECT date, distance_m, avg_pace_s_km
-           FROM activities
-           WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
-           ORDER BY date""",
-        (date_from, date_to),
-    )
-
-    # Collect planned run distances for last week
-    run_distances = [
-        float(getattr(r, "total_distance_m", 0) or 0)
-        for r in planned_rows
-        if r.kind == SessionKind.RUN
-    ]
-    total_planned_km = sum(run_distances) / 1000.0
-
-    # Count activity dates that overlap with planned-run dates
-    planned_run_dates = {
-        r.date for r in planned_rows if r.kind == SessionKind.RUN
-    }
-    completed = 0
-    actual_distance_m = 0.0
-    for act in activity_rows:
-        raw = str(act["date"])
-        # activities.date may be compact YYYYMMDD; normalise to ISO YYYY-MM-DD.
-        if len(raw) == 8 and raw.isdigit():
-            act_date = f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]}"
-        else:
-            # planned_run_dates is Shanghai-local; convert UTC ISO before matching.
-            act_date = shanghai_day_str(raw)
-        if act_date in planned_run_dates:
-            completed += 1
-            actual_distance_m += float(act["distance_m"] or 0)
-
-    if completed == 0 and total_sessions == 0:
-        return None
-
-    # Use the *planned* base, not the actual mileage. Otherwise an
-    # under-completed week (e.g. 16km actual vs 40km planned) would shrink
-    # next week's target dramatically — punishing the user twice.
-    total_distance_km = total_planned_km
-
-    return {
-        "completed_sessions": completed,
-        "total_sessions": total_sessions,
-        "total_distance_km": total_distance_km,
-        "avg_rpe": None,  # RPE not stored per planned-session; future: pull from activity_feedback
-    }
 
 
 def _write_plan(user: str, weekly_plan) -> None:
@@ -181,51 +115,33 @@ def generate_week(
     if not parse_week_dates(folder):
         raise HTTPException(status_code=500, detail="Internal: invalid folder generated")
 
-    db = get_db(user)
-
     try:
-        # ── Conflict check ───────────────────────────────────────────────────
-        existing = get_weekly_plan_store().get_current_plan(
-            user, week_start.isoformat()
+        generated = build_weekly_plan(
+            user_id=user,
+            week_start=week_start,
+            base_distance_km=body.base_distance_km,
+            allow_existing=force,
         )
-        if existing is not None:
-            if not force:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "error": "week_already_exists",
-                        "folder": existing.week_folder,
-                        "hint": "Pass ?force=true to overwrite the existing plan",
-                    },
-                )
-            # force=true replaces the canonical WeeklyPlanStore entry below.
+        weekly_plan = generated.plan
+        if force:
             logger.info(
                 "generate_week: force overwrite week_start=%s user=%s",
                 week_start, user,
             )
-
-        # ── Compute last-week summary ────────────────────────────────────────
-        last_week_summary = _get_last_week_summary(user, db, week_start)
-
-        # ── Generate ─────────────────────────────────────────────────────────
-        weekly_plan, base_km = generate_week_plan(
-            user_id=user,
-            week_start=week_start,
-            base_distance_km=body.base_distance_km,
-            last_week_summary=last_week_summary,
-        )
-
-        # ── Persist ──────────────────────────────────────────────────────────
         _write_plan(user, weekly_plan)
-
-    finally:
-        db.close()
+    except WeeklyPlanAlreadyExistsError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "week_already_exists",
+                "folder": exc.folder,
+                "hint": "Pass ?force=true to overwrite the existing plan",
+            },
+        ) from exc
 
     # ── Build response ───────────────────────────────────────────────────────
-    # ``total_distance_km`` reports the *target* base (user-facing weekly mileage),
-    # not the sum of allocated session distances (which is ~87% of base by
-    # design — rest day + strength don't carry km).
-    total_distance_km = round(base_km, 1)
+    # ``total_distance_km`` reports the user-facing weekly running target.
+    total_distance_km = generated.total_distance_km
 
     sessions_payload = []
     for s in weekly_plan.sessions:

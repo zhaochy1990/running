@@ -19,6 +19,8 @@ from coach_cli.cli import (
 )
 from stride_core.master_plan_diff import MasterPlanDiff
 from stride_core.plan_diff import PlanDiff
+from stride_core.plan_spec import WeeklyPlan
+from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 from stride_storage.coach_persistence.store import CheckpointRow
 
 
@@ -285,7 +287,7 @@ def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
     assert "📋 提案 2[season_plan]" in output
 
 
-def test_print_turn_only_numbers_cli_applicable_master_proposals(capsys) -> None:
+def test_print_turn_numbers_all_cli_applicable_proposals(capsys) -> None:
     weekly = PlanDiff(
         diff_id="week",
         folder="2026-W29",
@@ -313,9 +315,8 @@ def test_print_turn_only_numbers_cli_applicable_master_proposals(capsys) -> None
     _print_turn(turn, interactive=False, render_markdown=False)
 
     output = capsys.readouterr().out
-    assert "📋 提案[weekly_plan]" in output
-    assert "📋 提案 1[season_plan]" in output
-    assert "提案 2" not in output
+    assert "📋 提案 1[weekly_plan]" in output
+    assert "📋 提案 2[season_plan]" in output
 
 
 def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> None:
@@ -358,3 +359,65 @@ def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> No
     assert applied == ["b"]
     assert "方案 2 已应用" in result.output
     assert "v2" in result.output
+
+
+def test_repl_applies_week_create_then_adjust_proposals(monkeypatch, tmp_path) -> None:
+    folder = "2026-07-13_07-19"
+    create = WeeklyPlanCreateProposal(
+        proposal_id="create-1",
+        folder=folder,
+        plan=WeeklyPlan(week_folder=folder).to_dict(),
+        total_distance_km=40,
+        ai_explanation="创建本周计划",
+        created_at="t",
+    )
+    adjust = PlanDiff(
+        diff_id="adjust-1",
+        folder=folder,
+        ops=[],
+        ai_explanation="调整周三",
+        created_at="t",
+    )
+    turns = iter(
+        [
+            SimpleNamespace(
+                reply="创建提案",
+                clarification=None,
+                proposals=[ProposalCard(specialist_id="weekly_plan", proposal=create)],
+                active_target=None,
+            ),
+            SimpleNamespace(
+                reply="调整提案",
+                clarification=None,
+                proposals=[ProposalCard(specialist_id="weekly_plan", proposal=adjust)],
+                active_target=None,
+            ),
+        ]
+    )
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: next(turns))
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: (
+            applied.append(
+                proposal.proposal_id
+                if isinstance(proposal, WeeklyPlanCreateProposal)
+                else proposal.diff_id
+            )
+            or {"folder": folder, "created": isinstance(proposal, WeeklyPlanCreateProposal)}
+        ),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="创建本周计划\n/apply 1\n调整周三\n/apply 1\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert applied == ["create-1", "adjust-1"]
+    assert "已创建" in result.output
+    assert "已更新" in result.output

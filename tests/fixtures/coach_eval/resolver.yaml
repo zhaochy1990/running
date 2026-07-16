@@ -131,6 +131,50 @@ fixtures:
       resolved_from: resolved
       self_ambiguity: false
 
+  - fixture_id: resolver-create-next-week-explicit
+    description: 用户明确生成下一周计划时，应路由到周计划写专家并保留下周目标。
+    tags: [write, week, next_week, explicit_target, target_resolution]
+    input:
+      utterance: 创建我的下一周训练计划
+      target_resolution: &next_week_create
+        kind: week
+        folder: 2026-07-20_07-26(EVAL)
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target: *next_week_create
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+      target_hint_kind: week
+      target_ref_phrase_contains: 下一周
+
+  - fixture_id: resolver-create-week-after-next
+    description: 下下周请求仍应完整路由到周计划专家，由执行层确定性拒绝而不是误判为下周。
+    tags: [write, week, unsupported_generation_window, target_resolution]
+    input:
+      utterance: 生成下下周的训练计划
+      target_resolution:
+        kind: week
+        folder: 2026-07-27_08-02(EVAL)
+    expected:
+      intents:
+        - specialist_id: weekly_plan
+          action: write
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: week
+        folder: 2026-07-27_08-02(EVAL)
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+      target_hint_kind: week
+      target_ref_phrase_contains: 下下周
+
   - fixture_id: resolver-create-current-master-week-followup
     description: 教练已回答当前处于总纲第11周后，后续生成本周计划应利用历史并路由到周计划写专家。
     tags: [write, week, conversation, master_week, followup, target_resolution]

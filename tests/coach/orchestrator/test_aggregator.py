@@ -107,6 +107,20 @@ def test_all_failed_honest_failure() -> None:
     assert resp.proposals == []
 
 
+def test_rejected_surfaces_deterministic_policy_message() -> None:
+    rejected = DispatchResult(
+        specialist_id="weekly_plan",
+        result=SpecialistResult(
+            status="rejected",
+            reply_fragment="目前只支持生成当前周和下一周的训练计划。",
+        ),
+    )
+    resp = aggregate([rejected], resolver_output=_resolver(), utterance="生成下下周")
+
+    assert resp.reply == "目前只支持生成当前周和下一周的训练计划。"
+    assert resp.proposals == []
+
+
 def test_completed_with_proposal_builds_card() -> None:
     item = _completed("把周三改成轻松跑", sid="weekly_plan", proposal=_diff())
     resp = aggregate(

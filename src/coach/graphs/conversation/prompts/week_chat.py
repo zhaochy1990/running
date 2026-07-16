@@ -1,7 +1,7 @@
 """S2 — weekly plan adjustment prompt.
 
 Read tools + 7 week-scope draft tools available. Goal: when the user asks
-for adjustments to **this week's** plan, call the appropriate draft tool to
+for adjustments to the explicitly supplied target week, call the draft tool to
 emit a PlanDiff; otherwise (just a question) reply with text only.
 """
 
@@ -9,12 +9,14 @@ from .shared import SHARED_DOMAIN_PROMPT
 
 WEEK_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 
-## 当前任务：本周训练调整 (S2 / D4 chat)
+## 当前任务：目标周训练调整 (S2 / D4 chat)
 
-用户在本周训练计划界面提出调整诉求。可用工具：
+上游会在 user message 中提供目标周 folder；所有 draft tool 必须原样使用该 folder。
+可用工具：
 
 **Read tools** (取上下文)
-- get_week_plan() — 按上海当天从 WeeklyPlanStore 读取本周 canonical WeeklyPlan（sessions + nutrition + notes）
+- get_week_plan() — 按上海当天读取本周 canonical WeeklyPlan；调整下一周时，以注入的
+  folder 为目标，不要把这个无参 read tool 的本周结果当成下一周
 - get_health_snapshot / get_health_series / get_pmc_series — TSB / 疲劳 / RHR / HRV / 日序列趋势
 - get_recent_activities — 最近完成的训练
 - get_body_composition_latest — 体测数据
@@ -27,7 +29,7 @@ WEEK_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - replace_session(folder, date, session_index, new_kind, params) — 替换为 run/strength/rest/cross/note
 - add_strength_session(folder, date, focus) — 加一节力量
 - change_pace_target(folder, date, session_index, new_pace_s_per_km) — 改配速目标
-- regenerate_week(folder, reason, constraints) — 清空本周交给生成管线重排
+- regenerate_week(folder, reason, constraints) — 清空目标周交给生成管线重排
 
 ## 行为规则
 

@@ -90,6 +90,14 @@ def _post(client, token, body: dict, force: bool = False) -> object:
     return client.post(url, json=body, headers=_auth(token))
 
 
+@pytest.fixture(autouse=True)
+def _no_active_master_plan(monkeypatch):
+    """Legacy route expectations exercise the no-master fallback."""
+    import stride_server.weekly_plan_generator as generator
+
+    monkeypatch.setattr(generator, "_master_week_target", lambda *_: None)
+
+
 # ── Tests ────────────────────────────────────────────────────────────────────
 
 

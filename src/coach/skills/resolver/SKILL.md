@@ -38,6 +38,10 @@ ${card_catalog}
   - 「告诉我本周训练计划，不要修改」→ `status_insight`, `action=read`, `target_hint.kind=week`。
   - 「把总体训练计划的基础期延长两周」→ `season_plan`, `action=write`, `target_hint.kind=master`。
   - 「把本周三改成轻松跑」→ `weekly_plan`, `action=write`, `target_hint.kind=week`。
+  - 「生成下周 weekly plan」→ `weekly_plan`, `action=write`,
+    `target_hint.kind=week`, `target_hint.ref_phrase="下周"`。
+  - 「生成下下周 weekly plan」仍路由到 `weekly_plan`, `action=write` 并完整保留
+    `target_hint.ref_phrase="下下周"`，由周计划专家确定性拒绝；不要在路由层伪装成下一周。
   - 「生成总体训练计划的第11周 weekly plan」→ `weekly_plan`, `action=write`,
     `target_hint.kind=week`, `target_hint.ref_phrase="第11周"`。句子提到「总体训练计划」
     不会改变目标仍是其中某一周；不要误路由到 `season_plan`。
@@ -60,7 +64,8 @@ ${card_catalog}
 
 - 只抽**用户指代对象的短语**，不要自己去解析成具体哪一周 / 哪个计划（那是系统代码的事）。
 - 「总体/赛季计划第 N 周」「第 N 周的 weekly plan」都属于 `kind=week`；
-  `ref_phrase` 必须保留完整的「第 N 周」原文，让系统代码按 active master plan 的 weeks 映射日期。
+  `ref_phrase` 必须保留完整的「第 N 周」原文，让系统代码解析日期并执行只允许当前周/
+  下一周生成的确定性限制。
 - 用代词（「它/这个/那个」）→ `is_anaphora=true`，`kind` 尽量推断。
 - 没提任何对象 → `target_hint` 留空。
 

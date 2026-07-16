@@ -25,11 +25,22 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from coach.schemas import AssistantPart, assistant_parts_from_message
 
 from stride_core.plan_diff import PlanDiff, apply_diff_to_weekly_plan
+from stride_core.timefmt import today_shanghai
+from stride_core.weekly_plan_proposal import (
+    WeeklyPlanCreateProposal,
+    is_supported_weekly_plan_generation,
+)
 from stride_core.master_plan import MasterPlanStatus
 from stride_core.master_plan_diff import MasterPlanDiff, apply_master_plan_diff
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
@@ -44,7 +55,11 @@ from coach.orchestrator import coach_thread_id
 from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import get_checkpointer
 from ..master_plan_store import get_master_plan_store
-from ..weekly_plan_store import get_weekly_plan_store, save_weekly_plan
+from ..weekly_plan_store import (
+    create_weekly_plan,
+    get_weekly_plan_store,
+    save_weekly_plan,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -235,16 +250,21 @@ def post_chat_message(
 
 
 class CoachWeekApplyRequest(BaseModel):
-    """Body for the orchestrator week-diff apply.
+    """Body for applying a weekly creation proposal or adjustment diff.
 
-    Unlike the legacy plan_chat apply (which kept pending diffs in process
-    memory), the orchestrator is stateless: the ``PlanDiff`` rode the chat
-    response (``proposals[].proposal``) and the client sends the *whole* diff
-    back here with the op ids the user accepted (Pattern Y, §9).
+    The orchestrator is stateless: a complete creation proposal or ``PlanDiff``
+    rides the chat response and the client sends it back after confirmation.
     """
 
-    diff: PlanDiff
-    accepted_op_ids: list[str]
+    diff: PlanDiff | None = None
+    proposal: WeeklyPlanCreateProposal | None = None
+    accepted_op_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _exactly_one_payload(self) -> "CoachWeekApplyRequest":
+        if (self.diff is None) == (self.proposal is None):
+            raise ValueError("provide exactly one of diff or proposal")
+        return self
 
 
 @router.post("/api/users/me/coach/plan/{folder}/apply")
@@ -253,9 +273,50 @@ def apply_coach_week_diff(
     body: CoachWeekApplyRequest,
     payload: dict = Depends(require_bearer),
 ) -> dict[str, Any]:
-    """Apply the accepted ops of a coach-proposed week ``PlanDiff`` to the store."""
+    """Create a proposed week or apply accepted ops to an existing week."""
     user_id: str = payload["sub"]
+    if body.proposal is not None:
+        proposal = body.proposal
+        if proposal.folder != folder:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"proposal folder {proposal.folder!r} does not match path "
+                    f"folder {folder!r}"
+                ),
+            )
+        if not is_supported_weekly_plan_generation(
+            proposal.folder, today=today_shanghai()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="目前只支持生成当前周和下一周的训练计划",
+            )
+        try:
+            created = create_weekly_plan(
+                user_id,
+                proposal.to_weekly_plan(),
+                expected_folder=folder,
+                generated_by="coach-generation",
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not created:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"weekly plan {folder!r} already exists",
+            )
+        from datetime import datetime, timezone
+
+        return {
+            "applied": 1,
+            "folder": folder,
+            "created": True,
+            "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+
     diff = body.diff
+    assert diff is not None
     if diff.folder != folder:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -287,6 +348,7 @@ def apply_coach_week_diff(
     return {
         "applied": len(accepted_op_ids),
         "folder": folder,
+        "created": False,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 

@@ -97,6 +97,14 @@ def test_committed_resolver_fixtures_cover_routing_boundaries() -> None:
         if fixture.fixture_id == "resolver-create-current-master-week-followup"
     )
     assert "第 11 周" in master_week_followup.input.conversation_window[-1].content
+    assert any(
+        fixture.fixture_id == "resolver-create-next-week-explicit"
+        for fixture in fixtures
+    )
+    assert any(
+        fixture.fixture_id == "resolver-create-week-after-next"
+        for fixture in fixtures
+    )
     tags = {tag for fixture in fixtures for tag in fixture.tags}
     assert {
         "read_write_boundary",
@@ -109,6 +117,8 @@ def test_committed_resolver_fixtures_cover_routing_boundaries() -> None:
         "short_followup",
         "missing_plan",
         "master_week",
+        "next_week",
+        "unsupported_generation_window",
     } <= tags
 
     registry_ids = set(build_resolver_eval_registry().ids())

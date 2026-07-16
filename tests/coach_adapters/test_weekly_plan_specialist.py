@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from coach.contracts import SpecialistTask, TargetHint, TargetRef, Turn
@@ -15,7 +17,8 @@ from stride_core.master_plan import (
     MasterPlanWeek,
 )
 from stride_core.plan_diff import PlanDiff
-from stride_core.plan_spec import WeeklyPlan
+from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 from stride_server.coach_adapters.orchestrator import weekly_plan as wp
 from stride_server.coach_adapters.orchestrator.weekly_plan import (
     WEEKLY_PLAN_CARD,
@@ -26,6 +29,16 @@ from stride_server.coach_adapters.orchestrator.weekly_plan import (
 )
 
 _FOLDER = "2026-06-22_06-28(W8)"
+
+
+@pytest.fixture(autouse=True)
+def _existing_week_by_default(monkeypatch):
+    """Legacy adjustment tests operate on an existing canonical week."""
+    monkeypatch.setattr(
+        wp,
+        "get_weekly_plan_store",
+        lambda: _FakeWeeklyPlanStore(WeeklyPlan(week_folder=_FOLDER)),
+    )
 
 
 def _plan_diff_dict() -> dict[str, Any]:
@@ -156,6 +169,87 @@ def test_runner_without_folder_asks_clarification() -> None:
     assert "build" not in capture  # graph never built without a folder
 
 
+def test_runner_creates_full_plan_proposal_when_week_missing(monkeypatch) -> None:
+    folder = "2026-07-13_07-19"
+    generated_plan = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+            PlannedSession(
+                date="2026-07-13",
+                session_index=0,
+                kind=SessionKind.REST,
+                summary="休息",
+            ),
+        ),
+        notes_md="本周保持稳定负荷",
+    )
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+    monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
+    monkeypatch.setattr(
+        wp,
+        "build_weekly_plan",
+        lambda **_: SimpleNamespace(plan=generated_plan, total_distance_km=40.0),
+    )
+    capture: dict[str, Any] = {}
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=_factory("unused", None, capture),
+    )
+
+    result = runner(_task("创建本周计划", folder=folder))
+
+    assert result.status == "completed"
+    assert len(result.proposals) == 1
+    proposal = result.proposals[0]
+    assert isinstance(proposal, WeeklyPlanCreateProposal)
+    assert proposal.to_weekly_plan().notes_md == "本周保持稳定负荷"
+    assert "确认后才会保存" in result.reply_fragment
+    assert "build" not in capture
+
+
+def test_runner_rejects_week_after_next_without_generation(monkeypatch) -> None:
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+    monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
+    capture: dict[str, Any] = {}
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=_factory("unused", None, capture),
+    )
+
+    result = runner(_task("生成下下周计划", folder="2026-07-27_08-02"))
+
+    assert result.status == "rejected"
+    assert "当前周和下一周" in result.reply_fragment
+    assert "build" not in capture
+
+
+def test_runner_rejects_regenerating_existing_week_after_next(monkeypatch) -> None:
+    folder = "2026-07-27_08-02"
+    monkeypatch.setattr(
+        wp,
+        "get_weekly_plan_store",
+        lambda: _FakeWeeklyPlanStore(WeeklyPlan(week_folder=folder)),
+    )
+    monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
+    capture: dict[str, Any] = {}
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=_factory("unused", None, capture),
+    )
+
+    result = runner(_task("重新生成下下周计划", folder=folder))
+
+    assert result.status == "rejected"
+    assert "当前周和下一周" in result.reply_fragment
+    assert "build" not in capture
+
+
 def test_runner_seeds_window_and_memory_notes() -> None:
     from coach.contracts import ScopedContext
 
@@ -187,6 +281,9 @@ class _FakeWeeklyPlanStore:
         self.current = current
 
     def get_current_plan(self, _user_id, _today):
+        return self.current
+
+    def get_plan(self, _user_id, _folder):
         return self.current
 
 
@@ -313,6 +410,7 @@ def test_target_resolver_uses_calendar_folder_when_current_week_missing(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(wp, "resolve_current_week_folder", lambda _u: None)
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
     monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
     resolver = make_current_week_target_resolver("u1")
     assert resolver(None) is None
@@ -325,7 +423,11 @@ def test_target_resolver_uses_calendar_folder_when_current_week_missing(
     assert resolver(
         TargetRef(kind="week"),
         TargetHint(kind="week", ref_phrase="下周"),
-    ) is None
+    ) == TargetRef(kind="week", folder="2026-07-20_07-26")
+    assert resolver(
+        TargetRef(kind="week"),
+        TargetHint(kind="week", ref_phrase="下下周"),
+    ) == TargetRef(kind="week", folder="2026-07-27_08-02")
     assert resolver(
         TargetRef(kind="session", date="2026-07-15"),
         TargetHint(kind="session", ref_phrase="本周三的间歇"),
