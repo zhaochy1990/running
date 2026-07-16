@@ -25,7 +25,8 @@ WEEK_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - swap_sessions(folder, date_a, date_b) — 调换两天
 - shift_session(folder, date, to_date, session_index=0) — 单节挪日
 - reduce_intensity(folder, scope, factor, reason) — 整周或单日按比例减量 (scope='week'|'day', factor∈(0.1,1.0])
-- replace_session(folder, date, session_index, new_kind, params) — 替换为 run/strength/rest/cross/note
+- replace_session(folder, date, session_index, new_kind, params) — 替换为 run/strength/rest/cross/note；
+  时长必须用 total_duration_s（秒），距离用 total_distance_m（米）
 - add_strength_session(folder, date, focus) — 加一节力量
 - change_pace_target(folder, date, session_index, new_pace_s_per_km) — 改配速目标
 - regenerate_week(folder, reason, constraints) — 清空目标周交给生成管线重排

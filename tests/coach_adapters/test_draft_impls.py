@@ -143,6 +143,35 @@ def test_replace_session_changes_kind(patched_plan):
     assert op.spec_patch["kind"] == "rest"
 
 
+def test_replace_session_normalises_duration_minutes_and_clears_distance(patched_plan):
+    folder, _ = patched_plan
+    res = draft_impls.ReplaceSessionImpl("uid")(
+        folder=folder,
+        date="2026-05-13",
+        session_index=0,
+        new_kind="run",
+        params={"summary": "45分钟轻松跑", "duration_min": 45},
+    )
+
+    op = _assert_plan_diff(res).ops[0]
+    assert op.spec_patch["summary"] == "45分钟轻松跑"
+    assert op.spec_patch["total_duration_s"] == 2700
+    assert op.spec_patch["total_distance_m"] is None
+
+
+def test_replace_session_normalises_distance_km(patched_plan):
+    folder, _ = patched_plan
+    res = draft_impls.ReplaceSessionImpl("uid")(
+        folder=folder,
+        date="2026-05-13",
+        session_index=0,
+        new_kind="run",
+        params={"summary": "8公里轻松跑", "distance_km": 8},
+    )
+
+    assert _assert_plan_diff(res).ops[0].spec_patch["total_distance_m"] == 8000
+
+
 def test_replace_session_invalid_kind_fails(patched_plan):
     folder, _ = patched_plan
     res = draft_impls.ReplaceSessionImpl("uid")(

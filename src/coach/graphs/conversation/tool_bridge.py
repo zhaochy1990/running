@@ -64,7 +64,12 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "swap_sessions": "Propose swapping the run scheduled on date_a with the one on date_b (PlanDiff).",
     "shift_session": "Propose moving a single session from `date` to `to_date` (PlanDiff).",
     "reduce_intensity": "Propose reducing intensity over `scope` (week / day) by `factor` for `reason`.",
-    "replace_session": "Propose replacing a session at (date, session_index) with `new_kind` + `params`.",
+    "replace_session": (
+        "Propose replacing a session at (date, session_index) with `new_kind` + `params`. "
+        "Use canonical params `summary`, `total_duration_s` (seconds), `total_distance_m` "
+        "(metres), and `notes_md`; `duration_min`/`duration_minutes` and `distance_km` "
+        "are accepted and normalized."
+    ),
     "add_strength_session": "Propose adding a strength session on `date` with `focus` area.",
     "change_pace_target": "Propose changing the pace target of a session to `new_pace_s_per_km`.",
     "regenerate_week": "Propose regenerating the whole week given `reason` and `constraints`.",
