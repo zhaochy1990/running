@@ -1571,7 +1571,21 @@ class Database:
         for week_index, date_from, date_to in week_windows:
             row = self._conn.execute(
                 f"""SELECT count(*) AS run_count,
-                          round(coalesce(sum(distance_m), 0) / 1000.0, 1) AS actual_distance_km,
+                          round(coalesce(sum(
+                              CASE
+                                  -- A small set of legacy rows retained a
+                                  -- pre-normalisation distance while duration
+                                  -- and average pace were already canonical.
+                                  WHEN avg_pace_s_km IS NOT NULL
+                                   AND avg_pace_s_km > 0
+                                   AND duration_s IS NOT NULL
+                                   AND duration_s >= 1200
+                                   AND coalesce(distance_m, 0) BETWEEN 0 AND 999
+                                   AND duration_s / avg_pace_s_km * 1000.0 >= 3000
+                                  THEN duration_s / avg_pace_s_km * 1000.0
+                                  ELSE coalesce(distance_m, 0)
+                              END
+                          ), 0) / 1000.0, 1) AS actual_distance_km,
                           round(coalesce(sum(duration_s), 0), 0) AS total_duration_s,
                           round(
                               sum(CASE WHEN avg_pace_s_km IS NOT NULL AND duration_s IS NOT NULL AND duration_s > 0

@@ -100,6 +100,25 @@ class TestDatabaseActivities:
             "avg_hr": 146,
         }
 
+    def test_running_week_summaries_recovers_legacy_under_scaled_distance(self, db):
+        """Duration/pace recover distance when a legacy row kept tiny metres."""
+        db.upsert_activity(_make_detail(
+            "legacy-run",
+            date="2026-05-04T00:00:00+00:00",
+            distance=20.0,
+        ))
+        db._conn.execute(
+            "UPDATE activities SET duration_s = 3600, avg_pace_s_km = 300 "
+            "WHERE label_id = 'legacy-run'"
+        )
+        db._conn.commit()
+
+        summaries = db.get_running_week_summaries(
+            [(1, "2026-05-04", "2026-05-10")]
+        )
+
+        assert summaries[1]["actual_distance_km"] == 12.0
+
     def test_compact_training_summary_aggregates_range_and_plan(self, db):
         from stride_storage.sqlite.training_summary import get_training_summary
 

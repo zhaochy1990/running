@@ -127,6 +127,13 @@ Local/file backend 是 `data/.weekly_plans.json`。
 
 `coach.graphs.generation.rule_filter.run_rule_filter(plan_dict, ...)` 是 pure-Python 预过滤，跑 7 条安全规则（weekly progression ≤ 1.10×、long run ≤ 35%、Z4-Z5 ≤ 20%、≥ 1 rest day、`WeeklyPlan.from_dict` validity、injury-conflict keyword check、CTL ramp ≤ 6 TSS/wk）。HARD 违规直接回 generator，不调（贵的）reviewer。
 
+当前周/下周的确定性创建路径会先读取最近两个**完整上海自然周**的实际跑量，
+以其中位数作为已吸收训练基线，并结合最新 STRIDE `load_ratio` 校准目标。
+Master plan 周目标只提供周期方向：普通周不得因 master 过时而相对近期基线骤降
+超过 10%；高负荷时允许受控降量；明确 recovery 周使用基线的 70–80%；taper
+周保留比赛减量意图。周中创建还会锁定已完成日期，只把剩余里程预算分配到未来
+训练，禁止事后把已完成训练改写成休息或重复课程。
+
 ## HMAC signature — deliberately not v1
 
 Pattern Y apply 完整性通过 path-match validation（`diff.folder == path_folder`、`accepted_op_ids ⊆ diff.ops.id`）+ post-apply rule_filter rerun + schema validation 保证。HMAC 签名讨论过但推迟 —— 产品语义是"trust + 用户对自己的 plan 有完全权威"，HTTPS 处理 MITM。出现真实滥用 pattern 再加 HMAC。

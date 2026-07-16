@@ -167,12 +167,12 @@ def check_weekly_target_volume(
     target_weekly_km: float | None,
     tolerance_km: float = 1.0,
 ) -> list[RuleViolation]:
-    """Weekly running distance must match the injected master-plan target.
+    """Weekly running distance must match the injected executable target.
 
-    S2 receives a deterministic per-week target from ``master_plan.weeks``. A
-    generated week that drifts beyond a small rounding tolerance is no longer
-    executing the master skeleton, even if the usual progression and long-run
-    share checks still pass.
+    The target may be calibrated from ``master_plan.weeks`` plus recent actual
+    execution and STRIDE load. A generated week that drifts beyond a small
+    rounding tolerance is no longer executing that resolved target, even if
+    the usual progression and long-run share checks still pass.
     """
     if target_weekly_km is None or target_weekly_km <= 0:
         return []
