@@ -38,6 +38,30 @@ function sanitizeUrl(url) {
   return url.replace(/[?].*/, '')
 }
 
+function shanghaiToday() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
+
+function assertCurrentWeekUrl(url) {
+  const folder = decodeURIComponent(new URL(url).pathname.replace(/^\/week\//, ''))
+  const match = /^(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})/.exec(folder)
+  if (!match) throw new Error(`weekly plan did not redirect to a dated week: ${folder}`)
+  const startYear = Number(match[1].slice(0, 4))
+  const startMonthDay = match[1].slice(5)
+  const endMonthDay = `${match[2]}-${match[3]}`
+  const endYear = endMonthDay < startMonthDay ? startYear + 1 : startYear
+  const end = `${endYear}-${endMonthDay}`
+  const today = shanghaiToday()
+  if (today < match[1] || today > end) {
+    throw new Error(`weekly plan opened ${match[1]}..${end} instead of current Shanghai week (${today})`)
+  }
+}
+
 async function main() {
   const { email, password } = readCredentials()
   let browser
@@ -130,6 +154,7 @@ async function main() {
   await page.goto(`${appUrl}/`, { waitUntil: 'domcontentloaded' })
   await page.getByRole('heading', { name: '本周课表' }).waitFor({ timeout: 20_000 })
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
+  assertCurrentWeekUrl(page.url())
 
   const weeklyTabs = page.getByRole('tab')
   if (await weeklyTabs.count() !== 4) {

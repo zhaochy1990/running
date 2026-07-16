@@ -15,6 +15,8 @@ import {
 import type { PlannedSession, StructuredStatus } from '../types/plan'
 import type { StrengthTabResponse } from '../types/strength'
 import { useUser } from '../UserContextValue'
+import { shanghaiToday } from '../lib/shanghai'
+import { findCurrentWeek } from '../lib/weeklyPlanView'
 
 export interface CoachWeeklyPlanState {
   readonly week: WeekDetail | null
@@ -60,8 +62,9 @@ export function useCoachWeeklyPlan(): CoachWeeklyPlanState {
         if (cancelled) return
         setWeeks(response.weeks)
         setWeeksLoaded(true)
-        if (!folder && response.weeks[0]) {
-          navigate(`/week/${response.weeks[0].folder}`, { replace: true })
+        const currentWeek = findCurrentWeek(response.weeks, shanghaiToday())
+        if (!folder && currentWeek) {
+          navigate(`/week/${currentWeek.folder}`, { replace: true })
         }
       })
       .catch((reason: unknown) => {

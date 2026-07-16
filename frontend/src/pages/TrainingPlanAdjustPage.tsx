@@ -24,6 +24,7 @@ import {
   type TrainingPlan,
 } from '../api'
 import { shanghaiDate, shanghaiToday } from '../lib/shanghai'
+import { findCurrentWeek } from '../lib/weeklyPlanView'
 import { useUser } from '../UserContextValue'
 
 type FlowStep = 'intent' | 'body' | 'focus' | 'sessions' | 'preview'
@@ -1170,10 +1171,6 @@ function buildHrZoneRows(zones: StrideZonesResponse | null): ZoneRow[] {
 
 function zoneColor(index: number): string {
   return ['#00a85a', '#64b800', '#e68a00', '#ff6d00', '#d32f2f', '#c2185b'][index] ?? '#8a8f98'
-}
-
-function findCurrentWeek(weeks: Array<{ date_from: string; date_to: string }>, today: string) {
-  return weeks.find((week) => week.date_from <= today && week.date_to >= today) ?? weeks[0] ?? null
 }
 
 function addDays(ymd: string, delta: number): string {
