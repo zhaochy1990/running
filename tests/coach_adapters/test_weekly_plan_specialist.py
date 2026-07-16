@@ -301,6 +301,7 @@ def test_runner_does_not_silently_drop_adjustment_when_supported_week_missing(
     assert "还没有训练计划" in (result.clarification or "")
     assert "先创建并应用" in (result.clarification or "")
     assert "重新提出这项调整" in (result.clarification or "")
+    assert "创建这一周计划" in (result.clarification or "")
 
 
 def test_negated_generation_phrase_can_adjust_existing_far_week(monkeypatch) -> None:

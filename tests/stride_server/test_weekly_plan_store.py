@@ -241,9 +241,24 @@ def test_azure_create_uses_insert_not_upsert() -> None:
 
     store = AzureTableWeeklyPlanStore.__new__(AzureTableWeeklyPlanStore)
     store._plans = type("Connection", (), {"table": lambda self: _Table()})()
+    store.get_current_plan = lambda *_args: None
 
     assert store.create_plan(USER_A, plan) is True
     assert captured["entity"]["RowKey"] == "2026-07-13"
+
+
+def test_azure_create_refuses_migration_era_same_week_row() -> None:
+    plan = _plan()
+
+    class _Table:
+        def create_entity(self, _entity):
+            raise AssertionError("must not insert when a legacy row exists")
+
+    store = AzureTableWeeklyPlanStore.__new__(AzureTableWeeklyPlanStore)
+    store._plans = type("Connection", (), {"table": lambda self: _Table()})()
+    store.get_current_plan = lambda *_args: plan
+
+    assert store.create_plan(USER_A, plan) is False
 
 
 def test_table_property_size_limit_is_checked(monkeypatch) -> None:

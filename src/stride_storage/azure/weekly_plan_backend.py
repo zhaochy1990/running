@@ -266,6 +266,12 @@ class AzureTableWeeklyPlanStore(WeeklyPlanStore):
 
         plan = _canonical_plan(plan)
         date_from, date_to = _bounds(plan)
+        # Migration-era entities used the full display folder as RowKey. Check
+        # both canonical and legacy keys before inserting the canonical row so
+        # one Shanghai week never gains two current records. The subsequent
+        # create_entity remains the atomic race guard for canonical writers.
+        if self.get_current_plan(user_id, date_from) is not None:
+            return False
         entity = {
             "PartitionKey": user_id,
             "RowKey": date_from,

@@ -152,6 +152,29 @@ fixtures:
       target_hint_kind: week
       target_ref_phrase_contains: 下一周
 
+  - fixture_id: resolver-read-next-week-explicit
+    description: 只读查询下一周计划时，应保留下周目标而不是默认读取当前周。
+    tags: [read, week, next_week, explicit_target, target_resolution]
+    input:
+      utterance: 下一周的训练计划是什么？
+      target_resolution:
+        kind: week
+        folder: 2026-07-20_07-26(EVAL)
+    expected:
+      intents:
+        - specialist_id: status_insight
+          action: read
+          min_confidence: 0.7
+      is_compound: false
+      active_target:
+        kind: week
+        folder: 2026-07-20_07-26(EVAL)
+      ambiguity_kind: null
+      resolved_from: resolved
+      self_ambiguity: false
+      target_hint_kind: week
+      target_ref_phrase_contains: 下一周
+
   - fixture_id: resolver-create-week-after-next
     description: 下下周请求仍应完整路由到周计划专家，由执行层确定性拒绝而不是误判为下周。
     tags: [write, week, unsupported_generation_window, target_resolution]
