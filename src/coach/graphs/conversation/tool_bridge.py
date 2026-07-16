@@ -91,6 +91,12 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "extend_phase": "Propose extending a master-plan phase by N weeks.",
     "compress_phase": "Propose shortening a master-plan phase by N weeks.",
     "shift_milestone": "Propose moving a milestone to `new_date`.",
+    "reschedule_target_race": (
+        "Move the target race to an exact new ISO date as one atomic diff. "
+        "This synchronises the embedded goal race_date, plan end, race milestone, "
+        "final taper and preceding phase boundary. Use this for a postponed or "
+        "advanced target race; never emulate it with shift_milestone or multiple ops."
+    ),
     "change_target": "Propose changing a milestone target time.",
     "set_phase_weekly_range": (
         "Propose one exact weekly-distance range for a named master-plan phase. "

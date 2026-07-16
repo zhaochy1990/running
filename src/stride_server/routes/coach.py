@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -42,7 +43,12 @@ from stride_core.weekly_plan_proposal import (
     is_supported_weekly_plan_generation,
 )
 from stride_core.master_plan import MasterPlanStatus
-from stride_core.master_plan_diff import MasterPlanDiff, apply_master_plan_diff
+from stride_core.master_plan_diff import (
+    MasterPlanDiff,
+    MasterPlanDiffOp,
+    MasterPlanDiffOpKind,
+    apply_master_plan_diff,
+)
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 
 from ..bearer import require_bearer
@@ -54,6 +60,7 @@ from coach.orchestrator import coach_thread_id
 
 from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import get_checkpointer
+from ..content_store import read_json, write_json
 from ..master_plan_store import get_master_plan_store
 from ..weekly_plan_store import (
     create_weekly_plan,
@@ -394,6 +401,59 @@ class _MasterStoreBridge:
         return self._inner.save_version(version)
 
 
+def _accepted_race_reschedule(
+    diff: MasterPlanDiff, accepted_op_ids: list[str]
+) -> MasterPlanDiffOp | None:
+    accepted = set(accepted_op_ids)
+    matches = [
+        op
+        for op in diff.ops
+        if op.id in accepted
+        and op.accepted is not False
+        and op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
+    ]
+    return matches[0] if matches else None
+
+
+def _prepare_training_goal_reschedule(
+    user_id: str, plan: Any, op: MasterPlanDiffOp
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate and prepare the external TrainingGoal half of a race move."""
+    item = read_json(f"{user_id}/training_goal.json")
+    if item is None or not isinstance(item[0], dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前 Training Goal 不存在，无法安全同步目标比赛日期",
+        )
+    original = item[0]
+    current = original.get("current")
+    if not isinstance(current, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前 Training Goal 不存在，无法安全同步目标比赛日期",
+        )
+    if current.get("type") != "race":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前 Training Goal 不是比赛目标，无法同步目标比赛日期",
+        )
+    if (
+        current.get("goal_id") != plan.goal.goal_id
+        or current.get("race_date") != plan.goal.race_date
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Training Goal 与当前 Master Plan 不一致，请刷新后重试",
+        )
+    new_date = (op.spec_patch or {}).get("race_date")
+    updated_current = dict(current)
+    updated_current["race_date"] = new_date
+    updated_current["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updated = dict(original)
+    updated["current"] = updated_current
+    return original, updated
+
+
 @router.post("/api/users/me/coach/master-plan/{plan_id}/apply")
 def apply_coach_master_diff(
     plan_id: str,
@@ -452,9 +512,35 @@ def apply_coach_master_diff(
         )
 
     bridge = _MasterStoreBridge(store, user_id)
+    race_op = _accepted_race_reschedule(diff, accepted_op_ids)
+    goal_original: dict[str, Any] | None = None
+    if race_op is not None:
+        goal_original, goal_updated = _prepare_training_goal_reschedule(
+            user_id, plan, race_op
+        )
+        try:
+            write_json(f"{user_id}/training_goal.json", goal_updated)
+        except Exception as exc:  # noqa: BLE001 — content-store boundary
+            logger.exception("coach master apply: training goal sync failed")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Training Goal 暂时无法更新，请稍后重试",
+            ) from exc
     try:
         updated_plan = apply_master_plan_diff(bridge, plan_id, diff, accepted_op_ids, body.change_reason)
-    except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
+    except Exception as exc:  # noqa: BLE001 — compensate cross-store goal write
+        if goal_original is not None:
+            try:
+                write_json(f"{user_id}/training_goal.json", goal_original)
+            except Exception:  # noqa: BLE001 — preserve the primary failure
+                logger.critical(
+                    "coach master apply: failed to roll back Training Goal",
+                    exc_info=True,
+                )
+        if not isinstance(
+            exc, (ValidationError, ValueError, TypeError, KeyError, OverflowError)
+        ):
+            raise
         # The gate validates diff semantics, but spec_patch contents are untyped
         # JSON from the client — a pathological value (wrong type, bad enum,
         # missing construction key) would otherwise raise inside apply and 500.

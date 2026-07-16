@@ -628,6 +628,36 @@ class TestReviewApply:
 
         assert resp.status_code == 404, resp.text
 
+    def test_review_apply_rejects_atomic_race_reschedule_op(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+            milestone_id=plan.milestones[0].id,
+            spec_patch={"race_date": "2026-11-08"},
+        )
+        diff = MasterPlanDiff(
+            diff_id=str(uuid4()), plan_id=plan.plan_id, ops=[op],
+            ai_explanation="move race",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={
+                "diff": diff.model_dump(mode="json"),
+                "accepted_op_ids": [op.id],
+                "change_reason": "move race",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 400
+        assert "Coach 原子 apply" in resp.json()["detail"]
+
     def test_apply_active_plan_returns_409(self, app_client):
         """Apply to active plan → 409."""
         client, token, tmp_path, _ = app_client

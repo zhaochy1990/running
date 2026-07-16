@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from datetime import date
 from types import SimpleNamespace
 from typing import Any
 
@@ -23,7 +24,9 @@ from stride_server.coach_adapters.orchestrator.season_plan import (
 )
 from stride_server.coach_adapters.tool_impls.draft_impls import (
     ProposeAlternativesImpl,
+    RescheduleTargetRaceImpl,
     SetPhaseWeeklyRangeImpl,
+    ShiftMilestoneImpl,
 )
 
 
@@ -34,7 +37,12 @@ _REQUIRED_READS = (
     "get_pmc_series",
     "estimate_master_plan_load",
 )
-_DRAFT_TOOLS = ("set_phase_weekly_range", "propose_alternatives")
+_DRAFT_TOOLS = (
+    "set_phase_weekly_range",
+    "propose_alternatives",
+    "shift_milestone",
+    "reschedule_target_race",
+)
 
 
 class _FrozenStore:
@@ -83,7 +91,10 @@ class _FrozenMasterLoadRead:
 
 
 def _build_frozen_toolkit(fixture: dict, plan: MasterPlan) -> Any:
-    read_results = (fixture.get("input") or {}).get("read_results") or {}
+    fixture_input = fixture.get("input") or {}
+    read_results = fixture_input.get("read_results") or {}
+    as_of_raw = fixture_input.get("as_of_date")
+    as_of = date.fromisoformat(str(as_of_raw)) if as_of_raw else None
     load_plan: Callable[[str], MasterPlan | None] = (
         lambda plan_id: plan if plan_id == plan.plan_id else None
     )
@@ -101,6 +112,10 @@ def _build_frozen_toolkit(fixture: dict, plan: MasterPlan) -> Any:
         ),
         propose_alternatives=ProposeAlternativesImpl(
             plan.user_id, plan_loader=load_plan
+        ),
+        shift_milestone=ShiftMilestoneImpl(plan.user_id, plan_loader=load_plan),
+        reschedule_target_race=RescheduleTargetRaceImpl(
+            plan.user_id, plan_loader=load_plan, as_of=as_of
         ),
     )
 
@@ -192,11 +207,16 @@ def _contract_violations(artifact: dict, expected: dict) -> list[str]:
     if proposal_expectation and proposals:
         proposal = proposals[0]
         ops = proposal.get("ops") or []
+        expected_op_count = proposal_expectation.get("op_count")
+        if isinstance(expected_op_count, int) and len(ops) != expected_op_count:
+            violations.append(
+                f"proposal op_count expected {expected_op_count}, got {len(ops)}"
+            )
         if not ops:
             violations.append("proposal has no diff ops")
         else:
             op = ops[0]
-            for key in ("op", "phase_id"):
+            for key in ("op", "phase_id", "milestone_id"):
                 expected_value = proposal_expectation.get(key)
                 if expected_value is not None and op.get(key) != expected_value:
                     violations.append(
@@ -210,6 +230,12 @@ def _contract_violations(artifact: dict, expected: dict) -> list[str]:
                         f"proposal new_value.{key} expected {expected_value!r}, "
                         f"got {actual_new.get(key)!r}"
                     )
+            expected_patch = proposal_expectation.get("spec_patch")
+            if expected_patch is not None and op.get("spec_patch") != expected_patch:
+                violations.append(
+                    f"proposal spec_patch expected {expected_patch!r}, "
+                    f"got {op.get('spec_patch')!r}"
+                )
 
     return violations
 
@@ -237,6 +263,11 @@ def run_s1_conversation_fixture(
         plan_store=store,
         state_observer=_observe,
         graph_factory=_graph_factory,
+        validation_as_of=(
+            date.fromisoformat(str(fixture_input["as_of_date"]))
+            if fixture_input.get("as_of_date")
+            else None
+        ),
     )
     started = time.monotonic()
     try:

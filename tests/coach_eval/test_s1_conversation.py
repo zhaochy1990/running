@@ -22,6 +22,7 @@ FIXTURE_DIR = (
 S1_CONVERSATION_INPUT_SHA256 = {
     "s1c-aggressive-range-unreasonable": "9d54fc2cb89baa5263b3e8e0bf08f792807ebb3fb6f602b16266c7376d0aebcc",
     "s1c-exact-range-reasonable": "638adf9fdc4fa4af9884583fb04d97739707ae31bb90ec5e287cb3a4ac092215",
+    "s1c-race-postponed-atomic": "ae2c9d7a12347e44fd15e7a684b827627a55db1263759ce572c78e229d305303",
     "s1c-vague-adjustment-clarify": "a9c4467eb8c4ce6458ab418a8870f99e8ae7d851cdfc0773909ddb137fd05d9d",
 }
 
@@ -178,6 +179,57 @@ def test_exact_range_fixture_passes_scripted_production_graph() -> None:
         "estimate_master_plan_load",
         "assess_master_adjustment",
         "set_phase_weekly_range",
+    ]
+
+
+def test_postponed_race_fixture_passes_as_one_atomic_diff() -> None:
+    request = "目标马拉松官方延期到 2026-11-08，请把 Master Plan 一起顺延"
+    llm = _ScriptedLLM(
+        [
+            _required_read_calls(),
+            _tool_calls(
+                2,
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "official postponement is consistent with a two-week season shift",
+                    },
+                ),
+            ),
+            _tool_calls(
+                3,
+                (
+                    "reschedule_target_race",
+                    {
+                        "plan_id": "s1c-plan-001",
+                        "milestone_id": "race-001",
+                        "new_date": "2026-11-08",
+                        "reason": "比赛官方延期两周",
+                    },
+                ),
+            ),
+        ]
+    )
+
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-race-postponed-atomic"], llm=llm
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.debug["contract_violations"] == []
+    proposal = outcome.generated_artifact["result"]["proposals"][0]
+    assert len(proposal["ops"]) == 1
+    assert proposal["ops"][0]["op"] == "reschedule_target_race"
+    assert [item["name"] for item in outcome.generated_artifact["tool_trace"]] == [
+        "get_master_plan_current",
+        "get_health_snapshot",
+        "get_pmc_series",
+        "estimate_master_plan_load",
+        "assess_master_adjustment",
+        "reschedule_target_race",
     ]
 
 

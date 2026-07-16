@@ -255,7 +255,12 @@ def get_job_status(
 # T21 — review-chat endpoints
 # ===========================================================================
 
-_DIFF_OP_KINDS_STR = ", ".join(k.value for k in MasterPlanDiffOpKind)
+_LEGACY_DIFF_OP_KINDS = tuple(
+    kind
+    for kind in MasterPlanDiffOpKind
+    if kind != MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
+)
+_DIFF_OP_KINDS_STR = ", ".join(kind.value for kind in _LEGACY_DIFF_OP_KINDS)
 
 
 def _build_review_system_prompt(plan_summary: str) -> str:
@@ -397,6 +402,11 @@ def _build_mp_diff_ops(ops_list: list[dict]) -> list[MasterPlanDiffOp]:
     for item in ops_list:
         try:
             op_kind = MasterPlanDiffOpKind(item.get("op", ""))
+            if op_kind == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE:
+                logger.warning(
+                    "Skipping reschedule_target_race from legacy free-form diff path"
+                )
+                continue
             result.append(
                 MasterPlanDiffOp(
                     id=str(uuid4()),
@@ -565,6 +575,15 @@ def review_apply(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"diff plan_id {diff.plan_id!r} does not match path plan_id {plan_id!r}",
+        )
+    if any(
+        op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
+        and op.id in set(body.accepted_op_ids)
+        for op in diff.ops
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="目标比赛改期只能通过 Coach 原子 apply 接口执行",
         )
 
     # Filter to known op ids; silently skip unknowns (fault-tolerant)
@@ -1062,6 +1081,26 @@ def _compute_affected_weeks(ops: list, plan: Any) -> list[dict]:
                     date_val = spec.get("date")
                     if date_val:
                         start_str = end_str = date_val
+
+            elif op_kind_str == "reschedule_target_race":
+                phase_updates = spec.get("phase_updates") or []
+                starts: list[str] = []
+                ends: list[str] = []
+                for item in phase_updates:
+                    if not isinstance(item, dict):
+                        continue
+                    phase = phase_map.get(item.get("phase_id"))
+                    if phase is not None and item.get("start_date"):
+                        starts.append(phase.start_date)
+                    if phase is not None and item.get("end_date"):
+                        ends.append(phase.end_date)
+                    if item.get("start_date"):
+                        starts.append(item["start_date"])
+                    if item.get("end_date"):
+                        ends.append(item["end_date"])
+                if starts and ends:
+                    start_str = min(starts)
+                    end_str = max(ends)
 
             elif op_kind_str == "remove_milestone":
                 ms_id = op.milestone_id if hasattr(op, "milestone_id") else op.get("milestone_id")

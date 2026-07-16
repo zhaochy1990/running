@@ -25,6 +25,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    PhaseType,
     _apply_review_diff,
 )
 from stride_core.master_plan_diff import (
@@ -651,6 +652,169 @@ def test_apply_diff_milestone_change_keeps_weekly_key_sessions():
     )
     assert len(result.weeks) == 1
     assert len(result.weekly_key_sessions) == 1
+
+
+def test_apply_atomic_target_race_reschedule_updates_plan_and_clears_skeleton():
+    plan = _plan_with_skeleton()
+    build = plan.phases[0].model_copy(
+        update={
+            "end_date": "2026-10-31",
+            "milestone_ids": [],
+        }
+    )
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "phase-taper",
+            "name": "调整期",
+            "phase_type": PhaseType.TAPER,
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": ["race"],
+        }
+    )
+    race = Milestone(
+        id="race",
+        type=MilestoneType.RACE,
+        date="2026-11-15",
+        phase_id=taper.id,
+        target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "end_date": "2026-11-15",
+            "goal": plan.goal.model_copy(update={"race_date": "2026-11-15"}),
+            "phases": [build, taper],
+            "milestones": [race],
+        }
+    )
+    store = InMemoryStore(plan)
+    op = _op(
+        MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        milestone_id=race.id,
+        spec_patch={
+            "race_date": "2026-11-29",
+            "plan_end_date": "2026-11-29",
+            "milestone_date": "2026-11-29",
+            "phase_updates": [
+                {
+                    "phase_id": build.id,
+                    "end_date": "2026-11-14",
+                },
+                {
+                    "phase_id": taper.id,
+                    "start_date": "2026-11-15",
+                    "end_date": "2026-11-29",
+                }
+            ],
+        },
+    )
+
+    result = apply_master_plan_diff(
+        store, plan.plan_id, _make_diff([op]), [op.id], "race postponed"
+    )
+
+    assert result.goal.race_date == "2026-11-29"
+    assert result.end_date == "2026-11-29"
+    assert result.total_weeks == 26
+    assert result.milestones[0].date == "2026-11-29"
+    assert result.phases[0].end_date == "2026-11-14"
+    assert result.phases[1].start_date == "2026-11-15"
+    assert result.phases[1].end_date == "2026-11-29"
+    assert result.weeks == []
+    assert result.weekly_key_sessions == []
+    assert result.training_load_projection is None
+
+
+def test_apply_rejects_target_race_reschedule_mixed_with_another_op():
+    plan = _plan_with_skeleton()
+    store = InMemoryStore(plan)
+    race_op = _op(
+        MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        milestone_id="missing",
+        spec_patch={"race_date": "2026-11-29"},
+    )
+    focus_op = _op(
+        MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS,
+        phase_id=plan.phases[0].id,
+        spec_patch={"focus": "x"},
+    )
+
+    with pytest.raises(ValueError, match="only accepted operation"):
+        apply_master_plan_diff(
+            store, plan.plan_id, _make_diff([race_op, focus_op]),
+            [race_op.id, focus_op.id], "mixed"
+        )
+
+
+def test_build_target_race_reschedule_rejects_non_future_shanghai_date(monkeypatch):
+    from datetime import date
+
+    import stride_core.master_plan_diff as master_plan_diff
+
+    plan = _plan_with_skeleton()
+    build = plan.phases[0].model_copy(
+        update={"end_date": "2026-10-31", "milestone_ids": []}
+    )
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "phase-taper",
+            "phase_type": PhaseType.TAPER,
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": ["race"],
+        }
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-11-15",
+        phase_id=taper.id, target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "end_date": "2026-11-15",
+            "goal": plan.goal.model_copy(update={"race_date": "2026-11-15"}),
+            "phases": [build, taper],
+            "milestones": [race],
+        }
+    )
+    monkeypatch.setattr(master_plan_diff, "today_shanghai", lambda: date(2026, 11, 1))
+
+    with pytest.raises(ValueError, match="future Shanghai date"):
+        master_plan_diff.build_target_race_reschedule_patch(
+            plan, race.id, "2026-11-01"
+        )
+
+
+def test_build_target_race_reschedule_rejects_existing_phase_gap():
+    from stride_core.master_plan_diff import build_target_race_reschedule_patch
+
+    plan = _plan_with_skeleton()
+    build = plan.phases[0].model_copy(
+        update={"end_date": "2026-10-30", "milestone_ids": []}
+    )
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "phase-taper",
+            "phase_type": PhaseType.TAPER,
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": ["race"],
+        }
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-11-15",
+        phase_id=taper.id, target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "end_date": "2026-11-15",
+            "goal": plan.goal.model_copy(update={"race_date": "2026-11-15"}),
+            "phases": [build, taper],
+            "milestones": [race],
+        }
+    )
+
+    with pytest.raises(ValueError, match="continuous boundary"):
+        build_target_race_reschedule_patch(plan, race.id, "2026-11-29")
 
 
 def test_apply_review_diff_resize_phase_clears_weeks_and_weekly_key_sessions():

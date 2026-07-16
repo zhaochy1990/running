@@ -30,6 +30,7 @@ from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
+    build_target_race_reschedule_patch,
 )
 
 _Kind = MasterPlanDiffOpKind
@@ -250,7 +251,35 @@ def _check_ref(op: MasterPlanDiffOp, phases: dict, milestones: dict) -> str | No
     return None
 
 
-def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
+def _check_target_race_reschedule(
+    plan: MasterPlan,
+    op: MasterPlanDiffOp,
+    *,
+    active_op_count: int,
+    as_of: _date | None,
+) -> str | None:
+    if active_op_count != 1:
+        return "比赛改期必须作为唯一的原子操作提交，不能和其它操作拆分或混用"
+    if not op.milestone_id:
+        return "比赛改期缺少目标比赛 milestone_id"
+    patch = op.spec_patch or {}
+    try:
+        expected = build_target_race_reschedule_patch(
+            plan,
+            op.milestone_id,
+            str(patch.get("race_date") or ""),
+            as_of=as_of,
+        )
+    except (TypeError, ValueError) as exc:
+        return f"比赛改期的阶段边界无法形成一致计划：{exc}"
+    if patch != expected:
+        return "比赛改期必须原子同步目标日、计划结束日、里程碑和阶段边界"
+    return None
+
+
+def validate_master_diff(
+    plan: MasterPlan, diff: MasterPlanDiff, *, as_of: _date | None = None
+) -> list[str]:
     """Return structural violations of ``diff`` against ``plan`` (empty = valid).
 
     Invariants (deterministic, date-parsed):
@@ -260,6 +289,8 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
     * **REPLACE_MILESTONE_DATE / ADD_MILESTONE** — the date stays within the
       season's ``[start_date, end_date]`` window.
     * **REPLACE_WEEKLY_RANGE** — ``low <= high``.
+    * **RESCHEDULE_TARGET_RACE** — one atomic op synchronises the embedded
+      goal, plan end, race milestone and final phase boundaries.
     * **Protected final taper** — a final phase of at most 14 inclusive days
       cannot be shortened or removed.
     * **Reference integrity** — REMOVE/REPLACE ops target an existing phase /
@@ -328,6 +359,10 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
             v = _check_phase_focus(op, phases)
         elif op.op == _Kind.REPLACE_MILESTONE_TARGET:
             v = _check_milestone_target(op, milestones)
+        elif op.op == _Kind.RESCHEDULE_TARGET_RACE:
+            v = _check_target_race_reschedule(
+                plan, op, active_op_count=len(active_ops), as_of=as_of
+            )
         else:
             v = _check_ref(op, phases, milestones)
 

@@ -237,6 +237,138 @@ def test_shift_milestone_bad_date_fails(seeded_plan):
     assert not res.ok
 
 
+def test_reschedule_target_race_emits_one_atomic_plan_diff() -> None:
+    taper = Phase(
+        id="phase-taper",
+        name="调整期",
+        phase_type=PhaseType.TAPER,
+        start_date="2026-10-11",
+        end_date="2026-10-25",
+        focus="减量与比赛",
+        weekly_distance_km_low=35,
+        weekly_distance_km_high=55,
+        key_session_types=["race_pace", "race"],
+        milestone_ids=["race-1"],
+    )
+    build = Phase(
+        id="phase-build",
+        name="专项期",
+        phase_type=PhaseType.BUILD,
+        start_date="2026-08-16",
+        end_date="2026-10-10",
+        focus="马拉松专项",
+        weekly_distance_km_low=75,
+        weekly_distance_km_high=88,
+        key_session_types=["long_run", "race_pace"],
+        milestone_ids=[],
+    )
+    race = Milestone(
+        id="race-1",
+        type=MilestoneType.RACE,
+        date="2026-10-25",
+        phase_id=taper.id,
+        target="全马 3:15",
+    )
+    plan = MasterPlan(
+        plan_id="plan-race",
+        user_id=USER_ID,
+        status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="goal-race", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-07-01",
+        end_date="2026-10-25",
+        phases=[build, taper],
+        milestones=[race],
+        training_principles=["保留两周 taper"],
+        generated_by="fixture",
+        version=1,
+        created_at="2026-07-01T00:00:00Z",
+        updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.RescheduleTargetRaceImpl(
+        USER_ID, plan_loader=lambda plan_id: plan if plan_id == plan.plan_id else None
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        milestone_id=race.id,
+        new_date="2026-11-08",
+        reason="比赛官方延期两周",
+    )
+
+    diff = _assert_master_diff(result)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
+    assert op.milestone_id == race.id
+    assert op.spec_patch == {
+        "race_date": "2026-11-08",
+        "plan_end_date": "2026-11-08",
+        "milestone_date": "2026-11-08",
+        "phase_updates": [
+            {"phase_id": build.id, "end_date": "2026-10-24"},
+            {
+                "phase_id": taper.id,
+                "start_date": "2026-10-25",
+                "end_date": "2026-11-08",
+            },
+        ],
+    }
+
+
+def test_reschedule_target_race_rejects_non_race_milestone(seeded_plan):
+    plan, _, _, milestone = seeded_plan
+    tool = draft_impls.RescheduleTargetRaceImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        milestone_id=milestone.id,
+        new_date="2026-09-28",
+        reason="not a race",
+    )
+
+    assert result.ok is False
+    assert "target race" in result.errors[0]
+
+
+def test_reschedule_target_race_rejects_noop_date() -> None:
+    taper = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    build = taper.model_copy(update={
+        "id": "build", "name": "专项期", "phase_type": PhaseType.BUILD,
+        "start_date": "2026-08-01", "end_date": "2026-10-10",
+        "milestone_ids": [],
+    })
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=taper.id, target="全马",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(goal_id="g", race_date="2026-10-25", target_time=""),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[build, taper],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.RescheduleTargetRaceImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, milestone_id=race.id, new_date=race.date, reason="same"
+    )
+
+    assert result.ok is False
+    assert "no proposal is needed" in result.errors[0]
+
+
 def test_change_target_replaces_target(seeded_plan):
     plan, _, _, milestone = seeded_plan
     res = draft_impls.ChangeTargetImpl(USER_ID)(

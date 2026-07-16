@@ -260,6 +260,7 @@ def test_runner_does_not_treat_undecided_options_as_a_direction(
         "把基础期周跑量降到 100 公里",
         "把专项期周跑量加到 120 公里",
         "将比赛目标设为 2:55",
+        "目标比赛延期到 2026-11-08，请把计划顺延",
     ],
 )
 def test_runner_recognizes_common_concrete_adjustment_directions(

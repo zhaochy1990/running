@@ -68,10 +68,11 @@ class FakeToolkit:
     change_pace_target: _FakeTool = field(default_factory=_FakeTool)
     regenerate_week: _FakeTool = field(default_factory=_FakeTool)
 
-    # master-scope draft (7)
+    # master-scope draft (8)
     extend_phase: _FakeTool = field(default_factory=_FakeTool)
     compress_phase: _FakeTool = field(default_factory=_FakeTool)
     shift_milestone: _FakeTool = field(default_factory=_FakeTool)
+    reschedule_target_race: _FakeTool = field(default_factory=_FakeTool)
     change_target: _FakeTool = field(default_factory=_FakeTool)
     set_phase_weekly_range: _FakeTool = field(default_factory=_FakeTool)
     propose_alternatives: _FakeTool = field(default_factory=_FakeTool)
@@ -96,7 +97,8 @@ def _assert_toolkit_protocol() -> None:
         "swap_sessions", "shift_session", "reduce_intensity",
         "replace_session", "add_strength_session", "change_pace_target",
         "regenerate_week",
-        "extend_phase", "compress_phase", "shift_milestone", "change_target",
+        "extend_phase", "compress_phase", "shift_milestone",
+        "reschedule_target_race", "change_target",
         "set_phase_weekly_range",
         "propose_alternatives", "regenerate_master",
     ):

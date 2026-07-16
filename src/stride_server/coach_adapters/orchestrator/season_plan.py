@@ -32,6 +32,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable
+from datetime import date
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -58,7 +59,7 @@ GraphFactory = Callable[..., Any]
 
 _CONCRETE_DIRECTION_RE = re.compile(
     r"(?:延长|缩短|缩到|增加|加大|加到|降低|降到|减少|减量|减轻|提高|提升|"
-    r"调高|调低|调整到|设为|前移|后移|往前|往后|提前|推迟|延后|改为|改成|"
+    r"调高|调低|调整到|设为|前移|后移|往前|往后|提前|推迟|延期|顺延|延后|改为|改成|"
     r"改到|挪到|"
     r"取消|删除|保留|重排|重新生成|清空|"
     r"extend|shorten|increase|decrease|reduce|raise|lower|move|shift|postpone|"
@@ -214,6 +215,7 @@ def make_season_plan_runner(
     plan_store: Any | None = None,
     state_observer: Callable[[dict[str, Any]], None] | None = None,
     graph_factory: GraphFactory = build_conversation_graph,
+    validation_as_of: date | None = None,
 ) -> SpecialistRunner:
     """Build the season_plan runner (wraps the master_chat conversation graph)."""
 
@@ -295,7 +297,9 @@ def make_season_plan_runner(
                 )
             valid_proposals: list[MasterPlanDiff] = []
             for index, proposal in enumerate(proposals):
-                violations = validate_master_diff(plan, proposal)
+                violations = validate_master_diff(
+                    plan, proposal, as_of=validation_as_of
+                )
                 if not violations:
                     valid_proposals.append(proposal)
                     continue

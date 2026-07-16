@@ -170,6 +170,7 @@ python scripts/eval_coach.py --scope s1 --conversation
 4. 只有 `reasonable` 才允许 draft tool；
 5. 精确周量区间必须用 `set_phase_weekly_range` 忠实生成单一 typed diff，不能偷换成固定 5%/10% alternatives；
 6. `unreasonable` 必须零 proposal。
+7. 目标比赛改期必须使用单个 `reschedule_target_race` 原子 op，同步 external Training Goal、embedded goal、plan end、race milestone、taper 和前序阶段边界；禁止退化成 `shift_milestone` 或多个可分别采纳的 ops。
 
 ### S1 Required vs Optional
 

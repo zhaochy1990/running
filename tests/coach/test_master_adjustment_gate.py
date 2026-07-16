@@ -16,12 +16,14 @@ class _ScriptedLLM:
     def __init__(self, responses: list[AIMessage]) -> None:
         self._responses = list(responses)
         self.bound_tool_names: set[str] = set()
+        self.invocations: list[list[Any]] = []
 
     def bind_tools(self, tools: list[Any], **_kwargs: Any) -> "_ScriptedLLM":
         self.bound_tool_names = {tool.name for tool in tools}
         return self
 
-    def invoke(self, _messages: list[Any]) -> AIMessage:
+    def invoke(self, messages: list[Any]) -> AIMessage:
+        self.invocations.append(messages)
         if not self._responses:
             raise AssertionError("scripted LLM ran out of responses")
         return self._responses.pop(0)
@@ -159,6 +161,14 @@ def test_assessment_is_rejected_until_required_data_has_been_read() -> None:
     assert state.get("tool_trace") == [
         {"name": "assess_master_adjustment", "outcome": "blocked", "reason": "assessment_gate"}
     ]
+    stage_messages = [
+        message.content
+        for message in llm.invocations[0]
+        if isinstance(message, HumanMessage) and "【本轮工具阶段" in message.content
+    ]
+    assert len(stage_messages) == 1
+    assert "读取" in stage_messages[0]
+    assert "不要调用 assess_master_adjustment" in stage_messages[0]
 
 
 def test_draft_is_rejected_without_a_reasonable_assessment() -> None:
@@ -262,6 +272,17 @@ def test_reasonable_assessment_after_data_reads_allows_a_proposal() -> None:
     ]
     assert state["last_diff"]["alternatives"][0]["diff_id"] == "d1"
     assert "assess_master_adjustment" in llm.bound_tool_names
+    stage_messages = [
+        next(
+            message.content
+            for message in invocation
+            if isinstance(message, HumanMessage) and "【本轮工具阶段" in message.content
+        )
+        for invocation in llm.invocations
+    ]
+    assert "读取" in stage_messages[0]
+    assert "评估" in stage_messages[1]
+    assert "提案" in stage_messages[2]
 
 
 @pytest.mark.parametrize(

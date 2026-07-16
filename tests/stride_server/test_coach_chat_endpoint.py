@@ -491,6 +491,60 @@ def _master_plan(status_value="active"):
     )
 
 
+def _race_plan(status_value="active"):
+    from stride_core.master_plan import (
+        MasterPlan, MasterPlanGoal, MasterPlanStatus, Milestone, MilestoneType,
+        Phase, PhaseType,
+    )
+    build = Phase(
+        id="build", name="专项期", phase_type=PhaseType.BUILD,
+        start_date="2026-08-01", end_date="2026-10-31", focus="专项",
+        weekly_distance_km_low=60, weekly_distance_km_high=80,
+        key_session_types=["long_run"], milestone_ids=[],
+    )
+    taper = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-11-01", end_date="2026-11-15", focus="减量",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-11-15",
+        phase_id=taper.id, target="全马",
+    )
+    return MasterPlan(
+        plan_id=_PLAN_ID, user_id=USER_UUID, status=MasterPlanStatus(status_value),
+        goal=MasterPlanGoal(goal_id="g1", target_time="3:15:00", race_date="2026-11-15"),
+        start_date="2026-08-01", end_date="2026-11-15", phases=[build, taper],
+        milestones=[race], training_principles=["保留 taper"], generated_by="test",
+        version=3, created_at="2026-07-01T00:00:00Z",
+        updated_at="2026-07-01T00:00:00Z",
+    )
+
+
+def _race_reschedule_body():
+    return {
+        "diff": {
+            "diff_id": "race-move", "plan_id": _PLAN_ID,
+            "ops": [{
+                "id": "move-race", "op": "reschedule_target_race",
+                "milestone_id": "race",
+                "spec_patch": {
+                    "race_date": "2026-11-29",
+                    "plan_end_date": "2026-11-29",
+                    "milestone_date": "2026-11-29",
+                    "phase_updates": [
+                        {"phase_id": "build", "end_date": "2026-11-14"},
+                        {"phase_id": "taper", "start_date": "2026-11-15", "end_date": "2026-11-29"},
+                    ],
+                },
+            }],
+            "ai_explanation": "比赛延期", "created_at": "2026-07-16T00:00:00Z",
+        },
+        "accepted_op_ids": ["move-race"],
+    }
+
+
 def _master_diff_body(*, plan_id=_PLAN_ID, end_date="2026-08-15", op_ids=("op1",)):
     return {
         "diff": {
@@ -540,6 +594,148 @@ def test_master_apply_lands_accepted_ops(chat_client, monkeypatch):
     assert body["plan_id"] == _PLAN_ID
     assert body["version"] == 4  # bumped from 3
     assert captured["accepted"] == ["op1"]
+
+
+def test_master_apply_reschedules_training_goal_and_plan(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    plan = _race_plan()
+    saved: dict[str, object] = {"plan": plan}
+
+    class _Store:
+        def get_plan(self, user_id, plan_id):
+            return saved["plan"]
+
+        def save_plan(self, updated):
+            saved["plan"] = updated
+
+        def save_version(self, version):
+            saved["version"] = version
+
+    monkeypatch.setattr(coach_routes, "get_master_plan_store", lambda: _Store())
+    writes: list[dict] = []
+    monkeypatch.setattr(
+        coach_routes,
+        "read_json",
+        lambda _path: ({"current": {
+            "goal_id": "g1", "race_date": "2026-11-15",
+            "type": "race", "race_distance": "FM",
+        }, "history": []}, "file"),
+    )
+    monkeypatch.setattr(
+        coach_routes, "write_json", lambda _path, data: writes.append(data) or "file"
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_race_reschedule_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert len(writes) == 1
+    assert writes[0]["current"]["race_date"] == "2026-11-29"
+    updated = saved["plan"]
+    assert updated.goal.race_date == "2026-11-29"
+    assert updated.end_date == "2026-11-29"
+    assert updated.milestones[0].date == "2026-11-29"
+    assert updated.phases[-1].end_date == "2026-11-29"
+
+
+def test_master_apply_rejects_race_move_when_training_goal_is_stale(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_race_plan())
+    monkeypatch.setattr(
+        coach_routes,
+        "read_json",
+        lambda _path: ({"current": {
+            "goal_id": "other-goal", "race_date": "2026-11-15",
+            "type": "race",
+        }}, "file"),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_race_reschedule_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 409
+    assert "不一致" in resp.json()["detail"]
+
+
+def test_master_apply_rejects_race_move_for_non_race_training_goal(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_race_plan())
+    monkeypatch.setattr(
+        coach_routes,
+        "read_json",
+        lambda _path: ({"current": {
+            "goal_id": "g1", "race_date": "2026-11-15",
+            "type": "health",
+        }}, "file"),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_race_reschedule_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 409
+    assert "不是比赛目标" in resp.json()["detail"]
+
+
+def test_master_apply_rolls_back_training_goal_when_plan_apply_fails(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    plan = _race_plan()
+    _stub_master(coach_routes, monkeypatch, plan=plan)
+    original = {"current": {
+        "goal_id": "g1", "race_date": "2026-11-15",
+        "type": "race", "race_distance": "FM",
+    }, "history": []}
+    writes: list[dict] = []
+    monkeypatch.setattr(coach_routes, "read_json", lambda _path: (original, "file"))
+    monkeypatch.setattr(
+        coach_routes, "write_json", lambda _path, data: writes.append(data) or "file"
+    )
+    monkeypatch.setattr(
+        coach_routes, "apply_master_plan_diff",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("apply failed")),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_race_reschedule_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 400
+    assert len(writes) == 2
+    assert writes[0]["current"]["race_date"] == "2026-11-29"
+    assert writes[1] == original
+
+
+def test_race_reschedule_affected_weeks_include_extended_build_window(
+    chat_client, monkeypatch
+):
+    _client, _private_pem, coach_routes = chat_client
+    from stride_core.master_plan_diff import MasterPlanDiff
+
+    diff = MasterPlanDiff.model_validate(_race_reschedule_body()["diff"])
+
+    from stride_server.routes.master_plan import _compute_affected_weeks
+
+    weeks = _compute_affected_weeks(diff.ops, _race_plan())
+    folders = [item["folder"] for item in weeks]
+
+    assert "2026-10-26_11-01" in folders
+    assert "2026-11-02_11-08" in folders
+    assert "2026-11-09_11-15" in folders
+    assert "2026-11-23_11-29" in folders
 
 
 def test_master_apply_rejects_plan_id_mismatch(chat_client, monkeypatch):

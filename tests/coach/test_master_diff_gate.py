@@ -459,6 +459,93 @@ def test_resize_phase_past_season_end_is_rejected() -> None:
     assert "超出赛季范围" in violations[0]
 
 
+def test_atomic_target_race_reschedule_passes() -> None:
+    plan = _plan()
+    build = plan.phases[0].model_copy(
+        update={
+            "id": "build",
+            "end_date": "2026-10-31",
+            "milestone_ids": [],
+        }
+    )
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "phase_type": PhaseType.TAPER,
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": ["race"],
+        }
+    )
+    race = Milestone(
+        id="race",
+        type=MilestoneType.RACE,
+        date="2026-11-15",
+        phase_id=taper.id,
+        target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "end_date": "2026-11-15",
+            "goal": plan.goal.model_copy(update={"race_date": "2026-11-15"}),
+            "phases": [build, taper],
+            "milestones": [race],
+        }
+    )
+    op = _op(
+        MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        milestone_id=race.id,
+        spec_patch={
+            "race_date": "2026-11-29",
+            "plan_end_date": "2026-11-29",
+            "milestone_date": "2026-11-29",
+            "phase_updates": [
+                {"phase_id": build.id, "end_date": "2026-11-14"},
+                {
+                    "phase_id": taper.id,
+                    "start_date": "2026-11-15",
+                    "end_date": "2026-11-29",
+                },
+            ],
+        },
+    )
+
+    assert validate_master_diff(plan, _diff(op)) == []
+
+
+def test_target_race_reschedule_must_be_one_coherent_atomic_patch() -> None:
+    plan = _plan()
+    race = Milestone(
+        id="race",
+        type=MilestoneType.RACE,
+        date=plan.end_date,
+        phase_id=plan.phases[0].id,
+        target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "goal": plan.goal.model_copy(update={"race_date": plan.end_date}),
+            "milestones": [race],
+        }
+    )
+    op = _op(
+        MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        milestone_id=race.id,
+        spec_patch={
+            "race_date": "2026-11-29",
+            "plan_end_date": "2026-11-29",
+            "milestone_date": "2026-11-29",
+            "phase_updates": [],
+        },
+    )
+
+    violations = validate_master_diff(plan, _diff(op))
+
+    assert violations
+    assert "阶段边界" in violations[0]
+
+
 def test_weekly_range_non_numeric_is_rejected_not_crash() -> None:
     """Non-numeric weekly range must be a violation, never an unhandled crash."""
     op = _op(

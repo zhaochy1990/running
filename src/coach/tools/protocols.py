@@ -5,10 +5,10 @@ Tools come in two flavours:
 * **Read tools (15)** — pull data out of STRIDE state. They are safe to call
   any time and their ``ToolResult.data`` contains the read payload.
 
-* **Draft tools (14)** — emit a proposed change. They never apply it. Their
+* **Draft tools (15)** — emit a proposed change. They never apply it. Their
   ``ToolResult.data`` is the serialised form of a typed diff:
   - 7 week-scope draft tools → ``stride_core.plan_diff.PlanDiff`` shape
-  - 7 master-scope draft tools → ``stride_core.master_plan_diff.MasterPlanDiff`` shape
+  - 8 master-scope draft tools → ``stride_core.master_plan_diff.MasterPlanDiff`` shape
 
 There are intentionally **no execute tools**: every side effect (push to
 watch, apply diff, sync, etc.) is triggered by a deterministic UI chip
@@ -156,7 +156,7 @@ class RegenerateWeek(Protocol):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Master-scope draft tools (6) — ToolResult.data is one MasterPlanDiff dump, or
+# Master-scope draft tools (8) — ToolResult.data is one MasterPlanDiff dump, or
 # for ProposeAlternatives an envelope containing multiple MasterPlanDiff dumps.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -174,6 +174,18 @@ class CompressPhase(Protocol):
 @runtime_checkable
 class ShiftMilestone(Protocol):
     def __call__(self, *, plan_id: str, milestone_id: str, new_date: str) -> ToolResult: ...
+
+
+@runtime_checkable
+class RescheduleTargetRace(Protocol):
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        milestone_id: str,
+        new_date: str,
+        reason: str,
+    ) -> ToolResult: ...
 
 
 @runtime_checkable
@@ -241,6 +253,7 @@ MASTER_DRAFT_TOOL_NAMES: tuple[str, ...] = (
     "extend_phase",
     "compress_phase",
     "shift_milestone",
+    "reschedule_target_race",
     "change_target",
     "set_phase_weekly_range",
     "propose_alternatives",

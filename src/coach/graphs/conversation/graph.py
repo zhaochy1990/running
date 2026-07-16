@@ -89,6 +89,47 @@ def _current_user_request(state: ConversationState) -> str:
     return ""
 
 
+def _master_stage_instruction(state: ConversationState) -> str:
+    """Tell the model which adjustment protocol stage is allowed now.
+
+    The deterministic tool gate remains the authority. This per-iteration
+    instruction prevents models that support parallel tool calls from placing
+    the assessment in the same batch as its prerequisite reads.
+    """
+    current_request = _current_user_request(state)
+    same_request = state.get("master_adjustment_request") == current_request
+    consulted = set(state.get("consulted_tools") or []) if same_request else set()
+    missing_reads = sorted(_MASTER_ASSESSMENT_REQUIRED_READS - consulted)
+    if missing_reads:
+        return (
+            "【本轮工具阶段：读取】只调用以下尚缺的 read tools："
+            + ", ".join(missing_reads)
+            + "。本轮不要调用 assess_master_adjustment，也不要调用任何 draft tool；"
+            "读取结果会在下一轮提供。"
+        )
+
+    assessment = (
+        state.get("master_adjustment_assessment") if same_request else None
+    )
+    if not assessment:
+        return (
+            "【本轮工具阶段：评估】必需数据已经读完。只调用 "
+            "assess_master_adjustment，且 adjustment_request 必须逐字等于用户当前请求；"
+            "本轮不要调用任何 draft tool。"
+        )
+
+    verdict = assessment.get("verdict")
+    if verdict == "reasonable":
+        return (
+            "【本轮工具阶段：提案】当前请求已经评估为 reasonable。"
+            "现在只调用一个忠实实现用户方向的 draft tool；不要再次读取或评估。"
+        )
+    return (
+        f"【本轮工具阶段：结束】当前评估 verdict={verdict!r}，禁止调用 draft tool。"
+        "直接解释依据；若需要澄清则向用户追问。"
+    )
+
+
 _SCOPE_PROMPTS = {
     "qa": QA_PROMPT,
     "week_chat": WEEK_CHAT_PROMPT,
@@ -121,6 +162,19 @@ def build_conversation_graph(
 
     def reason(state: ConversationState) -> dict[str, Any]:
         msgs = [SystemMessage(content=system_prompt), *state.get("history", [])]
+        if scope == "master_chat":
+            # Runtime protocol state varies per turn, so it belongs in a user
+            # message. Keep the system prompt byte-identical for prompt caching.
+            stage_message = HumanMessage(content=_master_stage_instruction(state))
+            insert_at = next(
+                (
+                    index
+                    for index in range(len(msgs) - 1, 0, -1)
+                    if isinstance(msgs[index], HumanMessage)
+                ),
+                len(msgs),
+            )
+            msgs.insert(insert_at, stage_message)
         started = time.perf_counter()
         resp = llm_with_tools.invoke(msgs)
         iteration = state.get("iteration", 0) + 1
