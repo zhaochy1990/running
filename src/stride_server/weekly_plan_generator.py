@@ -200,6 +200,42 @@ def _current_week_actual_km(context: RecentTrainingContext) -> float:
     )
 
 
+def _current_week_immutable_rule_names(
+    plan: WeeklyPlan,
+    context: RecentTrainingContext,
+    *,
+    prev_week_km: float | None,
+) -> set[str]:
+    """Rules violated only by completed work that can no longer be prescribed."""
+    actual_by_date = context.current_week_by_date
+    if actual_by_date is None:
+        return set()
+    immutable: set[str] = set()
+    actual_km = _current_week_actual_km(context)
+    if prev_week_km is not None and actual_km > prev_week_km * 1.10:
+        immutable.add("weekly_progression")
+
+    actual_longest = max(
+        (
+            float(summary.get("actual_distance_km") or 0)
+            for summary in actual_by_date.values()
+        ),
+        default=0.0,
+    )
+    future_longest = max(
+        (
+            float(session.total_distance_m or 0) / 1000.0
+            for session in plan.sessions
+            if session.kind == SessionKind.RUN
+            and session.date not in actual_by_date
+        ),
+        default=0.0,
+    )
+    if actual_longest > future_longest:
+        immutable.add("long_run_share")
+    return immutable
+
+
 def _replace_distance_label(summary: str, distance_km: float) -> str:
     km_label = f"{round(distance_km)}K"
     return re.sub(r"（[^，）]+([，）])", rf"（{km_label}\1", summary, count=1)
@@ -391,8 +427,16 @@ def build_weekly_plan(
             else _resolve_weekly_target(master_target, training_context)
         )
         actual_km = _current_week_actual_km(training_context)
-        if resolved_base_km is not None and actual_km > resolved_base_km:
+        if actual_km > 0 and (
+            resolved_base_km is None or actual_km > resolved_base_km
+        ):
             resolved_base_km = math.ceil(actual_km * 2.0) / 2.0
+            actual_note = (
+                f"本周已完成 {actual_km:.1f}km，目标下限抬升为 "
+                f"{resolved_base_km:.1f}km"
+            )
+        else:
+            actual_note = None
         plan, total_distance_km = generate_week_plan(
             user_id=user_id,
             week_start=week_start,
@@ -410,6 +454,7 @@ def build_weekly_plan(
     notes = [
         master_target.context if master_target is not None else None,
         calibration_note,
+        actual_note,
         plan.notes_md,
     ]
     plan = replace(
@@ -419,19 +464,30 @@ def build_weekly_plan(
 
     from coach.graphs.generation.rule_filter import run_rule_filter
 
+    prev_week_km = (
+        training_context.completed_week_km[0]
+        if training_context.completed_week_km
+        else None
+    )
     report = run_rule_filter(
         plan.to_dict(),
-        prev_week_km=(
-            training_context.completed_week_km[0]
-            if training_context.completed_week_km
-            else None
-        ),
+        prev_week_km=prev_week_km,
         target_weekly_km=resolved_base_km,
     )
-    if not report.ok:
+    immutable_rules = _current_week_immutable_rule_names(
+        plan,
+        training_context,
+        prev_week_km=prev_week_km,
+    )
+    actionable_errors = [
+        violation
+        for violation in report.errors()
+        if violation.rule not in immutable_rules
+    ]
+    if actionable_errors:
         messages = "; ".join(
             f"{violation.rule}: {violation.message}"
-            for violation in report.errors()
+            for violation in actionable_errors
         )
         raise ValueError(f"generated weekly plan failed safety rules: {messages}")
 

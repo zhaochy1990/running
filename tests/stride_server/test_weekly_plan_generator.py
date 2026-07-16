@@ -189,6 +189,46 @@ def test_midweek_generation_locks_actual_days_and_only_budgets_remainder(
     )
 
 
+def test_midweek_generation_does_not_reject_immutable_over_cap_actuals(
+    monkeypatch,
+) -> None:
+    """Progression gates apply to prescriptions, not completed historical work."""
+    monkeypatch.setattr(generator, "today_shanghai", lambda: date(2026, 7, 16))
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: SimpleNamespace(get_active_plan=lambda _uid: _master(68, 74)),
+    )
+    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+    monkeypatch.setattr(
+        generator,
+        "get_db",
+        lambda _uid: _StateDb(
+            completed_weeks=(40.0, 42.0),
+            load_ratio=1.0,
+            daily={
+                0: {"actual_distance_km": 18.0, "total_duration_s": 5400},
+                1: {"actual_distance_km": 16.0, "total_duration_s": 4800},
+                2: {"actual_distance_km": 15.0, "total_duration_s": 4500},
+            },
+        ),
+    )
+
+    generated = generator.build_weekly_plan(
+        user_id="u1", week_start=date(2026, 7, 13)
+    )
+
+    # 49km actual is already above the normal 45.1km progression ceiling.
+    # The generator must preserve it and avoid prescribing additional mileage.
+    assert generated.total_distance_km == 49.0
+    assert sum(
+        float(session.total_distance_m or 0)
+        for session in generated.plan.sessions
+    ) == 49_000
+    assert all(
+        session.kind.value != "run" for session in generated.plan.sessions[3:]
+    )
+
+
 def test_explicit_base_distance_overrides_master_week_target(monkeypatch) -> None:
     monkeypatch.setattr(
         generator,
