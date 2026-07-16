@@ -233,6 +233,8 @@ def _current_week_immutable_rule_names(
     )
     if actual_longest > future_longest:
         immutable.add("long_run_share")
+    if len(actual_by_date) == 7:
+        immutable.add("rest_days")
     return immutable
 
 
