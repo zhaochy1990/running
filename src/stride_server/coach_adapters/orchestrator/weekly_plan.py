@@ -354,6 +354,14 @@ def make_weekly_plan_runner(
             rejection = _creation_rejection(folder)
             if rejection is not None:
                 return SpecialistResult(status="rejected", reply_fragment=rejection)
+            if not _requests_generation(task.objective):
+                return SpecialistResult(
+                    status="needs_clarification",
+                    clarification=(
+                        f"目标周 {folder} 还没有训练计划。请先创建并应用这一周的"
+                        "计划，再重新提出这项调整。现在要先创建吗？"
+                    ),
+                )
             try:
                 proposal = _create_proposal(user_id, folder)
             except WeeklyPlanAlreadyExistsError:

@@ -239,9 +239,9 @@ def resolve(
     """Run the Resolver: LLM intent draft → deterministic target + clarify (§4.1).
 
     ``target_resolver`` (injected by the adapter) upgrades a kind-only / missing
-    target to a concrete one (e.g. "本周" → the current week's folder) for write
-    intents *before* arbitration, so a routine "调整本周" doesn't perpetually ask
-    "哪一周?". It only fires when a write intent still lacks a usable target.
+    target to a concrete one (e.g. "本周" → the current week's folder). Writes
+    need this before arbitration; explicit reads use it so queries such as
+    "下一周计划是什么" do not silently fall back to the current week.
     """
     window = conversation_window or []
     system_prompt = build_resolver_system_prompt(registry)
@@ -261,16 +261,26 @@ def resolve(
     valid = _valid_intents(draft.intents, registry)
     target, resolved_from = _resolve_target(draft.target_hint, prior_target)
 
-    # Fill a concrete write target (folder) from the DB index before arbitration.
-    # Reads default to most-recent (no target needed). Only fire when exactly one
-    # *distinct* write specialist is in play: with two different writers (e.g. a
-    # future master-plan writer alongside weekly_plan) a single current-week
-    # folder can't be the right target for both, so defer to a clarify instead.
+    # Fill a concrete target from the DB index before arbitration. Reads without
+    # an explicit target still default to most-recent; explicit week/master reads
+    # are resolved so they query the requested object. For writes, only fire when
+    # exactly one distinct write specialist is in play: with two different
+    # writers a single current-week folder cannot be right for both.
     write_ids = {h.specialist_id for h in valid if registry.get_card(h.specialist_id).writes}
+    explicit_unresolved_read = (
+        bool(valid)
+        and not write_ids
+        and draft.target_hint is not None
+        and draft.target_hint.kind is not None
+        and target is not None
+        and _needs_target_clarify(target, True)
+    )
     if (
         target_resolver is not None
-        and len(write_ids) == 1
-        and _needs_target_clarify(target, True)
+        and (
+            (len(write_ids) == 1 and _needs_target_clarify(target, True))
+            or explicit_unresolved_read
+        )
     ):
         upgraded = target_resolver(target, draft.target_hint)
         if upgraded is not None:

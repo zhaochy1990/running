@@ -281,6 +281,28 @@ def test_runner_does_not_create_missing_far_week_for_adjustment(monkeypatch) -> 
     assert "当前周和下一周" in result.reply_fragment
 
 
+def test_runner_does_not_silently_drop_adjustment_when_supported_week_missing(
+    monkeypatch,
+) -> None:
+    folder = "2026-07-20_07-26"
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _FakeWeeklyPlanStore())
+    monkeypatch.setattr(wp, "today_shanghai", lambda: date(2026, 7, 15))
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        graph_factory=lambda **_: pytest.fail("graph must not run"),
+    )
+
+    result = runner(_task("把下一周周三改成45分钟轻松跑", folder=folder))
+
+    assert result.status == "needs_clarification"
+    assert result.proposals == []
+    assert "还没有训练计划" in (result.clarification or "")
+    assert "先创建并应用" in (result.clarification or "")
+    assert "重新提出这项调整" in (result.clarification or "")
+
+
 def test_negated_generation_phrase_can_adjust_existing_far_week(monkeypatch) -> None:
     folder = "2026-07-27_08-02"
     monkeypatch.setattr(

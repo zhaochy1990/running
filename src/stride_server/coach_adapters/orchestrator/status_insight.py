@@ -35,6 +35,13 @@ from ..toolkit import build_stride_toolkit
 logger = logging.getLogger(__name__)
 
 CURRENT_WEEK_MISSING_REPLY = "当前周还没有训练计划，你要创建本周的训练计划吗？"
+_WEEK_PLAN_QUERY_MARKERS = (
+    "周计划",
+    "训练计划",
+    "weekly plan",
+    "课表",
+    "安排",
+)
 
 # Builds the qa conversation graph; injectable so the runner is unit-testable
 # without a real toolkit / LLM.
@@ -135,6 +142,21 @@ def make_status_insight_runner(
                         "【用户指向的计划对象，只读】"
                         f"{task.active_target.model_dump(exclude_none=True)}。"
                         "若 kind=master，调用 get_master_plan_current。"
+                    )
+                )
+            )
+        elif (
+            task.active_target is not None
+            and task.active_target.kind in ("week", "session")
+            and task.active_target.folder
+            and any(marker in task.objective.lower() for marker in _WEEK_PLAN_QUERY_MARKERS)
+        ):
+            messages.append(
+                HumanMessage(
+                    content=(
+                        "【用户指向的训练周，只读】"
+                        f"folder = {task.active_target.folder}。"
+                        "调用 get_week_plan 时必须传这个 folder，不要读取当前周。"
                     )
                 )
             )

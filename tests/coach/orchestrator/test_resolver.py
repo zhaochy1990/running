@@ -197,6 +197,32 @@ def test_explicit_kind_hint_yields_kind_only_target() -> None:
     assert out.resolved_from == "explicit"
 
 
+def test_explicit_read_target_can_be_resolved_to_requested_week() -> None:
+    draft = ResolverDraft(
+        intents=[
+            IntentHit(
+                specialist_id="status_insight", action="read", confidence=0.9
+            )
+        ],
+        target_hint=TargetHint(kind="week", ref_phrase="下一周"),
+    )
+    fn, _ = _fixed(draft)
+
+    out = resolve(
+        "下一周的训练计划是什么？",
+        registry=_registry(),
+        draft_fn=fn,
+        target_resolver=lambda _target, _hint: TargetRef(
+            kind="week", folder="2026-07-20_07-26"
+        ),
+    )
+
+    assert out.active_target == TargetRef(
+        kind="week", folder="2026-07-20_07-26"
+    )
+    assert out.resolved_from == "resolved"
+
+
 def test_write_intent_without_target_clarifies_target() -> None:
     draft = ResolverDraft(
         intents=[IntentHit(specialist_id="weekly_plan", action="write", confidence=0.9)],
