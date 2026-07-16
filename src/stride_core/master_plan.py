@@ -236,6 +236,7 @@ class TrainingLoadProjection(BaseModel):
     unavailable_reason: Literal[
         "weekly_skeleton_unavailable",
         "personal_threshold_unavailable",
+        "planned_session_uncomputable",
     ] | None = None
     calculated_at: str
 
@@ -404,10 +405,13 @@ class MasterPlan(BaseModel):
                     raise ValueError(
                         "weekly_skeleton_unavailable projection requires an empty weekly skeleton"
                     )
-                if projection.unavailable_reason == "personal_threshold_unavailable":
+                if projection.unavailable_reason in {
+                    "personal_threshold_unavailable",
+                    "planned_session_uncomputable",
+                }:
                     if not projected_weeks:
                         raise ValueError(
-                            "personal_threshold_unavailable projection requires weekly skeletons"
+                            f"{projection.unavailable_reason} projection requires weekly skeletons"
                         )
                     if any(
                         week.target_training_dose_low is not None
@@ -415,7 +419,7 @@ class MasterPlan(BaseModel):
                         for week in projected_weeks
                     ):
                         raise ValueError(
-                            "personal_threshold_unavailable projection cannot contain weekly dose values"
+                            f"{projection.unavailable_reason} projection cannot contain weekly dose values"
                         )
         return self
 

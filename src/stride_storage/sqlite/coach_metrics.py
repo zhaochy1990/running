@@ -79,9 +79,10 @@ def fetch_recent_activities(db: Database, *, limit: int) -> list[Any]:
             atl.reasons_json AS stride_reasons_json
         FROM activities a
         LEFT JOIN activity_training_load atl ON atl.label_id = a.label_id
+          AND atl.algorithm_version = ?
         ORDER BY a.date DESC, a.label_id DESC
         LIMIT ?""",
-        (max(1, int(limit)),),
+        (TRAINING_LOAD_MODEL_VERSION, max(1, int(limit))),
     )
 
 

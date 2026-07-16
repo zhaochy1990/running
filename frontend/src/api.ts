@@ -613,7 +613,7 @@ export interface MasterPlanWeek {
 
 export interface MasterPlanTrainingLoadProjection {
   status: 'available' | 'unavailable'
-  unavailable_reason: 'weekly_skeleton_unavailable' | 'personal_threshold_unavailable' | null
+  unavailable_reason: 'weekly_skeleton_unavailable' | 'personal_threshold_unavailable' | 'planned_session_uncomputable' | null
   calculated_at: string
 }
 

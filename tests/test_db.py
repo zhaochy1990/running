@@ -139,8 +139,9 @@ class TestDatabaseActivities:
             """INSERT INTO activity_training_load
                (label_id, activity_date, sport, session_class, algorithm_version,
                 training_dose, load_confidence, excluded_from_pmc)
-               VALUES ('run1','2026-05-04','run_outdoor','long',1,80,'high',0),
-                      ('run2','2026-05-05','run_outdoor','easy',1,40,'high',0)"""
+               VALUES ('run1','2026-05-04','run_outdoor','long',?,80,'high',0),
+                      ('run2','2026-05-05','run_outdoor','easy',?,40,'high',0)""",
+            (TRAINING_LOAD_MODEL_VERSION, TRAINING_LOAD_MODEL_VERSION),
         )
         db._conn.execute(
             """INSERT INTO planned_session

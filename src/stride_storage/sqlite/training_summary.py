@@ -71,9 +71,10 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
                       atl.excluded_from_pmc, af.rpe
                  FROM bounded b
                  LEFT JOIN activity_training_load atl ON atl.label_id = b.label_id
+                   AND atl.algorithm_version = ?
                  LEFT JOIN activity_feedback af ON af.label_id = b.label_id
                 ORDER BY b.shanghai_date, b.label_id""",
-        (date_from, date_to),
+        (date_from, date_to, TRAINING_LOAD_MODEL_VERSION),
     ).fetchall()
 
     running = db.get_running_week_summaries([(0, date_from, date_to)]).get(0, {})

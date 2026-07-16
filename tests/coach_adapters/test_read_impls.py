@@ -408,7 +408,7 @@ def test_recent_activities_populated(patched_db) -> None:
             cardio_tss, external_tss, mechanical_load, training_dose,
             load_confidence, excluded_from_pmc, reasons_json)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("a1", "2026-05-13", "run_outdoor", "easy", 3,
+        ("a1", "2026-05-13", "run_outdoor", "easy", TRAINING_LOAD_MODEL_VERSION,
          55.0, 50.0, 10.0, 53.5, "high", 0, '[]'),
     )
     patched_db._conn.commit()
@@ -422,7 +422,7 @@ def test_recent_activities_populated(patched_db) -> None:
     assert a["stride_training_load"] == {
         "source": "stride",
         "vendor_derived": False,
-        "algorithm_version": 3,
+        "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
         "calibration_id": None,
         "session_class": "easy",
         "cardio_load_raw": None,

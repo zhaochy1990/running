@@ -404,6 +404,55 @@ def test_embedded_race_pace_raises_long_run_load_without_double_counting_km() ->
     assert embedded["weeks"][0]["key_session_km"] == 30.0
     assert embedded["weeks"][0]["estimated_dose"] > easy["weeks"][0]["estimated_dose"]
     assert embedded["weeks"][0]["long_run_dose"] > easy["weeks"][0]["long_run_dose"]
+    short_embedded = estimate_master_plan_training_load(
+        {"goal": {"distance": "FM", "target_time": "3:00:00"},
+         "weeks": [{**base_week, "key_sessions": [
+             {"type": "long_run", "distance_km": 30},
+             {"type": "race_pace", "distance_km": 2,
+              "purpose": "embedded within long run"},
+         ]}]},
+        history_anchor=anchor,
+    )
+    assert embedded["weeks"][0]["estimated_dose"] > short_embedded["weeks"][0]["estimated_dose"]
+    assert "embedded_segments_integrated_by_distance" in embedded["weeks"][0]["load_assumptions"]
+
+
+def test_duration_only_long_run_uses_estimated_distance_for_ratio() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "3:30:00"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 60,
+                "key_sessions": [{"type": "long_run", "duration_min": 165}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["long_run_km"] > 0
+    assert week["long_run_km_ratio"] == pytest.approx(
+        week["long_run_km"] / 60.0, abs=0.01
+    )
+
+
+def test_uncomputable_session_returns_explicit_unavailable_reason() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 50,
+                "key_sessions": [{"type": "race"}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    assert estimate["unavailable_reason"] == "planned_session_uncomputable"
 
 
 def test_long_run_mp_marker_does_not_match_inside_ordinary_words() -> None:
@@ -449,6 +498,31 @@ def test_long_run_mp_marker_does_not_match_inside_ordinary_words() -> None:
     assert (
         "mp_fraction_unspecified_range_easy_to_goal_pace"
         in explicit_mp["weeks"][0]["load_assumptions"]
+    )
+
+
+def test_chinese_marathon_pace_marker_works_without_goal_time() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 50,
+                "key_sessions": [{
+                    "type": "long_run", "distance_km": 30,
+                    "purpose": "含8km马配",
+                }],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["load_computable"] is True
+    assert (
+        "mp_fraction_unspecified_range_easy_to_distance_only_goal_pace"
+        in week["load_assumptions"]
     )
 
 

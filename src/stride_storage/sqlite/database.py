@@ -1890,7 +1890,15 @@ class Database:
         if commit:
             self._conn.commit()
 
-    def fetch_activity_training_load(self, label_id: str) -> sqlite3.Row | None:
+    def fetch_activity_training_load(
+        self, label_id: str, *, algorithm_version: int | None = None
+    ) -> sqlite3.Row | None:
+        if algorithm_version is not None:
+            return self._conn.execute(
+                "SELECT * FROM activity_training_load "
+                "WHERE label_id = ? AND algorithm_version = ?",
+                (label_id, algorithm_version),
+            ).fetchone()
         return self._conn.execute(
             "SELECT * FROM activity_training_load WHERE label_id = ?",
             (label_id,),
@@ -2005,7 +2013,7 @@ class Database:
         self, start: str, end: str, *, algorithm_version: int
     ) -> tuple[float | None, sqlite3.Row | None]:
         dose_row = self._conn.execute(
-            "SELECT SUM(training_dose) FROM daily_training_load "
+            "SELECT SUM(training_dose), COUNT(*) FROM daily_training_load "
             "WHERE algorithm_version = ? AND date BETWEEN ? AND ? "
             "AND coverage_status IN ('complete', 'rest_confirmed')",
             (algorithm_version, start, end),
@@ -2019,7 +2027,15 @@ class Database:
             "ORDER BY date DESC LIMIT 1",
             (algorithm_version, start, end),
         ).fetchone()
-        dose = float(dose_row[0]) if dose_row and dose_row[0] is not None else None
+        # The execution cap needs a completed seven-day baseline. A partial
+        # week would make dose/km artificially low and over-tighten next week.
+        dose = (
+            float(dose_row[0])
+            if dose_row and dose_row[0] is not None and int(dose_row[1] or 0) == 7
+            else None
+        )
+        if dose is None:
+            latest = None
         return dose, latest
 
     def fetch_latest_daily_health_date(self) -> str | None:

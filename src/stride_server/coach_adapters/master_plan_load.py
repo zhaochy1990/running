@@ -253,7 +253,7 @@ def _zone_range(name: str) -> tuple[float, float]:
 def _has_race_pace_marker(text: str) -> bool:
     if any(phrase in text for phrase in (
         "race pace", "marathon pace", "half marathon pace",
-        "比赛配速", "马拉松配速", "半马配速",
+        "比赛配速", "马拉松配速", "半马配速", "马配", "半马配",
     )):
         return True
     # Match the common ASCII abbreviations as standalone markers. Using plain
@@ -339,11 +339,17 @@ def _session_if_range(
     if stype == "long_run":
         if _has_race_pace_marker(text):
             easy_low, _easy_high = _zone_range("easy")
-            if goal_race_if is None:
+            if goal_race_if is not None:
+                race_low = race_high = goal_race_if
+                assumption = "mp_fraction_unspecified_range_easy_to_goal_pace"
+            elif goal_race_distance_km:
+                race_low, race_high, _ = _distance_only_race_if_range(
+                    goal_race_distance_km
+                )
+                assumption = "mp_fraction_unspecified_range_easy_to_distance_only_goal_pace"
+            else:
                 return None
-            return min(easy_low, goal_race_if), max(easy_low, goal_race_if), [
-                "mp_fraction_unspecified_range_easy_to_goal_pace"
-            ]
+            return min(easy_low, race_low), max(easy_low, race_high), [assumption]
         low, high = _zone_range("easy")
         return low, high, ["long_run_easy_zone_range"]
     return None
@@ -422,18 +428,19 @@ def estimate_master_plan_training_load(
         load_computable = bool(threshold_speed_mps and threshold_speed_mps > 0)
         long_run_km = 0.0
         long_run_dose = 0.0
-        embedded_intensity_ranges: list[tuple[float, float]] = []
+        embedded_sessions: list[tuple[Any, tuple[float, float, list[str]]]] = []
         for session in sessions:
             stype = _session_type(session)
             if stype in {"strength_key", "strength"}:
                 continue
             if stype in {"race_pace", "threshold", "tempo"} and _is_embedded_session(session):
                 embedded_intensity = _session_if_range(
-                session, goal_race_if=goal_race_if,
-                goal_race_distance_km=goal_race_distance_km,
+                    session,
+                    goal_race_if=goal_race_if,
+                    goal_race_distance_km=goal_race_distance_km,
                 )
                 if embedded_intensity is not None:
-                    embedded_intensity_ranges.append(embedded_intensity[:2])
+                    embedded_sessions.append((session, embedded_intensity))
                 week_assumptions.append(f"{stype}_embedded_in_parent_not_double_counted")
                 continue
             km = _session_distance_km(session)
@@ -464,9 +471,11 @@ def estimate_master_plan_training_load(
             elif estimated_km is not None:
                 key_km += max(0.0, estimated_km)
             if stype == "long_run":
-                long_run_km = max(long_run_km, max(0.0, km or 0.0))
+                long_run_km = max(
+                    long_run_km, max(0.0, km or estimated_km or 0.0)
+                )
                 long_run_dose = max(long_run_dose, estimate.expected_dose or 0.0) if estimate else 0.0
-        if embedded_intensity_ranges and load_computable:
+        if embedded_sessions and load_computable:
             long_sessions = [s for s in sessions if _session_type(s) == "long_run"]
             for parent in long_sessions:
                 parent_km = _session_distance_km(parent)
@@ -479,8 +488,9 @@ def estimate_master_plan_training_load(
                 )
                 if parent_intensity is None:
                     continue
-                low_if = min(parent_intensity[0], *(r[0] for r in embedded_intensity_ranges))
-                high_if = max(parent_intensity[1], *(r[1] for r in embedded_intensity_ranges))
+                intensity_ranges = [item[1] for item in embedded_sessions]
+                low_if = min(parent_intensity[0], *(r[0] for r in intensity_ranges))
+                high_if = max(parent_intensity[1], *(r[1] for r in intensity_ranges))
                 ranged_parent = _estimate_session(
                     km=parent_km, duration_min=parent_duration,
                     low_if=low_if, high_if=high_if,
@@ -492,21 +502,81 @@ def estimate_master_plan_training_load(
                     threshold_speed_mps=float(threshold_speed_mps),
                 )
                 if ranged_parent.expected_dose is not None and original_parent.expected_dose is not None:
-                    # The embedded segment's exact fraction is unknown. Keep
-                    # the parent's expected dose conservative, but lift it
-                    # halfway toward the easy-to-quality range midpoint so it
-                    # is not priced identically to an all-easy long run.
-                    delta = max(
-                        0.0,
-                        (ranged_parent.high_dose or ranged_parent.expected_dose)
-                        - original_parent.expected_dose,
-                    ) / 2.0
-                    key_dose += delta
-                    key_dose_low += (ranged_parent.low_dose or 0.0) - (original_parent.low_dose or 0.0)
-                    key_dose_high += (ranged_parent.high_dose or 0.0) - (original_parent.high_dose or 0.0)
-                    long_run_dose = max(
-                        long_run_dose, original_parent.expected_dose + delta
+                    exact_by_distance = bool(parent_km) and all(
+                        _session_distance_km(item[0]) is not None
+                        for item in embedded_sessions
                     )
+                    exact_by_duration = bool(parent_duration) and all(
+                        _session_duration_min(item[0]) is not None
+                        for item in embedded_sessions
+                    )
+                    replacement_expected = replacement_low = replacement_high = None
+                    if exact_by_distance or exact_by_duration:
+                        use_distance = exact_by_distance
+                        parent_amount = float(parent_km if use_distance else parent_duration)
+                        embedded_amount = sum(
+                            float(
+                                _session_distance_km(item[0])
+                                if use_distance else _session_duration_min(item[0])
+                            )
+                            for item in embedded_sessions
+                        )
+                        if 0 < embedded_amount <= parent_amount:
+                            pieces = []
+                            remainder = parent_amount - embedded_amount
+                            if remainder > 0:
+                                pieces.append(_estimate_session(
+                                    km=remainder if use_distance else None,
+                                    duration_min=None if use_distance else remainder,
+                                    low_if=parent_intensity[0], high_if=parent_intensity[1],
+                                    threshold_speed_mps=float(threshold_speed_mps),
+                                ))
+                            for embedded, embedded_intensity in embedded_sessions:
+                                pieces.append(_estimate_session(
+                                    km=_session_distance_km(embedded) if use_distance else None,
+                                    duration_min=(
+                                        None if use_distance
+                                        else _session_duration_min(embedded)
+                                    ),
+                                    low_if=embedded_intensity[0],
+                                    high_if=embedded_intensity[1],
+                                    threshold_speed_mps=float(threshold_speed_mps),
+                                ))
+                            if all(piece.expected_dose is not None for piece in pieces):
+                                replacement_expected = sum(
+                                    float(piece.expected_dose) for piece in pieces
+                                )
+                                replacement_low = sum(
+                                    float(piece.low_dose or piece.expected_dose)
+                                    for piece in pieces
+                                )
+                                replacement_high = sum(
+                                    float(piece.high_dose or piece.expected_dose)
+                                    for piece in pieces
+                                )
+                                week_assumptions.append(
+                                    "embedded_segments_integrated_by_"
+                                    + ("distance" if use_distance else "duration")
+                                )
+                    if replacement_expected is None:
+                        replacement_expected = original_parent.expected_dose + max(
+                            0.0,
+                            (ranged_parent.high_dose or ranged_parent.expected_dose)
+                            - original_parent.expected_dose,
+                        ) / 2.0
+                        replacement_low = ranged_parent.low_dose or replacement_expected
+                        replacement_high = ranged_parent.high_dose or replacement_expected
+                        week_assumptions.append(
+                            "embedded_fraction_unknown_conservative_parent_range"
+                        )
+                    key_dose += replacement_expected - original_parent.expected_dose
+                    key_dose_low += replacement_low - (
+                        original_parent.low_dose or original_parent.expected_dose
+                    )
+                    key_dose_high += replacement_high - (
+                        original_parent.high_dose or original_parent.expected_dose
+                    )
+                    long_run_dose = max(long_run_dose, replacement_expected)
                 break
         low_remaining_easy_km = max(0.0, low - key_km)
         remaining_easy_km = max(0.0, high - key_km)
@@ -604,6 +674,8 @@ def estimate_master_plan_training_load(
         "unavailable_reason": (
             "personal_threshold_unavailable"
             if not threshold_speed_mps or threshold_speed_mps <= 0
+            else "planned_session_uncomputable"
+            if not summary["load_computable"]
             else None
         ),
     }
@@ -654,8 +726,12 @@ def apply_master_plan_training_load_projection(
     if set(by_index) != expected_indexes:
         raise ValueError("load estimate week set does not match master plan")
 
-    if (estimate or {}).get("unavailable_reason") == "personal_threshold_unavailable":
-        if any(
+    unavailable_reason = (estimate or {}).get("unavailable_reason")
+    if unavailable_reason in {
+        "personal_threshold_unavailable",
+        "planned_session_uncomputable",
+    }:
+        if unavailable_reason == "personal_threshold_unavailable" and any(
             _float(row.get("target_training_dose_low")) is not None
             or _float(row.get("target_training_dose_high")) is not None
             for row in by_index.values()
@@ -672,7 +748,7 @@ def apply_master_plan_training_load_projection(
         ]
         projection = TrainingLoadProjection(
             status="unavailable",
-            unavailable_reason="personal_threshold_unavailable",
+            unavailable_reason=unavailable_reason,
             calculated_at=timestamp,
         )
         return MasterPlan.model_validate(plan.model_copy(update={
