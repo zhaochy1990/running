@@ -784,6 +784,44 @@ def test_build_target_race_reschedule_rejects_non_future_shanghai_date(monkeypat
         )
 
 
+def test_build_target_race_reschedule_rejects_taper_shifted_into_past(monkeypatch):
+    from datetime import date
+
+    import stride_core.master_plan_diff as master_plan_diff
+
+    plan = _plan_with_skeleton()
+    build = plan.phases[0].model_copy(
+        update={"end_date": "2026-10-31", "milestone_ids": []}
+    )
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "phase-taper",
+            "phase_type": PhaseType.TAPER,
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": ["race"],
+        }
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-11-15",
+        phase_id=taper.id, target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "end_date": "2026-11-15",
+            "goal": plan.goal.model_copy(update={"race_date": "2026-11-15"}),
+            "phases": [build, taper],
+            "milestones": [race],
+        }
+    )
+    monkeypatch.setattr(master_plan_diff, "today_shanghai", lambda: date(2026, 11, 1))
+
+    with pytest.raises(ValueError, match="preserved taper into the past"):
+        master_plan_diff.build_target_race_reschedule_patch(
+            plan, race.id, "2026-11-08"
+        )
+
+
 def test_build_target_race_reschedule_rejects_existing_phase_gap():
     from stride_core.master_plan_diff import build_target_race_reschedule_patch
 

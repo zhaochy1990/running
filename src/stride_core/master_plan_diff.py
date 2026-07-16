@@ -147,7 +147,8 @@ def build_target_race_reschedule_patch(
         )
     if target_day == old_race_day:
         raise ValueError("target race already uses the requested date; no proposal is needed")
-    if target_day <= (as_of or today_shanghai()):
+    effective_today = as_of or today_shanghai()
+    if target_day <= effective_today:
         raise ValueError("new target race must be a future Shanghai date")
     if target_day <= plan_start:
         raise ValueError("new target race must be after the plan start")
@@ -155,6 +156,8 @@ def build_target_race_reschedule_patch(
     delta = target_day - old_race_day
     new_taper_start = old_taper_start + delta
     new_taper_end = old_taper_end + delta
+    if new_taper_start < effective_today:
+        raise ValueError("reschedule cannot move the preserved taper into the past")
     previous = plan.phases[taper_index - 1]
     if previous.is_completed or taper.is_completed:
         raise ValueError("target race reschedule cannot rewrite a completed phase")
