@@ -1863,6 +1863,20 @@ class Database:
             tuple(params),
         ).fetchall()
 
+    def fetch_recent_daily_training_load(self, limit: int) -> list[sqlite3.Row]:
+        """Return the newest STRIDE daily training-load rows, newest first."""
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        return self._conn.execute(
+            """SELECT date, algorithm_version, training_dose, acute_load,
+                      chronic_load, form, load_ratio, readiness_gate,
+                      readiness_reasons_json
+               FROM daily_training_load
+               ORDER BY date DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+
     # --- Weekly feedback (rich-text, edited via UI) ---
 
     def get_weekly_feedback_row(self, week: str) -> sqlite3.Row | None:

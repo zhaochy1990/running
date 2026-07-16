@@ -271,6 +271,17 @@ class SQLiteRunningCalibrationRepository:
             return None
         return self._snapshot_from_row(row)
 
+    def fetch_zones_for_snapshot(self, snapshot_id: int) -> list[sqlite3.Row]:
+        """Return persisted training-zone rows for a calibration snapshot."""
+        return self._conn.execute(
+            """SELECT zone_kind, name, min_value, max_value,
+                      min_speed_mps, max_speed_mps
+               FROM running_calibration_zone
+               WHERE snapshot_id = ?
+               ORDER BY zone_kind, name""",
+            (snapshot_id,),
+        ).fetchall()
+
     def _snapshot_from_row(self, row: Any) -> RunningCalibrationSnapshot:
         snapshot_id = int(_row_value(row, "id"))
         evidence = self._fetch_evidence(snapshot_id)

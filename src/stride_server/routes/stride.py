@@ -87,14 +87,7 @@ def get_stride_zones(user: str) -> dict[str, Any]:
 
         # fetch_latest() hydrates the snapshot but not its zones — read those
         # by snapshot_id (the one part the repository doesn't expose).
-        zone_rows = db._conn.execute(
-            """SELECT zone_kind, name, min_value, max_value,
-                      min_speed_mps, max_speed_mps
-               FROM running_calibration_zone
-               WHERE snapshot_id = ?
-               ORDER BY zone_kind, name""",
-            (snapshot.id,),
-        ).fetchall()
+        zone_rows = repo.fetch_zones_for_snapshot(snapshot.id)
 
         hr_zones = []
         pace_zones = []
@@ -139,15 +132,7 @@ def get_stride_training_load(
 ) -> dict[str, Any]:
     db = get_db(user)
     try:
-        rows = db._conn.execute(
-            """SELECT date, algorithm_version, training_dose, acute_load,
-                      chronic_load, form, load_ratio, readiness_gate,
-                      readiness_reasons_json
-               FROM daily_training_load
-               ORDER BY date DESC
-               LIMIT ?""",
-            (days,),
-        ).fetchall()
+        rows = db.fetch_recent_daily_training_load(days)
         if not rows:
             return {"current": None, "series": []}
 
