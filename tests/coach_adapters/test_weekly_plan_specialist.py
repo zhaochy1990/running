@@ -155,6 +155,46 @@ def test_runner_seeds_folder_value_into_context() -> None:
     assert capture["state_in"]["folder"] == _FOLDER
 
 
+def test_runner_next_week_toolkit_can_read_injected_folder(monkeypatch) -> None:
+    next_folder = "2026-07-20_07-26"
+    next_plan = WeeklyPlan(
+        week_folder=next_folder,
+        sessions=(PlannedSession(
+            date="2026-07-22", session_index=0, kind=SessionKind.RUN,
+            summary="Next-week interval",
+        ),),
+    )
+
+    class _Store:
+        def get_plan(self, _user_id, folder):
+            return next_plan if folder == next_folder else None
+
+    class _Graph:
+        def invoke(self, state_in, config):
+            result = toolkit.get_week_plan(folder=state_in["folder"])
+            assert result.ok
+            assert result.data["sessions"][0]["summary"] == "Next-week interval"
+            return {"history": [AIMessage(content="已读取并调整下一周。")]}
+
+    from stride_server.coach_adapters.tool_impls.read_impls import GetWeekPlanImpl
+
+    toolkit = SimpleNamespace(get_week_plan=GetWeekPlanImpl("u1"))
+    monkeypatch.setattr(
+        "stride_server.weekly_plan_store.get_weekly_plan_store", lambda: _Store()
+    )
+    monkeypatch.setattr(wp, "get_weekly_plan_store", lambda: _Store())
+    runner = make_weekly_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=toolkit,
+        graph_factory=lambda **_kwargs: _Graph(),
+    )
+    result = runner(_task("调整下一周", folder=next_folder))
+
+    assert result.status == "completed"
+    assert result.reply_fragment == "已读取并调整下一周。"
+
+
 def test_runner_without_folder_asks_clarification() -> None:
     capture: dict[str, Any] = {}
     runner = make_weekly_plan_runner(

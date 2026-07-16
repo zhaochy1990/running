@@ -51,8 +51,9 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_master_plan_current": "Active master plan (phases + milestones + training principles) or None.",
     "get_master_plan_versions": "Version history of a master plan id.",
     "get_week_plan": (
-        "Current canonical structured WeeklyPlan (sessions + nutrition + notes), "
-        "resolved by today's Shanghai calendar date from WeeklyPlanStore. Takes no arguments. "
+        "Canonical structured WeeklyPlan from WeeklyPlanStore (sessions + nutrition + notes). "
+        "Pass the injected "
+        "target `folder` when adjusting a specific week; omit it to resolve today's Shanghai week. "
         "When no row covers today it returns available=false with an explicit missing_reason; "
         "answer exactly in Chinese: 当前周还没有训练计划，你要创建本周的训练计划吗？"
     ),

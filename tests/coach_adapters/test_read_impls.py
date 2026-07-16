@@ -260,6 +260,35 @@ def test_get_week_plan_reports_no_current_plan(monkeypatch) -> None:
     assert res.data["sessions"] == []
 
 
+def test_get_week_plan_reads_explicit_target_folder(monkeypatch) -> None:
+    from stride_server import weekly_plan_store
+    from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+
+    folder = "2026-07-20_07-26"
+    plan = WeeklyPlan(
+        week_folder=folder,
+        sessions=(PlannedSession(
+            date="2026-07-22", session_index=0, kind=SessionKind.RUN,
+            summary="Next-week run",
+        ),),
+    )
+    calls: list[tuple[str, str]] = []
+
+    class _Store:
+        def get_plan(self, user_id, target_folder):
+            calls.append((user_id, target_folder))
+            return plan
+
+    monkeypatch.setattr(weekly_plan_store, "get_weekly_plan_store", lambda: _Store())
+
+    res = read_impls.GetWeekPlanImpl("uid")(folder=folder)
+
+    assert res.ok
+    assert calls == [("uid", folder)]
+    assert res.data["week_folder"] == folder
+    assert res.data["sessions"][0]["summary"] == "Next-week run"
+
+
 def test_get_week_plan_does_not_fallback_when_canonical_store_fails(
     monkeypatch, tmp_path
 ) -> None:

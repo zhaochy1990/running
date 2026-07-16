@@ -894,13 +894,16 @@ class GetWeekPlanImpl:
         self._user_id = user_id
 
     @_tool_safe
-    def __call__(self) -> ToolResult:
+    def __call__(self, *, folder: str | None = None) -> ToolResult:
         from stride_core.timefmt import today_shanghai
         from stride_server.weekly_plan_store import get_weekly_plan_store
 
         on_date = today_shanghai().isoformat()
-        canonical_plan = get_weekly_plan_store().get_current_plan(
-            self._user_id, on_date
+        store = get_weekly_plan_store()
+        canonical_plan = (
+            store.get_plan(self._user_id, folder)
+            if folder
+            else store.get_current_plan(self._user_id, on_date)
         )
         if canonical_plan is None:
             return ToolResult(
@@ -912,8 +915,16 @@ class GetWeekPlanImpl:
                     "date_to": None,
                     "structured_source": "weekly_plan_store",
                     "available": False,
-                    "missing_reason": "no_plan_for_current_shanghai_week",
-                    "user_message": "当前周还没有训练计划，你要创建本周的训练计划吗？",
+                    "missing_reason": (
+                        "no_plan_for_target_week"
+                        if folder
+                        else "no_plan_for_current_shanghai_week"
+                    ),
+                    "user_message": (
+                        f"目标周 {folder} 还没有训练计划。"
+                        if folder
+                        else "当前周还没有训练计划，你要创建本周的训练计划吗？"
+                    ),
                     "sessions": [],
                     "nutrition": [],
                     "notes_md": None,

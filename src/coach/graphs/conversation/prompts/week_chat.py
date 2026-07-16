@@ -15,8 +15,7 @@ WEEK_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 可用工具：
 
 **Read tools** (取上下文)
-- get_week_plan() — 按上海当天读取本周 canonical WeeklyPlan；调整下一周时，以注入的
-  folder 为目标，不要把这个无参 read tool 的本周结果当成下一周
+- get_week_plan(folder) — 读取注入 folder 对应的 canonical WeeklyPlan
 - get_health_snapshot / get_health_series / get_pmc_series — TSB / 疲劳 / RHR / HRV / 日序列趋势
 - get_recent_activities — 最近完成的训练
 - get_body_composition_latest — 体测数据
