@@ -4,6 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from coach.graphs.generation.rule_filter import run_rule_filter
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 from stride_server import weekly_plan_generator as generator
 
 
@@ -35,8 +36,9 @@ class _StateDb(_Db):
             for window, km in zip(windows, self.completed_weeks, strict=False)
         }
 
-    def fetch_recent_daily_training_load(self, _limit):
-        return [{"load_ratio": self.load_ratio}]
+    def fetch_latest_daily_training_load(self, *, algorithm_version):
+        assert algorithm_version == TRAINING_LOAD_MODEL_VERSION
+        return {"load_ratio": self.load_ratio}
 
 
 class _WeeklyStore:
@@ -115,6 +117,34 @@ def test_recent_actual_volume_floors_stale_low_master_target(monkeypatch) -> Non
 
     assert generated.total_distance_km == 111.0
     assert "总体计划 71.0km 已校准为 111.0km" in (generated.plan.notes_md or "")
+
+
+def test_current_stride_model_load_ratio_reduces_overloaded_week(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "stride_server.master_plan_store.get_master_plan_store",
+        lambda: SimpleNamespace(
+            get_active_plan=lambda _uid: _master(
+                98, 102, week_start="2026-07-20"
+            )
+        ),
+    )
+    monkeypatch.setattr(generator, "get_weekly_plan_store", lambda: _WeeklyStore())
+    monkeypatch.setattr(
+        generator,
+        "get_db",
+        lambda _uid: _StateDb(
+            completed_weeks=(100.0, 100.0), load_ratio=1.30
+        ),
+    )
+
+    generated = generator.build_weekly_plan(
+        user_id="u1", week_start=date(2026, 7, 20)
+    )
+
+    assert generated.total_distance_km == 90.0
+    assert "STRIDE load_ratio=1.30" in (generated.plan.notes_md or "")
 
 
 def test_recovery_week_allows_controlled_deload_from_actual_baseline(
