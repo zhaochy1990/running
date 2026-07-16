@@ -83,6 +83,22 @@ def _explicit_sample_time(sample: ActivitySample) -> float | None:
     return None
 
 
+def _positive_sample_intervals(
+    samples: Sequence[ActivitySample],
+) -> list[tuple[int, float]]:
+    """Return adjacent positive timestamp deltas, including pause gaps."""
+    intervals: list[tuple[int, float]] = []
+    for index in range(1, len(samples)):
+        current = _explicit_sample_time(samples[index])
+        previous = _explicit_sample_time(samples[index - 1])
+        if current is None or previous is None:
+            continue
+        delta = current - previous
+        if delta > 0:
+            intervals.append((index, delta))
+    return intervals
+
+
 def _valid_sample_intervals(
     samples: Sequence[ActivitySample],
     *,
@@ -94,16 +110,11 @@ def _valid_sample_intervals(
     is therefore weighted by the time since the previous sample; missing,
     duplicate, backwards, or pause-sized gaps are never invented or expanded.
     """
-    intervals: list[tuple[int, float]] = []
-    for index in range(1, len(samples)):
-        current = _explicit_sample_time(samples[index])
-        previous = _explicit_sample_time(samples[index - 1])
-        if current is None or previous is None:
-            continue
-        delta = current - previous
-        if 0 < delta <= max_gap_s:
-            intervals.append((index, delta))
-    return intervals
+    return [
+        (index, delta)
+        for index, delta in _positive_sample_intervals(samples)
+        if delta <= max_gap_s
+    ]
 
 
 def _coverage_status(*coverages: float) -> LoadCoverageStatus:
@@ -365,10 +376,35 @@ def _compute_high_intensity_tss(
     recovery_seconds = 0.0
     armed_seconds = 0.0
 
-    for index, delta_s in _valid_sample_intervals(activity.samples):
+    for index, delta_s in _positive_sample_intervals(activity.samples):
+        if delta_s > 300.0:
+            # Pause-sized gaps are never integrated, but they still terminate
+            # any recovery attribution carried by an earlier work bout.
+            recovery_armed = False
+            work_seconds = 0.0
+            recovery_seconds = 0.0
+            armed_seconds = 0.0
+            smoothed_if = None
+            continue
         hr = clean_hr[index]
         speed = activity.samples[index].speed_mps
         if hr is None or speed is None or speed <= 0:
+            # Missing samples still consume wall-clock time.  Freezing the
+            # recovery state here would let an old work bout survive an
+            # arbitrarily long telemetry gap and attribute a later easy segment
+            # to that stale effort.  Advance the documented 240-second expiry
+            # even though the interval itself cannot contribute load.
+            if recovery_armed:
+                armed_seconds += delta_s
+                if armed_seconds >= _HIGH_INTENSITY_ARM_WINDOW_SECONDS:
+                    recovery_armed = False
+                    work_seconds = 0.0
+                    recovery_seconds = 0.0
+                    armed_seconds = 0.0
+                    smoothed_if = None
+            else:
+                # Work qualification requires continuous observed speed.
+                work_seconds = max(0.0, work_seconds - 2.0 * delta_s)
             continue
         covered_seconds += delta_s
 

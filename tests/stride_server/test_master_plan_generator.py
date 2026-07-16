@@ -2624,6 +2624,30 @@ class TestWeeklyProfile:
         assert w["atl"] == 70.0
         assert w["form"] == -12.0
         assert w["dose"] == 50 + 60 + 80  # additive
+        assert w["dose_coverage_status"] == "complete"
+
+    def test_partial_daily_dose_is_kept_with_weekly_coverage_caveat(self, tmp_path):
+        db = self._db(tmp_path)
+        c = db._conn
+        self._add_run(
+            c, "a1", "2026-06-17T08:00:00+00:00",
+            km=10.0, dur_s=3000,
+        )
+        c.executemany(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("2026-06-16", TRAINING_LOAD_MODEL_VERSION, 50, 45, 55, 10, "complete"),
+                ("2026-06-17", TRAINING_LOAD_MODEL_VERSION, 60, 50, 56, 6, "partial"),
+            ],
+        )
+        c.commit()
+
+        week = self._profile(db)[0]
+
+        assert week["dose"] == 110
+        assert week["dose_coverage_status"] == "partial"
 
     def test_uses_only_current_training_load_model_version(self, tmp_path):
         from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
@@ -3156,6 +3180,15 @@ class TestFormatHistorySummary:
         assert "n/a" in out
         # dose 0.0 → "0" (a real zero, not missing); n_runs still shown.
         assert "2026-W09|42.1|3.8|n/a|n/a|n/a/n/a|n/a|n/a|0|n/a/n/a|5/0/0/0" in out
+
+    def test_marks_partial_weekly_dose_in_prompt(self):
+        week = self._week(
+            "2026-02-23", dose=250.0, dose_coverage_status="partial"
+        )
+
+        out = self._summary(self._history([week]))
+
+        assert "|250(partial)|" in out
 
     def test_empty_profile_message(self):
         out = self._summary(self._history([]))

@@ -146,13 +146,23 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
             available[row["date"]][expected] -= 1
             completed += 1
 
-    load_rows = db.fetch_daily_training_load(
+    all_load_rows = db.fetch_daily_training_load(
         date_from, date_to, algorithm_version=TRAINING_LOAD_MODEL_VERSION
     )
     load_rows = [
-        row for row in load_rows
-        if row["coverage_status"] in {"complete", "rest_confirmed"}
+        row for row in all_load_rows
+        if row["coverage_status"] in {"complete", "partial", "rest_confirmed"}
     ]
+    training_dose_coverage = (
+        "partial"
+        if load_rows and any(
+            row["coverage_status"] in {"partial", "unknown"}
+            for row in all_load_rows
+        )
+        else "complete"
+        if load_rows
+        else "unknown"
+    )
 
     day_sql = _health_day_sql()
     health_rows = db._conn.execute(
@@ -203,6 +213,7 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
             "avg_pace_s_km": running.get("avg_pace_s_km"),
             "avg_hr": running.get("avg_hr"),
             "training_dose": round(sum(float(row["training_dose"] or 0) for row in load_rows), 1),
+            "training_dose_coverage": training_dose_coverage,
             "avg_rpe": round(sum(rpes) / len(rpes), 1) if rpes else None,
             "session_class_counts": dict(sorted(class_counts.items())),
         },

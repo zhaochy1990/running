@@ -292,6 +292,90 @@ def test_delayed_recovery_is_not_attributed_to_old_work_bout():
     assert result.high_intensity_tss == 0.0
 
 
+def test_missing_samples_expire_recovery_eligibility():
+    samples: list[ActivitySample] = []
+    elapsed = 0
+    distance = 0.0
+    phases = (
+        (90, 4.4, 175.0),
+        (241, None, None),
+        (120, 3.2, 165.0),
+        # Keep overall dual-channel coverage above 80% so the assertion tests
+        # recovery-state expiry rather than the low-coverage gate.
+        (1000, 3.0, 150.0),
+    )
+    for seconds, speed, hr in phases:
+        for _ in range(seconds):
+            if speed is not None:
+                distance += speed
+            samples.append(
+                ActivitySample(
+                    elapsed_s=float(elapsed),
+                    distance_m=distance,
+                    heart_rate_bpm=hr,
+                    speed_mps=speed,
+                )
+            )
+            elapsed += 1
+    samples.append(
+        ActivitySample(
+            elapsed_s=float(elapsed),
+            distance_m=distance,
+            heart_rate_bpm=150.0,
+            speed_mps=3.0,
+        )
+    )
+
+    result = compute_activity_load(
+        _activity(duration_s=float(elapsed), samples=tuple(samples)),
+        _calibration(),
+    )
+
+    assert result.high_intensity_coverage >= 0.8
+    assert result.high_intensity_tss == 0.0
+
+
+def test_pause_sized_timestamp_gap_clears_recovery_eligibility():
+    samples = list(_single_work_then_recovery_samples(float_seconds=0))
+    shifted: list[ActivitySample] = []
+    for index, sample in enumerate(samples):
+        elapsed = float(sample.elapsed_s or 0.0)
+        if index >= 90:
+            elapsed += 301.0
+        shifted.append(
+            ActivitySample(
+                elapsed_s=elapsed,
+                distance_m=sample.distance_m,
+                heart_rate_bpm=sample.heart_rate_bpm,
+                speed_mps=sample.speed_mps,
+            )
+        )
+    # Add enough fully observed easy running that the pause gap does not trip
+    # the overall 80% coverage gate.
+    last = shifted[-1]
+    distance = float(last.distance_m or 0.0)
+    elapsed = float(last.elapsed_s or 0.0)
+    for _ in range(1400):
+        elapsed += 1.0
+        distance += 3.0
+        shifted.append(
+            ActivitySample(
+                elapsed_s=elapsed,
+                distance_m=distance,
+                heart_rate_bpm=150.0,
+                speed_mps=3.0,
+            )
+        )
+
+    result = compute_activity_load(
+        _activity(duration_s=elapsed, samples=tuple(shifted)),
+        _calibration(),
+    )
+
+    assert result.high_intensity_coverage >= 0.8
+    assert result.high_intensity_tss == 0.0
+
+
 def test_unvalidated_power_proxy_does_not_override_speed_load():
     result = compute_activity_load(
         _activity(samples=_samples(power_w=300.0, heart_rate_bpm=None, speed_mps=3.0)),

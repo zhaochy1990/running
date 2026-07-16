@@ -1281,6 +1281,7 @@ def _query_weekly_profile(
                 "training_load_ratio": None,
                 "form": None,
                 "dose": 0.0,
+                "dose_coverage_status": None,
                 "rhr": None,
                 "hrv": None,
                 "n_runs": 0,
@@ -1350,14 +1351,20 @@ def _query_weekly_profile(
         algorithm_version=TRAINING_LOAD_MODEL_VERSION, as_of=as_of.isoformat()
     )
     dose_acc: dict[str, float] = {}
+    dose_known_weeks: set[str] = set()
+    dose_incomplete_weeks: set[str] = set()
     for r in rows:
         wk = date_cls.fromisoformat(r["date"]).strftime("%Y-%m-%d")
         wk = (date_cls.fromisoformat(wk) - timedelta(days=date_cls.fromisoformat(wk).weekday())).isoformat()
         if wk is None:
             continue
         b = _bucket(wk)
-        if r["coverage_status"] in {"complete", "rest_confirmed"}:
+        coverage_status = r["coverage_status"]
+        if coverage_status in {"complete", "partial", "rest_confirmed"}:
             dose_acc[wk] = dose_acc.get(wk, 0.0) + (r["training_dose"] or 0.0)
+            dose_known_weeks.add(wk)
+        if coverage_status in {"partial", "unknown"}:
+            dose_incomplete_weeks.add(wk)
         # rows ascend by date, so the last write per week is the latest day.
         b["ctl"] = r["chronic_load"]
         b["atl"] = r["acute_load"]
@@ -1365,6 +1372,12 @@ def _query_weekly_profile(
         b["form"] = r["form"]
     for wk, total in dose_acc.items():
         buckets[wk]["dose"] = total
+    for wk in dose_known_weeks:
+        buckets[wk]["dose_coverage_status"] = (
+            "partial" if wk in dose_incomplete_weeks else "complete"
+        )
+    for wk in dose_incomplete_weeks - dose_known_weeks:
+        buckets[wk]["dose_coverage_status"] = "unknown"
 
     # --- daily_health: rhr (avg) --------------------------------------------
     health_norm = "(substr(date,1,4)||'-'||substr(date,5,2)||'-'||substr(date,7,2))"
@@ -1777,6 +1790,9 @@ def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
         "W|km|h|pace|HR|CTL/ATL|ratio|form|dose|RHR/HRV|runs/L/S/R",
     ]
     for w in profile:
+        dose_text = num(w.get('dose'), '.0f')
+        if w.get("dose_coverage_status") == "partial":
+            dose_text += "(partial)"
         lines.append(
             f"{iso_week(w['week_start'])}|"
             f"{num(w.get('distance_km'), '.1f')}|"
@@ -1786,7 +1802,7 @@ def _format_weekly_profile(profile: list[dict[str, Any]]) -> list[str]:
             f"{num(w.get('ctl'), '.0f')}/{num(w.get('atl'), '.0f')}|"
             f"{num(w.get('training_load_ratio'), '.2f')}|"
             f"{num(w.get('form'), '+.0f')}|"
-            f"{num(w.get('dose'), '.0f')}|"
+            f"{dose_text}|"
             f"{num(w.get('rhr'), '.0f')}/{num(w.get('hrv'), '.0f')}|"
             f"{w.get('n_runs', 0)}/{w.get('n_long', 0)}/"
             f"{w.get('n_speed', 0)}/{w.get('n_race', 0)}"

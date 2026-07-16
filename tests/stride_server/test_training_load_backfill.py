@@ -154,3 +154,55 @@ def test_internal_training_load_calibration_refresh_updates_threshold_only(tmp_p
             "training_load_calibration table still exists — pivot to "
             "running_calibration_snapshot may be incomplete"
         )
+
+
+def test_rollout_backfill_is_idempotent_when_current_version_exists(
+    tmp_path, monkeypatch
+):
+    import stride_core.db as core_db_mod
+    import stride_server.deps as deps_mod
+    import stride_server.routes.training_load as route_mod
+
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+    from stride_server.config import clear_server_config_cache
+    from stride_storage.sqlite.database import Database
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+    clear_server_config_cache()
+
+    user_dir = tmp_path / USER_UUID
+    user_dir.mkdir(parents=True, exist_ok=True)
+    with Database(user=USER_UUID) as db:
+        db._conn.execute(
+            """INSERT INTO daily_training_load
+               (date, algorithm_version, training_dose, coverage_status)
+               VALUES ('2026-05-20', ?, 50, 'complete')""",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        db._conn.commit()
+
+    def fail_backfill(*_args, **_kwargs):
+        raise AssertionError("idempotent rollout must not recompute existing v2 rows")
+
+    monkeypatch.setattr(route_mod, "backfill_training_load", fail_backfill)
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        f"/internal/training-load/backfill?user={USER_UUID}&only_if_missing=true",
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {
+        "ok": True,
+        "user": USER_UUID,
+        "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+        "skipped": True,
+        "reason": "algorithm_version_already_present",
+        "calibration_lookback_days": 180,
+        "load_lookback_days": 90,
+    }

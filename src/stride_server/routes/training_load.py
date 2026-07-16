@@ -5,7 +5,11 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from stride_storage.sqlite.database import Database
-from stride_core.training_load import backfill_training_load, refresh_training_load_calibration
+from stride_core.training_load import (
+    TRAINING_LOAD_MODEL_VERSION,
+    backfill_training_load,
+    refresh_training_load_calibration,
+)
 
 from .plan import require_internal_token
 
@@ -52,10 +56,23 @@ def internal_training_load_backfill(
     as_of_date: str | None = Query(None),
     calibration_lookback_days: int = Query(180, ge=1, le=730),
     load_lookback_days: int = Query(90, ge=1, le=365),
+    only_if_missing: bool = Query(False),
     _token: None = Depends(require_internal_token),
 ):
     try:
         with Database(user=user) as db:
+            if only_if_missing and db.has_daily_training_load_version(
+                TRAINING_LOAD_MODEL_VERSION
+            ):
+                return {
+                    "ok": True,
+                    "user": user,
+                    "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+                    "skipped": True,
+                    "reason": "algorithm_version_already_present",
+                    "calibration_lookback_days": calibration_lookback_days,
+                    "load_lookback_days": load_lookback_days,
+                }
             summary = backfill_training_load(
                 db,
                 as_of_date=as_of_date,
@@ -67,6 +84,8 @@ def internal_training_load_backfill(
     return {
         "ok": True,
         "user": user,
+        "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+        "skipped": False,
         "calibration": _calibration_body(summary.calibration),
         "load": {
             "start": summary.load.start.isoformat() if isinstance(summary.load.start, date) else None,

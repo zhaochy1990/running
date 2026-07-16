@@ -85,6 +85,17 @@ def test_low_history_short_race_not_forced_up() -> None:
     assert estimate["alignment"]["status"] == "ok"
 
 
+def test_history_anchor_keeps_partial_dose_and_exposes_caveat() -> None:
+    history = _history([40, 42, 44, 46])
+    history["weekly_profile"][1]["dose_coverage_status"] = "partial"
+
+    anchor = build_training_history_load_anchor(history)
+
+    assert anchor["dose_anchor"] == pytest.approx(33.5, abs=0.1)
+    assert anchor["dose_anchor_coverage"] == "partial"
+    assert anchor["partial_dose_weeks"] == 1
+
+
 def test_long_run_ratios_are_estimated_from_weekly_load() -> None:
     anchor = build_training_history_load_anchor(_history([45, 48, 50, 52]))
 

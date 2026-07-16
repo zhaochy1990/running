@@ -153,7 +153,7 @@ class TestDatabaseActivities:
             """INSERT INTO daily_training_load
                (date,algorithm_version,training_dose,acute_load,chronic_load,form,load_ratio,
                 coverage_status) VALUES ('2026-05-04',?,80,50,45,-5,1.11,'complete'),
-                                        ('2026-05-05',?,40,52,46,-6,1.13,'complete')""",
+                                        ('2026-05-05',?,40,52,46,-6,1.13,'partial')""",
             (TRAINING_LOAD_MODEL_VERSION, TRAINING_LOAD_MODEL_VERSION),
         )
         db._conn.execute(
@@ -174,6 +174,7 @@ class TestDatabaseActivities:
         assert result["summary"]["run_count"] == 2
         assert result["summary"]["run_distance_km"] == 15.0
         assert result["summary"]["training_dose"] == 120.0
+        assert result["summary"]["training_dose_coverage"] == "partial"
         assert result["plan_adherence"] == {
             "planned_sessions": 2,
             "completed_sessions": 1,
@@ -187,6 +188,10 @@ class TestDatabaseActivities:
         assert "training_dose" not in result["activities"][0]
         assert all(row["source"] == "stride" for row in result["load_series"])
         assert all(row["vendor_derived"] is False for row in result["load_series"])
+        assert [row["coverage_status"] for row in result["load_series"]] == [
+            "complete",
+            "partial",
+        ]
         assert result["recovery_series"] == [
             {"day": "2026-05-05", "rhr": 49, "hrv": 42}
         ]

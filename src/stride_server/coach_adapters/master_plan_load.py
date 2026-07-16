@@ -77,6 +77,13 @@ def build_training_history_load_anchor(history: Mapping[str, Any] | None) -> dic
     active = _active_history_weeks(history)
     distances = [_truthy_week_km(w) for w in active if _truthy_week_km(w) > 0]
     doses = [float(w["dose"]) for w in active if _float(w.get("dose")) is not None and float(w["dose"]) > 0]
+    partial_dose_weeks = sum(
+        1
+        for w in active
+        if _float(w.get("dose")) is not None
+        and float(w["dose"]) > 0
+        and w.get("dose_coverage_status") == "partial"
+    )
     recent_last4 = distances[-4:]
     dose_last4 = doses[-4:]
 
@@ -116,6 +123,10 @@ def build_training_history_load_anchor(history: Mapping[str, Any] | None) -> dic
         "recent_last4_avg_weekly_dose": _round(mean(dose_last4) if dose_last4 else None),
         "recent_peak_weekly_dose": _round(max(doses) if doses else None),
         "dose_anchor": _round(dose_anchor),
+        "dose_anchor_coverage": (
+            "partial" if partial_dose_weeks else "complete" if doses else "unknown"
+        ),
+        "partial_dose_weeks": partial_dose_weeks,
         "avg_runs_per_active_week": _round(avg_runs),
         "avg_pace_s_km": _round(avg_pace_s_km, 0),
         "threshold_speed_mps": _round(_float(history.get("threshold_speed_mps")), 4),
@@ -139,6 +150,7 @@ def format_training_load_anchor_for_prompt(anchor: Mapping[str, Any] | None) -> 
         f"last4_avg={val('recent_last4_avg_weekly_km', 'km')}",
         f"history_peak={val('history_peak_weekly_km', 'km')}",
         f"dose_anchor={val('dose_anchor')}",
+        f"dose_coverage={anchor.get('dose_anchor_coverage', 'unknown')}",
         f"runs_per_active_week={val('avg_runs_per_active_week')}",
     ]
     return "; ".join(parts)
