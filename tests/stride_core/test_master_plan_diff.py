@@ -746,6 +746,42 @@ def test_apply_rejects_target_race_reschedule_mixed_with_another_op():
         )
 
 
+def test_apply_atomic_target_race_time_updates_goal_and_clears_skeleton():
+    plan = _plan_with_skeleton()
+    phase = plan.phases[0].model_copy(update={
+        "end_date": plan.goal.race_date,
+        "milestone_ids": ["race"],
+    })
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date=plan.goal.race_date,
+        phase_id=phase.id, target="全马 3:15:00",
+    )
+    plan = plan.model_copy(update={
+        "goal": plan.goal.model_copy(update={"target_time": "3:15:00"}),
+        "phases": [phase],
+        "milestones": [race],
+    })
+    store = InMemoryStore(plan)
+    op = _op(
+        MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+        milestone_id=race.id,
+        spec_patch={
+            "target_time": "3:10:00",
+            "milestone_target": "全马 3:10:00",
+        },
+    )
+
+    result = apply_master_plan_diff(
+        store, plan.plan_id, _make_diff([op]), [op.id], "target supported"
+    )
+
+    assert result.goal.target_time == "3:10:00"
+    assert result.milestones[0].target == "全马 3:10:00"
+    assert result.weeks == []
+    assert result.weekly_key_sessions == []
+    assert result.training_load_projection is None
+
+
 def test_build_target_race_reschedule_rejects_non_future_shanghai_date(monkeypatch):
     from datetime import date
 

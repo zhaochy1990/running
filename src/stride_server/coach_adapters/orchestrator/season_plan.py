@@ -3,7 +3,7 @@
 The season_plan expert **amends** the athlete's long-term master plan (赛季计划/
 总纲): extend/compress a phase, shift or retarget a milestone, propose
 alternatives, or clear-for-regeneration. It already exists as the ``master_chat``
-scope of the conversation graph (6 real master-scope draft tools that emit one
+scope of the conversation graph (9 real master-scope draft tools that emit one
 or more ``MasterPlanDiff`` values), so this adapter dresses it in the
 SpecialistContract and returns the diffs as Pattern-Y proposals.
 

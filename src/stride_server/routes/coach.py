@@ -48,6 +48,7 @@ from stride_core.master_plan_diff import (
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
     apply_master_plan_diff,
+    normalise_target_race_time,
 )
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 
@@ -415,6 +416,20 @@ def _accepted_race_reschedule(
     return matches[0] if matches else None
 
 
+def _accepted_target_race_time_update(
+    diff: MasterPlanDiff, accepted_op_ids: list[str]
+) -> MasterPlanDiffOp | None:
+    accepted = set(accepted_op_ids)
+    matches = [
+        op
+        for op in diff.ops
+        if op.id in accepted
+        and op.accepted is not False
+        and op.op == MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME
+    ]
+    return matches[0] if matches else None
+
+
 def _prepare_training_goal_reschedule(
     user_id: str, plan: Any, op: MasterPlanDiffOp
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -437,9 +452,11 @@ def _prepare_training_goal_reschedule(
             status_code=status.HTTP_409_CONFLICT,
             detail="当前 Training Goal 不是比赛目标，无法同步目标比赛日期",
         )
+    plan_distance = getattr(plan.goal.distance, "value", str(plan.goal.distance))
     if (
         current.get("goal_id") != plan.goal.goal_id
         or current.get("race_date") != plan.goal.race_date
+        or current.get("race_distance") != plan_distance
     ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -448,6 +465,61 @@ def _prepare_training_goal_reschedule(
     new_date = (op.spec_patch or {}).get("race_date")
     updated_current = dict(current)
     updated_current["race_date"] = new_date
+    updated_current["updated_at"] = datetime.now(timezone.utc).isoformat()
+    updated = dict(original)
+    updated["current"] = updated_current
+    return original, updated
+
+
+def _prepare_training_goal_time_update(
+    user_id: str, plan: Any, op: MasterPlanDiffOp
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate and prepare the external TrainingGoal target-time update."""
+    item = read_json(f"{user_id}/training_goal.json")
+    if item is None or not isinstance(item[0], dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前 Training Goal 不存在，无法安全同步目标成绩",
+        )
+    original = item[0]
+    current = original.get("current")
+    if not isinstance(current, dict) or current.get("type") != "race":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前 Training Goal 不是比赛目标，无法同步目标成绩",
+        )
+    external_time_raw = str(current.get("target_finish_time") or "")
+    embedded_time_raw = str(plan.goal.target_time or "")
+    try:
+        external_time = (
+            normalise_target_race_time(external_time_raw)
+            if external_time_raw
+            else ""
+        )
+        embedded_time = (
+            normalise_target_race_time(embedded_time_raw)
+            if embedded_time_raw
+            else ""
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前目标成绩格式无效，请先修正 Training Goal",
+        ) from exc
+    plan_distance = getattr(plan.goal.distance, "value", str(plan.goal.distance))
+    if (
+        current.get("goal_id") != plan.goal.goal_id
+        or current.get("race_date") != plan.goal.race_date
+        or current.get("race_distance") != plan_distance
+        or external_time != embedded_time
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Training Goal 与当前 Master Plan 不一致，请刷新后重试",
+        )
+    new_time = (op.spec_patch or {}).get("target_time")
+    updated_current = dict(current)
+    updated_current["target_finish_time"] = new_time
     updated_current["updated_at"] = datetime.now(timezone.utc).isoformat()
     updated = dict(original)
     updated["current"] = updated_current
@@ -513,11 +585,19 @@ def apply_coach_master_diff(
 
     bridge = _MasterStoreBridge(store, user_id)
     race_op = _accepted_race_reschedule(diff, accepted_op_ids)
+    race_time_op = _accepted_target_race_time_update(diff, accepted_op_ids)
     goal_original: dict[str, Any] | None = None
     if race_op is not None:
         goal_original, goal_updated = _prepare_training_goal_reschedule(
             user_id, plan, race_op
         )
+    elif race_time_op is not None:
+        goal_original, goal_updated = _prepare_training_goal_time_update(
+            user_id, plan, race_time_op
+        )
+    else:
+        goal_updated = None
+    if goal_updated is not None:
         try:
             write_json(f"{user_id}/training_goal.json", goal_updated)
         except Exception as exc:  # noqa: BLE001 — content-store boundary

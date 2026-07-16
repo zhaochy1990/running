@@ -1,0 +1,41 @@
+{
+  "fixture_id": "s1c-target-time-reasonable-atomic",
+  "scope": "s1",
+  "evaluation_path": "master_chat",
+  "description": "The athlete requests a modest target-race improvement supported by frozen prediction and PB evidence. Coach must read both, assess realism, and emit one atomic target-time diff.",
+  "tags": ["conversation", "target_time", "goal_realism", "atomic_diff"],
+  "input": {
+    "as_of_date": "2026-07-16",
+    "message": "把目标马拉松完赛成绩从 3:15:00 调整到 3:10:00",
+    "active_plan": {
+      "plan_id": "s1c-plan-001", "user_id": "s1c-user-001", "status": "active",
+      "goal": {"goal_id": "goal-001", "race_date": "2026-10-25", "target_time": "3:15:00", "timezone": "Asia/Shanghai"},
+      "start_date": "2026-07-01", "end_date": "2026-10-25",
+      "phases": [
+        {"id": "phase-base", "name": "基础期", "phase_type": "base", "start_date": "2026-07-01", "end_date": "2026-08-15", "focus": "有氧基础", "weekly_distance_km_low": 70, "weekly_distance_km_high": 80, "key_session_types": ["long_run", "threshold"], "milestone_ids": []},
+        {"id": "phase-build", "name": "专项期", "phase_type": "build", "start_date": "2026-08-16", "end_date": "2026-10-10", "focus": "马拉松专项", "weekly_distance_km_low": 75, "weekly_distance_km_high": 88, "key_session_types": ["long_run", "race_pace"], "milestone_ids": []},
+        {"id": "phase-taper", "name": "调整期", "phase_type": "taper", "start_date": "2026-10-11", "end_date": "2026-10-25", "focus": "减量与比赛", "weekly_distance_km_low": 35, "weekly_distance_km_high": 55, "key_session_types": ["race_pace", "race"], "milestone_ids": ["race-001"]}
+      ],
+      "milestones": [{"id": "race-001", "type": "race", "date": "2026-10-25", "phase_id": "phase-taper", "target": "全马 3:15:00"}],
+      "training_principles": ["渐进负荷", "保留两周 taper"], "generated_by": "fixture", "version": 1,
+      "created_at": "2026-07-01T00:00:00Z", "updated_at": "2026-07-01T00:00:00Z"
+    },
+    "read_results": {
+      "get_health_snapshot": {"stride_training_load": {"acute_load": 78, "chronic_load": 72, "form": -6, "load_ratio": 1.08, "form_zone": "maintenance", "source": "stride", "vendor_derived": false}, "raw_measurements": {"rhr": 48, "hrv": 63}},
+      "get_pmc_series": {"series": [{"date": "2026-07-13", "acute_load": 78, "chronic_load": 72, "form": -6, "load_ratio": 1.08}], "provenance": {"source": "stride", "vendor_derived": false}},
+      "estimate_master_plan_load": {"history_anchor": {"recent_weekly_km": 72, "peak_weekly_km": 84}, "plan_source": "active"},
+      "get_race_predictions": {"distances": {"FM": {"predicted_time_sec": 11370, "predicted_time": "3:09:30"}}},
+      "get_pbs": {"pbs": [{"distance": "FM", "time_s": 11580, "time": "3:13:00", "date": "2026-03-29"}]}
+    }
+  },
+  "expected": {
+    "status": "completed", "clarification_required": false, "proposal_count": 1,
+    "required_reads": ["get_master_plan_current", "get_health_snapshot", "get_pmc_series", "estimate_master_plan_load", "get_race_predictions", "get_pbs"],
+    "assessment_verdict": "reasonable", "required_draft_tool": "update_target_race_time",
+    "forbidden_tools": ["change_target", "set_phase_weekly_range", "propose_alternatives"],
+    "proposal": {
+      "op_count": 1, "op": "update_target_race_time", "milestone_id": "race-001",
+      "spec_patch": {"target_time": "3:10:00", "milestone_target": "全马 3:10:00"}
+    }
+  }
+}

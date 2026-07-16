@@ -1,7 +1,7 @@
 """Draft-tool implementations — see plan §5.2.
 
 * 7 week-scope tools (return ``PlanDiff``) — real impls (US-007).
-* 8 master-scope tools (return ``MasterPlanDiff``).
+* 9 master-scope tools (return ``MasterPlanDiff``).
 
 A draft tool's job is to propose a change as a typed diff; it never applies
 the change. The route handler accepts the diff back (Pattern Y) and runs
@@ -426,7 +426,7 @@ class RegenerateWeekImpl:
 
 
 # ---------------------------------------------------------------------------
-# Master-scope (8) — emit MasterPlanDiff
+# Master-scope (9) — emit MasterPlanDiff
 # ---------------------------------------------------------------------------
 
 from datetime import date as _date, timedelta as _timedelta
@@ -434,6 +434,7 @@ from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
+    build_target_race_time_patch,
     build_target_race_reschedule_patch,
 )
 
@@ -640,6 +641,52 @@ class ChangeTargetImpl:
             spec_patch={"target": new_target_time},
         )
         diff = _empty_master_diff(plan_id, f"把目标 {ms.target} 改为 {new_target_time}")
+        return _ok_master(diff.model_copy(update={"ops": [op]}))
+
+
+class UpdateTargetRaceTimeImpl:
+    """Change the season goal race time as one indivisible operation."""
+
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
+
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        milestone_id: str,
+        new_target_time: str,
+        reason: str,
+    ) -> ToolResult:
+        plan = self._load_plan(plan_id)
+        if plan is None:
+            return _fail(f"master plan {plan_id!r} not found")
+        try:
+            patch = build_target_race_time_patch(
+                plan, milestone_id, new_target_time
+            )
+        except (TypeError, ValueError) as exc:
+            return _fail(str(exc))
+
+        milestone = next(item for item in plan.milestones if item.id == milestone_id)
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+            milestone_id=milestone_id,
+            old_value={
+                "target_time": plan.goal.target_time,
+                "milestone_target": milestone.target,
+            },
+            new_value=patch,
+            spec_patch=patch,
+        )
+        diff = _empty_master_diff(
+            plan_id,
+            f"将目标比赛成绩从 {plan.goal.target_time} 调整到 {patch['target_time']}"
+            f"，并原子同步目标状态（原因：{reason}）",
+        )
         return _ok_master(diff.model_copy(update={"ops": [op]}))
 
 

@@ -23,10 +23,12 @@ from stride_server.coach_adapters.orchestrator.season_plan import (
     make_season_plan_runner,
 )
 from stride_server.coach_adapters.tool_impls.draft_impls import (
+    ChangeTargetImpl,
     ProposeAlternativesImpl,
     RescheduleTargetRaceImpl,
     SetPhaseWeeklyRangeImpl,
     ShiftMilestoneImpl,
+    UpdateTargetRaceTimeImpl,
 )
 
 
@@ -42,6 +44,8 @@ _DRAFT_TOOLS = (
     "propose_alternatives",
     "shift_milestone",
     "reschedule_target_race",
+    "change_target",
+    "update_target_race_time",
 )
 
 
@@ -107,6 +111,10 @@ def _build_frozen_toolkit(fixture: dict, plan: MasterPlan) -> Any:
         estimate_master_plan_load=_FrozenMasterLoadRead(
             dict(read_results.get("estimate_master_plan_load") or {})
         ),
+        get_race_predictions=_FrozenNoArgRead(
+            dict(read_results.get("get_race_predictions") or {})
+        ),
+        get_pbs=_FrozenNoArgRead(dict(read_results.get("get_pbs") or {})),
         set_phase_weekly_range=SetPhaseWeeklyRangeImpl(
             plan.user_id, plan_loader=load_plan
         ),
@@ -117,11 +125,21 @@ def _build_frozen_toolkit(fixture: dict, plan: MasterPlan) -> Any:
         reschedule_target_race=RescheduleTargetRaceImpl(
             plan.user_id, plan_loader=load_plan, as_of=as_of
         ),
+        change_target=ChangeTargetImpl(plan.user_id, plan_loader=load_plan),
+        update_target_race_time=UpdateTargetRaceTimeImpl(
+            plan.user_id, plan_loader=load_plan
+        ),
     )
 
 
 def _selected_tool_names() -> tuple[str, ...]:
-    return (*_REQUIRED_READS, MASTER_ASSESSMENT_TOOL_NAME, *_DRAFT_TOOLS)
+    return (
+        *_REQUIRED_READS,
+        "get_race_predictions",
+        "get_pbs",
+        MASTER_ASSESSMENT_TOOL_NAME,
+        *_DRAFT_TOOLS,
+    )
 
 
 def _contract_violations(artifact: dict, expected: dict) -> list[str]:

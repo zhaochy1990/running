@@ -60,6 +60,14 @@ _MASTER_ASSESSMENT_REQUIRED_READS = frozenset(
         "estimate_master_plan_load",
     }
 )
+_TARGET_TIME_REQUEST_RE = re.compile(
+    r"(?:目标|比赛|完赛|成绩|target|goal|finish)"
+    r".{0,24}(?:\d{1,2}:\d{2}(?::\d{2})?|\d{1,2}\s*小时(?:\s*\d{1,2}\s*分)?|sub[- ]?\d)"
+    r"|(?:\d{1,2}:\d{2}(?::\d{2})?|\d{1,2}\s*小时(?:\s*\d{1,2}\s*分)?|sub[- ]?\d)"
+    r".{0,24}(?:目标|比赛|完赛|成绩|target|goal|finish)",
+    re.IGNORECASE,
+)
+_TARGET_TIME_REQUIRED_READS = frozenset({"get_race_predictions", "get_pbs"})
 _ALTERNATIVES_REQUEST_RE = re.compile(
     r"(?:两个|两种|2\s*个|比较|对比|备选|alternatives?|options?|compare)",
     re.IGNORECASE,
@@ -89,6 +97,13 @@ def _current_user_request(state: ConversationState) -> str:
     return ""
 
 
+def _required_master_adjustment_reads(request: str) -> frozenset[str]:
+    required = set(_MASTER_ASSESSMENT_REQUIRED_READS)
+    if _TARGET_TIME_REQUEST_RE.search(request):
+        required.update(_TARGET_TIME_REQUIRED_READS)
+    return frozenset(required)
+
+
 def _master_stage_instruction(state: ConversationState) -> str:
     """Tell the model which adjustment protocol stage is allowed now.
 
@@ -99,7 +114,8 @@ def _master_stage_instruction(state: ConversationState) -> str:
     current_request = _current_user_request(state)
     same_request = state.get("master_adjustment_request") == current_request
     consulted = set(state.get("consulted_tools") or []) if same_request else set()
-    missing_reads = sorted(_MASTER_ASSESSMENT_REQUIRED_READS - consulted)
+    required_reads = _required_master_adjustment_reads(current_request)
+    missing_reads = sorted(required_reads - consulted)
     if missing_reads:
         return (
             "【本轮工具阶段：读取】只调用以下尚缺的 read tools："
@@ -221,7 +237,8 @@ def build_conversation_graph(
                 )
                 continue
             if scope == "master_chat" and name == MASTER_ASSESSMENT_TOOL_NAME:
-                missing = sorted(_MASTER_ASSESSMENT_REQUIRED_READS - consulted_before)
+                required_reads = _required_master_adjustment_reads(current_request)
+                missing = sorted(required_reads - consulted_before)
                 request_mismatch = str(args.get("adjustment_request") or "").strip() != current_request
                 if missing or request_mismatch:
                     errors = []

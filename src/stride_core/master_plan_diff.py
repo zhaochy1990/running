@@ -16,6 +16,7 @@ Design notes:
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
@@ -64,6 +65,7 @@ class MasterPlanDiffOpKind(str, Enum):
     REPLACE_MILESTONE_DATE  = "replace_milestone_date"
     REPLACE_MILESTONE_TARGET = "replace_milestone_target"
     RESCHEDULE_TARGET_RACE  = "reschedule_target_race"  # 原子同步比赛日与赛季边界
+    UPDATE_TARGET_RACE_TIME = "update_target_race_time"  # 原子同步目标比赛成绩
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +90,98 @@ class MasterPlanDiff(BaseModel):
     ops: list[MasterPlanDiffOp]
     ai_explanation: str
     created_at: str               # ISO datetime UTC
+
+
+_TARGET_TIME_RE = re.compile(
+    r"^(?P<hours>\d{1,2}):(?P<minutes>[0-5]\d):(?P<seconds>[0-5]\d)$"
+)
+_TARGET_DISTANCE_LABELS = {
+    "5K": "5K",
+    "10K": "10K",
+    "HM": "半马",
+    "FM": "全马",
+    "trail": "越野",
+}
+_TARGET_TIME_TOKEN_RE = re.compile(r"(?<!\d)(\d{1,2}:[0-5]\d(?::[0-5]\d)?)(?!\d)")
+
+
+def normalise_target_race_time(value: str) -> str:
+    """Return canonical H:MM:SS or reject an ambiguous race target."""
+    match = _TARGET_TIME_RE.fullmatch(str(value).strip())
+    if match is None:
+        raise ValueError(
+            "new_target_time must use H:MM:SS with valid minutes and seconds"
+        )
+    hours = int(match.group("hours"))
+    minutes = int(match.group("minutes"))
+    seconds = int(match.group("seconds"))
+    if hours == 0 and minutes == 0 and seconds == 0:
+        raise ValueError("new_target_time must be greater than zero")
+    return f"{hours}:{minutes:02d}:{seconds:02d}"
+
+
+def _updated_milestone_target(
+    current_target: str, current_time: str, new_time: str, distance: str
+) -> str:
+    """Preserve milestone coaching context while replacing its goal time."""
+    text = str(current_target or "").strip()
+    if current_time:
+        for match in _TARGET_TIME_TOKEN_RE.finditer(text):
+            token = match.group(1)
+            candidate = token if token.count(":") == 2 else f"{token}:00"
+            try:
+                matches_current = normalise_target_race_time(candidate) == current_time
+            except ValueError:
+                matches_current = False
+            if matches_current:
+                return text[: match.start(1)] + new_time + text[match.end(1) :]
+
+    label = _TARGET_DISTANCE_LABELS.get(distance, distance)
+    if text:
+        return f"{text}；目标完赛时间 {new_time}"
+    return f"{label} {new_time}"
+
+
+def build_target_race_time_patch(
+    plan: MasterPlan, milestone_id: str, new_target_time: str
+) -> dict[str, Any]:
+    """Build one coherent patch for the external and embedded race target."""
+    target_time = normalise_target_race_time(new_target_time)
+    milestone = next((item for item in plan.milestones if item.id == milestone_id), None)
+    if milestone is None:
+        raise ValueError(f"milestone {milestone_id!r} not in plan")
+    if milestone.type != MilestoneType.RACE:
+        raise ValueError(f"milestone {milestone_id!r} is not the target race")
+    if milestone.date != plan.goal.race_date:
+        raise ValueError(
+            "target race milestone and embedded goal date are inconsistent"
+        )
+    phase = next((item for item in plan.phases if item.id == milestone.phase_id), None)
+    if phase is None or milestone.id not in phase.milestone_ids:
+        raise ValueError("target race milestone is not attached to its owning phase")
+    try:
+        milestone_day = date.fromisoformat(milestone.date)
+        phase_start = date.fromisoformat(phase.start_date)
+        phase_end = date.fromisoformat(phase.end_date)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("target race milestone or phase date is invalid") from exc
+    if not phase_start <= milestone_day <= phase_end:
+        raise ValueError("target race milestone date is outside its owning phase")
+
+    current_raw = str(plan.goal.target_time or "").strip()
+    current_time = normalise_target_race_time(current_raw) if current_raw else ""
+    if current_time and target_time == current_time:
+        raise ValueError(
+            "target race already uses the requested time; no proposal is needed"
+        )
+
+    distance = getattr(plan.goal.distance, "value", str(plan.goal.distance))
+    return {
+        "target_time": target_time,
+        "milestone_target": _updated_milestone_target(
+            milestone.target, current_time, target_time, str(distance)
+        ),
+    }
 
 
 def build_target_race_reschedule_patch(
@@ -221,6 +315,31 @@ def apply_target_race_reschedule_op(
     }
 
 
+def apply_target_race_time_op(
+    plan: MasterPlan,
+    op: MasterPlanDiffOp,
+    milestones: dict[str, Milestone],
+) -> dict[str, Any]:
+    """Apply a validated atomic target-time update."""
+    milestone_id = _require_milestone_id(op)
+    patch = op.spec_patch or {}
+    expected = build_target_race_time_patch(
+        plan, milestone_id, str(patch.get("target_time") or "")
+    )
+    if patch != expected:
+        raise ValueError("target race time patch is incomplete or inconsistent")
+
+    milestone = _get_milestone(milestones, milestone_id, op.op)
+    milestones[milestone_id] = milestone.model_copy(
+        update={"target": expected["milestone_target"]}
+    )
+    return {
+        "goal": plan.goal.model_copy(
+            update={"target_time": expected["target_time"]}
+        )
+    }
+
+
 # ---------------------------------------------------------------------------
 # apply_master_plan_diff
 # ---------------------------------------------------------------------------
@@ -257,12 +376,18 @@ def apply_master_plan_diff(
     if not active_ops:
         logger.debug("apply_master_plan_diff: no ops to apply after filtering")
         return plan
-    race_reschedule_ops = [
-        op for op in active_ops if op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
+    atomic_race_ops = [
+        op
+        for op in active_ops
+        if op.op
+        in {
+            MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+            MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+        }
     ]
-    if race_reschedule_ops and len(active_ops) != 1:
+    if atomic_race_ops and len(active_ops) != 1:
         raise ValueError(
-            "target race reschedule must be the only accepted operation in its diff"
+            "atomic target race update must be the only accepted operation in its diff"
         )
 
     # Snapshot the current plan BEFORE mutation.
@@ -289,6 +414,7 @@ def apply_master_plan_diff(
         MasterPlanDiffOpKind.RESIZE_PHASE,
         MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
         MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
     }
     phase_affecting_applied = any(op.op in PHASE_AFFECTING for op in active_ops)
 
@@ -302,6 +428,10 @@ def apply_master_plan_diff(
             if op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE:
                 top_level_updates.update(
                     apply_target_race_reschedule_op(plan, op, phases, milestones)
+                )
+            elif op.op == MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME:
+                top_level_updates.update(
+                    apply_target_race_time_op(plan, op, milestones)
                 )
             else:
                 _apply_op(op, phases, milestones)

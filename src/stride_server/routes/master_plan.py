@@ -258,7 +258,11 @@ def get_job_status(
 _LEGACY_DIFF_OP_KINDS = tuple(
     kind
     for kind in MasterPlanDiffOpKind
-    if kind != MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
+    if kind
+    not in {
+        MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+    }
 )
 _DIFF_OP_KINDS_STR = ", ".join(kind.value for kind in _LEGACY_DIFF_OP_KINDS)
 
@@ -402,9 +406,12 @@ def _build_mp_diff_ops(ops_list: list[dict]) -> list[MasterPlanDiffOp]:
     for item in ops_list:
         try:
             op_kind = MasterPlanDiffOpKind(item.get("op", ""))
-            if op_kind == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE:
+            if op_kind in {
+                MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+                MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+            }:
                 logger.warning(
-                    "Skipping reschedule_target_race from legacy free-form diff path"
+                    "Skipping atomic target-race op from legacy free-form diff path"
                 )
                 continue
             result.append(
@@ -577,13 +584,17 @@ def review_apply(
             detail=f"diff plan_id {diff.plan_id!r} does not match path plan_id {plan_id!r}",
         )
     if any(
-        op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
+        op.op
+        in {
+            MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+            MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+        }
         and op.id in set(body.accepted_op_ids)
         for op in diff.ops
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="目标比赛改期只能通过 Coach 原子 apply 接口执行",
+            detail="目标比赛日期或成绩只能通过 Coach 原子 apply 接口执行",
         )
 
     # Filter to known op ids; silently skip unknowns (fault-tolerant)

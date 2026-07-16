@@ -391,6 +391,105 @@ def test_change_target_empty_fails(seeded_plan):
     assert not res.ok
 
 
+def test_update_target_race_time_emits_one_atomic_diff() -> None:
+    taper = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=taper.id, target="全马 3:15:00",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[taper],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.UpdateTargetRaceTimeImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, milestone_id=race.id,
+        new_target_time="3:10:00", reason="prediction supports it",
+    )
+
+    diff = _assert_master_diff(result)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME
+    assert op.spec_patch == {
+        "target_time": "3:10:00",
+        "milestone_target": "全马 3:10:00",
+    }
+
+
+def test_update_target_race_time_preserves_milestone_coaching_context() -> None:
+    phase = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=phase.id,
+        target="本周期 B 目标 3:15:00；长期 A 目标 2:59:00",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[phase],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.UpdateTargetRaceTimeImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, milestone_id=race.id,
+        new_target_time="3:10:00", reason="supported",
+    )
+
+    diff = _assert_master_diff(result)
+    assert diff.ops[0].spec_patch["milestone_target"] == (
+        "本周期 B 目标 3:10:00；长期 A 目标 2:59:00"
+    )
+
+
+@pytest.mark.parametrize("bad_time", ["3:10", "3:70:00", "sub-3:10", ""])
+def test_update_target_race_time_rejects_noncanonical_time(bad_time: str) -> None:
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time=""
+        ),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[],
+        milestones=[], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.UpdateTargetRaceTimeImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, milestone_id="race",
+        new_target_time=bad_time, reason="bad",
+    )
+
+    assert result.ok is False
+    assert "H:MM:SS" in result.errors[0]
+
+
 # ---------------------------------------------------------------------------
 # propose_alternatives
 # ---------------------------------------------------------------------------

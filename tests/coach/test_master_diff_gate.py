@@ -546,6 +546,40 @@ def test_target_race_reschedule_must_be_one_coherent_atomic_patch() -> None:
     assert "阶段边界" in violations[0]
 
 
+def test_target_race_time_requires_one_coherent_atomic_patch() -> None:
+    plan = _plan()
+    phase = plan.phases[0].model_copy(update={
+        "end_date": plan.goal.race_date,
+        "milestone_ids": ["race"],
+    })
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date=plan.goal.race_date,
+        phase_id=phase.id, target="全马 3:15:00",
+    )
+    plan = plan.model_copy(update={
+        "goal": plan.goal.model_copy(update={"target_time": "3:15:00"}),
+        "phases": [phase],
+        "milestones": [race],
+    })
+    op = _op(
+        MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+        milestone_id=race.id,
+        spec_patch={
+            "target_time": "3:10:00",
+            "milestone_target": "全马 3:10:00",
+        },
+    )
+
+    assert validate_master_diff(plan, _diff(op)) == []
+
+    malformed = op.model_copy(update={
+        "spec_patch": {"target_time": "3:10:00"}
+    })
+    violations = validate_master_diff(plan, _diff(malformed))
+    assert violations
+    assert "原子同步" in violations[0]
+
+
 def test_weekly_range_non_numeric_is_rejected_not_crash() -> None:
     """Non-numeric weekly range must be a violation, never an unhandled crash."""
     op = _op(

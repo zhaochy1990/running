@@ -390,3 +390,51 @@ def test_reads_for_an_old_request_cannot_authorize_a_new_assessment() -> None:
 
     assert state.get("master_adjustment_assessment") is None
     assert state.get("last_diff") is None
+
+
+def test_target_time_assessment_requires_prediction_and_pb_reads() -> None:
+    request = "把目标马拉松完赛成绩从 3:15:00 调整到 3:10:00"
+    toolkit = _toolkit()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "without prediction evidence",
+                    },
+                )
+            ),
+            AIMessage(content="我还需要读取预测和 PB。"),
+        ]
+    )
+
+    state = _invoke(
+        llm,
+        toolkit,
+        request=request,
+        consulted_tools=[
+            "get_master_plan_current",
+            "get_health_snapshot",
+            "get_pmc_series",
+            "estimate_master_plan_load",
+        ],
+    )
+
+    assert state.get("master_adjustment_assessment") is None
+    stage_messages = [
+        message.content
+        for message in llm.invocations[0]
+        if isinstance(message, HumanMessage) and "【本轮工具阶段" in message.content
+    ]
+    assert "get_race_predictions" in stage_messages[0]
+    assert "get_pbs" in stage_messages[0]
+    assert state["tool_trace"] == [
+        {
+            "name": "assess_master_adjustment",
+            "outcome": "blocked",
+            "reason": "assessment_gate",
+        }
+    ]

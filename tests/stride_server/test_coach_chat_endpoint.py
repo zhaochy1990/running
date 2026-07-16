@@ -545,6 +545,25 @@ def _race_reschedule_body():
     }
 
 
+def _target_race_time_body():
+    return {
+        "diff": {
+            "diff_id": "target-time", "plan_id": _PLAN_ID,
+            "ops": [{
+                "id": "change-target-time", "op": "update_target_race_time",
+                "milestone_id": "race",
+                "spec_patch": {
+                    "target_time": "3:10:00",
+                    "milestone_target": "全马；目标完赛时间 3:10:00",
+                },
+            }],
+            "ai_explanation": "目标成绩调整",
+            "created_at": "2026-07-16T00:00:00Z",
+        },
+        "accepted_op_ids": ["change-target-time"],
+    }
+
+
 def _master_diff_body(*, plan_id=_PLAN_ID, end_date="2026-08-15", op_ids=("op1",)):
     return {
         "diff": {
@@ -640,6 +659,168 @@ def test_master_apply_reschedules_training_goal_and_plan(
     assert updated.end_date == "2026-11-29"
     assert updated.milestones[0].date == "2026-11-29"
     assert updated.phases[-1].end_date == "2026-11-29"
+
+
+def test_master_apply_updates_target_time_in_training_goal_and_plan(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    plan = _race_plan()
+    saved: dict[str, object] = {"plan": plan}
+
+    class _Store:
+        def get_plan(self, user_id, plan_id):
+            return saved["plan"]
+
+        def save_plan(self, updated):
+            saved["plan"] = updated
+
+        def save_version(self, version):
+            saved["version"] = version
+
+    monkeypatch.setattr(coach_routes, "get_master_plan_store", lambda: _Store())
+    writes: list[dict] = []
+    monkeypatch.setattr(
+        coach_routes,
+        "read_json",
+        lambda _path: ({"current": {
+            "goal_id": "g1", "race_date": "2026-11-15",
+            "target_finish_time": "3:15:00",
+            "type": "race", "race_distance": "FM",
+        }, "history": []}, "file"),
+    )
+    monkeypatch.setattr(
+        coach_routes, "write_json", lambda _path, data: writes.append(data) or "file"
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_target_race_time_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert writes[0]["current"]["target_finish_time"] == "3:10:00"
+    updated = saved["plan"]
+    assert updated.goal.target_time == "3:10:00"
+    assert updated.milestones[0].target == "全马；目标完赛时间 3:10:00"
+
+
+def test_master_apply_accepts_equivalent_leading_zero_target_time(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    plan = _race_plan().model_copy(update={
+        "goal": _race_plan().goal.model_copy(update={"target_time": "03:15:00"})
+    })
+    saved: dict[str, object] = {"plan": plan}
+
+    class _Store:
+        def get_plan(self, user_id, plan_id):
+            return saved["plan"]
+
+        def save_plan(self, updated):
+            saved["plan"] = updated
+
+        def save_version(self, version):
+            saved["version"] = version
+
+    monkeypatch.setattr(coach_routes, "get_master_plan_store", lambda: _Store())
+    monkeypatch.setattr(
+        coach_routes,
+        "read_json",
+        lambda _path: ({"current": {
+            "goal_id": "g1", "race_date": "2026-11-15",
+            "target_finish_time": "3:15:00",
+            "type": "race", "race_distance": "FM",
+        }}, "file"),
+    )
+    monkeypatch.setattr(coach_routes, "write_json", lambda *_args: "file")
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_target_race_time_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert saved["plan"].goal.target_time == "3:10:00"
+
+
+def test_master_apply_rejects_target_time_when_training_goal_is_stale(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_race_plan())
+    monkeypatch.setattr(
+        coach_routes,
+        "read_json",
+        lambda _path: ({"current": {
+            "goal_id": "g1", "race_date": "2026-11-15",
+            "target_finish_time": "3:20:00", "type": "race",
+        }}, "file"),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_target_race_time_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 409
+    assert "不一致" in resp.json()["detail"]
+
+
+def test_master_apply_rejects_target_time_for_different_race_distance(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_race_plan())
+    monkeypatch.setattr(
+        coach_routes,
+        "read_json",
+        lambda _path: ({"current": {
+            "goal_id": "g1", "race_date": "2026-11-15",
+            "target_finish_time": "3:15:00",
+            "type": "race", "race_distance": "HM",
+        }}, "file"),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_target_race_time_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 409
+    assert "不一致" in resp.json()["detail"]
+
+
+def test_master_apply_rolls_back_target_time_when_plan_apply_fails(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    plan = _race_plan()
+    _stub_master(coach_routes, monkeypatch, plan=plan)
+    original = {"current": {
+        "goal_id": "g1", "race_date": "2026-11-15",
+        "target_finish_time": "3:15:00",
+        "type": "race", "race_distance": "FM",
+    }, "history": []}
+    writes: list[dict] = []
+    monkeypatch.setattr(coach_routes, "read_json", lambda _path: (original, "file"))
+    monkeypatch.setattr(
+        coach_routes, "write_json", lambda _path, data: writes.append(data) or "file"
+    )
+    monkeypatch.setattr(
+        coach_routes, "apply_master_plan_diff",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("apply failed")),
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_target_race_time_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 400
+    assert writes[0]["current"]["target_finish_time"] == "3:10:00"
+    assert writes[1] == original
 
 
 def test_master_apply_rejects_race_move_when_training_goal_is_stale(

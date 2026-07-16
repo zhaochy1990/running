@@ -149,7 +149,7 @@ generation baseline。conversation fixture 冻结：
 
 - 用户本轮 `message`；
 - 一个虚构 `active_plan`；
-- `get_health_snapshot`、`get_pmc_series`、`estimate_master_plan_load` 的返回值；
+- `get_health_snapshot`、`get_pmc_series`、`estimate_master_plan_load` 的返回值；目标成绩场景还冻结 `get_race_predictions` 和 `get_pbs`；
 - 期望状态、proposal 数量、必需 read、assessment verdict、draft tool 和 diff 数值。
 
 Harness 复用 production `season_plan` runner、`master_chat` prompt、conversation
@@ -171,6 +171,7 @@ python scripts/eval_coach.py --scope s1 --conversation
 5. 精确周量区间必须用 `set_phase_weekly_range` 忠实生成单一 typed diff，不能偷换成固定 5%/10% alternatives；
 6. `unreasonable` 必须零 proposal。
 7. 目标比赛改期必须使用单个 `reschedule_target_race` 原子 op，同步 external Training Goal、embedded goal、plan end、race milestone、taper 和前序阶段边界；禁止退化成 `shift_milestone` 或多个可分别采纳的 ops。
+8. 修改目标比赛成绩必须先读 race prediction + PB，再使用单个 `update_target_race_time` 原子 op 同步 external Training Goal、embedded goal 和 race milestone；普通 `change_target` 只用于非目标比赛里程碑。
 
 ### S1 Required vs Optional
 

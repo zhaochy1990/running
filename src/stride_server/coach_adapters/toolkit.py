@@ -29,6 +29,7 @@ from .tool_impls.draft_impls import (
     ShiftMilestoneImpl,
     ShiftSessionImpl,
     SwapSessionsImpl,
+    UpdateTargetRaceTimeImpl,
 )
 from .tool_impls.read_impls import (
     EstimateMasterPlanLoadImpl,
@@ -51,7 +52,7 @@ from .tool_impls.read_impls import (
 
 @dataclass(frozen=True)
 class StrideToolkit:
-    """Frozen container holding callable instances for all 30 tools."""
+    """Frozen container holding callable instances for all 31 tools."""
 
     # read (15)
     get_training_summary: GetTrainingSummaryImpl
@@ -79,12 +80,13 @@ class StrideToolkit:
     change_pace_target: ChangePaceTargetImpl
     regenerate_week: RegenerateWeekImpl
 
-    # master-scope draft (8)
+    # master-scope draft (9)
     extend_phase: ExtendPhaseImpl
     compress_phase: CompressPhaseImpl
     shift_milestone: ShiftMilestoneImpl
     reschedule_target_race: RescheduleTargetRaceImpl
     change_target: ChangeTargetImpl
+    update_target_race_time: UpdateTargetRaceTimeImpl
     set_phase_weekly_range: SetPhaseWeeklyRangeImpl
     propose_alternatives: ProposeAlternativesImpl
     regenerate_master: RegenerateMasterImpl
@@ -126,6 +128,9 @@ def build_stride_toolkit(
             user_id, plan_loader=master_plan_loader
         ),
         change_target=ChangeTargetImpl(user_id, plan_loader=master_plan_loader),
+        update_target_race_time=UpdateTargetRaceTimeImpl(
+            user_id, plan_loader=master_plan_loader
+        ),
         set_phase_weekly_range=SetPhaseWeeklyRangeImpl(
             user_id, plan_loader=master_plan_loader
         ),

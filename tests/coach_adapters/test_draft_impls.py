@@ -235,6 +235,7 @@ def test_master_draft_impls_real_and_fail_on_missing_plan():
         (draft_impls.CompressPhaseImpl, {"plan_id": "pid", "phase_id": "phid", "weeks": 1}),
         (draft_impls.ShiftMilestoneImpl, {"plan_id": "pid", "milestone_id": "mid", "new_date": "2026-08-01"}),
         (draft_impls.ChangeTargetImpl, {"plan_id": "pid", "milestone_id": "mid", "new_target_time": "10K 40:00"}),
+        (draft_impls.UpdateTargetRaceTimeImpl, {"plan_id": "pid", "milestone_id": "mid", "new_target_time": "0:40:00", "reason": "test"}),
         (draft_impls.ProposeAlternativesImpl, {"plan_id": "pid", "intent": "test"}),
         (draft_impls.RegenerateMasterImpl, {"plan_id": "pid", "reason": "test"}),
     ):

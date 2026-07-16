@@ -30,6 +30,7 @@ from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
+    build_target_race_time_patch,
     build_target_race_reschedule_patch,
 )
 
@@ -277,6 +278,25 @@ def _check_target_race_reschedule(
     return None
 
 
+def _check_target_race_time(
+    plan: MasterPlan, op: MasterPlanDiffOp, *, active_op_count: int
+) -> str | None:
+    if active_op_count != 1:
+        return "目标比赛成绩必须作为唯一的原子操作提交，不能和其它操作拆分或混用"
+    if not op.milestone_id:
+        return "目标比赛成绩调整缺少 milestone_id"
+    patch = op.spec_patch or {}
+    try:
+        expected = build_target_race_time_patch(
+            plan, op.milestone_id, str(patch.get("target_time") or "")
+        )
+    except (TypeError, ValueError) as exc:
+        return f"目标比赛成绩无法形成一致计划：{exc}"
+    if patch != expected:
+        return "目标比赛成绩必须原子同步 embedded goal 和 race milestone"
+    return None
+
+
 def validate_master_diff(
     plan: MasterPlan, diff: MasterPlanDiff, *, as_of: _date | None = None
 ) -> list[str]:
@@ -291,6 +311,8 @@ def validate_master_diff(
     * **REPLACE_WEEKLY_RANGE** — ``low <= high``.
     * **RESCHEDULE_TARGET_RACE** — one atomic op synchronises the embedded
       goal, plan end, race milestone and final phase boundaries.
+    * **UPDATE_TARGET_RACE_TIME** — one atomic op synchronises the embedded
+      goal target time and target-race milestone description.
     * **Protected final taper** — a final phase of at most 14 inclusive days
       cannot be shortened or removed.
     * **Reference integrity** — REMOVE/REPLACE ops target an existing phase /
@@ -362,6 +384,10 @@ def validate_master_diff(
         elif op.op == _Kind.RESCHEDULE_TARGET_RACE:
             v = _check_target_race_reschedule(
                 plan, op, active_op_count=len(active_ops), as_of=as_of
+            )
+        elif op.op == _Kind.UPDATE_TARGET_RACE_TIME:
+            v = _check_target_race_time(
+                plan, op, active_op_count=len(active_ops)
             )
         else:
             v = _check_ref(op, phases, milestones)

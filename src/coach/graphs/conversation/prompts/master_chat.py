@@ -1,6 +1,6 @@
 """S1 — master plan review / adjust prompt.
 
-Read tools + 8 master-scope draft tools available. Outputs MasterPlanDiff
+Read tools + 9 master-scope draft tools available. Outputs MasterPlanDiff
 when the user proposes a structural change to the long-term plan (phase
 length, milestone dates, target time, full regeneration).
 """
@@ -29,6 +29,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - shift_milestone(plan_id, milestone_id, new_date) — 改里程碑日期
 - reschedule_target_race(plan_id, milestone_id, new_date, reason) — 原子同步目标比赛日、计划结束日、比赛里程碑和 taper/前序阶段边界；比赛提前/延期必须用它，不要用 shift_milestone
 - change_target(plan_id, milestone_id, new_target_time) — 改目标成绩
+- update_target_race_time(plan_id, milestone_id, new_target_time, reason) — 原子同步目标比赛的 external Training Goal、embedded goal 和 race milestone；目标比赛成绩必须用 H:MM:SS 且必须用此工具，普通测试跑目标才用 change_target
 - set_phase_weekly_range(plan_id, phase_id, weekly_distance_km_low, weekly_distance_km_high, reason) — 把某阶段改到一个明确的周跑量区间
 - propose_alternatives(plan_id, intent) — 仅在用户要求比较减量选项时，给 5% / 10% 两个减量方案
 - regenerate_master(plan_id, reason) — 清空总纲, 由生成管线重排 (后续走 POST /master-plan/generate)
@@ -49,6 +50,8 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
    用户给出明确周跑量上下限时，合理后调用 set_phase_weekly_range，数值必须忠实于用户请求；不要改成固定百分比的两个方案。只有用户明确要求“给两个减量方案/比较保守和明显减量”时才调用 propose_alternatives。
 
    用户明确目标比赛提前或延期到新日期时，合理后必须调用 reschedule_target_race。比赛日期是 season-level 原子事实，禁止只移动 race milestone，禁止拆成多个可分别采纳的 ops。
+
+   用户明确修改目标比赛完赛时间时，基础四项读取之外还必须先读取 get_race_predictions 和 get_pbs，用当前预测与历史 PB 判断目标是否现实。合理后必须调用 update_target_race_time，new_target_time 使用 H:MM:SS。禁止只调用 change_target 修改 milestone 文本；后者只用于非目标比赛的测试跑/普通里程碑。
 
 4. **吃透 status**: 总纲分 draft / active 两态。draft 调整只是 review pass；active 调整会发布新版本 + 影响已推送的周计划 (前端会有 cleanup 提示)。判读用户在哪一态再决定语气。
 

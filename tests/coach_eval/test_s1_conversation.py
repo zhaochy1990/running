@@ -23,6 +23,7 @@ S1_CONVERSATION_INPUT_SHA256 = {
     "s1c-aggressive-range-unreasonable": "9d54fc2cb89baa5263b3e8e0bf08f792807ebb3fb6f602b16266c7376d0aebcc",
     "s1c-exact-range-reasonable": "638adf9fdc4fa4af9884583fb04d97739707ae31bb90ec5e287cb3a4ac092215",
     "s1c-race-postponed-atomic": "ae2c9d7a12347e44fd15e7a684b827627a55db1263759ce572c78e229d305303",
+    "s1c-target-time-reasonable-atomic": "6e016c9222f18450e9d7eda42fbc8a94939c8168339aabd6c69c1f1fc542939e",
     "s1c-vague-adjustment-clarify": "a9c4467eb8c4ce6458ab418a8870f99e8ae7d851cdfc0773909ddb137fd05d9d",
 }
 
@@ -70,6 +71,18 @@ def _required_read_calls() -> AIMessage:
         ("get_health_snapshot", {}),
         ("get_pmc_series", {"days": 42}),
         ("estimate_master_plan_load", {}),
+    )
+
+
+def _target_time_read_calls() -> AIMessage:
+    return _tool_calls(
+        1,
+        ("get_master_plan_current", {}),
+        ("get_health_snapshot", {}),
+        ("get_pmc_series", {"days": 42}),
+        ("estimate_master_plan_load", {}),
+        ("get_race_predictions", {}),
+        ("get_pbs", {}),
     )
 
 
@@ -230,6 +243,58 @@ def test_postponed_race_fixture_passes_as_one_atomic_diff() -> None:
         "estimate_master_plan_load",
         "assess_master_adjustment",
         "reschedule_target_race",
+    ]
+
+
+def test_target_time_fixture_reads_realism_evidence_and_emits_atomic_diff() -> None:
+    request = "把目标马拉松完赛成绩从 3:15:00 调整到 3:10:00"
+    llm = _ScriptedLLM(
+        [
+            _target_time_read_calls(),
+            _tool_calls(
+                2,
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "3:09:30 prediction and 3:13 PB support 3:10",
+                    },
+                ),
+            ),
+            _tool_calls(
+                3,
+                (
+                    "update_target_race_time",
+                    {
+                        "plan_id": "s1c-plan-001",
+                        "milestone_id": "race-001",
+                        "new_target_time": "3:10:00",
+                        "reason": "prediction and PB support the modest improvement",
+                    },
+                ),
+            ),
+        ]
+    )
+
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-target-time-reasonable-atomic"], llm=llm
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.debug["contract_violations"] == []
+    proposal = outcome.generated_artifact["result"]["proposals"][0]
+    assert proposal["ops"][0]["op"] == "update_target_race_time"
+    assert [item["name"] for item in outcome.generated_artifact["tool_trace"]] == [
+        "get_master_plan_current",
+        "get_health_snapshot",
+        "get_pmc_series",
+        "estimate_master_plan_load",
+        "get_race_predictions",
+        "get_pbs",
+        "assess_master_adjustment",
+        "update_target_race_time",
     ]
 
 

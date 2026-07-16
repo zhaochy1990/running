@@ -98,6 +98,11 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "advanced target race; never emulate it with shift_milestone or multiple ops."
     ),
     "change_target": "Propose changing a milestone target time.",
+    "update_target_race_time": (
+        "Change the goal race finish time as one atomic diff. This synchronises "
+        "the embedded MasterPlan goal, external Training Goal on apply, and target-race "
+        "milestone. Use for the season goal race; keep change_target for non-goal milestones."
+    ),
     "set_phase_weekly_range": (
         "Propose one exact weekly-distance range for a named master-plan phase. "
         "Use when the user requests concrete low/high kilometres or when the evidence-based "
