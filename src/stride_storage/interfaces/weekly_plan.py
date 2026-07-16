@@ -16,6 +16,13 @@ class WeeklyPlanStore(Protocol):
         source_hash: str | None = None,
     ) -> None: ...
 
+    def create_plan(
+        self, user_id: str, plan: WeeklyPlan, *, generated_by: str | None = None,
+        source_hash: str | None = None,
+    ) -> bool:
+        """Create only when the Shanghai week does not exist."""
+        ...
+
     def get_plan(self, user_id: str, folder: str) -> WeeklyPlan | None: ...
 
     def get_generated_by(self, user_id: str, folder: str) -> str | None: ...

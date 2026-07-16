@@ -109,9 +109,11 @@ def test_runner_seeds_concrete_read_only_plan_target() -> None:
     )
 
     history = capture["state_in"]["history"]
-    assert len(history) == 1
+    assert len(history) == 2
     assert isinstance(history[0], HumanMessage)
-    assert history[0].content == "本周计划是什么"
+    assert "folder = 2026-07-13_07-19(W12)" in history[0].content
+    assert "get_week_plan" in history[0].content
+    assert history[1].content == "本周计划是什么"
 
 
 def test_week_target_does_not_override_an_unrelated_status_objective() -> None:

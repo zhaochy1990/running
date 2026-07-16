@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from stride_core.plan_diff import PlanDiff
 from stride_core.master_plan_diff import MasterPlanDiff
+from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 
 from .target import TargetRef
 from .turn import Turn
@@ -94,7 +95,9 @@ class SpecialistResult(BaseModel):
 
     status: SpecialistStatus
     reply_fragment: str = ""
-    proposals: list[PlanDiff | MasterPlanDiff] = Field(default_factory=list)
+    proposals: list[
+        PlanDiff | MasterPlanDiff | WeeklyPlanCreateProposal
+    ] = Field(default_factory=list)
     clarification: str | None = None
     artifacts: list[ArtifactRef] | None = None
     handoff_hint: str | None = None

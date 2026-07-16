@@ -38,7 +38,9 @@ from rich.text import Text
 
 import stride_core.db as _coredb
 from stride_core.master_plan_diff import MasterPlanDiff
+from stride_core.plan_diff import PlanDiff
 from stride_core.timefmt import utc_iso_to_shanghai_iso
+from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 
 # Our trace loggers (DEBUG when --debug). Third-party stays at WARNING so the
 # httpx / azure / openai request spam doesn't drown the orchestration trace.
@@ -75,8 +77,8 @@ _HELP = """\
 命令:
   /new       开一个新会话（清空上下文）
   /session   列出历史会话，选择并恢复其中一个
-  /proposals 查看当前待选的赛季调整方案
-  /apply N   应用第 N 个赛季调整方案的全部改动
+  /proposals 查看当前待确认的计划提案
+  /apply N   应用第 N 个周计划或赛季计划提案
   /dismiss   放弃当前待选方案
   /help      显示这个帮助
   /exit /quit 退出
@@ -280,20 +282,20 @@ def _format_turn(turn) -> str:
 def _turn_metadata(turn) -> list[str]:
     """Build the compact non-Markdown lines appended after the reply."""
     lines: list[str] = []
-    master_index = 0
+    proposal_index = 0
     for card in turn.proposals:
         proposal = card.proposal
         n_ops = len(getattr(proposal, "ops", []) or [])
         explanation = getattr(proposal, "ai_explanation", "") or ""
-        if card.specialist_id == "season_plan" and isinstance(
-            proposal, MasterPlanDiff
+        if isinstance(
+            proposal, (MasterPlanDiff, PlanDiff, WeeklyPlanCreateProposal)
         ):
-            master_index += 1
-            label = f"提案 {master_index}[season_plan]"
+            proposal_index += 1
+            label = f"提案 {proposal_index}[{card.specialist_id}]"
         else:
-            # Only season-plan proposals are accepted by `/apply N`; keep all
-            # other specialist cards visible without assigning an apply index.
             label = f"提案[{card.specialist_id}]"
+        if isinstance(proposal, WeeklyPlanCreateProposal):
+            n_ops = len(proposal.plan.get("sessions", []))
         lines.append(
             f"📋 {label} · {n_ops} 处改动 — {explanation}"
         )
@@ -418,13 +420,16 @@ def _run_turn(*, user_id: str, session_id: str, message: str, checkpointer):
     )
 
 
-def _master_proposals(turn) -> list[MasterPlanDiff]:
-    """Return only season-plan proposals that the CLI can apply directly."""
+def _applicable_proposals(
+    turn,
+) -> list[MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal]:
+    """Return proposal types the CLI can confirm through Coach routes."""
     return [
         card.proposal
         for card in turn.proposals
-        if card.specialist_id == "season_plan"
-        and isinstance(card.proposal, MasterPlanDiff)
+        if isinstance(
+            card.proposal, (MasterPlanDiff, PlanDiff, WeeklyPlanCreateProposal)
+        )
     ]
 
 
@@ -444,6 +449,37 @@ def _apply_master_proposal(*, user_id: str, proposal: MasterPlanDiff) -> dict:
         ),
         payload={"sub": user_id},
     )
+
+
+def _apply_week_proposal(
+    *, user_id: str, proposal: PlanDiff | WeeklyPlanCreateProposal
+) -> dict:
+    """Create a week or apply every op in an existing-week adjustment."""
+    from stride_server.routes.coach import (
+        CoachWeekApplyRequest,
+        apply_coach_week_diff,
+    )
+
+    if isinstance(proposal, WeeklyPlanCreateProposal):
+        body = CoachWeekApplyRequest(proposal=proposal)
+    else:
+        body = CoachWeekApplyRequest(
+            diff=proposal,
+            accepted_op_ids=[op.id for op in proposal.ops],
+        )
+    return apply_coach_week_diff(
+        proposal.folder, body, payload={"sub": user_id}
+    )
+
+
+def _apply_proposal(
+    *,
+    user_id: str,
+    proposal: MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal,
+) -> dict:
+    if isinstance(proposal, MasterPlanDiff):
+        return _apply_master_proposal(user_id=user_id, proposal=proposal)
+    return _apply_week_proposal(user_id=user_id, proposal=proposal)
 
 
 @click.command()
@@ -539,7 +575,9 @@ def main(
 
     input_history = _InputHistory(_readline)
     input_history.start()
-    pending_proposals: list[MasterPlanDiff] = []
+    pending_proposals: list[
+        MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal
+    ] = []
     try:
         while True:
             try:
@@ -571,11 +609,11 @@ def main(
                 continue
             if line == "/proposals":
                 if not pending_proposals:
-                    click.echo("当前没有待选的赛季调整方案。")
+                    click.echo("当前没有待确认的计划提案。")
                 else:
                     for index, proposal in enumerate(pending_proposals, start=1):
                         click.echo(
-                            f"{index}. {proposal.ai_explanation}（{len(proposal.ops)} 处改动）"
+                            f"{index}. {proposal.ai_explanation}"
                         )
                 continue
             if line == "/dismiss":
@@ -588,23 +626,28 @@ def main(
                     click.echo("用法: /apply N（例如 /apply 2）")
                     continue
                 if not pending_proposals:
-                    click.echo("当前没有待选的赛季调整方案。")
+                    click.echo("当前没有待确认的计划提案。")
                     continue
                 selected = int(parts[1])
                 if selected < 1 or selected > len(pending_proposals):
                     click.echo(f"方案编号无效，请输入 1-{len(pending_proposals)}。")
                     continue
                 try:
-                    result = _apply_master_proposal(
+                    proposal = pending_proposals[selected - 1]
+                    result = _apply_proposal(
                         user_id=user_id, proposal=pending_proposals[selected - 1]
                     )
                 except Exception as exc:  # noqa: BLE001 — keep the REPL alive
                     click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
                     continue
                 pending_proposals = []
-                click.echo(
-                    f"✅ 方案 {selected} 已应用，训练计划已更新至 v{result.get('version', '?')}。"
-                )
+                if isinstance(proposal, MasterPlanDiff):
+                    suffix = f"训练计划已更新至 v{result.get('version', '?')}。"
+                elif result.get("created"):
+                    suffix = f"周计划 {result.get('folder', '')} 已创建。"
+                else:
+                    suffix = f"周计划 {result.get('folder', '')} 已更新。"
+                click.echo(f"✅ 方案 {selected} 已应用，{suffix}")
                 continue
 
             input_history.remember(line)
@@ -621,7 +664,7 @@ def main(
                 continue
 
             _print_turn(turn, interactive=True)
-            pending_proposals = _master_proposals(turn)
+            pending_proposals = _applicable_proposals(turn)
     finally:
         input_history.close()
 

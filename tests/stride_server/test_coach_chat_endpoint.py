@@ -8,6 +8,7 @@ tests; here we verify auth, request/response shape, and session threading.
 from __future__ import annotations
 
 import time
+from datetime import date
 
 import jwt
 import pytest
@@ -19,6 +20,8 @@ from fastapi.testclient import TestClient
 from coach.contracts import ProposalCard, TargetRef, TurnResponse
 from stride_core.master_plan_diff import MasterPlanDiff
 from stride_core.plan_diff import PlanDiff
+from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 from stride_server.config.models import AuthConfig, ServerConfig
 
 USER_UUID = "11111111-2222-4aaa-89ab-123456789012"
@@ -272,6 +275,30 @@ def _apply_body(folder: str = _APPLY_FOLDER, op_ids=("op1",)) -> dict:
     }
 
 
+def _create_body(folder: str = _APPLY_FOLDER) -> dict:
+    plan = WeeklyPlan(
+        week_folder=folder,
+        sessions=(
+                PlannedSession(
+                    date=folder[:10],
+                session_index=0,
+                kind=SessionKind.REST,
+                summary="休息日",
+            ),
+        ),
+        notes_md="创建提案中的完整周级说明",
+    )
+    proposal = WeeklyPlanCreateProposal(
+        proposal_id="create-1",
+        folder=folder,
+        plan=plan.to_dict(),
+        total_distance_km=40,
+        ai_explanation="创建本周计划",
+        created_at="2026-06-22T00:00:00Z",
+    )
+    return {"proposal": proposal.model_dump()}
+
+
 def _stub_apply(coach_routes, monkeypatch) -> dict:
     """Isolate the apply route from storage; capture its single save."""
     captured: dict[str, object] = {}
@@ -362,6 +389,79 @@ def test_apply_requires_auth(chat_client):
         json=_apply_body(),
     )
     assert resp.status_code in (401, 403)
+
+
+def test_apply_creates_week_from_full_proposal(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
+
+    def _create(user_id, plan, *, expected_folder=None, generated_by=None):
+        captured.update(
+            user_id=user_id,
+            plan=plan,
+            folder=expected_folder,
+            generated_by=generated_by,
+        )
+        return True
+
+    monkeypatch.setattr(coach_routes, "create_weekly_plan", _create)
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_create_body(),
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["created"] is True
+    assert captured["generated_by"] == "coach-generation"
+    assert captured["plan"].notes_md == "创建提案中的完整周级说明"
+
+
+def test_apply_create_is_conflict_safe(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
+    monkeypatch.setattr(coach_routes, "create_weekly_plan", lambda *a, **k: False)
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_create_body(),
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 409
+
+
+def test_apply_rejects_create_proposal_folder_mismatch(chat_client):
+    client, private_pem, _coach_routes = chat_client
+    resp = client.post(
+        "/api/users/me/coach/plan/2026-06-15_06-21/apply",
+        json=_create_body(),
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 400
+
+
+def test_apply_rejects_forged_far_future_create(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
+    captured = {"called": False}
+    monkeypatch.setattr(
+        coach_routes,
+        "create_weekly_plan",
+        lambda *a, **k: captured.update(called=True) or True,
+    )
+    far_folder = "2026-07-06_07-12"
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{far_folder}/apply",
+        json=_create_body(far_folder),
+        headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 400
+    assert captured["called"] is False
 
 
 # ---------------------------------------------------------------------------

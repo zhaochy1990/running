@@ -89,7 +89,7 @@ class GetMasterPlanVersions(Protocol):
 
 @runtime_checkable
 class GetWeekPlan(Protocol):
-    def __call__(self) -> ToolResult: ...
+    def __call__(self, *, folder: str | None = None) -> ToolResult: ...
 
 
 @runtime_checkable

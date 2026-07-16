@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from stride_core.plan_diff import PlanDiff
 from stride_core.master_plan_diff import MasterPlanDiff
+from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 
 from .target import TargetRef
 
@@ -35,7 +36,7 @@ class ProposalCard(BaseModel):
     """A write proposal surfaced to the user, confirmed via ``/apply`` (§4.4)."""
 
     specialist_id: str
-    proposal: PlanDiff | MasterPlanDiff
+    proposal: PlanDiff | MasterPlanDiff | WeeklyPlanCreateProposal
     target: TargetRef | None = None
     summary: str = ""
 

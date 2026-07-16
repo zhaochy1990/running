@@ -66,6 +66,8 @@ class ResolverFixtureExpected(BaseModel):
     ambiguity_kind: Literal["intent", "target"] | None
     resolved_from: Literal["anaphora", "explicit", "default", "resolved"]
     self_ambiguity: bool | None = None
+    target_hint_kind: Literal["master", "week", "session"] | None = None
+    target_ref_phrase_contains: str | None = None
 
 
 class ResolverFixture(BaseModel):
@@ -208,6 +210,22 @@ def grade_resolver_output(
             f"self_ambiguity: expected={expected.self_ambiguity} "
             f"actual={draft.self_ambiguity}"
         )
+    if expected.target_hint_kind is not None:
+        actual_kind = draft.target_hint.kind if draft.target_hint is not None else None
+        if actual_kind != expected.target_hint_kind:
+            failures.append(
+                f"target_hint.kind: expected={expected.target_hint_kind!r} "
+                f"actual={actual_kind!r}"
+            )
+    if expected.target_ref_phrase_contains is not None:
+        actual_phrase = (
+            draft.target_hint.ref_phrase if draft.target_hint is not None else None
+        )
+        if actual_phrase is None or expected.target_ref_phrase_contains not in actual_phrase:
+            failures.append(
+                "target_hint.ref_phrase: expected to contain "
+                f"{expected.target_ref_phrase_contains!r} actual={actual_phrase!r}"
+            )
     return failures
 
 
@@ -227,7 +245,9 @@ def run_resolver_fixture(
 
     target_resolution = fixture.input.target_resolution
     target_resolver = (
-        (lambda _target: target_resolution) if target_resolution is not None else None
+        (lambda _target, _hint: target_resolution)
+        if target_resolution is not None
+        else None
     )
     started = time.monotonic()
     try:

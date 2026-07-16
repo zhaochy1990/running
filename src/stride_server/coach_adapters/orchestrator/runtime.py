@@ -20,7 +20,7 @@ from coach.orchestrator import (
 from coach.orchestrator.memory import make_llm_memory_extractor
 from coach.orchestrator.resolver import ResolverDraftFn
 
-from coach.contracts import TargetRef
+from coach.contracts import TargetHint, TargetRef
 from coach.orchestrator.resolver import TargetResolverFn
 
 from ..toolkit import build_stride_toolkit
@@ -66,16 +66,20 @@ def build_specialist_registry(
 
 
 def build_target_resolver(user_id: str) -> TargetResolverFn:
-    """Combined target resolver: a ``master`` target resolves to the active season
-    plan, anything else (week/session/None) to the current week. The Resolver
-    only fires this for a write intent that still lacks a concrete target."""
+    """Resolve master targets or current-week targets for write intents.
+
+    The original hint accompanies the kind-only target so the week resolver can
+    distinguish an explicit current week from another unresolved week.
+    """
     master_resolver = make_current_master_target_resolver(user_id)
     week_resolver = make_current_week_target_resolver(user_id)
 
-    def _resolve(target: TargetRef | None) -> TargetRef | None:
+    def _resolve(
+        target: TargetRef | None, hint: TargetHint | None
+    ) -> TargetRef | None:
         if target is not None and target.kind == "master":
             return master_resolver(target)
-        return week_resolver(target)
+        return week_resolver(target, hint)
 
     return _resolve
 

@@ -33,11 +33,12 @@ def test_coach_prompt_and_tools_enforce_vendor_metric_boundary() -> None:
     assert "stride_training_load" in snapshot
 
 
-def test_get_week_plan_is_a_no_argument_current_week_lookup() -> None:
+def test_get_week_plan_accepts_optional_target_folder() -> None:
     description = _TOOL_DESCRIPTIONS["get_week_plan"]
     schema = _build_args_schema("get_week_plan", GetWeekPlanImpl("user-1"))
 
-    assert "folder" not in schema.model_fields
-    assert "Takes no arguments" in description
+    assert "folder" in schema.model_fields
+    assert schema.model_fields["folder"].is_required() is False
+    assert "target `folder`" in description
     assert "WeeklyPlanStore" in description
     assert "当前周还没有训练计划，你要创建本周的训练计划吗？" in description

@@ -86,9 +86,22 @@ def aggregate(
             active_target=active_target,
         )
 
-    # Priority 2: honest failure when nothing completed.
+    # Priority 2: preserve a specialist's deterministic policy rejection. It is
+    # a user-facing outcome (for example an unsupported generation window), not
+    # an infrastructure failure that should be hidden behind the generic copy.
     completed = [item for item in dispatched if item.result.status == "completed"]
     if not completed:
+        rejected = [
+            item.result.reply_fragment
+            for item in dispatched
+            if item.result.status == "rejected" and item.result.reply_fragment
+        ]
+        if rejected:
+            return TurnResponse(
+                reply="\n\n".join(rejected),
+                proposals=[],
+                active_target=active_target,
+            )
         return TurnResponse(reply=_FAILURE_REPLY, proposals=[], active_target=active_target)
 
     proposals = _proposal_cards(completed, resolver_output)

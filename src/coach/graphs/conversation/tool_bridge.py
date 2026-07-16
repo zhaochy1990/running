@@ -51,8 +51,9 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_master_plan_current": "Active master plan (phases + milestones + training principles) or None.",
     "get_master_plan_versions": "Version history of a master plan id.",
     "get_week_plan": (
-        "Current canonical structured WeeklyPlan (sessions + nutrition + notes), "
-        "resolved by today's Shanghai calendar date from WeeklyPlanStore. Takes no arguments. "
+        "Canonical structured WeeklyPlan from WeeklyPlanStore (sessions + nutrition + notes). "
+        "Pass the injected "
+        "target `folder` when adjusting a specific week; omit it to resolve today's Shanghai week. "
         "When no row covers today it returns available=false with an explicit missing_reason; "
         "answer exactly in Chinese: 当前周还没有训练计划，你要创建本周的训练计划吗？"
     ),
@@ -63,7 +64,12 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "swap_sessions": "Propose swapping the run scheduled on date_a with the one on date_b (PlanDiff).",
     "shift_session": "Propose moving a single session from `date` to `to_date` (PlanDiff).",
     "reduce_intensity": "Propose reducing intensity over `scope` (week / day) by `factor` for `reason`.",
-    "replace_session": "Propose replacing a session at (date, session_index) with `new_kind` + `params`.",
+    "replace_session": (
+        "Propose replacing a session at (date, session_index) with `new_kind` + `params`. "
+        "Use canonical params `summary`, `total_duration_s` (seconds), `total_distance_m` "
+        "(metres), and `notes_md`; `duration_min`/`duration_minutes` and `distance_km` "
+        "are accepted and normalized."
+    ),
     "add_strength_session": "Propose adding a strength session on `date` with `focus` area.",
     "change_pace_target": "Propose changing the pace target of a session to `new_pace_s_per_km`.",
     "regenerate_week": "Propose regenerating the whole week given `reason` and `constraints`.",

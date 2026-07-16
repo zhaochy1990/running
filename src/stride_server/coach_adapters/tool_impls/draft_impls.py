@@ -229,6 +229,32 @@ class ReduceIntensityImpl:
 # ---------------------------------------------------------------------------
 
 
+def _normalise_replace_params(params: dict) -> dict:
+    """Map common model-friendly units to canonical PlannedSession fields."""
+    normalized = dict(params)
+    if normalized.get("total_duration_s") is None:
+        minutes = normalized.get("duration_min")
+        if minutes is None:
+            minutes = normalized.get("duration_minutes")
+        if minutes is not None:
+            try:
+                duration_s = round(float(minutes) * 60)
+            except (TypeError, ValueError):
+                duration_s = 0
+            if duration_s > 0:
+                normalized["total_duration_s"] = duration_s
+    if normalized.get("total_distance_m") is None:
+        distance_km = normalized.get("distance_km")
+        if distance_km is not None:
+            try:
+                distance_m = round(float(distance_km) * 1000)
+            except (TypeError, ValueError):
+                distance_m = 0
+            if distance_m > 0:
+                normalized["total_distance_m"] = distance_m
+    return normalized
+
+
 class ReplaceSessionImpl:
     def __init__(self, user_id: str) -> None:
         self._user_id = user_id
@@ -252,6 +278,7 @@ class ReplaceSessionImpl:
             return _fail(f"db lookup failed: {exc}")
         if sess is None:
             return _fail(f"no session at {date} idx={session_index}")
+        params = _normalise_replace_params(params)
         op = DiffOp(
             id=str(uuid4()),
             op=DiffOpKind.REPLACE_KIND,

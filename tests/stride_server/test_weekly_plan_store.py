@@ -84,6 +84,26 @@ def test_file_store_replaces_same_week_even_when_folder_label_changes(
     assert store.get_plan(USER_A, original.week_folder) == renamed
 
 
+def test_file_store_create_plan_never_replaces_same_week(
+    tmp_path, monkeypatch,
+) -> None:
+    import stride_core.db as core_db
+    from dataclasses import replace
+
+    monkeypatch.setattr(core_db, "USER_DATA_DIR", tmp_path)
+    store = FileWeeklyPlanStore()
+    original = _plan()
+    replacement = replace(
+        original,
+        week_folder="2026-07-13_07-19(replacement)",
+        sessions=(replace(original.sessions[0], summary="should not land"),),
+    )
+
+    assert store.create_plan(USER_A, original, generated_by="coach") is True
+    assert store.create_plan(USER_A, replacement, generated_by="coach") is False
+    assert store.get_plan(USER_A, original.week_folder) == original
+
+
 def test_file_store_rejects_invalid_folder(tmp_path, monkeypatch) -> None:
     import stride_core.db as core_db
     import pytest
@@ -209,6 +229,36 @@ def test_azure_save_keys_entity_by_week_start() -> None:
 
     assert captured["entity"]["RowKey"] == "2026-07-13"
     assert captured["entity"]["week_folder"] == plan.week_folder
+
+
+def test_azure_create_uses_insert_not_upsert() -> None:
+    plan = _plan()
+    captured = {}
+
+    class _Table:
+        def create_entity(self, entity):
+            captured["entity"] = entity
+
+    store = AzureTableWeeklyPlanStore.__new__(AzureTableWeeklyPlanStore)
+    store._plans = type("Connection", (), {"table": lambda self: _Table()})()
+    store.get_current_plan = lambda *_args: None
+
+    assert store.create_plan(USER_A, plan) is True
+    assert captured["entity"]["RowKey"] == "2026-07-13"
+
+
+def test_azure_create_refuses_migration_era_same_week_row() -> None:
+    plan = _plan()
+
+    class _Table:
+        def create_entity(self, _entity):
+            raise AssertionError("must not insert when a legacy row exists")
+
+    store = AzureTableWeeklyPlanStore.__new__(AzureTableWeeklyPlanStore)
+    store._plans = type("Connection", (), {"table": lambda self: _Table()})()
+    store.get_current_plan = lambda *_args: plan
+
+    assert store.create_plan(USER_A, plan) is False
 
 
 def test_table_property_size_limit_is_checked(monkeypatch) -> None:

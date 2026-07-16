@@ -62,6 +62,21 @@ def save_weekly_plan(
     get_weekly_plan_store().save_plan(user_id, plan, **kwargs)
 
 
+def create_weekly_plan(
+    user_id: str, plan: WeeklyPlan, *, expected_folder: str | None = None,
+    generated_by: str | None = None,
+) -> bool:
+    """Atomically create a canonical week; never replace an existing row."""
+    if expected_folder is not None and plan.week_folder != expected_folder:
+        raise ValueError(
+            f"weekly plan folder {plan.week_folder!r} does not match "
+            f"requested folder {expected_folder!r}"
+        )
+    return get_weekly_plan_store().create_plan(
+        user_id, plan, generated_by=generated_by
+    )
+
+
 def plans_in_range(user_id: str, date_from: str, date_to: str) -> list[WeeklyPlan]:
     """Canonical plans whose inclusive bounds overlap the requested range."""
     plans: list[WeeklyPlan] = []

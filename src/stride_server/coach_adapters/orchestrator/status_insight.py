@@ -35,6 +35,12 @@ from ..toolkit import build_stride_toolkit
 logger = logging.getLogger(__name__)
 
 CURRENT_WEEK_MISSING_REPLY = "当前周还没有训练计划，你要创建本周的训练计划吗？"
+_WEEK_PLAN_QUERY_MARKERS = (
+    "周计划",
+    "训练计划",
+    "weekly plan",
+    "课表",
+)
 
 # Builds the qa conversation graph; injectable so the runner is unit-testable
 # without a real toolkit / LLM.
@@ -47,11 +53,13 @@ STATUS_INSIGHT_CARD = SpecialistCard(
         "回答训练状态、疲劳、负荷、训练指标、身体数据相关的问题；解读 PMC/form 趋势、"
         "判断是否过度训练、给现状诊断；查询当前周计划或长期赛季总计划的内容、"
         "阶段和安排；回答跑步知识与训练计算问题，例如配速、距离、用时和操场单圈换算。"
+        "回答训练日历和上海自然周日期问题，例如今天日期、本周周一和周日日期。"
         "只读，不修改任何计划。"
     ),
     tags=[
         "状态", "疲劳", "负荷", "诊断", "指标", "form", "问答",
-        "查询计划", "当前计划", "周计划内容", "赛季总计划", "跑步知识", "配速换算",
+        "查询计划", "当前计划", "周计划内容", "赛季总计划", "训练日历", "自然周",
+        "日期", "跑步知识", "配速换算",
     ],
     examples=[
         "我最近状态怎么样",
@@ -61,6 +69,8 @@ STATUS_INSIGHT_CARD = SpecialistCard(
         "昨天那节间歇质量如何",
         "我当前的总体训练计划是什么",
         "告诉我本周计划，不要修改",
+        "今天是哪天",
+        "这周周一和周日分别是哪天",
         "配速 4:30 对应 400 米操场多少时间一圈",
     ],
     writes=False,
@@ -131,6 +141,21 @@ def make_status_insight_runner(
                         "【用户指向的计划对象，只读】"
                         f"{task.active_target.model_dump(exclude_none=True)}。"
                         "若 kind=master，调用 get_master_plan_current。"
+                    )
+                )
+            )
+        elif (
+            task.active_target is not None
+            and task.active_target.kind in ("week", "session")
+            and task.active_target.folder
+            and any(marker in task.objective.lower() for marker in _WEEK_PLAN_QUERY_MARKERS)
+        ):
+            messages.append(
+                HumanMessage(
+                    content=(
+                        "【用户指向的训练周，只读】"
+                        f"folder = {task.active_target.folder}。"
+                        "调用 get_week_plan 时必须传这个 folder，不要读取当前周。"
                     )
                 )
             )

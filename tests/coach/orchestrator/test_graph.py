@@ -13,6 +13,7 @@ from coach.contracts import (
     SpecialistResult,
     SpecialistTask,
     TargetHint,
+    TargetRef,
     TurnResponse,
 )
 from coach.orchestrator import build_orchestrator_graph, coach_thread_id
@@ -66,6 +67,117 @@ def test_session_memory_accumulates_across_turns() -> None:
     resp2 = _invoke(graph, user_id="u1", session_id="s1", message="第二句")
     # Turn 2's window holds turn 1's user + assistant messages (2 turns).
     assert "窗口 2 轮" in resp2.reply
+
+
+def test_resolver_receives_prior_user_and_assistant_history() -> None:
+    prompts: list[str] = []
+
+    def _draft(_system: str, user_prompt: str) -> ResolverDraft:
+        prompts.append(user_prompt)
+        return ResolverDraft(
+            intents=[
+                IntentHit(
+                    specialist_id="status_insight",
+                    action="read",
+                    confidence=0.95,
+                )
+            ]
+        )
+
+    graph = build_orchestrator_graph(
+        registry=_registry(_echo_runner),
+        draft_fn=_draft,
+        checkpointer=InMemorySaver(),
+    )
+    _invoke(
+        graph,
+        user_id="u1",
+        session_id="s1",
+        message="我当前处于总体训练计划的第几周？",
+    )
+    _invoke(
+        graph,
+        user_id="u1",
+        session_id="s1",
+        message="我希望生成本周的训练计划",
+    )
+
+    assert len(prompts) == 2
+    assert "用户: 我当前处于总体训练计划的第几周？" in prompts[1]
+    assert "教练: 诊断结果（窗口 0 轮）" in prompts[1]
+    assert "# 本轮用户消息\n我希望生成本周的训练计划" in prompts[1]
+
+
+def test_week_creation_followup_keeps_history_and_resolves_week_target() -> None:
+    seen_tasks: list[SpecialistTask] = []
+    drafts = iter(
+        [
+            ResolverDraft(
+                intents=[
+                    IntentHit(
+                        specialist_id="status_insight",
+                        action="read",
+                        confidence=0.95,
+                    )
+                ],
+                target_hint=TargetHint(kind="master", ref_phrase="总体训练计划"),
+            ),
+            ResolverDraft(
+                intents=[
+                    IntentHit(
+                        specialist_id="weekly_plan",
+                        action="write",
+                        confidence=0.95,
+                    )
+                ],
+                target_hint=TargetHint(kind="week", ref_phrase="本周"),
+            ),
+        ]
+    )
+    registry = SpecialistRegistry()
+    registry.register(
+        SpecialistCard(id="status_insight", description="状态查询", writes=False),
+        lambda _task: SpecialistResult(
+            status="completed",
+            reply_fragment="你当前处于总体训练计划第 11 周。",
+        ),
+    )
+
+    def _weekly(task: SpecialistTask) -> SpecialistResult:
+        seen_tasks.append(task)
+        return SpecialistResult(status="completed", reply_fragment="已生成本周计划提案。")
+
+    registry.register(
+        SpecialistCard(id="weekly_plan", description="周计划写入", writes=True),
+        _weekly,
+    )
+    target = TargetRef(kind="week", folder="2026-07-13_07-19")
+    graph = build_orchestrator_graph(
+        registry=registry,
+        draft_fn=lambda _s, _u: next(drafts),
+        target_resolver=lambda _target, _hint: target,
+        checkpointer=InMemorySaver(),
+    )
+
+    _invoke(
+        graph,
+        user_id="u1",
+        session_id="s1",
+        message="我当前处于总体训练计划的第几周？",
+    )
+    response = _invoke(
+        graph,
+        user_id="u1",
+        session_id="s1",
+        message="我希望生成本周的训练计划",
+    )
+
+    assert response.active_target == target
+    assert seen_tasks[0].active_target == target
+    assert [turn.content for turn in seen_tasks[0].conversation_window] == [
+        "我当前处于总体训练计划的第几周？",
+        "你当前处于总体训练计划第 11 周。",
+    ]
 
 
 def test_separate_sessions_do_not_share_memory() -> None:

@@ -16,6 +16,7 @@ venv/
 htmlcov/
 # coach_cli local dev checkpointer (session state, never committed)
 data/_coach_dev/
+data/_jobs_dev/
 .claude/*
 !.claude/commands/
 .codex/

@@ -22,6 +22,8 @@ from coach.contracts import (
     TurnResponse,
 )
 from stride_core.plan_diff import DiffOp, DiffOpKind, PlanDiff
+from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
+from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
@@ -68,6 +70,29 @@ def _master_diff() -> MasterPlanDiff:
     )
 
 
+def _week_create_proposal() -> WeeklyPlanCreateProposal:
+    plan = WeeklyPlan(
+        week_folder="2026-06-22_06-28",
+        sessions=(
+            PlannedSession(
+                date="2026-06-22",
+                session_index=0,
+                kind=SessionKind.REST,
+                summary="休息",
+            ),
+        ),
+        notes_md="完整周级说明",
+    )
+    return WeeklyPlanCreateProposal(
+        proposal_id="wp1",
+        folder=plan.week_folder,
+        plan=plan.to_dict(),
+        total_distance_km=40,
+        ai_explanation="创建本周计划",
+        created_at="2026-06-22T00:00:00Z",
+    )
+
+
 @pytest.mark.parametrize(
     "ref",
     [
@@ -110,6 +135,16 @@ def test_specialist_result_carries_master_diff_proposal() -> None:
     assert len(restored.proposals) == 1
     assert isinstance(restored.proposals[0], MasterPlanDiff)
     assert restored.proposals[0].plan_id == "plan-abc"
+
+
+def test_specialist_result_carries_week_create_proposal() -> None:
+    result = SpecialistResult(status="completed", proposals=[_week_create_proposal()])
+    restored = SpecialistResult.model_validate(result.model_dump())
+
+    assert len(restored.proposals) == 1
+    proposal = restored.proposals[0]
+    assert isinstance(proposal, WeeklyPlanCreateProposal)
+    assert proposal.to_weekly_plan().notes_md == "完整周级说明"
 
 
 def test_specialist_result_carries_multiple_master_diff_proposals() -> None:

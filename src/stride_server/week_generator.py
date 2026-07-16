@@ -20,17 +20,17 @@ _DEFAULT_BASE_KM: float = 40.0
 _DAY_PLAN: list[tuple[str, str, float, str | None, str | None, str | None]] = [
     # Mon — rest
     ("rest",     "休息日",                     0.00,  None,                None, None),
-    # Tue — E medium run ~18%
-    ("run",      "E 轻松跑",                   0.18,  "5:30-6:00/km",      "Z2", "轻松有氧，保持对话配速。"),
-    # Wed — T tempo run ~13%
-    ("run",      "T 节奏跑",                   0.13,  "4:45-5:00/km",      "Z3", "阈值配速，能说短句即可。"),
-    # Thu — E medium run ~18%
-    ("run",      "E 轻松跑",                   0.18,  "5:30-6:00/km",      "Z2", "恢复性轻松跑。"),
-    # Fri — I intervals ~5% (short but intense)
-    ("run",      "I 间歇跑",                   0.05,  "4:15-4:30/km",      "Z5", "400m×6-8，组间慢跑 200m。"),
+    # Tue — E medium run 20%
+    ("run",      "E 轻松跑",                   0.20,  "5:30-6:00/km",      "Z2", "轻松有氧，保持对话配速。"),
+    # Wed — T tempo run 15%
+    ("run",      "T 节奏跑",                   0.15,  "4:45-5:00/km",      "Z3", "阈值配速，能说短句即可。"),
+    # Thu — E medium run 20%
+    ("run",      "E 轻松跑",                   0.20,  "5:30-6:00/km",      "Z2", "恢复性轻松跑。"),
+    # Fri — I intervals 12% (short but intense)
+    ("run",      "I 间歇跑",                   0.12,  "4:15-4:30/km",      "Z5", "400m×6-8，组间慢跑 200m。"),
     # Sat — strength (not counted in weekly km)
     ("strength", "力量训练",                   0.00,  None,                None, "核心 + 臀腿力量，40-50min。"),
-    # Sun — E long run ~33%
+    # Sun — E long run 33% (below the repo's <35% hard gate)
     ("run",      "E 长距离跑",                 0.33,  "5:45-6:15/km",      "Z2", "全程有氧，后半段维持配速。"),
 ]
 

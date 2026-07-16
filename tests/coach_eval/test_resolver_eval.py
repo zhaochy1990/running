@@ -82,6 +82,29 @@ def test_committed_resolver_fixtures_cover_routing_boundaries() -> None:
         fixture for fixture in fixtures if fixture.fixture_id == "resolver-week-read"
     )
     assert week_read.input.utterance == "我这周的训练计划是什么？"
+    create_followup = next(
+        fixture
+        for fixture in fixtures
+        if fixture.fixture_id == "resolver-create-current-week-followup"
+    )
+    assert create_followup.input.conversation_window[-1].content.endswith(
+        "要创建本周的训练计划吗？"
+    )
+    assert create_followup.input.target_resolution is not None
+    master_week_followup = next(
+        fixture
+        for fixture in fixtures
+        if fixture.fixture_id == "resolver-create-current-master-week-followup"
+    )
+    assert "第 11 周" in master_week_followup.input.conversation_window[-1].content
+    assert any(
+        fixture.fixture_id == "resolver-create-next-week-explicit"
+        for fixture in fixtures
+    )
+    assert any(
+        fixture.fixture_id == "resolver-create-week-after-next"
+        for fixture in fixtures
+    )
     tags = {tag for fixture in fixtures for tag in fixture.tags}
     assert {
         "read_write_boundary",
@@ -90,6 +113,12 @@ def test_committed_resolver_fixtures_cover_routing_boundaries() -> None:
         "anaphora",
         "out_of_domain",
         "target_resolution",
+        "simple_question",
+        "short_followup",
+        "missing_plan",
+        "master_week",
+        "next_week",
+        "unsupported_generation_window",
     } <= tags
 
     registry_ids = set(build_resolver_eval_registry().ids())
@@ -176,6 +205,31 @@ def test_grade_resolver_output_rejects_duplicate_intents() -> None:
     failures = grade_resolver_output(fixture, draft=draft, output=output)
 
     assert any(failure.startswith("intents:") for failure in failures)
+
+
+def test_grade_resolver_output_checks_target_hint_contract() -> None:
+    fixture = _fixture().model_copy(
+        update={
+            "expected": _fixture().expected.model_copy(
+                update={
+                    "target_hint_kind": "week",
+                    "target_ref_phrase_contains": "第11周",
+                }
+            )
+        }
+    )
+    draft = _weekly_write_draft()
+    output = ResolverOutput(
+        intents=draft.intents,
+        active_target=TargetRef(
+            kind="week", folder="2026-07-13_07-19(EVAL)"
+        ),
+        resolved_from="resolved",
+    )
+
+    failures = grade_resolver_output(fixture, draft=draft, output=output)
+
+    assert any(failure.startswith("target_hint.ref_phrase:") for failure in failures)
 
 
 def test_run_resolver_fixture_captures_draft_and_production_output() -> None:
