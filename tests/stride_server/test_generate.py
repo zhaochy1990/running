@@ -243,8 +243,10 @@ class TestProgressionFromLastWeek:
         # 40km × 1.05 = 42km; round to nearest 0.5 → 42.0
         assert data["total_distance_km"] == pytest.approx(42.0, abs=0.5)
 
-    def test_poor_completion_reduces_10pct(self, app_client, tmp_path, monkeypatch):
-        """<60% completion → -10% distance."""
+    def test_low_actual_week_uses_actual_volume_not_planned_volume(
+        self, app_client, tmp_path, monkeypatch
+    ):
+        """A missed week must not pretend the planned 40 km were absorbed."""
         import stride_core.db as core_db_mod
         import stride_server.deps as deps_mod
         monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
@@ -275,12 +277,18 @@ class TestProgressionFromLastWeek:
         # Only 2 activities completed (40% of 5)
         for i in range(2):
             day_str = f"2026-05-0{5 + i}"
-            day_compact = day_str.replace("-", "")
             db._conn.execute(
                 "INSERT OR REPLACE INTO activities "
                 "(label_id, name, sport_type, date, distance_m, duration_s) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (f"B{i}", f"Run {i}", 100, day_compact, 8000.0, 2400.0),
+                (
+                    f"B{i}",
+                    f"Run {i}",
+                    100,
+                    f"{day_str}T08:00:00+00:00",
+                    8000.0,
+                    2400.0,
+                ),
             )
         db._conn.commit()
         db.close()
@@ -289,9 +297,10 @@ class TestProgressionFromLastWeek:
         resp = _post(client, token, {"week_start": MONDAY})
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        # planned total = 5 × 8km = 40km; actual = 2 × 8km = 16km
-        # completion 2/5 = 40% < 60% → use planned base 40km × 0.9 = 36km
-        assert data["total_distance_km"] == pytest.approx(36.0, abs=0.5)
+        # Actual total is 16km. With no other completed-week baseline or load
+        # constraint, the normal 5% progression produces 17km; the stale 40km
+        # planned value must not drive the target.
+        assert data["total_distance_km"] == pytest.approx(17.0, abs=0.5)
 
 
 class TestValidation:
