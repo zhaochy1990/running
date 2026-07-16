@@ -16,6 +16,7 @@ import {
   getWeeks,
   sendMasterPlanAdjustMessage,
   type Activity,
+  type MasterPlanAdjustMessageResponse,
 } from '../../api'
 import { UserContext } from '../../UserContextValue'
 import TrainingPlanAdjustPage from '../TrainingPlanAdjustPage'
@@ -137,11 +138,58 @@ function renderAdjustPage() {
   )
 }
 
-async function completeBuildFlow() {
-  fireEvent.click(await screen.findByRole('button', { name: '继续加量 / 强化能力' }))
-  fireEvent.click(await screen.findByRole('button', { name: '专项能力' }))
-  fireEvent.click(await screen.findByRole('button', { name: '4 次跑步' }))
-  return screen.findByText('新计划预览')
+async function chooseDirection(direction = '把周跑量降低到 45–50 公里') {
+  fireEvent.click(await screen.findByRole('button', { name: direction }))
+  fireEvent.click(screen.getByRole('button', { name: '确认调整方向' }))
+  return screen.findByText('你希望调整哪个阶段？')
+}
+
+async function chooseDirectionAndPhase(
+  direction = '把周跑量降低到 45–50 公里',
+  phase = '基础期',
+) {
+  await chooseDirection(direction)
+  fireEvent.click(screen.getByRole('button', { name: phase }))
+  await screen.findByText('已完成')
+}
+
+function proposalResponse(): {
+  ok: true
+  status: number
+  data: MasterPlanAdjustMessageResponse
+} {
+  return {
+    ok: true as const,
+    status: 200,
+    data: {
+      stage: 'proposal' as const,
+      ai_response: '当前负荷支持小幅降低基础期周量。',
+      clarification: null,
+      assessment: {
+        adjustment_request: '基础期：把周跑量降低到 45–50 公里',
+        verdict: 'reasonable' as const,
+        rationale: '近期负荷稳定，降低到该区间不会破坏赛季连续性。',
+      },
+      diff: {
+        diff_id: 'diff-1',
+        plan_id: 'plan-1',
+        ai_explanation: '将基础期周跑量调整到 45–50 公里。',
+        created_at: '2026-06-10T00:00:00Z',
+        ops: [
+          {
+            id: 'op-1',
+            op: 'replace_weekly_range',
+            phase_id: 'phase-1',
+            milestone_id: null,
+            old_value: { weekly_distance_km_low: 42, weekly_distance_km_high: 54 },
+            new_value: { weekly_distance_km_low: 45, weekly_distance_km_high: 50 },
+            spec_patch: { weekly_distance_km_low: 45, weekly_distance_km_high: 50 },
+            accepted: null,
+          },
+        ],
+      },
+    },
+  }
 }
 
 describe('TrainingPlanAdjustPage', () => {
@@ -324,24 +372,75 @@ describe('TrainingPlanAdjustPage', () => {
     })
   })
 
-  it('loads scan data from existing APIs and keeps neutral rows when one source fails', async () => {
+  it('does not load scan data or ask Coach before direction and phase are clear', async () => {
+    renderAdjustPage()
+
+    expect(await screen.findByText('这次具体想怎么调整训练计划？')).toBeInTheDocument()
+    expect(screen.queryByText('STRIDE 正在查看你的情况')).not.toBeInTheDocument()
+    expect(getActivities).not.toHaveBeenCalled()
+    expect(getHealth).not.toHaveBeenCalled()
+    expect(getHrv).not.toHaveBeenCalled()
+    expect(getPMC).not.toHaveBeenCalled()
+    expect(getStrideZones).not.toHaveBeenCalled()
+    expect(getWeeks).not.toHaveBeenCalled()
+    expect(getPlanDays).not.toHaveBeenCalled()
+    expect(sendMasterPlanAdjustMessage).not.toHaveBeenCalled()
+
+    await chooseDirection()
+
+    expect(getActivities).not.toHaveBeenCalled()
+    expect(getHealth).not.toHaveBeenCalled()
+    expect(getPMC).not.toHaveBeenCalled()
+    expect(sendMasterPlanAdjustMessage).not.toHaveBeenCalled()
+  })
+
+  it('skips the phase question when the adjustment does not target a phase', async () => {
+    renderAdjustPage()
+    const direction = '把目标比赛延期到 2026-11-08，并顺延训练计划'
+
+    fireEvent.change(await screen.findByLabelText('这次具体想怎么调整训练计划？'), {
+      target: { value: direction },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '确认调整方向' }))
+
+    expect(screen.queryByText('你希望调整哪个阶段？')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(sendMasterPlanAdjustMessage).toHaveBeenCalledWith(
+        'plan-1',
+        direction,
+        [],
+      )
+    })
+    expect(getActivities).toHaveBeenCalledTimes(1)
+  })
+
+  it('loads scan data only after the target phase is selected', async () => {
     vi.mocked(getHrv).mockRejectedValueOnce(new Error('hrv unavailable'))
 
     renderAdjustPage()
+    await chooseDirectionAndPhase()
 
     expect(await screen.findByText('STRIDE 正在查看你的情况')).toBeInTheDocument()
+    await waitFor(() => expect(getActivities).toHaveBeenCalledTimes(1))
+    expect(getHealth).toHaveBeenCalledTimes(1)
+    expect(getPMC).toHaveBeenCalledTimes(1)
+    expect(sendMasterPlanAdjustMessage).toHaveBeenCalledWith(
+      'plan-1',
+      '基础期：把周跑量降低到 45–50 公里',
+      [],
+    )
     expect(within(screen.getByTestId('scan-row-completion')).getByText('本周完成度')).toBeInTheDocument()
-    expect(screen.getByText('近 2 周训练量')).toBeInTheDocument()
-    expect(screen.getByText('18.0 km / 14天')).toBeInTheDocument()
-    expect(screen.getByText('静息心率 (RHR)')).toBeInTheDocument()
-    expect(screen.getByText('48 bpm · 基线 47')).toBeInTheDocument()
+    expect(screen.getAllByText('近 2 周训练量')).toHaveLength(2)
+    expect(screen.getAllByText('18.0 km / 14天')).toHaveLength(2)
+    expect(screen.getAllByText('静息心率 (RHR)')).toHaveLength(2)
+    expect(screen.getAllByText('48 bpm · 基线 47')).toHaveLength(2)
     expect(screen.getByText('VO₂max 估算')).toBeInTheDocument()
     expect(screen.getByText('56.4')).toBeInTheDocument()
     expect(within(screen.getByTestId('scan-row-hrv')).getByText('暂无数据')).toBeInTheDocument()
     expect(screen.getByText('Z2 有氧 5:45-5:05/km')).toBeInTheDocument()
   })
 
-  it('renders the plan reference and scan anatomy from API data', async () => {
+  it('renders the current plan but keeps data evaluation and proposal locked initially', async () => {
     renderAdjustPage()
 
     expect(await screen.findByText('当前计划')).toBeInTheDocument()
@@ -351,90 +450,109 @@ describe('TrainingPlanAdjustPage', () => {
     expect(screen.getByText(/全程周量曲线 · 23 周/)).toBeInTheDocument()
     expect(screen.getByText(/峰值 66km/)).toBeInTheDocument()
     expect(screen.getByText('阶段划分 · 起止与周数')).toBeInTheDocument()
-    expect(screen.getByText('STRIDE 正在查看你的情况')).toBeInTheDocument()
-    expect(screen.getByText('配速区间')).toBeInTheDocument()
-    expect(screen.getByText('心率区间')).toBeInTheDocument()
-    expect(screen.getByText('本阶段训练总结')).toBeInTheDocument()
-    expect(screen.getByText('STRIDE 初步判断')).toBeInTheDocument()
+    expect(screen.queryByText('STRIDE 正在查看你的情况')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新计划' })).not.toBeInTheDocument()
+    expect(screen.getByText('澄清完成前不读取训练数据、不生成方案')).toBeInTheDocument()
     expect(screen.queryByText(/从 W0 到西马/)).not.toBeInTheDocument()
     expect(screen.queryByText('西安马拉松')).not.toBeInTheDocument()
     expect(screen.queryByText(/峰值 65km/)).not.toBeInTheDocument()
   })
 
-  it('branches to body protection questions for de-load intent', async () => {
+  it('shows no proposal for an unreasonable adjustment and lets the runner revise', async () => {
+    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: {
+        stage: 'assessment',
+        ai_response: '近期负荷不足以支持该增量。',
+        clarification: null,
+        assessment: {
+          adjustment_request: '基础期：把周跑量提高到 55–65 公里',
+          verdict: 'unreasonable',
+          rationale: '近期稳定周量只有 35 公里，直接提高到该区间会造成负荷跳升。',
+        },
+        diff: null,
+      },
+    })
+
     renderAdjustPage()
+    await chooseDirectionAndPhase('把周跑量提高到 55–65 公里')
 
-    fireEvent.click(await screen.findByRole('button', { name: '减量缓冲一段时间' }))
+    expect(await screen.findByText('暂不建议')).toBeInTheDocument()
+    expect(screen.getByText(/直接提高到该区间会造成负荷跳升/)).toBeInTheDocument()
+    expect(screen.queryByText('后端调整建议')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新计划' })).not.toBeInTheDocument()
 
-    expect(await screen.findByText('身体哪里最需要保护？')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '修改我的想法' }))
+    expect(await screen.findByText('这次具体想怎么调整训练计划？')).toBeInTheDocument()
   })
 
-  it('branches to build-focus questions for build intent', async () => {
+  it('unlocks the typed proposal only after a reasonable assessment', async () => {
+    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce(proposalResponse())
     renderAdjustPage()
+    await chooseDirectionAndPhase()
 
-    fireEvent.click(await screen.findByRole('button', { name: '继续加量 / 强化能力' }))
-
-    expect(await screen.findByText('这次重点想建立什么？')).toBeInTheDocument()
-  })
-
-  it('shows a deterministic preview after final answers and toggles current/new plan', async () => {
-    renderAdjustPage()
-
-    await completeBuildFlow()
-    expect(screen.getByText(/本次调整/)).toBeInTheDocument()
-    expect(screen.getByText('专项能力 · 4 次跑步')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '当前计划' }))
-    expect(screen.getByText('训练总纲 · v2 · 2026-06-01')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: '新计划' }))
+    expect(await screen.findByText('后端调整建议')).toBeInTheDocument()
+    expect(screen.getAllByText('将基础期周跑量调整到 45–50 公里。')).toHaveLength(2)
+    expect(screen.getByRole('checkbox')).toBeChecked()
+    expect(screen.getByRole('button', { name: '新计划' })).toBeInTheDocument()
     expect(screen.getByText('STRIDE 重新规划 · 基于本次反馈 · 未保存')).toBeInTheDocument()
+    expect(screen.queryByText('目标比赛 · 不变')).not.toBeInTheDocument()
   })
 
-  it('lets the runner revise answers from the preview step', async () => {
+  it('previews a changed race date from an atomic race proposal', async () => {
+    const response = proposalResponse()
+    const adjustmentRequest = '把目标比赛延期到 2026-11-08，并顺延训练计划'
+    response.data.assessment = {
+      adjustment_request: adjustmentRequest,
+      verdict: 'reasonable',
+      rationale: '官方改期，顺延后仍保留完整减量期。',
+    }
+    response.data.diff = {
+      diff_id: 'diff-race',
+      plan_id: 'plan-1',
+      ai_explanation: '目标比赛和赛季边界顺延到 2026-11-08。',
+      created_at: '2026-06-10T00:00:00Z',
+      ops: [{
+      id: 'op-race',
+      op: 'reschedule_target_race',
+      phase_id: null,
+      milestone_id: null,
+      old_value: { race_date: '2026-10-11' },
+      new_value: { race_date: '2026-11-08' },
+      spec_patch: {
+        race_date: '2026-11-08',
+        phase_updates: [{ phase_id: 'phase-2', end_date: '2026-11-08' }],
+      },
+      accepted: null,
+      }],
+    }
+    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce(response)
     renderAdjustPage()
 
-    await completeBuildFlow()
-    fireEvent.click(screen.getByRole('button', { name: '再调整一下' }))
+    fireEvent.change(await screen.findByLabelText('这次具体想怎么调整训练计划？'), {
+      target: { value: adjustmentRequest },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '确认调整方向' }))
 
-    expect(await screen.findByText('这次想怎么调整训练计划？')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: '继续加量 / 强化能力' })).toBeInTheDocument()
+    expect(await screen.findByText('后端调整建议')).toBeInTheDocument()
+    expect(screen.getByText('目标比赛 · 已调整')).toBeInTheDocument()
+    expect(screen.getByText(/全马 · 2026 \/ 11 \/ 08/)).toBeInTheDocument()
+    expect(screen.getByText(/全程周量曲线 · 27 周/)).toBeInTheDocument()
   })
 
-  it('keeps the local preview and retries adjust-chat errors', async () => {
+  it('retries a failed assessment without exposing a local fake preview', async () => {
     vi.mocked(sendMasterPlanAdjustMessage)
       .mockRejectedValueOnce(new Error('service unavailable'))
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        data: {
-          ai_response: '建议保留预览并生成可选差异。',
-          diff: {
-            diff_id: 'diff-retry',
-            plan_id: 'plan-1',
-            ai_explanation: '建议保留预览并生成可选差异。',
-            created_at: '2026-06-10T00:00:00Z',
-            ops: [{
-              id: 'op-retry',
-              op: 'replace_phase_focus',
-              phase_id: 'phase-1',
-              milestone_id: null,
-              old_value: { focus: '有氧基础与力量耐受' },
-              new_value: { focus: '恢复优先' },
-              spec_patch: { focus: '恢复优先' },
-              accepted: null,
-            }],
-          },
-        },
-      })
+      .mockResolvedValueOnce(proposalResponse())
 
     renderAdjustPage()
-    await completeBuildFlow()
+    await chooseDirectionAndPhase()
 
-    expect(await screen.findByText(/调整建议请求失败/)).toBeInTheDocument()
-    expect(screen.getByText('新计划预览')).toBeInTheDocument()
+    expect(await screen.findByText(/评估请求失败/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '新计划' })).not.toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: '重试后端建议' }))
+    fireEvent.click(screen.getByRole('button', { name: '重试评估' }))
 
     expect(await screen.findByText('后端调整建议')).toBeInTheDocument()
     expect(screen.getByRole('checkbox')).toBeChecked()
@@ -442,50 +560,14 @@ describe('TrainingPlanAdjustPage', () => {
   })
 
   it('renders returned diff ops selected by default and applies selected op ids', async () => {
-    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      data: {
-        ai_response: '建议先减量并调低基础期周量。',
-        diff: {
-          diff_id: 'diff-1',
-          plan_id: 'plan-1',
-          ai_explanation: '建议先减量并调低基础期周量。',
-          created_at: '2026-06-10T00:00:00Z',
-          ops: [
-            {
-              id: 'op-1',
-              op: 'replace_weekly_range',
-              phase_id: 'phase-1',
-              milestone_id: null,
-              old_value: { weekly_distance_km_high: 54 },
-              new_value: { weekly_distance_km_high: 45 },
-              spec_patch: { weekly_distance_km_high: 45 },
-              accepted: null,
-            },
-            {
-              id: 'op-2',
-              op: 'replace_phase_focus',
-              phase_id: 'phase-1',
-              milestone_id: null,
-              old_value: { focus: '有氧基础与力量耐受' },
-              new_value: { focus: '恢复优先' },
-              spec_patch: { focus: '恢复优先' },
-              accepted: null,
-            },
-          ],
-        },
-      },
-    })
+    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce(proposalResponse())
 
     renderAdjustPage()
-    fireEvent.click(await screen.findByRole('button', { name: '减量缓冲一段时间' }))
-    fireEvent.click(await screen.findByRole('button', { name: '跟腱 / 小腿' }))
-    fireEvent.click(await screen.findByRole('button', { name: '3 次跑步' }))
+    await chooseDirectionAndPhase()
 
     expect(await screen.findByText('后端调整建议')).toBeInTheDocument()
     const selectedOps = screen.getAllByRole('checkbox')
-    expect(selectedOps).toHaveLength(2)
+    expect(selectedOps).toHaveLength(1)
     selectedOps.forEach((checkbox) => expect(checkbox).toBeChecked())
 
     fireEvent.click(screen.getByRole('button', { name: '采用这份计划' }))
@@ -494,8 +576,8 @@ describe('TrainingPlanAdjustPage', () => {
       expect(applyMasterPlanAdjustDiff).toHaveBeenCalledWith(
         'plan-1',
         'diff-1',
-        ['op-1', 'op-2'],
-        expect.stringContaining('减量缓冲'),
+        ['op-1'],
+        expect.stringContaining('基础期'),
       )
     })
     expect(await screen.findByText('受影响周次')).toBeInTheDocument()

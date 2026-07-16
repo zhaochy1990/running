@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
+from coach.contracts import SpecialistResult
 
 from stride_core.master_plan import (
     MasterPlan,
@@ -172,31 +173,43 @@ def _get_store() -> FileMasterPlanStore:
 class TestAdjustMessages:
 
     def test_active_plan_returns_diff(self, app_client):
-        """ACTIVE plan + valid LLM JSON → diff returned, diff_id stored."""
+        """Reasonable specialist proposal is returned and kept for legacy apply."""
         client, token, tmp_path, _ = app_client
         store = _get_store()
         plan = _make_plan(status=MasterPlanStatus.ACTIVE)
         store.save_plan(plan)
 
         phase_id = plan.phases[0].id
-        llm_output = f"""---BEGIN_MP_DIFF---
-{{
-  "ai_response": "已将基础期延长至 7 月 20 日，请注意清理手表中相关周次的训练",
-  "ops": [
-    {{
-      "op": "resize_phase",
-      "phase_id": "{phase_id}",
-      "milestone_id": null,
-      "old_value": {{"end_date": "2026-07-06"}},
-      "new_value": {{"end_date": "2026-07-20"}},
-      "spec_patch": {{"end_date": "2026-07-20"}}
-    }}
-  ]
-}}
----END_MP_DIFF---"""
+        diff = MasterPlanDiff(
+            diff_id=str(uuid4()),
+            plan_id=plan.plan_id,
+            ops=[MasterPlanDiffOp(
+                id=str(uuid4()),
+                op=MasterPlanDiffOpKind.RESIZE_PHASE,
+                phase_id=phase_id,
+                old_value={"end_date": "2026-07-06"},
+                new_value={"end_date": "2026-07-20"},
+                spec_patch={"end_date": "2026-07-20"},
+            )],
+            ai_explanation="数据支持把基础期延长两周",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
 
-        with patch.object(mp_mod, "LLMClient") as MockLLM:
-            MockLLM.return_value.chat_sync.return_value = llm_output
+        def fake_factory(**kwargs):
+            kwargs["state_observer"]({
+                "master_adjustment_assessment": {
+                    "adjustment_request": "把基础期延长两周",
+                    "verdict": "reasonable",
+                    "rationale": "当前负荷与目标窗口支持延长。",
+                }
+            })
+            return lambda task: SpecialistResult(
+                status="completed",
+                reply_fragment="数据支持把基础期延长两周",
+                proposals=[diff],
+            )
+
+        with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
             resp = client.post(
                 f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
                 json={"message": "把基础期延长两周", "history": []},
@@ -205,6 +218,8 @@ class TestAdjustMessages:
 
         assert resp.status_code == 200, resp.text
         data = resp.json()
+        assert data["stage"] == "proposal"
+        assert data["assessment"]["verdict"] == "reasonable"
         assert isinstance(data["ai_response"], str)
         assert data["diff"] is not None
         assert len(data["diff"]["ops"]) == 1
@@ -220,12 +235,11 @@ class TestAdjustMessages:
         plan = _make_plan(status=MasterPlanStatus.DRAFT)
         store.save_plan(plan)
 
-        with patch.object(mp_mod, "LLMClient"):
-            resp = client.post(
-                f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
-                json={"message": "调整一下", "history": []},
-                headers=_auth(token),
-            )
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
+            json={"message": "把基础期延长两周", "history": []},
+            headers=_auth(token),
+        )
 
         assert resp.status_code == 409, resp.text
 
@@ -233,12 +247,11 @@ class TestAdjustMessages:
         """Non-existent plan_id → 404."""
         client, token, tmp_path, _ = app_client
 
-        with patch.object(mp_mod, "LLMClient"):
-            resp = client.post(
-                "/api/users/me/master-plan/nonexistent-id/adjust/messages",
-                json={"message": "调整", "history": []},
-                headers=_auth(token),
-            )
+        resp = client.post(
+            "/api/users/me/master-plan/nonexistent-id/adjust/messages",
+            json={"message": "把基础期延长两周", "history": []},
+            headers=_auth(token),
+        )
 
         assert resp.status_code == 404, resp.text
 
@@ -249,33 +262,157 @@ class TestAdjustMessages:
         plan = _make_plan()
         store.save_plan(plan)
 
-        with patch.object(mp_mod, "LLMClient") as MockLLM:
-            MockLLM.side_effect = mp_mod.LLMUnavailable("no config")
+        def fail_factory(**kwargs):
+            return lambda task: (_ for _ in ()).throw(RuntimeError("no config"))
+
+        with patch.object(mp_mod, "make_season_plan_runner", side_effect=fail_factory):
             resp = client.post(
                 f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
-                json={"message": "调整", "history": []},
+                json={"message": "把基础期延长两周", "history": []},
                 headers=_auth(token),
             )
 
         assert resp.status_code == 503, resp.text
 
-    def test_non_json_llm_output_returns_ai_response_diff_null(self, app_client):
-        """LLM returns plain text → diff=null."""
+    def test_vague_direction_clarifies_without_plan_data_or_llm(self, app_client):
         client, token, tmp_path, _ = app_client
         store = _get_store()
         plan = _make_plan()
         store.save_plan(plan)
 
-        with patch.object(mp_mod, "LLMClient") as MockLLM:
-            MockLLM.return_value.chat_sync.return_value = "好的，我来看看怎么调整。"
+        with (
+            patch.object(mp_mod, "get_master_plan_store") as get_store,
+            patch.object(mp_mod, "make_season_plan_runner") as make_runner,
+            patch.object(mp_mod, "get_generator_llm") as get_llm,
+        ):
             resp = client.post(
                 f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
-                json={"message": "调整", "history": []},
+                json={"message": "我想调整整体训练计划", "history": []},
                 headers=_auth(token),
             )
 
         assert resp.status_code == 200, resp.text
+        assert resp.json()["stage"] == "clarification"
         assert resp.json()["diff"] is None
+        assert "具体怎么调整" in resp.json()["clarification"]
+        get_store.assert_not_called()
+        make_runner.assert_not_called()
+        get_llm.assert_not_called()
+
+    def test_missing_phase_clarifies_without_plan_data_or_llm(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+
+        with (
+            patch.object(mp_mod, "get_master_plan_store") as get_store,
+            patch.object(mp_mod, "make_season_plan_runner") as make_runner,
+            patch.object(mp_mod, "get_generator_llm") as get_llm,
+        ):
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
+                json={"message": "把周跑量降到 45 公里", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["stage"] == "clarification"
+        assert "哪个阶段" in resp.json()["clarification"]
+        get_store.assert_not_called()
+        make_runner.assert_not_called()
+        get_llm.assert_not_called()
+
+    def test_phase_only_followup_restores_original_request(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+        captured = {}
+
+        def fake_factory(**kwargs):
+            def run(task):
+                captured["task"] = task
+                kwargs["state_observer"]({
+                    "master_adjustment_assessment": {
+                        "adjustment_request": "专项期：训练重点改成上坡力量与跑姿经济性",
+                        "verdict": "unreasonable",
+                        "rationale": "当前阶段不适合加入该重点。",
+                    }
+                })
+                return SpecialistResult(
+                    status="completed",
+                    reply_fragment="当前阶段不适合加入该重点。",
+                )
+            return run
+
+        with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
+                json={
+                    "message": "专项期",
+                    "history": [
+                        {"role": "user", "content": "训练重点改成上坡力量与跑姿经济性"},
+                        {
+                            "role": "assistant",
+                            "content": "你希望调整哪个阶段？确认阶段后我再加载数据评估。",
+                        },
+                    ],
+                },
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["stage"] == "assessment"
+        assert captured["task"].objective == "专项期"
+        assert captured["task"].conversation_window[-2].content.startswith("训练重点")
+
+    def test_unreasonable_assessment_never_returns_diff(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+        unsafe_diff = MasterPlanDiff(
+            diff_id=str(uuid4()),
+            plan_id=plan.plan_id,
+            ops=[MasterPlanDiffOp(
+                id=str(uuid4()),
+                op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+                phase_id=plan.phases[0].id,
+                old_value={"weekly_distance_km_high": 50},
+                new_value={"weekly_distance_km_high": 150},
+                spec_patch={"weekly_distance_km_high": 150},
+            )],
+            ai_explanation="不应泄漏的方案",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        def fake_factory(**kwargs):
+            kwargs["state_observer"]({
+                "master_adjustment_assessment": {
+                    "adjustment_request": "把基础期周跑量加到 150 公里",
+                    "verdict": "unreasonable",
+                    "rationale": "远高于近期负荷，受伤风险过高。",
+                }
+            })
+            return lambda task: SpecialistResult(
+                status="completed",
+                reply_fragment="远高于近期负荷，受伤风险过高。",
+                proposals=[unsafe_diff],
+            )
+
+        with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
+                json={"message": "把基础期周跑量加到 150 公里", "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["stage"] == "assessment"
+        assert resp.json()["assessment"]["verdict"] == "unreasonable"
+        assert resp.json()["diff"] is None
+        assert mp_mod._PENDING_MP_DIFFS == {}
 
 
 # ===========================================================================
@@ -289,26 +426,34 @@ class TestAdjustApply:
         self, client, token, plan, phase_id: str
     ) -> tuple[str, str]:
         """Helper: call /adjust/messages, return (diff_id, op_id)."""
-        llm_output = f"""---BEGIN_MP_DIFF---
-{{
-  "ai_response": "已延长基础期",
-  "ops": [
-    {{
-      "op": "resize_phase",
-      "phase_id": "{phase_id}",
-      "milestone_id": null,
-      "old_value": {{"end_date": "2026-07-06"}},
-      "new_value": {{"end_date": "2026-07-27"}},
-      "spec_patch": {{"end_date": "2026-07-27"}}
-    }}
-  ]
-}}
----END_MP_DIFF---"""
-        with patch.object(mp_mod, "LLMClient") as MockLLM:
-            MockLLM.return_value.chat_sync.return_value = llm_output
+        diff = MasterPlanDiff(
+            diff_id=str(uuid4()), plan_id=plan.plan_id,
+            ops=[MasterPlanDiffOp(
+                id=str(uuid4()), op=MasterPlanDiffOpKind.RESIZE_PHASE,
+                phase_id=phase_id, old_value={"end_date": "2026-07-06"},
+                new_value={"end_date": "2026-07-27"},
+                spec_patch={"end_date": "2026-07-27"},
+            )],
+            ai_explanation="已延长基础期",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        def fake_factory(**kwargs):
+            kwargs["state_observer"]({
+                "master_adjustment_assessment": {
+                    "adjustment_request": "把基础期延长两周",
+                    "verdict": "reasonable",
+                    "rationale": "合理",
+                }
+            })
+            return lambda task: SpecialistResult(
+                status="completed", reply_fragment="已延长基础期", proposals=[diff]
+            )
+
+        with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
             resp = client.post(
                 f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
-                json={"message": "延长基础期", "history": []},
+                json={"message": "把基础期延长两周", "history": []},
                 headers=_auth(token),
             )
         assert resp.status_code == 200, resp.text

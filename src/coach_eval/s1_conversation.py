@@ -13,7 +13,7 @@ from datetime import date
 from types import SimpleNamespace
 from typing import Any
 
-from coach.contracts import SpecialistTask, TargetRef
+from coach.contracts import SpecialistTask, TargetRef, Turn
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.tool_bridge import MASTER_ASSESSMENT_TOOL_NAME
 from coach.schemas import ToolResult
@@ -185,6 +185,13 @@ def _contract_violations(artifact: dict, expected: dict) -> list[str]:
         violations.append(
             f"clarification_required={clarification_required}, got {has_clarification}"
         )
+    clarification_contains = expected.get("clarification_contains")
+    if clarification_contains and clarification_contains not in str(
+        result.get("clarification") or ""
+    ):
+        violations.append(
+            f"clarification missing expected text {clarification_contains!r}"
+        )
     expected_proposals = expected.get("proposal_count")
     if isinstance(expected_proposals, int) and len(proposals) != expected_proposals:
         violations.append(
@@ -208,6 +215,21 @@ def _contract_violations(artifact: dict, expected: dict) -> list[str]:
         violations.append(
             f"assessment verdict expected {assessment_verdict!r}, "
             f"got {assessment.get('verdict')!r}"
+        )
+    assessment_request = expected.get("assessment_request")
+    if (
+        assessment_request
+        and assessment.get("adjustment_request") != assessment_request
+    ):
+        violations.append(
+            f"assessment request expected {assessment_request!r}, "
+            f"got {assessment.get('adjustment_request')!r}"
+        )
+    effective_request = expected.get("effective_request")
+    if effective_request and artifact.get("effective_request") != effective_request:
+        violations.append(
+            f"effective request expected {effective_request!r}, "
+            f"got {artifact.get('effective_request')!r}"
         )
     if required_reads and assessment_verdict:
         try:
@@ -305,10 +327,15 @@ def run_s1_conversation_fixture(
     )
     started = time.monotonic()
     try:
+        conversation_window = [
+            Turn.model_validate(item)
+            for item in (fixture_input.get("conversation_window") or [])
+        ]
         result = runner(
             SpecialistTask(
                 objective=str(fixture_input.get("message") or ""),
                 active_target=TargetRef(kind="master", plan_id=plan.plan_id),
+                conversation_window=conversation_window,
             )
         )
     except Exception as exc:  # noqa: BLE001 - eval boundary
@@ -322,6 +349,7 @@ def run_s1_conversation_fixture(
 
     artifact = {
         "evaluation_path": "master_chat",
+        "effective_request": captured_state.get("master_adjustment_request"),
         "result": result.model_dump(mode="json"),
         "tool_trace": list(captured_state.get("tool_trace") or []),
         "consulted_tools": list(captured_state.get("consulted_tools") or []),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from langchain_core.messages import AIMessage
+
 from coach.contracts import AthleteMemory, MemoryWrite
 from coach.orchestrator.memory import (
     MemoryExtraction,
@@ -9,6 +11,7 @@ from coach.orchestrator.memory import (
     dedup_merge,
     format_memory_context,
     load_active_memories,
+    make_llm_memory_extractor,
     memory_receipt,
     should_extract,
     write_memories,
@@ -34,6 +37,34 @@ class FakeStore:
             self.mems[user_id][memory_id] = m.model_copy(update={"status": "resolved"})
             return True
         return False
+
+
+def test_memory_extractor_uses_portable_schema_tool() -> None:
+    captured: dict[str, object] = {}
+
+    class _Structured:
+        def invoke(self, _messages):
+            return AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": "MemoryExtraction",
+                    "args": {"writes": []},
+                    "id": "call-1",
+                    "type": "tool_call",
+                }],
+            )
+
+    class _Model:
+        def bind_tools(self, schemas, **kwargs):
+            captured.update(schemas=schemas, kwargs=kwargs)
+            return _Structured()
+
+    extractor = make_llm_memory_extractor(_Model())
+
+    extractor("sys", "user")
+
+    assert captured["schemas"] == [MemoryExtraction]
+    assert captured["kwargs"] == {"parallel_tool_calls": False}
 
 
 def test_should_extract_prefilter():

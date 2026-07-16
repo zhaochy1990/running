@@ -26,7 +26,9 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from coach.contracts import SpecialistTask, TargetRef, Turn
 
 from stride_core.master_plan import MasterPlanStatus, _apply_review_diff
 from stride_core.master_plan_diff import (
@@ -45,6 +47,11 @@ from .. import llm_client as _llm_client_mod
 from ..llm_client import LLMClient, LLMError, LLMUnavailable
 from .. import master_plan_generator
 from ..master_plan_store import get_master_plan_store
+from ..coach_adapters.orchestrator.season_plan import (
+    clarification_for_season_plan_task,
+    make_season_plan_runner,
+)
+from ..coach_runtime import get_generator_llm
 
 logger = logging.getLogger(__name__)
 
@@ -980,59 +987,9 @@ def get_master_plan_by_id(
 # ===========================================================================
 
 
-def _build_adjust_system_prompt(plan_summary: str) -> str:
-    return f"""你是一名专业的跑步教练助手，帮助运动员调整已激活的长期训练总纲（master plan）。
-
-当前训练总纲（已激活）：
-{plan_summary}
-
-重要约束：
-1. 该总纲已激活，用户正在按此计划训练。
-2. 已经过去的阶段不可改动（start_date 在今日之前的阶段请勿修改起始日期）。
-3. 已推送到手表的训练将失效，应在回复中提醒用户清理受影响周次的手表训练。
-4. 新增阶段或调整阶段必须从今日之后开始。
-
-你的任务：理解用户的调整请求，输出严格 JSON，格式如下：
-
----BEGIN_MP_DIFF---
-{{
-  "ai_response": "中文自然语言回复，解释做了哪些调整，并提醒用户受影响的周次需清理手表训练",
-  "ops": [
-    {{
-      "op": "<MasterPlanDiffOpKind>",
-      "phase_id": "<phase uuid 或 null>",
-      "milestone_id": "<milestone uuid 或 null>",
-      "old_value": {{}},
-      "new_value": {{}},
-      "spec_patch": {{}}
-    }}
-  ]
-}}
----END_MP_DIFF---
-
-MasterPlanDiffOpKind 枚举值（只能用这些）：{_DIFF_OP_KINDS_STR}
-
-spec_patch 说明（按 op 类型）：
-- add_phase: {{id, name, start_date, end_date, focus, weekly_distance_km_low, weekly_distance_km_high, key_session_types, milestone_ids}}
-- remove_phase: null（phase_id 指定）
-- resize_phase: {{start_date?, end_date?}}（phase_id 指定）
-- replace_phase_focus: {{focus}}（phase_id 指定）
-- replace_weekly_range: {{weekly_distance_km_low?, weekly_distance_km_high?}}（phase_id 指定）
-- add_milestone: {{id, type, date, phase_id, target, completed_actual?}}
-- remove_milestone: null（milestone_id 指定）
-- replace_milestone_date: {{date}}（milestone_id 指定）
-- replace_milestone_target: {{target}}（milestone_id 指定）
-
-规则：
-1. 如果用户请求无需修改（只是询问），ops 数组为空，ai_response 正常回答。
-2. 只修改用户明确要求的内容。
-3. 输出必须包含 ---BEGIN_MP_DIFF--- 和 ---END_MP_DIFF--- 哨兵。
-4. 哨兵之间必须是可被 json.loads() 解析的纯 JSON。"""
-
-
 class AdjustMessagesRequest(BaseModel):
     message: str
-    history: list[dict] = []
+    history: list[dict] = Field(default_factory=list)
 
 
 class AdjustApplyRequest(BaseModel):
@@ -1161,10 +1118,30 @@ def adjust_messages(
     body: AdjustMessagesRequest,
     payload: dict = Depends(require_bearer),
 ) -> dict[str, Any]:
-    """Send a chat message during active-plan adjustment; get AI response + optional diff."""
+    """Run active-plan adjustment through the canonical season specialist."""
     user_id: str = payload["sub"]
-    store = get_master_plan_store()
+    conversation_window = [
+        Turn(role=item["role"], content=str(item["content"]))
+        for item in body.history
+        if item.get("role") in {"user", "assistant"}
+        and str(item.get("content") or "").strip()
+    ]
+    task = SpecialistTask(
+        objective=body.message,
+        active_target=TargetRef(kind="master", plan_id=plan_id),
+        conversation_window=conversation_window,
+    )
+    clarification = clarification_for_season_plan_task(task)
+    if clarification is not None:
+        return {
+            "stage": "clarification",
+            "ai_response": clarification,
+            "clarification": clarification,
+            "assessment": None,
+            "diff": None,
+        }
 
+    store = get_master_plan_store()
     plan = store.get_plan(user_id, plan_id)
     if plan is None:
         raise HTTPException(
@@ -1185,54 +1162,75 @@ def adjust_messages(
             ),
         )
 
-    plan_summary = _build_plan_summary(plan)
-    system_prompt = _build_adjust_system_prompt(plan_summary)
+    observed_state: dict[str, Any] = {}
 
-    messages: list[dict] = list(body.history)
-    messages.append({"role": "user", "content": body.message})
+    def _observe(state: dict[str, Any]) -> None:
+        observed_state.update(state)
 
+    # The LLM is a factory on purpose: make_season_plan_runner performs both
+    # deterministic clarification gates before it constructs a provider or a
+    # toolkit, so vague requests do not load athlete data or call any model.
+    runner = make_season_plan_runner(
+        user_id=user_id,
+        llm_factory=get_generator_llm,
+        plan_store=store,
+        state_observer=_observe,
+    )
     try:
-        llm = LLMClient()
-        raw_response = llm.chat_sync(system_prompt, messages, max_tokens=4096)
-    except (LLMUnavailable, _llm_client_mod.LLMUnavailable) as exc:
-        logger.warning("LLMUnavailable in adjust_messages: %s", exc)
+        result = runner(task)
+    except Exception:  # noqa: BLE001 — legacy HTTP compatibility boundary
+        logger.exception("season_plan failed in adjust_messages")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI 教练当前不可用，请稍后重试",
         )
-    except (LLMError, _llm_client_mod.LLMError) as exc:
-        if exc.retryable:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"AI 服务暂时不可用，请稍后重试：{exc}",
-            )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI 服务返回错误：{exc}",
-        )
 
-    ai_response, ops_list = _parse_review_llm_output(raw_response)
+    if result.status == "needs_clarification":
+        clarification = result.clarification or result.reply_fragment
+        return {
+            "stage": "clarification",
+            "ai_response": clarification,
+            "clarification": clarification,
+            "assessment": None,
+            "diff": None,
+        }
 
-    if ops_list is None or not isinstance(ops_list, list):
-        return {"ai_response": ai_response, "diff": None}
+    assessment = observed_state.get("master_adjustment_assessment")
+    if not isinstance(assessment, dict):
+        assessment = None
+    verdict = assessment.get("verdict") if assessment else None
+    proposals = [
+        proposal
+        for proposal in result.proposals
+        if isinstance(proposal, MasterPlanDiff) and proposal.plan_id == plan_id
+    ]
+    if verdict != "reasonable":
+        # Defense in depth at the HTTP boundary. The conversation graph already
+        # enforces this, but no legacy response may surface or cache a diff
+        # without the matching reasonable assessment.
+        proposals = []
+    for proposal in proposals:
+        _mp_diff_store(user_id, plan_id, proposal)
 
-    diff_ops = _build_mp_diff_ops(ops_list)
-    diff_id = str(uuid4())
-    created_at = datetime.now(timezone.utc).isoformat()
-
-    diff = MasterPlanDiff(
-        diff_id=diff_id,
-        plan_id=plan_id,
-        ops=diff_ops,
-        ai_explanation=ai_response,
-        created_at=created_at,
+    if proposals:
+        stage = "proposal"
+    elif verdict == "needs_clarification":
+        stage = "clarification"
+    else:
+        stage = "assessment"
+    reply = result.reply_fragment or (
+        str(assessment.get("rationale") or "") if assessment else ""
     )
-
-    _mp_diff_store(user_id, plan_id, diff)
-
+    clarification = reply if stage == "clarification" else None
     return {
-        "ai_response": ai_response,
-        "diff": diff.model_dump(),
+        "stage": stage,
+        "ai_response": reply,
+        "clarification": clarification,
+        "assessment": assessment,
+        # The legacy Web apply endpoint accepts one pending diff. Normal UI
+        # requests produce exactly one proposal; explicit alternatives remain
+        # available through the canonical /coach/chat Pattern-Y endpoint.
+        "diff": proposals[0].model_dump() if proposals else None,
     }
 
 

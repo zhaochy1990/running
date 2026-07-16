@@ -3,7 +3,7 @@
 The season_plan expert **amends** the athlete's long-term master plan (赛季计划/
 总纲): extend/compress a phase, shift or retarget a milestone, propose
 alternatives, or clear-for-regeneration. It already exists as the ``master_chat``
-scope of the conversation graph (9 real master-scope draft tools that emit one
+scope of the conversation graph (10 real master-scope draft tools that emit one
 or more ``MasterPlanDiff`` values), so this adapter dresses it in the
 SpecialistContract and returns the diffs as Pattern-Y proposals.
 
@@ -44,6 +44,7 @@ from coach.contracts import (
     SpecialistTask,
     TargetRef,
     Turn,
+    TurnResponse,
 )
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
@@ -86,9 +87,62 @@ _CONFLICTING_DIRECTIONS_RE = re.compile(
     r"(?:increase|raise|extend|advance|keep)",
     re.IGNORECASE,
 )
+_PHASE_TARGET_REQUIRED_RE = re.compile(
+    r"(?:训练重点|重点(?:改|调|放)|侧重|聚焦|专注|"
+    r"周跑量|周量区间|训练量|减量|加量|weekly\s+(?:distance|volume|range)|"
+    r"延长|缩短|extend|shorten|compress|"
+    r"focus|emphasi[sz]e|prioriti[sz]e)",
+    re.IGNORECASE,
+)
+_EXPLICIT_PHASE_TARGET_RE = re.compile(
+    r"(?:基础期|基础阶段|base\s*(?:phase)?|"
+    r"专项期|专项阶段|强化期|build\s*(?:phase)?|"
+    r"高峰期|赛前期|peak\s*(?:phase)?|"
+    r"减量期|调整期|taper\s*(?:phase)?|"
+    r"恢复期|恢复阶段|recovery\s*(?:phase)?|"
+    r"当前阶段|现阶段|这个阶段|本阶段|下一阶段|下个阶段|后续阶段|"
+    r"第\s*[一二三四五六七八九十0-9]+\s*(?:个)?阶段|"
+    r"phase[-_ ]?[a-z0-9]+)",
+    re.IGNORECASE,
+)
+_PHASE_ONLY_ANSWER_RE = re.compile(
+    r"\s*(?:就|选|选择|目标(?:是|为)?|调整)?\s*"
+    r"(?:基础期|基础阶段|base\s*(?:phase)?|"
+    r"专项期|专项阶段|强化期|build\s*(?:phase)?|"
+    r"高峰期|赛前期|peak\s*(?:phase)?|"
+    r"减量期|调整期|taper\s*(?:phase)?|"
+    r"恢复期|恢复阶段|recovery\s*(?:phase)?|"
+    r"当前阶段|现阶段|这个阶段|本阶段|下一阶段|下个阶段|后续阶段|"
+    r"第\s*[一二三四五六七八九十0-9]+\s*(?:个)?阶段|"
+    r"phase[-_ ]?[a-z0-9]+)"
+    r"\s*(?:吧)?\s*[。.!！]?\s*",
+    re.IGNORECASE,
+)
 _DIRECTION_CLARIFICATION = (
     "你希望具体怎么调整整体训练计划？请先告诉我你的调整方向，例如想增加或减少"
     "哪个阶段的训练量、延长或缩短哪个阶段、移动比赛日期，或者修改目标。"
+)
+_PHASE_TARGET_CLARIFICATION = (
+    "你希望调整哪个阶段？请指定阶段，例如基础期、专项期、调整期，"
+    "或者明确说当前阶段/下一阶段。确认阶段后我再加载数据评估这个想法。"
+)
+_MASTER_ADJUSTMENT_CONTEXT_RE = re.compile(
+    r"(?:总计划|整体训练计划|总纲|赛季计划|master\s*plan|"
+    r"训练重点|周跑量|周量区间|(?:延长|缩短).{0,12}阶段)",
+    re.IGNORECASE,
+)
+_MASTER_WRITE_CUE_RE = re.compile(
+    r"(?:调整|修改|改成|改为|优化|重排|重新生成|增加|加大|降低|减少|减量|"
+    r"延长|缩短|前移|后移|推迟|延期|侧重|聚焦|专注|"
+    r"adjust|change|modify|regenerate|increase|decrease|reduce|extend|shorten|shift)",
+    re.IGNORECASE,
+)
+_MASTER_ADVICE_QUESTION_RE = re.compile(
+    r"(?:要不要|是否(?:需要|应该)?|需不需要|该不该|应不应该|"
+    r"你觉得.{0,12}(?:需要|应该|有必要)|"
+    r"(?:我|现在|当前).{0,8}(?:需要|有必要).{0,16}(?:吗|么|[?？])|"
+    r"do\s+i\s+need|should\s+i)",
+    re.IGNORECASE,
 )
 
 
@@ -174,6 +228,91 @@ def _needs_direction_clarification(objective: str) -> bool:
     return not bool(_CONCRETE_DIRECTION_RE.search(objective))
 
 
+def _clarification_for_objective(objective: str) -> str | None:
+    """Return the pre-data clarification needed for this write request."""
+    if _needs_direction_clarification(objective):
+        return _DIRECTION_CLARIFICATION
+    if (
+        _PHASE_TARGET_REQUIRED_RE.search(objective)
+        and not _EXPLICIT_PHASE_TARGET_RE.search(objective)
+    ):
+        return _PHASE_TARGET_CLARIFICATION
+    return None
+
+
+def _effective_objective_for_task(task: SpecialistTask) -> str:
+    """Recover the full request behind a phase-only clarification answer."""
+    objective = task.objective.strip()
+    if _clarification_for_objective(objective) != _DIRECTION_CLARIFICATION:
+        return objective
+    if not _PHASE_ONLY_ANSWER_RE.fullmatch(objective):
+        return objective
+
+    turns = list(task.conversation_window)
+    if (
+        len(turns) < 2
+        or turns[-1].role != "assistant"
+        or turns[-2].role != "user"
+        or "哪个阶段" not in turns[-1].content
+        or "确认阶段后" not in turns[-1].content
+    ):
+        return objective
+    prior_user = turns[-2].content
+    if (
+        not prior_user
+        or _clarification_for_objective(prior_user)
+        != _PHASE_TARGET_CLARIFICATION
+    ):
+        return objective
+    return f"{objective}：{prior_user}"
+
+
+def clarification_for_season_plan_task(task: SpecialistTask) -> str | None:
+    """Public deterministic preflight shared by HTTP adapters and the runner.
+
+    It intentionally performs no store, toolkit, or model access.  Adapters can
+    therefore answer clarification turns before even looking up the active plan.
+    """
+    return _clarification_for_objective(_effective_objective_for_task(task))
+
+
+def preflight_season_plan_turn(
+    objective: str, conversation_window: list[Turn]
+) -> TurnResponse | None:
+    """Short-circuit incomplete master-adjustment turns before orchestration."""
+    continuing_clarification = bool(
+        conversation_window
+        and conversation_window[-1].role == "assistant"
+        and (
+            "具体怎么调整" in conversation_window[-1].content
+            or (
+                "哪个阶段" in conversation_window[-1].content
+                and "确认阶段后" in conversation_window[-1].content
+            )
+        )
+    )
+    if not continuing_clarification and _MASTER_ADVICE_QUESTION_RE.search(objective):
+        return None
+    if not continuing_clarification and not (
+        _MASTER_ADJUSTMENT_CONTEXT_RE.search(objective)
+        and _MASTER_WRITE_CUE_RE.search(objective)
+    ):
+        return None
+    task = SpecialistTask(
+        objective=objective,
+        active_target=TargetRef(kind="master"),
+        conversation_window=conversation_window,
+    )
+    clarification = clarification_for_season_plan_task(task)
+    if clarification is None:
+        return None
+    return TurnResponse(
+        reply=clarification,
+        clarification=clarification,
+        active_target=TargetRef(kind="master"),
+    )
+
+
 def _parse_proposals(last_diff: Any) -> list[MasterPlanDiff]:
     """Decode a single diff or a ``propose_alternatives`` result envelope.
 
@@ -210,7 +349,8 @@ def _parse_proposals(last_diff: Any) -> list[MasterPlanDiff]:
 def make_season_plan_runner(
     *,
     user_id: str,
-    llm: Any,
+    llm: Any | None = None,
+    llm_factory: Callable[[], Any] | None = None,
     toolkit: Any | None = None,
     plan_store: Any | None = None,
     state_observer: Callable[[dict[str, Any]], None] | None = None,
@@ -218,9 +358,10 @@ def make_season_plan_runner(
     validation_as_of: date | None = None,
 ) -> SpecialistRunner:
     """Build the season_plan runner (wraps the master_chat conversation graph)."""
+    if llm is None and llm_factory is None:
+        raise ValueError("season_plan requires llm or llm_factory")
 
     def _run(task: SpecialistTask) -> SpecialistResult:
-        active_plan_store = plan_store or get_master_plan_store()
         plan_id = task.active_target.plan_id if task.active_target else None
         if not plan_id:
             # No active plan to amend — the Resolver should have filled this.
@@ -232,15 +373,22 @@ def make_season_plan_runner(
                 ),
             )
 
-        if _needs_direction_clarification(task.objective):
+        effective_objective = _effective_objective_for_task(task)
+        clarification = clarification_for_season_plan_task(task)
+        if clarification is not None:
             return SpecialistResult(
                 status="needs_clarification",
-                clarification=_DIRECTION_CLARIFICATION,
+                clarification=clarification,
             )
 
+        active_plan_store = plan_store or get_master_plan_store()
+        # Keep provider/toolkit construction behind both deterministic
+        # clarification gates.  A vague adjustment request must remain a
+        # zero-data, zero-LLM turn, including provider initialisation.
+        active_llm = llm if llm is not None else llm_factory()
         active_toolkit = toolkit or build_stride_toolkit(user_id)
         graph = graph_factory(
-            toolkit=active_toolkit, llm=llm, checkpointer=None, scope="master_chat"
+            toolkit=active_toolkit, llm=active_llm, checkpointer=None, scope="master_chat"
         )
 
         messages: list[Any] = []
@@ -254,7 +402,7 @@ def make_season_plan_runner(
             )
         )
         messages.extend(_window_to_messages(task.conversation_window))
-        messages.append(HumanMessage(content=task.objective))
+        messages.append(HumanMessage(content=effective_objective))
 
         state_in = {
             "history": messages,
@@ -266,7 +414,7 @@ def make_season_plan_runner(
             "constraints": [],
             "consulted_tools": [],
             "tool_trace": [],
-            "master_adjustment_request": task.objective.strip(),
+            "master_adjustment_request": effective_objective,
             "master_adjustment_assessment": None,
             "last_diff": None,
             "iteration": 0,
@@ -278,6 +426,28 @@ def make_season_plan_runner(
         reply = _extract_reply(state.get("history") or [])
         proposals: list[MasterPlanDiff] = []
         last_diff = state.get("last_diff")
+        assessment = state.get("master_adjustment_assessment")
+        assessment_matches = (
+            isinstance(assessment, dict)
+            and assessment.get("adjustment_request") == effective_objective
+        )
+        verdict = assessment.get("verdict") if assessment_matches else None
+        if verdict == "needs_clarification":
+            clarification = reply or str(assessment.get("rationale") or "")
+            return SpecialistResult(
+                status="needs_clarification",
+                clarification=clarification or _DIRECTION_CLARIFICATION,
+            )
+
+        # Defense in depth at the typed specialist boundary. The conversation
+        # graph already blocks draft tools before a matching reasonable
+        # assessment; still discard any unexpected diff returned by a custom or
+        # degraded graph so no alternate adapter can bypass that contract.
+        if last_diff is not None and verdict != "reasonable":
+            logger.warning(
+                "season_plan: dropping proposal without matching reasonable assessment"
+            )
+            last_diff = None
         is_alternatives = isinstance(last_diff, dict) and "alternatives" in last_diff
         if last_diff is not None:
             proposals = _parse_proposals(last_diff)

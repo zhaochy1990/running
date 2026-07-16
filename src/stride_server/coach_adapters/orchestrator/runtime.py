@@ -17,17 +17,18 @@ from coach.orchestrator import (
     coach_thread_id,
     make_llm_draft_fn,
 )
+from coach.orchestrator.state import history_to_window
 from coach.orchestrator.memory import make_llm_memory_extractor
 from coach.orchestrator.resolver import ResolverDraftFn
 
 from coach.contracts import TargetHint, TargetRef
 from coach.orchestrator.resolver import TargetResolverFn
 
-from ..toolkit import build_stride_toolkit
 from .season_plan import (
     SEASON_PLAN_CARD,
     make_current_master_target_resolver,
     make_season_plan_runner,
+    preflight_season_plan_turn,
 )
 from .status_insight import STATUS_INSIGHT_CARD, make_status_insight_runner
 from .weekly_plan import (
@@ -45,22 +46,20 @@ def build_specialist_registry(
 ) -> SpecialistRegistry:
     """Register the S1 specialist set. Adding a specialist = one more register()."""
     registry = SpecialistRegistry()
-    toolkit = build_stride_toolkit(user_id)
     registry.register(
         STATUS_INSIGHT_CARD,
         make_status_insight_runner(
             user_id=user_id,
             llm=status_insight_llm or specialist_llm,
-            toolkit=toolkit,
         ),
     )
     registry.register(
         WEEKLY_PLAN_CARD,
-        make_weekly_plan_runner(user_id=user_id, llm=specialist_llm, toolkit=toolkit),
+        make_weekly_plan_runner(user_id=user_id, llm=specialist_llm),
     )
     registry.register(
         SEASON_PLAN_CARD,
-        make_season_plan_runner(user_id=user_id, llm=specialist_llm, toolkit=toolkit),
+        make_season_plan_runner(user_id=user_id, llm=specialist_llm),
     )
     return registry
 
@@ -111,6 +110,36 @@ def run_coach_turn(
         get_status_insight_llm,
     )
 
+    resolved_checkpointer = checkpointer or get_checkpointer()
+    thread_id = coach_thread_id(user_id, session_id)
+    config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+
+    # Run the deterministic master-adjustment clarification gate before any
+    # LLM singleton/provider or athlete memory/toolkit is constructed. Read the
+    # existing checkpoint only to recover the filtered conversation window.
+    checkpoint_tuple = resolved_checkpointer.get_tuple(config)
+    checkpoint = checkpoint_tuple.checkpoint if checkpoint_tuple is not None else {}
+    prior_history = (checkpoint.get("channel_values") or {}).get("history") or []
+    preflight = preflight_season_plan_turn(message, history_to_window(prior_history))
+    if preflight is not None:
+        preflight_graph = build_orchestrator_graph(
+            registry=SpecialistRegistry(),
+            draft_fn=lambda _system, _user: (_ for _ in ()).throw(
+                AssertionError("resolver must not run on a preflight turn")
+            ),
+            checkpointer=resolved_checkpointer,
+            turn_preflight_fn=preflight_season_plan_turn,
+        )
+        state = preflight_graph.invoke(
+            {
+                "history": [HumanMessage(content=message)],
+                "user_id": user_id,
+                "session_id": session_id,
+            },
+            config=config,
+        )
+        return TurnResponse.model_validate(state["turn_response"])
+
     resolved_specialist_llm = specialist_llm or get_generator_llm()
     resolved_status_llm = status_insight_llm or (
         specialist_llm if specialist_llm is not None else get_status_insight_llm()
@@ -120,9 +149,10 @@ def run_coach_turn(
         specialist_llm=resolved_specialist_llm,
         status_insight_llm=resolved_status_llm,
     )
-    orchestrator_llm = get_orchestrator_llm()
+    orchestrator_llm = None
+    if draft_fn is None or memory_extract_fn is None:
+        orchestrator_llm = get_orchestrator_llm()
     resolved_draft_fn = draft_fn or make_llm_draft_fn(orchestrator_llm)
-    resolved_checkpointer = checkpointer or get_checkpointer()
     resolved_store = memory_store or get_athlete_memory_store()
     resolved_extract_fn = memory_extract_fn or make_llm_memory_extractor(orchestrator_llm)
 
@@ -133,9 +163,8 @@ def run_coach_turn(
         memory_store=resolved_store,
         memory_extract_fn=resolved_extract_fn,
         target_resolver=build_target_resolver(user_id),
+        turn_preflight_fn=preflight_season_plan_turn,
     )
-    thread_id = coach_thread_id(user_id, session_id)
-    config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
     state = graph.invoke(
         {
             "history": [HumanMessage(content=message)],

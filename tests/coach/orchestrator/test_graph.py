@@ -237,3 +237,37 @@ def test_clarify_turn_short_circuits_no_dispatch() -> None:
     resp = _invoke(graph, user_id="u1", session_id="s1", message="嗯")
     assert resp.clarification is not None
     assert resp.proposals == []
+
+
+def test_adapter_preflight_runs_before_memory_and_resolver() -> None:
+    calls = {"memory": 0, "resolver": 0, "specialist": 0}
+
+    class _MemoryStore:
+        def list_active(self, user_id):
+            calls["memory"] += 1
+            return []
+
+    def _draft(_s: str, _u: str) -> ResolverDraft:
+        calls["resolver"] += 1
+        return _draft_fn_status(_s, _u)
+
+    def _runner(task: SpecialistTask) -> SpecialistResult:
+        calls["specialist"] += 1
+        return _echo_runner(task)
+
+    def _preflight(utterance, window):
+        return TurnResponse(
+            reply="先说明调整方向。",
+            clarification="先说明调整方向。",
+        )
+
+    graph = build_orchestrator_graph(
+        registry=_registry(_runner),
+        draft_fn=_draft,
+        memory_store=_MemoryStore(),
+        turn_preflight_fn=_preflight,
+    )
+    resp = _invoke(graph, user_id="u1", session_id="s1", message="我想调整")
+
+    assert resp.clarification == "先说明调整方向。"
+    assert calls == {"memory": 0, "resolver": 0, "specialist": 0}

@@ -1,0 +1,39 @@
+{
+  "fixture_id": "s1c-focus-phase-followup-reasonable",
+  "scope": "s1",
+  "evaluation_path": "master_chat",
+  "description": "After Coach asks which phase, the user answers only with the phase name. Coach must recover the original focus request and continue through reads, assessment, and one exact proposal.",
+  "tags": ["conversation", "clarification_followup", "phase_focus", "request_recovery"],
+  "input": {
+    "message": "专项期",
+    "conversation_window": [
+      {"role": "user", "content": "训练重点改成上坡力量与跑姿经济性"},
+      {"role": "assistant", "content": "你希望调整哪个阶段？确认阶段后我再加载数据评估。"}
+    ],
+    "active_plan": {
+      "plan_id": "s1c-plan-001", "user_id": "s1c-user-001", "status": "active",
+      "goal": {"goal_id": "goal-001", "race_date": "2026-10-25", "target_time": "3:15:00", "timezone": "Asia/Shanghai"},
+      "start_date": "2026-07-01", "end_date": "2026-10-25",
+      "phases": [
+        {"id": "phase-base", "name": "基础期", "phase_type": "base", "start_date": "2026-07-01", "end_date": "2026-08-15", "focus": "有氧基础", "weekly_distance_km_low": 70, "weekly_distance_km_high": 80, "key_session_types": ["long_run", "threshold"], "milestone_ids": []},
+        {"id": "phase-build", "name": "专项期", "phase_type": "build", "start_date": "2026-08-16", "end_date": "2026-10-10", "focus": "马拉松专项", "weekly_distance_km_low": 75, "weekly_distance_km_high": 88, "key_session_types": ["long_run", "race_pace"], "milestone_ids": []},
+        {"id": "phase-taper", "name": "调整期", "phase_type": "taper", "start_date": "2026-10-11", "end_date": "2026-10-25", "focus": "减量与比赛", "weekly_distance_km_low": 35, "weekly_distance_km_high": 55, "key_session_types": ["race_pace", "race"], "milestone_ids": ["race-001"]}
+      ],
+      "milestones": [{"id": "race-001", "type": "race", "date": "2026-10-25", "phase_id": "phase-taper", "target": "全马 3:15"}],
+      "training_principles": ["渐进负荷", "保留两周 taper"], "generated_by": "fixture", "version": 1,
+      "created_at": "2026-07-01T00:00:00Z", "updated_at": "2026-07-01T00:00:00Z"
+    },
+    "read_results": {
+      "get_health_snapshot": {"stride_training_load": {"acute_load": 75, "chronic_load": 72, "form": -3, "load_ratio": 1.04, "form_zone": "maintenance", "source": "stride", "vendor_derived": false}, "raw_measurements": {"rhr": 47, "hrv": 65}},
+      "get_pmc_series": {"series": [{"date": "2026-07-13", "acute_load": 75, "chronic_load": 72, "form": -3, "load_ratio": 1.04}], "provenance": {"source": "stride", "vendor_derived": false}},
+      "estimate_master_plan_load": {"history_anchor": {"recent_weekly_km": 74, "peak_weekly_km": 88}, "plan_estimate": {"build_phase_range_km": [75, 88]}, "plan_source": "active"}
+    }
+  },
+  "expected": {
+    "status": "completed", "clarification_required": false, "proposal_count": 1,
+    "required_reads": ["get_master_plan_current", "get_health_snapshot", "get_pmc_series", "estimate_master_plan_load"],
+    "assessment_verdict": "reasonable", "effective_request": "专项期：训练重点改成上坡力量与跑姿经济性", "assessment_request": "专项期：训练重点改成上坡力量与跑姿经济性", "required_draft_tool": "set_phase_focus",
+    "forbidden_tools": ["set_phase_weekly_range", "propose_alternatives", "regenerate_master"],
+    "proposal": {"op_count": 1, "op": "replace_phase_focus", "phase_id": "phase-build", "spec_patch": {"focus": "上坡力量与跑姿经济性"}}
+  }
+}

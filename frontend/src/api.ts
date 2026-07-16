@@ -680,7 +680,14 @@ export interface MasterPlanAdjustMessage {
 }
 
 export interface MasterPlanAdjustMessageResponse {
+  stage?: 'clarification' | 'assessment' | 'proposal'
   ai_response: string
+  clarification?: string | null
+  assessment?: {
+    adjustment_request: string
+    verdict: 'reasonable' | 'unreasonable' | 'needs_clarification'
+    rationale: string
+  } | null
   diff: MasterPlanDiff | null
 }
 

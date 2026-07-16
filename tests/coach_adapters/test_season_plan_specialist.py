@@ -6,8 +6,18 @@ from typing import Any
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
 
-from coach.contracts import SpecialistTask, TargetRef, Turn
+from coach.contracts import (
+    IntentHit,
+    ResolverDraft,
+    SpecialistRegistry,
+    SpecialistTask,
+    TargetHint,
+    TargetRef,
+    Turn,
+)
+from coach.orchestrator.memory import MemoryExtraction
 from stride_core.master_plan import (
     MasterPlan,
     MasterPlanStatus,
@@ -21,7 +31,9 @@ from stride_server.coach_adapters.orchestrator.season_plan import (
     SEASON_PLAN_CARD,
     make_current_master_target_resolver,
     make_season_plan_runner,
+    preflight_season_plan_turn,
 )
+from stride_server.coach_adapters.orchestrator.runtime import run_coach_turn
 
 _PLAN_ID = "plan-test"
 _TS = "2026-05-12T08:00:00+00:00"
@@ -84,6 +96,11 @@ class _FakeGraph:
         if self._last_diff is not None:
             history.append(ToolMessage(content="{}", tool_call_id="t1", name="extend_phase"))
             out["last_diff"] = self._last_diff
+            out["master_adjustment_assessment"] = {
+                "adjustment_request": state_in["master_adjustment_request"],
+                "verdict": "reasonable",
+                "rationale": "测试数据支持这个调整。",
+            }
         return out
 
 
@@ -186,6 +203,66 @@ def test_runner_drops_diff_that_fails_the_gate(monkeypatch) -> None:
     assert "结构问题" in result.reply_fragment
 
 
+def test_runner_drops_proposal_without_matching_reasonable_assessment(
+    monkeypatch,
+) -> None:
+    capture: dict[str, Any] = {}
+
+    class _UngatedGraph:
+        def invoke(self, state_in, config):
+            capture["state_in"] = state_in
+            return {
+                "history": [*state_in["history"], AIMessage(content="不建议这样调整。")],
+                "last_diff": _diff_dict(),
+                "master_adjustment_assessment": {
+                    "adjustment_request": state_in["master_adjustment_request"],
+                    "verdict": "unreasonable",
+                    "rationale": "负荷跳升过大。",
+                },
+            }
+
+    runner = make_season_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        plan_store=_StoreStub(),
+        graph_factory=lambda **_kwargs: _UngatedGraph(),
+    )
+
+    result = runner(_task("把基础期周跑量加到 120 公里"))
+
+    assert result.status == "completed"
+    assert result.proposals == []
+    assert result.reply_fragment == "不建议这样调整。"
+
+
+def test_runner_surfaces_assessment_clarification_as_specialist_status() -> None:
+    class _ClarifyingGraph:
+        def invoke(self, state_in, config):
+            return {
+                "history": [*state_in["history"], AIMessage(content="你希望降低到多少公里？")],
+                "master_adjustment_assessment": {
+                    "adjustment_request": state_in["master_adjustment_request"],
+                    "verdict": "needs_clarification",
+                    "rationale": "缺少目标周量。",
+                },
+            }
+
+    runner = make_season_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        plan_store=_StoreStub(),
+        graph_factory=lambda **_kwargs: _ClarifyingGraph(),
+    )
+
+    result = runner(_task("减少基础期周跑量"))
+
+    assert result.status == "needs_clarification"
+    assert result.clarification == "你希望降低到多少公里？"
+    assert result.proposals == []
+
+
 def test_runner_misrouted_read_question_does_not_enter_write_graph(monkeypatch) -> None:
     capture: dict[str, Any] = {}
     runner = _runner(capture, reply="你的赛季计划目前 24 周。", last_diff=None, monkeypatch=monkeypatch)
@@ -228,6 +305,262 @@ def test_runner_without_adjustment_direction_asks_before_loading_data(monkeypatc
     assert result.status == "needs_clarification"
     assert result.proposals == []
     assert "具体怎么调整" in (result.clarification or "")
+    assert "build" not in capture
+
+
+def test_orchestrator_preflight_clarifies_vague_master_adjustment() -> None:
+    result = preflight_season_plan_turn("我想调整整体训练计划", [])
+
+    assert result is not None
+    assert result.clarification is not None
+    assert result.proposals == []
+    assert result.active_target == TargetRef(kind="master")
+
+
+def test_orchestrator_preflight_does_not_capture_read_only_master_question() -> None:
+    assert preflight_season_plan_turn("我的赛季计划目前是什么样", []) is None
+    assert preflight_season_plan_turn("我是否需要调整整体训练计划？", []) is None
+    assert preflight_season_plan_turn("你觉得我该不该减少赛季计划的训练量？", []) is None
+    assert preflight_season_plan_turn("你觉得我需要减少周跑量吗？", []) is None
+
+
+def test_orchestrator_preflight_does_not_treat_need_statement_as_advice() -> None:
+    result = preflight_season_plan_turn("我需要调整整体训练计划", [])
+
+    assert result is not None
+    assert "具体怎么调整" in (result.clarification or "")
+
+
+def test_orchestrator_preflight_allows_concrete_master_adjustment() -> None:
+    assert preflight_season_plan_turn("把基础期延长两周", []) is None
+
+
+def test_orchestrator_preflight_asks_phase_after_direction_followup() -> None:
+    result = preflight_season_plan_turn(
+        "我想减量",
+        [Turn(role="assistant", content="你希望具体怎么调整整体训练计划？")],
+    )
+
+    assert result is not None
+    assert "哪个阶段" in (result.clarification or "")
+
+
+def test_run_coach_turn_preflight_does_not_construct_any_llm(monkeypatch) -> None:
+    import stride_server.coach_runtime as coach_runtime
+
+    def fail():
+        raise AssertionError("LLM or memory singleton must not be constructed")
+
+    monkeypatch.setattr(coach_runtime, "get_generator_llm", fail)
+    monkeypatch.setattr(coach_runtime, "get_status_insight_llm", fail)
+    monkeypatch.setattr(coach_runtime, "get_orchestrator_llm", fail)
+    monkeypatch.setattr(coach_runtime, "get_athlete_memory_store", fail)
+
+    result = run_coach_turn(
+        user_id="u1",
+        session_id="clarify",
+        message="我想调整整体训练计划",
+        checkpointer=InMemorySaver(),
+    )
+
+    assert result.clarification is not None
+    assert result.proposals == []
+
+
+def test_run_coach_turn_restores_adjustment_after_phase_checkpoint(
+    monkeypatch,
+) -> None:
+    saver = InMemorySaver()
+    capture: dict[str, Any] = {}
+    monkeypatch.setattr(sp, "get_master_plan_store", lambda: _StoreStub())
+
+    registry = SpecialistRegistry()
+    registry.register(
+        SEASON_PLAN_CARD,
+        make_season_plan_runner(
+            user_id="u1",
+            llm=object(),
+            toolkit=object(),
+            graph_factory=_factory("这个方向合理，可以提出调整方案。", None, capture),
+        ),
+    )
+
+    class _MemoryStore:
+        def fetch_active(self, user_id: str, *, top_k: int = 10):
+            return []
+
+    def _draft(_system: str, _user: str) -> ResolverDraft:
+        return ResolverDraft(
+            intents=[
+                IntentHit(
+                    specialist_id="season_plan", action="write", confidence=0.99
+                )
+            ],
+            target_hint=TargetHint(kind="master", ref_phrase="专项期"),
+        )
+
+    first = run_coach_turn(
+        user_id="u1",
+        session_id="phase-checkpoint",
+        message="训练重点改成上坡力量与跑姿经济性",
+        checkpointer=saver,
+    )
+    assert "哪个阶段" in (first.clarification or "")
+
+    second = run_coach_turn(
+        user_id="u1",
+        session_id="phase-checkpoint",
+        message="专项期",
+        checkpointer=saver,
+        registry=registry,
+        draft_fn=_draft,
+        specialist_llm=object(),
+        memory_store=_MemoryStore(),
+        memory_extract_fn=lambda _system, _user: MemoryExtraction(),
+    )
+
+    assert second.clarification is None
+    assert second.reply == "这个方向合理，可以提出调整方案。"
+    assert capture["state_in"]["master_adjustment_request"] == (
+        "专项期：训练重点改成上坡力量与跑姿经济性"
+    )
+    assert capture["state_in"]["history"][-1].content == (
+        "专项期：训练重点改成上坡力量与跑姿经济性"
+    )
+
+
+@pytest.mark.parametrize(
+    "objective",
+    [
+        "训练重点改成上坡力量与跑姿经济性",
+        "把周跑量降到 60–70 公里",
+        "把阶段延长两周",
+    ],
+)
+def test_runner_asks_for_missing_phase_before_loading_data(
+    objective: str, monkeypatch
+) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=_diff_dict(), monkeypatch=monkeypatch)
+
+    result = runner(_task(objective))
+
+    assert result.status == "needs_clarification"
+    assert result.proposals == []
+    assert "哪个阶段" in (result.clarification or "")
+    assert "build" not in capture
+
+
+@pytest.mark.parametrize(
+    "objective",
+    [
+        "把基础期训练重点改成上坡力量与跑姿经济性",
+        "把当前阶段周跑量降到 60–70 公里",
+        "把下一阶段延长两周",
+    ],
+)
+def test_runner_accepts_explicit_phase_targets(
+    objective: str, monkeypatch
+) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=None, monkeypatch=monkeypatch)
+
+    result = runner(_task(objective))
+
+    assert result.status == "completed"
+    assert "build" in capture
+    assert capture["state_in"]["master_adjustment_request"] == objective
+    assert capture["state_in"]["history"][-1].content == objective
+
+
+def test_runner_resumes_focus_request_after_phase_clarification(monkeypatch) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=None, monkeypatch=monkeypatch)
+
+    result = runner(
+        _task(
+            "专项期",
+            conversation_window=[
+                Turn(role="user", content="训练重点改成上坡力量与跑姿经济性"),
+                Turn(
+                    role="assistant",
+                    content="你希望调整哪个阶段？确认阶段后我再加载数据评估。",
+                ),
+            ],
+        )
+    )
+
+    assert result.status == "completed"
+    assert "build" in capture
+    assert capture["state_in"]["master_adjustment_request"] == (
+        "专项期：训练重点改成上坡力量与跑姿经济性"
+    )
+    assert capture["state_in"]["history"][-1].content == (
+        "专项期：训练重点改成上坡力量与跑姿经济性"
+    )
+
+
+@pytest.mark.parametrize(
+    "objective",
+    [
+        "专项期，不过先别改",
+        "专项期，我还需要想想",
+    ],
+)
+def test_runner_does_not_resume_when_phase_answer_contains_a_new_instruction(
+    objective: str, monkeypatch
+) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=None, monkeypatch=monkeypatch)
+
+    result = runner(
+        _task(
+            objective,
+            conversation_window=[
+                Turn(role="user", content="训练重点改成上坡力量与跑姿经济性"),
+                Turn(
+                    role="assistant",
+                    content="你希望调整哪个阶段？确认阶段后我再加载数据评估。",
+                ),
+            ],
+        )
+    )
+
+    assert result.status == "needs_clarification"
+    assert "build" not in capture
+
+
+def test_runner_does_not_resume_a_stale_phase_question(monkeypatch) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=None, monkeypatch=monkeypatch)
+
+    result = runner(
+        _task(
+            "专项期",
+            conversation_window=[
+                Turn(role="user", content="训练重点改成上坡力量与跑姿经济性"),
+                Turn(
+                    role="assistant",
+                    content="你希望调整哪个阶段？确认阶段后我再加载数据评估。",
+                ),
+                Turn(role="user", content="我晚点再决定"),
+            ],
+        )
+    )
+
+    assert result.status == "needs_clarification"
+    assert "build" not in capture
+
+
+def test_runner_does_not_treat_isolated_phase_name_as_complete_request(
+    monkeypatch,
+) -> None:
+    capture: dict[str, Any] = {}
+    runner = _runner(capture, last_diff=None, monkeypatch=monkeypatch)
+
+    result = runner(_task("专项期"))
+
+    assert result.status == "needs_clarification"
     assert "build" not in capture
 
 

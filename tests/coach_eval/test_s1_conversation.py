@@ -23,6 +23,8 @@ S1_CONVERSATION_INPUT_SHA256 = {
     "s1c-aggressive-range-unreasonable": "9d54fc2cb89baa5263b3e8e0bf08f792807ebb3fb6f602b16266c7376d0aebcc",
     "s1c-exact-range-reasonable": "638adf9fdc4fa4af9884583fb04d97739707ae31bb90ec5e287cb3a4ac092215",
     "s1c-focus-change-reasonable": "5c05ba87262e5e03c38de4f79bfb802cc1086f7af4801168b97fe277f4ea78a7",
+    "s1c-focus-missing-phase-clarify": "622136741decfb9537fed00397d2026982c6c95c5f49909aac8a8d0d30ca1fb2",
+    "s1c-focus-phase-followup-reasonable": "9bed8e3c399e0d0cdfb653a9f9c529b99d7f891d7afb2317f8d91fb614440e51",
     "s1c-race-postponed-atomic": "ae2c9d7a12347e44fd15e7a684b827627a55db1263759ce572c78e229d305303",
     "s1c-target-time-reasonable-atomic": "6e016c9222f18450e9d7eda42fbc8a94939c8168339aabd6c69c1f1fc542939e",
     "s1c-vague-adjustment-clarify": "a9c4467eb8c4ce6458ab418a8870f99e8ae7d851cdfc0773909ddb137fd05d9d",
@@ -34,7 +36,7 @@ class _NeverCalledLLM:
         return self
 
     def invoke(self, _messages):
-        raise AssertionError("vague fixture must clarify before invoking the LLM")
+        raise AssertionError("clarification fixture must not invoke the LLM")
 
 
 class _ScriptedLLM:
@@ -118,6 +120,20 @@ def test_vague_adjustment_fixture_passes_without_llm_or_tools() -> None:
     assert outcome.generated_artifact["tool_trace"] == []
     result = outcome.generated_artifact["result"]
     assert result["status"] == "needs_clarification"
+    assert result["proposals"] == []
+
+
+def test_missing_phase_fixture_clarifies_without_llm_or_tools() -> None:
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-focus-missing-phase-clarify"], llm=_NeverCalledLLM()
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.generated_artifact["tool_trace"] == []
+    result = outcome.generated_artifact["result"]
+    assert result["status"] == "needs_clarification"
+    assert "哪个阶段" in result["clarification"]
     assert result["proposals"] == []
 
 
@@ -289,6 +305,51 @@ def test_phase_focus_fixture_preserves_exact_user_direction() -> None:
     assert proposal["ops"][0]["op"] == "replace_phase_focus"
     assert proposal["ops"][0]["spec_patch"] == {
         "focus": "马拉松配速耐力与补给演练"
+    }
+
+
+def test_phase_focus_followup_fixture_resumes_original_request() -> None:
+    request = "专项期：训练重点改成上坡力量与跑姿经济性"
+    llm = _ScriptedLLM(
+        [
+            _required_read_calls(),
+            _tool_calls(
+                2,
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "the clarified build phase can safely emphasize hills and economy",
+                    },
+                ),
+            ),
+            _tool_calls(
+                3,
+                (
+                    "set_phase_focus",
+                    {
+                        "plan_id": "s1c-plan-001",
+                        "phase_id": "phase-build",
+                        "focus": "上坡力量与跑姿经济性",
+                        "reason": "用户补充指定专项期，当前负荷与恢复支持",
+                    },
+                ),
+            ),
+        ]
+    )
+
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-focus-phase-followup-reasonable"], llm=llm
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.debug["contract_violations"] == []
+    proposal = outcome.generated_artifact["result"]["proposals"][0]
+    assert proposal["ops"][0]["phase_id"] == "phase-build"
+    assert proposal["ops"][0]["spec_patch"] == {
+        "focus": "上坡力量与跑姿经济性"
     }
 
 
