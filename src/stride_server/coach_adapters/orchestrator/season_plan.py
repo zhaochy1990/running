@@ -49,7 +49,7 @@ from coach.contracts import (
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 from coach.graphs.conversation.master_adjustment_direction import (
-    master_diff_matches_volume_request,
+    master_diff_matches_adjustment_request,
     requested_weekly_volume_direction,
 )
 from coach.schemas import assistant_parts_from_message
@@ -540,16 +540,19 @@ def make_season_plan_runner(
         is_alternatives = isinstance(last_diff, dict) and "alternatives" in last_diff
         if last_diff is not None:
             proposals = _parse_proposals(last_diff)
-            direction_safe = [
+            current_plan = active_plan_store.get_plan(user_id, plan_id)
+            request_safe = [
                 proposal
                 for proposal in proposals
-                if master_diff_matches_volume_request(proposal, effective_objective)
-            ]
-            if len(direction_safe) != len(proposals):
-                logger.warning(
-                    "season_plan: dropping proposal that mismatches requested volume change"
+                if master_diff_matches_adjustment_request(
+                    proposal, effective_objective, plan=current_plan
                 )
-                proposals = direction_safe
+            ]
+            if len(request_safe) != len(proposals):
+                logger.warning(
+                    "season_plan: dropping proposal that mismatches the adjustment request"
+                )
+                proposals = request_safe
                 if not proposals:
                     direction = requested_weekly_volume_direction(effective_objective)
                     requested_label = (
@@ -560,7 +563,8 @@ def make_season_plan_runner(
                     return SpecialistResult(
                         status="completed",
                         reply_fragment=(
-                            f"生成的方案与“{requested_label}周跑量”的方向或幅度不一致，"
+                            f"生成的方案与当前调整请求（{requested_label}周跑量/阶段重点）的"
+                            "目标、方向或幅度不一致，"
                             "已阻止展示和应用。请重新生成这个调整。"
                         ),
                     )

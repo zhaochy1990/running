@@ -1,12 +1,14 @@
-"""Deterministic intent-to-diff direction checks for master-plan volume edits."""
+"""Deterministic request-fidelity checks for master-plan adjustments."""
 
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
 import math
 import re
+import unicodedata
 from typing import Any, Literal
 
+from stride_core.master_plan import MasterPlan
 from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOpKind
 
 WeeklyVolumeDirection = Literal["increase", "decrease"]
@@ -43,6 +45,26 @@ _KM_RANGE_RE = re.compile(
     re.IGNORECASE,
 )
 _PERCENT_RE = re.compile(r"(?P<percentage>\d+(?:\.\d+)?)\s*%")
+_FOCUS_CUE_RE = re.compile(
+    r"(?:训练重点|训练重心|重点)\s*(?:(?:调整|修改|改|设|换)?\s*(?:成|为|到)|是)\s*"
+    r"|(?:更\s*)?(?:侧重|聚焦|专注(?:于)?|重点放在)\s*"
+    r"|(?:focus\s+(?:to|toward|towards)|focus(?:es|ed|ing)?\s+on|"
+    r"emphasi[sz]e(?:s|d|ing)?|"
+    r"prioriti[sz]e(?:s|d|ing)?)\s+",
+    re.IGNORECASE,
+)
+_FOCUS_REASON_SUFFIX_RE = re.compile(
+    r"(?:，|,)\s*(?:因为|原因(?:是)?|考虑到|鉴于|但|不过|同时(?:不要|不|保持)|"
+    r"不要|不改变|保持周跑量|because\b|without\s+changing\b).*$",
+    re.IGNORECASE,
+)
+_FOCUS_PHASE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("base", re.compile(r"(?:基础期|基础阶段|base\s*(?:phase)?)", re.IGNORECASE)),
+    ("build", re.compile(r"(?:专项期|专项阶段|强化期|build\s*(?:phase)?)", re.IGNORECASE)),
+    ("peak", re.compile(r"(?:高峰期|赛前期|peak\s*(?:phase)?)", re.IGNORECASE)),
+    ("taper", re.compile(r"(?:减量期|调整期|taper\s*(?:phase)?)", re.IGNORECASE)),
+    ("recovery", re.compile(r"(?:恢复期|恢复阶段|recovery\s*(?:phase)?)", re.IGNORECASE)),
+)
 
 
 def _percentage_bound(
@@ -107,6 +129,49 @@ def requested_weekly_volume_percentage(request: str) -> float | None:
         return None
     percentage = values.pop()
     return percentage if math.isfinite(percentage) and percentage > 0 else None
+
+
+def _normalise_focus(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value.strip(" \t\r\n。.!！;；：:\\'\"“”‘’『』「」")
+
+
+def requested_phase_focus(request: str) -> str | None:
+    """Extract the exact phase-focus text explicitly supplied by the user.
+
+    This intentionally returns ``None`` for a generic request such as "调整训练
+    重点".  A proposal gate must not invent the missing focus on the user's
+    behalf.  Explanatory suffixes (for example ``，因为比赛有爬升``) are not
+    part of the requested replacement value.
+    """
+    cue = _FOCUS_CUE_RE.search(request)
+    if cue is None:
+        return None
+    raw = request[cue.end() :].strip()
+    if not raw:
+        return None
+    if raw[0] in "“\"'‘『「":
+        closing = {
+            "“": "”", '"': '"', "'": "'", "‘": "’",
+            "『": "』", "「": "」",
+        }[raw[0]]
+        end = raw.find(closing, 1)
+        if end > 1:
+            raw = raw[1:end]
+    raw = _FOCUS_REASON_SUFFIX_RE.sub("", raw)
+    focus = _normalise_focus(raw)
+    return focus or None
+
+
+def requested_phase_type_for_focus(request: str) -> str | None:
+    """Return one explicit canonical phase named before the focus cue."""
+    cue = _FOCUS_CUE_RE.search(request)
+    if cue is None:
+        return None
+    prefix = request[: cue.start()]
+    matches = {name for name, pattern in _FOCUS_PHASE_PATTERNS if pattern.search(prefix)}
+    return matches.pop() if len(matches) == 1 else None
 
 
 def _number(mapping: dict[str, Any] | None, key: str) -> float | None:
@@ -191,10 +256,60 @@ def master_diff_matches_volume_request(diff: MasterPlanDiff, request: str) -> bo
     return True
 
 
-def proposal_payload_matches_volume_request(
+def master_diff_matches_focus_request(
+    diff: MasterPlanDiff, request: str, *, plan: MasterPlan | None = None
+) -> bool:
+    """Require a focus request to produce one exact, correctly-targeted op."""
+    requested_focus = requested_phase_focus(request)
+    if requested_focus is None:
+        return True
+    if len(diff.ops) != 1:
+        return False
+    op = diff.ops[0]
+    if op.op != MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS or not op.phase_id:
+        return False
+    new_focus = (op.new_value or {}).get("focus")
+    patch_focus = (op.spec_patch or {}).get("focus")
+    if not isinstance(new_focus, str) or not isinstance(patch_focus, str):
+        return False
+    if not (
+        _normalise_focus(new_focus) == requested_focus
+        and _normalise_focus(patch_focus) == requested_focus
+    ):
+        return False
+
+    requested_phase_type = requested_phase_type_for_focus(request)
+    if requested_phase_type is not None and plan is not None:
+        phase = next((item for item in plan.phases if item.id == op.phase_id), None)
+        if phase is None:
+            return False
+        actual_type = getattr(phase.phase_type, "value", phase.phase_type)
+        if actual_type is None:
+            phase_label = f"{phase.name} {phase.focus}"
+            inferred = {
+                name
+                for name, pattern in _FOCUS_PHASE_PATTERNS
+                if pattern.search(phase_label)
+            }
+            actual_type = inferred.pop() if len(inferred) == 1 else None
+        if actual_type != requested_phase_type:
+            return False
+    return True
+
+
+def master_diff_matches_adjustment_request(
+    diff: MasterPlanDiff, request: str, *, plan: MasterPlan | None = None
+) -> bool:
+    """Validate all deterministic request-fidelity contracts for one diff."""
+    return master_diff_matches_volume_request(
+        diff, request
+    ) and master_diff_matches_focus_request(diff, request, plan=plan)
+
+
+def proposal_payload_matches_adjustment_request(
     payload: Any, request: str
 ) -> bool:
-    """Validate a draft payload against requested direction and magnitude."""
+    """Validate every proposal in a draft-tool payload against the request."""
     if not isinstance(payload, dict):
         return False
     raw_diffs = payload.get("alternatives", [payload])
@@ -204,4 +319,4 @@ def proposal_payload_matches_volume_request(
         diffs = [MasterPlanDiff.model_validate(item) for item in raw_diffs]
     except Exception:  # noqa: BLE001 - malformed payload fails closed
         return False
-    return all(master_diff_matches_volume_request(diff, request) for diff in diffs)
+    return all(master_diff_matches_adjustment_request(diff, request) for diff in diffs)

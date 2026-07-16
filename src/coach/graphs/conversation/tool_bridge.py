@@ -113,7 +113,9 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "set_phase_focus": (
         "Propose one exact training-focus description for a master-plan phase. "
         "Use when the user explicitly changes what a phase should emphasize; preserve the "
-        "requested focus text and do not substitute a volume, date, target, or regeneration op."
+        "requested focus text and do not substitute a volume, date, target, or regeneration op. "
+        "adjustment_request must exactly repeat the canonical current user request; the "
+        "tool deterministically rejects invented focus text or a different named phase."
     ),
     "propose_reduction_alternatives": (
         "Generate exactly two load-reduction alternatives (5% and 10%) for the current or "

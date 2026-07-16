@@ -227,6 +227,7 @@ class SetPhaseFocus(Protocol):
         plan_id: str,
         phase_id: str,
         focus: str,
+        adjustment_request: str,
         reason: str,
     ) -> ToolResult: ...
 

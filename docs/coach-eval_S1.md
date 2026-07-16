@@ -180,6 +180,7 @@ python scripts/eval_coach.py --scope s1 --conversation
 13. 周量 proposal 必须与 canonical request 的增减方向一致；加量请求不得调用 `propose_reduction_alternatives`，也不得返回任何上下限下降的 diff。该约束由 prompt、tool、conversation graph、specialist 和 HTTP boundary 共同执行。
 14. 自然语言“跑量/里程提高或降低”与“周跑量/训练量”使用同一方向门禁；只有百分比而没有阶段时也必须先澄清阶段，不能提前加载数据。
 15. 周量 proposal 不仅方向一致，幅度也必须忠实：明确区间必须逐值匹配；百分比必须以目标阶段当前上下限分别计算并四舍五入到 0.1 km。`set_phase_weekly_range` 必须携带 canonical `adjustment_request`，tool、graph、specialist 和 HTTP response boundary 都会拒绝偷换幅度。
+16. 阶段训练重点 proposal 同样绑定 canonical `adjustment_request`：`set_phase_focus` 只能输出用户明确给出的 replacement focus，不能擅自扩写，并且明确命名阶段时不能偷换 `phase_id`。conversation harness 还可用 `assessment_rationale_contains`、proposal `old_value` 与 `ai_explanation_contains` 校验评估依据和提案解释。
 
 ### S1 Required vs Optional
 

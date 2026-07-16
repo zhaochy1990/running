@@ -787,8 +787,18 @@ class SetPhaseFocusImpl:
         plan_id: str,
         phase_id: str,
         focus: str,
+        adjustment_request: str,
         reason: str,
     ) -> ToolResult:
+        from coach.graphs.conversation.master_adjustment_direction import (
+            master_diff_matches_focus_request,
+            requested_phase_focus,
+        )
+
+        if requested_phase_focus(adjustment_request) is None:
+            return _fail(
+                "set_phase_focus requires an explicit replacement focus in adjustment_request"
+            )
         if not isinstance(focus, str):
             return _fail("focus must be text")
         requested_focus = focus.strip()
@@ -817,9 +827,16 @@ class SetPhaseFocusImpl:
         diff = _empty_master_diff(
             plan_id,
             f"将「{phase.name}」训练重点从“{phase.focus}”调整为"
-            f"“{requested_focus}”（原因：{reason}）",
+            f"“{requested_focus}”（用户请求：{adjustment_request}；原因：{reason}）",
         )
-        return _ok_master(diff.model_copy(update={"ops": [op]}))
+        candidate = diff.model_copy(update={"ops": [op]})
+        if not master_diff_matches_focus_request(
+            candidate, adjustment_request, plan=plan
+        ):
+            return _fail(
+                "phase focus or phase_id does not match the explicit focus adjustment_request"
+            )
+        return _ok_master(candidate)
 
 
 class ProposeReductionAlternativesImpl:

@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 
 from coach.contracts import SpecialistTask, TargetRef, Turn
 from coach.graphs.conversation.master_adjustment_direction import (
-    master_diff_matches_volume_request,
+    master_diff_matches_adjustment_request,
 )
 
 from stride_core.master_plan import MasterPlanStatus, _apply_review_diff
@@ -1219,7 +1219,9 @@ def adjust_messages(
         proposal
         for proposal in proposals
         if isinstance(effective_request, str)
-        and master_diff_matches_volume_request(proposal, effective_request)
+        and master_diff_matches_adjustment_request(
+            proposal, effective_request, plan=plan
+        )
     ]
     if verdict != "reasonable":
         # Defense in depth at the HTTP boundary. The conversation graph already

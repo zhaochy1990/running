@@ -225,6 +225,15 @@ def _contract_violations(artifact: dict, expected: dict) -> list[str]:
             f"assessment request expected {assessment_request!r}, "
             f"got {assessment.get('adjustment_request')!r}"
         )
+    expected_rationale_contains = expected.get("assessment_rationale_contains") or []
+    if isinstance(expected_rationale_contains, str):
+        expected_rationale_contains = [expected_rationale_contains]
+    rationale = str(assessment.get("rationale") or "")
+    for token in expected_rationale_contains:
+        if str(token) not in rationale:
+            violations.append(
+                f"assessment rationale missing expected text {token!r}"
+            )
     effective_request = expected.get("effective_request")
     if effective_request and artifact.get("effective_request") != effective_request:
         violations.append(
@@ -292,6 +301,25 @@ def _contract_violations(artifact: dict, expected: dict) -> list[str]:
                     f"proposal spec_patch expected {expected_patch!r}, "
                     f"got {op.get('spec_patch')!r}"
                 )
+            expected_old = proposal_expectation.get("old_value") or {}
+            actual_old = op.get("old_value") or {}
+            for key, expected_value in expected_old.items():
+                if actual_old.get(key) != expected_value:
+                    violations.append(
+                        f"proposal old_value.{key} expected {expected_value!r}, "
+                        f"got {actual_old.get(key)!r}"
+                    )
+            explanation_contains = proposal_expectation.get(
+                "ai_explanation_contains"
+            ) or []
+            if isinstance(explanation_contains, str):
+                explanation_contains = [explanation_contains]
+            explanation = str(proposal.get("ai_explanation") or "")
+            for token in explanation_contains:
+                if str(token) not in explanation:
+                    violations.append(
+                        f"proposal ai_explanation missing expected text {token!r}"
+                    )
 
     return violations
 

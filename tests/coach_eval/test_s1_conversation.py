@@ -23,6 +23,7 @@ S1_CONVERSATION_INPUT_SHA256 = {
     "s1c-aggressive-range-unreasonable": "9d54fc2cb89baa5263b3e8e0bf08f792807ebb3fb6f602b16266c7376d0aebcc",
     "s1c-exact-range-reasonable": "638adf9fdc4fa4af9884583fb04d97739707ae31bb90ec5e287cb3a4ac092215",
     "s1c-focus-change-reasonable": "5c05ba87262e5e03c38de4f79bfb802cc1086f7af4801168b97fe277f4ea78a7",
+    "s1c-focus-exact-text-reasonable": "0ec123355b3e44219945171168255203a6d2051dab4ff7f5f3de9a2154d02628",
     "s1c-focus-missing-phase-clarify": "622136741decfb9537fed00397d2026982c6c95c5f49909aac8a8d0d30ca1fb2",
     "s1c-focus-phase-followup-reasonable": "9bed8e3c399e0d0cdfb653a9f9c529b99d7f891d7afb2317f8d91fb614440e51",
     "s1c-increase-details-followup-reasonable": "d0ad8f40d3801fa119d688e8f834eebf9634b64b0dbdb066f129c013554bc90b",
@@ -197,6 +198,43 @@ def test_contract_reports_wrong_exact_range() -> None:
     assert any("weekly_distance_km_high" in item for item in violations)
 
 
+def test_contract_reports_missing_assessment_and_explanation_evidence() -> None:
+    artifact = {
+        "result": {
+            "status": "completed",
+            "clarification": None,
+            "proposals": [
+                {
+                    "ai_explanation": "修改训练重点",
+                    "ops": [
+                        {
+                            "op": "replace_phase_focus",
+                            "phase_id": "phase-base",
+                            "old_value": {"focus": "错误旧值"},
+                            "spec_patch": {"focus": "上坡力量"},
+                        }
+                    ],
+                }
+            ],
+        },
+        "tool_trace": [],
+        "assessment": {"rationale": "负荷稳定"},
+    }
+    expected = {
+        "assessment_rationale_contains": ["比赛爬升"],
+        "proposal": {
+            "old_value": {"focus": "有氧基础"},
+            "ai_explanation_contains": ["比赛爬升"],
+        },
+    }
+
+    violations = _contract_violations(artifact, expected)
+
+    assert any("assessment rationale" in item for item in violations)
+    assert any("old_value.focus" in item for item in violations)
+    assert any("ai_explanation" in item for item in violations)
+
+
 def test_exact_range_fixture_passes_scripted_production_graph() -> None:
     request = "把基础期周跑量从 70–80 公里调整到 65–75 公里"
     llm = _ScriptedLLM(
@@ -322,6 +360,7 @@ def test_phase_focus_fixture_preserves_exact_user_direction() -> None:
                         "plan_id": "s1c-plan-001",
                         "phase_id": "phase-build",
                         "focus": "马拉松配速耐力与补给演练",
+                        "adjustment_request": request,
                         "reason": "用户明确要求，当前负荷与恢复支持",
                     },
                 ),
@@ -341,6 +380,52 @@ def test_phase_focus_fixture_preserves_exact_user_direction() -> None:
     assert proposal["ops"][0]["spec_patch"] == {
         "focus": "马拉松配速耐力与补给演练"
     }
+
+
+def test_phase_focus_fixture_preserves_exact_text_and_grounded_reason() -> None:
+    request = "基础期训练重点改为上坡力量，因为秋季比赛有爬升，但保持周跑量不变"
+    llm = _ScriptedLLM(
+        [
+            _required_read_calls(),
+            _tool_calls(
+                2,
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "秋季比赛有爬升；当前恢复与负荷稳定，适合在基础期加入上坡力量且不改周跑量",
+                    },
+                ),
+            ),
+            _tool_calls(
+                3,
+                (
+                    "set_phase_focus",
+                    {
+                        "plan_id": "s1c-plan-001",
+                        "phase_id": "phase-base",
+                        "focus": "上坡力量",
+                        "adjustment_request": request,
+                        "reason": "秋季比赛有爬升，当前恢复与负荷支持",
+                    },
+                ),
+            ),
+        ]
+    )
+
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-focus-exact-text-reasonable"], llm=llm
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.debug["contract_violations"] == []
+    proposal = outcome.generated_artifact["result"]["proposals"][0]
+    op = proposal["ops"][0]
+    assert op["phase_id"] == "phase-base"
+    assert op["spec_patch"] == {"focus": "上坡力量"}
+    assert op["old_value"] == {"focus": "有氧基础"}
 
 
 def test_phase_focus_followup_fixture_resumes_original_request() -> None:
@@ -367,6 +452,7 @@ def test_phase_focus_followup_fixture_resumes_original_request() -> None:
                         "plan_id": "s1c-plan-001",
                         "phase_id": "phase-build",
                         "focus": "上坡力量与跑姿经济性",
+                        "adjustment_request": request,
                         "reason": "用户补充指定专项期，当前负荷与恢复支持",
                     },
                 ),

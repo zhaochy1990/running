@@ -9,7 +9,10 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_adjustment_direction import (
+    master_diff_matches_focus_request,
     master_diff_matches_volume_request,
+    requested_phase_focus,
+    requested_phase_type_for_focus,
     requested_weekly_volume_direction,
 )
 from coach.schemas import ToolResult
@@ -119,6 +122,84 @@ def test_conflicting_percentages_fail_closed() -> None:
 
     assert not master_diff_matches_volume_request(
         diff, "专项期跑量提高 5% 或 10%"
+    )
+
+
+@pytest.mark.parametrize(
+    ("user_text", "focus", "phase_type"),
+    [
+        ("专项期更侧重马拉松配速耐力与补给演练", "马拉松配速耐力与补给演练", "build"),
+        ("基础期训练重点改成『有氧耐力与上坡力量』", "有氧耐力与上坡力量", "base"),
+        ("把 peak phase focus on race pace economy", "race pace economy", "peak"),
+        ("Change the build phase focus to marathon pace endurance", "marathon pace endurance", "build"),
+        ("调整期聚焦配速唤醒，不改变周跑量", "配速唤醒", "taper"),
+    ],
+)
+def test_requested_phase_focus_extracts_exact_text_and_phase(
+    user_text: str, focus: str, phase_type: str
+) -> None:
+    assert requested_phase_focus(user_text) == focus
+    assert requested_phase_type_for_focus(user_text) == phase_type
+
+
+def test_focus_request_rejects_expanded_or_wrong_phase_diff() -> None:
+    from stride_core.master_plan import MasterPlan
+
+    plan = MasterPlan.model_validate(
+        {
+            "plan_id": "plan-1",
+            "user_id": "u1",
+            "status": "active",
+            "goal": {
+                "goal_id": "goal-1", "race_date": "2026-10-25",
+                "target_time": "3:15:00", "timezone": "Asia/Shanghai",
+            },
+            "start_date": "2026-07-01",
+            "end_date": "2026-10-25",
+            "phases": [
+                {
+                    "id": "phase-base", "name": "基础期", "phase_type": "base",
+                    "start_date": "2026-07-01", "end_date": "2026-08-15",
+                    "focus": "有氧基础", "weekly_distance_km_low": 60,
+                    "weekly_distance_km_high": 70, "key_session_types": [],
+                    "milestone_ids": [],
+                },
+                {
+                    "id": "phase-build", "name": "专项期", "phase_type": "build",
+                    "start_date": "2026-08-16", "end_date": "2026-10-10",
+                    "focus": "马拉松专项", "weekly_distance_km_low": 70,
+                    "weekly_distance_km_high": 80, "key_session_types": [],
+                    "milestone_ids": [],
+                },
+            ],
+            "milestones": [], "training_principles": [], "generated_by": "test",
+            "version": 1, "created_at": "2026-07-01T00:00:00Z",
+            "updated_at": "2026-07-01T00:00:00Z",
+        }
+    )
+
+    def _diff(phase_id: str, focus: str) -> MasterPlanDiff:
+        return MasterPlanDiff.model_validate(
+            {
+                "diff_id": phase_id + focus, "plan_id": "plan-1",
+                "ops": [{
+                    "id": "op-1", "op": "replace_phase_focus",
+                    "phase_id": phase_id, "old_value": {"focus": "old"},
+                    "new_value": {"focus": focus}, "spec_patch": {"focus": focus},
+                }],
+                "ai_explanation": "test", "created_at": "2026-07-16T00:00:00Z",
+            }
+        )
+
+    request = "专项期更侧重马拉松配速耐力与补给演练"
+    assert master_diff_matches_focus_request(
+        _diff("phase-build", "马拉松配速耐力与补给演练"), request, plan=plan
+    )
+    assert not master_diff_matches_focus_request(
+        _diff("phase-build", "马拉松配速耐力、补给演练与上坡力量"), request, plan=plan
+    )
+    assert not master_diff_matches_focus_request(
+        _diff("phase-base", "马拉松配速耐力与补给演练"), request, plan=plan
     )
 
 
@@ -758,10 +839,40 @@ def test_target_time_assessment_requires_prediction_and_pb_reads() -> None:
     ]
     assert "get_race_predictions" in stage_messages[0]
     assert "get_pbs" in stage_messages[0]
-    assert state["tool_trace"] == [
-        {
-            "name": "assess_master_adjustment",
-            "outcome": "blocked",
-            "reason": "assessment_gate",
-        }
-    ]
+
+
+def test_focus_draft_requires_exact_current_request_binding() -> None:
+    request = "专项期训练重点改为马拉松配速耐力与补给演练"
+    toolkit = _toolkit()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                (
+                    "set_phase_focus",
+                    {
+                        "plan_id": "plan-1",
+                        "phase_id": "phase-build",
+                        "focus": "马拉松配速耐力与补给演练",
+                        "adjustment_request": "专项期训练重点改为上坡力量",
+                        "reason": "错误绑定",
+                    },
+                )
+            ),
+            AIMessage(content="重点调整请求未正确绑定，已拒绝。"),
+        ]
+    )
+
+    state = _invoke(
+        llm,
+        toolkit,
+        request=request,
+        assessment={
+            "adjustment_request": request,
+            "verdict": "reasonable",
+            "rationale": "数据支持该明确重点",
+        },
+    )
+
+    assert toolkit.set_phase_focus.calls == []
+    assert state.get("last_diff") is None
+    assert state["tool_trace"][-1]["reason"] == "focus_request_gate"

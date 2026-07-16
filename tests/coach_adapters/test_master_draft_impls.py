@@ -597,6 +597,7 @@ def test_set_phase_focus_returns_exact_typed_diff(seeded_plan):
         plan_id=plan.plan_id,
         phase_id=phase1.id,
         focus="有氧基础与上坡力量",
+        adjustment_request="基础期训练重点改为有氧基础与上坡力量",
         reason="用户明确要求且当前负荷支持",
     )
 
@@ -611,6 +612,54 @@ def test_set_phase_focus_returns_exact_typed_diff(seeded_plan):
     assert validate_master_diff(plan, diff) == []
 
 
+@pytest.mark.parametrize(
+    ("phase_selector", "focus", "adjustment_request"),
+    [
+        (1, "有氧基础与上坡力量", "基础期训练重点改为上坡力量"),
+        (2, "阈值耐力", "基础期训练重点改为阈值耐力"),
+    ],
+)
+def test_set_phase_focus_rejects_invented_text_or_wrong_named_phase(
+    seeded_plan, phase_selector: int, focus: str, adjustment_request: str
+) -> None:
+    plan, phase1, phase2, _ = seeded_plan
+    phase = phase1 if phase_selector == 1 else phase2
+    tool = draft_impls.SetPhaseFocusImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase.id,
+        focus=focus,
+        adjustment_request=adjustment_request,
+        reason="模型不应扩写或换阶段",
+    )
+
+    assert result.ok is False
+    assert "does not match" in result.errors[0]
+
+
+def test_set_phase_focus_requires_explicit_focus_in_bound_request(
+    seeded_plan,
+) -> None:
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseFocusImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        focus="上坡力量",
+        adjustment_request="请帮我调整基础期训练重点",
+        reason="模型不应猜重点",
+    )
+
+    assert result.ok is False
+    assert "explicit replacement focus" in result.errors[0]
+
+
 @pytest.mark.parametrize("focus", ["", "   ", "有氧基础", None])
 def test_set_phase_focus_rejects_empty_or_noop(
     seeded_plan, focus: object
@@ -621,7 +670,11 @@ def test_set_phase_focus_rejects_empty_or_noop(
     )
 
     result = tool(
-        plan_id=plan.plan_id, phase_id=phase1.id, focus=focus, reason="test"
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        focus=focus,
+        adjustment_request="基础期训练重点改为有氧基础与上坡力量",
+        reason="test",
     )
 
     assert result.ok is False
