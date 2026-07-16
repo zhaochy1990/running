@@ -49,7 +49,7 @@ from coach.contracts import (
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 from coach.graphs.conversation.master_adjustment_direction import (
-    master_diff_matches_volume_direction,
+    master_diff_matches_volume_request,
     requested_weekly_volume_direction,
 )
 from coach.schemas import assistant_parts_from_message
@@ -101,6 +101,11 @@ _PHASE_TARGET_REQUIRED_RE = re.compile(
 _EXPLICIT_VOLUME_TARGET_RE = re.compile(
     r"(?:\d+(?:\.\d+)?\s*(?:公里|km)?\s*[–—\-~至到]\s*"
     r"\d+(?:\.\d+)?\s*(?:公里|km)|\d+(?:\.\d+)?\s*%)",
+    re.IGNORECASE,
+)
+_AMBIGUOUS_VOLUME_PERCENT_RE = re.compile(
+    r"\d+(?:\.\d+)?\s*%\s*(?:还是|或者|或|/|、)\s*"
+    r"\d+(?:\.\d+)?\s*%",
     re.IGNORECASE,
 )
 _MULTIPLE_OPTIONS_RE = re.compile(
@@ -265,6 +270,8 @@ def _clarification_for_objective(objective: str) -> str | None:
     """Return the pre-data clarification needed for this write request."""
     if _needs_direction_clarification(objective):
         return _DIRECTION_CLARIFICATION
+    if _AMBIGUOUS_VOLUME_PERCENT_RE.search(objective):
+        return _VOLUME_TARGET_CLARIFICATION
     volume_direction = requested_weekly_volume_direction(objective)
     volume_change = volume_direction is not None
     missing_phase = not _EXPLICIT_PHASE_TARGET_RE.search(objective)
@@ -533,25 +540,27 @@ def make_season_plan_runner(
         is_alternatives = isinstance(last_diff, dict) and "alternatives" in last_diff
         if last_diff is not None:
             proposals = _parse_proposals(last_diff)
-            volume_direction = requested_weekly_volume_direction(effective_objective)
             direction_safe = [
                 proposal
                 for proposal in proposals
-                if master_diff_matches_volume_direction(proposal, volume_direction)
+                if master_diff_matches_volume_request(proposal, effective_objective)
             ]
             if len(direction_safe) != len(proposals):
                 logger.warning(
-                    "season_plan: dropping proposal opposite to requested volume direction"
+                    "season_plan: dropping proposal that mismatches requested volume change"
                 )
                 proposals = direction_safe
                 if not proposals:
+                    direction = requested_weekly_volume_direction(effective_objective)
                     requested_label = (
-                        "增加" if volume_direction == "increase" else "降低"
+                        "增加" if direction == "increase"
+                        else "降低" if direction == "decrease"
+                        else "调整"
                     )
                     return SpecialistResult(
                         status="completed",
                         reply_fragment=(
-                            f"生成的方案与“{requested_label}周跑量”的方向不一致，"
+                            f"生成的方案与“{requested_label}周跑量”的方向或幅度不一致，"
                             "已阻止展示和应用。请重新生成这个调整。"
                         ),
                     )

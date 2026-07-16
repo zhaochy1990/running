@@ -9,9 +9,11 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_adjustment_direction import (
+    master_diff_matches_volume_request,
     requested_weekly_volume_direction,
 )
 from coach.schemas import ToolResult
+from stride_core.master_plan_diff import MasterPlanDiff
 from .stubs.fake_toolkit import FakeToolkit
 
 
@@ -30,6 +32,94 @@ def test_requested_weekly_volume_direction_covers_natural_phrasing(
     user_text: str, expected: str
 ) -> None:
     assert requested_weekly_volume_direction(user_text) == expected
+
+
+def test_exact_range_request_rejects_a_different_same_direction_range() -> None:
+    diff = MasterPlanDiff.model_validate({
+        "diff_id": "wrong-exact-range",
+        "plan_id": "plan-1",
+        "ops": [{
+            "id": "op-1",
+            "op": "replace_weekly_range",
+            "phase_id": "phase-build",
+            "old_value": {
+                "weekly_distance_km_low": 75,
+                "weekly_distance_km_high": 88,
+            },
+            "new_value": {
+                "weekly_distance_km_low": 80,
+                "weekly_distance_km_high": 95,
+            },
+            "spec_patch": {
+                "weekly_distance_km_low": 80,
+                "weekly_distance_km_high": 95,
+            },
+        }],
+        "ai_explanation": "方向正确但不是用户指定区间",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+
+    assert not master_diff_matches_volume_request(
+        diff, "专项期增加到 82–96 公里"
+    )
+
+
+def test_percentage_request_uses_half_up_rounding_at_one_decimal() -> None:
+    diff = MasterPlanDiff.model_validate({
+        "diff_id": "half-up",
+        "plan_id": "plan-1",
+        "ops": [{
+            "id": "op-1",
+            "op": "replace_weekly_range",
+            "phase_id": "phase-build",
+            "old_value": {
+                "weekly_distance_km_low": 65,
+                "weekly_distance_km_high": 75,
+            },
+            "new_value": {
+                "weekly_distance_km_low": 68.3,
+                "weekly_distance_km_high": 78.8,
+            },
+            "spec_patch": {
+                "weekly_distance_km_low": 68.3,
+                "weekly_distance_km_high": 78.8,
+            },
+        }],
+        "ai_explanation": "分别提高 5% 并按 0.1 km 四舍五入",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+
+    assert master_diff_matches_volume_request(diff, "专项期跑量提高 5%")
+
+
+def test_conflicting_percentages_fail_closed() -> None:
+    diff = MasterPlanDiff.model_validate({
+        "diff_id": "ambiguous-percentage",
+        "plan_id": "plan-1",
+        "ops": [{
+            "id": "op-1",
+            "op": "replace_weekly_range",
+            "phase_id": "phase-build",
+            "old_value": {
+                "weekly_distance_km_low": 75,
+                "weekly_distance_km_high": 88,
+            },
+            "new_value": {
+                "weekly_distance_km_low": 82.5,
+                "weekly_distance_km_high": 96.8,
+            },
+            "spec_patch": {
+                "weekly_distance_km_low": 82.5,
+                "weekly_distance_km_high": 96.8,
+            },
+        }],
+        "ai_explanation": "不应猜测冲突的百分比",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+
+    assert not master_diff_matches_volume_request(
+        diff, "专项期跑量提高 5% 或 10%"
+    )
 
 
 class _ScriptedLLM:
@@ -111,6 +201,7 @@ class _SetPhaseWeeklyRange:
         phase_id: str,
         weekly_distance_km_low: float,
         weekly_distance_km_high: float,
+        adjustment_request: str,
         reason: str,
     ) -> ToolResult:
         self.calls.append(
@@ -119,6 +210,7 @@ class _SetPhaseWeeklyRange:
                 "phase_id": phase_id,
                 "weekly_distance_km_low": weekly_distance_km_low,
                 "weekly_distance_km_high": weekly_distance_km_high,
+                "adjustment_request": adjustment_request,
                 "reason": reason,
             }
         )
@@ -472,6 +564,7 @@ def test_decreasing_weekly_diff_is_rejected_for_an_increase_request() -> None:
                         "phase_id": "phase-build",
                         "weekly_distance_km_low": 67.5,
                         "weekly_distance_km_high": 79.2,
+                        "adjustment_request": request,
                         "reason": "错误方向",
                     },
                 )
@@ -497,6 +590,71 @@ def test_decreasing_weekly_diff_is_rejected_for_an_increase_request() -> None:
         "outcome": "blocked",
         "reason": "proposal_direction_gate",
     }
+
+
+def test_wrong_percentage_diff_is_rejected_even_when_direction_is_correct() -> None:
+    request = "把专项期跑量提高 10%"
+    toolkit = _toolkit()
+    toolkit.set_phase_weekly_range.set_result(
+        ToolResult(
+            ok=True,
+            data={
+                "diff_id": "wrong-percentage",
+                "plan_id": "plan-1",
+                "ops": [{
+                    "id": "op-1",
+                    "op": "replace_weekly_range",
+                    "phase_id": "phase-build",
+                    "old_value": {
+                        "weekly_distance_km_low": 75,
+                        "weekly_distance_km_high": 88,
+                    },
+                    "new_value": {
+                        "weekly_distance_km_low": 80,
+                        "weekly_distance_km_high": 95,
+                    },
+                    "spec_patch": {
+                        "weekly_distance_km_low": 80,
+                        "weekly_distance_km_high": 95,
+                    },
+                }],
+                "ai_explanation": "方向向上但幅度不是 10%",
+                "created_at": "2026-07-16T00:00:00Z",
+            },
+        )
+    )
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                (
+                    "set_phase_weekly_range",
+                    {
+                        "plan_id": "plan-1",
+                        "phase_id": "phase-build",
+                        "weekly_distance_km_low": 80,
+                        "weekly_distance_km_high": 95,
+                        "adjustment_request": request,
+                        "reason": "错误计算",
+                    },
+                )
+            ),
+            AIMessage(content="方案与用户指定的 10% 不一致，已拒绝。"),
+        ]
+    )
+
+    state = _invoke(
+        llm,
+        toolkit,
+        request=request,
+        assessment={
+            "adjustment_request": request,
+            "verdict": "reasonable",
+            "rationale": "数据支持精确增加 10%。",
+        },
+    )
+
+    assert state.get("last_diff") is None
+    assert state["tool_trace"][-1]["reason"] == "proposal_direction_gate"
 
 
 def test_reasonable_assessment_for_an_old_request_cannot_authorize_a_new_draft() -> None:

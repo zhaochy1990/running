@@ -43,7 +43,7 @@ from .prompts.master_chat import MASTER_CHAT_PROMPT
 from .prompts.qa import QA_PROMPT
 from .prompts.week_chat import WEEK_CHAT_PROMPT
 from .master_adjustment_direction import (
-    proposal_payload_matches_volume_direction,
+    proposal_payload_matches_volume_request,
     requested_weekly_volume_direction,
 )
 from .tool_bridge import (
@@ -329,6 +329,34 @@ def build_conversation_graph(
                         )
                     )
                     continue
+                if (
+                    name == "set_phase_weekly_range"
+                    and str(args.get("adjustment_request") or "").strip()
+                    != current_request
+                ):
+                    tool_trace.append(
+                        {
+                            "name": name,
+                            "outcome": "blocked",
+                            "reason": "volume_request_gate",
+                        }
+                    )
+                    new_messages.append(
+                        ToolMessage(
+                            content=json.dumps(
+                                {
+                                    "ok": False,
+                                    "errors": [
+                                        "weekly_range_adjustment_request_does_not_match_current_user_request"
+                                    ],
+                                },
+                                ensure_ascii=False,
+                            ),
+                            tool_call_id=tc["id"],
+                            name=name,
+                        )
+                    )
+                    continue
             try:
                 payload = impl.invoke(args)
             except Exception as exc:  # noqa: BLE001 — tool boundary
@@ -368,7 +396,7 @@ def build_conversation_graph(
                 try:
                     if parsed_payload.get("ok") and parsed_payload.get("data") is not None:
                         candidate = parsed_payload["data"]
-                        if proposal_payload_matches_volume_direction(
+                        if proposal_payload_matches_volume_request(
                             candidate, current_request
                         ):
                             last_diff = candidate
@@ -383,7 +411,7 @@ def build_conversation_graph(
                                     {
                                         "ok": False,
                                         "errors": [
-                                            "proposal_opposes_requested_weekly_volume_direction"
+                                            "proposal_does_not_match_requested_weekly_volume_change"
                                         ],
                                     },
                                     ensure_ascii=False,

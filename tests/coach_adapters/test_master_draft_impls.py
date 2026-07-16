@@ -506,6 +506,7 @@ def test_set_phase_weekly_range_returns_exact_typed_diff(seeded_plan, monkeypatc
         phase_id=phase1.id,
         weekly_distance_km_low=55,
         weekly_distance_km_high=65,
+        adjustment_request="把基础期周跑量调整到 55–65 公里",
         reason="用户明确要求且训练负荷支持",
     )
 
@@ -536,11 +537,54 @@ def test_set_phase_weekly_range_rejects_inverted_range(seeded_plan):
         phase_id=phase1.id,
         weekly_distance_km_low=70,
         weekly_distance_km_high=60,
+        adjustment_request="把基础期周跑量调整到 70–60 公里",
         reason="bad input",
     )
 
     assert result.ok is False
     assert "low <= high" in result.errors[0]
+
+
+def test_set_phase_weekly_range_calculates_exact_requested_percentage(seeded_plan):
+    plan, _, phase2, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+    request = "把专项期跑量提高 10%"
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase2.id,
+        weekly_distance_km_low=55,
+        weekly_distance_km_high=71.5,
+        adjustment_request=request,
+        reason="历史峰值和当前恢复支持",
+    )
+
+    diff = _assert_master_diff(result)
+    assert diff.ops[0].new_value == {
+        "weekly_distance_km_low": 55.0,
+        "weekly_distance_km_high": 71.5,
+    }
+
+
+def test_set_phase_weekly_range_rejects_wrong_requested_percentage(seeded_plan):
+    plan, _, phase2, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase2.id,
+        weekly_distance_km_low=80,
+        weekly_distance_km_high=95,
+        adjustment_request="把专项期跑量提高 10%",
+        reason="错误计算",
+    )
+
+    assert result.ok is False
+    assert "exact range or percentage" in result.errors[0]
 
 
 def test_set_phase_focus_returns_exact_typed_diff(seeded_plan):
@@ -597,6 +641,7 @@ def test_set_phase_weekly_range_rejects_non_finite_values(
         phase_id=phase1.id,
         weekly_distance_km_low=low,
         weekly_distance_km_high=high,
+        adjustment_request="把基础期周跑量提高 10%",
         reason="bad input",
     )
 
@@ -615,6 +660,7 @@ def test_set_phase_weekly_range_rejects_noop(seeded_plan):
         phase_id=phase1.id,
         weekly_distance_km_low=phase1.weekly_distance_km_low,
         weekly_distance_km_high=phase1.weekly_distance_km_high,
+        adjustment_request="保持基础期周跑量不变",
         reason="same range",
     )
 

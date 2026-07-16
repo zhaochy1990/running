@@ -28,6 +28,7 @@ S1_CONVERSATION_INPUT_SHA256 = {
     "s1c-increase-details-followup-reasonable": "d0ad8f40d3801fa119d688e8f834eebf9634b64b0dbdb066f129c013554bc90b",
     "s1c-increase-missing-details-clarify": "7f2864ebd73f9eed21177d26bdd7c0c959a9127d1e1807e8efe8e3e87292650e",
     "s1c-increase-percentage-missing-phase-clarify": "d8dab5b18209ee27fa0badcf76af6b5f4d8c5ac2f2480a6342e4df15fb393b69",
+    "s1c-increase-percentage-phase-followup-reasonable": "dd6dc25b301716cb3721e8e2c0caf64c59f7cd5a6dc8290905521909feaa835f",
     "s1c-race-postponed-atomic": "ae2c9d7a12347e44fd15e7a684b827627a55db1263759ce572c78e229d305303",
     "s1c-target-time-reasonable-atomic": "6e016c9222f18450e9d7eda42fbc8a94939c8168339aabd6c69c1f1fc542939e",
     "s1c-vague-adjustment-clarify": "a9c4467eb8c4ce6458ab418a8870f99e8ae7d851cdfc0773909ddb137fd05d9d",
@@ -221,6 +222,7 @@ def test_exact_range_fixture_passes_scripted_production_graph() -> None:
                         "phase_id": "phase-base",
                         "weekly_distance_km_low": 65,
                         "weekly_distance_km_high": 75,
+                        "adjustment_request": request,
                         "reason": "modest supported reduction",
                     },
                 ),
@@ -411,6 +413,7 @@ def test_increase_details_followup_preserves_direction_and_exact_range() -> None
                         "phase_id": "phase-build",
                         "weekly_distance_km_low": 82,
                         "weekly_distance_km_high": 96,
+                        "adjustment_request": request,
                         "reason": "用户明确要求加量且冻结证据支持",
                     },
                 ),
@@ -436,6 +439,58 @@ def test_increase_details_followup_preserves_direction_and_exact_range() -> None
     assert "propose_reduction_alternatives" not in [
         item["name"] for item in outcome.generated_artifact["tool_trace"]
     ]
+
+
+def test_percentage_increase_followup_preserves_exact_magnitude() -> None:
+    request = "专项期：把跑量提高 10%"
+    llm = _ScriptedLLM(
+        [
+            _required_read_calls(),
+            _tool_calls(
+                2,
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "专项期 75–88 公里提高 10% 后为 82.5–96.8 公里，冻结证据支持",
+                    },
+                ),
+            ),
+            _tool_calls(
+                3,
+                (
+                    "set_phase_weekly_range",
+                    {
+                        "plan_id": "s1c-plan-001",
+                        "phase_id": "phase-build",
+                        "weekly_distance_km_low": 82.5,
+                        "weekly_distance_km_high": 96.8,
+                        "adjustment_request": request,
+                        "reason": "75–88 公里分别提高 10%",
+                    },
+                ),
+            ),
+        ]
+    )
+
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-increase-percentage-phase-followup-reasonable"],
+        llm=llm,
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.debug["contract_violations"] == []
+    proposal = outcome.generated_artifact["result"]["proposals"][0]
+    assert proposal["ops"][0]["old_value"] == {
+        "weekly_distance_km_low": 75.0,
+        "weekly_distance_km_high": 88.0,
+    }
+    assert proposal["ops"][0]["new_value"] == {
+        "weekly_distance_km_low": 82.5,
+        "weekly_distance_km_high": 96.8,
+    }
 
 
 def test_target_time_fixture_reads_realism_evidence_and_emits_atomic_diff() -> None:

@@ -526,6 +526,65 @@ class TestAdjustMessages:
         assert resp.json()["diff"] is None
         assert mp_mod._PENDING_MP_DIFFS == {}
 
+    def test_percentage_request_never_returns_or_caches_wrong_magnitude(
+        self, app_client
+    ):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+        wrong_diff = MasterPlanDiff(
+            diff_id=str(uuid4()),
+            plan_id=plan.plan_id,
+            ops=[MasterPlanDiffOp(
+                id=str(uuid4()),
+                op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+                phase_id=plan.phases[0].id,
+                old_value={
+                    "weekly_distance_km_low": 40,
+                    "weekly_distance_km_high": 50,
+                },
+                new_value={
+                    "weekly_distance_km_low": 45,
+                    "weekly_distance_km_high": 56,
+                },
+                spec_patch={
+                    "weekly_distance_km_low": 45,
+                    "weekly_distance_km_high": 56,
+                },
+            )],
+            ai_explanation="方向向上但不是精确 10%",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+        request = "把基础期跑量提高 10%"
+
+        def fake_factory(**kwargs):
+            kwargs["state_observer"]({
+                "master_adjustment_request": request,
+                "master_adjustment_assessment": {
+                    "adjustment_request": request,
+                    "verdict": "reasonable",
+                    "rationale": "测试中的错误 runner 声称合理。",
+                },
+            })
+            return lambda task: SpecialistResult(
+                status="completed",
+                reply_fragment="错误幅度方案。",
+                proposals=[wrong_diff],
+            )
+
+        with patch.object(mp_mod, "make_season_plan_runner", side_effect=fake_factory):
+            resp = client.post(
+                f"/api/users/me/master-plan/{plan.plan_id}/adjust/messages",
+                json={"message": request, "history": []},
+                headers=_auth(token),
+            )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["stage"] == "assessment"
+        assert resp.json()["diff"] is None
+        assert mp_mod._PENDING_MP_DIFFS == {}
+
 
 # ===========================================================================
 # T42 — adjust/apply tests

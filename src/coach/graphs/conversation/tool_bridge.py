@@ -106,7 +106,9 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "set_phase_weekly_range": (
         "Propose one exact weekly-distance range for a named master-plan phase. "
         "Use when the user requests concrete low/high kilometres or when the evidence-based "
-        "assessment supports one specific range. This emits a typed diff and does not apply it."
+        "assessment supports one specific range. adjustment_request must exactly repeat the "
+        "canonical current user request; the tool deterministically rejects a range that does "
+        "not match its exact kilometres or percentage. This emits a typed diff and does not apply it."
     ),
     "set_phase_focus": (
         "Propose one exact training-focus description for a master-plan phase. "

@@ -705,6 +705,7 @@ class SetPhaseWeeklyRangeImpl:
         phase_id: str,
         weekly_distance_km_low: float,
         weekly_distance_km_high: float,
+        adjustment_request: str,
         reason: str,
     ) -> ToolResult:
         low = float(weekly_distance_km_low)
@@ -750,12 +751,25 @@ class SetPhaseWeeklyRangeImpl:
             new_value=new_range,
             spec_patch=new_range,
         )
+        from coach.graphs.conversation.master_adjustment_direction import (
+            master_diff_matches_volume_request,
+        )
+
+        candidate = _empty_master_diff(plan_id, "").model_copy(
+            update={"ops": [op]}
+        )
+        if not master_diff_matches_volume_request(candidate, adjustment_request):
+            return _fail(
+                "weekly distance range does not match the exact range or percentage "
+                "in adjustment_request"
+            )
         explanation = (
             f"将「{phase.name}」周跑量从 "
             f"{phase.weekly_distance_km_low:g}–{phase.weekly_distance_km_high:g} km "
-            f"调整为 {low:g}–{high:g} km（原因：{reason}）"
+            f"调整为 {low:g}–{high:g} km"
+            f"（用户请求：{adjustment_request}；原因：{reason}）"
         )
-        diff = _empty_master_diff(plan_id, explanation)
+        diff = candidate.model_copy(update={"ai_explanation": explanation})
         return _ok_master(diff.model_copy(update={"ops": [op]}))
 
 

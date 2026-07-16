@@ -236,7 +236,7 @@ def test_runner_rejects_reduction_diff_for_increase_request(monkeypatch) -> None
     result = runner(_task("专项期增加到 70–80 公里：我想要加量"))
 
     assert result.proposals == []
-    assert "方向不一致" in result.reply_fragment
+    assert "方向或幅度不一致" in result.reply_fragment
     assert "增加周跑量" in result.reply_fragment
 
 
@@ -425,6 +425,13 @@ def test_orchestrator_preflight_asks_phase_when_only_increase_percentage_is_know
 
     assert result is not None
     assert "哪个阶段" in (result.clarification or "")
+
+
+def test_orchestrator_preflight_clarifies_conflicting_percentages() -> None:
+    result = preflight_season_plan_turn("专项期跑量提高 5% 或 10%", [])
+
+    assert result is not None
+    assert "明确幅度" in (result.clarification or "")
 
 
 def test_run_coach_turn_preflight_does_not_construct_any_llm(monkeypatch) -> None:

@@ -214,6 +214,7 @@ class SetPhaseWeeklyRange(Protocol):
         phase_id: str,
         weekly_distance_km_low: float,
         weekly_distance_km_high: float,
+        adjustment_request: str,
         reason: str,
     ) -> ToolResult: ...
 
