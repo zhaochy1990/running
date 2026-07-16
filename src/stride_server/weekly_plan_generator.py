@@ -429,7 +429,11 @@ def build_weekly_plan(
             else _resolve_weekly_target(master_target, training_context)
         )
         actual_km = _current_week_actual_km(training_context)
-        if actual_km > 0 and (
+        completed_run_days = len(training_context.current_week_by_date or {})
+        if completed_run_days == 7:
+            resolved_base_km = math.ceil(actual_km * 2.0) / 2.0
+            actual_note = f"本周已全部完成，最终实际跑量 {actual_km:.1f}km"
+        elif actual_km > 0 and (
             resolved_base_km is None or actual_km > resolved_base_km
         ):
             resolved_base_km = math.ceil(actual_km * 2.0) / 2.0

@@ -258,7 +258,7 @@ def test_end_of_week_generation_preserves_completed_seven_day_streak(
         user_id="u1", week_start=date(2026, 7, 13)
     )
 
-    assert generated.total_distance_km == 71.0
+    assert generated.total_distance_km == 70.0
     assert sum(
         float(session.total_distance_m or 0)
         for session in generated.plan.sessions
