@@ -64,6 +64,9 @@ elapsed time, message/input character counts, token usage, tool names, tool
 elapsed time, and result size. It never logs prompts, tool payloads, or replies.
 
 `coach-cli` 在交互终端中用 Rich 渲染 Coach 回复里的 Markdown（标题、列表、表格、代码块）；stdout 重定向到文件或 pipe 时保留原始 Markdown，避免 ANSI 和终端布局破坏脚本消费。
+计划 proposal 在 CLI 中显示为带范围、摘要和逐项 diff 的卡片；单 proposal 可直接回复
+“应用这个提案”确认，多个 proposal 必须回复“应用第 N 个提案”或输入 `/apply N`。
+确认由 CLI 调用 deterministic apply endpoint，不把副作用交给 Agent 执行。
 
 Resolver 的每个结构化 intent 都必须输出
 `{specialist_id, action: read|write, confidence}`。模型根据语义选择 action 和

@@ -24,7 +24,7 @@ import uuid
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 try:
     import readline as _readline
@@ -34,11 +34,12 @@ except ImportError:  # pragma: no cover - unavailable on some platforms
 import click
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.text import Text
 
 import stride_core.db as _coredb
-from stride_core.master_plan_diff import MasterPlanDiff
-from stride_core.plan_diff import PlanDiff
+from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOpKind
+from stride_core.plan_diff import DiffOpKind, PlanDiff
 from stride_core.timefmt import utc_iso_to_shanghai_iso
 from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 
@@ -72,6 +73,47 @@ _UUID4_RE = re.compile(
 )
 _COACH_CLI_HOME = Path.home() / ".coach-cli"
 _CHECKPOINT_DIR = _COACH_CLI_HOME / "checkpoints"
+_APPLICABLE_PROPOSAL_TYPES = (MasterPlanDiff, PlanDiff, WeeklyPlanCreateProposal)
+
+_PROPOSAL_OP_LABELS = {
+    "move_session": "移动训练",
+    "replace_kind": "更换训练类型",
+    "replace_distance": "调整训练量",
+    "add_session": "新增训练",
+    "remove_session": "删除训练",
+    "replace_note": "更新训练说明",
+    "add_phase": "新增阶段",
+    "remove_phase": "删除阶段",
+    "resize_phase": "调整阶段日期",
+    "replace_phase_focus": "调整阶段重点",
+    "replace_weekly_range": "调整周跑量",
+    "add_milestone": "新增里程碑",
+    "remove_milestone": "删除里程碑",
+    "replace_milestone_date": "调整里程碑日期",
+    "replace_milestone_target": "调整里程碑目标",
+}
+_FIELD_LABELS = {
+    "date": "日期",
+    "new_date": "新日期",
+    "kind": "类型",
+    "summary": "内容",
+    "focus": "重点",
+    "target": "目标",
+    "name": "名称",
+    "end_date": "结束日期",
+    "start_date": "开始日期",
+    "total_distance_m": "距离",
+    "total_duration_s": "时长",
+    "weekly_distance_km_low": "周跑量下限",
+    "weekly_distance_km_high": "周跑量上限",
+}
+_KIND_LABELS = {
+    "run": "跑步",
+    "strength": "力量",
+    "rest": "休息",
+    "mobility": "灵活性",
+    "note": "说明",
+}
 
 _HELP = """\
 命令:
@@ -79,6 +121,7 @@ _HELP = """\
   /session   列出历史会话，选择并恢复其中一个
   /proposals 查看当前待确认的计划提案
   /apply N   应用第 N 个周计划或赛季计划提案
+  应用这个提案  聊天确认单个提案；多个提案请说“应用第 N 个提案”
   /dismiss   放弃当前待选方案
   /help      显示这个帮助
   /exit /quit 退出
@@ -258,6 +301,7 @@ def _setup_debug_logging() -> None:
 
 def _build_checkpointer():
     """Local file-backed checkpointer (no Azure Table needed for dev)."""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
     from stride_server.coach_adapters.persistence.checkpointer import (
         AzureTableCheckpointSaver,
     )
@@ -265,7 +309,149 @@ def _build_checkpointer():
         FileCheckpointStore,
     )
 
-    return AzureTableCheckpointSaver(store=FileCheckpointStore(_CHECKPOINT_DIR))
+    # Checkpoints contain Pydantic ``model_dump`` output whose enum members are
+    # reconstructed by msgpack.  Keep the allow-list explicit so LangGraph does
+    # not print a permissive-deserialisation warning into the interactive REPL.
+    serde = JsonPlusSerializer(
+        allowed_msgpack_modules=[
+            DiffOpKind,
+            MasterPlanDiffOpKind,
+        ]
+    )
+    return AzureTableCheckpointSaver(
+        store=FileCheckpointStore(_CHECKPOINT_DIR), serde=serde
+    )
+
+
+def _proposal_heading(proposal: object) -> tuple[str, str]:
+    """Return a friendly proposal type and its affected scope."""
+    if isinstance(proposal, WeeklyPlanCreateProposal):
+        return "新建周计划", proposal.folder
+    if isinstance(proposal, PlanDiff):
+        return "调整周计划", proposal.folder
+    if isinstance(proposal, MasterPlanDiff):
+        return "调整赛季计划", proposal.plan_id
+    return "计划提案", ""
+
+
+def _format_scalar(key: str, value: object) -> str:
+    if value is None:
+        return "无"
+    if key == "total_distance_m" and isinstance(value, (int, float)):
+        return f"{value / 1000:g} km"
+    if key == "total_duration_s" and isinstance(value, (int, float)):
+        return f"{value / 60:g} 分钟"
+    if key in ("weekly_distance_km_low", "weekly_distance_km_high"):
+        return f"{value} km"
+    if key == "kind":
+        return _KIND_LABELS.get(str(value), str(value))
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value)
+
+
+def _format_diff_value(value: dict[str, Any] | None) -> str:
+    if not value:
+        return "无"
+    if set(value) >= {"weekly_distance_km_low", "weekly_distance_km_high"}:
+        return (
+            f"周跑量 {value['weekly_distance_km_low']}–"
+            f"{value['weekly_distance_km_high']} km"
+        )
+    return "；".join(
+        f"{_FIELD_LABELS.get(key, key)} {_format_scalar(key, item)}"
+        for key, item in value.items()
+        if key != "session_index"
+    ) or "无"
+
+
+def _proposal_change_lines(proposal: object) -> list[str]:
+    if isinstance(proposal, WeeklyPlanCreateProposal):
+        plan = proposal.to_weekly_plan()
+        lines = [
+            f"共 {len(plan.sessions)} 项训练 · 计划跑量 {proposal.total_distance_km:g} km"
+        ]
+        for session in plan.sessions:
+            kind = _KIND_LABELS.get(session.kind.value, session.kind.value)
+            details = session.summary or session.notes_md or "未命名训练"
+            lines.append(f"{session.date} · {kind} · {details}")
+        return lines
+
+    lines: list[str] = []
+    for op in getattr(proposal, "ops", []) or []:
+        op_name = getattr(op.op, "value", str(op.op))
+        label = _PROPOSAL_OP_LABELS.get(op_name, op_name)
+        target = (
+            getattr(op, "phase_id", None)
+            or getattr(op, "milestone_id", None)
+            or getattr(op, "date", None)
+        )
+        target_text = f" · {target}" if target else ""
+        old_value = _format_diff_value(getattr(op, "old_value", None))
+        new_value = _format_diff_value(
+            getattr(op, "new_value", None) or getattr(op, "spec_patch", None)
+        )
+        lines.append(f"{label}{target_text}: {old_value} → {new_value}")
+    return lines
+
+
+def _proposal_lines(proposal: object, *, index: int, total: int) -> list[str]:
+    heading, scope = _proposal_heading(proposal)
+    explanation = getattr(proposal, "ai_explanation", "") or "无摘要"
+    changes = _proposal_change_lines(proposal)
+    apply_hint = (
+        "回复“应用这个提案”确认，或输入 /apply 1"
+        if total == 1
+        else f"回复“应用第 {index} 个提案”确认，或输入 /apply {index}"
+    )
+    return [
+        f"提案 {index} · {heading}",
+        f"范围: {scope}",
+        f"摘要: {explanation}",
+        f"改动 ({len(changes)}):",
+        *(
+            ["  暂无结构化改动"]
+            if not changes
+            else [
+                f"  {change_index}. {change}"
+                for change_index, change in enumerate(changes, 1)
+            ]
+        ),
+        f"操作: {apply_hint}",
+    ]
+
+
+def _print_proposals(
+    proposals: list[MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal],
+    *,
+    console: Console | None = None,
+    render_panels: bool | None = None,
+) -> None:
+    """Render pending proposals consistently for turns and /proposals."""
+    should_render = _stdout_is_terminal() if render_panels is None else render_panels
+    if not should_render:
+        for index, proposal in enumerate(proposals, start=1):
+            click.echo("\n".join(_proposal_lines(proposal, index=index, total=len(proposals))))
+        return
+
+    output = console or Console(
+        file=click.get_text_stream("stdout"), highlight=False
+    )
+    for index, proposal in enumerate(proposals, start=1):
+        lines = _proposal_lines(proposal, index=index, total=len(proposals))
+        title = lines[0]
+        content = Text("\n".join(lines[1:]))
+        output.print(
+            Panel(
+                content,
+                title=title,
+                title_align="left",
+                border_style="cyan",
+                padding=(0, 1),
+            )
+        )
 
 
 def _format_turn(turn) -> str:
@@ -276,29 +462,16 @@ def _format_turn(turn) -> str:
     else:
         lines.append(turn.reply or "(空回复)")
     lines.extend(f"  {line}" for line in _turn_metadata(turn))
+    proposals = _applicable_proposals(turn)
+    for index, proposal in enumerate(proposals, start=1):
+        lines.append("")
+        lines.extend(_proposal_lines(proposal, index=index, total=len(proposals)))
     return "\n".join(lines)
 
 
 def _turn_metadata(turn) -> list[str]:
     """Build the compact non-Markdown lines appended after the reply."""
     lines: list[str] = []
-    proposal_index = 0
-    for card in turn.proposals:
-        proposal = card.proposal
-        n_ops = len(getattr(proposal, "ops", []) or [])
-        explanation = getattr(proposal, "ai_explanation", "") or ""
-        if isinstance(
-            proposal, (MasterPlanDiff, PlanDiff, WeeklyPlanCreateProposal)
-        ):
-            proposal_index += 1
-            label = f"提案 {proposal_index}[{card.specialist_id}]"
-        else:
-            label = f"提案[{card.specialist_id}]"
-        if isinstance(proposal, WeeklyPlanCreateProposal):
-            n_ops = len(proposal.plan.get("sessions", []))
-        lines.append(
-            f"📋 {label} · {n_ops} 处改动 — {explanation}"
-        )
     if turn.active_target:
         lines.append(f"· 当前对象: {turn.active_target.model_dump(exclude_none=True)}")
     return lines
@@ -346,6 +519,11 @@ def _print_turn(
 
     for line in _turn_metadata(turn):
         output.print(Text(f"  {line}", style="dim"))
+
+    proposals = _applicable_proposals(turn)
+    if proposals:
+        output.print()
+        _print_proposals(proposals, console=output, render_panels=True)
 
 
 class _Thinking:
@@ -427,10 +605,86 @@ def _applicable_proposals(
     return [
         card.proposal
         for card in turn.proposals
-        if isinstance(
-            card.proposal, (MasterPlanDiff, PlanDiff, WeeklyPlanCreateProposal)
-        )
+        if isinstance(card.proposal, _APPLICABLE_PROPOSAL_TYPES)
     ]
+
+
+_CHINESE_NUMBERS = {
+    "一": 1,
+    "二": 2,
+    "两": 2,
+    "三": 3,
+    "四": 4,
+    "五": 5,
+    "六": 6,
+    "七": 7,
+    "八": 8,
+    "九": 9,
+    "十": 10,
+}
+_CHAT_APPLY_PATTERNS = (
+    re.compile(
+        r"^(?:(?:好|好的)[，, ]*|(?:请|那就|就)\s*)?"
+        r"(?:应用|采用|接受|确认|执行)(?:一下)?(?:第\s*)?"
+        r"(?P<index>\d+|[一二两三四五六七八九十])\s*"
+        r"(?:个|条|项)?(?:方案|提案)?(?:吧)?[。！!]?$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:(?:yes|ok|okay|please)[, ]+)?"
+        r"(?:apply|accept|use)\s+(?:(?:proposal|option|choice)\s*)"
+        r"(?P<index>\d+)[.!！。]?$",
+        re.IGNORECASE,
+    ),
+)
+_CHAT_APPLY_WITHOUT_INDEX = re.compile(
+    r"(?:"
+    r"^(?:(?:好|好的)[，, ]*|(?:请|那就|就)\s*)?"
+    r"(?:应用|采用|接受|确认|执行)(?:一下)?"
+    r"(?:这个|该|当前|上面|刚才|它)?(?:方案|提案)?(?:吧)?"
+    r"|"
+    r"^(?:(?:yes|ok|okay|please)[, ]+)?"
+    r"(?:apply|accept|use)(?:\s+(?:it|this|that|the))?(?:\s+proposal)?"
+    r")[.!！。]?$",
+    re.IGNORECASE,
+)
+
+
+def _chat_apply_selection(message: str) -> tuple[bool, int | None]:
+    """Parse a natural-language confirmation without involving the Agent.
+
+    Returning ``(True, None)`` means the message confirms a proposal but does
+    not disambiguate which one.  The caller can then ask for a number instead
+    of risking a write.
+    """
+    if re.search(
+        r"(?:不要|不许|别|取消|don't|do not|not)", message, re.IGNORECASE
+    ):
+        return False, None
+    normalized = re.split(r"[，,；;:]\s*", message.strip())[-1].strip()
+    for pattern in _CHAT_APPLY_PATTERNS:
+        match = pattern.fullmatch(normalized)
+        if match:
+            raw_index = match.group("index")
+            return True, int(raw_index) if raw_index.isdigit() else _CHINESE_NUMBERS[raw_index]
+    if _CHAT_APPLY_WITHOUT_INDEX.fullmatch(normalized):
+        return True, None
+    return False, None
+
+
+def _apply_result_message(
+    *,
+    proposal: MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal,
+    result: dict,
+    selected: int,
+) -> str:
+    if isinstance(proposal, MasterPlanDiff):
+        suffix = f"训练计划已更新至 v{result.get('version', '?')}。"
+    elif result.get("created"):
+        suffix = f"周计划 {result.get('folder', '')} 已创建。"
+    else:
+        suffix = f"周计划 {result.get('folder', '')} 已更新。"
+    return f"✅ 方案 {selected} 已应用，{suffix}"
 
 
 def _apply_master_proposal(*, user_id: str, proposal: MasterPlanDiff) -> dict:
@@ -611,10 +865,7 @@ def main(
                 if not pending_proposals:
                     click.echo("当前没有待确认的计划提案。")
                 else:
-                    for index, proposal in enumerate(pending_proposals, start=1):
-                        click.echo(
-                            f"{index}. {proposal.ai_explanation}"
-                        )
+                    _print_proposals(pending_proposals)
                 continue
             if line == "/dismiss":
                 pending_proposals = []
@@ -635,19 +886,46 @@ def main(
                 try:
                     proposal = pending_proposals[selected - 1]
                     result = _apply_proposal(
-                        user_id=user_id, proposal=pending_proposals[selected - 1]
+                        user_id=user_id, proposal=proposal
                     )
                 except Exception as exc:  # noqa: BLE001 — keep the REPL alive
                     click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
                     continue
                 pending_proposals = []
-                if isinstance(proposal, MasterPlanDiff):
-                    suffix = f"训练计划已更新至 v{result.get('version', '?')}。"
-                elif result.get("created"):
-                    suffix = f"周计划 {result.get('folder', '')} 已创建。"
-                else:
-                    suffix = f"周计划 {result.get('folder', '')} 已更新。"
-                click.echo(f"✅ 方案 {selected} 已应用，{suffix}")
+                click.echo(
+                    _apply_result_message(
+                        proposal=proposal, result=result, selected=selected
+                    )
+                )
+                continue
+
+            is_chat_apply, selected = _chat_apply_selection(line)
+            if is_chat_apply and pending_proposals:
+                if selected is None:
+                    if len(pending_proposals) > 1:
+                        click.echo(
+                            f"当前有 {len(pending_proposals)} 个待确认提案，"
+                            "请说“应用第 N 个提案”，或输入 /apply N。"
+                        )
+                        continue
+                    selected = 1
+                if selected < 1 or selected > len(pending_proposals):
+                    click.echo(
+                        f"方案编号无效，请说“应用第 1-{len(pending_proposals)} 个提案”。"
+                    )
+                    continue
+                proposal = pending_proposals[selected - 1]
+                try:
+                    result = _apply_proposal(user_id=user_id, proposal=proposal)
+                except Exception as exc:  # noqa: BLE001 — keep the REPL alive
+                    click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
+                    continue
+                pending_proposals = []
+                click.echo(
+                    _apply_result_message(
+                        proposal=proposal, result=result, selected=selected
+                    )
+                )
                 continue
 
             input_history.remember(line)
@@ -664,7 +942,9 @@ def main(
                 continue
 
             _print_turn(turn, interactive=True)
-            pending_proposals = _applicable_proposals(turn)
+            new_proposals = _applicable_proposals(turn)
+            if new_proposals:
+                pending_proposals = new_proposals
     finally:
         input_history.close()
 
