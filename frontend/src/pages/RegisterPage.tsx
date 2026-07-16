@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, Link, Navigate } from 'react-router-dom'
+import { AUTH_CLIENT_ID } from '../authConfig'
 import { useAuthStore } from '../store/authStore'
 
 const AUTH_BASE = import.meta.env.VITE_AUTH_BASE_URL || ''
-const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID || ''
 
 interface PasswordRule {
   id: string
@@ -212,7 +212,7 @@ export default function RegisterPage() {
     try {
       const res = await fetch(`${AUTH_BASE}/api/auth/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Client-Id': CLIENT_ID },
+        headers: { 'Content-Type': 'application/json', 'X-Client-Id': AUTH_CLIENT_ID },
         body: JSON.stringify({
           email,
           password,

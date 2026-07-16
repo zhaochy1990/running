@@ -440,7 +440,7 @@ def test_load_master_context_uses_load_tool_for_anchor(monkeypatch):
     monkeypatch.setattr(adapter_mod, "_query_fitness_state", mod._query_fitness_state)
     monkeypatch.setattr(adapter_mod, "analyze_continuity", lambda *a, **k: None)
     monkeypatch.setattr(adapter_mod, "detect_current_phase", lambda *a, **k: None)
-    monkeypatch.setattr(adapter_mod, "_load_pb_seconds", lambda _db: {})
+    monkeypatch.setattr(adapter_mod, "_load_pb_seconds", lambda _db, *, as_of=None: {})
     monkeypatch.setattr(adapter_mod, "_load_body_composition", lambda _db, _profile, *, as_of=None: None)
 
     class FakeDb:
@@ -2972,7 +2972,11 @@ class TestLoadMasterContextDoubleBaseline:
 
         monkeypatch.setattr(adapter_mod, "_query_history", _history)
         monkeypatch.setattr(adapter_mod, "_query_fitness_state", _fitness)
-        monkeypatch.setattr(adapter_mod, "_load_pb_seconds", lambda db: {})
+        def _pbs(db, *, as_of=None):
+            seen["pb_as_of"] = as_of
+            return {}
+
+        monkeypatch.setattr(adapter_mod, "_load_pb_seconds", _pbs)
 
         def _body(db, profile, *, as_of=None):
             seen["body_as_of"] = as_of
@@ -3011,6 +3015,7 @@ class TestLoadMasterContextDoubleBaseline:
         assert seen["continuity_as_of"] == frozen
         assert seen["phase_as_of"] == frozen
         assert seen["body_as_of"] == frozen
+        assert seen["pb_as_of"] == frozen
         assert seen["load_tool_as_of"] == "2026-05-19"
 
 

@@ -35,6 +35,7 @@ from .continuity_analyzer import analyze_continuity
 from .phase_detector import detect_current_phase
 from ..job_runner import JobStage, update_job
 from ..llm_client import LLMClient
+from ..master_plan_intake import build_history_analysis, format_history_prompt_block
 from ..master_plan_generator import (
     _build_master_plan,
     _format_history_summary,
@@ -132,12 +133,14 @@ _PB_HISTORY_KEYS = {
 }
 
 
-def _load_pb_seconds(db) -> dict[str, float]:
+def _load_pb_seconds(db, *, as_of: date_cls | None = None) -> dict[str, float]:
     """Load achieved PB seconds from personal_bests, self-healing via the
     canonical PB reader when needed."""
-    from stride_core.pb_records import load_personal_bests
+    from stride_core.pb_records import load_personal_bests, personal_bests_at_or_before
 
     pb_map = load_personal_bests(db)
+    if as_of is not None:
+        pb_map = personal_bests_at_or_before(pb_map, as_of)
     raw = {}
     for display, key in (("5K", "5k"), ("10K", "10k"), ("HM", "hm"), ("FM", "fm")):
         entry = pb_map.get(display)
@@ -239,7 +242,7 @@ def load_master_context(state: GenState) -> dict:
         from stride_storage.sqlite.database import Database
         db = Database(user=user_id)
         try:
-            pb_seconds = _load_pb_seconds(db)
+            pb_seconds = _load_pb_seconds(db, as_of=as_of)
         except Exception as exc:  # noqa: BLE001 — PB read must not block gen
             logger.warning("load_master_context: PB read failed for %s: %s", user_id, exc)
         continuity = analyze_continuity(db, goal=goal, profile=profile, as_of=as_of)
@@ -267,6 +270,12 @@ def load_master_context(state: GenState) -> dict:
         logger.warning("load_master_context: continuity failed: %s", exc)
 
     history_summary = _format_history_summary(_history_with_pb_seconds(history, pb_seconds))
+    intake_history: dict = {}
+    try:
+        intake_history = build_history_analysis(user_id, as_of=as_of)
+        history_summary = history_summary + "\n" + format_history_prompt_block(intake_history)
+    except Exception as exc:  # noqa: BLE001 — preflight hints must not block gen
+        logger.warning("load_master_context: intake history failed user=%s: %s", user_id, exc)
     load_tool_result = EstimateMasterPlanLoadImpl(user_id)(
         as_of_date=as_of.isoformat(),
     )
@@ -312,6 +321,7 @@ def load_master_context(state: GenState) -> dict:
         "as_of_date": as_of.isoformat(),
         "training_load_tool": training_load_tool,
         "training_load_tool_summary": training_load_tool_summary,
+        "intake_history": intake_history,
         "continuity": continuity.model_dump() if continuity is not None else None,
         "current_phase": current_phase.model_dump() if current_phase is not None else None,
         "body_composition": body_composition,

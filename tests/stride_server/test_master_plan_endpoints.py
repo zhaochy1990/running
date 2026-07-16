@@ -151,6 +151,56 @@ def test_generate_with_goal_returns_201(app_client, tmp_path, monkeypatch):
     assert "eta_seconds" in data
 
 
+def test_get_master_plan_intake_returns_history(app_client, tmp_path, monkeypatch):
+    client, token, tmp_path, _ = app_client
+    _write_goal(tmp_path)
+
+    import stride_server.routes.master_plan as mp_mod
+    monkeypatch.setattr(mp_mod.master_plan_intake, "build_intake_context", lambda user_id: {
+        "goal": VALID_GOAL,
+        "profile": None,
+        "history": {"data_available": False, "summary": "no data"},
+    })
+
+    resp = client.get("/api/users/me/master-plan/intake", headers=_auth(token))
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["goal"]["goal_id"] == VALID_GOAL["goal_id"]
+    assert data["history"]["summary"] == "no data"
+
+
+def test_intake_extract_falls_back_when_light_model_unavailable(app_client, tmp_path, monkeypatch):
+    client, token, tmp_path, _ = app_client
+    _write_goal(tmp_path)
+
+    import stride_server.routes.master_plan as mp_mod
+    monkeypatch.setattr(mp_mod.master_plan_intake, "build_intake_context", lambda user_id: {
+        "goal": VALID_GOAL,
+        "profile": None,
+        "history": {"data_available": False, "summary": "no data"},
+    })
+    monkeypatch.setattr(
+        mp_mod.master_plan_intake,
+        "extract_intake_fields",
+        lambda message, context: (_ for _ in ()).throw(RuntimeError("model down")),
+    )
+
+    resp = client.post(
+        "/api/users/me/master-plan/intake/extract",
+        json={"message": "2026年10月18日全马sub-2:50，一周可以跑步5天，没有伤病"},
+        headers=_auth(token),
+    )
+
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["source"] == "rules"
+    assert data["fields"]["race_distance"] == "FM"
+    assert data["fields"]["race_date"] == "2026-10-18"
+    assert data["fields"]["weekly_training_days"] == 5
+    assert data["warning"]
+
+
 # ---------------------------------------------------------------------------
 # Test 2: POST generate without training goal → 422
 # ---------------------------------------------------------------------------

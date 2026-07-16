@@ -1,14 +1,16 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import {
   getCurrentMasterPlan,
   getDraftMasterPlan,
+  getMasterPlanIntake,
   getMyProfile,
   getTrainingGoal,
   getTrainingPlan,
   type MasterPlan,
+  extractMasterPlanIntake,
 } from '../../api'
 import { UserContext } from '../../UserContextValue'
 import TrainingPlanPage from '../TrainingPlanPage'
@@ -27,6 +29,8 @@ vi.mock('../../api', async () => {
     ...actual,
     getCurrentMasterPlan: vi.fn(),
     getDraftMasterPlan: vi.fn(),
+    getMasterPlanIntake: vi.fn(),
+    extractMasterPlanIntake: vi.fn(),
     getTrainingPlan: vi.fn(),
     getTrainingGoal: vi.fn(),
     getMyProfile: vi.fn(),
@@ -248,6 +252,12 @@ function renderPlanPage() {
   )
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => { resolve = next })
+  return { promise, resolve }
+}
+
 describe('TrainingPlanPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -271,6 +281,67 @@ describe('TrainingPlanPage', () => {
       display_name: 'Runner',
       profile: {},
       onboarding: { coros_ready: true, profile_ready: true, completed_at: '2026-05-01T00:00:00Z' },
+    })
+    vi.mocked(getMasterPlanIntake).mockResolvedValue({
+      goal: null,
+      profile: null,
+      history: {
+        data_available: true,
+        as_of_date: '2026-06-10',
+        summary: '全马 PB 2:59:22（2026-04-12，距今 59 天）',
+        pbs: [
+          {
+            distance: 'FM',
+            time: '2:59:22',
+            time_seconds: 10762,
+            achieved_at: '2026-04-12',
+            days_since: 59,
+            source: 'activity',
+            label_id: 'pb-1',
+            activity_name: '上海马拉松',
+          },
+        ],
+        recent_races: [
+          {
+            label_id: 'race-1',
+            name: '西安半马测试',
+            date: '2026-05-20',
+            days_since: 21,
+            distance_km: 21.1,
+            distance_label: '半马',
+            duration: '1:24:30',
+            duration_seconds: 5070,
+            pace: '4:00',
+            avg_hr: 168,
+            max_hr: 184,
+            training_load: 180,
+            train_kind: 'race',
+          },
+        ],
+      },
+    })
+    vi.mocked(extractMasterPlanIntake).mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: {
+        source: 'lightweight_model',
+        warning: null,
+        fields: {
+          race_name: '西安马拉松',
+          race_distance: 'FM',
+          race_date: '2026-10-18',
+          target_finish_time: '2:50:00',
+          weekly_training_days: 5,
+          injuries: ['none'],
+        },
+        history: {
+          data_available: false,
+          as_of_date: '2026-06-10',
+          summary: '暂无历史数据',
+          pbs: [],
+          recent_races: [],
+        },
+      },
     })
   })
 
@@ -371,5 +442,153 @@ describe('TrainingPlanPage', () => {
     expect(screen.getByText('和 Coach 审阅计划')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /启用计划/ })[0]).toBeInTheDocument()
     expect(screen.queryByText('调整计划')).not.toBeInTheDocument()
+  })
+
+  it('shows the intake coach surface and applies extracted fields in setup mode', async () => {
+    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getDraftMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getTrainingPlan).mockResolvedValueOnce({
+      content: null,
+      phases: [],
+      current_phase: null,
+    })
+    vi.mocked(getTrainingGoal).mockResolvedValueOnce(null)
+
+    renderPlanPage()
+
+    expect(await screen.findByText('Coach 正在收集信息')).toBeInTheDocument()
+    expect(await screen.findByText('比赛与 PB 线索')).toBeInTheDocument()
+    expect(screen.getByText(/全马 PB 2:59:22/)).toBeInTheDocument()
+    expect(screen.getByText('FM · 2:59:22')).toBeInTheDocument()
+    expect(screen.getByText('西安半马测试')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText(/目标是 2026 年 10 月 18 日西安马拉松/), {
+      target: { value: '目标是2026年10月18日西安马拉松，全马sub-2:50，一周可以跑步5天，没有伤病' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /发送给 Coach/ }))
+
+    await waitFor(() => expect(extractMasterPlanIntake).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('Coach 已把可识别的信息回填到卡片')).toBeInTheDocument()
+    expect(screen.getByText('西安马拉松')).toBeInTheDocument()
+    expect(screen.getByText('全马 · 2026-10-18')).toBeInTheDocument()
+    expect(screen.getByText('2:50:00')).toBeInTheDocument()
+  })
+
+  it('does not overwrite form edits when stored intake hydration arrives late', async () => {
+    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getDraftMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getTrainingPlan).mockResolvedValueOnce({ content: null, phases: [], current_phase: null })
+    vi.mocked(getTrainingGoal).mockResolvedValueOnce(null)
+    const intake = deferred<Awaited<ReturnType<typeof getMasterPlanIntake>>>()
+    vi.mocked(getMasterPlanIntake).mockReturnValueOnce(intake.promise)
+
+    renderPlanPage()
+    fireEvent.change(await screen.findByLabelText('目标赛事'), { target: { value: '用户刚输入的赛事' } })
+    expect(screen.getByRole('button', { name: '读取资料中...' })).toBeDisabled()
+    fireEvent.change(screen.getByPlaceholderText(/目标是 2026 年 10 月 18 日西安马拉松/), {
+      target: { value: '全马 PB 3:10' },
+    })
+    expect(screen.getByRole('button', { name: /发送给 Coach/ })).toBeDisabled()
+
+    await act(async () => {
+      intake.resolve({
+        goal: {
+          type: 'race',
+          race_distance: 'FM',
+          race_name: '旧赛事',
+          race_date: '2026-10-18',
+          target_finish_time: '3:30:00',
+          weekly_training_days: 5,
+        },
+        profile: null,
+        history: {
+          data_available: false,
+          as_of_date: '2026-06-10',
+          summary: '暂无历史数据',
+          pbs: [],
+          recent_races: [],
+        },
+      })
+    })
+
+    expect(screen.getByLabelText('目标赛事')).toHaveValue('用户刚输入的赛事')
+    expect(screen.getByLabelText('目标完赛时间')).toHaveValue('3:30:00')
+  })
+
+  it('blocks generation while Coach extraction is pending', async () => {
+    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getDraftMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getTrainingPlan).mockResolvedValueOnce({ content: null, phases: [], current_phase: null })
+    vi.mocked(getTrainingGoal).mockResolvedValueOnce(null)
+    const extraction = deferred<Awaited<ReturnType<typeof extractMasterPlanIntake>>>()
+    vi.mocked(extractMasterPlanIntake).mockReturnValueOnce(extraction.promise)
+
+    renderPlanPage()
+    fireEvent.change(await screen.findByPlaceholderText(/目标是 2026 年 10 月 18 日西安马拉松/), {
+      target: { value: '全马 sub-2:50' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /发送给 Coach/ }))
+
+    expect(await screen.findByRole('button', { name: '整理中...' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '生成我的赛季计划' })).toBeDisabled()
+
+    await act(async () => {
+      extraction.resolve({
+        ok: true,
+        status: 200,
+        data: {
+          source: 'lightweight_model',
+          warning: null,
+          fields: { target_finish_time: '2:50:00' },
+          history: {
+            data_available: false,
+            as_of_date: '2026-06-10',
+            summary: '暂无历史数据',
+            pbs: [],
+            recent_races: [],
+          },
+        },
+      })
+    })
+
+    expect(screen.getByRole('button', { name: '生成我的赛季计划' })).toBeEnabled()
+  })
+
+  it('does not overwrite manual edits made while Coach extraction is pending', async () => {
+    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getDraftMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getTrainingPlan).mockResolvedValueOnce({ content: null, phases: [], current_phase: null })
+    vi.mocked(getTrainingGoal).mockResolvedValueOnce(null)
+    const extraction = deferred<Awaited<ReturnType<typeof extractMasterPlanIntake>>>()
+    vi.mocked(extractMasterPlanIntake).mockReturnValueOnce(extraction.promise)
+
+    renderPlanPage()
+    fireEvent.change(await screen.findByPlaceholderText(/目标是 2026 年 10 月 18 日西安马拉松/), {
+      target: { value: '全马 sub-2:50' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /发送给 Coach/ }))
+    fireEvent.change(screen.getByLabelText('目标赛事'), { target: { value: '用户手动赛事' } })
+
+    await act(async () => {
+      extraction.resolve({
+        ok: true,
+        status: 200,
+        data: {
+          source: 'lightweight_model',
+          warning: null,
+          fields: { race_name: '模型赛事' },
+          history: {
+            data_available: false,
+            as_of_date: '2026-06-10',
+            summary: '暂无历史数据',
+            pbs: [],
+            recent_races: [],
+          },
+        },
+      })
+    })
+
+    expect(screen.getByLabelText('目标赛事')).toHaveValue('用户手动赛事')
+    expect(screen.getByText('你已修改卡片，Coach 结果未覆盖手动输入')).toBeInTheDocument()
   })
 })
