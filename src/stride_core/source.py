@@ -49,6 +49,9 @@ class SyncResult:
     activities: int
     health: int
     activity_label_ids: tuple[str, ...] = ()
+    # Exact Shanghai calendar dates whose daily_health rows were refreshed.
+    # `health` is only a display count and may include HRV/dashboard writes.
+    health_dates: tuple[str, ...] = ()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

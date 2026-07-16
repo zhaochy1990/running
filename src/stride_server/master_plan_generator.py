@@ -1235,7 +1235,7 @@ _RACE_NAME_KEYWORDS = ("%马拉松%", "%marathon%", "%比赛%", "%race%", "%赛%
 
 
 def _query_weekly_profile(
-    conn: Any,
+    db: Any,
     *,
     weeks: int = 16,
     threshold_speed_mps: float | None = None,
@@ -1264,6 +1264,7 @@ def _query_weekly_profile(
     """
     from stride_core.models import RUN_SPORT_SQL_LIST
 
+    conn = db._conn
     buckets: dict[str, dict[str, Any]] = {}
 
     def _bucket(week_start: str) -> dict[str, Any]:
@@ -1345,28 +1346,23 @@ def _query_weekly_profile(
     # matching _query_fitness_state which selects acute_load first. The explicit
     # r[3]=chronic→ctl / r[4]=acute→atl mapping below is the anchor; don't copy
     # the column list from the other function or the two will silently swap.
-    dtl_monday = _monday_expr("date")
-    rows = conn.execute(
-        f"""
-        SELECT {dtl_monday} AS wk, date, training_dose, chronic_load, acute_load, form
-        FROM daily_training_load
-        WHERE algorithm_version = ? AND date <= ?
-        ORDER BY date ASC
-        """,
-        (TRAINING_LOAD_MODEL_VERSION, as_of.isoformat()),
-    ).fetchall()
+    rows = db.fetch_daily_training_load_weekly_source(
+        algorithm_version=TRAINING_LOAD_MODEL_VERSION, as_of=as_of.isoformat()
+    )
     dose_acc: dict[str, float] = {}
     for r in rows:
-        wk = r[0]
+        wk = date_cls.fromisoformat(r["date"]).strftime("%Y-%m-%d")
+        wk = (date_cls.fromisoformat(wk) - timedelta(days=date_cls.fromisoformat(wk).weekday())).isoformat()
         if wk is None:
             continue
         b = _bucket(wk)
-        dose_acc[wk] = dose_acc.get(wk, 0.0) + (r[2] or 0.0)
+        if r["coverage_status"] in {"complete", "rest_confirmed"}:
+            dose_acc[wk] = dose_acc.get(wk, 0.0) + (r["training_dose"] or 0.0)
         # rows ascend by date, so the last write per week is the latest day.
-        b["ctl"] = r[3]  # chronic_load (CTL, 42-day EWMA)
-        b["atl"] = r[4]  # acute_load (ATL, 7-day EWMA)
-        b["training_load_ratio"] = (r[4] / r[3]) if r[3] else None
-        b["form"] = r[5]
+        b["ctl"] = r["chronic_load"]
+        b["atl"] = r["acute_load"]
+        b["training_load_ratio"] = (r["acute_load"] / r["chronic_load"]) if r["chronic_load"] else None
+        b["form"] = r["form"]
     for wk, total in dose_acc.items():
         buckets[wk]["dose"] = total
 
@@ -1520,7 +1516,7 @@ def _query_history(user_id: str, *, as_of: date_cls | None = None) -> dict[str, 
                     "_query_history: threshold_speed read failed for %s", user_id, exc_info=True
                 )
             result["weekly_profile"] = _query_weekly_profile(
-                conn, weeks=16, threshold_speed_mps=threshold_speed_mps, as_of=as_of
+                db, weeks=16, threshold_speed_mps=threshold_speed_mps, as_of=as_of
             )
         except Exception:  # noqa: BLE001 — weekly profile must not block gen
             logger.warning(
@@ -1576,11 +1572,9 @@ def _ensure_training_load_current(db, as_of=None) -> None:
     # check its depth and force a full backfill when it is too shallow.
     _CHRONIC_WARMUP_DAYS = 126  # 3 x the 42-day chronic EWMA time-constant
     try:
-        row = db._conn.execute(
-            "SELECT MAX(date) FROM daily_training_load WHERE algorithm_version = ?",
-            (TRAINING_LOAD_MODEL_VERSION,),
-        ).fetchone()
-        last = row[0] if row and row[0] else None
+        earliest, last = db.fetch_training_load_bounds(
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION
+        )
 
         # Shallow-table guard: if the earliest persisted row is younger than the
         # chronic warmup window AND older activity history exists to warm up on,
@@ -1589,11 +1583,6 @@ def _ensure_training_load_current(db, as_of=None) -> None:
         # history; a backfill can't deepen it, so fall through and avoid an
         # expensive no-op refit on every generation.)
         if last:
-            earliest_row = db._conn.execute(
-                "SELECT MIN(date) FROM daily_training_load WHERE algorithm_version = ?",
-                (TRAINING_LOAD_MODEL_VERSION,),
-            ).fetchone()
-            earliest = earliest_row[0] if earliest_row and earliest_row[0] else None
             if earliest is not None:
                 # Measure the actual persisted span (earliest..last), not
                 # earliest..as_of — a shallow *and* stale table would otherwise
@@ -1681,11 +1670,10 @@ def _query_fitness_state(user_id: str, *, as_of: date_cls | None = None) -> dict
         # generation against an un-synced DB still gets a current fitness state.
         _ensure_training_load_current(db, as_of=as_of)
 
-        row = conn.execute(
-            "SELECT date, acute_load, chronic_load, form FROM daily_training_load "
-            "WHERE algorithm_version = ? AND date <= ? ORDER BY date DESC LIMIT 1",
-            (TRAINING_LOAD_MODEL_VERSION, as_of.isoformat()),
-        ).fetchone()
+        row = db.fetch_latest_daily_training_load(
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION,
+            as_of=as_of.isoformat(),
+        )
         # RHR for the fitness context: prefer the calibration baseline (smoothed
         # P10/25 over 30-90d — the CLAUDE.md single source) over a single noisy
         # last reading; fall back to the latest measured value when there is no
@@ -1715,7 +1703,9 @@ def _query_fitness_state(user_id: str, *, as_of: date_cls | None = None) -> dict
         hrv = hrv_row[1] if hrv_row else None
 
         if row:
-            _date, atl, ctl, form = row
+            atl = row["acute_load"]
+            ctl = row["chronic_load"]
+            form = row["form"]
             ratio = round(atl / ctl, 2) if ctl else None
             result.update({
                 "ctl": round(ctl, 1) if ctl is not None else None,

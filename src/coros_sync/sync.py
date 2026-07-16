@@ -370,6 +370,7 @@ def sync_health(
     client: CorosClient,
     db: Database,
     progress_callback: SyncProgressCallback | None = None,
+    health_dates_out: set[str] | None = None,
 ) -> int:
     """Sync health/body metrics from COROS. Returns count of daily records synced."""
     synced = 0
@@ -400,6 +401,13 @@ def sync_health(
             for day in day_list:
                 health = DailyHealth.from_api(day)
                 db.upsert_daily_health(health)
+                if health_dates_out is not None:
+                    raw_date = str(health.date)
+                    health_dates_out.add(
+                        f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+                        if len(raw_date) == 8 and raw_date.isdigit()
+                        else raw_date[:10]
+                    )
                 synced += 1
             _emit_sync_progress(
                 progress_callback,
@@ -471,6 +479,7 @@ def run_health_only_sync(
     client: CorosClient,
     db: Database,
     progress: SyncProgressCallback | None = None,
+    health_dates_out: set[str] | None = None,
 ) -> tuple[int, int]:
     """Run lightweight health-only sync (no activities). Used during onboarding.
 
@@ -482,7 +491,9 @@ def run_health_only_sync(
         message="已连接手表，准备同步健康数据",
         percent=10,
     )
-    health = sync_health(client, db, progress_callback=progress)
+    health = sync_health(
+        client, db, progress_callback=progress, health_dates_out=health_dates_out
+    )
     _emit_sync_progress(
         progress,
         phase="finalizing",
@@ -501,6 +512,7 @@ def run_sync(
     full: bool = False,
     jobs: int = 1,
     progress: SyncProgressCallback | None = None,
+    health_dates_out: set[str] | None = None,
 ) -> tuple[int, int, tuple[str, ...]]:
     """Run full sync. Returns (activities, health, activity_label_ids)."""
     _emit_sync_progress(
@@ -516,7 +528,9 @@ def run_sync(
         jobs=jobs,
         progress_callback=progress,
     )
-    health = sync_health(client, db, progress_callback=progress)
+    health = sync_health(
+        client, db, progress_callback=progress, health_dates_out=health_dates_out
+    )
     _emit_sync_progress(
         progress,
         phase="finalizing",

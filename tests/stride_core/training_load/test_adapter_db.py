@@ -730,6 +730,10 @@ def test_partial_window_recompute_backfills_rest_day_gap_rows(db):
 
     gap_row = {r["date"]: dict(r) for r in rows}["2026-05-02"]
     assert gap_row["training_dose"] == 0
+    assert gap_row["coverage_status"] == "unknown"
+    day1 = {r["date"]: dict(r) for r in rows}["2026-05-01"]
+    assert gap_row["acute_load"] == day1["acute_load"]
+    assert gap_row["chronic_load"] == day1["chronic_load"]
     # The gap row must match what a contiguous recompute produces.
     assert gap_row["acute_load"] == pytest.approx(full["2026-05-02"]["acute_load"], abs=1e-3)
     assert gap_row["chronic_load"] == pytest.approx(full["2026-05-02"]["chronic_load"], abs=1e-3)

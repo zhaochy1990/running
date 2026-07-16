@@ -204,6 +204,8 @@ def test_incomplete_recovery_after_intervals_adds_high_intensity_supplement():
         min(result.cardio_tss, result.external_tss) + result.high_intensity_tss
     )
     assert result.training_dose_source == "conservative_fusion+high_intensity"
+    covered_hours = result.high_intensity_coverage * result.duration_minutes / 60.0
+    assert result.high_intensity_tss <= 75.0 * covered_hours + 0.1
 
 
 def test_recovered_hr_after_same_intervals_has_no_high_intensity_supplement():

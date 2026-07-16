@@ -96,7 +96,10 @@ def test_onboarding_health_only_sync_does_not_run_activity_handlers(monkeypatch,
 
         def sync_user(self, user: str, *, full: bool = False, mode: str = "full", progress=None):
             assert mode == "health_only"
-            return SyncResult(activities=0, health=7, activity_label_ids=())
+            return SyncResult(
+                activities=0, health=7, activity_label_ids=(),
+                health_dates=("2026-05-01",),
+            )
 
     ob_mod._run_background_sync("u", Source(), mode="health_only")
 

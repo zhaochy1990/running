@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from datetime import date, timedelta
 from typing import Any, Iterable, Sequence
 
@@ -356,10 +355,6 @@ def _fetch_feedback_rows(db: Any, activity_rows: Sequence[Any]) -> list[Feedback
     return out
 
 
-_K_ACUTE = 1.0 - math.exp(-1.0 / 7.0)
-_K_CHRONIC = 1.0 - math.exp(-1.0 / 42.0)
-
-
 def _last_persisted_daily_date(db: Any, *, before: date) -> date | None:
     """Date of the most recent persisted daily_training_load row strictly
     before ``before`` (None when none exists)."""
@@ -371,13 +366,7 @@ def _last_persisted_daily_date(db: Any, *, before: date) -> date | None:
 
 def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
     """Read the last persisted daily_training_load row before series_start
-    and decay its ATL/CTL through any rest-day gap.
-
-    Without this, a recompute starting N days after the last persisted row
-    would seed the EWMA with values that are "too fresh" — the dose on day N
-    would be applied to load state from day 0, skipping N-1 zero-dose decay
-    steps. The decay loop here matches the recursion in
-    `compute_daily_load_series` for a dose of 0.
+    without inventing rest-day decay for dates whose coverage is unknown.
     """
     row = db.fetch_previous_daily_training_load(
         series_start.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
@@ -386,12 +375,6 @@ def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
         return None
     acute = float(row["acute_load"]) if row["acute_load"] is not None else 0.0
     chronic = float(row["chronic_load"]) if row["chronic_load"] is not None else 0.0
-    prior_date = _parse_date(row["date"])
-    if prior_date is not None:
-        gap_days = max(0, (series_start - prior_date).days - 1)
-        for _ in range(gap_days):
-            acute += _K_ACUTE * (0.0 - acute)
-            chronic += _K_CHRONIC * (0.0 - chronic)
     return PriorLoadState(acute_load=acute, chronic_load=chronic)
 
 
@@ -513,11 +496,11 @@ def recompute_training_load(
     activity_rows = _fetch_activity_rows(db, start=start_date, end=end_date, label_ids=labels)
     activity_inputs = [a for row in activity_rows if (a := _build_activity_input(db, row)) is not None]
     if not activity_inputs:
-        # An explicit calendar window can legitimately contain only confirmed
-        # rest days. Continue when a health row confirms coverage or an earlier
-        # v2 PMC state exists to decay. A completely empty database still has no
-        # evidence from which to manufacture a calendar series, so backfill
-        # remains a no-op there.
+        # An explicit calendar window can legitimately contain no activities.
+        # Continue when a health row confirms rest or an earlier v2 PMC state
+        # exists so an unknown-coverage placeholder can preserve the calendar
+        # series without decaying ATL/CTL. A completely empty database still
+        # has no evidence from which to manufacture a series.
         has_health_coverage = bool(
             start_date is not None
             and _fetch_health_rows(db, start=start_date, end=end_date)
@@ -570,7 +553,6 @@ def recompute_training_load(
         series_start,
         series_end,
         prior_state=prior_state,
-        activity_history_complete=labels is None,
     )
     if persist:
         # The current model is canonical for a calendar date. Remove stale

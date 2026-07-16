@@ -100,13 +100,12 @@ def analyze_continuity(db, *, goal: dict, profile: dict | None, as_of: date_cls)
     chronic = None
     form_zone = None
     try:
-        row = conn.execute(
-            "SELECT acute_load, chronic_load, form FROM daily_training_load "
-            "WHERE algorithm_version = ? ORDER BY date DESC LIMIT 1",
-            (TRAINING_LOAD_MODEL_VERSION,),
-        ).fetchone()
+        row = db.fetch_latest_daily_training_load(
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION
+        )
         if row:
-            atl, chronic, _form = row
+            atl = row["acute_load"]
+            chronic = row["chronic_load"]
             form_zone = _classify_form_zone(chronic, atl)
     except Exception as exc:  # noqa: BLE001
         logger.warning("continuity: load read failed: %s", exc)

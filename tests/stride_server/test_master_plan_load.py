@@ -110,14 +110,14 @@ def test_long_run_ratios_are_estimated_from_weekly_load() -> None:
 
     week = estimate["weeks"][0]
     assert week["target_training_dose_low"] <= week["target_training_dose_high"]
-    assert week["target_training_dose_high"] == week["estimated_dose"]
+    assert week["target_training_dose_high"] >= week["estimated_dose"]
     assert week["long_run_km"] == 18.0
     assert week["long_run_km_ratio"] == 0.3
     assert week["key_session_km_ratio"] == 0.43
     assert estimate["plan_summary"]["max_long_run_km_ratio"] == 0.3
 
 
-def test_weekly_dose_low_and_high_use_the_same_existing_formula() -> None:
+def test_weekly_dose_low_and_high_include_volume_and_intensity_ranges() -> None:
     anchor = build_training_history_load_anchor(_history([45, 48, 50, 52]))
     common = {
         "goal": {"distance": "10K"},
@@ -141,9 +141,10 @@ def test_weekly_dose_low_and_high_use_the_same_existing_formula() -> None:
     )
 
     week = ranged["weeks"][0]
-    assert week["target_training_dose_low"] == low_only["weeks"][0]["estimated_dose"]
-    assert week["target_training_dose_high"] == high_only["weeks"][0]["estimated_dose"]
-    assert week["target_training_dose_high"] == week["estimated_dose"]
+    assert week["target_training_dose_low"] == low_only["weeks"][0]["estimated_dose_low"]
+    assert week["target_training_dose_high"] == high_only["weeks"][0]["estimated_dose_high"]
+    assert week["target_training_dose_low"] < low_only["weeks"][0]["estimated_dose"]
+    assert week["target_training_dose_high"] > week["estimated_dose"]
 
 
 def test_missing_threshold_does_not_fall_back_to_fixed_pace() -> None:
@@ -332,6 +333,77 @@ def test_distance_only_tune_up_race_keeps_week_load_computable() -> None:
     assert week["target_training_dose_low"] is not None
     assert week["target_training_dose_high"] is not None
     assert "tune_up_distance_only_hm_marathon_to_threshold_range" in week["load_assumptions"]
+
+
+def test_distance_only_goal_race_keeps_week_load_computable() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "trail"},
+            "weeks": [{
+                "week_index": 1,
+                "week_start": "2026-07-01",
+                "target_weekly_km_low": 42.195,
+                "target_weekly_km_high": 42.195,
+                "key_sessions": [{"type": "race", "distance_km": 42.195}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["load_computable"] is True
+    assert week["target_training_dose_low"] is not None
+    assert week["target_training_dose_high"] is not None
+    assert "goal_race_distance_only_long_race_marathon_range" in week["load_assumptions"]
+
+
+def test_distance_only_race_pace_uses_goal_distance_not_segment_distance() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 50,
+                "key_sessions": [{"type": "race_pace", "distance_km": 10}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    assert (
+        "goal_race_distance_only_long_race_marathon_range"
+        in estimate["weeks"][0]["load_assumptions"]
+    )
+
+
+def test_embedded_race_pace_raises_long_run_load_without_double_counting_km() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    base_week = {
+        "week_index": 1,
+        "week_start": "2026-07-01",
+        "target_weekly_km_high": 50,
+        "key_sessions": [{"type": "long_run", "distance_km": 30}],
+    }
+    easy = estimate_master_plan_training_load(
+        {"goal": {"distance": "FM", "target_time": "3:00:00"},
+         "weeks": [base_week]},
+        history_anchor=anchor,
+    )
+    embedded = estimate_master_plan_training_load(
+        {"goal": {"distance": "FM", "target_time": "3:00:00"},
+         "weeks": [{**base_week, "key_sessions": [
+             {"type": "long_run", "distance_km": 30},
+             {"type": "race_pace", "distance_km": 12,
+              "purpose": "embedded within long run"},
+         ]}]},
+        history_anchor=anchor,
+    )
+
+    assert embedded["weeks"][0]["key_session_km"] == 30.0
+    assert embedded["weeks"][0]["estimated_dose"] > easy["weeks"][0]["estimated_dose"]
+    assert embedded["weeks"][0]["long_run_dose"] > easy["weeks"][0]["long_run_dose"]
 
 
 def test_long_run_mp_marker_does_not_match_inside_ordinary_words() -> None:

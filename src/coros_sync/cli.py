@@ -92,7 +92,10 @@ def sync(ctx: click.Context, full: bool, jobs: int) -> None:
         raise SystemExit(1)
 
     with CorosClient(creds, user=profile) as client, Database(user=profile) as db:
-        activities, health, activity_label_ids = run_sync(client, db, full=full, jobs=jobs)
+        health_dates: set[str] = set()
+        activities, health, activity_label_ids = run_sync(
+            client, db, full=full, jobs=jobs, health_dates_out=health_dates
+        )
         console.print(f"\n[green]Synced {activities} activities, {health} daily health records[/green]")
     try:
         run_post_sync_for_labels(
@@ -100,7 +103,7 @@ def sync(ctx: click.Context, full: bool, jobs: int) -> None:
             provider="coros",
             operation="sync",
             activity_label_ids=activity_label_ids,
-            health_records_synced=health,
+            health_dates=tuple(sorted(health_dates)),
         )
     except Exception:
         logger.exception("post-sync events failed for COROS CLI sync profile=%s", profile)

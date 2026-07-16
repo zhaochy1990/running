@@ -22,6 +22,7 @@ from stride_core.distance import meters_to_km
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL
 from stride_core.registry import read_user_provider, user_has_config
 from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from ..deps import get_db
 
@@ -147,20 +148,15 @@ def _build_status_ring(db) -> StatusRing:
     # STRIDE-computed load from `daily_training_load` (NOT COROS ati/cti). Same
     # table the `/pmc` endpoint reads; pick the latest row of the active
     # algorithm version. `form` = chronic − acute; `load_ratio` = acute/chronic.
-    rows = db.query(
-        """SELECT acute_load, chronic_load, form, load_ratio
-           FROM daily_training_load
-           WHERE algorithm_version = (
-               SELECT MAX(algorithm_version) FROM daily_training_load
-           )
-           ORDER BY date DESC LIMIT 1"""
+    row = db.fetch_latest_daily_training_load(
+        algorithm_version=TRAINING_LOAD_MODEL_VERSION
     )
-    if not rows:
+    if row is None:
         return StatusRing(
             tsb=None, tsb_band=None, load_ratio=None,
             chronic_load=None, acute_load=None,
         )
-    r = dict(rows[0])
+    r = dict(row)
     chronic = r.get("chronic_load")
     acute = r.get("acute_load")
     form = r.get("form")

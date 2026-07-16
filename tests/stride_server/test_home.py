@@ -6,6 +6,7 @@ import time
 
 import jwt
 import pytest
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import Depends, FastAPI
@@ -104,7 +105,7 @@ def _seed(tmp_path, *, with_data: bool = True, with_provider: str | None = "coro
             "INSERT INTO daily_training_load (date, algorithm_version, "
             "training_dose, acute_load, chronic_load, form, load_ratio) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("2026-05-10", 1, 80.0, 50.0, 60.0, 10.0, 0.83),
+            ("2026-05-10", TRAINING_LOAD_MODEL_VERSION, 80.0, 50.0, 60.0, 10.0, 0.83),
         )
         db._conn.execute(
             "INSERT OR REPLACE INTO sync_meta (key, value) VALUES "

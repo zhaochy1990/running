@@ -1917,39 +1917,110 @@ class Database:
             (before, algorithm_version),
         ).fetchone()
 
+    def has_daily_training_load_version(self, algorithm_version: int) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM daily_training_load WHERE algorithm_version = ? LIMIT 1",
+            (algorithm_version,),
+        ).fetchone() is not None
+
     def fetch_daily_training_load(
         self, start: str | None = None, end: str | None = None,
+        *, algorithm_version: int | None = None, limit: int | None = None,
     ) -> list[sqlite3.Row]:
         clauses: list[str] = []
-        params: list[str] = []
+        params: list[object] = []
         if start is not None:
             clauses.append("date >= ?")
             params.append(start)
         if end is not None:
             clauses.append("date <= ?")
             params.append(end)
+        if algorithm_version is not None:
+            clauses.append("algorithm_version = ?")
+            params.append(algorithm_version)
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        suffix = " ORDER BY date"
+        if limit is not None:
+            suffix = " ORDER BY date DESC LIMIT ?"
+            params.append(max(1, int(limit)))
+        rows = self._conn.execute(
+            "SELECT * FROM daily_training_load" + where + suffix, tuple(params)
+        ).fetchall()
+        return list(reversed(rows)) if limit is not None else rows
+
+    def fetch_latest_daily_training_load(
+        self, *, algorithm_version: int, as_of: str | None = None,
+    ) -> sqlite3.Row | None:
+        sql = "SELECT * FROM daily_training_load WHERE algorithm_version = ?"
+        params: list[object] = [algorithm_version]
+        if as_of is not None:
+            sql += " AND date <= ?"
+            params.append(as_of)
         return self._conn.execute(
-            "SELECT * FROM daily_training_load" + where + " ORDER BY date",
-            tuple(params),
+            sql + " ORDER BY date DESC LIMIT 1", tuple(params)
+        ).fetchone()
+
+    def fetch_training_load_bounds(
+        self, *, algorithm_version: int
+    ) -> tuple[str | None, str | None]:
+        row = self._conn.execute(
+            "SELECT MIN(date), MAX(date) FROM daily_training_load "
+            "WHERE algorithm_version = ?",
+            (algorithm_version,),
+        ).fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
+    def fetch_daily_training_load_weekly_source(
+        self, *, algorithm_version: int, as_of: str
+    ) -> list[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT date, training_dose, chronic_load, acute_load, form, "
+            "coverage_status FROM daily_training_load "
+            "WHERE algorithm_version = ? AND date <= ? ORDER BY date",
+            (algorithm_version, as_of),
         ).fetchall()
 
-    def fetch_recent_daily_training_load(
-        self, limit: int, *, algorithm_version: int
+    def fetch_daily_training_load_with_prior(
+        self, *, algorithm_version: int, limit: int
     ) -> list[sqlite3.Row]:
-        """Return the newest STRIDE daily training-load rows, newest first."""
-        if limit < 1:
-            raise ValueError("limit must be >= 1")
         return self._conn.execute(
-            """SELECT date, algorithm_version, training_dose, acute_load,
-                      chronic_load, form, load_ratio, readiness_gate,
-                      readiness_reasons_json
-               FROM daily_training_load
-               WHERE algorithm_version = ?
-               ORDER BY date DESC
-               LIMIT ?""",
-            (algorithm_version, limit),
+            """WITH recent AS (
+                   SELECT date, algorithm_version, training_dose, acute_load, chronic_load,
+                          form, load_ratio, coverage_status, readiness_gate,
+                          readiness_reasons_json
+                   FROM daily_training_load
+                   WHERE algorithm_version = ?
+                   ORDER BY date DESC LIMIT ?
+               )
+               SELECT recent.*, prior.chronic_load AS chronic_load_7d_ago
+               FROM recent
+               LEFT JOIN daily_training_load AS prior
+                 ON prior.date = date(recent.date, '-7 day')
+                AND prior.algorithm_version = recent.algorithm_version
+               ORDER BY recent.date""",
+            (algorithm_version, max(1, int(limit))),
         ).fetchall()
+
+    def fetch_completed_week_training_load(
+        self, start: str, end: str, *, algorithm_version: int
+    ) -> tuple[float | None, sqlite3.Row | None]:
+        dose_row = self._conn.execute(
+            "SELECT SUM(training_dose) FROM daily_training_load "
+            "WHERE algorithm_version = ? AND date BETWEEN ? AND ? "
+            "AND coverage_status IN ('complete', 'rest_confirmed')",
+            (algorithm_version, start, end),
+        ).fetchone()
+        latest = self._conn.execute(
+            "SELECT acute_load, chronic_load, coverage_status "
+            "FROM daily_training_load WHERE algorithm_version = ? "
+            "AND date BETWEEN ? AND ? AND acute_load IS NOT NULL "
+            "AND chronic_load IS NOT NULL "
+            "AND coverage_status IN ('complete', 'rest_confirmed') "
+            "ORDER BY date DESC LIMIT 1",
+            (algorithm_version, start, end),
+        ).fetchone()
+        dose = float(dose_row[0]) if dose_row and dose_row[0] is not None else None
+        return dose, latest
 
     def fetch_latest_daily_health_date(self) -> str | None:
         """Return the latest watch-covered Shanghai day as ISO YYYY-MM-DD."""

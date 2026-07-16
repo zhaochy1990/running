@@ -5,6 +5,7 @@ import json
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 
@@ -48,7 +49,7 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
                (date, algorithm_version, training_dose, acute_load, chronic_load,
                 form, load_ratio, readiness_gate, readiness_reasons_json)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("2026-05-01", 1, 80.0, 8.0, 18.0, 10.0, 0.44, "green", json.dumps([])),
+            ("2026-05-01", TRAINING_LOAD_MODEL_VERSION, 80.0, 8.0, 18.0, 10.0, 0.44, "green", json.dumps([])),
         )
         db._conn.execute(
             """INSERT INTO daily_training_load
@@ -57,7 +58,7 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 "2026-05-08",
-                1,
+                TRAINING_LOAD_MODEL_VERSION,
                 120.0,
                 21.0,
                 27.0,
@@ -79,7 +80,8 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
     assert body["stride_pmc"] == [
         {
             "date": "2026-05-01",
-            "algorithm_version": 1,
+            "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+            "coverage_status": "unknown",
             "training_dose": 80.0,
             "acute_load": 8.0,
             "chronic_load": 18.0,
@@ -91,7 +93,8 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
         },
         {
             "date": "2026-05-08",
-            "algorithm_version": 1,
+            "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+            "coverage_status": "unknown",
             "training_dose": 120.0,
             "acute_load": 21.0,
             "chronic_load": 27.0,
@@ -109,6 +112,7 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
         "current_chronic_load": 27.0,
         "current_form": 6.0,
         "current_load_ratio": 0.78,
+        "current_coverage_status": "unknown",
         "current_readiness_gate": "yellow",
         "current_readiness_reasons": ["low_hrv"],
         "chronic_load_ramp": 9.0,

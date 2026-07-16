@@ -2552,7 +2552,7 @@ class TestWeeklyProfile:
 
     def _profile(self, db, **kw):
         from stride_server.master_plan_generator import _query_weekly_profile
-        return _query_weekly_profile(db._conn, **kw)
+        return _query_weekly_profile(db, **kw)
 
     def test_cross_source_week_alignment(self, tmp_path):
         """An activity (UTC ISO), dtl (YYYY-MM-DD), health (YYYYMMDD), and hrv
@@ -2565,8 +2565,8 @@ class TestWeeklyProfile:
         self._add_run(c, "a1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=3000,
                       avg_hr=150)
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
-                  "training_dose, acute_load, chronic_load, form) "
-                  "VALUES ('2026-06-17', ?, 70, 65.0, 60.0, -5.0)",
+                  "training_dose, acute_load, chronic_load, form, coverage_status) "
+                  "VALUES ('2026-06-17', ?, 70, 65.0, 60.0, -5.0, 'complete')",
                   (TRAINING_LOAD_MODEL_VERSION,))
         c.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260617', 48)")
         c.execute("INSERT INTO daily_hrv (date, last_night_avg) "
@@ -2614,8 +2614,8 @@ class TestWeeklyProfile:
         ]
         for d, dose, atl, ctl, form in rows:
             c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
-                      "training_dose, acute_load, chronic_load, form) "
-                      "VALUES (?, ?, ?, ?, ?, ?)",
+                      "training_dose, acute_load, chronic_load, form, coverage_status) "
+                      "VALUES (?, ?, ?, ?, ?, ?, 'complete')",
                       (d, TRAINING_LOAD_MODEL_VERSION, dose, atl, ctl, form))
         c.commit()
         w = self._profile(db)[0]
@@ -2636,7 +2636,8 @@ class TestWeeklyProfile:
         )
         c.execute(
             "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form) VALUES ('2026-06-17', ?, 70, 65, 60, -5)",
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES ('2026-06-17', ?, 70, 65, 60, -5, 'complete')",
             (TRAINING_LOAD_MODEL_VERSION,),
         )
         c.commit()

@@ -84,11 +84,12 @@ const happyLoad: api.StrideTrainingLoadResponse = {
   current: {
     date: '2026-05-21', algorithm_version: 1, training_dose: 75.2,
     acute_load: 78, chronic_load: 72, form: -6, load_ratio: 1.08,
+    coverage_status: 'complete',
     readiness_gate: 'green', readiness_reasons: ['ok'],
   },
   series: [
-    { date: '2026-05-17', algorithm_version: 1, training_dose: 60, acute_load: 70, chronic_load: 70, form: 0, load_ratio: 1.0, readiness_gate: 'green', readiness_reasons: [] },
-    { date: '2026-05-21', algorithm_version: 1, training_dose: 75.2, acute_load: 78, chronic_load: 72, form: -6, load_ratio: 1.08, readiness_gate: 'green', readiness_reasons: [] },
+    { date: '2026-05-17', algorithm_version: 1, training_dose: 60, acute_load: 70, chronic_load: 70, form: 0, load_ratio: 1.0, coverage_status: 'complete', readiness_gate: 'green', readiness_reasons: [] },
+    { date: '2026-05-21', algorithm_version: 1, training_dose: 75.2, acute_load: 78, chronic_load: 72, form: -6, load_ratio: 1.08, coverage_status: 'complete', readiness_gate: 'green', readiness_reasons: [] },
   ],
 }
 

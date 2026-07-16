@@ -134,8 +134,8 @@ def get_stride_training_load(
 
     db = get_db(user)
     try:
-        rows = db.fetch_recent_daily_training_load(
-            days, algorithm_version=TRAINING_LOAD_MODEL_VERSION
+        rows = db.fetch_daily_training_load(
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION, limit=days
         )
         if not rows:
             return {"current": None, "series": []}
@@ -151,7 +151,6 @@ def get_stride_training_load(
             rec["readiness_reasons"] = reasons if isinstance(reasons, list) else []
             records.append(rec)
 
-        records.sort(key=lambda r: r["date"])
         current = dict(records[-1])
         return {"current": current, "series": records}
     finally:

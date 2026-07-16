@@ -65,7 +65,9 @@ def test_sync_user_forwards_to_run_sync(tmp_path, monkeypatch):
         result = CorosDataSource(jobs=2).sync_user("alice", full=True)
 
     assert result == SyncResult(activities=7, health=3, activity_label_ids=("L1", "L2"))
-    run_sync_mock.assert_called_once_with(fake_client, fake_db, full=True, jobs=2)
+    run_sync_mock.assert_called_once_with(
+        fake_client, fake_db, full=True, jobs=2, health_dates_out=set()
+    )
 
 
 def test_sync_user_health_only_returns_no_activity_label_ids(tmp_path, monkeypatch):
@@ -86,7 +88,9 @@ def test_sync_user_health_only_returns_no_activity_label_ids(tmp_path, monkeypat
         result = CorosDataSource(jobs=2).sync_user("alice", mode="health_only")
 
     assert result == SyncResult(activities=0, health=3, activity_label_ids=())
-    health_sync_mock.assert_called_once_with(fake_client, fake_db, progress=None)
+    health_sync_mock.assert_called_once_with(
+        fake_client, fake_db, progress=None, health_dates_out=set()
+    )
 
 
 def test_resync_activity_raises_when_activity_missing(tmp_path, monkeypatch):

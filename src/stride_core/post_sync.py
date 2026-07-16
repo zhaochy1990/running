@@ -20,7 +20,11 @@ from stride_storage.sqlite.database import Database
 from stride_core.source import SyncProgressCallback, SyncResult
 from stride_core.timefmt import SHANGHAI_DAY_SQL
 from stride_core.timefmt import today_shanghai
-from stride_core.training_load import recompute_training_load
+from stride_core.training_load import (
+    TRAINING_LOAD_MODEL_VERSION,
+    backfill_training_load,
+    recompute_training_load,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +38,7 @@ class PostSyncContext:
     operation: str
     db: Database
     activity_label_ids: tuple[str, ...] = ()
-    health_records_synced: int = 0
+    health_dates: tuple[str, ...] = ()
     progress: SyncProgressCallback | None = None
 
 
@@ -94,27 +98,22 @@ class StrideTrainingLoadHandler:
         self._backoff_s = max(0.0, backoff_s)
 
     def applies_to(self, context: PostSyncContext) -> bool:
-        return bool(context.activity_label_ids) or context.health_records_synced > 0
+        return bool(context.activity_label_ids) or bool(context.health_dates)
 
     def run(self, context: PostSyncContext) -> None:
         label_ids = _unique_labels(context.activity_label_ids)
+        changed_dates = [d for d in context.health_dates if d]
         if label_ids:
             window = _activity_shanghai_window(context.db, label_ids)
             if window is None:
                 return
-            start, changed_end = window
-            # ATL/CTL are recursive: changing a historical activity changes
-            # every later day, not only the activity's own date. Recompute the
-            # full tail through today so descendants cannot remain stale.
-            end = max(changed_end, today_shanghai().isoformat())
-        else:
-            # A health-only sync proves watch coverage even when the athlete did
-            # not train. Recompute that latest covered day so it is persisted as
-            # rest_confirmed and ATL/CTL decay instead of freezing.
-            health_date = context.db.fetch_latest_daily_health_date()
-            if health_date is None:
-                return
-            start = end = health_date
+            changed_dates.extend(window)
+        if not changed_dates:
+            return
+        # Any changed activity or newly confirmed rest day changes every later
+        # recursive ATL/CTL value. Merge both sources and recompute the tail.
+        start = min(changed_dates)
+        end = max(max(changed_dates), today_shanghai().isoformat())
         _emit(
             context.progress,
             phase="stride_training_load",
@@ -124,6 +123,14 @@ class StrideTrainingLoadHandler:
 
         for attempt in range(1, self._attempts + 1):
             try:
+                if not context.db.has_daily_training_load_version(
+                    TRAINING_LOAD_MODEL_VERSION
+                ):
+                    backfill_training_load(
+                        context.db, as_of_date=end, load_lookback_days=365,
+                        calibration_lookback_days=365, persist=True,
+                    )
+                    return
                 # Daily training load is date-scoped, so recompute every
                 # activity in the affected Shanghai date window. A label-only
                 # activity set would overwrite same-day daily totals.
@@ -372,12 +379,13 @@ def run_post_sync_for_labels(
     provider: str,
     operation: str,
     activity_label_ids: Sequence[str],
-    health_records_synced: int = 0,
+    health_dates: Sequence[str] = (),
     progress: SyncProgressCallback | None = None,
     handlers: Sequence[PostSyncHandler] = DEFAULT_POST_SYNC_HANDLERS,
 ) -> None:
     label_ids = _unique_labels(activity_label_ids)
-    if not label_ids and health_records_synced <= 0:
+    normalized_health_dates = tuple(sorted({str(d)[:10] for d in health_dates if d}))
+    if not label_ids and not normalized_health_dates:
         return
     try:
         with Database(user=user) as db:
@@ -388,7 +396,7 @@ def run_post_sync_for_labels(
                     operation=operation,
                     db=db,
                     activity_label_ids=label_ids,
-                    health_records_synced=max(0, int(health_records_synced)),
+                    health_dates=normalized_health_dates,
                     progress=progress,
                 ),
                 handlers=handlers,
@@ -418,7 +426,7 @@ def run_post_sync_for_result(
         provider=provider,
         operation=operation,
         activity_label_ids=getattr(result, "activity_label_ids", ()) or (),
-        health_records_synced=max(0, int(getattr(result, "health", 0) or 0)),
+        health_dates=getattr(result, "health_dates", ()) or (),
         progress=progress,
         handlers=handlers,
     )

@@ -12,6 +12,7 @@ from datetime import date
 from typing import Any
 
 from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .database import Database, HRV_PREFERRED_PER_DATE_SQL
 
@@ -144,14 +145,13 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
             available[row["date"]][expected] -= 1
             completed += 1
 
-    load_rows = db._conn.execute(
-        """SELECT date, training_dose, acute_load, chronic_load, form, load_ratio
-             FROM daily_training_load
-            WHERE algorithm_version = (SELECT max(algorithm_version) FROM daily_training_load)
-              AND date BETWEEN ? AND ?
-            ORDER BY date""",
-        (date_from, date_to),
-    ).fetchall()
+    load_rows = db.fetch_daily_training_load(
+        date_from, date_to, algorithm_version=TRAINING_LOAD_MODEL_VERSION
+    )
+    load_rows = [
+        row for row in load_rows
+        if row["coverage_status"] in {"complete", "rest_confirmed"}
+    ]
 
     day_sql = _health_day_sql()
     health_rows = db._conn.execute(

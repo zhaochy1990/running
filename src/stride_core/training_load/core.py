@@ -45,6 +45,7 @@ _HIGH_INTENSITY_ARM_WINDOW_SECONDS = 240.0
 _HIGH_INTENSITY_RECOVERY_WEIGHT = 50.0
 _HIGH_INTENSITY_SEVERITY_WEIGHT = 100.0
 _HIGH_INTENSITY_SEVERITY_EXPONENT = 4.0
+_HIGH_INTENSITY_MAX_TSS_PER_HOUR = 75.0
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -438,6 +439,10 @@ def _compute_high_intensity_tss(
         + _HIGH_INTENSITY_SEVERITY_WEIGHT
         * peak_excess**_HIGH_INTENSITY_SEVERITY_EXPONENT
         * threshold_hr_minutes
+    )
+    supplement = min(
+        supplement,
+        _HIGH_INTENSITY_MAX_TSS_PER_HOUR * covered_seconds / 3600.0,
     )
     return _round(supplement), reasons, confidence, _round(coverage) or 0.0
 
@@ -910,7 +915,6 @@ def compute_daily_load_series(
     start: date,
     end: date,
     prior_state: PriorLoadState | None = None,
-    activity_history_complete: bool = False,
 ) -> list[DailyLoadResult]:
     """Compute daily TSS-like dose plus fixed 7/42-day EWMA ATL/CTL."""
     by_date: dict[date, list[ActivityLoadResult]] = defaultdict(list)
@@ -943,7 +947,7 @@ def compute_daily_load_series(
                 if usable
                 else LoadCoverageStatus.UNKNOWN
             )
-        elif activity_history_complete or day in health_by_date:
+        elif day in health_by_date:
             # A provider health row proves the watch synced this calendar day;
             # with no activities it is an observed rest day, not missing data.
             coverage_status = LoadCoverageStatus.REST_CONFIRMED

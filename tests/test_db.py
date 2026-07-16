@@ -9,6 +9,7 @@ from stride_core.models import (
     ActivityDetail, DailyHealth, Dashboard, Lap, TimeseriesPoint, Zone,
 )
 from stride_core.timefmt import today_shanghai
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):
@@ -149,9 +150,10 @@ class TestDatabaseActivities:
         )
         db._conn.execute(
             """INSERT INTO daily_training_load
-               (date,algorithm_version,training_dose,acute_load,chronic_load,form,load_ratio)
-               VALUES ('2026-05-04',1,80,50,45,-5,1.11),
-                      ('2026-05-05',1,40,52,46,-6,1.13)"""
+               (date,algorithm_version,training_dose,acute_load,chronic_load,form,load_ratio,
+                coverage_status) VALUES ('2026-05-04',?,80,50,45,-5,1.11,'complete'),
+                                        ('2026-05-05',?,40,52,46,-6,1.13,'complete')""",
+            (TRAINING_LOAD_MODEL_VERSION, TRAINING_LOAD_MODEL_VERSION),
         )
         db._conn.execute(
             """INSERT INTO daily_health

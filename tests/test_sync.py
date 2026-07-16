@@ -308,6 +308,25 @@ class TestSyncHealthHrv:
         assert statuses["2026-05-20"] == "UNBALANCED"  # 27 < balanced_low=31 but ≥ low_upper=26
         assert statuses["2026-05-22"] == "BALANCED"   # 31 in [29, 39]
 
+    def test_health_dates_only_include_daily_health_not_hrv_or_dashboard(self, db):
+        class FakeClient:
+            def get_analyse(_self):
+                return {"data": {"dayList": [{
+                    "happenDay": 20260521, "testRhr": 45,
+                    "trainingLoadRatioState": 0,
+                }]}}
+
+            def get_dashboard(_self):
+                return self._dashboard_payload()
+
+            def get_dashboard_detail(_self):
+                return {"data": {"currentWeekRecord": {}}}
+
+        changed: set[str] = set()
+        sync_health(FakeClient(), db, health_dates_out=changed)
+
+        assert changed == {"2026-05-21"}
+
     def test_handles_missing_sleephrvlist(self, db):
         payload = self._dashboard_payload()
         payload["data"]["summaryInfo"]["sleepHrvData"].pop("sleepHrvList")

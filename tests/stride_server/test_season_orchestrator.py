@@ -545,8 +545,8 @@ def test_execution_cap_uses_recent_training_dose_when_it_is_tighter(db, monkeypa
         day = date(2026, 6, 1).fromordinal(date(2026, 6, 1).toordinal() + offset)
         db._conn.execute(
             "INSERT INTO daily_training_load "
-            "(date, algorithm_version, training_dose, acute_load, chronic_load, form) "
-            "VALUES (?, ?, ?, 120.0, 50.0, -70.0)",
+            "(date, algorithm_version, training_dose, acute_load, chronic_load, form, "
+            "coverage_status) VALUES (?, ?, ?, 120.0, 50.0, -70.0, 'complete')",
             (day.isoformat(), TRAINING_LOAD_MODEL_VERSION, dose),
         )
     db._conn.commit()

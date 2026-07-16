@@ -88,8 +88,6 @@ from coach.graphs.generation.week_schedule import (
 from coach.graphs.generation.weekly_prompt import WeekMeta
 from coach.schemas import PhaseReview, PhaseWeeks, SeasonPlanBundle
 from stride_core.master_plan import MasterPlan, MasterPlanWeek, Milestone, Phase
-from stride_core.models import RUN_SPORT_SQL_LIST
-from stride_core.timefmt import SHANGHAI_DAY_SQL
 from stride_storage.sqlite.database import Database
 
 from ..coach_runtime import get_generator_model
@@ -267,46 +265,22 @@ def _last_completed_week_actual(
     prev_end = first_week_start - timedelta(days=1)
     try:
         db = Database(user=user_id)
-        km_row = db._conn.execute(
-            f"""
-            SELECT COALESCE(SUM(distance_m), 0.0) / 1000.0 AS total_km
-            FROM activities
-            WHERE sport_type IN ({RUN_SPORT_SQL_LIST})
-              AND {SHANGHAI_DAY_SQL} BETWEEN ? AND ?
-            """,
-            (prev_start.isoformat(), prev_end.isoformat()),
-        ).fetchone()
-        dose_row = db._conn.execute(
-            """
-            SELECT COALESCE(SUM(training_dose), 0.0) AS total_dose
-            FROM daily_training_load
-            WHERE algorithm_version = ? AND date BETWEEN ? AND ?
-            """,
-            (TRAINING_LOAD_MODEL_VERSION, prev_start.isoformat(), prev_end.isoformat()),
-        ).fetchone()
-        load_row = db._conn.execute(
-            """
-            SELECT acute_load, chronic_load
-            FROM daily_training_load
-            WHERE algorithm_version = ? AND date BETWEEN ? AND ?
-              AND acute_load IS NOT NULL
-              AND chronic_load IS NOT NULL
-            ORDER BY date DESC
-            LIMIT 1
-            """,
-            (TRAINING_LOAD_MODEL_VERSION, prev_start.isoformat(), prev_end.isoformat()),
-        ).fetchone()
+        running = db.get_running_week_summaries([
+            (0, prev_start.isoformat(), prev_end.isoformat())
+        ]).get(0, {})
+        dose, load_row = db.fetch_completed_week_training_load(
+            prev_start.isoformat(), prev_end.isoformat(),
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION,
+        )
     except Exception as exc:  # noqa: BLE001 — execution cap is best-effort context
         logger.warning("season: failed to read last completed week actual load: %s", exc)
         return None
-    if not km_row:
-        return None
-    km = float(km_row[0] or 0.0)
+    km = float(running.get("actual_distance_km") or 0.0)
     if km <= 0:
         return None
-    dose = float(dose_row[0] or 0.0) if dose_row else 0.0
-    acute = float(load_row[0]) if load_row and load_row[0] is not None else None
-    chronic = float(load_row[1]) if load_row and load_row[1] is not None else None
+    dose = float(dose or 0.0)
+    acute = float(load_row["acute_load"]) if load_row and load_row["acute_load"] is not None else None
+    chronic = float(load_row["chronic_load"]) if load_row and load_row["chronic_load"] is not None else None
     return _ActualExecutionBaseline(
         last_week_km=round(km, 1),
         last_week_dose=round(dose, 1) if dose > 0 else None,

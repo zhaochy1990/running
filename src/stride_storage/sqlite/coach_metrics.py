@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
 from .database import Database, HRV_PREFERRED_PER_DATE_SQL
 
 
@@ -87,13 +89,13 @@ def fetch_latest_health_context(db: Database) -> dict[str, Any]:
     """Return STRIDE load plus raw recovery measurements for Coach."""
     load_rows = db.query(
         """SELECT date, algorithm_version, calibration_id, training_dose,
-            acute_load, chronic_load, form, load_ratio
+            acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
-        WHERE algorithm_version = (
-            SELECT MAX(algorithm_version) FROM daily_training_load
-        )
+        WHERE algorithm_version = ?
+          AND coverage_status IN ('complete', 'rest_confirmed')
         ORDER BY date DESC
-        LIMIT 1"""
+        LIMIT 1""",
+        (TRAINING_LOAD_MODEL_VERSION,),
     )
     rhr_rows = db.query(
         "SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
@@ -138,14 +140,13 @@ def fetch_health_series_context(db: Database, *, limit: int) -> dict[str, list[A
     )
     load_rows = db.query(
         """SELECT date, algorithm_version, calibration_id, training_dose,
-            acute_load, chronic_load, form, load_ratio
+            acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
-        WHERE algorithm_version = (
-            SELECT MAX(algorithm_version) FROM daily_training_load
-        )
+        WHERE algorithm_version = ?
+          AND coverage_status IN ('complete', 'rest_confirmed')
         ORDER BY date DESC
         LIMIT ?""",
-        (bounded,),
+        (TRAINING_LOAD_MODEL_VERSION, bounded),
     )
     return {
         "health": health_rows,
@@ -158,13 +159,12 @@ def fetch_stride_pmc_series(db: Database, *, limit: int) -> list[Any]:
     """Return only STRIDE daily load; never vendor ATI/CTI/fatigue."""
     return db.query(
         """SELECT date, algorithm_version, calibration_id, training_dose,
-            acute_load, chronic_load, form, load_ratio
+            acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
-        WHERE algorithm_version = (
-            SELECT MAX(algorithm_version) FROM daily_training_load
-        )
+        WHERE algorithm_version = ?
+          AND coverage_status IN ('complete', 'rest_confirmed')
         ORDER BY date DESC LIMIT ?""",
-        (max(1, int(limit)),),
+        (TRAINING_LOAD_MODEL_VERSION, max(1, int(limit))),
     )
 
 

@@ -279,6 +279,7 @@ class TestSyncUser:
         assert result.activities == 2
         assert result.health == 5
         assert result.activity_label_ids == ("g1", "g2")
+        assert result.health_dates == ()
 
     def test_sync_user_health_only_returns_no_activity_label_ids(self, tmp_path: Path, monkeypatch):
         from stride_core import db as db_mod
@@ -308,6 +309,7 @@ class TestSyncUser:
         assert result.activities == 0
         assert result.health == 5
         assert result.activity_label_ids == ()
+        assert result.health_dates == ()
 
 
 class TestGarminCredentialsRoundtrip:

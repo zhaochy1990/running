@@ -991,6 +991,7 @@ export interface StridePMCRecord {
   chronic_load: number | null
   form: number | null
   load_ratio: number | null
+  coverage_status: string
   readiness_gate: string | null
   readiness_reasons: string[]
   chronic_load_ramp: number | null
@@ -1003,6 +1004,7 @@ export interface StridePMCSummary {
   current_chronic_load: number | null
   current_form: number | null
   current_load_ratio: number | null
+  current_coverage_status: string | null
   current_readiness_gate: string | null
   current_readiness_reasons: string[] | null
   chronic_load_ramp: number | null
@@ -1901,6 +1903,7 @@ export interface StrideTrainingLoadRecord {
   chronic_load: number | null
   form: number | null
   load_ratio: number | null
+  coverage_status: string
   readiness_gate: string | null
   readiness_reasons: string[]
 }

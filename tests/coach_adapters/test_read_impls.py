@@ -7,6 +7,7 @@ from datetime import date as date_cls
 from typing import Any
 
 import pytest
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from coach.runtime.toolkit import Toolkit
 from coach.schemas import ToolResult
@@ -441,9 +442,9 @@ def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
     # STRIDE self-computed PMC (acute/chronic/form), NOT COROS ati/cti.
     patched_db._conn.execute(
         """INSERT INTO daily_training_load
-           (date, algorithm_version, acute_load, chronic_load, form, load_ratio)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
+           (date, algorithm_version, acute_load, chronic_load, form, load_ratio, coverage_status)
+           VALUES (?, ?, ?, ?, ?, ?, 'complete')""",
+        ("2026-05-13", TRAINING_LOAD_MODEL_VERSION, 50.0, 62.0, 12.0, 0.81),
     )
     patched_db._conn.execute(
         """INSERT INTO daily_health
@@ -531,11 +532,11 @@ def test_health_series_uses_raw_measurements_and_stride_load_only(patched_db) ->
     conn.executemany(
         """INSERT INTO daily_training_load
            (date, algorithm_version, training_dose, acute_load, chronic_load, form, load_ratio,
-            readiness_gate, readiness_reasons_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            readiness_gate, readiness_reasons_json, coverage_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete')""",
         [
-            ("2026-07-01", 1, 60.0, 50.0, 55.0, 5.0, 0.91, "green", '["ok"]'),
-            ("2026-07-03", 1, 80.0, 58.0, 56.0, -2.0, 1.04, "yellow", '["low_hrv"]'),
+            ("2026-07-01", TRAINING_LOAD_MODEL_VERSION, 60.0, 50.0, 55.0, 5.0, 0.91, "green", '["ok"]'),
+            ("2026-07-03", TRAINING_LOAD_MODEL_VERSION, 80.0, 58.0, 56.0, -2.0, 1.04, "yellow", '["low_hrv"]'),
         ],
     )
     conn.commit()
@@ -627,9 +628,9 @@ def test_health_series_rejects_unknown_metrics(patched_db) -> None:
 def test_pmc_series_uses_stride_load(patched_db) -> None:
     patched_db._conn.execute(
         """INSERT INTO daily_training_load
-           (date, algorithm_version, acute_load, chronic_load, form, load_ratio)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
+           (date, algorithm_version, acute_load, chronic_load, form, load_ratio, coverage_status)
+           VALUES (?, ?, ?, ?, ?, ?, 'complete')""",
+        ("2026-05-13", TRAINING_LOAD_MODEL_VERSION, 50.0, 62.0, 12.0, 0.81),
     )
     patched_db._conn.commit()
     res = read_impls.GetPmcSeriesImpl("uid")(days=14)

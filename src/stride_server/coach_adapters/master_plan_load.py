@@ -283,10 +283,16 @@ def _distance_only_tune_up_if_range(distance_km: float) -> tuple[float, float, s
     return low, high, "tune_up_distance_only_long_race_marathon_range"
 
 
+def _distance_only_race_if_range(distance_km: float) -> tuple[float, float, str]:
+    low, high, assumption = _distance_only_tune_up_if_range(distance_km)
+    return low, high, assumption.replace("tune_up_", "goal_race_", 1)
+
+
 def _session_if_range(
     session: Any,
     *,
     goal_race_if: float | None,
+    goal_race_distance_km: float | None = None,
 ) -> tuple[float, float, list[str]] | None:
     stype = _session_type(session)
     text = " ".join(
@@ -312,9 +318,13 @@ def _session_if_range(
         low, high = _zone_range("threshold")
         return low, high, ["hill_effort_flat_equivalent_range"]
     if stype in {"race", "race_pace"}:
-        if goal_race_if is None:
-            return None
-        return goal_race_if, goal_race_if, ["goal_time_race_pace"]
+        if goal_race_if is not None:
+            return goal_race_if, goal_race_if, ["goal_time_race_pace"]
+        distance = goal_race_distance_km or _session_distance_km(session)
+        if distance:
+            low, high, assumption = _distance_only_race_if_range(distance)
+            return low, high, [assumption]
+        return None
     if stype == "tune_up_race":
         duration = _session_duration_min(session)
         distance = _session_distance_km(session)
@@ -393,6 +403,10 @@ def estimate_master_plan_training_load(
     baseline_km = _float(anchor.get("distance_anchor_km"))
     baseline_dose = _float(anchor.get("dose_anchor"))
     goal_race_if = _goal_race_if(plan, target_race, threshold_speed_mps)
+    goal_distance_key = _extract_goal_distance(plan, target_race)
+    goal_race_distance_km = (
+        _RACE_DISTANCE_M.get(goal_distance_key, 0.0) / 1000.0 or None
+    )
     weeks_out: list[dict[str, Any]] = []
     for week in _extract_weeks(plan):
         low = _float(_get(week, "target_weekly_km_low")) or 0.0
@@ -408,16 +422,26 @@ def estimate_master_plan_training_load(
         load_computable = bool(threshold_speed_mps and threshold_speed_mps > 0)
         long_run_km = 0.0
         long_run_dose = 0.0
+        embedded_intensity_ranges: list[tuple[float, float]] = []
         for session in sessions:
             stype = _session_type(session)
             if stype in {"strength_key", "strength"}:
                 continue
             if stype in {"race_pace", "threshold", "tempo"} and _is_embedded_session(session):
+                embedded_intensity = _session_if_range(
+                session, goal_race_if=goal_race_if,
+                goal_race_distance_km=goal_race_distance_km,
+                )
+                if embedded_intensity is not None:
+                    embedded_intensity_ranges.append(embedded_intensity[:2])
                 week_assumptions.append(f"{stype}_embedded_in_parent_not_double_counted")
                 continue
             km = _session_distance_km(session)
             duration = _session_duration_min(session)
-            intensity = _session_if_range(session, goal_race_if=goal_race_if)
+            intensity = _session_if_range(
+                session, goal_race_if=goal_race_if,
+                goal_race_distance_km=goal_race_distance_km,
+            )
             estimate = None
             if load_computable and intensity is not None and (km or duration):
                 low_if, high_if, assumptions = intensity
@@ -442,9 +466,52 @@ def estimate_master_plan_training_load(
             if stype == "long_run":
                 long_run_km = max(long_run_km, max(0.0, km or 0.0))
                 long_run_dose = max(long_run_dose, estimate.expected_dose or 0.0) if estimate else 0.0
+        if embedded_intensity_ranges and load_computable:
+            long_sessions = [s for s in sessions if _session_type(s) == "long_run"]
+            for parent in long_sessions:
+                parent_km = _session_distance_km(parent)
+                parent_duration = _session_duration_min(parent)
+                if not (parent_km or parent_duration):
+                    continue
+                parent_intensity = _session_if_range(
+                    parent, goal_race_if=goal_race_if,
+                    goal_race_distance_km=goal_race_distance_km,
+                )
+                if parent_intensity is None:
+                    continue
+                low_if = min(parent_intensity[0], *(r[0] for r in embedded_intensity_ranges))
+                high_if = max(parent_intensity[1], *(r[1] for r in embedded_intensity_ranges))
+                ranged_parent = _estimate_session(
+                    km=parent_km, duration_min=parent_duration,
+                    low_if=low_if, high_if=high_if,
+                    threshold_speed_mps=float(threshold_speed_mps),
+                )
+                original_parent = _estimate_session(
+                    km=parent_km, duration_min=parent_duration,
+                    low_if=parent_intensity[0], high_if=parent_intensity[1],
+                    threshold_speed_mps=float(threshold_speed_mps),
+                )
+                if ranged_parent.expected_dose is not None and original_parent.expected_dose is not None:
+                    # The embedded segment's exact fraction is unknown. Keep
+                    # the parent's expected dose conservative, but lift it
+                    # halfway toward the easy-to-quality range midpoint so it
+                    # is not priced identically to an all-easy long run.
+                    delta = max(
+                        0.0,
+                        (ranged_parent.high_dose or ranged_parent.expected_dose)
+                        - original_parent.expected_dose,
+                    ) / 2.0
+                    key_dose += delta
+                    key_dose_low += (ranged_parent.low_dose or 0.0) - (original_parent.low_dose or 0.0)
+                    key_dose_high += (ranged_parent.high_dose or 0.0) - (original_parent.high_dose or 0.0)
+                    long_run_dose = max(
+                        long_run_dose, original_parent.expected_dose + delta
+                    )
+                break
         low_remaining_easy_km = max(0.0, low - key_km)
         remaining_easy_km = max(0.0, high - key_km)
         low_easy_dose = 0.0
+        low_easy_dose_lower = 0.0
         easy_dose = easy_low = easy_high = 0.0
         if load_computable and (low_remaining_easy_km > 0 or remaining_easy_km > 0):
             low_if, high_if = _zone_range("easy")
@@ -454,6 +521,7 @@ def estimate_master_plan_training_load(
                     threshold_speed_mps=float(threshold_speed_mps),
                 )
                 low_easy_dose = low_easy_estimate.expected_dose or 0.0
+                low_easy_dose_lower = low_easy_estimate.low_dose or low_easy_dose
             if remaining_easy_km > 0:
                 easy_estimate = _estimate_session(
                     km=remaining_easy_km, duration_min=None, low_if=low_if, high_if=high_if,
@@ -465,7 +533,7 @@ def estimate_master_plan_training_load(
             week_assumptions.append("remaining_weekly_distance_in_easy_zone")
         low_raw_total_dose = key_dose + low_easy_dose if load_computable else None
         raw_total_dose = key_dose + easy_dose if load_computable else None
-        total_dose_low = key_dose_low + easy_low if load_computable else None
+        total_dose_low = key_dose_low + low_easy_dose_lower if load_computable else None
         total_dose_high = key_dose_high + easy_high if load_computable else None
         total_dose = raw_total_dose
         weeks_out.append({
@@ -473,8 +541,8 @@ def estimate_master_plan_training_load(
             "week_start": _get(week, "week_start"),
             "target_weekly_km_low": _round(low),
             "target_weekly_km_high": _round(high),
-            "target_training_dose_low": _round(low_raw_total_dose),
-            "target_training_dose_high": _round(total_dose),
+            "target_training_dose_low": _round(total_dose_low),
+            "target_training_dose_high": _round(total_dose_high),
             "estimated_dose": _round(total_dose),
             "estimated_dose_low": _round(total_dose_low),
             "estimated_dose_high": _round(total_dose_high),

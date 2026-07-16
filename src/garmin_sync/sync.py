@@ -46,6 +46,7 @@ def run_sync(
     activity_limit: int = 200,
     since_date: str | None = None,
     health_days: int = 28,
+    health_dates_out: set[str] | None = None,
 ) -> tuple[int, int, tuple[str, ...]]:
     """Sync the user's Garmin data into `db`.
 
@@ -75,7 +76,10 @@ def run_sync(
         client, db, full=full, progress=progress, limit=effective_limit,
         since_date=since_date,
     )
-    health_synced = _sync_health(client, db, progress=progress, days=health_days)
+    health_synced = _sync_health(
+        client, db, progress=progress, days=health_days,
+        health_dates_out=health_dates_out,
+    )
 
     return activities_synced, health_synced, tuple(new_label_ids)
 
@@ -85,8 +89,11 @@ def run_health_only_sync(
     db: Database,
     *,
     progress: SyncProgressCallback | None = None,
+    health_dates_out: set[str] | None = None,
 ) -> tuple[int, int]:
-    health_synced = _sync_health(client, db, progress=progress)
+    health_synced = _sync_health(
+        client, db, progress=progress, health_dates_out=health_dates_out
+    )
     return 0, health_synced
 
 
@@ -185,6 +192,7 @@ def _sync_health(
     *,
     progress: SyncProgressCallback | None,
     days: int = 28,
+    health_dates_out: set[str] | None = None,
 ) -> int:
     """Pull `days` of daily health from Garmin (default 28 — matches the COROS
     `analyse/query` window so PMC / fatigue charts have comparable history).
@@ -228,6 +236,8 @@ def _sync_health(
                 or h.sleep_total_s or h.body_battery_high
                 or h.fatigue) is not None:
             db.upsert_daily_health(h, provider="garmin")
+            if health_dates_out is not None:
+                health_dates_out.add(date_iso)
             health_count += 1
             wrote_anything = True
         hrv_row = daily_hrv_from_garmin(date_iso, hrv)
