@@ -692,13 +692,15 @@ def test_master_apply_updates_target_time_in_training_goal_and_plan(
     monkeypatch.setattr(
         coach_routes, "write_json", lambda _path, data: writes.append(data) or "file"
     )
-
     resp = client.post(
         f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
         json=_target_race_time_body(), headers=_auth(_token(private_pem)),
     )
 
     assert resp.status_code == 200, resp.text
+    affected = resp.json()["affected_weeks"]
+    assert affected
+    assert affected[-1]["folder"] == "2026-11-09_11-15"
     assert writes[0]["current"]["target_finish_time"] == "3:10:00"
     updated = saved["plan"]
     assert updated.goal.target_time == "3:10:00"
@@ -916,6 +918,62 @@ def test_race_reschedule_affected_weeks_include_extended_build_window(
     assert "2026-10-26_11-01" in folders
     assert "2026-11-02_11-08" in folders
     assert "2026-11-09_11-15" in folders
+    assert "2026-11-23_11-29" in folders
+
+
+def test_target_race_time_affected_weeks_start_from_as_of(
+    chat_client,
+):
+    from stride_core.master_plan_diff import MasterPlanDiff
+    from stride_server.routes.master_plan import _compute_affected_weeks
+
+    diff = MasterPlanDiff.model_validate(_target_race_time_body()["diff"])
+
+    weeks = _compute_affected_weeks(
+        diff.ops, _race_plan(), as_of=date(2026, 7, 16)
+    )
+
+    assert weeks[0]["folder"] == "2026-07-13_07-19"
+    assert weeks[-1]["folder"] == "2026-11-09_11-15"
+
+
+def test_coach_race_reschedule_apply_returns_affected_weeks(
+    chat_client, monkeypatch
+):
+    client, private_pem, coach_routes = chat_client
+    plan = _race_plan()
+    saved: dict[str, object] = {"plan": plan}
+
+    class _Store:
+        def get_plan(self, user_id, plan_id):
+            return saved["plan"]
+
+        def save_plan(self, updated):
+            saved["plan"] = updated
+
+        def save_version(self, version):
+            pass
+
+    monkeypatch.setattr(coach_routes, "get_master_plan_store", lambda: _Store())
+    monkeypatch.setattr(
+        coach_routes,
+        "read_json",
+        lambda _path: ({"current": {
+            "goal_id": "g1", "race_date": "2026-11-15",
+            "target_finish_time": "3:15:00",
+            "type": "race", "race_distance": "FM",
+        }}, "file"),
+    )
+    monkeypatch.setattr(coach_routes, "write_json", lambda *_args: "file")
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=_race_reschedule_body(), headers=_auth(_token(private_pem)),
+    )
+
+    assert resp.status_code == 200, resp.text
+    folders = [item["folder"] for item in resp.json()["affected_weeks"]]
+    assert "2026-10-26_11-01" in folders
     assert "2026-11-23_11-29" in folders
 
 

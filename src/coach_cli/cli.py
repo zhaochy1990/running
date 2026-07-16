@@ -648,6 +648,12 @@ def main(
                 else:
                     suffix = f"周计划 {result.get('folder', '')} 已更新。"
                 click.echo(f"✅ 方案 {selected} 已应用，{suffix}")
+                if isinstance(proposal, MasterPlanDiff):
+                    affected = result.get("affected_weeks") or []
+                    if affected:
+                        click.echo(
+                            f"⚠️  {len(affected)} 个周计划可能仍含旧总纲目标，请按需重新生成。"
+                        )
                 continue
 
             input_history.remember(line)

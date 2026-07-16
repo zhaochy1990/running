@@ -1041,7 +1041,9 @@ class AdjustApplyRequest(BaseModel):
     change_reason: str = ""
 
 
-def _compute_affected_weeks(ops: list, plan: Any) -> list[dict]:
+def _compute_affected_weeks(
+    ops: list, plan: Any, *, as_of: date_cls | None = None
+) -> list[dict]:
     """Compute weekly folders affected by the given accepted ops.
 
     For each op that involves a phase or milestone date range, find all
@@ -1113,6 +1115,10 @@ def _compute_affected_weeks(ops: list, plan: Any) -> list[dict]:
                     start_str = min(starts)
                     end_str = max(ends)
 
+            elif op_kind_str == "update_target_race_time":
+                start_str = (as_of or today_shanghai()).isoformat()
+                end_str = plan.goal.race_date
+
             elif op_kind_str == "remove_milestone":
                 ms_id = op.milestone_id if hasattr(op, "milestone_id") else op.get("milestone_id")
                 for ms in plan.milestones:
@@ -1133,7 +1139,6 @@ def _compute_affected_weeks(ops: list, plan: Any) -> list[dict]:
             logger.debug("_compute_affected_weeks: skipped op due to error", exc_info=True)
 
     # Build folder list sorted by date desc
-    today = date_cls.today()
     result: list[dict] = []
     for monday in sorted(affected_dates):
         sunday = monday + timedelta(days=6)

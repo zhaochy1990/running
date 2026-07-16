@@ -43,6 +43,7 @@ from stride_core.weekly_plan_proposal import (
     is_supported_weekly_plan_generation,
 )
 from stride_core.master_plan import MasterPlanStatus
+from stride_core.timefmt import today_shanghai
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
@@ -526,6 +527,25 @@ def _prepare_training_goal_time_update(
     return original, updated
 
 
+def _affected_weeks_for_coach_master_apply(
+    plan: Any, diff: MasterPlanDiff, accepted_op_ids: list[str]
+) -> list[dict[str, str]]:
+    """Report canonical weekly plans that may contain stale master guidance."""
+    accepted = set(accepted_op_ids)
+    accepted_ops = [
+        op
+        for op in diff.ops
+        if op.id in accepted and op.accepted is not False
+    ]
+    if not accepted_ops:
+        return []
+
+    from .master_plan import _compute_affected_weeks
+    return _compute_affected_weeks(
+        accepted_ops, plan, as_of=today_shanghai()
+    )
+
+
 @router.post("/api/users/me/coach/master-plan/{plan_id}/apply")
 def apply_coach_master_diff(
     plan_id: str,
@@ -583,6 +603,9 @@ def apply_coach_master_diff(
             detail="赛季调整结构非法：" + "；".join(violations),
         )
 
+    affected_weeks = _affected_weeks_for_coach_master_apply(
+        plan, diff, accepted_op_ids
+    )
     bridge = _MasterStoreBridge(store, user_id)
     race_op = _accepted_race_reschedule(diff, accepted_op_ids)
     race_time_op = _accepted_target_race_time_update(diff, accepted_op_ids)
@@ -637,6 +660,7 @@ def apply_coach_master_diff(
         "plan_id": plan_id,
         "version": updated_plan.version,
         "updated_at": updated_plan.updated_at,
+        "affected_weeks": affected_weeks,
     }
 
 
