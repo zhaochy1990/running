@@ -93,7 +93,7 @@ def fetch_latest_health_context(db: Database) -> dict[str, Any]:
             acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
         WHERE algorithm_version = ?
-          AND coverage_status IN ('complete', 'rest_confirmed')
+          AND coverage_status IN ('complete', 'partial', 'rest_confirmed')
         ORDER BY date DESC
         LIMIT 1""",
         (TRAINING_LOAD_MODEL_VERSION,),
@@ -144,7 +144,7 @@ def fetch_health_series_context(db: Database, *, limit: int) -> dict[str, list[A
             acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
         WHERE algorithm_version = ?
-          AND coverage_status IN ('complete', 'rest_confirmed')
+          AND coverage_status IN ('complete', 'partial', 'rest_confirmed')
         ORDER BY date DESC
         LIMIT ?""",
         (TRAINING_LOAD_MODEL_VERSION, bounded),
@@ -163,7 +163,7 @@ def fetch_stride_pmc_series(db: Database, *, limit: int) -> list[Any]:
             acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
         WHERE algorithm_version = ?
-          AND coverage_status IN ('complete', 'rest_confirmed')
+          AND coverage_status IN ('complete', 'partial', 'rest_confirmed')
         ORDER BY date DESC LIMIT ?""",
         (TRAINING_LOAD_MODEL_VERSION, max(1, int(limit))),
     )

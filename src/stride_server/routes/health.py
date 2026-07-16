@@ -213,6 +213,9 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
     stride_rows = db.fetch_daily_training_load_with_prior(
         algorithm_version=TRAINING_LOAD_MODEL_VERSION, limit=days
     )
+    latest_usable_stride_row = db.fetch_latest_daily_training_load(
+        algorithm_version=TRAINING_LOAD_MODEL_VERSION
+    )
     db.close()
 
     records = [dict(r) for r in rows]
@@ -280,7 +283,23 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         )
         stride_records.append(rec)
 
-    latest_stride = stride_records[-1] if stride_records else {}
+    # Keep UNKNOWN placeholders in the chart so missing coverage stays visible,
+    # but never promote one to the current athlete state. The unbounded storage
+    # lookup also avoids losing the latest usable state when an unknown gap is
+    # longer than the requested chart window.
+    latest_stride = dict(latest_usable_stride_row) if latest_usable_stride_row else {}
+    if latest_stride:
+        latest_stride["readiness_reasons"] = _json_list(
+            latest_stride.pop("readiness_reasons_json", None)
+        )
+        latest_stride["chronic_load_ramp"] = next(
+            (
+                rec.get("chronic_load_ramp")
+                for rec in reversed(stride_records)
+                if rec.get("date") == latest_stride.get("date")
+            ),
+            None,
+        )
     stride_summary = {
         "date": latest_stride.get("date"),
         "current_training_dose": latest_stride.get("training_dose"),

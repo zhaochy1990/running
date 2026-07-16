@@ -488,6 +488,41 @@ def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
     assert "LOW" not in str(res.data)
 
 
+def test_coach_load_readers_keep_partial_and_skip_unknown_current_state(patched_db) -> None:
+    patched_db._conn.executemany(
+        """INSERT INTO daily_training_load
+           (date, algorithm_version, training_dose, acute_load, chronic_load, form,
+            load_ratio, coverage_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            ("2026-05-13", TRAINING_LOAD_MODEL_VERSION, 70.0, 50.0, 62.0,
+             12.0, 0.81, "partial"),
+            ("2026-05-14", TRAINING_LOAD_MODEL_VERSION, 0.0, 50.0, 62.0,
+             12.0, 0.81, "unknown"),
+        ],
+    )
+    patched_db._conn.commit()
+
+    snapshot = read_impls.GetHealthSnapshotImpl("uid")()
+    health_series = read_impls.GetHealthSeriesImpl("uid")(
+        days=14, metrics=["training_dose", "form"]
+    )
+    pmc_series = read_impls.GetPmcSeriesImpl("uid")(days=14)
+
+    assert snapshot.ok and snapshot.data["stride_training_load"]["date"] == "2026-05-13"
+    assert snapshot.data["stride_training_load"]["coverage_status"] == "partial"
+    assert health_series.ok and health_series.data["series"] == [
+        {
+            "date": "2026-05-13",
+            "coverage_status": "partial",
+            "training_dose": 70.0,
+            "form": 12.0,
+        }
+    ]
+    assert pmc_series.ok and len(pmc_series.data["series"]) == 1
+    assert pmc_series.data["series"][0]["coverage_status"] == "partial"
+
+
 def test_health_snapshot_threshold_from_stride_calibration(patched_db) -> None:
     from datetime import date
 
