@@ -281,18 +281,18 @@ def _seed_training_load(db_path: Path):
     db = Database(db_path)
     try:
         rows = [
-            ("2026-05-17", TRAINING_LOAD_MODEL_VERSION, None, 60.0, 70.0, 70.0, 0.0, 1.00, "go",  '["ok"]'),
-            ("2026-05-18", TRAINING_LOAD_MODEL_VERSION, None, 75.0, 72.0, 70.5, -1.5, 1.02, "go",  '["ok"]'),
-            ("2026-05-19", TRAINING_LOAD_MODEL_VERSION, None, 80.0, 75.0, 71.5, -3.5, 1.05, "caution", '["high_load"]'),
-            ("2026-05-20", TRAINING_LOAD_MODEL_VERSION, None, 70.0, 76.0, 72.5, -3.5, 1.05, "go",  '["ok"]'),
-            ("2026-05-21", TRAINING_LOAD_MODEL_VERSION, None, 75.2, 78.0, 72.0, -6.0, 1.08, "go",  '["ok"]'),
+            ("2026-05-17", TRAINING_LOAD_MODEL_VERSION, None, 60.0, 70.0, 70.0, 0.0, 1.00, "complete", "go",  '["ok"]'),
+            ("2026-05-18", TRAINING_LOAD_MODEL_VERSION, None, 75.0, 72.0, 70.5, -1.5, 1.02, "complete", "go",  '["ok"]'),
+            ("2026-05-19", TRAINING_LOAD_MODEL_VERSION, None, 80.0, 75.0, 71.5, -3.5, 1.05, "complete", "caution", '["high_load"]'),
+            ("2026-05-20", TRAINING_LOAD_MODEL_VERSION, None, 70.0, 76.0, 72.5, -3.5, 1.05, "complete", "go",  '["ok"]'),
+            ("2026-05-21", TRAINING_LOAD_MODEL_VERSION, None, 75.2, 78.0, 72.0, -6.0, 1.08, "complete", "go",  '["ok"]'),
         ]
         db._conn.executemany(
             """INSERT INTO daily_training_load
                (date, algorithm_version, calibration_id, training_dose,
                 acute_load, chronic_load, form, load_ratio,
-                readiness_gate, readiness_reasons_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                coverage_status, readiness_gate, readiness_reasons_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             rows,
         )
         db._conn.commit()
@@ -338,6 +338,39 @@ def test_stride_training_load_no_data(rsa_keypair, monkeypatch, seeded_db):
     )
     assert resp.status_code == 200
     assert resp.json() == {"current": None, "series": []}
+
+
+def test_stride_training_load_current_skips_unknown_tail(
+    rsa_keypair, monkeypatch, seeded_db
+):
+    private_pem, public_pem = rsa_keypair
+    _reset_bearer_module(monkeypatch, public_pem)
+    _seed_training_load(seeded_db)
+    db = Database(seeded_db)
+    try:
+        db._conn.execute(
+            """INSERT INTO daily_training_load
+               (date, algorithm_version, training_dose, acute_load, chronic_load,
+                form, load_ratio, coverage_status, readiness_gate)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'unknown', 'green')""",
+            ("2026-05-22", TRAINING_LOAD_MODEL_VERSION, 0.0, 78.0, 72.0, -6.0, 1.08),
+        )
+        db._conn.commit()
+    finally:
+        db.close()
+
+    client = _build_client(public_pem)
+    token = _issue_token(private_pem)
+    resp = client.get(
+        f"/api/{USER_ID}/stride/training-load?days=30",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["current"]["date"] == "2026-05-21"
+    assert body["series"][-1]["date"] == "2026-05-22"
+    assert body["series"][-1]["coverage_status"] == "unknown"
 
 
 def test_stride_training_load_validates_days(rsa_keypair, monkeypatch, seeded_db):

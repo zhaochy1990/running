@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { aggregateWeeklyDose, type DailyDoseRow } from '../weeklyLoad'
 
-function rec(date: string, dose: number | null): DailyDoseRow {
-  return { date, training_dose: dose }
+function rec(
+  date: string, dose: number | null, coverage_status: string = 'complete',
+): DailyDoseRow {
+  return { date, training_dose: dose, coverage_status }
 }
 
 // Anchor: 2026-05-24 is a Sunday in Shanghai → its week starts Mon 2026-05-18.
@@ -17,10 +19,10 @@ describe('aggregateWeeklyDose', () => {
     expect(out[7].weekStart).toBe('2026-05-18')
   })
 
-  it('zero-fills weeks with no data instead of dropping them', () => {
+  it('renders weeks with no observed coverage as gaps', () => {
     const out = aggregateWeeklyDose([], TODAY)
     for (const b of out) {
-      expect(b.totalDose).toBe(0)
+      expect(b.totalDose).toBeNull()
       expect(b.activeDays).toBe(0)
     }
   })
@@ -49,7 +51,7 @@ describe('aggregateWeeklyDose', () => {
     const out = aggregateWeeklyDose([rec('2026-05-18', 50)], TODAY)
     expect(out[7].weekStart).toBe('2026-05-18')
     expect(out[7].totalDose).toBe(50)
-    expect(out[6].totalDose).toBe(0)  // previous week unaffected
+    expect(out[6].totalDose).toBeNull()  // previous week has no observed coverage
   })
 
   it('drops records outside the 8-week window', () => {
@@ -58,13 +60,13 @@ describe('aggregateWeeklyDose', () => {
       rec('2026-05-25', 999),    // next Monday — already after current week
     ], TODAY)
     for (const b of out) {
-      expect(b.totalDose).toBe(0)
+      expect(b.totalDose).toBeNull()
     }
   })
 
   it('ignores records with null training_dose', () => {
     const out = aggregateWeeklyDose([rec('2026-05-20', null)], TODAY)
-    expect(out[7].totalDose).toBe(0)
+    expect(out[7].totalDose).toBeNull()
     expect(out[7].activeDays).toBe(0)
   })
 
@@ -74,7 +76,7 @@ describe('aggregateWeeklyDose', () => {
     const out = aggregateWeeklyDose([
       rec('2026-05-24T17:00:00+00:00', 200),
     ], TODAY)
-    expect(out[7].totalDose).toBe(0)
+    expect(out[7].totalDose).toBeNull()
   })
 
   it('uses M/D Monday for weekLabel', () => {
@@ -90,6 +92,16 @@ describe('aggregateWeeklyDose', () => {
       rec('2026-05-21', 0),
     ], TODAY)
     expect(out[7].totalDose).toBeCloseTo(25)
+    expect(out[7].activeDays).toBe(1)
+  })
+
+  it('renders a week containing an unknown placeholder as a gap', () => {
+    const out = aggregateWeeklyDose([
+      rec('2026-05-19', 50),
+      rec('2026-05-20', 0, 'unknown'),
+    ], TODAY)
+
+    expect(out[7].totalDose).toBeNull()
     expect(out[7].activeDays).toBe(1)
   })
 })

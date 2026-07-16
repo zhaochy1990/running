@@ -2742,7 +2742,8 @@ class TestQueryFitnessStateStride:
         c.execute("INSERT INTO daily_hrv (date, last_night_avg, provider) "
                   "VALUES ('2026-06-10', 42, 'garmin')")
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-                  "acute_load, chronic_load, form) VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8)",
+                  "acute_load, chronic_load, form, coverage_status) "
+                  "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
                   (TRAINING_LOAD_MODEL_VERSION,))
         c.commit()
         monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
@@ -2771,7 +2772,8 @@ class TestQueryFitnessStateStride:
         c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
                   "VALUES ('20260610', 136, 120, 50, 52)")
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-                  "acute_load, chronic_load, form) VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8)",
+                  "acute_load, chronic_load, form, coverage_status) "
+                  "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
                   (TRAINING_LOAD_MODEL_VERSION,))
         SQLiteRunningCalibrationRepository(db)  # bootstrap calibration tables
         c.execute(
@@ -2797,11 +2799,13 @@ class TestQueryFitnessStateStride:
         c = db._conn
         c.execute(
             "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 700, 699, 641, -58)"
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES ('2026-06-10', 1, 700, 699, 641, -58, 'complete')"
         )
         c.execute(
             "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form) VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8)",
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
             (TRAINING_LOAD_MODEL_VERSION,),
         )
         c.commit()

@@ -103,8 +103,8 @@ def _seed(tmp_path, *, with_data: bool = True, with_provider: str | None = "coro
         # load_ratio 0.83 (race_ready), form=10.
         db._conn.execute(
             "INSERT INTO daily_training_load (date, algorithm_version, "
-            "training_dose, acute_load, chronic_load, form, load_ratio) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "training_dose, acute_load, chronic_load, form, load_ratio, coverage_status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, 'complete')",
             ("2026-05-10", TRAINING_LOAD_MODEL_VERSION, 80.0, 50.0, 60.0, 10.0, 0.83),
         )
         db._conn.execute(

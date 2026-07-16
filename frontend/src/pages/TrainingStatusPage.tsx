@@ -626,7 +626,7 @@ function DailyDoseTooltip({
   active, payload, activitiesByDate,
 }: {
   active?: boolean
-  payload?: Array<{ payload: { date: string; training_dose: number | null } }>
+  payload?: Array<{ payload: { date: string; training_dose: number | null; coverage_status?: string } }>
   label?: string
   activitiesByDate: Map<string, Activity[]>
 }) {
@@ -638,7 +638,9 @@ function DailyDoseTooltip({
     <div style={{ ...TOOLTIP_STYLE.contentStyle, padding: '8px 10px', lineHeight: 1.4 }}>
       <div style={{ color: '#8888a0', marginBottom: 4 }}>{dayLabel}</div>
       <div style={{ color: '#e68a00', fontWeight: 600 }}>
-        训练负荷: {row.training_dose != null ? row.training_dose.toFixed(0) : '—'}
+        训练负荷: {row.coverage_status === 'unknown'
+          ? '数据未确认'
+          : row.training_dose != null ? row.training_dose.toFixed(0) : '—'}
       </div>
       {acts.map((a) => {
         const sport = chineseSportName(a.sport_name)
@@ -657,7 +659,7 @@ function DailyDoseTooltip({
           </div>
         )
       })}
-      {acts.length === 0 && (
+      {acts.length === 0 && row.coverage_status !== 'unknown' && (
         <div style={{ marginTop: 4, color: '#8888a0' }}>休息日</div>
       )}
     </div>
@@ -724,7 +726,9 @@ export function ActivityHeatmap({
           date,
           weekIdx: w,
           dayIdx: d,
-          dose: seriesByDate.get(date)?.training_dose ?? null,
+          dose: seriesByDate.get(date)?.coverage_status === 'unknown'
+            ? null
+            : seriesByDate.get(date)?.training_dose ?? null,
           isFuture: date > todayCN,
           isToday: date === todayCN,
         })
@@ -858,7 +862,10 @@ export function ActivityHeatmap({
             payload={[{
               payload: {
                 date: hovered.date,
-                training_dose: seriesByDate.get(hovered.date)?.training_dose ?? null,
+                training_dose: seriesByDate.get(hovered.date)?.coverage_status === 'unknown'
+                  ? null
+                  : seriesByDate.get(hovered.date)?.training_dose ?? null,
+                coverage_status: seriesByDate.get(hovered.date)?.coverage_status,
               },
             }]}
             activitiesByDate={activitiesByDate}
@@ -878,7 +885,18 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
   const cur = load?.current
   // Daily chart respects the user's window; weekly chart always uses the
   // full series the parent fetched (≥ 56 days) so all 8 buckets fill.
-  const rawSeries = load?.series ?? []
+  const rawSeries = (load?.series ?? []).map((row) => (
+    row.coverage_status === 'unknown'
+      ? {
+          ...row,
+          training_dose: null,
+          acute_load: null,
+          chronic_load: null,
+          form: null,
+          load_ratio: null,
+        }
+      : row
+  ))
   const series = rawSeries.slice(-dailyWindowDays).map((r) => ({
     ...r,
     dateLabel: formatDateShort(r.date),
@@ -886,7 +904,7 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
   const weeklySeries = useMemo(
     () => aggregateWeeklyDose(rawSeries).map((b) => ({
       ...b,
-      totalDose: Math.round(b.totalDose * 10) / 10,
+      totalDose: b.totalDose == null ? null : Math.round(b.totalDose * 10) / 10,
     })),
     [rawSeries],
   )
@@ -1054,7 +1072,7 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                         }}
                         formatter={(value: unknown, _name, ctx) => {
                           const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload
-                          const dose = typeof value === 'number' ? value.toFixed(1) : `${value}`
+                          const dose = typeof value === 'number' ? value.toFixed(1) : '数据不完整'
                           return [`${dose}（${row?.activeDays ?? 0} 天）`, '周剂量']
                         }}
                       />

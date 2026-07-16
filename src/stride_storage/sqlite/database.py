@@ -1959,7 +1959,13 @@ class Database:
     def fetch_latest_daily_training_load(
         self, *, algorithm_version: int, as_of: str | None = None,
     ) -> sqlite3.Row | None:
-        sql = "SELECT * FROM daily_training_load WHERE algorithm_version = ?"
+        # UNKNOWN rows preserve a date-continuous series without decaying PMC,
+        # but they are not an observed athlete state. All callers of this API
+        # ask for the latest usable state, so keep the rule centralized here.
+        sql = (
+            "SELECT * FROM daily_training_load WHERE algorithm_version = ? "
+            "AND coverage_status IN ('complete', 'partial', 'rest_confirmed')"
+        )
         params: list[object] = [algorithm_version]
         if as_of is not None:
             sql += " AND date <= ?"

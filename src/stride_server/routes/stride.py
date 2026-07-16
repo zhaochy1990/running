@@ -151,7 +151,23 @@ def get_stride_training_load(
             rec["readiness_reasons"] = reasons if isinstance(reasons, list) else []
             records.append(rec)
 
-        current = dict(records[-1])
+        # ``unknown`` rows are continuity placeholders: they deliberately keep
+        # ATL/CTL frozen until the day is backed by activity or health coverage.
+        # Never present one as today's measured rest/readiness state.  Partial
+        # rows remain eligible because they contain observed activity data, with
+        # the coverage caveat exposed to the client.
+        current_row = db.fetch_latest_daily_training_load(
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION
+        )
+        current = None
+        if current_row is not None:
+            current = dict(current_row)
+            reasons_raw = current.pop("readiness_reasons_json", None)
+            try:
+                reasons = json.loads(reasons_raw) if reasons_raw else []
+            except (TypeError, ValueError):
+                reasons = []
+            current["readiness_reasons"] = reasons if isinstance(reasons, list) else []
         return {"current": current, "series": records}
     finally:
         db.close()
