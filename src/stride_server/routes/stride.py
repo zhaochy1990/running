@@ -130,9 +130,13 @@ def get_stride_training_load(
     user: str,
     days: int = Query(90, ge=7, le=365),
 ) -> dict[str, Any]:
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
     db = get_db(user)
     try:
-        rows = db.fetch_recent_daily_training_load(days)
+        rows = db.fetch_recent_daily_training_load(
+            days, algorithm_version=TRAINING_LOAD_MODEL_VERSION
+        )
         if not rows:
             return {"current": None, "series": []}
 

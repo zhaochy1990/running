@@ -346,7 +346,7 @@ def _is_embedded_session(session: Any) -> bool:
     ).lower()
     return any(token in text for token in (
         "embedded", "within long", "inside long", "part of long",
-        "其中", "内含", "长跑内", "末段", "后段",
+        "其中", "内含", "长跑内",
     ))
 
 
@@ -533,6 +533,11 @@ def estimate_master_plan_training_load(
         "plan_summary": summary,
         "weeks": weeks_out,
         "alignment": alignment,
+        "unavailable_reason": (
+            "personal_threshold_unavailable"
+            if not threshold_speed_mps or threshold_speed_mps <= 0
+            else None
+        ),
     }
 
 
@@ -577,6 +582,37 @@ def apply_master_plan_training_load_projection(
             raise ValueError(f"duplicate load estimate for week {index}")
         by_index[index] = row
 
+    expected_indexes = {week.week_index for week in plan.weeks}
+    if set(by_index) != expected_indexes:
+        raise ValueError("load estimate week set does not match master plan")
+
+    if (estimate or {}).get("unavailable_reason") == "personal_threshold_unavailable":
+        if any(
+            _float(row.get("target_training_dose_low")) is not None
+            or _float(row.get("target_training_dose_high")) is not None
+            for row in by_index.values()
+        ):
+            raise ValueError(
+                "personal-threshold-unavailable estimate unexpectedly contains weekly dose"
+            )
+        unprojected = [
+            week.model_copy(update={
+                "target_training_dose_low": None,
+                "target_training_dose_high": None,
+            })
+            for week in plan.weeks
+        ]
+        projection = TrainingLoadProjection(
+            status="unavailable",
+            unavailable_reason="personal_threshold_unavailable",
+            calculated_at=timestamp,
+        )
+        return MasterPlan.model_validate(plan.model_copy(update={
+            "weeks": unprojected,
+            "weekly_key_sessions": list(unprojected),
+            "training_load_projection": projection,
+        }).model_dump(mode="json"))
+
     projected = []
     for week in plan.weeks:
         row = by_index.get(week.week_index)
@@ -590,9 +626,6 @@ def apply_master_plan_training_load_projection(
             "target_training_dose_low": low,
             "target_training_dose_high": high,
         }))
-
-    if set(by_index) != {week.week_index for week in plan.weeks}:
-        raise ValueError("load estimate week set does not match master plan")
 
     projection = TrainingLoadProjection(
         status="available",

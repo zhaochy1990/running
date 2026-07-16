@@ -100,6 +100,7 @@ def sync(ctx: click.Context, full: bool, jobs: int) -> None:
             provider="coros",
             operation="sync",
             activity_label_ids=activity_label_ids,
+            health_records_synced=health,
         )
     except Exception:
         logger.exception("post-sync events failed for COROS CLI sync profile=%s", profile)

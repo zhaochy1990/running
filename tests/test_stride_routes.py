@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 from stride_storage.sqlite.database import Database
 from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 
 USER_ID = "00000000-0000-4000-8000-000000000001"
@@ -280,11 +281,11 @@ def _seed_training_load(db_path: Path):
     db = Database(db_path)
     try:
         rows = [
-            ("2026-05-17", 1, None, 60.0, 70.0, 70.0, 0.0, 1.00, "go",  '["ok"]'),
-            ("2026-05-18", 1, None, 75.0, 72.0, 70.5, -1.5, 1.02, "go",  '["ok"]'),
-            ("2026-05-19", 1, None, 80.0, 75.0, 71.5, -3.5, 1.05, "caution", '["high_load"]'),
-            ("2026-05-20", 1, None, 70.0, 76.0, 72.5, -3.5, 1.05, "go",  '["ok"]'),
-            ("2026-05-21", 1, None, 75.2, 78.0, 72.0, -6.0, 1.08, "go",  '["ok"]'),
+            ("2026-05-17", TRAINING_LOAD_MODEL_VERSION, None, 60.0, 70.0, 70.0, 0.0, 1.00, "go",  '["ok"]'),
+            ("2026-05-18", TRAINING_LOAD_MODEL_VERSION, None, 75.0, 72.0, 70.5, -1.5, 1.02, "go",  '["ok"]'),
+            ("2026-05-19", TRAINING_LOAD_MODEL_VERSION, None, 80.0, 75.0, 71.5, -3.5, 1.05, "caution", '["high_load"]'),
+            ("2026-05-20", TRAINING_LOAD_MODEL_VERSION, None, 70.0, 76.0, 72.5, -3.5, 1.05, "go",  '["ok"]'),
+            ("2026-05-21", TRAINING_LOAD_MODEL_VERSION, None, 75.2, 78.0, 72.0, -6.0, 1.08, "go",  '["ok"]'),
         ]
         db._conn.executemany(
             """INSERT INTO daily_training_load

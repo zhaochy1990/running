@@ -39,6 +39,7 @@ from stride_server.master_plan_generator import (
     run_generate_job,
 )
 from stride_core.master_plan import MasterPlan, MasterPlanStatus, MilestoneType
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 # ---------------------------------------------------------------------------
 # Constants / helpers
@@ -2565,7 +2566,8 @@ class TestWeeklyProfile:
                       avg_hr=150)
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
                   "training_dose, acute_load, chronic_load, form) "
-                  "VALUES ('2026-06-17', 1, 70, 65.0, 60.0, -5.0)")
+                  "VALUES ('2026-06-17', ?, 70, 65.0, 60.0, -5.0)",
+                  (TRAINING_LOAD_MODEL_VERSION,))
         c.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260617', 48)")
         c.execute("INSERT INTO daily_hrv (date, last_night_avg) "
                   "VALUES ('2026-06-17', 35)")
@@ -2613,7 +2615,8 @@ class TestWeeklyProfile:
         for d, dose, atl, ctl, form in rows:
             c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
                       "training_dose, acute_load, chronic_load, form) "
-                      "VALUES (?, 1, ?, ?, ?, ?)", (d, dose, atl, ctl, form))
+                      "VALUES (?, ?, ?, ?, ?, ?)",
+                      (d, TRAINING_LOAD_MODEL_VERSION, dose, atl, ctl, form))
         c.commit()
         w = self._profile(db)[0]
         assert w["week_start"] == "2026-06-15"
@@ -2621,6 +2624,27 @@ class TestWeeklyProfile:
         assert w["atl"] == 70.0
         assert w["form"] == -12.0
         assert w["dose"] == 50 + 60 + 80  # additive
+
+    def test_uses_only_current_training_load_model_version(self, tmp_path):
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db = self._db(tmp_path)
+        c = db._conn
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form) VALUES ('2026-06-17', 1, 700, 650, 600, -50)"
+        )
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form) VALUES ('2026-06-17', ?, 70, 65, 60, -5)",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        c.commit()
+
+        w = self._profile(db)[0]
+        assert w["dose"] == 70
+        assert w["ctl"] == 60
+        assert w["atl"] == 65
 
     def test_n_long_and_pace_and_hr_weighting(self, tmp_path):
         """n_long counts runs >= 20km.
@@ -2717,7 +2741,8 @@ class TestQueryFitnessStateStride:
         c.execute("INSERT INTO daily_hrv (date, last_night_avg, provider) "
                   "VALUES ('2026-06-10', 42, 'garmin')")
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-                  "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8)")
+                  "acute_load, chronic_load, form) VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8)",
+                  (TRAINING_LOAD_MODEL_VERSION,))
         c.commit()
         monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
         from stride_server import master_plan_generator as mod
@@ -2745,7 +2770,8 @@ class TestQueryFitnessStateStride:
         c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
                   "VALUES ('20260610', 136, 120, 50, 52)")
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-                  "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8)")
+                  "acute_load, chronic_load, form) VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8)",
+                  (TRAINING_LOAD_MODEL_VERSION,))
         SQLiteRunningCalibrationRepository(db)  # bootstrap calibration tables
         c.execute(
             "INSERT INTO running_calibration_snapshot "
@@ -2761,6 +2787,58 @@ class TestQueryFitnessStateStride:
         monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
         state = mod._query_fitness_state("anyuser")
         assert state["rhr"] == 45.0      # calibration baseline preferred over raw 52
+
+    def test_ignores_legacy_training_load_model_rows(self, tmp_path, monkeypatch):
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+        from stride_storage.sqlite.database import Database
+
+        db = Database(db_path=tmp_path / "coros.db")
+        c = db._conn
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 700, 699, 641, -58)"
+        )
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form) VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8)",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        c.commit()
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
+        from stride_server import master_plan_generator as mod
+        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
+
+        state = mod._query_fitness_state("anyuser", as_of=date(2026, 6, 10))
+
+        assert state["ctl"] == 64.1
+        assert state["atl"] == 69.9
+
+
+def test_ensure_training_load_current_backfills_when_only_v1_rows_exist(tmp_path, monkeypatch):
+    from datetime import date
+    from stride_storage.sqlite.database import Database
+    from stride_server import master_plan_generator as mod
+
+    db = Database(db_path=tmp_path / "coros.db")
+    db._conn.execute(
+        "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+        "acute_load, chronic_load, form) VALUES ('2026-07-15', 1, 70, 69.9, 64.1, -5.8)"
+    )
+    db._conn.commit()
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "stride_core.training_load.backfill_training_load",
+        lambda db_arg, **kwargs: calls.append(kwargs),
+    )
+
+    mod._ensure_training_load_current(db, as_of=date(2026, 7, 15))
+
+    assert calls == [{
+        "as_of_date": date(2026, 7, 15),
+        "load_lookback_days": 365,
+        "calibration_lookback_days": 365,
+        "persist": True,
+    }]
 
 
 # ---------------------------------------------------------------------------

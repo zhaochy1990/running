@@ -118,6 +118,64 @@ def test_stride_training_load_handler_recomputes_shanghai_tail(db, monkeypatch):
     assert calls == [{"start": "2026-05-02", "end": "2026-05-10"}]
 
 
+def test_stride_training_load_handler_recomputes_latest_health_only_day(db, monkeypatch):
+    from stride_core.models import DailyHealth
+    from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
+
+    db.upsert_daily_health(
+        DailyHealth("20260502", None, None, 50, None, None, None, None, None)
+    )
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "stride_core.post_sync.recompute_training_load",
+        lambda db_arg, **kwargs: calls.append(kwargs),
+    )
+
+    context = PostSyncContext(
+        user="u",
+        provider="coros",
+        operation="health_only",
+        db=db,
+        activity_label_ids=(),
+        health_records_synced=1,
+    )
+    assert StrideTrainingLoadHandler().applies_to(context) is True
+    StrideTrainingLoadHandler(backoff_s=0).run(context)
+
+    assert calls == [{"start": "2026-05-02", "end": "2026-05-02"}]
+
+
+def test_post_sync_result_runs_health_only_handlers(monkeypatch, tmp_path):
+    from stride_core.post_sync import run_post_sync_for_result
+    from stride_core.source import SyncResult
+    from stride_storage.sqlite.database import Database
+
+    calls: list[tuple[tuple[str, ...], int]] = []
+
+    class HealthHandler:
+        name = "health"
+
+        def applies_to(self, context):
+            return context.health_records_synced > 0
+
+        def run(self, context):
+            calls.append((context.activity_label_ids, context.health_records_synced))
+
+    monkeypatch.setattr(
+        "stride_core.post_sync.Database",
+        lambda user=None: Database(tmp_path / "health-only.db"),
+    )
+    run_post_sync_for_result(
+        user="u",
+        provider="garmin",
+        operation="health_only",
+        result=SyncResult(activities=0, health=7, activity_label_ids=()),
+        handlers=(HealthHandler(),),
+    )
+
+    assert calls == [((), 7)]
+
+
 def test_stride_training_load_handler_recomputes_full_days_for_daily_totals(db):
     from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
     from datetime import date

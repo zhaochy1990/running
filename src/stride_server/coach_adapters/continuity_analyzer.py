@@ -92,6 +92,8 @@ def _season_context(race_date, as_of) -> str:
 
 
 def analyze_continuity(db, *, goal: dict, profile: dict | None, as_of: date_cls) -> ContinuitySignals:
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
     conn = db._conn
     race_date = (goal or {}).get("race_date")
 
@@ -99,7 +101,9 @@ def analyze_continuity(db, *, goal: dict, profile: dict | None, as_of: date_cls)
     form_zone = None
     try:
         row = conn.execute(
-            "SELECT acute_load, chronic_load, form FROM daily_training_load ORDER BY date DESC LIMIT 1"
+            "SELECT acute_load, chronic_load, form FROM daily_training_load "
+            "WHERE algorithm_version = ? ORDER BY date DESC LIMIT 1",
+            (TRAINING_LOAD_MODEL_VERSION,),
         ).fetchone()
         if row:
             atl, chronic, _form = row

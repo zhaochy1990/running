@@ -34,6 +34,7 @@ class PostSyncContext:
     operation: str
     db: Database
     activity_label_ids: tuple[str, ...] = ()
+    health_records_synced: int = 0
     progress: SyncProgressCallback | None = None
 
 
@@ -93,20 +94,27 @@ class StrideTrainingLoadHandler:
         self._backoff_s = max(0.0, backoff_s)
 
     def applies_to(self, context: PostSyncContext) -> bool:
-        return bool(context.activity_label_ids)
+        return bool(context.activity_label_ids) or context.health_records_synced > 0
 
     def run(self, context: PostSyncContext) -> None:
         label_ids = _unique_labels(context.activity_label_ids)
-        if not label_ids:
-            return
-        window = _activity_shanghai_window(context.db, label_ids)
-        if window is None:
-            return
-        start, changed_end = window
-        # ATL/CTL are recursive: changing a historical activity changes every
-        # later day, not only the activity's own date. Recompute the full tail
-        # through today so persisted PMC state cannot retain stale descendants.
-        end = max(changed_end, today_shanghai().isoformat())
+        if label_ids:
+            window = _activity_shanghai_window(context.db, label_ids)
+            if window is None:
+                return
+            start, changed_end = window
+            # ATL/CTL are recursive: changing a historical activity changes
+            # every later day, not only the activity's own date. Recompute the
+            # full tail through today so descendants cannot remain stale.
+            end = max(changed_end, today_shanghai().isoformat())
+        else:
+            # A health-only sync proves watch coverage even when the athlete did
+            # not train. Recompute that latest covered day so it is persisted as
+            # rest_confirmed and ATL/CTL decay instead of freezing.
+            health_date = context.db.fetch_latest_daily_health_date()
+            if health_date is None:
+                return
+            start = end = health_date
         _emit(
             context.progress,
             phase="stride_training_load",
@@ -364,11 +372,12 @@ def run_post_sync_for_labels(
     provider: str,
     operation: str,
     activity_label_ids: Sequence[str],
+    health_records_synced: int = 0,
     progress: SyncProgressCallback | None = None,
     handlers: Sequence[PostSyncHandler] = DEFAULT_POST_SYNC_HANDLERS,
 ) -> None:
     label_ids = _unique_labels(activity_label_ids)
-    if not label_ids:
+    if not label_ids and health_records_synced <= 0:
         return
     try:
         with Database(user=user) as db:
@@ -379,6 +388,7 @@ def run_post_sync_for_labels(
                     operation=operation,
                     db=db,
                     activity_label_ids=label_ids,
+                    health_records_synced=max(0, int(health_records_synced)),
                     progress=progress,
                 ),
                 handlers=handlers,
@@ -408,6 +418,7 @@ def run_post_sync_for_result(
         provider=provider,
         operation=operation,
         activity_label_ids=getattr(result, "activity_label_ids", ()) or (),
+        health_records_synced=max(0, int(getattr(result, "health", 0) or 0)),
         progress=progress,
         handlers=handlers,
     )

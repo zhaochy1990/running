@@ -102,3 +102,4 @@ def test_onboarding_health_only_sync_does_not_run_activity_handlers(monkeypatch,
 
     assert len(calls) == 1
     assert calls[0]["result"].activity_label_ids == ()
+    assert calls[0]["result"].health == 7

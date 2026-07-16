@@ -170,6 +170,7 @@ def test_missing_threshold_does_not_fall_back_to_fixed_pace() -> None:
     assert week["target_training_dose_high"] is None
     assert week["estimated_dose"] is None
     assert week["load_computable"] is False
+    assert estimate["unavailable_reason"] == "personal_threshold_unavailable"
     assert "dose_scale" not in estimate["plan_summary"]
 
 
@@ -377,3 +378,28 @@ def test_long_run_mp_marker_does_not_match_inside_ordinary_words() -> None:
         "mp_fraction_unspecified_range_easy_to_goal_pace"
         in explicit_mp["weeks"][0]["load_assumptions"]
     )
+
+
+def test_quality_session_endurance_wording_is_not_treated_as_embedded() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "4:00:00"},
+            "weeks": [{
+                "week_index": 1,
+                "week_start": "2026-07-01",
+                "target_weekly_km_high": 50,
+                "key_sessions": [{
+                    "type": "threshold",
+                    "distance_km": 8,
+                    "purpose": "提升后段维持能力",
+                }],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["key_session_km"] == 8.0
+    assert "threshold_zone_range" in week["load_assumptions"]
+    assert "threshold_embedded_in_parent_not_double_counted" not in week["load_assumptions"]

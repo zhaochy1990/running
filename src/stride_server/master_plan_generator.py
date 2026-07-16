@@ -38,6 +38,7 @@ from stride_core.master_plan import (
     PhaseType,
     compute_total_weeks,
 )
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .job_runner import JobStage, JobStatus, update_job
 from .llm_client import LLMClient, LLMError, LLMUnavailable
@@ -1349,10 +1350,10 @@ def _query_weekly_profile(
         f"""
         SELECT {dtl_monday} AS wk, date, training_dose, chronic_load, acute_load, form
         FROM daily_training_load
-        WHERE date <= ?
+        WHERE algorithm_version = ? AND date <= ?
         ORDER BY date ASC
         """,
-        (as_of.isoformat(),),
+        (TRAINING_LOAD_MODEL_VERSION, as_of.isoformat()),
     ).fetchall()
     dose_acc: dict[str, float] = {}
     for r in rows:
@@ -1576,7 +1577,8 @@ def _ensure_training_load_current(db, as_of=None) -> None:
     _CHRONIC_WARMUP_DAYS = 126  # 3 x the 42-day chronic EWMA time-constant
     try:
         row = db._conn.execute(
-            "SELECT MAX(date) FROM daily_training_load"
+            "SELECT MAX(date) FROM daily_training_load WHERE algorithm_version = ?",
+            (TRAINING_LOAD_MODEL_VERSION,),
         ).fetchone()
         last = row[0] if row and row[0] else None
 
@@ -1588,7 +1590,8 @@ def _ensure_training_load_current(db, as_of=None) -> None:
         # expensive no-op refit on every generation.)
         if last:
             earliest_row = db._conn.execute(
-                "SELECT MIN(date) FROM daily_training_load"
+                "SELECT MIN(date) FROM daily_training_load WHERE algorithm_version = ?",
+                (TRAINING_LOAD_MODEL_VERSION,),
             ).fetchone()
             earliest = earliest_row[0] if earliest_row and earliest_row[0] else None
             if earliest is not None:
@@ -1680,8 +1683,8 @@ def _query_fitness_state(user_id: str, *, as_of: date_cls | None = None) -> dict
 
         row = conn.execute(
             "SELECT date, acute_load, chronic_load, form FROM daily_training_load "
-            "WHERE date <= ? ORDER BY date DESC LIMIT 1",
-            (as_of.isoformat(),),
+            "WHERE algorithm_version = ? AND date <= ? ORDER BY date DESC LIMIT 1",
+            (TRAINING_LOAD_MODEL_VERSION, as_of.isoformat()),
         ).fetchone()
         # RHR for the fitness context: prefer the calibration baseline (smoothed
         # P10/25 over 30-90d — the CLAUDE.md single source) over a single noisy

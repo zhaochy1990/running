@@ -1934,7 +1934,9 @@ class Database:
             tuple(params),
         ).fetchall()
 
-    def fetch_recent_daily_training_load(self, limit: int) -> list[sqlite3.Row]:
+    def fetch_recent_daily_training_load(
+        self, limit: int, *, algorithm_version: int
+    ) -> list[sqlite3.Row]:
         """Return the newest STRIDE daily training-load rows, newest first."""
         if limit < 1:
             raise ValueError("limit must be >= 1")
@@ -1943,10 +1945,26 @@ class Database:
                       chronic_load, form, load_ratio, readiness_gate,
                       readiness_reasons_json
                FROM daily_training_load
+               WHERE algorithm_version = ?
                ORDER BY date DESC
                LIMIT ?""",
-            (limit,),
+            (algorithm_version, limit),
         ).fetchall()
+
+    def fetch_latest_daily_health_date(self) -> str | None:
+        """Return the latest watch-covered Shanghai day as ISO YYYY-MM-DD."""
+        row = self._conn.execute(
+            """SELECT CASE
+                       WHEN length(date) = 8 AND date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+                           THEN substr(date, 1, 4) || '-' || substr(date, 5, 2) || '-' || substr(date, 7, 2)
+                       ELSE substr(date, 1, 10)
+                   END AS health_date
+               FROM daily_health
+               WHERE date IS NOT NULL AND date <> ''
+               ORDER BY health_date DESC
+               LIMIT 1"""
+        ).fetchone()
+        return str(row["health_date"]) if row is not None and row["health_date"] else None
 
     # --- Weekly feedback (rich-text, edited via UI) ---
 

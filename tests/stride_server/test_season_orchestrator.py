@@ -39,6 +39,7 @@ from stride_core.master_plan import (
     Phase,
     PhaseType,
 )
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 from stride_storage.sqlite.calibration_connector import (
     SQLiteRunningCalibrationRepository,
 )
@@ -545,8 +546,8 @@ def test_execution_cap_uses_recent_training_dose_when_it_is_tighter(db, monkeypa
         db._conn.execute(
             "INSERT INTO daily_training_load "
             "(date, algorithm_version, training_dose, acute_load, chronic_load, form) "
-            "VALUES (?, 1, ?, 120.0, 50.0, -70.0)",
-            (day.isoformat(), dose),
+            "VALUES (?, ?, ?, 120.0, 50.0, -70.0)",
+            (day.isoformat(), TRAINING_LOAD_MODEL_VERSION, dose),
         )
     db._conn.commit()
     reviewer = _FakeReviewerLLM(["pass"])

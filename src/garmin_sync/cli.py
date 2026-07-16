@@ -112,6 +112,7 @@ def sync(ctx: click.Context, full: bool, since_date: str | None, health_days: in
             provider="garmin",
             operation="sync",
             activity_label_ids=activity_label_ids,
+            health_records_synced=health,
         )
     except Exception:
         logger.exception("post-sync events failed for Garmin CLI sync profile=%s", profile)
