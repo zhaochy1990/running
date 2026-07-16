@@ -905,8 +905,8 @@ def test_master_draft_tools_reject_unknown_plan(patched_db) -> None:
     # All master tools need at least plan_id; supply a bogus one and verify
     # graceful failure instead of crashes.
     test_args = {
-        "extend_phase": {"plan_id": "nope", "phase_id": "phid", "weeks": 1},
-        "compress_phase": {"plan_id": "nope", "phase_id": "phid", "weeks": 1},
+        "extend_phase": {"plan_id": "nope", "phase_id": "phid", "weeks": 1, "adjustment_request": "把基础期延长一周"},
+        "compress_phase": {"plan_id": "nope", "phase_id": "phid", "weeks": 1, "adjustment_request": "把基础期缩短一周"},
         "shift_milestone": {"plan_id": "nope", "milestone_id": "mid", "new_date": "2026-08-01"},
         "set_phase_focus": {"plan_id": "nope", "phase_id": "phid", "focus": "马拉松配速耐力", "adjustment_request": "专项期训练重点改为马拉松配速耐力", "reason": "x"},
         "change_target": {"plan_id": "nope", "milestone_id": "mid", "new_target_time": "5K 20:00"},

@@ -58,6 +58,7 @@ class MasterPlanDiffOpKind(str, Enum):
     ADD_PHASE               = "add_phase"
     REMOVE_PHASE            = "remove_phase"
     RESIZE_PHASE            = "resize_phase"           # 改阶段起止日期 / 周数
+    SHIFT_PHASE_BOUNDARY    = "shift_phase_boundary"   # 原子移动相邻阶段共享边界
     REPLACE_PHASE_FOCUS     = "replace_phase_focus"    # 改训练重点文字
     REPLACE_WEEKLY_RANGE    = "replace_weekly_range"   # 改周量区间
     ADD_MILESTONE           = "add_milestone"
@@ -412,6 +413,7 @@ def apply_master_plan_diff(
         MasterPlanDiffOpKind.ADD_PHASE,
         MasterPlanDiffOpKind.REMOVE_PHASE,
         MasterPlanDiffOpKind.RESIZE_PHASE,
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
         MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
         MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
         MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
@@ -513,6 +515,24 @@ def _apply_op(
             updates["end_date"] = patch["end_date"]
         phases[phase_id] = phase.model_copy(update=updates)
         logger.info("apply_master_plan_diff: RESIZE_PHASE id=%s updates=%s", phase_id, updates)
+
+    elif op.op == MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY:
+        phase_id = _require_phase_id(op)
+        _require_patch(op, patch)
+        following_phase_id = patch.get("following_phase_id")
+        if not isinstance(following_phase_id, str) or not following_phase_id:
+            raise ValueError("shift_phase_boundary requires following_phase_id")
+        phase = _get_phase(phases, phase_id, op.op)
+        following = _get_phase(phases, following_phase_id, op.op)
+        phases[phase_id] = phase.model_copy(update={"end_date": patch["end_date"]})
+        phases[following_phase_id] = following.model_copy(
+            update={"start_date": patch["following_start_date"]}
+        )
+        logger.info(
+            "apply_master_plan_diff: SHIFT_PHASE_BOUNDARY ids=%s,%s",
+            phase_id,
+            following_phase_id,
+        )
 
     elif op.op == MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS:
         phase_id = _require_phase_id(op)

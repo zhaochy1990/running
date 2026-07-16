@@ -45,6 +45,7 @@ from .prompts.week_chat import WEEK_CHAT_PROMPT
 from .master_adjustment_direction import (
     proposal_payload_matches_adjustment_request,
     requested_phase_focus,
+    requested_phase_resize_weeks,
     requested_weekly_volume_direction,
 )
 from .tool_bridge import (
@@ -412,6 +413,48 @@ def build_conversation_graph(
                         )
                     )
                     continue
+                if name in {"extend_phase", "compress_phase"}:
+                    request_mismatch = (
+                        str(args.get("adjustment_request") or "").strip()
+                        != current_request
+                    )
+                    requested_weeks = requested_phase_resize_weeks(current_request)
+                    try:
+                        supplied_weeks = int(args.get("weeks"))
+                    except (TypeError, ValueError):
+                        supplied_weeks = None
+                    if request_mismatch or requested_weeks != supplied_weeks:
+                        tool_trace.append(
+                            {
+                                "name": name,
+                                "outcome": "blocked",
+                                "reason": "phase_resize_request_gate",
+                            }
+                        )
+                        errors = []
+                        if request_mismatch:
+                            errors.append(
+                                "phase_resize_adjustment_request_does_not_match_current_user_request"
+                            )
+                        if requested_weeks is None:
+                            errors.append(
+                                "phase_resize_requires_one_explicit_whole_week_duration"
+                            )
+                        elif requested_weeks != supplied_weeks:
+                            errors.append(
+                                "phase_resize_weeks_do_not_match_current_user_request"
+                            )
+                        new_messages.append(
+                            ToolMessage(
+                                content=json.dumps(
+                                    {"ok": False, "errors": errors},
+                                    ensure_ascii=False,
+                                ),
+                                tool_call_id=tc["id"],
+                                name=name,
+                            )
+                        )
+                        continue
             try:
                 payload = impl.invoke(args)
             except Exception as exc:  # noqa: BLE001 — tool boundary

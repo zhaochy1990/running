@@ -91,6 +91,90 @@ def test_valid_resize_passes() -> None:
     assert validate_master_diff(_plan(), _diff(op)) == []
 
 
+def test_atomic_phase_boundary_shift_passes() -> None:
+    plan = _plan()
+    following = _phase().model_copy(
+        update={
+            "id": "phase-2",
+            "name": "专项期",
+            "start_date": "2026-08-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), following]})
+    patch = {
+        "end_date": "2026-08-14",
+        "following_phase_id": following.id,
+        "following_start_date": "2026-08-15",
+    }
+    op = _op(
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
+        phase_id="phase-1",
+        old_value={
+            "end_date": "2026-07-31",
+            "following_phase_id": following.id,
+            "following_start_date": "2026-08-01",
+        },
+        new_value=patch,
+        spec_patch=patch,
+    )
+
+    assert validate_master_diff(plan, _diff(op)) == []
+
+
+def test_phase_boundary_shift_rejects_gap_or_nonadjacent_phase() -> None:
+    plan = _plan()
+    following = _phase().model_copy(
+        update={
+            "id": "phase-2", "name": "专项期",
+            "start_date": "2026-08-01", "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), following]})
+    patch = {
+        "end_date": "2026-08-14", "following_phase_id": following.id,
+        "following_start_date": "2026-08-16",
+    }
+    op = _op(
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY, phase_id="phase-1",
+        old_value={"end_date": "2026-07-31", "following_phase_id": following.id, "following_start_date": "2026-08-01"},
+        new_value=patch, spec_patch=patch,
+    )
+
+    violations = validate_master_diff(plan, _diff(op))
+
+    assert len(violations) == 1
+    assert "日历连续" in violations[0]
+
+
+def test_phase_boundary_shift_rejects_orphaning_a_phase_milestone() -> None:
+    plan = _plan()
+    following = _phase().model_copy(
+        update={
+            "id": "phase-2", "name": "专项期",
+            "start_date": "2026-08-01", "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), following]})
+    patch = {
+        "end_date": "2026-07-17", "following_phase_id": following.id,
+        "following_start_date": "2026-07-18",
+    }
+    op = _op(
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY, phase_id="phase-1",
+        old_value={"end_date": "2026-07-31", "following_phase_id": following.id, "following_start_date": "2026-08-01"},
+        new_value=patch, spec_patch=patch,
+    )
+
+    violations = validate_master_diff(plan, _diff(op))
+
+    assert len(violations) == 1
+    assert "里程碑" in violations[0]
+
+
 def test_short_final_taper_cannot_be_compressed() -> None:
     plan = _plan()
     taper = _phase().model_copy(

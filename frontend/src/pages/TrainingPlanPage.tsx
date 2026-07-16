@@ -1452,6 +1452,7 @@ function diffOpLabel(op: string): string {
     add_phase: '新增阶段',
     remove_phase: '删除阶段',
     resize_phase: '调整阶段日期',
+    shift_phase_boundary: '调整相邻阶段边界',
     replace_phase_focus: '调整阶段重点',
     replace_weekly_range: '调整周量区间',
     add_milestone: '新增里程碑',

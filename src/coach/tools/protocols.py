@@ -163,12 +163,16 @@ class RegenerateWeek(Protocol):
 
 @runtime_checkable
 class ExtendPhase(Protocol):
-    def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult: ...
+    def __call__(
+        self, *, plan_id: str, phase_id: str, weeks: int, adjustment_request: str
+    ) -> ToolResult: ...
 
 
 @runtime_checkable
 class CompressPhase(Protocol):
-    def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult: ...
+    def __call__(
+        self, *, plan_id: str, phase_id: str, weeks: int, adjustment_request: str
+    ) -> ToolResult: ...
 
 
 @runtime_checkable

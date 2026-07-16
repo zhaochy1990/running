@@ -50,6 +50,8 @@ from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 from coach.graphs.conversation.master_adjustment_direction import (
     master_diff_matches_adjustment_request,
+    requested_phase_resize_direction,
+    requested_phase_resize_weeks,
     requested_weekly_volume_direction,
 )
 from coach.schemas import assistant_parts_from_message
@@ -146,6 +148,12 @@ _VOLUME_DETAILS_ANSWER_RE = re.compile(
     r"\s*[。.!！]?\s*",
     re.IGNORECASE,
 )
+_PHASE_RESIZE_DURATION_ANSWER_RE = re.compile(
+    r"\s*(?:就|调整|改|延长|缩短|压缩)?\s*"
+    r"(?:\d+|[一二两三四五六七八九十]+)\s*(?:周|星期|weeks?)"
+    r"\s*(?:吧)?\s*[。.!！]?\s*",
+    re.IGNORECASE,
+)
 _DIRECTION_CLARIFICATION = (
     "你希望具体怎么调整整体训练计划？请先告诉我你的调整方向，例如想增加或减少"
     "哪个阶段的训练量、延长或缩短哪个阶段、移动比赛日期，或者修改目标。"
@@ -164,9 +172,15 @@ _VOLUME_TARGET_CLARIFICATION = (
     "请给出明确幅度，例如“提高 10%”或“增加到 80–95 公里”。"
     "确认幅度后我再加载数据评估这个想法。"
 )
+_PHASE_RESIZE_DURATION_CLARIFICATION = (
+    "你希望把这个阶段延长或缩短几周？请给出一个明确的正整数周数，"
+    "例如“延长 2 周”或“缩短 1 周”。确认周数后我再加载数据评估这个想法。"
+)
 _MASTER_ADJUSTMENT_CONTEXT_RE = re.compile(
     r"(?:总计划|整体训练计划|总纲|赛季计划|master\s*plan|"
-    r"训练重点|周跑量|周量区间|跑量|训练量|里程|加量|减量|(?:延长|缩短).{0,12}阶段)",
+    r"基础期|基础阶段|专项期|专项阶段|强化期|高峰期|赛前期|减量期|调整期|"
+    r"恢复期|恢复阶段|训练重点|周跑量|周量区间|跑量|训练量|里程|加量|减量|"
+    r"(?:延长|缩短).{0,12}阶段)",
     re.IGNORECASE,
 )
 _MASTER_WRITE_CUE_RE = re.compile(
@@ -290,6 +304,11 @@ def _clarification_for_objective(objective: str) -> str | None:
         return _VOLUME_TARGET_CLARIFICATION
     if volume_change and missing_phase:
         return _PHASE_TARGET_CLARIFICATION
+    phase_resize = requested_phase_resize_direction(objective)
+    if phase_resize is not None and missing_phase:
+        return _PHASE_TARGET_CLARIFICATION
+    if phase_resize is not None and requested_phase_resize_weeks(objective) is None:
+        return _PHASE_RESIZE_DURATION_CLARIFICATION
     if (
         _PHASE_TARGET_REQUIRED_RE.search(objective)
         and missing_phase
@@ -304,6 +323,7 @@ def _effective_objective_for_task(task: SpecialistTask) -> str:
     if not (
         _PHASE_ONLY_ANSWER_RE.fullmatch(objective)
         or _VOLUME_DETAILS_ANSWER_RE.fullmatch(objective)
+        or _PHASE_RESIZE_DURATION_ANSWER_RE.fullmatch(objective)
     ):
         return objective
 
@@ -320,6 +340,8 @@ def _effective_objective_for_task(task: SpecialistTask) -> str:
                 "调整多少百分比",
                 "增加到什么区间",
                 "增加多少百分比",
+                "延长或缩短几周",
+                "明确的正整数周数",
             )
         )
         or "再加载数据评估" not in turns[-1].content
@@ -341,6 +363,7 @@ def _effective_objective_for_task(task: SpecialistTask) -> str:
             _PHASE_TARGET_CLARIFICATION,
             _VOLUME_DETAILS_CLARIFICATION,
             _VOLUME_TARGET_CLARIFICATION,
+            _PHASE_RESIZE_DURATION_CLARIFICATION,
         }
     ):
         return objective
@@ -374,6 +397,8 @@ def preflight_season_plan_turn(
                         "调整多少百分比",
                         "增加到什么区间",
                         "增加多少百分比",
+                        "延长或缩短几周",
+                        "明确的正整数周数",
                     )
                 )
                 and "再加载数据评估" in conversation_window[-1].content

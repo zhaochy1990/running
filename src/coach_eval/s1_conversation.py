@@ -280,7 +280,13 @@ def _contract_violations(artifact: dict, expected: dict) -> list[str]:
         if not ops:
             violations.append("proposal has no diff ops")
         else:
-            op = ops[0]
+            expected_op = proposal_expectation.get("op")
+            matching_ops = (
+                [item for item in ops if item.get("op") == expected_op]
+                if expected_op is not None
+                else ops
+            )
+            op = matching_ops[0] if matching_ops else ops[0]
             for key in ("op", "phase_id", "milestone_id"):
                 expected_value = proposal_expectation.get(key)
                 if expected_value is not None and op.get(key) != expected_value:

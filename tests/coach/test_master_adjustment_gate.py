@@ -9,9 +9,12 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_adjustment_direction import (
+    master_diff_matches_phase_resize_request,
     master_diff_matches_focus_request,
     master_diff_matches_volume_request,
     requested_phase_focus,
+    requested_phase_resize_direction,
+    requested_phase_resize_weeks,
     requested_phase_type_for_focus,
     requested_weekly_volume_direction,
 )
@@ -200,6 +203,81 @@ def test_focus_request_rejects_expanded_or_wrong_phase_diff() -> None:
     )
     assert not master_diff_matches_focus_request(
         _diff("phase-base", "马拉松配速耐力与补给演练"), request, plan=plan
+    )
+
+
+@pytest.mark.parametrize(
+    ("user_text", "direction", "weeks"),
+    [
+        ("把基础期延长两周", "extend", 2),
+        ("专项期缩短 1 周", "compress", 1),
+        ("extend the base phase by 3 weeks", "extend", 3),
+        ("把基础期从 6 周改为 8 周", "extend", 2),
+        ("把专项期从八周压缩到六周", "compress", 2),
+        ("基础期延长 14 天", "extend", 2),
+    ],
+)
+def test_phase_resize_request_parses_exact_direction_and_whole_weeks(
+    user_text: str, direction: str, weeks: int
+) -> None:
+    assert requested_phase_resize_direction(user_text) == direction
+    assert requested_phase_resize_weeks(user_text) == weeks
+
+
+@pytest.mark.parametrize(
+    "user_text",
+    [
+        "把基础期延长一些",
+        "把基础期延长 10 天",
+        "把基础期延长 1 周或 2 周",
+    ],
+)
+def test_phase_resize_request_fails_closed_without_one_whole_week_delta(
+    user_text: str,
+) -> None:
+    assert requested_phase_resize_weeks(user_text) is None
+
+
+def test_phase_resize_diff_requires_atomic_contiguous_exact_boundary_move() -> None:
+    from stride_core.master_plan import MasterPlan
+
+    plan = MasterPlan.model_validate(
+        {
+            "plan_id": "resize-plan", "user_id": "u1", "status": "active",
+            "goal": {"goal_id": "g1", "race_date": "2026-10-25", "target_time": "3:15:00"},
+            "start_date": "2026-07-01", "end_date": "2026-10-25",
+            "phases": [
+                {"id": "base", "name": "基础期", "phase_type": "base", "start_date": "2026-07-01", "end_date": "2026-08-15", "focus": "有氧", "weekly_distance_km_low": 50, "weekly_distance_km_high": 60, "key_session_types": [], "milestone_ids": []},
+                {"id": "build", "name": "专项期", "phase_type": "build", "start_date": "2026-08-16", "end_date": "2026-10-25", "focus": "专项", "weekly_distance_km_low": 60, "weekly_distance_km_high": 70, "key_session_types": [], "milestone_ids": []},
+            ],
+            "milestones": [], "training_principles": [], "generated_by": "test",
+            "version": 1, "created_at": "2026-07-01T00:00:00Z", "updated_at": "2026-07-01T00:00:00Z",
+        }
+    )
+
+    def _boundary(new_end: str, new_start: str, phase_id: str = "base") -> MasterPlanDiff:
+        return MasterPlanDiff.model_validate(
+            {
+                "diff_id": new_end, "plan_id": "resize-plan",
+                "ops": [{
+                    "id": "op", "op": "shift_phase_boundary", "phase_id": phase_id,
+                    "old_value": {"end_date": "2026-08-15", "following_phase_id": "build", "following_start_date": "2026-08-16"},
+                    "new_value": {"end_date": new_end, "following_phase_id": "build", "following_start_date": new_start},
+                    "spec_patch": {"end_date": new_end, "following_phase_id": "build", "following_start_date": new_start},
+                }],
+                "ai_explanation": "test", "created_at": "2026-07-16T00:00:00Z",
+            }
+        )
+
+    request = "把基础期延长两周"
+    assert master_diff_matches_phase_resize_request(
+        _boundary("2026-08-29", "2026-08-30"), request, plan=plan
+    )
+    assert not master_diff_matches_phase_resize_request(
+        _boundary("2026-08-22", "2026-08-23"), request, plan=plan
+    )
+    assert not master_diff_matches_phase_resize_request(
+        _boundary("2026-08-29", "2026-08-31"), request, plan=plan
     )
 
 
@@ -876,3 +954,39 @@ def test_focus_draft_requires_exact_current_request_binding() -> None:
     assert toolkit.set_phase_focus.calls == []
     assert state.get("last_diff") is None
     assert state["tool_trace"][-1]["reason"] == "focus_request_gate"
+
+
+def test_phase_resize_draft_requires_exact_current_request_weeks() -> None:
+    request = "把基础期延长两周"
+    toolkit = _toolkit()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                (
+                    "extend_phase",
+                    {
+                        "plan_id": "plan-1",
+                        "phase_id": "phase-base",
+                        "weeks": 1,
+                        "adjustment_request": request,
+                    },
+                )
+            ),
+            AIMessage(content="周数不匹配，已拒绝。"),
+        ]
+    )
+
+    state = _invoke(
+        llm,
+        toolkit,
+        request=request,
+        assessment={
+            "adjustment_request": request,
+            "verdict": "reasonable",
+            "rationale": "数据支持延长两周",
+        },
+    )
+
+    assert toolkit.extend_phase.calls == []
+    assert state.get("last_diff") is None
+    assert state["tool_trace"][-1]["reason"] == "phase_resize_request_gate"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date as _date, timedelta as _timedelta
 from decimal import Decimal, ROUND_HALF_UP
 import math
 import re
@@ -12,6 +13,7 @@ from stride_core.master_plan import MasterPlan
 from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOpKind
 
 WeeklyVolumeDirection = Literal["increase", "decrease"]
+PhaseResizeDirection = Literal["extend", "compress"]
 
 _INCREASE_RE = re.compile(
     r"(?:加量|(?:增加|加大|提高|提升|调高).{0,12}(?:周跑量|周量|跑量|训练量|里程)|"
@@ -65,6 +67,33 @@ _FOCUS_PHASE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("taper", re.compile(r"(?:减量期|调整期|taper\s*(?:phase)?)", re.IGNORECASE)),
     ("recovery", re.compile(r"(?:恢复期|恢复阶段|recovery\s*(?:phase)?)", re.IGNORECASE)),
 )
+_PHASE_RESIZE_CONTEXT_RE = re.compile(
+    r"(?:基础期|基础阶段|专项期|专项阶段|强化期|高峰期|赛前期|"
+    r"减量期|调整期|恢复期|恢复阶段|第\s*[一二三四五六七八九十0-9]+"
+    r"\s*(?:个)?阶段|phase[-_ ]?[a-z0-9]+|(?:base|build|peak|taper|recovery)"
+    r"\s*phase|阶段)",
+    re.IGNORECASE,
+)
+_PHASE_EXTEND_RE = re.compile(
+    r"(?:延长|拉长|多\s*(?:安排|加)|extend|lengthen|\badd\b)", re.IGNORECASE
+)
+_PHASE_COMPRESS_RE = re.compile(
+    r"(?:缩短|压缩|少\s*(?:安排|减)|shorten|compress)", re.IGNORECASE
+)
+_COUNT_TOKEN = r"(?:\d+(?:\.\d+)?|[零〇一二两三四五六七八九十百]+)"
+_DURATION_RE = re.compile(
+    rf"(?P<count>{_COUNT_TOKEN})\s*(?P<unit>周|星期|weeks?|天|days?)",
+    re.IGNORECASE,
+)
+_FROM_TO_DURATION_RE = re.compile(
+    rf"(?:从|由|from)\s*(?P<old>{_COUNT_TOKEN})\s*(?:周|星期|weeks?)"
+    rf".{{0,16}}?(?:到|至|为|to)\s*(?P<new>{_COUNT_TOKEN})\s*(?:周|星期|weeks?)",
+    re.IGNORECASE,
+)
+_CN_DIGITS = {
+    "零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3,
+    "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
 
 
 def _percentage_bound(
@@ -172,6 +201,126 @@ def requested_phase_type_for_focus(request: str) -> str | None:
     prefix = request[: cue.start()]
     matches = {name for name, pattern in _FOCUS_PHASE_PATTERNS if pattern.search(prefix)}
     return matches.pop() if len(matches) == 1 else None
+
+
+def _count_value(raw: str) -> float | None:
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    if raw == "十":
+        return 10.0
+    if "百" in raw:
+        head, _, tail = raw.partition("百")
+        hundreds = _CN_DIGITS.get(head, 1 if not head else -1)
+        if hundreds < 0:
+            return None
+        remainder = _count_value(tail) if tail else 0.0
+        return hundreds * 100.0 + remainder if remainder is not None else None
+    if "十" in raw:
+        head, _, tail = raw.partition("十")
+        tens = _CN_DIGITS.get(head, 1 if not head else -1)
+        ones = _CN_DIGITS.get(tail, 0 if not tail else -1)
+        return float(tens * 10 + ones) if tens >= 0 and ones >= 0 else None
+    if len(raw) == 1 and raw in _CN_DIGITS:
+        return float(_CN_DIGITS[raw])
+    return None
+
+
+def _duration_weeks(count: str, unit: str = "周") -> int | None:
+    value = _count_value(count)
+    if value is None or not math.isfinite(value) or value <= 0:
+        return None
+    weeks = value / 7.0 if unit.lower() in {"天", "day", "days"} else value
+    rounded = round(weeks)
+    return int(rounded) if math.isclose(weeks, rounded, abs_tol=1e-9) else None
+
+
+def requested_phase_resize_direction(request: str) -> PhaseResizeDirection | None:
+    """Return one unambiguous phase-duration direction, excluding race moves."""
+    if _PHASE_RESIZE_CONTEXT_RE.search(request) is None:
+        return None
+    extend = bool(_PHASE_EXTEND_RE.search(request))
+    compress = bool(_PHASE_COMPRESS_RE.search(request))
+    if extend == compress:
+        from_to = _FROM_TO_DURATION_RE.search(request)
+        if from_to is None:
+            return None
+        old = _count_value(from_to.group("old"))
+        new = _count_value(from_to.group("new"))
+        if old is None or new is None or old == new:
+            return None
+        return "extend" if new > old else "compress"
+    return "extend" if extend else "compress"
+
+
+def requested_phase_resize_weeks(request: str) -> int | None:
+    """Return the exact whole-week delta requested for a phase resize."""
+    direction = requested_phase_resize_direction(request)
+    if direction is None:
+        return None
+    from_to = _FROM_TO_DURATION_RE.search(request)
+    if from_to is not None:
+        old = _count_value(from_to.group("old"))
+        new = _count_value(from_to.group("new"))
+        if old is None or new is None:
+            return None
+        delta = new - old
+        if (direction == "extend" and delta <= 0) or (
+            direction == "compress" and delta >= 0
+        ):
+            return None
+        rounded = round(abs(delta))
+        return int(rounded) if math.isclose(abs(delta), rounded, abs_tol=1e-9) else None
+
+    direction_matches = list(
+        (_PHASE_EXTEND_RE if direction == "extend" else _PHASE_COMPRESS_RE).finditer(
+            request
+        )
+    )
+    candidates: set[int] = set()
+    for marker in direction_matches:
+        nearby = request[marker.end() : marker.end() + 24]
+        for match in _DURATION_RE.finditer(nearby):
+            weeks = _duration_weeks(match.group("count"), match.group("unit"))
+            if weeks is not None:
+                candidates.add(weeks)
+    if not candidates:
+        all_durations = list(_DURATION_RE.finditer(request))
+        if len(all_durations) == 1:
+            match = all_durations[0]
+            weeks = _duration_weeks(match.group("count"), match.group("unit"))
+            if weeks is not None:
+                candidates.add(weeks)
+    return candidates.pop() if len(candidates) == 1 else None
+
+
+def requested_phase_type_for_resize(request: str) -> str | None:
+    """Return the single named phase closest to the resize direction."""
+    markers = list(_PHASE_EXTEND_RE.finditer(request)) + list(
+        _PHASE_COMPRESS_RE.finditer(request)
+    )
+    if len(markers) == 1:
+        marker = markers[0]
+        window = request[max(0, marker.start() - 24) : marker.end() + 24]
+    elif not markers and _FROM_TO_DURATION_RE.search(request):
+        window = request
+    else:
+        return None
+    matches = {name for name, pattern in _FOCUS_PHASE_PATTERNS if pattern.search(window)}
+    return matches.pop() if len(matches) == 1 else None
+
+
+def _phase_type(phase: Any) -> str | None:
+    phase_type = getattr(phase.phase_type, "value", phase.phase_type)
+    if phase_type is not None:
+        return str(phase_type)
+    inferred = {
+        name
+        for name, pattern in _FOCUS_PHASE_PATTERNS
+        if pattern.search(f"{phase.name} {phase.focus}")
+    }
+    return inferred.pop() if len(inferred) == 1 else None
 
 
 def _number(mapping: dict[str, Any] | None, key: str) -> float | None:
@@ -283,16 +432,80 @@ def master_diff_matches_focus_request(
         phase = next((item for item in plan.phases if item.id == op.phase_id), None)
         if phase is None:
             return False
-        actual_type = getattr(phase.phase_type, "value", phase.phase_type)
-        if actual_type is None:
-            phase_label = f"{phase.name} {phase.focus}"
-            inferred = {
-                name
-                for name, pattern in _FOCUS_PHASE_PATTERNS
-                if pattern.search(phase_label)
-            }
-            actual_type = inferred.pop() if len(inferred) == 1 else None
+        actual_type = _phase_type(phase)
         if actual_type != requested_phase_type:
+            return False
+    return True
+
+
+def master_diff_matches_phase_resize_request(
+    diff: MasterPlanDiff, request: str, *, plan: MasterPlan | None = None
+) -> bool:
+    """Require one atomic shared-boundary move with exact direction/magnitude."""
+    direction = requested_phase_resize_direction(request)
+    if direction is None:
+        return True
+    weeks = requested_phase_resize_weeks(request)
+    requested_phase_type = requested_phase_type_for_resize(request)
+    if weeks is None or requested_phase_type is None:
+        return False
+    ops = [
+        op for op in diff.ops
+        if op.op == MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY
+    ]
+    if len(diff.ops) != 1 or len(ops) != 1:
+        return False
+    target_op = ops[0]
+    if set(target_op.spec_patch or {}) != {
+        "end_date", "following_phase_id", "following_start_date"
+    }:
+        return False
+    following_phase_id = (target_op.spec_patch or {}).get("following_phase_id")
+    if not target_op.phase_id or not isinstance(following_phase_id, str):
+        return False
+
+    def _date_value(mapping: dict[str, Any] | None, key: str) -> _date | None:
+        value = (mapping or {}).get(key)
+        try:
+            return _date.fromisoformat(value) if isinstance(value, str) else None
+        except ValueError:
+            return None
+
+    old_end = _date_value(target_op.old_value, "end_date")
+    new_end = _date_value(target_op.new_value, "end_date")
+    patch_end = _date_value(target_op.spec_patch, "end_date")
+    old_start = _date_value(target_op.old_value, "following_start_date")
+    new_start = _date_value(target_op.new_value, "following_start_date")
+    patch_start = _date_value(target_op.spec_patch, "following_start_date")
+    if None in {old_end, new_end, patch_end, old_start, new_start, patch_start}:
+        return False
+    signed_days = weeks * 7 * (1 if direction == "extend" else -1)
+    if not (
+        new_end == old_end + _timedelta(days=signed_days)
+        and new_start == old_start + _timedelta(days=signed_days)
+        and patch_end == new_end
+        and patch_start == new_start
+        and old_start == old_end + _timedelta(days=1)
+        and new_start == new_end + _timedelta(days=1)
+    ):
+        return False
+
+    if plan is not None:
+        try:
+            target_index = next(
+                index for index, phase in enumerate(plan.phases)
+                if phase.id == target_op.phase_id
+            )
+        except StopIteration:
+            return False
+        if target_index + 1 >= len(plan.phases):
+            return False
+        target = plan.phases[target_index]
+        following = plan.phases[target_index + 1]
+        actual_type = _phase_type(target)
+        if actual_type != requested_phase_type or following.id != following_phase_id:
+            return False
+        if old_end.isoformat() != target.end_date or old_start.isoformat() != following.start_date:
             return False
     return True
 
@@ -301,9 +514,11 @@ def master_diff_matches_adjustment_request(
     diff: MasterPlanDiff, request: str, *, plan: MasterPlan | None = None
 ) -> bool:
     """Validate all deterministic request-fidelity contracts for one diff."""
-    return master_diff_matches_volume_request(
-        diff, request
-    ) and master_diff_matches_focus_request(diff, request, plan=plan)
+    return (
+        master_diff_matches_volume_request(diff, request)
+        and master_diff_matches_focus_request(diff, request, plan=plan)
+        and master_diff_matches_phase_resize_request(diff, request, plan=plan)
+    )
 
 
 def proposal_payload_matches_adjustment_request(

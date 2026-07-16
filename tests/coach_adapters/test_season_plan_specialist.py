@@ -24,6 +24,7 @@ from stride_core.master_plan import (
     Milestone,
     MilestoneType,
     Phase,
+    PhaseType,
 )
 from stride_core.master_plan_diff import MasterPlanDiff
 from stride_server.coach_adapters.orchestrator import season_plan as sp
@@ -50,9 +51,14 @@ def _plan() -> MasterPlan:
         phases=[
             Phase(
                 id="phase-1", name="基础期", start_date="2026-06-01", end_date="2026-07-31",
-                focus="有氧", weekly_distance_km_low=50.0, weekly_distance_km_high=65.0,
+                phase_type=PhaseType.BASE, focus="有氧", weekly_distance_km_low=50.0, weekly_distance_km_high=65.0,
                 key_session_types=["有氧"], milestone_ids=["ms-1"],
-            )
+            ),
+            Phase(
+                id="phase-2", name="专项期", start_date="2026-08-01", end_date="2026-11-15",
+                phase_type=PhaseType.BUILD, focus="马拉松专项", weekly_distance_km_low=55.0,
+                weekly_distance_km_high=70.0, key_session_types=["阈值"], milestone_ids=[],
+            ),
         ],
         milestones=[
             Milestone(id="ms-1", type=MilestoneType.LONG_RUN, date="2026-07-20",
@@ -63,18 +69,22 @@ def _plan() -> MasterPlan:
     )
 
 
-def _diff_dict(*, end_date: str = "2026-08-15") -> dict[str, Any]:
-    """A RESIZE_PHASE diff; default extends phase-1 (valid)."""
+def _diff_dict(*, end_date: str = "2026-08-14") -> dict[str, Any]:
+    """An atomic two-week phase-boundary extension (valid by default)."""
+    start = {
+        "2026-08-14": "2026-08-15",
+        "2026-05-15": "2026-05-16",
+    }.get(end_date, "2026-08-15")
     return MasterPlanDiff(
         diff_id="d1",
         plan_id=_PLAN_ID,
         ops=[{
             "id": "op1",
-            "op": "resize_phase",
+            "op": "shift_phase_boundary",
             "phase_id": "phase-1",
-            "old_value": {"end_date": "2026-07-31"},
-            "new_value": {"end_date": end_date},
-            "spec_patch": {"end_date": end_date},
+            "old_value": {"end_date": "2026-07-31", "following_phase_id": "phase-2", "following_start_date": "2026-08-01"},
+            "new_value": {"end_date": end_date, "following_phase_id": "phase-2", "following_start_date": start},
+            "spec_patch": {"end_date": end_date, "following_phase_id": "phase-2", "following_start_date": start},
             "accepted": None,
         }],
         ai_explanation="把基础期延长到 " + end_date,
@@ -169,7 +179,7 @@ def test_card_is_a_writer_with_routing_metadata() -> None:
 
 def test_runner_extracts_valid_proposal(monkeypatch) -> None:
     capture: dict[str, Any] = {}
-    runner = _runner(capture, last_diff=_diff_dict(end_date="2026-08-15"), monkeypatch=monkeypatch)
+    runner = _runner(capture, last_diff=_diff_dict(), monkeypatch=monkeypatch)
     result = runner(_task("把基础期延长两周"))
     assert result.status == "completed"
     assert len(result.proposals) == 1
@@ -324,7 +334,7 @@ def test_runner_misrouted_read_question_does_not_enter_write_graph(monkeypatch) 
 def test_runner_seeds_plan_id_into_context(monkeypatch) -> None:
     capture: dict[str, Any] = {}
     runner = _runner(capture, last_diff=None, monkeypatch=monkeypatch)
-    runner(_task("延长基础期"))
+    runner(_task("延长基础期两周"))
     seeded = " ".join(
         m.content for m in capture["state_in"]["history"] if isinstance(m, HumanMessage)
     )
@@ -726,11 +736,11 @@ def test_runner_recognizes_common_concrete_adjustment_directions(
 def test_runner_empty_reply_falls_back_to_diff_explanation(monkeypatch) -> None:
     capture: dict[str, Any] = {}
     runner = _runner(
-        capture, reply="", last_diff=_diff_dict(end_date="2026-08-15"), monkeypatch=monkeypatch
+        capture, reply="", last_diff=_diff_dict(), monkeypatch=monkeypatch
     )
-    result = runner(_task("延长基础期"))
+    result = runner(_task("延长基础期两周"))
     assert len(result.proposals) == 1
-    assert result.reply_fragment == "把基础期延长到 2026-08-15"
+    assert result.reply_fragment == "把基础期延长到 2026-08-14"
 
 
 def test_runner_drops_proposal_when_plan_vanishes_midturn(monkeypatch) -> None:
@@ -746,7 +756,7 @@ def test_runner_drops_proposal_when_plan_vanishes_midturn(monkeypatch) -> None:
         user_id="u1", llm=object(), toolkit=object(),
         graph_factory=_factory("ok", _diff_dict(), capture),
     )
-    result = runner(_task("延长基础期"))
+    result = runner(_task("延长基础期两周"))
     assert result.status == "completed"
     assert result.proposals == []
 

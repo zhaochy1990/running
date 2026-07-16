@@ -1,0 +1,145 @@
+{
+  "fixture_id": "s1c-phase-extend-missing-weeks-clarify",
+  "scope": "s1",
+  "evaluation_path": "master_chat",
+  "description": "A phase extension without one explicit whole-week delta must clarify before any LLM or data tool call.",
+  "tags": [
+    "conversation",
+    "phase_resize",
+    "request_fidelity"
+  ],
+  "input": {
+    "message": "把基础期延长一些",
+    "active_plan": {
+      "plan_id": "s1c-plan-001",
+      "user_id": "s1c-user-001",
+      "status": "active",
+      "goal": {
+        "goal_id": "goal-001",
+        "race_date": "2026-10-25",
+        "target_time": "3:15:00",
+        "timezone": "Asia/Shanghai"
+      },
+      "start_date": "2026-07-01",
+      "end_date": "2026-10-25",
+      "phases": [
+        {
+          "id": "phase-base",
+          "name": "基础期",
+          "phase_type": "base",
+          "start_date": "2026-07-01",
+          "end_date": "2026-08-15",
+          "focus": "有氧基础",
+          "weekly_distance_km_low": 70,
+          "weekly_distance_km_high": 80,
+          "key_session_types": [
+            "long_run",
+            "threshold"
+          ],
+          "milestone_ids": []
+        },
+        {
+          "id": "phase-build",
+          "name": "专项期",
+          "phase_type": "build",
+          "start_date": "2026-08-16",
+          "end_date": "2026-10-10",
+          "focus": "马拉松专项",
+          "weekly_distance_km_low": 75,
+          "weekly_distance_km_high": 88,
+          "key_session_types": [
+            "long_run",
+            "race_pace"
+          ],
+          "milestone_ids": []
+        },
+        {
+          "id": "phase-taper",
+          "name": "调整期",
+          "phase_type": "taper",
+          "start_date": "2026-10-11",
+          "end_date": "2026-10-25",
+          "focus": "减量与比赛",
+          "weekly_distance_km_low": 35,
+          "weekly_distance_km_high": 55,
+          "key_session_types": [
+            "race_pace",
+            "race"
+          ],
+          "milestone_ids": [
+            "race-001"
+          ]
+        }
+      ],
+      "milestones": [
+        {
+          "id": "race-001",
+          "type": "race",
+          "date": "2026-10-25",
+          "phase_id": "phase-taper",
+          "target": "全马 3:15"
+        }
+      ],
+      "training_principles": [
+        "渐进负荷",
+        "保留两周 taper"
+      ],
+      "generated_by": "fixture",
+      "version": 1,
+      "created_at": "2026-07-01T00:00:00Z",
+      "updated_at": "2026-07-01T00:00:00Z"
+    },
+    "read_results": {
+      "get_health_snapshot": {
+        "stride_training_load": {
+          "acute_load": 76,
+          "chronic_load": 72,
+          "form": -4,
+          "load_ratio": 1.06,
+          "form_zone": "maintenance",
+          "source": "stride",
+          "vendor_derived": false
+        },
+        "raw_measurements": {
+          "rhr": 47,
+          "hrv": 65
+        }
+      },
+      "get_pmc_series": {
+        "series": [
+          {
+            "date": "2026-07-13",
+            "acute_load": 76,
+            "chronic_load": 72,
+            "form": -4,
+            "load_ratio": 1.06
+          }
+        ],
+        "provenance": {
+          "source": "stride",
+          "vendor_derived": false
+        }
+      },
+      "estimate_master_plan_load": {
+        "history_anchor": {
+          "recent_weekly_km": 74,
+          "peak_weekly_km": 88
+        },
+        "plan_estimate": {
+          "build_phase_range_km": [
+            75,
+            88
+          ]
+        },
+        "plan_source": "active"
+      }
+    }
+  },
+  "expected": {
+    "status": "needs_clarification",
+    "clarification_required": true,
+    "clarification_contains": "几周",
+    "proposal_count": 0,
+    "tool_trace_empty": true
+  }
+}

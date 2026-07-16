@@ -181,6 +181,7 @@ python scripts/eval_coach.py --scope s1 --conversation
 14. 自然语言“跑量/里程提高或降低”与“周跑量/训练量”使用同一方向门禁；只有百分比而没有阶段时也必须先澄清阶段，不能提前加载数据。
 15. 周量 proposal 不仅方向一致，幅度也必须忠实：明确区间必须逐值匹配；百分比必须以目标阶段当前上下限分别计算并四舍五入到 0.1 km。`set_phase_weekly_range` 必须携带 canonical `adjustment_request`，tool、graph、specialist 和 HTTP response boundary 都会拒绝偷换幅度。
 16. 阶段训练重点 proposal 同样绑定 canonical `adjustment_request`：`set_phase_focus` 只能输出用户明确给出的 replacement focus，不能擅自扩写，并且明确命名阶段时不能偷换 `phase_id`。conversation harness 还可用 `assessment_rationale_contains`、proposal `old_value` 与 `ai_explanation_contains` 校验评估依据和提案解释。
+17. 阶段延长/缩短必须同时给出明确阶段和一个正整数周数；否则在任何 LLM/data-tool call 前澄清。合理后 `extend_phase`/`compress_phase` 生成单个 `shift_phase_boundary` 原子 op，同时移动目标阶段结束日和相邻下一阶段起点，保持阶段日历连续且不改变目标比赛/赛季结束日；prompt、tool、graph、specialist、HTTP 与 apply gate 共同校验阶段、方向、周数及边界一致性。
 
 ### S1 Required vs Optional
 

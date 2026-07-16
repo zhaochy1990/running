@@ -109,20 +109,24 @@ def _assert_master_diff(res: ToolResult) -> MasterPlanDiff:
 def test_extend_phase_shifts_end_date_forward(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.ExtendPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2,
+        adjustment_request="把基础期延长两周",
     )
     diff = _assert_master_diff(res)
     assert len(diff.ops) == 1
     op = diff.ops[0]
-    assert op.op == MasterPlanDiffOpKind.RESIZE_PHASE
+    assert op.op == MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY
     assert op.phase_id == phase1.id
     assert op.spec_patch["end_date"] == "2026-07-20"  # 2026-07-06 + 2 weeks
+    assert op.spec_patch["following_phase_id"] == seeded_plan[2].id
+    assert op.spec_patch["following_start_date"] == "2026-07-21"
 
 
 def test_extend_phase_zero_weeks_fails(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.ExtendPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=phase1.id, weeks=0
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=0,
+        adjustment_request="把基础期延长零周",
     )
     assert not res.ok
 
@@ -130,7 +134,8 @@ def test_extend_phase_zero_weeks_fails(seeded_plan):
 def test_extend_phase_missing_plan_fails(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.ExtendPhaseImpl(USER_ID)(
-        plan_id="nonexistent", phase_id=phase1.id, weeks=2
+        plan_id="nonexistent", phase_id=phase1.id, weeks=2,
+        adjustment_request="把基础期延长两周",
     )
     assert not res.ok
     assert any("not found" in e for e in res.errors)
@@ -139,7 +144,8 @@ def test_extend_phase_missing_plan_fails(seeded_plan):
 def test_extend_phase_missing_phase_fails(seeded_plan):
     plan, _, _, _ = seeded_plan
     res = draft_impls.ExtendPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id="bogus", weeks=2
+        plan_id=plan.plan_id, phase_id="bogus", weeks=2,
+        adjustment_request="把基础期延长两周",
     )
     assert not res.ok
 
@@ -147,17 +153,70 @@ def test_extend_phase_missing_phase_fails(seeded_plan):
 def test_compress_phase_shifts_end_date_backward(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.CompressPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2,
+        adjustment_request="把基础期缩短两周",
     )
     diff = _assert_master_diff(res)
     assert len(diff.ops) == 1
     assert diff.ops[0].spec_patch["end_date"] == "2026-06-22"  # 2026-07-06 - 2 weeks
+    assert diff.ops[0].spec_patch["following_start_date"] == "2026-06-23"
+
+
+def test_phase_resize_tools_reject_wrong_direction_or_magnitude(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+
+    wrong_weeks = draft_impls.ExtendPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weeks=1,
+        adjustment_request="把基础期延长两周",
+    )
+    wrong_direction = draft_impls.CompressPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weeks=2,
+        adjustment_request="把基础期延长两周",
+    )
+
+    assert not wrong_weeks.ok
+    assert not wrong_direction.ok
+
+
+def test_extend_phase_rejects_shortening_protected_following_taper(seeded_plan):
+    plan, phase1, phase2, _ = seeded_plan
+    taper = phase2.model_copy(
+        update={
+            "name": "调整期",
+            "phase_type": PhaseType.TAPER,
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-14",
+        }
+    )
+    shifted_plan = plan.model_copy(
+        update={
+            "phases": [phase1.model_copy(update={"end_date": "2026-08-31"}), taper]
+        }
+    )
+    tool = draft_impls.ExtendPhaseImpl(
+        USER_ID, plan_loader=lambda _plan_id: shifted_plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weeks=1,
+        adjustment_request="把基础期延长一周",
+    )
+
+    assert not result.ok
+    assert "必须完整保留" in result.errors[0]
 
 
 def test_compress_phase_below_start_fails(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.CompressPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=phase1.id, weeks=100
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=100,
+        adjustment_request="把基础期缩短一百周",
     )
     assert not res.ok
 
@@ -178,14 +237,15 @@ def test_compress_phase_refuses_to_shorten_final_two_week_taper(seeded_plan):
     )
 
     res = draft_impls.CompressPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=taper.id, weeks=1
+        plan_id=plan.plan_id, phase_id=taper.id, weeks=1,
+        adjustment_request="把调整期缩短一周",
     )
 
     assert not res.ok
     assert "必须完整保留" in res.errors[0]
 
 
-def test_compress_phase_allows_short_final_recovery(seeded_plan):
+def test_compress_phase_rejects_final_recovery_boundary_move(seeded_plan):
     plan, phase1, phase2, _ = seeded_plan
     from stride_server.master_plan_store import get_master_plan_store
 
@@ -203,12 +263,12 @@ def test_compress_phase_allows_short_final_recovery(seeded_plan):
     )
 
     res = draft_impls.CompressPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=recovery.id, weeks=1
+        plan_id=plan.plan_id, phase_id=recovery.id, weeks=1,
+        adjustment_request="把恢复期缩短一周",
     )
 
-    assert res.ok
-    diff = MasterPlanDiff.model_validate(res.data)
-    assert diff.ops[0].spec_patch["end_date"] == "2026-09-07"
+    assert not res.ok
+    assert "final phase" in res.errors[0]
 
 
 # ---------------------------------------------------------------------------

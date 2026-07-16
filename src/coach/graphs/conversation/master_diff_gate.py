@@ -23,7 +23,7 @@ Only *accepted-or-pending* ops are checked — an explicitly rejected op can't l
 from __future__ import annotations
 
 import math
-from datetime import date as _date
+from datetime import date as _date, timedelta as _timedelta
 
 from stride_core.master_plan import MasterPlan, MilestoneType, PhaseType
 from stride_core.master_plan_diff import (
@@ -123,6 +123,82 @@ def _check_phase_resize(
             return f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短"
     if not _within(start, plan_lo, plan_hi) or not _within(end, plan_lo, plan_hi):
         return f"阶段「{phase.name}」调整后的日期超出赛季范围"
+    return None
+
+
+def _check_phase_boundary_shift(
+    op: MasterPlanDiffOp,
+    ordered_phases: list,
+    phases: dict,
+    milestones: dict,
+    plan_lo: _date | None,
+    plan_hi: _date | None,
+    protected_final_phase_id: str | None,
+) -> str | None:
+    phase = phases.get(op.phase_id)
+    if phase is None:
+        return f"调整的阶段（id={op.phase_id}）不在当前赛季计划里"
+    patch = op.spec_patch or {}
+    required = {"end_date", "following_phase_id", "following_start_date"}
+    if set(patch) != required:
+        return "阶段边界调整必须完整包含 end_date、following_phase_id 和 following_start_date"
+    try:
+        index = next(i for i, item in enumerate(ordered_phases) if item.id == op.phase_id)
+    except StopIteration:
+        return f"调整的阶段（id={op.phase_id}）不在当前赛季计划里"
+    if index + 1 >= len(ordered_phases):
+        return "最终阶段没有相邻下一阶段，不能用阶段边界调整改变赛季结束日"
+    following = ordered_phases[index + 1]
+    if patch.get("following_phase_id") != following.id:
+        return "阶段边界调整引用的 following_phase_id 不是相邻下一阶段"
+    old = op.old_value or {}
+    new = op.new_value or {}
+    if old.get("following_phase_id") != following.id or new != patch:
+        return "阶段边界调整的 old_value/new_value 与原子 patch 不一致"
+    old_end = _parse(phase.end_date)
+    old_start = _parse(following.start_date)
+    new_end = _parse(patch.get("end_date"))
+    new_start = _parse(patch.get("following_start_date"))
+    if None in {old_end, old_start, new_end, new_start}:
+        return "阶段边界调整包含非法 ISO 日期"
+    if _parse(old.get("end_date")) != old_end or _parse(
+        old.get("following_start_date")
+    ) != old_start:
+        return "阶段边界调整的旧边界与当前计划不一致"
+    if old_start != old_end + _timedelta(days=1):
+        return "当前相邻阶段边界本身不连续，不能自动平移"
+    if new_start != new_end + _timedelta(days=1):
+        return "阶段边界调整后必须保持相邻阶段日历连续"
+    delta = new_end - old_end
+    if delta.days == 0 or delta.days % 7 != 0 or new_start - old_start != delta:
+        return "阶段边界必须按相同的整数周数原子平移"
+    phase_start = _parse(phase.start_date)
+    following_end = _parse(following.end_date)
+    if phase_start is None or following_end is None:
+        return "阶段边界调整涉及非法 ISO 日期"
+    if new_end <= phase_start or new_start >= following_end:
+        return "阶段边界调整会让目标阶段或相邻阶段长度为零或为负"
+    if not _within(new_end, plan_lo, plan_hi) or not _within(new_start, plan_lo, plan_hi):
+        return "阶段边界调整超出赛季范围"
+    if following.id == protected_final_phase_id and new_start > old_start:
+        return f"最后 1–2 周的调整期「{following.name}」必须完整保留，不能再缩短"
+    for milestone in milestones.values():
+        milestone_date = _parse(milestone.date)
+        if milestone_date is None:
+            continue
+        if milestone.phase_id == phase.id:
+            was_inside = phase_start <= milestone_date <= old_end
+            remains_inside = phase_start <= milestone_date <= new_end
+        elif milestone.phase_id == following.id:
+            was_inside = old_start <= milestone_date <= following_end
+            remains_inside = new_start <= milestone_date <= following_end
+        else:
+            continue
+        if was_inside and not remains_inside:
+            return (
+                f"阶段边界调整会让里程碑「{milestone.target}」落到所属阶段之外；"
+                "请先调整请求或使用专门的里程碑/比赛改期操作"
+            )
     return None
 
 
@@ -308,6 +384,8 @@ def validate_master_diff(
 
     * **RESIZE_PHASE / ADD_PHASE** — start strictly before end; ADD also stays
       within the season window.
+    * **SHIFT_PHASE_BOUNDARY** — one atomic op moves both sides of one adjacent
+      phase boundary by the same whole-week delta and preserves the final taper.
     * **REPLACE_MILESTONE_DATE / ADD_MILESTONE** — the date stays within the
       season's ``[start_date, end_date]`` window.
     * **REPLACE_WEEKLY_RANGE** — ``low <= high``.
@@ -324,6 +402,7 @@ def validate_master_diff(
     phases = {p.id: p for p in plan.phases}
     milestones = {m.id: m for m in plan.milestones}
     plan_lo, plan_hi = _parse(plan.start_date), _parse(plan.end_date)
+    ordered_phases = list(plan.phases)
     violations: list[str] = []
     if diff.plan_id != plan.plan_id:
         violations.append(
@@ -363,6 +442,16 @@ def validate_master_diff(
         if op.op == _Kind.RESIZE_PHASE:
             v = _check_phase_resize(
                 op, phases, plan_lo, plan_hi, protected_final_phase_id
+            )
+        elif op.op == _Kind.SHIFT_PHASE_BOUNDARY:
+            v = _check_phase_boundary_shift(
+                op,
+                ordered_phases,
+                phases,
+                milestones,
+                plan_lo,
+                plan_hi,
+                protected_final_phase_id,
             )
         elif (
             op.op == _Kind.REMOVE_PHASE

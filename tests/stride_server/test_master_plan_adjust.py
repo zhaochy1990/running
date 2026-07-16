@@ -63,6 +63,17 @@ def _make_plan(
         key_session_types=["长距离", "有氧"],
         milestone_ids=[ms_id],
     )
+    build_phase = Phase(
+        id=str(uuid4()),
+        name="专项期",
+        start_date="2026-07-07",
+        end_date=end_date,
+        focus="马拉松专项",
+        weekly_distance_km_low=45.0,
+        weekly_distance_km_high=60.0,
+        key_session_types=["阈值", "马拉松配速"],
+        milestone_ids=[],
+    )
     milestone = Milestone(
         id=ms_id,
         type=MilestoneType.TEST_RUN,
@@ -80,7 +91,7 @@ def _make_plan(
         goal=MasterPlanGoal(goal_id=goal_id, target_time="", race_date=end_date),
         start_date=start_date,
         end_date=end_date,
-        phases=[phase],
+        phases=[phase, build_phase],
         milestones=[milestone],
         training_principles=["渐进原则", "充足休息"],
         generated_by="gpt-4.1",
@@ -185,11 +196,11 @@ class TestAdjustMessages:
             plan_id=plan.plan_id,
             ops=[MasterPlanDiffOp(
                 id=str(uuid4()),
-                op=MasterPlanDiffOpKind.RESIZE_PHASE,
+                op=MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
                 phase_id=phase_id,
-                old_value={"end_date": "2026-07-06"},
-                new_value={"end_date": "2026-07-20"},
-                spec_patch={"end_date": "2026-07-20"},
+                old_value={"end_date": "2026-07-06", "following_phase_id": plan.phases[1].id, "following_start_date": "2026-07-07"},
+                new_value={"end_date": "2026-07-20", "following_phase_id": plan.phases[1].id, "following_start_date": "2026-07-21"},
+                spec_patch={"end_date": "2026-07-20", "following_phase_id": plan.phases[1].id, "following_start_date": "2026-07-21"},
             )],
             ai_explanation="数据支持把基础期延长两周",
             created_at=datetime.now(timezone.utc).isoformat(),
@@ -224,7 +235,7 @@ class TestAdjustMessages:
         assert isinstance(data["ai_response"], str)
         assert data["diff"] is not None
         assert len(data["diff"]["ops"]) == 1
-        assert data["diff"]["ops"][0]["op"] == "resize_phase"
+        assert data["diff"]["ops"][0]["op"] == "shift_phase_boundary"
         # diff_id stored in pending dict
         diff_id = data["diff"]["diff_id"]
         assert (USER_UUID, plan.plan_id, diff_id) in mp_mod._PENDING_MP_DIFFS
@@ -600,10 +611,10 @@ class TestAdjustApply:
         diff = MasterPlanDiff(
             diff_id=str(uuid4()), plan_id=plan.plan_id,
             ops=[MasterPlanDiffOp(
-                id=str(uuid4()), op=MasterPlanDiffOpKind.RESIZE_PHASE,
-                phase_id=phase_id, old_value={"end_date": "2026-07-06"},
-                new_value={"end_date": "2026-07-27"},
-                spec_patch={"end_date": "2026-07-27"},
+                id=str(uuid4()), op=MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
+                phase_id=phase_id, old_value={"end_date": "2026-07-06", "following_phase_id": plan.phases[1].id, "following_start_date": "2026-07-07"},
+                new_value={"end_date": "2026-07-20", "following_phase_id": plan.phases[1].id, "following_start_date": "2026-07-21"},
+                spec_patch={"end_date": "2026-07-20", "following_phase_id": plan.phases[1].id, "following_start_date": "2026-07-21"},
             )],
             ai_explanation="已延长基础期",
             created_at=datetime.now(timezone.utc).isoformat(),
@@ -663,7 +674,8 @@ class TestAdjustApply:
         updated = store.get_plan(USER_UUID, plan.plan_id)
         assert updated is not None
         assert updated.version == 2
-        assert updated.phases[0].end_date == "2026-07-27"
+        assert updated.phases[0].end_date == "2026-07-20"
+        assert updated.phases[1].start_date == "2026-07-21"
 
     def test_apply_writes_version_snapshot(self, app_client):
         """apply → MasterPlanVersion snapshot stored in store."""

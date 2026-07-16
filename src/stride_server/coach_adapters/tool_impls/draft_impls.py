@@ -24,7 +24,10 @@ from typing import Any
 from uuid import uuid4
 
 from coach.schemas import ToolResult
-from coach.graphs.conversation.master_diff_gate import is_short_taper_phase
+from coach.graphs.conversation.master_diff_gate import (
+    is_short_taper_phase,
+    validate_master_diff,
+)
 from stride_core.plan_diff import DiffOp, DiffOpKind, PlanDiff
 from stride_core.timefmt import today_shanghai
 
@@ -477,7 +480,9 @@ class ExtendPhaseImpl:
     ) -> None:
         self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
-    def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult:
+    def __call__(
+        self, *, plan_id: str, phase_id: str, weeks: int, adjustment_request: str
+    ) -> ToolResult:
         if weeks <= 0:
             return _fail(f"weeks must be positive, got {weeks}")
         plan = self._load_plan(plan_id)
@@ -486,17 +491,55 @@ class ExtendPhaseImpl:
         phase = next((p for p in plan.phases if p.id == phase_id), None)
         if phase is None:
             return _fail(f"phase {phase_id!r} not in plan")
+        phase_index = plan.phases.index(phase)
+        if phase_index + 1 >= len(plan.phases):
+            return _fail(
+                "extending the final phase would move the season boundary; "
+                "use reschedule_target_race for a target-race date change"
+            )
+        following = plan.phases[phase_index + 1]
         new_end = _shift_phase_end(phase.end_date, weeks)
+        new_following_start = _shift_phase_end(following.start_date, weeks)
         op = MasterPlanDiffOp(
             id=str(uuid4()),
-            op=MasterPlanDiffOpKind.RESIZE_PHASE,
+            op=MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
             phase_id=phase_id,
-            old_value={"end_date": phase.end_date},
-            new_value={"end_date": new_end},
-            spec_patch={"end_date": new_end},
+            old_value={
+                "end_date": phase.end_date,
+                "following_phase_id": following.id,
+                "following_start_date": following.start_date,
+            },
+            new_value={
+                "end_date": new_end,
+                "following_phase_id": following.id,
+                "following_start_date": new_following_start,
+            },
+            spec_patch={
+                "end_date": new_end,
+                "following_phase_id": following.id,
+                "following_start_date": new_following_start,
+            },
         )
-        diff = _empty_master_diff(plan_id, f"将 {phase.name} 延长 {weeks} 周至 {new_end}")
-        return _ok_master(diff.model_copy(update={"ops": [op]}))
+        diff = _empty_master_diff(
+            plan_id,
+            f"将 {phase.name} 延长 {weeks} 周至 {new_end}，并将相邻的"
+            f" {following.name} 起点同步到 {new_following_start}"
+            f"（用户请求：{adjustment_request}）",
+        ).model_copy(update={"ops": [op]})
+        from coach.graphs.conversation.master_adjustment_direction import (
+            master_diff_matches_phase_resize_request,
+        )
+
+        if not master_diff_matches_phase_resize_request(
+            diff, adjustment_request, plan=plan
+        ):
+            return _fail(
+                "phase extension does not match the exact phase or weeks in adjustment_request"
+            )
+        violations = validate_master_diff(plan, diff)
+        if violations:
+            return _fail(*violations)
+        return _ok_master(diff)
 
 
 class CompressPhaseImpl:
@@ -505,7 +548,9 @@ class CompressPhaseImpl:
     ) -> None:
         self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
-    def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult:
+    def __call__(
+        self, *, plan_id: str, phase_id: str, weeks: int, adjustment_request: str
+    ) -> ToolResult:
         if weeks <= 0:
             return _fail(f"weeks must be positive, got {weeks}")
         plan = self._load_plan(plan_id)
@@ -519,7 +564,15 @@ class CompressPhaseImpl:
                 f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短；"
                 "请调整更早阶段的周跑量，或拒绝这次要求"
             )
+        phase_index = plan.phases.index(phase)
+        if phase_index + 1 >= len(plan.phases):
+            return _fail(
+                "compressing the final phase would move the season boundary; "
+                "use reschedule_target_race for a target-race date change"
+            )
+        following = plan.phases[phase_index + 1]
         new_end = _shift_phase_end(phase.end_date, -weeks)
+        new_following_start = _shift_phase_end(following.start_date, -weeks)
         # Refuse a compress that would collapse the phase below its start
         if _date.fromisoformat(new_end) <= _date.fromisoformat(phase.start_date):
             return _fail(
@@ -527,14 +580,44 @@ class CompressPhaseImpl:
             )
         op = MasterPlanDiffOp(
             id=str(uuid4()),
-            op=MasterPlanDiffOpKind.RESIZE_PHASE,
+            op=MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
             phase_id=phase_id,
-            old_value={"end_date": phase.end_date},
-            new_value={"end_date": new_end},
-            spec_patch={"end_date": new_end},
+            old_value={
+                "end_date": phase.end_date,
+                "following_phase_id": following.id,
+                "following_start_date": following.start_date,
+            },
+            new_value={
+                "end_date": new_end,
+                "following_phase_id": following.id,
+                "following_start_date": new_following_start,
+            },
+            spec_patch={
+                "end_date": new_end,
+                "following_phase_id": following.id,
+                "following_start_date": new_following_start,
+            },
         )
-        diff = _empty_master_diff(plan_id, f"将 {phase.name} 缩短 {weeks} 周至 {new_end}")
-        return _ok_master(diff.model_copy(update={"ops": [op]}))
+        diff = _empty_master_diff(
+            plan_id,
+            f"将 {phase.name} 缩短 {weeks} 周至 {new_end}，并将相邻的"
+            f" {following.name} 起点同步到 {new_following_start}"
+            f"（用户请求：{adjustment_request}）",
+        ).model_copy(update={"ops": [op]})
+        from coach.graphs.conversation.master_adjustment_direction import (
+            master_diff_matches_phase_resize_request,
+        )
+
+        if not master_diff_matches_phase_resize_request(
+            diff, adjustment_request, plan=plan
+        ):
+            return _fail(
+                "phase compression does not match the exact phase or weeks in adjustment_request"
+            )
+        violations = validate_master_diff(plan, diff)
+        if violations:
+            return _fail(*violations)
+        return _ok_master(diff)
 
 
 class ShiftMilestoneImpl:

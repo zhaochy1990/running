@@ -414,6 +414,7 @@ class _OpPill extends StatelessWidget {
 
   static String _label(String op) => switch (op) {
         'resize_phase' => '调整阶段',
+        'shift_phase_boundary' => '调整阶段边界',
         'replace_phase_focus' => '更新重点',
         'replace_weekly_range' => '调整周量',
         'add_phase' => '新增阶段',
@@ -428,7 +429,7 @@ class _OpPill extends StatelessWidget {
   static Color _color(String op) => switch (op) {
         'add_phase' || 'add_milestone' => StrideTokens.accent,
         'remove_phase' || 'remove_milestone' => StrideTokens.danger,
-        'resize_phase' || 'replace_weekly_range' => StrideTokens.warn,
+        'resize_phase' || 'shift_phase_boundary' || 'replace_weekly_range' => StrideTokens.warn,
         _ => StrideTokens.muted,
       };
 

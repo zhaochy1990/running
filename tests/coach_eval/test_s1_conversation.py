@@ -30,6 +30,9 @@ S1_CONVERSATION_INPUT_SHA256 = {
     "s1c-increase-missing-details-clarify": "7f2864ebd73f9eed21177d26bdd7c0c959a9127d1e1807e8efe8e3e87292650e",
     "s1c-increase-percentage-missing-phase-clarify": "d8dab5b18209ee27fa0badcf76af6b5f4d8c5ac2f2480a6342e4df15fb393b69",
     "s1c-increase-percentage-phase-followup-reasonable": "dd6dc25b301716cb3721e8e2c0caf64c59f7cd5a6dc8290905521909feaa835f",
+    "s1c-phase-compress-reasonable": "7da6a6783da20fc966cb9fc06ccd6a20adb66f61765861ba7593b50a396d1b93",
+    "s1c-phase-extend-missing-weeks-clarify": "2d975ae386848310c2bdb4debedc43c3fa0d850114be69d87c38c595109afbbe",
+    "s1c-phase-extend-reasonable": "7d230e696cad495a6e0c5a1f25f80f3fb20d8a7c1ad9d08728f111d64820c59c",
     "s1c-race-postponed-atomic": "ae2c9d7a12347e44fd15e7a684b827627a55db1263759ce572c78e229d305303",
     "s1c-target-time-reasonable-atomic": "6e016c9222f18450e9d7eda42fbc8a94939c8168339aabd6c69c1f1fc542939e",
     "s1c-vague-adjustment-clarify": "a9c4467eb8c4ce6458ab418a8870f99e8ae7d851cdfc0773909ddb137fd05d9d",
@@ -172,6 +175,21 @@ def test_percentage_increase_missing_phase_fixture_clarifies_without_llm_or_tool
     assert result["proposals"] == []
 
 
+def test_phase_extend_missing_weeks_clarifies_without_llm_or_tools() -> None:
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-phase-extend-missing-weeks-clarify"],
+        llm=_NeverCalledLLM(),
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.generated_artifact["tool_trace"] == []
+    result = outcome.generated_artifact["result"]
+    assert result["status"] == "needs_clarification"
+    assert "几周" in result["clarification"]
+    assert result["proposals"] == []
+
+
 def test_contract_reports_wrong_exact_range() -> None:
     artifact = {
         "result": {"status": "completed", "clarification": None, "proposals": [{"ops": [{"op": "replace_weekly_range", "phase_id": "phase-base", "new_value": {"weekly_distance_km_low": 60.0, "weekly_distance_km_high": 70.0}}]}]},
@@ -283,6 +301,102 @@ def test_exact_range_fixture_passes_scripted_production_graph() -> None:
         "assess_master_adjustment",
         "set_phase_weekly_range",
     ]
+
+
+def test_phase_extend_fixture_emits_one_atomic_boundary_shift() -> None:
+    request = "把基础期延长两周"
+    llm = _ScriptedLLM(
+        [
+            _required_read_calls(),
+            _tool_calls(
+                2,
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "当前恢复稳定，赛季内部可把基础期与专项期共享边界后移两周",
+                    },
+                ),
+            ),
+            _tool_calls(
+                3,
+                (
+                    "extend_phase",
+                    {
+                        "plan_id": "s1c-plan-001",
+                        "phase_id": "phase-base",
+                        "weeks": 2,
+                        "adjustment_request": request,
+                    },
+                ),
+            ),
+        ]
+    )
+
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-phase-extend-reasonable"], llm=llm
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.debug["contract_violations"] == []
+    proposal = outcome.generated_artifact["result"]["proposals"][0]
+    assert len(proposal["ops"]) == 1
+    op = proposal["ops"][0]
+    assert op["op"] == "shift_phase_boundary"
+    assert op["spec_patch"] == {
+        "end_date": "2026-08-29",
+        "following_phase_id": "phase-build",
+        "following_start_date": "2026-08-30",
+    }
+
+
+def test_phase_compress_fixture_emits_one_atomic_boundary_shift() -> None:
+    request = "把基础期缩短一周"
+    llm = _ScriptedLLM(
+        [
+            _required_read_calls(),
+            _tool_calls(
+                2,
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": request,
+                        "verdict": "reasonable",
+                        "rationale": "当前基础能力与恢复稳定，可把专项期起点提前一周",
+                    },
+                ),
+            ),
+            _tool_calls(
+                3,
+                (
+                    "compress_phase",
+                    {
+                        "plan_id": "s1c-plan-001",
+                        "phase_id": "phase-base",
+                        "weeks": 1,
+                        "adjustment_request": request,
+                    },
+                ),
+            ),
+        ]
+    )
+
+    report = run_s1_conversation_evaluation(
+        fixture_ids=["s1c-phase-compress-reasonable"], llm=llm
+    )
+
+    assert report.fixtures_passed == 1
+    outcome = report.per_fixture[0]
+    assert outcome.debug["contract_violations"] == []
+    op = outcome.generated_artifact["result"]["proposals"][0]["ops"][0]
+    assert op["op"] == "shift_phase_boundary"
+    assert op["spec_patch"] == {
+        "end_date": "2026-08-08",
+        "following_phase_id": "phase-build",
+        "following_start_date": "2026-08-09",
+    }
 
 
 def test_postponed_race_fixture_passes_as_one_atomic_diff() -> None:

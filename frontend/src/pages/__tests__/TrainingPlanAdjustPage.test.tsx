@@ -608,6 +608,56 @@ describe('TrainingPlanAdjustPage', () => {
     expect(screen.getByText(/全程周量曲线 · 27 周/)).toBeInTheDocument()
   })
 
+  it('previews both sides of an atomic phase-boundary proposal', async () => {
+    const response = proposalResponse()
+    const adjustmentRequest = '把基础期延长两周'
+    response.data.assessment = {
+      adjustment_request: adjustmentRequest,
+      verdict: 'reasonable',
+      rationale: '当前恢复稳定，可以在赛季内部后移共享边界。',
+    }
+    response.data.diff = {
+      diff_id: 'diff-boundary',
+      plan_id: 'plan-1',
+      ai_explanation: '基础期延长两周并同步专项期起点。',
+      created_at: '2026-06-10T00:00:00Z',
+      ops: [{
+        id: 'op-boundary',
+        op: 'shift_phase_boundary',
+        phase_id: 'phase-1',
+        milestone_id: null,
+        old_value: {
+          end_date: '2026-06-28',
+          following_phase_id: 'phase-2',
+          following_start_date: '2026-06-29',
+        },
+        new_value: {
+          end_date: '2026-07-12',
+          following_phase_id: 'phase-2',
+          following_start_date: '2026-07-13',
+        },
+        spec_patch: {
+          end_date: '2026-07-12',
+          following_phase_id: 'phase-2',
+          following_start_date: '2026-07-13',
+        },
+        accepted: null,
+      }],
+    }
+    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce(response)
+    renderAdjustPage()
+
+    fireEvent.change(await screen.findByLabelText('这次具体想怎么调整训练计划？'), {
+      target: { value: adjustmentRequest },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '确认调整方向' }))
+
+    expect(await screen.findByText('后端调整建议')).toBeInTheDocument()
+    expect(screen.getByText('调整相邻阶段边界')).toBeInTheDocument()
+    expect(screen.getByText(/2026-07-12/)).toBeInTheDocument()
+    expect(screen.getByText(/2026-07-13/)).toBeInTheDocument()
+  })
+
   it('retries a failed assessment without exposing a local fake preview', async () => {
     vi.mocked(sendMasterPlanAdjustMessage)
       .mockRejectedValueOnce(new Error('service unavailable'))

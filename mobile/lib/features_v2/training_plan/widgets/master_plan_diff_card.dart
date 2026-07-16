@@ -93,6 +93,7 @@ class _MasterPlanOpRow extends StatelessWidget {
     return switch (opType) {
       'extend_phase' => '延长阶段',
       'shorten_phase' => '缩短阶段',
+      'shift_phase_boundary' => '调整相邻阶段边界',
       'reduce_intensity' => '降低强度',
       'increase_intensity' => '提升强度',
       'add_milestone' => '新增里程碑',
@@ -108,7 +109,7 @@ class _MasterPlanOpRow extends StatelessWidget {
     return switch (opType) {
       'add_milestone' || 'add_race' || 'extend_phase' => StrideTokens.accent,
       'remove_milestone' => StrideTokens.danger,
-      'reduce_intensity' || 'shorten_phase' => StrideTokens.warn,
+      'reduce_intensity' || 'shorten_phase' || 'shift_phase_boundary' => StrideTokens.warn,
       _ => StrideTokens.muted,
     };
   }

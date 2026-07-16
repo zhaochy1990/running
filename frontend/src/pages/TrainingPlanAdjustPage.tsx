@@ -1083,6 +1083,14 @@ function applyDiffToDisplayPhases(phases: DisplayPhase[], diff: MasterPlanDiff |
       .filter((op) => op.phase_id === phase.id)
       .map((op) => ({ ...(op.new_value ?? {}), ...(op.spec_patch ?? {}) }))
     const atomicPatches = diff.ops.flatMap((op) => {
+      if (op.op === 'shift_phase_boundary') {
+        const patch = op.spec_patch ?? {}
+        const followingPhaseId = stringValue(patch.following_phase_id)
+        if (op.phase_id === phase.id) return [{ end_date: patch.end_date }]
+        if (followingPhaseId === phase.id) {
+          return [{ start_date: patch.following_start_date }]
+        }
+      }
       const phaseUpdates = op.spec_patch?.phase_updates
       if (!Array.isArray(phaseUpdates)) return []
       return phaseUpdates.filter(
@@ -1419,6 +1427,7 @@ function diffOpLabel(op: string): string {
     add_phase: '新增阶段',
     remove_phase: '删除阶段',
     resize_phase: '调整阶段日期',
+    shift_phase_boundary: '调整相邻阶段边界',
     replace_phase_focus: '调整阶段重点',
     replace_weekly_range: '调整周量区间',
     add_milestone: '新增里程碑',

@@ -24,8 +24,8 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 - get_week_plan() — 按上海当天从 WeeklyPlanStore 读取本周计划 (查阅当前阶段执行情况)
 
 **Draft tools** (输出 MasterPlanDiff —— 等用户在 UI 上点"采纳")
-- extend_phase(plan_id, phase_id, weeks) — 延长一个阶段 N 周
-- compress_phase(plan_id, phase_id, weeks) — 缩短一个阶段 N 周
+- extend_phase(plan_id, phase_id, weeks, adjustment_request) — 按用户明确周数延长指定阶段，并原子移动相邻下一阶段起点以保持日历连续；不得改变目标比赛/赛季结束日
+- compress_phase(plan_id, phase_id, weeks, adjustment_request) — 按用户明确周数缩短指定阶段，并原子移动相邻下一阶段起点以保持日历连续；不得缩短最终 taper
 - shift_milestone(plan_id, milestone_id, new_date) — 改里程碑日期
 - reschedule_target_race(plan_id, milestone_id, new_date, reason) — 原子同步目标比赛日、计划结束日、比赛里程碑和 taper/前序阶段边界；比赛提前/延期必须用它，不要用 shift_milestone
 - change_target(plan_id, milestone_id, new_target_time) — 改目标成绩
@@ -42,7 +42,7 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
 
 ## 行为规则
 
-1. **先澄清方向和必要目标，不替用户猜**: 如果用户只说“想调整总纲/整体训练计划”，但没有表达希望增加、减少、延长、缩短、移动日期、改变目标或重排等具体方向，先追问“希望具体怎么调整”。如果方向已明确，但操作需要具体阶段（例如训练重点、周跑量区间、延长/缩短阶段）而用户没说哪个阶段，先追问阶段。用户回答阶段后，结合上一轮原请求继续，不要重复追问方向。澄清完成前不要读取个人训练数据，也不要调用任何 draft tool。
+1. **先澄清方向和必要目标，不替用户猜**: 如果用户只说“想调整总纲/整体训练计划”，但没有表达希望增加、减少、延长、缩短、移动日期、改变目标或重排等具体方向，先追问“希望具体怎么调整”。如果方向已明确，但操作需要具体阶段（例如训练重点、周跑量区间、延长/缩短阶段）而用户没说哪个阶段，先追问阶段。延长/缩短还必须有一个明确的正整数周数；缺少时先追问，禁止自行假设 1 周或 2 周。用户回答阶段或周数后，结合上一轮原请求继续，不要重复追问方向。澄清完成前不要读取个人训练数据，也不要调用任何 draft tool。
 
 2. **先评估，再提案**: 用户表达具体方向后，先读取 get_master_plan_current、get_health_snapshot、get_pmc_series 和 estimate_master_plan_load；按需补充近期活动、环境、PB/比赛预测等数据。读到结果后的下一轮必须调用 assess_master_adjustment，明确 verdict 和依据。不要在同一批并行 tool calls 里一边请求数据一边下判断；每轮严格服从系统消息给出的“本轮工具阶段”。
 
@@ -51,6 +51,8 @@ MASTER_CHAT_PROMPT = SHARED_DOMAIN_PROMPT + """
    用户说“加量/增加训练量”但没有目标阶段和明确的新周量区间或百分比时，先逐项追问，不能替用户猜数值。用户给出明确周跑量上下限时，合理后调用 set_phase_weekly_range，数值必须忠实于用户请求；用户给出百分比时，以 get_master_plan_current 的目标阶段现有上下限为基准计算新上下限，并在 assessment rationale 与 proposal explanation 中写明计算。调用时 adjustment_request 必须逐字等于 canonical 用户请求；工具会再次核对数值，算错或偷换幅度会被拒绝。不要改成固定百分比的两个方案。只有用户明确要求“给两个减量方案/比较保守和明显减量”时才调用 propose_reduction_alternatives。加量请求永远不能调用减量备选工具，也不能输出任何新周量低于旧周量的 diff。
 
    用户明确要求修改某阶段训练重点时，合理后调用 set_phase_focus，focus 必须只包含并忠实保留用户给出的新重点，不得扩写成你认为更合理的组合；adjustment_request 必须逐字等于 canonical 用户请求。用户没有给出新重点文本时继续澄清，不能自行发明。不要偷换阶段，也不要偷换成周量、阶段日期、目标成绩或 regenerate_master。
+
+   用户明确延长/缩短某阶段时，合理后分别调用 extend_phase/compress_phase，weeks 必须逐字对应 canonical 请求中的正整数周数，adjustment_request 必须逐字等于 canonical 请求。工具会用一个原子 shift_phase_boundary op 同时移动目标阶段结束日和相邻下一阶段起点，保持阶段连续且不改变目标比赛日/赛季结束日。不要只移动一个边界制造阶段重叠或空档；不要把延长变缩短、偷换阶段/周数，也不要用它们模拟比赛改期。
 
    用户明确目标比赛提前或延期到新日期时，合理后必须调用 reschedule_target_race。比赛日期是 season-level 原子事实，禁止只移动 race milestone，禁止拆成多个可分别采纳的 ops。
 

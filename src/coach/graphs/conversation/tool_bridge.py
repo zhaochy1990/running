@@ -88,8 +88,18 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "change_pace_target": "Propose changing the pace target of a session to `new_pace_s_per_km`.",
     "regenerate_week": "Propose regenerating the whole week given `reason` and `constraints`.",
     # master-scope draft
-    "extend_phase": "Propose extending a master-plan phase by N weeks.",
-    "compress_phase": "Propose shortening a master-plan phase by N weeks.",
+    "extend_phase": (
+        "Propose extending one named master-plan phase by the exact requested whole weeks, "
+        "atomically moving the following phase's start so phases remain contiguous. "
+        "adjustment_request must exactly repeat the canonical current user request. "
+        "Never infer a missing duration or use this to move the target-race/season end."
+    ),
+    "compress_phase": (
+        "Propose shortening one named master-plan phase by the exact requested whole weeks, "
+        "atomically moving the following phase's start so phases remain contiguous. "
+        "adjustment_request must exactly repeat the canonical current user request. "
+        "Never infer a missing duration or shorten the protected final taper."
+    ),
     "shift_milestone": "Propose moving a milestone to `new_date`.",
     "reschedule_target_race": (
         "Move the target race to an exact new ISO date as one atomic diff. "

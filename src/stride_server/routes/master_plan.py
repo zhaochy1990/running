@@ -32,6 +32,7 @@ from coach.contracts import SpecialistTask, TargetRef, Turn
 from coach.graphs.conversation.master_adjustment_direction import (
     master_diff_matches_adjustment_request,
 )
+from coach.graphs.conversation.master_diff_gate import validate_master_diff
 
 from stride_core.master_plan import MasterPlanStatus, _apply_review_diff
 from stride_core.master_plan_diff import (
@@ -272,6 +273,7 @@ _LEGACY_DIFF_OP_KINDS = tuple(
     not in {
         MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
         MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
     }
 )
 _DIFF_OP_KINDS_STR = ", ".join(kind.value for kind in _LEGACY_DIFF_OP_KINDS)
@@ -419,9 +421,10 @@ def _build_mp_diff_ops(ops_list: list[dict]) -> list[MasterPlanDiffOp]:
             if op_kind in {
                 MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
                 MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+                MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
             }:
                 logger.warning(
-                    "Skipping atomic target-race op from legacy free-form diff path"
+                    "Skipping atomic coach-only op from legacy free-form diff path"
                 )
                 continue
             result.append(
@@ -598,13 +601,14 @@ def review_apply(
         in {
             MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
             MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+            MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
         }
         and op.id in set(body.accepted_op_ids)
         for op in diff.ops
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="目标比赛日期或成绩只能通过 Coach 原子 apply 接口执行",
+            detail="目标比赛或阶段边界操作只能通过 Coach 原子 apply 接口执行",
         )
 
     # Filter to known op ids; silently skip unknowns (fault-tolerant)
@@ -1035,6 +1039,29 @@ def _compute_affected_weeks(
                     start_str = spec.get("start_date")
                     end_str = spec.get("end_date")
 
+            elif op_kind_str == "shift_phase_boundary":
+                phase_id = op.phase_id if hasattr(op, "phase_id") else op.get("phase_id")
+                following_id = spec.get("following_phase_id") if spec else None
+                starts: list[str] = []
+                ends: list[str] = []
+                phase = phase_map.get(phase_id)
+                following = phase_map.get(following_id)
+                if phase is not None:
+                    starts.extend([phase.end_date, spec.get("end_date")])
+                    ends.extend([phase.end_date, spec.get("end_date")])
+                if following is not None:
+                    starts.extend(
+                        [following.start_date, spec.get("following_start_date")]
+                    )
+                    ends.extend(
+                        [following.start_date, spec.get("following_start_date")]
+                    )
+                clean_starts = [item for item in starts if isinstance(item, str)]
+                clean_ends = [item for item in ends if isinstance(item, str)]
+                if clean_starts and clean_ends:
+                    start_str = min(clean_starts)
+                    end_str = max(clean_ends)
+
             elif op_kind_str == "remove_phase":
                 phase_id = op.phase_id if hasattr(op, "phase_id") else op.get("phase_id")
                 if phase_id and phase_id in phase_map:
@@ -1302,6 +1329,13 @@ def adjust_apply(
     affected_weeks = _compute_affected_weeks(accepted_ops, plan)
 
     if applied > 0:
+        accepted_diff = diff.model_copy(update={"ops": accepted_ops})
+        violations = validate_master_diff(plan, accepted_diff)
+        if violations:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="赛季调整结构非法：" + "；".join(violations),
+            )
         from stride_core.master_plan_diff import apply_master_plan_diff as _apply_diff
 
         # Store protocol bridge: wrap store to match master_plan_diff.MasterPlanStore protocol

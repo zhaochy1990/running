@@ -262,6 +262,32 @@ def test_resize_phase():
     assert result.version == 2
 
 
+def test_shift_phase_boundary_updates_both_adjacent_phases_atomically():
+    first = _make_phase(start_date="2026-06-01", end_date="2026-07-31")
+    second = _make_phase(
+        phase_id="phase-2", start_date="2026-08-01", end_date="2026-11-15"
+    )
+    plan = _make_plan(phases=[first, second])
+    store = InMemoryStore(plan)
+    op = _op(
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
+        phase_id=first.id,
+        spec_patch={
+            "end_date": "2026-08-14",
+            "following_phase_id": second.id,
+            "following_start_date": "2026-08-15",
+        },
+    )
+
+    result = apply_master_plan_diff(
+        store, "plan-test", _make_diff([op]), [op.id], "extend base"
+    )
+
+    assert result.phases[0].end_date == "2026-08-14"
+    assert result.phases[1].start_date == "2026-08-15"
+    assert result.version == 2
+
+
 # ---------------------------------------------------------------------------
 # REPLACE_PHASE_FOCUS
 # ---------------------------------------------------------------------------
