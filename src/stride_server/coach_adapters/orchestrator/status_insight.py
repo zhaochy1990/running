@@ -40,7 +40,6 @@ _WEEK_PLAN_QUERY_MARKERS = (
     "训练计划",
     "weekly plan",
     "课表",
-    "安排",
 )
 
 # Builds the qa conversation graph; injectable so the runner is unit-testable
