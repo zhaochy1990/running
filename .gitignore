@@ -19,6 +19,9 @@ data/_coach_dev/
 data/_jobs_dev/
 .claude/*
 !.claude/commands/
+!.claude/skills/
+!.claude/skills/verify/
+!.claude/skills/verify/SKILL.md
 .codex/
 .composer/
 .superpowers/
