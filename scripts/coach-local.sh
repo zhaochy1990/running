@@ -1,68 +1,70 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# Local Coach + GitHub Copilot Proxy
+# Local Coach + Agent Maestro（默认）/ GitHub Copilot Proxy（可选）
 # =============================================================================
 #
 # 用途
 # ----
-# 一键管理本地 Coach 和 voidsteed/copilot-proxy-api@0.10.22，通过 OpenAI
-# Responses API 使用 GitHub Copilot 中的 GPT-5.5 / GPT-5.6 模型。
-# 这是本地开发测试工具，不用于生产环境或共享代理服务。
+# `coach` 和 `eval-resolver` 默认通过本机 Agent Maestro 的 OpenAI-compatible
+# Responses API 使用 GPT-5.6。`auth` / `start` / `smoke` / `stop` 则管理可选
+# Copilot proxy，供需要绕过 Agent Maestro 直接测试 Copilot 时使用。
+# 这些命令仅用于本地开发测试，不用于生产环境或共享代理服务。
 #
 # 前置依赖
 # --------
-# - Node.js + npm/npx
-# - curl、openssl
-# - 有效的 GitHub Copilot 订阅
+# - 默认 Coach：Agent Maestro 已监听 http://127.0.0.1:23333，且已安装 openssl
+# - 可选 Copilot proxy：Node.js + npm/npx、curl、有效 Copilot 订阅
 #
-# 首次使用：只需授权一次
-# ----------------------
-#   cd /path/to/running
+# 默认 Agent Maestro 流程
+# -----------------------
+#   scripts/coach-local.sh coach
+#   scripts/coach-local.sh eval-resolver
+#
+# 可选 Copilot proxy：首次授权
+# ---------------------------
 #   scripts/coach-local.sh auth
 #
 # 按终端提示到 https://github.com/login/device 完成 Device Flow。授权成功后，
 # credential 会持久保存在用户目录；正常 start/stop 不会再次要求授权。
 #
-# 日常最短流程
-# ------------
-#   scripts/coach-local.sh start
-#   scripts/coach-local.sh coach
-#   scripts/coach-local.sh stop
-#
 # 其他常用命令
 # ------------
-#   scripts/coach-local.sh smoke                 # 验证 gpt-5.6-sol Responses API
-#   scripts/coach-local.sh eval-resolver         # 真实 LLM 跑 Resolver 冻结 fixtures
+#   scripts/coach-local.sh start                 # 启动可选 Copilot proxy
+#   scripts/coach-local.sh smoke                 # 验证 Copilot Responses API
 #   scripts/coach-local.sh coach "我当前的总体训练计划是什么？"
-#   scripts/coach-local.sh status                # 查看代理和授权状态
+#   scripts/coach-local.sh status                # 查看 Copilot proxy 状态
 #   scripts/coach-local.sh logs                  # 查看最近 50 行代理日志
+#   scripts/coach-local.sh stop                  # 停止代理但保留凭据
 #   scripts/coach-local.sh auth --force          # 强制重新授权
 #   scripts/coach-local.sh reset                 # 停止并删除全部本地状态
 #
 # 本地状态与安全边界
 # ----------------
-# 默认持久目录：~/.local/share/stride/copilot-proxy/
-# 默认 npm cache：~/.cache/stride/copilot-proxy-npm/
-# 默认 endpoint：http://127.0.0.1:44141/v1
+# Agent Maestro endpoint：http://127.0.0.1:23333/api/openai/v1
+# Copilot 持久目录：~/.local/share/stride/copilot-proxy/
+# Copilot npm cache：~/.cache/stride/copilot-proxy-npm/
+# Copilot endpoint：http://127.0.0.1:44141/v1
 #
-# 状态目录权限为 0700，OAuth credential 和本地 API key 权限为 0600。凭据、
-# API key 和日志均不写入仓库。代理实现会监听所有网卡，因此脚本始终启用随机
-# API key；不要把端口暴露到公网、局域网共享或反向代理。`stop` 只停止进程并
-# 保留凭据；只有 `reset` 会删除 credential、API key、日志和 npm cache。
+# Copilot 状态目录权限为 0700，OAuth credential 和本地 API key 权限为 0600。
+# 凭据、API key 和日志均不写入仓库。Copilot proxy 会监听所有网卡，因此脚本
+# 始终启用随机 API key；不要把端口暴露到公网、局域网共享或反向代理。`stop`
+# 只停止进程并保留凭据；只有 `reset` 会删除 credential、API key、日志和 cache。
 #
 # 可选环境变量
 # ------------
-# COPILOT_PROXY_PORT=44141              覆盖本地代理端口
-# COPILOT_PROXY_STATE_DIR=...           覆盖持久状态目录
-# COPILOT_PROXY_CACHE_DIR=...           覆盖 npm cache 目录
+# AGENT_MAESTRO_API_KEY=...             覆盖 Agent Maestro bearer 占位值
+# COPILOT_PROXY_API_KEY=...              覆盖已保存的 Copilot proxy API key
+# COPILOT_PROXY_PORT=44141               覆盖本地 Copilot proxy 端口
+# COPILOT_PROXY_STATE_DIR=...            覆盖 Copilot 持久状态目录
+# COPILOT_PROXY_CACHE_DIR=...            覆盖 Copilot npm cache 目录
 #
 # 故障排查
 # --------
+# - `coach` 连接失败：确认 Agent Maestro 正在 127.0.0.1:23333 监听。
 # - `start` 报 no saved credentials：先运行 `auth`。
 # - `start` 报端口被占用：停止占用进程，或设置 COPILOT_PROXY_PORT。
-# - `coach` 会自动启动代理并执行 Hello World gate。
-# - 启动失败时运行 `logs`；脚本不会开启 verbose 请求日志。
+# - Copilot 启动失败时运行 `logs`；脚本不会开启 verbose 请求日志。
 # - 完整命令速查：scripts/coach-local.sh help
 # =============================================================================
 
@@ -101,6 +103,8 @@ Commands:
   help             Show this help
 
 Optional environment variables:
+  AGENT_MAESTRO_API_KEY     Override the ephemeral Agent Maestro bearer value
+  COPILOT_PROXY_API_KEY     Override the saved Copilot proxy API key
   COPILOT_PROXY_STATE_DIR   Persistent credential/state directory
   COPILOT_PROXY_CACHE_DIR   npm cache directory
   COPILOT_PROXY_PORT        Local port (default: 44141)
@@ -211,6 +215,23 @@ local_no_proxy() {
   else
     echo "localhost,127.0.0.1,::1"
   fi
+}
+
+agent_maestro_api_key() {
+  if [[ -n "${AGENT_MAESTRO_API_KEY:-}" ]]; then
+    printf '%s' "$AGENT_MAESTRO_API_KEY"
+  else
+    require_command openssl
+    openssl rand -hex 32
+  fi
+}
+
+copilot_proxy_api_key() {
+  local api_key="${COPILOT_PROXY_API_KEY:-}"
+  if [[ -z "$api_key" && -s "$KEY_FILE" ]]; then
+    api_key="$(<"$KEY_FILE")"
+  fi
+  printf '%s' "$api_key"
 }
 
 proxy_ready() {
@@ -464,16 +485,15 @@ coach_python() {
 }
 
 cmd_coach() {
-  cmd_start
-  cmd_smoke "gpt-5.6-sol"
-
-  local main_root data_dir python profile bypass config_files
+  local main_root data_dir python profile bypass config_files agent_api_key copilot_api_key
   main_root="$(main_checkout_root)"
   data_dir="${STRIDE_COACH_DATA_DIR:-$main_root/data}"
   python="$(coach_python "$main_root")"
   profile="${STRIDE_COACH_PROFILE:-zhaochaoyi}"
   bypass="$(local_no_proxy)"
   config_files="$REPO_ROOT/config/server.toml;$REPO_ROOT/config/server.local.toml;$REPO_ROOT/config/server.coach-cli.toml"
+  agent_api_key="$(agent_maestro_api_key)"
+  copilot_api_key="$(copilot_proxy_api_key)"
 
   [[ -x "$python" ]] || fail "Coach Python is not executable: $python"
   [[ -d "$data_dir" ]] || fail "Coach data directory not found: $data_dir"
@@ -494,7 +514,8 @@ cmd_coach() {
     args+=(--message "$*")
   fi
 
-  COPILOT_PROXY_API_KEY="$(<"$KEY_FILE")" \
+  AGENT_MAESTRO_API_KEY="$agent_api_key" \
+  COPILOT_PROXY_API_KEY="$copilot_api_key" \
   STRIDE_COACH_CONFIG_PATH="$REPO_ROOT/config/coach.copilot.toml" \
   STRIDE_CONFIG_FILES="$config_files" \
   PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
@@ -503,13 +524,12 @@ cmd_coach() {
 }
 
 cmd_eval_resolver() {
-  cmd_start
-  cmd_smoke "gpt-5.6-sol"
-
-  local main_root python bypass
+  local main_root python bypass agent_api_key copilot_api_key
   main_root="$(main_checkout_root)"
   python="$(coach_python "$main_root")"
   bypass="$(local_no_proxy)"
+  agent_api_key="$(agent_maestro_api_key)"
+  copilot_api_key="$(copilot_proxy_api_key)"
 
   [[ -x "$python" ]] || fail "Coach Python is not executable: $python"
   [[ -f "$REPO_ROOT/config/coach.copilot.toml" ]] || fail "missing Coach Copilot config"
@@ -519,7 +539,8 @@ cmd_eval_resolver() {
     args+=(--fixture "$1")
   fi
 
-  COPILOT_PROXY_API_KEY="$(<"$KEY_FILE")" \
+  AGENT_MAESTRO_API_KEY="$agent_api_key" \
+  COPILOT_PROXY_API_KEY="$copilot_api_key" \
   STRIDE_COACH_CONFIG_PATH="$REPO_ROOT/config/coach.copilot.toml" \
   PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
   NO_PROXY="$bypass" no_proxy="$bypass" \

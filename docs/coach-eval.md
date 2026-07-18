@@ -419,7 +419,7 @@ Resolver 是 typed classifier，预期结果（specialist、read/write、compoun
 clarify）可以精确断言，不需要再调用第二个 LLM judge。手动运行：
 
 ```bash
-# 推荐：自动启动本地 Copilot proxy、跑 smoke，再用 orchestrator 模型执行全部 fixture
+# 推荐：通过默认 Agent Maestro orchestrator 模型执行全部 fixture
 scripts/coach-local.sh eval-resolver
 
 # 只跑一条 fixture

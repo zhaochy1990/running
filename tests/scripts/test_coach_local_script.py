@@ -42,13 +42,13 @@ def test_shell_syntax_is_valid() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_script_header_documents_quickstart_and_persistent_credentials() -> None:
+def test_script_header_documents_agent_maestro_default_and_optional_copilot() -> None:
     header = SCRIPT.read_text(encoding="utf-8").split("set -Eeuo pipefail", 1)[0]
 
-    assert "首次使用：只需授权一次" in header
-    assert 'scripts/coach-local.sh start' in header
+    assert "Agent Maestro" in header
+    assert "默认" in header
     assert 'scripts/coach-local.sh coach' in header
-    assert 'scripts/coach-local.sh stop' in header
+    assert "可选 Copilot proxy" in header
     assert "~/.local/share/stride/copilot-proxy/" in header
     assert "只有 `reset` 会删除" in header
     assert "copilot" not in SCRIPT.name
@@ -67,24 +67,34 @@ def test_help_exposes_coach_workflow(tmp_path: Path) -> None:
     assert "smoke [model]" in result.stdout
 
 
-def test_coach_command_loads_both_config_layers() -> None:
+def test_coach_command_defaults_to_agent_maestro() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
+    body = source.split("cmd_coach() {", 1)[1].split("cmd_eval_resolver() {", 1)[0]
 
-    assert "cmd_coach" in source
-    assert 'STRIDE_COACH_CONFIG_PATH="$REPO_ROOT/config/coach.copilot.toml"' in source
-    assert "server.coach-cli.toml" in source
-    assert "STRIDE_CONFIG_FILES" in source
-    assert "coros_sync" in source
+    assert 'STRIDE_COACH_CONFIG_PATH="$REPO_ROOT/config/coach.copilot.toml"' in body
+    assert 'agent_api_key="$(agent_maestro_api_key)"' in body
+    assert 'AGENT_MAESTRO_API_KEY="$agent_api_key"' in body
+    assert "COPILOT_PROXY_API_KEY" in body
+    assert "server.coach-cli.toml" in body
+    assert "STRIDE_CONFIG_FILES" in body
+    assert "coros_sync" in body
+    assert "cmd_start" not in body
+    assert "cmd_smoke" not in body
+    assert "local-agent-maestro" not in source
 
 
-def test_eval_resolver_uses_copilot_orchestrator_config_without_sync() -> None:
+def test_eval_resolver_defaults_to_agent_maestro_without_sync() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
     body = source.split("cmd_eval_resolver() {", 1)[1].split("cmd_logs() {", 1)[0]
 
     assert "scripts.eval_resolver" in body
     assert 'STRIDE_COACH_CONFIG_PATH="$REPO_ROOT/config/coach.copilot.toml"' in body
+    assert 'agent_api_key="$(agent_maestro_api_key)"' in body
+    assert 'AGENT_MAESTRO_API_KEY="$agent_api_key"' in body
     assert "COPILOT_PROXY_API_KEY" in body
     assert "coros_sync" not in body
+    assert "cmd_start" not in body
+    assert "cmd_smoke" not in body
 
 
 def test_status_reports_missing_persistent_credentials(tmp_path: Path) -> None:
