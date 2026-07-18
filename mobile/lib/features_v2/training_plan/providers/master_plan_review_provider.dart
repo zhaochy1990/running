@@ -11,7 +11,6 @@ import '../../plan/models/plan_chat.dart';
 // ── State ─────────────────────────────────────────────────────────────────────
 
 class MasterPlanDiffOp {
-
   factory MasterPlanDiffOp.fromJson(Map<String, dynamic> json) =>
       MasterPlanDiffOp(
         id: json['id'] as String,
@@ -20,6 +19,8 @@ class MasterPlanDiffOp {
         milestoneName: json['milestone_name'] as String?,
         oldValue: json['old_value'] as Map<String, dynamic>?,
         newValue: json['new_value'] as Map<String, dynamic>?,
+        specPatch: json['spec_patch'] as Map<String, dynamic>?,
+        accepted: json['accepted'] as bool?,
       );
   const MasterPlanDiffOp({
     required this.id,
@@ -28,6 +29,8 @@ class MasterPlanDiffOp {
     this.milestoneName,
     this.oldValue,
     this.newValue,
+    this.specPatch,
+    this.accepted,
   });
 
   final String id;
@@ -39,31 +42,58 @@ class MasterPlanDiffOp {
   final String? milestoneName;
   final Map<String, dynamic>? oldValue;
   final Map<String, dynamic>? newValue;
+  final Map<String, dynamic>? specPatch;
+
+  /// null/true = user-applicable; false = excluded by backend/gating.
+  final bool? accepted;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'op': op,
+    'phase_name': phaseName,
+    'milestone_name': milestoneName,
+    'old_value': oldValue,
+    'new_value': newValue,
+    'spec_patch': specPatch,
+    'accepted': accepted,
+  };
 }
 
 class MasterPlanDiff {
-
   factory MasterPlanDiff.fromJson(Map<String, dynamic> json) => MasterPlanDiff(
-        diffId: json['diff_id'] as String? ?? '',
-        ops: (json['ops'] as List? ?? const [])
-            .cast<Map<String, dynamic>>()
-            .map(MasterPlanDiffOp.fromJson)
-            .toList(growable: false),
-        aiExplanation: json['ai_explanation'] as String? ?? '',
-      );
+    diffId: json['diff_id'] as String? ?? '',
+    planId: json['plan_id'] as String? ?? '',
+    ops: (json['ops'] as List? ?? const [])
+        .cast<Map<String, dynamic>>()
+        .map(MasterPlanDiffOp.fromJson)
+        .toList(growable: false),
+    aiExplanation: json['ai_explanation'] as String? ?? '',
+    createdAt: json['created_at'] as String? ?? '',
+  );
   const MasterPlanDiff({
     required this.diffId,
+    required this.planId,
     required this.ops,
     this.aiExplanation = '',
+    this.createdAt = '',
   });
 
   final String diffId;
+  final String planId;
   final List<MasterPlanDiffOp> ops;
   final String aiExplanation;
+  final String createdAt;
+
+  Map<String, dynamic> toJson() => {
+    'diff_id': diffId,
+    'plan_id': planId,
+    'ops': ops.map((op) => op.toJson()).toList(growable: false),
+    'ai_explanation': aiExplanation,
+    'created_at': createdAt,
+  };
 }
 
 class MasterPlanSummary {
-
   factory MasterPlanSummary.fromJson(Map<String, dynamic> json) =>
       MasterPlanSummary(
         planId: json['plan_id'] as String? ?? json['id'] as String? ?? '',
@@ -125,24 +155,23 @@ class MasterPlanReviewState {
     bool? summaryLoading,
     String? Function()? error,
     bool? confirmed,
-  }) =>
-      MasterPlanReviewState(
-        summary: summary != null ? summary() : this.summary,
-        messages: messages ?? this.messages,
-        pendingDiff: pendingDiff != null ? pendingDiff() : this.pendingDiff,
-        acceptedOpIds: acceptedOpIds ?? this.acceptedOpIds,
-        loading: loading ?? this.loading,
-        summaryLoading: summaryLoading ?? this.summaryLoading,
-        error: error != null ? error() : this.error,
-        confirmed: confirmed ?? this.confirmed,
-      );
+  }) => MasterPlanReviewState(
+    summary: summary != null ? summary() : this.summary,
+    messages: messages ?? this.messages,
+    pendingDiff: pendingDiff != null ? pendingDiff() : this.pendingDiff,
+    acceptedOpIds: acceptedOpIds ?? this.acceptedOpIds,
+    loading: loading ?? this.loading,
+    summaryLoading: summaryLoading ?? this.summaryLoading,
+    error: error != null ? error() : this.error,
+    confirmed: confirmed ?? this.confirmed,
+  );
 }
 
 // ── Notifier ──────────────────────────────────────────────────────────────────
 
 class MasterPlanReviewNotifier extends StateNotifier<MasterPlanReviewState> {
   MasterPlanReviewNotifier(this._api, this._planId)
-      : super(const MasterPlanReviewState()) {
+    : super(const MasterPlanReviewState()) {
     _loadSummary();
   }
 
@@ -158,10 +187,7 @@ class MasterPlanReviewNotifier extends StateNotifier<MasterPlanReviewState> {
         summary: () => MasterPlanSummary.fromJson(json),
       );
     } catch (e) {
-      state = state.copyWith(
-        summaryLoading: false,
-        error: () => e.toString(),
-      );
+      state = state.copyWith(summaryLoading: false, error: () => e.toString());
     }
   }
 
@@ -205,14 +231,20 @@ class MasterPlanReviewNotifier extends StateNotifier<MasterPlanReviewState> {
         loading: false,
       );
     } catch (e) {
-      state = state.copyWith(
-        loading: false,
-        error: () => e.toString(),
-      );
+      state = state.copyWith(loading: false, error: () => e.toString());
     }
   }
 
   void toggleOp(String opId) {
+    MasterPlanDiffOp? selectedOp;
+    for (final op in state.pendingDiff?.ops ?? const <MasterPlanDiffOp>[]) {
+      if (op.id == opId) {
+        selectedOp = op;
+        break;
+      }
+    }
+    if (selectedOp == null || selectedOp.accepted == false) return;
+
     final current = Set<String>.from(state.acceptedOpIds);
     if (current.contains(opId)) {
       current.remove(opId);
@@ -226,12 +258,19 @@ class MasterPlanReviewNotifier extends StateNotifier<MasterPlanReviewState> {
     final diff = state.pendingDiff;
     if (diff == null || state.acceptedOpIds.isEmpty) return;
 
+    final applicableIds = diff.ops
+        .where((op) => op.accepted != false)
+        .map((op) => op.id)
+        .toSet();
+    final acceptedOpIds = state.acceptedOpIds.intersection(applicableIds);
+    if (acceptedOpIds.isEmpty) return;
+
     state = state.copyWith(loading: true, error: () => null);
     try {
       await _api!.applyMasterPlanReviewDiff(
         planId: _planId,
-        diffId: diff.diffId,
-        acceptedOpIds: state.acceptedOpIds.toList(),
+        diff: diff.toJson(),
+        acceptedOpIds: acceptedOpIds.toList(),
       );
       // Reload summary to reflect changes.
       state = state.copyWith(
@@ -241,10 +280,7 @@ class MasterPlanReviewNotifier extends StateNotifier<MasterPlanReviewState> {
       );
       await _loadSummary();
     } catch (e) {
-      state = state.copyWith(
-        loading: false,
-        error: () => e.toString(),
-      );
+      state = state.copyWith(loading: false, error: () => e.toString());
     }
   }
 
@@ -254,10 +290,7 @@ class MasterPlanReviewNotifier extends StateNotifier<MasterPlanReviewState> {
       await _api!.confirmMasterPlan(_planId);
       state = state.copyWith(loading: false, confirmed: true);
     } catch (e) {
-      state = state.copyWith(
-        loading: false,
-        error: () => e.toString(),
-      );
+      state = state.copyWith(loading: false, error: () => e.toString());
     }
   }
 }
@@ -265,9 +298,10 @@ class MasterPlanReviewNotifier extends StateNotifier<MasterPlanReviewState> {
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 final masterPlanReviewProvider = StateNotifierProvider.family
-    .autoDispose<MasterPlanReviewNotifier, MasterPlanReviewState, String>(
-  (ref, planId) {
-    final api = ref.watch(strideApiProvider);
-    return MasterPlanReviewNotifier(api, planId);
-  },
-);
+    .autoDispose<MasterPlanReviewNotifier, MasterPlanReviewState, String>((
+      ref,
+      planId,
+    ) {
+      final api = ref.watch(strideApiProvider);
+      return MasterPlanReviewNotifier(api, planId);
+    });

@@ -19,65 +19,52 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 import threading
 from datetime import date as date_cls, datetime, timezone, timedelta
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from coach.contracts import SpecialistTask, TargetRef, Turn
+from coach.graphs.conversation.master_adjustment_direction import (
+    master_diff_matches_adjustment_request,
+)
+from coach.graphs.conversation.master_diff_gate import validate_master_diff
 
 from stride_core.master_plan import MasterPlanStatus, _apply_review_diff
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
+    apply_master_plan_diff,
 )
 from stride_core.timefmt import today_shanghai
 
 from ..bearer import require_bearer
-from ..content_store import read_json
+from ..content_store import read_json, write_json
 from ..deps import get_db
 from .. import job_runner
 from ..job_runner import JobStatus, STAGE_LABEL_MAP
 from .. import llm_client as _llm_client_mod
 from ..llm_client import LLMClient, LLMError, LLMUnavailable
 from .. import master_plan_generator
+from ..master_plan_apply import (
+    accepted_master_diff,
+    accepted_master_op_ids,
+    apply_active_master_diff,
+    master_plan_apply_lock,
+    require_active_master_plan,
+)
 from ..master_plan_store import get_master_plan_store
+from ..coach_adapters.orchestrator.season_plan import (
+    clarification_for_season_plan_task,
+    make_season_plan_runner,
+)
+from ..coach_runtime import get_generator_llm
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# In-memory pending master-plan diffs (TTL 900s)
-# ---------------------------------------------------------------------------
-
-_PENDING_MP_DIFFS: dict[tuple[str, str, str], tuple[MasterPlanDiff, float]] = {}
-# key: (user_id, plan_id, diff_id)   value: (diff, mono_time)
-_MP_DIFF_TTL = 900  # 15 minutes
-
-
-def _mp_diff_cleanup() -> None:
-    now = time.monotonic()
-    expired = [k for k, (_, ts) in _PENDING_MP_DIFFS.items() if now - ts > _MP_DIFF_TTL]
-    for k in expired:
-        del _PENDING_MP_DIFFS[k]
-
-
-def _mp_diff_store(user_id: str, plan_id: str, diff: MasterPlanDiff) -> None:
-    _mp_diff_cleanup()
-    _PENDING_MP_DIFFS[(user_id, plan_id, diff.diff_id)] = (diff, time.monotonic())
-
-
-def _mp_diff_get(user_id: str, plan_id: str, diff_id: str) -> MasterPlanDiff | None:
-    entry = _PENDING_MP_DIFFS.get((user_id, plan_id, diff_id))
-    if entry is None:
-        return None
-    diff, ts = entry
-    if time.monotonic() - ts > _MP_DIFF_TTL:
-        del _PENDING_MP_DIFFS[(user_id, plan_id, diff_id)]
-        return None
-    return diff
 
 router = APIRouter()
 
@@ -255,7 +242,17 @@ def get_job_status(
 # T21 — review-chat endpoints
 # ===========================================================================
 
-_DIFF_OP_KINDS_STR = ", ".join(k.value for k in MasterPlanDiffOpKind)
+_LEGACY_DIFF_OP_KINDS = tuple(
+    kind
+    for kind in MasterPlanDiffOpKind
+    if kind
+    not in {
+        MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
+    }
+)
+_DIFF_OP_KINDS_STR = ", ".join(kind.value for kind in _LEGACY_DIFF_OP_KINDS)
 
 
 def _build_review_system_prompt(plan_summary: str) -> str:
@@ -397,6 +394,15 @@ def _build_mp_diff_ops(ops_list: list[dict]) -> list[MasterPlanDiffOp]:
     for item in ops_list:
         try:
             op_kind = MasterPlanDiffOpKind(item.get("op", ""))
+            if op_kind in {
+                MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+                MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+                MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
+            }:
+                logger.warning(
+                    "Skipping atomic coach-only op from legacy free-form diff path"
+                )
+                continue
             result.append(
                 MasterPlanDiffOp(
                     id=str(uuid4()),
@@ -425,9 +431,7 @@ class ReviewMessagesRequest(BaseModel):
 
 
 class ReviewApplyRequest(BaseModel):
-    diff: MasterPlanDiff | None = None
-    # Back-compat for older clients/tests that apply a server-held pending diff.
-    diff_id: str | None = None
+    diff: MasterPlanDiff
     accepted_op_ids: list[str]
     change_reason: str = ""
 
@@ -510,8 +514,6 @@ def review_messages(
         created_at=created_at,
     )
 
-    _mp_diff_store(user_id, plan_id, diff)
-
     return {
         "ai_response": ai_response,
         "diff": diff.model_dump(),
@@ -551,25 +553,34 @@ def review_apply(
         )
 
     diff = body.diff
-    if diff is None and body.diff_id:
-        diff = _mp_diff_get(user_id, plan_id, body.diff_id)
-    if diff is None:
-        detail = "diff body is required"
-        if body.diff_id:
-            detail = f"Diff '{body.diff_id}' not found or expired (TTL={_MP_DIFF_TTL}s)"
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=detail,
-        )
     if diff.plan_id != plan_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"diff plan_id {diff.plan_id!r} does not match path plan_id {plan_id!r}",
         )
+    if any(
+        op.op
+        in {
+            MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+            MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+            MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
+        }
+        and op.id in set(body.accepted_op_ids)
+        for op in diff.ops
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="目标比赛或阶段边界操作只能通过 Coach 原子 apply 接口执行",
+        )
 
-    # Filter to known op ids; silently skip unknowns (fault-tolerant)
-    known_ids = {op.id for op in diff.ops}
-    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
+    accepted_op_ids = accepted_master_op_ids(diff, body.accepted_op_ids)
+    selected_diff = accepted_master_diff(diff, accepted_op_ids)
+    violations = validate_master_diff(plan, selected_diff)
+    if violations:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="总纲调整结构非法：" + "；".join(violations),
+        )
     applied = len(accepted_op_ids)
 
     if applied > 0:
@@ -577,9 +588,6 @@ def review_apply(
         store.save_plan(updated_plan)
     else:
         updated_plan = plan
-
-    # Clean up pending diff after successful apply
-    _PENDING_MP_DIFFS.pop((user_id, plan_id, diff.diff_id), None)
 
     return {
         "applied": applied,
@@ -950,68 +958,20 @@ def get_master_plan_by_id(
 # ===========================================================================
 
 
-def _build_adjust_system_prompt(plan_summary: str) -> str:
-    return f"""你是一名专业的跑步教练助手，帮助运动员调整已激活的长期训练总纲（master plan）。
-
-当前训练总纲（已激活）：
-{plan_summary}
-
-重要约束：
-1. 该总纲已激活，用户正在按此计划训练。
-2. 已经过去的阶段不可改动（start_date 在今日之前的阶段请勿修改起始日期）。
-3. 已推送到手表的训练将失效，应在回复中提醒用户清理受影响周次的手表训练。
-4. 新增阶段或调整阶段必须从今日之后开始。
-
-你的任务：理解用户的调整请求，输出严格 JSON，格式如下：
-
----BEGIN_MP_DIFF---
-{{
-  "ai_response": "中文自然语言回复，解释做了哪些调整，并提醒用户受影响的周次需清理手表训练",
-  "ops": [
-    {{
-      "op": "<MasterPlanDiffOpKind>",
-      "phase_id": "<phase uuid 或 null>",
-      "milestone_id": "<milestone uuid 或 null>",
-      "old_value": {{}},
-      "new_value": {{}},
-      "spec_patch": {{}}
-    }}
-  ]
-}}
----END_MP_DIFF---
-
-MasterPlanDiffOpKind 枚举值（只能用这些）：{_DIFF_OP_KINDS_STR}
-
-spec_patch 说明（按 op 类型）：
-- add_phase: {{id, name, start_date, end_date, focus, weekly_distance_km_low, weekly_distance_km_high, key_session_types, milestone_ids}}
-- remove_phase: null（phase_id 指定）
-- resize_phase: {{start_date?, end_date?}}（phase_id 指定）
-- replace_phase_focus: {{focus}}（phase_id 指定）
-- replace_weekly_range: {{weekly_distance_km_low?, weekly_distance_km_high?}}（phase_id 指定）
-- add_milestone: {{id, type, date, phase_id, target, completed_actual?}}
-- remove_milestone: null（milestone_id 指定）
-- replace_milestone_date: {{date}}（milestone_id 指定）
-- replace_milestone_target: {{target}}（milestone_id 指定）
-
-规则：
-1. 如果用户请求无需修改（只是询问），ops 数组为空，ai_response 正常回答。
-2. 只修改用户明确要求的内容。
-3. 输出必须包含 ---BEGIN_MP_DIFF--- 和 ---END_MP_DIFF--- 哨兵。
-4. 哨兵之间必须是可被 json.loads() 解析的纯 JSON。"""
-
-
 class AdjustMessagesRequest(BaseModel):
     message: str
-    history: list[dict] = []
+    history: list[dict] = Field(default_factory=list)
 
 
 class AdjustApplyRequest(BaseModel):
-    diff_id: str
+    diff: MasterPlanDiff | None = None
     accepted_op_ids: list[str]
     change_reason: str = ""
 
 
-def _compute_affected_weeks(ops: list, plan: Any) -> list[dict]:
+def _compute_affected_weeks(
+    ops: list, plan: Any, *, as_of: date_cls | None = None
+) -> list[dict]:
     """Compute weekly folders affected by the given accepted ops.
 
     For each op that involves a phase or milestone date range, find all
@@ -1043,6 +1003,29 @@ def _compute_affected_weeks(ops: list, plan: Any) -> list[dict]:
                     start_str = spec.get("start_date")
                     end_str = spec.get("end_date")
 
+            elif op_kind_str == "shift_phase_boundary":
+                phase_id = op.phase_id if hasattr(op, "phase_id") else op.get("phase_id")
+                following_id = spec.get("following_phase_id") if spec else None
+                starts: list[str] = []
+                ends: list[str] = []
+                phase = phase_map.get(phase_id)
+                following = phase_map.get(following_id)
+                if phase is not None:
+                    starts.extend([phase.end_date, spec.get("end_date")])
+                    ends.extend([phase.end_date, spec.get("end_date")])
+                if following is not None:
+                    starts.extend(
+                        [following.start_date, spec.get("following_start_date")]
+                    )
+                    ends.extend(
+                        [following.start_date, spec.get("following_start_date")]
+                    )
+                clean_starts = [item for item in starts if isinstance(item, str)]
+                clean_ends = [item for item in ends if isinstance(item, str)]
+                if clean_starts and clean_ends:
+                    start_str = min(clean_starts)
+                    end_str = max(clean_ends)
+
             elif op_kind_str == "remove_phase":
                 phase_id = op.phase_id if hasattr(op, "phase_id") else op.get("phase_id")
                 if phase_id and phase_id in phase_map:
@@ -1062,6 +1045,30 @@ def _compute_affected_weeks(ops: list, plan: Any) -> list[dict]:
                     date_val = spec.get("date")
                     if date_val:
                         start_str = end_str = date_val
+
+            elif op_kind_str == "reschedule_target_race":
+                phase_updates = spec.get("phase_updates") or []
+                starts: list[str] = []
+                ends: list[str] = []
+                for item in phase_updates:
+                    if not isinstance(item, dict):
+                        continue
+                    phase = phase_map.get(item.get("phase_id"))
+                    if phase is not None and item.get("start_date"):
+                        starts.append(phase.start_date)
+                    if phase is not None and item.get("end_date"):
+                        ends.append(phase.end_date)
+                    if item.get("start_date"):
+                        starts.append(item["start_date"])
+                    if item.get("end_date"):
+                        ends.append(item["end_date"])
+                if starts and ends:
+                    start_str = min(starts)
+                    end_str = max(ends)
+
+            elif op_kind_str == "update_target_race_time":
+                start_str = (as_of or today_shanghai()).isoformat()
+                end_str = plan.goal.race_date
 
             elif op_kind_str == "remove_milestone":
                 ms_id = op.milestone_id if hasattr(op, "milestone_id") else op.get("milestone_id")
@@ -1083,7 +1090,6 @@ def _compute_affected_weeks(ops: list, plan: Any) -> list[dict]:
             logger.debug("_compute_affected_weeks: skipped op due to error", exc_info=True)
 
     # Build folder list sorted by date desc
-    today = date_cls.today()
     result: list[dict] = []
     for monday in sorted(affected_dates):
         sunday = monday + timedelta(days=6)
@@ -1106,78 +1112,121 @@ def adjust_messages(
     body: AdjustMessagesRequest,
     payload: dict = Depends(require_bearer),
 ) -> dict[str, Any]:
-    """Send a chat message during active-plan adjustment; get AI response + optional diff."""
+    """Run active-plan adjustment through the canonical season specialist."""
     user_id: str = payload["sub"]
     store = get_master_plan_store()
+    plan = require_active_master_plan(
+        store,
+        user_id,
+        plan_id,
+        inactive_detail=(
+            "该总纲尚未确认（status=draft）。"
+            "如需调整草稿总纲，请使用 review-chat 接口。"
+        ),
+    )
+    conversation_window = [
+        Turn(role=item["role"], content=str(item["content"]))
+        for item in body.history
+        if item.get("role") in {"user", "assistant"}
+        and str(item.get("content") or "").strip()
+    ]
+    task = SpecialistTask(
+        objective=body.message,
+        active_target=TargetRef(kind="master", plan_id=plan_id),
+        conversation_window=conversation_window,
+    )
+    clarification = clarification_for_season_plan_task(task)
+    if clarification is not None:
+        return {
+            "stage": "clarification",
+            "ai_response": clarification,
+            "clarification": clarification,
+            "assessment": None,
+            "diff": None,
+        }
 
-    plan = store.get_plan(user_id, plan_id)
-    if plan is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Master plan '{plan_id}' not found",
-        )
-    if plan.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: plan belongs to a different user",
-        )
-    if plan.status != MasterPlanStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "该总纲尚未确认（status=draft）。"
-                "如需调整草稿总纲，请使用 review-chat 接口。"
-            ),
-        )
+    observed_state: dict[str, Any] = {}
 
-    plan_summary = _build_plan_summary(plan)
-    system_prompt = _build_adjust_system_prompt(plan_summary)
+    def _observe(state: dict[str, Any]) -> None:
+        observed_state.update(state)
 
-    messages: list[dict] = list(body.history)
-    messages.append({"role": "user", "content": body.message})
-
+    # The LLM is a factory on purpose: make_season_plan_runner performs both
+    # deterministic clarification gates before it constructs a provider or a
+    # toolkit, so vague requests do not load athlete data or call any model.
+    runner = make_season_plan_runner(
+        user_id=user_id,
+        llm_factory=get_generator_llm,
+        plan_store=store,
+        state_observer=_observe,
+    )
     try:
-        llm = LLMClient()
-        raw_response = llm.chat_sync(system_prompt, messages, max_tokens=4096)
-    except (LLMUnavailable, _llm_client_mod.LLMUnavailable) as exc:
-        logger.warning("LLMUnavailable in adjust_messages: %s", exc)
+        result = runner(task)
+    except Exception:  # noqa: BLE001 — legacy HTTP compatibility boundary
+        logger.exception("season_plan failed in adjust_messages")
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="AI 教练当前不可用，请稍后重试",
         )
-    except (LLMError, _llm_client_mod.LLMError) as exc:
-        if exc.retryable:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"AI 服务暂时不可用，请稍后重试：{exc}",
-            )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"AI 服务返回错误：{exc}",
-        )
 
-    ai_response, ops_list = _parse_review_llm_output(raw_response)
+    if result.status == "needs_clarification":
+        clarification = result.clarification or result.reply_fragment
+        return {
+            "stage": "clarification",
+            "ai_response": clarification,
+            "clarification": clarification,
+            "assessment": None,
+            "diff": None,
+        }
 
-    if ops_list is None or not isinstance(ops_list, list):
-        return {"ai_response": ai_response, "diff": None}
-
-    diff_ops = _build_mp_diff_ops(ops_list)
-    diff_id = str(uuid4())
-    created_at = datetime.now(timezone.utc).isoformat()
-
-    diff = MasterPlanDiff(
-        diff_id=diff_id,
-        plan_id=plan_id,
-        ops=diff_ops,
-        ai_explanation=ai_response,
-        created_at=created_at,
+    assessment = observed_state.get("master_adjustment_assessment")
+    if not isinstance(assessment, dict):
+        assessment = None
+    effective_request = observed_state.get("master_adjustment_request")
+    assessment_matches = (
+        isinstance(effective_request, str)
+        and isinstance(assessment, dict)
+        and assessment.get("adjustment_request") == effective_request
     )
-
-    _mp_diff_store(user_id, plan_id, diff)
-
+    if not assessment_matches:
+        assessment = None
+    verdict = assessment.get("verdict") if assessment else None
+    proposals = [
+        proposal
+        for proposal in result.proposals
+        if isinstance(proposal, MasterPlanDiff) and proposal.plan_id == plan_id
+    ]
+    proposals = [
+        proposal
+        for proposal in proposals
+        if isinstance(effective_request, str)
+        and master_diff_matches_adjustment_request(
+            proposal, effective_request, plan=plan
+        )
+    ]
+    if verdict != "reasonable":
+        # Defense in depth at the HTTP boundary. The conversation graph already
+        # enforces this, but no legacy response may surface or cache a diff
+        # without the matching reasonable assessment for this effective request.
+        proposals = []
+    if proposals:
+        stage = "proposal"
+    elif verdict == "needs_clarification":
+        stage = "clarification"
+    else:
+        stage = "assessment"
+    reply = result.reply_fragment or (
+        str(assessment.get("rationale") or "") if assessment else ""
+    )
+    clarification = reply if stage == "clarification" else None
     return {
-        "ai_response": ai_response,
-        "diff": diff.model_dump(),
+        "stage": stage,
+        "ai_response": reply,
+        "clarification": clarification,
+        "assessment": assessment,
+        # The legacy Web apply endpoint accepts one pending diff. Normal UI
+        # requests produce exactly one proposal; explicit alternatives remain
+        # available through the canonical /coach/chat Pattern-Y endpoint.
+        "diff": proposals[0].model_dump() if proposals else None,
     }
 
 
@@ -1196,70 +1245,47 @@ def adjust_apply(
     user_id: str = payload["sub"]
     store = get_master_plan_store()
 
-    plan = store.get_plan(user_id, plan_id)
-    if plan is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Master plan '{plan_id}' not found",
-        )
-    if plan.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: plan belongs to a different user",
-        )
-    if plan.status != MasterPlanStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="该总纲尚未确认（status=draft），不能 apply adjust diff",
-        )
-
-    diff = _mp_diff_get(user_id, plan_id, body.diff_id)
-    if diff is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Diff '{body.diff_id}' not found or expired (TTL={_MP_DIFF_TTL}s)",
-        )
-
-    # Filter to known op ids
-    known_ids = {op.id for op in diff.ops}
-    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
-    applied = len(accepted_op_ids)
-
-    # Build affected_weeks BEFORE applying (while plan still has original phase dates)
-    accepted_ops = [op for op in diff.ops if op.id in set(accepted_op_ids)]
-    affected_weeks = _compute_affected_weeks(accepted_ops, plan)
-
-    if applied > 0:
-        from stride_core.master_plan_diff import apply_master_plan_diff as _apply_diff
-
-        # Store protocol bridge: wrap store to match master_plan_diff.MasterPlanStore protocol
-        class _StoreBridge:
-            def __init__(self, inner, uid: str):
-                self._inner = inner
-                self._uid = uid
-
-            def get_plan(self, pid: str):
-                return self._inner.get_plan(self._uid, pid)
-
-            def save_plan(self, p):
-                return self._inner.save_plan(p)
-
-            def add_version(self, v):
-                return self._inner.save_version(v)
-
-        bridge = _StoreBridge(store, user_id)
-        updated_plan = _apply_diff(
-            bridge,
+    with master_plan_apply_lock(user_id, plan_id):
+        plan = require_active_master_plan(
+            store,
+            user_id,
             plan_id,
-            diff,
-            accepted_op_ids,
-            body.change_reason,
+            inactive_detail="该总纲尚未确认（status=draft），不能 apply adjust diff",
         )
-    else:
-        updated_plan = plan
 
-    # Clean up pending diff after successful apply
-    _PENDING_MP_DIFFS.pop((user_id, plan_id, body.diff_id), None)
+        diff = body.diff
+        if diff is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="diff body is required",
+            )
+        if diff.plan_id != plan_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"diff plan_id {diff.plan_id!r} does not match "
+                    f"path plan_id {plan_id!r}"
+                ),
+            )
+
+        accepted_op_ids = accepted_master_op_ids(diff, body.accepted_op_ids)
+        accepted_ops = [op for op in diff.ops if op.id in set(accepted_op_ids)]
+        affected_weeks = _compute_affected_weeks(accepted_ops, plan)
+        updated_plan, accepted_op_ids = apply_active_master_diff(
+            store=store,
+            user_id=user_id,
+            plan_id=plan_id,
+            plan=plan,
+            diff=diff,
+            requested_op_ids=body.accepted_op_ids,
+            change_reason=body.change_reason,
+            read_json_func=read_json,
+            write_json_func=write_json,
+            validate_diff_func=validate_master_diff,
+            apply_diff_func=apply_master_plan_diff,
+            logger=logger,
+        )
+        applied = len(accepted_op_ids)
 
     return {
         "plan_id": plan_id,

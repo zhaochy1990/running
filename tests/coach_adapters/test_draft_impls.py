@@ -231,11 +231,16 @@ def test_master_draft_impls_real_and_fail_on_missing_plan():
     plan_id they return ok=False with 'not found' rather than the old
     'not yet implemented' placeholder."""
     for cls, kwargs in (
-        (draft_impls.ExtendPhaseImpl, {"plan_id": "pid", "phase_id": "phid", "weeks": 1}),
-        (draft_impls.CompressPhaseImpl, {"plan_id": "pid", "phase_id": "phid", "weeks": 1}),
+        (draft_impls.ExtendPhaseImpl, {"plan_id": "pid", "phase_id": "phid", "weeks": 1, "adjustment_request": "把基础期延长一周"}),
+        (draft_impls.CompressPhaseImpl, {"plan_id": "pid", "phase_id": "phid", "weeks": 1, "adjustment_request": "把基础期缩短一周"}),
         (draft_impls.ShiftMilestoneImpl, {"plan_id": "pid", "milestone_id": "mid", "new_date": "2026-08-01"}),
         (draft_impls.ChangeTargetImpl, {"plan_id": "pid", "milestone_id": "mid", "new_target_time": "10K 40:00"}),
-        (draft_impls.ProposeAlternativesImpl, {"plan_id": "pid", "intent": "test"}),
+        (draft_impls.UpdateTargetRaceTimeImpl, {"plan_id": "pid", "milestone_id": "mid", "new_target_time": "0:40:00", "reason": "test"}),
+        (draft_impls.SetPhaseFocusImpl, {"plan_id": "pid", "phase_id": "phid", "focus": "马拉松配速耐力", "adjustment_request": "专项期训练重点改为马拉松配速耐力", "reason": "test"}),
+        (
+            draft_impls.ProposeReductionAlternativesImpl,
+            {"plan_id": "pid", "reduction_request": "降低训练量"},
+        ),
         (draft_impls.RegenerateMasterImpl, {"plan_id": "pid", "reason": "test"}),
     ):
         impl = cls("uid")

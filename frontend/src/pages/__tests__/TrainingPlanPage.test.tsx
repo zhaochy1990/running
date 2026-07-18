@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
@@ -8,6 +8,7 @@ import {
   getMyProfile,
   getTrainingGoal,
   getTrainingPlan,
+  sendMasterPlanReviewMessage,
   type MasterPlan,
 } from '../../api'
 import { UserContext } from '../../UserContextValue'
@@ -30,6 +31,7 @@ vi.mock('../../api', async () => {
     getTrainingPlan: vi.fn(),
     getTrainingGoal: vi.fn(),
     getMyProfile: vi.fn(),
+    sendMasterPlanReviewMessage: vi.fn(),
   }
 })
 
@@ -371,5 +373,87 @@ describe('TrainingPlanPage', () => {
     expect(screen.getByText('和 Coach 审阅计划')).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: /启用计划/ })[0]).toBeInTheDocument()
     expect(screen.queryByText('调整计划')).not.toBeInTheDocument()
+  })
+
+  it('labels atomic target race review ops and falls back from new_value to spec_patch', async () => {
+    vi.mocked(getCurrentMasterPlan).mockResolvedValueOnce(null)
+    vi.mocked(getDraftMasterPlan).mockResolvedValueOnce({
+      ...masterPlan,
+      status: 'draft',
+      plan_id: 'draft-1',
+    })
+    vi.mocked(getTrainingPlan).mockResolvedValueOnce({
+      content: null,
+      phases: [],
+      current_phase: null,
+    })
+    vi.mocked(sendMasterPlanReviewMessage).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      data: {
+        stage: 'proposal',
+        ai_response: '已生成目标赛事调整建议。',
+        clarification: null,
+        assessment: null,
+        diff: {
+          diff_id: 'diff-target',
+          plan_id: 'draft-1',
+          ai_explanation: '目标比赛日期和完赛时间已更新。',
+          created_at: '2026-06-10T00:00:00Z',
+          ops: [
+            {
+              id: 'op-race',
+              op: 'reschedule_target_race',
+              phase_id: null,
+              milestone_id: 'milestone-race',
+              old_value: { race_date: '2026-10-11' },
+              new_value: {},
+              spec_patch: { race_date: '2026-11-08' },
+              accepted: null,
+            },
+            {
+              id: 'op-time',
+              op: 'update_target_race_time',
+              phase_id: null,
+              milestone_id: 'milestone-race',
+              old_value: { target_time: '03:15:00' },
+              new_value: null,
+              spec_patch: { target_time: '03:05:00' },
+              accepted: null,
+            },
+            {
+              id: 'op-companion',
+              op: 'replace_weekly_range',
+              phase_id: 'phase-1',
+              milestone_id: null,
+              old_value: { weekly_distance_km_low: 42, weekly_distance_km_high: 54 },
+              new_value: { weekly_distance_km_low: 45, weekly_distance_km_high: 50 },
+              spec_patch: { weekly_distance_km_low: 45, weekly_distance_km_high: 50 },
+              accepted: null,
+            },
+          ],
+        },
+      },
+    })
+
+    renderPlanPage()
+
+    expect(await screen.findByRole('heading', { name: '审阅你的赛季训练计划' })).toBeInTheDocument()
+    fireEvent.change(screen.getByPlaceholderText('告诉 Coach 你想调整哪里...'), {
+      target: { value: '比赛延期并更新完赛目标' },
+    })
+    fireEvent.click(screen.getByTitle('提交反馈'))
+
+    await waitFor(() => expect(sendMasterPlanReviewMessage).toHaveBeenCalled())
+    expect(await screen.findByText('Coach 调整建议')).toBeInTheDocument()
+    expect(screen.getByText('调整目标比赛日期')).toBeInTheDocument()
+    expect(screen.getByText('{"race_date":"2026-10-11"} -> {"race_date":"2026-11-08"}')).toBeInTheDocument()
+    expect(screen.getByText('调整目标完赛时间')).toBeInTheDocument()
+    expect(screen.getByText('{"target_time":"03:15:00"} -> {"target_time":"03:05:00"}')).toBeInTheDocument()
+    const checkboxes = screen.getAllByRole('checkbox')
+    expect(checkboxes).toHaveLength(3)
+    expect(checkboxes[0]).toBeChecked()
+    expect(checkboxes[1]).not.toBeChecked()
+    expect(checkboxes[2]).not.toBeChecked()
   })
 })

@@ -148,14 +148,21 @@ describe('master plan API clients', () => {
       affected_weeks: [{ folder: '2026-06-08_06-14', reason: 'plan_adjusted' }],
     })))
 
-    const response = await applyMasterPlanAdjustDiff('plan-1', 'diff-1', ['op-1', 'op-2'], '调整训练负荷')
+    const diff = {
+      diff_id: 'diff-1',
+      plan_id: 'plan-1',
+      ops: [],
+      ai_explanation: '调整训练负荷',
+      created_at: '2026-06-08T00:00:00Z',
+    }
+    const response = await applyMasterPlanAdjustDiff('plan-1', diff, ['op-1', 'op-2'], '调整训练负荷')
 
     expect(response.data.applied).toBe(2)
     expect(fetchMock).toHaveBeenCalledWith('/api/users/me/master-plan/plan-1/adjust/apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        diff_id: 'diff-1',
+        diff,
         accepted_op_ids: ['op-1', 'op-2'],
         change_reason: '调整训练负荷',
       }),

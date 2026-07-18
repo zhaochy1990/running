@@ -346,7 +346,13 @@ def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> No
     monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
     monkeypatch.setattr(
         "coach_cli.cli._apply_master_proposal",
-        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {
+            "version": 2,
+            "affected_weeks": [
+                {"folder": "2026-07-13_07-19"},
+                {"folder": "2026-07-20_07-26"},
+            ],
+        },
     )
 
     result = CliRunner().invoke(
@@ -359,6 +365,7 @@ def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> No
     assert applied == ["b"]
     assert "方案 2 已应用" in result.output
     assert "v2" in result.output
+    assert "2 个周计划可能仍含旧总纲目标" in result.output
 
 
 def test_repl_applies_week_create_then_adjust_proposals(monkeypatch, tmp_path) -> None:

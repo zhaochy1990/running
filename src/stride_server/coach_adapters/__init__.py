@@ -3,7 +3,7 @@
 This is the integration layer:
 - `tool_impls/`: concrete read + draft tool implementations
 - `persistence/`: AzureTableCheckpointSaver, JobsStore, WeeklyVersionStore
-- `toolkit.py`: assembles a Toolkit instance with all 28 tools
+- `toolkit.py`: assembles a Toolkit instance with all 32 tools
 - `job_scheduler.py`: BackgroundTasks-driven job runner (Pattern A)
 - `notifier.py`: JPush completion / failure callbacks
 

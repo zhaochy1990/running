@@ -15,13 +15,18 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, create_model
 
 from coach.runtime.toolkit import Toolkit
 from coach.schemas import ToolResult
+from coach.tools.protocols import (
+    MASTER_DRAFT_TOOL_NAMES,
+    READ_TOOL_NAMES,
+    WEEK_DRAFT_TOOL_NAMES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +65,15 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "get_activity_detail": "Activity detail by label_id — raw activity facts/timeseries, laps/segments, explicit stride_training_load, and provenance. Vendor scores/zones and prior AI commentary are excluded; missing STRIDE load never falls back to vendor load.",
     "get_training_environment": "Training environment: STRIDE-detected current altitude + band, whether at altitude, and signal-informed acclimatization status (disturbed/recovering/stabilized from RHR/HRV vs baseline) after a recent altitude gain. Consult when assessing status; if a recent gain looks unconfirmed, ask the user to confirm the environment change. (weather TBD).",
     "estimate_master_plan_load": "Estimate historical weekly km/dose anchors and planned master-plan weekly load. Pass a MasterPlan-shaped `plan` draft to check underload/overload alignment; omit it to estimate the active master plan and still get the history anchor.",
+    "assess_master_adjustment": (
+        "Record the evidence-based verdict on the user's concrete master-plan adjustment "
+        "idea. Call only after reading the active master plan, current health snapshot, "
+        "recent STRIDE PMC series, and master-plan load estimate. Use verdict=reasonable "
+        "only when those data support creating a proposal; otherwise use unreasonable or "
+        "needs_clarification. adjustment_request must exactly repeat the current user's "
+        "request so the verdict cannot be reused for another idea. This tool does not create "
+        "or apply a proposal."
+    ),
     # week-scope draft
     "swap_sessions": "Propose swapping the run scheduled on date_a with the one on date_b (PlanDiff).",
     "shift_session": "Propose moving a single session from `date` to `to_date` (PlanDiff).",
@@ -74,11 +88,51 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     "change_pace_target": "Propose changing the pace target of a session to `new_pace_s_per_km`.",
     "regenerate_week": "Propose regenerating the whole week given `reason` and `constraints`.",
     # master-scope draft
-    "extend_phase": "Propose extending a master-plan phase by N weeks.",
-    "compress_phase": "Propose shortening a master-plan phase by N weeks.",
+    "extend_phase": (
+        "Propose extending one named master-plan phase by the exact requested whole weeks, "
+        "atomically moving the following phase's start so phases remain contiguous. "
+        "adjustment_request must exactly repeat the canonical current user request. "
+        "Never infer a missing duration or use this to move the target-race/season end."
+    ),
+    "compress_phase": (
+        "Propose shortening one named master-plan phase by the exact requested whole weeks, "
+        "atomically moving the following phase's start so phases remain contiguous. "
+        "adjustment_request must exactly repeat the canonical current user request. "
+        "Never infer a missing duration or shorten the protected final taper."
+    ),
     "shift_milestone": "Propose moving a milestone to `new_date`.",
+    "reschedule_target_race": (
+        "Move the target race to an exact new ISO date as one atomic diff. "
+        "This synchronises the embedded goal race_date, plan end, race milestone, "
+        "final taper and preceding phase boundary. Use this for a postponed or "
+        "advanced target race; never emulate it with shift_milestone or multiple ops."
+    ),
     "change_target": "Propose changing a milestone target time.",
-    "propose_alternatives": "Generate alternative master-plan adjustments matching the user's intent.",
+    "update_target_race_time": (
+        "Change the goal race finish time as one atomic diff. This synchronises "
+        "the embedded MasterPlan goal, external Training Goal on apply, and target-race "
+        "milestone. Use for the season goal race; keep change_target for non-goal milestones."
+    ),
+    "set_phase_weekly_range": (
+        "Propose one exact weekly-distance range for a named master-plan phase. "
+        "Use when the user requests concrete low/high kilometres or when the evidence-based "
+        "assessment supports one specific range. adjustment_request must exactly repeat the "
+        "canonical current user request; the tool deterministically rejects a range that does "
+        "not match its exact kilometres or percentage. This emits a typed diff and does not apply it."
+    ),
+    "set_phase_focus": (
+        "Propose one exact training-focus description for a master-plan phase. "
+        "Use when the user explicitly changes what a phase should emphasize; preserve the "
+        "requested focus text and do not substitute a volume, date, target, or regeneration op. "
+        "adjustment_request must exactly repeat the canonical current user request; the "
+        "tool deterministically rejects invented focus text or a different named phase."
+    ),
+    "propose_reduction_alternatives": (
+        "Generate exactly two load-reduction alternatives (5% and 10%) for the current or "
+        "next adjustable phase. The reduction_request must explicitly ask to reduce weekly "
+        "volume and compare reduction options. Never use for increases, exact requested "
+        "ranges, dates, targets, or generic requests for multiple proposals."
+    ),
     "regenerate_master": "Propose regenerating the whole master plan given `reason`.",
 }
 
@@ -153,42 +207,41 @@ def _wrap(name: str, callable_: Callable[..., ToolResult]) -> StructuredTool:
     )
 
 
-READ_TOOL_NAMES = (
-    "get_training_summary",
-    "get_recent_activities",
-    "get_health_snapshot",
-    "get_health_series",
-    "get_pmc_series",
-    "get_body_composition_latest",
-    "get_ability_snapshot",
-    "get_race_predictions",
-    "get_pbs",
-    "get_master_plan_current",
-    "get_master_plan_versions",
-    "get_week_plan",
-    "get_activity_detail",
-    "get_training_environment",
-    "estimate_master_plan_load",
-)
+MASTER_ASSESSMENT_TOOL_NAME = "assess_master_adjustment"
 
-WEEK_DRAFT_TOOL_NAMES = (
-    "swap_sessions",
-    "shift_session",
-    "reduce_intensity",
-    "replace_session",
-    "add_strength_session",
-    "change_pace_target",
-    "regenerate_week",
-)
 
-MASTER_DRAFT_TOOL_NAMES = (
-    "extend_phase",
-    "compress_phase",
-    "shift_milestone",
-    "change_target",
-    "propose_alternatives",
-    "regenerate_master",
-)
+class _MasterAdjustmentAssessmentInput(BaseModel):
+    adjustment_request: str
+    verdict: Literal["reasonable", "unreasonable", "needs_clarification"]
+    rationale: str
+
+
+def _build_master_adjustment_assessment_tool() -> StructuredTool:
+    """Build the structured, side-effect-free assessment checkpoint tool."""
+
+    def assess_master_adjustment(
+        *,
+        adjustment_request: str,
+        verdict: Literal["reasonable", "unreasonable", "needs_clarification"],
+        rationale: str,
+    ) -> str:
+        return _serialize_result(
+            ToolResult(
+                ok=True,
+                data={
+                    "adjustment_request": adjustment_request,
+                    "verdict": verdict,
+                    "rationale": rationale,
+                },
+            )
+        )
+
+    return StructuredTool.from_function(
+        assess_master_adjustment,
+        name=MASTER_ASSESSMENT_TOOL_NAME,
+        description=_TOOL_DESCRIPTIONS[MASTER_ASSESSMENT_TOOL_NAME],
+        args_schema=_MasterAdjustmentAssessmentInput,
+    )
 
 
 def tool_names_for_scope(scope: str) -> tuple[str, ...]:
@@ -198,14 +251,29 @@ def tool_names_for_scope(scope: str) -> tuple[str, ...]:
     if scope == "week_chat":
         return READ_TOOL_NAMES + WEEK_DRAFT_TOOL_NAMES
     if scope == "master_chat":
-        return READ_TOOL_NAMES + MASTER_DRAFT_TOOL_NAMES
+        return (
+            READ_TOOL_NAMES
+            + (MASTER_ASSESSMENT_TOOL_NAME,)
+            + MASTER_DRAFT_TOOL_NAMES
+        )
     raise ValueError(f"unknown scope {scope!r}")
 
 
-def build_langchain_tools(toolkit: Toolkit, scope: str) -> list[StructuredTool]:
-    """Pack the (read + scope-specific draft) tools into a list of langchain tools."""
-    names = tool_names_for_scope(scope)
-    return [_wrap(name, getattr(toolkit, name)) for name in names]
+def build_langchain_tools(
+    toolkit: Toolkit, scope: str, *, selected_names: tuple[str, ...] | None = None
+) -> list[StructuredTool]:
+    """Pack scope tools, optionally restricting the exposed surface for eval."""
+    available = tool_names_for_scope(scope)
+    names = available if selected_names is None else selected_names
+    unknown = set(names) - set(available)
+    if unknown:
+        raise ValueError(f"tools not available in scope {scope!r}: {sorted(unknown)}")
+    return [
+        _build_master_adjustment_assessment_tool()
+        if name == MASTER_ASSESSMENT_TOOL_NAME
+        else _wrap(name, getattr(toolkit, name))
+        for name in names
+    ]
 
 
 def is_draft_tool(name: str) -> bool:

@@ -66,6 +66,27 @@ class TargetDistance(str, Enum):
     TRAIL  = "trail"
 
 
+_LEGACY_TAPER_MARKERS = ("taper", "race prep", "减量", "调整", "比赛准备")
+_MAX_LEGACY_TAPER_DAYS = 14
+
+
+def is_short_taper_phase(phase: object) -> bool:
+    """Recognize explicit tapers and legacy inferred tapers up to two weeks."""
+    phase_type = getattr(phase, "phase_type", None)
+    if phase_type is not None:
+        return phase_type == PhaseType.TAPER
+    label = f"{getattr(phase, 'name', '')} {getattr(phase, 'focus', '')}".lower()
+    if not any(marker in label for marker in _LEGACY_TAPER_MARKERS):
+        return False
+    try:
+        start = _date.fromisoformat(getattr(phase, "start_date", ""))
+        end = _date.fromisoformat(getattr(phase, "end_date", ""))
+    except (TypeError, ValueError):
+        return False
+    duration_days = (end - start).days + 1
+    return 0 < duration_days <= _MAX_LEGACY_TAPER_DAYS
+
+
 # ---------------------------------------------------------------------------
 # Component models
 # ---------------------------------------------------------------------------
@@ -489,6 +510,7 @@ def _apply_review_diff(
         _K.ADD_PHASE,
         _K.REMOVE_PHASE,
         _K.RESIZE_PHASE,
+        _K.SHIFT_PHASE_BOUNDARY,
         _K.REPLACE_WEEKLY_RANGE,
     }
     phase_affecting_applied = any(op.op in PHASE_AFFECTING for op in active_ops)
@@ -529,6 +551,21 @@ def _apply_review_diff(
                 if "end_date" in patch:
                     updates["end_date"] = patch["end_date"]
                 phases[op.phase_id] = phases[op.phase_id].model_copy(update=updates)
+
+        elif op_kind == _K.SHIFT_PHASE_BOUNDARY:
+            following_phase_id = patch.get("following_phase_id")
+            if (
+                op.phase_id
+                and op.phase_id in phases
+                and isinstance(following_phase_id, str)
+                and following_phase_id in phases
+            ):
+                phases[op.phase_id] = phases[op.phase_id].model_copy(
+                    update={"end_date": patch["end_date"]}
+                )
+                phases[following_phase_id] = phases[following_phase_id].model_copy(
+                    update={"start_date": patch["following_start_date"]}
+                )
 
         elif op_kind == _K.REPLACE_PHASE_FOCUS:
             if op.phase_id and op.phase_id in phases and "focus" in patch:

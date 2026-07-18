@@ -680,7 +680,14 @@ export interface MasterPlanAdjustMessage {
 }
 
 export interface MasterPlanAdjustMessageResponse {
+  stage?: 'clarification' | 'assessment' | 'proposal'
   ai_response: string
+  clarification?: string | null
+  assessment?: {
+    adjustment_request: string
+    verdict: 'reasonable' | 'unreasonable' | 'needs_clarification'
+    rationale: string
+  } | null
   diff: MasterPlanDiff | null
 }
 
@@ -767,14 +774,14 @@ export function sendMasterPlanAdjustMessage(
 
 export function applyMasterPlanAdjustDiff(
   planId: string,
-  diffId: string,
+  diff: MasterPlanDiff,
   acceptedOpIds: string[],
   changeReason: string,
 ) {
   return postJSON<MasterPlanAdjustApplyResponse>(
     `/users/me/master-plan/${encodeURIComponent(planId)}/adjust/apply`,
     {
-      diff_id: diffId,
+      diff,
       accepted_op_ids: acceptedOpIds,
       change_reason: changeReason,
     },

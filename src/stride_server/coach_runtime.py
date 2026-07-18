@@ -323,7 +323,7 @@ def set_status_insight_llm_for_tests(llm: Any) -> None:
 
 
 def set_orchestrator_llm_for_tests(llm: Any) -> None:
-    """Inject a test orchestrator LLM (must support with_structured_output)."""
+    """Inject a test orchestrator LLM (must support ``bind_tools``)."""
     global _ORCHESTRATOR_LLM
     with _ORCHESTRATOR_LLM_LOCK:
         _ORCHESTRATOR_LLM = llm

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -28,7 +29,6 @@ from langchain_core.messages import (
 from pydantic import (
     BaseModel,
     Field,
-    ValidationError,
     field_validator,
     model_validator,
 )
@@ -36,13 +36,15 @@ from pydantic import (
 from coach.schemas import AssistantPart, assistant_parts_from_message
 
 from stride_core.plan_diff import PlanDiff, apply_diff_to_weekly_plan
-from stride_core.timefmt import today_shanghai
 from stride_core.weekly_plan_proposal import (
     WeeklyPlanCreateProposal,
     is_supported_weekly_plan_generation,
 )
-from stride_core.master_plan import MasterPlanStatus
-from stride_core.master_plan_diff import MasterPlanDiff, apply_master_plan_diff
+from stride_core.timefmt import today_shanghai
+from stride_core.master_plan_diff import (
+    MasterPlanDiff,
+    apply_master_plan_diff,
+)
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 
 from ..bearer import require_bearer
@@ -54,6 +56,13 @@ from coach.orchestrator import coach_thread_id
 
 from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import get_checkpointer
+from ..content_store import read_json, write_json
+from ..master_plan_apply import (
+    accepted_master_op_ids,
+    apply_active_master_diff,
+    master_plan_apply_lock,
+    require_active_master_plan,
+)
 from ..master_plan_store import get_master_plan_store
 from ..weekly_plan_store import (
     create_weekly_plan,
@@ -306,8 +315,6 @@ def apply_coach_week_diff(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"weekly plan {folder!r} already exists",
             )
-        from datetime import datetime, timezone
-
         return {
             "applied": 1,
             "folder": folder,
@@ -343,8 +350,6 @@ def apply_coach_week_diff(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    from datetime import datetime, timezone
-
     return {
         "applied": len(accepted_op_ids),
         "folder": folder,
@@ -371,27 +376,24 @@ class CoachMasterApplyRequest(BaseModel):
     change_reason: str = "coach adjustment"
 
 
-class _MasterStoreBridge:
-    """Adapt ``get_master_plan_store()`` (2-arg ``get_plan(user_id, plan_id)`` +
-    ``save_version``) to the ``MasterPlanStore`` protocol ``apply_master_plan_diff``
-    expects (1-arg ``get_plan(plan_id)`` + ``add_version``)."""
 
-    def __init__(self, inner: Any, user_id: str) -> None:
-        self._inner = inner
-        self._user_id = user_id
+def _affected_weeks_for_coach_master_apply(
+    plan: Any, diff: MasterPlanDiff, accepted_op_ids: list[str]
+) -> list[dict[str, str]]:
+    """Report canonical weekly plans that may contain stale master guidance."""
+    accepted = set(accepted_op_ids)
+    accepted_ops = [
+        op
+        for op in diff.ops
+        if op.id in accepted and op.accepted is not False
+    ]
+    if not accepted_ops:
+        return []
 
-    def get_plan(self, plan_id: str):
-        return self._inner.get_plan(self._user_id, plan_id)
-
-    def save_plan(self, plan):
-        # Defense in depth: only ever persist a plan owned by this bridge's user,
-        # so a future refactor of apply_master_plan_diff can't write across users.
-        if getattr(plan, "user_id", self._user_id) != self._user_id:
-            raise PermissionError("refusing to save a plan owned by a different user")
-        return self._inner.save_plan(plan)
-
-    def add_version(self, version):
-        return self._inner.save_version(version)
+    from .master_plan import _compute_affected_weeks
+    return _compute_affected_weeks(
+        accepted_ops, plan, as_of=today_shanghai()
+    )
 
 
 @router.post("/api/users/me/coach/master-plan/{plan_id}/apply")
@@ -410,60 +412,32 @@ def apply_coach_master_diff(
         )
 
     store = get_master_plan_store()
-    plan = store.get_plan(user_id, plan_id)
-    if plan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"master plan {plan_id!r} not found")
-    if plan.user_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="plan belongs to a different user")
-    if plan.status != MasterPlanStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="该赛季计划尚未确认（status≠active），不能应用调整",
+    with master_plan_apply_lock(user_id, plan_id):
+        plan = require_active_master_plan(
+            store,
+            user_id,
+            plan_id,
+            not_found_detail=f"master plan {plan_id!r} not found",
+            forbidden_detail="plan belongs to a different user",
+            inactive_detail="该赛季计划尚未确认（status≠active），不能应用调整",
         )
-
-    # Only land ops the diff actually carries (skip unknown / stale ids). Build
-    # the exact accepted subset before validation: safety rules such as the
-    # full-regeneration taper exception must be evaluated against what will
-    # actually land, not against unselected sibling ops in the same diff.
-    known_ids = {op.id for op in diff.ops}
-    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
-    accepted_ids = set(accepted_op_ids)
-    accepted_diff = diff.model_copy(
-        update={"ops": [op for op in diff.ops if op.id in accepted_ids]}
-    )
-
-    # Re-run the validation gate: the client supplies the diff body, so don't
-    # trust it blindly — refuse a structurally broken diff (defense in depth).
-    # The gate is wrapped too: it coerces untyped spec_patch values (float() etc.),
-    # so a pathological value that makes the gate itself raise becomes a 400, not
-    # a 500.
-    try:
-        violations = validate_master_diff(plan, accepted_diff)
-    except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
-        logger.warning("coach master apply: gate raised on malformed diff: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="赛季调整数据非法，无法应用",
+        accepted_op_ids = accepted_master_op_ids(diff, body.accepted_op_ids)
+        affected_weeks = _affected_weeks_for_coach_master_apply(
+            plan, diff, accepted_op_ids
         )
-    if violations:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="赛季调整结构非法：" + "；".join(violations),
-        )
-
-    bridge = _MasterStoreBridge(store, user_id)
-    try:
-        updated_plan = apply_master_plan_diff(bridge, plan_id, diff, accepted_op_ids, body.change_reason)
-    except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
-        # The gate validates diff semantics, but spec_patch contents are untyped
-        # JSON from the client — a pathological value (wrong type, bad enum,
-        # missing construction key) would otherwise raise inside apply and 500.
-        # Convert that whole class to a 400; infra/storage errors are other
-        # exception types and still propagate as a real 5xx.
-        logger.warning("coach master apply: rejecting malformed diff: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="赛季调整数据非法，无法应用",
+        updated_plan, accepted_op_ids = apply_active_master_diff(
+            store=store,
+            user_id=user_id,
+            plan_id=plan_id,
+            plan=plan,
+            diff=diff,
+            requested_op_ids=body.accepted_op_ids,
+            change_reason=body.change_reason,
+            read_json_func=read_json,
+            write_json_func=write_json,
+            validate_diff_func=validate_master_diff,
+            apply_diff_func=apply_master_plan_diff,
+            logger=logger,
         )
 
     return {
@@ -471,6 +445,7 @@ def apply_coach_master_diff(
         "plan_id": plan_id,
         "version": updated_plan.version,
         "updated_at": updated_plan.updated_at,
+        "affected_weeks": affected_weeks,
     }
 
 
