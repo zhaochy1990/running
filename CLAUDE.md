@@ -9,6 +9,10 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 
 ## Agent skills
 
+### Worktree-first development（HARD）
+
+任何可能修改仓库内容的开发任务（含代码、测试、文档、配置、设计和生成文件）开始时，必须先使用项目 skill [`worktree-development`](.claude/skills/worktree-development/SKILL.md) 调用 `EnterWorktree`，创建并切换到该任务专属的全新 Git worktree。探索、实现、测试、验证、review、commit 和 push 都必须在该 worktree 内完成；不得修改启动 checkout。纯只读问答或当前会话已位于本任务专属 worktree 时除外。
+
 ### Issue tracker
 
 Issues and PRDs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
