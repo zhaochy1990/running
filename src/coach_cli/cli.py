@@ -32,12 +32,15 @@ except ImportError:  # pragma: no cover - unavailable on some platforms
     _readline = None
 
 import click
-from rich.console import Console
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.text import Text
 
 import stride_core.db as _coredb
+from coach_cli.apply_confirmation import chat_apply_selection as _chat_apply_selection
+from coach_cli.proposals import (
+    Proposal,
+    applicable_proposals as _applicable_proposals,
+    print_proposals as _print_proposals,
+    print_turn as _print_turn,
+)
 from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOpKind
 from stride_core.plan_diff import DiffOpKind, PlanDiff
 from stride_core.timefmt import utc_iso_to_shanghai_iso
@@ -73,47 +76,6 @@ _UUID4_RE = re.compile(
 )
 _COACH_CLI_HOME = Path.home() / ".coach-cli"
 _CHECKPOINT_DIR = _COACH_CLI_HOME / "checkpoints"
-_APPLICABLE_PROPOSAL_TYPES = (MasterPlanDiff, PlanDiff, WeeklyPlanCreateProposal)
-
-_PROPOSAL_OP_LABELS = {
-    "move_session": "移动训练",
-    "replace_kind": "更换训练类型",
-    "replace_distance": "调整训练量",
-    "add_session": "新增训练",
-    "remove_session": "删除训练",
-    "replace_note": "更新训练说明",
-    "add_phase": "新增阶段",
-    "remove_phase": "删除阶段",
-    "resize_phase": "调整阶段日期",
-    "replace_phase_focus": "调整阶段重点",
-    "replace_weekly_range": "调整周跑量",
-    "add_milestone": "新增里程碑",
-    "remove_milestone": "删除里程碑",
-    "replace_milestone_date": "调整里程碑日期",
-    "replace_milestone_target": "调整里程碑目标",
-}
-_FIELD_LABELS = {
-    "date": "日期",
-    "new_date": "新日期",
-    "kind": "类型",
-    "summary": "内容",
-    "focus": "重点",
-    "target": "目标",
-    "name": "名称",
-    "end_date": "结束日期",
-    "start_date": "开始日期",
-    "total_distance_m": "距离",
-    "total_duration_s": "时长",
-    "weekly_distance_km_low": "周跑量下限",
-    "weekly_distance_km_high": "周跑量上限",
-}
-_KIND_LABELS = {
-    "run": "跑步",
-    "strength": "力量",
-    "rest": "休息",
-    "mobility": "灵活性",
-    "note": "说明",
-}
 
 _HELP = """\
 命令:
@@ -201,7 +163,7 @@ class _InputHistory:
 
 def _list_sessions(
     *,
-    checkpointer,
+    checkpointer: Any,
     user_id: str,
     current_session_id: str,
 ) -> list[_SessionSummary]:
@@ -229,7 +191,7 @@ def _format_session_time(value: str | None) -> str:
 
 def _select_session(
     *,
-    checkpointer,
+    checkpointer: Any,
     user_id: str,
     current_session_id: str,
     prompt: Callable[[str], str] = input,
@@ -257,7 +219,8 @@ def _select_session(
         if not answer:
             click.echo("已取消")
             return current_session_id
-        if answer.isdigit() and 1 <= int(answer) <= len(sessions):
+        is_ascii_index = answer.isascii() and answer.isdigit() and len(answer) <= 9
+        if is_ascii_index and 1 <= int(answer) <= len(sessions):
             selected = sessions[int(answer) - 1].session_id
             if selected == current_session_id:
                 click.echo(f"继续当前会话: {selected}")
@@ -299,7 +262,7 @@ def _setup_debug_logging() -> None:
         logging.getLogger(name).setLevel(logging.DEBUG)
 
 
-def _build_checkpointer():
+def _build_checkpointer() -> Any:
     """Local file-backed checkpointer (no Azure Table needed for dev)."""
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
     from stride_server.coach_adapters.persistence.checkpointer import (
@@ -321,246 +284,6 @@ def _build_checkpointer():
     return AzureTableCheckpointSaver(
         store=FileCheckpointStore(_CHECKPOINT_DIR), serde=serde
     )
-
-
-def _proposal_heading(proposal: object) -> tuple[str, str]:
-    """Return a friendly proposal type and its affected scope."""
-    if isinstance(proposal, WeeklyPlanCreateProposal):
-        return "新建周计划", proposal.folder
-    if isinstance(proposal, PlanDiff):
-        return "调整周计划", proposal.folder
-    if isinstance(proposal, MasterPlanDiff):
-        return "调整赛季计划", proposal.plan_id
-    return "计划提案", ""
-
-
-def _format_scalar(key: str, value: object) -> str:
-    if value is None:
-        return "无"
-    if key == "total_distance_m" and isinstance(value, (int, float)):
-        return f"{value / 1000:g} km"
-    if key == "total_duration_s" and isinstance(value, (int, float)):
-        return f"{value / 60:g} 分钟"
-    if key in ("weekly_distance_km_low", "weekly_distance_km_high"):
-        return f"{value} km"
-    if key == "kind":
-        return _KIND_LABELS.get(str(value), str(value))
-    if isinstance(value, bool):
-        return "是" if value else "否"
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-    return str(value)
-
-
-def _format_diff_value(value: dict[str, Any] | None) -> str:
-    if not value:
-        return "无"
-    if set(value) >= {"weekly_distance_km_low", "weekly_distance_km_high"}:
-        return (
-            f"周跑量 {value['weekly_distance_km_low']}–"
-            f"{value['weekly_distance_km_high']} km"
-        )
-    return "；".join(
-        f"{_FIELD_LABELS.get(key, key)} {_format_scalar(key, item)}"
-        for key, item in value.items()
-        if key != "session_index"
-    ) or "无"
-
-
-def _proposal_change_lines(proposal: object) -> list[str]:
-    if isinstance(proposal, WeeklyPlanCreateProposal):
-        plan = proposal.to_weekly_plan()
-        lines = [
-            f"共 {len(plan.sessions)} 项训练 · 计划跑量 {proposal.total_distance_km:g} km"
-        ]
-        for session in plan.sessions:
-            kind = _KIND_LABELS.get(session.kind.value, session.kind.value)
-            details = session.summary or session.notes_md or "未命名训练"
-            lines.append(f"{session.date} · {kind} · {details}")
-        return lines
-
-    lines: list[str] = []
-    for op in getattr(proposal, "ops", []) or []:
-        op_name = getattr(op.op, "value", str(op.op))
-        label = _PROPOSAL_OP_LABELS.get(op_name, op_name)
-        target = (
-            getattr(op, "phase_id", None)
-            or getattr(op, "milestone_id", None)
-            or getattr(op, "date", None)
-        )
-        target_text = f" · {target}" if target else ""
-        old_value = _format_diff_value(getattr(op, "old_value", None))
-        new_value = _format_diff_value(
-            getattr(op, "new_value", None) or getattr(op, "spec_patch", None)
-        )
-        lines.append(f"{label}{target_text}: {old_value} → {new_value}")
-    return lines
-
-
-def _proposal_lines(
-    proposal: object,
-    *,
-    index: int,
-    total: int,
-    show_apply_hint: bool = True,
-) -> list[str]:
-    heading, scope = _proposal_heading(proposal)
-    explanation = getattr(proposal, "ai_explanation", "") or "无摘要"
-    changes = _proposal_change_lines(proposal)
-    apply_hint = (
-        "回复“应用这个提案”确认，或输入 /apply 1"
-        if total == 1
-        else f"回复“应用第 {index} 个提案”确认，或输入 /apply {index}"
-    )
-    lines = [
-        f"提案 {index} · {heading}",
-        f"范围: {scope}",
-        f"摘要: {explanation}",
-        f"改动 ({len(changes)}):",
-        *(
-            ["  暂无结构化改动"]
-            if not changes
-            else [
-                f"  {change_index}. {change}"
-                for change_index, change in enumerate(changes, 1)
-            ]
-        ),
-    ]
-    if show_apply_hint:
-        lines.append(f"操作: {apply_hint}")
-    return lines
-
-
-def _print_proposals(
-    proposals: list[MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal],
-    *,
-    console: Console | None = None,
-    render_panels: bool | None = None,
-    show_apply_hint: bool = True,
-) -> None:
-    """Render pending proposals consistently for turns and /proposals."""
-    should_render = _stdout_is_terminal() if render_panels is None else render_panels
-    if not should_render:
-        for index, proposal in enumerate(proposals, start=1):
-            click.echo(
-                "\n".join(
-                    _proposal_lines(
-                        proposal,
-                        index=index,
-                        total=len(proposals),
-                        show_apply_hint=show_apply_hint,
-                    )
-                )
-            )
-        return
-
-    output = console or Console(
-        file=click.get_text_stream("stdout"), highlight=False
-    )
-    for index, proposal in enumerate(proposals, start=1):
-        lines = _proposal_lines(
-            proposal,
-            index=index,
-            total=len(proposals),
-            show_apply_hint=show_apply_hint,
-        )
-        title = lines[0]
-        content = Text("\n".join(lines[1:]))
-        output.print(
-            Panel(
-                content,
-                title=title,
-                title_align="left",
-                border_style="cyan",
-                padding=(0, 1),
-            )
-        )
-
-
-def _format_turn(turn, *, show_apply_hint: bool = True) -> str:
-    """Render a TurnResponse as stable plain text for pipes/files."""
-    lines: list[str] = []
-    if turn.clarification:
-        lines.append(f"❓ {turn.clarification}")
-    else:
-        lines.append(turn.reply or "(空回复)")
-    lines.extend(f"  {line}" for line in _turn_metadata(turn))
-    proposals = _applicable_proposals(turn)
-    for index, proposal in enumerate(proposals, start=1):
-        lines.append("")
-        lines.extend(
-            _proposal_lines(
-                proposal,
-                index=index,
-                total=len(proposals),
-                show_apply_hint=show_apply_hint,
-            )
-        )
-    return "\n".join(lines)
-
-
-def _turn_metadata(turn) -> list[str]:
-    """Build the compact non-Markdown lines appended after the reply."""
-    lines: list[str] = []
-    if turn.active_target:
-        lines.append(f"· 当前对象: {turn.active_target.model_dump(exclude_none=True)}")
-    return lines
-
-
-def _stdout_is_terminal() -> bool:
-    """Return whether stdout is an interactive terminal."""
-    stream = click.get_text_stream("stdout")
-    isatty = getattr(stream, "isatty", None)
-    return bool(isatty and isatty())
-
-
-def _print_turn(
-    turn,
-    *,
-    interactive: bool,
-    render_markdown: bool | None = None,
-    console: Console | None = None,
-) -> None:
-    """Print a turn, rendering Markdown only for an interactive terminal.
-
-    Redirected stdout remains the stable raw Markdown/plain-text contract so
-    shell pipelines and files do not receive terminal layout or ANSI escapes.
-    ``render_markdown`` and ``console`` are injectable for focused tests.
-    """
-    should_render = _stdout_is_terminal() if render_markdown is None else render_markdown
-    if not should_render:
-        prefix = "\n教练 › " if interactive else ""
-        click.echo(
-            f"{prefix}{_format_turn(turn, show_apply_hint=interactive)}"
-        )
-        return
-
-    output = console or Console(
-        file=click.get_text_stream("stdout"),
-        highlight=False,
-    )
-    if interactive:
-        output.print()
-        output.print(Text("教练 ›", style="bold cyan"))
-
-    if turn.clarification:
-        output.print(Text("❓ 需要补充信息", style="bold yellow"))
-        output.print(Markdown(turn.clarification))
-    else:
-        output.print(Markdown(turn.reply or "(空回复)"))
-
-    for line in _turn_metadata(turn):
-        output.print(Text(f"  {line}", style="dim"))
-
-    proposals = _applicable_proposals(turn)
-    if proposals:
-        output.print()
-        _print_proposals(
-            proposals,
-            console=output,
-            render_panels=True,
-            show_apply_hint=interactive,
-        )
 
 
 class _Thinking:
@@ -623,7 +346,9 @@ def _friendly_error(exc: Exception) -> str:
     return s
 
 
-def _run_turn(*, user_id: str, session_id: str, message: str, checkpointer):
+def _run_turn(
+    *, user_id: str, session_id: str, message: str, checkpointer: Any
+) -> Any:
     # Lazy import: pulls in azure-identity + langchain, slow to import.
     from stride_server.coach_adapters.orchestrator import run_coach_turn
 
@@ -633,81 +358,6 @@ def _run_turn(*, user_id: str, session_id: str, message: str, checkpointer):
         message=message,
         checkpointer=checkpointer,
     )
-
-
-def _applicable_proposals(
-    turn,
-) -> list[MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal]:
-    """Return proposal types the CLI can confirm through Coach routes."""
-    return [
-        card.proposal
-        for card in turn.proposals
-        if isinstance(card.proposal, _APPLICABLE_PROPOSAL_TYPES)
-    ]
-
-
-_CHINESE_NUMBERS = {
-    "一": 1,
-    "二": 2,
-    "两": 2,
-    "三": 3,
-    "四": 4,
-    "五": 5,
-    "六": 6,
-    "七": 7,
-    "八": 8,
-    "九": 9,
-    "十": 10,
-}
-_CHAT_APPLY_PATTERNS = (
-    re.compile(
-        r"^(?:(?:好|好的)[，, ]*|(?:请|那就|就)\s*)?"
-        r"(?:应用|采用|接受|确认|执行)(?:一下)?(?:第\s*)?"
-        r"(?P<index>\d+|[一二两三四五六七八九十])\s*"
-        r"(?:个|条|项)?(?:方案|提案)(?:吧)?[。！!]?$",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"^(?:(?:yes|ok|okay|please)[, ]+)?"
-        r"(?:apply|accept|use)\s+(?:(?:proposal|option|choice)\s*)"
-        r"(?P<index>\d+)[.!！。]?$",
-        re.IGNORECASE,
-    ),
-)
-_CHAT_APPLY_WITHOUT_INDEX = re.compile(
-    r"(?:"
-    r"^(?:(?:好|好的)[，, ]*|(?:请|那就|就)\s*)?"
-    r"(?:应用|采用|接受|确认|执行)(?:一下)?"
-    r"(?:这个|该|当前|上面|刚才|它)?(?:方案|提案)(?:吧)?"
-    r"|"
-    r"^(?:(?:yes|ok|okay|please)[, ]+)?"
-    r"(?:apply\s+it|(?:apply|accept|use)\s+(?:"
-    r"(?:this|that|the)\s+)?(?:proposal|option|choice))"
-    r")[.!！。]?$",
-    re.IGNORECASE,
-)
-
-
-def _chat_apply_selection(message: str) -> tuple[bool, int | None]:
-    """Parse a natural-language confirmation without involving the Agent.
-
-    Returning ``(True, None)`` means the message confirms a proposal but does
-    not disambiguate which one.  The caller can then ask for a number instead
-    of risking a write.
-    """
-    if re.search(
-        r"(?:不要|不许|别|取消|don't|do not|not)", message, re.IGNORECASE
-    ):
-        return False, None
-    normalized = re.split(r"[，,；;:]\s*", message.strip())[-1].strip()
-    for pattern in _CHAT_APPLY_PATTERNS:
-        match = pattern.fullmatch(normalized)
-        if match:
-            raw_index = match.group("index")
-            return True, int(raw_index) if raw_index.isdigit() else _CHINESE_NUMBERS[raw_index]
-    if _CHAT_APPLY_WITHOUT_INDEX.fullmatch(normalized):
-        return True, None
-    return False, None
 
 
 def _apply_result_message(
@@ -757,21 +407,226 @@ def _apply_week_proposal(
     else:
         body = CoachWeekApplyRequest(
             diff=proposal,
-            accepted_op_ids=[op.id for op in proposal.ops],
+            accepted_op_ids=[
+                op.id for op in proposal.ops if op.accepted is not False
+            ],
         )
     return apply_coach_week_diff(
         proposal.folder, body, payload={"sub": user_id}
     )
 
 
-def _apply_proposal(
-    *,
-    user_id: str,
-    proposal: MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal,
-) -> dict:
+def _apply_proposal(*, user_id: str, proposal: Proposal) -> dict:
     if isinstance(proposal, MasterPlanDiff):
         return _apply_master_proposal(user_id=user_id, proposal=proposal)
     return _apply_week_proposal(user_id=user_id, proposal=proposal)
+
+
+@dataclass(frozen=True)
+class _ReplState:
+    session_id: str
+    pending_proposals: tuple[Proposal, ...] = ()
+
+
+@dataclass(frozen=True)
+class _CommandOutcome:
+    handled: bool
+    state: _ReplState
+    should_exit: bool = False
+
+
+def _apply_pending(
+    *, user_id: str, state: _ReplState, selected: int | None, chat: bool
+) -> _CommandOutcome:
+    proposals = state.pending_proposals
+    if not proposals:
+        click.echo("当前没有待确认的计划提案。")
+        return _CommandOutcome(True, state)
+    if selected is None and len(proposals) > 1:
+        click.echo(
+            f"当前有 {len(proposals)} 个待确认提案，请说“应用第 N 个提案”，或输入 /apply N。"
+        )
+        return _CommandOutcome(True, state)
+    if selected is None:
+        selected = 1
+    if selected < 1 or selected > len(proposals):
+        prefix = "请说“应用第" if chat else "请输入"
+        suffix = "个提案”。" if chat else "。"
+        click.echo(f"方案编号无效，{prefix} 1-{len(proposals)} {suffix}")
+        return _CommandOutcome(True, state)
+    proposal = proposals[selected - 1]
+    try:
+        result = _apply_proposal(user_id=user_id, proposal=proposal)
+    except Exception as exc:  # noqa: BLE001 — keep the REPL alive
+        click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
+        return _CommandOutcome(True, state)
+    click.echo(_apply_result_message(proposal=proposal, result=result, selected=selected))
+    return _CommandOutcome(True, _ReplState(state.session_id))
+
+
+def _handle_slash_command(
+    *, line: str, user_id: str, state: _ReplState, checkpointer
+) -> _CommandOutcome:
+    if line in ("/exit", "/quit"):
+        click.echo("再见 👋")
+        return _CommandOutcome(True, state, should_exit=True)
+    if line == "/help":
+        click.echo(_HELP)
+        return _CommandOutcome(True, state)
+    if line == "/session":
+        selected = _select_session(
+            checkpointer=checkpointer,
+            user_id=user_id,
+            current_session_id=state.session_id,
+        )
+        if selected == state.session_id:
+            return _CommandOutcome(True, state)
+        return _CommandOutcome(True, _ReplState(selected))
+    if line == "/new":
+        selected = _new_session_id()
+        click.echo(f"已开新会话: {selected}")
+        return _CommandOutcome(True, _ReplState(selected))
+    if line == "/proposals":
+        if state.pending_proposals:
+            _print_proposals(state.pending_proposals)
+        else:
+            click.echo("当前没有待确认的计划提案。")
+        return _CommandOutcome(True, state)
+    if line == "/dismiss":
+        click.echo("已放弃当前待选方案。")
+        return _CommandOutcome(True, _ReplState(state.session_id))
+    if not (line == "/apply" or line.startswith("/apply ")):
+        return _CommandOutcome(False, state)
+    parts = line.split()
+    if len(parts) != 2 or not parts[1].isascii() or not parts[1].isdigit():
+        click.echo("用法: /apply N（例如 /apply 2）")
+        return _CommandOutcome(True, state)
+    normalized_index = parts[1].lstrip("0") or "0"
+    selected = int(normalized_index) if len(normalized_index) <= 9 else 1_000_000_000
+    return _apply_pending(
+        user_id=user_id, state=state, selected=selected, chat=False
+    )
+
+
+def _handle_chat_apply(
+    *, line: str, user_id: str, state: _ReplState
+) -> _CommandOutcome:
+    is_chat_apply, selected = _chat_apply_selection(line)
+    if not is_chat_apply:
+        return _CommandOutcome(False, state)
+    return _apply_pending(
+        user_id=user_id, state=state, selected=selected, chat=True
+    )
+
+
+def _warn_about_database(*, db_path: Path, profile: str) -> None:
+    if not db_path.exists():
+        click.echo(
+            f"⚠️  {db_path} 不存在 — status_insight 读工具会返回空。"
+            f"先 `python -m coros_sync -P {profile} sync`，或用 --data-dir 指向已同步的 data。",
+            err=True,
+        )
+    elif db_path.stat().st_size < 1_000_000:
+        click.echo(
+            f"⚠️  {db_path} 只有 {db_path.stat().st_size // 1024}KB，疑似空库（worktree 没同步过）。"
+            "用 --data-dir 指向主仓库的 data，例如："
+            "--data-dir C:/Users/zhaochaoyi/workspace/running/data",
+            err=True,
+        )
+
+
+def _run_one_shot(
+    *, user_id: str, session_id: str, message: str, checkpointer: Any
+) -> None:
+    started_at = time.perf_counter()
+    try:
+        turn = _run_turn(
+            user_id=user_id,
+            session_id=session_id,
+            message=message,
+            checkpointer=checkpointer,
+        )
+    except Exception as exc:  # noqa: BLE001 — surface a friendly error
+        raise SystemExit(f"❌ 教练调用失败: {_friendly_error(exc)}")
+    _print_turn(turn, interactive=False)
+    click.echo(f"（用时 {time.perf_counter() - started_at:.1f}s）", err=True)
+
+
+def _print_repl_banner(*, user_id: str, session_id: str, db_path: Path) -> None:
+    click.echo("─" * 60)
+    click.echo("  STRIDE 教练 CLI · S0+S1 编排脑（本地测试）")
+    click.echo(f"  user: {user_id}")
+    click.echo(f"  session: {session_id}")
+    click.echo(f"  data: {db_path}")
+    click.echo(f"  {_model_banner()} · /help 看命令")
+    click.echo("─" * 60)
+
+
+def _run_repl_turn(
+    *, line: str, user_id: str, state: _ReplState, checkpointer: Any, debug: bool
+) -> _ReplState:
+    try:
+        with _Thinking(debug=debug):
+            turn = _run_turn(
+                user_id=user_id,
+                session_id=state.session_id,
+                message=line,
+                checkpointer=checkpointer,
+            )
+    except Exception as exc:  # noqa: BLE001 — keep the REPL alive
+        click.echo(f"❌ 调用失败: {_friendly_error(exc)}")
+        return state
+
+    _print_turn(turn, interactive=True)
+    new_proposals = _applicable_proposals(turn)
+    if new_proposals:
+        return _ReplState(state.session_id, new_proposals)
+    return state
+
+
+def _run_repl(
+    *, user_id: str, session_id: str, db_path: Path, checkpointer: Any, debug: bool
+) -> None:
+    _print_repl_banner(user_id=user_id, session_id=session_id, db_path=db_path)
+    input_history = _InputHistory(_readline)
+    input_history.start()
+    state = _ReplState(session_id)
+    try:
+        while True:
+            try:
+                line = input("\n你 › ").strip()
+            except (EOFError, KeyboardInterrupt):
+                click.echo("\n再见 👋")
+                return
+            if not line:
+                continue
+
+            outcome = _handle_slash_command(
+                line=line,
+                user_id=user_id,
+                state=state,
+                checkpointer=checkpointer,
+            )
+            if not outcome.handled:
+                outcome = _handle_chat_apply(
+                    line=line, user_id=user_id, state=state
+                )
+            if outcome.handled:
+                state = outcome.state
+                if outcome.should_exit:
+                    return
+                continue
+
+            input_history.remember(line)
+            state = _run_repl_turn(
+                line=line,
+                user_id=user_id,
+                state=state,
+                checkpointer=checkpointer,
+                debug=debug,
+            )
+    finally:
+        input_history.close()
 
 
 @click.command()
@@ -817,174 +672,29 @@ def main(
     """与 STRIDE 教练对话（本地测试 S0+S1 编排脑）。"""
     if debug:
         _setup_debug_logging()
-
-    # Redirect every read tool's DB root (status_insight opens data/{uid}/coros.db).
-    # Done before resolving the profile / building the toolkit so it takes effect.
     if data_dir:
         _coredb.USER_DATA_DIR = Path(data_dir).resolve()
     data_root = _coredb.USER_DATA_DIR
-
     user_id = _resolve_profile(profile, data_dir=data_root)
-    session_id = session_id or _new_session_id()
+    resolved_session_id = session_id or _new_session_id()
     checkpointer = _build_checkpointer()
-
     db_path = data_root / user_id / "coros.db"
-    if not db_path.exists():
-        click.echo(
-            f"⚠️  {db_path} 不存在 — status_insight 读工具会返回空。"
-            f"先 `python -m coros_sync -P {profile} sync`，或用 --data-dir 指向已同步的 data。",
-            err=True,
-        )
-    elif db_path.stat().st_size < 1_000_000:  # < 1MB ≈ schema-only skeleton
-        click.echo(
-            f"⚠️  {db_path} 只有 {db_path.stat().st_size // 1024}KB，疑似空库（worktree 没同步过）。"
-            f"用 --data-dir 指向主仓库的 data，例如：--data-dir C:/Users/zhaochaoyi/workspace/running/data",
-            err=True,
-        )
-
-    # Non-interactive one-shot.
+    _warn_about_database(db_path=db_path, profile=profile)
     if message is not None:
-        t0 = time.perf_counter()
-        try:
-            turn = _run_turn(
-                user_id=user_id, session_id=session_id, message=message, checkpointer=checkpointer
-            )
-        except Exception as exc:  # noqa: BLE001 — surface a friendly error
-            raise SystemExit(f"❌ 教练调用失败: {_friendly_error(exc)}")
-        _print_turn(turn, interactive=False)
-        # Elapsed to stderr so piped stdout stays clean.
-        click.echo(f"（用时 {time.perf_counter() - t0:.1f}s）", err=True)
+        _run_one_shot(
+            user_id=user_id,
+            session_id=resolved_session_id,
+            message=message,
+            checkpointer=checkpointer,
+        )
         return
-
-    # Interactive REPL.
-    click.echo("─" * 60)
-    click.echo("  STRIDE 教练 CLI · S0+S1 编排脑（本地测试）")
-    click.echo(f"  user: {user_id}")
-    click.echo(f"  session: {session_id}")
-    click.echo(f"  data: {db_path}")
-    click.echo(f"  {_model_banner()} · /help 看命令")
-    click.echo("─" * 60)
-
-    input_history = _InputHistory(_readline)
-    input_history.start()
-    pending_proposals: list[
-        MasterPlanDiff | PlanDiff | WeeklyPlanCreateProposal
-    ] = []
-    try:
-        while True:
-            try:
-                line = input("\n你 › ").strip()
-            except (EOFError, KeyboardInterrupt):
-                click.echo("\n再见 👋")
-                return
-
-            if not line:
-                continue
-            if line in ("/exit", "/quit"):
-                click.echo("再见 👋")
-                return
-            if line == "/help":
-                click.echo(_HELP)
-                continue
-            if line == "/session":
-                session_id = _select_session(
-                    checkpointer=checkpointer,
-                    user_id=user_id,
-                    current_session_id=session_id,
-                )
-                pending_proposals = []
-                continue
-            if line == "/new":
-                session_id = _new_session_id()
-                pending_proposals = []
-                click.echo(f"已开新会话: {session_id}")
-                continue
-            if line == "/proposals":
-                if not pending_proposals:
-                    click.echo("当前没有待确认的计划提案。")
-                else:
-                    _print_proposals(pending_proposals)
-                continue
-            if line == "/dismiss":
-                pending_proposals = []
-                click.echo("已放弃当前待选方案。")
-                continue
-            if line.startswith("/apply"):
-                parts = line.split()
-                if len(parts) != 2 or not parts[1].isdigit():
-                    click.echo("用法: /apply N（例如 /apply 2）")
-                    continue
-                if not pending_proposals:
-                    click.echo("当前没有待确认的计划提案。")
-                    continue
-                selected = int(parts[1])
-                if selected < 1 or selected > len(pending_proposals):
-                    click.echo(f"方案编号无效，请输入 1-{len(pending_proposals)}。")
-                    continue
-                try:
-                    proposal = pending_proposals[selected - 1]
-                    result = _apply_proposal(
-                        user_id=user_id, proposal=proposal
-                    )
-                except Exception as exc:  # noqa: BLE001 — keep the REPL alive
-                    click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
-                    continue
-                pending_proposals = []
-                click.echo(
-                    _apply_result_message(
-                        proposal=proposal, result=result, selected=selected
-                    )
-                )
-                continue
-
-            is_chat_apply, selected = _chat_apply_selection(line)
-            if is_chat_apply and pending_proposals:
-                if selected is None:
-                    if len(pending_proposals) > 1:
-                        click.echo(
-                            f"当前有 {len(pending_proposals)} 个待确认提案，"
-                            "请说“应用第 N 个提案”，或输入 /apply N。"
-                        )
-                        continue
-                    selected = 1
-                if selected < 1 or selected > len(pending_proposals):
-                    click.echo(
-                        f"方案编号无效，请说“应用第 1-{len(pending_proposals)} 个提案”。"
-                    )
-                    continue
-                proposal = pending_proposals[selected - 1]
-                try:
-                    result = _apply_proposal(user_id=user_id, proposal=proposal)
-                except Exception as exc:  # noqa: BLE001 — keep the REPL alive
-                    click.echo(f"❌ 应用失败: {_friendly_error(exc)}")
-                    continue
-                pending_proposals = []
-                click.echo(
-                    _apply_result_message(
-                        proposal=proposal, result=result, selected=selected
-                    )
-                )
-                continue
-
-            input_history.remember(line)
-            try:
-                with _Thinking(debug=debug):
-                    turn = _run_turn(
-                        user_id=user_id,
-                        session_id=session_id,
-                        message=line,
-                        checkpointer=checkpointer,
-                    )
-            except Exception as exc:  # noqa: BLE001 — keep the REPL alive
-                click.echo(f"❌ 调用失败: {_friendly_error(exc)}")
-                continue
-
-            _print_turn(turn, interactive=True)
-            new_proposals = _applicable_proposals(turn)
-            if new_proposals:
-                pending_proposals = new_proposals
-    finally:
-        input_history.close()
+    _run_repl(
+        user_id=user_id,
+        session_id=resolved_session_id,
+        db_path=db_path,
+        checkpointer=checkpointer,
+        debug=debug,
+    )
 
 
 if __name__ == "__main__":
