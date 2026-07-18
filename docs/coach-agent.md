@@ -64,9 +64,9 @@ elapsed time, message/input character counts, token usage, tool names, tool
 elapsed time, and result size. It never logs prompts, tool payloads, or replies.
 
 `coach-cli` 在交互终端中用 Rich 渲染 Coach 回复里的 Markdown（标题、列表、表格、代码块）；stdout 重定向到文件或 pipe 时保留原始 Markdown，避免 ANSI 和终端布局破坏脚本消费。
-计划 proposal 在 CLI 中显示为带范围、摘要和逐项 diff 的卡片；单 proposal 可直接回复
-“应用这个提案”确认，多个 proposal 必须回复“应用第 N 个提案”或输入 `/apply N`。
-确认由 CLI 调用 deterministic apply endpoint，不把副作用交给 Agent 执行。
+计划 proposal 在 CLI 中显示为带范围、摘要和逐项 diff 的卡片。所有自然语言输入
+（包括讨论或确认 proposal）都交给 Coach LLM 理解；只有显式 `/apply N` 命令会由 CLI
+调用 deterministic apply endpoint，副作用永不交给 Agent 判断或执行。
 `--message` 一次性模式只展示 proposal 内容，不显示必须留在 REPL 中才能执行的
 确认提示。
 

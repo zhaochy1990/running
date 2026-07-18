@@ -156,11 +156,7 @@ def _proposal_lines(
     heading, scope = _proposal_heading(proposal)
     explanation = getattr(proposal, "ai_explanation", "") or "无摘要"
     changes = _proposal_change_lines(proposal)
-    apply_hint = (
-        "回复“应用这个提案”确认，或输入 /apply 1"
-        if total == 1
-        else f"回复“应用第 {index} 个提案”确认，或输入 /apply {index}"
-    )
+    apply_hint = f"输入 /apply {index} 应用此提案"
     lines = [
         f"提案 {index} · {heading}",
         f"范围: {scope}",

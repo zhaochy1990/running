@@ -34,7 +34,6 @@ except ImportError:  # pragma: no cover - unavailable on some platforms
 import click
 
 import stride_core.db as _coredb
-from coach_cli.apply_confirmation import chat_apply_selection as _chat_apply_selection
 from coach_cli.proposals import (
     Proposal,
     applicable_proposals as _applicable_proposals,
@@ -82,8 +81,7 @@ _HELP = """\
   /new       开一个新会话（清空上下文）
   /session   列出历史会话，选择并恢复其中一个
   /proposals 查看当前待确认的计划提案
-  /apply N   应用第 N 个周计划或赛季计划提案
-  应用这个提案  聊天确认单个提案；多个提案请说“应用第 N 个提案”
+  /apply N   应用第 N 个周计划或赛季计划提案（唯一写入入口）
   /dismiss   放弃当前待选方案
   /help      显示这个帮助
   /exit /quit 退出
@@ -436,23 +434,14 @@ class _CommandOutcome:
 
 
 def _apply_pending(
-    *, user_id: str, state: _ReplState, selected: int | None, chat: bool
+    *, user_id: str, state: _ReplState, selected: int
 ) -> _CommandOutcome:
     proposals = state.pending_proposals
     if not proposals:
         click.echo("当前没有待确认的计划提案。")
         return _CommandOutcome(True, state)
-    if selected is None and len(proposals) > 1:
-        click.echo(
-            f"当前有 {len(proposals)} 个待确认提案，请说“应用第 N 个提案”，或输入 /apply N。"
-        )
-        return _CommandOutcome(True, state)
-    if selected is None:
-        selected = 1
     if selected < 1 or selected > len(proposals):
-        prefix = "请说“应用第" if chat else "请输入"
-        suffix = "个提案”。" if chat else "。"
-        click.echo(f"方案编号无效，{prefix} 1-{len(proposals)} {suffix}")
+        click.echo(f"方案编号无效，请输入 1-{len(proposals)}。")
         return _CommandOutcome(True, state)
     proposal = proposals[selected - 1]
     try:
@@ -503,20 +492,7 @@ def _handle_slash_command(
         return _CommandOutcome(True, state)
     normalized_index = parts[1].lstrip("0") or "0"
     selected = int(normalized_index) if len(normalized_index) <= 9 else 1_000_000_000
-    return _apply_pending(
-        user_id=user_id, state=state, selected=selected, chat=False
-    )
-
-
-def _handle_chat_apply(
-    *, line: str, user_id: str, state: _ReplState
-) -> _CommandOutcome:
-    is_chat_apply, selected = _chat_apply_selection(line)
-    if not is_chat_apply:
-        return _CommandOutcome(False, state)
-    return _apply_pending(
-        user_id=user_id, state=state, selected=selected, chat=True
-    )
+    return _apply_pending(user_id=user_id, state=state, selected=selected)
 
 
 def _warn_about_database(*, db_path: Path, profile: str) -> None:
@@ -607,10 +583,6 @@ def _run_repl(
                 state=state,
                 checkpointer=checkpointer,
             )
-            if not outcome.handled:
-                outcome = _handle_chat_apply(
-                    line=line, user_id=user_id, state=state
-                )
             if outcome.handled:
                 state = outcome.state
                 if outcome.should_exit:

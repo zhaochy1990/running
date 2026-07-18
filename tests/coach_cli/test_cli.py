@@ -14,7 +14,6 @@ from coach_cli.cli import (
     _InputHistory,
     _build_checkpointer,
     _apply_week_proposal,
-    _chat_apply_selection,
     _model_banner,
     _print_turn,
     _select_session,
@@ -344,6 +343,25 @@ def test_message_mode_omits_unusable_proposal_apply_hint(monkeypatch, tmp_path) 
     assert "/apply" not in result.output
 
 
+def test_print_turn_advertises_only_slash_apply(capsys) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a", plan_id="plan-1", ops=[], ai_explanation="减量", created_at="t"
+    )
+    turn = SimpleNamespace(
+        reply="调整提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    _print_turn(turn, interactive=True, render_markdown=False)
+
+    output = capsys.readouterr().out
+    assert "输入 /apply 1 应用此提案" in output
+    assert "应用这个提案" not in output
+    assert "应用第 1 个提案" not in output
+
+
 def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
     choices = [
         MasterPlanDiff(
@@ -393,7 +411,7 @@ def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
     assert "提案 1 · 调整赛季计划" in output
     assert "范围: plan-1" in output
     assert "调整周跑量 · build: 周跑量 110–115 km → 周跑量 104.5–109.2 km" in output
-    assert "应用第 1 个提案" in output
+    assert "输入 /apply 1 应用此提案" in output
     assert "提案 2 · 调整赛季计划" in output
 
 
@@ -427,61 +445,6 @@ def test_print_turn_numbers_all_cli_applicable_proposals(capsys) -> None:
     output = capsys.readouterr().out
     assert "提案 1 · 调整周计划" in output
     assert "提案 2 · 调整赛季计划" in output
-
-
-def test_chat_apply_selection_supports_chinese_and_english_confirmation() -> None:
-    assert _chat_apply_selection("应用这个提案") == (True, None)
-    assert _chat_apply_selection("应用第 2 个提案") == (True, 2)
-    assert _chat_apply_selection("好的，应用这个提案") == (True, None)
-    assert _chat_apply_selection("好的，请应用这个提案") == (True, None)
-    assert _chat_apply_selection("好的，那就请应用第 1 个提案") == (True, 1)
-    assert _chat_apply_selection("apply this proposal") == (True, None)
-    assert _chat_apply_selection("please, apply it") == (True, None)
-    assert _chat_apply_selection("please, apply proposal 1") == (True, 1)
-    assert _chat_apply_selection("okay, apply it") == (True, None)
-    assert _chat_apply_selection("okay, please apply it") == (True, None)
-    assert _chat_apply_selection("apply proposal 3") == (True, 3)
-    assert _chat_apply_selection("apply proposal 0000000001") == (True, 1)
-    assert _chat_apply_selection("应用第 -1 个提案") == (True, -1)
-    assert _chat_apply_selection("apply proposal -1") == (True, -1)
-    assert _chat_apply_selection("应用第零个提案") == (True, 0)
-    assert _chat_apply_selection("应用第〇个提案") == (True, 0)
-
-
-def test_chat_apply_selection_rejects_quoted_and_conditional_commands() -> None:
-    for unsafe_message in (
-        "我想知道：apply it",
-        "他说，apply it",
-        "如果我输入 apply it，会发生什么？",
-        "可以解释一下，应用这个提案吗？",
-    ):
-        assert _chat_apply_selection(unsafe_message) == (False, None)
-
-
-def test_chat_apply_selection_handles_oversized_index_locally() -> None:
-    oversized_index = "9" * 4_301
-
-    is_apply, selected = _chat_apply_selection(f"apply proposal {oversized_index}")
-
-    assert is_apply is True
-    assert selected is not None
-
-
-def test_chat_apply_selection_rejects_negation_and_questions() -> None:
-    assert _chat_apply_selection("不要应用这个提案") == (False, None)
-    assert _chat_apply_selection("不要应用，apply it") == (False, None)
-    assert _chat_apply_selection("我应该应用这个提案吗？") == (False, None)
-    for ambiguous_reply in (
-        "确认",
-        "执行",
-        "接受",
-        "应用",
-        "use",
-        "apply",
-        "use it",
-        "accept it",
-    ):
-        assert _chat_apply_selection(ambiguous_reply) == (False, None)
 
 
 def test_print_turn_keeps_non_distance_fields_in_weekly_range_patch(capsys) -> None:
@@ -555,14 +518,16 @@ def test_print_turn_renders_cross_training_kind(capsys) -> None:
     assert "交叉训练 · 骑行恢复" in capsys.readouterr().out
 
 
-def test_repl_handles_chat_apply_without_pending_locally(monkeypatch, tmp_path) -> None:
+def test_repl_forwards_natural_language_apply_without_pending_to_coach(
+    monkeypatch, tmp_path
+) -> None:
     coach_messages: list[str] = []
 
     monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
     monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
     monkeypatch.setattr(
         "coach_cli.cli._run_turn",
-        lambda **kwargs: coach_messages.append(kwargs["message"]) or _turn("unexpected"),
+        lambda **kwargs: coach_messages.append(kwargs["message"]) or _turn("收到"),
     )
 
     result = CliRunner().invoke(
@@ -572,8 +537,8 @@ def test_repl_handles_chat_apply_without_pending_locally(monkeypatch, tmp_path) 
     )
 
     assert result.exit_code == 0, result.output
-    assert coach_messages == []
-    assert "当前没有待确认的计划提案。" in result.output
+    assert coach_messages == ["应用这个提案"]
+    assert "当前没有待确认的计划提案。" not in result.output
 
 
 def test_repl_does_not_treat_apply_prefixed_command_as_apply(
@@ -677,7 +642,7 @@ def test_repl_rejects_zero_proposal_index(monkeypatch, tmp_path) -> None:
 
     assert result.exit_code == 0, result.output
     assert applied == []
-    assert result.output.count("方案编号无效") == 2
+    assert result.output.count("方案编号无效") == 1
 
 
 def test_repl_keeps_pending_proposal_when_session_picker_is_cancelled(
@@ -766,7 +731,9 @@ def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> No
     assert "v2" in result.output
 
 
-def test_repl_applies_single_proposal_through_chat_confirmation(monkeypatch, tmp_path) -> None:
+def test_repl_forwards_natural_language_confirmation_with_pending_proposal(
+    monkeypatch, tmp_path
+) -> None:
     proposal = MasterPlanDiff(
         diff_id="a",
         plan_id="plan-1",
@@ -803,9 +770,9 @@ def test_repl_applies_single_proposal_through_chat_confirmation(monkeypatch, tmp
     )
 
     assert result.exit_code == 0, result.output
-    assert coach_messages == ["帮我减量"]
-    assert applied == ["a"]
-    assert "方案 1 已应用" in result.output
+    assert coach_messages == ["帮我减量", "okay, apply it"]
+    assert applied == []
+    assert "方案 1 已应用" not in result.output
 
 
 def test_repl_sends_ambiguous_confirmation_to_coach_before_explicit_apply(
@@ -850,7 +817,7 @@ def test_repl_sends_ambiguous_confirmation_to_coach_before_explicit_apply(
     result = CliRunner().invoke(
         main,
         ["--profile", "user-x", "--data-dir", str(tmp_path)],
-        input="帮我减量\n确认\n应用这个提案\n/quit\n",
+        input="帮我减量\n确认\n/apply 1\n/quit\n",
     )
 
     assert result.exit_code == 0, result.output
@@ -858,7 +825,7 @@ def test_repl_sends_ambiguous_confirmation_to_coach_before_explicit_apply(
     assert applied == ["a"]
 
 
-def test_repl_requires_number_for_multiple_chat_proposals(monkeypatch, tmp_path) -> None:
+def test_repl_forwards_chat_apply_for_multiple_proposals(monkeypatch, tmp_path) -> None:
     choices = [
         MasterPlanDiff(
             diff_id=diff_id,
@@ -879,10 +846,14 @@ def test_repl_requires_number_for_multiple_chat_proposals(monkeypatch, tmp_path)
         active_target=None,
     )
     applied: list[str] = []
+    coach_messages: list[str] = []
 
     monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
     monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
-    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._run_turn",
+        lambda **kwargs: coach_messages.append(kwargs["message"]) or turn,
+    )
     monkeypatch.setattr(
         "coach_cli.cli._apply_proposal",
         lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 3},
@@ -895,9 +866,9 @@ def test_repl_requires_number_for_multiple_chat_proposals(monkeypatch, tmp_path)
     )
 
     assert result.exit_code == 0, result.output
-    assert applied == ["b"]
-    assert "当前有 2 个待确认提案" in result.output
-    assert "方案 2 已应用" in result.output
+    assert coach_messages == ["给我两个方案", "apply it", "应用第 2 个提案"]
+    assert applied == []
+    assert "方案 2 已应用" not in result.output
 
 
 def test_repl_keeps_pending_proposal_across_follow_up_question(monkeypatch, tmp_path) -> None:
@@ -928,7 +899,7 @@ def test_repl_keeps_pending_proposal_across_follow_up_question(monkeypatch, tmp_
     result = CliRunner().invoke(
         main,
         ["--profile", "user-x", "--data-dir", str(tmp_path)],
-        input="给我一个方案\n会保留调整期吗？\n应用这个提案\n/quit\n",
+        input="给我一个方案\n会保留调整期吗？\n/apply 1\n/quit\n",
     )
 
     assert result.exit_code == 0, result.output
