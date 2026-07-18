@@ -12,14 +12,20 @@ from coach.contracts import ProposalCard
 from coach_cli.cli import (
     _CHECKPOINT_DIR,
     _InputHistory,
+    _build_checkpointer,
+    _apply_week_proposal,
     _model_banner,
     _print_turn,
     _select_session,
     main,
 )
-from stride_core.master_plan_diff import MasterPlanDiff
-from stride_core.plan_diff import PlanDiff
-from stride_core.plan_spec import WeeklyPlan
+from stride_core.master_plan_diff import (
+    MasterPlanDiff,
+    MasterPlanDiffOp,
+    MasterPlanDiffOpKind,
+)
+from stride_core.plan_diff import DiffOp, DiffOpKind, PlanDiff
+from stride_core.plan_spec import PlannedSession, SessionKind, WeeklyPlan
 from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 from stride_storage.coach_persistence.store import CheckpointRow
 
@@ -84,6 +90,19 @@ def test_checkpoints_live_under_coach_cli_home() -> None:
     assert _CHECKPOINT_DIR.is_absolute()
 
 
+def test_cli_checkpointer_allowlists_domain_diff_enums(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("coach_cli.cli._CHECKPOINT_DIR", tmp_path)
+
+    checkpointer = _build_checkpointer()
+    type_tag, payload = checkpointer.serde.dumps_typed(DiffOpKind.MOVE_SESSION)
+
+    assert checkpointer.serde._allowed_msgpack_modules == {
+        ("stride_core.plan_diff", "DiffOpKind"),
+        ("stride_core.master_plan_diff", "MasterPlanDiffOpKind"),
+    }
+    assert checkpointer.serde.loads_typed((type_tag, payload)) == DiffOpKind.MOVE_SESSION
+
+
 def test_input_history_recalls_coach_messages_and_restores_process_history() -> None:
     backend = _ReadlineBackend(["existing-shell-input"])
     history = _InputHistory(backend)
@@ -126,7 +145,7 @@ def test_session_picker_lists_current_and_restores_selected(capsys) -> None:
 
 def test_session_picker_includes_unsaved_current_and_reprompts(capsys) -> None:
     checkpointer = _Checkpointer([_row("cli-old", "2026-07-14T06:30:00Z")])
-    answers = iter(["9", ""])
+    answers = iter(["²", "9" * 4_301, "9", ""])
 
     selected = _select_session(
         checkpointer=checkpointer,
@@ -251,12 +270,118 @@ def test_print_turn_keeps_raw_markdown_for_redirected_stdout(capsys) -> None:
     assert capsys.readouterr().out == f"{reply}\n"
 
 
+def test_non_interactive_turn_omits_unusable_proposal_apply_hint() -> None:
+    stream = StringIO()
+    console = Console(
+        file=stream,
+        force_terminal=False,
+        highlight=False,
+        width=80,
+    )
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="已生成提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    _print_turn(
+        turn,
+        interactive=False,
+        render_markdown=True,
+        console=console,
+    )
+
+    rendered = stream.getvalue()
+    assert "提案 1 · 调整赛季计划" in rendered
+    assert "温和减量" in rendered
+    assert "操作:" not in rendered
+    assert "/apply" not in rendered
+
+
+def test_message_mode_omits_unusable_proposal_apply_hint(monkeypatch, tmp_path) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="已生成提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--profile",
+            "user-x",
+            "--data-dir",
+            str(tmp_path),
+            "--message",
+            "帮我减量",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "提案 1 · 调整赛季计划" in result.output
+    assert "温和减量" in result.output
+    assert "操作:" not in result.output
+    assert "/apply" not in result.output
+
+
+def test_print_turn_advertises_only_slash_apply(capsys) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a", plan_id="plan-1", ops=[], ai_explanation="减量", created_at="t"
+    )
+    turn = SimpleNamespace(
+        reply="调整提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    _print_turn(turn, interactive=True, render_markdown=False)
+
+    output = capsys.readouterr().out
+    assert "输入 /apply 1 应用此提案" in output
+    assert "应用这个提案" not in output
+    assert "应用第 1 个提案" not in output
+
+
 def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
     choices = [
         MasterPlanDiff(
             diff_id="a",
             plan_id="plan-1",
-            ops=[],
+            ops=[
+                MasterPlanDiffOp(
+                    id="op-a",
+                    op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+                    phase_id="build",
+                    old_value={
+                        "weekly_distance_km_low": 110,
+                        "weekly_distance_km_high": 115,
+                    },
+                    new_value={
+                        "weekly_distance_km_low": 104.5,
+                        "weekly_distance_km_high": 109.2,
+                    },
+                )
+            ],
             ai_explanation="方案 A（温和减量）",
             created_at="t",
         ),
@@ -278,13 +403,16 @@ def test_print_turn_lists_each_master_plan_choice(capsys) -> None:
         active_target=None,
     )
 
-    _print_turn(turn, interactive=False, render_markdown=False)
+    _print_turn(turn, interactive=True, render_markdown=False)
 
     output = capsys.readouterr().out
     assert "方案 A（温和减量）" in output
     assert "方案 B（明显减量）" in output
-    assert "📋 提案 1[season_plan]" in output
-    assert "📋 提案 2[season_plan]" in output
+    assert "提案 1 · 调整赛季计划" in output
+    assert "范围: plan-1" in output
+    assert "调整周跑量 · build: 周跑量 110–115 km → 周跑量 104.5–109.2 km" in output
+    assert "输入 /apply 1 应用此提案" in output
+    assert "提案 2 · 调整赛季计划" in output
 
 
 def test_print_turn_numbers_all_cli_applicable_proposals(capsys) -> None:
@@ -315,8 +443,250 @@ def test_print_turn_numbers_all_cli_applicable_proposals(capsys) -> None:
     _print_turn(turn, interactive=False, render_markdown=False)
 
     output = capsys.readouterr().out
-    assert "📋 提案 1[weekly_plan]" in output
-    assert "📋 提案 2[season_plan]" in output
+    assert "提案 1 · 调整周计划" in output
+    assert "提案 2 · 调整赛季计划" in output
+
+
+def test_print_turn_keeps_non_distance_fields_in_weekly_range_patch(capsys) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="add-phase",
+        plan_id="plan-1",
+        ops=[
+            MasterPlanDiffOp(
+                id="op-1",
+                op=MasterPlanDiffOpKind.ADD_PHASE,
+                phase_id="build",
+                spec_patch={
+                    "name": "强化期",
+                    "start_date": "2026-08-03",
+                    "end_date": "2026-08-30",
+                    "focus": "阈值耐力",
+                    "weekly_distance_km_low": 104,
+                    "weekly_distance_km_high": 110,
+                },
+            )
+        ],
+        ai_explanation="新增强化阶段",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="这是调整提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    _print_turn(turn, interactive=False, render_markdown=False)
+
+    output = capsys.readouterr().out
+    assert "周跑量 104–110 km" in output
+    assert "名称 强化期" in output
+    assert "开始日期 2026-08-03" in output
+    assert "结束日期 2026-08-30" in output
+    assert "重点 阈值耐力" in output
+
+
+def test_print_turn_renders_cross_training_kind(capsys) -> None:
+    folder = "2026-07-13_07-19"
+    proposal = WeeklyPlanCreateProposal(
+        proposal_id="create-cross",
+        folder=folder,
+        plan=WeeklyPlan(
+            week_folder=folder,
+            sessions=(
+                PlannedSession(
+                    date="2026-07-15",
+                    session_index=0,
+                    kind=SessionKind.CROSS,
+                    summary="骑行恢复",
+                ),
+            ),
+        ).to_dict(),
+        total_distance_km=0,
+        ai_explanation="安排交叉训练",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="这是本周提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="weekly_plan", proposal=proposal)],
+        active_target=None,
+    )
+
+    _print_turn(turn, interactive=False, render_markdown=False)
+
+    assert "交叉训练 · 骑行恢复" in capsys.readouterr().out
+
+
+def test_repl_forwards_natural_language_apply_without_pending_to_coach(
+    monkeypatch, tmp_path
+) -> None:
+    coach_messages: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr(
+        "coach_cli.cli._run_turn",
+        lambda **kwargs: coach_messages.append(kwargs["message"]) or _turn("收到"),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="应用这个提案\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert coach_messages == ["应用这个提案"]
+    assert "当前没有待确认的计划提案。" not in result.output
+
+
+def test_repl_does_not_treat_apply_prefixed_command_as_apply(
+    monkeypatch, tmp_path
+) -> None:
+    coach_messages: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr(
+        "coach_cli.cli._run_turn",
+        lambda **kwargs: coach_messages.append(kwargs["message"]) or _turn("收到"),
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="/applyfoo 1\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert coach_messages == ["/applyfoo 1"]
+
+
+def test_repl_rejects_non_ascii_and_oversized_slash_indexes(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input=f"/apply ²\n/apply {'9' * 4_301}\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "用法: /apply N" in result.output
+    assert "当前没有待确认的计划提案。" in result.output
+
+
+def test_repl_normalizes_leading_zero_slash_index(monkeypatch, tmp_path) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a", plan_id="plan-1", ops=[], ai_explanation="减量", created_at="t"
+    )
+    turn = SimpleNamespace(
+        reply="调整提案",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="给我方案\n/apply 0000000001\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert applied == ["a"]
+
+
+def test_repl_rejects_zero_proposal_index(monkeypatch, tmp_path) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="已准备好调整",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="帮我减量\n/apply 0\n应用第 0 个提案\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert applied == []
+    assert result.output.count("方案编号无效") == 1
+
+
+def test_repl_keeps_pending_proposal_when_session_picker_is_cancelled(
+    monkeypatch, tmp_path
+) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="已准备好调整",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: turn)
+    monkeypatch.setattr("coach_cli.cli._select_session", lambda **_: "cli-current")
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--profile",
+            "user-x",
+            "--session",
+            "cli-current",
+            "--data-dir",
+            str(tmp_path),
+        ],
+        input="帮我减量\n/session\n/apply 1\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert applied == ["a"]
 
 
 def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> None:
@@ -366,6 +736,223 @@ def test_repl_applies_selected_master_plan_proposal(monkeypatch, tmp_path) -> No
     assert "方案 2 已应用" in result.output
     assert "v2" in result.output
     assert "2 个周计划可能仍含旧总纲目标" in result.output
+
+
+def test_repl_forwards_natural_language_confirmation_with_pending_proposal(
+    monkeypatch, tmp_path
+) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turn = SimpleNamespace(
+        reply="已准备好调整",
+        clarification=None,
+        proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+        active_target=None,
+    )
+    applied: list[str] = []
+    coach_messages: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+
+    def fake_turn(**kwargs):
+        coach_messages.append(kwargs["message"])
+        return turn
+
+    monkeypatch.setattr("coach_cli.cli._run_turn", fake_turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="帮我减量\nokay, apply it\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert coach_messages == ["帮我减量", "okay, apply it"]
+    assert applied == []
+    assert "方案 1 已应用" not in result.output
+
+
+def test_repl_sends_ambiguous_confirmation_to_coach_before_explicit_apply(
+    monkeypatch, tmp_path
+) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a",
+        plan_id="plan-1",
+        ops=[],
+        ai_explanation="温和减量",
+        created_at="t",
+    )
+    turns = iter(
+        [
+            SimpleNamespace(
+                reply="已准备好调整",
+                clarification=None,
+                proposals=[
+                    ProposalCard(specialist_id="season_plan", proposal=proposal)
+                ],
+                active_target=None,
+            ),
+            _turn("已收到你的确认信息。"),
+        ]
+    )
+    coach_messages: list[str] = []
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+
+    def fake_turn(**kwargs):
+        coach_messages.append(kwargs["message"])
+        return next(turns)
+
+    monkeypatch.setattr("coach_cli.cli._run_turn", fake_turn)
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="帮我减量\n确认\n/apply 1\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert coach_messages == ["帮我减量", "确认"]
+    assert applied == ["a"]
+
+
+def test_repl_forwards_chat_apply_for_multiple_proposals(monkeypatch, tmp_path) -> None:
+    choices = [
+        MasterPlanDiff(
+            diff_id=diff_id,
+            plan_id="plan-1",
+            ops=[],
+            ai_explanation=label,
+            created_at="t",
+        )
+        for diff_id, label in (("a", "温和减量"), ("b", "明显减量"))
+    ]
+    turn = SimpleNamespace(
+        reply="请选择一个方向",
+        clarification=None,
+        proposals=[
+            ProposalCard(specialist_id="season_plan", proposal=choice)
+            for choice in choices
+        ],
+        active_target=None,
+    )
+    applied: list[str] = []
+    coach_messages: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr(
+        "coach_cli.cli._run_turn",
+        lambda **kwargs: coach_messages.append(kwargs["message"]) or turn,
+    )
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 3},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="给我两个方案\napply it\n应用第 2 个提案\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert coach_messages == ["给我两个方案", "apply it", "应用第 2 个提案"]
+    assert applied == []
+    assert "方案 2 已应用" not in result.output
+
+
+def test_repl_keeps_pending_proposal_across_follow_up_question(monkeypatch, tmp_path) -> None:
+    proposal = MasterPlanDiff(
+        diff_id="a", plan_id="plan-1", ops=[], ai_explanation="减量", created_at="t"
+    )
+    turns = iter(
+        [
+            SimpleNamespace(
+                reply="调整提案",
+                clarification=None,
+                proposals=[ProposalCard(specialist_id="season_plan", proposal=proposal)],
+                active_target=None,
+            ),
+            _turn("这个提案会保留调整期。"),
+        ]
+    )
+    applied: list[str] = []
+
+    monkeypatch.setattr("coach_cli.cli._build_checkpointer", lambda: _Checkpointer([]))
+    monkeypatch.setattr("coach_cli.cli._readline", _ReadlineBackend())
+    monkeypatch.setattr("coach_cli.cli._run_turn", lambda **_: next(turns))
+    monkeypatch.setattr(
+        "coach_cli.cli._apply_proposal",
+        lambda *, user_id, proposal: applied.append(proposal.diff_id) or {"version": 2},
+    )
+
+    result = CliRunner().invoke(
+        main,
+        ["--profile", "user-x", "--data-dir", str(tmp_path)],
+        input="给我一个方案\n会保留调整期吗？\n/apply 1\n/quit\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert applied == ["a"]
+
+
+def test_apply_week_proposal_skips_explicitly_rejected_ops(monkeypatch) -> None:
+    proposal = PlanDiff(
+        diff_id="week",
+        folder="2026-07-13_07-19",
+        ops=[
+            DiffOp(
+                id="accepted",
+                op=DiffOpKind.REPLACE_NOTE,
+                date="2026-07-15",
+                session_index=0,
+                old_value={"summary": "旧"},
+                new_value={"summary": "新"},
+                spec_patch={"summary": "新"},
+                accepted=None,
+            ),
+            DiffOp(
+                id="rejected",
+                op=DiffOpKind.REPLACE_NOTE,
+                date="2026-07-16",
+                session_index=0,
+                old_value={"summary": "旧"},
+                new_value={"summary": "不采用"},
+                spec_patch={"summary": "不采用"},
+                accepted=False,
+            ),
+        ],
+        ai_explanation="调整说明",
+        created_at="t",
+    )
+    seen_ids: list[str] = []
+
+    def fake_apply(folder, body, payload):
+        seen_ids.extend(body.accepted_op_ids)
+        return {"folder": folder}
+
+    monkeypatch.setattr("stride_server.routes.coach.apply_coach_week_diff", fake_apply)
+
+    _apply_week_proposal(user_id="user-x", proposal=proposal)
+
+    assert seen_ids == ["accepted"]
 
 
 def test_repl_applies_week_create_then_adjust_proposals(monkeypatch, tmp_path) -> None:

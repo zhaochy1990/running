@@ -33,7 +33,7 @@ class Turn(BaseModel):
 
 
 class ProposalCard(BaseModel):
-    """A write proposal surfaced to the user, confirmed via ``/apply`` (§4.4)."""
+    """A write proposal surfaced to the user for deterministic confirmation (§4.4)."""
 
     specialist_id: str
     proposal: PlanDiff | MasterPlanDiff | WeeklyPlanCreateProposal
