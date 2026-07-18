@@ -7,6 +7,20 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 
 ---
 
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked in GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the canonical labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
+
 ## Topic-specific docs（按需 Read）
 
 写代码 / 文档前，按任务类型主动 Read 对应文件：
