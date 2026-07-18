@@ -87,3 +87,140 @@ class TestGarminSyncTimeseries:
             "speed": 250.0,
             "power": 300,
         }
+
+
+class TestGarminSyncHealthDates:
+    """Verify that _sync_health emits changed dates for HRV-only days and uses
+    changed-only detection to avoid spurious recomputes on repeat syncs."""
+
+    def _make_client(
+        self,
+        *,
+        rhr: int | None = None,
+        hrv_avg: int | None = None,
+        hrv_weekly: int | None = None,
+        hrv_status: str | None = None,
+        sleep_score: int | None = None,
+    ):
+        """Build a fake Garmin client returning a single day of data."""
+        from garmin_sync.sync import _sync_health  # noqa: F401 - ensure import works
+
+        class FakeClient:
+            def get_training_status(self, date_iso):
+                return {}
+
+            def get_user_summary(self, date_iso):
+                return {"restingHeartRate": rhr}
+
+            def get_sleep_data(self, date_iso):
+                if sleep_score is None:
+                    return {}
+                return {"dailySleepDTO": {"sleepScores": {"overall": {"value": sleep_score}}}}
+
+            def get_hrv_data(self, date_iso):
+                if hrv_avg is None and hrv_weekly is None and hrv_status is None:
+                    return {}
+                return {
+                    "hrvSummary": {
+                        "lastNightAvg": hrv_avg,
+                        "weeklyAvg": hrv_weekly,
+                        "status": hrv_status,
+                    }
+                }
+
+            def get_lactate_threshold(self):
+                return {}
+
+            def get_race_predictions(self):
+                return []
+
+        return FakeClient()
+
+    def test_hrv_only_day_adds_date_to_health_dates_out(self, db):
+        """A day where only HRV was written (no usable health signal) must
+        still emit its date so training-load recompute fires for rest days."""
+        from garmin_sync.sync import _sync_health
+
+        client = self._make_client(hrv_avg=42, hrv_weekly=44)
+        changed: set[str] = set()
+        _sync_health(client, db, progress=None, days=1, health_dates_out=changed)
+
+        assert len(changed) == 1
+
+    def test_health_and_hrv_day_adds_date_once(self, db):
+        """A day with both health and HRV signals emits the date (deduplicated)."""
+        from garmin_sync.sync import _sync_health
+
+        client = self._make_client(rhr=50, hrv_avg=42)
+        changed: set[str] = set()
+        _sync_health(client, db, progress=None, days=1, health_dates_out=changed)
+
+        assert len(changed) == 1
+
+    def test_repeat_sync_identical_payload_emits_no_dates(self, db):
+        """Second sync with same data must not emit any changed dates."""
+        from garmin_sync.sync import _sync_health
+
+        client = self._make_client(rhr=50, hrv_avg=42)
+        # First sync — populates DB.
+        _sync_health(client, db, progress=None, days=1, health_dates_out=set())
+        # Second sync — same data, nothing changed.
+        changed2: set[str] = set()
+        _sync_health(client, db, progress=None, days=1, health_dates_out=changed2)
+
+        assert changed2 == set()
+
+    def test_updated_value_emits_date(self, db):
+        """When a key field changes on the second sync, the date is emitted."""
+        from garmin_sync.sync import _sync_health
+
+        client_first = self._make_client(rhr=50, hrv_avg=42)
+        _sync_health(client_first, db, progress=None, days=1, health_dates_out=set())
+
+        client_updated = self._make_client(rhr=48, hrv_avg=42)  # rhr dropped
+        changed2: set[str] = set()
+        _sync_health(client_updated, db, progress=None, days=1, health_dates_out=changed2)
+
+        assert len(changed2) == 1
+
+    def test_status_only_update_emits_date(self, db):
+        from garmin_sync.sync import _sync_health
+
+        _sync_health(
+            self._make_client(hrv_avg=42, hrv_weekly=44, hrv_status="BALANCED"),
+            db,
+            progress=None,
+            days=1,
+            health_dates_out=set(),
+        )
+        changed: set[str] = set()
+        _sync_health(
+            self._make_client(hrv_avg=42, hrv_weekly=44, hrv_status="LOW"),
+            db,
+            progress=None,
+            days=1,
+            health_dates_out=changed,
+        )
+
+        assert len(changed) == 1
+
+    def test_sleep_score_only_update_emits_date(self, db):
+        from garmin_sync.sync import _sync_health
+
+        _sync_health(
+            self._make_client(sleep_score=80),
+            db,
+            progress=None,
+            days=1,
+            health_dates_out=set(),
+        )
+        changed: set[str] = set()
+        _sync_health(
+            self._make_client(sleep_score=55),
+            db,
+            progress=None,
+            days=1,
+            health_dates_out=changed,
+        )
+
+        assert len(changed) == 1

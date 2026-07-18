@@ -129,13 +129,15 @@ class CorosDataSource(BaseDataSource):
             )
 
         with CorosClient(creds, user=user) as client, Database(user=user) as db:
+            health_dates: set[str] = set()
             if mode == "health_only":
                 activities, health = run_health_only_sync(
-                    client, db, progress=progress,
+                    client, db, progress=progress, health_dates_out=health_dates,
                 )
                 activity_label_ids: tuple[str, ...] = ()
             else:
                 kwargs: dict = {"full": full, "jobs": self._jobs}
+                kwargs["health_dates_out"] = health_dates
                 if progress is not None:
                     kwargs["progress"] = progress
                 activities, health, activity_label_ids = run_sync(client, db, **kwargs)
@@ -143,6 +145,7 @@ class CorosDataSource(BaseDataSource):
             activities=activities,
             health=health,
             activity_label_ids=activity_label_ids,
+            health_dates=tuple(sorted(health_dates)),
         )
 
     def push_run_workout(self, user: str, workout: NormalizedRunWorkout) -> str:

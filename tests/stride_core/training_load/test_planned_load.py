@@ -108,7 +108,7 @@ def test_pace_target_preferred_over_hr_when_both_present():
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_variable_run_sums_per_step():
+def test_variable_run_uses_same_normalized_if_as_measured_load():
     # 20 min @ IF 1.0 + 20 min @ IF 0.78 within one linear block.
     easy_pace = 1000.0 / (THRESHOLD_SPEED * 0.78)
     wo = _workout(
@@ -117,27 +117,28 @@ def test_variable_run_sums_per_step():
             _work_step(Duration.of_time_min(20), Target.pace_range_s_km(easy_pace, easy_pace)),
         ))
     )
-    expected = (20 / 60) * 1.0 ** 2 * 100 + (20 / 60) * 0.78 ** 2 * 100
+    normalized_if = ((1.0**6 + 0.78**6) / 2.0) ** (1.0 / 6.0)
+    expected = (40 / 60) * normalized_if**2 * 100
     assert _estimate(wo) == pytest.approx(expected, abs=1.0)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Interval run — recovery steps are skipped
+# Interval run — active recovery steps are included
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def test_interval_recovery_is_skipped():
-    # 6 × (800m work @ IF 1.1 + 90s easy recovery). Recovery must NOT add dose.
+def test_interval_recovery_is_included():
+    # 6 × (800m work @ IF 1.1 + 90s easy recovery). Recovery is real work.
     work_pace = 1000.0 / (THRESHOLD_SPEED * 1.1)
     work = _work_step(Duration.of_distance_m(800), Target.pace_range_s_km(work_pace, work_pace))
     recovery = WorkoutStep(
         step_kind=StepKind.RECOVERY,
         duration=Duration.of_time_s(90),
-        target=Target.pace_range_s_km(400, 400),  # would add dose if not skipped
+        target=Target.pace_range_s_km(400, 400),
     )
     with_recovery = _workout(WorkoutBlock(steps=(work, recovery), repeat=6))
     work_only = _workout(WorkoutBlock(steps=(work,), repeat=6))
-    assert _estimate(with_recovery) == pytest.approx(_estimate(work_only), abs=1e-6)
+    assert _estimate(with_recovery) > _estimate(work_only)
 
 
 def test_interval_work_dose_value():
@@ -170,6 +171,20 @@ def test_open_target_uses_step_kind_default_if():
     assert _estimate(wo) == pytest.approx(expected, abs=1.0)
 
 
+def test_open_work_target_is_unknown_instead_of_using_fixed_session_if():
+    wo = _workout(
+        WorkoutBlock(steps=(
+            WorkoutStep(
+                step_kind=StepKind.WORK,
+                duration=Duration.of_time_min(60),
+                target=Target.open(),
+            ),
+        ))
+    )
+
+    assert _estimate(wo) is None
+
+
 def test_open_duration_step_is_skipped():
     # The only step is open-duration → nothing computable → None.
     wo = _workout(
@@ -192,9 +207,9 @@ def test_missing_calibration_returns_none():
     ) is None
 
 
-def test_intervals_more_conservative_than_steady_same_time():
-    # Documented property: skipping recovery makes an interval session's dose
-    # lower than a steady threshold run of the same *total clock time*.
+def test_interval_variation_gets_same_non_linear_emphasis_as_actual_load():
+    # The sixth-power normalized IF makes variable high-intensity work costlier
+    # than a simple per-segment IF² sum, matching the measured external channel.
     work_pace = 1000.0 / (THRESHOLD_SPEED * 1.1)
     interval = _workout(
         WorkoutBlock(steps=(
@@ -203,12 +218,8 @@ def test_intervals_more_conservative_than_steady_same_time():
                         target=Target.pace_range_s_km(400, 400)),
         ), repeat=6)
     )  # 30 min clock time
-    steady = _workout(
-        WorkoutBlock(steps=(
-            _work_step(Duration.of_time_min(30), Target.pace_range_s_km(THRESHOLD_PACE, THRESHOLD_PACE)),
-        ))
-    )
-    assert _estimate(interval) < _estimate(steady)
+    simple_if2_sum = (18 / 60) * 1.1**2 * 100 + (12 / 60) * 0.625**2 * 100
+    assert _estimate(interval) > simple_if2_sum
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -230,7 +241,7 @@ def test_steady_matches_external_tss():
         duration_s=duration_s, distance_m=speed * duration_s, samples=samples,
     )
     calib = CalibrationSnapshot(as_of_date=date(2026, 5, 1), threshold_speed_mps=THRESHOLD_SPEED)
-    external_tss, _, _, _ = _compute_external_tss(activity, calib)
+    external_tss, _, _, _, _ = _compute_external_tss(activity, calib)
 
     pace = 1000.0 / speed
     wo = _workout(
@@ -240,3 +251,42 @@ def test_steady_matches_external_tss():
     )
     planned = _estimate(wo)
     assert planned == pytest.approx(external_tss, rel=0.02)
+
+
+def test_variable_plan_matches_same_variable_measured_external_scale():
+    duration_s = 2400
+    samples = tuple(
+        ActivitySample(
+            elapsed_s=float(i),
+            speed_mps=THRESHOLD_SPEED * (1.0 if i <= 1200 else 0.78),
+        )
+        for i in range(duration_s + 1)
+    )
+    activity = ActivityLoadInput(
+        label_id="variable",
+        activity_date=date(2026, 5, 1),
+        sport="run_outdoor",
+        duration_s=duration_s,
+        samples=samples,
+    )
+    calibration = CalibrationSnapshot(
+        as_of_date=date(2026, 5, 1),
+        threshold_speed_mps=THRESHOLD_SPEED,
+    )
+    external_tss, _, _, _, _ = _compute_external_tss(activity, calibration)
+
+    easy_pace = 1000.0 / (THRESHOLD_SPEED * 0.78)
+    workout = _workout(
+        WorkoutBlock(steps=(
+            _work_step(
+                Duration.of_time_min(20),
+                Target.pace_range_s_km(THRESHOLD_PACE, THRESHOLD_PACE),
+            ),
+            _work_step(
+                Duration.of_time_min(20),
+                Target.pace_range_s_km(easy_pace, easy_pace),
+            ),
+        ))
+    )
+
+    assert _estimate(workout) == pytest.approx(external_tss, rel=0.01)

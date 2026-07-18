@@ -88,9 +88,15 @@ describe('ActivityDetailPage', () => {
         cardio_load_raw: 70.5,
         cardio_tss: 84.2,
         external_tss: 91.4,
+        high_intensity_tss: 12.3,
         mechanical_load: 10.3,
         subjective_internal_load: null,
         training_dose: 86.4,
+        training_dose_source: 'conservative_fusion+high_intensity',
+        cardio_coverage: 1.0,
+        external_coverage: 1.0,
+        high_intensity_coverage: 1.0,
+        coverage_status: 'complete',
         load_confidence: 'high',
         excluded_from_pmc: false,
         reasons: ['gps_ok'],
@@ -105,6 +111,8 @@ describe('ActivityDetailPage', () => {
     expect(screen.getByText('STRIDE 客观负荷')).toBeInTheDocument()
     expect(screen.getByText('训练剂量')).toBeInTheDocument()
     expect(screen.getByText('86.4')).toBeInTheDocument()
+    expect(screen.getByText('高强度加成')).toBeInTheDocument()
+    expect(screen.getByText('12.3')).toBeInTheDocument()
     expect(screen.getByText('gps_ok')).toBeInTheDocument()
   })
 

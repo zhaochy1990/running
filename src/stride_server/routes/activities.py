@@ -13,6 +13,7 @@ from stride_core.distance import meters_to_km_zero
 from stride_core.post_sync import run_post_sync_for_labels
 from stride_core.source import DataSource
 from stride_core.timefmt import utc_iso_to_shanghai_iso
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from ..bearer import require_bearer
 from ..deps import (
@@ -54,9 +55,15 @@ def _serialize_activity_training_load(row) -> dict | None:
         "cardio_load_raw": rec.get("cardio_load_raw"),
         "cardio_tss": rec.get("cardio_tss"),
         "external_tss": rec.get("external_tss"),
+        "high_intensity_tss": rec.get("high_intensity_tss"),
         "mechanical_load": rec.get("mechanical_load"),
         "subjective_internal_load": rec.get("subjective_internal_load"),
         "training_dose": rec.get("training_dose"),
+        "training_dose_source": rec.get("training_dose_source"),
+        "cardio_coverage": rec.get("cardio_coverage"),
+        "external_coverage": rec.get("external_coverage"),
+        "high_intensity_coverage": rec.get("high_intensity_coverage"),
+        "coverage_status": rec.get("coverage_status"),
         "load_confidence": rec.get("load_confidence"),
         "excluded_from_pmc": bool(rec.get("excluded_from_pmc")),
         "reasons": _json_list(rec.get("reasons_json")),
@@ -206,7 +213,9 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     zones = [dict(z) for z in zones_rows]
 
     stride_training_load = _serialize_activity_training_load(
-        db.fetch_activity_training_load(label_id)
+        db.fetch_activity_training_load(
+            label_id, algorithm_version=TRAINING_LOAD_MODEL_VERSION
+        )
     )
 
     ts_rows = db.query(

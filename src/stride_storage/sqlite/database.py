@@ -14,7 +14,7 @@ from stride_core.models import (
     ActivityDetail, BodyCompositionScan, BodySegment, DailyHealth, DailyHrv,
     Dashboard, Lap, RacePrediction, RUN_SPORT_SQL_LIST, TimeseriesPoint, Zone,
 )
-from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.timefmt import SHANGHAI_DAY_SQL, sqlite_mixed_date_expr
 
 
 _VO2MAX_PB_DISTANCE_METERS_FLAG = "distance_units_vo2max_pb_meters_v1"
@@ -355,7 +355,7 @@ CREATE TABLE IF NOT EXISTS daily_hrv (
     PRIMARY KEY (date, provider)
 );
 
--- Objective training-load v1. Vendor black-box fields stay in activities /
+-- Objective training-load v2. Vendor black-box fields stay in activities /
 -- daily_health; these tables hold STRIDE-computed TSS-like load. Mapping:
 -- cardio_load_raw = Banister TRIMP; external_tss = rTSS/RSS/power TSS;
 -- acute_load = ATL; chronic_load = CTL; form = TSB.
@@ -369,9 +369,15 @@ CREATE TABLE IF NOT EXISTS activity_training_load (
     cardio_load_raw          REAL,
     cardio_tss               REAL,
     external_tss             REAL,
+    high_intensity_tss       REAL,
     mechanical_load          REAL,
     subjective_internal_load REAL,
     training_dose            REAL,
+    training_dose_source     TEXT,
+    cardio_coverage          REAL NOT NULL DEFAULT 0,
+    external_coverage        REAL NOT NULL DEFAULT 0,
+    high_intensity_coverage  REAL NOT NULL DEFAULT 0,
+    coverage_status          TEXT NOT NULL DEFAULT 'unknown',
     load_confidence          TEXT,
     excluded_from_pmc        INTEGER NOT NULL DEFAULT 1,
     reasons_json             TEXT,
@@ -388,6 +394,7 @@ CREATE TABLE IF NOT EXISTS daily_training_load (
     chronic_load            REAL,
     form                    REAL,
     load_ratio              REAL,
+    coverage_status         TEXT NOT NULL DEFAULT 'unknown',
     readiness_gate          TEXT,
     readiness_reasons_json  TEXT,
     computed_at             TEXT NOT NULL DEFAULT (datetime('now')),
@@ -527,17 +534,19 @@ CREATE TABLE IF NOT EXISTS activity_feedback (
 # providers so adding a third source (Apple, Fitbit, ...) is non-breaking.
 # Wrap this string as an inner subquery, e.g.:
 #   SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) ORDER BY date DESC
-HRV_PREFERRED_PER_DATE_SQL = """
+_HRV_H1_DAY_SQL = sqlite_mixed_date_expr("h1.date")
+_HRV_H2_DAY_SQL = sqlite_mixed_date_expr("h2.date")
+HRV_PREFERRED_PER_DATE_SQL = f"""
     SELECT * FROM daily_hrv WHERE rowid IN (
         SELECT rowid FROM daily_hrv h1
-        WHERE provider = (
-            SELECT provider FROM daily_hrv h2
-            WHERE h2.date = h1.date
-            ORDER BY CASE provider
+        WHERE h1.rowid = (
+            SELECT h2.rowid FROM daily_hrv h2
+            WHERE {_HRV_H2_DAY_SQL} = {_HRV_H1_DAY_SQL}
+            ORDER BY CASE h2.provider
                 WHEN 'garmin' THEN 1
                 WHEN 'coros' THEN 2
                 ELSE 3
-            END, provider
+            END, h2.provider
             LIMIT 1
         )
     )
@@ -955,6 +964,13 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_scheduled_workout_plan_session "
             "ON scheduled_workout(week_folder, planned_date, session_index, id)"
         )
+        _add("activity_training_load", "training_dose_source", "TEXT")
+        _add("activity_training_load", "cardio_coverage", "REAL NOT NULL DEFAULT 0")
+        _add("activity_training_load", "external_coverage", "REAL NOT NULL DEFAULT 0")
+        _add("activity_training_load", "high_intensity_tss", "REAL")
+        _add("activity_training_load", "high_intensity_coverage", "REAL NOT NULL DEFAULT 0")
+        _add("activity_training_load", "coverage_status", "TEXT NOT NULL DEFAULT 'unknown'")
+        _add("daily_training_load", "coverage_status", "TEXT NOT NULL DEFAULT 'unknown'")
 
         def _rename(old: str, new: str) -> None:
             """Rename table if old exists and new doesn't. Idempotent."""
@@ -1025,9 +1041,15 @@ class Database:
             "    cardio_load_raw REAL,"
             "    cardio_tss REAL,"
             "    external_tss REAL,"
+            "    high_intensity_tss REAL,"
             "    mechanical_load REAL,"
             "    subjective_internal_load REAL,"
             "    training_dose REAL,"
+            "    training_dose_source TEXT,"
+            "    cardio_coverage REAL NOT NULL DEFAULT 0,"
+            "    external_coverage REAL NOT NULL DEFAULT 0,"
+            "    high_intensity_coverage REAL NOT NULL DEFAULT 0,"
+            "    coverage_status TEXT NOT NULL DEFAULT 'unknown',"
             "    load_confidence TEXT,"
             "    excluded_from_pmc INTEGER NOT NULL DEFAULT 1,"
             "    reasons_json TEXT,"
@@ -1044,6 +1066,7 @@ class Database:
             "    chronic_load REAL,"
             "    form REAL,"
             "    load_ratio REAL,"
+            "    coverage_status TEXT NOT NULL DEFAULT 'unknown',"
             "    readiness_gate TEXT,"
             "    readiness_reasons_json TEXT,"
             "    computed_at TEXT NOT NULL DEFAULT (datetime('now')),"
@@ -1631,7 +1654,37 @@ class Database:
 
     # --- Health ---
 
-    def upsert_daily_health(self, h: DailyHealth, *, provider: str = "coros") -> None:
+    def upsert_daily_health(
+        self,
+        h: DailyHealth,
+        *,
+        provider: str = "coros",
+        track_changes: bool = False,
+    ) -> bool:
+        columns = (
+            "ati", "cti", "rhr", "distance_m", "duration_s",
+            "training_load_ratio", "training_load_state", "fatigue",
+            "body_battery_high", "body_battery_low", "stress_avg",
+            "sleep_total_s", "sleep_deep_s", "sleep_light_s", "sleep_rem_s",
+            "sleep_awake_s", "sleep_score", "respiration_avg", "spo2_avg",
+            "provider",
+        )
+        values = (
+            h.ati, h.cti, h.rhr, h.distance_m, h.duration_s,
+            h.training_load_ratio, h.training_load_state, h.fatigue,
+            h.body_battery_high, h.body_battery_low, h.stress_avg,
+            h.sleep_total_s, h.sleep_deep_s, h.sleep_light_s, h.sleep_rem_s,
+            h.sleep_awake_s, h.sleep_score, h.respiration_avg, h.spo2_avg,
+            provider,
+        )
+        existing = (
+            self._conn.execute(
+                f"SELECT {', '.join(columns)} FROM daily_health WHERE date = ?",
+                (h.date,),
+            ).fetchone()
+            if track_changes
+            else None
+        )
         self._conn.execute(
             """INSERT OR REPLACE INTO daily_health
             (date, ati, cti, rhr, distance_m, duration_s, training_load_ratio,
@@ -1641,29 +1694,60 @@ class Database:
              respiration_avg, spo2_avg,
              provider)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (h.date, h.ati, h.cti, h.rhr, h.distance_m, h.duration_s,
-             h.training_load_ratio, h.training_load_state, h.fatigue,
-             h.body_battery_high, h.body_battery_low, h.stress_avg,
-             h.sleep_total_s, h.sleep_deep_s, h.sleep_light_s, h.sleep_rem_s,
-             h.sleep_awake_s, h.sleep_score,
-             h.respiration_avg, h.spo2_avg,
-             provider),
+            (h.date, *values),
         )
         self._conn.commit()
+        return bool(
+            track_changes
+            and (
+                existing is None
+                or any(existing[column] != value for column, value in zip(columns, values))
+            )
+        )
 
-    def upsert_daily_hrv(self, h: DailyHrv, *, provider: str = "garmin") -> None:
-        """Upsert a per-day HRV detail row (Garmin-rich, COROS-empty for v1)."""
+    def upsert_daily_hrv(
+        self,
+        h: DailyHrv,
+        *,
+        provider: str = "garmin",
+        track_changes: bool = False,
+    ) -> bool:
+        """Upsert a per-day HRV detail row (Garmin-rich; COROS-basic)."""
+        columns = (
+            "weekly_avg", "last_night_avg", "last_night_5min_high", "status",
+            "baseline_low_upper", "baseline_balanced_low", "baseline_balanced_upper",
+            "feedback_phrase",
+        )
+        values = (
+            h.weekly_avg, h.last_night_avg, h.last_night_5min_high, h.status,
+            h.baseline_low_upper, h.baseline_balanced_low, h.baseline_balanced_upper,
+            h.feedback_phrase,
+        )
+        existing = (
+            self._conn.execute(
+                f"SELECT {', '.join(columns)} FROM daily_hrv "
+                "WHERE date = ? AND provider = ?",
+                (h.date, provider),
+            ).fetchone()
+            if track_changes
+            else None
+        )
         self._conn.execute(
             """INSERT OR REPLACE INTO daily_hrv
             (date, weekly_avg, last_night_avg, last_night_5min_high, status,
              baseline_low_upper, baseline_balanced_low, baseline_balanced_upper,
              feedback_phrase, provider)
             VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (h.date, h.weekly_avg, h.last_night_avg, h.last_night_5min_high, h.status,
-             h.baseline_low_upper, h.baseline_balanced_low, h.baseline_balanced_upper,
-             h.feedback_phrase, provider),
+            (h.date, *values, provider),
         )
         self._conn.commit()
+        return bool(
+            track_changes
+            and (
+                existing is None
+                or any(existing[column] != value for column, value in zip(columns, values))
+            )
+        )
 
     def upsert_dashboard(self, d: Dashboard, *, provider: str = "coros") -> None:
         self._conn.execute(
@@ -1779,10 +1863,11 @@ class Database:
         self._conn.execute(
             """INSERT INTO activity_training_load
                (label_id, activity_date, sport, session_class, algorithm_version,
-                calibration_id, cardio_load_raw, cardio_tss, external_tss,
+                calibration_id, cardio_load_raw, cardio_tss, external_tss, high_intensity_tss,
                 mechanical_load, subjective_internal_load, training_dose,
-                load_confidence, excluded_from_pmc, reasons_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                training_dose_source, cardio_coverage, external_coverage, high_intensity_coverage,
+                coverage_status, load_confidence, excluded_from_pmc, reasons_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(label_id) DO UPDATE SET
                    activity_date = excluded.activity_date,
                    sport = excluded.sport,
@@ -1792,9 +1877,15 @@ class Database:
                    cardio_load_raw = excluded.cardio_load_raw,
                    cardio_tss = excluded.cardio_tss,
                    external_tss = excluded.external_tss,
+                   high_intensity_tss = excluded.high_intensity_tss,
                    mechanical_load = excluded.mechanical_load,
                    subjective_internal_load = excluded.subjective_internal_load,
                    training_dose = excluded.training_dose,
+                   training_dose_source = excluded.training_dose_source,
+                   cardio_coverage = excluded.cardio_coverage,
+                   external_coverage = excluded.external_coverage,
+                   high_intensity_coverage = excluded.high_intensity_coverage,
+                   coverage_status = excluded.coverage_status,
                    load_confidence = excluded.load_confidence,
                    excluded_from_pmc = excluded.excluded_from_pmc,
                    reasons_json = excluded.reasons_json,
@@ -1809,9 +1900,15 @@ class Database:
                 result.cardio_load_raw,
                 result.cardio_tss,
                 result.external_tss,
+                result.high_intensity_tss,
                 result.mechanical_load,
                 result.subjective_internal_load,
                 result.training_dose,
+                result.training_dose_source,
+                result.cardio_coverage,
+                result.external_coverage,
+                result.high_intensity_coverage,
+                result.coverage_status.value,
                 result.load_confidence.value,
                 1 if result.excluded_from_pmc else 0,
                 reasons_json,
@@ -1826,8 +1923,8 @@ class Database:
             """INSERT INTO daily_training_load
                (date, algorithm_version, calibration_id, training_dose, acute_load,
                 chronic_load, form, load_ratio, readiness_gate,
-                readiness_reasons_json, computed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                coverage_status, readiness_reasons_json, computed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                ON CONFLICT(date, algorithm_version) DO UPDATE SET
                    calibration_id = excluded.calibration_id,
                    training_dose = excluded.training_dose,
@@ -1836,6 +1933,7 @@ class Database:
                    form = excluded.form,
                    load_ratio = excluded.load_ratio,
                    readiness_gate = excluded.readiness_gate,
+                   coverage_status = excluded.coverage_status,
                    readiness_reasons_json = excluded.readiness_reasons_json,
                    computed_at = excluded.computed_at""",
             (
@@ -1848,48 +1946,173 @@ class Database:
                 result.form,
                 result.load_ratio,
                 result.readiness_gate,
+                result.coverage_status.value,
                 reasons_json,
             ),
         )
         if commit:
             self._conn.commit()
 
-    def fetch_activity_training_load(self, label_id: str) -> sqlite3.Row | None:
+    def fetch_activity_training_load(
+        self, label_id: str, *, algorithm_version: int | None = None
+    ) -> sqlite3.Row | None:
+        if algorithm_version is not None:
+            return self._conn.execute(
+                "SELECT * FROM activity_training_load "
+                "WHERE label_id = ? AND algorithm_version = ?",
+                (label_id, algorithm_version),
+            ).fetchone()
         return self._conn.execute(
             "SELECT * FROM activity_training_load WHERE label_id = ?",
             (label_id,),
         ).fetchone()
 
+    def fetch_previous_daily_training_load(
+        self, before: str, *, algorithm_version: int
+    ) -> sqlite3.Row | None:
+        """Return the latest model row strictly before a calendar date."""
+        return self._conn.execute(
+            "SELECT * FROM daily_training_load "
+            "WHERE date < ? AND algorithm_version = ? "
+            "ORDER BY date DESC LIMIT 1",
+            (before, algorithm_version),
+        ).fetchone()
+
+    def has_daily_training_load_version(self, algorithm_version: int) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM daily_training_load WHERE algorithm_version = ? LIMIT 1",
+            (algorithm_version,),
+        ).fetchone() is not None
+
     def fetch_daily_training_load(
         self, start: str | None = None, end: str | None = None,
+        *, algorithm_version: int | None = None, limit: int | None = None,
     ) -> list[sqlite3.Row]:
-        clauses: list[str] = []
-        params: list[str] = []
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        active_algorithm_version = (
+            TRAINING_LOAD_MODEL_VERSION if algorithm_version is None else algorithm_version
+        )
+        clauses: list[str] = ["algorithm_version = ?"]
+        params: list[object] = [active_algorithm_version]
         if start is not None:
             clauses.append("date >= ?")
             params.append(start)
         if end is not None:
             clauses.append("date <= ?")
             params.append(end)
-        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        where = " WHERE " + " AND ".join(clauses)
+        suffix = " ORDER BY date"
+        if limit is not None:
+            suffix = " ORDER BY date DESC LIMIT ?"
+            params.append(max(1, int(limit)))
+        rows = self._conn.execute(
+            "SELECT * FROM daily_training_load" + where + suffix, tuple(params)
+        ).fetchall()
+        return list(reversed(rows)) if limit is not None else rows
+
+    def fetch_latest_daily_training_load(
+        self, *, algorithm_version: int, as_of: str | None = None,
+    ) -> sqlite3.Row | None:
+        # UNKNOWN rows preserve a date-continuous series without decaying PMC,
+        # but they are not an observed athlete state. All callers of this API
+        # ask for the latest usable state, so keep the rule centralized here.
+        sql = (
+            "SELECT * FROM daily_training_load WHERE algorithm_version = ? "
+            "AND coverage_status IN ('complete', 'partial', 'rest_confirmed')"
+        )
+        params: list[object] = [algorithm_version]
+        if as_of is not None:
+            sql += " AND date <= ?"
+            params.append(as_of)
         return self._conn.execute(
-            "SELECT * FROM daily_training_load" + where + " ORDER BY date",
-            tuple(params),
+            sql + " ORDER BY date DESC LIMIT 1", tuple(params)
+        ).fetchone()
+
+    def fetch_training_load_bounds(
+        self, *, algorithm_version: int
+    ) -> tuple[str | None, str | None]:
+        row = self._conn.execute(
+            "SELECT MIN(date), MAX(date) FROM daily_training_load "
+            "WHERE algorithm_version = ?",
+            (algorithm_version,),
+        ).fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
+    def fetch_daily_training_load_weekly_source(
+        self, *, algorithm_version: int, as_of: str
+    ) -> list[sqlite3.Row]:
+        return self._conn.execute(
+            "SELECT date, training_dose, chronic_load, acute_load, form, "
+            "coverage_status FROM daily_training_load "
+            "WHERE algorithm_version = ? AND date <= ? ORDER BY date",
+            (algorithm_version, as_of),
         ).fetchall()
 
-    def fetch_recent_daily_training_load(self, limit: int) -> list[sqlite3.Row]:
-        """Return the newest STRIDE daily training-load rows, newest first."""
-        if limit < 1:
-            raise ValueError("limit must be >= 1")
+    def fetch_daily_training_load_with_prior(
+        self, *, algorithm_version: int, limit: int
+    ) -> list[sqlite3.Row]:
         return self._conn.execute(
-            """SELECT date, algorithm_version, training_dose, acute_load,
-                      chronic_load, form, load_ratio, readiness_gate,
-                      readiness_reasons_json
-               FROM daily_training_load
-               ORDER BY date DESC
-               LIMIT ?""",
-            (limit,),
+            """WITH recent AS (
+                   SELECT date, algorithm_version, training_dose, acute_load, chronic_load,
+                          form, load_ratio, coverage_status, readiness_gate,
+                          readiness_reasons_json
+                   FROM daily_training_load
+                   WHERE algorithm_version = ?
+                   ORDER BY date DESC LIMIT ?
+               )
+               SELECT recent.*, prior.chronic_load AS chronic_load_7d_ago
+               FROM recent
+               LEFT JOIN daily_training_load AS prior
+                 ON prior.date = date(recent.date, '-7 day')
+                AND prior.algorithm_version = recent.algorithm_version
+               ORDER BY recent.date""",
+            (algorithm_version, max(1, int(limit))),
         ).fetchall()
+
+    def fetch_completed_week_training_load(
+        self, start: str, end: str, *, algorithm_version: int
+    ) -> tuple[float | None, sqlite3.Row | None]:
+        dose_row = self._conn.execute(
+            "SELECT SUM(training_dose), COUNT(*) FROM daily_training_load "
+            "WHERE algorithm_version = ? AND date BETWEEN ? AND ? "
+            "AND coverage_status IN ('complete', 'rest_confirmed')",
+            (algorithm_version, start, end),
+        ).fetchone()
+        latest = self._conn.execute(
+            "SELECT acute_load, chronic_load, coverage_status "
+            "FROM daily_training_load WHERE algorithm_version = ? "
+            "AND date BETWEEN ? AND ? AND acute_load IS NOT NULL "
+            "AND chronic_load IS NOT NULL "
+            "AND coverage_status IN ('complete', 'rest_confirmed') "
+            "ORDER BY date DESC LIMIT 1",
+            (algorithm_version, start, end),
+        ).fetchone()
+        # The execution cap needs a completed seven-day baseline. A partial
+        # week would make dose/km artificially low and over-tighten next week.
+        dose = (
+            float(dose_row[0])
+            if dose_row and dose_row[0] is not None and int(dose_row[1] or 0) == 7
+            else None
+        )
+        if dose is None:
+            latest = None
+        return dose, latest
+
+    def fetch_latest_daily_health_date(self) -> str | None:
+        """Return the latest watch-covered Shanghai day as ISO YYYY-MM-DD."""
+        row = self._conn.execute(
+            """SELECT CASE
+                       WHEN length(date) = 8 AND date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+                           THEN substr(date, 1, 4) || '-' || substr(date, 5, 2) || '-' || substr(date, 7, 2)
+                       ELSE substr(date, 1, 10)
+                   END AS health_date
+               FROM daily_health
+               WHERE date IS NOT NULL AND date <> ''
+               ORDER BY health_date DESC
+               LIMIT 1"""
+        ).fetchone()
+        return str(row["health_date"]) if row is not None and row["health_date"] else None
 
     # --- Weekly feedback (rich-text, edited via UI) ---
 

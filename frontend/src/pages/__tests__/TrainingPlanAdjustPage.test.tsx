@@ -295,6 +295,7 @@ describe('TrainingPlanAdjustPage', () => {
         current_chronic_load: 39,
         current_form: 5,
         current_load_ratio: 0.87,
+        current_coverage_status: 'complete',
         current_readiness_gate: 'green',
         current_readiness_reasons: [],
         chronic_load_ramp: 2,

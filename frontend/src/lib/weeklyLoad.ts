@@ -15,6 +15,7 @@ import { shanghaiToday, shanghaiWeekStart } from './shanghai'
 export interface DailyDoseRow {
   date: string
   training_dose: number | null
+  coverage_status?: string
 }
 
 export interface WeeklyDoseBucket {
@@ -22,8 +23,8 @@ export interface WeeklyDoseBucket {
   weekStart: string
   /** Short label for chart X-axis, `M/D` of the Monday. */
   weekLabel: string
-  /** Sum of `training_dose` across all days falling in this Shanghai week. */
-  totalDose: number
+  /** Sum of known daily dose, or null when the week contains a coverage gap. */
+  totalDose: number | null
   /** Days within the week that had a non-zero training_dose recorded. */
   activeDays: number
 }
@@ -33,9 +34,9 @@ const WEEKS = 8
 /**
  * Build the 8-week trailing window ending in the Shanghai week of `today`.
  *
- * The output is always exactly 8 buckets, oldest first, with zero totals for
- * weeks lacking data — so the rendered line stays continuous and the chart
- * domain is stable even when the user has no recent activities.
+ * The output is always exactly 8 buckets, oldest first. Weeks lacking observed
+ * coverage, or containing an explicit `unknown` placeholder, expose a null
+ * total so charts render a gap instead of inventing a zero-load rest week.
  *
  * Records outside the window (older than 8 weeks, or after the current
  * Shanghai week) are silently dropped.
@@ -51,6 +52,7 @@ export function aggregateWeeklyDose(
   const anchor = new Date(Date.UTC(y, m - 1, d))
 
   const buckets = new Map<string, WeeklyDoseBucket>()
+  const unknownWeeks = new Set<string>()
   const orderedStarts: string[] = []
   for (let i = WEEKS - 1; i >= 0; i--) {
     const t = new Date(anchor)
@@ -63,19 +65,26 @@ export function aggregateWeeklyDose(
     buckets.set(key, {
       weekStart: key,
       weekLabel: `${t.getUTCMonth() + 1}/${t.getUTCDate()}`,
-      totalDose: 0,
+      totalDose: null,
       activeDays: 0,
     })
   }
 
   for (const r of records) {
-    if (r.training_dose == null) continue
     const weekStart = shanghaiWeekStart(r.date)
     const bucket = buckets.get(weekStart)
     if (!bucket) continue
-    bucket.totalDose += r.training_dose
+    if (r.coverage_status === 'unknown') {
+      unknownWeeks.add(weekStart)
+      continue
+    }
+    if (r.training_dose == null) continue
+    bucket.totalDose = (bucket.totalDose ?? 0) + r.training_dose
     if (r.training_dose > 0) bucket.activeDays += 1
   }
 
-  return orderedStarts.map((k) => buckets.get(k)!)
+  return orderedStarts.map((k) => {
+    const bucket = buckets.get(k)!
+    return unknownWeeks.has(k) ? { ...bucket, totalDose: null } : bucket
+  })
 }

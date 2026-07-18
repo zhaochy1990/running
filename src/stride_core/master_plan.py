@@ -233,7 +233,11 @@ class TrainingLoadProjection(BaseModel):
     """Availability metadata for deterministic weekly STRIDE dose values."""
 
     status: Literal["available", "unavailable"]
-    unavailable_reason: Literal["weekly_skeleton_unavailable"] | None = None
+    unavailable_reason: Literal[
+        "weekly_skeleton_unavailable",
+        "personal_threshold_unavailable",
+        "planned_session_uncomputable",
+    ] | None = None
     calculated_at: str
 
     @field_validator("calculated_at")
@@ -394,10 +398,29 @@ class MasterPlan(BaseModel):
                 ):
                     raise ValueError("available training-load projection requires dose on every week")
             else:
-                if projected_weeks:
+                if (
+                    projection.unavailable_reason == "weekly_skeleton_unavailable"
+                    and projected_weeks
+                ):
                     raise ValueError(
                         "weekly_skeleton_unavailable projection requires an empty weekly skeleton"
                     )
+                if projection.unavailable_reason in {
+                    "personal_threshold_unavailable",
+                    "planned_session_uncomputable",
+                }:
+                    if not projected_weeks:
+                        raise ValueError(
+                            f"{projection.unavailable_reason} projection requires weekly skeletons"
+                        )
+                    if any(
+                        week.target_training_dose_low is not None
+                        or week.target_training_dose_high is not None
+                        for week in projected_weeks
+                    ):
+                        raise ValueError(
+                            f"{projection.unavailable_reason} projection cannot contain weekly dose values"
+                        )
         return self
 
 

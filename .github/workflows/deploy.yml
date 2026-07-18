@@ -296,3 +296,62 @@ jobs:
             --revision "$LATEST" \
             --tail 100 || true
           exit 1
+
+      - name: Backfill current STRIDE training-load model when missing
+        env:
+          INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$INTERNAL_TOKEN" ]; then
+            echo "::error::STRIDE_INTERNAL_TOKEN secret missing"
+            exit 1
+          fi
+
+          FQDN=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          users_response=$(mktemp)
+          users_http=$(curl -sS -o "$users_response" -w "%{http_code}" \
+            --max-time 60 \
+            -H "X-Internal-Token: $INTERNAL_TOKEN" \
+            "https://$FQDN/internal/training-load/users") || users_http="000"
+          if [ "$users_http" != "200" ]; then
+            echo "::error::could not enumerate production training-load users (HTTP $users_http)"
+            head -c 500 "$users_response" || true
+            rm -f "$users_response"
+            exit 1
+          fi
+          python3 - "$users_response" > users.txt <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              payload = json.load(handle)
+          users = payload.get("users")
+          if not isinstance(users, list) or any(not isinstance(user, str) for user in users):
+              raise SystemExit("invalid response from /internal/training-load/users")
+          print("\n".join(users))
+          PY
+          rm -f "$users_response"
+
+          failed=0
+          while read -r user; do
+            [ -z "$user" ] && continue
+            response=$(mktemp)
+            http=$(curl -sS -o "$response" -w "%{http_code}" \
+              --max-time 600 \
+              -X POST \
+              -H "X-Internal-Token: $INTERNAL_TOKEN" \
+              "https://$FQDN/internal/training-load/backfill?user=$user&load_lookback_days=365&calibration_lookback_days=365&only_if_missing=true") \
+              || http="000"
+            if [ "$http" = "200" ]; then
+              echo "training-load model ready for $user"
+            else
+              echo "::error::training-load rollout backfill failed for $user (HTTP $http)"
+              head -c 500 "$response" || true
+              failed=1
+            fi
+            rm -f "$response"
+          done < users.txt
+          exit "$failed"

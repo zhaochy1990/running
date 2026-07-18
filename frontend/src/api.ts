@@ -613,7 +613,7 @@ export interface MasterPlanWeek {
 
 export interface MasterPlanTrainingLoadProjection {
   status: 'available' | 'unavailable'
-  unavailable_reason: 'weekly_skeleton_unavailable' | null
+  unavailable_reason: 'weekly_skeleton_unavailable' | 'personal_threshold_unavailable' | 'planned_session_uncomputable' | null
   calculated_at: string
 }
 
@@ -991,6 +991,7 @@ export interface StridePMCRecord {
   chronic_load: number | null
   form: number | null
   load_ratio: number | null
+  coverage_status: string
   readiness_gate: string | null
   readiness_reasons: string[]
   chronic_load_ramp: number | null
@@ -1003,6 +1004,7 @@ export interface StridePMCSummary {
   current_chronic_load: number | null
   current_form: number | null
   current_load_ratio: number | null
+  current_coverage_status: string | null
   current_readiness_gate: string | null
   current_readiness_reasons: string[] | null
   chronic_load_ramp: number | null
@@ -1563,9 +1565,15 @@ export interface ActivityStrideTrainingLoad {
   cardio_load_raw: number | null
   cardio_tss: number | null
   external_tss: number | null
+  high_intensity_tss: number | null
   mechanical_load: number | null
   subjective_internal_load: number | null
   training_dose: number | null
+  training_dose_source: string | null
+  cardio_coverage: number
+  external_coverage: number
+  high_intensity_coverage: number
+  coverage_status: string
   load_confidence: string | null
   excluded_from_pmc: boolean
   reasons: string[]
@@ -1895,6 +1903,7 @@ export interface StrideTrainingLoadRecord {
   chronic_load: number | null
   form: number | null
   load_ratio: number | null
+  coverage_status: string
   readiness_gate: string | null
   readiness_reasons: string[]
 }

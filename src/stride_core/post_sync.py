@@ -19,7 +19,12 @@ from stride_core.ability_hook import run_ability_hook
 from stride_storage.sqlite.database import Database
 from stride_core.source import SyncProgressCallback, SyncResult
 from stride_core.timefmt import SHANGHAI_DAY_SQL
-from stride_core.training_load import recompute_training_load
+from stride_core.timefmt import today_shanghai
+from stride_core.training_load import (
+    TRAINING_LOAD_MODEL_VERSION,
+    backfill_training_load,
+    recompute_training_load,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,7 @@ class PostSyncContext:
     operation: str
     db: Database
     activity_label_ids: tuple[str, ...] = ()
+    health_dates: tuple[str, ...] = ()
     progress: SyncProgressCallback | None = None
 
 
@@ -92,16 +98,24 @@ class StrideTrainingLoadHandler:
         self._backoff_s = max(0.0, backoff_s)
 
     def applies_to(self, context: PostSyncContext) -> bool:
-        return bool(context.activity_label_ids)
+        return bool(context.activity_label_ids) or bool(context.health_dates)
 
     def run(self, context: PostSyncContext) -> None:
         label_ids = _unique_labels(context.activity_label_ids)
-        if not label_ids:
+        changed_dates = [d for d in context.health_dates if d]
+        if label_ids:
+            window = _activity_shanghai_window(context.db, label_ids)
+            # Only incorporate the activity window when it's available; if
+            # activities haven't landed in the DB yet, health_dates still
+            # provide a valid recompute anchor so we must not return early.
+            if window is not None:
+                changed_dates.extend(window)
+        if not changed_dates:
             return
-        window = _activity_shanghai_window(context.db, label_ids)
-        if window is None:
-            return
-        start, end = window
+        # Any changed activity or newly confirmed rest day changes every later
+        # recursive ATL/CTL value. Merge both sources and recompute the tail.
+        start = min(changed_dates)
+        end = max(max(changed_dates), today_shanghai().isoformat())
         _emit(
             context.progress,
             phase="stride_training_load",
@@ -111,6 +125,14 @@ class StrideTrainingLoadHandler:
 
         for attempt in range(1, self._attempts + 1):
             try:
+                if not context.db.has_daily_training_load_version(
+                    TRAINING_LOAD_MODEL_VERSION
+                ):
+                    backfill_training_load(
+                        context.db, as_of_date=end, load_lookback_days=365,
+                        calibration_lookback_days=365, persist=True,
+                    )
+                    return
                 # Daily training load is date-scoped, so recompute every
                 # activity in the affected Shanghai date window. A label-only
                 # activity set would overwrite same-day daily totals.
@@ -359,11 +381,13 @@ def run_post_sync_for_labels(
     provider: str,
     operation: str,
     activity_label_ids: Sequence[str],
+    health_dates: Sequence[str] = (),
     progress: SyncProgressCallback | None = None,
     handlers: Sequence[PostSyncHandler] = DEFAULT_POST_SYNC_HANDLERS,
 ) -> None:
     label_ids = _unique_labels(activity_label_ids)
-    if not label_ids:
+    normalized_health_dates = tuple(sorted({str(d)[:10] for d in health_dates if d}))
+    if not label_ids and not normalized_health_dates:
         return
     try:
         with Database(user=user) as db:
@@ -374,6 +398,7 @@ def run_post_sync_for_labels(
                     operation=operation,
                     db=db,
                     activity_label_ids=label_ids,
+                    health_dates=normalized_health_dates,
                     progress=progress,
                 ),
                 handlers=handlers,
@@ -403,6 +428,7 @@ def run_post_sync_for_result(
         provider=provider,
         operation=operation,
         activity_label_ids=getattr(result, "activity_label_ids", ()) or (),
+        health_dates=getattr(result, "health_dates", ()) or (),
         progress=progress,
         handlers=handlers,
     )
