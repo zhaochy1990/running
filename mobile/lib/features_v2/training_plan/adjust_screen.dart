@@ -489,7 +489,9 @@ List<String> _previewLines(MasterPlanDiffOp op) {
 
 List<String> _phaseBoundaryLines(Object? rawUpdates) {
   if (rawUpdates is! List) return const [];
-  final updates = rawUpdates.whereType<Map>().toList(growable: false);
+  final updates = rawUpdates.whereType<Map<String, dynamic>>().toList(
+    growable: false,
+  );
   if (updates.isEmpty) return const [];
 
   final lines = <String>[];
