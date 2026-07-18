@@ -37,14 +37,16 @@ Provider tags:
 |----------|-----------------|------|-------|
 | `azure-openai` | `AzureChatOpenAI` | MI or `api_key_env` | AOAI chat-completions / responses |
 | `azure-ai-inference` | `AzureAIChatCompletionsModel` | MI or `api_key_env` | Foundry serverless |
-| `openai-compatible` | `ChatOpenAI` | `api_key_env` | Third-party Chat Completions or Responses endpoints such as DeepSeek V4 and the local Copilot proxy |
+| `openai-compatible` | `ChatOpenAI` | `api_key_env` | Third-party Chat Completions or Responses endpoints such as DeepSeek V4, local Agent Maestro, and the local Copilot proxy |
 
 `config/coach.local.toml` carries a single local model registry under `[models.<key>]`, including DeepSeek V4 and Azure dev models. Shared model properties, including auth, live under the model key, while each role only references the key (`model = "deepseekv4pro"`) and can inherit role-specific defaults from `[models.<key>.generator]` / `[models.<key>.reviewer]` / etc. DeepSeek-specific knobs stay in `ModelSpec.extra`: `thinking` is passed via `extra_body`, `response_format` via `model_kwargs`, while graph/business code stays provider-neutral.
 
 `[status_insight]` is optional and falls back to `[generator]` for backward
-compatibility. Latency-sensitive configs should point it at a fast model; the
-Copilot config uses `gpt-5.6-luna` with low reasoning while plan generation and
-review stay on `gpt-5.6-sol`. Weekly summaries should prefer the bounded
+compatibility. Latency-sensitive configs should point it at a fast model;
+`config/coach.copilot.toml` defaults to Agent Maestro with `gpt-5.6-luna` at low
+reasoning while plan generation and review stay on `gpt-5.6-sol`; the direct
+Copilot proxy remains an optional binding in the same registry. Weekly summaries
+should prefer the bounded
 `get_training_summary` tool rather than repeatedly expanding activity queries.
 
 Coach 的 read-tool surface 只暴露 STRIDE 自算指标和手表原始测量值。厂商

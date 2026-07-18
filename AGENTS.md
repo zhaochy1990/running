@@ -45,65 +45,53 @@ For both Web UI and mobile UI, we need to use the Stitch MCP to design with Stit
 
 ---
 
-## Local GitHub Copilot proxy（仅开发测试）
+## Local Coach provider（Agent Maestro 默认）
 
-需要在本地把 GitHub Copilot 暴露成 OpenAI-compatible API 时，使用已实测的
+`config/coach.copilot.toml` 默认通过本机 Agent Maestro 的 OpenAI-compatible
+Responses API（`http://127.0.0.1:23333/api/openai/v1`）运行 Coach：
+`gpt-5.6-luna` 处理编排和只读 `status_insight`，`gpt-5.6-sol` 处理计划生成和
+reviewer。Agent Maestro 必须已在 VS Code 中启动；日常直接运行：
+
+```bash
+scripts/coach-local.sh coach
+scripts/coach-local.sh eval-resolver
+```
+
+脚本自动加载 `config/coach.copilot.toml`（LLM）以及 `config/server.toml` +
+`server.local.toml` + `server.coach-cli.toml`（基础设施），并为 Coach runtime
+生成非空的临时随机 bearer 值。其中 master-plan 与 weekly-plan store 指向生产
+Azure Table；活动、健康数据和 checkpoint 仍使用本地数据。
+
+周总结必须优先走 `get_training_summary` 单次聚合工具，避免反复扩大活动明细请求。
+
+### 可选 GitHub Copilot proxy（仅开发测试）
+
+需要绕过 Agent Maestro 直接测试 GitHub Copilot 时，使用已实测的
 [`voidsteed/copilot-proxy-api`](https://github.com/voidsteed/copilot-proxy-api)。
-它是逆向 Copilot 内部 API 的社区项目，**只允许本地实验，禁止生产部署或共享账号服务**。必须启用本地 API key，不得把 prompt、response 或 token 写入日志、回复或仓库文件。测试结束后立即停止服务；本地 credential 可以按下方规则持久保存。
+它是逆向 Copilot 内部 API 的社区项目，**只允许本地实验，禁止生产部署或共享账号服务**。必须启用本地 API key，不得把 prompt、response 或 token 写入日志、回复或仓库文件。
 
 截至 2026-07-14，已验证 `copilot-proxy-api@0.10.22` 的 `/v1/responses` 可调用
-`gpt-5.5`、`gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`。固定版本以保证可复现；升级前必须重新跑下方 Hello World。
+`gpt-5.5`、`gpt-5.6-luna`、`gpt-5.6-sol`、`gpt-5.6-terra`。固定版本以保证可复现；升级前必须重新跑 Hello World。
 
-### 一次授权，日常一键启停
-
-统一使用 [`scripts/coach-local.sh`](scripts/coach-local.sh)。它把 OAuth
-credential、本地 API key、PID 和非 verbose 日志持久保存到
-`~/.local/share/copilot-proxy/`（目录 `0700`、secret 文件 `0600`），
-不写入仓库。首次运行一次 Device Flow：
+统一使用 [`scripts/coach-local.sh`](scripts/coach-local.sh) 管理可选代理。首次运行
+Device Flow，之后凭据持久保存在 `~/.local/share/stride/copilot-proxy/`：
 
 ```bash
 scripts/coach-local.sh auth
-```
-
-按终端提示在 `https://github.com/login/device` 完成授权。之后日常无需再次
-auth：
-
-```bash
 scripts/coach-local.sh start
 scripts/coach-local.sh smoke
-scripts/coach-local.sh coach
 scripts/coach-local.sh stop
 ```
 
-如果 `smoke` 返回上游 401，运行 `scripts/coach-local.sh auth --force`。脚本会
-自动停止正在运行的代理、重新授权并重启；只更新 credential 文件而不重启进程，
-不会替换进程内存里已经过期的 Copilot 短期 token。
+如果 `smoke` 返回上游 401，运行 `scripts/coach-local.sh auth --force`。`smoke`
+必须输出严格的 `HELLO_WORLD_OK model=gpt-5.6-sol endpoint=/v1/responses`。
+GPT-5.5 / GPT-5.6 必须走 `/v1/responses`；`/v1/chat/completions` 对这些模型会返回
+`unsupported_api_for_model`。
 
-`coach` 自动加载 `config/coach.copilot.toml`（LLM）以及
-`config/server.toml` + `server.local.toml` + `server.coach-cli.toml`（基础设施）。
-其中 master-plan 与 weekly-plan store 指向生产 Azure Table；活动、健康数据和
-checkpoint 仍使用本地数据。用户不需要手工 export 配置环境变量。
-
-`smoke` 是进入 Coach 前的 HARD gate，必须输出严格的
-`HELLO_WORLD_OK model=gpt-5.6-sol endpoint=/v1/responses`。HTTP 200 但文本
-不匹配也视为失败。
-
-**协议边界**：GPT-5.5 / GPT-5.6 必须走 `/v1/responses`。不要因为 `/v1/models` 列出了模型，就用 `/v1/chat/completions` 判断可用；该路径对这些模型会返回 `unsupported_api_for_model`。
-
-Coach 的 Copilot 配置用 `gpt-5.6-luna` 处理编排和只读
-`status_insight`，用 `gpt-5.6-sol` 处理计划生成/reviewer。周总结必须优先走
-`get_training_summary` 单次聚合工具，避免反复扩大活动明细请求。
-
-该工具会监听所有网卡，不只 `127.0.0.1`；脚本始终生成并启用本地 API key，
-端口不得暴露到公网、局域网共享或反向代理。`stop` 只停进程，**保留凭据**。
-只有用户明确要撤销本地状态时才运行：
-
-```bash
-scripts/coach-local.sh reset
-```
-
-`reset` 会删除本地 credential、API key、日志和 npm cache，但不会撤销 GitHub
-OAuth grant；彻底停用时还应在 GitHub Settings 的 Authorized OAuth Apps 中撤销。
+该代理会监听所有网卡，不只 `127.0.0.1`；脚本始终生成并启用本地 API key，
+端口不得暴露到公网、局域网共享或反向代理。`stop` 只停进程并保留凭据。只有用户
+明确要撤销本地状态时才运行 `scripts/coach-local.sh reset`；该命令会删除本地
+credential、API key、日志和 npm cache，但不会撤销 GitHub OAuth grant。
 
 ---
 
