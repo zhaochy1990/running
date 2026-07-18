@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
-import json
-import math
 from datetime import date, timedelta
 from typing import Any, Iterable, Sequence
 
 from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.normalize import kind_from_legacy_train_type
-from stride_core.timefmt import SHANGHAI_DAY_SQL, today_shanghai, utc_iso_to_shanghai_iso
+from stride_core.timefmt import (
+    SHANGHAI_DAY_SQL,
+    parse_local_day,
+    sqlite_mixed_date_expr,
+    today_shanghai,
+    utc_iso_to_shanghai_iso,
+)
 
 from .core import compute_activity_load, compute_daily_load_series
 from .types import (
+    TRAINING_LOAD_MODEL_VERSION,
     ActivityLoadInput,
     ActivitySample,
     CalibrationSnapshot,
@@ -29,16 +34,7 @@ _IN_CLAUSE_CHUNK = 500
 
 
 def _parse_date(value: Any) -> date | None:
-    if isinstance(value, date):
-        return value
-    if value is None:
-        return None
-    text = str(value).strip()
-    if len(text) >= 10 and text[4] == "-":
-        return date.fromisoformat(text[:10])
-    if len(text) == 8 and text.isdigit():
-        return date(int(text[:4]), int(text[4:6]), int(text[6:8]))
-    return None
+    return parse_local_day(value)
 
 
 def _activity_shanghai_date(value: Any) -> date | None:
@@ -267,20 +263,34 @@ def _fetch_activity_rows(
     return db.query(f"SELECT * FROM activities {where} ORDER BY date, label_id", tuple(params))
 
 
+def _mixed_date_bounds(
+    day_sql: str,
+    *,
+    start: date | None = None,
+    end: date | None = None,
+) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if start is not None and end is not None:
+        clauses.append(f"{day_sql} BETWEEN ? AND ?")
+        params.extend([start.isoformat(), end.isoformat()])
+    elif start is not None:
+        clauses.append(f"{day_sql} >= ?")
+        params.append(start.isoformat())
+    elif end is not None:
+        clauses.append(f"{day_sql} <= ?")
+        params.append(end.isoformat())
+    return (" WHERE " + " AND ".join(clauses) if clauses else "", params)
+
+
 def _fetch_health_rows(db: Any, *, start: date | None = None, end: date | None = None) -> list[HealthRow]:
-    # `daily_health.date` is stored as Shanghai-local YYYYMMDD on COROS-sourced
-    # rows but ISO YYYY-MM-DD elsewhere. Lexicographic SQL `BETWEEN` cannot
-    # safely compare both formats against an ISO bound, so normalize in Python
-    # after a broad SELECT. The table is small (one row per user-day).
-    rows = db.query("SELECT * FROM daily_health ORDER BY date")
+    day_sql = sqlite_mixed_date_expr("date")
+    where, params = _mixed_date_bounds(day_sql, start=start, end=end)
+    rows = db.query(f"SELECT *, {day_sql} AS normalized_date FROM daily_health{where} ORDER BY normalized_date", tuple(params))
     out: list[HealthRow] = []
     for row in rows:
-        d = _parse_date(row["date"])
+        d = _parse_date(row["normalized_date"])
         if d is None:
-            continue
-        if start is not None and d < start:
-            continue
-        if end is not None and d > end:
             continue
         out.append(HealthRow(
             date=d,
@@ -292,22 +302,20 @@ def _fetch_health_rows(db: Any, *, start: date | None = None, end: date | None =
 
 
 def _fetch_hrv_rows(db: Any, *, start: date | None = None, end: date | None = None) -> list[HrvRow]:
-    # daily_hrv shares the mixed YYYYMMDD/ISO storage convention; filter in
-    # Python after parsing for the same reason as `_fetch_health_rows`.
     # Dedupe multi-provider rows per date (Garmin > COROS) so a dual-watch
     # user doesn't get both providers' values fed into the readiness model.
+    day_sql = sqlite_mixed_date_expr("date")
+    where, params = _mixed_date_bounds(day_sql, start=start, end=end)
     rows = db.query(
-        "SELECT date, last_night_avg, status "
-        f"FROM ({HRV_PREFERRED_PER_DATE_SQL}) ORDER BY date"
+        "SELECT date, last_night_avg, status, "
+        f"{day_sql} AS normalized_date FROM ({HRV_PREFERRED_PER_DATE_SQL})"
+        f"{where} ORDER BY normalized_date",
+        tuple(params),
     )
     out: list[HrvRow] = []
     for row in rows:
-        d = _parse_date(row["date"])
+        d = _parse_date(row["normalized_date"])
         if d is None:
-            continue
-        if start is not None and d < start:
-            continue
-        if end is not None and d > end:
             continue
         out.append(HrvRow(
             date=d,
@@ -356,57 +364,42 @@ def _fetch_feedback_rows(db: Any, activity_rows: Sequence[Any]) -> list[Feedback
     return out
 
 
-_K_ACUTE = 1.0 - math.exp(-1.0 / 7.0)
-_K_CHRONIC = 1.0 - math.exp(-1.0 / 42.0)
-
-
 def _last_persisted_daily_date(db: Any, *, before: date) -> date | None:
     """Date of the most recent persisted daily_training_load row strictly
     before ``before`` (None when none exists)."""
-    rows = db.query(
-        "SELECT date FROM daily_training_load WHERE date < ? ORDER BY date DESC LIMIT 1",
-        (before.isoformat(),),
+    row = db.fetch_previous_daily_training_load(
+        before.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
     )
-    if not rows:
-        return None
-    return _parse_date(rows[0]["date"])
+    return _parse_date(row["date"]) if row is not None else None
 
 
 def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
     """Read the last persisted daily_training_load row before series_start
-    and decay its ATL/CTL through any rest-day gap.
-
-    Without this, a recompute starting N days after the last persisted row
-    would seed the EWMA with values that are "too fresh" — the dose on day N
-    would be applied to load state from day 0, skipping N-1 zero-dose decay
-    steps. The decay loop here matches the recursion in
-    `compute_daily_load_series` for a dose of 0.
+    without inventing rest-day decay for dates whose coverage is unknown.
     """
-    rows = db.query(
-        "SELECT date, acute_load, chronic_load FROM daily_training_load "
-        "WHERE date < ? ORDER BY date DESC LIMIT 1",
-        (series_start.isoformat(),),
+    row = db.fetch_previous_daily_training_load(
+        series_start.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
     )
-    if not rows:
+    if row is None:
         return None
-    row = rows[0]
     acute = float(row["acute_load"]) if row["acute_load"] is not None else 0.0
     chronic = float(row["chronic_load"]) if row["chronic_load"] is not None else 0.0
-    prior_date = _parse_date(row["date"])
-    if prior_date is not None:
-        gap_days = max(0, (series_start - prior_date).days - 1)
-        for _ in range(gap_days):
-            acute += _K_ACUTE * (0.0 - acute)
-            chronic += _K_CHRONIC * (0.0 - chronic)
     return PriorLoadState(acute_load=acute, chronic_load=chronic)
 
 
-def _build_activity_input(db: Any, row: Any) -> ActivityLoadInput | None:
+def _build_activity_input(
+    db: Any,
+    row: Any,
+    feedback_by_label: dict[str, Any] | None = None,
+) -> ActivityLoadInput | None:
     activity_date = _activity_shanghai_date(row["date"])
     if activity_date is None:
         return None
     sport = _sport_from_row(row)
-    feedback = db.get_activity_feedback(row["label_id"])
+    if feedback_by_label is None:
+        feedback = db.get_activity_feedback(row["label_id"])
+    else:
+        feedback = feedback_by_label.get(row["label_id"])
     rpe = feedback["rpe"] if feedback is not None and feedback["rpe"] is not None else None
     return ActivityLoadInput(
         label_id=row["label_id"],
@@ -432,50 +425,38 @@ def _build_activity_input(db: Any, row: Any) -> ActivityLoadInput | None:
     )
 
 
-def _json_dict(value: Any) -> dict[str, Any]:
-    if not value:
-        return {}
-    try:
-        data = json.loads(str(value))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+def _build_activity_inputs(db: Any, activity_rows: Sequence[Any]) -> list[ActivityLoadInput]:
+    labels = [row["label_id"] for row in activity_rows]
+    feedback_rows = _query_feedback_for_labels(db, labels) if labels else []
+    feedback_by_label = {row["label_id"]: row for row in feedback_rows}
+    return [
+        activity
+        for row in activity_rows
+        if (activity := _build_activity_input(db, row, feedback_by_label)) is not None
+    ]
 
 
-def _calibration_from_running_snapshot_row(row: Any) -> CalibrationSnapshot:
-    """Map a running_calibration_snapshot row to the training-load CalibrationSnapshot."""
-    def _get(key: str) -> Any:
-        try:
-            return row[key]
-        except (KeyError, IndexError):
-            return None
-
-    return CalibrationSnapshot(
-        as_of_date=_parse_date(_get("as_of_date")) or today_shanghai(),
-        rhr_baseline=float(_get("rhr_baseline")) if _get("rhr_baseline") is not None else None,
-        hrmax_estimate=float(_get("hrmax_estimate")) if _get("hrmax_estimate") is not None else None,
-        threshold_hr=float(_get("threshold_hr")) if _get("threshold_hr") is not None else None,
-        threshold_speed_mps=float(_get("threshold_speed_mps")) if _get("threshold_speed_mps") is not None else None,
-        critical_power_w=None,  # not tracked in running_calibration
-        source=_json_dict(_get("source_json")),
-        id=int(_get("id")) if _get("id") is not None else None,
-        algorithm_version=int(_get("algorithm_version")) if _get("algorithm_version") is not None else 1,
-    )
-
-
-def _fetch_latest_calibration(db: Any) -> CalibrationSnapshot | None:
-    from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
+def _fetch_latest_calibration(
+    db: Any, *, as_of_date: date | None = None
+) -> CalibrationSnapshot | None:
     from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
-    # Ensure the running_calibration_snapshot table exists (idempotent).
-    SQLiteRunningCalibrationRepository(db).ensure_schema()
-    rows = db.query(
-        "SELECT * FROM running_calibration_snapshot "
-        "WHERE algorithm_version = ? "
-        "ORDER BY as_of_date DESC, id DESC LIMIT 1",
-        (RUNNING_CALIBRATION_MODEL_VERSION,),
+
+    repo = SQLiteRunningCalibrationRepository(db)
+    repo.ensure_schema()
+    snapshot = repo.fetch_latest(as_of_date=as_of_date)
+    if snapshot is None:
+        return None
+    return CalibrationSnapshot(
+        as_of_date=snapshot.as_of_date,
+        rhr_baseline=snapshot.rhr_baseline,
+        hrmax_estimate=snapshot.hrmax_estimate,
+        threshold_hr=snapshot.threshold_hr,
+        threshold_speed_mps=snapshot.threshold_speed_mps,
+        critical_power_w=snapshot.critical_power_w,
+        source=snapshot.source if isinstance(snapshot.source, dict) else {},
+        id=int(snapshot.id) if snapshot.id is not None else None,
+        algorithm_version=snapshot.algorithm_version,
     )
-    row = rows[0] if rows else None
-    return _calibration_from_running_snapshot_row(row) if row is not None else None
 
 
 def refresh_training_load_calibration(
@@ -517,44 +498,6 @@ def refresh_training_load_calibration(
     )
 
 
-def _defaulted_calibration(
-    calibration: CalibrationSnapshot,
-    activity_inputs: Sequence[ActivityLoadInput],
-) -> CalibrationSnapshot:
-    rhr = calibration.rhr_baseline
-    hrmax = calibration.hrmax_estimate
-    used_runtime_defaults = False
-    if hrmax is None:
-        max_values = [a.max_hr for a in activity_inputs if a.max_hr is not None]
-        hrmax = max(max_values) if max_values else None
-        used_runtime_defaults = hrmax is not None
-
-    threshold_hr = calibration.threshold_hr
-    threshold_speed = calibration.threshold_speed_mps
-    source = dict(calibration.source)
-    if threshold_speed is None:
-        speeds: list[float] = []
-        for activity in activity_inputs:
-            if activity.duration_s and activity.distance_m and activity.duration_s > 0 and activity.distance_m > 500:
-                speeds.append(activity.distance_m / activity.duration_s)
-            speeds.extend(s.speed_mps for s in activity.samples if s.speed_mps is not None and s.speed_mps > 0)
-        if speeds:
-            threshold_speed = max(speeds)
-            source.setdefault("adapter_defaults", {"used": True})
-            used_runtime_defaults = True
-    return CalibrationSnapshot(
-        as_of_date=calibration.as_of_date,
-        rhr_baseline=rhr,
-        hrmax_estimate=hrmax,
-        threshold_hr=threshold_hr,
-        threshold_speed_mps=threshold_speed,
-        critical_power_w=calibration.critical_power_w,
-        source=source,
-        id=None if used_runtime_defaults else calibration.id,
-        algorithm_version=calibration.algorithm_version,
-    )
-
-
 def recompute_training_load(
     db: Any,
     *,
@@ -567,8 +510,8 @@ def recompute_training_load(
 ) -> TrainingLoadRunSummary:
     """Recompute objective activity and daily training-load rows.
 
-    This is the only DB adapter entry point for v1; it does not hook into sync
-    and does not alter vendor-provided training-load fields.
+    This is the DB adapter entry point for the current model; it does not alter
+    vendor-provided training-load fields.
 
     When ``start`` is provided without an explicit ``prior_state``, the most
     recent persisted ``daily_training_load`` row before the window is loaded
@@ -578,9 +521,25 @@ def recompute_training_load(
     end_date = _parse_date(end)
     labels = list(label_ids) if label_ids is not None else None
     activity_rows = _fetch_activity_rows(db, start=start_date, end=end_date, label_ids=labels)
-    activity_inputs = [a for row in activity_rows if (a := _build_activity_input(db, row)) is not None]
+    activity_inputs = _build_activity_inputs(db, activity_rows)
     if not activity_inputs:
-        return TrainingLoadRunSummary(0, 0, 0, None, start_date, end_date, persist)
+        # An explicit calendar window can legitimately contain no activities.
+        # Continue when a health row confirms rest or an earlier v2 PMC state
+        # exists so an unknown-coverage placeholder can preserve the calendar
+        # series without decaying ATL/CTL. A completely empty database still
+        # has no evidence from which to manufacture a series.
+        has_health_coverage = bool(
+            start_date is not None
+            and _fetch_health_rows(db, start=start_date, end=end_date)
+        )
+        has_prior_state = bool(
+            start_date is not None
+            and db.fetch_previous_daily_training_load(
+                start_date.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
+            )
+        )
+        if start_date is None or not (has_health_coverage or has_prior_state):
+            return TrainingLoadRunSummary(0, 0, 0, None, start_date, end_date, persist)
 
     series_start = start_date or min(a.activity_date for a in activity_inputs)
     series_end = end_date or today_shanghai()
@@ -598,15 +557,12 @@ def recompute_training_load(
         if prior_date is not None and series_start - prior_date > timedelta(days=1):
             series_start = prior_date + timedelta(days=1)
             activity_rows = _fetch_activity_rows(db, start=series_start, end=series_end, label_ids=None)
-            activity_inputs = [
-                a for row in activity_rows if (a := _build_activity_input(db, row)) is not None
-            ]
+            activity_inputs = _build_activity_inputs(db, activity_rows)
 
     as_of = series_end
-    calibration = calibration_override or _fetch_latest_calibration(db) or CalibrationSnapshot(
+    calibration = calibration_override or _fetch_latest_calibration(db, as_of_date=as_of) or CalibrationSnapshot(
         as_of_date=as_of,
     )
-    calibration = _defaulted_calibration(calibration, activity_inputs)
     calibration_id = calibration.id
     activity_results = [compute_activity_load(activity, calibration) for activity in activity_inputs]
     health_rows = _fetch_health_rows(db, start=series_start, end=series_end)

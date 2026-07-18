@@ -45,6 +45,8 @@ def run_sync(
     progress: SyncProgressCallback | None = None,
     activity_limit: int = 200,
     since_date: str | None = None,
+    health_days: int = 28,
+    health_dates_out: set[str] | None = None,
 ) -> tuple[int, int, tuple[str, ...]]:
     """Sync the user's Garmin data into `db`.
 
@@ -74,7 +76,10 @@ def run_sync(
         client, db, full=full, progress=progress, limit=effective_limit,
         since_date=since_date,
     )
-    health_synced = _sync_health(client, db, progress=progress)
+    health_synced = _sync_health(
+        client, db, progress=progress, days=health_days,
+        health_dates_out=health_dates_out,
+    )
 
     return activities_synced, health_synced, tuple(new_label_ids)
 
@@ -84,8 +89,11 @@ def run_health_only_sync(
     db: Database,
     *,
     progress: SyncProgressCallback | None = None,
+    health_dates_out: set[str] | None = None,
 ) -> tuple[int, int]:
-    health_synced = _sync_health(client, db, progress=progress)
+    health_synced = _sync_health(
+        client, db, progress=progress, health_dates_out=health_dates_out
+    )
     return 0, health_synced
 
 
@@ -184,6 +192,7 @@ def _sync_health(
     *,
     progress: SyncProgressCallback | None,
     days: int = 28,
+    health_dates_out: set[str] | None = None,
 ) -> int:
     """Pull `days` of daily health from Garmin (default 28 — matches the COROS
     `analyse/query` window so PMC / fatigue charts have comparable history).
@@ -223,15 +232,35 @@ def _sync_health(
             sleep_data=sleep,
         )
         wrote_anything = False
-        if (h.ati or h.cti or h.rhr or h.training_load_ratio
-                or h.sleep_total_s or h.body_battery_high
-                or h.fatigue) is not None:
-            db.upsert_daily_health(h, provider="garmin")
+        health_signals = (
+            h.ati,
+            h.cti,
+            h.rhr,
+            h.training_load_ratio,
+            h.sleep_total_s,
+            h.sleep_score,
+            h.body_battery_high,
+            h.fatigue,
+        )
+        if any(value is not None for value in health_signals):
+            changed_h = db.upsert_daily_health(
+                h,
+                provider="garmin",
+                track_changes=health_dates_out is not None,
+            )
+            if changed_h and health_dates_out is not None:
+                health_dates_out.add(date_iso)
             health_count += 1
             wrote_anything = True
         hrv_row = daily_hrv_from_garmin(date_iso, hrv)
         if hrv_row.last_night_avg is not None or hrv_row.weekly_avg is not None:
-            db.upsert_daily_hrv(hrv_row, provider="garmin")
+            changed_hrv = db.upsert_daily_hrv(
+                hrv_row,
+                provider="garmin",
+                track_changes=health_dates_out is not None,
+            )
+            if changed_hrv and health_dates_out is not None:
+                health_dates_out.add(date_iso)
             health_count += 1
             wrote_anything = True
 

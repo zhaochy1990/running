@@ -16,6 +16,7 @@ from ..workout_spec import (
     WorkoutStep,
 )
 from .types import (
+    TRAINING_LOAD_MODEL_VERSION,
     ActivityLoadInput,
     ActivityLoadResult,
     ActivitySample,
@@ -25,11 +26,26 @@ from .types import (
     HealthRow,
     HrvRow,
     LoadConfidence,
+    LoadCoverageStatus,
+    PlannedLoadEstimate,
     PriorLoadState,
     SessionClass,
 )
 
 _RUNNING_SPORTS = {"run", "run_outdoor", "run_indoor", "run_trail", "run_track", "run_treadmill"}
+_CARDIO_HRR_EXPONENT = 4.0
+_EXTERNAL_NORMALIZATION_EXPONENT = 6.0
+_HIGH_INTENSITY_SPEED_SMOOTHING_SECONDS = 20.0
+_HIGH_INTENSITY_WORK_IF = 1.05
+_HIGH_INTENSITY_MIN_WORK_SECONDS = 60.0
+_HIGH_INTENSITY_RECOVERY_IF = 0.90
+_HIGH_INTENSITY_RECOVERY_HR_IF = 0.85
+_HIGH_INTENSITY_RECOVERY_WINDOW_SECONDS = 120.0
+_HIGH_INTENSITY_ARM_WINDOW_SECONDS = 240.0
+_HIGH_INTENSITY_RECOVERY_WEIGHT = 50.0
+_HIGH_INTENSITY_SEVERITY_WEIGHT = 100.0
+_HIGH_INTENSITY_SEVERITY_EXPONENT = 4.0
+_HIGH_INTENSITY_MAX_TSS_PER_HOUR = 75.0
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -59,13 +75,65 @@ def _sample_time(sample: ActivitySample, index: int) -> float:
     return float(index)
 
 
-def _sample_delta_minutes(samples: Sequence[ActivitySample], index: int) -> float:
-    if index <= 0 or index >= len(samples):
-        return 0.0
-    delta = _sample_time(samples[index], index) - _sample_time(samples[index - 1], index - 1)
-    if delta <= 0 or delta > 300:
-        return 0.0
-    return delta / 60.0
+def _explicit_sample_time(sample: ActivitySample) -> float | None:
+    if sample.elapsed_s is not None:
+        return float(sample.elapsed_s)
+    if sample.timestamp_s is not None:
+        return float(sample.timestamp_s)
+    return None
+
+
+def _positive_sample_intervals(
+    samples: Sequence[ActivitySample],
+) -> list[tuple[int, float]]:
+    """Return adjacent positive timestamp deltas, including pause gaps."""
+    intervals: list[tuple[int, float]] = []
+    for index in range(1, len(samples)):
+        current = _explicit_sample_time(samples[index])
+        previous = _explicit_sample_time(samples[index - 1])
+        if current is None or previous is None:
+            continue
+        delta = current - previous
+        if delta > 0:
+            intervals.append((index, delta))
+    return intervals
+
+
+def _valid_sample_intervals(
+    samples: Sequence[ActivitySample],
+    *,
+    max_gap_s: float = 300.0,
+) -> list[tuple[int, float]]:
+    """Return ``(ending_sample_index, dwell_seconds)`` from real timestamps.
+
+    Load integration must be invariant to device sampling density.  Each value
+    is therefore weighted by the time since the previous sample; missing,
+    duplicate, backwards, or pause-sized gaps are never invented or expanded.
+    """
+    return [
+        (index, delta)
+        for index, delta in _positive_sample_intervals(samples)
+        if delta <= max_gap_s
+    ]
+
+
+def _coverage_status(*coverages: float) -> LoadCoverageStatus:
+    coverage = max(coverages, default=0.0)
+    if coverage >= 0.8:
+        return LoadCoverageStatus.COMPLETE
+    if coverage > 0:
+        return LoadCoverageStatus.PARTIAL
+    return LoadCoverageStatus.UNKNOWN
+
+
+def _confidence_for_coverage(coverage: float) -> LoadConfidence:
+    if coverage >= 0.8:
+        return LoadConfidence.HIGH
+    if coverage >= 0.5:
+        return LoadConfidence.MEDIUM
+    if coverage > 0:
+        return LoadConfidence.LOW
+    return LoadConfidence.NONE
 
 
 def _clean_hr_values(samples: Sequence[ActivitySample]) -> list[float | None]:
@@ -89,57 +157,69 @@ def _clean_hr_values(samples: Sequence[ActivitySample]) -> list[float | None]:
 
 
 def _banister_trimp(hrr: float, minutes: float) -> float:
-    return minutes * hrr * 0.64 * math.exp(1.92 * hrr)
+    # STRIDE's provider-neutral internal-load response.  The classic 1.92
+    # coefficient is too flat for modern running data: short near-max efforts
+    # become almost indistinguishable from steady aerobic work.  A steeper
+    # curve preserves dwell-by-dwell detail while the threshold normalization
+    # below still pins one hour at this athlete's LTHR to exactly 100.
+    return minutes * hrr * math.exp(_CARDIO_HRR_EXPONENT * hrr)
 
 
 def _compute_cardio_load(
     activity: ActivityLoadInput, calibration: CalibrationSnapshot
-) -> tuple[float | None, float | None, list[str], LoadConfidence]:
+) -> tuple[float | None, float | None, list[str], LoadConfidence, float]:
     if not activity.samples:
-        return None, None, ["heart_rate_missing"], LoadConfidence.NONE
+        return None, None, ["heart_rate_missing"], LoadConfidence.NONE, 0.0
     rhr = calibration.rhr_baseline
     hrmax = calibration.hrmax_estimate
     if rhr is None or hrmax is None or hrmax <= rhr:
-        return None, None, ["hr_calibration_missing"], LoadConfidence.NONE
+        return None, None, ["hr_calibration_missing"], LoadConfidence.NONE, 0.0
 
     clean_hr = _clean_hr_values(activity.samples)
     valid = [hr for hr in clean_hr if hr is not None]
     if not valid:
-        return None, None, ["heart_rate_missing"], LoadConfidence.NONE
+        return None, None, ["heart_rate_missing"], LoadConfidence.NONE, 0.0
 
     raw = 0.0
-    total_minutes = 0.0
-    for i, hr in enumerate(clean_hr):
-        minutes = _sample_delta_minutes(activity.samples, i)
-        total_minutes += minutes
+    covered_minutes = 0.0
+    sampled_minutes = 0.0
+    for i, delta_s in _valid_sample_intervals(activity.samples):
+        minutes = delta_s / 60.0
+        sampled_minutes += minutes
+        hr = clean_hr[i]
         if hr is None or minutes <= 0:
             continue
+        covered_minutes += minutes
         hrr = _clamp((hr - rhr) / (hrmax - rhr), 0.0, 1.05)
         raw += _banister_trimp(hrr, minutes)
 
-    duration_min = _duration_minutes(activity) or total_minutes
-    coverage = total_minutes / duration_min if duration_min and duration_min > 0 else 0.0
-    confidence = LoadConfidence.HIGH if coverage >= 0.7 else LoadConfidence.LOW
+    duration_min = _duration_minutes(activity) or sampled_minutes
+    coverage = (
+        _clamp(covered_minutes / duration_min, 0.0, 1.0)
+        if duration_min and duration_min > 0
+        else 0.0
+    )
+    confidence = _confidence_for_coverage(coverage)
     reasons: list[str] = []
-    if confidence == LoadConfidence.LOW:
+    if coverage < 0.8:
         reasons.append("heart_rate_low_coverage")
 
     threshold_hr = calibration.threshold_hr
     if threshold_hr is None:
         reasons.append("threshold_hr_missing")
-        return _round(raw), None, reasons, confidence
+        return _round(raw), None, reasons, confidence, _round(coverage) or 0.0
 
     threshold_hrr = (threshold_hr - rhr) / (hrmax - rhr)
     if threshold_hrr <= 0:
         reasons.append("threshold_hr_invalid")
-        return _round(raw), None, reasons, confidence
+        return _round(raw), None, reasons, confidence, _round(coverage) or 0.0
 
     threshold_trimp_1h = _banister_trimp(_clamp(threshold_hrr, 0.0, 1.05), 60.0)
     if threshold_trimp_1h <= 0:
         reasons.append("threshold_hr_invalid")
-        return _round(raw), None, reasons, confidence
+        return _round(raw), None, reasons, confidence, _round(coverage) or 0.0
     cardio_tss = 100.0 * raw / threshold_trimp_1h
-    return _round(raw), _round(cardio_tss), reasons, confidence
+    return _round(raw), _round(cardio_tss), reasons, confidence, _round(coverage) or 0.0
 
 
 def _series_values(samples: Sequence[ActivitySample], field: str) -> list[float]:
@@ -177,6 +257,101 @@ def _distance_window_grade(samples: Sequence[ActivitySample], index: int) -> flo
     return _clamp((last.altitude_m - first.altitude_m) / dist, -0.2, 0.2)
 
 
+def _precompute_grades(samples: Sequence[ActivitySample]) -> list[float | None]:
+    """Compute grade for every sample index in O(n) using two pointers.
+
+    Produces identical results to calling ``_distance_window_grade(samples, i)``
+    for each ``i`` but avoids the O(n) per-sample backward/forward scans.
+
+    The 50 m bidirectional window, 20 m minimum span, altitude-None check,
+    and ±0.2 clamp are all preserved exactly.
+    """
+    n = len(samples)
+    if n == 0:
+        return []
+
+    # The two-pointer window requires cumulative distance to be non-decreasing.
+    # Watch traces can occasionally correct distance backwards; preserve the
+    # reference per-index semantics for those rare traces instead of carrying
+    # stale pointers across the correction.
+    present_distances = [sample.distance_m for sample in samples if sample.distance_m is not None]
+    if any(right < left for left, right in zip(present_distances, present_distances[1:])):
+        return [_distance_window_grade(samples, index) for index in range(n)]
+
+    result: list[float | None] = [None] * n
+
+    # L is the current left-boundary candidate (lo for index i).
+    # It can only advance rightward as i increases.
+    # Extra invariant: L must be >= the index of the most recent None-distance
+    # sample to the left of i, because the original backward scan stops at None.
+    L = 0  # lo pointer
+    R = 0  # hi pointer; also only advances rightward
+
+    for i in range(n):
+        cur_dist = samples[i].distance_m
+        cur_alt = samples[i].altitude_m
+        if cur_dist is None:
+            # None distance breaks backward reachability for all future indices;
+            # reset L so no future index looks back past this gap.
+            L = i + 1
+            R = i
+            result[i] = None
+            continue
+        if cur_alt is None:
+            # Distance is valid so it doesn't break backward reachability,
+            # but this sample itself is ungradable.
+            result[i] = None
+            continue
+
+        # Advance L forward past any None-distance samples or samples now
+        # farther than 50 m behind cur_dist.
+        # L must never exceed i (lo <= index always).
+        while L < i:
+            prev_dist = samples[L].distance_m
+            if prev_dist is None:
+                # This None sample would have stopped a backward scan; move past it.
+                L += 1
+                continue
+            if cur_dist - prev_dist > 50:
+                L += 1
+                continue
+            break
+
+        # Ensure R >= i before advancing the right pointer.
+        if R < i:
+            R = i
+
+        # Advance R forward as long as the next sample is within 50 m and
+        # has a valid distance.
+        while R < n - 1:
+            next_dist = samples[R + 1].distance_m
+            if next_dist is None or next_dist - cur_dist > 50:
+                break
+            R += 1
+
+        first = samples[L]
+        last = samples[R]
+
+        # Both endpoints must have valid distance and altitude.
+        if first.distance_m is None or last.distance_m is None:
+            result[i] = None
+            continue
+        if first.altitude_m is None or last.altitude_m is None:
+            result[i] = None
+            continue
+
+        dist = last.distance_m - first.distance_m
+        if dist < 20:
+            result[i] = None
+            continue
+
+        result[i] = _clamp(
+            (last.altitude_m - first.altitude_m) / dist, -0.2, 0.2
+        )
+
+    return result
+
+
 def _grade_adjusted_speed(speed: float, grade: float | None) -> float:
     if grade is None:
         return speed
@@ -185,68 +360,234 @@ def _grade_adjusted_speed(speed: float, grade: float | None) -> float:
     return max(0.0, speed * factor)
 
 
-def _rolling_mean(values: Sequence[float], window: int) -> list[float]:
-    out: list[float] = []
-    queue: list[float] = []
-    total = 0.0
-    for value in values:
-        queue.append(value)
-        total += value
-        if len(queue) > window:
-            total -= queue.pop(0)
-        out.append(total / len(queue))
-    return out
-
-
 def _compute_external_tss(
     activity: ActivityLoadInput, calibration: CalibrationSnapshot
-) -> tuple[float | None, list[str], LoadConfidence, float | None]:
+) -> tuple[float | None, list[str], LoadConfidence, float | None, float]:
     samples = activity.samples
     if not samples:
-        return None, ["external_samples_missing"], LoadConfidence.NONE, None
+        return None, ["external_samples_missing"], LoadConfidence.NONE, None, 0.0
+    if not _is_running(activity.sport):
+        return None, ["external_not_supported_for_sport"], LoadConfidence.NONE, None, 0.0
 
-    ifs: list[float] = []
-    use_power = bool(calibration.critical_power_w and calibration.critical_power_w > 0)
     use_speed = bool(calibration.threshold_speed_mps and calibration.threshold_speed_mps > 0)
     reasons: list[str] = []
-
-    if use_power:
-        power = _series_values(samples, "power_w")
-        if power and len(power) / len(samples) >= 0.8:
-            for sample in samples:
-                if sample.power_w is not None and sample.power_w > 0:
-                    ifs.append(_clamp(float(sample.power_w) / float(calibration.critical_power_w), 0.3, 2.0))
-        else:
-            use_power = False
-
-    if not ifs and use_speed:
-        altitude_present = len(_series_values(samples, "altitude_m")) / len(samples) >= 0.8
-        distance_present = len(_series_values(samples, "distance_m")) / len(samples) >= 0.8
-        grade_ok = altitude_present and distance_present
-        if not grade_ok:
-            reasons.append("grade_unavailable_flat_speed")
-        for i, sample in enumerate(samples):
-            speed = sample.speed_mps
-            if speed is None or speed <= 0:
-                continue
-            grade = _distance_window_grade(samples, i) if grade_ok else None
-            adjusted = _grade_adjusted_speed(float(speed), grade)
-            ifs.append(_clamp(adjusted / float(calibration.threshold_speed_mps), 0.3, 2.0))
-
-    if not ifs:
+    if not use_speed:
         reasons.append("external_calibration_missing")
-        return None, reasons, LoadConfidence.NONE, None
+        return None, reasons, LoadConfidence.NONE, None, 0.0
 
     duration_min = _duration_minutes(activity)
     if duration_min is None or duration_min <= 0:
         reasons.append("duration_missing")
-        return None, reasons, LoadConfidence.NONE, None
+        return None, reasons, LoadConfidence.NONE, None, 0.0
 
-    rolling = _rolling_mean(ifs, 30)
-    normalized_if = (sum(v**4 for v in rolling) / len(rolling)) ** 0.25
-    tss = (duration_min / 60.0) * normalized_if**2 * 100.0
-    confidence = LoadConfidence.HIGH if len(ifs) / len(samples) >= 0.8 else LoadConfidence.LOW
-    return _round(tss), reasons, confidence, _round(normalized_if)
+    altitude_present = len(_series_values(samples, "altitude_m")) / len(samples) >= 0.8
+    distance_present = len(_series_values(samples, "distance_m")) / len(samples) >= 0.8
+    grade_ok = altitude_present and distance_present
+    if not grade_ok:
+        reasons.append("grade_unavailable_flat_speed")
+
+    weighted_if_power = 0.0
+    covered_seconds = 0.0
+    grades = _precompute_grades(samples) if grade_ok else None
+    for i, delta_s in _valid_sample_intervals(samples):
+        speed = samples[i].speed_mps
+        if speed is None or speed <= 0:
+            continue
+        grade = grades[i] if grades is not None else None
+        adjusted = _grade_adjusted_speed(float(speed), grade)
+        intensity = _clamp(adjusted / float(calibration.threshold_speed_mps), 0.0, 2.0)
+        weighted_if_power += delta_s * intensity**_EXTERNAL_NORMALIZATION_EXPONENT
+        covered_seconds += delta_s
+
+    if covered_seconds <= 0:
+        reasons.append("external_samples_missing")
+        return None, reasons, LoadConfidence.NONE, None, 0.0
+
+    # Integrate only observed dwell.  A ten-minute trace attached to a
+    # sixty-minute summary remains a ten-minute load; it is never multiplied
+    # up to the summary duration.
+    normalized_if = (
+        weighted_if_power / covered_seconds
+    ) ** (1.0 / _EXTERNAL_NORMALIZATION_EXPONENT)
+    tss = 100.0 * (covered_seconds / 3600.0) * normalized_if**2
+    coverage = _clamp(covered_seconds / (duration_min * 60.0), 0.0, 1.0)
+    confidence = _confidence_for_coverage(coverage)
+    if coverage < 0.8:
+        reasons.append("external_low_coverage")
+    return _round(tss), reasons, confidence, _round(normalized_if), _round(coverage) or 0.0
+
+
+def _compute_high_intensity_tss(
+    activity: ActivityLoadInput,
+    calibration: CalibrationSnapshot,
+) -> tuple[float | None, list[str], LoadConfidence, float]:
+    """Estimate the extra metabolic cost visible only after execution.
+
+    Ordinary cardio/external TSS integrates intensity dwell but cannot fully
+    distinguish a steady run from repeated hard work with incomplete active
+    recovery. This channel detects sustained supra-threshold work from a
+    smoothed speed trace, then measures how much HR remains elevated during
+    the following low-speed recovery. It deliberately uses no session label
+    or vendor training-load/effect field.
+
+    The result is a supplement on the shared TSS scale. It is available only
+    when both HR and speed cover the activity; planned workouts cannot use it
+    because post-work recovery HR is not known before execution.
+    """
+    if not activity.samples:
+        return None, ["high_intensity_samples_missing"], LoadConfidence.NONE, 0.0
+    if not _is_running(activity.sport):
+        return None, ["high_intensity_not_supported_for_sport"], LoadConfidence.NONE, 0.0
+
+    rhr = calibration.rhr_baseline
+    hrmax = calibration.hrmax_estimate
+    threshold_hr = calibration.threshold_hr
+    threshold_speed = calibration.threshold_speed_mps
+    if (
+        rhr is None
+        or hrmax is None
+        or hrmax <= rhr
+        or threshold_hr is None
+        or threshold_speed is None
+        or threshold_speed <= 0
+    ):
+        return None, ["high_intensity_calibration_missing"], LoadConfidence.NONE, 0.0
+
+    threshold_hrr = (threshold_hr - rhr) / (hrmax - rhr)
+    if threshold_hrr <= 0:
+        return None, ["high_intensity_calibration_invalid"], LoadConfidence.NONE, 0.0
+
+    duration_min = _duration_minutes(activity)
+    if duration_min is None or duration_min <= 0:
+        return None, ["duration_missing"], LoadConfidence.NONE, 0.0
+
+    clean_hr = _clean_hr_values(activity.samples)
+    covered_seconds = 0.0
+    threshold_hr_seconds = 0.0
+    recovery_residual_tss = 0.0
+    smoothed_if: float | None = None
+    peak_smoothed_if = 0.0
+    recovery_armed = False
+    work_seconds = 0.0
+    recovery_seconds = 0.0
+    armed_seconds = 0.0
+
+    for index, delta_s in _positive_sample_intervals(activity.samples):
+        if delta_s > 300.0:
+            # Pause-sized gaps are never integrated, but they still terminate
+            # any recovery attribution carried by an earlier work bout.
+            recovery_armed = False
+            work_seconds = 0.0
+            recovery_seconds = 0.0
+            armed_seconds = 0.0
+            smoothed_if = None
+            continue
+        hr = clean_hr[index]
+        speed = activity.samples[index].speed_mps
+        if hr is None or speed is None or speed <= 0:
+            # Missing samples still consume wall-clock time.  Freezing the
+            # recovery state here would let an old work bout survive an
+            # arbitrarily long telemetry gap and attribute a later easy segment
+            # to that stale effort.  Advance the documented 240-second expiry
+            # even though the interval itself cannot contribute load.
+            if recovery_armed:
+                armed_seconds += delta_s
+                if armed_seconds >= _HIGH_INTENSITY_ARM_WINDOW_SECONDS:
+                    recovery_armed = False
+                    work_seconds = 0.0
+                    recovery_seconds = 0.0
+                    armed_seconds = 0.0
+                    smoothed_if = None
+            else:
+                # Work qualification requires continuous observed speed.
+                work_seconds = max(0.0, work_seconds - 2.0 * delta_s)
+            continue
+        covered_seconds += delta_s
+
+        hrr = _clamp((hr - rhr) / (hrmax - rhr), 0.0, 1.05)
+        hr_if = hrr / threshold_hrr
+        raw_speed_if = _clamp(float(speed) / float(threshold_speed), 0.0, 2.0)
+        alpha = 1.0 - math.exp(-delta_s / _HIGH_INTENSITY_SPEED_SMOOTHING_SECONDS)
+        smoothed_if = (
+            raw_speed_if
+            if smoothed_if is None
+            else smoothed_if + alpha * (raw_speed_if - smoothed_if)
+        )
+        peak_smoothed_if = max(peak_smoothed_if, smoothed_if)
+        if hr_if >= 1.0:
+            threshold_hr_seconds += delta_s
+
+        # A qualifying work bout must be continuous in the observed trace.
+        # Smoothing protects the threshold from one-sample GPS spikes, but it
+        # must not bridge a real low-speed interval and concatenate two short
+        # surges into one >=60-second bout. Require the current raw sample to
+        # remain supra-threshold while accumulating pre-arm work time. Once a
+        # bout is armed, the existing smoothed transition still governs the
+        # recovery window.
+        is_observed_work = (
+            smoothed_if >= _HIGH_INTENSITY_WORK_IF
+            and raw_speed_if >= _HIGH_INTENSITY_WORK_IF
+        )
+        if is_observed_work:
+            work_seconds += delta_s
+            recovery_seconds = 0.0
+            armed_seconds = 0.0
+            if work_seconds >= _HIGH_INTENSITY_MIN_WORK_SECONDS:
+                recovery_armed = True
+        elif recovery_armed:
+            armed_seconds += delta_s
+            if smoothed_if <= _HIGH_INTENSITY_RECOVERY_IF:
+                recovery_seconds += delta_s
+                recovery_residual_tss += (
+                    100.0
+                    * delta_s
+                    / 3600.0
+                    * max(hr_if - _HIGH_INTENSITY_RECOVERY_HR_IF, 0.0)
+                )
+            else:
+                recovery_seconds = 0.0
+            if (
+                recovery_seconds >= _HIGH_INTENSITY_RECOVERY_WINDOW_SECONDS
+                or armed_seconds >= _HIGH_INTENSITY_ARM_WINDOW_SECONDS
+                or hr_if < _HIGH_INTENSITY_RECOVERY_HR_IF
+            ):
+                recovery_armed = False
+                work_seconds = 0.0
+                recovery_seconds = 0.0
+                armed_seconds = 0.0
+        elif not recovery_armed:
+            # Work qualification is continuous: any observed interval below
+            # the threshold ends the unarmed candidate bout.
+            work_seconds = 0.0
+
+    coverage = _clamp(covered_seconds / (duration_min * 60.0), 0.0, 1.0)
+    confidence = _confidence_for_coverage(coverage)
+    reasons: list[str] = []
+    if coverage < 0.8:
+        reasons.append("high_intensity_low_coverage")
+        return None, reasons, confidence, _round(coverage) or 0.0
+
+    if recovery_residual_tss <= 0:
+        return 0.0, reasons, confidence, _round(coverage) or 0.0
+
+    # Convert the post-work recovery residual to the common TSS scale. The
+    # second term is a severe-session EPOC proxy: it activates only when a
+    # 20-second-smoothed peak exceeds threshold and HR also spends time above
+    # LTHR. A fourth power separates short VO2/anaerobic work from ordinary
+    # threshold running without reacting to one-sample GPS spikes.
+    peak_excess = max(peak_smoothed_if - 1.0, 0.0)
+    threshold_hr_minutes = threshold_hr_seconds / 60.0
+    supplement = recovery_residual_tss * (
+        _HIGH_INTENSITY_RECOVERY_WEIGHT
+        + _HIGH_INTENSITY_SEVERITY_WEIGHT
+        * peak_excess**_HIGH_INTENSITY_SEVERITY_EXPONENT
+        * threshold_hr_minutes
+    )
+    supplement = min(
+        supplement,
+        _HIGH_INTENSITY_MAX_TSS_PER_HOUR * covered_seconds / 3600.0,
+    )
+    return _round(supplement), reasons, confidence, _round(coverage) or 0.0
 
 
 def _compute_mechanical_load(activity: ActivityLoadInput, normalized_if: float | None) -> float | None:
@@ -285,35 +626,60 @@ def compute_activity_load(
 ) -> ActivityLoadResult:
     """Compute objective TSS-like load for one activity.
 
-    Raw TRIMP, duration-only estimates, strength volume, and sRPE are kept as
-    side-channel signals in v1 unless they can be normalized to TSS-like scale.
+    Raw TRIMP, mechanical load, and sRPE remain side-channel signals unless
+    they can be normalized to the shared TSS-like scale.
     """
     duration_min = _duration_minutes(activity)
     subjective = None
     if activity.rpe is not None and duration_min is not None:
         subjective = float(activity.rpe) * duration_min
 
-    cardio_raw, cardio_tss, cardio_reasons, cardio_conf = _compute_cardio_load(activity, calibration)
-    external_tss, external_reasons, external_conf, normalized_if = _compute_external_tss(activity, calibration)
+    cardio_raw, cardio_tss, cardio_reasons, cardio_conf, cardio_coverage = _compute_cardio_load(activity, calibration)
+    external_tss, external_reasons, external_conf, normalized_if, external_coverage = _compute_external_tss(activity, calibration)
+    high_intensity_tss, high_intensity_reasons, high_intensity_conf, high_intensity_coverage = (
+        _compute_high_intensity_tss(activity, calibration)
+    )
     mechanical = _compute_mechanical_load(activity, normalized_if)
 
     reasons = list(cardio_reasons)
     reasons.extend(r for r in external_reasons if r != "grade_unavailable_flat_speed")
+    reasons.extend(high_intensity_reasons)
 
     training_dose: float | None = None
+    training_dose_source: str | None = None
     confidence = LoadConfidence.NONE
-    if cardio_tss is not None and external_tss is not None and _is_running(activity.sport):
-        if activity.session_class in {SessionClass.INTERVAL, SessionClass.RACE}:
-            training_dose = 0.4 * cardio_tss + 0.6 * external_tss
-        else:
-            training_dose = 0.7 * cardio_tss + 0.3 * external_tss
+    # PMC needs one stable scalar. Prefer measured physiological response when
+    # it covers the activity; use running external load only as a fallback.
+    # The two channels remain persisted separately and are never mixed by a
+    # session-type-specific magic weight.
+    if (
+        cardio_tss is not None
+        and external_tss is not None
+        and cardio_coverage >= 0.8
+        and external_coverage >= 0.8
+    ):
+        # Both complete channels should agree directionally.  Use their
+        # conservative envelope so a GPS burst or optical-HR spike cannot by
+        # itself dominate PMC; unlike v1 this is data-quality fusion, not a
+        # session-label-specific fixed blend.
+        training_dose = min(cardio_tss, external_tss)
+        training_dose_source = "conservative_fusion"
         confidence = _confidence_from_parts(cardio_conf, external_conf)
-    elif external_tss is not None:
-        training_dose = external_tss
-        confidence = LoadConfidence.MEDIUM if external_conf == LoadConfidence.HIGH else external_conf
-    elif cardio_tss is not None:
+        if high_intensity_tss is not None and high_intensity_coverage >= 0.8:
+            training_dose += high_intensity_tss
+            if high_intensity_tss > 0:
+                training_dose_source = "conservative_fusion+high_intensity"
+            confidence = _confidence_from_parts(confidence, high_intensity_conf)
+    elif cardio_tss is not None and cardio_coverage >= 0.8:
         training_dose = cardio_tss
+        training_dose_source = "cardio"
         confidence = cardio_conf
+    elif external_tss is not None and external_coverage >= 0.8:
+        training_dose = external_tss
+        training_dose_source = "external"
+        confidence = external_conf
+    elif cardio_tss is not None or external_tss is not None:
+        reasons.append("objective_load_partial_coverage")
 
     if training_dose is None:
         reasons.append("no_tss_like_objective_load")
@@ -325,82 +691,76 @@ def compute_activity_load(
         sport=activity.sport,
         session_class=activity.session_class,
         duration_minutes=_round(duration_min),
-        algorithm_version=calibration.algorithm_version,
+        algorithm_version=TRAINING_LOAD_MODEL_VERSION,
         calibration_id=calibration.id,
         cardio_load_raw=cardio_raw,
         cardio_tss=cardio_tss,
         external_tss=external_tss,
+        high_intensity_tss=high_intensity_tss,
         mechanical_load=mechanical,
         subjective_internal_load=_round(subjective),
         training_dose=_round(training_dose),
+        training_dose_source=training_dose_source,
+        cardio_coverage=cardio_coverage,
+        external_coverage=external_coverage,
+        high_intensity_coverage=high_intensity_coverage,
+        coverage_status=_coverage_status(cardio_coverage, external_coverage),
         load_confidence=confidence,
         excluded_from_pmc=training_dose is None,
         reasons=compact_reasons,
     )
 
 
-# Default intensity factors for steps whose target is OPEN (no pace/HR given),
-# keyed by step role. Values mirror the midpoints of
-# running_calibration.zones.PACE_ZONE_SPEED_RATIOS — easy=(0.72,0.84)→0.78,
-# marathon=(0.84,0.97)→~0.90 — so the open-target fallback stays on the same
-# zone scale rather than using a magic number.
+# Explicit assumptions for non-work steps whose target is OPEN. They are only
+# used for warm-up, cooldown, and active recovery; an OPEN work step stays
+# unknown because its session intensity cannot be inferred from the role alone.
 _OPEN_TARGET_DEFAULT_IF: dict[StepKind, float] = {
     StepKind.WARMUP: 0.78,
     StepKind.COOLDOWN: 0.78,
-    StepKind.WORK: 0.90,
+    StepKind.RECOVERY: 0.65,
 }
 
-# Steps excluded from a planned-load estimate: active recovery between interval
-# reps and passive rest. Their low/zero intensity is intentionally dropped so a
-# session's planned dose reflects the work, not the float between efforts.
-_SKIPPED_PLANNED_STEPS = {StepKind.RECOVERY, StepKind.REST}
+# Passive rest has no running load. Active recovery is a real part of the
+# session and is estimated from its own target (or the declared recovery
+# assumption above).
+_SKIPPED_PLANNED_STEPS = {StepKind.REST}
 
 
-def _planned_step_intensity(
+def _planned_step_intensity_range(
     step: WorkoutStep,
     threshold_speed_mps: float | None,
     threshold_hr: float | None,
     rhr: float | None,
-) -> float | None:
-    """Intensity factor (fraction of threshold speed) for one planned step.
-
-    Pace target is preferred; an HR target is the fallback; an OPEN target uses
-    a role-based default. Returns None when the target needs calibration that is
-    absent (e.g. a pace target with no threshold speed) — that step is skipped.
-    """
+) -> tuple[float, float, float, str | None] | None:
     target = step.target
-
     if target.kind == TargetKind.PACE_S_KM:
-        if (
-            threshold_speed_mps
-            and threshold_speed_mps > 0
-            and target.low is not None
-            and target.high is not None
-        ):
-            pace_mid = (float(target.low) + float(target.high)) / 2.0
-            if pace_mid > 0:
-                return _clamp((1000.0 / pace_mid) / float(threshold_speed_mps), 0.3, 2.0)
-        return None
-
+        if not threshold_speed_mps or threshold_speed_mps <= 0:
+            return None
+        if target.low is None or target.high is None:
+            return None
+        slow_pace = max(float(target.low), float(target.high))
+        fast_pace = min(float(target.low), float(target.high))
+        if slow_pace <= 0 or fast_pace <= 0:
+            return None
+        low = _clamp((1000.0 / slow_pace) / threshold_speed_mps, 0.0, 2.0)
+        high = _clamp((1000.0 / fast_pace) / threshold_speed_mps, 0.0, 2.0)
+        return low, (low + high) / 2.0, high, None
     if target.kind == TargetKind.HR_BPM:
-        if (
-            threshold_hr
-            and rhr is not None
-            and float(threshold_hr) > float(rhr)
-            and target.low is not None
-            and target.high is not None
-        ):
-            hr_mid = (float(target.low) + float(target.high)) / 2.0
-            # IF = HRR / threshold_HRR; hrmax cancels, leaving (hr-rhr)/(lthr-rhr).
-            return _clamp((hr_mid - float(rhr)) / (float(threshold_hr) - float(rhr)), 0.3, 2.0)
-        return None
-
+        if not threshold_hr or rhr is None or threshold_hr <= rhr:
+            return None
+        if target.low is None or target.high is None:
+            return None
+        low_hr = min(float(target.low), float(target.high))
+        high_hr = max(float(target.low), float(target.high))
+        low = _clamp((low_hr - rhr) / (threshold_hr - rhr), 0.0, 2.0)
+        high = _clamp((high_hr - rhr) / (threshold_hr - rhr), 0.0, 2.0)
+        return low, (low + high) / 2.0, high, "heart_rate_target_used_as_intensity_proxy"
     if target.kind == TargetKind.POWER_W:
-        # Planned power estimation is not supported yet; fall through to default.
-        pass
-
+        return None
     default = _OPEN_TARGET_DEFAULT_IF.get(step.step_kind)
-    return None if default is None else _clamp(default, 0.3, 2.0)
+    if default is None:
+        return None
+    return default, default, default, f"open_{step.step_kind.value}_target_if_{default:.2f}"
 
 
 def _planned_step_minutes(
@@ -423,6 +783,22 @@ def _planned_step_minutes(
     return None
 
 
+def _dose_from_intensity_dwell(
+    intervals: Sequence[tuple[float, float]],
+) -> float | None:
+    """Apply the measured external-load scale to planned minute/IF pairs."""
+    total_minutes = sum(minutes for minutes, _intensity in intervals if minutes > 0)
+    if total_minutes <= 0:
+        return None
+    weighted = sum(
+        minutes * intensity**_EXTERNAL_NORMALIZATION_EXPONENT
+        for minutes, intensity in intervals
+        if minutes > 0
+    )
+    normalized_if = (weighted / total_minutes) ** (1.0 / _EXTERNAL_NORMALIZATION_EXPONENT)
+    return 100.0 * (total_minutes / 60.0) * normalized_if**2
+
+
 def estimate_planned_run_load(
     workout: NormalizedRunWorkout,
     *,
@@ -433,38 +809,110 @@ def estimate_planned_run_load(
     """Estimate STRIDE training_dose for a *planned* run workout.
 
     The estimate is on the same TSS-like scale as the actual load
-    (`_compute_external_tss`): per countable step,
-    ``dose += (minutes / 60) * IF**2 * 100`` where ``IF`` is the step's
-    intensity relative to threshold. A steady run reproduces the measured
-    external TSS exactly; this is the single source of the scale definition.
+    (`_compute_external_tss`): planned segments are time-weighted with the same
+    normalized-IF exponent, then converted with
+    ``dose = hours * normalized_IF**2 * 100``. A steady or variable-pace plan
+    therefore uses the same scale as the eventual measured external channel.
 
     Intensity per step prefers a pace target (``speed / threshold_speed``),
     falls back to an HR target (``(hr - rhr) / (lthr - rhr)``, an IF² proxy for
     Banister TRIMP — adequate for the easy runs that carry HR-only targets),
-    then to a role-based default for OPEN targets. RECOVERY/REST steps and
-    open-duration steps contribute nothing, so interval sessions read slightly
-    conservative versus their measured normalized-IF dose — the safe direction
-    for load budgeting.
+    then to a visible role-based assumption for OPEN targets. Active RECOVERY
+    steps are counted; passive REST and open-duration steps contribute nothing.
+    Variable-pace sessions remain an estimate rather than a reconstruction of
+    the athlete's eventual sample-by-sample response.
 
     Returns None when no step is computable (e.g. neither threshold speed nor
     HR calibration is available).
     """
-    total = 0.0
-    counted = False
+    return estimate_planned_run_load_details(
+        workout,
+        threshold_speed_mps=threshold_speed_mps,
+        threshold_hr=threshold_hr,
+        rhr=rhr,
+    ).expected_dose
+
+
+def estimate_planned_run_load_details(
+    workout: NormalizedRunWorkout,
+    *,
+    threshold_speed_mps: float | None = None,
+    threshold_hr: float | None = None,
+    rhr: float | None = None,
+) -> PlannedLoadEstimate:
+    """Estimate expected/range load for a structured planned run.
+
+    Every active segment, including jog recoveries, is integrated separately.
+    Explicit target ranges become load ranges; role-based OPEN targets are kept
+    as visible assumptions.  No fixed athlete pace is introduced when a
+    distance step cannot be converted with personal calibration.
+    """
+    total_minutes = 0.0
+    total_distance_m = 0.0
+    low_intervals: list[tuple[float, float]] = []
+    expected_intervals: list[tuple[float, float]] = []
+    high_intervals: list[tuple[float, float]] = []
+    finite_steps = estimated_steps = unestimated_steps = 0
+    assumptions: list[str] = []
     for block in workout.blocks:
         for _rep in range(block.repeat):
             for step in block.steps:
                 if step.step_kind in _SKIPPED_PLANNED_STEPS:
                     continue
-                intensity = _planned_step_intensity(step, threshold_speed_mps, threshold_hr, rhr)
-                if intensity is None:
+                if step.duration.kind != DurationKind.OPEN:
+                    finite_steps += 1
+                intensity_range = _planned_step_intensity_range(
+                    step, threshold_speed_mps, threshold_hr, rhr
+                )
+                if intensity_range is None:
+                    unestimated_steps += 1
                     continue
-                minutes = _planned_step_minutes(step, intensity, threshold_speed_mps)
+                low_if, expected_if, high_if, assumption = intensity_range
+                minutes = _planned_step_minutes(step, expected_if, threshold_speed_mps)
                 if minutes is None or minutes <= 0:
+                    unestimated_steps += 1
                     continue
-                total += (minutes / 60.0) * intensity ** 2 * 100.0
-                counted = True
-    return _round(total) if counted else None
+                estimated_steps += 1
+                total_minutes += minutes
+                if step.duration.kind == DurationKind.DISTANCE_M and step.duration.value:
+                    total_distance_m += float(step.duration.value)
+                    low_minutes = _planned_step_minutes(step, low_if, threshold_speed_mps) or minutes
+                    high_minutes = _planned_step_minutes(step, high_if, threshold_speed_mps) or minutes
+                elif threshold_speed_mps and threshold_speed_mps > 0:
+                    total_distance_m += minutes * 60.0 * threshold_speed_mps * expected_if
+                    low_minutes = high_minutes = minutes
+                else:
+                    low_minutes = high_minutes = minutes
+                low_intervals.append((low_minutes, low_if))
+                expected_intervals.append((minutes, expected_if))
+                high_intervals.append((high_minutes, high_if))
+                if assumption:
+                    assumptions.append(assumption)
+
+    coverage = estimated_steps / finite_steps if finite_steps else 0.0
+    total_low = _dose_from_intensity_dwell(low_intervals)
+    total_expected = _dose_from_intensity_dwell(expected_intervals)
+    total_high = _dose_from_intensity_dwell(high_intervals)
+    confidence = (
+        LoadConfidence.HIGH
+        if coverage >= 0.999 and not assumptions and not unestimated_steps
+        else LoadConfidence.MEDIUM
+        if coverage >= 0.8
+        else LoadConfidence.LOW
+        if estimated_steps
+        else LoadConfidence.NONE
+    )
+    return PlannedLoadEstimate(
+        expected_dose=_round(total_expected),
+        low_dose=_round(total_low),
+        high_dose=_round(total_high),
+        estimated_duration_minutes=_round(total_minutes) if estimated_steps else None,
+        estimated_distance_km=_round(total_distance_m / 1000.0) if estimated_steps else None,
+        coverage=_round(coverage) or 0.0,
+        confidence=confidence,
+        assumptions=tuple(dict.fromkeys(assumptions)),
+        unestimated_steps=unestimated_steps,
+    )
 
 
 def _daterange(start: date, end: date) -> Iterable[date]:
@@ -628,13 +1076,34 @@ def compute_daily_load_series(
 
     for day in _daterange(start, end):
         day_activities = by_date.get(day, [])
+        if day_activities:
+            usable = [
+                activity
+                for activity in day_activities
+                if activity.training_dose is not None and not activity.excluded_from_pmc
+            ]
+            coverage_status = (
+                LoadCoverageStatus.COMPLETE
+                if len(usable) == len(day_activities)
+                and all(activity.coverage_status == LoadCoverageStatus.COMPLETE for activity in usable)
+                else LoadCoverageStatus.PARTIAL
+                if usable
+                else LoadCoverageStatus.UNKNOWN
+            )
+        elif day in health_by_date:
+            # A provider health row proves the watch synced this calendar day;
+            # with no activities it is an observed rest day, not missing data.
+            coverage_status = LoadCoverageStatus.REST_CONFIRMED
+        else:
+            coverage_status = LoadCoverageStatus.UNKNOWN
         dose = sum(
             float(activity.training_dose)
             for activity in day_activities
             if activity.training_dose is not None and not activity.excluded_from_pmc
         )
-        acute += k_acute * (dose - acute)
-        chronic += k_chronic * (dose - chronic)
+        if coverage_status != LoadCoverageStatus.UNKNOWN:
+            acute += k_acute * (dose - acute)
+            chronic += k_chronic * (dose - chronic)
         gate, readiness_reasons = _readiness_for_day(
             day,
             health_by_date,
@@ -659,6 +1128,7 @@ def compute_daily_load_series(
                 chronic_load=round(chronic, 4),
                 form=round(chronic - acute, 4),
                 load_ratio=round(ratio, 4) if ratio is not None else None,
+                coverage_status=coverage_status,
                 readiness_gate=gate,
                 readiness_reasons=readiness_reasons,
             )

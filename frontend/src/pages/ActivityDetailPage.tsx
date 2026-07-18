@@ -443,10 +443,11 @@ function StrideTrainingLoadPanel({ load }: { load: ActivityStrideTrainingLoad })
           {included ? '计入PMC' : '未计入PMC'}
         </span>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-4">
         <SmallMetric label="训练剂量" value={formatLoadValue(load.training_dose)} />
         <SmallMetric label="Cardio TSS" value={formatLoadValue(load.cardio_tss)} />
         <SmallMetric label="External TSS" value={formatLoadValue(load.external_tss)} />
+        <SmallMetric label="高强度加成" value={formatLoadValue(load.high_intensity_tss)} />
         <SmallMetric label="机械负荷" value={formatLoadValue(load.mechanical_load)} />
         <SmallMetric label="置信度" value={load.load_confidence || '—'} />
         <SmallMetric label="分类" value={load.session_class || '—'} />

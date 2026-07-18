@@ -26,9 +26,9 @@ STRIDE 数据缺失时明确说缺失。以下厂商字段说明仅用于 legacy
 | Field | 说明 |
 |-------|------|
 | `fatigue` | 疲劳分（COROS `tiredRate`）。<40 恢复，40-50 正常，50-60 疲劳，>60 高疲劳 |
-| `ati` | Acute Training Index —— 7 日加权训练负荷（短期 stress） |
-| `cti` | Chronic Training Index —— 28 日加权训练负荷（fitness baseline） |
-| `training_load_ratio` | ATI/CTI。0.8-1.0 optimal，>1.2 Very High，<0.7 detraining |
+| `ati` | 厂家短期负荷（COROS/Garmin 的单位和时间窗不同，仅用于同厂商趋势对照） |
+| `cti` | 厂家长期负荷（COROS/Garmin 的单位和时间窗不同，仅用于同厂商趋势对照） |
+| `training_load_ratio` | 厂家短期/长期负荷比；不可假定等于 STRIDE ATL/CTL。Garmin 同步在 ATI/CTI 完整时存精确 `ATI/CTI`，避免其一位小数 ACWR 字段的量化误差 |
 | `training_load_state` | COROS label：Low / Optimal / High / Very High |
 | `rhr` | 静息心率 |
 
@@ -50,25 +50,26 @@ for r in rows: print(dict(r))
 "
 ```
 
-## 比赛就绪 / 训练 / 恢复 阈值
+## STRIDE 负荷定义
+
+- `training_dose`：TSS-scaled，个人阈值强度 1 小时 = 100。
+- `acute_load` / `chronic_load`：分别为 7 / 42 天时间常数的 EWMA。
+- `form = chronic_load - acute_load`；分类必须使用 `form / chronic_load`，不能使用固定 TSB 分值。
+- `load_ratio = acute_load / chronic_load`。厂家 ratio 只做趋势对照，不能作为同公式的真值。
+- STRIDE canonical ratio 固定为 7/42 天时间常数 EWMA，不按厂商切换；跨厂家离线验证可补充 7/28 eACWR 参考线，但不能据此改写 PMC。
+- 实际活动逐时间段积分，包含心率、速度和高强度工作后恢复残余三个可审计通道；计划活动按结构化训练段输出 expected/low/high 区间，两者使用同一 TSS 标尺。
+- 厂家负荷、training effect 与厂家 ratio 只做离线验证，不作为 STRIDE 计算输入。
+- `coverage_status=unknown` 的日期不按零负荷休息日衰减；只有完整活动历史或厂家健康日存在时才能确认休息。
+
+## 比赛就绪 / 训练 / 恢复阈值
 
 写 weekly plan 时把疲劳趋势表带进 context。关键阈值：
 
-- **Race-ready**: fatigue <35, load ratio 0.7-0.9, RHR at baseline, TSB 10-25
-- **Normal training**: fatigue 40-50, load ratio 0.8-1.1, TSB -30 to -10
-- **Needs recovery**: fatigue >50, load ratio >1.2, RHR elevated, TSB < -30
-
-## TSB (Training Stress Balance) — PMC
-
-TSB = CTI − ATI。表示 readiness to perform：
-
-| TSB Zone | Range | 含义 |
-|----------|-------|------|
-| 比赛就绪 | 10 ~ 25 | Well-rested, peak performance |
-| 过渡区 | -10 ~ 10 | Recovering or maintaining |
-| 正常训练 | -30 ~ -10 | Productive training stress |
-| 过度负荷 | < -30 | Too much stress, injury/overtraining risk |
-| 减量过多 | > 25 | Losing fitness, too much rest |
+- **减量过多**：`acute/chronic < 0.75`
+- **比赛就绪**：`0.75 <= acute/chronic < 0.90`
+- **维持期**：`0.90 <= acute/chronic <= 1.10`
+- **提升期**：`1.10 < acute/chronic <= 1.25`
+- **过度负荷**：`acute/chronic > 1.25`
 
 ## HRV
 

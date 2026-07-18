@@ -113,12 +113,19 @@ export function heatmapBucket(dose: number | null): 0 | 1 | 2 | 3 | 4 {
 // Tailwind orange-200/300/400/700 give 4 visually distinct active levels
 // plus a neutral slate-100 for empty days.
 export const HEATMAP_COLORS = [
-  '#f0f1f4',  // 0 = empty / rest
+  '#f0f1f4',  // 0 = observed rest / zero dose
   '#fed7aa',  // 1 = light  (1–40)
   '#fdba74',  // 2 = mid    (41–80)
   '#fb923c',  // 3 = dark   (81–120)
   '#c2410c',  // 4 = deepest (>120)
 ] as const
+
+const HEATMAP_UNKNOWN_COLOR = '#f8fafc'
+const HEATMAP_ABSENT_COLOR = '#ffffff'
+const HEATMAP_GRID_STROKE = '#e8eaf0'
+const HEATMAP_UNKNOWN_STROKE = '#cbd5e1'
+
+type HeatmapDayState = 'active' | 'rest' | 'unknown' | 'absent' | 'future'
 
 const AXIS_TICK = { fontSize: 10, fontFamily: 'JetBrains Mono', fill: '#8888a0' }
 const TOOLTIP_STYLE = {
@@ -626,19 +633,31 @@ function DailyDoseTooltip({
   active, payload, activitiesByDate,
 }: {
   active?: boolean
-  payload?: Array<{ payload: { date: string; training_dose: number | null } }>
+  payload?: Array<{ payload: { date: string; training_dose: number | null; coverage_status?: string; dayState?: HeatmapDayState } }>
   label?: string
   activitiesByDate: Map<string, Activity[]>
 }) {
   if (!active || !payload || payload.length === 0) return null
   const row = payload[0].payload
+  const dayState = row.dayState ?? (
+    row.coverage_status === 'unknown'
+      ? 'unknown'
+      : row.coverage_status
+        ? 'rest'
+        : 'absent'
+  )
   const acts = activitiesByDate.get(row.date) ?? []
   const dayLabel = `${formatDateShort(row.date)} · ${shanghaiWeekday(row.date)}`
+  const doseLabel = (() => {
+    if (dayState === 'unknown') return '数据未确认'
+    if (dayState === 'absent') return '历史无记录'
+    return row.training_dose != null ? row.training_dose.toFixed(0) : '—'
+  })()
   return (
     <div style={{ ...TOOLTIP_STYLE.contentStyle, padding: '8px 10px', lineHeight: 1.4 }}>
       <div style={{ color: '#8888a0', marginBottom: 4 }}>{dayLabel}</div>
       <div style={{ color: '#e68a00', fontWeight: 600 }}>
-        训练负荷: {row.training_dose != null ? row.training_dose.toFixed(0) : '—'}
+        训练负荷: {doseLabel}
       </div>
       {acts.map((a) => {
         const sport = chineseSportName(a.sport_name)
@@ -657,7 +676,7 @@ function DailyDoseTooltip({
           </div>
         )
       })}
-      {acts.length === 0 && (
+      {acts.length === 0 && dayState === 'rest' && (
         <div style={{ marginTop: 4, color: '#8888a0' }}>休息日</div>
       )}
     </div>
@@ -692,6 +711,7 @@ type HeatmapCell = {
   weekIdx: number  // 0..weeks-1
   dayIdx: number   // 0=Mon .. 6=Sun
   dose: number | null
+  dayState: HeatmapDayState
   isFuture: boolean
   isToday: boolean
 }
@@ -720,12 +740,22 @@ export function ActivityHeatmap({
     for (let w = 0; w < weeks; w++) {
       for (let d = 0; d < 7; d++) {
         const date = addDays(firstMonday, w * 7 + d)
+        const row = seriesByDate.get(date)
+        const isFuture = date > todayCN
+        const dose = row?.coverage_status === 'unknown' ? null : row?.training_dose ?? null
+        const dayState: HeatmapDayState = (() => {
+          if (isFuture) return 'future'
+          if (!row) return 'absent'
+          if (row.coverage_status === 'unknown') return 'unknown'
+          return dose != null && dose > 0 ? 'active' : 'rest'
+        })()
         out.push({
           date,
           weekIdx: w,
           dayIdx: d,
-          dose: seriesByDate.get(date)?.training_dose ?? null,
-          isFuture: date > todayCN,
+          dose,
+          dayState,
+          isFuture,
           isToday: date === todayCN,
         })
       }
@@ -800,14 +830,30 @@ export function ActivityHeatmap({
             const x = HEATMAP_DAY_LABEL_W + c.weekIdx * HEATMAP_STEP
             const y = HEATMAP_MONTH_LABEL_H + c.dayIdx * HEATMAP_STEP
             const bucket = heatmapBucket(c.dose)
-            const fill = c.isFuture ? 'transparent' : HEATMAP_COLORS[bucket]
-            const stroke = c.isFuture ? '#e8eaf0' : c.isToday ? '#1a1c2e' : 'none'
-            const strokeDash = c.isFuture ? '2 2' : undefined
+            const fill = (() => {
+              if (c.dayState === 'future') return 'transparent'
+              if (c.dayState === 'unknown') return HEATMAP_UNKNOWN_COLOR
+              if (c.dayState === 'absent') return HEATMAP_ABSENT_COLOR
+              return HEATMAP_COLORS[bucket]
+            })()
+            const stroke = (() => {
+              if (c.isToday) return '#1a1c2e'
+              if (c.dayState === 'unknown') return HEATMAP_UNKNOWN_STROKE
+              if (c.dayState === 'absent' || c.dayState === 'future') return HEATMAP_GRID_STROKE
+              return 'none'
+            })()
+            const strokeDash = (() => {
+              if (c.dayState === 'future') return '2 2'
+              if (c.dayState === 'unknown') return '3 2'
+              if (c.dayState === 'absent') return '1 3'
+              return undefined
+            })()
             return (
               <rect
                 key={c.date}
                 className="heatmap-cell"
                 data-date={c.date}
+                data-state={c.dayState}
                 x={x}
                 y={y}
                 width={HEATMAP_CELL}
@@ -815,7 +861,7 @@ export function ActivityHeatmap({
                 rx={3}
                 fill={fill}
                 stroke={stroke}
-                strokeWidth={c.isToday ? 1 : c.isFuture ? 1 : 0}
+                strokeWidth={c.dayState === 'active' || c.dayState === 'rest' ? (c.isToday ? 1 : 0) : 1}
                 strokeDasharray={strokeDash}
                 onMouseEnter={c.isFuture ? undefined : (e) => {
                   setHovered({ date: c.date, x: e.clientX, y: e.clientY })
@@ -843,29 +889,35 @@ export function ActivityHeatmap({
       </div>
       {/* Tooltip rendered via Portal into document.body so it isn't trapped
           by any ancestor transform / filter that would re-anchor position:fixed. */}
-      {hovered && createPortal(
-        <div
-          style={{
-            position: 'fixed',
-            left: hovered.x + 12,
-            top: hovered.y + 12,
-            zIndex: 50,
-            pointerEvents: 'none',
-          }}
-        >
-          <DailyDoseTooltip
-            active={true}
-            payload={[{
-              payload: {
-                date: hovered.date,
-                training_dose: seriesByDate.get(hovered.date)?.training_dose ?? null,
-              },
-            }]}
-            activitiesByDate={activitiesByDate}
-          />
-        </div>,
-        document.body,
-      )}
+      {hovered && (() => {
+        const hoveredCell = cells.find((c) => c.date === hovered.date)
+        const hoveredRow = seriesByDate.get(hovered.date)
+        return createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              left: hovered.x + 12,
+              top: hovered.y + 12,
+              zIndex: 50,
+              pointerEvents: 'none',
+            }}
+          >
+            <DailyDoseTooltip
+              active={true}
+              payload={[{
+                payload: {
+                  date: hovered.date,
+                  training_dose: hoveredCell?.dose ?? null,
+                  coverage_status: hoveredRow?.coverage_status,
+                  dayState: hoveredCell?.dayState,
+                },
+              }]}
+              activitiesByDate={activitiesByDate}
+            />
+          </div>,
+          document.body,
+        )
+      })()}
     </div>
   )
 }
@@ -878,7 +930,18 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
   const cur = load?.current
   // Daily chart respects the user's window; weekly chart always uses the
   // full series the parent fetched (≥ 56 days) so all 8 buckets fill.
-  const rawSeries = load?.series ?? []
+  const rawSeries = (load?.series ?? []).map((row) => (
+    row.coverage_status === 'unknown'
+      ? {
+          ...row,
+          training_dose: null,
+          acute_load: null,
+          chronic_load: null,
+          form: null,
+          load_ratio: null,
+        }
+      : row
+  ))
   const series = rawSeries.slice(-dailyWindowDays).map((r) => ({
     ...r,
     dateLabel: formatDateShort(r.date),
@@ -886,7 +949,7 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
   const weeklySeries = useMemo(
     () => aggregateWeeklyDose(rawSeries).map((b) => ({
       ...b,
-      totalDose: Math.round(b.totalDose * 10) / 10,
+      totalDose: b.totalDose == null ? null : Math.round(b.totalDose * 10) / 10,
     })),
     [rawSeries],
   )
@@ -1054,7 +1117,7 @@ function TrainingLoadSection({ load, dailyWindowDays, activitiesByDate }: {
                         }}
                         formatter={(value: unknown, _name, ctx) => {
                           const row = (ctx as { payload?: { activeDays?: number } } | undefined)?.payload
-                          const dose = typeof value === 'number' ? value.toFixed(1) : `${value}`
+                          const dose = typeof value === 'number' ? value.toFixed(1) : '数据不完整'
                           return [`${dose}（${row?.activeDays ?? 0} 天）`, '周剂量']
                         }}
                       />

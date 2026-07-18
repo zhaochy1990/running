@@ -10,6 +10,7 @@ from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.models import RUN_SPORT_SQL_LIST as _RUN_SPORT_SQL, pace_str
 from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.timefmt import today_shanghai
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from ..deps import format_duration, get_db
 
@@ -209,27 +210,11 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         "FROM daily_health ORDER BY date DESC LIMIT ?",
         (days,),
     )
-    stride_rows = db.query(
-        """WITH active_version AS (
-               SELECT MAX(algorithm_version) AS algorithm_version
-               FROM daily_training_load
-           ),
-           recent AS (
-               SELECT date, algorithm_version, training_dose, acute_load, chronic_load,
-                      form, load_ratio, readiness_gate, readiness_reasons_json
-               FROM daily_training_load
-               WHERE algorithm_version = (SELECT algorithm_version FROM active_version)
-               ORDER BY date DESC
-               LIMIT ?
-           )
-           SELECT recent.*,
-                  prior.chronic_load AS chronic_load_7d_ago
-           FROM recent
-           LEFT JOIN daily_training_load AS prior
-             ON prior.date = date(recent.date, '-7 day')
-            AND prior.algorithm_version = recent.algorithm_version
-           ORDER BY recent.date""",
-        (days,),
+    stride_rows = db.fetch_daily_training_load_with_prior(
+        algorithm_version=TRAINING_LOAD_MODEL_VERSION, limit=days
+    )
+    latest_usable_stride_row = db.fetch_latest_daily_training_load(
+        algorithm_version=TRAINING_LOAD_MODEL_VERSION
     )
     db.close()
 
@@ -298,7 +283,23 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         )
         stride_records.append(rec)
 
-    latest_stride = stride_records[-1] if stride_records else {}
+    # Keep UNKNOWN placeholders in the chart so missing coverage stays visible,
+    # but never promote one to the current athlete state. The unbounded storage
+    # lookup also avoids losing the latest usable state when an unknown gap is
+    # longer than the requested chart window.
+    latest_stride = dict(latest_usable_stride_row) if latest_usable_stride_row else {}
+    if latest_stride:
+        latest_stride["readiness_reasons"] = _json_list(
+            latest_stride.pop("readiness_reasons_json", None)
+        )
+        latest_stride["chronic_load_ramp"] = next(
+            (
+                rec.get("chronic_load_ramp")
+                for rec in reversed(stride_records)
+                if rec.get("date") == latest_stride.get("date")
+            ),
+            None,
+        )
     stride_summary = {
         "date": latest_stride.get("date"),
         "current_training_dose": latest_stride.get("training_dose"),
@@ -306,6 +307,7 @@ def get_pmc(user: str, days: int = Query(90, ge=14, le=365)):
         "current_chronic_load": latest_stride.get("chronic_load"),
         "current_form": latest_stride.get("form"),
         "current_load_ratio": latest_stride.get("load_ratio"),
+        "current_coverage_status": latest_stride.get("coverage_status"),
         "current_readiness_gate": latest_stride.get("readiness_gate"),
         "current_readiness_reasons": latest_stride.get("readiness_reasons"),
         "chronic_load_ramp": latest_stride.get("chronic_load_ramp"),
@@ -354,5 +356,3 @@ def get_stats(user: str):
         "latest_date": latest_date,
         "weekly": weekly,
     }
-
-

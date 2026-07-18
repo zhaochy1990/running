@@ -15,14 +15,16 @@ from stride_core.running_calibration import (
 )
 from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.training_load.adapter import (
+    _build_activity_inputs,
     _fetch_health_rows,
+    _fetch_hrv_rows,
     _fetch_samples,
     _normalize_elapsed_seconds,
     backfill_training_load,
     refresh_training_load_calibration,
     recompute_training_load,
 )
-from stride_core.training_load.types import CalibrationSnapshot
+from stride_core.training_load.types import TRAINING_LOAD_MODEL_VERSION, CalibrationSnapshot
 
 
 def _save_running_snapshot(
@@ -275,10 +277,7 @@ def test_recompute_ignores_calibration_snapshot_from_other_algorithm_version(db)
     assert row["calibration_id"] == current_id
 
 
-def test_recompute_does_not_attach_cached_calibration_id_when_runtime_defaults_change_it(db):
-    """When the cached snapshot lacks threshold_speed_mps, _defaulted_calibration
-    fills it in from activity data and clears the calibration_id to signal the
-    result is not purely snapshot-derived."""
+def test_recompute_never_defaults_threshold_speed_from_activity_max(db):
     snapshot_id = _save_running_snapshot(
         db,
         as_of_date=date(2026, 5, 1),
@@ -296,20 +295,19 @@ def test_recompute_does_not_attach_cached_calibration_id_when_runtime_defaults_c
 
     summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
 
-    assert summary.calibration_id is None
+    assert summary.calibration_id == snapshot_id
     cached = db.query(
         "SELECT threshold_speed_mps FROM running_calibration_snapshot WHERE id = ?", (snapshot_id,)
     )[0]
     assert cached["threshold_speed_mps"] is None
     row = db.fetch_activity_training_load("run1")
     assert row is not None
-    assert row["calibration_id"] is None
-    assert row["external_tss"] is not None
+    assert row["calibration_id"] == snapshot_id
+    assert row["external_tss"] is None
+    assert row["training_dose_source"] == "cardio"
 
 
-def test_recompute_does_not_attach_cached_calibration_id_when_hrmax_is_defaulted(db):
-    """When the cached snapshot lacks hrmax_estimate, _defaulted_calibration fills
-    it from activity max_hr and clears the calibration_id."""
+def test_recompute_never_defaults_hrmax_from_activity_max(db):
     snapshot_id = _save_running_snapshot(
         db,
         as_of_date=date(2026, 5, 1),
@@ -328,15 +326,16 @@ def test_recompute_does_not_attach_cached_calibration_id_when_hrmax_is_defaulted
 
     summary = recompute_training_load(db, start="2026-05-03", end="2026-05-03")
 
-    assert summary.calibration_id is None
+    assert summary.calibration_id == snapshot_id
     cached = db.query(
         "SELECT hrmax_estimate FROM running_calibration_snapshot WHERE id = ?", (snapshot_id,)
     )[0]
     assert cached["hrmax_estimate"] is None
     row = db.fetch_activity_training_load("run1")
     assert row is not None
-    assert row["calibration_id"] is None
-    assert row["cardio_tss"] is not None
+    assert row["calibration_id"] == snapshot_id
+    assert row["cardio_tss"] is None
+    assert row["training_dose_source"] == "external"
 
 
 def test_recompute_without_cached_calibration_does_not_create_running_snapshot(db):
@@ -358,7 +357,8 @@ def test_recompute_without_cached_calibration_does_not_create_running_snapshot(d
     assert db.query("SELECT COUNT(*) AS n FROM running_calibration_snapshot")[0]["n"] == 0
     row = db.fetch_activity_training_load("run1")
     assert row is not None
-    assert row["training_dose"] is not None
+    assert row["training_dose"] is None
+    assert row["coverage_status"] == "unknown"
 
 
 def test_backfill_refreshes_calibration_then_recomputes_recent_load_window(db):
@@ -503,6 +503,51 @@ def test_recompute_persists_activity_and_daily_load_idempotently(db):
     daily_rows = db.fetch_daily_training_load("2026-05-01", "2026-05-01")
     assert len(daily_rows) == 1
     assert json.loads(activity_row["reasons_json"]) == []
+
+
+def test_recompute_retains_superseded_daily_model_version(db):
+    db._conn.execute(
+        "INSERT INTO daily_training_load "
+        "(date, algorithm_version, training_dose, acute_load, chronic_load) "
+        "VALUES ('2026-05-01', 1, 999, 999, 999)"
+    )
+    db.upsert_activity(
+        _make_activity(
+            "run1", "2026-05-01T00:00:00+00:00",
+            samples=_timeseries(hr=None, speed_mps=4.0),
+        )
+    )
+    calibration = CalibrationSnapshot(
+        as_of_date=date(2026, 5, 1), threshold_speed_mps=4.0
+    )
+
+    recompute_training_load(
+        db, start="2026-05-01", end="2026-05-01",
+        calibration_override=calibration,
+    )
+
+    rows = db.query(
+        "SELECT algorithm_version FROM daily_training_load "
+        "WHERE date = '2026-05-01' ORDER BY algorithm_version"
+    )
+    assert [row["algorithm_version"] for row in rows] == [1, TRAINING_LOAD_MODEL_VERSION]
+
+
+def test_fetch_daily_training_load_filters_current_version(db):
+    db._conn.executemany(
+        "INSERT INTO daily_training_load "
+        "(date, algorithm_version, training_dose, acute_load, chronic_load) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [
+            ("2026-05-01", 1, 999, 999, 999),
+            ("2026-05-01", TRAINING_LOAD_MODEL_VERSION, 10, 10, 20),
+        ],
+    )
+    db._conn.commit()
+
+    rows = db.fetch_daily_training_load("2026-05-01", "2026-05-01")
+
+    assert [row["algorithm_version"] for row in rows] == [TRAINING_LOAD_MODEL_VERSION]
 
 
 def test_recompute_persist_false_returns_summary_without_writes(db):
@@ -705,9 +750,48 @@ def test_partial_window_recompute_backfills_rest_day_gap_rows(db):
 
     gap_row = {r["date"]: dict(r) for r in rows}["2026-05-02"]
     assert gap_row["training_dose"] == 0
+    assert gap_row["coverage_status"] == "unknown"
+    day1 = {r["date"]: dict(r) for r in rows}["2026-05-01"]
+    assert gap_row["acute_load"] == day1["acute_load"]
+    assert gap_row["chronic_load"] == day1["chronic_load"]
     # The gap row must match what a contiguous recompute produces.
     assert gap_row["acute_load"] == pytest.approx(full["2026-05-02"]["acute_load"], abs=1e-3)
     assert gap_row["chronic_load"] == pytest.approx(full["2026-05-02"]["chronic_load"], abs=1e-3)
+
+
+def test_explicit_rest_only_window_persists_zero_dose_and_decays_load(db):
+    _save_running_snapshot(
+        db,
+        as_of_date=date(2026, 5, 1),
+        threshold_hr=170.0,
+        threshold_speed_mps=4.0,
+    )
+    db.upsert_activity(
+        _make_activity(
+            "d1",
+            "2026-05-01T00:00:00+00:00",
+            avg_power=None,
+            samples=_timeseries(hr=170, speed_mps=4.0),
+        ),
+        provider="garmin",
+    )
+    recompute_training_load(db, start="2026-05-01", end="2026-05-01")
+    training_day = dict(db.fetch_daily_training_load("2026-05-01", "2026-05-01")[0])
+
+    db.upsert_daily_health(
+        DailyHealth("2026-05-02", None, None, 50, None, None, None, None, None)
+    )
+    summary = recompute_training_load(db, start="2026-05-02", end="2026-05-02")
+
+    rows = db.fetch_daily_training_load("2026-05-02", "2026-05-02")
+    assert summary.daily_rows_written == 1
+    assert len(rows) == 1
+    rest_day = dict(rows[0])
+    assert rest_day["algorithm_version"] == TRAINING_LOAD_MODEL_VERSION
+    assert rest_day["coverage_status"] == "rest_confirmed"
+    assert rest_day["training_dose"] == 0
+    assert rest_day["acute_load"] < training_day["acute_load"]
+    assert rest_day["chronic_load"] < training_day["chronic_load"]
 
 
 def test_fetch_health_rows_handles_compact_yyyymmdd_dates(db):
@@ -724,3 +808,84 @@ def test_fetch_health_rows_handles_compact_yyyymmdd_dates(db):
 
     assert by_date[date(2026, 5, 1)] == 50.0
     assert by_date[date(2026, 5, 2)] == 52.0
+
+
+def test_fetch_health_rows_bounds_query_in_sql(db, monkeypatch):
+    for day in range(1, 32):
+        stored = f"202605{day:02d}" if day % 2 else f"2026-05-{day:02d}"
+        db._conn.execute("INSERT INTO daily_health (date, rhr) VALUES (?, ?)", (stored, 50 + day))
+    db._conn.commit()
+
+    queries: list[str] = []
+    original_query = db.query
+
+    def traced_query(sql, params=()):
+        queries.append(sql)
+        return original_query(sql, params)
+
+    monkeypatch.setattr(db, "query", traced_query)
+
+    rows = _fetch_health_rows(db, start=date(2026, 5, 10), end=date(2026, 5, 12))
+
+    assert [row.date for row in rows] == [date(2026, 5, 10), date(2026, 5, 11), date(2026, 5, 12)]
+    assert any("BETWEEN ? AND ?" in sql for sql in queries)
+
+
+def test_fetch_hrv_rows_handles_compact_dates_and_bounds_in_sql(db, monkeypatch):
+    db._conn.executemany(
+        "INSERT INTO daily_hrv (date, last_night_avg, provider) VALUES (?, ?, ?)",
+        [
+            ("20260501", 41, "garmin"),
+            ("2026-05-02", 42, "garmin"),
+            ("20260503", 43, "garmin"),
+        ],
+    )
+    db._conn.commit()
+    queries: list[str] = []
+    original_query = db.query
+
+    def traced_query(sql, params=()):
+        queries.append(sql)
+        return original_query(sql, params)
+
+    monkeypatch.setattr(db, "query", traced_query)
+
+    rows = _fetch_hrv_rows(db, start=date(2026, 5, 1), end=date(2026, 5, 2))
+
+    assert {row.date: row.last_night_avg for row in rows} == {
+        date(2026, 5, 1): 41.0,
+        date(2026, 5, 2): 42.0,
+    }
+    assert any("BETWEEN ? AND ?" in sql for sql in queries)
+
+
+def test_build_activity_inputs_fetches_feedback_without_n_plus_one(db, monkeypatch):
+    for idx in range(3):
+        label = f"run{idx}"
+        db.upsert_activity(
+            _make_activity(
+                label,
+                f"2026-05-0{idx + 1}T00:00:00+00:00",
+                samples=_timeseries(hr=None, speed_mps=4.0),
+            )
+        )
+        db.upsert_activity_feedback(label, rpe=idx + 4, mood_tags=[], note="ok")
+    rows = db.query("SELECT * FROM activities ORDER BY date")
+    queries: list[str] = []
+    original_query = db.query
+
+    def traced_query(sql, params=()):
+        queries.append(sql)
+        return original_query(sql, params)
+
+    def fail_get_activity_feedback(label_id):
+        raise AssertionError(f"N+1 feedback fetch for {label_id}")
+
+    monkeypatch.setattr(db, "query", traced_query)
+    monkeypatch.setattr(db, "get_activity_feedback", fail_get_activity_feedback)
+
+    inputs = _build_activity_inputs(db, rows)
+
+    assert [item.rpe for item in inputs] == [4, 5, 6]
+    feedback_queries = [sql for sql in queries if "FROM activity_feedback" in sql]
+    assert len(feedback_queries) == 1

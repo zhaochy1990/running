@@ -39,6 +39,7 @@ from stride_server.master_plan_generator import (
     run_generate_job,
 )
 from stride_core.master_plan import MasterPlan, MasterPlanStatus, MilestoneType
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 # ---------------------------------------------------------------------------
 # Constants / helpers
@@ -2551,7 +2552,7 @@ class TestWeeklyProfile:
 
     def _profile(self, db, **kw):
         from stride_server.master_plan_generator import _query_weekly_profile
-        return _query_weekly_profile(db._conn, **kw)
+        return _query_weekly_profile(db, **kw)
 
     def test_cross_source_week_alignment(self, tmp_path):
         """An activity (UTC ISO), dtl (YYYY-MM-DD), health (YYYYMMDD), and hrv
@@ -2564,11 +2565,12 @@ class TestWeeklyProfile:
         self._add_run(c, "a1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=3000,
                       avg_hr=150)
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
-                  "training_dose, acute_load, chronic_load, form) "
-                  "VALUES ('2026-06-17', 1, 70, 65.0, 60.0, -5.0)")
-        c.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260617', 48)")
+                  "training_dose, acute_load, chronic_load, form, coverage_status) "
+                  "VALUES ('2026-06-17', ?, 70, 65.0, 60.0, -5.0, 'complete')",
+                  (TRAINING_LOAD_MODEL_VERSION,))
+        c.execute("INSERT INTO daily_health (date, rhr) VALUES ('2026-06-17', 48)")
         c.execute("INSERT INTO daily_hrv (date, last_night_avg) "
-                  "VALUES ('2026-06-17', 35)")
+                  "VALUES ('20260617', 35)")
         c.commit()
 
         prof = self._profile(db)
@@ -2612,8 +2614,9 @@ class TestWeeklyProfile:
         ]
         for d, dose, atl, ctl, form in rows:
             c.execute("INSERT INTO daily_training_load (date, algorithm_version, "
-                      "training_dose, acute_load, chronic_load, form) "
-                      "VALUES (?, 1, ?, ?, ?, ?)", (d, dose, atl, ctl, form))
+                      "training_dose, acute_load, chronic_load, form, coverage_status) "
+                      "VALUES (?, ?, ?, ?, ?, ?, 'complete')",
+                      (d, TRAINING_LOAD_MODEL_VERSION, dose, atl, ctl, form))
         c.commit()
         w = self._profile(db)[0]
         assert w["week_start"] == "2026-06-15"
@@ -2621,6 +2624,52 @@ class TestWeeklyProfile:
         assert w["atl"] == 70.0
         assert w["form"] == -12.0
         assert w["dose"] == 50 + 60 + 80  # additive
+        assert w["dose_coverage_status"] == "complete"
+
+    def test_partial_daily_dose_is_kept_with_weekly_coverage_caveat(self, tmp_path):
+        db = self._db(tmp_path)
+        c = db._conn
+        self._add_run(
+            c, "a1", "2026-06-17T08:00:00+00:00",
+            km=10.0, dur_s=3000,
+        )
+        c.executemany(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("2026-06-16", TRAINING_LOAD_MODEL_VERSION, 50, 45, 55, 10, "complete"),
+                ("2026-06-17", TRAINING_LOAD_MODEL_VERSION, 60, 50, 56, 6, "partial"),
+            ],
+        )
+        c.commit()
+
+        week = self._profile(db)[0]
+
+        assert week["dose"] == 110
+        assert week["dose_coverage_status"] == "partial"
+
+    def test_uses_only_current_training_load_model_version(self, tmp_path):
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        db = self._db(tmp_path)
+        c = db._conn
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form) VALUES ('2026-06-17', 1, 700, 650, 600, -50)"
+        )
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES ('2026-06-17', ?, 70, 65, 60, -5, 'complete')",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        c.commit()
+
+        w = self._profile(db)[0]
+        assert w["dose"] == 70
+        assert w["ctl"] == 60
+        assert w["atl"] == 65
 
     def test_n_long_and_pace_and_hr_weighting(self, tmp_path):
         """n_long counts runs >= 20km.
@@ -2701,6 +2750,31 @@ class TestWeeklyProfile:
         assert weeks_kept[0] == (start + _td(days=7 * 4)).isoformat()
         assert weeks_kept[-1] == (start + _td(days=7 * 19)).isoformat()
 
+    def test_unknown_only_dose_week_exposes_none_not_zero(self, tmp_path):
+        """A week with only 'unknown' coverage_status days must have dose=None.
+
+        The query only adds to dose_acc for complete/partial/rest_confirmed rows.
+        If only 'unknown' rows exist for a week, dose_acc is never updated and
+        the bucket keeps dose=0.0 (the initializer default) — falsely showing a
+        confirmed zero instead of missing data. Fix: set dose=None for such weeks.
+        """
+        db = self._db(tmp_path)
+        c = db._conn
+        self._add_run(c, "a1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=3000)
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES ('2026-06-17', ?, 0, 50, 60, -10, 'unknown')",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        c.commit()
+
+        week = self._profile(db)[0]
+
+        # dose must be None (data unavailable), not 0.0 (confirmed zero)
+        assert week["dose"] is None
+        assert week["dose_coverage_status"] == "unknown"
+
 
 # ---------------------------------------------------------------------------
 # _query_fitness_state — reads STRIDE daily_training_load, not COROS ati/cti
@@ -2717,7 +2791,9 @@ class TestQueryFitnessStateStride:
         c.execute("INSERT INTO daily_hrv (date, last_night_avg, provider) "
                   "VALUES ('2026-06-10', 42, 'garmin')")
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-                  "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8)")
+                  "acute_load, chronic_load, form, coverage_status) "
+                  "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
+                  (TRAINING_LOAD_MODEL_VERSION,))
         c.commit()
         monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
         from stride_server import master_plan_generator as mod
@@ -2734,6 +2810,7 @@ class TestQueryFitnessStateStride:
         assert "HRV 42ms" in state["summary"]
 
     def test_prefers_calibration_rhr_baseline_over_raw(self, tmp_path, monkeypatch):
+        from stride_core.running_calibration import RUNNING_CALIBRATION_MODEL_VERSION
         from stride_storage.sqlite.database import Database
         from stride_storage.sqlite.calibration_connector import (
             SQLiteRunningCalibrationRepository,
@@ -2744,14 +2821,17 @@ class TestQueryFitnessStateStride:
         c.execute("INSERT INTO daily_health (date, ati, cti, fatigue, rhr) "
                   "VALUES ('20260610', 136, 120, 50, 52)")
         c.execute("INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-                  "acute_load, chronic_load, form) VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8)")
+                  "acute_load, chronic_load, form, coverage_status) "
+                  "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
+                  (TRAINING_LOAD_MODEL_VERSION,))
         SQLiteRunningCalibrationRepository(db)  # bootstrap calibration tables
         c.execute(
             "INSERT INTO running_calibration_snapshot "
             "(as_of_date, algorithm_version, threshold_hr, threshold_speed_mps, "
             " threshold_hr_confidence, threshold_speed_confidence, rhr_baseline, "
             " observed_max_hr, hrmax_estimate, hrmax_confidence) "
-            "VALUES ('2026-06-10', 1, 175.0, 4.65, 'medium', 'medium', 45.0, 188.0, 188.0, 'medium')"
+            "VALUES ('2026-06-10', ?, 175.0, 4.65, 'medium', 'medium', 45.0, 188.0, 188.0, 'medium')",
+            (RUNNING_CALIBRATION_MODEL_VERSION,),
         )
         c.commit()
         monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
@@ -2759,6 +2839,60 @@ class TestQueryFitnessStateStride:
         monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
         state = mod._query_fitness_state("anyuser")
         assert state["rhr"] == 45.0      # calibration baseline preferred over raw 52
+
+    def test_ignores_legacy_training_load_model_rows(self, tmp_path, monkeypatch):
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+        from stride_storage.sqlite.database import Database
+
+        db = Database(db_path=tmp_path / "coros.db")
+        c = db._conn
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES ('2026-06-10', 1, 700, 699, 641, -58, 'complete')"
+        )
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        c.commit()
+        monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)
+        from stride_server import master_plan_generator as mod
+        monkeypatch.setattr(mod, "_ensure_training_load_current", lambda db, as_of=None: None)
+
+        state = mod._query_fitness_state("anyuser", as_of=date(2026, 6, 10))
+
+        assert state["ctl"] == 64.1
+        assert state["atl"] == 69.9
+
+
+def test_ensure_training_load_current_backfills_when_only_v1_rows_exist(tmp_path, monkeypatch):
+    from datetime import date
+    from stride_storage.sqlite.database import Database
+    from stride_server import master_plan_generator as mod
+
+    db = Database(db_path=tmp_path / "coros.db")
+    db._conn.execute(
+        "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+        "acute_load, chronic_load, form) VALUES ('2026-07-15', 1, 70, 69.9, 64.1, -5.8)"
+    )
+    db._conn.commit()
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "stride_core.training_load.backfill_training_load",
+        lambda db_arg, **kwargs: calls.append(kwargs),
+    )
+
+    mod._ensure_training_load_current(db, as_of=date(2026, 7, 15))
+
+    assert calls == [{
+        "as_of_date": date(2026, 7, 15),
+        "load_lookback_days": 365,
+        "calibration_lookback_days": 365,
+        "persist": True,
+    }]
 
 
 # ---------------------------------------------------------------------------
@@ -3072,7 +3206,31 @@ class TestFormatHistorySummary:
         # dose 0.0 → "0" (a real zero, not missing); n_runs still shown.
         assert "2026-W09|42.1|3.8|n/a|n/a|n/a/n/a|n/a|n/a|0|n/a/n/a|5/0/0/0" in out
 
+    def test_marks_partial_weekly_dose_in_prompt(self):
+        week = self._week(
+            "2026-02-23", dose=250.0, dose_coverage_status="partial"
+        )
+
+        out = self._summary(self._history([week]))
+
+        assert "|250(partial)|" in out
+
     def test_empty_profile_message(self):
         out = self._summary(self._history([]))
         assert "no recent weekly data" in out
         assert "Actual personal bests (PB" in out
+
+    def test_unknown_only_dose_is_not_rendered_as_confirmed_zero(self):
+        """A week where coverage_status is 'unknown' only must not show dose=0.
+
+        The query only adds to dose_acc for complete/partial/rest_confirmed rows.
+        Unknown-only weeks keep dose=0.0 from the bucket initializer, which falsely
+        looks like a confirmed zero. The fix: set dose to None for pure-unknown weeks.
+        """
+        wk = self._week("2026-02-23", dose=None, dose_coverage_status="unknown")
+
+        out = self._summary(self._history([wk]))
+
+        # dose field must be n/a (unknown), NOT "0" (confirmed zero)
+        assert "|n/a|" in out
+        assert "|0|" not in out

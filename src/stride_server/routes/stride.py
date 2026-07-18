@@ -130,9 +130,13 @@ def get_stride_training_load(
     user: str,
     days: int = Query(90, ge=7, le=365),
 ) -> dict[str, Any]:
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
     db = get_db(user)
     try:
-        rows = db.fetch_recent_daily_training_load(days)
+        rows = db.fetch_daily_training_load(
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION, limit=days
+        )
         if not rows:
             return {"current": None, "series": []}
 
@@ -147,8 +151,23 @@ def get_stride_training_load(
             rec["readiness_reasons"] = reasons if isinstance(reasons, list) else []
             records.append(rec)
 
-        records.sort(key=lambda r: r["date"])
-        current = dict(records[-1])
+        # ``unknown`` rows are continuity placeholders: they deliberately keep
+        # ATL/CTL frozen until the day is backed by activity or health coverage.
+        # Never present one as today's measured rest/readiness state.  Partial
+        # rows remain eligible because they contain observed activity data, with
+        # the coverage caveat exposed to the client.
+        current_row = db.fetch_latest_daily_training_load(
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION
+        )
+        current = None
+        if current_row is not None:
+            current = dict(current_row)
+            reasons_raw = current.pop("readiness_reasons_json", None)
+            try:
+                reasons = json.loads(reasons_raw) if reasons_raw else []
+            except (TypeError, ValueError):
+                reasons = []
+            current["readiness_reasons"] = reasons if isinstance(reasons, list) else []
         return {"current": current, "series": records}
     finally:
         db.close()

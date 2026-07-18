@@ -10,6 +10,7 @@ from .core import (
     compute_activity_load,
     compute_daily_load_series,
     estimate_planned_run_load,
+    estimate_planned_run_load_details,
 )
 from .types import TRAINING_LOAD_MODEL_VERSION
 
@@ -18,6 +19,7 @@ __all__ = [
     "compute_activity_load",
     "compute_daily_load_series",
     "estimate_planned_run_load",
+    "estimate_planned_run_load_details",
     "estimate_calibration",
     "backfill_training_load",
     "refresh_training_load_calibration",

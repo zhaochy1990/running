@@ -92,6 +92,91 @@ def test_legacy_plan_without_skeleton_is_explicitly_unavailable() -> None:
     assert projected.weeks == []
 
 
+def test_missing_personal_threshold_keeps_weekly_skeleton_unprojected() -> None:
+    projected = apply_master_plan_training_load_projection(
+        _plan(),
+        {
+            "unavailable_reason": "personal_threshold_unavailable",
+            "weeks": [{
+                "week_index": 1,
+                "target_training_dose_low": None,
+                "target_training_dose_high": None,
+            }],
+        },
+        calculated_at="2026-07-15T08:30:00+00:00",
+        allow_unavailable_without_weeks=False,
+    )
+
+    assert projected.training_load_projection.status == "unavailable"
+    assert (
+        projected.training_load_projection.unavailable_reason
+        == "personal_threshold_unavailable"
+    )
+    assert len(projected.weeks) == 1
+    assert projected.weeks[0].target_training_dose_low is None
+    assert projected.weekly_key_sessions == projected.weeks
+
+
+def test_uncomputable_session_keeps_weekly_skeleton_unprojected() -> None:
+    projected = apply_master_plan_training_load_projection(
+        _plan(),
+        {
+            "unavailable_reason": "planned_session_uncomputable",
+            "weeks": [{
+                "week_index": 1,
+                "target_training_dose_low": None,
+                "target_training_dose_high": None,
+            }],
+        },
+    )
+
+    assert projected.training_load_projection.status == "unavailable"
+    assert (
+        projected.training_load_projection.unavailable_reason
+        == "planned_session_uncomputable"
+    )
+    assert len(projected.weeks) == 1
+
+
+def test_one_uncomputable_week_clears_partial_multiweek_projection() -> None:
+    plan = _plan().model_copy(update={
+        "weeks": [
+            _plan().weeks[0],
+            _plan().weeks[0].model_copy(update={"week_index": 2}),
+        ],
+        "weekly_key_sessions": [
+            _plan().weeks[0],
+            _plan().weeks[0].model_copy(update={"week_index": 2}),
+        ],
+    })
+    projected = apply_master_plan_training_load_projection(
+        plan,
+        {
+            "unavailable_reason": "planned_session_uncomputable",
+            "weeks": [
+                {
+                    "week_index": 1,
+                    "target_training_dose_low": 100.0,
+                    "target_training_dose_high": 120.0,
+                },
+                {
+                    "week_index": 2,
+                    "target_training_dose_low": None,
+                    "target_training_dose_high": None,
+                },
+            ],
+        },
+    )
+
+    assert projected.training_load_projection.status == "unavailable"
+    assert (
+        projected.training_load_projection.unavailable_reason
+        == "planned_session_uncomputable"
+    )
+    assert all(week.target_training_dose_low is None for week in projected.weeks)
+    assert all(week.target_training_dose_high is None for week in projected.weeks)
+
+
 def test_unavailable_projection_rejects_a_nonempty_weekly_skeleton() -> None:
     with pytest.raises(ValueError, match="requires an empty weekly skeleton"):
         MasterPlan.model_validate({
@@ -104,8 +189,26 @@ def test_unavailable_projection_rejects_a_nonempty_weekly_skeleton() -> None:
         })
 
 
+def test_personal_threshold_unavailable_requires_an_unprojected_skeleton() -> None:
+    with pytest.raises(ValueError, match="cannot contain weekly dose"):
+        MasterPlan.model_validate({
+            **_plan().model_dump(mode="json"),
+            "weeks": [{
+                **_plan().weeks[0].model_dump(mode="json"),
+                "target_training_dose_low": 100.0,
+                "target_training_dose_high": 120.0,
+            }],
+            "weekly_key_sessions": [],
+            "training_load_projection": {
+                "status": "unavailable",
+                "unavailable_reason": "personal_threshold_unavailable",
+                "calculated_at": "2026-07-15T08:30:00Z",
+            },
+        })
+
+
 def test_partial_projection_is_rejected() -> None:
-    with pytest.raises(ValueError, match="missing load estimate"):
+    with pytest.raises(ValueError, match="week set does not match master plan"):
         apply_master_plan_training_load_projection(_plan(), {"weeks": []})
 
 

@@ -7,6 +7,7 @@ from datetime import date as date_cls
 from typing import Any
 
 import pytest
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from coach.runtime.toolkit import Toolkit
 from coach.schemas import ToolResult
@@ -407,7 +408,7 @@ def test_recent_activities_populated(patched_db) -> None:
             cardio_tss, external_tss, mechanical_load, training_dose,
             load_confidence, excluded_from_pmc, reasons_json)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        ("a1", "2026-05-13", "run_outdoor", "easy", 3,
+        ("a1", "2026-05-13", "run_outdoor", "easy", TRAINING_LOAD_MODEL_VERSION,
          55.0, 50.0, 10.0, 53.5, "high", 0, '[]'),
     )
     patched_db._conn.commit()
@@ -421,7 +422,7 @@ def test_recent_activities_populated(patched_db) -> None:
     assert a["stride_training_load"] == {
         "source": "stride",
         "vendor_derived": False,
-        "algorithm_version": 3,
+        "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
         "calibration_id": None,
         "session_class": "easy",
         "cardio_load_raw": None,
@@ -441,9 +442,9 @@ def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
     # STRIDE self-computed PMC (acute/chronic/form), NOT COROS ati/cti.
     patched_db._conn.execute(
         """INSERT INTO daily_training_load
-           (date, algorithm_version, acute_load, chronic_load, form, load_ratio)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
+           (date, algorithm_version, acute_load, chronic_load, form, load_ratio, coverage_status)
+           VALUES (?, ?, ?, ?, ?, ?, 'complete')""",
+        ("2026-05-13", TRAINING_LOAD_MODEL_VERSION, 50.0, 62.0, 12.0, 0.81),
     )
     patched_db._conn.execute(
         """INSERT INTO daily_health
@@ -487,6 +488,52 @@ def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
     assert "LOW" not in str(res.data)
 
 
+def test_coach_load_readers_keep_partial_and_skip_unknown_current_state(patched_db, monkeypatch) -> None:
+    patched_db._conn.executemany(
+        """INSERT INTO daily_training_load
+           (date, algorithm_version, training_dose, acute_load, chronic_load, form,
+            load_ratio, coverage_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        [
+            ("2026-05-13", TRAINING_LOAD_MODEL_VERSION, 70.0, 50.0, 62.0,
+             12.0, 0.81, "partial"),
+            ("2026-05-14", TRAINING_LOAD_MODEL_VERSION, 0.0, 50.0, 62.0,
+             12.0, 0.81, "unknown"),
+        ],
+    )
+    patched_db._conn.commit()
+    from stride_storage.sqlite.database import Database
+
+    calls = []
+    original = Database.fetch_latest_daily_training_load
+
+    def traced_fetch_latest(self, *, algorithm_version, as_of=None):
+        calls.append((algorithm_version, as_of))
+        return original(self, algorithm_version=algorithm_version, as_of=as_of)
+
+    monkeypatch.setattr(Database, "fetch_latest_daily_training_load", traced_fetch_latest)
+
+    snapshot = read_impls.GetHealthSnapshotImpl("uid")()
+    health_series = read_impls.GetHealthSeriesImpl("uid")(
+        days=14, metrics=["training_dose", "form"]
+    )
+    pmc_series = read_impls.GetPmcSeriesImpl("uid")(days=14)
+
+    assert calls == [(TRAINING_LOAD_MODEL_VERSION, None)]
+    assert snapshot.ok and snapshot.data["stride_training_load"]["date"] == "2026-05-13"
+    assert snapshot.data["stride_training_load"]["coverage_status"] == "partial"
+    assert health_series.ok and health_series.data["series"] == [
+        {
+            "date": "2026-05-13",
+            "coverage_status": "partial",
+            "training_dose": 70.0,
+            "form": 12.0,
+        }
+    ]
+    assert pmc_series.ok and len(pmc_series.data["series"]) == 1
+    assert pmc_series.data["series"][0]["coverage_status"] == "partial"
+
+
 def test_health_snapshot_threshold_from_stride_calibration(patched_db) -> None:
     from datetime import date
 
@@ -524,18 +571,18 @@ def test_health_series_uses_raw_measurements_and_stride_load_only(patched_db) ->
            (date, last_night_avg, status, baseline_balanced_low, baseline_balanced_upper, provider)
            VALUES (?, ?, ?, ?, ?, ?)""",
         [
-            ("2026-07-01", 42, "BALANCED", 35, 55, "coros"),
+            ("20260701", 42, "BALANCED", 35, 55, "coros"),
             ("2026-07-03", 38, "LOW", 35, 55, "coros"),
         ],
     )
     conn.executemany(
         """INSERT INTO daily_training_load
            (date, algorithm_version, training_dose, acute_load, chronic_load, form, load_ratio,
-            readiness_gate, readiness_reasons_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            readiness_gate, readiness_reasons_json, coverage_status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'complete')""",
         [
-            ("2026-07-01", 1, 60.0, 50.0, 55.0, 5.0, 0.91, "green", '["ok"]'),
-            ("2026-07-03", 1, 80.0, 58.0, 56.0, -2.0, 1.04, "yellow", '["low_hrv"]'),
+            ("2026-07-01", TRAINING_LOAD_MODEL_VERSION, 60.0, 50.0, 55.0, 5.0, 0.91, "green", '["ok"]'),
+            ("2026-07-03", TRAINING_LOAD_MODEL_VERSION, 80.0, 58.0, 56.0, -2.0, 1.04, "yellow", '["low_hrv"]'),
         ],
     )
     conn.commit()
@@ -627,9 +674,9 @@ def test_health_series_rejects_unknown_metrics(patched_db) -> None:
 def test_pmc_series_uses_stride_load(patched_db) -> None:
     patched_db._conn.execute(
         """INSERT INTO daily_training_load
-           (date, algorithm_version, acute_load, chronic_load, form, load_ratio)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        ("2026-05-13", 1, 50.0, 62.0, 12.0, 0.81),
+           (date, algorithm_version, acute_load, chronic_load, form, load_ratio, coverage_status)
+           VALUES (?, ?, ?, ?, ?, ?, 'complete')""",
+        ("2026-05-13", TRAINING_LOAD_MODEL_VERSION, 50.0, 62.0, 12.0, 0.81),
     )
     patched_db._conn.commit()
     res = read_impls.GetPmcSeriesImpl("uid")(days=14)

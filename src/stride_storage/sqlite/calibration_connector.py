@@ -8,9 +8,15 @@ from dataclasses import replace
 from datetime import date
 from typing import Any, Sequence
 
-from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
+from stride_core.timefmt import (
+    SHANGHAI_DAY_SQL,
+    parse_local_day,
+    sqlite_mixed_date_expr,
+    utc_iso_to_shanghai_iso,
+)
 
 from stride_core.running_calibration.types import (
+    RUNNING_CALIBRATION_MODEL_VERSION,
     CalibrationConfidence,
     CalibrationEvidence,
     HeartRateZone,
@@ -144,20 +150,19 @@ class SQLiteRunningCalibrationRepository:
         CLAUDE.md Timezone discipline whitelist. We convert each row's date
         to a Python `date` before returning. Rows with NULL `rhr` are skipped.
         """
-        start_compact = start.strftime("%Y%m%d")
-        end_compact = end.strftime("%Y%m%d")
-        rows = self._conn.execute(
-            "SELECT date, rhr FROM daily_health "
-            "WHERE rhr IS NOT NULL AND date >= ? AND date <= ?",
-            (start_compact, end_compact),
-        ).fetchall()
+        day_sql = sqlite_mixed_date_expr("date")
+        rows = self._query(
+            f"""SELECT date, rhr, {day_sql} AS normalized_date
+               FROM daily_health
+              WHERE rhr IS NOT NULL AND {day_sql} BETWEEN ? AND ?
+              ORDER BY normalized_date""",
+            (start.isoformat(), end.isoformat()),
+        )
         out: list[RunningHealthRow] = []
         for row in rows or []:
-            date_str = str(_row_value(row, "date"))
+            d = _parse_date(_row_value(row, "normalized_date"))
             rhr_val = _row_value(row, "rhr")
-            try:
-                d = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
-            except (ValueError, IndexError):
+            if d is None:
                 continue
             out.append(RunningHealthRow(date=d, rhr=float(rhr_val) if rhr_val is not None else None))
         return out
@@ -228,11 +233,19 @@ class SQLiteRunningCalibrationRepository:
     def fetch_latest(self, as_of_date: date | None = None) -> RunningCalibrationSnapshot | None:
         params: tuple[Any, ...]
         if as_of_date is None:
-            sql = "SELECT * FROM running_calibration_snapshot ORDER BY as_of_date DESC, id DESC LIMIT 1"
-            params = ()
+            sql = (
+                "SELECT * FROM running_calibration_snapshot "
+                "WHERE algorithm_version = ? "
+                "ORDER BY as_of_date DESC, id DESC LIMIT 1"
+            )
+            params = (RUNNING_CALIBRATION_MODEL_VERSION,)
         else:
-            sql = "SELECT * FROM running_calibration_snapshot WHERE as_of_date <= ? ORDER BY as_of_date DESC, id DESC LIMIT 1"
-            params = (as_of_date.isoformat(),)
+            sql = (
+                "SELECT * FROM running_calibration_snapshot "
+                "WHERE algorithm_version = ? AND as_of_date <= ? "
+                "ORDER BY as_of_date DESC, id DESC LIMIT 1"
+            )
+            params = (RUNNING_CALIBRATION_MODEL_VERSION, as_of_date.isoformat())
         row = self._conn.execute(sql, params).fetchone()
         if row is None:
             return None
@@ -263,9 +276,9 @@ class SQLiteRunningCalibrationRepository:
     ) -> RunningCalibrationSnapshot | None:
         row = self._conn.execute(
             "SELECT * FROM running_calibration_snapshot "
-            "WHERE hrmax_estimate IS NOT NULL AND "
+            "WHERE algorithm_version = ? AND hrmax_estimate IS NOT NULL AND "
             f"{where_and_order}",
-            params,
+            (RUNNING_CALIBRATION_MODEL_VERSION, *params),
         ).fetchone()
         if row is None:
             return None
@@ -508,16 +521,7 @@ def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str
 
 
 def _parse_date(value: str | date | None) -> date | None:
-    if isinstance(value, date):
-        return value
-    if value is None:
-        return None
-    text = str(value).strip()
-    if len(text) >= 10 and text[4] == "-":
-        return date.fromisoformat(text[:10])
-    if len(text) == 8 and text.isdigit():
-        return date(int(text[:4]), int(text[4:6]), int(text[6:8]))
-    return None
+    return parse_local_day(value)
 
 
 def _activity_shanghai_date(value: Any) -> date | None:

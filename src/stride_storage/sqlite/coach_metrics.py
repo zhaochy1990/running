@@ -10,6 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from stride_core.timefmt import sqlite_mixed_date_expr
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
 from .database import Database, HRV_PREFERRED_PER_DATE_SQL
 
 
@@ -77,33 +80,46 @@ def fetch_recent_activities(db: Database, *, limit: int) -> list[Any]:
             atl.reasons_json AS stride_reasons_json
         FROM activities a
         LEFT JOIN activity_training_load atl ON atl.label_id = a.label_id
+          AND atl.algorithm_version = ?
         ORDER BY a.date DESC, a.label_id DESC
         LIMIT ?""",
-        (max(1, int(limit)),),
+        (TRAINING_LOAD_MODEL_VERSION, max(1, int(limit))),
     )
 
 
 def fetch_latest_health_context(db: Database) -> dict[str, Any]:
     """Return STRIDE load plus raw recovery measurements for Coach."""
-    load_rows = db.query(
-        """SELECT date, algorithm_version, calibration_id, training_dose,
-            acute_load, chronic_load, form, load_ratio
-        FROM daily_training_load
-        WHERE algorithm_version = (
-            SELECT MAX(algorithm_version) FROM daily_training_load
-        )
-        ORDER BY date DESC
-        LIMIT 1"""
+    load_row = db.fetch_latest_daily_training_load(
+        algorithm_version=TRAINING_LOAD_MODEL_VERSION
     )
+    load_fields = (
+        "date",
+        "algorithm_version",
+        "calibration_id",
+        "training_dose",
+        "acute_load",
+        "chronic_load",
+        "form",
+        "load_ratio",
+        "coverage_status",
+    )
+    rhr_day_sql = sqlite_mixed_date_expr("date")
     rhr_rows = db.query(
-        "SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL ORDER BY date DESC LIMIT 1"
+        "SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL "
+        f"ORDER BY {rhr_day_sql} DESC LIMIT 1"
     )
+    hrv_day_sql = sqlite_mixed_date_expr("date")
     hrv_rows = db.query(
-        f"SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
-        "WHERE last_night_avg IS NOT NULL ORDER BY date DESC LIMIT 1"
+        "SELECT date, last_night_avg "
+        f"FROM ({HRV_PREFERRED_PER_DATE_SQL}) "
+        f"WHERE last_night_avg IS NOT NULL ORDER BY {hrv_day_sql} DESC LIMIT 1"
     )
     return {
-        "load": dict(load_rows[0]) if load_rows else None,
+        "load": (
+            {field: load_row[field] for field in load_fields}
+            if load_row is not None
+            else None
+        ),
         "rhr": dict(rhr_rows[0]) if rhr_rows else None,
         "hrv": dict(hrv_rows[0]) if hrv_rows else None,
     }
@@ -117,35 +133,32 @@ def fetch_health_series_context(db: Database, *, limit: int) -> dict[str, list[A
     provider readiness/recovery scores.
     """
     bounded = max(1, min(int(limit), 365))
+    health_day_sql = sqlite_mixed_date_expr("date")
     health_rows = db.query(
-        """SELECT date, rhr
+        f"""SELECT date, rhr, {health_day_sql} AS normalized_date
         FROM daily_health
-        ORDER BY CASE
-            WHEN length(date) = 8 AND date GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-                THEN substr(date, 1, 4) || '-' || substr(date, 5, 2) || '-' || substr(date, 7, 2)
-            ELSE substr(date, 1, 10)
-        END DESC
+        ORDER BY normalized_date DESC
         LIMIT ?""",
         (bounded,),
     )
+    hrv_day_sql = sqlite_mixed_date_expr("date")
     hrv_rows = db.query(
-        """SELECT date, last_night_avg, last_night_5min_high
-        FROM (""" + HRV_PREFERRED_PER_DATE_SQL + """)
+        f"""SELECT date, last_night_avg, last_night_5min_high, {hrv_day_sql} AS normalized_date
+        FROM ({HRV_PREFERRED_PER_DATE_SQL})
         WHERE last_night_avg IS NOT NULL
-        ORDER BY date DESC
+        ORDER BY normalized_date DESC
         LIMIT ?""",
         (bounded,),
     )
     load_rows = db.query(
         """SELECT date, algorithm_version, calibration_id, training_dose,
-            acute_load, chronic_load, form, load_ratio
+            acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
-        WHERE algorithm_version = (
-            SELECT MAX(algorithm_version) FROM daily_training_load
-        )
+        WHERE algorithm_version = ?
+          AND coverage_status IN ('complete', 'partial', 'rest_confirmed')
         ORDER BY date DESC
         LIMIT ?""",
-        (bounded,),
+        (TRAINING_LOAD_MODEL_VERSION, bounded),
     )
     return {
         "health": health_rows,
@@ -158,13 +171,12 @@ def fetch_stride_pmc_series(db: Database, *, limit: int) -> list[Any]:
     """Return only STRIDE daily load; never vendor ATI/CTI/fatigue."""
     return db.query(
         """SELECT date, algorithm_version, calibration_id, training_dose,
-            acute_load, chronic_load, form, load_ratio
+            acute_load, chronic_load, form, load_ratio, coverage_status
         FROM daily_training_load
-        WHERE algorithm_version = (
-            SELECT MAX(algorithm_version) FROM daily_training_load
-        )
+        WHERE algorithm_version = ?
+          AND coverage_status IN ('complete', 'partial', 'rest_confirmed')
         ORDER BY date DESC LIMIT ?""",
-        (max(1, int(limit)),),
+        (TRAINING_LOAD_MODEL_VERSION, max(1, int(limit))),
     )
 
 
