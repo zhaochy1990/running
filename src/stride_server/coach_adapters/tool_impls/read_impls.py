@@ -373,13 +373,13 @@ class GetHealthSeriesImpl:
 
         by_date: dict[str, dict[str, Any]] = {}
         for row in context["health"]:
-            day = _norm_day(row["date"])
+            day = _norm_day(row["normalized_date"] if "normalized_date" in row.keys() else row["date"])
             merged = by_date.setdefault(day, {"date": day})
             if "rhr" in selected:
                 merged["rhr"] = row["rhr"]
 
         for row in context["hrv"]:
-            day = _norm_day(row["date"])
+            day = _norm_day(row["normalized_date"] if "normalized_date" in row.keys() else row["date"])
             merged = by_date.setdefault(day, {"date": day})
             hrv_metric_map = {
                 "hrv_last_night_avg": row["last_night_avg"],

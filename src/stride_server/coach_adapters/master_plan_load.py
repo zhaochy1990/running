@@ -215,9 +215,15 @@ def _parse_time_seconds(value: Any) -> float | None:
     except ValueError:
         return None
     if len(nums) == 3:
-        return nums[0] * 3600.0 + nums[1] * 60.0 + nums[2]
+        h, m, s = nums
+        if m >= 60 or s >= 60:
+            return None
+        return h * 3600.0 + m * 60.0 + s
     if len(nums) == 2:
-        return nums[0] * 60.0 + nums[1]
+        m, s = nums
+        if s >= 60:
+            return None
+        return m * 60.0 + s
     return None
 
 
@@ -244,9 +250,11 @@ def _goal_race_if(
         parsed
         for value in (
             source.get("goal_time_s"),
+            source.get("target_time_s"),
             source.get("target_time"),
             source.get("target_finish_time"),
             _get(goal, "goal_time_s"),
+            _get(goal, "target_time_s"),
             _get(goal, "target_time"),
             _get(goal, "target_finish_time"),
         )
@@ -324,7 +332,8 @@ def _session_if_range(
         low, high = _zone_range("interval")
         return low, high, [f"{stype}_zone_range"]
     if stype == "tempo":
-        low, high = _zone_range("marathon")
+        low, _ = _zone_range("marathon")
+        _, high = _zone_range("threshold")
         return low, high, ["tempo_marathon_to_threshold_range"]
     if stype == "hill":
         low, high = _zone_range("threshold")
@@ -392,9 +401,16 @@ def _estimate_session(
         low_if = high_if = expected_if
     pace_low = 1000.0 / max(threshold_speed_mps * low_if, 0.01)
     pace_high = 1000.0 / max(threshold_speed_mps * high_if, 0.01)
+    # When distance is given, use it for the workout spec; duration is a
+    # fallback so that a mismatched duration_min cannot silently shift the load.
     step = WorkoutStep(
         step_kind=StepKind.WORK,
-        duration=(Duration.of_time_min(duration_min) if duration_min is not None else Duration.of_distance_km(km or 0.0)),
+        duration=(
+            Duration.of_distance_km(km)
+            if km is not None and km > 0
+            else Duration.of_time_min(duration_min) if duration_min is not None and duration_min > 0
+            else Duration.of_distance_km(0.0)
+        ),
         target=Target.pace_range_s_km(pace_low, pace_high),
     )
     workout = NormalizedRunWorkout(

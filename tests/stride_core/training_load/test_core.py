@@ -5,6 +5,8 @@ from datetime import date, timedelta
 import pytest
 
 from stride_core.training_load.core import (
+    _distance_window_grade,
+    _precompute_grades,
     compute_activity_load,
     compute_daily_load_series,
 )
@@ -648,3 +650,178 @@ def test_hrv_robust_scale_floor_prevents_tiny_mad_false_reds():
 
     assert rows[-1].readiness_gate == "yellow"
     assert "low_hrv" in rows[-1].readiness_reasons
+
+
+# ---------------------------------------------------------------------------
+# _distance_window_grade and _precompute_grades
+# ---------------------------------------------------------------------------
+
+
+def _make_samples(
+    distances: list[float | None],
+    altitudes: list[float | None],
+) -> tuple[ActivitySample, ...]:
+    """Build samples with the given distance_m and altitude_m lists."""
+    assert len(distances) == len(altitudes)
+    return tuple(
+        ActivitySample(elapsed_s=float(i), distance_m=d, altitude_m=a)
+        for i, (d, a) in enumerate(zip(distances, altitudes))
+    )
+
+
+def test_grade_flat_returns_zero():
+    # All at same altitude → grade 0.0
+    samples = _make_samples(
+        distances=[0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+        altitudes=[100.0] * 7,
+    )
+    g = _distance_window_grade(samples, 3)
+    assert g == pytest.approx(0.0)
+
+
+def test_grade_uphill_clamped():
+    # Rise of 100 m over 50 m span → raw grade 2.0 → clamped to 0.2
+    samples = _make_samples(
+        distances=[0.0, 50.0],
+        altitudes=[0.0, 100.0],
+    )
+    g = _distance_window_grade(samples, 1)
+    assert g == pytest.approx(0.2)
+
+
+def test_grade_downhill_clamped():
+    # Drop of 100 m over 50 m span → raw grade -2.0 → clamped to -0.2
+    samples = _make_samples(
+        distances=[0.0, 50.0],
+        altitudes=[100.0, 0.0],
+    )
+    g = _distance_window_grade(samples, 0)
+    assert g == pytest.approx(-0.2)
+
+
+def test_grade_below_20m_minimum_returns_none():
+    # Window spans only 15 m → below 20 m minimum → None
+    samples = _make_samples(
+        distances=[0.0, 5.0, 10.0, 15.0],
+        altitudes=[100.0, 101.0, 102.0, 103.0],
+    )
+    g = _distance_window_grade(samples, 2)
+    assert g is None
+
+
+def test_grade_missing_altitude_at_index_returns_none():
+    samples = _make_samples(
+        distances=[0.0, 25.0, 50.0, 75.0, 100.0],
+        altitudes=[100.0, None, 105.0, 107.0, 110.0],
+    )
+    g = _distance_window_grade(samples, 1)
+    assert g is None
+
+
+def test_grade_none_distance_stops_scan():
+    # Sample at index 2 has None distance → backward scan stops before it
+    samples = _make_samples(
+        distances=[None, 0.0, None, 50.0, 100.0],
+        altitudes=[90.0, 100.0, None, 110.0, 120.0],
+    )
+    # Index 3: backward scan tries lo-1=2 which has distance_m=None → stops at lo=3
+    # hi tries 4: 100-50=50 ≤ 50 → hi=4; dist=100-50=50 ≥ 20; grade=(120-110)/50=0.2
+    g = _distance_window_grade(samples, 3)
+    assert g == pytest.approx(0.2)
+
+
+def test_grade_50m_exact_boundary_included():
+    # Samples at 0, 50, 100: window from index 1 → back to 0 (50m exactly ≤50 ok),
+    # forward to 2 would be 50 > 50 → stop at hi=1; dist = 50-0 = 50 ≥ 20
+    samples = _make_samples(
+        distances=[0.0, 50.0, 100.0],
+        altitudes=[100.0, 110.0, 120.0],
+    )
+    # backward: lo-1=0, 50-0=50 which is NOT > 50, so lo=0
+    # forward: hi+1=2, 100-50=50 which IS > 50, so stop at hi=1
+    # dist = samples[1].distance_m - samples[0].distance_m = 50-0 = 50
+    # grade = (110-100)/50 = 0.2
+    g = _distance_window_grade(samples, 1)
+    assert g == pytest.approx(0.2)
+
+
+def test_grade_51m_boundary_excluded():
+    # Distance from cur to neighbor is 51 → excluded from window
+    samples = _make_samples(
+        distances=[0.0, 51.0],
+        altitudes=[100.0, 115.0],
+    )
+    # index 1: backward: cur.distance_m - samples[0].distance_m = 51 > 50 → stop at lo=1
+    # hi stays at 1; dist = 51-51=0 < 20 → None
+    g = _distance_window_grade(samples, 1)
+    assert g is None
+
+
+def test_precompute_grades_matches_per_index():
+    """_precompute_grades must return identical values as _distance_window_grade for every index."""
+    import random
+
+    rng = random.Random(42)
+    n = 200
+    # Build a realistic ascending distance series with occasional None gaps
+    distances: list[float | None] = []
+    d = 0.0
+    for _ in range(n):
+        if rng.random() < 0.05:
+            distances.append(None)
+        else:
+            d += rng.uniform(1.0, 5.0)
+            distances.append(d)
+
+    altitudes: list[float | None] = []
+    a = 50.0
+    for _ in range(n):
+        if rng.random() < 0.05:
+            altitudes.append(None)
+        else:
+            a += rng.uniform(-2.0, 2.0)
+            altitudes.append(a)
+
+    samples = _make_samples(distances, altitudes)
+
+    expected = [_distance_window_grade(samples, i) for i in range(n)]
+    got = _precompute_grades(samples)
+
+    assert len(got) == n
+    for i, (e, g) in enumerate(zip(expected, got)):
+        if e is None:
+            assert g is None, f"index {i}: expected None, got {g}"
+        else:
+            assert g == pytest.approx(e, abs=1e-9), f"index {i}: expected {e}, got {g}"
+
+
+def test_precompute_grades_all_none_distances():
+    samples = _make_samples(
+        distances=[None, None, None],
+        altitudes=[100.0, 101.0, 102.0],
+    )
+    result = _precompute_grades(samples)
+    assert result == [None, None, None]
+
+
+def test_precompute_grades_empty():
+    result = _precompute_grades(())
+    assert result == []
+
+
+def test_precompute_grades_single_sample():
+    samples = _make_samples(distances=[0.0], altitudes=[100.0])
+    # Only one sample → dist=0 < 20 → None
+    result = _precompute_grades(samples)
+    assert result == [None]
+
+
+def test_precompute_grades_preserves_reference_after_backward_distance_jump():
+    samples = _make_samples(
+        distances=[0.0, 10.0, 20.0, 1000.0, 30.0, 40.0, 50.0],
+        altitudes=[100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0],
+    )
+
+    assert _precompute_grades(samples) == [
+        _distance_window_grade(samples, index) for index in range(len(samples))
+    ]

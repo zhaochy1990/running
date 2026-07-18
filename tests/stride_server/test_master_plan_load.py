@@ -560,3 +560,166 @@ def test_quality_session_endurance_wording_is_not_treated_as_embedded() -> None:
     assert week["key_session_km"] == 8.0
     assert "threshold_zone_range" in week["load_assumptions"]
     assert "threshold_embedded_in_parent_not_double_counted" not in week["load_assumptions"]
+
+
+# ---------------------------------------------------------------------------
+# New fix tests
+# ---------------------------------------------------------------------------
+
+
+from stride_server.coach_adapters.master_plan_load import _parse_time_seconds  # noqa: E402
+
+
+class TestParseTimeSeconds:
+    def test_hms_string(self) -> None:
+        assert _parse_time_seconds("3:30:00") == pytest.approx(3 * 3600 + 30 * 60)
+
+    def test_mm_ss_string(self) -> None:
+        assert _parse_time_seconds("4:15") == pytest.approx(4 * 60 + 15)
+
+    def test_numeric_passthrough(self) -> None:
+        assert _parse_time_seconds(14400.0) == pytest.approx(14400.0)
+
+    def test_invalid_seconds_rejected(self) -> None:
+        # 3:90:00 has 90 seconds, not a valid time
+        assert _parse_time_seconds("3:90:00") is None
+
+    def test_invalid_minutes_rejected(self) -> None:
+        # 3:70:00 has 70 minutes
+        assert _parse_time_seconds("3:70:00") is None
+
+    def test_invalid_mm_ss_seconds_rejected(self) -> None:
+        # 4:90 has 90 seconds in mm:ss form
+        assert _parse_time_seconds("4:90") is None
+
+    def test_garbage_string_rejected(self) -> None:
+        assert _parse_time_seconds("not-a-time") is None
+
+    def test_none_rejected(self) -> None:
+        assert _parse_time_seconds(None) is None
+
+    def test_zero_rejected(self) -> None:
+        assert _parse_time_seconds(0) is None
+
+
+def test_target_time_s_field_is_accepted_for_goal_race_if() -> None:
+    """target_time_s (pre-parsed int seconds) must feed into IF calculation."""
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    plan_with_target_time = {
+        "goal": {"distance": "FM", "target_time": "4:00:00"},
+        "weeks": [{
+            "week_index": 1, "week_start": "2026-07-01",
+            "target_weekly_km_high": 42.195,
+            "key_sessions": [{"type": "race", "distance_km": 42.195}],
+        }],
+    }
+    plan_with_target_time_s = {
+        "goal": {"distance": "FM", "target_time_s": 4 * 3600},
+        "weeks": [{
+            "week_index": 1, "week_start": "2026-07-01",
+            "target_weekly_km_high": 42.195,
+            "key_sessions": [{"type": "race", "distance_km": 42.195}],
+        }],
+    }
+
+    estimate_time = estimate_master_plan_training_load(
+        plan_with_target_time, history_anchor=anchor,
+        target_race={"distance": "fm", "target_time": "4:00:00"},
+    )
+    estimate_time_s = estimate_master_plan_training_load(
+        plan_with_target_time_s, history_anchor=anchor,
+        target_race={"distance": "fm", "target_time_s": 4 * 3600},
+    )
+
+    assert estimate_time["weeks"][0]["estimated_dose"] == pytest.approx(
+        estimate_time_s["weeks"][0]["estimated_dose"], rel=0.001
+    )
+    assert estimate_time_s["weeks"][0]["load_computable"] is True
+
+
+def test_tempo_zone_uses_marathon_to_threshold_range() -> None:
+    """Tempo high bound should reach threshold zone high, not stop at marathon zone.
+
+    The session type is called 'tempo_marathon_to_threshold_range' in assumptions,
+    which implies the high bound reaches threshold (1.03× threshold speed),
+    not just the marathon zone ceiling (0.97×).
+    """
+    from stride_server.coach_adapters.master_plan_load import _session_if_range, _zone_range
+
+    result = _session_if_range({"type": "tempo", "distance_km": 12}, goal_race_if=None)
+    assert result is not None
+    low_if, high_if, assumptions = result
+
+    marathon_low, marathon_high = _zone_range("marathon")
+    _, threshold_high = _zone_range("threshold")
+
+    # Low bound should be at marathon zone floor
+    assert low_if == pytest.approx(marathon_low, rel=0.001)
+    # High bound must reach threshold zone ceiling, NOT stop at marathon ceiling
+    assert high_if == pytest.approx(threshold_high, rel=0.001)
+    assert "tempo_marathon_to_threshold_range" in assumptions
+
+
+def test_distance_and_duration_dose_consistency() -> None:
+    """When distance_km is given, duration_min must not alter the dose computation.
+
+    The current _estimate_session prefers duration_min when both are set,
+    so a session with distance_km=10 + duration_min produces different dose
+    than one with distance_km=10 alone. The fix: km wins when both are present.
+    """
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    threshold_mps = 4.0
+    km = 10.0
+    # Pick a duration that would produce a different dose if used instead of km
+    duration_min = (km * 320) / 60.0  # 320 s/km ≈ easy zone midpoint
+
+    dist_only = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 30,
+                "key_sessions": [{"type": "threshold", "distance_km": km}],
+            }],
+        },
+        history_anchor={**anchor, "threshold_speed_mps": threshold_mps},
+    )
+    dist_and_dur = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 30,
+                "key_sessions": [{"type": "threshold", "distance_km": km, "duration_min": duration_min}],
+            }],
+        },
+        history_anchor={**anchor, "threshold_speed_mps": threshold_mps},
+    )
+
+    # When distance is present, duration should not alter the dose computation
+    assert dist_only["weeks"][0]["estimated_dose"] == pytest.approx(
+        dist_and_dur["weeks"][0]["estimated_dose"], rel=0.001
+    )
+
+
+def test_zero_distance_uses_positive_duration_fallback() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1,
+                "week_start": "2026-07-01",
+                "target_weekly_km_high": 30,
+                "key_sessions": [{
+                    "type": "threshold",
+                    "distance_km": 0,
+                    "duration_min": 45,
+                }],
+            }],
+        },
+        history_anchor={**anchor, "threshold_speed_mps": 4.0},
+    )
+
+    assert estimate["weeks"][0]["estimated_dose"] is not None
+    assert estimate["weeks"][0]["estimated_dose"] > 0

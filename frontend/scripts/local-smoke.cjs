@@ -1,5 +1,5 @@
 const { chromium } = require('playwright')
-const { execFileSync } = require('node:child_process')
+const { loadLocalCredentials } = require('./onboarding-e2e-lib.cjs')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -8,49 +8,6 @@ const appUrl = (process.env.STRIDE_LOCAL_URL || 'http://127.0.0.1:5173').replace
 const screenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-local-smoke.png')
 const weeklyScreenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-weekly-plan-smoke.png')
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-
-function readCredentials() {
-  let mainWorktreeCredentials = null
-  try {
-    const commonGitDir = execFileSync('git', ['rev-parse', '--git-common-dir'], {
-      cwd: repoRoot,
-      encoding: 'utf8',
-    }).trim()
-    mainWorktreeCredentials = path.join(
-      path.dirname(path.resolve(repoRoot, commonGitDir)),
-      '.credentials.local',
-    )
-  } catch {
-    // A standalone source archive has no main worktree to inspect.
-  }
-  const candidates = [
-    process.env.STRIDE_CREDENTIALS_FILE,
-    path.join(repoRoot, '.credentials.local'),
-    mainWorktreeCredentials,
-    process.env.HOME
-      ? path.join(process.env.HOME, 'workspace', 'running', '.credentials.local')
-      : null,
-    process.env.USERPROFILE
-      ? path.join(process.env.USERPROFILE, 'workspace', 'running', '.credentials.local')
-      : null,
-  ].filter(Boolean)
-  const file = candidates.find((candidate) => fs.existsSync(candidate))
-  if (!file) {
-    throw new Error('.credentials.local not found')
-  }
-  const raw = fs.readFileSync(file, 'utf8')
-  const values = {}
-  for (const line of raw.split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*?)\s*$/)
-    if (match) values[match[1].toLowerCase()] = match[2]
-  }
-  const email = values.email || values.user_email
-  const password = values.password || values.user_password
-  if (!email || !password) {
-    throw new Error('.credentials.local must contain email/password or user_email/user_password')
-  }
-  return { email, password }
-}
 
 function sanitizeUrl(url) {
   return url.replace(/[?].*/, '')
@@ -81,7 +38,7 @@ function assertCurrentWeekUrl(url) {
 }
 
 async function main() {
-  const { email, password } = readCredentials()
+  const { email, password } = loadLocalCredentials()
   let browser
   try {
     browser = await chromium.launch({ headless: true })

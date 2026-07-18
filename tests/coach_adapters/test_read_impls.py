@@ -488,7 +488,7 @@ def test_health_snapshot_uses_stride_load_not_vendor(patched_db) -> None:
     assert "LOW" not in str(res.data)
 
 
-def test_coach_load_readers_keep_partial_and_skip_unknown_current_state(patched_db) -> None:
+def test_coach_load_readers_keep_partial_and_skip_unknown_current_state(patched_db, monkeypatch) -> None:
     patched_db._conn.executemany(
         """INSERT INTO daily_training_load
            (date, algorithm_version, training_dose, acute_load, chronic_load, form,
@@ -502,6 +502,16 @@ def test_coach_load_readers_keep_partial_and_skip_unknown_current_state(patched_
         ],
     )
     patched_db._conn.commit()
+    from stride_storage.sqlite.database import Database
+
+    calls = []
+    original = Database.fetch_latest_daily_training_load
+
+    def traced_fetch_latest(self, *, algorithm_version, as_of=None):
+        calls.append((algorithm_version, as_of))
+        return original(self, algorithm_version=algorithm_version, as_of=as_of)
+
+    monkeypatch.setattr(Database, "fetch_latest_daily_training_load", traced_fetch_latest)
 
     snapshot = read_impls.GetHealthSnapshotImpl("uid")()
     health_series = read_impls.GetHealthSeriesImpl("uid")(
@@ -509,6 +519,7 @@ def test_coach_load_readers_keep_partial_and_skip_unknown_current_state(patched_
     )
     pmc_series = read_impls.GetPmcSeriesImpl("uid")(days=14)
 
+    assert calls == [(TRAINING_LOAD_MODEL_VERSION, None)]
     assert snapshot.ok and snapshot.data["stride_training_load"]["date"] == "2026-05-13"
     assert snapshot.data["stride_training_load"]["coverage_status"] == "partial"
     assert health_series.ok and health_series.data["series"] == [
@@ -560,7 +571,7 @@ def test_health_series_uses_raw_measurements_and_stride_load_only(patched_db) ->
            (date, last_night_avg, status, baseline_balanced_low, baseline_balanced_upper, provider)
            VALUES (?, ?, ?, ?, ?, ?)""",
         [
-            ("2026-07-01", 42, "BALANCED", 35, 55, "coros"),
+            ("20260701", 42, "BALANCED", 35, 55, "coros"),
             ("2026-07-03", 38, "LOW", 35, 55, "coros"),
         ],
     )

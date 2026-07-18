@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import pytest
 from datetime import date
 
 from stride_core.models import ActivityDetail, TimeseriesPoint
@@ -153,6 +154,39 @@ def test_stride_training_load_handler_recomputes_health_tail_from_earliest_chang
     StrideTrainingLoadHandler(backoff_s=0).run(context)
 
     assert calls == [{"start": "2026-05-02", "end": "2026-05-10"}]
+
+
+def test_stride_training_load_handler_health_dates_survive_missing_activity_window(
+    db, monkeypatch
+):
+    """Regression: when label_ids are present but the activity window lookup
+    returns None (activities not yet in DB), health_dates must still drive
+    a recompute — the early-return must not discard them."""
+    from stride_core.post_sync import PostSyncContext, StrideTrainingLoadHandler
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        "stride_core.post_sync.recompute_training_load",
+        lambda db_arg, **kwargs: calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "stride_core.post_sync.today_shanghai", lambda: date(2026, 5, 10)
+    )
+    monkeypatch.setattr(db, "has_daily_training_load_version", lambda _version: True)
+
+    # label_id not present in DB → _activity_shanghai_window returns None.
+    context = PostSyncContext(
+        user="u",
+        provider="coros",
+        operation="sync",
+        db=db,
+        activity_label_ids=("ghost-label-not-in-db",),
+        health_dates=("2026-05-03",),
+    )
+    StrideTrainingLoadHandler(backoff_s=0).run(context)
+
+    # health_dates drove the recompute; no silent discard.
+    assert calls == [{"start": "2026-05-03", "end": "2026-05-10"}]
 
 
 def test_stride_training_load_handler_cold_start_backfills_full_warmup(db, monkeypatch):

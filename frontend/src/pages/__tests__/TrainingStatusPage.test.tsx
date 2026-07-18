@@ -273,19 +273,68 @@ describe('ActivityHeatmap', () => {
     expect(cellAt('2026-05-24')?.getAttribute('fill')).toBe('#c2410c')  // bucket 4
   })
 
-  it('marks future days with dashed stroke and transparent fill', () => {
+  it('marks rest, explicit unknown, absent historical, and future days distinctly', () => {
+    const series: any[] = [
+      { date: '2026-05-20', training_dose: 0, coverage_status: 'rest_confirmed', algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-21', training_dose: null, coverage_status: 'unknown', algorithm_version: 1, acute_load: null, chronic_load: null, form: null, load_ratio: null, readiness_gate: null, readiness_reasons: [] },
+    ]
     const { container } = render(
       <ActivityHeatmap
         weeks={16}
-        series={[]}
+        series={series}
         activitiesByDate={new Map()}
       />,
     )
-    // 2026-05-28 is Thursday, the day after the fake "today" (2026-05-27 Wed).
-    const future = container.querySelector('rect.heatmap-cell[data-date="2026-05-28"]')
-    expect(future).not.toBeNull()
+
+    const cellAt = (date: string) =>
+      container.querySelector(`rect.heatmap-cell[data-date="${date}"]`)
+    const rest = cellAt('2026-05-20')
+    const unknown = cellAt('2026-05-21')
+    const absent = cellAt('2026-05-19')
+    const future = cellAt('2026-05-28')
+
+    expect(rest?.getAttribute('data-state')).toBe('rest')
+    expect(rest?.getAttribute('fill')).toBe('#f0f1f4')
+    expect(rest?.getAttribute('stroke-dasharray')).toBeNull()
+
+    expect(unknown?.getAttribute('data-state')).toBe('unknown')
+    expect(unknown?.getAttribute('fill')).toBe('#f8fafc')
+    expect(unknown?.getAttribute('stroke')).toBe('#cbd5e1')
+    expect(unknown?.getAttribute('stroke-dasharray')).toBe('3 2')
+
+    expect(absent?.getAttribute('data-state')).toBe('absent')
+    expect(absent?.getAttribute('fill')).toBe('#ffffff')
+    expect(absent?.getAttribute('stroke')).toBe('#e8eaf0')
+    expect(absent?.getAttribute('stroke-dasharray')).toBe('1 3')
+
+    expect(future?.getAttribute('data-state')).toBe('future')
     expect(future?.getAttribute('fill')).toBe('transparent')
     expect(future?.getAttribute('stroke-dasharray')).toBe('2 2')
+  })
+
+  it('shows tooltips that distinguish rest, explicit unknown, and absent historical days', () => {
+    const series: any[] = [
+      { date: '2026-05-20', training_dose: 0, coverage_status: 'rest_confirmed', algorithm_version: 1, acute_load: 0, chronic_load: 0, form: 0, load_ratio: 0, readiness_gate: 'green', readiness_reasons: [] },
+      { date: '2026-05-21', training_dose: null, coverage_status: 'unknown', algorithm_version: 1, acute_load: null, chronic_load: null, form: null, load_ratio: null, readiness_gate: null, readiness_reasons: [] },
+    ]
+    const { container } = render(
+      <ActivityHeatmap
+        weeks={16}
+        series={series}
+        activitiesByDate={new Map()}
+      />,
+    )
+
+    fireEvent.mouseEnter(container.querySelector('rect.heatmap-cell[data-date="2026-05-20"]')!)
+    expect(screen.getByText('休息日')).toBeInTheDocument()
+
+    fireEvent.mouseLeave(container.querySelector('rect.heatmap-cell[data-date="2026-05-20"]')!)
+    fireEvent.mouseEnter(container.querySelector('rect.heatmap-cell[data-date="2026-05-21"]')!)
+    expect(screen.getByText(/数据未确认/)).toBeInTheDocument()
+
+    fireEvent.mouseLeave(container.querySelector('rect.heatmap-cell[data-date="2026-05-21"]')!)
+    fireEvent.mouseEnter(container.querySelector('rect.heatmap-cell[data-date="2026-05-19"]')!)
+    expect(screen.getByText(/历史无记录/)).toBeInTheDocument()
   })
 
   it('marks today with a dark stroke', () => {

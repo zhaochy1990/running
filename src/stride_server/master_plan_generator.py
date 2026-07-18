@@ -19,7 +19,7 @@ import re
 from datetime import date as date_cls
 from datetime import datetime, timedelta, timezone
 
-from stride_core.timefmt import today_shanghai
+from stride_core.timefmt import sqlite_mixed_date_expr, today_shanghai
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -1378,9 +1378,12 @@ def _query_weekly_profile(
         )
     for wk in dose_incomplete_weeks - dose_known_weeks:
         buckets[wk]["dose_coverage_status"] = "unknown"
+        # These weeks have no confirmed dose days; reset the 0.0 initializer so
+        # the value is explicitly absent rather than appearing as a confirmed zero.
+        buckets[wk]["dose"] = None
 
     # --- daily_health: rhr (avg) --------------------------------------------
-    health_norm = "(substr(date,1,4)||'-'||substr(date,5,2)||'-'||substr(date,7,2))"
+    health_norm = sqlite_mixed_date_expr("date")
     health_monday = _monday_expr(health_norm)
     rows = conn.execute(
         f"""
@@ -1399,13 +1402,14 @@ def _query_weekly_profile(
         _bucket(wk)["rhr"] = r[1]
 
     # --- daily_hrv: last_night_avg (avg) ------------------------------------
-    hrv_monday = _monday_expr("date")
+    hrv_norm = sqlite_mixed_date_expr("date")
+    hrv_monday = _monday_expr(hrv_norm)
     rows = conn.execute(
         f"""
         SELECT {hrv_monday} AS wk, AVG(last_night_avg) AS hrv
         FROM daily_hrv
         WHERE last_night_avg IS NOT NULL
-          AND date <= ?
+          AND {hrv_norm} <= ?
         GROUP BY wk
         """,
         (as_of.isoformat(),),

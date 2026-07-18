@@ -14,7 +14,7 @@ from stride_core.models import (
     ActivityDetail, BodyCompositionScan, BodySegment, DailyHealth, DailyHrv,
     Dashboard, Lap, RacePrediction, RUN_SPORT_SQL_LIST, TimeseriesPoint, Zone,
 )
-from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.timefmt import SHANGHAI_DAY_SQL, sqlite_mixed_date_expr
 
 
 _VO2MAX_PB_DISTANCE_METERS_FLAG = "distance_units_vo2max_pb_meters_v1"
@@ -534,17 +534,19 @@ CREATE TABLE IF NOT EXISTS activity_feedback (
 # providers so adding a third source (Apple, Fitbit, ...) is non-breaking.
 # Wrap this string as an inner subquery, e.g.:
 #   SELECT date, last_night_avg FROM ({HRV_PREFERRED_PER_DATE_SQL}) ORDER BY date DESC
-HRV_PREFERRED_PER_DATE_SQL = """
+_HRV_H1_DAY_SQL = sqlite_mixed_date_expr("h1.date")
+_HRV_H2_DAY_SQL = sqlite_mixed_date_expr("h2.date")
+HRV_PREFERRED_PER_DATE_SQL = f"""
     SELECT * FROM daily_hrv WHERE rowid IN (
         SELECT rowid FROM daily_hrv h1
-        WHERE provider = (
-            SELECT provider FROM daily_hrv h2
-            WHERE h2.date = h1.date
-            ORDER BY CASE provider
+        WHERE h1.rowid = (
+            SELECT h2.rowid FROM daily_hrv h2
+            WHERE {_HRV_H2_DAY_SQL} = {_HRV_H1_DAY_SQL}
+            ORDER BY CASE h2.provider
                 WHEN 'garmin' THEN 1
                 WHEN 'coros' THEN 2
                 ELSE 3
-            END, provider
+            END, h2.provider
             LIMIT 1
         )
     )
@@ -1652,7 +1654,37 @@ class Database:
 
     # --- Health ---
 
-    def upsert_daily_health(self, h: DailyHealth, *, provider: str = "coros") -> None:
+    def upsert_daily_health(
+        self,
+        h: DailyHealth,
+        *,
+        provider: str = "coros",
+        track_changes: bool = False,
+    ) -> bool:
+        columns = (
+            "ati", "cti", "rhr", "distance_m", "duration_s",
+            "training_load_ratio", "training_load_state", "fatigue",
+            "body_battery_high", "body_battery_low", "stress_avg",
+            "sleep_total_s", "sleep_deep_s", "sleep_light_s", "sleep_rem_s",
+            "sleep_awake_s", "sleep_score", "respiration_avg", "spo2_avg",
+            "provider",
+        )
+        values = (
+            h.ati, h.cti, h.rhr, h.distance_m, h.duration_s,
+            h.training_load_ratio, h.training_load_state, h.fatigue,
+            h.body_battery_high, h.body_battery_low, h.stress_avg,
+            h.sleep_total_s, h.sleep_deep_s, h.sleep_light_s, h.sleep_rem_s,
+            h.sleep_awake_s, h.sleep_score, h.respiration_avg, h.spo2_avg,
+            provider,
+        )
+        existing = (
+            self._conn.execute(
+                f"SELECT {', '.join(columns)} FROM daily_health WHERE date = ?",
+                (h.date,),
+            ).fetchone()
+            if track_changes
+            else None
+        )
         self._conn.execute(
             """INSERT OR REPLACE INTO daily_health
             (date, ati, cti, rhr, distance_m, duration_s, training_load_ratio,
@@ -1662,29 +1694,60 @@ class Database:
              respiration_avg, spo2_avg,
              provider)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (h.date, h.ati, h.cti, h.rhr, h.distance_m, h.duration_s,
-             h.training_load_ratio, h.training_load_state, h.fatigue,
-             h.body_battery_high, h.body_battery_low, h.stress_avg,
-             h.sleep_total_s, h.sleep_deep_s, h.sleep_light_s, h.sleep_rem_s,
-             h.sleep_awake_s, h.sleep_score,
-             h.respiration_avg, h.spo2_avg,
-             provider),
+            (h.date, *values),
         )
         self._conn.commit()
+        return bool(
+            track_changes
+            and (
+                existing is None
+                or any(existing[column] != value for column, value in zip(columns, values))
+            )
+        )
 
-    def upsert_daily_hrv(self, h: DailyHrv, *, provider: str = "garmin") -> None:
-        """Upsert a per-day HRV detail row (Garmin-rich, COROS-empty for v1)."""
+    def upsert_daily_hrv(
+        self,
+        h: DailyHrv,
+        *,
+        provider: str = "garmin",
+        track_changes: bool = False,
+    ) -> bool:
+        """Upsert a per-day HRV detail row (Garmin-rich; COROS-basic)."""
+        columns = (
+            "weekly_avg", "last_night_avg", "last_night_5min_high", "status",
+            "baseline_low_upper", "baseline_balanced_low", "baseline_balanced_upper",
+            "feedback_phrase",
+        )
+        values = (
+            h.weekly_avg, h.last_night_avg, h.last_night_5min_high, h.status,
+            h.baseline_low_upper, h.baseline_balanced_low, h.baseline_balanced_upper,
+            h.feedback_phrase,
+        )
+        existing = (
+            self._conn.execute(
+                f"SELECT {', '.join(columns)} FROM daily_hrv "
+                "WHERE date = ? AND provider = ?",
+                (h.date, provider),
+            ).fetchone()
+            if track_changes
+            else None
+        )
         self._conn.execute(
             """INSERT OR REPLACE INTO daily_hrv
             (date, weekly_avg, last_night_avg, last_night_5min_high, status,
              baseline_low_upper, baseline_balanced_low, baseline_balanced_upper,
              feedback_phrase, provider)
             VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (h.date, h.weekly_avg, h.last_night_avg, h.last_night_5min_high, h.status,
-             h.baseline_low_upper, h.baseline_balanced_low, h.baseline_balanced_upper,
-             h.feedback_phrase, provider),
+            (h.date, *values, provider),
         )
         self._conn.commit()
+        return bool(
+            track_changes
+            and (
+                existing is None
+                or any(existing[column] != value for column, value in zip(columns, values))
+            )
+        )
 
     def upsert_dashboard(self, d: Dashboard, *, provider: str = "coros") -> None:
         self._conn.execute(
@@ -1904,16 +1967,6 @@ class Database:
             (label_id,),
         ).fetchone()
 
-    def delete_daily_training_load_versions(
-        self, start: str, end: str, *, keep_algorithm_version: int
-    ) -> None:
-        """Delete superseded model rows in a recomputed calendar window."""
-        self._conn.execute(
-            "DELETE FROM daily_training_load "
-            "WHERE date >= ? AND date <= ? AND algorithm_version <> ?",
-            (start, end, keep_algorithm_version),
-        )
-
     def fetch_previous_daily_training_load(
         self, before: str, *, algorithm_version: int
     ) -> sqlite3.Row | None:
@@ -1935,18 +1988,20 @@ class Database:
         self, start: str | None = None, end: str | None = None,
         *, algorithm_version: int | None = None, limit: int | None = None,
     ) -> list[sqlite3.Row]:
-        clauses: list[str] = []
-        params: list[object] = []
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        active_algorithm_version = (
+            TRAINING_LOAD_MODEL_VERSION if algorithm_version is None else algorithm_version
+        )
+        clauses: list[str] = ["algorithm_version = ?"]
+        params: list[object] = [active_algorithm_version]
         if start is not None:
             clauses.append("date >= ?")
             params.append(start)
         if end is not None:
             clauses.append("date <= ?")
             params.append(end)
-        if algorithm_version is not None:
-            clauses.append("algorithm_version = ?")
-            params.append(algorithm_version)
-        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        where = " WHERE " + " AND ".join(clauses)
         suffix = " ORDER BY date"
         if limit is not None:
             suffix = " ORDER BY date DESC LIMIT ?"

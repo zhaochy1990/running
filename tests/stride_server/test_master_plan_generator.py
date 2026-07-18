@@ -2568,9 +2568,9 @@ class TestWeeklyProfile:
                   "training_dose, acute_load, chronic_load, form, coverage_status) "
                   "VALUES ('2026-06-17', ?, 70, 65.0, 60.0, -5.0, 'complete')",
                   (TRAINING_LOAD_MODEL_VERSION,))
-        c.execute("INSERT INTO daily_health (date, rhr) VALUES ('20260617', 48)")
+        c.execute("INSERT INTO daily_health (date, rhr) VALUES ('2026-06-17', 48)")
         c.execute("INSERT INTO daily_hrv (date, last_night_avg) "
-                  "VALUES ('2026-06-17', 35)")
+                  "VALUES ('20260617', 35)")
         c.commit()
 
         prof = self._profile(db)
@@ -2749,6 +2749,31 @@ class TestWeeklyProfile:
         assert weeks_kept == sorted(weeks_kept)
         assert weeks_kept[0] == (start + _td(days=7 * 4)).isoformat()
         assert weeks_kept[-1] == (start + _td(days=7 * 19)).isoformat()
+
+    def test_unknown_only_dose_week_exposes_none_not_zero(self, tmp_path):
+        """A week with only 'unknown' coverage_status days must have dose=None.
+
+        The query only adds to dose_acc for complete/partial/rest_confirmed rows.
+        If only 'unknown' rows exist for a week, dose_acc is never updated and
+        the bucket keeps dose=0.0 (the initializer default) — falsely showing a
+        confirmed zero instead of missing data. Fix: set dose=None for such weeks.
+        """
+        db = self._db(tmp_path)
+        c = db._conn
+        self._add_run(c, "a1", "2026-06-17T08:00:00+00:00", km=10.0, dur_s=3000)
+        c.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, form, coverage_status) "
+            "VALUES ('2026-06-17', ?, 0, 50, 60, -10, 'unknown')",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        c.commit()
+
+        week = self._profile(db)[0]
+
+        # dose must be None (data unavailable), not 0.0 (confirmed zero)
+        assert week["dose"] is None
+        assert week["dose_coverage_status"] == "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -3194,3 +3219,18 @@ class TestFormatHistorySummary:
         out = self._summary(self._history([]))
         assert "no recent weekly data" in out
         assert "Actual personal bests (PB" in out
+
+    def test_unknown_only_dose_is_not_rendered_as_confirmed_zero(self):
+        """A week where coverage_status is 'unknown' only must not show dose=0.
+
+        The query only adds to dose_acc for complete/partial/rest_confirmed rows.
+        Unknown-only weeks keep dose=0.0 from the bucket initializer, which falsely
+        looks like a confirmed zero. The fix: set dose to None for pure-unknown weeks.
+        """
+        wk = self._week("2026-02-23", dose=None, dose_coverage_status="unknown")
+
+        out = self._summary(self._history([wk]))
+
+        # dose field must be n/a (unknown), NOT "0" (confirmed zero)
+        assert "|n/a|" in out
+        assert "|0|" not in out

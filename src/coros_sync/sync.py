@@ -400,14 +400,18 @@ def sync_health(
             day_list = analyse_data.get("data", {}).get("dayList", [])
             for day in day_list:
                 health = DailyHealth.from_api(day)
-                db.upsert_daily_health(health)
-                if health_dates_out is not None:
-                    raw_date = str(health.date)
-                    health_dates_out.add(
-                        f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
-                        if len(raw_date) == 8 and raw_date.isdigit()
-                        else raw_date[:10]
-                    )
+                raw_date = str(health.date)
+                date_iso = (
+                    f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:8]}"
+                    if len(raw_date) == 8 and raw_date.isdigit()
+                    else raw_date[:10]
+                )
+                changed = db.upsert_daily_health(
+                    health,
+                    track_changes=health_dates_out is not None,
+                )
+                if changed and health_dates_out is not None:
+                    health_dates_out.add(date_iso)
                 synced += 1
             _emit_sync_progress(
                 progress_callback,
@@ -458,7 +462,13 @@ def sync_health(
             # those rows into daily_hrv so trend accumulates over time.
             try:
                 for hrv_row in hrv_list_from_dashboard(summary):
-                    db.upsert_daily_hrv(hrv_row, provider="coros")
+                    changed_hrv = db.upsert_daily_hrv(
+                        hrv_row,
+                        provider="coros",
+                        track_changes=health_dates_out is not None,
+                    )
+                    if changed_hrv and health_dates_out is not None:
+                        health_dates_out.add(hrv_row.date)
             except Exception as e:  # noqa: BLE001 - same isolation as dashboard upsert
                 logger.warning("Failed to persist daily HRV rows: %s", e, exc_info=True)
 

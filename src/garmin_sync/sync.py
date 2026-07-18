@@ -232,17 +232,35 @@ def _sync_health(
             sleep_data=sleep,
         )
         wrote_anything = False
-        if (h.ati or h.cti or h.rhr or h.training_load_ratio
-                or h.sleep_total_s or h.body_battery_high
-                or h.fatigue) is not None:
-            db.upsert_daily_health(h, provider="garmin")
-            if health_dates_out is not None:
+        health_signals = (
+            h.ati,
+            h.cti,
+            h.rhr,
+            h.training_load_ratio,
+            h.sleep_total_s,
+            h.sleep_score,
+            h.body_battery_high,
+            h.fatigue,
+        )
+        if any(value is not None for value in health_signals):
+            changed_h = db.upsert_daily_health(
+                h,
+                provider="garmin",
+                track_changes=health_dates_out is not None,
+            )
+            if changed_h and health_dates_out is not None:
                 health_dates_out.add(date_iso)
             health_count += 1
             wrote_anything = True
         hrv_row = daily_hrv_from_garmin(date_iso, hrv)
         if hrv_row.last_night_avg is not None or hrv_row.weekly_avg is not None:
-            db.upsert_daily_hrv(hrv_row, provider="garmin")
+            changed_hrv = db.upsert_daily_hrv(
+                hrv_row,
+                provider="garmin",
+                track_changes=health_dates_out is not None,
+            )
+            if changed_hrv and health_dates_out is not None:
+                health_dates_out.add(date_iso)
             health_count += 1
             wrote_anything = True
 

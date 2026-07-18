@@ -105,9 +105,11 @@ class StrideTrainingLoadHandler:
         changed_dates = [d for d in context.health_dates if d]
         if label_ids:
             window = _activity_shanghai_window(context.db, label_ids)
-            if window is None:
-                return
-            changed_dates.extend(window)
+            # Only incorporate the activity window when it's available; if
+            # activities haven't landed in the DB yet, health_dates still
+            # provide a valid recompute anchor so we must not return early.
+            if window is not None:
+                changed_dates.extend(window)
         if not changed_dates:
             return
         # Any changed activity or newly confirmed rest day changes every later

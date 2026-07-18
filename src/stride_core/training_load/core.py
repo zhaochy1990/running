@@ -257,6 +257,101 @@ def _distance_window_grade(samples: Sequence[ActivitySample], index: int) -> flo
     return _clamp((last.altitude_m - first.altitude_m) / dist, -0.2, 0.2)
 
 
+def _precompute_grades(samples: Sequence[ActivitySample]) -> list[float | None]:
+    """Compute grade for every sample index in O(n) using two pointers.
+
+    Produces identical results to calling ``_distance_window_grade(samples, i)``
+    for each ``i`` but avoids the O(n) per-sample backward/forward scans.
+
+    The 50 m bidirectional window, 20 m minimum span, altitude-None check,
+    and ±0.2 clamp are all preserved exactly.
+    """
+    n = len(samples)
+    if n == 0:
+        return []
+
+    # The two-pointer window requires cumulative distance to be non-decreasing.
+    # Watch traces can occasionally correct distance backwards; preserve the
+    # reference per-index semantics for those rare traces instead of carrying
+    # stale pointers across the correction.
+    present_distances = [sample.distance_m for sample in samples if sample.distance_m is not None]
+    if any(right < left for left, right in zip(present_distances, present_distances[1:])):
+        return [_distance_window_grade(samples, index) for index in range(n)]
+
+    result: list[float | None] = [None] * n
+
+    # L is the current left-boundary candidate (lo for index i).
+    # It can only advance rightward as i increases.
+    # Extra invariant: L must be >= the index of the most recent None-distance
+    # sample to the left of i, because the original backward scan stops at None.
+    L = 0  # lo pointer
+    R = 0  # hi pointer; also only advances rightward
+
+    for i in range(n):
+        cur_dist = samples[i].distance_m
+        cur_alt = samples[i].altitude_m
+        if cur_dist is None:
+            # None distance breaks backward reachability for all future indices;
+            # reset L so no future index looks back past this gap.
+            L = i + 1
+            R = i
+            result[i] = None
+            continue
+        if cur_alt is None:
+            # Distance is valid so it doesn't break backward reachability,
+            # but this sample itself is ungradable.
+            result[i] = None
+            continue
+
+        # Advance L forward past any None-distance samples or samples now
+        # farther than 50 m behind cur_dist.
+        # L must never exceed i (lo <= index always).
+        while L < i:
+            prev_dist = samples[L].distance_m
+            if prev_dist is None:
+                # This None sample would have stopped a backward scan; move past it.
+                L += 1
+                continue
+            if cur_dist - prev_dist > 50:
+                L += 1
+                continue
+            break
+
+        # Ensure R >= i before advancing the right pointer.
+        if R < i:
+            R = i
+
+        # Advance R forward as long as the next sample is within 50 m and
+        # has a valid distance.
+        while R < n - 1:
+            next_dist = samples[R + 1].distance_m
+            if next_dist is None or next_dist - cur_dist > 50:
+                break
+            R += 1
+
+        first = samples[L]
+        last = samples[R]
+
+        # Both endpoints must have valid distance and altitude.
+        if first.distance_m is None or last.distance_m is None:
+            result[i] = None
+            continue
+        if first.altitude_m is None or last.altitude_m is None:
+            result[i] = None
+            continue
+
+        dist = last.distance_m - first.distance_m
+        if dist < 20:
+            result[i] = None
+            continue
+
+        result[i] = _clamp(
+            (last.altitude_m - first.altitude_m) / dist, -0.2, 0.2
+        )
+
+    return result
+
+
 def _grade_adjusted_speed(speed: float, grade: float | None) -> float:
     if grade is None:
         return speed
@@ -293,11 +388,12 @@ def _compute_external_tss(
 
     weighted_if_power = 0.0
     covered_seconds = 0.0
+    grades = _precompute_grades(samples) if grade_ok else None
     for i, delta_s in _valid_sample_intervals(samples):
         speed = samples[i].speed_mps
         if speed is None or speed <= 0:
             continue
-        grade = _distance_window_grade(samples, i) if grade_ok else None
+        grade = grades[i] if grades is not None else None
         adjusted = _grade_adjusted_speed(float(speed), grade)
         intensity = _clamp(adjusted / float(calibration.threshold_speed_mps), 0.0, 2.0)
         weighted_if_power += delta_s * intensity**_EXTERNAL_NORMALIZATION_EXPONENT

@@ -8,7 +8,12 @@ from dataclasses import replace
 from datetime import date
 from typing import Any, Sequence
 
-from stride_core.timefmt import SHANGHAI_DAY_SQL, utc_iso_to_shanghai_iso
+from stride_core.timefmt import (
+    SHANGHAI_DAY_SQL,
+    parse_local_day,
+    sqlite_mixed_date_expr,
+    utc_iso_to_shanghai_iso,
+)
 
 from stride_core.running_calibration.types import (
     RUNNING_CALIBRATION_MODEL_VERSION,
@@ -145,21 +150,19 @@ class SQLiteRunningCalibrationRepository:
         CLAUDE.md Timezone discipline whitelist. We convert each row's date
         to a Python `date` before returning. Rows with NULL `rhr` are skipped.
         """
-        rows = self._conn.execute(
-            "SELECT date, rhr FROM daily_health WHERE rhr IS NOT NULL"
-        ).fetchall()
+        day_sql = sqlite_mixed_date_expr("date")
+        rows = self._query(
+            f"""SELECT date, rhr, {day_sql} AS normalized_date
+               FROM daily_health
+              WHERE rhr IS NOT NULL AND {day_sql} BETWEEN ? AND ?
+              ORDER BY normalized_date""",
+            (start.isoformat(), end.isoformat()),
+        )
         out: list[RunningHealthRow] = []
         for row in rows or []:
-            date_str = str(_row_value(row, "date"))
+            d = _parse_date(_row_value(row, "normalized_date"))
             rhr_val = _row_value(row, "rhr")
-            try:
-                if len(date_str) >= 10 and date_str[4] == "-":
-                    d = date.fromisoformat(date_str[:10])
-                else:
-                    d = date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:8]))
-            except (ValueError, IndexError):
-                continue
-            if not start <= d <= end:
+            if d is None:
                 continue
             out.append(RunningHealthRow(date=d, rhr=float(rhr_val) if rhr_val is not None else None))
         return out
@@ -518,16 +521,7 @@ def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str
 
 
 def _parse_date(value: str | date | None) -> date | None:
-    if isinstance(value, date):
-        return value
-    if value is None:
-        return None
-    text = str(value).strip()
-    if len(text) >= 10 and text[4] == "-":
-        return date.fromisoformat(text[:10])
-    if len(text) == 8 and text.isdigit():
-        return date(int(text[:4]), int(text[4:6]), int(text[6:8]))
-    return None
+    return parse_local_day(value)
 
 
 def _activity_shanghai_date(value: Any) -> date | None:

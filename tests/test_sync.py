@@ -308,7 +308,7 @@ class TestSyncHealthHrv:
         assert statuses["2026-05-20"] == "UNBALANCED"  # 27 < balanced_low=31 but ≥ low_upper=26
         assert statuses["2026-05-22"] == "BALANCED"   # 31 in [29, 39]
 
-    def test_health_dates_only_include_daily_health_not_hrv_or_dashboard(self, db):
+    def test_health_dates_includes_daily_health_and_hrv_dates(self, db):
         class FakeClient:
             def get_analyse(_self):
                 return {"data": {"dayList": [{
@@ -325,7 +325,31 @@ class TestSyncHealthHrv:
         changed: set[str] = set()
         sync_health(FakeClient(), db, health_dates_out=changed)
 
-        assert changed == {"2026-05-21"}
+        # Daily health date + 3 HRV dates from the dashboard sleepHrvList
+        assert changed == {"2026-05-21", "2026-05-16", "2026-05-20", "2026-05-22"}
+
+    def test_health_dates_unchanged_on_repeat_sync(self, db):
+        """Second sync with identical payload should not emit changed dates."""
+        class FakeClient:
+            def get_analyse(_self):
+                return {"data": {"dayList": [{
+                    "happenDay": 20260521, "testRhr": 45,
+                    "trainingLoadRatioState": 0,
+                }]}}
+
+            def get_dashboard(_self):
+                return self._dashboard_payload()
+
+            def get_dashboard_detail(_self):
+                return {"data": {"currentWeekRecord": {}}}
+
+        # First sync populates the DB.
+        sync_health(FakeClient(), db, health_dates_out=set())
+        # Second sync with same payload — nothing changed, so no dates emitted.
+        changed2: set[str] = set()
+        sync_health(FakeClient(), db, health_dates_out=changed2)
+
+        assert changed2 == set()
 
     def test_handles_missing_sleephrvlist(self, db):
         payload = self._dashboard_payload()

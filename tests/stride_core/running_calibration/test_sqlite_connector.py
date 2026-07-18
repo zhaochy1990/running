@@ -277,10 +277,22 @@ def test_fetch_health_rows_reads_daily_health(tmp_path):
             ('2026-05-10', 48),
             ('20260520', 47),
             ('20260101', 60),
+            ('20260230', 61),
             ('20260515', NULL);
     """)
-    db = type("DB", (), {"_conn": conn, "_path": str(db_path)})()
-    repo = SQLiteRunningCalibrationRepository(db)
+    queries = []
+
+    class DB:
+        _conn = conn
+        _path = str(db_path)
+
+        @staticmethod
+        def query(sql, params=()):
+            queries.append(sql)
+            return conn.execute(sql, params).fetchall()
+
+    repo = SQLiteRunningCalibrationRepository(DB())
     rows = repo.fetch_health_rows(start=_d(2026, 2, 25), end=_d(2026, 5, 25))
     assert {r.date for r in rows} == {_d(2026, 5, 1), _d(2026, 5, 10), _d(2026, 5, 20)}
     assert all(isinstance(r, RunningHealthRow) for r in rows)
+    assert any("BETWEEN ? AND ?" in sql for sql in queries)

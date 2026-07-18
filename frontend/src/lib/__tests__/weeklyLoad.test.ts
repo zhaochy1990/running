@@ -95,6 +95,16 @@ describe('aggregateWeeklyDose', () => {
     expect(out[7].activeDays).toBe(1)
   })
 
+  it('treats explicit rest rows as observed zero-load days, not coverage gaps', () => {
+    const out = aggregateWeeklyDose([
+      rec('2026-05-19', 0, 'rest_confirmed'),
+      rec('2026-05-20', 50),
+    ], TODAY)
+
+    expect(out[7].totalDose).toBe(50)
+    expect(out[7].activeDays).toBe(1)
+  })
+
   it('renders a week containing an unknown placeholder as a gap', () => {
     const out = aggregateWeeklyDose([
       rec('2026-05-19', 50),

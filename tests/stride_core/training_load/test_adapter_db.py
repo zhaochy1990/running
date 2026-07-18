@@ -15,7 +15,9 @@ from stride_core.running_calibration import (
 )
 from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
 from stride_core.training_load.adapter import (
+    _build_activity_inputs,
     _fetch_health_rows,
+    _fetch_hrv_rows,
     _fetch_samples,
     _normalize_elapsed_seconds,
     backfill_training_load,
@@ -503,7 +505,7 @@ def test_recompute_persists_activity_and_daily_load_idempotently(db):
     assert json.loads(activity_row["reasons_json"]) == []
 
 
-def test_recompute_removes_superseded_daily_model_version(db):
+def test_recompute_retains_superseded_daily_model_version(db):
     db._conn.execute(
         "INSERT INTO daily_training_load "
         "(date, algorithm_version, training_dose, acute_load, chronic_load) "
@@ -525,9 +527,27 @@ def test_recompute_removes_superseded_daily_model_version(db):
     )
 
     rows = db.query(
-        "SELECT algorithm_version FROM daily_training_load WHERE date = '2026-05-01'"
+        "SELECT algorithm_version FROM daily_training_load "
+        "WHERE date = '2026-05-01' ORDER BY algorithm_version"
     )
-    assert [row["algorithm_version"] for row in rows] == [2]
+    assert [row["algorithm_version"] for row in rows] == [1, TRAINING_LOAD_MODEL_VERSION]
+
+
+def test_fetch_daily_training_load_filters_current_version(db):
+    db._conn.executemany(
+        "INSERT INTO daily_training_load "
+        "(date, algorithm_version, training_dose, acute_load, chronic_load) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [
+            ("2026-05-01", 1, 999, 999, 999),
+            ("2026-05-01", TRAINING_LOAD_MODEL_VERSION, 10, 10, 20),
+        ],
+    )
+    db._conn.commit()
+
+    rows = db.fetch_daily_training_load("2026-05-01", "2026-05-01")
+
+    assert [row["algorithm_version"] for row in rows] == [TRAINING_LOAD_MODEL_VERSION]
 
 
 def test_recompute_persist_false_returns_summary_without_writes(db):
@@ -788,3 +808,84 @@ def test_fetch_health_rows_handles_compact_yyyymmdd_dates(db):
 
     assert by_date[date(2026, 5, 1)] == 50.0
     assert by_date[date(2026, 5, 2)] == 52.0
+
+
+def test_fetch_health_rows_bounds_query_in_sql(db, monkeypatch):
+    for day in range(1, 32):
+        stored = f"202605{day:02d}" if day % 2 else f"2026-05-{day:02d}"
+        db._conn.execute("INSERT INTO daily_health (date, rhr) VALUES (?, ?)", (stored, 50 + day))
+    db._conn.commit()
+
+    queries: list[str] = []
+    original_query = db.query
+
+    def traced_query(sql, params=()):
+        queries.append(sql)
+        return original_query(sql, params)
+
+    monkeypatch.setattr(db, "query", traced_query)
+
+    rows = _fetch_health_rows(db, start=date(2026, 5, 10), end=date(2026, 5, 12))
+
+    assert [row.date for row in rows] == [date(2026, 5, 10), date(2026, 5, 11), date(2026, 5, 12)]
+    assert any("BETWEEN ? AND ?" in sql for sql in queries)
+
+
+def test_fetch_hrv_rows_handles_compact_dates_and_bounds_in_sql(db, monkeypatch):
+    db._conn.executemany(
+        "INSERT INTO daily_hrv (date, last_night_avg, provider) VALUES (?, ?, ?)",
+        [
+            ("20260501", 41, "garmin"),
+            ("2026-05-02", 42, "garmin"),
+            ("20260503", 43, "garmin"),
+        ],
+    )
+    db._conn.commit()
+    queries: list[str] = []
+    original_query = db.query
+
+    def traced_query(sql, params=()):
+        queries.append(sql)
+        return original_query(sql, params)
+
+    monkeypatch.setattr(db, "query", traced_query)
+
+    rows = _fetch_hrv_rows(db, start=date(2026, 5, 1), end=date(2026, 5, 2))
+
+    assert {row.date: row.last_night_avg for row in rows} == {
+        date(2026, 5, 1): 41.0,
+        date(2026, 5, 2): 42.0,
+    }
+    assert any("BETWEEN ? AND ?" in sql for sql in queries)
+
+
+def test_build_activity_inputs_fetches_feedback_without_n_plus_one(db, monkeypatch):
+    for idx in range(3):
+        label = f"run{idx}"
+        db.upsert_activity(
+            _make_activity(
+                label,
+                f"2026-05-0{idx + 1}T00:00:00+00:00",
+                samples=_timeseries(hr=None, speed_mps=4.0),
+            )
+        )
+        db.upsert_activity_feedback(label, rpe=idx + 4, mood_tags=[], note="ok")
+    rows = db.query("SELECT * FROM activities ORDER BY date")
+    queries: list[str] = []
+    original_query = db.query
+
+    def traced_query(sql, params=()):
+        queries.append(sql)
+        return original_query(sql, params)
+
+    def fail_get_activity_feedback(label_id):
+        raise AssertionError(f"N+1 feedback fetch for {label_id}")
+
+    monkeypatch.setattr(db, "query", traced_query)
+    monkeypatch.setattr(db, "get_activity_feedback", fail_get_activity_feedback)
+
+    inputs = _build_activity_inputs(db, rows)
+
+    assert [item.rpe for item in inputs] == [4, 5, 6]
+    feedback_queries = [sql for sql in queries if "FROM activity_feedback" in sql]
+    assert len(feedback_queries) == 1

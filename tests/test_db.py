@@ -162,8 +162,9 @@ class TestDatabaseActivities:
                VALUES ('20260505', 49, 88, 90, 40, 2.25, 'Very High')"""
         )
         db._conn.execute(
-            """INSERT INTO daily_hrv (date, last_night_avg, status)
-               VALUES ('2026-05-05', 42, 'LOW')"""
+            """INSERT INTO daily_hrv (date, last_night_avg, status, provider)
+               VALUES ('20260505', 41, 'LOW', 'coros'),
+                      ('2026-05-05', 42, 'BALANCED', 'garmin')"""
         )
         db._conn.commit()
 

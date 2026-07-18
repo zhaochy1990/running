@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from datetime import date
 from typing import Any
 
-from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.timefmt import SHANGHAI_DAY_SQL, sqlite_mixed_date_expr
 from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .database import Database, HRV_PREFERRED_PER_DATE_SQL
@@ -40,13 +40,6 @@ def _category(row: dict[str, Any]) -> str:
     if sport_type in {402, 800} or sport == "strength" or "strength" in sport_name:
         return "strength"
     return "cross"
-
-
-def _health_day_sql() -> str:
-    return (
-        "CASE WHEN length(date) = 8 THEN substr(date,1,4) || '-' || "
-        "substr(date,5,2) || '-' || substr(date,7,2) ELSE substr(date,1,10) END"
-    )
 
 
 def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[str, Any]:
@@ -164,7 +157,7 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
         else "unknown"
     )
 
-    day_sql = _health_day_sql()
+    day_sql = sqlite_mixed_date_expr("date")
     health_rows = db._conn.execute(
         f"""SELECT {day_sql} AS day, rhr
                FROM daily_health
@@ -172,16 +165,17 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
               ORDER BY day""",
         (date_from, date_to),
     ).fetchall()
+    hrv_day_sql = sqlite_mixed_date_expr("date")
     hrv_rows = db._conn.execute(
-        """SELECT date, last_night_avg
-             FROM (""" + HRV_PREFERRED_PER_DATE_SQL + """)
-            WHERE date BETWEEN ? AND ?
-            ORDER BY date""",
+        f"""SELECT {hrv_day_sql} AS day, last_night_avg
+             FROM ({HRV_PREFERRED_PER_DATE_SQL})
+            WHERE {hrv_day_sql} BETWEEN ? AND ?
+            ORDER BY day""",
         (date_from, date_to),
     ).fetchall()
     recovery_by_day = {row["day"]: dict(row) for row in health_rows}
     for row in hrv_rows:
-        recovery_by_day.setdefault(row["date"], {"day": row["date"]}).update(
+        recovery_by_day.setdefault(row["day"], {"day": row["day"]}).update(
             {"hrv": row["last_night_avg"]}
         )
 
