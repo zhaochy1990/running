@@ -14,7 +14,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.datastructures import Headers
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from stride_core.registry import ProviderRegistry
 from stride_core.source import DataSource
@@ -26,6 +29,40 @@ from .bearer import load_public_key_from_config, require_bearer, verify_path_use
 from .deps import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
+
+
+class SkipRangeGZipMiddleware:
+    """Compress normal responses while preserving byte-range semantics."""
+
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        minimum_size: int = 1024,
+        compresslevel: int = 6,
+    ) -> None:
+        self.app = app
+        self.gzip = GZipMiddleware(
+            app,
+            minimum_size=minimum_size,
+            compresslevel=compresslevel,
+        )
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and "range" in Headers(scope=scope):
+            await self.app(scope, receive, send)
+            return
+        await self.gzip(scope, receive, send)
+
+
+def _add_http_middleware(app: FastAPI) -> None:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    app.add_middleware(SkipRangeGZipMiddleware)
 
 
 @asynccontextmanager
@@ -114,12 +151,7 @@ def create_app(
 
     # CORS is intentionally permissive (`*`) — the real authz boundary lives
     # at the Bearer layer applied per-router below.
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    _add_http_middleware(app)
 
     # Public routes (no auth) — liveness probe, must stay open for Azure.
     app.include_router(public.router)
