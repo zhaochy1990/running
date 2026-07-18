@@ -357,7 +357,7 @@ function DraftReviewWorkspace({
       setMessages([...nextMessages, assistantMessage])
       const nextDiff = response.data.diff
       setDiff(nextDiff && nextDiff.ops.length > 0 ? nextDiff : null)
-      setSelectedOpIds(new Set(nextDiff?.ops.map((op) => op.id) ?? []))
+      setSelectedOpIds(defaultSelectedOpIds(nextDiff))
     } catch (err) {
       setChatError(err instanceof Error ? err.message : '发送失败')
     } finally {
@@ -383,6 +383,9 @@ function DraftReviewWorkspace({
     try {
       const response = await applyMasterPlanReviewDiff(plan.plan_id, diff, opIds, diff.ai_explanation || 'review feedback')
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if ((response.data.applied ?? 0) <= 0) {
+        throw new Error('没有调整被采用，请确认至少选择一项可应用调整')
+      }
       const updated = await getMasterPlanById(plan.plan_id)
       onPlanUpdated(updated)
       setDiff(null)
@@ -589,9 +592,10 @@ function ReviewChatPanel({
 }
 
 function ReviewDiffOpRow({ op, checked, onToggle }: { op: MasterPlanDiffOp; checked: boolean; onToggle: () => void }) {
+  const disabled = op.accepted === false
   return (
-    <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border-subtle bg-bg-card p-2.5">
-      <input type="checkbox" checked={checked} onChange={onToggle} className="mt-1 accent-accent-green" />
+    <label className={`flex items-start gap-2 rounded-md border border-border-subtle bg-bg-card p-2.5 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={onToggle} className="mt-1 accent-accent-green" />
       <span className="min-w-0">
         <span className="block text-xs font-semibold text-text-primary">{diffOpLabel(op.op)}</span>
         <span className="mt-0.5 block break-words text-[11px] leading-5 text-text-muted">{summarizeDiffValue(op)}</span>
@@ -1459,14 +1463,31 @@ function diffOpLabel(op: string): string {
     remove_milestone: '删除里程碑',
     replace_milestone_date: '调整里程碑日期',
     replace_milestone_target: '调整里程碑目标',
+    reschedule_target_race: '调整目标比赛日期',
+    update_target_race_time: '调整目标完赛时间',
   }
   return labels[op] ?? op
 }
 
+function defaultSelectedOpIds(diff: MasterPlanDiff | null): Set<string> {
+  if (!diff) return new Set()
+  const selectableOps = diff.ops.filter((op) => op.accepted !== false)
+  const atomicOp = selectableOps.find((op) => isAtomicRaceOp(op.op))
+  return new Set(atomicOp ? [atomicOp.id] : selectableOps.map((op) => op.id))
+}
+
+function isAtomicRaceOp(op: string): boolean {
+  return op === 'reschedule_target_race' || op === 'update_target_race_time'
+}
+
 function summarizeDiffValue(op: MasterPlanDiffOp): string {
   const oldValue = compactJson(op.old_value)
-  const newValue = compactJson(op.new_value ?? op.spec_patch)
+  const newValue = compactJson(effectiveNewValue(op))
   return `${oldValue} -> ${newValue}`
+}
+
+function effectiveNewValue(op: MasterPlanDiffOp): Record<string, unknown> | null {
+  return op.new_value && Object.keys(op.new_value).length > 0 ? op.new_value : op.spec_patch
 }
 
 function compactJson(value: Record<string, unknown> | null): string {

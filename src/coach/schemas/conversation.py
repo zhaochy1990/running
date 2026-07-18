@@ -111,7 +111,9 @@ class ConversationState(TypedDict, total=False):
     consulted_tools: list[str]
     tool_trace: list[dict]
     master_adjustment_request: str | None
+    master_adjustment_plan_id: str | None
     master_adjustment_assessment: dict | None
+    master_mandatory_read_failed: bool
     last_diff: dict | None
     iteration: int
 

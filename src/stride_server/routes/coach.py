@@ -29,7 +29,6 @@ from langchain_core.messages import (
 from pydantic import (
     BaseModel,
     Field,
-    ValidationError,
     field_validator,
     model_validator,
 )
@@ -37,19 +36,14 @@ from pydantic import (
 from coach.schemas import AssistantPart, assistant_parts_from_message
 
 from stride_core.plan_diff import PlanDiff, apply_diff_to_weekly_plan
-from stride_core.timefmt import today_shanghai
 from stride_core.weekly_plan_proposal import (
     WeeklyPlanCreateProposal,
     is_supported_weekly_plan_generation,
 )
-from stride_core.master_plan import MasterPlanStatus
 from stride_core.timefmt import today_shanghai
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
-    MasterPlanDiffOp,
-    MasterPlanDiffOpKind,
     apply_master_plan_diff,
-    normalise_target_race_time,
 )
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 
@@ -63,6 +57,12 @@ from coach.orchestrator import coach_thread_id
 from ..coach_adapters.orchestrator import run_coach_turn
 from ..coach_runtime import get_checkpointer
 from ..content_store import read_json, write_json
+from ..master_plan_apply import (
+    accepted_master_op_ids,
+    apply_active_master_diff,
+    master_plan_apply_lock,
+    require_active_master_plan,
+)
 from ..master_plan_store import get_master_plan_store
 from ..weekly_plan_store import (
     create_weekly_plan,
@@ -315,8 +315,6 @@ def apply_coach_week_diff(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"weekly plan {folder!r} already exists",
             )
-        from datetime import datetime, timezone
-
         return {
             "applied": 1,
             "folder": folder,
@@ -352,8 +350,6 @@ def apply_coach_week_diff(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    from datetime import datetime, timezone
-
     return {
         "applied": len(accepted_op_ids),
         "folder": folder,
@@ -379,152 +375,6 @@ class CoachMasterApplyRequest(BaseModel):
     accepted_op_ids: list[str]
     change_reason: str = "coach adjustment"
 
-
-class _MasterStoreBridge:
-    """Adapt ``get_master_plan_store()`` (2-arg ``get_plan(user_id, plan_id)`` +
-    ``save_version``) to the ``MasterPlanStore`` protocol ``apply_master_plan_diff``
-    expects (1-arg ``get_plan(plan_id)`` + ``add_version``)."""
-
-    def __init__(self, inner: Any, user_id: str) -> None:
-        self._inner = inner
-        self._user_id = user_id
-
-    def get_plan(self, plan_id: str):
-        return self._inner.get_plan(self._user_id, plan_id)
-
-    def save_plan(self, plan):
-        # Defense in depth: only ever persist a plan owned by this bridge's user,
-        # so a future refactor of apply_master_plan_diff can't write across users.
-        if getattr(plan, "user_id", self._user_id) != self._user_id:
-            raise PermissionError("refusing to save a plan owned by a different user")
-        return self._inner.save_plan(plan)
-
-    def add_version(self, version):
-        return self._inner.save_version(version)
-
-
-def _accepted_race_reschedule(
-    diff: MasterPlanDiff, accepted_op_ids: list[str]
-) -> MasterPlanDiffOp | None:
-    accepted = set(accepted_op_ids)
-    matches = [
-        op
-        for op in diff.ops
-        if op.id in accepted
-        and op.accepted is not False
-        and op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
-    ]
-    return matches[0] if matches else None
-
-
-def _accepted_target_race_time_update(
-    diff: MasterPlanDiff, accepted_op_ids: list[str]
-) -> MasterPlanDiffOp | None:
-    accepted = set(accepted_op_ids)
-    matches = [
-        op
-        for op in diff.ops
-        if op.id in accepted
-        and op.accepted is not False
-        and op.op == MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME
-    ]
-    return matches[0] if matches else None
-
-
-def _prepare_training_goal_reschedule(
-    user_id: str, plan: Any, op: MasterPlanDiffOp
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Validate and prepare the external TrainingGoal half of a race move."""
-    item = read_json(f"{user_id}/training_goal.json")
-    if item is None or not isinstance(item[0], dict):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="当前 Training Goal 不存在，无法安全同步目标比赛日期",
-        )
-    original = item[0]
-    current = original.get("current")
-    if not isinstance(current, dict):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="当前 Training Goal 不存在，无法安全同步目标比赛日期",
-        )
-    if current.get("type") != "race":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="当前 Training Goal 不是比赛目标，无法同步目标比赛日期",
-        )
-    plan_distance = getattr(plan.goal.distance, "value", str(plan.goal.distance))
-    if (
-        current.get("goal_id") != plan.goal.goal_id
-        or current.get("race_date") != plan.goal.race_date
-        or current.get("race_distance") != plan_distance
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Training Goal 与当前 Master Plan 不一致，请刷新后重试",
-        )
-    new_date = (op.spec_patch or {}).get("race_date")
-    updated_current = dict(current)
-    updated_current["race_date"] = new_date
-    updated_current["updated_at"] = datetime.now(timezone.utc).isoformat()
-    updated = dict(original)
-    updated["current"] = updated_current
-    return original, updated
-
-
-def _prepare_training_goal_time_update(
-    user_id: str, plan: Any, op: MasterPlanDiffOp
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Validate and prepare the external TrainingGoal target-time update."""
-    item = read_json(f"{user_id}/training_goal.json")
-    if item is None or not isinstance(item[0], dict):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="当前 Training Goal 不存在，无法安全同步目标成绩",
-        )
-    original = item[0]
-    current = original.get("current")
-    if not isinstance(current, dict) or current.get("type") != "race":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="当前 Training Goal 不是比赛目标，无法同步目标成绩",
-        )
-    external_time_raw = str(current.get("target_finish_time") or "")
-    embedded_time_raw = str(plan.goal.target_time or "")
-    try:
-        external_time = (
-            normalise_target_race_time(external_time_raw)
-            if external_time_raw
-            else ""
-        )
-        embedded_time = (
-            normalise_target_race_time(embedded_time_raw)
-            if embedded_time_raw
-            else ""
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="当前目标成绩格式无效，请先修正 Training Goal",
-        ) from exc
-    plan_distance = getattr(plan.goal.distance, "value", str(plan.goal.distance))
-    if (
-        current.get("goal_id") != plan.goal.goal_id
-        or current.get("race_date") != plan.goal.race_date
-        or current.get("race_distance") != plan_distance
-        or external_time != embedded_time
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Training Goal 与当前 Master Plan 不一致，请刷新后重试",
-        )
-    new_time = (op.spec_patch or {}).get("target_time")
-    updated_current = dict(current)
-    updated_current["target_finish_time"] = new_time
-    updated_current["updated_at"] = datetime.now(timezone.utc).isoformat()
-    updated = dict(original)
-    updated["current"] = updated_current
-    return original, updated
 
 
 def _affected_weeks_for_coach_master_apply(
@@ -562,101 +412,32 @@ def apply_coach_master_diff(
         )
 
     store = get_master_plan_store()
-    plan = store.get_plan(user_id, plan_id)
-    if plan is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"master plan {plan_id!r} not found")
-    if plan.user_id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="plan belongs to a different user")
-    if plan.status != MasterPlanStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="该赛季计划尚未确认（status≠active），不能应用调整",
+    with master_plan_apply_lock(user_id, plan_id):
+        plan = require_active_master_plan(
+            store,
+            user_id,
+            plan_id,
+            not_found_detail=f"master plan {plan_id!r} not found",
+            forbidden_detail="plan belongs to a different user",
+            inactive_detail="该赛季计划尚未确认（status≠active），不能应用调整",
         )
-
-    # Only land ops the diff actually carries (skip unknown / stale ids). Build
-    # the exact accepted subset before validation: safety rules such as the
-    # full-regeneration taper exception must be evaluated against what will
-    # actually land, not against unselected sibling ops in the same diff.
-    applicable_ids = {op.id for op in diff.ops if op.accepted is not False}
-    accepted_op_ids = list(
-        dict.fromkeys(
-            oid for oid in body.accepted_op_ids if oid in applicable_ids
+        accepted_op_ids = accepted_master_op_ids(diff, body.accepted_op_ids)
+        affected_weeks = _affected_weeks_for_coach_master_apply(
+            plan, diff, accepted_op_ids
         )
-    )
-    accepted_ids = set(accepted_op_ids)
-    accepted_diff = diff.model_copy(
-        update={"ops": [op for op in diff.ops if op.id in accepted_ids]}
-    )
-
-    # Re-run the validation gate: the client supplies the diff body, so don't
-    # trust it blindly — refuse a structurally broken diff (defense in depth).
-    # The gate is wrapped too: it coerces untyped spec_patch values (float() etc.),
-    # so a pathological value that makes the gate itself raise becomes a 400, not
-    # a 500.
-    try:
-        violations = validate_master_diff(plan, accepted_diff)
-    except (ValidationError, ValueError, TypeError, KeyError, OverflowError) as exc:
-        logger.warning("coach master apply: gate raised on malformed diff: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="赛季调整数据非法，无法应用",
-        )
-    if violations:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="赛季调整结构非法：" + "；".join(violations),
-        )
-
-    affected_weeks = _affected_weeks_for_coach_master_apply(
-        plan, diff, accepted_op_ids
-    )
-    bridge = _MasterStoreBridge(store, user_id)
-    race_op = _accepted_race_reschedule(diff, accepted_op_ids)
-    race_time_op = _accepted_target_race_time_update(diff, accepted_op_ids)
-    goal_original: dict[str, Any] | None = None
-    if race_op is not None:
-        goal_original, goal_updated = _prepare_training_goal_reschedule(
-            user_id, plan, race_op
-        )
-    elif race_time_op is not None:
-        goal_original, goal_updated = _prepare_training_goal_time_update(
-            user_id, plan, race_time_op
-        )
-    else:
-        goal_updated = None
-    if goal_updated is not None:
-        try:
-            write_json(f"{user_id}/training_goal.json", goal_updated)
-        except Exception as exc:  # noqa: BLE001 — content-store boundary
-            logger.exception("coach master apply: training goal sync failed")
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Training Goal 暂时无法更新，请稍后重试",
-            ) from exc
-    try:
-        updated_plan = apply_master_plan_diff(bridge, plan_id, diff, accepted_op_ids, body.change_reason)
-    except Exception as exc:  # noqa: BLE001 — compensate cross-store goal write
-        if goal_original is not None:
-            try:
-                write_json(f"{user_id}/training_goal.json", goal_original)
-            except Exception:  # noqa: BLE001 — preserve the primary failure
-                logger.critical(
-                    "coach master apply: failed to roll back Training Goal",
-                    exc_info=True,
-                )
-        if not isinstance(
-            exc, (ValidationError, ValueError, TypeError, KeyError, OverflowError)
-        ):
-            raise
-        # The gate validates diff semantics, but spec_patch contents are untyped
-        # JSON from the client — a pathological value (wrong type, bad enum,
-        # missing construction key) would otherwise raise inside apply and 500.
-        # Convert that whole class to a 400; infra/storage errors are other
-        # exception types and still propagate as a real 5xx.
-        logger.warning("coach master apply: rejecting malformed diff: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="赛季调整数据非法，无法应用",
+        updated_plan, accepted_op_ids = apply_active_master_diff(
+            store=store,
+            user_id=user_id,
+            plan_id=plan_id,
+            plan=plan,
+            diff=diff,
+            requested_op_ids=body.accepted_op_ids,
+            change_reason=body.change_reason,
+            read_json_func=read_json,
+            write_json_func=write_json,
+            validate_diff_func=validate_master_diff,
+            apply_diff_func=apply_master_plan_diff,
+            logger=logger,
         )
 
     return {

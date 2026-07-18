@@ -567,7 +567,7 @@ describe('TrainingPlanAdjustPage', () => {
     expect(screen.queryByText('目标比赛 · 不变')).not.toBeInTheDocument()
   })
 
-  it('previews a changed race date from an atomic race proposal', async () => {
+  it('previews and labels an atomic race-date proposal that only returns spec_patch', async () => {
     const response = proposalResponse()
     const adjustmentRequest = '把目标比赛延期到 2026-11-08，并顺延训练计划'
     response.data.assessment = {
@@ -580,18 +580,81 @@ describe('TrainingPlanAdjustPage', () => {
       plan_id: 'plan-1',
       ai_explanation: '目标比赛和赛季边界顺延到 2026-11-08。',
       created_at: '2026-06-10T00:00:00Z',
+      ops: [
+        {
+          id: 'op-race',
+          op: 'reschedule_target_race',
+          phase_id: null,
+          milestone_id: 'milestone-race',
+          old_value: { race_date: '2026-10-11' },
+          new_value: {},
+          spec_patch: {
+            race_date: '2026-11-08',
+            phase_updates: [{ phase_id: 'phase-2', end_date: '2026-11-08' }],
+          },
+          accepted: null,
+        },
+        {
+          id: 'op-companion',
+          op: 'replace_weekly_range',
+          phase_id: 'phase-1',
+          milestone_id: null,
+          old_value: { weekly_distance_km_low: 42, weekly_distance_km_high: 54 },
+          new_value: { weekly_distance_km_low: 45, weekly_distance_km_high: 50 },
+          spec_patch: { weekly_distance_km_low: 45, weekly_distance_km_high: 50 },
+          accepted: null,
+        },
+      ],
+    }
+    vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce(response)
+    renderAdjustPage()
+
+    fireEvent.change(await screen.findByLabelText('这次具体想怎么调整训练计划？'), {
+      target: { value: adjustmentRequest },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '确认调整方向' }))
+
+    expect(await screen.findByText('后端调整建议')).toBeInTheDocument()
+    expect(screen.getByText('调整目标比赛日期')).toBeInTheDocument()
+    expect(screen.getByText('{"race_date":"2026-10-11"} -> {"race_date":"2026-11-08","phase_updates":[{"phase_id":"phase-2","end_date":"2026-11-08"}]}')).toBeInTheDocument()
+    expect(screen.getByText('目标比赛 · 已调整')).toBeInTheDocument()
+    expect(screen.getByText(/全马 · 2026 \/ 11 \/ 08/)).toBeInTheDocument()
+    expect(screen.getByText(/全程周量曲线 · 27 周/)).toBeInTheDocument()
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    expect(checkboxes).toHaveLength(2)
+    expect(checkboxes[0]).toBeChecked()
+    expect(checkboxes[1]).not.toBeChecked()
+
+    fireEvent.click(checkboxes[0])
+
+    expect(screen.getByText(/全马 · 2026 \/ 10 \/ 11/)).toBeInTheDocument()
+    expect(screen.getByText(/全程周量曲线 · 23 周/)).toBeInTheDocument()
+    expect(screen.queryByText('目标比赛 · 已调整')).not.toBeInTheDocument()
+  })
+
+  it('labels an atomic target-time proposal that only returns spec_patch', async () => {
+    const response = proposalResponse()
+    const adjustmentRequest = '把完赛目标改成 03:05:00'
+    response.data.assessment = {
+      adjustment_request: adjustmentRequest,
+      verdict: 'reasonable',
+      rationale: '近期表现支持更新目标时间。',
+    }
+    response.data.diff = {
+      diff_id: 'diff-time',
+      plan_id: 'plan-1',
+      ai_explanation: '目标完赛时间更新到 03:05:00。',
+      created_at: '2026-06-10T00:00:00Z',
       ops: [{
-      id: 'op-race',
-      op: 'reschedule_target_race',
-      phase_id: null,
-      milestone_id: null,
-      old_value: { race_date: '2026-10-11' },
-      new_value: { race_date: '2026-11-08' },
-      spec_patch: {
-        race_date: '2026-11-08',
-        phase_updates: [{ phase_id: 'phase-2', end_date: '2026-11-08' }],
-      },
-      accepted: null,
+        id: 'op-time',
+        op: 'update_target_race_time',
+        phase_id: null,
+        milestone_id: null,
+        old_value: { target_time: '03:15:00' },
+        new_value: null,
+        spec_patch: { target_time: '03:05:00' },
+        accepted: null,
       }],
     }
     vi.mocked(sendMasterPlanAdjustMessage).mockResolvedValueOnce(response)
@@ -603,9 +666,9 @@ describe('TrainingPlanAdjustPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认调整方向' }))
 
     expect(await screen.findByText('后端调整建议')).toBeInTheDocument()
-    expect(screen.getByText('目标比赛 · 已调整')).toBeInTheDocument()
-    expect(screen.getByText(/全马 · 2026 \/ 11 \/ 08/)).toBeInTheDocument()
-    expect(screen.getByText(/全程周量曲线 · 27 周/)).toBeInTheDocument()
+    expect(screen.getByText('调整目标完赛时间')).toBeInTheDocument()
+    expect(screen.getByText('{"target_time":"03:15:00"} -> {"target_time":"03:05:00"}')).toBeInTheDocument()
+    expect(screen.getByText(/目标 03:05:00/)).toBeInTheDocument()
   })
 
   it('previews both sides of an atomic phase-boundary proposal', async () => {
@@ -692,7 +755,7 @@ describe('TrainingPlanAdjustPage', () => {
     await waitFor(() => {
       expect(applyMasterPlanAdjustDiff).toHaveBeenCalledWith(
         'plan-1',
-        'diff-1',
+        expect.objectContaining({ diff_id: 'diff-1', plan_id: 'plan-1' }),
         ['op-1'],
         expect.stringContaining('基础期'),
       )

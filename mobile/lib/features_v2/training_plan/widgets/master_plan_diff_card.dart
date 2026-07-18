@@ -62,6 +62,7 @@ class MasterPlanDiffCard extends ConsumerWidget {
             _MasterPlanOpRow(
               op: op,
               accepted: state.acceptedOpIds.contains(op.id),
+              enabled: op.accepted != false && !state.loading,
               onToggle: () => notifier.toggleOp(op.id),
             ),
             if (op != diff.ops.last)
@@ -82,11 +83,13 @@ class _MasterPlanOpRow extends StatelessWidget {
   const _MasterPlanOpRow({
     required this.op,
     required this.accepted,
+    required this.enabled,
     required this.onToggle,
   });
 
   final MasterPlanDiffOp op;
   final bool accepted;
+  final bool enabled;
   final VoidCallback onToggle;
 
   static String _opLabel(String opType) {
@@ -109,7 +112,9 @@ class _MasterPlanOpRow extends StatelessWidget {
     return switch (opType) {
       'add_milestone' || 'add_race' || 'extend_phase' => StrideTokens.accent,
       'remove_milestone' => StrideTokens.danger,
-      'reduce_intensity' || 'shorten_phase' || 'shift_phase_boundary' => StrideTokens.warn,
+      'reduce_intensity' ||
+      'shorten_phase' ||
+      'shift_phase_boundary' => StrideTokens.warn,
       _ => StrideTokens.muted,
     };
   }
@@ -118,109 +123,123 @@ class _MasterPlanOpRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _opColor(op.op);
     final context2 = op.phaseName ?? op.milestoneName;
-    final oldSummary = op.oldValue?['summary'] as String? ??
-        op.oldValue?['value']?.toString();
-    final newSummary = op.newValue?['summary'] as String? ??
-        op.newValue?['value']?.toString();
+    final oldSummary =
+        op.oldValue?['summary'] as String? ?? op.oldValue?['value']?.toString();
+    final newValue = op.newValue != null && op.newValue!.isNotEmpty
+        ? op.newValue
+        : op.specPatch;
+    final newSummary = _summary(newValue);
 
-    return InkWell(
-      onTap: onToggle,
-      borderRadius: BorderRadius.circular(StrideTokens.radiusSm),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: StrideTokens.spaceMd,
-          vertical: StrideTokens.spaceMd,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Checkbox
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: Checkbox(
-                value: accepted,
-                onChanged: (_) => onToggle(),
-                activeColor: StrideTokens.accent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-            ),
-            const SizedBox(width: StrideTokens.spaceSm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Op pill + context name
-                  Row(
-                    children: [
-                      _OpPill(label: _opLabel(op.op), color: color),
-                      if (context2 != null) ...[
-                        const SizedBox(width: StrideTokens.spaceSm),
-                        Flexible(
-                          child: Text(
-                            context2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontFamily: AppTypography.fontSans,
-                              fontSize: StrideTokens.fs12,
-                              color: StrideTokens.muted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ],
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: InkWell(
+        onTap: enabled ? onToggle : null,
+        borderRadius: BorderRadius.circular(StrideTokens.radiusSm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: StrideTokens.spaceMd,
+            vertical: StrideTokens.spaceMd,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Checkbox
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Checkbox(
+                  value: accepted,
+                  onChanged: enabled ? (_) => onToggle() : null,
+                  activeColor: StrideTokens.accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                  // old → new
-                  if (oldSummary != null || newSummary != null) ...[
-                    const SizedBox(height: 4),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: StrideTokens.spaceSm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Op pill + context name
                     Row(
                       children: [
-                        if (oldSummary != null)
+                        _OpPill(label: _opLabel(op.op), color: color),
+                        if (context2 != null) ...[
+                          const SizedBox(width: StrideTokens.spaceSm),
                           Flexible(
                             child: Text(
-                              oldSummary,
+                              context2,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontFamily: AppTypography.fontSans,
-                                fontSize: StrideTokens.fs13,
+                                fontSize: StrideTokens.fs12,
                                 color: StrideTokens.muted,
-                                decoration: TextDecoration.lineThrough,
                               ),
                             ),
                           ),
-                        if (oldSummary != null && newSummary != null)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Icon(
-                              Icons.arrow_forward,
-                              size: 14,
-                              color: StrideTokens.muted,
-                            ),
-                          ),
-                        if (newSummary != null)
-                          Flexible(
-                            child: Text(
-                              newSummary,
-                              style: const TextStyle(
-                                fontFamily: AppTypography.fontSans,
-                                fontSize: StrideTokens.fs13,
-                                color: StrideTokens.fg,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
+                        ],
                       ],
                     ),
+                    // old → new
+                    if (oldSummary != null || newSummary != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          if (oldSummary != null)
+                            Flexible(
+                              child: Text(
+                                oldSummary,
+                                style: const TextStyle(
+                                  fontFamily: AppTypography.fontSans,
+                                  fontSize: StrideTokens.fs13,
+                                  color: StrideTokens.muted,
+                                  decoration: TextDecoration.lineThrough,
+                                ),
+                              ),
+                            ),
+                          if (oldSummary != null && newSummary != null)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 4),
+                              child: Icon(
+                                Icons.arrow_forward,
+                                size: 14,
+                                color: StrideTokens.muted,
+                              ),
+                            ),
+                          if (newSummary != null)
+                            Flexible(
+                              child: Text(
+                                newSummary,
+                                style: const TextStyle(
+                                  fontFamily: AppTypography.fontSans,
+                                  fontSize: StrideTokens.fs13,
+                                  color: StrideTokens.fg,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  static String? _summary(Map<String, dynamic>? value) {
+    if (value == null || value.isEmpty) return null;
+    if (value['summary'] != null) return value['summary'].toString();
+    if (value['value'] != null) return value['value'].toString();
+    return value.entries
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join(', ');
   }
 }
 

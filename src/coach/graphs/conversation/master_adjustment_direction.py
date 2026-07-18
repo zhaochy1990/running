@@ -10,7 +10,11 @@ import unicodedata
 from typing import Any, Literal
 
 from stride_core.master_plan import MasterPlan
-from stride_core.master_plan_diff import MasterPlanDiff, MasterPlanDiffOpKind
+from stride_core.master_plan_diff import (
+    MasterPlanDiff,
+    MasterPlanDiffOpKind,
+    normalise_target_race_time,
+)
 
 WeeklyVolumeDirection = Literal["increase", "decrease"]
 PhaseResizeDirection = Literal["extend", "compress"]
@@ -46,7 +50,38 @@ _KM_RANGE_RE = re.compile(
     r"(?P<high>\d+(?:\.\d+)?)\s*(?:公里|km)",
     re.IGNORECASE,
 )
+_KM_SINGLE_TARGET_RE = re.compile(
+    r"(?:调整到|改到|设为|降到|降至|减到|加到|提高到|提升到|降低到|到|至|"
+    r"set\s+to|target(?:\s+of)?|increase\s+to|decrease\s+to|reduce\s+to|lower\s+to)"
+    r"\s*(?P<value>\d+(?:\.\d+)?)\s*(?:公里|km)\b",
+    re.IGNORECASE,
+)
 _PERCENT_RE = re.compile(r"(?P<percentage>\d+(?:\.\d+)?)\s*%")
+_RACE_DATE_RE = re.compile(
+    r"(?:"
+    r"(?:目标赛|目标比赛|target\s+race|race).{0,16}?"
+    r"(?:延期|推迟|提前|挪到|改到|改为|改成|设为|调整到|到|至|postpone|move|shift|reschedule)"
+    r"|(?:延期|推迟|提前|postpone|move|shift|reschedule).{0,16}?"
+    r"(?:目标赛|目标比赛|target\s+race|race).{0,8}?(?:to|到|至)?"
+    r").{0,16}?(?P<date>20\d{2}-\d{1,2}-\d{1,2})",
+    re.IGNORECASE,
+)
+_RACE_TIME_TOKEN = (
+    r"(?:\d{1,2}:[0-5]\d(?::[0-5]\d)?|"
+    r"\d{1,2}\s*(?:小时|h)\s*[0-5]?\d\s*(?:分|m)"
+    r"(?:\s*[0-5]?\d\s*(?:秒|s))?)"
+)
+_RACE_TIME_TRANSITION_RE = re.compile(
+    rf"(?:调整到|调到|调整为|改到|改为|改成|设为|到|至|"
+    rf"set\s+to|change\s+to|to|target(?:\s+of)?)\s*"
+    rf"(?P<time>{_RACE_TIME_TOKEN})(?!\s*/\s*km)",
+    re.IGNORECASE,
+)
+_RACE_TIME_RE = re.compile(
+    r"(?:目标(?:成绩|时间)|完赛成绩|比赛成绩|target\s+time).{0,20}?"
+    rf"(?P<time>{_RACE_TIME_TOKEN})",
+    re.IGNORECASE,
+)
 _FOCUS_CUE_RE = re.compile(
     r"(?:训练重点|训练重心|重点)\s*(?:(?:调整|修改|改|设|换)?\s*(?:成|为|到)|是)\s*"
     r"|(?:更\s*)?(?:侧重|聚焦|专注(?:于)?|重点放在)\s*"
@@ -75,7 +110,7 @@ _PHASE_RESIZE_CONTEXT_RE = re.compile(
     re.IGNORECASE,
 )
 _PHASE_EXTEND_RE = re.compile(
-    r"(?:延长|拉长|多\s*(?:安排|加)|extend|lengthen|\badd\b)", re.IGNORECASE
+    r"(?:延长|拉长|多\s*(?:安排|加)|extend|lengthen)", re.IGNORECASE
 )
 _PHASE_COMPRESS_RE = re.compile(
     r"(?:缩短|压缩|少\s*(?:安排|减)|shorten|compress)", re.IGNORECASE
@@ -136,14 +171,28 @@ def requested_weekly_volume_direction(
 
 def requested_weekly_volume_range(request: str) -> tuple[float, float] | None:
     """Return the exact requested kilometre range, if one is unambiguous."""
+    if not re.search(
+        r"(?:加量|减量|周跑量|周量|跑量|训练量|里程|weekly\s+(?:distance|volume|mileage))",
+        request,
+        re.IGNORECASE,
+    ):
+        return None
     from_to = _FROM_TO_RANGE_RE.search(request)
     if from_to is not None:
         return float(from_to.group("new_low")), float(from_to.group("new_high"))
 
+    range_matches = list(_KM_RANGE_RE.finditer(request))
     matches = {
         (float(match.group("low")), float(match.group("high")))
-        for match in _KM_RANGE_RE.finditer(request)
+        for match in range_matches
     }
+    range_spans = [match.span() for match in range_matches]
+    single_targets = {
+        float(match.group("value"))
+        for match in _KM_SINGLE_TARGET_RE.finditer(request)
+        if not any(start <= match.start() and match.end() <= end for start, end in range_spans)
+    }
+    matches.update((value, value) for value in single_targets)
     if len(matches) != 1:
         return None
     return matches.pop()
@@ -382,6 +431,8 @@ def master_diff_matches_volume_request(diff: MasterPlanDiff, request: str) -> bo
     range_ops = [
         op for op in diff.ops if op.op == MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE
     ]
+    if (requested_range is not None or percentage is not None) and not range_ops:
+        return False
     for op in range_ops:
         old_low = _number(op.old_value, "weekly_distance_km_low")
         old_high = _number(op.old_value, "weekly_distance_km_high")
@@ -510,6 +561,79 @@ def master_diff_matches_phase_resize_request(
     return True
 
 
+def _requested_race_date(request: str) -> str | None:
+    matches: set[str] = set()
+    for match in _RACE_DATE_RE.finditer(request):
+        try:
+            year, month, day = (int(part) for part in match.group("date").split("-"))
+            matches.add(_date(year, month, day).isoformat())
+        except ValueError:
+            return None
+    return matches.pop() if len(matches) == 1 else None
+
+
+def _normalise_requested_race_time(raw: str) -> str:
+    raw = re.sub(r"\s+", "", raw.strip())
+    chinese = re.fullmatch(
+        r"(?P<hours>\d{1,2})(?:小时|h)(?P<minutes>[0-5]?\d)(?:分|m)"
+        r"(?:(?P<seconds>[0-5]?\d)(?:秒|s))?",
+        raw,
+        re.IGNORECASE,
+    )
+    if chinese is not None:
+        raw = (
+            f"{int(chinese.group('hours'))}:"
+            f"{int(chinese.group('minutes')):02d}:"
+            f"{int(chinese.group('seconds') or 0):02d}"
+        )
+    elif raw.count(":") == 1:
+        raw = f"{raw}:00"
+    return normalise_target_race_time(raw)
+
+
+def _requested_race_time(request: str) -> str | None:
+    transition_matches = list(_RACE_TIME_TRANSITION_RE.finditer(request))
+    source_matches = transition_matches or list(_RACE_TIME_RE.finditer(request))
+    matches: set[str] = set()
+    for match in source_matches:
+        try:
+            matches.add(_normalise_requested_race_time(match.group("time")))
+        except ValueError:
+            return None
+    return matches.pop() if len(matches) == 1 else None
+
+
+def master_diff_matches_target_race_request(diff: MasterPlanDiff, request: str) -> bool:
+    """Require atomic target-race ops to preserve explicit date/time requests."""
+    requested_date = _requested_race_date(request)
+    requested_time = _requested_race_time(request)
+    if requested_date is None and requested_time is None:
+        return True
+
+    if requested_date is not None and requested_time is not None:
+        return False
+    if len(diff.ops) != 1:
+        return False
+
+    if requested_date is not None:
+        ops = [op for op in diff.ops if op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE]
+        if len(ops) != 1:
+            return False
+        patch_date = (ops[0].spec_patch or {}).get("race_date")
+        if patch_date != requested_date:
+            return False
+
+    if requested_time is not None:
+        ops = [op for op in diff.ops if op.op == MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME]
+        if len(ops) != 1:
+            return False
+        patch_time = (ops[0].spec_patch or {}).get("target_time")
+        if patch_time != requested_time:
+            return False
+
+    return True
+
+
 def master_diff_matches_adjustment_request(
     diff: MasterPlanDiff, request: str, *, plan: MasterPlan | None = None
 ) -> bool:
@@ -518,6 +642,7 @@ def master_diff_matches_adjustment_request(
         master_diff_matches_volume_request(diff, request)
         and master_diff_matches_focus_request(diff, request, plan=plan)
         and master_diff_matches_phase_resize_request(diff, request, plan=plan)
+        and master_diff_matches_target_race_request(diff, request)
     )
 
 

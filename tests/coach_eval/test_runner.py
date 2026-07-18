@@ -1408,6 +1408,15 @@ def test_llm_health_check_must_run_by_itself(capsys, tmp_path):
     assert "Use --llm-health-check by itself" in err
 
 
+def test_conversation_rejects_live_local_db_mode(capsys) -> None:
+    from scripts.eval_coach import EXIT_FAIL, main
+
+    assert main(["--scope", "s1", "--conversation", "--mode", "live_local_db"]) == EXIT_FAIL
+
+    err = capsys.readouterr().err
+    assert "--conversation supports only --mode frozen_fixture" in err
+
+
 def test_resume_report_rejects_incompatible_cli_modes(capsys, tmp_path):
     from scripts.eval_coach import EXIT_FAIL, main
 

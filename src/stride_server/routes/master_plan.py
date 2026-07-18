@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 import threading
 from datetime import date as date_cls, datetime, timezone, timedelta
 from typing import Any
@@ -39,17 +38,25 @@ from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
+    apply_master_plan_diff,
 )
 from stride_core.timefmt import today_shanghai
 
 from ..bearer import require_bearer
-from ..content_store import read_json
+from ..content_store import read_json, write_json
 from ..deps import get_db
 from .. import job_runner
 from ..job_runner import JobStatus, STAGE_LABEL_MAP
 from .. import llm_client as _llm_client_mod
 from ..llm_client import LLMClient, LLMError, LLMUnavailable
 from .. import master_plan_generator
+from ..master_plan_apply import (
+    accepted_master_diff,
+    accepted_master_op_ids,
+    apply_active_master_diff,
+    master_plan_apply_lock,
+    require_active_master_plan,
+)
 from ..master_plan_store import get_master_plan_store
 from ..coach_adapters.orchestrator.season_plan import (
     clarification_for_season_plan_task,
@@ -58,37 +65,6 @@ from ..coach_adapters.orchestrator.season_plan import (
 from ..coach_runtime import get_generator_llm
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# In-memory pending master-plan diffs (TTL 900s)
-# ---------------------------------------------------------------------------
-
-_PENDING_MP_DIFFS: dict[tuple[str, str, str], tuple[MasterPlanDiff, float]] = {}
-# key: (user_id, plan_id, diff_id)   value: (diff, mono_time)
-_MP_DIFF_TTL = 900  # 15 minutes
-
-
-def _mp_diff_cleanup() -> None:
-    now = time.monotonic()
-    expired = [k for k, (_, ts) in _PENDING_MP_DIFFS.items() if now - ts > _MP_DIFF_TTL]
-    for k in expired:
-        del _PENDING_MP_DIFFS[k]
-
-
-def _mp_diff_store(user_id: str, plan_id: str, diff: MasterPlanDiff) -> None:
-    _mp_diff_cleanup()
-    _PENDING_MP_DIFFS[(user_id, plan_id, diff.diff_id)] = (diff, time.monotonic())
-
-
-def _mp_diff_get(user_id: str, plan_id: str, diff_id: str) -> MasterPlanDiff | None:
-    entry = _PENDING_MP_DIFFS.get((user_id, plan_id, diff_id))
-    if entry is None:
-        return None
-    diff, ts = entry
-    if time.monotonic() - ts > _MP_DIFF_TTL:
-        del _PENDING_MP_DIFFS[(user_id, plan_id, diff_id)]
-        return None
-    return diff
 
 router = APIRouter()
 
@@ -455,9 +431,7 @@ class ReviewMessagesRequest(BaseModel):
 
 
 class ReviewApplyRequest(BaseModel):
-    diff: MasterPlanDiff | None = None
-    # Back-compat for older clients/tests that apply a server-held pending diff.
-    diff_id: str | None = None
+    diff: MasterPlanDiff
     accepted_op_ids: list[str]
     change_reason: str = ""
 
@@ -540,8 +514,6 @@ def review_messages(
         created_at=created_at,
     )
 
-    _mp_diff_store(user_id, plan_id, diff)
-
     return {
         "ai_response": ai_response,
         "diff": diff.model_dump(),
@@ -581,16 +553,6 @@ def review_apply(
         )
 
     diff = body.diff
-    if diff is None and body.diff_id:
-        diff = _mp_diff_get(user_id, plan_id, body.diff_id)
-    if diff is None:
-        detail = "diff body is required"
-        if body.diff_id:
-            detail = f"Diff '{body.diff_id}' not found or expired (TTL={_MP_DIFF_TTL}s)"
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=detail,
-        )
     if diff.plan_id != plan_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -611,9 +573,14 @@ def review_apply(
             detail="目标比赛或阶段边界操作只能通过 Coach 原子 apply 接口执行",
         )
 
-    # Filter to known op ids; silently skip unknowns (fault-tolerant)
-    known_ids = {op.id for op in diff.ops}
-    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
+    accepted_op_ids = accepted_master_op_ids(diff, body.accepted_op_ids)
+    selected_diff = accepted_master_diff(diff, accepted_op_ids)
+    violations = validate_master_diff(plan, selected_diff)
+    if violations:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="总纲调整结构非法：" + "；".join(violations),
+        )
     applied = len(accepted_op_ids)
 
     if applied > 0:
@@ -621,9 +588,6 @@ def review_apply(
         store.save_plan(updated_plan)
     else:
         updated_plan = plan
-
-    # Clean up pending diff after successful apply
-    _PENDING_MP_DIFFS.pop((user_id, plan_id, diff.diff_id), None)
 
     return {
         "applied": applied,
@@ -1000,7 +964,7 @@ class AdjustMessagesRequest(BaseModel):
 
 
 class AdjustApplyRequest(BaseModel):
-    diff_id: str
+    diff: MasterPlanDiff | None = None
     accepted_op_ids: list[str]
     change_reason: str = ""
 
@@ -1150,6 +1114,16 @@ def adjust_messages(
 ) -> dict[str, Any]:
     """Run active-plan adjustment through the canonical season specialist."""
     user_id: str = payload["sub"]
+    store = get_master_plan_store()
+    plan = require_active_master_plan(
+        store,
+        user_id,
+        plan_id,
+        inactive_detail=(
+            "该总纲尚未确认（status=draft）。"
+            "如需调整草稿总纲，请使用 review-chat 接口。"
+        ),
+    )
     conversation_window = [
         Turn(role=item["role"], content=str(item["content"]))
         for item in body.history
@@ -1170,27 +1144,6 @@ def adjust_messages(
             "assessment": None,
             "diff": None,
         }
-
-    store = get_master_plan_store()
-    plan = store.get_plan(user_id, plan_id)
-    if plan is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Master plan '{plan_id}' not found",
-        )
-    if plan.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: plan belongs to a different user",
-        )
-    if plan.status != MasterPlanStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "该总纲尚未确认（status=draft）。"
-                "如需调整草稿总纲，请使用 review-chat 接口。"
-            ),
-        )
 
     observed_state: dict[str, Any] = {}
 
@@ -1255,9 +1208,6 @@ def adjust_messages(
         # enforces this, but no legacy response may surface or cache a diff
         # without the matching reasonable assessment for this effective request.
         proposals = []
-    for proposal in proposals:
-        _mp_diff_store(user_id, plan_id, proposal)
-
     if proposals:
         stage = "proposal"
     elif verdict == "needs_clarification":
@@ -1295,77 +1245,47 @@ def adjust_apply(
     user_id: str = payload["sub"]
     store = get_master_plan_store()
 
-    plan = store.get_plan(user_id, plan_id)
-    if plan is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Master plan '{plan_id}' not found",
-        )
-    if plan.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Access denied: plan belongs to a different user",
-        )
-    if plan.status != MasterPlanStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="该总纲尚未确认（status=draft），不能 apply adjust diff",
+    with master_plan_apply_lock(user_id, plan_id):
+        plan = require_active_master_plan(
+            store,
+            user_id,
+            plan_id,
+            inactive_detail="该总纲尚未确认（status=draft），不能 apply adjust diff",
         )
 
-    diff = _mp_diff_get(user_id, plan_id, body.diff_id)
-    if diff is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Diff '{body.diff_id}' not found or expired (TTL={_MP_DIFF_TTL}s)",
-        )
-
-    # Filter to known op ids
-    known_ids = {op.id for op in diff.ops}
-    accepted_op_ids = [oid for oid in body.accepted_op_ids if oid in known_ids]
-    applied = len(accepted_op_ids)
-
-    # Build affected_weeks BEFORE applying (while plan still has original phase dates)
-    accepted_ops = [op for op in diff.ops if op.id in set(accepted_op_ids)]
-    affected_weeks = _compute_affected_weeks(accepted_ops, plan)
-
-    if applied > 0:
-        accepted_diff = diff.model_copy(update={"ops": accepted_ops})
-        violations = validate_master_diff(plan, accepted_diff)
-        if violations:
+        diff = body.diff
+        if diff is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="赛季调整结构非法：" + "；".join(violations),
+                detail="diff body is required",
             )
-        from stride_core.master_plan_diff import apply_master_plan_diff as _apply_diff
+        if diff.plan_id != plan_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"diff plan_id {diff.plan_id!r} does not match "
+                    f"path plan_id {plan_id!r}"
+                ),
+            )
 
-        # Store protocol bridge: wrap store to match master_plan_diff.MasterPlanStore protocol
-        class _StoreBridge:
-            def __init__(self, inner, uid: str):
-                self._inner = inner
-                self._uid = uid
-
-            def get_plan(self, pid: str):
-                return self._inner.get_plan(self._uid, pid)
-
-            def save_plan(self, p):
-                return self._inner.save_plan(p)
-
-            def add_version(self, v):
-                return self._inner.save_version(v)
-
-        bridge = _StoreBridge(store, user_id)
-        updated_plan = _apply_diff(
-            bridge,
-            plan_id,
-            diff,
-            accepted_op_ids,
-            body.change_reason,
+        accepted_op_ids = accepted_master_op_ids(diff, body.accepted_op_ids)
+        accepted_ops = [op for op in diff.ops if op.id in set(accepted_op_ids)]
+        affected_weeks = _compute_affected_weeks(accepted_ops, plan)
+        updated_plan, accepted_op_ids = apply_active_master_diff(
+            store=store,
+            user_id=user_id,
+            plan_id=plan_id,
+            plan=plan,
+            diff=diff,
+            requested_op_ids=body.accepted_op_ids,
+            change_reason=body.change_reason,
+            read_json_func=read_json,
+            write_json_func=write_json,
+            validate_diff_func=validate_master_diff,
+            apply_diff_func=apply_master_plan_diff,
+            logger=logger,
         )
-    else:
-        updated_plan = plan
-
-    # Clean up pending diff after successful apply
-    _PENDING_MP_DIFFS.pop((user_id, plan_id, body.diff_id), None)
+        applied = len(accepted_op_ids)
 
     return {
         "plan_id": plan_id,

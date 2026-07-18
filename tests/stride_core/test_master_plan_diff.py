@@ -557,6 +557,50 @@ def _plan_with_skeleton() -> MasterPlan:
     )
 
 
+def _make_target_reschedule_plan(
+    *,
+    taper_phase_type: PhaseType | None = PhaseType.TAPER,
+    taper_name: str = "调整期",
+    taper_focus: str = "赛前减量",
+    extra_milestones: list[Milestone] | None = None,
+) -> tuple[MasterPlan, Phase, Phase, Milestone]:
+    plan = _plan_with_skeleton()
+    extras = list(extra_milestones or [])
+    build = plan.phases[0].model_copy(
+        update={
+            "end_date": "2026-11-01" if taper_phase_type is None else "2026-10-31",
+            "milestone_ids": [item.id for item in extras if item.phase_id == "phase-1"],
+        }
+    )
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "phase-taper",
+            "name": taper_name,
+            "focus": taper_focus,
+            "phase_type": taper_phase_type,
+            "start_date": "2026-11-02" if taper_phase_type is None else "2026-11-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": ["race"],
+        }
+    )
+    race = Milestone(
+        id="race",
+        type=MilestoneType.RACE,
+        date="2026-11-15",
+        phase_id=taper.id,
+        target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "end_date": "2026-11-15",
+            "goal": plan.goal.model_copy(update={"race_date": "2026-11-15"}),
+            "phases": [build, taper],
+            "milestones": [*extras, race],
+        }
+    )
+    return plan, build, taper, race
+
+
 def test_apply_diff_resize_phase_clears_weekly_key_sessions():
     """RESIZE_PHASE invalidates skeleton week dates — must clear."""
     plan = _plan_with_skeleton()
@@ -749,6 +793,127 @@ def test_apply_atomic_target_race_reschedule_updates_plan_and_clears_skeleton():
     assert result.weeks == []
     assert result.weekly_key_sessions == []
     assert result.training_load_projection is None
+
+
+def test_build_target_race_reschedule_accepts_legacy_final_taper_without_phase_type() -> None:
+    from datetime import date
+
+    from stride_core.master_plan_diff import build_target_race_reschedule_patch
+
+    plan, build, taper, race = _make_target_reschedule_plan(
+        taper_phase_type=None,
+        taper_name="赛前调整期",
+        taper_focus="赛前减量与比赛准备",
+    )
+
+    patch = build_target_race_reschedule_patch(
+        plan, race.id, "2026-11-29", as_of=date(2026, 10, 1)
+    )
+
+    assert patch["race_date"] == "2026-11-29"
+    assert patch["phase_updates"] == [
+        {"phase_id": build.id, "end_date": "2026-11-15"},
+        {
+            "phase_id": taper.id,
+            "start_date": "2026-11-16",
+            "end_date": "2026-11-29",
+        },
+    ]
+
+
+def test_build_target_race_reschedule_accepts_legacy_short_english_taper_semantics() -> None:
+    from datetime import date
+
+    from stride_core.master_plan_diff import build_target_race_reschedule_patch
+
+    plan, _, _, race = _make_target_reschedule_plan(
+        taper_phase_type=None,
+        taper_name="Final taper",
+        taper_focus="Race-day freshness",
+    )
+
+    patch = build_target_race_reschedule_patch(
+        plan, race.id, "2026-11-29", as_of=date(2026, 10, 1)
+    )
+
+    assert patch["race_date"] == "2026-11-29"
+
+
+def test_build_target_race_reschedule_rejects_long_legacy_generic_adjustment_phase() -> None:
+    from datetime import date
+
+    from stride_core.master_plan_diff import build_target_race_reschedule_patch
+
+    plan, _, taper, race = _make_target_reschedule_plan(
+        taper_phase_type=None,
+        taper_name="调整期",
+        taper_focus="调整训练结构",
+    )
+    long_adjustment = taper.model_copy(update={"start_date": "2026-10-05"})
+    preceding = plan.phases[0].model_copy(update={"end_date": "2026-10-04"})
+    plan = plan.model_copy(update={"phases": [preceding, long_adjustment]})
+
+    with pytest.raises(ValueError, match="final taper phase"):
+        build_target_race_reschedule_patch(
+            plan, race.id, "2026-11-29", as_of=date(2026, 10, 1)
+        )
+
+
+def test_build_target_race_reschedule_rejects_detached_target_milestone() -> None:
+    from datetime import date
+
+    from stride_core.master_plan_diff import build_target_race_reschedule_patch
+
+    plan, _, taper, race = _make_target_reschedule_plan()
+    detached_taper = taper.model_copy(update={"milestone_ids": []})
+    plan = plan.model_copy(update={"phases": [plan.phases[0], detached_taper]})
+
+    with pytest.raises(ValueError, match="not attached to its owning phase"):
+        build_target_race_reschedule_patch(
+            plan, race.id, "2026-11-29", as_of=date(2026, 10, 1)
+        )
+
+
+def test_build_target_race_reschedule_rejects_non_target_milestone_outside_proposed_phase() -> None:
+    from datetime import date
+
+    from stride_core.master_plan_diff import build_target_race_reschedule_patch
+
+    tuneup = Milestone(
+        id="tuneup",
+        type=MilestoneType.LONG_RUN,
+        date="2026-10-25",
+        phase_id="phase-1",
+        target="30K steady",
+    )
+    plan, _, _, race = _make_target_reschedule_plan(extra_milestones=[tuneup])
+
+    with pytest.raises(ValueError, match="milestone .* outside its owning proposed phase"):
+        build_target_race_reschedule_patch(
+            plan, race.id, "2026-11-05", as_of=date(2026, 10, 1)
+        )
+
+
+def test_build_target_race_reschedule_checks_target_milestone_using_proposed_date() -> None:
+    from datetime import date
+
+    from stride_core.master_plan_diff import build_target_race_reschedule_patch
+
+    plan, build, taper, race = _make_target_reschedule_plan()
+
+    patch = build_target_race_reschedule_patch(
+        plan, race.id, "2026-11-05", as_of=date(2026, 10, 1)
+    )
+
+    assert patch["milestone_date"] == "2026-11-05"
+    assert patch["phase_updates"] == [
+        {"phase_id": build.id, "end_date": "2026-10-21"},
+        {
+            "phase_id": taper.id,
+            "start_date": "2026-10-22",
+            "end_date": "2026-11-05",
+        },
+    ]
 
 
 def test_apply_rejects_target_race_reschedule_mixed_with_another_op():

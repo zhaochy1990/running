@@ -269,6 +269,8 @@ def _contract_violations(artifact: dict, expected: dict) -> list[str]:
             violations.append(f"forbidden tool succeeded: {forbidden}")
 
     proposal_expectation = expected.get("proposal") or {}
+    if proposal_expectation and not proposals:
+        violations.append("expected proposal was not returned")
     if proposal_expectation and proposals:
         proposal = proposals[0]
         ops = proposal.get("ops") or []

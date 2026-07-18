@@ -82,7 +82,7 @@ def build_orchestrator_graph(
                     "active_target": (
                         preflight.active_target.model_dump()
                         if preflight.active_target is not None
-                        else state.get("active_target")
+                        else None
                     ),
                     "turn_response": preflight.model_dump(),
                     "injected_memories": [],

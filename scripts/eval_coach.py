@@ -330,6 +330,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.conversation and args.scope != "s1":
         print("--conversation currently supports only --scope s1", file=sys.stderr)
         return EXIT_FAIL
+    if args.conversation and args.mode != "frozen_fixture":
+        print(
+            "--conversation supports only --mode frozen_fixture; "
+            "live_local_db conversation runner is not implemented",
+            file=sys.stderr,
+        )
+        return EXIT_FAIL
     if args.conversation and (
         args.judge_artifact is not None
         or args.resume_report is not None

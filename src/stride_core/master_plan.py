@@ -66,6 +66,27 @@ class TargetDistance(str, Enum):
     TRAIL  = "trail"
 
 
+_LEGACY_TAPER_MARKERS = ("taper", "race prep", "减量", "调整", "比赛准备")
+_MAX_LEGACY_TAPER_DAYS = 14
+
+
+def is_short_taper_phase(phase: object) -> bool:
+    """Recognize explicit tapers and legacy inferred tapers up to two weeks."""
+    phase_type = getattr(phase, "phase_type", None)
+    if phase_type is not None:
+        return phase_type == PhaseType.TAPER
+    label = f"{getattr(phase, 'name', '')} {getattr(phase, 'focus', '')}".lower()
+    if not any(marker in label for marker in _LEGACY_TAPER_MARKERS):
+        return False
+    try:
+        start = _date.fromisoformat(getattr(phase, "start_date", ""))
+        end = _date.fromisoformat(getattr(phase, "end_date", ""))
+    except (TypeError, ValueError):
+        return False
+    duration_days = (end - start).days + 1
+    return 0 < duration_days <= _MAX_LEGACY_TAPER_DAYS
+
+
 # ---------------------------------------------------------------------------
 # Component models
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from coach.graphs.conversation.graph import build_conversation_graph
 from coach.graphs.conversation.master_adjustment_direction import (
@@ -17,6 +17,8 @@ from coach.graphs.conversation.master_adjustment_direction import (
     requested_phase_resize_weeks,
     requested_phase_type_for_focus,
     requested_weekly_volume_direction,
+    requested_weekly_volume_range,
+    master_diff_matches_adjustment_request,
 )
 from coach.schemas import ToolResult
 from stride_core.master_plan_diff import MasterPlanDiff
@@ -38,6 +40,29 @@ def test_requested_weekly_volume_direction_covers_natural_phrasing(
     user_text: str, expected: str
 ) -> None:
     assert requested_weekly_volume_direction(user_text) == expected
+
+
+def test_single_km_target_is_parsed_as_exact_range() -> None:
+    assert requested_weekly_volume_range("把基础期周跑量降到 45 公里") == (45.0, 45.0)
+
+
+def test_km_range_is_not_made_ambiguous_by_single_target_suffix() -> None:
+    assert requested_weekly_volume_range("把基础期周跑量调整到 40 到 60 公里") == (
+        40.0,
+        60.0,
+    )
+
+
+def test_exact_single_km_target_requires_weekly_range_op() -> None:
+    diff = MasterPlanDiff.model_validate({
+        "diff_id": "not-weekly-range",
+        "plan_id": "plan-1",
+        "ops": [{"id": "op-1", "op": "remove_milestone", "milestone_id": "m1"}],
+        "ai_explanation": "不应匹配单公里周跑量目标",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+
+    assert not master_diff_matches_volume_request(diff, "把基础期周跑量降到 45 公里")
 
 
 def test_exact_range_request_rejects_a_different_same_direction_range() -> None:
@@ -96,6 +121,128 @@ def test_percentage_request_uses_half_up_rounding_at_one_decimal() -> None:
     })
 
     assert master_diff_matches_volume_request(diff, "专项期跑量提高 5%")
+
+
+def test_focus_request_with_target_pace_is_not_treated_as_race_time_change() -> None:
+    diff = MasterPlanDiff.model_validate({
+        "diff_id": "focus-target-pace",
+        "plan_id": "plan-1",
+        "ops": [{
+            "id": "op-1",
+            "op": "replace_phase_focus",
+            "phase_id": "phase-build",
+            "new_value": {"focus": "目标配速 4:30/km"},
+            "spec_patch": {"focus": "目标配速 4:30/km"},
+        }],
+        "ai_explanation": "专项期重点改为目标配速",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+
+    assert master_diff_matches_adjustment_request(
+        diff, "把专项期训练重点改为目标配速 4:30/km"
+    )
+
+
+def test_target_race_date_request_requires_exact_atomic_reschedule() -> None:
+    matching = MasterPlanDiff.model_validate({
+        "diff_id": "race-date-ok",
+        "plan_id": "plan-1",
+        "ops": [{
+            "id": "op-1",
+            "op": "reschedule_target_race",
+            "milestone_id": "race",
+            "spec_patch": {"race_date": "2026-11-08"},
+        }],
+        "ai_explanation": "目标比赛延期到 2026-11-08",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+    wrong = matching.model_copy(
+        update={
+            "diff_id": "race-date-wrong",
+            "ops": [
+                matching.ops[0].model_copy(
+                    update={"spec_patch": {"race_date": "2026-11-01"}}
+                )
+            ],
+        }
+    )
+
+    assert master_diff_matches_adjustment_request(
+        matching, "目标比赛延期到 2026-11-08，请把计划顺延"
+    )
+    assert master_diff_matches_adjustment_request(
+        matching, "目标比赛改成 2026-11-08，请把计划顺延"
+    )
+    assert not master_diff_matches_adjustment_request(
+        wrong, "目标比赛延期到 2026-11-08，请把计划顺延"
+    )
+
+
+def test_target_race_date_and_time_request_fails_closed_for_atomic_contract() -> None:
+    combined = MasterPlanDiff.model_validate({
+        "diff_id": "race-date-time-combined",
+        "plan_id": "plan-1",
+        "ops": [
+            {
+                "id": "op-1",
+                "op": "reschedule_target_race",
+                "milestone_id": "race",
+                "spec_patch": {"race_date": "2026-11-08"},
+            },
+            {
+                "id": "op-2",
+                "op": "update_target_race_time",
+                "milestone_id": "race",
+                "spec_patch": {"target_time": "3:10:00"},
+            },
+        ],
+        "ai_explanation": "目标比赛延期到 2026-11-08，成绩改为 3:10:00",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+
+    assert not master_diff_matches_adjustment_request(
+        combined, "目标比赛延期到 2026-11-08，并把目标成绩调整到 3:10:00"
+    )
+
+
+def test_target_race_time_request_requires_exact_atomic_time_update() -> None:
+    matching = MasterPlanDiff.model_validate({
+        "diff_id": "race-time-ok",
+        "plan_id": "plan-1",
+        "ops": [{
+            "id": "op-1",
+            "op": "update_target_race_time",
+            "milestone_id": "race",
+            "spec_patch": {"target_time": "3:10:00"},
+        }],
+        "ai_explanation": "目标成绩改为 3:10:00",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+    generic = MasterPlanDiff.model_validate({
+        "diff_id": "race-time-generic",
+        "plan_id": "plan-1",
+        "ops": [{
+            "id": "op-1",
+            "op": "replace_milestone_target",
+            "milestone_id": "race",
+            "spec_patch": {"target": "全马 3:10:00"},
+        }],
+        "ai_explanation": "目标成绩改为 3:10:00",
+        "created_at": "2026-07-16T00:00:00Z",
+    })
+
+    assert master_diff_matches_adjustment_request(
+        matching, "把目标马拉松完赛成绩调整到 3:10:00"
+    )
+    assert master_diff_matches_adjustment_request(
+        matching, "把目标马拉松完赛成绩从 3:15:00 改为 3:10:00"
+    )
+    assert master_diff_matches_adjustment_request(
+        matching, "把目标马拉松完赛成绩调整到 3小时10分"
+    )
+    assert not master_diff_matches_adjustment_request(
+        generic, "把目标马拉松完赛成绩调整到 3:10:00"
+    )
 
 
 def test_conflicting_percentages_fail_closed() -> None:
@@ -236,6 +383,14 @@ def test_phase_resize_request_fails_closed_without_one_whole_week_delta(
     user_text: str,
 ) -> None:
     assert requested_phase_resize_weeks(user_text) is None
+
+
+def test_english_add_focus_is_not_parsed_as_phase_resize() -> None:
+    request = "add focus on hill strength to the base phase"
+
+    assert requested_phase_focus(request) == "hill strength to the base phase"
+    assert requested_phase_resize_direction(request) is None
+    assert requested_phase_resize_weeks(request) is None
 
 
 def test_phase_resize_diff_requires_atomic_contiguous_exact_boundary_move() -> None:
@@ -431,6 +586,7 @@ def _invoke(
             "plan_id": "plan-1",
             "consulted_tools": consulted_tools or [],
             "master_adjustment_request": tracked_request or request,
+            "master_adjustment_plan_id": "plan-1",
             "master_adjustment_assessment": assessment,
             "last_diff": None,
             "iteration": 0,
@@ -990,3 +1146,271 @@ def test_phase_resize_draft_requires_exact_current_request_weeks() -> None:
     assert toolkit.extend_phase.calls == []
     assert state.get("last_diff") is None
     assert state["tool_trace"][-1]["reason"] == "phase_resize_request_gate"
+
+
+def test_stale_last_diff_is_cleared_when_request_changes() -> None:
+    toolkit = _toolkit()
+    llm = _ScriptedLLM([AIMessage(content="我需要重新评估这个新请求。")])
+    graph = build_conversation_graph(
+        toolkit=toolkit, llm=llm, checkpointer=None, scope="master_chat"
+    )
+
+    state = graph.invoke(
+        {
+            "history": [HumanMessage(content="把专项期周跑量提高 10%")],
+            "scope": "master_chat",
+            "user_id": "u1",
+            "plan_id": "plan-1",
+            "consulted_tools": [
+                "get_master_plan_current",
+                "get_health_snapshot",
+                "get_pmc_series",
+                "estimate_master_plan_load",
+            ],
+            "master_adjustment_request": "把基础期延长两周",
+            "master_adjustment_plan_id": "old-plan",
+            "master_adjustment_assessment": {
+                "adjustment_request": "把基础期延长两周",
+                "verdict": "reasonable",
+                "rationale": "旧请求合理",
+            },
+            "last_diff": {"diff_id": "old"},
+            "iteration": 0,
+        },
+        config={},
+    )
+
+    assert state.get("last_diff") is None
+    assert state.get("consulted_tools") == []
+    assert state.get("master_adjustment_plan_id") == "plan-1"
+    assert state.get("master_adjustment_assessment") is None
+
+
+def test_missing_tracked_plan_id_does_not_reuse_legacy_master_cache() -> None:
+    request = "把基础期延长两周"
+    toolkit = _toolkit()
+    llm = _ScriptedLLM([AIMessage(content="我需要重新读取当前计划数据。")])
+    graph = build_conversation_graph(
+        toolkit=toolkit, llm=llm, checkpointer=None, scope="master_chat"
+    )
+
+    state = graph.invoke(
+        {
+            "history": [HumanMessage(content=request)],
+            "scope": "master_chat",
+            "user_id": "u1",
+            "plan_id": "plan-1",
+            "consulted_tools": [
+                "get_master_plan_current",
+                "get_health_snapshot",
+                "get_pmc_series",
+                "estimate_master_plan_load",
+            ],
+            "master_adjustment_request": request,
+            "master_adjustment_assessment": {
+                "adjustment_request": request,
+                "verdict": "reasonable",
+                "rationale": "legacy checkpoint lacks plan_id",
+            },
+            "last_diff": {"diff_id": "old"},
+            "iteration": 0,
+        },
+        config={},
+    )
+
+    assert state.get("last_diff") is None
+    assert state.get("consulted_tools") == []
+    assert state.get("master_adjustment_plan_id") == "plan-1"
+    assert state.get("master_adjustment_assessment") is None
+
+
+def test_plan_scoped_cached_request_is_cleared_when_plan_changes() -> None:
+    request = "把基础期延长两周"
+    toolkit = _toolkit()
+    llm = _ScriptedLLM([AIMessage(content="我需要为当前赛季计划重新读取数据。")])
+    graph = build_conversation_graph(
+        toolkit=toolkit, llm=llm, checkpointer=None, scope="master_chat"
+    )
+
+    state = graph.invoke(
+        {
+            "history": [HumanMessage(content=request)],
+            "scope": "master_chat",
+            "user_id": "u1",
+            "plan_id": "new-plan",
+            "consulted_tools": [
+                "get_master_plan_current",
+                "get_health_snapshot",
+                "get_pmc_series",
+                "estimate_master_plan_load",
+            ],
+            "master_adjustment_request": request,
+            "master_adjustment_plan_id": "old-plan",
+            "master_adjustment_assessment": {
+                "adjustment_request": request,
+                "verdict": "reasonable",
+                "rationale": "旧计划下合理",
+            },
+            "last_diff": {"diff_id": "old"},
+            "iteration": 0,
+        },
+        config={},
+    )
+
+    assert state.get("last_diff") is None
+    assert state.get("consulted_tools") == []
+    assert state.get("master_adjustment_plan_id") == "new-plan"
+    assert state.get("master_adjustment_assessment") is None
+
+
+def test_master_fidelity_gate_does_not_block_week_chat_draft_payload() -> None:
+    request = "把周二轻松跑挪到周三"
+
+    class _ShiftSession:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        def __call__(
+            self,
+            *,
+            folder: str,
+            date: str,
+            to_date: str,
+            session_index: int = 0,
+        ) -> ToolResult:
+            self.calls.append(
+                {
+                    "folder": folder,
+                    "date": date,
+                    "to_date": to_date,
+                    "session_index": session_index,
+                }
+            )
+            return ToolResult(
+                ok=True,
+                data={
+                    "diff_id": "week-diff",
+                    "folder": folder,
+                    "ops": [],
+                    "ai_explanation": "移动本周训练",
+                    "created_at": "2026-07-16T00:00:00Z",
+                },
+            )
+
+    toolkit = FakeToolkit()
+    toolkit.shift_session = _ShiftSession()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                (
+                    "shift_session",
+                    {
+                        "folder": "2026-07-13_07-19",
+                        "date": "2026-07-14",
+                        "to_date": "2026-07-15",
+                        "session_index": 0,
+                    },
+                )
+            )
+        ]
+    )
+    graph = build_conversation_graph(
+        toolkit=toolkit, llm=llm, checkpointer=None, scope="week_chat"
+    )
+
+    state = graph.invoke(
+        {
+            "history": [HumanMessage(content=request)],
+            "scope": "week_chat",
+            "user_id": "u1",
+            "folder": "2026-07-13_07-19",
+            "consulted_tools": [],
+            "tool_trace": [],
+            "last_diff": None,
+            "iteration": 0,
+        },
+        config={},
+    )
+
+    assert state["last_diff"]["diff_id"] == "week-diff"
+    assert state["tool_trace"][-1] == {"name": "shift_session", "outcome": "ok"}
+
+
+def test_old_mandatory_read_failure_does_not_terminate_later_retry() -> None:
+    toolkit = _toolkit()
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(("get_health_snapshot", {})),
+            AIMessage(content="这次读取成功，下一步继续评估。"),
+        ]
+    )
+    graph = build_conversation_graph(
+        toolkit=toolkit, llm=llm, checkpointer=None, scope="master_chat"
+    )
+
+    state = graph.invoke(
+        {
+            "history": [HumanMessage(content="把基础期延长两周")],
+            "scope": "master_chat",
+            "user_id": "u1",
+            "plan_id": "plan-1",
+            "consulted_tools": [],
+            "tool_trace": [
+                {
+                    "name": "get_health_snapshot",
+                    "outcome": "error",
+                    "reason": "mandatory_read_failed",
+                }
+            ],
+            "master_adjustment_request": "把基础期延长两周",
+            "master_adjustment_plan_id": "plan-1",
+            "master_mandatory_read_failed": True,
+            "last_diff": None,
+            "iteration": 0,
+        },
+        config={},
+    )
+
+    assert len(llm.invocations) == 2
+    assert state.get("master_mandatory_read_failed") is False
+    assert state["tool_trace"][-1] == {"name": "get_health_snapshot", "outcome": "ok"}
+
+
+def test_failed_mandatory_read_stops_without_assessment_retry_loop() -> None:
+    toolkit = _toolkit()
+    failing_health = FakeToolkit().get_health_snapshot
+    failing_health.set_result(ToolResult(ok=False, errors=["health unavailable"]))
+    toolkit.get_health_snapshot = failing_health
+    llm = _ScriptedLLM(
+        [
+            _tool_calls(
+                ("get_health_snapshot", {}),
+                (
+                    "assess_master_adjustment",
+                    {
+                        "adjustment_request": "把基础期延长两周",
+                        "verdict": "reasonable",
+                        "rationale": "missing health",
+                    },
+                ),
+            ),
+            AIMessage(content="无法读取健康数据。"),
+        ]
+    )
+
+    state = _invoke(llm, toolkit, request="把基础期延长两周")
+
+    assert state.get("master_adjustment_assessment") is None
+    assert state.get("last_diff") is None
+    assert state["tool_trace"][-2] == {
+        "name": "get_health_snapshot",
+        "outcome": "error",
+        "reason": "mandatory_read_failed",
+    }
+    assert state["tool_trace"][-1] == {
+        "name": "assess_master_adjustment",
+        "outcome": "blocked",
+        "reason": "mandatory_read_failed",
+    }
+    assert len([msg for msg in state["history"] if isinstance(msg, ToolMessage)]) == 2
+    assert len(llm.invocations) == 1

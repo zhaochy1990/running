@@ -383,11 +383,36 @@ def test_orchestrator_preflight_does_not_capture_read_only_master_question() -> 
     assert preflight_season_plan_turn("你觉得我需要减少周跑量吗？", []) is None
 
 
+def test_orchestrator_preflight_does_not_capture_weekly_only_adjustment() -> None:
+    assert preflight_season_plan_turn("本周周跑量降低 10%", []) is None
+    assert preflight_season_plan_turn("把周三的训练挪到周四", []) is None
+    assert preflight_season_plan_turn("生成下周 weekly plan", []) is None
+
+
+def test_orchestrator_preflight_does_not_capture_weekly_request_after_master_clarification() -> None:
+    assert (
+        preflight_season_plan_turn(
+            "本周周跑量降低 10%",
+            [Turn(role="assistant", content="你希望具体怎么调整整体训练计划？")],
+        )
+        is None
+    )
+
+
 def test_orchestrator_preflight_does_not_treat_need_statement_as_advice() -> None:
     result = preflight_season_plan_turn("我需要调整整体训练计划", [])
 
     assert result is not None
     assert "具体怎么调整" in (result.clarification or "")
+
+
+def test_orchestrator_preflight_clarifies_combined_target_race_changes() -> None:
+    result = preflight_season_plan_turn(
+        "目标比赛延期到 2026-11-08，并把目标成绩调整到 3:10:00", []
+    )
+
+    assert result is not None
+    assert "分两次" in (result.clarification or "")
 
 
 def test_orchestrator_preflight_allows_concrete_master_adjustment() -> None:
@@ -741,6 +766,28 @@ def test_runner_empty_reply_falls_back_to_diff_explanation(monkeypatch) -> None:
     result = runner(_task("延长基础期两周"))
     assert len(result.proposals) == 1
     assert result.reply_fragment == "把基础期延长到 2026-08-14"
+
+
+def test_runner_drops_proposal_when_reread_plan_is_no_longer_active() -> None:
+    capture: dict[str, Any] = {}
+
+    class _Archived:
+        def get_plan(self, user_id, plan_id):
+            return _plan().model_copy(update={"status": MasterPlanStatus.ARCHIVED})
+
+    runner = make_season_plan_runner(
+        user_id="u1",
+        llm=object(),
+        toolkit=object(),
+        plan_store=_Archived(),
+        graph_factory=_factory("ok", _diff_dict(), capture),
+    )
+
+    result = runner(_task("延长基础期两周"))
+
+    assert result.status == "completed"
+    assert result.proposals == []
+    assert "不再是当前启用计划" in result.reply_fragment
 
 
 def test_runner_drops_proposal_when_plan_vanishes_midturn(monkeypatch) -> None:

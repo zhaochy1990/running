@@ -61,17 +61,15 @@ class StrideApi {
       'weight_kg': ?weightKg,
       'display_name': ?displayName,
     };
-    return _patch<Map<String, dynamic>>(
-      '/api/users/me/profile',
-      body: body,
-    );
+    return _patch<Map<String, dynamic>>('/api/users/me/profile', body: body);
   }
 
   /// Fetch onboarding-default RHR / MaxHR suggestions for B4. Backend
   /// derives RHR from recent `daily_health` and MaxHR from 220-age formula.
   Future<OnboardingDefaults> getOnboardingDefaults() async {
-    final json =
-        await _get<Map<String, dynamic>>('/api/users/me/onboarding/defaults');
+    final json = await _get<Map<String, dynamic>>(
+      '/api/users/me/onboarding/defaults',
+    );
     return OnboardingDefaults.fromJson(json);
   }
 
@@ -108,20 +106,20 @@ class StrideApi {
     // unpack the activities field rather than casting the wrapper.
     final json = await _get<Map<String, dynamic>>(
       '/api/$user/activities',
-      query: {
-        'limit': ?limit,
-        'offset': ?offset,
-        'from': ?from,
-        'to': ?to,
-      },
+      query: {'limit': ?limit, 'offset': ?offset, 'from': ?from, 'to': ?to},
     );
     final list = (json['activities'] as List? ?? const [])
         .cast<Map<String, dynamic>>();
     return list.map(Activity.fromJson).toList(growable: false);
   }
 
-  Future<ActivityDetailResponse> getActivity(String user, String labelId) async {
-    final json = await _get<Map<String, dynamic>>('/api/$user/activities/$labelId');
+  Future<ActivityDetailResponse> getActivity(
+    String user,
+    String labelId,
+  ) async {
+    final json = await _get<Map<String, dynamic>>(
+      '/api/$user/activities/$labelId',
+    );
     return ActivityDetailResponse.fromJson(json);
   }
 
@@ -192,10 +190,7 @@ class StrideApi {
     final qs = force ? '?force=true' : '';
     final resp = await _post<Map<String, dynamic>>(
       '/api/$user/plan/weeks/generate$qs',
-      body: {
-        'week_start': weekStart,
-        'source': source,
-      },
+      body: {'week_start': weekStart, 'source': source},
     );
     return GeneratedWeek.fromJson(resp);
   }
@@ -205,7 +200,11 @@ class StrideApi {
     return PlanTodayResponse.fromJson(json);
   }
 
-  Future<PlanDaysResponse> getPlanDays(String user, String from, String to) async {
+  Future<PlanDaysResponse> getPlanDays(
+    String user,
+    String from,
+    String to,
+  ) async {
     final json = await _get<Map<String, dynamic>>(
       '/api/$user/plan/days',
       query: {'from': from, 'to': to},
@@ -298,7 +297,10 @@ class StrideApi {
     return TeamFeed.fromJson(json);
   }
 
-  Future<MileageLeaderboard> getTeamMileage(String teamId, {String period = 'month'}) async {
+  Future<MileageLeaderboard> getTeamMileage(
+    String teamId, {
+    String period = 'month',
+  }) async {
     final json = await _get<Map<String, dynamic>>(
       '/api/teams/$teamId/mileage',
       query: {'period': period},
@@ -320,11 +322,7 @@ class StrideApi {
   }) async {
     return _post<Map<String, dynamic>>(
       '/api/users/me/coros/login',
-      body: {
-        'email': email,
-        'password': password,
-        'region': ?region,
-      },
+      body: {'email': email, 'password': password, 'region': ?region},
     );
   }
 
@@ -410,8 +408,9 @@ class StrideApi {
   }
 
   Future<NotificationPrefs> getNotificationPrefs() async {
-    final json =
-        await _get<Map<String, dynamic>>('/api/users/me/notification-prefs');
+    final json = await _get<Map<String, dynamic>>(
+      '/api/users/me/notification-prefs',
+    );
     return NotificationPrefs.fromJson(json);
   }
 
@@ -444,11 +443,7 @@ class StrideApi {
   }) async {
     final json = await _put<Map<String, dynamic>>(
       '/api/$userId/activities/$labelId/feedback',
-      body: {
-        'rpe': rpe,
-        'mood_tags': moodTags,
-        'note': note,
-      },
+      body: {'rpe': rpe, 'mood_tags': moodTags, 'note': note},
     );
     return ActivityFeedback.fromJson(json);
   }
@@ -485,7 +480,7 @@ class StrideApi {
   /// surface the first one. Returns the user-facing `reply`, an optional
   /// `clarification`, and the proposed diff (or null for a plain Q&A turn).
   Future<({String reply, String? clarification, Map<String, dynamic>? diff})>
-      sendWeeklyAdjustMessage({
+  sendWeeklyAdjustMessage({
     required String folder,
     required String message,
   }) async {
@@ -520,10 +515,7 @@ class StrideApi {
   }) async {
     return _post<Map<String, dynamic>>(
       '/api/users/me/coach/plan/$folder/apply',
-      body: {
-        'diff': diff,
-        'accepted_op_ids': acceptedOpIds,
-      },
+      body: {'diff': diff, 'accepted_op_ids': acceptedOpIds},
     );
   }
 
@@ -553,21 +545,26 @@ class StrideApi {
 
   Future<TrainingGoal> postTrainingGoal(Map<String, dynamic> body) async {
     final r = await _post<Map<String, dynamic>>(
-        '/api/users/me/training-goal', body: body);
+      '/api/users/me/training-goal',
+      body: body,
+    );
     return TrainingGoal.fromJson(r);
   }
 
   Future<TrainingGoal> putTrainingGoal(Map<String, dynamic> body) async {
-    final r =
-        await _put<Map<String, dynamic>>('/api/users/me/training-goal', body: body);
+    final r = await _put<Map<String, dynamic>>(
+      '/api/users/me/training-goal',
+      body: body,
+    );
     return TrainingGoal.fromJson(r);
   }
 
   // ── Running Profile (M3 C2) ────────────────────────────────────────────
   Future<RunningProfile?> getRunningProfile() async {
     try {
-      final r =
-          await _get<Map<String, dynamic>>('/api/users/me/running-profile');
+      final r = await _get<Map<String, dynamic>>(
+        '/api/users/me/running-profile',
+      );
       return RunningProfile.fromJson(r);
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
@@ -577,23 +574,28 @@ class StrideApi {
 
   Future<RunningProfile> postRunningProfile(Map<String, dynamic> body) async {
     final r = await _post<Map<String, dynamic>>(
-        '/api/users/me/running-profile', body: body);
+      '/api/users/me/running-profile',
+      body: body,
+    );
     return RunningProfile.fromJson(r);
   }
 
   // ── Master Plan (M3 C4/C5) ─────────────────────────────────────────────
-  Future<Map<String, dynamic>> postMasterPlanGenerate(
-      {String? goalId, String? profileId}) async {
+  Future<Map<String, dynamic>> postMasterPlanGenerate({
+    String? goalId,
+    String? profileId,
+  }) async {
     final body = <String, dynamic>{};
     if (goalId != null) body['goal_id'] = goalId;
     if (profileId != null) body['profile_id'] = profileId;
     return _post<Map<String, dynamic>>(
-        '/api/users/me/master-plan/generate', body: body);
+      '/api/users/me/master-plan/generate',
+      body: body,
+    );
   }
 
   Future<Map<String, dynamic>> getMasterPlanJobStatus(String jobId) async {
-    return _get<Map<String, dynamic>>(
-        '/api/users/me/master-plan/jobs/$jobId');
+    return _get<Map<String, dynamic>>('/api/users/me/master-plan/jobs/$jobId');
   }
 
   Future<Map<String, dynamic>> getMasterPlan(String planId) async {
@@ -613,14 +615,14 @@ class StrideApi {
 
   Future<Map<String, dynamic>> applyMasterPlanReviewDiff({
     required String planId,
-    required String diffId,
+    required Map<String, dynamic> diff,
     required List<String> acceptedOpIds,
     String? changeReason,
   }) async {
     return _post<Map<String, dynamic>>(
       '/api/users/me/master-plan/$planId/review/apply',
       body: {
-        'diff_id': diffId,
+        'diff': diff,
         'accepted_op_ids': acceptedOpIds,
         'change_reason': ?changeReason,
       },
@@ -629,14 +631,17 @@ class StrideApi {
 
   Future<Map<String, dynamic>> confirmMasterPlan(String planId) async {
     return _post<Map<String, dynamic>>(
-        '/api/users/me/master-plan/$planId/confirm', body: {});
+      '/api/users/me/master-plan/$planId/confirm',
+      body: {},
+    );
   }
 
   /// GET /api/users/me/master-plan/current — active plan with derived fields.
   Future<MasterPlan?> getCurrentMasterPlan() async {
     try {
-      final r =
-          await _get<Map<String, dynamic>>('/api/users/me/master-plan/current');
+      final r = await _get<Map<String, dynamic>>(
+        '/api/users/me/master-plan/current',
+      );
       return MasterPlan.fromJson(r);
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
@@ -661,14 +666,14 @@ class StrideApi {
   /// POST /api/users/me/master-plan/{planId}/adjust/apply
   Future<Map<String, dynamic>> applyMasterPlanAdjustDiff({
     required String planId,
-    required String diffId,
+    required Map<String, dynamic> diff,
     required List<String> acceptedOpIds,
     String? changeReason,
   }) async {
     return _post<Map<String, dynamic>>(
       '/api/users/me/master-plan/$planId/adjust/apply',
       body: {
-        'diff_id': diffId,
+        'diff': diff,
         'accepted_op_ids': acceptedOpIds,
         'change_reason': ?changeReason,
       },
@@ -679,21 +684,24 @@ class StrideApi {
 
   /// GET /api/users/me/master-plan/{planId}/versions
   Future<List<MasterPlanVersionSummary>> listMasterPlanVersions(
-      String planId) async {
+    String planId,
+  ) async {
     final r = await _get<Map<String, dynamic>>(
-        '/api/users/me/master-plan/$planId/versions');
-    final list =
-        (r['versions'] as List? ?? const []).cast<Map<String, dynamic>>();
-    return list
-        .map(MasterPlanVersionSummary.fromJson)
-        .toList(growable: false);
+      '/api/users/me/master-plan/$planId/versions',
+    );
+    final list = (r['versions'] as List? ?? const [])
+        .cast<Map<String, dynamic>>();
+    return list.map(MasterPlanVersionSummary.fromJson).toList(growable: false);
   }
 
   /// GET /api/users/me/master-plan/{planId}/versions/{version}
   Future<Map<String, dynamic>> getMasterPlanVersion(
-      String planId, int version) async {
+    String planId,
+    int version,
+  ) async {
     return _get<Map<String, dynamic>>(
-        '/api/users/me/master-plan/$planId/versions/$version');
+      '/api/users/me/master-plan/$planId/versions/$version',
+    );
   }
 
   // ── Review ─────────────────────────────────────────────────────────────
@@ -710,8 +718,9 @@ class StrideApi {
   /// GET /api/users/me/nutrition-prefs — returns null on 404.
   Future<NutritionPrefs?> getNutritionPrefs() async {
     try {
-      final r =
-          await _get<Map<String, dynamic>>('/api/users/me/nutrition-prefs');
+      final r = await _get<Map<String, dynamic>>(
+        '/api/users/me/nutrition-prefs',
+      );
       return NutritionPrefs.fromJson(r);
     } on DioException catch (e) {
       if (e.response?.statusCode == 404) return null;
@@ -761,7 +770,10 @@ class StrideApi {
     String user,
     Map<String, dynamic> body,
   ) async {
-    return _post<Map<String, dynamic>>('/api/$user/nutrition/meals', body: body);
+    return _post<Map<String, dynamic>>(
+      '/api/$user/nutrition/meals',
+      body: body,
+    );
   }
 
   // ── Coach chat ─────────────────────────────────────────────────────────
@@ -772,16 +784,15 @@ class StrideApi {
   /// `reply` (the user-facing answer), an optional `clarification` (when the
   /// coach needs more info), the echoed `session_id`, and the `thread_id`.
   Future<
-      ({
-        String sessionId,
-        String threadId,
-        String reply,
-        String? clarification,
-        List<Map<String, dynamic>> proposals,
-      })> postCoachChat({
-    required String sessionId,
-    required String message,
-  }) async {
+    ({
+      String sessionId,
+      String threadId,
+      String reply,
+      String? clarification,
+      List<Map<String, dynamic>> proposals,
+    })
+  >
+  postCoachChat({required String sessionId, required String message}) async {
     final r = await _post<Map<String, dynamic>>(
       '/api/users/me/coach/chat',
       body: {'session_id': sessionId, 'message': message},
@@ -862,8 +873,11 @@ class StrideApi {
     return _unpack<T>(res);
   }
 
-  Future<T> _post<T>(String path,
-      {Map<String, dynamic>? query, Object? body}) async {
+  Future<T> _post<T>(
+    String path, {
+    Map<String, dynamic>? query,
+    Object? body,
+  }) async {
     final res = await _dio.post<T>(path, queryParameters: query, data: body);
     return _unpack<T>(res);
   }
@@ -908,7 +922,6 @@ final strideApiProvider = Provider<StrideApi>((ref) {
 /// Only the fields needed to navigate to the week detail screen are kept here;
 /// the full plan is fetched by [WeekDetailScreen] once navigation completes.
 class GeneratedWeek {
-
   factory GeneratedWeek.fromJson(Map<String, dynamic> json) {
     return GeneratedWeek(
       folder: json['folder'] as String,

@@ -191,7 +191,11 @@ export default function TrainingPlanAdjustPage() {
   useEffect(() => loadPlan(), [loadPlan])
 
   const currentPhases = useMemo(() => toDisplayPhases(masterPlan, fallbackPlan), [masterPlan, fallbackPlan])
-  const previewPhases = useMemo(() => applyDiffToDisplayPhases(currentPhases, diff), [currentPhases, diff])
+  const selectedDiff = useMemo(() => filterSelectedDiff(diff, selectedOpIds), [diff, selectedOpIds])
+  const previewPhases = useMemo(
+    () => applyDiffToDisplayPhases(currentPhases, selectedDiff),
+    [currentPhases, selectedDiff],
+  )
   const targetProfile = useMemo(() => readTargetProfile(profile), [profile])
   const previewReady = step === 'proposal'
 
@@ -257,7 +261,7 @@ export default function TrainingPlanAdjustPage() {
       setAssessment(response.data.assessment ?? null)
       const nextDiff = response.data.diff
       setDiff(nextDiff)
-      setSelectedOpIds(new Set(nextDiff?.ops.map((op) => op.id) ?? []))
+      setSelectedOpIds(defaultSelectedOpIds(nextDiff))
       if (response.data.stage === 'proposal' && nextDiff) {
         void loadScan()
         setStep('proposal')
@@ -292,11 +296,14 @@ export default function TrainingPlanAdjustPage() {
       const opIds = diff.ops.map((op) => op.id).filter((id) => selectedOpIds.has(id))
       const response = await applyMasterPlanAdjustDiff(
         masterPlan.plan_id,
-        diff.diff_id,
+        diff,
         opIds,
         composeChangeReason(answers),
       )
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if ((response.data.applied ?? 0) <= 0) {
+        throw new Error('没有调整被采用，请确认至少选择一项可应用调整')
+      }
       setAffectedWeeks(response.data.affected_weeks ?? [])
       setDiff(null)
       setSelectedOpIds(new Set())
@@ -338,7 +345,7 @@ export default function TrainingPlanAdjustPage() {
           masterPlan={masterPlan}
           fallbackPlan={fallbackPlan}
           targetProfile={targetProfile}
-          diff={diff}
+          diff={selectedDiff}
           summary={diff?.ai_explanation ?? ''}
         />
 
@@ -915,11 +922,13 @@ function GuidedFlow({
 }
 
 function DiffOpRow({ op, checked, onToggle }: { op: MasterPlanDiffOp; checked: boolean; onToggle: () => void }) {
+  const disabled = op.accepted === false
   return (
-    <label className="flex items-start gap-2 rounded-lg border border-border-subtle bg-bg-card p-2.5 cursor-pointer">
+    <label className={`flex items-start gap-2 rounded-lg border border-border-subtle bg-bg-card p-2.5 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={onToggle}
         className="mt-1 accent-accent-green"
       />
@@ -1073,6 +1082,23 @@ function toDisplayPhases(masterPlan: MasterPlan | null, fallbackPlan: TrainingPl
     cursor = displayPhase.weekEnd + 1
     return displayPhase
   })
+}
+
+function filterSelectedDiff(diff: MasterPlanDiff | null, selectedOpIds: Set<string>): MasterPlanDiff | null {
+  if (!diff) return null
+  const selectedOps = diff.ops.filter((op) => selectedOpIds.has(op.id))
+  return selectedOps.length > 0 ? { ...diff, ops: selectedOps } : null
+}
+
+function defaultSelectedOpIds(diff: MasterPlanDiff | null): Set<string> {
+  if (!diff) return new Set()
+  const selectableOps = diff.ops.filter((op) => op.accepted !== false)
+  const atomicOp = selectableOps.find((op) => isAtomicRaceOp(op.op))
+  return new Set(atomicOp ? [atomicOp.id] : selectableOps.map((op) => op.id))
+}
+
+function isAtomicRaceOp(op: string): boolean {
+  return op === 'reschedule_target_race' || op === 'update_target_race_time'
 }
 
 function applyDiffToDisplayPhases(phases: DisplayPhase[], diff: MasterPlanDiff | null): DisplayPhase[] {
@@ -1434,14 +1460,25 @@ function diffOpLabel(op: string): string {
     remove_milestone: '删除里程碑',
     replace_milestone_date: '调整里程碑日期',
     replace_milestone_target: '调整里程碑目标',
+    reschedule_target_race: '调整目标比赛日期',
+    update_target_race_time: '调整目标完赛时间',
   }
   return labels[op] ?? op
 }
 
 function summarizeDiffValue(op: MasterPlanDiffOp): string {
-  const oldValue = op.old_value ? JSON.stringify(op.old_value) : '无'
-  const newValue = op.new_value ? JSON.stringify(op.new_value) : '无'
+  const oldValue = compactJson(op.old_value)
+  const newValue = compactJson(effectiveNewValue(op))
   return `${oldValue} -> ${newValue}`
+}
+
+function effectiveNewValue(op: MasterPlanDiffOp): Record<string, unknown> | null {
+  return op.new_value && Object.keys(op.new_value).length > 0 ? op.new_value : op.spec_patch
+}
+
+function compactJson(value: Record<string, unknown> | null): string {
+  if (!value || Object.keys(value).length === 0) return '无'
+  return JSON.stringify(value)
 }
 
 function BackIcon() {

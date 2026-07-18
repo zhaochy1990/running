@@ -190,6 +190,74 @@ def test_phase_extend_missing_weeks_clarifies_without_llm_or_tools() -> None:
     assert result["proposals"] == []
 
 
+def test_conversation_atomic_fixtures_declare_expected_op_count() -> None:
+    fixtures = load_fixtures("s1_conversation")
+
+    missing = [
+        fixture["fixture_id"]
+        for fixture in fixtures
+        if (fixture.get("expected") or {}).get("proposal")
+        and not isinstance(
+            ((fixture.get("expected") or {}).get("proposal") or {}).get("op_count"),
+            int,
+        )
+    ]
+
+    assert missing == []
+
+
+def test_contract_reports_missing_expected_proposal() -> None:
+    artifact = {
+        "result": {"status": "completed", "clarification": None, "proposals": []},
+        "tool_trace": [],
+        "assessment": {},
+    }
+    expected = {
+        "status": "completed",
+        "clarification_required": False,
+        "proposal": {
+            "op": "replace_weekly_range",
+            "phase_id": "phase-base",
+        },
+    }
+
+    violations = _contract_violations(artifact, expected)
+
+    assert any("expected proposal" in item for item in violations)
+
+
+def test_contract_reports_extra_atomic_operations() -> None:
+    artifact = {
+        "result": {
+            "status": "completed",
+            "clarification": None,
+            "proposals": [
+                {
+                    "ops": [
+                        {"op": "reschedule_target_race", "milestone_id": "race-001"},
+                        {"op": "shift_milestone", "milestone_id": "race-001"},
+                    ]
+                }
+            ],
+        },
+        "tool_trace": [],
+        "assessment": {},
+    }
+    expected = {
+        "status": "completed",
+        "clarification_required": False,
+        "proposal": {
+            "op_count": 1,
+            "op": "reschedule_target_race",
+            "milestone_id": "race-001",
+        },
+    }
+
+    violations = _contract_violations(artifact, expected)
+
+    assert any("proposal op_count expected 1, got 2" in item for item in violations)
+
+
 def test_contract_reports_wrong_exact_range() -> None:
     artifact = {
         "result": {"status": "completed", "clarification": None, "proposals": [{"ops": [{"op": "replace_weekly_range", "phase_id": "phase-base", "new_value": {"weekly_distance_km_low": 60.0, "weekly_distance_km_high": 70.0}}]}]},

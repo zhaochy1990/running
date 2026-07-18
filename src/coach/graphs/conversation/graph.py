@@ -105,6 +105,20 @@ def _current_user_request(state: ConversationState) -> str:
     return ""
 
 
+def _current_plan_id(state: ConversationState) -> str | None:
+    plan_id = state.get("plan_id")
+    return str(plan_id).strip() if plan_id else None
+
+
+def _is_same_master_request(state: ConversationState, request: str) -> bool:
+    tracked_plan_id = state.get("master_adjustment_plan_id")
+    return (
+        state.get("master_adjustment_request") == request
+        and tracked_plan_id is not None
+        and tracked_plan_id == _current_plan_id(state)
+    )
+
+
 def _required_master_adjustment_reads(request: str) -> frozenset[str]:
     required = set(_MASTER_ASSESSMENT_REQUIRED_READS)
     if _TARGET_TIME_REQUEST_RE.search(request):
@@ -120,7 +134,7 @@ def _master_stage_instruction(state: ConversationState) -> str:
     the assessment in the same batch as its prerequisite reads.
     """
     current_request = _current_user_request(state)
-    same_request = state.get("master_adjustment_request") == current_request
+    same_request = _is_same_master_request(state, current_request)
     consulted = set(state.get("consulted_tools") or []) if same_request else set()
     required_reads = _required_master_adjustment_reads(current_request)
     missing_reads = sorted(required_reads - consulted)
@@ -209,7 +223,23 @@ def build_conversation_graph(
             len(msgs),
             [call.get("name") for call in (getattr(resp, "tool_calls", None) or [])],
         )
-        return {"history": [resp], "iteration": iteration}
+        update: dict[str, Any] = {"history": [resp], "iteration": iteration}
+        if state.get("last_diff") is not None:
+            update["last_diff"] = None
+        if scope == "master_chat":
+            update["master_mandatory_read_failed"] = False
+            current_request = _current_user_request(state)
+            if not _is_same_master_request(state, current_request):
+                update.update(
+                    {
+                        "consulted_tools": [],
+                        "tool_trace": [],
+                        "master_adjustment_request": current_request,
+                        "master_adjustment_plan_id": _current_plan_id(state),
+                        "master_adjustment_assessment": None,
+                    }
+                )
+        return update
 
     def tools_node(state: ConversationState) -> dict[str, Any]:
         history = state.get("history", [])
@@ -218,7 +248,7 @@ def build_conversation_graph(
         new_messages: list[Any] = []
         last_diff: dict | None = None
         current_request = _current_user_request(state)
-        same_request = state.get("master_adjustment_request") == current_request
+        same_request = _is_same_master_request(state, current_request)
         consulted_before = (
             set(state.get("consulted_tools") or []) if same_request else set()
         )
@@ -228,9 +258,32 @@ def build_conversation_graph(
         )
         assessment_after = assessment_before
         tool_trace = list(state.get("tool_trace") or []) if same_request else []
+        mandatory_read_failed = False
         for tc in tool_calls:
             name = tc["name"]
             args = tc.get("args") or {}
+            if mandatory_read_failed:
+                tool_trace.append(
+                    {
+                        "name": name,
+                        "outcome": "blocked",
+                        "reason": "mandatory_read_failed",
+                    }
+                )
+                new_messages.append(
+                    ToolMessage(
+                        content=json.dumps(
+                            {
+                                "ok": False,
+                                "errors": ["blocked_after_mandatory_read_failed"],
+                            },
+                            ensure_ascii=False,
+                        ),
+                        tool_call_id=tc["id"],
+                        name=name,
+                    )
+                )
+                continue
             impl = tool_map.get(name)
             if impl is None:
                 tool_trace.append(
@@ -477,12 +530,19 @@ def build_conversation_graph(
                     ),
                 }
             )
-            if (
-                name in READ_TOOL_NAMES
-                and isinstance(parsed_payload, dict)
-                and parsed_payload.get("ok")
-            ):
-                consulted_after.add(name)
+            if name in READ_TOOL_NAMES and isinstance(parsed_payload, dict):
+                if parsed_payload.get("ok"):
+                    consulted_after.add(name)
+                elif scope == "master_chat" and name in _required_master_adjustment_reads(
+                    current_request
+                ):
+                    tool_trace[-1] = {
+                        "name": name,
+                        "outcome": "error",
+                        "reason": "mandatory_read_failed",
+                    }
+                    mandatory_read_failed = True
+                    continue
             if name == MASTER_ASSESSMENT_TOOL_NAME:
                 try:
                     data = parsed_payload.get("data")
@@ -494,7 +554,7 @@ def build_conversation_graph(
                 try:
                     if parsed_payload.get("ok") and parsed_payload.get("data") is not None:
                         candidate = parsed_payload["data"]
-                        if proposal_payload_matches_adjustment_request(
+                        if scope != "master_chat" or proposal_payload_matches_adjustment_request(
                             candidate, current_request
                         ):
                             last_diff = candidate
@@ -524,11 +584,19 @@ def build_conversation_graph(
             "history": new_messages,
             "consulted_tools": sorted(consulted_after),
             "tool_trace": tool_trace,
-            "master_adjustment_request": current_request,
-            "master_adjustment_assessment": assessment_after,
         }
-        if last_diff is not None:
-            update["last_diff"] = last_diff
+        if scope == "master_chat":
+            update.update(
+                {
+                    "consulted_tools": sorted(consulted_after),
+                    "tool_trace": tool_trace,
+                    "master_adjustment_request": current_request,
+                    "master_adjustment_plan_id": _current_plan_id(state),
+                    "master_adjustment_assessment": assessment_after,
+                    "master_mandatory_read_failed": mandatory_read_failed,
+                }
+            )
+        update["last_diff"] = last_diff
         return update
 
     def after_reason(state: ConversationState) -> str:
@@ -543,6 +611,10 @@ def build_conversation_graph(
         # can review the proposed diff (Pattern Y — server stays stateless after
         # this point; the diff travels through the HTTP response).
         if state.get("last_diff") is not None:
+            return END
+        if state.get("master_mandatory_read_failed"):
+            return END
+        if state.get("iteration", 0) >= 8:
             return END
         return "reason"
 

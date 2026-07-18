@@ -271,3 +271,33 @@ def test_adapter_preflight_runs_before_memory_and_resolver() -> None:
 
     assert resp.clarification == "先说明调整方向。"
     assert calls == {"memory": 0, "resolver": 0, "specialist": 0}
+
+
+def test_preflight_clears_stale_active_target_when_no_target_returned() -> None:
+    graph = build_orchestrator_graph(
+        registry=_registry(_echo_runner),
+        draft_fn=lambda _system, _user: (_ for _ in ()).throw(
+            AssertionError("resolver must not run")
+        ),
+        checkpointer=InMemorySaver(),
+        turn_preflight_fn=lambda _utterance, _window: TurnResponse(
+            reply="先说明调整方向。",
+            clarification="先说明调整方向。",
+            active_target=None,
+        ),
+    )
+    config = {"configurable": {"thread_id": coach_thread_id("u1", "s1"), "checkpoint_ns": ""}}
+
+    first = graph.invoke(
+        {
+            "history": [HumanMessage(content="赛季计划怎么样")],
+            "user_id": "u1",
+            "session_id": "s1",
+            "active_target": TargetRef(kind="master", plan_id="old-plan").model_dump(),
+        },
+        config=config,
+    )
+    response = TurnResponse.model_validate(first["turn_response"])
+
+    assert response.clarification == "先说明调整方向。"
+    assert first.get("active_target") is None

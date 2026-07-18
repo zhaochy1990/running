@@ -102,12 +102,30 @@ _PHASE_TARGET_REQUIRED_RE = re.compile(
 )
 _EXPLICIT_VOLUME_TARGET_RE = re.compile(
     r"(?:\d+(?:\.\d+)?\s*(?:公里|km)?\s*[–—\-~至到]\s*"
-    r"\d+(?:\.\d+)?\s*(?:公里|km)|\d+(?:\.\d+)?\s*%)",
+    r"\d+(?:\.\d+)?\s*(?:公里|km)|"
+    r"(?:调整到|改到|设为|降到|降至|减到|加到|提高到|提升到|降低到|到|至|"
+    r"set\s+to|target(?:\s+of)?|increase\s+to|decrease\s+to|reduce\s+to|lower\s+to)"
+    r"\s*\d+(?:\.\d+)?\s*(?:公里|km)|"
+    r"\d+(?:\.\d+)?\s*%)",
     re.IGNORECASE,
 )
 _AMBIGUOUS_VOLUME_PERCENT_RE = re.compile(
     r"\d+(?:\.\d+)?\s*%\s*(?:还是|或者|或|/|、)\s*"
     r"\d+(?:\.\d+)?\s*%",
+    re.IGNORECASE,
+)
+_TARGET_RACE_DATE_CHANGE_RE = re.compile(
+    r"(?:比赛|目标赛|目标比赛|race).{0,16}?"
+    r"(?:延期|推迟|提前|挪到|改到|改为|设为|调整到|到|至|"
+    r"postpone|move|shift|reschedule).{0,16}?"
+    r"20\d{2}-\d{1,2}-\d{1,2}",
+    re.IGNORECASE,
+)
+_TARGET_RACE_TIME_CHANGE_RE = re.compile(
+    r"(?:目标(?:成绩|时间)?|完赛成绩|比赛成绩|target(?:\s+time)?).{0,20}?"
+    r"(?:\d{1,2}:[0-5]\d(?::[0-5]\d)?|"
+    r"\d{1,2}\s*(?:小时|h)\s*[0-5]?\d\s*(?:分|m)"
+    r"(?:\s*[0-5]?\d\s*(?:秒|s))?)",
     re.IGNORECASE,
 )
 _MULTIPLE_OPTIONS_RE = re.compile(
@@ -176,11 +194,29 @@ _PHASE_RESIZE_DURATION_CLARIFICATION = (
     "你希望把这个阶段延长或缩短几周？请给出一个明确的正整数周数，"
     "例如“延长 2 周”或“缩短 1 周”。确认周数后我再加载数据评估这个想法。"
 )
+_TARGET_RACE_ONE_CHANGE_CLARIFICATION = (
+    "目标比赛日期和目标成绩需要分两次分别调整。请先选择这次要改比赛日期，"
+    "还是先改目标成绩。"
+)
 _MASTER_ADJUSTMENT_CONTEXT_RE = re.compile(
-    r"(?:总计划|整体训练计划|总纲|赛季计划|master\s*plan|"
+    r"(?:总计划|整体训练计划|总纲|赛季计划|master\s*plan|目标赛|目标比赛|"
     r"基础期|基础阶段|专项期|专项阶段|强化期|高峰期|赛前期|减量期|调整期|"
     r"恢复期|恢复阶段|训练重点|周跑量|周量区间|跑量|训练量|里程|加量|减量|"
     r"(?:延长|缩短).{0,12}阶段)",
+    re.IGNORECASE,
+)
+_WEEKLY_ONLY_CONTEXT_RE = re.compile(
+    r"(?:本周|这周|这一周|当前周|下周|下一周|周计划|weekly\s+plan|"
+    r"周[一二三四五六日天]|星期[一二三四五六日天]|今天|明天|后天)",
+    re.IGNORECASE,
+)
+_EXPLICIT_MASTER_PLAN_CONTEXT_RE = re.compile(
+    r"(?:总计划|整体训练计划|总纲|赛季计划|master\s*plan|"
+    r"基础期|基础阶段|base\s*(?:phase)?|"
+    r"专项期|专项阶段|强化期|build\s*(?:phase)?|"
+    r"高峰期|赛前期|peak\s*(?:phase)?|"
+    r"减量期|调整期|taper\s*(?:phase)?|"
+    r"恢复期|恢复阶段|recovery\s*(?:phase)?|阶段)",
     re.IGNORECASE,
 )
 _MASTER_WRITE_CUE_RE = re.compile(
@@ -284,6 +320,8 @@ def _clarification_for_objective(objective: str) -> str | None:
     """Return the pre-data clarification needed for this write request."""
     if _needs_direction_clarification(objective):
         return _DIRECTION_CLARIFICATION
+    if _TARGET_RACE_DATE_CHANGE_RE.search(objective) and _TARGET_RACE_TIME_CHANGE_RE.search(objective):
+        return _TARGET_RACE_ONE_CHANGE_CLARIFICATION
     if _AMBIGUOUS_VOLUME_PERCENT_RE.search(objective):
         return _VOLUME_TARGET_CLARIFICATION
     volume_direction = requested_weekly_volume_direction(objective)
@@ -405,6 +443,8 @@ def preflight_season_plan_turn(
             )
         )
     )
+    if _WEEKLY_ONLY_CONTEXT_RE.search(objective) and not _EXPLICIT_MASTER_PLAN_CONTEXT_RE.search(objective):
+        return None
     if not continuing_clarification and _MASTER_ADVICE_QUESTION_RE.search(objective):
         return None
     if not continuing_clarification and not (
@@ -529,6 +569,7 @@ def make_season_plan_runner(
             "consulted_tools": [],
             "tool_trace": [],
             "master_adjustment_request": effective_objective,
+            "master_adjustment_plan_id": plan_id,
             "master_adjustment_assessment": None,
             "last_diff": None,
             "iteration": 0,
@@ -538,6 +579,13 @@ def make_season_plan_runner(
             state_observer(state)
 
         reply = _extract_reply(state.get("history") or [])
+        if state.get("master_mandatory_read_failed"):
+            return SpecialistResult(
+                status="completed",
+                reply_fragment=(
+                    "评估这次调整所需的训练数据暂时无法读取，请稍后重试。"
+                ),
+            )
         proposals: list[MasterPlanDiff] = []
         last_diff = state.get("last_diff")
         assessment = state.get("master_adjustment_assessment")
@@ -563,9 +611,21 @@ def make_season_plan_runner(
             )
             last_diff = None
         is_alternatives = isinstance(last_diff, dict) and "alternatives" in last_diff
+        current_plan: Any | None = None
         if last_diff is not None:
             proposals = _parse_proposals(last_diff)
             current_plan = active_plan_store.get_plan(user_id, plan_id)
+            if current_plan is not None and getattr(
+                getattr(current_plan, "status", None), "value", current_plan.status
+            ) != "active":
+                logger.warning(
+                    "season_plan: plan %s is no longer active; dropping proposal",
+                    plan_id,
+                )
+                return SpecialistResult(
+                    status="completed",
+                    reply_fragment="这份赛季计划已不再是当前启用计划，请刷新后再试。",
+                )
             request_safe = [
                 proposal
                 for proposal in proposals
@@ -598,8 +658,7 @@ def make_season_plan_runner(
         # malformed choice cannot hide another valid one.
         invalid_details: list[str] = []
         if proposals:
-            plan = active_plan_store.get_plan(user_id, plan_id)
-            if plan is None:
+            if current_plan is None:
                 # Plan vanished between target resolution and now — don't surface
                 # an un-gated proposal for a plan that no longer exists.
                 logger.warning("season_plan: plan %s disappeared mid-turn; dropping proposal", plan_id)
@@ -610,7 +669,7 @@ def make_season_plan_runner(
             valid_proposals: list[MasterPlanDiff] = []
             for index, proposal in enumerate(proposals):
                 violations = validate_master_diff(
-                    plan, proposal, as_of=validation_as_of
+                    current_plan, proposal, as_of=validation_as_of
                 )
                 if not violations:
                     valid_proposals.append(proposal)

@@ -455,6 +455,29 @@ def _resolve_master_plan_loader(
     return plan_loader or (lambda plan_id: _open_master_plan(user_id, plan_id))
 
 
+def _is_target_race_milestone(plan: Any, milestone: Any) -> bool:
+    milestone_type = getattr(getattr(milestone, "type", None), "value", None)
+    if milestone_type is None:
+        milestone_type = str(getattr(milestone, "type", ""))
+    if milestone_type != "race":
+        return False
+    # Generic milestone edits must fail closed for the target-race candidate.
+    # A partially inconsistent plan must be repaired through the atomic target
+    # race tools rather than using the inconsistency to bypass them.
+    goal = getattr(plan, "goal", None)
+    race_date = getattr(goal, "race_date", None)
+    if race_date and getattr(milestone, "date", None) == race_date:
+        return True
+    phases = list(getattr(plan, "phases", None) or [])
+    final_phase = phases[-1] if phases else None
+    return bool(
+        final_phase is not None
+        and getattr(milestone, "phase_id", None) == getattr(final_phase, "id", None)
+        and getattr(milestone, "id", None)
+        in (getattr(final_phase, "milestone_ids", None) or [])
+    )
+
+
 def _empty_master_diff(plan_id: str, explanation: str) -> MasterPlanDiff:
     return MasterPlanDiff(
         diff_id=str(uuid4()),
@@ -639,6 +662,10 @@ class ShiftMilestoneImpl:
         ms = next((m for m in plan.milestones if m.id == milestone_id), None)
         if ms is None:
             return _fail(f"milestone {milestone_id!r} not in plan")
+        if _is_target_race_milestone(plan, ms):
+            return _fail(
+                "target race milestone must be changed with reschedule_target_race"
+            )
         op = MasterPlanDiffOp(
             id=str(uuid4()),
             op=MasterPlanDiffOpKind.REPLACE_MILESTONE_DATE,
@@ -715,6 +742,10 @@ class ChangeTargetImpl:
         ms = next((m for m in plan.milestones if m.id == milestone_id), None)
         if ms is None:
             return _fail(f"milestone {milestone_id!r} not in plan")
+        if _is_target_race_milestone(plan, ms):
+            return _fail(
+                "target race milestone must be changed with update_target_race_time"
+            )
         op = MasterPlanDiffOp(
             id=str(uuid4()),
             op=MasterPlanDiffOpKind.REPLACE_MILESTONE_TARGET,

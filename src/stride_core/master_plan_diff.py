@@ -30,8 +30,8 @@ from .master_plan import (
     Milestone,
     MilestoneType,
     Phase,
-    PhaseType,
     compute_total_weeks,
+    is_short_taper_phase,
 )
 from .timefmt import today_shanghai
 
@@ -143,6 +143,38 @@ def _updated_milestone_target(
     return f"{label} {new_time}"
 
 
+def _parse_iso_day(value: str, message: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+
+
+def _validate_milestones_within_proposed_phases(
+    milestones: list[Milestone],
+    proposed_phase_dates: dict[str, tuple[date, date]],
+    *,
+    target_milestone_id: str,
+    target_day: date,
+) -> None:
+    for milestone in milestones:
+        bounds = proposed_phase_dates.get(milestone.phase_id)
+        if bounds is None:
+            raise ValueError(
+                f"milestone {milestone.id!r} does not belong to a proposed phase"
+            )
+        milestone_day = (
+            target_day
+            if milestone.id == target_milestone_id
+            else _parse_iso_day(milestone.date, "milestone date is invalid")
+        )
+        phase_start, phase_end = bounds
+        if not phase_start <= milestone_day <= phase_end:
+            raise ValueError(
+                f"milestone {milestone.id!r} would fall outside its owning proposed phase"
+            )
+
+
 def build_target_race_time_patch(
     plan: MasterPlan, milestone_id: str, new_target_time: str
 ) -> dict[str, Any]:
@@ -220,7 +252,9 @@ def build_target_race_reschedule_patch(
     if taper_index is None:
         raise ValueError("target race milestone does not belong to a plan phase")
     taper = plan.phases[taper_index]
-    if taper_index != len(plan.phases) - 1 or taper.phase_type != PhaseType.TAPER:
+    if milestone.id not in taper.milestone_ids:
+        raise ValueError("target race milestone is not attached to its owning phase")
+    if taper_index != len(plan.phases) - 1 or not is_short_taper_phase(taper):
         raise ValueError("target race must belong to the final taper phase")
     if taper_index == 0:
         raise ValueError("target race reschedule requires a phase before taper")
@@ -268,6 +302,25 @@ def build_target_race_reschedule_patch(
     previous_end = new_taper_start - timedelta(days=1)
     if previous_end <= previous_start:
         raise ValueError("reschedule would collapse the phase before taper")
+
+    current_phase_dates = {
+        phase.id: (
+            _parse_iso_day(phase.start_date, "phase date is invalid"),
+            _parse_iso_day(phase.end_date, "phase date is invalid"),
+        )
+        for phase in plan.phases
+    }
+    proposed_phase_dates = {
+        **current_phase_dates,
+        previous.id: (previous_start, previous_end),
+        taper.id: (new_taper_start, new_taper_end),
+    }
+    _validate_milestones_within_proposed_phases(
+        plan.milestones,
+        proposed_phase_dates,
+        target_milestone_id=milestone.id,
+        target_day=target_day,
+    )
 
     return {
         "race_date": target_day.isoformat(),

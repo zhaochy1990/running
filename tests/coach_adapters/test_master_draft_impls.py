@@ -289,6 +289,124 @@ def test_shift_milestone_changes_date(seeded_plan):
     assert op.spec_patch["date"] == "2026-08-22"
 
 
+def test_generic_milestone_tools_reject_target_race_milestone() -> None:
+    phase = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=phase.id, target="全马 3:15:00",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[phase],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+
+    loader = lambda _plan_id: plan
+    date_result = draft_impls.ShiftMilestoneImpl(USER_ID, plan_loader=loader)(
+        plan_id=plan.plan_id, milestone_id=race.id, new_date="2026-11-08"
+    )
+    target_result = draft_impls.ChangeTargetImpl(USER_ID, plan_loader=loader)(
+        plan_id=plan.plan_id, milestone_id=race.id, new_target_time="全马 3:10:00"
+    )
+
+    assert date_result.ok is False
+    assert "target race" in date_result.errors[0]
+    assert "reschedule_target_race" in date_result.errors[0]
+    assert target_result.ok is False
+    assert "target race" in target_result.errors[0]
+    assert "update_target_race_time" in target_result.errors[0]
+
+
+def test_generic_milestone_tools_reject_stale_target_race_date() -> None:
+    phase = Phase(
+        id="taper",
+        name="调整期",
+        phase_type=PhaseType.TAPER,
+        start_date="2026-10-11",
+        end_date="2026-10-25",
+        focus="taper",
+        weekly_distance_km_low=30,
+        weekly_distance_km_high=45,
+        key_session_types=["race"],
+        milestone_ids=["race"],
+    )
+    stale_race = Milestone(
+        id="race",
+        type=MilestoneType.RACE,
+        date="2026-10-18",
+        phase_id=phase.id,
+        target="全马 3:15:00",
+    )
+    plan = MasterPlan(
+        plan_id="p",
+        user_id=USER_ID,
+        status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-08-01",
+        end_date="2026-10-25",
+        phases=[phase],
+        milestones=[stale_race],
+        training_principles=[],
+        generated_by="test",
+        version=1,
+        created_at="2026-07-01T00:00:00Z",
+        updated_at="2026-07-01T00:00:00Z",
+    )
+
+    loader = lambda _plan_id: plan
+    date_result = draft_impls.ShiftMilestoneImpl(USER_ID, plan_loader=loader)(
+        plan_id=plan.plan_id, milestone_id=stale_race.id, new_date="2026-11-08"
+    )
+    target_result = draft_impls.ChangeTargetImpl(USER_ID, plan_loader=loader)(
+        plan_id=plan.plan_id,
+        milestone_id=stale_race.id,
+        new_target_time="全马 3:10:00",
+    )
+
+    assert date_result.ok is False
+    assert "reschedule_target_race" in date_result.errors[0]
+    assert target_result.ok is False
+    assert "update_target_race_time" in target_result.errors[0]
+
+
+def test_generic_milestone_tools_fail_closed_when_target_race_date_is_empty() -> None:
+    phase = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=phase.id, target="全马 3:15:00",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(goal_id="g", race_date="", target_time="3:15:00"),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[phase],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+
+    result = draft_impls.ShiftMilestoneImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )(plan_id=plan.plan_id, milestone_id=race.id, new_date="2026-11-08")
+
+    assert result.ok is False
+    assert "target race" in result.errors[0]
+
+
 def test_shift_milestone_bad_date_fails(seeded_plan):
     plan, _, _, milestone = seeded_plan
     res = draft_impls.ShiftMilestoneImpl(USER_ID)(
