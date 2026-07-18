@@ -18,7 +18,6 @@ import logging
 from collections.abc import Callable
 
 from langchain_core.exceptions import OutputParserException
-from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 from coach.contracts import (
@@ -32,6 +31,7 @@ from coach.contracts import (
     Turn,
 )
 from coach.skills.loader import render_skill
+from .structured_tool import StructuredToolRunner
 
 logger = logging.getLogger(__name__)
 
@@ -106,19 +106,16 @@ def build_resolver_user_prompt(
 
 
 def make_llm_draft_fn(model: object) -> ResolverDraftFn:
-    """Wrap a langchain chat model into a ``ResolverDraftFn`` via structured output.
+    """Wrap a chat model into a ``ResolverDraftFn`` via one schema tool call.
 
-    The orchestrator output is small + schema-bound, so structured-output mode is
-    reliable here (unlike the large aspirational-weeks generation path, which
-    uses the tolerant JSON parser).
+    Ordinary tool calling is portable across providers that reject
+    ``response_format`` or forced ``tool_choice`` in thinking mode.
     """
-    structured = model.with_structured_output(ResolverDraft)  # type: ignore[attr-defined]
+    structured = StructuredToolRunner(model, ResolverDraft)
 
     def _draft_fn(system_prompt: str, user_prompt: str) -> ResolverDraft:
         try:
-            result = structured.invoke(
-                [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
-            )
+            result = structured.invoke(system_prompt, user_prompt)
             if isinstance(result, ResolverDraft):
                 return result
             return ResolverDraft.model_validate(result)

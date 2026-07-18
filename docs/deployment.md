@@ -21,6 +21,13 @@ Multi-stage build (`Dockerfile`)：
 
 Pipeline：Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy to Azure Container Apps → Health check。
 
+训练负荷算法版本升级时，deploy 在新 revision 通过 health check 后调用受内部 token
+保护的 `/internal/training-load/users`。服务端从生产 Azure Files 挂载盘枚举所有
+UUID 目录中的 `coros.db`（不依赖可能滞后的 `.slug_aliases.json`），再逐个调用带
+`only_if_missing=true` 的内部 backfill。已有当前版本数据的用户会幂等跳过；缺少当前
+版本的用户会完成 365 天回填。任一用户回填失败都会让 deploy 失败，避免新版 reader
+上线后静默读取空数据。
+
 ### `.github/workflows/sync-data.yml` —— 同步 training-log markdown 到 prod Azure Files
 
 触发：push 到 `master` 且 `data/*/logs/**`、`data/*/TRAINING_PLAN.md`、`data/*/status.md` 中任一变更。经 `az storage file upload-batch` 推到 `authstorage2026` 上 `stride-data` share（RG `rg-common-prod`）。

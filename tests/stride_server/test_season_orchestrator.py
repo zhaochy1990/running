@@ -39,6 +39,7 @@ from stride_core.master_plan import (
     Phase,
     PhaseType,
 )
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 from stride_storage.sqlite.calibration_connector import (
     SQLiteRunningCalibrationRepository,
 )
@@ -544,9 +545,9 @@ def test_execution_cap_uses_recent_training_dose_when_it_is_tighter(db, monkeypa
         day = date(2026, 6, 1).fromordinal(date(2026, 6, 1).toordinal() + offset)
         db._conn.execute(
             "INSERT INTO daily_training_load "
-            "(date, algorithm_version, training_dose, acute_load, chronic_load, form) "
-            "VALUES (?, 1, ?, 120.0, 50.0, -70.0)",
-            (day.isoformat(), dose),
+            "(date, algorithm_version, training_dose, acute_load, chronic_load, form, "
+            "coverage_status) VALUES (?, ?, ?, 120.0, 50.0, -70.0, 'complete')",
+            (day.isoformat(), TRAINING_LOAD_MODEL_VERSION, dose),
         )
     db._conn.commit()
     reviewer = _FakeReviewerLLM(["pass"])
@@ -571,6 +572,40 @@ def test_execution_cap_uses_recent_training_dose_when_it_is_tighter(db, monkeypa
     ]
     assert base_kms[0] < 46.0
     assert base_kms[1] <= round(base_kms[0] * 1.10, 1) + 0.1
+
+
+def test_execution_cap_ignores_partial_week_training_dose(db, monkeypatch):
+    _seed_calibration(db)
+    _insert_run(db, "prev-1", date_iso="2026-06-02T01:00:00Z", km=16.0)
+    _insert_run(db, "prev-2", date_iso="2026-06-05T01:00:00Z", km=24.0)
+    for offset in range(5):
+        day = date(2026, 6, 1).fromordinal(date(2026, 6, 1).toordinal() + offset)
+        db._conn.execute(
+            "INSERT INTO daily_training_load "
+            "(date, algorithm_version, training_dose, acute_load, chronic_load, form, "
+            "coverage_status) VALUES (?, ?, 100, 120, 50, -70, 'complete')",
+            (day.isoformat(), TRAINING_LOAD_MODEL_VERSION),
+        )
+    db._conn.commit()
+    reviewer = _FakeReviewerLLM(["pass"])
+    _wire(monkeypatch, db, reviewer=reviewer)
+
+    bundle = generate_season(
+        _with_master_weeks(_master_plan(), {
+            "p-base": [70.0, 75.0], "p-build": [80.0, 84.0],
+            "p-taper": [58.0, 45.0],
+        }),
+        _context(), injuries=[],
+    )
+
+    from coach.graphs.generation.rule_filter import _total_run_distance_m
+    from stride_core.plan_spec import WeeklyPlan
+
+    first_km = round(
+        _total_run_distance_m(WeeklyPlan.from_dict(bundle.phases[0].weeks[0])) / 1000.0,
+        1,
+    )
+    assert first_km == 46.0
 
 
 # ---------------------------------------------------------------------------

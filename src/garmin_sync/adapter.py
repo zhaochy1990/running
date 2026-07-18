@@ -134,18 +134,25 @@ class GarminDataSource(BaseDataSource):
 
         client = GarminClient.from_stored(creds)
         with Database(user=user) as db:
+            health_dates: set[str] = set()
             # Self-heal legacy rows (e.g. pre-fix metre distances) before pulling.
             from garmin_sync.migrations import run_garmin_migrations
             run_garmin_migrations(db)
             if mode == "health_only":
-                activities, health = run_health_only_sync(client, db, progress=progress)
+                activities, health = run_health_only_sync(
+                    client, db, progress=progress, health_dates_out=health_dates
+                )
                 activity_label_ids: tuple[str, ...] = ()
             else:
-                activities, health, activity_label_ids = run_sync(client, db, full=full, progress=progress)
+                activities, health, activity_label_ids = run_sync(
+                    client, db, full=full, progress=progress,
+                    health_dates_out=health_dates,
+                )
         return SyncResult(
             activities=activities,
             health=health,
             activity_label_ids=activity_label_ids,
+            health_dates=tuple(sorted(health_dates)),
         )
 
     def push_run_workout(self, user: str, workout: NormalizedRunWorkout) -> str:

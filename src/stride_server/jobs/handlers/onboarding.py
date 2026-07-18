@@ -121,16 +121,36 @@ def handle_calibration(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
 
 @job_handler("onboarding_backfill")
 def handle_backfill(job: JobRecord, *, heartbeat: Any) -> dict[str, Any]:
-    """Step 3 — ability snapshot backfill.
+    """Step 3 — current training-load and ability snapshot backfill.
 
-    Calibration exists now, so ability reads a real HRmax. No commentary
-    (expensive; generated lazily elsewhere).
+    Calibration exists now, so one bounded 365-day pass can warm up the
+    42-day chronic-load EWMA without refitting athlete baselines. Ability then
+    reads the same persisted calibration. No commentary (expensive; generated
+    lazily elsewhere).
     """
+    from datetime import timedelta
+
     from stride_core.ability_hook import backfill_ability_snapshots
+    from stride_core.timefmt import today_shanghai
+    from stride_core.training_load import recompute_training_load
     from stride_storage.sqlite.database import Database
 
     uuid = job.partition_key
-    heartbeat(stage="scoring", progress_pct=70)
+    heartbeat(stage="training_load", progress_pct=65)
     with Database(user=uuid) as db:
+        as_of = today_shanghai()
+        load = recompute_training_load(
+            db,
+            start=as_of - timedelta(days=365),
+            end=as_of,
+            persist=True,
+        )
+        heartbeat(stage="scoring", progress_pct=70)
         ability = backfill_ability_snapshots(db, days=180)
-    return {"ability": ability}
+    return {
+        "training_load": {
+            "activities_processed": load.activities_processed,
+            "daily_rows_written": load.daily_rows_written,
+        },
+        "ability": ability,
+    }

@@ -59,6 +59,10 @@ from .judge_s2 import JUDGE_PROMPT_VERSION as S2_JUDGE_VERSION
 from .judge_s2 import build_s2_judge_prompt_metadata, make_s2_judge
 from .s2_l1 import run_s2_l1_filter, s2_rule_filter_kwargs
 from .schemas import AxisScore, EvalReport, FixtureRunOutcome, JudgeScore, aggregate_axis_avg
+from .s1_conversation import (
+    CONVERSATION_CONTRACT_VERSION,
+    run_s1_conversation_fixture,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +119,36 @@ def load_fixtures(scope: str, fixture_ids: list[str] | None = None) -> list[dict
             continue
         out.append(fixture)
     return out
+
+
+def run_s1_conversation_evaluation(
+    *, fixture_ids: list[str] | None = None, llm: Any | None = None
+) -> EvalReport:
+    """Run frozen S1 ``master_chat`` fixtures through the production specialist."""
+    fixtures = load_fixtures("s1_conversation", fixture_ids)
+    if not fixtures:
+        logger.warning(
+            "No S1 conversation fixtures matched (ids=%s)", fixture_ids
+        )
+        return _build_report(
+            "s1",
+            RunMode.FROZEN_FIXTURE,
+            [],
+            judge_prompt_version=CONVERSATION_CONTRACT_VERSION,
+        )
+    if llm is None:
+        from stride_server.coach_runtime import get_generator_llm
+
+        llm = get_generator_llm()
+    outcomes = [
+        run_s1_conversation_fixture(fixture, llm=llm) for fixture in fixtures
+    ]
+    return _build_report(
+        "s1",
+        RunMode.FROZEN_FIXTURE,
+        outcomes,
+        judge_prompt_version=CONVERSATION_CONTRACT_VERSION,
+    )
 
 
 # ---------------------------------------------------------------------------

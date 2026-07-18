@@ -229,8 +229,6 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
     reset_master_plan_store_cache()
     monkeypatch.setenv("STRIDE_MASTER_PLAN_TABLE_ACCOUNT_URL", "")  # force file backend
 
-    # Clear pending diffs from other tests
-    mp_mod._PENDING_MP_DIFFS.clear()
 
     from stride_server.bearer import require_bearer
     from stride_server.routes.master_plan import router
@@ -243,7 +241,6 @@ def app_client(tmp_path, monkeypatch, rsa_keypair):
 
     # Cleanup
     reset_master_plan_store_cache()
-    mp_mod._PENDING_MP_DIFFS.clear()
 
 
 def _get_store(monkeypatch=None) -> FileMasterPlanStore:
@@ -441,30 +438,25 @@ class TestReviewMessages:
 
         assert resp.status_code == 403, resp.text
 
-    def test_diff_stored_in_pending_for_apply(self, app_client):
-        """After /messages, diff is stored and retrievable for /apply."""
+    def test_diff_is_returned_for_stateless_apply(self, app_client):
+        """Review messages returns the full typed diff for stateless apply."""
         client, token, tmp_path, _ = app_client
         store = _get_store()
         plan = _make_plan()
         store.save_plan(plan)
-
         phase_id = plan.phases[0].id
         llm_output = f"""---BEGIN_MP_DIFF---
 {{
   "ai_response": "延长基础期",
-  "ops": [
-    {{
-      "op": "resize_phase",
-      "phase_id": "{phase_id}",
-      "milestone_id": null,
-      "old_value": {{"end_date": "2026-07-06"}},
-      "new_value": {{"end_date": "2026-07-27"}},
-      "spec_patch": {{"end_date": "2026-07-27"}}
-    }}
-  ]
+  "ops": [{{
+    "op": "resize_phase",
+    "phase_id": "{phase_id}",
+    "old_value": {{"end_date": "2026-07-06"}},
+    "new_value": {{"end_date": "2026-07-27"}},
+    "spec_patch": {{"end_date": "2026-07-27"}}
+  }}]
 }}
 ---END_MP_DIFF---"""
-
         with patch.object(mp_mod, "LLMClient") as MockLLM:
             MockLLM.return_value.chat_sync.return_value = llm_output
             resp = client.post(
@@ -472,11 +464,8 @@ class TestReviewMessages:
                 json={"message": "把基础期延长三周", "history": []},
                 headers=_auth(token),
             )
-
         assert resp.status_code == 200, resp.text
-        diff_id = resp.json()["diff"]["diff_id"]
-        key = (USER_UUID, plan.plan_id, diff_id)
-        assert key in mp_mod._PENDING_MP_DIFFS
+        assert resp.json()["diff"]["plan_id"] == plan.plan_id
 
 
 # ===========================================================================
@@ -486,8 +475,8 @@ class TestReviewMessages:
 
 class TestReviewApply:
 
-    def _post_messages(self, client, token, plan_id: str, phase_id: str) -> str:
-        """Helper: call /messages and return diff_id."""
+    def _post_messages(self, client, token, plan_id: str, phase_id: str) -> tuple[dict, str]:
+        """Helper: call /messages and return the full diff body."""
         llm_output = f"""---BEGIN_MP_DIFF---
 {{
   "ai_response": "延长基础期",
@@ -511,7 +500,7 @@ class TestReviewApply:
                 headers=_auth(token),
             )
         assert resp.status_code == 200, resp.text
-        return resp.json()["diff"]["diff_id"], resp.json()["diff"]["ops"][0]["id"]
+        return resp.json()["diff"], resp.json()["diff"]["ops"][0]["id"]
 
     def _make_resize_diff(self, plan_id: str, phase_id: str, end_date: str) -> tuple[MasterPlanDiff, str]:
         op = MasterPlanDiffOp(
@@ -541,11 +530,11 @@ class TestReviewApply:
         store.save_plan(plan)
 
         phase_id = plan.phases[0].id
-        diff_id, op_id = self._post_messages(client, token, plan.plan_id, phase_id)
+        diff_body, op_id = self._post_messages(client, token, plan.plan_id, phase_id)
 
         resp = client.post(
             f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
-            json={"diff_id": diff_id, "accepted_op_ids": [op_id], "change_reason": "想多打基础"},
+            json={"diff": diff_body, "accepted_op_ids": [op_id], "change_reason": "想多打基础"},
             headers=_auth(token),
         )
 
@@ -609,8 +598,8 @@ class TestReviewApply:
 
         assert resp.status_code == 400, resp.text
 
-    def test_apply_unknown_diff_id_returns_404(self, app_client):
-        """Unknown diff_id → 404."""
+    def test_apply_missing_diff_body_returns_422(self, app_client):
+        """Stateless review apply requires the typed diff body."""
         client, token, tmp_path, _ = app_client
         store = _get_store()
         plan = _make_plan()
@@ -619,14 +608,73 @@ class TestReviewApply:
         resp = client.post(
             f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
             json={
-                "diff_id": "nonexistent-diff-id",
                 "accepted_op_ids": [],
                 "change_reason": "",
             },
             headers=_auth(token),
         )
 
-        assert resp.status_code == 404, resp.text
+        assert resp.status_code == 422, resp.text
+
+    def test_review_apply_rejects_atomic_race_reschedule_op(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+            milestone_id=plan.milestones[0].id,
+            spec_patch={"race_date": "2026-11-08"},
+        )
+        diff = MasterPlanDiff(
+            diff_id=str(uuid4()), plan_id=plan.plan_id, ops=[op],
+            ai_explanation="move race",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={
+                "diff": diff.model_dump(mode="json"),
+                "accepted_op_ids": [op.id],
+                "change_reason": "move race",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 400
+        assert "Coach 原子 apply" in resp.json()["detail"]
+
+    def test_review_apply_rejects_atomic_target_race_time_op(self, app_client):
+        client, token, tmp_path, _ = app_client
+        store = _get_store()
+        plan = _make_plan()
+        store.save_plan(plan)
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+            milestone_id=plan.milestones[0].id,
+            spec_patch={"target_time": "3:10:00"},
+        )
+        diff = MasterPlanDiff(
+            diff_id=str(uuid4()), plan_id=plan.plan_id, ops=[op],
+            ai_explanation="target time",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        resp = client.post(
+            f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
+            json={
+                "diff": diff.model_dump(mode="json"),
+                "accepted_op_ids": [op.id],
+                "change_reason": "target time",
+            },
+            headers=_auth(token),
+        )
+
+        assert resp.status_code == 400
+        assert "Coach 原子 apply" in resp.json()["detail"]
 
     def test_apply_active_plan_returns_409(self, app_client):
         """Apply to active plan → 409."""
@@ -637,7 +685,7 @@ class TestReviewApply:
 
         resp = client.post(
             f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
-            json={"diff_id": "any-id", "accepted_op_ids": [], "change_reason": ""},
+            json={"diff": self._make_resize_diff(plan.plan_id, plan.phases[0].id, "2026-08-03")[0].model_dump(mode="json"), "accepted_op_ids": [], "change_reason": ""},
             headers=_auth(token),
         )
 
@@ -651,12 +699,12 @@ class TestReviewApply:
         store.save_plan(plan)
 
         phase_id = plan.phases[0].id
-        diff_id, real_op_id = self._post_messages(client, token, plan.plan_id, phase_id)
+        diff_body, real_op_id = self._post_messages(client, token, plan.plan_id, phase_id)
 
         resp = client.post(
             f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
             json={
-                "diff_id": diff_id,
+                "diff": diff_body,
                 "accepted_op_ids": ["nonexistent-op-id"],  # not the real op id
                 "change_reason": "",
             },
@@ -666,22 +714,19 @@ class TestReviewApply:
         assert resp.status_code == 200, resp.text
         assert resp.json()["applied"] == 0
 
-    def test_apply_injects_pending_diff_directly(self, app_client):
-        """Directly inject a pending diff and apply it → plan updated."""
+    def test_apply_full_diff_directly(self, app_client):
+        """Send a full stateless diff directly and apply it."""
         client, token, tmp_path, _ = app_client
         store = _get_store()
         plan = _make_plan()
         store.save_plan(plan)
 
         diff, op_id = self._make_resize_diff(plan.plan_id, plan.phases[0].id, "2026-08-03")
-        mp_mod._PENDING_MP_DIFFS[(USER_UUID, plan.plan_id, diff.diff_id)] = (
-            diff, time.monotonic()
-        )
 
         resp = client.post(
             f"/api/users/me/master-plan/{plan.plan_id}/review/apply",
             json={
-                "diff_id": diff.diff_id,
+                "diff": diff.model_dump(mode="json"),
                 "accepted_op_ids": [op_id],
                 "change_reason": "需要更多基础",
             },
@@ -865,7 +910,7 @@ class TestCurrentMasterPlan:
         client, token, tmp_path, _ = app_client
         store = _get_store()
 
-        today = datetime.now(timezone.utc).date()
+        today = today_shanghai()
         phase_id = str(uuid4())
         goal_id = str(uuid4())
         phase = Phase(
@@ -1270,7 +1315,7 @@ class TestCurrentMasterPlan:
         client, token, tmp_path, _ = app_client
         store = _get_store()
 
-        today = datetime.now(timezone.utc).date()
+        today = today_shanghai()
         future_date = (today + timedelta(days=14)).isoformat()
 
         phase_id = str(uuid4())

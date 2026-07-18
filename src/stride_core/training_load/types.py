@@ -7,7 +7,7 @@ from datetime import date
 from enum import Enum
 from typing import Any
 
-TRAINING_LOAD_MODEL_VERSION = 1
+TRAINING_LOAD_MODEL_VERSION = 2
 
 
 class SessionClass(str, Enum):
@@ -27,6 +27,13 @@ class LoadConfidence(str, Enum):
     MEDIUM = "medium"
     LOW = "low"
     NONE = "none"
+
+
+class LoadCoverageStatus(str, Enum):
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    UNKNOWN = "unknown"
+    REST_CONFIRMED = "rest_confirmed"
 
 
 @dataclass(frozen=True)
@@ -83,9 +90,15 @@ class ActivityLoadResult:
     cardio_load_raw: float | None = None
     cardio_tss: float | None = None
     external_tss: float | None = None
+    high_intensity_tss: float | None = None
     mechanical_load: float | None = None
     subjective_internal_load: float | None = None
     training_dose: float | None = None
+    training_dose_source: str | None = None
+    cardio_coverage: float = 0.0
+    external_coverage: float = 0.0
+    high_intensity_coverage: float = 0.0
+    coverage_status: LoadCoverageStatus = LoadCoverageStatus.UNKNOWN
     load_confidence: LoadConfidence = LoadConfidence.NONE
     excluded_from_pmc: bool = True
     reasons: list[str] = field(default_factory=list)
@@ -124,6 +137,7 @@ class DailyLoadResult:
     chronic_load: float = 0.0
     form: float = 0.0
     load_ratio: float | None = None
+    coverage_status: LoadCoverageStatus = LoadCoverageStatus.UNKNOWN
     readiness_gate: str = "green"
     readiness_reasons: list[str] = field(default_factory=list)
 
@@ -151,6 +165,27 @@ class TrainingLoadBackfillSummary:
     load: TrainingLoadRunSummary
     calibration_lookback_days: int
     load_lookback_days: int
+
+
+@dataclass(frozen=True)
+class PlannedLoadEstimate:
+    """TSS-scaled estimate for a structured planned run.
+
+    Planned targets are ranges, so the estimator keeps the expected value and
+    lower/upper bounds instead of presenting false single-number precision.
+    ``coverage`` is the share of finite-duration/distance steps whose target and
+    athlete calibration were sufficient to estimate.
+    """
+
+    expected_dose: float | None = None
+    low_dose: float | None = None
+    high_dose: float | None = None
+    estimated_duration_minutes: float | None = None
+    estimated_distance_km: float | None = None
+    coverage: float = 0.0
+    confidence: LoadConfidence = LoadConfidence.NONE
+    assumptions: tuple[str, ...] = ()
+    unestimated_steps: int = 0
 
 
 CalibrationSample = ActivitySample

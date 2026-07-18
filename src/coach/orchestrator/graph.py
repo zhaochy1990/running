@@ -15,12 +15,13 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import Any
 
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, START, StateGraph
 
-from coach.contracts import SpecialistRegistry, TargetRef
+from coach.contracts import SpecialistRegistry, TargetRef, Turn, TurnResponse
 from .aggregator import SynthFn, aggregate
 from .dispatcher import dispatch
 from .memory import MemoryExtractFn, MemoryStore, load_active_memories, write_memories
@@ -33,6 +34,8 @@ from .state import (
 from .supervisor import build_call_plan
 
 logger = logging.getLogger(__name__)
+
+TurnPreflightFn = Callable[[str, list[Turn]], TurnResponse | None]
 
 
 def _ms(since: float) -> float:
@@ -52,6 +55,7 @@ def build_orchestrator_graph(
     memory_store: MemoryStore | None = None,
     memory_extract_fn: MemoryExtractFn | None = None,
     target_resolver: TargetResolverFn | None = None,
+    turn_preflight_fn: TurnPreflightFn | None = None,
 ) -> Any:
     """Compile the orchestrator pipeline graph.
 
@@ -66,6 +70,23 @@ def build_orchestrator_graph(
         utterance = last_human_text(history)
         # Window excludes the current utterance (the trailing HumanMessage).
         window = history_to_window(history[:-1]) if history else []
+
+        # Adapter-provided deterministic gates may answer before any memory,
+        # target, data, or specialist access. The response still enters graph
+        # history, so the next turn can resume the clarification naturally.
+        if turn_preflight_fn is not None:
+            preflight = turn_preflight_fn(utterance, window)
+            if preflight is not None:
+                return {
+                    "history": [AIMessage(content=preflight.reply)],
+                    "active_target": (
+                        preflight.active_target.model_dump()
+                        if preflight.active_target is not None
+                        else None
+                    ),
+                    "turn_response": preflight.model_dump(),
+                    "injected_memories": [],
+                }
 
         prior_raw = state.get("active_target")
         prior_target = TargetRef.model_validate(prior_raw) if prior_raw else None

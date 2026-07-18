@@ -403,7 +403,16 @@ def daily_health_from_garmin(
         load = primary.get("acuteTrainingLoadDTO") or {}
         ati = load.get("dailyTrainingLoadAcute")
         cti = load.get("dailyTrainingLoadChronic")
-        ratio = load.get("dailyAcuteChronicWorkloadRatio")
+        reported_ratio = load.get("dailyAcuteChronicWorkloadRatio")
+        # Garmin's ACWR field is rounded to one decimal place, while the ATI
+        # and CTI fields retain enough precision to reconstruct the same ratio.
+        # Persist the precise quotient when available so charts, thresholds,
+        # and offline validation do not inherit avoidable quantization noise.
+        # Keep the reported field as the fallback for incomplete payloads.
+        if ati is not None and cti is not None and float(cti) > 0:
+            ratio = float(ati) / float(cti)
+        else:
+            ratio = reported_ratio
         state = load.get("acwrStatus")  # 'OPTIMAL' / 'HIGH' / 'LOW' / ...
 
     us = user_summary or {}

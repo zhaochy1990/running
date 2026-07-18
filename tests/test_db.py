@@ -9,6 +9,7 @@ from stride_core.models import (
     ActivityDetail, DailyHealth, Dashboard, Lap, TimeseriesPoint, Zone,
 )
 from stride_core.timefmt import today_shanghai
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 
 def _make_detail(label_id="test1", sport_type=100, date="20260315", distance=10000):
@@ -138,8 +139,9 @@ class TestDatabaseActivities:
             """INSERT INTO activity_training_load
                (label_id, activity_date, sport, session_class, algorithm_version,
                 training_dose, load_confidence, excluded_from_pmc)
-               VALUES ('run1','2026-05-04','run_outdoor','long',1,80,'high',0),
-                      ('run2','2026-05-05','run_outdoor','easy',1,40,'high',0)"""
+               VALUES ('run1','2026-05-04','run_outdoor','long',?,80,'high',0),
+                      ('run2','2026-05-05','run_outdoor','easy',?,40,'high',0)""",
+            (TRAINING_LOAD_MODEL_VERSION, TRAINING_LOAD_MODEL_VERSION),
         )
         db._conn.execute(
             """INSERT INTO planned_session
@@ -149,9 +151,10 @@ class TestDatabaseActivities:
         )
         db._conn.execute(
             """INSERT INTO daily_training_load
-               (date,algorithm_version,training_dose,acute_load,chronic_load,form,load_ratio)
-               VALUES ('2026-05-04',1,80,50,45,-5,1.11),
-                      ('2026-05-05',1,40,52,46,-6,1.13)"""
+               (date,algorithm_version,training_dose,acute_load,chronic_load,form,load_ratio,
+                coverage_status) VALUES ('2026-05-04',?,80,50,45,-5,1.11,'complete'),
+                                        ('2026-05-05',?,40,52,46,-6,1.13,'partial')""",
+            (TRAINING_LOAD_MODEL_VERSION, TRAINING_LOAD_MODEL_VERSION),
         )
         db._conn.execute(
             """INSERT INTO daily_health
@@ -159,8 +162,9 @@ class TestDatabaseActivities:
                VALUES ('20260505', 49, 88, 90, 40, 2.25, 'Very High')"""
         )
         db._conn.execute(
-            """INSERT INTO daily_hrv (date, last_night_avg, status)
-               VALUES ('2026-05-05', 42, 'LOW')"""
+            """INSERT INTO daily_hrv (date, last_night_avg, status, provider)
+               VALUES ('20260505', 41, 'LOW', 'coros'),
+                      ('2026-05-05', 42, 'BALANCED', 'garmin')"""
         )
         db._conn.commit()
 
@@ -171,6 +175,7 @@ class TestDatabaseActivities:
         assert result["summary"]["run_count"] == 2
         assert result["summary"]["run_distance_km"] == 15.0
         assert result["summary"]["training_dose"] == 120.0
+        assert result["summary"]["training_dose_coverage"] == "partial"
         assert result["plan_adherence"] == {
             "planned_sessions": 2,
             "completed_sessions": 1,
@@ -184,6 +189,10 @@ class TestDatabaseActivities:
         assert "training_dose" not in result["activities"][0]
         assert all(row["source"] == "stride" for row in result["load_series"])
         assert all(row["vendor_derived"] is False for row in result["load_series"])
+        assert [row["coverage_status"] for row in result["load_series"]] == [
+            "complete",
+            "partial",
+        ]
         assert result["recovery_series"] == [
             {"day": "2026-05-05", "rhr": 49, "hrv": 42}
         ]
@@ -397,7 +406,9 @@ class TestActivitiesIndexes:
         from stride_core.timefmt import SHANGHAI_DAY_SQL
 
         for sql, params in [
-            (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} >= ?", ("2026-05-09",)),
+            # Keep the lower-bound query selective. SQLite correctly prefers a
+            # table scan when most rows match, which is not an index regression.
+            (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} >= ?", ("2026-05-20",)),
             (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ?", ("2026-05-04", "2026-05-10")),
             (f"SELECT label_id FROM activities WHERE {SHANGHAI_DAY_SQL} = ?", ("2026-05-09",)),
         ]:
@@ -410,7 +421,7 @@ class TestActivitiesIndexes:
         for sql, params in [
             ("SELECT label_id, date FROM activities ORDER BY date DESC LIMIT 5", ()),
             ("SELECT MAX(date) FROM activities", ()),
-            ("SELECT label_id FROM activities WHERE date >= ?", ("2026-05-09T00:00:00+00:00",)),
+            ("SELECT label_id FROM activities WHERE date >= ?", ("2026-05-20T00:00:00+00:00",)),
         ]:
             joined = self._plan(seeded_db, sql, params)
             assert "idx_activities_date" in joined, (

@@ -117,13 +117,14 @@ def _recent_training_context(db, week_start: date_cls) -> RecentTrainingContext:
     baseline = round(float(median(completed)), 1) if completed else None
 
     load_ratio = None
-    load_rows = (
-        db.fetch_recent_daily_training_load(1)
-        if hasattr(db, "fetch_recent_daily_training_load")
-        else []
-    )
-    if load_rows and load_rows[0]["load_ratio"] is not None:
-        load_ratio = float(load_rows[0]["load_ratio"])
+    if hasattr(db, "fetch_latest_daily_training_load"):
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        load_row = db.fetch_latest_daily_training_load(
+            algorithm_version=TRAINING_LOAD_MODEL_VERSION
+        )
+        if load_row is not None and load_row["load_ratio"] is not None:
+            load_ratio = float(load_row["load_ratio"])
 
     current_week_by_date = None
     if (

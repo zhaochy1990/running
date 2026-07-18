@@ -33,6 +33,44 @@ SHANGHAI_TZ = timezone(timedelta(hours=8))
 SHANGHAI_DAY_SQL = "date(datetime(date, '+8 hours'))"
 
 
+_SQL_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?")
+
+
+def sqlite_mixed_date_expr(column: str = "date") -> str:
+    """SQLite expression normalizing mixed ``YYYYMMDD`` / ISO dates to ``YYYY-MM-DD``.
+
+    Some per-day watch tables store Shanghai-local days as compact ``YYYYMMDD``
+    while newer/provider-neutral rows use ISO ``YYYY-MM-DD``. Lexicographic
+    ``BETWEEN`` against ISO bounds silently drops compact rows, so bounded SQL
+    readers should compare against this expression instead of raw ``date``.
+    """
+    if _SQL_IDENTIFIER_RE.fullmatch(column) is None:
+        raise ValueError(f"invalid SQL identifier: {column!r}")
+    return (
+        f"CASE WHEN length({column}) = 8 "
+        f"AND {column} GLOB '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' "
+        f"THEN substr({column},1,4) || '-' || substr({column},5,2) || '-' || substr({column},7,2) "
+        f"ELSE substr({column},1,10) END"
+    )
+
+
+def parse_local_day(value: str | date | None) -> date | None:
+    """Parse compact or ISO local-day text, returning ``None`` when invalid."""
+    if isinstance(value, date):
+        return value
+    if value is None:
+        return None
+    text = str(value).strip()
+    try:
+        if len(text) >= 10 and text[4] == "-":
+            return date.fromisoformat(text[:10])
+        if len(text) == 8 and text.isdigit():
+            return date(int(text[:4]), int(text[4:6]), int(text[6:8]))
+    except ValueError:
+        return None
+    return None
+
+
 def utc_iso_to_shanghai_iso(s: str | None) -> str | None:
     """Convert a UTC ISO 8601 string to Asia/Shanghai ISO 8601 (with ``+08:00``).
 

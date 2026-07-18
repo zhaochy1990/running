@@ -47,6 +47,7 @@ ${card_catalog}
     不会改变目标仍是其中某一周；不要误路由到 `season_plan`。
   - 教练问「要创建本周的训练计划吗？」后用户答「创建」→ `weekly_plan`,
     `action=write`, `target_hint.kind=week`。
+- 如果本轮只是回答教练上一轮的澄清问题（如教练问“哪个阶段？”，用户答“专项期”），必须结合「最近对话」继承上一条未完成请求的 specialist/action/target kind；不要把短答降级成只读查询或无意图。示例：上一条用户说“训练重点改成上坡力量”，教练问“哪个阶段？”，本轮“专项期”仍是 `season_plan`, `action=write`, `target_hint.kind=master`。
 - 不要仅凭句子出现「生成」「减少」等单个词判断写入；以用户是否要求形成计划修改提案为准。例如「不要生成计划，只告诉我当前计划」和「这个计划能否减少受伤风险」都是 `read`。
 - 只有一个明确诉求时，`intents` 只放一个，`confidence` 给高分（≥0.7）。
 - 完全跑题、没有任何专家能接（如「今天天气怎样」）→ `intents` 留空、`self_ambiguity=true`。

@@ -366,6 +366,9 @@ def _apply_result_message(
 ) -> str:
     if isinstance(proposal, MasterPlanDiff):
         suffix = f"训练计划已更新至 v{result.get('version', '?')}。"
+        affected = result.get("affected_weeks") or []
+        if affected:
+            suffix += f"\n⚠️  {len(affected)} 个周计划可能仍含旧总纲目标，请按需重新生成。"
     elif result.get("created"):
         suffix = f"周计划 {result.get('folder', '')} 已创建。"
     else:

@@ -5,6 +5,7 @@ import json
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 USER_UUID = "a1b2c3d4-e5f6-4aaa-89ab-123456789012"
 
@@ -46,18 +47,18 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
         db._conn.execute(
             """INSERT INTO daily_training_load
                (date, algorithm_version, training_dose, acute_load, chronic_load,
-                form, load_ratio, readiness_gate, readiness_reasons_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            ("2026-05-01", 1, 80.0, 8.0, 18.0, 10.0, 0.44, "green", json.dumps([])),
+                form, load_ratio, readiness_gate, readiness_reasons_json, coverage_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("2026-05-01", TRAINING_LOAD_MODEL_VERSION, 80.0, 8.0, 18.0, 10.0, 0.44, "green", json.dumps([]), "complete"),
         )
         db._conn.execute(
             """INSERT INTO daily_training_load
                (date, algorithm_version, training_dose, acute_load, chronic_load,
-                form, load_ratio, readiness_gate, readiness_reasons_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                form, load_ratio, readiness_gate, readiness_reasons_json, coverage_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 "2026-05-08",
-                1,
+                TRAINING_LOAD_MODEL_VERSION,
                 120.0,
                 21.0,
                 27.0,
@@ -65,6 +66,7 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
                 0.78,
                 "yellow",
                 json.dumps(["low_hrv"]),
+                "partial",
             ),
         )
         db._conn.commit()
@@ -79,7 +81,8 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
     assert body["stride_pmc"] == [
         {
             "date": "2026-05-01",
-            "algorithm_version": 1,
+            "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+            "coverage_status": "complete",
             "training_dose": 80.0,
             "acute_load": 8.0,
             "chronic_load": 18.0,
@@ -91,7 +94,8 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
         },
         {
             "date": "2026-05-08",
-            "algorithm_version": 1,
+            "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+            "coverage_status": "partial",
             "training_dose": 120.0,
             "acute_load": 21.0,
             "chronic_load": 27.0,
@@ -109,10 +113,44 @@ def test_pmc_returns_stride_daily_load_payload(app_client):
         "current_chronic_load": 27.0,
         "current_form": 6.0,
         "current_load_ratio": 0.78,
+        "current_coverage_status": "partial",
         "current_readiness_gate": "yellow",
         "current_readiness_reasons": ["low_hrv"],
         "chronic_load_ramp": 9.0,
     }
+
+
+def test_pmc_summary_skips_latest_unknown_placeholder(app_client):
+    client, tmp_path = app_client
+    db = _open_user_db(tmp_path)
+    try:
+        db._conn.executemany(
+            """INSERT INTO daily_training_load
+               (date, algorithm_version, training_dose, acute_load, chronic_load,
+                form, load_ratio, readiness_gate, readiness_reasons_json, coverage_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                ("2026-05-08", TRAINING_LOAD_MODEL_VERSION, 75.0, 20.0, 25.0,
+                 5.0, 0.8, "yellow", '["measured"]', "partial"),
+                ("2026-05-09", TRAINING_LOAD_MODEL_VERSION, 0.0, 20.0, 25.0,
+                 5.0, 0.8, "green", '[]', "unknown"),
+            ],
+        )
+        db._conn.commit()
+    finally:
+        db.close()
+
+    resp = client.get(f"/api/{USER_UUID}/pmc?days=14")
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [row["coverage_status"] for row in body["stride_pmc"]] == [
+        "partial",
+        "unknown",
+    ]
+    assert body["stride_summary"]["date"] == "2026-05-08"
+    assert body["stride_summary"]["current_coverage_status"] == "partial"
+    assert body["stride_summary"]["current_readiness_gate"] == "yellow"
 
 
 def test_pmc_uses_single_latest_stride_algorithm_version(app_client):
@@ -120,17 +158,17 @@ def test_pmc_uses_single_latest_stride_algorithm_version(app_client):
     db = _open_user_db(tmp_path)
     try:
         rows = [
-            ("2026-05-01", 1, 10.0, 1.0, 11.0, 10.0, 0.09, "green", []),
-            ("2026-05-02", 1, 20.0, 2.0, 12.0, 10.0, 0.17, "green", []),
-            ("2026-05-01", 2, 100.0, 10.0, 30.0, 20.0, 0.33, "yellow", ["v2"]),
-            ("2026-05-02", 2, 110.0, 12.0, 34.0, 22.0, 0.35, "yellow", ["v2"]),
+            ("2026-05-01", 1, 10.0, 1.0, 11.0, 10.0, 0.09, "green", [], "complete"),
+            ("2026-05-02", 1, 20.0, 2.0, 12.0, 10.0, 0.17, "green", [], "complete"),
+            ("2026-05-01", 2, 100.0, 10.0, 30.0, 20.0, 0.33, "yellow", ["v2"], "complete"),
+            ("2026-05-02", 2, 110.0, 12.0, 34.0, 22.0, 0.35, "yellow", ["v2"], "partial"),
         ]
         db._conn.executemany(
             """INSERT INTO daily_training_load
                (date, algorithm_version, training_dose, acute_load, chronic_load,
-                form, load_ratio, readiness_gate, readiness_reasons_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            [(*row[:-1], json.dumps(row[-1])) for row in rows],
+                form, load_ratio, readiness_gate, readiness_reasons_json, coverage_status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(*row[:-2], json.dumps(row[-2]), row[-1]) for row in rows],
         )
         db._conn.commit()
     finally:
@@ -178,7 +216,7 @@ def test_activity_detail_returns_stride_training_load(app_client):
                 "2026-05-08",
                 "run_outdoor",
                 "easy",
-                1,
+                TRAINING_LOAD_MODEL_VERSION,
                 70.5,
                 84.2,
                 91.4,
@@ -205,14 +243,20 @@ def test_activity_detail_returns_stride_training_load(app_client):
         "activity_date": "2026-05-08",
         "sport": "run_outdoor",
         "session_class": "easy",
-        "algorithm_version": 1,
+        "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
         "calibration_id": None,
         "cardio_load_raw": 70.5,
         "cardio_tss": 84.2,
         "external_tss": 91.4,
+        "high_intensity_tss": None,
         "mechanical_load": 10.3,
         "subjective_internal_load": None,
         "training_dose": 86.4,
+        "training_dose_source": None,
+        "cardio_coverage": 0.0,
+        "external_coverage": 0.0,
+        "high_intensity_coverage": 0.0,
+        "coverage_status": "unknown",
         "load_confidence": "high",
         "excluded_from_pmc": False,
         "reasons": ["gps_ok"],

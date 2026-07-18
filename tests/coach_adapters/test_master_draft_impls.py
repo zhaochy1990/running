@@ -1,4 +1,4 @@
-"""US-009: 6 master-scope draft tools emit valid MasterPlanDiff."""
+"""Master-scope draft tools emit valid MasterPlanDiff values."""
 
 from __future__ import annotations
 
@@ -109,20 +109,24 @@ def _assert_master_diff(res: ToolResult) -> MasterPlanDiff:
 def test_extend_phase_shifts_end_date_forward(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.ExtendPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2,
+        adjustment_request="把基础期延长两周",
     )
     diff = _assert_master_diff(res)
     assert len(diff.ops) == 1
     op = diff.ops[0]
-    assert op.op == MasterPlanDiffOpKind.RESIZE_PHASE
+    assert op.op == MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY
     assert op.phase_id == phase1.id
     assert op.spec_patch["end_date"] == "2026-07-20"  # 2026-07-06 + 2 weeks
+    assert op.spec_patch["following_phase_id"] == seeded_plan[2].id
+    assert op.spec_patch["following_start_date"] == "2026-07-21"
 
 
 def test_extend_phase_zero_weeks_fails(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.ExtendPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=phase1.id, weeks=0
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=0,
+        adjustment_request="把基础期延长零周",
     )
     assert not res.ok
 
@@ -130,7 +134,8 @@ def test_extend_phase_zero_weeks_fails(seeded_plan):
 def test_extend_phase_missing_plan_fails(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.ExtendPhaseImpl(USER_ID)(
-        plan_id="nonexistent", phase_id=phase1.id, weeks=2
+        plan_id="nonexistent", phase_id=phase1.id, weeks=2,
+        adjustment_request="把基础期延长两周",
     )
     assert not res.ok
     assert any("not found" in e for e in res.errors)
@@ -139,7 +144,8 @@ def test_extend_phase_missing_plan_fails(seeded_plan):
 def test_extend_phase_missing_phase_fails(seeded_plan):
     plan, _, _, _ = seeded_plan
     res = draft_impls.ExtendPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id="bogus", weeks=2
+        plan_id=plan.plan_id, phase_id="bogus", weeks=2,
+        adjustment_request="把基础期延长两周",
     )
     assert not res.ok
 
@@ -147,17 +153,70 @@ def test_extend_phase_missing_phase_fails(seeded_plan):
 def test_compress_phase_shifts_end_date_backward(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.CompressPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=2,
+        adjustment_request="把基础期缩短两周",
     )
     diff = _assert_master_diff(res)
     assert len(diff.ops) == 1
     assert diff.ops[0].spec_patch["end_date"] == "2026-06-22"  # 2026-07-06 - 2 weeks
+    assert diff.ops[0].spec_patch["following_start_date"] == "2026-06-23"
+
+
+def test_phase_resize_tools_reject_wrong_direction_or_magnitude(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+
+    wrong_weeks = draft_impls.ExtendPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weeks=1,
+        adjustment_request="把基础期延长两周",
+    )
+    wrong_direction = draft_impls.CompressPhaseImpl(USER_ID)(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weeks=2,
+        adjustment_request="把基础期延长两周",
+    )
+
+    assert not wrong_weeks.ok
+    assert not wrong_direction.ok
+
+
+def test_extend_phase_rejects_shortening_protected_following_taper(seeded_plan):
+    plan, phase1, phase2, _ = seeded_plan
+    taper = phase2.model_copy(
+        update={
+            "name": "调整期",
+            "phase_type": PhaseType.TAPER,
+            "start_date": "2026-09-01",
+            "end_date": "2026-09-14",
+        }
+    )
+    shifted_plan = plan.model_copy(
+        update={
+            "phases": [phase1.model_copy(update={"end_date": "2026-08-31"}), taper]
+        }
+    )
+    tool = draft_impls.ExtendPhaseImpl(
+        USER_ID, plan_loader=lambda _plan_id: shifted_plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weeks=1,
+        adjustment_request="把基础期延长一周",
+    )
+
+    assert not result.ok
+    assert "必须完整保留" in result.errors[0]
 
 
 def test_compress_phase_below_start_fails(seeded_plan):
     plan, phase1, _, _ = seeded_plan
     res = draft_impls.CompressPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=phase1.id, weeks=100
+        plan_id=plan.plan_id, phase_id=phase1.id, weeks=100,
+        adjustment_request="把基础期缩短一百周",
     )
     assert not res.ok
 
@@ -178,14 +237,15 @@ def test_compress_phase_refuses_to_shorten_final_two_week_taper(seeded_plan):
     )
 
     res = draft_impls.CompressPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=taper.id, weeks=1
+        plan_id=plan.plan_id, phase_id=taper.id, weeks=1,
+        adjustment_request="把调整期缩短一周",
     )
 
     assert not res.ok
     assert "必须完整保留" in res.errors[0]
 
 
-def test_compress_phase_allows_short_final_recovery(seeded_plan):
+def test_compress_phase_rejects_final_recovery_boundary_move(seeded_plan):
     plan, phase1, phase2, _ = seeded_plan
     from stride_server.master_plan_store import get_master_plan_store
 
@@ -203,12 +263,12 @@ def test_compress_phase_allows_short_final_recovery(seeded_plan):
     )
 
     res = draft_impls.CompressPhaseImpl(USER_ID)(
-        plan_id=plan.plan_id, phase_id=recovery.id, weeks=1
+        plan_id=plan.plan_id, phase_id=recovery.id, weeks=1,
+        adjustment_request="把恢复期缩短一周",
     )
 
-    assert res.ok
-    diff = MasterPlanDiff.model_validate(res.data)
-    assert diff.ops[0].spec_patch["end_date"] == "2026-09-07"
+    assert not res.ok
+    assert "final phase" in res.errors[0]
 
 
 # ---------------------------------------------------------------------------
@@ -229,12 +289,262 @@ def test_shift_milestone_changes_date(seeded_plan):
     assert op.spec_patch["date"] == "2026-08-22"
 
 
+def test_generic_milestone_tools_reject_target_race_milestone() -> None:
+    phase = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=phase.id, target="全马 3:15:00",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[phase],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+
+    loader = lambda _plan_id: plan
+    date_result = draft_impls.ShiftMilestoneImpl(USER_ID, plan_loader=loader)(
+        plan_id=plan.plan_id, milestone_id=race.id, new_date="2026-11-08"
+    )
+    target_result = draft_impls.ChangeTargetImpl(USER_ID, plan_loader=loader)(
+        plan_id=plan.plan_id, milestone_id=race.id, new_target_time="全马 3:10:00"
+    )
+
+    assert date_result.ok is False
+    assert "target race" in date_result.errors[0]
+    assert "reschedule_target_race" in date_result.errors[0]
+    assert target_result.ok is False
+    assert "target race" in target_result.errors[0]
+    assert "update_target_race_time" in target_result.errors[0]
+
+
+def test_generic_milestone_tools_reject_stale_target_race_date() -> None:
+    phase = Phase(
+        id="taper",
+        name="调整期",
+        phase_type=PhaseType.TAPER,
+        start_date="2026-10-11",
+        end_date="2026-10-25",
+        focus="taper",
+        weekly_distance_km_low=30,
+        weekly_distance_km_high=45,
+        key_session_types=["race"],
+        milestone_ids=["race"],
+    )
+    stale_race = Milestone(
+        id="race",
+        type=MilestoneType.RACE,
+        date="2026-10-18",
+        phase_id=phase.id,
+        target="全马 3:15:00",
+    )
+    plan = MasterPlan(
+        plan_id="p",
+        user_id=USER_ID,
+        status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-08-01",
+        end_date="2026-10-25",
+        phases=[phase],
+        milestones=[stale_race],
+        training_principles=[],
+        generated_by="test",
+        version=1,
+        created_at="2026-07-01T00:00:00Z",
+        updated_at="2026-07-01T00:00:00Z",
+    )
+
+    loader = lambda _plan_id: plan
+    date_result = draft_impls.ShiftMilestoneImpl(USER_ID, plan_loader=loader)(
+        plan_id=plan.plan_id, milestone_id=stale_race.id, new_date="2026-11-08"
+    )
+    target_result = draft_impls.ChangeTargetImpl(USER_ID, plan_loader=loader)(
+        plan_id=plan.plan_id,
+        milestone_id=stale_race.id,
+        new_target_time="全马 3:10:00",
+    )
+
+    assert date_result.ok is False
+    assert "reschedule_target_race" in date_result.errors[0]
+    assert target_result.ok is False
+    assert "update_target_race_time" in target_result.errors[0]
+
+
+def test_generic_milestone_tools_fail_closed_when_target_race_date_is_empty() -> None:
+    phase = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=phase.id, target="全马 3:15:00",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(goal_id="g", race_date="", target_time="3:15:00"),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[phase],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+
+    result = draft_impls.ShiftMilestoneImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )(plan_id=plan.plan_id, milestone_id=race.id, new_date="2026-11-08")
+
+    assert result.ok is False
+    assert "target race" in result.errors[0]
+
+
 def test_shift_milestone_bad_date_fails(seeded_plan):
     plan, _, _, milestone = seeded_plan
     res = draft_impls.ShiftMilestoneImpl(USER_ID)(
         plan_id=plan.plan_id, milestone_id=milestone.id, new_date="not-a-date"
     )
     assert not res.ok
+
+
+def test_reschedule_target_race_emits_one_atomic_plan_diff() -> None:
+    taper = Phase(
+        id="phase-taper",
+        name="调整期",
+        phase_type=PhaseType.TAPER,
+        start_date="2026-10-11",
+        end_date="2026-10-25",
+        focus="减量与比赛",
+        weekly_distance_km_low=35,
+        weekly_distance_km_high=55,
+        key_session_types=["race_pace", "race"],
+        milestone_ids=["race-1"],
+    )
+    build = Phase(
+        id="phase-build",
+        name="专项期",
+        phase_type=PhaseType.BUILD,
+        start_date="2026-08-16",
+        end_date="2026-10-10",
+        focus="马拉松专项",
+        weekly_distance_km_low=75,
+        weekly_distance_km_high=88,
+        key_session_types=["long_run", "race_pace"],
+        milestone_ids=[],
+    )
+    race = Milestone(
+        id="race-1",
+        type=MilestoneType.RACE,
+        date="2026-10-25",
+        phase_id=taper.id,
+        target="全马 3:15",
+    )
+    plan = MasterPlan(
+        plan_id="plan-race",
+        user_id=USER_ID,
+        status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="goal-race", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-07-01",
+        end_date="2026-10-25",
+        phases=[build, taper],
+        milestones=[race],
+        training_principles=["保留两周 taper"],
+        generated_by="fixture",
+        version=1,
+        created_at="2026-07-01T00:00:00Z",
+        updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.RescheduleTargetRaceImpl(
+        USER_ID, plan_loader=lambda plan_id: plan if plan_id == plan.plan_id else None
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        milestone_id=race.id,
+        new_date="2026-11-08",
+        reason="比赛官方延期两周",
+    )
+
+    diff = _assert_master_diff(result)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE
+    assert op.milestone_id == race.id
+    assert op.spec_patch == {
+        "race_date": "2026-11-08",
+        "plan_end_date": "2026-11-08",
+        "milestone_date": "2026-11-08",
+        "phase_updates": [
+            {"phase_id": build.id, "end_date": "2026-10-24"},
+            {
+                "phase_id": taper.id,
+                "start_date": "2026-10-25",
+                "end_date": "2026-11-08",
+            },
+        ],
+    }
+
+
+def test_reschedule_target_race_rejects_non_race_milestone(seeded_plan):
+    plan, _, _, milestone = seeded_plan
+    tool = draft_impls.RescheduleTargetRaceImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        milestone_id=milestone.id,
+        new_date="2026-09-28",
+        reason="not a race",
+    )
+
+    assert result.ok is False
+    assert "target race" in result.errors[0]
+
+
+def test_reschedule_target_race_rejects_noop_date() -> None:
+    taper = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    build = taper.model_copy(update={
+        "id": "build", "name": "专项期", "phase_type": PhaseType.BUILD,
+        "start_date": "2026-08-01", "end_date": "2026-10-10",
+        "milestone_ids": [],
+    })
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=taper.id, target="全马",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(goal_id="g", race_date="2026-10-25", target_time=""),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[build, taper],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.RescheduleTargetRaceImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, milestone_id=race.id, new_date=race.date, reason="same"
+    )
+
+    assert result.ok is False
+    assert "no proposal is needed" in result.errors[0]
 
 
 def test_change_target_replaces_target(seeded_plan):
@@ -259,18 +569,343 @@ def test_change_target_empty_fails(seeded_plan):
     assert not res.ok
 
 
+def test_update_target_race_time_emits_one_atomic_diff() -> None:
+    taper = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=taper.id, target="全马 3:15:00",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[taper],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.UpdateTargetRaceTimeImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, milestone_id=race.id,
+        new_target_time="3:10:00", reason="prediction supports it",
+    )
+
+    diff = _assert_master_diff(result)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME
+    assert op.spec_patch == {
+        "target_time": "3:10:00",
+        "milestone_target": "全马 3:10:00",
+    }
+
+
+def test_update_target_race_time_preserves_milestone_coaching_context() -> None:
+    phase = Phase(
+        id="taper", name="调整期", phase_type=PhaseType.TAPER,
+        start_date="2026-10-11", end_date="2026-10-25", focus="taper",
+        weekly_distance_km_low=30, weekly_distance_km_high=45,
+        key_session_types=["race"], milestone_ids=["race"],
+    )
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date="2026-10-25",
+        phase_id=phase.id,
+        target="本周期 B 目标 3:15:00；长期 A 目标 2:59:00",
+    )
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time="3:15:00"
+        ),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[phase],
+        milestones=[race], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.UpdateTargetRaceTimeImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, milestone_id=race.id,
+        new_target_time="3:10:00", reason="supported",
+    )
+
+    diff = _assert_master_diff(result)
+    assert diff.ops[0].spec_patch["milestone_target"] == (
+        "本周期 B 目标 3:10:00；长期 A 目标 2:59:00"
+    )
+
+
+@pytest.mark.parametrize("bad_time", ["3:10", "3:70:00", "sub-3:10", ""])
+def test_update_target_race_time_rejects_noncanonical_time(bad_time: str) -> None:
+    plan = MasterPlan(
+        plan_id="p", user_id=USER_ID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(
+            goal_id="g", race_date="2026-10-25", target_time=""
+        ),
+        start_date="2026-08-01", end_date="2026-10-25", phases=[],
+        milestones=[], training_principles=[], generated_by="test", version=1,
+        created_at="2026-07-01T00:00:00Z", updated_at="2026-07-01T00:00:00Z",
+    )
+    tool = draft_impls.UpdateTargetRaceTimeImpl(
+        USER_ID, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id, milestone_id="race",
+        new_target_time=bad_time, reason="bad",
+    )
+
+    assert result.ok is False
+    assert "H:MM:SS" in result.errors[0]
+
+
 # ---------------------------------------------------------------------------
-# propose_alternatives
+# propose_reduction_alternatives
 # ---------------------------------------------------------------------------
 
 
-def test_propose_alternatives_returns_two_diffs(seeded_plan, monkeypatch):
+def test_set_phase_weekly_range_returns_exact_typed_diff(seeded_plan, monkeypatch):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda plan_id: plan if plan_id == plan.plan_id else None
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weekly_distance_km_low=55,
+        weekly_distance_km_high=65,
+        adjustment_request="把基础期周跑量调整到 55–65 公里",
+        reason="用户明确要求且训练负荷支持",
+    )
+
+    assert result.ok is True
+    diff = MasterPlanDiff.model_validate(result.data)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE
+    assert op.phase_id == phase1.id
+    assert op.old_value == {
+        "weekly_distance_km_low": phase1.weekly_distance_km_low,
+        "weekly_distance_km_high": phase1.weekly_distance_km_high,
+    }
+    assert op.new_value == {
+        "weekly_distance_km_low": 55.0,
+        "weekly_distance_km_high": 65.0,
+    }
+
+
+def test_set_phase_weekly_range_rejects_inverted_range(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weekly_distance_km_low=70,
+        weekly_distance_km_high=60,
+        adjustment_request="把基础期周跑量调整到 70–60 公里",
+        reason="bad input",
+    )
+
+    assert result.ok is False
+    assert "low <= high" in result.errors[0]
+
+
+def test_set_phase_weekly_range_calculates_exact_requested_percentage(seeded_plan):
+    plan, _, phase2, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+    request = "把专项期跑量提高 10%"
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase2.id,
+        weekly_distance_km_low=55,
+        weekly_distance_km_high=71.5,
+        adjustment_request=request,
+        reason="历史峰值和当前恢复支持",
+    )
+
+    diff = _assert_master_diff(result)
+    assert diff.ops[0].new_value == {
+        "weekly_distance_km_low": 55.0,
+        "weekly_distance_km_high": 71.5,
+    }
+
+
+def test_set_phase_weekly_range_rejects_wrong_requested_percentage(seeded_plan):
+    plan, _, phase2, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase2.id,
+        weekly_distance_km_low=80,
+        weekly_distance_km_high=95,
+        adjustment_request="把专项期跑量提高 10%",
+        reason="错误计算",
+    )
+
+    assert result.ok is False
+    assert "exact range or percentage" in result.errors[0]
+
+
+def test_set_phase_focus_returns_exact_typed_diff(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseFocusImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        focus="有氧基础与上坡力量",
+        adjustment_request="基础期训练重点改为有氧基础与上坡力量",
+        reason="用户明确要求且当前负荷支持",
+    )
+
+    diff = _assert_master_diff(result)
+    assert len(diff.ops) == 1
+    op = diff.ops[0]
+    assert op.op == MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS
+    assert op.phase_id == phase1.id
+    assert op.old_value == {"focus": "有氧基础"}
+    assert op.new_value == {"focus": "有氧基础与上坡力量"}
+    assert op.spec_patch == {"focus": "有氧基础与上坡力量"}
+    assert validate_master_diff(plan, diff) == []
+
+
+@pytest.mark.parametrize(
+    ("phase_selector", "focus", "adjustment_request"),
+    [
+        (1, "有氧基础与上坡力量", "基础期训练重点改为上坡力量"),
+        (2, "阈值耐力", "基础期训练重点改为阈值耐力"),
+    ],
+)
+def test_set_phase_focus_rejects_invented_text_or_wrong_named_phase(
+    seeded_plan, phase_selector: int, focus: str, adjustment_request: str
+) -> None:
+    plan, phase1, phase2, _ = seeded_plan
+    phase = phase1 if phase_selector == 1 else phase2
+    tool = draft_impls.SetPhaseFocusImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase.id,
+        focus=focus,
+        adjustment_request=adjustment_request,
+        reason="模型不应扩写或换阶段",
+    )
+
+    assert result.ok is False
+    assert "does not match" in result.errors[0]
+
+
+def test_set_phase_focus_requires_explicit_focus_in_bound_request(
+    seeded_plan,
+) -> None:
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseFocusImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        focus="上坡力量",
+        adjustment_request="请帮我调整基础期训练重点",
+        reason="模型不应猜重点",
+    )
+
+    assert result.ok is False
+    assert "explicit replacement focus" in result.errors[0]
+
+
+@pytest.mark.parametrize("focus", ["", "   ", "有氧基础", None])
+def test_set_phase_focus_rejects_empty_or_noop(
+    seeded_plan, focus: object
+) -> None:
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseFocusImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        focus=focus,
+        adjustment_request="基础期训练重点改为有氧基础与上坡力量",
+        reason="test",
+    )
+
+    assert result.ok is False
+
+
+@pytest.mark.parametrize("low,high", [(float("nan"), 60), (50, float("inf"))])
+def test_set_phase_weekly_range_rejects_non_finite_values(
+    seeded_plan, low: float, high: float
+):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weekly_distance_km_low=low,
+        weekly_distance_km_high=high,
+        adjustment_request="把基础期周跑量提高 10%",
+        reason="bad input",
+    )
+
+    assert result.ok is False
+    assert "finite" in result.errors[0]
+
+
+def test_set_phase_weekly_range_rejects_noop(seeded_plan):
+    plan, phase1, _, _ = seeded_plan
+    tool = draft_impls.SetPhaseWeeklyRangeImpl(
+        plan.user_id, plan_loader=lambda _plan_id: plan
+    )
+
+    result = tool(
+        plan_id=plan.plan_id,
+        phase_id=phase1.id,
+        weekly_distance_km_low=phase1.weekly_distance_km_low,
+        weekly_distance_km_high=phase1.weekly_distance_km_high,
+        adjustment_request="保持基础期周跑量不变",
+        reason="same range",
+    )
+
+    assert result.ok is False
+    assert "no proposal is needed" in result.errors[0]
+
+
+def test_propose_reduction_alternatives_returns_two_diffs(seeded_plan, monkeypatch):
     plan, phase1, phase2, _ = seeded_plan
     monkeypatch.setattr(
         draft_impls, "today_shanghai", lambda: date(2026, 7, 15)
     )
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="想加大强度但又怕受伤"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="给我两个降低训练量的方案"
     )
     assert res.ok
     assert "alternatives" in res.data
@@ -292,7 +927,20 @@ def test_propose_alternatives_returns_two_diffs(seeded_plan, monkeypatch):
     assert phase2.end_date == "2026-09-14"
 
 
-def test_propose_alternatives_targets_current_phase_before_future_phases(
+def test_propose_reduction_alternatives_rejects_an_increase_request(
+    seeded_plan,
+):
+    plan, _, _, _ = seeded_plan
+
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="我想要加量"
+    )
+
+    assert not res.ok
+    assert "requires an explicit weekly-volume reduction request" in res.errors[0]
+
+
+def test_propose_reduction_alternatives_targets_current_phase_before_future_phases(
     seeded_plan, monkeypatch
 ):
     plan, phase1, phase2, _ = seeded_plan
@@ -324,8 +972,8 @@ def test_propose_alternatives_targets_current_phase_before_future_phases(
         plan.model_copy(update={"phases": [phase1, current, future, taper]})
     )
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="我在昆明高原待到 7 月 26 日，调整当前阶段周跑量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="我在昆明高原待到 7 月 26 日，给两个降低当前阶段周跑量的方案"
     )
 
     assert res.ok
@@ -339,7 +987,7 @@ def test_propose_alternatives_targets_current_phase_before_future_phases(
     )
 
 
-def test_propose_alternatives_targets_build_before_short_taper(
+def test_propose_reduction_alternatives_targets_build_before_short_taper(
     seeded_plan, monkeypatch
 ):
     plan, phase1, phase2, _ = seeded_plan
@@ -359,8 +1007,8 @@ def test_propose_alternatives_targets_build_before_short_taper(
     short_taper_plan = plan.model_copy(update={"phases": [phase1, taper]})
     get_master_plan_store().save_plan(short_taper_plan)
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="降低训练量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="降低训练量"
     )
 
     assert res.ok
@@ -373,7 +1021,7 @@ def test_propose_alternatives_targets_build_before_short_taper(
     assert taper.end_date == "2026-09-14"
 
 
-def test_propose_alternatives_does_not_treat_short_recovery_as_taper(
+def test_propose_reduction_alternatives_does_not_treat_short_recovery_as_taper(
     seeded_plan, monkeypatch
 ):
     plan, phase1, phase2, _ = seeded_plan
@@ -395,8 +1043,8 @@ def test_propose_alternatives_does_not_treat_short_recovery_as_taper(
         plan.model_copy(update={"phases": [phase1, recovery]})
     )
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="降低当前恢复期周跑量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="降低当前恢复期周跑量"
     )
 
     assert res.ok
@@ -410,7 +1058,7 @@ def test_propose_alternatives_does_not_treat_short_recovery_as_taper(
     )
 
 
-def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
+def test_propose_reduction_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
     plan, _, phase2, _ = seeded_plan
     from stride_server.master_plan_store import get_master_plan_store
 
@@ -429,8 +1077,8 @@ def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
     )
     get_master_plan_store().save_plan(taper_only)
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="再少练一周"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="给两个降低周跑量的方案"
     )
 
     assert not res.ok
@@ -438,7 +1086,7 @@ def test_propose_alternatives_refuses_when_only_final_taper_exists(seeded_plan):
     assert "无法生成" in res.errors[0]
 
 
-def test_propose_alternatives_ignores_completed_phase_before_taper(
+def test_propose_reduction_alternatives_ignores_completed_phase_before_taper(
     seeded_plan, monkeypatch
 ):
     plan, phase1, phase2, _ = seeded_plan
@@ -460,15 +1108,15 @@ def test_propose_alternatives_ignores_completed_phase_before_taper(
         plan.model_copy(update={"phases": [completed, taper]})
     )
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="降低接下来的训练量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="降低接下来的训练量"
     )
 
     assert not res.ok
     assert "没有可安全降低周跑量的当前或后续阶段" in res.errors[0]
 
 
-def test_propose_alternatives_can_reduce_single_long_phase(
+def test_propose_reduction_alternatives_can_reduce_single_long_phase(
     seeded_plan, monkeypatch
 ):
     plan, phase1, _, _ = seeded_plan
@@ -483,8 +1131,8 @@ def test_propose_alternatives_can_reduce_single_long_phase(
     )
     get_master_plan_store().save_plan(single_phase)
 
-    res = draft_impls.ProposeAlternativesImpl(USER_ID)(
-        plan_id=plan.plan_id, intent="降低训练量"
+    res = draft_impls.ProposeReductionAlternativesImpl(USER_ID)(
+        plan_id=plan.plan_id, reduction_request="降低训练量"
     )
 
     assert res.ok

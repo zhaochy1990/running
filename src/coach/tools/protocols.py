@@ -5,10 +5,10 @@ Tools come in two flavours:
 * **Read tools (15)** — pull data out of STRIDE state. They are safe to call
   any time and their ``ToolResult.data`` contains the read payload.
 
-* **Draft tools (13)** — emit a proposed change. They never apply it. Their
+* **Draft tools (17)** — emit a proposed change. They never apply it. Their
   ``ToolResult.data`` is the serialised form of a typed diff:
   - 7 week-scope draft tools → ``stride_core.plan_diff.PlanDiff`` shape
-  - 6 master-scope draft tools → ``stride_core.master_plan_diff.MasterPlanDiff`` shape
+  - 10 master-scope draft tools → ``stride_core.master_plan_diff.MasterPlanDiff`` shape
 
 There are intentionally **no execute tools**: every side effect (push to
 watch, apply diff, sync, etc.) is triggered by a deterministic UI chip
@@ -156,19 +156,23 @@ class RegenerateWeek(Protocol):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Master-scope draft tools (6) — ToolResult.data is one MasterPlanDiff dump, or
-# for ProposeAlternatives an envelope containing multiple MasterPlanDiff dumps.
+# Master-scope draft tools (10) — ToolResult.data is one MasterPlanDiff dump, or
+# for ProposeReductionAlternatives an envelope containing multiple MasterPlanDiff dumps.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 @runtime_checkable
 class ExtendPhase(Protocol):
-    def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult: ...
+    def __call__(
+        self, *, plan_id: str, phase_id: str, weeks: int, adjustment_request: str
+    ) -> ToolResult: ...
 
 
 @runtime_checkable
 class CompressPhase(Protocol):
-    def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult: ...
+    def __call__(
+        self, *, plan_id: str, phase_id: str, weeks: int, adjustment_request: str
+    ) -> ToolResult: ...
 
 
 @runtime_checkable
@@ -177,13 +181,64 @@ class ShiftMilestone(Protocol):
 
 
 @runtime_checkable
+class RescheduleTargetRace(Protocol):
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        milestone_id: str,
+        new_date: str,
+        reason: str,
+    ) -> ToolResult: ...
+
+
+@runtime_checkable
 class ChangeTarget(Protocol):
     def __call__(self, *, plan_id: str, milestone_id: str, new_target_time: str) -> ToolResult: ...
 
 
 @runtime_checkable
-class ProposeAlternatives(Protocol):
-    def __call__(self, *, plan_id: str, intent: str) -> ToolResult: ...
+class UpdateTargetRaceTime(Protocol):
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        milestone_id: str,
+        new_target_time: str,
+        reason: str,
+    ) -> ToolResult: ...
+
+
+@runtime_checkable
+class SetPhaseWeeklyRange(Protocol):
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        phase_id: str,
+        weekly_distance_km_low: float,
+        weekly_distance_km_high: float,
+        adjustment_request: str,
+        reason: str,
+    ) -> ToolResult: ...
+
+
+@runtime_checkable
+class SetPhaseFocus(Protocol):
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        phase_id: str,
+        focus: str,
+        adjustment_request: str,
+        reason: str,
+    ) -> ToolResult: ...
+
+
+@runtime_checkable
+class ProposeReductionAlternatives(Protocol):
+    def __call__(self, *, plan_id: str, reduction_request: str) -> ToolResult: ...
 
 
 @runtime_checkable
@@ -228,8 +283,12 @@ MASTER_DRAFT_TOOL_NAMES: tuple[str, ...] = (
     "extend_phase",
     "compress_phase",
     "shift_milestone",
+    "reschedule_target_race",
     "change_target",
-    "propose_alternatives",
+    "update_target_race_time",
+    "set_phase_weekly_range",
+    "set_phase_focus",
+    "propose_reduction_alternatives",
     "regenerate_master",
 )
 

@@ -15,9 +15,11 @@ import pytest
 from stride_core.timefmt import (
     SHANGHAI_DAY_SQL,
     SHANGHAI_TZ,
+    parse_local_day,
     parse_week_folder_dates,
     shanghai_day_to_utc_range,
     shanghai_week_range,
+    sqlite_mixed_date_expr,
     today_shanghai,
     utc_iso_to_shanghai_iso,
 )
@@ -46,6 +48,23 @@ class TestParseWeekFolderDates:
     def test_garbage_returns_none(self):
         assert parse_week_folder_dates("not-a-folder") is None
         assert parse_week_folder_dates("") is None
+
+
+class TestParseLocalDay:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("20260501", date(2026, 5, 1)),
+            ("2026-05-01", date(2026, 5, 1)),
+            (date(2026, 5, 1), date(2026, 5, 1)),
+        ],
+    )
+    def test_parses_supported_formats(self, raw, expected):
+        assert parse_local_day(raw) == expected
+
+    @pytest.mark.parametrize("raw", [None, "", "20260230", "2026-02-30", "bad"])
+    def test_invalid_values_return_none(self, raw):
+        assert parse_local_day(raw) is None
 
 
 class TestUtcIsoToShanghaiIso:
@@ -130,6 +149,33 @@ class TestShanghaiWeekRange:
         assert (de - ds).total_seconds() == 7 * 24 * 3600
         # Anchored to UTC 16:00 the day before Monday
         assert start == "2026-05-03T16:00:00+00:00"
+
+
+class TestSqliteMixedDateExpr:
+    def test_matches_compact_and_iso_dates_with_iso_bounds(self, tmp_path):
+        import sqlite3
+
+        db_path = tmp_path / "mixed.db"
+        conn = sqlite3.connect(db_path)
+        conn.execute("CREATE TABLE daily_health (date TEXT PRIMARY KEY, rhr INTEGER)")
+        conn.executemany(
+            "INSERT INTO daily_health (date, rhr) VALUES (?, ?)",
+            [("20260501", 50), ("2026-05-02", 52), ("20260503", 53)],
+        )
+        conn.commit()
+
+        day_sql = sqlite_mixed_date_expr("date")
+        rows = conn.execute(
+            f"SELECT {day_sql} AS day, rhr FROM daily_health "
+            f"WHERE {day_sql} BETWEEN ? AND ? ORDER BY day",
+            ("2026-05-01", "2026-05-02"),
+        ).fetchall()
+
+        assert rows == [("2026-05-01", 50), ("2026-05-02", 52)]
+
+    def test_rejects_non_identifier_column(self):
+        with pytest.raises(ValueError):
+            sqlite_mixed_date_expr("date); DROP TABLE daily_health; --")
 
 
 class TestSqlIntegration:

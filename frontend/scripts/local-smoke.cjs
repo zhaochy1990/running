@@ -1,4 +1,5 @@
 const { chromium } = require('playwright')
+const { loadLocalCredentials } = require('./onboarding-e2e-lib.cjs')
 const fs = require('node:fs')
 const path = require('node:path')
 
@@ -7,32 +8,6 @@ const appUrl = (process.env.STRIDE_LOCAL_URL || 'http://127.0.0.1:5173').replace
 const screenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-local-smoke.png')
 const weeklyScreenshotPath = path.join(process.env.TEMP || repoRoot, 'stride-weekly-plan-smoke.png')
 const systemChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
-
-function readCredentials() {
-  const candidates = [
-    path.join(repoRoot, '.credentials.local'),
-    process.env.STRIDE_CREDENTIALS_FILE,
-    process.env.HOME
-      ? path.join(process.env.HOME, 'workspace', 'running', '.credentials.local')
-      : null,
-  ].filter(Boolean)
-  const file = candidates.find((candidate) => fs.existsSync(candidate))
-  if (!file) {
-    throw new Error('.credentials.local not found')
-  }
-  const raw = fs.readFileSync(file, 'utf8')
-  const values = {}
-  for (const line of raw.split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*?)\s*$/)
-    if (match) values[match[1].toLowerCase()] = match[2]
-  }
-  const email = values.email || values.user_email
-  const password = values.password || values.user_password
-  if (!email || !password) {
-    throw new Error('.credentials.local must contain email/password or user_email/user_password')
-  }
-  return { email, password }
-}
 
 function sanitizeUrl(url) {
   return url.replace(/[?].*/, '')
@@ -63,7 +38,7 @@ function assertCurrentWeekUrl(url) {
 }
 
 async function main() {
-  const { email, password } = readCredentials()
+  const { email, password } = loadLocalCredentials()
   let browser
   try {
     browser = await chromium.launch({ headless: true })
@@ -120,16 +95,23 @@ async function main() {
   await page.goto(`${appUrl}/activities`, { waitUntil: 'domcontentloaded' })
   try {
     await page.getByRole('heading', { name: '活动列表' }).waitFor({ timeout: 20_000 })
-  } catch {
+  } catch (error) {
     await page.screenshot({ path: screenshotPath, fullPage: false })
     const state = await page.evaluate(() => ({
       path: window.location.pathname,
       loadingError: document.body.innerText.includes('加载失败，请检查网络后重试'),
       onboarding: window.location.pathname.startsWith('/onboarding'),
+      body: document.body.innerText.replace(/\s+/g, ' ').slice(0, 300),
     }))
+    const headings = (await page.locator('h1, h2, h3').allTextContents())
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 8)
     throw new Error(
       `activity page did not load: path=${state.path}, loading_error=${state.loadingError}, onboarding=${state.onboarding}; ` +
-      `responses=${responses.join(', ') || 'none'}; issues=${issues.join(' | ') || 'none'}; screenshot=${screenshotPath}`,
+      `headings=${headings.join(' | ') || 'none'}; body=${state.body || 'empty'}; ` +
+      `responses=${responses.slice(-8).join(' | ') || 'none'}; ` +
+      `issues=${issues.slice(-8).join(' | ') || 'none'}; cause=${error.message}; screenshot=${screenshotPath}`,
     )
   }
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {})
@@ -142,7 +124,15 @@ async function main() {
 
   const rows = page.locator('a[href^="/activity/"]')
   const rowCount = await rows.count()
-  if (rowCount === 0) throw new Error('activity list loaded but no activity rows were found')
+  if (rowCount === 0) {
+    const emptyState = await page.getByText('该范围暂无活动记录。').isVisible().catch(() => false)
+    const loadError = await page.locator('text^=加载失败：').allTextContents().catch(() => [])
+    throw new Error(
+      `activity list loaded but no activity rows were found; empty=${emptyState}; ` +
+      `error=${loadError.slice(0, 1).join('') || 'none'}; ` +
+      `responses=${responses.slice(-8).join(' | ') || 'none'}`
+    )
+  }
 
   await rows.first().click()
   await page.waitForURL((url) => url.pathname.startsWith('/activity/'), { timeout: 20_000 })

@@ -50,6 +50,7 @@ def test_rhr_baseline_comes_from_calibration_snapshot(app_client):
         # Leave daily_health empty — inline P10 would give None.
         from stride_storage.sqlite.calibration_connector import SQLiteRunningCalibrationRepository
         from stride_core.running_calibration.types import (
+            RUNNING_CALIBRATION_MODEL_VERSION,
             CalibrationConfidence,
             RunningCalibrationSnapshot,
         )
@@ -58,7 +59,7 @@ def test_rhr_baseline_comes_from_calibration_snapshot(app_client):
         repo = SQLiteRunningCalibrationRepository(db)
         snap = RunningCalibrationSnapshot(
             as_of_date=date(2026, 5, 20),
-            algorithm_version=1,
+            algorithm_version=RUNNING_CALIBRATION_MODEL_VERSION,
             threshold_hr=None,
             threshold_speed_mps=None,
             threshold_hr_confidence=CalibrationConfidence.NONE,

@@ -27,15 +27,17 @@ import { shanghaiDate, shanghaiToday } from '../lib/shanghai'
 import { findCurrentWeek } from '../lib/weeklyPlanView'
 import { useUser } from '../UserContextValue'
 
-type FlowStep = 'intent' | 'body' | 'focus' | 'sessions' | 'preview'
+type FlowStep = 'direction' | 'phase' | 'clarification' | 'assessment' | 'proposal'
 type PreviewMode = 'current' | 'new'
 
 interface FlowAnswers {
-  intent?: string
-  body?: string
-  focus?: string
-  sessions?: string
+  direction?: string
+  phase?: string
 }
+
+type AdjustmentAssessment = NonNullable<
+  Awaited<ReturnType<typeof sendMasterPlanAdjustMessage>>['data']['assessment']
+>
 
 interface ScanRow {
   id: string
@@ -84,28 +86,18 @@ interface TargetProfile {
   targetTime: string
 }
 
-const FLOW_COPY: Record<FlowStep, { question: string; options: string[] }> = {
-  intent: {
-    question: '这次想怎么调整训练计划？',
-    options: ['减量缓冲一段时间', '顺延训练', '继续加量 / 强化能力'],
-  },
-  body: {
-    question: '身体哪里最需要保护？',
-    options: ['跟腱 / 小腿', '膝关节', '全身疲劳'],
-  },
-  focus: {
-    question: '这次重点想建立什么？',
-    options: ['专项能力', '有氧耐力', '力量与跑姿'],
-  },
-  sessions: {
-    question: '接下来一周能稳定安排几次训练？',
-    options: ['3 次跑步', '4 次跑步', '5 次跑步'],
-  },
-  preview: {
-    question: '新计划已经生成在左侧。',
-    options: [],
-  },
-}
+const DIRECTION_SUGGESTIONS = [
+  '把周跑量降低到 45–50 公里',
+  '把周跑量提高到 55–65 公里',
+  '把训练重点改成马拉松配速耐力',
+  '把这个阶段延长两周',
+]
+
+const PHASE_OPTIONS = ['当前阶段', '基础期', '专项期', '调整期', '下一阶段']
+const PHASE_TARGET_REQUIRED_RE = /训练重点|重点(?:改|调|放)|侧重|聚焦|专注|周跑量|周量区间|训练量|减量|加量|延长|缩短/i
+const EXPLICIT_PHASE_TARGET_RE = /基础期|基础阶段|专项期|专项阶段|强化期|高峰期|赛前期|减量期|调整期|恢复期|恢复阶段|当前阶段|现阶段|这个阶段|本阶段|下一阶段|下个阶段|后续阶段|第\s*[一二三四五六七八九十0-9]+\s*(?:个)?阶段|phase[-_ ]?[a-z0-9]+/i
+const VOLUME_CHANGE_RE = /加量|减量|增加|加大|提高|提升|降低|减少/i
+const EXPLICIT_VOLUME_TARGET_RE = /\d+(?:\.\d+)?\s*(?:公里|km)?\s*[–—\-~至到]\s*\d+(?:\.\d+)?\s*(?:公里|km)|\d+(?:\.\d+)?\s*%/i
 
 const PHASE_COLORS = ['#00a85a', '#0097a7', '#e68a00', '#7c4dff', '#d32f2f']
 
@@ -116,15 +108,19 @@ export default function TrainingPlanAdjustPage() {
   const [fallbackPlan, setFallbackPlan] = useState<TrainingPlan | null>(null)
   const [profile, setProfile] = useState<MyProfile | null>(null)
   const [loadingPlan, setLoadingPlan] = useState(true)
-  const [scanLoading, setScanLoading] = useState(true)
+  const [scanLoading, setScanLoading] = useState(false)
   const [scan, setScan] = useState<ScanState>(() => emptyScan())
   const [answers, setAnswers] = useState<FlowAnswers>({})
-  const [step, setStep] = useState<FlowStep>('intent')
+  const [step, setStep] = useState<FlowStep>('direction')
+  const [directionDraft, setDirectionDraft] = useState('')
+  const [clarificationDraft, setClarificationDraft] = useState('')
   const [previewMode, setPreviewMode] = useState<PreviewMode>('current')
   const [diff, setDiff] = useState<MasterPlanDiff | null>(null)
   const [selectedOpIds, setSelectedOpIds] = useState<Set<string>>(new Set())
   const [adjustLoading, setAdjustLoading] = useState(false)
   const [adjustError, setAdjustError] = useState<string | null>(null)
+  const [coachReply, setCoachReply] = useState<string | null>(null)
+  const [assessment, setAssessment] = useState<AdjustmentAssessment | null>(null)
   const [applyLoading, setApplyLoading] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
   const [affectedWeeks, setAffectedWeeks] = useState<MasterPlanAffectedWeek[]>([])
@@ -193,49 +189,55 @@ export default function TrainingPlanAdjustPage() {
   }, [user])
 
   useEffect(() => loadPlan(), [loadPlan])
-  useEffect(() => loadScan(), [loadScan])
 
   const currentPhases = useMemo(() => toDisplayPhases(masterPlan, fallbackPlan), [masterPlan, fallbackPlan])
-  const previewPhases = useMemo(() => buildPreviewPhases(currentPhases, answers), [currentPhases, answers])
+  const selectedDiff = useMemo(() => filterSelectedDiff(diff, selectedOpIds), [diff, selectedOpIds])
+  const previewPhases = useMemo(
+    () => applyDiffToDisplayPhases(currentPhases, selectedDiff),
+    [currentPhases, selectedDiff],
+  )
   const targetProfile = useMemo(() => readTargetProfile(profile), [profile])
-  const previewReady = step === 'preview'
+  const previewReady = step === 'proposal'
 
-  const handleAnswer = (answer: string) => {
-    const nextAnswers = { ...answers }
-    if (step === 'intent') {
-      nextAnswers.intent = answer
-      setAnswers(nextAnswers)
-      setStep(answer.includes('继续') ? 'focus' : 'body')
+  const confirmDirection = () => {
+    const direction = directionDraft.trim()
+    if (!direction) return
+    const nextAnswers = { direction }
+    setAnswers(nextAnswers)
+    if (adjustmentNeedsPhase(direction)) {
+      setStep('phase')
       return
     }
-    if (step === 'body') {
-      nextAnswers.body = answer
-      setAnswers(nextAnswers)
-      setStep('sessions')
-      return
-    }
-    if (step === 'focus') {
-      nextAnswers.focus = answer
-      setAnswers(nextAnswers)
-      setStep('sessions')
-      return
-    }
-    if (step === 'sessions') {
-      nextAnswers.sessions = answer
-      setAnswers(nextAnswers)
-      setStep('preview')
-      setPreviewMode('new')
-      void requestAdjustDiff(nextAnswers)
-    }
+    void requestAdjustDiff(nextAnswers)
+  }
+
+  const confirmPhase = (phase: string) => {
+    const nextAnswers = { ...answers, phase }
+    setAnswers(nextAnswers)
+    void requestAdjustDiff(nextAnswers)
+  }
+
+  const confirmClarification = () => {
+    const detail = clarificationDraft.trim()
+    if (!detail) return
+    const direction = [answers.direction, detail].filter(Boolean).join('；')
+    const nextAnswers = { ...answers, direction }
+    setAnswers(nextAnswers)
+    setClarificationDraft('')
+    void requestAdjustDiff(nextAnswers)
   }
 
   const restartFlow = () => {
     setAnswers({})
-    setStep('intent')
+    setDirectionDraft('')
+    setClarificationDraft('')
+    setStep('direction')
     setPreviewMode('current')
     setDiff(null)
     setSelectedOpIds(new Set())
     setAdjustError(null)
+    setCoachReply(null)
+    setAssessment(null)
     setApplyError(null)
     setAffectedWeeks([])
   }
@@ -244,18 +246,32 @@ export default function TrainingPlanAdjustPage() {
     setAdjustError(null)
     setDiff(null)
     setSelectedOpIds(new Set())
+    setCoachReply(null)
+    setAssessment(null)
     if (!masterPlan?.plan_id) return
     setAdjustLoading(true)
     try {
       const response = await sendMasterPlanAdjustMessage(
         masterPlan.plan_id,
-        composeAdjustMessage(nextAnswers, scan),
+        composeAdjustMessage(nextAnswers),
         [],
       )
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      setCoachReply(response.data.ai_response)
+      setAssessment(response.data.assessment ?? null)
       const nextDiff = response.data.diff
       setDiff(nextDiff)
-      setSelectedOpIds(new Set(nextDiff?.ops.map((op) => op.id) ?? []))
+      setSelectedOpIds(defaultSelectedOpIds(nextDiff))
+      if (response.data.stage === 'proposal' && nextDiff) {
+        void loadScan()
+        setStep('proposal')
+        setPreviewMode('new')
+      } else if (response.data.stage === 'clarification') {
+        setStep('clarification')
+      } else {
+        void loadScan()
+        setStep('assessment')
+      }
     } catch (err) {
       setAdjustError(err instanceof Error ? err.message : '调整建议生成失败')
     } finally {
@@ -280,11 +296,14 @@ export default function TrainingPlanAdjustPage() {
       const opIds = diff.ops.map((op) => op.id).filter((id) => selectedOpIds.has(id))
       const response = await applyMasterPlanAdjustDiff(
         masterPlan.plan_id,
-        diff.diff_id,
+        diff,
         opIds,
         composeChangeReason(answers),
       )
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if ((response.data.applied ?? 0) <= 0) {
+        throw new Error('没有调整被采用，请确认至少选择一项可应用调整')
+      }
       setAffectedWeeks(response.data.affected_weeks ?? [])
       setDiff(null)
       setSelectedOpIds(new Set())
@@ -313,7 +332,7 @@ export default function TrainingPlanAdjustPage() {
         </button>
         <p className="font-mono text-[10px] text-accent-green tracking-[0.14em] font-semibold uppercase mt-3 mb-1.5">调整 / 重新生成训练计划</p>
         <h1 className="text-xl sm:text-2xl font-semibold leading-[1.15] text-text-primary m-0">告诉 STRIDE 发生了什么</h1>
-        <p className="text-[13px] text-text-secondary mt-1.5 max-w-[540px]">STRIDE 会先查看你的训练记录与身体状态，再结合你的反馈重新规划。两步都准备好后即可开始。</p>
+        <p className="text-[13px] text-text-secondary mt-1.5 max-w-[620px]">先说清楚想调整的方向，必要时再确认阶段。澄清后 STRIDE 才会加载训练数据、判断想法是否合理；只有合理时才生成可应用方案。</p>
       </div>
 
       <div className="pa-split">
@@ -326,18 +345,28 @@ export default function TrainingPlanAdjustPage() {
           masterPlan={masterPlan}
           fallbackPlan={fallbackPlan}
           targetProfile={targetProfile}
-          summary={buildAnswerSummary(answers)}
+          diff={selectedDiff}
+          summary={diff?.ai_explanation ?? ''}
         />
 
         <div className="pa-flow">
-          <ScanPanel scan={scan} loading={scanLoading} />
+          {(step === 'assessment' || step === 'proposal') && <ScanPanel scan={scan} loading={scanLoading} />}
           <GuidedFlow
             answers={answers}
             step={step}
-            onAnswer={handleAnswer}
+            directionDraft={directionDraft}
+            onDirectionDraft={setDirectionDraft}
+            clarificationDraft={clarificationDraft}
+            onClarificationDraft={setClarificationDraft}
+            onConfirmClarification={confirmClarification}
+            onConfirmDirection={confirmDirection}
+            onPhase={confirmPhase}
             previewReady={previewReady}
             adjustLoading={adjustLoading}
+            scanLoading={scanLoading}
             adjustError={adjustError}
+            coachReply={coachReply}
+            assessment={assessment}
             diff={diff}
             selectedOpIds={selectedOpIds}
             onToggleOp={toggleOp}
@@ -364,6 +393,7 @@ function PlanReferencePanel({
   masterPlan,
   fallbackPlan,
   targetProfile,
+  diff,
   summary,
 }: {
   currentPhases: DisplayPhase[]
@@ -374,9 +404,14 @@ function PlanReferencePanel({
   masterPlan: MasterPlan | null
   fallbackPlan: TrainingPlan | null
   targetProfile: TargetProfile
+  diff: MasterPlanDiff | null
   summary: string
 }) {
   const isNew = previewReady && mode === 'new'
+  const previewTarget = useMemo(
+    () => applyDiffToTargetProfile(targetProfile, masterPlan, diff),
+    [targetProfile, masterPlan, diff],
+  )
   return (
     <aside className="pa-current" id="pa-leftplan">
       {previewReady && (
@@ -391,7 +426,8 @@ function PlanReferencePanel({
           phases={previewPhases}
           masterPlan={masterPlan}
           fallbackPlan={fallbackPlan}
-          targetProfile={targetProfile}
+          targetProfile={previewTarget}
+          targetChanged={targetProfileChanged(targetProfile, previewTarget)}
           summary={summary}
         />
       ) : (
@@ -401,6 +437,7 @@ function PlanReferencePanel({
           masterPlan={masterPlan}
           fallbackPlan={fallbackPlan}
           targetProfile={targetProfile}
+          targetChanged={false}
           summary={summary}
         />
       )}
@@ -414,6 +451,7 @@ function PlanReferenceView({
   masterPlan,
   fallbackPlan,
   targetProfile,
+  targetChanged,
   summary,
 }: {
   kind: 'current' | 'new'
@@ -421,20 +459,27 @@ function PlanReferenceView({
   masterPlan: MasterPlan | null
   fallbackPlan: TrainingPlan | null
   targetProfile: TargetProfile
+  targetChanged: boolean
   summary: string
 }) {
   const isNew = kind === 'new'
-  const totalWeeks = planTotalWeeks(masterPlan, phases)
+  const totalWeeks = isNew
+    ? phases.at(-1)?.weekEnd ?? planTotalWeeks(masterPlan, phases)
+    : planTotalWeeks(masterPlan, phases)
   return (
     <div className="pa-planview">
       <div className="pa-chead">
         <div className={`pa-ctag ${isNew ? 'newt' : ''}`}>{isNew ? '新计划 · 已生成' : '当前计划'}</div>
-        <div className="pa-ctitle">{planReferenceTitle(masterPlan, phases, targetProfile)}{isNew ? '（已调整）' : ''}</div>
+        <div className="pa-ctitle">{planReferenceTitle(targetProfile, totalWeeks)}{isNew ? '（已调整）' : ''}</div>
         <div className="pa-cmeta">{planMeta(masterPlan, fallbackPlan, isNew)}</div>
       </div>
       <div className="pa-cbody">
         {isNew && <PlanChanges summary={summary} />}
-        <RaceCard unchanged={isNew} target={targetProfile} masterPlan={masterPlan} />
+        <RaceCard
+          changed={Boolean(isNew && targetChanged)}
+          target={targetProfile}
+          masterPlan={masterPlan}
+        />
         <PlanMileageCurve phases={phases} totalWeeks={totalWeeks} isNew={isNew} />
         <div>
           <div className="pa-cl">阶段划分 · 起止与周数</div>
@@ -460,24 +505,16 @@ function PlanReferenceView({
 function PlanChanges({ summary }: { summary: string }) {
   return (
     <div className="pa-changes">
-      <div className="ch-l">本次调整 · 3 处</div>
+      <div className="ch-l">Coach typed proposal</div>
       <div className="pa-chrow">
         <PulseMiniIcon className="ic" />
-        <div className="tx"><b>{summary || '本周起调整训练负荷'}</b>，周量和强度按当前反馈重新排序。<span className="why">— 基于身体与计划扫描</span></div>
-      </div>
-      <div className="pa-chrow">
-        <ArrowMiniIcon className="ic" />
-        <div className="tx">关键课不强行补回，优先顺延到恢复后的第 1 周。</div>
-      </div>
-      <div className="pa-chrow">
-        <PlusCircleMiniIcon className="ic" />
-        <div className="tx"><b>目标比赛日期不变</b>，只调整当前阶段和后续阶段分配。</div>
+        <div className="tx"><b>{summary || '调整方案已通过合理性门槛'}</b><span className="why"> — 仅展示后端返回的结构化 diff</span></div>
       </div>
     </div>
   )
 }
 
-function RaceCard({ unchanged, target, masterPlan }: { unchanged: boolean; target: TargetProfile; masterPlan: MasterPlan | null }) {
+function RaceCard({ changed, target, masterPlan }: { changed: boolean; target: TargetProfile; masterPlan: MasterPlan | null }) {
   const raceName = target.raceName || '目标比赛暂无数据'
   const raceDate = target.raceDate || masterPlan?.end_date || ''
   const weeks = raceDate ? weeksUntil(raceDate) : null
@@ -487,7 +524,7 @@ function RaceCard({ unchanged, target, masterPlan }: { unchanged: boolean; targe
   return (
     <div className="pa-race">
       <div className="top">
-        <div className="rl">目标比赛{unchanged ? ' · 不变' : ''}</div>
+        <div className="rl">目标比赛{changed ? ' · 已调整' : ''}</div>
         <div className="rn">{raceName}</div>
         <div className="rd">{distance}{raceDate ? ` · ${formatSlashDate(raceDate)}` : ' · 日期暂无数据'}{targetTime}</div>
       </div>
@@ -584,17 +621,17 @@ function ScanPanel({ scan, loading }: { scan: ScanState; loading: boolean }) {
             <span className="sl">本阶段训练总结</span>
             <span className="sp">P1 基础期 · 当前周</span>
           </div>
-          <div className="st">基础期正在搭建有氧底盘。近期完成度、跑量、RHR、HRV 和伤病信号会一起影响调整方向；如果出现 <b>疲劳或跟腱信号</b>，STRIDE 会优先保护身体，再处理关键课顺延。</div>
+          <div className="st">近期完成度、跑量、RHR、HRV 和伤病信号会与当前计划、PMC 及负荷估算一起进入合理性判断。</div>
           <div className="pa-sstats">
-            <div className="pa-sstat"><div className="sn">82%</div><div className="sd">阶段课次完成率</div></div>
-            <div className="pa-sstat"><div className="sn">76%</div><div className="sd">Z2 有氧占比</div></div>
-            <div className="pa-sstat"><div className="sn warn">{scan.rows[0]?.value ?? '暂无'}</div><div className="sd">本周完成度</div></div>
+            {scan.rows.slice(0, 3).map((row) => (
+              <div key={row.id} className="pa-sstat"><div className={`sn ${row.tone === 'warn' ? 'warn' : ''}`}>{row.value}</div><div className="sd">{scanDesignLabel(row.label)}</div></div>
+            ))}
           </div>
         </div>
 
         <div className="pa-verdict">
-          <div className="vl">STRIDE 初步判断</div>
-          <div className="vt">近期扫描已经完成。下面我问你几个问题，确认清楚后再帮你把计划重排 ↓</div>
+          <div className="vl">评估数据已加载</div>
+          <div className="vt">Coach 会先判断你的具体想法是否合理；只有 verdict=reasonable 才会生成调整方案。</div>
         </div>
       </div>
     </section>
@@ -604,10 +641,19 @@ function ScanPanel({ scan, loading }: { scan: ScanState; loading: boolean }) {
 function GuidedFlow({
   answers,
   step,
-  onAnswer,
+  directionDraft,
+  onDirectionDraft,
+  clarificationDraft,
+  onClarificationDraft,
+  onConfirmClarification,
+  onConfirmDirection,
+  onPhase,
   previewReady,
   adjustLoading,
+  scanLoading,
   adjustError,
+  coachReply,
+  assessment,
   diff,
   selectedOpIds,
   onToggleOp,
@@ -621,10 +667,19 @@ function GuidedFlow({
 }: {
   answers: FlowAnswers
   step: FlowStep
-  onAnswer: (answer: string) => void
+  directionDraft: string
+  onDirectionDraft: (value: string) => void
+  clarificationDraft: string
+  onClarificationDraft: (value: string) => void
+  onConfirmClarification: () => void
+  onConfirmDirection: () => void
+  onPhase: (phase: string) => void
   previewReady: boolean
   adjustLoading: boolean
+  scanLoading: boolean
   adjustError: string | null
+  coachReply: string | null
+  assessment: AdjustmentAssessment | null
   diff: MasterPlanDiff | null
   selectedOpIds: Set<string>
   onToggleOp: (opId: string) => void
@@ -636,33 +691,154 @@ function GuidedFlow({
   affectedWeeks: MasterPlanAffectedWeek[]
   hasPlanId: boolean
 }) {
-  const copy = FLOW_COPY[step]
   const acceptedCount = diff?.ops.filter((op) => selectedOpIds.has(op.id)).length ?? 0
+  const stageIndex = step === 'direction' ? 0 : step === 'phase' || step === 'clarification' ? 1 : step === 'assessment' ? 2 : 3
   return (
     <section className="pa-convo">
+      <ol className="grid grid-cols-4 gap-2" aria-label="调整流程">
+        {['调整方向', '目标阶段（按需）', '数据评估', '调整方案'].map((label, index) => (
+          <li
+            key={label}
+            className={`rounded-lg border px-2 py-2 text-center font-mono text-[10px] ${
+              index < stageIndex
+                ? 'border-accent-green/30 bg-accent-green/5 text-accent-green-dim'
+                : index === stageIndex
+                  ? 'border-accent-green bg-accent-green/10 text-accent-green-dim'
+                  : 'border-border-subtle bg-bg-card text-text-muted opacity-60'
+            }`}
+          >
+            {padWeek(index + 1)} {label}
+          </li>
+        ))}
+      </ol>
       <div className="pa-msg">
         <div className="av">S</div>
-        <div className="pa-bubble">我已经加载了当前计划和近期身体信号。请先告诉我这次主要想怎么调整。</div>
+        <div className="pa-bubble">
+          {step === 'direction' && '先告诉我你想怎么调整。此时不会读取训练数据，也不会生成方案。'}
+          {step === 'phase' && '方向已经明确。还需要确认要调整哪个阶段，之后我才会加载数据评估。'}
+          {step === 'clarification' && (coachReply || '还需要补充一个细节，确认后我才会加载数据评估。')}
+          {step === 'assessment' && (coachReply || '正在读取当前计划、身体状态与 STRIDE 训练负荷，判断这个想法是否合理。')}
+          {step === 'proposal' && (coachReply || '这个想法有数据支持，下面是可应用的调整方案。')}
+        </div>
       </div>
 
       <div className="pa-aq">
-        <div className="aq-q">{copy.question}</div>
-        <div className="aq-hint">按你的回答生成左侧新计划预览，后端返回 diff 后可选择采纳。</div>
-
-        {step !== 'preview' && (
-          <div className="aq-opts">
-          {copy.options.map((option) => (
+        {step === 'direction' && (
+          <>
+            <label htmlFor="adjust-direction" className="aq-q block">这次具体想怎么调整训练计划？</label>
+            <div className="aq-hint">请给出明确方向，例如周量、训练重点、阶段长度或比赛目标怎么变。</div>
+            <textarea
+              id="adjust-direction"
+              value={directionDraft}
+              onChange={(event) => onDirectionDraft(event.target.value)}
+              rows={3}
+              placeholder="例如：把专项期周跑量降低到 45–50 公里"
+              className="mt-3 w-full resize-y rounded-xl border border-border bg-bg-primary px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent-green"
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              {DIRECTION_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => onDirectionDraft(suggestion)}
+                  className="rounded-full border border-border-subtle bg-bg-card px-2.5 py-1.5 text-[11px] text-text-secondary hover:border-accent-green/40"
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
             <button
-              key={option}
               type="button"
-              onClick={() => onAnswer(option)}
-              className="aq-opt"
+              onClick={onConfirmDirection}
+              disabled={!directionDraft.trim()}
+              className="mt-4 inline-flex h-9 items-center rounded-lg bg-accent-green px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <span className="mk" />
-              <span className="ol">{option}</span>
-              <span className="od" aria-hidden="true">选择</span>
+              确认调整方向
             </button>
-          ))}
+          </>
+        )}
+
+        {step === 'phase' && (
+          <>
+            <div className="aq-q">你希望调整哪个阶段？</div>
+            <div className="aq-hint">方向：{answers.direction}</div>
+            <div className="aq-opts">
+              {PHASE_OPTIONS.map((phase) => (
+                <button key={phase} type="button" onClick={() => onPhase(phase)} className="aq-opt">
+                  <span className="mk" />
+                  <span className="ol">{phase}</span>
+                  <span className="od" aria-hidden="true">选择</span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {step === 'clarification' && (
+          <>
+            <label htmlFor="adjust-clarification" className="aq-q block">请补充调整细节</label>
+            <div className="aq-hint">{coachReply}</div>
+            <textarea
+              id="adjust-clarification"
+              value={clarificationDraft}
+              onChange={(event) => onClarificationDraft(event.target.value)}
+              rows={2}
+              placeholder="例如：专项期增加到 82–96 公里"
+              className="mt-3 w-full resize-y rounded-xl border border-border bg-bg-primary px-3 py-2.5 text-sm text-text-primary outline-none focus:border-accent-green"
+            />
+            <button
+              type="button"
+              onClick={onConfirmClarification}
+              disabled={!clarificationDraft.trim()}
+              className="mt-4 inline-flex h-9 items-center rounded-lg bg-accent-green px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              确认补充信息
+            </button>
+          </>
+        )}
+
+        {step === 'assessment' && (
+          <div className="space-y-3">
+            <div className="aq-q">数据评估</div>
+            <div className="aq-hint">{buildAnswerSummary(answers)}</div>
+            {(adjustLoading || scanLoading) && (
+              <div className="rounded-xl border border-accent-cyan/25 bg-accent-cyan/5 p-3 text-xs text-text-secondary">
+                正在读取当前计划、健康状态、PMC 与计划负荷估算…
+              </div>
+            )}
+            {assessment && (
+              <div className={`rounded-xl border p-3 ${
+                assessment.verdict === 'reasonable'
+                  ? 'border-accent-green/25 bg-accent-green/5'
+                  : 'border-accent-amber/30 bg-accent-amber/5'
+              }`}>
+                <div className="font-mono text-[10px] uppercase tracking-[0.12em] text-text-muted">
+                  {assessment.verdict === 'reasonable' ? '想法合理' : assessment.verdict === 'unreasonable' ? '暂不建议' : '需要继续澄清'}
+                </div>
+                <p className="mt-1.5 text-sm leading-6 text-text-primary">{assessment.rationale}</p>
+              </div>
+            )}
+            {assessment && assessment.verdict !== 'reasonable' && (
+              <button type="button" onClick={onRevise} className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-semibold text-text-secondary">
+                修改我的想法
+              </button>
+            )}
+            {!adjustLoading && coachReply && !assessment && (
+              <button type="button" onClick={onRevise} className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-semibold text-text-secondary">
+                修改我的想法
+              </button>
+            )}
+          </div>
+        )}
+
+        {adjustError && (
+          <div className="rounded-xl border border-accent-amber/30 bg-accent-amber/5 p-3">
+            <div className="text-xs text-accent-amber">评估请求失败：{adjustError}</div>
+            {hasPlanId && (
+              <button type="button" onClick={onRetryAdjust} disabled={adjustLoading} className="mt-2 text-xs font-semibold text-accent-amber disabled:opacity-50">
+                重试评估
+              </button>
+            )}
           </div>
         )}
 
@@ -677,29 +853,6 @@ function GuidedFlow({
               <SparkIcon />
             </div>
           </div>
-
-          {!hasPlanId && (
-            <p className="text-xs text-text-muted">当前没有激活的 master plan，预览不会持久化。</p>
-          )}
-
-          {adjustLoading && <p className="text-xs text-text-muted">正在请求后端差异...</p>}
-          {adjustError && (
-            <div className="rounded-xl border border-accent-amber/30 bg-accent-amber/5 p-3">
-              <div className="text-xs text-accent-amber">
-                调整建议请求失败：{adjustError}。本地预览仍可继续查看。
-              </div>
-              {hasPlanId && (
-                <button
-                  type="button"
-                  onClick={onRetryAdjust}
-                  disabled={adjustLoading}
-                  className="mt-2 inline-flex h-7 items-center rounded-md border border-accent-amber/30 bg-bg-card px-2.5 text-[11px] font-semibold text-accent-amber hover:bg-accent-amber/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  重试后端建议
-                </button>
-              )}
-            </div>
-          )}
 
           {diff && (
             <div className="rounded-xl border border-border-subtle bg-bg-primary p-3">
@@ -737,7 +890,7 @@ function GuidedFlow({
               className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-border-subtle bg-bg-primary text-xs font-semibold text-text-secondary hover:text-text-primary hover:border-border transition-colors"
             >
               <RefreshIcon />
-              再调整一下
+              修改我的想法
             </button>
           </div>
 
@@ -761,7 +914,7 @@ function GuidedFlow({
       )}
 
         <div className="aq-foot">
-          <span className="note">{hasPlanId ? '可生成持久化调整' : '当前仅生成本地预览'}</span>
+          <span className="note">{stageIndex < 2 ? '澄清完成前不读取训练数据、不生成方案' : hasPlanId ? '合理性通过后才可应用调整' : '当前没有可调整的激活计划'}</span>
         </div>
       </div>
     </section>
@@ -769,11 +922,13 @@ function GuidedFlow({
 }
 
 function DiffOpRow({ op, checked, onToggle }: { op: MasterPlanDiffOp; checked: boolean; onToggle: () => void }) {
+  const disabled = op.accepted === false
   return (
-    <label className="flex items-start gap-2 rounded-lg border border-border-subtle bg-bg-card p-2.5 cursor-pointer">
+    <label className={`flex items-start gap-2 rounded-lg border border-border-subtle bg-bg-card p-2.5 ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}>
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={onToggle}
         className="mt-1 accent-accent-green"
       />
@@ -929,45 +1084,145 @@ function toDisplayPhases(masterPlan: MasterPlan | null, fallbackPlan: TrainingPl
   })
 }
 
-function buildPreviewPhases(phases: DisplayPhase[], answers: FlowAnswers): DisplayPhase[] {
-  const deload = answers.intent?.includes('减量') || answers.intent?.includes('顺延')
-  return phases.map((phase, index) => {
-    if (index > 1) return phase
-    if (deload) {
-      return {
-        ...phase,
-        focus: index === 0 ? '恢复优先，保留轻松跑与基础力量' : phase.focus,
-        low: phase.low != null ? Math.max(0, Math.round(phase.low * 0.82)) : phase.low,
-        high: phase.high != null ? Math.max(0, Math.round(phase.high * 0.85)) : phase.high,
-        changed: true,
+function filterSelectedDiff(diff: MasterPlanDiff | null, selectedOpIds: Set<string>): MasterPlanDiff | null {
+  if (!diff) return null
+  const selectedOps = diff.ops.filter((op) => selectedOpIds.has(op.id))
+  return selectedOps.length > 0 ? { ...diff, ops: selectedOps } : null
+}
+
+function defaultSelectedOpIds(diff: MasterPlanDiff | null): Set<string> {
+  if (!diff) return new Set()
+  const selectableOps = diff.ops.filter((op) => op.accepted !== false)
+  const atomicOp = selectableOps.find((op) => isAtomicRaceOp(op.op))
+  return new Set(atomicOp ? [atomicOp.id] : selectableOps.map((op) => op.id))
+}
+
+function isAtomicRaceOp(op: string): boolean {
+  return op === 'reschedule_target_race' || op === 'update_target_race_time'
+}
+
+function applyDiffToDisplayPhases(phases: DisplayPhase[], diff: MasterPlanDiff | null): DisplayPhase[] {
+  if (!diff) return phases
+  let cursor = 1
+  return phases.map((phase) => {
+    const directPatches = diff.ops
+      .filter((op) => op.phase_id === phase.id)
+      .map((op) => ({ ...(op.new_value ?? {}), ...(op.spec_patch ?? {}) }))
+    const atomicPatches = diff.ops.flatMap((op) => {
+      if (op.op === 'shift_phase_boundary') {
+        const patch = op.spec_patch ?? {}
+        const followingPhaseId = stringValue(patch.following_phase_id)
+        if (op.phase_id === phase.id) return [{ end_date: patch.end_date }]
+        if (followingPhaseId === phase.id) {
+          return [{ start_date: patch.following_start_date }]
+        }
       }
+      const phaseUpdates = op.spec_patch?.phase_updates
+      if (!Array.isArray(phaseUpdates)) return []
+      return phaseUpdates.filter(
+        (update): update is Record<string, unknown> => isRecord(update) && update.phase_id === phase.id,
+      )
+    })
+    const patches = [...directPatches, ...atomicPatches]
+    const next = patches.reduce<DisplayPhase>((current, patch) => ({
+      ...current,
+      start: stringValue(patch.start_date) || current.start,
+      end: stringValue(patch.end_date) || current.end,
+      focus: stringValue(patch.focus) || current.focus,
+      low: typeof patch.weekly_distance_km_low === 'number'
+        ? patch.weekly_distance_km_low
+        : current.low,
+      high: typeof patch.weekly_distance_km_high === 'number'
+        ? patch.weekly_distance_km_high
+        : current.high,
+      changed: true,
+    }), phase)
+    const weekCount = weeksBetween(next.start, next.end) || next.weekCount
+    const timelinePhase = {
+      ...next,
+      weekStart: cursor,
+      weekEnd: cursor + weekCount - 1,
+      weekCount,
     }
-    return {
-      ...phase,
-      focus: index === 0 ? `${answers.focus ?? '专项能力'}，控制递增` : phase.focus,
-      high: phase.high != null ? Math.round(phase.high + 6) : phase.high,
-      changed: index === 0,
-    }
+    cursor = timelinePhase.weekEnd + 1
+    return timelinePhase
   })
 }
 
-function composeAdjustMessage(answers: FlowAnswers, scan: ScanState): string {
-  const rows = scan.rows.map((row) => `${row.label}: ${row.value}`).join('；')
-  return `请按以下信息调整当前 master plan：意图=${answers.intent ?? '未选择'}；身体重点=${answers.body ?? '无'}；能力重点=${answers.focus ?? '无'}；可用训练=${answers.sessions ?? '未选择'}。近期扫描：${rows}。`
+function applyDiffToTargetProfile(
+  target: TargetProfile,
+  masterPlan: MasterPlan | null,
+  diff: MasterPlanDiff | null,
+): TargetProfile {
+  if (!diff) return target
+  return diff.ops.reduce<TargetProfile>((next, op) => {
+    const patch = op.spec_patch ?? {}
+    if (op.op === 'reschedule_target_race') {
+      const raceDate = stringValue(patch.race_date) || stringValue(patch.milestone_date)
+      return raceDate ? { ...next, raceDate } : next
+    }
+    if (op.op === 'update_target_race_time') {
+      const targetTime = stringValue(patch.target_time)
+      return targetTime ? { ...next, targetTime } : next
+    }
+    if (op.op === 'replace_milestone_date' && op.milestone_id === targetRaceMilestoneId(masterPlan)) {
+      const raceDate = stringValue(patch.date) || stringValue(op.new_value?.date)
+      return raceDate ? { ...next, raceDate } : next
+    }
+    if (op.op === 'replace_milestone_target' && op.milestone_id === targetRaceMilestoneId(masterPlan)) {
+      const milestoneTarget = stringValue(patch.target) || stringValue(op.new_value?.target)
+      return milestoneTarget ? { ...next, targetTime: extractTargetTime(milestoneTarget) || next.targetTime } : next
+    }
+    return next
+  }, target)
+}
+
+function targetProfileChanged(current: TargetProfile, next: TargetProfile): boolean {
+  return current.raceName !== next.raceName
+    || current.distance !== next.distance
+    || current.raceDate !== next.raceDate
+    || current.targetTime !== next.targetTime
+}
+
+function targetRaceMilestoneId(masterPlan: MasterPlan | null): string | null {
+  return masterPlan?.milestones.find((milestone) => milestone.type === 'race')?.id ?? null
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function extractTargetTime(value: string): string {
+  return value.match(/\b(?:[0-9]{1,2}:)?[0-9]{1,2}:[0-9]{2}\b/)?.[0] ?? ''
+}
+
+function composeAdjustMessage(answers: FlowAnswers): string {
+  if (answers.phase) return `${answers.phase}：${answers.direction ?? '未说明方向'}`
+  return answers.direction ?? '未说明方向'
+}
+
+function adjustmentNeedsPhase(direction: string): boolean {
+  if (VOLUME_CHANGE_RE.test(direction)) {
+    if (!EXPLICIT_VOLUME_TARGET_RE.test(direction)) return false
+    return !EXPLICIT_PHASE_TARGET_RE.test(direction)
+  }
+  return PHASE_TARGET_REQUIRED_RE.test(direction) && !EXPLICIT_PHASE_TARGET_RE.test(direction)
 }
 
 function composeChangeReason(answers: FlowAnswers): string {
-  return [answers.intent, answers.body ?? answers.focus, answers.sessions].filter(Boolean).join(' · ')
+  return [answers.phase, answers.direction].filter(Boolean).join(' · ')
 }
 
 function buildAnswerSummary(answers: FlowAnswers): string {
-  const middle = answers.body ?? answers.focus
-  return [middle, answers.sessions].filter(Boolean).join(' · ') || '等待选择'
+  return [answers.phase, answers.direction].filter(Boolean).join(' · ') || '等待澄清'
 }
 
-function planReferenceTitle(masterPlan: MasterPlan | null, phases: DisplayPhase[], target: TargetProfile): string {
+function planReferenceTitle(target: TargetProfile, totalWeeks: number): string {
   const raceName = target.raceName || '目标赛事'
-  const totalWeeks = planTotalWeeks(masterPlan, phases)
   return `从现在到${raceName} · ${totalWeeks || '--'} 周`
 }
 
@@ -1198,20 +1453,32 @@ function diffOpLabel(op: string): string {
     add_phase: '新增阶段',
     remove_phase: '删除阶段',
     resize_phase: '调整阶段日期',
+    shift_phase_boundary: '调整相邻阶段边界',
     replace_phase_focus: '调整阶段重点',
     replace_weekly_range: '调整周量区间',
     add_milestone: '新增里程碑',
     remove_milestone: '删除里程碑',
     replace_milestone_date: '调整里程碑日期',
     replace_milestone_target: '调整里程碑目标',
+    reschedule_target_race: '调整目标比赛日期',
+    update_target_race_time: '调整目标完赛时间',
   }
   return labels[op] ?? op
 }
 
 function summarizeDiffValue(op: MasterPlanDiffOp): string {
-  const oldValue = op.old_value ? JSON.stringify(op.old_value) : '无'
-  const newValue = op.new_value ? JSON.stringify(op.new_value) : '无'
+  const oldValue = compactJson(op.old_value)
+  const newValue = compactJson(effectiveNewValue(op))
   return `${oldValue} -> ${newValue}`
+}
+
+function effectiveNewValue(op: MasterPlanDiffOp): Record<string, unknown> | null {
+  return op.new_value && Object.keys(op.new_value).length > 0 ? op.new_value : op.spec_patch
+}
+
+function compactJson(value: Record<string, unknown> | null): string {
+  if (!value || Object.keys(value).length === 0) return '无'
+  return JSON.stringify(value)
 }
 
 function BackIcon() {
@@ -1243,22 +1510,6 @@ function PulseMiniIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
       <path d="M3 12h7l2-5 3 10 2-5h4" />
-    </svg>
-  )
-}
-
-function ArrowMiniIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
-      <path d="M5 12h14M13 6l6 6-6 6" />
-    </svg>
-  )
-}
-
-function PlusCircleMiniIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} aria-hidden="true">
-      <path d="M12 8v8M8 12h8M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
     </svg>
   )
 }

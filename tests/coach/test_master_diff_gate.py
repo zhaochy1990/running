@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from coach.graphs.conversation.master_diff_gate import validate_master_diff
 from stride_core.master_plan import (
     MasterPlan,
@@ -87,6 +89,90 @@ def test_valid_resize_passes() -> None:
         spec_patch={"end_date": "2026-08-15"},  # extends, stays after start
     )
     assert validate_master_diff(_plan(), _diff(op)) == []
+
+
+def test_atomic_phase_boundary_shift_passes() -> None:
+    plan = _plan()
+    following = _phase().model_copy(
+        update={
+            "id": "phase-2",
+            "name": "专项期",
+            "start_date": "2026-08-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), following]})
+    patch = {
+        "end_date": "2026-08-14",
+        "following_phase_id": following.id,
+        "following_start_date": "2026-08-15",
+    }
+    op = _op(
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
+        phase_id="phase-1",
+        old_value={
+            "end_date": "2026-07-31",
+            "following_phase_id": following.id,
+            "following_start_date": "2026-08-01",
+        },
+        new_value=patch,
+        spec_patch=patch,
+    )
+
+    assert validate_master_diff(plan, _diff(op)) == []
+
+
+def test_phase_boundary_shift_rejects_gap_or_nonadjacent_phase() -> None:
+    plan = _plan()
+    following = _phase().model_copy(
+        update={
+            "id": "phase-2", "name": "专项期",
+            "start_date": "2026-08-01", "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), following]})
+    patch = {
+        "end_date": "2026-08-14", "following_phase_id": following.id,
+        "following_start_date": "2026-08-16",
+    }
+    op = _op(
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY, phase_id="phase-1",
+        old_value={"end_date": "2026-07-31", "following_phase_id": following.id, "following_start_date": "2026-08-01"},
+        new_value=patch, spec_patch=patch,
+    )
+
+    violations = validate_master_diff(plan, _diff(op))
+
+    assert len(violations) == 1
+    assert "日历连续" in violations[0]
+
+
+def test_phase_boundary_shift_rejects_orphaning_a_phase_milestone() -> None:
+    plan = _plan()
+    following = _phase().model_copy(
+        update={
+            "id": "phase-2", "name": "专项期",
+            "start_date": "2026-08-01", "end_date": "2026-11-15",
+            "milestone_ids": [],
+        }
+    )
+    plan = plan.model_copy(update={"phases": [_phase(), following]})
+    patch = {
+        "end_date": "2026-07-17", "following_phase_id": following.id,
+        "following_start_date": "2026-07-18",
+    }
+    op = _op(
+        MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY, phase_id="phase-1",
+        old_value={"end_date": "2026-07-31", "following_phase_id": following.id, "following_start_date": "2026-08-01"},
+        new_value=patch, spec_patch=patch,
+    )
+
+    violations = validate_master_diff(plan, _diff(op))
+
+    assert len(violations) == 1
+    assert "里程碑" in violations[0]
 
 
 def test_short_final_taper_cannot_be_compressed() -> None:
@@ -459,6 +545,127 @@ def test_resize_phase_past_season_end_is_rejected() -> None:
     assert "超出赛季范围" in violations[0]
 
 
+def test_atomic_target_race_reschedule_passes() -> None:
+    plan = _plan()
+    build = plan.phases[0].model_copy(
+        update={
+            "id": "build",
+            "end_date": "2026-10-31",
+            "milestone_ids": [],
+        }
+    )
+    taper = plan.phases[0].model_copy(
+        update={
+            "id": "taper",
+            "name": "调整期",
+            "phase_type": PhaseType.TAPER,
+            "start_date": "2026-11-01",
+            "end_date": "2026-11-15",
+            "milestone_ids": ["race"],
+        }
+    )
+    race = Milestone(
+        id="race",
+        type=MilestoneType.RACE,
+        date="2026-11-15",
+        phase_id=taper.id,
+        target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "end_date": "2026-11-15",
+            "goal": plan.goal.model_copy(update={"race_date": "2026-11-15"}),
+            "phases": [build, taper],
+            "milestones": [race],
+        }
+    )
+    op = _op(
+        MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        milestone_id=race.id,
+        spec_patch={
+            "race_date": "2026-11-29",
+            "plan_end_date": "2026-11-29",
+            "milestone_date": "2026-11-29",
+            "phase_updates": [
+                {"phase_id": build.id, "end_date": "2026-11-14"},
+                {
+                    "phase_id": taper.id,
+                    "start_date": "2026-11-15",
+                    "end_date": "2026-11-29",
+                },
+            ],
+        },
+    )
+
+    assert validate_master_diff(plan, _diff(op)) == []
+
+
+def test_target_race_reschedule_must_be_one_coherent_atomic_patch() -> None:
+    plan = _plan()
+    race = Milestone(
+        id="race",
+        type=MilestoneType.RACE,
+        date=plan.end_date,
+        phase_id=plan.phases[0].id,
+        target="全马",
+    )
+    plan = plan.model_copy(
+        update={
+            "goal": plan.goal.model_copy(update={"race_date": plan.end_date}),
+            "milestones": [race],
+        }
+    )
+    op = _op(
+        MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+        milestone_id=race.id,
+        spec_patch={
+            "race_date": "2026-11-29",
+            "plan_end_date": "2026-11-29",
+            "milestone_date": "2026-11-29",
+            "phase_updates": [],
+        },
+    )
+
+    violations = validate_master_diff(plan, _diff(op))
+
+    assert violations
+    assert "阶段边界" in violations[0]
+
+
+def test_target_race_time_requires_one_coherent_atomic_patch() -> None:
+    plan = _plan()
+    phase = plan.phases[0].model_copy(update={
+        "end_date": plan.goal.race_date,
+        "milestone_ids": ["race"],
+    })
+    race = Milestone(
+        id="race", type=MilestoneType.RACE, date=plan.goal.race_date,
+        phase_id=phase.id, target="全马 3:15:00",
+    )
+    plan = plan.model_copy(update={
+        "goal": plan.goal.model_copy(update={"target_time": "3:15:00"}),
+        "phases": [phase],
+        "milestones": [race],
+    })
+    op = _op(
+        MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+        milestone_id=race.id,
+        spec_patch={
+            "target_time": "3:10:00",
+            "milestone_target": "全马 3:10:00",
+        },
+    )
+
+    assert validate_master_diff(plan, _diff(op)) == []
+
+    malformed = op.model_copy(update={
+        "spec_patch": {"target_time": "3:10:00"}
+    })
+    violations = validate_master_diff(plan, _diff(malformed))
+    assert violations
+    assert "原子同步" in violations[0]
+
+
 def test_weekly_range_non_numeric_is_rejected_not_crash() -> None:
     """Non-numeric weekly range must be a violation, never an unhandled crash."""
     op = _op(
@@ -527,6 +734,18 @@ def test_replace_phase_focus_non_string_is_rejected() -> None:
     violations = validate_master_diff(_plan(), _diff(op))
     assert len(violations) == 1
     assert "focus 必须是文本" in violations[0]
+
+
+@pytest.mark.parametrize("focus", ["", "   "])
+def test_replace_phase_focus_empty_string_is_rejected(focus: str) -> None:
+    op = _op(
+        MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS,
+        phase_id="phase-1",
+        spec_patch={"focus": focus},
+    )
+    violations = validate_master_diff(_plan(), _diff(op))
+    assert len(violations) == 1
+    assert "focus 不能为空" in violations[0]
 
 
 def test_replace_milestone_target_non_string_is_rejected() -> None:

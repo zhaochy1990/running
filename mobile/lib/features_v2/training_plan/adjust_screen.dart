@@ -12,7 +12,8 @@ import '../../core/theme/tokens.dart';
 import '../_shared/widgets/top_bar.dart';
 import '../plan/models/plan_chat.dart';
 import 'providers/master_plan_adjust_provider.dart';
-import 'providers/master_plan_review_provider.dart' show MasterPlanDiff;
+import 'providers/master_plan_review_provider.dart'
+    show MasterPlanDiff, MasterPlanDiffOp;
 import 'widgets/master_plan_summary_card.dart';
 
 // ── Quick suggestions ─────────────────────────────────────────────────────────
@@ -76,18 +77,29 @@ class _MasterPlanAdjustScreenState
   }
 
   Future<void> _applyDiff() async {
-    final result = await ref
+    final outcome = await ref
         .read(masterPlanAdjustProvider(widget.planId).notifier)
         .applyDiff();
 
     if (!mounted) return;
 
-    if (result != null && result.affectedWeeks.isNotEmpty) {
-      _showAffectedWeeksDialog(result);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已应用调整')),
-      );
+    switch (outcome.status) {
+      case AdjustApplyStatus.ignoredInFlight:
+        return;
+      case AdjustApplyStatus.failed:
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('应用失败，请稍后重试')));
+        return;
+      case AdjustApplyStatus.applied:
+        final result = outcome.result!;
+        if (result.affectedWeeks.isNotEmpty) {
+          _showAffectedWeeksDialog(result);
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('已应用调整')));
+        }
     }
   }
 
@@ -139,9 +151,9 @@ class _MasterPlanAdjustScreenState
             onPressed: () {
               Navigator.of(ctx).pop();
               // TODO(T43): implement batch week regeneration
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('周计划重生成功能即将上线')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('周计划重生成功能即将上线')));
             },
             child: const Text(
               '全部重生成',
@@ -199,7 +211,7 @@ class _MasterPlanAdjustScreenState
       ),
       floatingActionButton: state.hasPendingAccepted
           ? FloatingActionButton.extended(
-              onPressed: _applyDiff,
+              onPressed: state.loading ? null : _applyDiff,
               backgroundColor: StrideTokens.accent,
               foregroundColor: StrideTokens.surface,
               label: Text(
@@ -343,55 +355,11 @@ class _AdjustDiffCard extends ConsumerWidget {
           ),
           const Divider(height: 1, color: StrideTokens.border2),
           for (final op in diff.ops) ...[
-            InkWell(
-              onTap: () => notifier.toggleOp(op.id),
-              borderRadius: BorderRadius.circular(StrideTokens.radiusSm),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: StrideTokens.spaceMd,
-                  vertical: StrideTokens.spaceMd,
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: Checkbox(
-                        value: state.acceptedOpIds.contains(op.id),
-                        onChanged: (_) => notifier.toggleOp(op.id),
-                        activeColor: StrideTokens.accent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                    ),
-                    const SizedBox(width: StrideTokens.spaceSm),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _OpPill(op: op.op),
-                          if (op.newValue != null) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              op.newValue!.entries
-                                  .map((e) => '${e.key}: ${e.value}')
-                                  .join(', '),
-                              style: const TextStyle(
-                                fontFamily: AppTypography.fontSans,
-                                fontSize: StrideTokens.fs13,
-                                color: StrideTokens.fg,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            _AdjustOpRow(
+              op: op,
+              accepted: state.acceptedOpIds.contains(op.id),
+              enabled: op.accepted != false && !state.loading,
+              onToggle: () => notifier.toggleOp(op.id),
             ),
             if (op != diff.ops.last)
               const Divider(
@@ -407,30 +375,197 @@ class _AdjustDiffCard extends ConsumerWidget {
   }
 }
 
+class _AdjustOpRow extends StatelessWidget {
+  const _AdjustOpRow({
+    required this.op,
+    required this.accepted,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  final MasterPlanDiffOp op;
+  final bool accepted;
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final previewLines = _previewLines(op);
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: InkWell(
+        onTap: enabled ? onToggle : null,
+        borderRadius: BorderRadius.circular(StrideTokens.radiusSm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: StrideTokens.spaceMd,
+            vertical: StrideTokens.spaceMd,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: Checkbox(
+                  key: Key('master-plan-adjust-op-${op.id}'),
+                  value: accepted,
+                  onChanged: enabled ? (_) => onToggle() : null,
+                  activeColor: StrideTokens.accent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+              const SizedBox(width: StrideTokens.spaceSm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _OpPill(op: op.op),
+                    if (previewLines.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      for (final line in previewLines)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 2),
+                          child: Text(
+                            line,
+                            style: const TextStyle(
+                              fontFamily: AppTypography.fontSans,
+                              fontSize: StrideTokens.fs13,
+                              color: StrideTokens.fg,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+List<String> _previewLines(MasterPlanDiffOp op) {
+  final oldValue = op.oldValue ?? const <String, dynamic>{};
+  final newValue = op.newValue ?? op.specPatch ?? const <String, dynamic>{};
+
+  if (op.op == 'reschedule_target_race') {
+    return [
+      _arrowLine('比赛日', oldValue['race_date'], newValue['race_date']),
+      _arrowLine('计划结束', oldValue['plan_end_date'], newValue['plan_end_date']),
+      ..._phaseBoundaryLines(newValue['phase_updates']),
+    ].whereType<String>().toList(growable: false);
+  }
+
+  if (op.op == 'update_target_race_time') {
+    return [
+      _arrowLine('目标成绩', oldValue['target_time'], newValue['target_time']),
+      _arrowLine(
+        '里程碑目标',
+        oldValue['milestone_target'],
+        newValue['milestone_target'],
+      ),
+    ].whereType<String>().toList(growable: false);
+  }
+
+  final oldSummary = oldValue['summary'] ?? oldValue['value'];
+  final newSummary = newValue['summary'] ?? newValue['value'];
+  final summaryLine = _arrowLine('调整', oldSummary, newSummary);
+  if (summaryLine != null) return [summaryLine];
+
+  final weeklyLine = _weeklyRangeLine(oldValue, newValue);
+  if (weeklyLine != null) return [weeklyLine];
+
+  if (newValue.isNotEmpty) {
+    return [newValue.entries.map((e) => '${e.key}: ${e.value}').join(', ')];
+  }
+  return const [];
+}
+
+List<String> _phaseBoundaryLines(Object? rawUpdates) {
+  if (rawUpdates is! List) return const [];
+  final updates = rawUpdates.whereType<Map<String, dynamic>>().toList(
+    growable: false,
+  );
+  if (updates.isEmpty) return const [];
+
+  final lines = <String>[];
+  final preceding = updates.first;
+  final precedingEnd = preceding['end_date'];
+  if (precedingEnd != null) {
+    lines.add('前序阶段结束：$precedingEnd');
+  }
+
+  if (updates.length > 1) {
+    final taper = updates.last;
+    final taperStart = taper['start_date'];
+    final taperEnd = taper['end_date'];
+    if (taperStart != null && taperEnd != null) {
+      lines.add('调整期：$taperStart → $taperEnd');
+    } else if (taperStart != null || taperEnd != null) {
+      lines.add(
+        '调整期：${taperStart ?? ''}${taperEnd == null ? '' : ' → $taperEnd'}',
+      );
+    }
+  }
+  return lines;
+}
+
+String? _arrowLine(String label, Object? oldValue, Object? newValue) {
+  if (oldValue == null && newValue == null) return null;
+  if (oldValue == null) return '$label ${newValue ?? ''}';
+  if (newValue == null) return '$label $oldValue';
+  return '$label $oldValue → $newValue';
+}
+
+String? _weeklyRangeLine(
+  Map<String, dynamic> oldValue,
+  Map<String, dynamic> newValue,
+) {
+  final oldLow = oldValue['weekly_distance_km_low'];
+  final oldHigh = oldValue['weekly_distance_km_high'];
+  final newLow = newValue['weekly_distance_km_low'];
+  final newHigh = newValue['weekly_distance_km_high'];
+  if (oldLow == null || oldHigh == null || newLow == null || newHigh == null) {
+    return null;
+  }
+  return '周量 $oldLow–$oldHigh km → $newLow–$newHigh km';
+}
+
 class _OpPill extends StatelessWidget {
   const _OpPill({required this.op});
 
   final String op;
 
   static String _label(String op) => switch (op) {
-        'resize_phase' => '调整阶段',
-        'replace_phase_focus' => '更新重点',
-        'replace_weekly_range' => '调整周量',
-        'add_phase' => '新增阶段',
-        'remove_phase' => '删除阶段',
-        'add_milestone' => '新增里程碑',
-        'remove_milestone' => '删除里程碑',
-        'replace_milestone_date' => '调整日期',
-        'replace_milestone_target' => '调整目标',
-        _ => op,
-      };
+    'resize_phase' => '调整阶段',
+    'shift_phase_boundary' => '调整阶段边界',
+    'replace_phase_focus' => '更新重点',
+    'replace_weekly_range' => '调整周量',
+    'add_phase' => '新增阶段',
+    'remove_phase' => '删除阶段',
+    'add_milestone' => '新增里程碑',
+    'remove_milestone' => '删除里程碑',
+    'replace_milestone_date' => '调整日期',
+    'replace_milestone_target' => '调整目标',
+    'reschedule_target_race' => '调整目标比赛',
+    'update_target_race_time' => '调整目标成绩',
+    _ => op,
+  };
 
   static Color _color(String op) => switch (op) {
-        'add_phase' || 'add_milestone' => StrideTokens.accent,
-        'remove_phase' || 'remove_milestone' => StrideTokens.danger,
-        'resize_phase' || 'replace_weekly_range' => StrideTokens.warn,
-        _ => StrideTokens.muted,
-      };
+    'add_phase' || 'add_milestone' => StrideTokens.accent,
+    'remove_phase' || 'remove_milestone' => StrideTokens.danger,
+    'resize_phase' ||
+    'shift_phase_boundary' ||
+    'replace_weekly_range' => StrideTokens.warn,
+    _ => StrideTokens.muted,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -468,8 +603,9 @@ class _BubbleWidget extends StatelessWidget {
     return Align(
       alignment: _isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
-        constraints:
-            BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.75,
+        ),
         margin: const EdgeInsets.only(bottom: StrideTokens.spaceMd),
         padding: const EdgeInsets.symmetric(
           horizontal: StrideTokens.spaceMd,

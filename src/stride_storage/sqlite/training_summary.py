@@ -11,7 +11,8 @@ from collections import Counter, defaultdict
 from datetime import date
 from typing import Any
 
-from stride_core.timefmt import SHANGHAI_DAY_SQL
+from stride_core.timefmt import SHANGHAI_DAY_SQL, sqlite_mixed_date_expr
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .database import Database, HRV_PREFERRED_PER_DATE_SQL
 
@@ -41,13 +42,6 @@ def _category(row: dict[str, Any]) -> str:
     return "cross"
 
 
-def _health_day_sql() -> str:
-    return (
-        "CASE WHEN length(date) = 8 THEN substr(date,1,4) || '-' || "
-        "substr(date,5,2) || '-' || substr(date,7,2) ELSE substr(date,1,10) END"
-    )
-
-
 def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[str, Any]:
     """Aggregate activities, load, recovery, and plan adherence.
 
@@ -70,9 +64,10 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
                       atl.excluded_from_pmc, af.rpe
                  FROM bounded b
                  LEFT JOIN activity_training_load atl ON atl.label_id = b.label_id
+                   AND atl.algorithm_version = ?
                  LEFT JOIN activity_feedback af ON af.label_id = b.label_id
                 ORDER BY b.shanghai_date, b.label_id""",
-        (date_from, date_to),
+        (date_from, date_to, TRAINING_LOAD_MODEL_VERSION),
     ).fetchall()
 
     running = db.get_running_week_summaries([(0, date_from, date_to)]).get(0, {})
@@ -144,16 +139,25 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
             available[row["date"]][expected] -= 1
             completed += 1
 
-    load_rows = db._conn.execute(
-        """SELECT date, training_dose, acute_load, chronic_load, form, load_ratio
-             FROM daily_training_load
-            WHERE algorithm_version = (SELECT max(algorithm_version) FROM daily_training_load)
-              AND date BETWEEN ? AND ?
-            ORDER BY date""",
-        (date_from, date_to),
-    ).fetchall()
+    all_load_rows = db.fetch_daily_training_load(
+        date_from, date_to, algorithm_version=TRAINING_LOAD_MODEL_VERSION
+    )
+    load_rows = [
+        row for row in all_load_rows
+        if row["coverage_status"] in {"complete", "partial", "rest_confirmed"}
+    ]
+    training_dose_coverage = (
+        "partial"
+        if load_rows and any(
+            row["coverage_status"] in {"partial", "unknown"}
+            for row in all_load_rows
+        )
+        else "complete"
+        if load_rows
+        else "unknown"
+    )
 
-    day_sql = _health_day_sql()
+    day_sql = sqlite_mixed_date_expr("date")
     health_rows = db._conn.execute(
         f"""SELECT {day_sql} AS day, rhr
                FROM daily_health
@@ -161,16 +165,17 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
               ORDER BY day""",
         (date_from, date_to),
     ).fetchall()
+    hrv_day_sql = sqlite_mixed_date_expr("date")
     hrv_rows = db._conn.execute(
-        """SELECT date, last_night_avg
-             FROM (""" + HRV_PREFERRED_PER_DATE_SQL + """)
-            WHERE date BETWEEN ? AND ?
-            ORDER BY date""",
+        f"""SELECT {hrv_day_sql} AS day, last_night_avg
+             FROM ({HRV_PREFERRED_PER_DATE_SQL})
+            WHERE {hrv_day_sql} BETWEEN ? AND ?
+            ORDER BY day""",
         (date_from, date_to),
     ).fetchall()
     recovery_by_day = {row["day"]: dict(row) for row in health_rows}
     for row in hrv_rows:
-        recovery_by_day.setdefault(row["date"], {"day": row["date"]}).update(
+        recovery_by_day.setdefault(row["day"], {"day": row["day"]}).update(
             {"hrv": row["last_night_avg"]}
         )
 
@@ -202,6 +207,7 @@ def get_training_summary(db: Database, *, date_from: str, date_to: str) -> dict[
             "avg_pace_s_km": running.get("avg_pace_s_km"),
             "avg_hr": running.get("avg_hr"),
             "training_dose": round(sum(float(row["training_dose"] or 0) for row in load_rows), 1),
+            "training_dose_coverage": training_dose_coverage,
             "avg_rpe": round(sum(rpes) / len(rpes), 1) if rpes else None,
             "session_class_counts": dict(sorted(class_counts.items())),
         },

@@ -117,15 +117,11 @@ def test_fetch_nearest_hrmax_skips_snapshots_without_hrmax(db: Database):
     assert result.as_of_date == date(2026, 5, 10)
 
 
-def test_fetch_latest_prefers_later_inserted_row_for_same_date(db: Database):
-    """When two snapshots share an as_of_date, the later-inserted one wins
-    (ordering: as_of_date DESC, id DESC). This is how algorithm-version bumps
-    propagate in practice — newer versions are always inserted later.
-    """
+def test_fetch_latest_ignores_noncanonical_algorithm_version(db: Database):
     repo = SQLiteRunningCalibrationRepository(db)
     # Same as_of_date, two algorithm versions inserted in version order
-    repo.save_snapshot(_snap("2026-05-20", hrmax=180.0, algorithm_version=2))
     repo.save_snapshot(_snap("2026-05-20", hrmax=190.0, algorithm_version=3))
+    repo.save_snapshot(_snap("2026-05-21", hrmax=220.0, algorithm_version=99))
 
     result = repo.fetch_latest()
 

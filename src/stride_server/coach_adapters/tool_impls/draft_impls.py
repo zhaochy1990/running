@@ -1,8 +1,7 @@
 """Draft-tool implementations — see plan §5.2.
 
 * 7 week-scope tools (return ``PlanDiff``) — real impls (US-007).
-* 6 master-scope tools (return ``MasterPlanDiff``) — still placeholders
-  pending US-009.
+* 10 master-scope tools (return ``MasterPlanDiff``).
 
 A draft tool's job is to propose a change as a typed diff; it never applies
 the change. The route handler accepts the diff back (Pattern Y) and runs
@@ -18,12 +17,17 @@ it None.
 from __future__ import annotations
 
 import logging
+import math
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from coach.schemas import ToolResult
-from coach.graphs.conversation.master_diff_gate import is_short_taper_phase
+from coach.graphs.conversation.master_diff_gate import (
+    is_short_taper_phase,
+    validate_master_diff,
+)
 from stride_core.plan_diff import DiffOp, DiffOpKind, PlanDiff
 from stride_core.timefmt import today_shanghai
 
@@ -425,7 +429,7 @@ class RegenerateWeekImpl:
 
 
 # ---------------------------------------------------------------------------
-# Master-scope (6) — emit MasterPlanDiff
+# Master-scope (10) — emit MasterPlanDiff
 # ---------------------------------------------------------------------------
 
 from datetime import date as _date, timedelta as _timedelta
@@ -433,6 +437,8 @@ from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
+    build_target_race_time_patch,
+    build_target_race_reschedule_patch,
 )
 
 
@@ -441,6 +447,35 @@ def _open_master_plan(user_id: str, plan_id: str):
     from stride_server.master_plan_store import get_master_plan_store
 
     return get_master_plan_store().get_plan(user_id, plan_id)
+
+
+def _resolve_master_plan_loader(
+    user_id: str, plan_loader: Callable[[str], Any] | None
+) -> Callable[[str], Any]:
+    return plan_loader or (lambda plan_id: _open_master_plan(user_id, plan_id))
+
+
+def _is_target_race_milestone(plan: Any, milestone: Any) -> bool:
+    milestone_type = getattr(getattr(milestone, "type", None), "value", None)
+    if milestone_type is None:
+        milestone_type = str(getattr(milestone, "type", ""))
+    if milestone_type != "race":
+        return False
+    # Generic milestone edits must fail closed for the target-race candidate.
+    # A partially inconsistent plan must be repaired through the atomic target
+    # race tools rather than using the inconsistency to bypass them.
+    goal = getattr(plan, "goal", None)
+    race_date = getattr(goal, "race_date", None)
+    if race_date and getattr(milestone, "date", None) == race_date:
+        return True
+    phases = list(getattr(plan, "phases", None) or [])
+    final_phase = phases[-1] if phases else None
+    return bool(
+        final_phase is not None
+        and getattr(milestone, "phase_id", None) == getattr(final_phase, "id", None)
+        and getattr(milestone, "id", None)
+        in (getattr(final_phase, "milestone_ids", None) or [])
+    )
 
 
 def _empty_master_diff(plan_id: str, explanation: str) -> MasterPlanDiff:
@@ -463,39 +498,85 @@ def _shift_phase_end(end_date: str, weeks: int) -> str:
 
 
 class ExtendPhaseImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
-    def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult:
+    def __call__(
+        self, *, plan_id: str, phase_id: str, weeks: int, adjustment_request: str
+    ) -> ToolResult:
         if weeks <= 0:
             return _fail(f"weeks must be positive, got {weeks}")
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         phase = next((p for p in plan.phases if p.id == phase_id), None)
         if phase is None:
             return _fail(f"phase {phase_id!r} not in plan")
+        phase_index = plan.phases.index(phase)
+        if phase_index + 1 >= len(plan.phases):
+            return _fail(
+                "extending the final phase would move the season boundary; "
+                "use reschedule_target_race for a target-race date change"
+            )
+        following = plan.phases[phase_index + 1]
         new_end = _shift_phase_end(phase.end_date, weeks)
+        new_following_start = _shift_phase_end(following.start_date, weeks)
         op = MasterPlanDiffOp(
             id=str(uuid4()),
-            op=MasterPlanDiffOpKind.RESIZE_PHASE,
+            op=MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
             phase_id=phase_id,
-            old_value={"end_date": phase.end_date},
-            new_value={"end_date": new_end},
-            spec_patch={"end_date": new_end},
+            old_value={
+                "end_date": phase.end_date,
+                "following_phase_id": following.id,
+                "following_start_date": following.start_date,
+            },
+            new_value={
+                "end_date": new_end,
+                "following_phase_id": following.id,
+                "following_start_date": new_following_start,
+            },
+            spec_patch={
+                "end_date": new_end,
+                "following_phase_id": following.id,
+                "following_start_date": new_following_start,
+            },
         )
-        diff = _empty_master_diff(plan_id, f"将 {phase.name} 延长 {weeks} 周至 {new_end}")
-        return _ok_master(diff.model_copy(update={"ops": [op]}))
+        diff = _empty_master_diff(
+            plan_id,
+            f"将 {phase.name} 延长 {weeks} 周至 {new_end}，并将相邻的"
+            f" {following.name} 起点同步到 {new_following_start}"
+            f"（用户请求：{adjustment_request}）",
+        ).model_copy(update={"ops": [op]})
+        from coach.graphs.conversation.master_adjustment_direction import (
+            master_diff_matches_phase_resize_request,
+        )
+
+        if not master_diff_matches_phase_resize_request(
+            diff, adjustment_request, plan=plan
+        ):
+            return _fail(
+                "phase extension does not match the exact phase or weeks in adjustment_request"
+            )
+        violations = validate_master_diff(plan, diff)
+        if violations:
+            return _fail(*violations)
+        return _ok_master(diff)
 
 
 class CompressPhaseImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
-    def __call__(self, *, plan_id: str, phase_id: str, weeks: int) -> ToolResult:
+    def __call__(
+        self, *, plan_id: str, phase_id: str, weeks: int, adjustment_request: str
+    ) -> ToolResult:
         if weeks <= 0:
             return _fail(f"weeks must be positive, got {weeks}")
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         phase = next((p for p in plan.phases if p.id == phase_id), None)
@@ -506,7 +587,15 @@ class CompressPhaseImpl:
                 f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短；"
                 "请调整更早阶段的周跑量，或拒绝这次要求"
             )
+        phase_index = plan.phases.index(phase)
+        if phase_index + 1 >= len(plan.phases):
+            return _fail(
+                "compressing the final phase would move the season boundary; "
+                "use reschedule_target_race for a target-race date change"
+            )
+        following = plan.phases[phase_index + 1]
         new_end = _shift_phase_end(phase.end_date, -weeks)
+        new_following_start = _shift_phase_end(following.start_date, -weeks)
         # Refuse a compress that would collapse the phase below its start
         if _date.fromisoformat(new_end) <= _date.fromisoformat(phase.start_date):
             return _fail(
@@ -514,19 +603,51 @@ class CompressPhaseImpl:
             )
         op = MasterPlanDiffOp(
             id=str(uuid4()),
-            op=MasterPlanDiffOpKind.RESIZE_PHASE,
+            op=MasterPlanDiffOpKind.SHIFT_PHASE_BOUNDARY,
             phase_id=phase_id,
-            old_value={"end_date": phase.end_date},
-            new_value={"end_date": new_end},
-            spec_patch={"end_date": new_end},
+            old_value={
+                "end_date": phase.end_date,
+                "following_phase_id": following.id,
+                "following_start_date": following.start_date,
+            },
+            new_value={
+                "end_date": new_end,
+                "following_phase_id": following.id,
+                "following_start_date": new_following_start,
+            },
+            spec_patch={
+                "end_date": new_end,
+                "following_phase_id": following.id,
+                "following_start_date": new_following_start,
+            },
         )
-        diff = _empty_master_diff(plan_id, f"将 {phase.name} 缩短 {weeks} 周至 {new_end}")
-        return _ok_master(diff.model_copy(update={"ops": [op]}))
+        diff = _empty_master_diff(
+            plan_id,
+            f"将 {phase.name} 缩短 {weeks} 周至 {new_end}，并将相邻的"
+            f" {following.name} 起点同步到 {new_following_start}"
+            f"（用户请求：{adjustment_request}）",
+        ).model_copy(update={"ops": [op]})
+        from coach.graphs.conversation.master_adjustment_direction import (
+            master_diff_matches_phase_resize_request,
+        )
+
+        if not master_diff_matches_phase_resize_request(
+            diff, adjustment_request, plan=plan
+        ):
+            return _fail(
+                "phase compression does not match the exact phase or weeks in adjustment_request"
+            )
+        violations = validate_master_diff(plan, diff)
+        if violations:
+            return _fail(*violations)
+        return _ok_master(diff)
 
 
 class ShiftMilestoneImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(
         self, *, plan_id: str, milestone_id: str, new_date: str
@@ -535,12 +656,16 @@ class ShiftMilestoneImpl:
             _date.fromisoformat(new_date)
         except ValueError:
             return _fail(f"new_date must be ISO YYYY-MM-DD, got {new_date!r}")
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         ms = next((m for m in plan.milestones if m.id == milestone_id), None)
         if ms is None:
             return _fail(f"milestone {milestone_id!r} not in plan")
+        if _is_target_race_milestone(plan, ms):
+            return _fail(
+                "target race milestone must be changed with reschedule_target_race"
+            )
         op = MasterPlanDiffOp(
             id=str(uuid4()),
             op=MasterPlanDiffOpKind.REPLACE_MILESTONE_DATE,
@@ -553,21 +678,74 @@ class ShiftMilestoneImpl:
         return _ok_master(diff.model_copy(update={"ops": [op]}))
 
 
+class RescheduleTargetRaceImpl:
+    """Move the target race as one indivisible season-plan operation."""
+
+    def __init__(
+        self,
+        user_id: str,
+        *,
+        plan_loader: Callable[[str], Any] | None = None,
+        as_of: _date | None = None,
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
+        self._as_of = as_of
+
+    def __call__(
+        self, *, plan_id: str, milestone_id: str, new_date: str, reason: str
+    ) -> ToolResult:
+        plan = self._load_plan(plan_id)
+        if plan is None:
+            return _fail(f"master plan {plan_id!r} not found")
+        try:
+            patch = build_target_race_reschedule_patch(
+                plan, milestone_id, new_date, as_of=self._as_of
+            )
+        except (TypeError, ValueError) as exc:
+            return _fail(str(exc))
+
+        milestone = next(item for item in plan.milestones if item.id == milestone_id)
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.RESCHEDULE_TARGET_RACE,
+            milestone_id=milestone_id,
+            old_value={
+                "race_date": plan.goal.race_date,
+                "plan_end_date": plan.end_date,
+                "milestone_date": milestone.date,
+            },
+            new_value=patch,
+            spec_patch=patch,
+        )
+        diff = _empty_master_diff(
+            plan_id,
+            f"将目标比赛从 {milestone.date} 调整到 {new_date}，并原子同步赛季和 taper 边界"
+            f"（原因：{reason}）",
+        )
+        return _ok_master(diff.model_copy(update={"ops": [op]}))
+
+
 class ChangeTargetImpl:
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(
         self, *, plan_id: str, milestone_id: str, new_target_time: str
     ) -> ToolResult:
         if not new_target_time:
             return _fail("new_target_time must be non-empty")
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         ms = next((m for m in plan.milestones if m.id == milestone_id), None)
         if ms is None:
             return _fail(f"milestone {milestone_id!r} not in plan")
+        if _is_target_race_milestone(plan, ms):
+            return _fail(
+                "target race milestone must be changed with update_target_race_time"
+            )
         op = MasterPlanDiffOp(
             id=str(uuid4()),
             op=MasterPlanDiffOpKind.REPLACE_MILESTONE_TARGET,
@@ -580,8 +758,203 @@ class ChangeTargetImpl:
         return _ok_master(diff.model_copy(update={"ops": [op]}))
 
 
-class ProposeAlternativesImpl:
-    """Return 2 distinct MasterPlanDiff alternatives matching the user's intent.
+class UpdateTargetRaceTimeImpl:
+    """Change the season goal race time as one indivisible operation."""
+
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
+
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        milestone_id: str,
+        new_target_time: str,
+        reason: str,
+    ) -> ToolResult:
+        plan = self._load_plan(plan_id)
+        if plan is None:
+            return _fail(f"master plan {plan_id!r} not found")
+        try:
+            patch = build_target_race_time_patch(
+                plan, milestone_id, new_target_time
+            )
+        except (TypeError, ValueError) as exc:
+            return _fail(str(exc))
+
+        milestone = next(item for item in plan.milestones if item.id == milestone_id)
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.UPDATE_TARGET_RACE_TIME,
+            milestone_id=milestone_id,
+            old_value={
+                "target_time": plan.goal.target_time,
+                "milestone_target": milestone.target,
+            },
+            new_value=patch,
+            spec_patch=patch,
+        )
+        diff = _empty_master_diff(
+            plan_id,
+            f"将目标比赛成绩从 {plan.goal.target_time} 调整到 {patch['target_time']}"
+            f"，并原子同步目标状态（原因：{reason}）",
+        )
+        return _ok_master(diff.model_copy(update={"ops": [op]}))
+
+
+class SetPhaseWeeklyRangeImpl:
+    """Propose one exact weekly-distance range for a master-plan phase."""
+
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
+
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        phase_id: str,
+        weekly_distance_km_low: float,
+        weekly_distance_km_high: float,
+        adjustment_request: str,
+        reason: str,
+    ) -> ToolResult:
+        low = float(weekly_distance_km_low)
+        high = float(weekly_distance_km_high)
+        if (
+            not math.isfinite(low)
+            or not math.isfinite(high)
+            or low < 0
+            or high <= 0
+            or low > high
+        ):
+            return _fail(
+                "weekly distance range must be finite and satisfy "
+                "0 <= low <= high and high > 0"
+            )
+        plan = self._load_plan(plan_id)
+        if plan is None:
+            return _fail(f"master plan {plan_id!r} not found")
+        phase = next((item for item in plan.phases if item.id == phase_id), None)
+        if phase is None:
+            return _fail(f"phase {phase_id!r} not in plan")
+        if (
+            round(low, 1) == round(float(phase.weekly_distance_km_low), 1)
+            and round(high, 1) == round(float(phase.weekly_distance_km_high), 1)
+        ):
+            return _fail(
+                f"phase {phase_id!r} already has weekly distance range "
+                f"{low:g}-{high:g} km; no proposal is needed"
+            )
+        old_range = {
+            "weekly_distance_km_low": phase.weekly_distance_km_low,
+            "weekly_distance_km_high": phase.weekly_distance_km_high,
+        }
+        new_range = {
+            "weekly_distance_km_low": round(low, 1),
+            "weekly_distance_km_high": round(high, 1),
+        }
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.REPLACE_WEEKLY_RANGE,
+            phase_id=phase_id,
+            old_value=old_range,
+            new_value=new_range,
+            spec_patch=new_range,
+        )
+        from coach.graphs.conversation.master_adjustment_direction import (
+            master_diff_matches_volume_request,
+        )
+
+        candidate = _empty_master_diff(plan_id, "").model_copy(
+            update={"ops": [op]}
+        )
+        if not master_diff_matches_volume_request(candidate, adjustment_request):
+            return _fail(
+                "weekly distance range does not match the exact range or percentage "
+                "in adjustment_request"
+            )
+        explanation = (
+            f"将「{phase.name}」周跑量从 "
+            f"{phase.weekly_distance_km_low:g}–{phase.weekly_distance_km_high:g} km "
+            f"调整为 {low:g}–{high:g} km"
+            f"（用户请求：{adjustment_request}；原因：{reason}）"
+        )
+        diff = candidate.model_copy(update={"ai_explanation": explanation})
+        return _ok_master(diff.model_copy(update={"ops": [op]}))
+
+
+class SetPhaseFocusImpl:
+    """Propose one exact training-focus description for a plan phase."""
+
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
+
+    def __call__(
+        self,
+        *,
+        plan_id: str,
+        phase_id: str,
+        focus: str,
+        adjustment_request: str,
+        reason: str,
+    ) -> ToolResult:
+        from coach.graphs.conversation.master_adjustment_direction import (
+            master_diff_matches_focus_request,
+            requested_phase_focus,
+        )
+
+        if requested_phase_focus(adjustment_request) is None:
+            return _fail(
+                "set_phase_focus requires an explicit replacement focus in adjustment_request"
+            )
+        if not isinstance(focus, str):
+            return _fail("focus must be text")
+        requested_focus = focus.strip()
+        if not requested_focus:
+            return _fail("focus must be non-empty")
+        plan = self._load_plan(plan_id)
+        if plan is None:
+            return _fail(f"master plan {plan_id!r} not found")
+        phase = next((item for item in plan.phases if item.id == phase_id), None)
+        if phase is None:
+            return _fail(f"phase {phase_id!r} not in plan")
+        if requested_focus == phase.focus.strip():
+            return _fail(
+                f"phase {phase_id!r} already uses the requested focus; "
+                "no proposal is needed"
+            )
+
+        op = MasterPlanDiffOp(
+            id=str(uuid4()),
+            op=MasterPlanDiffOpKind.REPLACE_PHASE_FOCUS,
+            phase_id=phase_id,
+            old_value={"focus": phase.focus},
+            new_value={"focus": requested_focus},
+            spec_patch={"focus": requested_focus},
+        )
+        diff = _empty_master_diff(
+            plan_id,
+            f"将「{phase.name}」训练重点从“{phase.focus}”调整为"
+            f"“{requested_focus}”（用户请求：{adjustment_request}；原因：{reason}）",
+        )
+        candidate = diff.model_copy(update={"ops": [op]})
+        if not master_diff_matches_focus_request(
+            candidate, adjustment_request, plan=plan
+        ):
+            return _fail(
+                "phase focus or phase_id does not match the explicit focus adjustment_request"
+            )
+        return _ok_master(candidate)
+
+
+class ProposeReductionAlternativesImpl:
+    """Return 2 distinct load-reduction alternatives (5% and 10%).
 
     Preserve the final taper/adjustment phase and offer two load-reduction
     magnitudes for the current Shanghai-day phase (or the nearest upcoming
@@ -590,11 +963,22 @@ class ProposeAlternativesImpl:
     rewriting completed history.
     """
 
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
-    def __call__(self, *, plan_id: str, intent: str) -> ToolResult:
-        plan = _open_master_plan(self._user_id, plan_id)
+    def __call__(self, *, plan_id: str, reduction_request: str) -> ToolResult:
+        from coach.graphs.conversation.master_adjustment_direction import (
+            requested_weekly_volume_direction,
+        )
+
+        if requested_weekly_volume_direction(reduction_request) != "decrease":
+            return _fail(
+                "propose_reduction_alternatives requires an explicit weekly-volume "
+                "reduction request; increases are not supported by this tool"
+            )
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         if not plan.phases:
@@ -676,12 +1060,18 @@ class ProposeAlternativesImpl:
                     f"{label}："
                     f"{'保留最后的调整期不变，' if has_protected_taper else ''}"
                     f"将「{target.name}」周跑量降低"
-                    f" {int(reduction * 100)}%（用户意图：{intent}）"
+                    f" {int(reduction * 100)}%（用户减量请求：{reduction_request}）"
                 ),
                 created_at=_now_iso(),
             )
             alternatives.append(diff.model_dump())
-        return ToolResult(ok=True, data={"alternatives": alternatives, "intent": intent})
+        return ToolResult(
+            ok=True,
+            data={
+                "alternatives": alternatives,
+                "reduction_request": reduction_request,
+            },
+        )
 
 
 class RegenerateMasterImpl:
@@ -690,11 +1080,13 @@ class RegenerateMasterImpl:
     is a draft-only signal — the generation pipeline (US-008/Phase 5) runs
     separately."""
 
-    def __init__(self, user_id: str) -> None:
-        self._user_id = user_id
+    def __init__(
+        self, user_id: str, *, plan_loader: Callable[[str], Any] | None = None
+    ) -> None:
+        self._load_plan = _resolve_master_plan_loader(user_id, plan_loader)
 
     def __call__(self, *, plan_id: str, reason: str) -> ToolResult:
-        plan = _open_master_plan(self._user_id, plan_id)
+        plan = self._load_plan(plan_id)
         if plan is None:
             return _fail(f"master plan {plan_id!r} not found")
         ops: list[MasterPlanDiffOp] = []

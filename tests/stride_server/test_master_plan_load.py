@@ -10,6 +10,7 @@ from stride_server.coach_adapters.master_plan_load import (
 
 def _history(kms: list[float]) -> dict:
     return {
+        "threshold_speed_mps": 4.0,
         "max_weekly_km": max(kms),
         "weekly_profile": [
             {
@@ -84,6 +85,17 @@ def test_low_history_short_race_not_forced_up() -> None:
     assert estimate["alignment"]["status"] == "ok"
 
 
+def test_history_anchor_keeps_partial_dose_and_exposes_caveat() -> None:
+    history = _history([40, 42, 44, 46])
+    history["weekly_profile"][1]["dose_coverage_status"] = "partial"
+
+    anchor = build_training_history_load_anchor(history)
+
+    assert anchor["dose_anchor"] == pytest.approx(33.5, abs=0.1)
+    assert anchor["dose_anchor_coverage"] == "partial"
+    assert anchor["partial_dose_weeks"] == 1
+
+
 def test_long_run_ratios_are_estimated_from_weekly_load() -> None:
     anchor = build_training_history_load_anchor(_history([45, 48, 50, 52]))
 
@@ -109,14 +121,14 @@ def test_long_run_ratios_are_estimated_from_weekly_load() -> None:
 
     week = estimate["weeks"][0]
     assert week["target_training_dose_low"] <= week["target_training_dose_high"]
-    assert week["target_training_dose_high"] == week["estimated_dose"]
+    assert week["target_training_dose_high"] >= week["estimated_dose"]
     assert week["long_run_km"] == 18.0
     assert week["long_run_km_ratio"] == 0.3
     assert week["key_session_km_ratio"] == 0.43
     assert estimate["plan_summary"]["max_long_run_km_ratio"] == 0.3
 
 
-def test_weekly_dose_low_and_high_use_the_same_existing_formula() -> None:
+def test_weekly_dose_low_and_high_include_volume_and_intensity_ranges() -> None:
     anchor = build_training_history_load_anchor(_history([45, 48, 50, 52]))
     common = {
         "goal": {"distance": "10K"},
@@ -140,33 +152,13 @@ def test_weekly_dose_low_and_high_use_the_same_existing_formula() -> None:
     )
 
     week = ranged["weeks"][0]
-    assert week["target_training_dose_low"] == low_only["weeks"][0]["estimated_dose"]
-    assert week["target_training_dose_high"] == high_only["weeks"][0]["estimated_dose"]
-    assert week["target_training_dose_high"] == week["estimated_dose"]
+    assert week["target_training_dose_low"] == low_only["weeks"][0]["estimated_dose_low"]
+    assert week["target_training_dose_high"] == high_only["weeks"][0]["estimated_dose_high"]
+    assert week["target_training_dose_low"] < low_only["weeks"][0]["estimated_dose"]
+    assert week["target_training_dose_high"] > week["estimated_dose"]
 
 
-@pytest.mark.parametrize(
-    ("anchor", "expected_scale", "expected_high"),
-    [
-        ({}, 1.0, 327.7),
-        (
-            {
-                "distance_anchor_km": 49.0,
-                "dose_anchor": 38.2,
-                "avg_pace_s_km": 300.0,
-            },
-            0.154,
-            50.4,
-        ),
-        ({"history_active_weeks": 3, "avg_pace_s_km": None}, 1.0, 327.7),
-    ],
-)
-def test_existing_fallback_and_dose_scale_outputs_are_unchanged(
-    anchor: dict,
-    expected_scale: float,
-    expected_high: float,
-) -> None:
-    """Lock the current 300 s/km fallback/history scaling semantics."""
+def test_missing_threshold_does_not_fall_back_to_fixed_pace() -> None:
     estimate = estimate_master_plan_training_load(
         {
             "goal": {"distance": "10K"},
@@ -178,12 +170,45 @@ def test_existing_fallback_and_dose_scale_outputs_are_unchanged(
                 "key_sessions": [{"type": "threshold", "distance_km": 8}],
             }],
         },
-        history_anchor=anchor,
+        history_anchor={
+            "distance_anchor_km": 49.0,
+            "dose_anchor": 38.2,
+            "avg_pace_s_km": 300.0,
+        },
     )
 
-    assert estimate["plan_summary"]["dose_scale"] == expected_scale
-    assert estimate["weeks"][0]["target_training_dose_high"] == expected_high
-    assert estimate["weeks"][0]["estimated_dose"] == expected_high
+    week = estimate["weeks"][0]
+    assert week["target_training_dose_low"] is None
+    assert week["target_training_dose_high"] is None
+    assert week["estimated_dose"] is None
+    assert week["load_computable"] is False
+    assert estimate["unavailable_reason"] == "personal_threshold_unavailable"
+    assert "dose_scale" not in estimate["plan_summary"]
+
+
+def test_vendor_history_dose_does_not_rescale_planned_load() -> None:
+    plan = {
+        "goal": {"distance": "10K"},
+        "weeks": [{
+            "week_index": 1,
+            "week_start": "2026-07-01",
+            "target_weekly_km_low": 50,
+            "target_weekly_km_high": 60,
+            "key_sessions": [{"type": "threshold", "distance_km": 8}],
+        }],
+    }
+    base_anchor = {"threshold_speed_mps": 4.0, "distance_anchor_km": 49.0}
+
+    low_vendor_dose = estimate_master_plan_training_load(
+        plan, history_anchor={**base_anchor, "dose_anchor": 10.0}
+    )
+    high_vendor_dose = estimate_master_plan_training_load(
+        plan, history_anchor={**base_anchor, "dose_anchor": 500.0}
+    )
+
+    assert low_vendor_dose["weeks"][0]["estimated_dose"] == (
+        high_vendor_dose["weeks"][0]["estimated_dose"]
+    )
 
 
 def test_long_run_load_concentration_is_flagged_without_distance_caps() -> None:
@@ -260,3 +285,441 @@ def test_three_day_runner_protected_long_run_uses_wider_load_threshold() -> None
 
     assert estimate["weeks"][0]["long_run_km_ratio"] == 0.58
     assert estimate["alignment"]["status"] == "ok"
+
+
+def test_missing_personal_threshold_omits_load_instead_of_using_fixed_pace() -> None:
+    anchor = build_training_history_load_anchor(_history([30, 32, 35, 33]))
+    anchor["threshold_speed_mps"] = None
+
+    estimate = estimate_master_plan_training_load(
+        _plan([40], distance="FM"),
+        history_anchor=anchor,
+        target_race={"distance": "fm", "target_time": "4:30:00"},
+    )
+
+    assert estimate["weeks"][0]["target_weekly_km_high"] == 40.0
+    assert estimate["weeks"][0]["estimated_dose"] is None
+    assert estimate["weeks"][0]["load_computable"] is False
+
+
+def test_fm_race_load_uses_goal_pace_not_fixed_if() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    plan = {
+        "goal": {"distance": "FM", "target_time": "4:00:00"},
+        "weeks": [{
+            "week_index": 1,
+            "week_start": "2026-07-01",
+            "target_weekly_km_high": 42.195,
+            "key_sessions": [{"type": "race", "distance_km": 42.195}],
+        }],
+    }
+
+    estimate = estimate_master_plan_training_load(
+        plan, history_anchor=anchor, target_race={"distance": "fm", "target_time": "4:00:00"}
+    )
+
+    expected_if = (42195 / (4 * 3600)) / 4.0
+    expected = (4.0 * expected_if**2) * 100.0
+    assert estimate["weeks"][0]["estimated_dose"] == pytest.approx(expected, rel=0.01)
+
+
+def test_distance_only_tune_up_race_keeps_week_load_computable() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "4:00:00"},
+            "weeks": [{
+                "week_index": 1,
+                "week_start": "2026-07-01",
+                "target_weekly_km_low": 40,
+                "target_weekly_km_high": 50,
+                "key_sessions": [{"type": "tune_up_race", "distance_km": 21.0975}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["load_computable"] is True
+    assert week["target_training_dose_low"] is not None
+    assert week["target_training_dose_high"] is not None
+    assert "tune_up_distance_only_hm_marathon_to_threshold_range" in week["load_assumptions"]
+
+
+def test_distance_only_goal_race_keeps_week_load_computable() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "trail"},
+            "weeks": [{
+                "week_index": 1,
+                "week_start": "2026-07-01",
+                "target_weekly_km_low": 42.195,
+                "target_weekly_km_high": 42.195,
+                "key_sessions": [{"type": "race", "distance_km": 42.195}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["load_computable"] is True
+    assert week["target_training_dose_low"] is not None
+    assert week["target_training_dose_high"] is not None
+    assert "goal_race_distance_only_long_race_marathon_range" in week["load_assumptions"]
+
+
+def test_distance_only_race_pace_uses_goal_distance_not_segment_distance() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 50,
+                "key_sessions": [{"type": "race_pace", "distance_km": 10}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    assert (
+        "goal_race_distance_only_long_race_marathon_range"
+        in estimate["weeks"][0]["load_assumptions"]
+    )
+
+
+def test_embedded_race_pace_raises_long_run_load_without_double_counting_km() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    base_week = {
+        "week_index": 1,
+        "week_start": "2026-07-01",
+        "target_weekly_km_high": 50,
+        "key_sessions": [{"type": "long_run", "distance_km": 30}],
+    }
+    easy = estimate_master_plan_training_load(
+        {"goal": {"distance": "FM", "target_time": "3:00:00"},
+         "weeks": [base_week]},
+        history_anchor=anchor,
+    )
+    embedded = estimate_master_plan_training_load(
+        {"goal": {"distance": "FM", "target_time": "3:00:00"},
+         "weeks": [{**base_week, "key_sessions": [
+             {"type": "long_run", "distance_km": 30},
+             {"type": "race_pace", "distance_km": 12,
+              "purpose": "embedded within long run"},
+         ]}]},
+        history_anchor=anchor,
+    )
+
+    assert embedded["weeks"][0]["key_session_km"] == 30.0
+    assert embedded["weeks"][0]["estimated_dose"] > easy["weeks"][0]["estimated_dose"]
+    assert embedded["weeks"][0]["long_run_dose"] > easy["weeks"][0]["long_run_dose"]
+    short_embedded = estimate_master_plan_training_load(
+        {"goal": {"distance": "FM", "target_time": "3:00:00"},
+         "weeks": [{**base_week, "key_sessions": [
+             {"type": "long_run", "distance_km": 30},
+             {"type": "race_pace", "distance_km": 2,
+              "purpose": "embedded within long run"},
+         ]}]},
+        history_anchor=anchor,
+    )
+    assert embedded["weeks"][0]["estimated_dose"] > short_embedded["weeks"][0]["estimated_dose"]
+    assert "embedded_segments_integrated_by_distance" in embedded["weeks"][0]["load_assumptions"]
+
+
+def test_duration_only_long_run_uses_estimated_distance_for_ratio() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "3:30:00"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 60,
+                "key_sessions": [{"type": "long_run", "duration_min": 165}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["long_run_km"] > 0
+    assert week["long_run_km_ratio"] == pytest.approx(
+        week["long_run_km"] / 60.0, abs=0.01
+    )
+
+
+def test_uncomputable_session_returns_explicit_unavailable_reason() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 50,
+                "key_sessions": [{"type": "race"}],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    assert estimate["unavailable_reason"] == "planned_session_uncomputable"
+
+
+def test_long_run_mp_marker_does_not_match_inside_ordinary_words() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    common_week = {
+        "week_index": 1,
+        "week_start": "2026-07-01",
+        "target_weekly_km_high": 50,
+    }
+
+    ordinary = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "4:00:00"},
+            "weeks": [{
+                **common_week,
+                "key_sessions": [{
+                    "type": "long_run",
+                    "distance_km": 24,
+                    "purpose": "improve aerobic endurance",
+                }],
+            }],
+        },
+        history_anchor=anchor,
+    )
+    explicit_mp = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "4:00:00"},
+            "weeks": [{
+                **common_week,
+                "key_sessions": [{
+                    "type": "long_run",
+                    "distance_km": 24,
+                    "intensity": "MP",
+                }],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    ordinary_assumptions = ordinary["weeks"][0]["load_assumptions"]
+    assert "long_run_easy_zone_range" in ordinary_assumptions
+    assert "mp_fraction_unspecified_range_easy_to_goal_pace" not in ordinary_assumptions
+    assert (
+        "mp_fraction_unspecified_range_easy_to_goal_pace"
+        in explicit_mp["weeks"][0]["load_assumptions"]
+    )
+
+
+def test_chinese_marathon_pace_marker_works_without_goal_time() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 50,
+                "key_sessions": [{
+                    "type": "long_run", "distance_km": 30,
+                    "purpose": "含8km马配",
+                }],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["load_computable"] is True
+    assert (
+        "mp_fraction_unspecified_range_easy_to_distance_only_goal_pace"
+        in week["load_assumptions"]
+    )
+
+
+def test_quality_session_endurance_wording_is_not_treated_as_embedded() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM", "target_time": "4:00:00"},
+            "weeks": [{
+                "week_index": 1,
+                "week_start": "2026-07-01",
+                "target_weekly_km_high": 50,
+                "key_sessions": [{
+                    "type": "threshold",
+                    "distance_km": 8,
+                    "purpose": "提升后段维持能力",
+                }],
+            }],
+        },
+        history_anchor=anchor,
+    )
+
+    week = estimate["weeks"][0]
+    assert week["key_session_km"] == 8.0
+    assert "threshold_zone_range" in week["load_assumptions"]
+    assert "threshold_embedded_in_parent_not_double_counted" not in week["load_assumptions"]
+
+
+# ---------------------------------------------------------------------------
+# New fix tests
+# ---------------------------------------------------------------------------
+
+
+from stride_server.coach_adapters.master_plan_load import _parse_time_seconds  # noqa: E402
+
+
+class TestParseTimeSeconds:
+    def test_hms_string(self) -> None:
+        assert _parse_time_seconds("3:30:00") == pytest.approx(3 * 3600 + 30 * 60)
+
+    def test_mm_ss_string(self) -> None:
+        assert _parse_time_seconds("4:15") == pytest.approx(4 * 60 + 15)
+
+    def test_numeric_passthrough(self) -> None:
+        assert _parse_time_seconds(14400.0) == pytest.approx(14400.0)
+
+    def test_invalid_seconds_rejected(self) -> None:
+        # 3:90:00 has 90 seconds, not a valid time
+        assert _parse_time_seconds("3:90:00") is None
+
+    def test_invalid_minutes_rejected(self) -> None:
+        # 3:70:00 has 70 minutes
+        assert _parse_time_seconds("3:70:00") is None
+
+    def test_invalid_mm_ss_seconds_rejected(self) -> None:
+        # 4:90 has 90 seconds in mm:ss form
+        assert _parse_time_seconds("4:90") is None
+
+    def test_garbage_string_rejected(self) -> None:
+        assert _parse_time_seconds("not-a-time") is None
+
+    def test_none_rejected(self) -> None:
+        assert _parse_time_seconds(None) is None
+
+    def test_zero_rejected(self) -> None:
+        assert _parse_time_seconds(0) is None
+
+
+def test_target_time_s_field_is_accepted_for_goal_race_if() -> None:
+    """target_time_s (pre-parsed int seconds) must feed into IF calculation."""
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    plan_with_target_time = {
+        "goal": {"distance": "FM", "target_time": "4:00:00"},
+        "weeks": [{
+            "week_index": 1, "week_start": "2026-07-01",
+            "target_weekly_km_high": 42.195,
+            "key_sessions": [{"type": "race", "distance_km": 42.195}],
+        }],
+    }
+    plan_with_target_time_s = {
+        "goal": {"distance": "FM", "target_time_s": 4 * 3600},
+        "weeks": [{
+            "week_index": 1, "week_start": "2026-07-01",
+            "target_weekly_km_high": 42.195,
+            "key_sessions": [{"type": "race", "distance_km": 42.195}],
+        }],
+    }
+
+    estimate_time = estimate_master_plan_training_load(
+        plan_with_target_time, history_anchor=anchor,
+        target_race={"distance": "fm", "target_time": "4:00:00"},
+    )
+    estimate_time_s = estimate_master_plan_training_load(
+        plan_with_target_time_s, history_anchor=anchor,
+        target_race={"distance": "fm", "target_time_s": 4 * 3600},
+    )
+
+    assert estimate_time["weeks"][0]["estimated_dose"] == pytest.approx(
+        estimate_time_s["weeks"][0]["estimated_dose"], rel=0.001
+    )
+    assert estimate_time_s["weeks"][0]["load_computable"] is True
+
+
+def test_tempo_zone_uses_marathon_to_threshold_range() -> None:
+    """Tempo high bound should reach threshold zone high, not stop at marathon zone.
+
+    The session type is called 'tempo_marathon_to_threshold_range' in assumptions,
+    which implies the high bound reaches threshold (1.03× threshold speed),
+    not just the marathon zone ceiling (0.97×).
+    """
+    from stride_server.coach_adapters.master_plan_load import _session_if_range, _zone_range
+
+    result = _session_if_range({"type": "tempo", "distance_km": 12}, goal_race_if=None)
+    assert result is not None
+    low_if, high_if, assumptions = result
+
+    marathon_low, marathon_high = _zone_range("marathon")
+    _, threshold_high = _zone_range("threshold")
+
+    # Low bound should be at marathon zone floor
+    assert low_if == pytest.approx(marathon_low, rel=0.001)
+    # High bound must reach threshold zone ceiling, NOT stop at marathon ceiling
+    assert high_if == pytest.approx(threshold_high, rel=0.001)
+    assert "tempo_marathon_to_threshold_range" in assumptions
+
+
+def test_distance_and_duration_dose_consistency() -> None:
+    """When distance_km is given, duration_min must not alter the dose computation.
+
+    The current _estimate_session prefers duration_min when both are set,
+    so a session with distance_km=10 + duration_min produces different dose
+    than one with distance_km=10 alone. The fix: km wins when both are present.
+    """
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    threshold_mps = 4.0
+    km = 10.0
+    # Pick a duration that would produce a different dose if used instead of km
+    duration_min = (km * 320) / 60.0  # 320 s/km ≈ easy zone midpoint
+
+    dist_only = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 30,
+                "key_sessions": [{"type": "threshold", "distance_km": km}],
+            }],
+        },
+        history_anchor={**anchor, "threshold_speed_mps": threshold_mps},
+    )
+    dist_and_dur = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1, "week_start": "2026-07-01",
+                "target_weekly_km_high": 30,
+                "key_sessions": [{"type": "threshold", "distance_km": km, "duration_min": duration_min}],
+            }],
+        },
+        history_anchor={**anchor, "threshold_speed_mps": threshold_mps},
+    )
+
+    # When distance is present, duration should not alter the dose computation
+    assert dist_only["weeks"][0]["estimated_dose"] == pytest.approx(
+        dist_and_dur["weeks"][0]["estimated_dose"], rel=0.001
+    )
+
+
+def test_zero_distance_uses_positive_duration_fallback() -> None:
+    anchor = build_training_history_load_anchor(_history([55, 58, 60, 62]))
+    estimate = estimate_master_plan_training_load(
+        {
+            "goal": {"distance": "FM"},
+            "weeks": [{
+                "week_index": 1,
+                "week_start": "2026-07-01",
+                "target_weekly_km_high": 30,
+                "key_sessions": [{
+                    "type": "threshold",
+                    "distance_km": 0,
+                    "duration_min": 45,
+                }],
+            }],
+        },
+        history_anchor={**anchor, "threshold_speed_mps": 4.0},
+    )
+
+    assert estimate["weeks"][0]["estimated_dose"] is not None
+    assert estimate["weeks"][0]["estimated_dose"] > 0

@@ -23,13 +23,15 @@ Only *accepted-or-pending* ops are checked — an explicitly rejected op can't l
 from __future__ import annotations
 
 import math
-from datetime import date as _date
+from datetime import date as _date, timedelta as _timedelta
 
 from stride_core.master_plan import MasterPlan, MilestoneType, PhaseType
 from stride_core.master_plan_diff import (
     MasterPlanDiff,
     MasterPlanDiffOp,
     MasterPlanDiffOpKind,
+    build_target_race_time_patch,
+    build_target_race_reschedule_patch,
 )
 
 _Kind = MasterPlanDiffOpKind
@@ -121,6 +123,82 @@ def _check_phase_resize(
             return f"最后 1–2 周的调整期「{phase.name}」必须完整保留，不能再缩短"
     if not _within(start, plan_lo, plan_hi) or not _within(end, plan_lo, plan_hi):
         return f"阶段「{phase.name}」调整后的日期超出赛季范围"
+    return None
+
+
+def _check_phase_boundary_shift(
+    op: MasterPlanDiffOp,
+    ordered_phases: list,
+    phases: dict,
+    milestones: dict,
+    plan_lo: _date | None,
+    plan_hi: _date | None,
+    protected_final_phase_id: str | None,
+) -> str | None:
+    phase = phases.get(op.phase_id)
+    if phase is None:
+        return f"调整的阶段（id={op.phase_id}）不在当前赛季计划里"
+    patch = op.spec_patch or {}
+    required = {"end_date", "following_phase_id", "following_start_date"}
+    if set(patch) != required:
+        return "阶段边界调整必须完整包含 end_date、following_phase_id 和 following_start_date"
+    try:
+        index = next(i for i, item in enumerate(ordered_phases) if item.id == op.phase_id)
+    except StopIteration:
+        return f"调整的阶段（id={op.phase_id}）不在当前赛季计划里"
+    if index + 1 >= len(ordered_phases):
+        return "最终阶段没有相邻下一阶段，不能用阶段边界调整改变赛季结束日"
+    following = ordered_phases[index + 1]
+    if patch.get("following_phase_id") != following.id:
+        return "阶段边界调整引用的 following_phase_id 不是相邻下一阶段"
+    old = op.old_value or {}
+    new = op.new_value or {}
+    if old.get("following_phase_id") != following.id or new != patch:
+        return "阶段边界调整的 old_value/new_value 与原子 patch 不一致"
+    old_end = _parse(phase.end_date)
+    old_start = _parse(following.start_date)
+    new_end = _parse(patch.get("end_date"))
+    new_start = _parse(patch.get("following_start_date"))
+    if None in {old_end, old_start, new_end, new_start}:
+        return "阶段边界调整包含非法 ISO 日期"
+    if _parse(old.get("end_date")) != old_end or _parse(
+        old.get("following_start_date")
+    ) != old_start:
+        return "阶段边界调整的旧边界与当前计划不一致"
+    if old_start != old_end + _timedelta(days=1):
+        return "当前相邻阶段边界本身不连续，不能自动平移"
+    if new_start != new_end + _timedelta(days=1):
+        return "阶段边界调整后必须保持相邻阶段日历连续"
+    delta = new_end - old_end
+    if delta.days == 0 or delta.days % 7 != 0 or new_start - old_start != delta:
+        return "阶段边界必须按相同的整数周数原子平移"
+    phase_start = _parse(phase.start_date)
+    following_end = _parse(following.end_date)
+    if phase_start is None or following_end is None:
+        return "阶段边界调整涉及非法 ISO 日期"
+    if new_end <= phase_start or new_start >= following_end:
+        return "阶段边界调整会让目标阶段或相邻阶段长度为零或为负"
+    if not _within(new_end, plan_lo, plan_hi) or not _within(new_start, plan_lo, plan_hi):
+        return "阶段边界调整超出赛季范围"
+    if following.id == protected_final_phase_id and new_start > old_start:
+        return f"最后 1–2 周的调整期「{following.name}」必须完整保留，不能再缩短"
+    for milestone in milestones.values():
+        milestone_date = _parse(milestone.date)
+        if milestone_date is None:
+            continue
+        if milestone.phase_id == phase.id:
+            was_inside = phase_start <= milestone_date <= old_end
+            remains_inside = phase_start <= milestone_date <= new_end
+        elif milestone.phase_id == following.id:
+            was_inside = old_start <= milestone_date <= following_end
+            remains_inside = new_start <= milestone_date <= following_end
+        else:
+            continue
+        if was_inside and not remains_inside:
+            return (
+                f"阶段边界调整会让里程碑「{milestone.target}」落到所属阶段之外；"
+                "请先调整请求或使用专门的里程碑/比赛改期操作"
+            )
     return None
 
 
@@ -229,6 +307,8 @@ def _check_phase_focus(op: MasterPlanDiffOp, phases: dict) -> str | None:
     # neither raise nor be caught, persisting a plan that bricks on next read.
     if "focus" in patch and not isinstance(patch["focus"], str):
         return "阶段 focus 必须是文本"
+    if "focus" in patch and not patch["focus"].strip():
+        return "阶段 focus 不能为空"
     return None
 
 
@@ -250,16 +330,69 @@ def _check_ref(op: MasterPlanDiffOp, phases: dict, milestones: dict) -> str | No
     return None
 
 
-def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
+def _check_target_race_reschedule(
+    plan: MasterPlan,
+    op: MasterPlanDiffOp,
+    *,
+    active_op_count: int,
+    as_of: _date | None,
+) -> str | None:
+    if active_op_count != 1:
+        return "比赛改期必须作为唯一的原子操作提交，不能和其它操作拆分或混用"
+    if not op.milestone_id:
+        return "比赛改期缺少目标比赛 milestone_id"
+    patch = op.spec_patch or {}
+    try:
+        expected = build_target_race_reschedule_patch(
+            plan,
+            op.milestone_id,
+            str(patch.get("race_date") or ""),
+            as_of=as_of,
+        )
+    except (TypeError, ValueError) as exc:
+        return f"比赛改期的阶段边界无法形成一致计划：{exc}"
+    if patch != expected:
+        return "比赛改期必须原子同步目标日、计划结束日、里程碑和阶段边界"
+    return None
+
+
+def _check_target_race_time(
+    plan: MasterPlan, op: MasterPlanDiffOp, *, active_op_count: int
+) -> str | None:
+    if active_op_count != 1:
+        return "目标比赛成绩必须作为唯一的原子操作提交，不能和其它操作拆分或混用"
+    if not op.milestone_id:
+        return "目标比赛成绩调整缺少 milestone_id"
+    patch = op.spec_patch or {}
+    try:
+        expected = build_target_race_time_patch(
+            plan, op.milestone_id, str(patch.get("target_time") or "")
+        )
+    except (TypeError, ValueError) as exc:
+        return f"目标比赛成绩无法形成一致计划：{exc}"
+    if patch != expected:
+        return "目标比赛成绩必须原子同步 embedded goal 和 race milestone"
+    return None
+
+
+def validate_master_diff(
+    plan: MasterPlan, diff: MasterPlanDiff, *, as_of: _date | None = None
+) -> list[str]:
     """Return structural violations of ``diff`` against ``plan`` (empty = valid).
 
     Invariants (deterministic, date-parsed):
 
     * **RESIZE_PHASE / ADD_PHASE** — start strictly before end; ADD also stays
       within the season window.
+    * **SHIFT_PHASE_BOUNDARY** — one atomic op moves both sides of one adjacent
+      phase boundary by the same whole-week delta and preserves the final taper.
     * **REPLACE_MILESTONE_DATE / ADD_MILESTONE** — the date stays within the
       season's ``[start_date, end_date]`` window.
     * **REPLACE_WEEKLY_RANGE** — ``low <= high``.
+    * **RESCHEDULE_TARGET_RACE** — one atomic op synchronises the embedded
+      goal, plan end, race milestone and final phase boundaries.
+    * **UPDATE_TARGET_RACE_TIME** — one atomic op synchronises the embedded
+      goal target time and target-race milestone description.
     * **Protected final taper** — a final phase of at most 14 inclusive days
       cannot be shortened or removed.
     * **Reference integrity** — REMOVE/REPLACE ops target an existing phase /
@@ -269,6 +402,7 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
     phases = {p.id: p for p in plan.phases}
     milestones = {m.id: m for m in plan.milestones}
     plan_lo, plan_hi = _parse(plan.start_date), _parse(plan.end_date)
+    ordered_phases = list(plan.phases)
     violations: list[str] = []
     if diff.plan_id != plan.plan_id:
         violations.append(
@@ -309,6 +443,16 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
             v = _check_phase_resize(
                 op, phases, plan_lo, plan_hi, protected_final_phase_id
             )
+        elif op.op == _Kind.SHIFT_PHASE_BOUNDARY:
+            v = _check_phase_boundary_shift(
+                op,
+                ordered_phases,
+                phases,
+                milestones,
+                plan_lo,
+                plan_hi,
+                protected_final_phase_id,
+            )
         elif (
             op.op == _Kind.REMOVE_PHASE
             and op.phase_id == protected_final_phase_id
@@ -328,6 +472,14 @@ def validate_master_diff(plan: MasterPlan, diff: MasterPlanDiff) -> list[str]:
             v = _check_phase_focus(op, phases)
         elif op.op == _Kind.REPLACE_MILESTONE_TARGET:
             v = _check_milestone_target(op, milestones)
+        elif op.op == _Kind.RESCHEDULE_TARGET_RACE:
+            v = _check_target_race_reschedule(
+                plan, op, active_op_count=len(active_ops), as_of=as_of
+            )
+        elif op.op == _Kind.UPDATE_TARGET_RACE_TIME:
+            v = _check_target_race_time(
+                plan, op, active_op_count=len(active_ops)
+            )
         else:
             v = _check_ref(op, phases, milestones)
 

@@ -18,10 +18,10 @@ import uuid
 from collections.abc import Callable
 from typing import Protocol
 
-from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from coach.contracts import AthleteMemory, MemoryWrite
+from .structured_tool import StructuredToolRunner
 
 logger = logging.getLogger(__name__)
 
@@ -131,13 +131,11 @@ def build_extraction_prompts(
 
 def make_llm_memory_extractor(model: object) -> MemoryExtractFn:
     """Wrap a cheap chat model into a structured ``MemoryExtraction`` extractor."""
-    structured = model.with_structured_output(MemoryExtraction)  # type: ignore[attr-defined]
+    structured = StructuredToolRunner(model, MemoryExtraction)
 
     def _extract(system_prompt: str, user_prompt: str) -> MemoryExtraction:
         try:
-            result = structured.invoke(
-                [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
-            )
+            result = structured.invoke(system_prompt, user_prompt)
             if isinstance(result, MemoryExtraction):
                 return result
             return MemoryExtraction.model_validate(result)

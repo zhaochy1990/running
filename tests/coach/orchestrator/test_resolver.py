@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from langchain_core.messages import AIMessage
+
 from coach.contracts import (
     IntentHit,
     ResolverDraft,
@@ -119,10 +121,38 @@ def test_tie_clarification_uses_card_descriptions() -> None:
 
 def _draft_fn_for(structured) -> object:
     class _Model:
-        def with_structured_output(self, _schema):
+        def bind_tools(self, _tools, **_kwargs):
             return structured
 
     return resolver.make_llm_draft_fn(_Model())
+
+
+def test_make_llm_draft_fn_uses_portable_schema_tool() -> None:
+    captured: dict[str, object] = {}
+
+    class _Structured:
+        def invoke(self, _messages):
+            return AIMessage(
+                content="",
+                tool_calls=[{
+                    "name": "ResolverDraft",
+                    "args": {"intents": []},
+                    "id": "call-1",
+                    "type": "tool_call",
+                }],
+            )
+
+    class _Model:
+        def bind_tools(self, schemas, **kwargs):
+            captured.update(schemas=schemas, kwargs=kwargs)
+            return _Structured()
+
+    draft_fn = resolver.make_llm_draft_fn(_Model())
+
+    draft_fn("sys", "user")
+
+    assert captured["schemas"] == [ResolverDraft]
+    assert captured["kwargs"] == {"parallel_tool_calls": False}
 
 
 def test_make_llm_draft_fn_degrades_on_parse_failure() -> None:
@@ -139,6 +169,17 @@ def test_make_llm_draft_fn_degrades_on_parse_failure() -> None:
     assert draft.self_ambiguity is True
     out = resolve("???", registry=_registry(), draft_fn=draft_fn)
     assert out.ambiguity is not None
+
+
+def test_make_llm_draft_fn_degrades_when_schema_tool_is_not_called() -> None:
+    class _PlainTextReply:
+        def invoke(self, _messages):
+            return AIMessage(content="plain text instead of a tool call")
+
+    draft = _draft_fn_for(_PlainTextReply())("sys", "user")
+
+    assert draft.intents == []
+    assert draft.self_ambiguity is True
 
 
 def test_make_llm_draft_fn_propagates_infra_error() -> None:
@@ -448,6 +489,9 @@ def test_resolver_prompt_distinguishes_reading_from_editing_plans() -> None:
     assert "只有明确要求调整、生成、重排" in system
     assert "我当前的总体训练计划是什么？" in system
     assert "不要仅凭句子出现" in system
+    assert "哪个阶段？" in system
+    assert "专项期" in system
+    assert "继承上一条未完成请求" in system
 
 
 def test_card_catalog_renders_ids_and_descriptions() -> None:
