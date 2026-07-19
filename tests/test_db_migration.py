@@ -400,3 +400,110 @@ def test_roundtrip_with_normalized_run_workout(db):
     row = db.get_scheduled_workout(wid)
     restored = NormalizedRunWorkout.from_dict(json.loads(row["spec_json"]))
     assert restored == workout
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# daily_training_load: composite (date, algorithm_version) PK → date-only PK
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LEGACY_DAILY_TRAINING_LOAD_SCHEMA = """
+CREATE TABLE daily_training_load (
+    date                    TEXT NOT NULL,
+    algorithm_version       INTEGER NOT NULL,
+    calibration_id          INTEGER,
+    training_dose           REAL NOT NULL DEFAULT 0,
+    acute_load              REAL,
+    chronic_load            REAL,
+    form                    REAL,
+    load_ratio              REAL,
+    coverage_status         TEXT NOT NULL DEFAULT 'unknown',
+    readiness_gate          TEXT,
+    readiness_reasons_json  TEXT,
+    computed_at             TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY(date, algorithm_version)
+);
+"""
+
+
+def _daily_training_load_pk(db: Database) -> list[str]:
+    return [
+        row[1]
+        for row in db._conn.execute(
+            "PRAGMA table_info(daily_training_load)"
+        ).fetchall()
+        if row[5]  # pk position > 0
+    ]
+
+
+class TestDailyTrainingLoadDatePkMigration:
+    def _legacy_db(self, tmp_path: Path) -> Path:
+        legacy_path = tmp_path / "legacy-daily-load.db"
+        conn = sqlite3.connect(str(legacy_path))
+        conn.executescript(_LEGACY_SCHEMA)
+        conn.executescript(_LEGACY_DAILY_TRAINING_LOAD_SCHEMA)
+        # Same date carries both a v1 and a v2 row (the split the migration
+        # collapses). A separate date only has a v1 row (must survive).
+        conn.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "chronic_load, coverage_status, computed_at) VALUES (?, 1, 10.0, 30.0, 'complete', '2026-01-01T00:00:00')",
+            ("2026-01-05",),
+        )
+        conn.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "chronic_load, coverage_status, computed_at) VALUES (?, 2, 20.0, 40.0, 'complete', '2026-01-02T00:00:00')",
+            ("2026-01-05",),
+        )
+        conn.execute(
+            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
+            "acute_load, chronic_load, coverage_status, computed_at) "
+            "VALUES (?, 1, 5.0, 10.0, 15.0, 'unknown', '2026-01-01T00:00:00')",
+            ("2026-01-04",),
+        )
+        conn.commit()
+        conn.close()
+        return legacy_path
+
+    def test_pk_becomes_date_only(self, tmp_path: Path):
+        db = Database(db_path=self._legacy_db(tmp_path))
+        try:
+            assert _daily_training_load_pk(db) == ["date"]
+        finally:
+            db.close()
+
+    def test_same_date_collapses_to_highest_version(self, tmp_path: Path):
+        db = Database(db_path=self._legacy_db(tmp_path))
+        try:
+            rows = db.query(
+                "SELECT algorithm_version, training_dose FROM daily_training_load "
+                "WHERE date = '2026-01-05'"
+            )
+            assert len(rows) == 1
+            assert rows[0]["algorithm_version"] == 2
+            assert rows[0]["training_dose"] == 20.0
+        finally:
+            db.close()
+
+    def test_v1_only_date_is_preserved_and_immediately_readable(self, tmp_path: Path):
+        db = Database(db_path=self._legacy_db(tmp_path))
+        try:
+            rows = db.query(
+                "SELECT algorithm_version, coverage_status "
+                "FROM daily_training_load WHERE date = '2026-01-04'"
+            )
+            assert len(rows) == 1
+            assert rows[0]["algorithm_version"] == 1
+            assert rows[0]["coverage_status"] == "partial"
+            current = db.fetch_latest_daily_training_load(as_of="2026-01-04")
+            assert current is not None
+            assert current["date"] == "2026-01-04"
+        finally:
+            db.close()
+
+    def test_migration_is_idempotent(self, tmp_path: Path):
+        db = Database(db_path=self._legacy_db(tmp_path))
+        try:
+            db._migrate()
+            db._migrate()
+            assert _daily_training_load_pk(db) == ["date"]
+        finally:
+            db.close()

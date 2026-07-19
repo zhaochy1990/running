@@ -296,6 +296,68 @@ class TestSyncMeta:
         assert db.get_meta("key") == "v2"
 
 
+def _daily_result(date_str, *, version=None, training_dose=10.0, chronic=30.0):
+    from datetime import date as _date
+
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION as _V
+    from stride_core.training_load.types import DailyLoadResult, LoadCoverageStatus
+
+    y, m, d = (int(p) for p in date_str.split("-"))
+    return DailyLoadResult(
+        date=_date(y, m, d),
+        algorithm_version=version if version is not None else _V,
+        training_dose=training_dose,
+        acute_load=5.0,
+        chronic_load=chronic,
+        form=chronic - 5.0,
+        load_ratio=0.5,
+        coverage_status=LoadCoverageStatus.COMPLETE,
+        readiness_gate="green",
+        readiness_reasons=[],
+    )
+
+
+class TestCanonicalDailyTrainingLoad:
+    def test_upsert_same_date_keeps_single_canonical_row(self, db):
+        db.upsert_daily_training_load(_daily_result("2026-05-01", version=1, training_dose=10.0))
+        db.upsert_daily_training_load(_daily_result("2026-05-01", version=2, training_dose=99.0))
+
+        rows = db.query("SELECT * FROM daily_training_load WHERE date = '2026-05-01'")
+        assert len(rows) == 1
+        # The re-upsert overwrote the canonical row (dose) and updated the audit
+        # column (algorithm_version) to the newer computing version.
+        assert rows[0]["training_dose"] == 99.0
+        assert rows[0]["algorithm_version"] == 2
+
+    def test_fetch_daily_returns_legacy_version_rows(self, db):
+        # A row stamped with an older version is still canonical and readable;
+        # the reader must not filter it out.
+        db.upsert_daily_training_load(_daily_result("2026-05-01", version=1))
+        rows = db.fetch_daily_training_load("2026-05-01", "2026-05-01")
+        assert len(rows) == 1
+        assert rows[0]["algorithm_version"] == 1
+
+
+class TestTrainingLoadBackfillMarker:
+    def test_false_before_mark_then_true_after(self, db):
+        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+
+        assert db.is_training_load_backfill_complete(TRAINING_LOAD_MODEL_VERSION) is False
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-01"
+        )
+        assert db.is_training_load_backfill_complete(TRAINING_LOAD_MODEL_VERSION) is True
+
+    def test_false_for_other_version(self, db):
+        db.mark_training_load_backfill_complete(2, as_of_date="2026-05-01")
+        assert db.is_training_load_backfill_complete(3) is False
+        assert db.is_training_load_backfill_complete(2) is True
+
+    def test_corrupt_marker_json_reads_false(self, db):
+        db.set_meta("training_load_backfill_complete", "{not-json")
+        assert db.is_training_load_backfill_complete(1) is False
+
+
 class TestWeeklyPlan:
     def test_weekly_plan_roundtrip(self, db):
         db.upsert_weekly_plan("2026-04-20_04-26(W0)", "# Plan v1", generated_by="gpt-5.5")

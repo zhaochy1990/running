@@ -398,7 +398,10 @@ CREATE TABLE IF NOT EXISTS daily_training_load (
     readiness_gate          TEXT,
     readiness_reasons_json  TEXT,
     computed_at             TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY(date, algorithm_version)
+    -- Canonical training load: one row per calendar date. algorithm_version is
+    -- an audit column recording which model computed the row, never a key or a
+    -- read filter. A recompute at a newer version overwrites the same-date row.
+    PRIMARY KEY(date)
 );
 
 CREATE TABLE IF NOT EXISTS scheduled_workout (
@@ -1070,7 +1073,7 @@ class Database:
             "    readiness_gate TEXT,"
             "    readiness_reasons_json TEXT,"
             "    computed_at TEXT NOT NULL DEFAULT (datetime('now')),"
-            "    PRIMARY KEY(date, algorithm_version)"
+            "    PRIMARY KEY(date)"
             ")",
         ):
             self._conn.execute(stmt)
@@ -1227,6 +1230,92 @@ class Database:
         # activity instead of clobbering on race_type.
         self._migrate_vo2max_pb_to_v2()
         self._migrate_vo2max_pb_distance_units()
+        self._migrate_daily_training_load_to_date_pk()
+
+    def _migrate_daily_training_load_to_date_pk(self) -> None:
+        """Collapse ``daily_training_load`` from a composite
+        ``(date, algorithm_version)`` PK to a canonical date-only PK.
+
+        Training load is canonical: one row per calendar date, with
+        ``algorithm_version`` demoted to an audit column. Older DBs stored a
+        separate row per (date, version), which let stale v1 rows shadow the
+        canonical series and made every reader filter by version. This rebuild
+        keeps one row per date, preferring the highest ``algorithm_version``,
+        then the most recent ``computed_at``, then the highest ``rowid``.
+
+        Idempotent + atomic: detects the old composite PK via PRAGMA and does
+        the whole rebuild inside one transaction. We deliberately do NOT write a
+        backfill-completion marker here — historical rows may be incomplete, so
+        the rollout re-runs a full backfill once and marks completion only on a
+        verified success.
+        """
+        pk_cols = [
+            row[1]
+            for row in self._conn.execute(
+                "PRAGMA table_info(daily_training_load)"
+            ).fetchall()
+            if row[5]  # pk position > 0
+        ]
+        if pk_cols == ["date"] or not pk_cols:
+            return  # already canonical (or table absent)
+        # DDL is transactional in SQLite. Execute each statement through the
+        # connection context manager rather than ``executescript`` (which issues
+        # an implicit pre-commit), so a failure cannot strand the DB after DROP
+        # but before RENAME.
+        with self._conn:
+            self._conn.execute("DROP TABLE IF EXISTS daily_training_load_new")
+            self._conn.execute(
+                """CREATE TABLE daily_training_load_new (
+                    date                    TEXT NOT NULL,
+                    algorithm_version       INTEGER NOT NULL,
+                    calibration_id          INTEGER REFERENCES running_calibration_snapshot(id),
+                    training_dose           REAL NOT NULL DEFAULT 0,
+                    acute_load              REAL,
+                    chronic_load            REAL,
+                    form                    REAL,
+                    load_ratio              REAL,
+                    coverage_status         TEXT NOT NULL DEFAULT 'unknown',
+                    readiness_gate          TEXT,
+                    readiness_reasons_json  TEXT,
+                    computed_at             TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY(date)
+                )"""
+            )
+            # Model v2 introduced explicit coverage semantics. Older rows gained
+            # the column later via DEFAULT 'unknown', even when they already held
+            # real ATL/CTL state. Preserve those rows as conservatively partial so
+            # they remain readable during the v2 backfill; genuine v2 UNKNOWN
+            # continuity placeholders stay UNKNOWN.
+            self._conn.execute(
+                """INSERT INTO daily_training_load_new
+                   SELECT date, algorithm_version, calibration_id, training_dose,
+                          acute_load, chronic_load, form, load_ratio,
+                          CASE
+                              WHEN algorithm_version < 2
+                               AND coverage_status = 'unknown'
+                               AND acute_load IS NOT NULL
+                               AND chronic_load IS NOT NULL
+                              THEN 'partial'
+                              ELSE coverage_status
+                          END,
+                          readiness_gate, readiness_reasons_json, computed_at
+                   FROM daily_training_load
+                   WHERE rowid IN (
+                       SELECT rowid FROM daily_training_load AS d
+                       WHERE rowid = (
+                           SELECT rowid FROM daily_training_load AS d2
+                           WHERE d2.date = d.date
+                           ORDER BY d2.algorithm_version DESC,
+                                    d2.computed_at DESC,
+                                    d2.rowid DESC
+                           LIMIT 1
+                       )
+                   )"""
+            )
+            self._conn.execute("DROP TABLE daily_training_load")
+            self._conn.execute(
+                "ALTER TABLE daily_training_load_new RENAME TO daily_training_load"
+            )
 
     def _migrate_vo2max_pb_to_v2(self) -> None:
         """Migrate ``vo2max_pb`` from v1 (race_type PRIMARY KEY) to v2
@@ -1784,6 +1873,40 @@ class Database:
         )
         self._conn.commit()
 
+    # --- Training-load backfill completion marker ---
+    #
+    # An independent completion marker (not "does any version row exist") gates
+    # the async full backfill. Canonical load is still shown by readers whether
+    # or not this marker is set; the marker only decides whether a fresh full
+    # backfill is enqueued vs. an incremental recompute.
+
+    _TRAINING_LOAD_BACKFILL_MARKER_KEY = "training_load_backfill_complete"
+
+    def is_training_load_backfill_complete(self, algorithm_version: int) -> bool:
+        """True only when a full backfill for ``algorithm_version`` has been
+        marked complete. Malformed / missing markers read False (safe re-run)."""
+        raw = self.get_meta(self._TRAINING_LOAD_BACKFILL_MARKER_KEY)
+        if not raw:
+            return False
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return False
+        if not isinstance(payload, dict):
+            return False
+        return payload.get("algorithm_version") == algorithm_version
+
+    def mark_training_load_backfill_complete(
+        self, algorithm_version: int, as_of_date: str
+    ) -> None:
+        self.set_meta(
+            self._TRAINING_LOAD_BACKFILL_MARKER_KEY,
+            json.dumps(
+                {"algorithm_version": algorithm_version, "as_of_date": as_of_date},
+                ensure_ascii=False,
+            ),
+        )
+
     # --- Activity commentary (AI coach notes) ---
 
     def get_activity_commentary(self, label_id: str) -> str | None:
@@ -1925,7 +2048,8 @@ class Database:
                 chronic_load, form, load_ratio, readiness_gate,
                 coverage_status, readiness_reasons_json, computed_at)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-               ON CONFLICT(date, algorithm_version) DO UPDATE SET
+               ON CONFLICT(date) DO UPDATE SET
+                   algorithm_version = excluded.algorithm_version,
                    calibration_id = excluded.calibration_id,
                    training_dose = excluded.training_dose,
                    acute_load = excluded.acute_load,
@@ -1953,55 +2077,36 @@ class Database:
         if commit:
             self._conn.commit()
 
-    def fetch_activity_training_load(
-        self, label_id: str, *, algorithm_version: int | None = None
-    ) -> sqlite3.Row | None:
-        if algorithm_version is not None:
-            return self._conn.execute(
-                "SELECT * FROM activity_training_load "
-                "WHERE label_id = ? AND algorithm_version = ?",
-                (label_id, algorithm_version),
-            ).fetchone()
+    def fetch_activity_training_load(self, label_id: str) -> sqlite3.Row | None:
         return self._conn.execute(
             "SELECT * FROM activity_training_load WHERE label_id = ?",
             (label_id,),
         ).fetchone()
 
     def fetch_previous_daily_training_load(
-        self, before: str, *, algorithm_version: int
+        self, before: str
     ) -> sqlite3.Row | None:
-        """Return the latest model row strictly before a calendar date."""
+        """Return the latest canonical daily row strictly before a date."""
         return self._conn.execute(
             "SELECT * FROM daily_training_load "
-            "WHERE date < ? AND algorithm_version = ? "
+            "WHERE date < ? "
             "ORDER BY date DESC LIMIT 1",
-            (before, algorithm_version),
+            (before,),
         ).fetchone()
-
-    def has_daily_training_load_version(self, algorithm_version: int) -> bool:
-        return self._conn.execute(
-            "SELECT 1 FROM daily_training_load WHERE algorithm_version = ? LIMIT 1",
-            (algorithm_version,),
-        ).fetchone() is not None
 
     def fetch_daily_training_load(
         self, start: str | None = None, end: str | None = None,
-        *, algorithm_version: int | None = None, limit: int | None = None,
+        *, limit: int | None = None,
     ) -> list[sqlite3.Row]:
-        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
-
-        active_algorithm_version = (
-            TRAINING_LOAD_MODEL_VERSION if algorithm_version is None else algorithm_version
-        )
-        clauses: list[str] = ["algorithm_version = ?"]
-        params: list[object] = [active_algorithm_version]
+        clauses: list[str] = []
+        params: list[object] = []
         if start is not None:
             clauses.append("date >= ?")
             params.append(start)
         if end is not None:
             clauses.append("date <= ?")
             params.append(end)
-        where = " WHERE " + " AND ".join(clauses)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         suffix = " ORDER BY date"
         if limit is not None:
             suffix = " ORDER BY date DESC LIMIT ?"
@@ -2012,16 +2117,16 @@ class Database:
         return list(reversed(rows)) if limit is not None else rows
 
     def fetch_latest_daily_training_load(
-        self, *, algorithm_version: int, as_of: str | None = None,
+        self, *, as_of: str | None = None,
     ) -> sqlite3.Row | None:
         # UNKNOWN rows preserve a date-continuous series without decaying PMC,
         # but they are not an observed athlete state. All callers of this API
         # ask for the latest usable state, so keep the rule centralized here.
         sql = (
-            "SELECT * FROM daily_training_load WHERE algorithm_version = ? "
-            "AND coverage_status IN ('complete', 'partial', 'rest_confirmed')"
+            "SELECT * FROM daily_training_load "
+            "WHERE coverage_status IN ('complete', 'partial', 'rest_confirmed')"
         )
-        params: list[object] = [algorithm_version]
+        params: list[object] = []
         if as_of is not None:
             sql += " AND date <= ?"
             params.append(as_of)
@@ -2029,28 +2134,24 @@ class Database:
             sql + " ORDER BY date DESC LIMIT 1", tuple(params)
         ).fetchone()
 
-    def fetch_training_load_bounds(
-        self, *, algorithm_version: int
-    ) -> tuple[str | None, str | None]:
+    def fetch_training_load_bounds(self) -> tuple[str | None, str | None]:
         row = self._conn.execute(
-            "SELECT MIN(date), MAX(date) FROM daily_training_load "
-            "WHERE algorithm_version = ?",
-            (algorithm_version,),
+            "SELECT MIN(date), MAX(date) FROM daily_training_load"
         ).fetchone()
         return (row[0], row[1]) if row else (None, None)
 
     def fetch_daily_training_load_weekly_source(
-        self, *, algorithm_version: int, as_of: str
+        self, *, as_of: str
     ) -> list[sqlite3.Row]:
         return self._conn.execute(
             "SELECT date, training_dose, chronic_load, acute_load, form, "
             "coverage_status FROM daily_training_load "
-            "WHERE algorithm_version = ? AND date <= ? ORDER BY date",
-            (algorithm_version, as_of),
+            "WHERE date <= ? ORDER BY date",
+            (as_of,),
         ).fetchall()
 
     def fetch_daily_training_load_with_prior(
-        self, *, algorithm_version: int, limit: int
+        self, *, limit: int
     ) -> list[sqlite3.Row]:
         return self._conn.execute(
             """WITH recent AS (
@@ -2058,35 +2159,33 @@ class Database:
                           form, load_ratio, coverage_status, readiness_gate,
                           readiness_reasons_json
                    FROM daily_training_load
-                   WHERE algorithm_version = ?
                    ORDER BY date DESC LIMIT ?
                )
                SELECT recent.*, prior.chronic_load AS chronic_load_7d_ago
                FROM recent
                LEFT JOIN daily_training_load AS prior
                  ON prior.date = date(recent.date, '-7 day')
-                AND prior.algorithm_version = recent.algorithm_version
                ORDER BY recent.date""",
-            (algorithm_version, max(1, int(limit))),
+            (max(1, int(limit)),),
         ).fetchall()
 
     def fetch_completed_week_training_load(
-        self, start: str, end: str, *, algorithm_version: int
+        self, start: str, end: str
     ) -> tuple[float | None, sqlite3.Row | None]:
         dose_row = self._conn.execute(
             "SELECT SUM(training_dose), COUNT(*) FROM daily_training_load "
-            "WHERE algorithm_version = ? AND date BETWEEN ? AND ? "
+            "WHERE date BETWEEN ? AND ? "
             "AND coverage_status IN ('complete', 'rest_confirmed')",
-            (algorithm_version, start, end),
+            (start, end),
         ).fetchone()
         latest = self._conn.execute(
             "SELECT acute_load, chronic_load, coverage_status "
-            "FROM daily_training_load WHERE algorithm_version = ? "
-            "AND date BETWEEN ? AND ? AND acute_load IS NOT NULL "
+            "FROM daily_training_load "
+            "WHERE date BETWEEN ? AND ? AND acute_load IS NOT NULL "
             "AND chronic_load IS NOT NULL "
             "AND coverage_status IN ('complete', 'rest_confirmed') "
             "ORDER BY date DESC LIMIT 1",
-            (algorithm_version, start, end),
+            (start, end),
         ).fetchone()
         # The execution cap needs a completed seven-day baseline. A partial
         # week would make dose/km artificially low and over-tighten next week.

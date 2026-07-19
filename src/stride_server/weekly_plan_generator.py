@@ -118,11 +118,7 @@ def _recent_training_context(db, week_start: date_cls) -> RecentTrainingContext:
 
     load_ratio = None
     if hasattr(db, "fetch_latest_daily_training_load"):
-        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
-
-        load_row = db.fetch_latest_daily_training_load(
-            algorithm_version=TRAINING_LOAD_MODEL_VERSION
-        )
+        load_row = db.fetch_latest_daily_training_load()
         if load_row is not None and load_row["load_ratio"] is not None:
             load_ratio = float(load_row["load_ratio"])
 

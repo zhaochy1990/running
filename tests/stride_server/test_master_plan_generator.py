@@ -2649,20 +2649,13 @@ class TestWeeklyProfile:
         assert week["dose"] == 110
         assert week["dose_coverage_status"] == "partial"
 
-    def test_uses_only_current_training_load_model_version(self, tmp_path):
-        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
-
+    def test_uses_canonical_load_regardless_of_audit_version(self, tmp_path):
         db = self._db(tmp_path)
         c = db._conn
         c.execute(
             "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form) VALUES ('2026-06-17', 1, 700, 650, 600, -50)"
-        )
-        c.execute(
-            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
             "acute_load, chronic_load, form, coverage_status) "
-            "VALUES ('2026-06-17', ?, 70, 65, 60, -5, 'complete')",
-            (TRAINING_LOAD_MODEL_VERSION,),
+            "VALUES ('2026-06-17', 1, 70, 65, 60, -5, 'complete')"
         )
         c.commit()
 
@@ -2840,8 +2833,7 @@ class TestQueryFitnessStateStride:
         state = mod._query_fitness_state("anyuser")
         assert state["rhr"] == 45.0      # calibration baseline preferred over raw 52
 
-    def test_ignores_legacy_training_load_model_rows(self, tmp_path, monkeypatch):
-        from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+    def test_reads_legacy_audit_version_as_canonical_state(self, tmp_path, monkeypatch):
         from stride_storage.sqlite.database import Database
 
         db = Database(db_path=tmp_path / "coros.db")
@@ -2849,13 +2841,7 @@ class TestQueryFitnessStateStride:
         c.execute(
             "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
             "acute_load, chronic_load, form, coverage_status) "
-            "VALUES ('2026-06-10', 1, 700, 699, 641, -58, 'complete')"
-        )
-        c.execute(
-            "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-            "acute_load, chronic_load, form, coverage_status) "
-            "VALUES ('2026-06-10', ?, 70, 69.9, 64.1, -5.8, 'complete')",
-            (TRAINING_LOAD_MODEL_VERSION,),
+            "VALUES ('2026-06-10', 1, 70, 69.9, 64.1, -5.8, 'complete')"
         )
         c.commit()
         monkeypatch.setattr("stride_storage.sqlite.database.Database", lambda **kw: db)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from . import hello  # noqa: F401  (registers the hello_world handler)
 from . import onboarding  # noqa: F401  (registers the onboarding pipeline steps)
+from . import training_load  # noqa: F401  (registers training_load_backfill)
 from ..registry import ensure_registered
 
 
@@ -21,3 +22,7 @@ def ensure_handlers_registered() -> None:
     ensure_registered("onboarding_full_sync", onboarding.handle_full_sync)
     ensure_registered("onboarding_calibration", onboarding.handle_calibration)
     ensure_registered("onboarding_backfill", onboarding.handle_backfill)
+    ensure_registered(
+        training_load.TRAINING_LOAD_BACKFILL_JOB_TYPE,
+        training_load.handle_training_load_backfill,
+    )

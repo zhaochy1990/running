@@ -125,9 +125,12 @@ class StrideTrainingLoadHandler:
 
         for attempt in range(1, self._attempts + 1):
             try:
-                if not context.db.has_daily_training_load_version(
+                if not context.db.is_training_load_backfill_complete(
                     TRAINING_LOAD_MODEL_VERSION
                 ):
+                    # No verified full backfill yet: run the canonical 365-day
+                    # rebuild (which marks completion on success) rather than an
+                    # incremental recompute off a possibly-empty prior state.
                     backfill_training_load(
                         context.db, as_of_date=end, load_lookback_days=365,
                         calibration_lookback_days=365, persist=True,

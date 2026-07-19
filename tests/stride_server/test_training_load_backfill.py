@@ -197,7 +197,7 @@ def test_internal_training_load_calibration_refresh_updates_threshold_only(tmp_p
         )
 
 
-def test_rollout_backfill_is_idempotent_when_current_version_exists(
+def test_rollout_backfill_skips_only_when_completion_marker_exists(
     tmp_path, monkeypatch
 ):
     import stride_core.db as core_db_mod
@@ -223,9 +223,12 @@ def test_rollout_backfill_is_idempotent_when_current_version_exists(
             (TRAINING_LOAD_MODEL_VERSION,),
         )
         db._conn.commit()
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-20"
+        )
 
     def fail_backfill(*_args, **_kwargs):
-        raise AssertionError("idempotent rollout must not recompute existing v2 rows")
+        raise AssertionError("completed rollout must not recompute canonical rows")
 
     monkeypatch.setattr(route_mod, "backfill_training_load", fail_backfill)
     app = FastAPI()
@@ -243,7 +246,183 @@ def test_rollout_backfill_is_idempotent_when_current_version_exists(
         "user": USER_UUID,
         "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
         "skipped": True,
-        "reason": "algorithm_version_already_present",
+        "reason": "backfill_already_complete",
         "calibration_lookback_days": 180,
         "load_lookback_days": 90,
     }
+
+
+def test_enqueue_backfill_returns_job_without_running_inline(tmp_path, monkeypatch):
+    """The rollout entry point must ENQUEUE a training_load_backfill job and
+    return quickly — it must NOT call backfill_training_load inline (that 365-day
+    scan over ~1.2M timeseries rows blows past the ACA 240s request budget and
+    504s, which is the prod regression this endpoint fixes)."""
+    import stride_core.db as core_db_mod
+    import stride_server.deps as deps_mod
+    import stride_server.routes.training_load as route_mod
+
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+    from stride_server.config import clear_server_config_cache
+    from stride_storage.interfaces.jobs import GLOBAL_PARTITION
+    from stride_storage.sqlite.database import Database
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+    clear_server_config_cache()
+
+    user_dir = tmp_path / USER_UUID
+    user_dir.mkdir(parents=True, exist_ok=True)
+    with Database(user=USER_UUID) as db:
+        # Existing canonical data must remain readable, but without an explicit
+        # completion marker it does not prove that the full rollout finished.
+        db._conn.execute(
+            """INSERT INTO daily_training_load
+               (date, algorithm_version, training_dose, coverage_status)
+               VALUES ('2026-05-20', 1, 50, 'partial')"""
+        )
+        db._conn.commit()
+
+    if hasattr(route_mod, "backfill_training_load"):
+        def fail_backfill(*_args, **_kwargs):
+            raise AssertionError("enqueue endpoint must not run backfill inline")
+
+        monkeypatch.setattr(route_mod, "backfill_training_load", fail_backfill)
+
+    enqueued: list[dict] = []
+
+    def fake_enqueue(*, job_type, partition_key=GLOBAL_PARTITION, input_payload=None, delay_s=0):
+        enqueued.append(
+            {
+                "job_type": job_type,
+                "partition_key": partition_key,
+                "input_payload": input_payload,
+            }
+        )
+        return "job-tl-1"
+
+    monkeypatch.setattr(route_mod, "enqueue", fake_enqueue, raising=False)
+
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    unauthorized = client.post(
+        "/internal/training-load/backfill/enqueue", json={"user": USER_UUID}
+    )
+    resp = client.post(
+        "/internal/training-load/backfill/enqueue",
+        json={"user": USER_UUID},
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert unauthorized.status_code == 401
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["job_id"] == "job-tl-1"
+    assert body["partition_key"] == USER_UUID
+    assert body["algorithm_version"] == TRAINING_LOAD_MODEL_VERSION
+    assert body["skipped"] is False
+
+    assert len(enqueued) == 1
+    assert enqueued[0]["job_type"] == "training_load_backfill"
+    assert enqueued[0]["partition_key"] == USER_UUID
+
+
+def test_enqueue_backfill_skips_when_completion_marker_exists(tmp_path, monkeypatch):
+    """A verified full-backfill marker skips enqueueing duplicate work."""
+    import stride_core.db as core_db_mod
+    import stride_server.deps as deps_mod
+    import stride_server.routes.training_load as route_mod
+
+    from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
+    from stride_server.config import clear_server_config_cache
+    from stride_storage.sqlite.database import Database
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+    clear_server_config_cache()
+
+    user_dir = tmp_path / USER_UUID
+    user_dir.mkdir(parents=True, exist_ok=True)
+    with Database(user=USER_UUID) as db:
+        db._conn.execute(
+            """INSERT INTO daily_training_load
+               (date, algorithm_version, training_dose, coverage_status)
+               VALUES ('2026-05-20', ?, 50, 'complete')""",
+            (TRAINING_LOAD_MODEL_VERSION,),
+        )
+        db._conn.commit()
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of_date="2026-05-20"
+        )
+
+    def fail_enqueue(**_kwargs):
+        raise AssertionError("idempotent enqueue must not queue a job when current")
+
+    monkeypatch.setattr(route_mod, "enqueue", fail_enqueue, raising=False)
+
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    resp = client.post(
+        "/internal/training-load/backfill/enqueue",
+        json={"user": USER_UUID, "only_if_missing": True},
+        headers={"X-Internal-Token": INTERNAL_TOKEN},
+    )
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["skipped"] is True
+    assert body["reason"] == "backfill_already_complete"
+    assert body["algorithm_version"] == TRAINING_LOAD_MODEL_VERSION
+    assert body.get("job_id") is None
+
+
+def test_internal_training_load_routes_reject_non_uuid_user(tmp_path, monkeypatch):
+    import stride_core.db as core_db_mod
+    import stride_server.deps as deps_mod
+    import stride_server.routes.training_load as route_mod
+
+    from stride_server.config import clear_server_config_cache
+
+    monkeypatch.setenv("STRIDE_INTERNAL_TOKEN", INTERNAL_TOKEN)
+    monkeypatch.setattr(core_db_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(deps_mod, "USER_DATA_DIR", tmp_path)
+    monkeypatch.setattr(
+        route_mod,
+        "enqueue",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("invalid users must be rejected before enqueue")
+        ),
+    )
+    clear_server_config_cache()
+
+    app = FastAPI()
+    app.include_router(route_mod.internal_router)
+    client = TestClient(app, raise_server_exceptions=False)
+    headers = {"X-Internal-Token": INTERNAL_TOKEN}
+    invalid_user = "../escaped-user"
+
+    calibration = client.post(
+        "/internal/training-load/calibration/refresh",
+        params={"user": invalid_user},
+        headers=headers,
+    )
+    backfill = client.post(
+        "/internal/training-load/backfill",
+        params={"user": invalid_user},
+        headers=headers,
+    )
+    enqueue_response = client.post(
+        "/internal/training-load/backfill/enqueue",
+        json={"user": invalid_user},
+        headers=headers,
+    )
+
+    assert calibration.status_code == 422
+    assert backfill.status_code == 422
+    assert enqueue_response.status_code == 422
+    assert not (tmp_path.parent / "escaped-user").exists()

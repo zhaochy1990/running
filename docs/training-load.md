@@ -172,6 +172,17 @@ v2 规则不读取课型标签：
 - 力量/交叉训练有 HR：只有可归一成 `cardio_tss` 时才可写入 `training_dose`。
 - raw TRIMP、无 HR 力量训练体积、卡路里、时长估算、sRPE 不进入 `training_dose`；无法得到 TSS-like 客观负荷时 `training_dose = NULL`，`excluded_from_pmc = 1`。
 
+### Canonical Storage
+
+`daily_training_load` 每个上海日只保留一条 canonical 记录，`activity_training_load`
+每个 `label_id` 只保留一条 canonical 记录。`algorithm_version` 仅是审计字段：记录该行
+由哪个算法生成，不参与主键、读取过滤或关联条件。算法升级期间旧负荷持续可读；新算法
+回填成功后按日期 / 活动原位覆盖。
+
+全量回填是否完成由 `sync_meta.training_load_backfill_complete` 独立记录，不能用“存在任意
+当前版本负荷行”代替。只有持久化 365 天回填成功且实际写出 daily rows 后才能更新该
+marker；短窗口回填、空库和失败均不得标记完成。
+
 ### Planned Load Estimate
 
 计划负荷解析结构化 warm-up、work、active recovery、passive rest、cooldown：

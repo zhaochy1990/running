@@ -13,7 +13,6 @@ from stride_core.distance import meters_to_km_zero
 from stride_core.post_sync import run_post_sync_for_labels
 from stride_core.source import DataSource
 from stride_core.timefmt import utc_iso_to_shanghai_iso
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from ..bearer import require_bearer
 from ..deps import (
@@ -213,9 +212,7 @@ def build_activity_detail(db, label_id: str, commentary_store=None) -> dict | No
     zones = [dict(z) for z in zones_rows]
 
     stride_training_load = _serialize_activity_training_load(
-        db.fetch_activity_training_load(
-            label_id, algorithm_version=TRAINING_LOAD_MODEL_VERSION
-        )
+        db.fetch_activity_training_load(label_id)
     )
 
     ts_rows = db.query(

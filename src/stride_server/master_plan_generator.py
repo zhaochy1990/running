@@ -38,7 +38,6 @@ from stride_core.master_plan import (
     PhaseType,
     compute_total_weeks,
 )
-from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION
 
 from .job_runner import JobStage, JobStatus, update_job
 from .llm_client import LLMClient, LLMError, LLMUnavailable
@@ -1347,9 +1346,7 @@ def _query_weekly_profile(
     # matching _query_fitness_state which selects acute_load first. The explicit
     # r[3]=chronic→ctl / r[4]=acute→atl mapping below is the anchor; don't copy
     # the column list from the other function or the two will silently swap.
-    rows = db.fetch_daily_training_load_weekly_source(
-        algorithm_version=TRAINING_LOAD_MODEL_VERSION, as_of=as_of.isoformat()
-    )
+    rows = db.fetch_daily_training_load_weekly_source(as_of=as_of.isoformat())
     dose_acc: dict[str, float] = {}
     dose_known_weeks: set[str] = set()
     dose_incomplete_weeks: set[str] = set()
@@ -1574,11 +1571,26 @@ def _ensure_training_load_current(db, as_of=None) -> None:
 
     from stride_core.timefmt import today_shanghai, utc_iso_to_shanghai_iso
     from stride_core.training_load import (
+        TRAINING_LOAD_MODEL_VERSION,
         backfill_training_load,
         recompute_training_load,
     )
 
     as_of = as_of or today_shanghai()
+    if not db.is_training_load_backfill_complete(TRAINING_LOAD_MODEL_VERSION):
+        # Existing canonical rows stay readable while an algorithm upgrade is
+        # pending, but they do not prove that the full warmup window completed.
+        # Rebuild once from a zero prior; backfill_training_load writes the
+        # independent completion marker only after a successful 365-day pass.
+        backfill_training_load(
+            db,
+            as_of_date=as_of,
+            load_lookback_days=365,
+            calibration_lookback_days=365,
+            persist=True,
+        )
+        return
+
     # Chronic load is a 42-day EWMA; it needs ~3x its time-constant of warmup
     # before it converges. A table seeded by post-sync (only the recent synced
     # window) can REACH as_of yet still be only a few weeks deep — its chronic
@@ -1589,9 +1601,7 @@ def _ensure_training_load_current(db, as_of=None) -> None:
     # check its depth and force a full backfill when it is too shallow.
     _CHRONIC_WARMUP_DAYS = 126  # 3 x the 42-day chronic EWMA time-constant
     try:
-        earliest, last = db.fetch_training_load_bounds(
-            algorithm_version=TRAINING_LOAD_MODEL_VERSION
-        )
+        earliest, last = db.fetch_training_load_bounds()
 
         # Shallow-table guard: if the earliest persisted row is younger than the
         # chronic warmup window AND older activity history exists to warm up on,
@@ -1687,10 +1697,7 @@ def _query_fitness_state(user_id: str, *, as_of: date_cls | None = None) -> dict
         # generation against an un-synced DB still gets a current fitness state.
         _ensure_training_load_current(db, as_of=as_of)
 
-        row = db.fetch_latest_daily_training_load(
-            algorithm_version=TRAINING_LOAD_MODEL_VERSION,
-            as_of=as_of.isoformat(),
-        )
+        row = db.fetch_latest_daily_training_load(as_of=as_of.isoformat())
         # RHR for the fitness context: prefer the calibration baseline (smoothed
         # P10/25 over 30-90d — the CLAUDE.md single source) over a single noisy
         # last reading; fall back to the latest measured value when there is no

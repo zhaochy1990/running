@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Any, Iterable, Sequence
+from typing import Any, Callable, Iterable, Sequence
 
 from stride_storage.sqlite.database import HRV_PREFERRED_PER_DATE_SQL
 from stride_core.normalize import kind_from_legacy_train_type
@@ -19,6 +19,7 @@ from .core import compute_activity_load, compute_daily_load_series
 from .types import (
     TRAINING_LOAD_MODEL_VERSION,
     ActivityLoadInput,
+    ActivityLoadResult,
     ActivitySample,
     CalibrationSnapshot,
     FeedbackRow,
@@ -367,9 +368,7 @@ def _fetch_feedback_rows(db: Any, activity_rows: Sequence[Any]) -> list[Feedback
 def _last_persisted_daily_date(db: Any, *, before: date) -> date | None:
     """Date of the most recent persisted daily_training_load row strictly
     before ``before`` (None when none exists)."""
-    row = db.fetch_previous_daily_training_load(
-        before.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
-    )
+    row = db.fetch_previous_daily_training_load(before.isoformat())
     return _parse_date(row["date"]) if row is not None else None
 
 
@@ -377,9 +376,7 @@ def _load_prior_state(db: Any, series_start: date) -> PriorLoadState | None:
     """Read the last persisted daily_training_load row before series_start
     without inventing rest-day decay for dates whose coverage is unknown.
     """
-    row = db.fetch_previous_daily_training_load(
-        series_start.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
-    )
+    row = db.fetch_previous_daily_training_load(series_start.isoformat())
     if row is None:
         return None
     acute = float(row["acute_load"]) if row["acute_load"] is not None else 0.0
@@ -434,6 +431,43 @@ def _build_activity_inputs(db: Any, activity_rows: Sequence[Any]) -> list[Activi
         for row in activity_rows
         if (activity := _build_activity_input(db, row, feedback_by_label)) is not None
     ]
+
+
+def _stream_activity_results(
+    db: Any,
+    activity_rows: Sequence[Any],
+    calibration: CalibrationSnapshot,
+    *,
+    progress: Callable[[int, int], None] | None = None,
+) -> list[ActivityLoadResult]:
+    """Compute each activity's load one at a time, releasing its samples before
+    moving to the next row.
+
+    Backfilling a full year would otherwise materialise every activity's
+    timeseries at once (``_build_activity_inputs`` holds them all), spiking peak
+    memory proportional to the whole corpus. Building one ``ActivityLoadInput``,
+    computing the small ``ActivityLoadResult``, then dropping the input keeps
+    peak memory bounded to a single activity's samples. Feedback is still
+    batch-fetched (no N+1).
+    """
+    labels = [row["label_id"] for row in activity_rows]
+    feedback_rows = _query_feedback_for_labels(db, labels) if labels else []
+    feedback_by_label = {row["label_id"]: row for row in feedback_rows}
+
+    total = len(activity_rows)
+    results: list[Any] = []
+    processed = 0
+    for row in activity_rows:
+        activity = _build_activity_input(db, row, feedback_by_label)
+        processed += 1
+        if activity is not None:
+            results.append(compute_activity_load(activity, calibration))
+        # Drop the input (and its samples) before the next iteration.
+        del activity
+        if progress is not None:
+            progress(processed, total)
+    return results
+
 
 
 def _fetch_latest_calibration(
@@ -507,6 +541,7 @@ def recompute_training_load(
     persist: bool = True,
     prior_state: PriorLoadState | None = None,
     calibration_override: CalibrationSnapshot | None = None,
+    progress: Callable[[int, int], None] | None = None,
 ) -> TrainingLoadRunSummary:
     """Recompute objective activity and daily training-load rows.
 
@@ -516,13 +551,22 @@ def recompute_training_load(
     When ``start`` is provided without an explicit ``prior_state``, the most
     recent persisted ``daily_training_load`` row before the window is loaded
     so the rolling ATL/CTL continues instead of restarting at zero.
+
+    ``progress`` (if given) is called ``progress(processed, total)`` as each
+    activity is computed so a worker can surface backfill progress. ``processed``
+    is monotonic, ``total`` is stable across calls, and the final tick satisfies
+    ``processed == total``.
     """
     start_date = _parse_date(start)
     end_date = _parse_date(end)
     labels = list(label_ids) if label_ids is not None else None
     activity_rows = _fetch_activity_rows(db, start=start_date, end=end_date, label_ids=labels)
-    activity_inputs = _build_activity_inputs(db, activity_rows)
-    if not activity_inputs:
+    # Activity dates are derived from the row alone (no timeseries) — safe to
+    # compute up front without materialising any samples.
+    activity_dates = [
+        d for row in activity_rows if (d := _activity_shanghai_date(row["date"])) is not None
+    ]
+    if not activity_dates:
         # An explicit calendar window can legitimately contain no activities.
         # Continue when a health row confirms rest or an earlier v2 PMC state
         # exists so an unknown-coverage placeholder can preserve the calendar
@@ -534,14 +578,14 @@ def recompute_training_load(
         )
         has_prior_state = bool(
             start_date is not None
-            and db.fetch_previous_daily_training_load(
-                start_date.isoformat(), algorithm_version=TRAINING_LOAD_MODEL_VERSION
-            )
+            and db.fetch_previous_daily_training_load(start_date.isoformat())
         )
         if start_date is None or not (has_health_coverage or has_prior_state):
+            if progress is not None:
+                progress(0, 0)
             return TrainingLoadRunSummary(0, 0, 0, None, start_date, end_date, persist)
 
-    series_start = start_date or min(a.activity_date for a in activity_inputs)
+    series_start = start_date or min(activity_dates)
     series_end = end_date or today_shanghai()
 
     # Gap-fill: when an explicit window begins more than one day after the last
@@ -557,14 +601,17 @@ def recompute_training_load(
         if prior_date is not None and series_start - prior_date > timedelta(days=1):
             series_start = prior_date + timedelta(days=1)
             activity_rows = _fetch_activity_rows(db, start=series_start, end=series_end, label_ids=None)
-            activity_inputs = _build_activity_inputs(db, activity_rows)
 
     as_of = series_end
     calibration = calibration_override or _fetch_latest_calibration(db, as_of_date=as_of) or CalibrationSnapshot(
         as_of_date=as_of,
     )
     calibration_id = calibration.id
-    activity_results = [compute_activity_load(activity, calibration) for activity in activity_inputs]
+    # Stream per-activity: build one input (with samples), compute, release, so
+    # a year-long backfill never holds every activity's timeseries at once.
+    activity_results = _stream_activity_results(
+        db, activity_rows, calibration, progress=progress
+    )
     health_rows = _fetch_health_rows(db, start=series_start, end=series_end)
     hrv_rows = _fetch_hrv_rows(db, start=series_start, end=series_end)
     feedback_rows = _fetch_feedback_rows(db, activity_rows)
@@ -580,6 +627,9 @@ def recompute_training_load(
         prior_state=prior_state,
     )
     if persist:
+        # Upsert activity results and daily results within a single transaction
+        # (commit=False), then one commit — a mid-backfill failure leaves no
+        # half-written current-model daily rows behind.
         for result in activity_results:
             db.upsert_activity_training_load(result, commit=False)
         for result in daily_results:
@@ -612,13 +662,28 @@ def backfill_training_load(
         persist=persist,
     )
     load_start = as_of - timedelta(days=max(0, load_lookback_days))
+    # A full backfill (or algorithm upgrade) must rebuild the PMC series from a
+    # zero prior state inside the window, never seed off an older algorithm's
+    # canonical prior. Incremental recomputes still read the canonical prior.
     load = recompute_training_load(
         db,
         start=load_start,
         end=as_of,
         persist=persist,
+        prior_state=PriorLoadState(),
         calibration_override=calibration,
     )
+    # Mark backfill completion only on a verified full success: a real 365-day
+    # (or longer) persisted window that actually wrote daily rows. A shorter
+    # manual backfill (default 90d) must not claim the rollout is complete.
+    if (
+        persist
+        and load_lookback_days >= 365
+        and load.daily_rows_written > 0
+    ):
+        db.mark_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION, as_of.isoformat()
+        )
     return TrainingLoadBackfillSummary(
         calibration=calibration,
         load=load,

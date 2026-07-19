@@ -21,12 +21,22 @@ Multi-stage build (`Dockerfile`)：
 
 Pipeline：Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy to Azure Container Apps → Health check。
 
-训练负荷算法版本升级时，deploy 在新 revision 通过 health check 后调用受内部 token
+训练负荷算法升级时，deploy 在新 revision 通过 health check 后调用受内部 token
 保护的 `/internal/training-load/users`。服务端从生产 Azure Files 挂载盘枚举所有
-UUID 目录中的 `coros.db`（不依赖可能滞后的 `.slug_aliases.json`），再逐个调用带
-`only_if_missing=true` 的内部 backfill。已有当前版本数据的用户会幂等跳过；缺少当前
-版本的用户会完成 365 天回填。任一用户回填失败都会让 deploy 失败，避免新版 reader
-上线后静默读取空数据。
+UUID 目录中的 `coros.db`（不依赖可能滞后的 `.slug_aliases.json`）。回填**不再**在
+请求内同步执行 —— 365 天扫描（~1.2M 条 timeseries）会超过 ACA 240s 请求预算而
+504。deploy 对缺少独立 completion marker 的用户 POST
+`/internal/training-load/backfill/enqueue`，入队一个 `training_load_backfill` 异步 job，
+**先全部入队**再轮询 `/internal/jobs/{partition}/{job_id}` 到 `done` / `failed` / 超时。
+worker deploy 显式固定 `min=max=1`，确保队列始终有且仅有一个消费者。
+
+`daily_training_load` 是按日期唯一的 canonical 存储；`algorithm_version` 只记录生成该行
+的算法版本，不参与主键或读取过滤。算法升级期间旧行继续可读，新回填按日期原位覆盖。
+是否跳过全量回填只看 `sync_meta.training_load_backfill_complete`，不能用“存在任意当前版本
+行”代替。worker 复用已有 calibration snapshot；成功写出 daily rows 后才更新 completion
+marker。空库返回 `skipped=no_source_data` 但不写 marker，失败或零行结果同样不写 marker。
+任务标记 `done` 后 deploy 仍解析 `result_json` 并确认非 skip 任务的
+`daily_rows_written > 0`；零行结果、任一 job `failed` 或轮询超时都会让 deploy 失败。
 
 ### `.github/workflows/sync-data.yml` —— 同步 training-log markdown 到 prod Azure Files
 

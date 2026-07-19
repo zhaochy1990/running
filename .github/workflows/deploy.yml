@@ -185,8 +185,8 @@ jobs:
           if ! az containerapp show \
               --name ${{ env.WORKER_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} >/dev/null 2>&1; then
-            echo "::warning::${{ env.WORKER_NAME }} does not exist yet — skipping worker deploy (create it, then re-run)."
-            exit 0
+            echo "::error::${{ env.WORKER_NAME }} does not exist — training-load rollout requires an active worker."
+            exit 1
           fi
 
           # The worker writes user SQLite databases during onboarding sync.
@@ -212,6 +212,8 @@ jobs:
             --name ${{ env.WORKER_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --image ${{ env.GHCR_IMAGE }}:${{ steps.version.outputs.version }} \
+            --min-replicas 1 \
+            --max-replicas 1 \
             --command "stride-job-worker" \
             --set-env-vars STRIDE_CONFIG_ENV=prod \
               STRIDE_COROS_KEYVAULT_URL=https://stride-kv-common.vault.azure.net/ \
@@ -301,7 +303,7 @@ jobs:
             --tail 100 || true
           exit 1
 
-      - name: Backfill current STRIDE training-load model when missing
+      - name: Roll out current STRIDE training-load model (async enqueue + poll)
         env:
           INTERNAL_TOKEN: ${{ secrets.STRIDE_INTERNAL_TOKEN }}
         run: |
@@ -315,47 +317,132 @@ jobs:
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "properties.configuration.ingress.fqdn" -o tsv)
-          users_response=$(mktemp)
-          users_http=$(curl -sS -o "$users_response" -w "%{http_code}" \
-            --max-time 60 \
-            -H "X-Internal-Token: $INTERNAL_TOKEN" \
-            "https://$FQDN/internal/training-load/users") || users_http="000"
-          if [ "$users_http" != "200" ]; then
-            echo "::error::could not enumerate production training-load users (HTTP $users_http)"
-            head -c 500 "$users_response" || true
-            rm -f "$users_response"
-            exit 1
-          fi
-          python3 - "$users_response" > users.txt <<'PY'
+
+          # Enqueue one training_load_backfill job per missing user, then poll
+          # each job's status endpoint to a terminal state. The old synchronous
+          # backfill route scanned 365 days (~1.2M timeseries rows) inside the
+          # request and 504'd past the ACA 240s budget; the async worker now does
+          # the scan and this step only enqueues + polls. All jobs are enqueued
+          # FIRST so a single worker's serial processing doesn't make the rollout
+          # wait user-by-user.
+          FQDN="$FQDN" INTERNAL_TOKEN="$INTERNAL_TOKEN" python3 <<'PY'
           import json
-          import sys
+          import os
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
 
-          with open(sys.argv[1], encoding="utf-8") as handle:
-              payload = json.load(handle)
+          fqdn = os.environ["FQDN"]
+          token = os.environ["INTERNAL_TOKEN"]
+          base = f"https://{fqdn}"
+          headers = {"X-Internal-Token": token, "Content-Type": "application/json"}
+          POLL_TIMEOUT_S = 3600
+          POLL_INTERVAL_S = 10
+
+
+          def request(method, path, body=None):
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(base + path, data=data, headers=headers, method=method)
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  return resp.status, json.loads(resp.read().decode() or "{}")
+
+
+          def fail(msg):
+              print(f"::error::{msg}")
+              raise SystemExit(1)
+
+
+          def job_result_is_usable(body):
+              raw = body.get("result_json")
+              if not isinstance(raw, str) or not raw:
+                  return False, "missing result_json"
+              try:
+                  result = json.loads(raw)
+              except json.JSONDecodeError:
+                  return False, "invalid result_json"
+              if result.get("skipped"):
+                  reason = result.get("reason")
+                  if reason in {"backfill_already_complete", "no_source_data"}:
+                      return True, str(reason)
+                  return False, f"unexpected skip reason: {reason}"
+              load = result.get("load")
+              rows = load.get("daily_rows_written") if isinstance(load, dict) else None
+              if not isinstance(rows, int) or rows <= 0:
+                  return False, f"daily_rows_written={rows}"
+              return True, f"daily_rows_written={rows}"
+
+
+          try:
+              status, payload = request("GET", "/internal/training-load/users")
+          except urllib.error.URLError as exc:
+              fail(f"could not enumerate training-load users: {exc}")
+          if status != 200:
+              fail(f"could not enumerate training-load users (HTTP {status})")
           users = payload.get("users")
-          if not isinstance(users, list) or any(not isinstance(user, str) for user in users):
-              raise SystemExit("invalid response from /internal/training-load/users")
-          print("\n".join(users))
-          PY
-          rm -f "$users_response"
+          if not isinstance(users, list) or any(not isinstance(u, str) for u in users):
+              fail("invalid response from /internal/training-load/users")
 
-          failed=0
-          while read -r user; do
-            [ -z "$user" ] && continue
-            response=$(mktemp)
-            http=$(curl -sS -o "$response" -w "%{http_code}" \
-              --max-time 600 \
-              -X POST \
-              -H "X-Internal-Token: $INTERNAL_TOKEN" \
-              "https://$FQDN/internal/training-load/backfill?user=$user&load_lookback_days=365&calibration_lookback_days=365&only_if_missing=true") \
-              || http="000"
-            if [ "$http" = "200" ]; then
-              echo "training-load model ready for $user"
-            else
-              echo "::error::training-load rollout backfill failed for $user (HTTP $http)"
-              head -c 500 "$response" || true
-              failed=1
-            fi
-            rm -f "$response"
-          done < users.txt
-          exit "$failed"
+          # Enqueue everything first.
+          jobs = {}  # user -> job_id
+          for user in users:
+              try:
+                  status, body = request(
+                      "POST",
+                      "/internal/training-load/backfill/enqueue",
+                      {"user": user, "only_if_missing": True},
+                  )
+              except urllib.error.URLError as exc:
+                  fail(f"enqueue failed for {user}: {exc}")
+              if status != 200:
+                  fail(f"enqueue failed for {user} (HTTP {status})")
+              if body.get("skipped"):
+                  print(f"training-load model already current for {user}")
+                  continue
+              job_id = body.get("job_id")
+              if not job_id:
+                  fail(f"enqueue for {user} returned no job_id")
+              jobs[user] = job_id
+              print(f"enqueued training_load_backfill for {user}: {job_id}")
+
+          if not jobs:
+              print("no training-load backfill jobs to run")
+              raise SystemExit(0)
+
+          # Poll all enqueued jobs to a terminal state.
+          deadline = time.time() + POLL_TIMEOUT_S
+          pending = dict(jobs)
+          while pending and time.time() < deadline:
+              time.sleep(POLL_INTERVAL_S)
+              for user, job_id in list(pending.items()):
+                  encoded_user = urllib.parse.quote(user, safe="")
+                  encoded_job_id = urllib.parse.quote(job_id, safe="")
+                  try:
+                      status, body = request(
+                          "GET", f"/internal/jobs/{encoded_user}/{encoded_job_id}"
+                      )
+                  except urllib.error.URLError as exc:
+                      print(f"poll error for {user}/{job_id}: {exc}")
+                      continue
+                  if status != 200 or not body.get("found"):
+                      continue
+                  state = body.get("status")
+                  if state == "done":
+                      usable, detail = job_result_is_usable(body)
+                      if not usable:
+                          fail(
+                              f"training-load backfill produced unusable result for "
+                              f"{user}/{job_id}: {detail}"
+                          )
+                      print(f"training-load backfill done for {user}: {detail}")
+                      del pending[user]
+                  elif state == "failed":
+                      fail(
+                          f"training-load backfill failed for {user}/{job_id}: "
+                          f"{body.get('error_code')}"
+                      )
+
+          if pending:
+              fail(f"training-load backfill timed out for: {sorted(pending)}")
+          print("training-load rollout complete")
+          PY

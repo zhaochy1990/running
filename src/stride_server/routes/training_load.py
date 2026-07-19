@@ -4,6 +4,7 @@ from datetime import date
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 
 from stride_storage.sqlite.database import Database
 from stride_core.training_load import (
@@ -12,13 +13,17 @@ from stride_core.training_load import (
     refresh_training_load_calibration,
 )
 
+# Imported at module level so tests can monkeypatch ``route_mod.enqueue`` as a
+# seam without patching deep into the jobs package.
+from stride_server.jobs import enqueue
+
 from .plan import require_internal_token
 
 internal_router = APIRouter()
 
 _UUID4_DIR_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-    re.IGNORECASE,
+    r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-4[0-9A-Fa-f]{3}-"
+    r"[89ABab][0-9A-Fa-f]{3}-[0-9A-Fa-f]{12}$"
 )
 
 
@@ -64,7 +69,7 @@ def internal_training_load_users(
 
 @internal_router.post("/internal/training-load/calibration/refresh")
 def internal_training_load_calibration_refresh(
-    user: str = Query(...),
+    user: str = Query(..., pattern=_UUID4_DIR_RE.pattern),
     as_of_date: str | None = Query(None),
     lookback_days: int = Query(180, ge=1, le=730),
     _token: None = Depends(require_internal_token),
@@ -88,7 +93,7 @@ def internal_training_load_calibration_refresh(
 
 @internal_router.post("/internal/training-load/backfill")
 def internal_training_load_backfill(
-    user: str = Query(...),
+    user: str = Query(..., pattern=_UUID4_DIR_RE.pattern),
     as_of_date: str | None = Query(None),
     calibration_lookback_days: int = Query(180, ge=1, le=730),
     load_lookback_days: int = Query(90, ge=1, le=365),
@@ -97,7 +102,7 @@ def internal_training_load_backfill(
 ):
     try:
         with Database(user=user) as db:
-            if only_if_missing and db.has_daily_training_load_version(
+            if only_if_missing and db.is_training_load_backfill_complete(
                 TRAINING_LOAD_MODEL_VERSION
             ):
                 return {
@@ -105,7 +110,7 @@ def internal_training_load_backfill(
                     "user": user,
                     "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
                     "skipped": True,
-                    "reason": "algorithm_version_already_present",
+                    "reason": "backfill_already_complete",
                     "calibration_lookback_days": calibration_lookback_days,
                     "load_lookback_days": load_lookback_days,
                 }
@@ -133,4 +138,60 @@ def internal_training_load_backfill(
         },
         "calibration_lookback_days": summary.calibration_lookback_days,
         "load_lookback_days": summary.load_lookback_days,
+    }
+
+
+class TrainingLoadBackfillEnqueue(BaseModel):
+    """Body for the async rollout entry point."""
+
+    user: str = Field(pattern=_UUID4_DIR_RE.pattern)
+    as_of_date: str | None = None
+    calibration_lookback_days: int = Field(365, ge=1, le=730)
+    load_lookback_days: int = Field(365, ge=1, le=365)
+    only_if_missing: bool = True
+
+
+@internal_router.post("/internal/training-load/backfill/enqueue")
+def internal_training_load_backfill_enqueue(
+    body: TrainingLoadBackfillEnqueue,
+    _token: None = Depends(require_internal_token),
+):
+    """Enqueue a ``training_load_backfill`` job and return quickly.
+
+    This is the rollout entry point: it must NOT run the backfill inline (the
+    365-day scan over ~1.2M timeseries rows blows past the ACA 240s request
+    budget and 504s — the prod regression this endpoint fixes). It only does a
+    fast current-version check, then hands the work to the async worker.
+    """
+    user = body.user
+    if body.only_if_missing:
+        with Database(user=user) as db:
+            if db.is_training_load_backfill_complete(TRAINING_LOAD_MODEL_VERSION):
+                return {
+                    "ok": True,
+                    "user": user,
+                    "partition_key": user,
+                    "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+                    "skipped": True,
+                    "reason": "backfill_already_complete",
+                    "job_id": None,
+                }
+
+    job_id = enqueue(
+        job_type="training_load_backfill",
+        partition_key=user,
+        input_payload={
+            "as_of_date": body.as_of_date,
+            "calibration_lookback_days": body.calibration_lookback_days,
+            "load_lookback_days": body.load_lookback_days,
+            "only_if_missing": body.only_if_missing,
+        },
+    )
+    return {
+        "ok": True,
+        "user": user,
+        "partition_key": user,
+        "algorithm_version": TRAINING_LOAD_MODEL_VERSION,
+        "skipped": False,
+        "job_id": job_id,
     }
