@@ -479,22 +479,38 @@ class StrideApi {
   /// proposed `PlanDiff` (Pattern Y) which rides back in `proposals[]`; we
   /// surface the first one. Returns the user-facing `reply`, an optional
   /// `clarification`, and the proposed diff (or null for a plain Q&A turn).
-  Future<({String reply, String? clarification, Map<String, dynamic>? diff})>
+  Future<
+    ({
+      String reply,
+      String? clarification,
+      Map<String, dynamic>? diff,
+      String baseRevision,
+    })
+  >
   sendWeeklyAdjustMessage({
     required String folder,
     required String message,
+    required String clientTurnId,
   }) async {
+    final sessionId = weekChatSessionId(folder);
     final r = await _post<Map<String, dynamic>>(
       '/api/users/me/coach/chat',
-      body: {'session_id': weekChatSessionId(folder), 'message': message},
+      body: {
+        'session_id': sessionId,
+        'message': message,
+        'client_turn_id': clientTurnId,
+        'target': {'kind': 'week', 'folder': folder},
+      },
     );
     final proposals = (r['proposals'] as List?) ?? const [];
     Map<String, dynamic>? diff;
+    var baseRevision = '';
     for (final p in proposals) {
       if (p is Map<String, dynamic> &&
           p['specialist_id'] == 'weekly_plan' &&
           p['proposal'] is Map<String, dynamic>) {
         diff = p['proposal'] as Map<String, dynamic>;
+        baseRevision = p['base_revision'] as String? ?? '';
         break;
       }
     }
@@ -502,6 +518,7 @@ class StrideApi {
       reply: r['reply'] as String? ?? '',
       clarification: r['clarification'] as String?,
       diff: diff,
+      baseRevision: baseRevision,
     );
   }
 
@@ -512,10 +529,16 @@ class StrideApi {
     required String folder,
     required Map<String, dynamic> diff,
     required List<String> acceptedOpIds,
+    required String baseRevision,
   }) async {
     return _post<Map<String, dynamic>>(
       '/api/users/me/coach/plan/$folder/apply',
-      body: {'diff': diff, 'accepted_op_ids': acceptedOpIds},
+      body: {
+        'session_id': weekChatSessionId(folder),
+        'diff': diff,
+        'accepted_op_ids': acceptedOpIds,
+        'base_revision': baseRevision,
+      },
     );
   }
 
@@ -778,7 +801,8 @@ class StrideApi {
 
   // ── Coach chat ─────────────────────────────────────────────────────────
   /// Send a message to the orchestrator coach brain.
-  /// `POST /api/users/me/coach/chat` — body `{session_id, message}`. The server
+  /// `POST /api/users/me/coach/chat` — body
+  /// `{session_id, message, client_turn_id}`. The server
   /// derives the thread key as `{user}:coach:{session_id}` and maintains
   /// conversation history per session. Returns one orchestrated turn:
   /// `reply` (the user-facing answer), an optional `clarification` (when the
@@ -792,10 +816,18 @@ class StrideApi {
       List<Map<String, dynamic>> proposals,
     })
   >
-  postCoachChat({required String sessionId, required String message}) async {
+  postCoachChat({
+    required String sessionId,
+    required String message,
+    required String clientTurnId,
+  }) async {
     final r = await _post<Map<String, dynamic>>(
       '/api/users/me/coach/chat',
-      body: {'session_id': sessionId, 'message': message},
+      body: {
+        'session_id': sessionId,
+        'message': message,
+        'client_turn_id': clientTurnId,
+      },
     );
     final proposals = <Map<String, dynamic>>[];
     for (final item in (r['proposals'] as List? ?? const [])) {
@@ -812,18 +844,34 @@ class StrideApi {
 
   /// Apply every accepted operation in a stateless Coach season proposal.
   Future<Map<String, dynamic>> applyCoachMasterPlanDiff({
+    required String sessionId,
     required String planId,
     required Map<String, dynamic> diff,
     required List<String> acceptedOpIds,
+    required String baseRevision,
     String changeReason = 'coach adjustment',
   }) async {
     return _post<Map<String, dynamic>>(
       '/api/users/me/coach/master-plan/$planId/apply',
       body: {
+        'session_id': sessionId,
         'diff': diff,
         'accepted_op_ids': acceptedOpIds,
         'change_reason': changeReason,
+        'base_revision': baseRevision,
       },
+    );
+  }
+
+  /// Record that a surfaced proposal was abandoned on its originating session.
+  Future<void> abandonCoachProposal({
+    required String sessionId,
+    required Map<String, dynamic> target,
+    String summary = '用户放弃了本次调整方案',
+  }) async {
+    await _post<Map<String, dynamic>>(
+      '/api/users/me/coach/proposals/abandon',
+      body: {'session_id': sessionId, 'target': target, 'summary': summary},
     );
   }
 
@@ -844,7 +892,11 @@ class StrideApi {
       // Skip tool turns — not user-facing in the chat transcript.
       if (role == 'tool') continue;
       final content = (m['content'] as String?) ?? '';
-      final text = content.isNotEmpty ? content : _textFromParts(m['parts']);
+      final eventSummary = (m['summary'] as String?) ?? '';
+      final partsText = _textFromParts(m['parts']);
+      final text = content.isNotEmpty
+          ? content
+          : (eventSummary.isNotEmpty ? eventSummary : partsText);
       if (text.trim().isEmpty) continue;
       out.add((role: role, text: text));
     }

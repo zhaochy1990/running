@@ -87,6 +87,9 @@ class InternalConfig:
 class PlanConfig:
     prefer_authored_json: bool = True
     coach_agent_weekly_plan_users: tuple[str, ...] = ()
+    coach_chat_users: tuple[str, ...] = ()
+    coach_chat_debug_users: tuple[str, ...] = ()
+    coach_chat_max_message_chars: int = 8_000
 
     def with_updates(self, **updates: object) -> PlanConfig:
         return replace(self, **updates)
@@ -126,6 +129,7 @@ class ServerConfig:
         validate_positive("coach_persistence.jobs_stale_after_seconds", self.coach_persistence.jobs_stale_after_seconds)
         validate_positive("notifications.jpush.timeout_s", self.notifications.jpush.timeout_s)
         validate_positive("sync.stale_after_seconds", self.sync.stale_after_seconds)
+        validate_positive("plan.coach_chat_max_message_chars", self.plan.coach_chat_max_message_chars)
         validate_optional_url("akv.vault_url", self.akv.vault_url)
         validate_optional_url("auth_service.base_url", self.auth_service.base_url)
         validate_optional_url("storage.content.account_url", self.storage.content.account_url)

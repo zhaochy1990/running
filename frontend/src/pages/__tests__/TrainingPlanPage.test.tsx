@@ -250,6 +250,23 @@ function renderPlanPage() {
   )
 }
 
+/** Render with an explicit coachChat flag and coach adjust route mounted. */
+function renderPlanPageWithCoach(coachChat: boolean) {
+  return render(
+    <UserContext.Provider
+      value={{ user: 'user-1', displayName: 'Runner', coachChat, refresh: async () => {} }}
+    >
+      <MemoryRouter initialEntries={['/plan']}>
+        <Routes>
+          <Route path="/plan" element={<TrainingPlanPage />} />
+          <Route path="/plan/adjust" element={<div>Legacy adjust route</div>} />
+          <Route path="/coach/master/:planId/adjust" element={<div>Coach master adjust route</div>} />
+        </Routes>
+      </MemoryRouter>
+    </UserContext.Provider>,
+  )
+}
+
 describe('TrainingPlanPage', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -455,5 +472,17 @@ describe('TrainingPlanPage', () => {
     expect(checkboxes[0]).toBeChecked()
     expect(checkboxes[1]).not.toBeChecked()
     expect(checkboxes[2]).not.toBeChecked()
+  })
+
+  it('routes 调整计划 to the coach master workspace for whitelisted users', async () => {
+    renderPlanPageWithCoach(true)
+    fireEvent.click(await screen.findByRole('button', { name: '调整计划' }))
+    expect(await screen.findByText('Coach master adjust route')).toBeInTheDocument()
+  })
+
+  it('routes 调整计划 to the legacy adjust route for non-coach users', async () => {
+    renderPlanPageWithCoach(false)
+    fireEvent.click(await screen.findByRole('button', { name: '调整计划' }))
+    expect(await screen.findByText('Legacy adjust route')).toBeInTheDocument()
   })
 })

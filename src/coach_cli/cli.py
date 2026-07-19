@@ -412,12 +412,14 @@ def _run_turn(*, user_id: str, session_id: str, message: str, checkpointer):
     # Lazy import: pulls in azure-identity + langchain, slow to import.
     from stride_server.coach_adapters.orchestrator import run_coach_turn
 
+    # The CLI only renders the TurnResponse; the HTTP layer consumes the stable
+    # assistant_message identity that also rides on the result.
     return run_coach_turn(
         user_id=user_id,
         session_id=session_id,
         message=message,
         checkpointer=checkpointer,
-    )
+    ).turn_response
 
 
 def _applicable_proposals(

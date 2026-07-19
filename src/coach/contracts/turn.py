@@ -17,6 +17,7 @@ from stride_core.plan_diff import PlanDiff
 from stride_core.master_plan_diff import MasterPlanDiff
 from stride_core.weekly_plan_proposal import WeeklyPlanCreateProposal
 
+from .season_impact import SeasonImpact
 from .target import TargetRef
 
 
@@ -33,11 +34,20 @@ class Turn(BaseModel):
 
 
 class ProposalCard(BaseModel):
-    """A write proposal surfaced to the user, confirmed via ``/apply`` (§4.4)."""
+    """A write proposal surfaced to the user, confirmed via ``/apply`` (§4.4).
+
+    ``base_revision`` pins the plan snapshot the diff was proposed against
+    (weekly content fingerprint or ``str(master.version)``) so ``/apply`` can
+    reject a stale proposal (409). ``season_impact`` is a deterministic,
+    adapter-computed assessment of how landing this proposal touches the active
+    season plan — the core never imports storage, so an enricher fills it in.
+    """
 
     specialist_id: str
     proposal: PlanDiff | MasterPlanDiff | WeeklyPlanCreateProposal
     target: TargetRef | None = None
+    base_revision: str | None = None
+    season_impact: SeasonImpact | None = None
     summary: str = ""
 
 

@@ -226,6 +226,9 @@ async def get_profile(
         "onboarding": onboarding,
         "features": {
             "coach_agent_weekly_plan": uuid in config.plan.coach_agent_weekly_plan_users,
+            "coach_chat": uuid in config.plan.coach_chat_users,
+            "coach_chat_debug": uuid in config.plan.coach_chat_debug_users,
+            "coach_chat_max_message_chars": config.plan.coach_chat_max_message_chars,
         },
     }
 
