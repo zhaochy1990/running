@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { useNavigate } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { CoachPlanAppliedBanner } from '../components/CoachPlanAppliedBanner'
 import {
   applyMasterPlanReviewDiff,
   confirmMasterPlan,
@@ -180,7 +181,7 @@ function targetFrom(goal: TrainingGoal | null, profile: MyProfile | null, plan?:
 type PageState = 'loading' | 'setup' | 'review' | 'plan'
 
 export default function TrainingPlanPage() {
-  const { user } = useUser()
+  const { user, coachChat } = useUser()
   const navigate = useNavigate()
   const [masterPlan, setMasterPlan] = useState<MasterPlan | null>(null)
   const [draftPlan, setDraftPlan] = useState<MasterPlan | null>(null)
@@ -278,15 +279,26 @@ export default function TrainingPlanPage() {
 
   if (masterPlan) {
     return (
-      <SeasonOverview
-        plan={masterPlan}
-        target={target}
-        tab={planTab}
-        onTab={setPlanTab}
-        selectedPhaseId={selectedPhaseId}
-        onSelectPhase={setSelectedPhaseId}
-        onAdjust={() => navigate('/plan/adjust')}
-      />
+      <>
+        <div className="max-w-5xl mx-auto px-4 pt-4 sm:px-8">
+          <CoachPlanAppliedBanner />
+        </div>
+        <SeasonOverview
+          plan={masterPlan}
+          target={target}
+          tab={planTab}
+          onTab={setPlanTab}
+          selectedPhaseId={selectedPhaseId}
+          onSelectPhase={setSelectedPhaseId}
+          onAdjust={() =>
+            navigate(
+              coachChat
+                ? `/coach/master/${encodeURIComponent(masterPlan.plan_id)}/adjust`
+                : '/plan/adjust',
+            )
+          }
+        />
+      </>
     )
   }
 

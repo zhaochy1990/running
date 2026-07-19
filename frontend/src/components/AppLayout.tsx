@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useLocation, useNavigate, Outlet } from 'react-router-dom'
+import { useUser } from '../UserContextValue'
 import TopNav from './TopNav'
 import NavSection from './sidebar/NavSection'
 import NavItem from './sidebar/NavItem'
@@ -13,8 +14,10 @@ const SIDEBAR_COLLAPSED_KEY = 'stride.sidebar.collapsed'
 export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const { coachChat } = useUser()
 
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileOpenPath, setMobileOpenPath] = useState<string | null>(null)
+  const mobileOpen = mobileOpenPath === location.pathname
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     try {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
@@ -22,9 +25,6 @@ export default function AppLayout() {
       return false
     }
   })
-  useEffect(() => {
-    setMobileOpen(false)
-  }, [location.pathname])
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -43,11 +43,11 @@ export default function AppLayout() {
       {mobileOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-30 sm:hidden"
-          onClick={() => setMobileOpen(false)}
+          onClick={() => setMobileOpenPath(null)}
         />
       )}
 
-      <TopNav onOpenMobileSidebar={() => setMobileOpen(true)} />
+      <TopNav onOpenMobileSidebar={() => setMobileOpenPath(location.pathname)} />
 
       <div className="flex flex-1 min-h-0">
         <nav
@@ -77,7 +77,7 @@ export default function AppLayout() {
             </button>
             <button
               className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-bg-secondary transition-colors"
-              onClick={() => setMobileOpen(false)}
+              onClick={() => setMobileOpenPath(null)}
               aria-label="关闭菜单"
             >
               <svg
@@ -103,6 +103,9 @@ export default function AppLayout() {
               />
               <NavItem to="/plan" collapsed={collapsed} icon={<DocIcon />} text="训练计划" />
               <NavItem to="/activities" collapsed={collapsed} icon={<ActivityIcon />} text="活动列表" />
+              {coachChat && (
+                <NavItem to="/coach" collapsed={collapsed} icon={<ChatIcon />} text="Coach 问答" />
+              )}
             </NavSection>
 
             <NavSection label="数据 / 分析" collapsed={collapsed}>
@@ -182,6 +185,14 @@ function DocIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
       <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
       <path d="M14 2v6h6M8 13h8M8 17h6" />
+    </svg>
+  )
+}
+
+function ChatIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+      <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
     </svg>
   )
 }

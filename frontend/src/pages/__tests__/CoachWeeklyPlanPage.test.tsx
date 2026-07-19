@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import type { CoachWeeklyPlanState } from '../../hooks/useCoachWeeklyPlan'
 
 const weeklyPlanState = vi.hoisted(() => ({ current: null as CoachWeeklyPlanState | null }))
@@ -9,6 +10,15 @@ vi.mock('../../hooks/useCoachWeeklyPlan', () => ({
 }))
 
 import CoachWeeklyPlanPage from '../CoachWeeklyPlanPage'
+
+/** The page reads router state (success banner), so tests mount it in a router. */
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <CoachWeeklyPlanPage />
+    </MemoryRouter>,
+  )
+}
 
 const emptyState: CoachWeeklyPlanState = {
   week: null,
@@ -30,7 +40,7 @@ describe('CoachWeeklyPlanPage', () => {
   })
 
   it('prompts users to generate a plan when no training week exists', () => {
-    render(<CoachWeeklyPlanPage />)
+    renderPage()
 
     expect(screen.getByRole('heading', { name: '使用 Coach Agent 生成本周计划' })).toBeInTheDocument()
     expect(document.querySelector('.animate-spin')).not.toBeInTheDocument()
@@ -51,7 +61,7 @@ describe('CoachWeeklyPlanPage', () => {
       },
     }
 
-    render(<CoachWeeklyPlanPage />)
+    renderPage()
 
     expect(screen.getByRole('heading', { name: '使用 Coach Agent 生成本周计划' })).toBeInTheDocument()
   })
@@ -77,7 +87,7 @@ describe('CoachWeeklyPlanPage', () => {
       structuredStatus: 'fresh',
     }
 
-    render(<CoachWeeklyPlanPage />)
+    renderPage()
 
     expect(screen.getByRole('heading', { name: '本周课表' })).toBeInTheDocument()
     expect(screen.getAllByText('计划跑量')).not.toHaveLength(0)

@@ -4,6 +4,7 @@ library;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/auth/current_user.dart';
+import '../../../data/api/coach_turn_id.dart';
 import '../../../data/api/stride_api.dart';
 import '../models/plan_chat.dart';
 
@@ -13,6 +14,7 @@ class PlanChatState {
   const PlanChatState({
     this.messages = const [],
     this.pendingDiff,
+    this.baseRevision = '',
     this.acceptedOpIds = const {},
     this.loading = false,
     this.error,
@@ -20,26 +22,31 @@ class PlanChatState {
 
   final List<ChatMessage> messages;
   final PlanDiffView? pendingDiff;
+  final String baseRevision;
   final Set<String> acceptedOpIds;
   final bool loading;
   final String? error;
 
-  bool get hasPendingAccepted => acceptedOpIds.isNotEmpty;
+  bool get hasPendingAccepted =>
+      pendingDiff != null &&
+      acceptedOpIds.isNotEmpty &&
+      baseRevision.isNotEmpty;
 
   PlanChatState copyWith({
     List<ChatMessage>? messages,
     PlanDiffView? Function()? pendingDiff,
+    String? baseRevision,
     Set<String>? acceptedOpIds,
     bool? loading,
     String? Function()? error,
-  }) =>
-      PlanChatState(
-        messages: messages ?? this.messages,
-        pendingDiff: pendingDiff != null ? pendingDiff() : this.pendingDiff,
-        acceptedOpIds: acceptedOpIds ?? this.acceptedOpIds,
-        loading: loading ?? this.loading,
-        error: error != null ? error() : this.error,
-      );
+  }) => PlanChatState(
+    messages: messages ?? this.messages,
+    pendingDiff: pendingDiff != null ? pendingDiff() : this.pendingDiff,
+    baseRevision: baseRevision ?? this.baseRevision,
+    acceptedOpIds: acceptedOpIds ?? this.acceptedOpIds,
+    loading: loading ?? this.loading,
+    error: error != null ? error() : this.error,
+  );
 }
 
 // ── Notifier ──────────────────────────────────────────────────────────────────
@@ -47,35 +54,51 @@ class PlanChatState {
 class PlanChatNotifier extends StateNotifier<PlanChatState> {
   // The second positional arg (legacy user id) is unused now that the
   // orchestrator endpoints are scoped to `/api/users/me/...`; kept so existing
-  // call sites / tests (`super(null, null)`) compile unchanged.
-  PlanChatNotifier(this._api, [String? _]) : super(const PlanChatState());
+  // call sites / tests (`super(null, null)`) compile unchanged. The optional
+  // factory is a test seam for deterministic idempotency keys.
+  PlanChatNotifier(
+    this._api, [
+    String? _,
+    String Function()? clientTurnIdFactory,
+  ]) : _clientTurnIdFactory = clientTurnIdFactory ?? createCoachClientTurnId,
+       super(const PlanChatState());
 
   final StrideApi? _api;
+  final String Function() _clientTurnIdFactory;
+  String? _pendingMessage;
+  String? _pendingClientTurnId;
 
   /// Send a user message through the orchestrator coach and receive the AI
   /// reply + optional `weekly_plan` diff proposal.
   Future<void> sendMessage(String folder, String text) async {
-    if (text.trim().isEmpty) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty || state.loading) return;
 
-    // Optimistically push the user message
-    final userMsg = ChatMessage(role: 'user', content: text);
+    final isRetry = _pendingMessage == trimmed && _pendingClientTurnId != null;
+    final clientTurnId = isRetry
+        ? _pendingClientTurnId!
+        : _clientTurnIdFactory();
+    _pendingMessage = trimmed;
+    _pendingClientTurnId = clientTurnId;
+
     state = state.copyWith(
-      messages: [...state.messages, userMsg],
+      messages: isRetry
+          ? state.messages
+          : [...state.messages, ChatMessage(role: 'user', content: trimmed)],
       loading: true,
       error: () => null,
       pendingDiff: () => null,
+      baseRevision: '',
       acceptedOpIds: const {},
     );
 
     try {
-      // The orchestrator threads history server-side per session id, so no
-      // client-side history is sent.
       final resp = await _api!.sendWeeklyAdjustMessage(
         folder: folder,
-        message: text,
+        message: trimmed,
+        clientTurnId: clientTurnId,
       );
 
-      // Prefer the user-facing reply; fall back to a clarification question.
       final aiText = resp.reply.isNotEmpty
           ? resp.reply
           : (resp.clarification ?? '');
@@ -86,47 +109,50 @@ class PlanChatNotifier extends StateNotifier<PlanChatState> {
       if (rawDiff != null) {
         diff = PlanDiffView.fromJson(rawDiff);
       }
+      final applicableOpIds =
+          diff?.ops
+              .where((op) => op.accepted != false)
+              .map((op) => op.id)
+              .toSet() ??
+          const <String>{};
 
+      _pendingMessage = null;
+      _pendingClientTurnId = null;
       state = state.copyWith(
         messages: [...state.messages, aiMsg],
         pendingDiff: () => diff,
-        acceptedOpIds: diff != null ? {} : state.acceptedOpIds,
+        baseRevision: resp.baseRevision,
+        acceptedOpIds: applicableOpIds,
         loading: false,
       );
     } catch (e) {
-      state = state.copyWith(
-        loading: false,
-        error: () => e.toString(),
-      );
+      state = state.copyWith(loading: false, error: () => e.toString());
     }
   }
 
-  /// Toggle a diff op's acceptance state.
-  void toggleOp(String opId) {
-    final current = Set<String>.from(state.acceptedOpIds);
-    if (current.contains(opId)) {
-      current.remove(opId);
-    } else {
-      current.add(opId);
-    }
-    state = state.copyWith(acceptedOpIds: current);
-  }
+  /// Weekly proposals are enabled as one unit; partial toggles are not allowed.
+  void toggleOp(String opId) {}
 
-  /// Apply the accepted ops to the backend (stateless — send the whole diff).
+  /// Apply every applicable op to the backend as one stateless proposal.
   Future<void> applyDiff(String folder) async {
     final diff = state.pendingDiff;
-    if (diff == null || state.acceptedOpIds.isEmpty) return;
+    if (diff == null ||
+        state.acceptedOpIds.isEmpty ||
+        state.baseRevision.isEmpty) {
+      return;
+    }
 
     state = state.copyWith(loading: true, error: () => null);
     try {
       await _api!.applyWeeklyAdjustDiff(
         folder: folder,
         diff: diff.toJson(),
-        acceptedOpIds: state.acceptedOpIds.toList(),
+        acceptedOpIds: state.acceptedOpIds.toList(growable: false),
+        baseRevision: state.baseRevision,
       );
-      // Clear diff after successful apply
       state = state.copyWith(
         pendingDiff: () => null,
+        baseRevision: '',
         acceptedOpIds: const {},
         loading: false,
       );
@@ -137,17 +163,20 @@ class PlanChatNotifier extends StateNotifier<PlanChatState> {
 
   /// Reset to initial state.
   void reset() {
+    _pendingMessage = null;
+    _pendingClientTurnId = null;
     state = const PlanChatState();
   }
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
-final planChatProvider = StateNotifierProvider.family<PlanChatNotifier,
-    PlanChatState, String>(
-  (ref, folder) {
-    final api = ref.watch(strideApiProvider);
-    final userId = ref.watch(currentUserIdProvider);
-    return PlanChatNotifier(api, userId);
-  },
-);
+final planChatProvider =
+    StateNotifierProvider.family<PlanChatNotifier, PlanChatState, String>((
+      ref,
+      folder,
+    ) {
+      final api = ref.watch(strideApiProvider);
+      final userId = ref.watch(currentUserIdProvider);
+      return PlanChatNotifier(api, userId);
+    });

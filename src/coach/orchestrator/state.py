@@ -10,6 +10,7 @@ plan, dispatched results) is computed inside the pipeline node and not persisted
 from __future__ import annotations
 
 from collections import deque
+from operator import add
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -31,6 +32,11 @@ class OrchestratorState(TypedDict, total=False):
     active_target: dict[str, Any] | None  # serialised TargetRef, promoted across turns
     turn_response: dict[str, Any] | None   # serialised TurnResponse (this turn's output)
     injected_memories: list[str]           # ids of long-term memories injected this turn (§5.4)
+    client_turn_id: str | None             # idempotency key for this turn (§ backend contract)
+    request_target: dict[str, Any] | None  # target the client sent THIS turn (fingerprint input)
+    turn_receipts: list[dict[str, Any]]    # bounded replay ledger, persisted across turns
+    assistant_message: dict[str, Any] | None  # stable-identity assistant message for this turn
+    events: Annotated[list[dict[str, Any]], add]  # trusted system receipts (applied/abandoned)
 
 
 def coach_thread_id(user_id: str, session_id: str) -> str:

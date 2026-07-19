@@ -61,6 +61,58 @@ def test_server_config_default_shape_keeps_current_defaults() -> None:
     assert cfg.notifications.devices_table == "stridedevices"
     assert cfg.notifications.prefs_table == "strideprefs"
     assert cfg.sync.stale_after_seconds == 300
+    assert cfg.plan.coach_chat_users == ()
+    assert cfg.plan.coach_chat_debug_users == ()
+    assert cfg.plan.coach_chat_max_message_chars == 8_000
+
+
+def test_coach_chat_max_message_chars_validation_names_config_path() -> None:
+    from stride_server.config.models import PlanConfig
+
+    cfg = ServerConfig.default(env="dev").with_updates(
+        plan=PlanConfig(coach_chat_max_message_chars=0)
+    )
+
+    with pytest.raises(ConfigError, match="plan.coach_chat_max_message_chars"):
+        cfg.validate()
+
+
+def test_load_server_config_reads_coach_chat_allowlists(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text(
+        'env = "dev"\n[plan]\n'
+        'coach_chat_users = ["user-a", "user-b"]\n'
+        'coach_chat_debug_users = ["user-a"]\n'
+        'coach_chat_max_message_chars = 4000\n',
+        encoding="utf-8",
+    )
+
+    cfg = load_server_config(project_root=tmp_path, environ={}, use_cache=False)
+
+    assert cfg.plan.coach_chat_users == ("user-a", "user-b")
+    assert cfg.plan.coach_chat_debug_users == ("user-a",)
+    assert cfg.plan.coach_chat_max_message_chars == 4000
+
+
+def test_load_server_config_reads_coach_chat_settings_from_env(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "server.toml").write_text('env = "dev"', encoding="utf-8")
+
+    cfg = load_server_config(
+        project_root=tmp_path,
+        environ={
+            "STRIDE_COACH_CHAT_USERS": "user-a,user-b",
+            "STRIDE_COACH_CHAT_DEBUG_USERS": "user-b",
+            "STRIDE_COACH_CHAT_MAX_MESSAGE_CHARS": "5000",
+        },
+        use_cache=False,
+    )
+
+    assert cfg.plan.coach_chat_users == ("user-a", "user-b")
+    assert cfg.plan.coach_chat_debug_users == ("user-b",)
+    assert cfg.plan.coach_chat_max_message_chars == 5000
 
 
 def _mapping_value_at_path(data: dict[str, object], path: str) -> object:

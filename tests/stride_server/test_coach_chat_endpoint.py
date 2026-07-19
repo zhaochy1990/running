@@ -85,8 +85,16 @@ def test_chat_returns_reply_and_session_thread(chat_client, monkeypatch):
 
     captured: dict[str, object] = {}
 
-    def _fake_turn(*, user_id: str, session_id: str, message: str) -> TurnResponse:
-        captured.update(user_id=user_id, session_id=session_id, message=message)
+    def _fake_turn(
+        *, user_id: str, session_id: str, message: str, client_turn_id=None, target=None
+    ) -> TurnResponse:
+        captured.update(
+            user_id=user_id,
+            session_id=session_id,
+            message=message,
+            client_turn_id=client_turn_id,
+            target=target,
+        )
         return TurnResponse(
             reply="你最近负荷偏高，注意恢复。",
             active_target=TargetRef(kind="week", folder="2026-W26"),
@@ -96,7 +104,7 @@ def test_chat_returns_reply_and_session_thread(chat_client, monkeypatch):
 
     resp = client.post(
         "/api/users/me/coach/chat",
-        json={"session_id": "sess-1", "message": "我状态如何"},
+        json={"session_id": "sess-1", "message": "我状态如何", "client_turn_id": "t-1"},
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 200, resp.text
@@ -107,8 +115,68 @@ def test_chat_returns_reply_and_session_thread(chat_client, monkeypatch):
     assert body["clarification"] is None
     assert body["active_target"]["folder"] == "2026-W26"
     assert body["proposals"] == []
-    # The handler forwarded the authenticated user + session to the driver.
-    assert captured == {"user_id": USER_UUID, "session_id": "sess-1", "message": "我状态如何"}
+    # New per-turn assistant message DTO with stable identity.
+    am = body["assistant_message"]
+    assert am["role"] == "assistant"
+    assert am["turn_id"] == "t-1"
+    assert am["message_id"]
+    assert am["created_at"]
+    assert any(p["kind"] == "text" for p in am["parts"])
+    # The handler forwarded the authenticated user + session + turn id to driver.
+    assert captured["user_id"] == USER_UUID
+    assert captured["session_id"] == "sess-1"
+    assert captured["message"] == "我状态如何"
+    assert captured["client_turn_id"] == "t-1"
+
+
+def test_chat_binds_authoritative_target(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    captured: dict[str, object] = {}
+
+    def _fake_turn(*, target=None, **kw) -> TurnResponse:
+        captured["target"] = target
+        return TurnResponse(reply="ok")
+
+    monkeypatch.setattr(coach_routes, "run_coach_turn", _fake_turn)
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={
+            "session_id": "s1",
+            "message": "改这周",
+            "client_turn_id": "t-9",
+            "target": {"kind": "week", "folder": "2026-06-22_06-28(W8)"},
+        },
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert captured["target"] == TargetRef(kind="week", folder="2026-06-22_06-28(W8)")
+
+
+def test_chat_requires_client_turn_id(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    monkeypatch.setattr(coach_routes, "run_coach_turn", lambda **_kw: TurnResponse(reply="x"))
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={"session_id": "s1", "message": "hi"},  # no client_turn_id
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 422
+
+
+def test_chat_maps_turn_conflict_to_409(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    from coach.orchestrator import TurnConflictError
+
+    def _boom(**_kw):
+        raise TurnConflictError("t-1")
+
+    monkeypatch.setattr(coach_routes, "run_coach_turn", _boom)
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={"session_id": "s1", "message": "hi", "client_turn_id": "t-1"},
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 409
 
 
 def test_chat_surfaces_proposal_cards(chat_client, monkeypatch):
@@ -125,7 +193,7 @@ def test_chat_surfaces_proposal_cards(chat_client, monkeypatch):
     monkeypatch.setattr(coach_routes, "run_coach_turn", _fake_turn)
     resp = client.post(
         "/api/users/me/coach/chat",
-        json={"session_id": "s2", "message": "把周三改轻松跑"},
+        json={"session_id": "s2", "message": "把周三改轻松跑", "client_turn_id": "t-1"},
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 200, resp.text
@@ -133,6 +201,74 @@ def test_chat_surfaces_proposal_cards(chat_client, monkeypatch):
     assert len(proposals) == 1
     assert proposals[0]["specialist_id"] == "weekly_plan"
     assert proposals[0]["proposal"]["folder"] == "2026-W26"
+
+
+def test_chat_enriches_weekly_diff_proposal_with_base_revision(chat_client, monkeypatch):
+    """A weekly PlanDiff card gets base_revision (fingerprint) filled in."""
+    client, private_pem, coach_routes = chat_client
+    from stride_core.plan_revision import weekly_plan_fingerprint
+
+    folder = "2026-06-22_06-28(W8)"
+    current = WeeklyPlan(
+        week_folder=folder,
+        sessions=(PlannedSession(
+            date="2026-06-24", session_index=0, kind=SessionKind.RUN, summary="run",
+        ),),
+    )
+
+    class _Store:
+        def get_plan(self, user_id, f):
+            return current
+
+    monkeypatch.setattr(coach_routes, "get_weekly_plan_store", lambda: _Store())
+    monkeypatch.setattr(coach_routes, "_active_master_for_user", lambda _uid: None)
+
+    diff = PlanDiff(diff_id="d1", folder=folder, ops=[], ai_explanation="x", created_at="t")
+
+    monkeypatch.setattr(
+        coach_routes, "run_coach_turn",
+        lambda **_kw: TurnResponse(
+            reply="调整方案",
+            proposals=[ProposalCard(specialist_id="weekly_plan", proposal=diff)],
+        ),
+    )
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={"session_id": "s2", "message": "改本周", "client_turn_id": "t-1"},
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    card = resp.json()["proposals"][0]
+    assert card["base_revision"] == weekly_plan_fingerprint(current)
+    assert card["target"]["folder"] == folder
+    # season_impact present (level none since no active master)
+    assert card["season_impact"]["level"] == "none"
+
+
+def test_chat_enriches_master_diff_proposal_with_version(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    monkeypatch.setattr(
+        coach_routes, "_active_master_for_user", lambda _uid: _master_plan()  # version=3
+    )
+    diff = MasterPlanDiff(
+        diff_id="m1", plan_id=_PLAN_ID, ops=[], ai_explanation="x", created_at="t",
+    )
+    monkeypatch.setattr(
+        coach_routes, "run_coach_turn",
+        lambda **_kw: TurnResponse(
+            reply="赛季调整",
+            proposals=[ProposalCard(specialist_id="season_plan", proposal=diff)],
+        ),
+    )
+    resp = client.post(
+        "/api/users/me/coach/chat",
+        json={"session_id": "s3", "message": "改赛季", "client_turn_id": "t-2"},
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    card = resp.json()["proposals"][0]
+    assert card["base_revision"] == "3"
+    assert card["target"]["plan_id"] == _PLAN_ID
 
 
 def test_chat_surfaces_multiple_master_plan_choices(chat_client, monkeypatch):
@@ -171,7 +307,7 @@ def test_chat_surfaces_multiple_master_plan_choices(chat_client, monkeypatch):
     monkeypatch.setattr(coach_routes, "run_coach_turn", _fake_turn)
     resp = client.post(
         "/api/users/me/coach/chat",
-        json={"session_id": "s-alternatives", "message": "给我两个方向"},
+        json={"session_id": "s-alternatives", "message": "给我两个方向", "client_turn_id": "t-1"},
         headers=_auth(_token(private_pem)),
     )
 
@@ -196,7 +332,7 @@ def test_chat_clarify_turn_has_no_proposals(chat_client, monkeypatch):
     monkeypatch.setattr(coach_routes, "run_coach_turn", _fake_turn)
     resp = client.post(
         "/api/users/me/coach/chat",
-        json={"session_id": "s3", "message": "嗯"},
+        json={"session_id": "s3", "message": "嗯", "client_turn_id": "t-1"},
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 200, resp.text
@@ -333,16 +469,150 @@ def _stub_apply(coach_routes, monkeypatch) -> dict:
         )
 
     monkeypatch.setattr(coach_routes, "save_weekly_plan", _fake_save)
+    # Impact scoring defaults to "none" (no active master) unless a test opts in.
+    monkeypatch.setattr(coach_routes, "_active_master_for_user", lambda _uid: None)
+    # Pin "today" so the fixture's 2026-06-24/25 ops are today/future, not past
+    # (the past-date immutability gate would otherwise 409 them).
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
+    # Today-lock is best-effort; with no synced actuals it never fires.
+    monkeypatch.setattr(coach_routes, "_locked_today_op_ids", lambda *a, **k: [])
     return captured
+
+
+def test_apply_rejects_stale_base_revision(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_apply(coach_routes, monkeypatch)
+    body = _apply_body()
+    body["base_revision"] = "sha-that-does-not-match"
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 409
+
+
+def test_apply_rejects_op_on_past_shanghai_day(chat_client, monkeypatch):
+    """History immutability: an op touching a day before today → 409."""
+    client, private_pem, coach_routes = chat_client
+    _stub_apply(coach_routes, monkeypatch)
+    # Pin today AFTER the fixture's op dates so they are in the past.
+    monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 30))
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_apply_body(),
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "past_day_immutable"
+
+
+def test_apply_rejects_locked_today_session(chat_client, monkeypatch):
+    """A today session already backed by a synced actual is frozen → 409."""
+    client, private_pem, coach_routes = chat_client
+    _stub_apply(coach_routes, monkeypatch)
+    monkeypatch.setattr(
+        coach_routes, "_locked_today_op_ids", lambda *a, **k: ["op1"]
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_apply_body(),
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "today_session_locked"
+
+
+def test_apply_accepts_matching_base_revision(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_apply(coach_routes, monkeypatch)
+    from stride_core.plan_revision import weekly_plan_fingerprint
+
+    current = coach_routes.get_weekly_plan_store().get_plan(USER_UUID, _APPLY_FOLDER)
+    body = _apply_body()
+    body["base_revision"] = weekly_plan_fingerprint(current)
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+def _material_master():
+    from stride_core.master_plan import (
+        MasterPlan, MasterPlanGoal, MasterPlanStatus, Phase,
+    )
+    return MasterPlan(
+        plan_id="plan-1", user_id=USER_UUID, status=MasterPlanStatus.ACTIVE,
+        goal=MasterPlanGoal(goal_id="g1", target_time="", race_date="2026-11-15"),
+        start_date="2026-06-01", end_date="2026-11-15",
+        phases=[Phase(
+            id="base", name="基础期", start_date="2026-06-01", end_date="2026-07-31",
+            focus="有氧", weekly_distance_km_low=60.0, weekly_distance_km_high=75.0,
+            key_session_types=["有氧"], milestone_ids=[],
+        )],
+        milestones=[], training_principles=["x"], generated_by="test", version=3,
+        created_at="2026-05-01T00:00:00Z", updated_at="2026-05-01T00:00:00Z",
+    )
+
+
+def test_apply_material_requires_acknowledgement(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_apply(coach_routes, monkeypatch)
+    # Active master with a 60km low; the adjusted plan has ~0km => material.
+    monkeypatch.setattr(
+        coach_routes, "_active_master_for_user", lambda _uid: _material_master()
+    )
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_apply_body(),  # no impact_acknowledgement
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["code"] == "season_impact_material"
+
+
+def test_apply_material_lands_with_acknowledgement(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_apply(coach_routes, monkeypatch)
+    monkeypatch.setattr(
+        coach_routes, "_active_master_for_user", lambda _uid: _material_master()
+    )
+    body = _apply_body()
+    body["impact_acknowledgement"] = "weekly_only"
+
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["season_impact"]["level"] == "material"
 
 
 def test_apply_lands_accepted_ops(chat_client, monkeypatch):
     client, private_pem, coach_routes = chat_client
     captured = _stub_apply(coach_routes, monkeypatch)
+    captured_event: dict[str, object] = {}
+    monkeypatch.setattr(
+        coach_routes,
+        "_emit_coach_event",
+        lambda user_id, event, session_id: captured_event.update(
+            user_id=user_id, event=event, session_id=session_id
+        ),
+    )
+    request_body = _apply_body()
+    request_body["session_id"] = "session-week"
 
     resp = client.post(
         f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
-        json=_apply_body(),
+        json=request_body,
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 200, resp.text
@@ -353,11 +623,14 @@ def test_apply_lands_accepted_ops(chat_client, monkeypatch):
     assert captured["folder"] == _APPLY_FOLDER
     assert captured["projection_folder"] == _APPLY_FOLDER
     assert captured["saved_plan"].sessions[0].date == "2026-06-25"
+    assert captured_event["session_id"] == "session-week"
+    assert captured_event["event"].type == "weekly_plan_applied"
 
 
-def test_apply_drops_unknown_op_ids(chat_client, monkeypatch):
+def test_apply_rejects_unknown_op_ids(chat_client, monkeypatch):
+    """Whole-plan apply: an unknown op id is a 400 (no silent drop)."""
     client, private_pem, coach_routes = chat_client
-    captured = _stub_apply(coach_routes, monkeypatch)
+    _stub_apply(coach_routes, monkeypatch)
 
     body = _apply_body(op_ids=("op1", "ghost"))
     resp = client.post(
@@ -365,9 +638,41 @@ def test_apply_drops_unknown_op_ids(chat_client, monkeypatch):
         json=body,
         headers=_auth(_token(private_pem)),
     )
+    assert resp.status_code == 400
+
+
+def _two_op_apply_body(folder: str = _APPLY_FOLDER, op_ids=("op1",)) -> dict:
+    body = _apply_body(folder=folder)
+    second = dict(body["diff"]["ops"][0])
+    second["id"] = "op2"
+    body["diff"]["ops"].append(second)
+    body["accepted_op_ids"] = list(op_ids)
+    return body
+
+
+def test_apply_rejects_partial_op_selection(chat_client, monkeypatch):
+    """Whole-plan apply: omitting an applicable op → 400."""
+    client, private_pem, coach_routes = chat_client
+    _stub_apply(coach_routes, monkeypatch)
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_two_op_apply_body(op_ids=("op1",)),  # op2 omitted
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 400
+
+
+def test_apply_accepts_whole_plan_order_ignored(chat_client, monkeypatch):
+    """All applicable ops sent (any order) → 200."""
+    client, private_pem, coach_routes = chat_client
+    captured = _stub_apply(coach_routes, monkeypatch)
+    resp = client.post(
+        f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
+        json=_two_op_apply_body(op_ids=("op2", "op1")),
+        headers=_auth(_token(private_pem)),
+    )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["applied"] == 1
-    assert captured["accepted"] == ["op1"]  # 'ghost' isn't in diff.ops
+    assert set(captured["accepted"]) == {"op1", "op2"}
 
 
 def test_apply_rejects_folder_mismatch(chat_client, monkeypatch):
@@ -394,6 +699,7 @@ def test_apply_requires_auth(chat_client):
 def test_apply_creates_week_from_full_proposal(chat_client, monkeypatch):
     client, private_pem, coach_routes = chat_client
     captured: dict[str, object] = {}
+    captured_event: dict[str, object] = {}
     monkeypatch.setattr(coach_routes, "today_shanghai", lambda: date(2026, 6, 24))
 
     def _create(user_id, plan, *, expected_folder=None, generated_by=None):
@@ -406,9 +712,18 @@ def test_apply_creates_week_from_full_proposal(chat_client, monkeypatch):
         return True
 
     monkeypatch.setattr(coach_routes, "create_weekly_plan", _create)
+    monkeypatch.setattr(
+        coach_routes,
+        "_emit_coach_event",
+        lambda user_id, event, session_id: captured_event.update(
+            user_id=user_id, event=event, session_id=session_id
+        ),
+    )
+    request_body = _create_body()
+    request_body["session_id"] = "session-create"
     resp = client.post(
         f"/api/users/me/coach/plan/{_APPLY_FOLDER}/apply",
-        json=_create_body(),
+        json=request_body,
         headers=_auth(_token(private_pem)),
     )
 
@@ -416,6 +731,8 @@ def test_apply_creates_week_from_full_proposal(chat_client, monkeypatch):
     assert resp.json()["created"] is True
     assert captured["generated_by"] == "coach-generation"
     assert captured["plan"].notes_md == "创建提案中的完整周级说明"
+    assert captured_event["session_id"] == "session-create"
+    assert captured_event["event"].type == "weekly_plan_applied"
 
 
 def test_apply_create_is_conflict_safe(chat_client, monkeypatch):
@@ -610,10 +927,20 @@ def _stub_master(coach_routes, monkeypatch, *, plan):
 def test_master_apply_lands_accepted_ops(chat_client, monkeypatch):
     client, private_pem, coach_routes = chat_client
     captured = _stub_master(coach_routes, monkeypatch, plan=_master_plan())
+    captured_event: dict[str, object] = {}
+    monkeypatch.setattr(
+        coach_routes,
+        "_emit_coach_event",
+        lambda user_id, event, session_id: captured_event.update(
+            user_id=user_id, event=event, session_id=session_id
+        ),
+    )
+    request_body = _master_diff_body()
+    request_body["session_id"] = "session-master"
 
     resp = client.post(
         f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
-        json=_master_diff_body(),
+        json=request_body,
         headers=_auth(_token(private_pem)),
     )
     assert resp.status_code == 200, resp.text
@@ -622,15 +949,16 @@ def test_master_apply_lands_accepted_ops(chat_client, monkeypatch):
     assert body["plan_id"] == _PLAN_ID
     assert body["version"] == 4  # bumped from 3
     assert captured["accepted"] == ["op1"]
+    assert captured_event["session_id"] == "session-master"
+    assert captured_event["event"].type == "master_plan_applied"
 
 
-def test_master_apply_drops_rejected_and_duplicate_op_ids(
+def test_master_apply_rejects_duplicate_and_rejected_op_ids(
     chat_client, monkeypatch
 ):
+    """Whole-plan master apply: duplicate + a rejected op → 400 (no silent drop)."""
     client, private_pem, coach_routes = chat_client
-    captured = _stub_master(
-        coach_routes, monkeypatch, plan=_master_plan()
-    )
+    _stub_master(coach_routes, monkeypatch, plan=_master_plan())
     body = _master_diff_body(op_ids=("op1", "op1"))
     body["diff"]["ops"][0]["accepted"] = False
 
@@ -639,9 +967,7 @@ def test_master_apply_drops_rejected_and_duplicate_op_ids(
         json=body, headers=_auth(_token(private_pem)),
     )
 
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["applied"] == 0
-    assert captured["accepted"] == []
+    assert resp.status_code == 400
 
 
 def test_master_apply_reschedules_training_goal_and_plan(
@@ -1066,6 +1392,34 @@ def test_coach_race_reschedule_apply_returns_affected_weeks(
     assert "2026-11-23_11-29" in folders
 
 
+def test_master_apply_rejects_stale_base_revision(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_master_plan())  # version=3
+    body = _master_diff_body()
+    body["base_revision"] = "2"  # plan is at version 3
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 409
+
+
+def test_master_apply_accepts_matching_base_revision(chat_client, monkeypatch):
+    client, private_pem, coach_routes = chat_client
+    _stub_master(coach_routes, monkeypatch, plan=_master_plan())  # version=3
+    body = _master_diff_body()
+    body["base_revision"] = "3"
+
+    resp = client.post(
+        f"/api/users/me/coach/master-plan/{_PLAN_ID}/apply",
+        json=body,
+        headers=_auth(_token(private_pem)),
+    )
+    assert resp.status_code == 200, resp.text
+
+
 def test_master_apply_rejects_plan_id_mismatch(chat_client, monkeypatch):
     client, private_pem, coach_routes = chat_client
     _stub_master(coach_routes, monkeypatch, plan=_master_plan())
@@ -1090,10 +1444,12 @@ def test_master_apply_rejects_invalid_diff_via_gate(chat_client, monkeypatch):
     assert "结构非法" in resp.json()["detail"]
 
 
-def test_master_apply_validates_only_selected_ops_for_taper_safety(
+def test_master_apply_rejects_partial_regeneration_selection(
     chat_client, monkeypatch
 ):
-    """Unselected regeneration ops cannot make a selected taper deletion safe."""
+    """Whole-plan contract: a multi-op regeneration diff can't be partially
+    applied — omitting applicable ops (which previously let a taper deletion slip
+    through unsafely) is now a hard 400."""
     client, private_pem, coach_routes = chat_client
     plan = _master_plan()
     taper = plan.phases[0].model_copy(
@@ -1138,7 +1494,7 @@ def test_master_apply_validates_only_selected_ops_for_taper_safety(
     )
 
     assert resp.status_code == 400
-    assert "不能删除" in resp.json()["detail"]
+    assert "全部有效项" in resp.json()["detail"]
 
 
 def test_master_apply_404_when_plan_missing(chat_client, monkeypatch):

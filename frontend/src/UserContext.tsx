@@ -7,6 +7,9 @@ interface UserProfileState {
   displayName: string
   onboardingCompletedAt: string | null
   coachAgentWeeklyPlan: boolean
+  coachChat: boolean
+  coachChatDebug: boolean
+  coachChatMaxMessageChars?: number
 }
 
 interface LoadedUserProfile extends UserProfileState {
@@ -18,7 +21,14 @@ async function loadUserProfile(userId: string): Promise<UserProfileState> {
     const profile = await getMyProfile()
     return profileToState(profile, userId)
   } catch {
-    return { displayName: userId, onboardingCompletedAt: null, coachAgentWeeklyPlan: false }
+    return {
+      displayName: userId,
+      onboardingCompletedAt: null,
+      coachAgentWeeklyPlan: false,
+      coachChat: false,
+      coachChatDebug: false,
+      coachChatMaxMessageChars: undefined,
+    }
   }
 }
 
@@ -27,6 +37,9 @@ function profileToState(profile: MyProfile, userId: string): UserProfileState {
     displayName: profile.display_name || userId,
     onboardingCompletedAt: profile.onboarding.completed_at,
     coachAgentWeeklyPlan: profile.features?.coach_agent_weekly_plan ?? false,
+    coachChat: profile.features?.coach_chat ?? false,
+    coachChatDebug: profile.features?.coach_chat_debug ?? false,
+    coachChatMaxMessageChars: profile.features?.coach_chat_max_message_chars,
   }
 }
 
@@ -68,6 +81,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
         profileReady,
         onboardingCompletedAt: profileReady ? loadedProfile.onboardingCompletedAt : null,
         coachAgentWeeklyPlan: profileReady ? loadedProfile.coachAgentWeeklyPlan : false,
+        coachChat: profileReady ? loadedProfile.coachChat : false,
+        coachChatDebug: profileReady ? loadedProfile.coachChatDebug : false,
+        coachChatMaxMessageChars: profileReady ? loadedProfile.coachChatMaxMessageChars : undefined,
         refresh,
       }}
     >

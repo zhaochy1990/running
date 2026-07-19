@@ -6,9 +6,11 @@ export interface WeeklyPlanSummaryProps {
   readonly week: WeekDetail
   readonly days: readonly PlanDay[]
   readonly planTitle?: string
+  /** When provided, the "调整本周" CTA is enabled and calls this on click. */
+  readonly onAdjust?: () => void
 }
 
-export default function WeeklyPlanSummary({ week, days, planTitle }: WeeklyPlanSummaryProps) {
+export default function WeeklyPlanSummary({ week, days, planTitle, onAdjust }: WeeklyPlanSummaryProps) {
   const stats = weeklyPlanStats(days)
   const plannedIntensity = computeWeekPlanIntensity(stats.sessions)
   const actualRunKm = actualRunDistanceKm(week.activities)
@@ -35,7 +37,17 @@ export default function WeeklyPlanSummary({ week, days, planTitle }: WeeklyPlanS
             <p className="font-mono text-[10px] tracking-wider text-text-muted">完成度</p>
             <div className="mt-1 flex items-center gap-2"><span className="font-mono text-lg font-bold text-text-primary">{completion}%</span><span className="h-1.5 w-14 overflow-hidden rounded-full bg-bg-secondary"><span className="block h-full rounded-full bg-accent-green" style={{ width: `${completion}%` }} /></span></div>
           </div>
-          <button type="button" disabled title="本周调整流程暂未开放" className="rounded-lg bg-accent-green px-4 py-2.5 text-sm font-bold text-white opacity-60">调整本周</button>
+          {onAdjust ? (
+            <button
+              type="button"
+              onClick={onAdjust}
+              className="rounded-lg bg-accent-green px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-accent-green-dim focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-green"
+            >
+              调整本周
+            </button>
+          ) : (
+            <button type="button" disabled title="本周调整流程暂未开放" className="rounded-lg bg-accent-green px-4 py-2.5 text-sm font-bold text-white opacity-60">调整本周</button>
+          )}
         </div>
       </div>
 

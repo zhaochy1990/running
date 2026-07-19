@@ -5,10 +5,10 @@
 /// 功能：
 ///   1. StrideTopBar "调整本周计划"
 ///   2. 消息流（ListView reverse：用户右靠 accent，AI 左靠 muted）
-///   3. DiffCard：op 类型 pill + 日期 + old→new + Checkbox 切换 accepted
+///   3. DiffCard：整单只读审阅 op 类型、日期和 old→new
 ///   4. 快捷气泡（水平横滚 4 个预设）
 ///   5. 底部输入栏（多行 + 发送按钮 + loading）
-///   6. 当 acceptedOpIds 非空 → 浮动 "应用 N 项" 按钮
+///   6. 方案完整且 revision 可用时 → 浮动“应用全部 N 项”按钮
 library;
 
 import 'package:flutter/material.dart';
@@ -23,12 +23,7 @@ import 'providers/plan_chat_provider.dart';
 
 // ── Quick suggestions ─────────────────────────────────────────────────────────
 
-const _kSuggestions = [
-  '将周三改为休息日',
-  '把长跑移到周末',
-  '减少本周跑量 20%',
-  '增加一次力量训练',
-];
+const _kSuggestions = ['将周三改为休息日', '把长跑移到周末', '减少本周跑量 20%', '增加一次力量训练'];
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
@@ -56,10 +51,9 @@ class _PlanChatScreenState extends ConsumerState<PlanChatScreen> {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
     _inputController.clear();
-    ref.read(planChatProvider(widget.folder).notifier).sendMessage(
-          widget.folder,
-          text,
-        );
+    ref
+        .read(planChatProvider(widget.folder).notifier)
+        .sendMessage(widget.folder, text);
     _scrollToBottom();
   }
 
@@ -85,9 +79,9 @@ class _PlanChatScreenState extends ConsumerState<PlanChatScreen> {
         .read(planChatProvider(widget.folder).notifier)
         .applyDiff(widget.folder);
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已应用调整')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已应用调整')));
     }
   }
 
@@ -130,7 +124,7 @@ class _PlanChatScreenState extends ConsumerState<PlanChatScreen> {
               backgroundColor: StrideTokens.accent,
               foregroundColor: StrideTokens.surface,
               label: Text(
-                '应用 ${state.acceptedOpIds.length} 项',
+                '应用全部 ${state.acceptedOpIds.length} 项',
                 style: const TextStyle(
                   fontFamily: AppTypography.fontSans,
                   fontWeight: FontWeight.w600,
@@ -263,9 +257,7 @@ class _BubbleWidget extends StatelessWidget {
                 ? const Radius.circular(2)
                 : const Radius.circular(StrideTokens.radiusMd),
           ),
-          border: _isUser
-              ? null
-              : Border.all(color: StrideTokens.border2),
+          border: _isUser ? null : Border.all(color: StrideTokens.border2),
         ),
         child: _isUser
             ? Text(
@@ -294,7 +286,6 @@ class _DiffCardWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(planChatProvider(folder));
-    final notifier = ref.read(planChatProvider(folder).notifier);
 
     if (diff.ops.isEmpty) return const SizedBox.shrink();
 
@@ -330,11 +321,7 @@ class _DiffCardWidget extends ConsumerWidget {
           const Divider(height: 1, color: StrideTokens.border2),
           // Ops
           for (final op in diff.ops) ...[
-            _OpRow(
-              op: op,
-              accepted: state.acceptedOpIds.contains(op.id),
-              onToggle: () => notifier.toggleOp(op.id),
-            ),
+            _OpRow(op: op, accepted: state.acceptedOpIds.contains(op.id)),
             if (op != diff.ops.last)
               const Divider(
                 height: 1,
@@ -350,15 +337,10 @@ class _DiffCardWidget extends ConsumerWidget {
 }
 
 class _OpRow extends StatelessWidget {
-  const _OpRow({
-    required this.op,
-    required this.accepted,
-    required this.onToggle,
-  });
+  const _OpRow({required this.op, required this.accepted});
 
   final DiffOpView op;
   final bool accepted;
-  final VoidCallback onToggle;
 
   static String _opLabel(String op) {
     return switch (op) {
@@ -386,93 +368,83 @@ class _OpRow extends StatelessWidget {
     final oldSummary = op.oldValue?['summary'] as String?;
     final newSummary = op.newValue?['summary'] as String?;
 
-    return InkWell(
-      onTap: onToggle,
-      borderRadius: BorderRadius.circular(StrideTokens.radiusSm),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: StrideTokens.spaceMd,
-          vertical: StrideTokens.spaceMd,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Checkbox
-            SizedBox(
-              width: 24,
-              height: 24,
-              child: Checkbox(
-                value: accepted,
-                onChanged: (_) => onToggle(),
-                activeColor: StrideTokens.accent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: StrideTokens.spaceMd,
+        vertical: StrideTokens.spaceMd,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            label: accepted ? '已包含在整单方案中' : '此项已被方案拒绝',
+            child: Icon(
+              accepted ? Icons.check_circle : Icons.block,
+              size: 22,
+              color: accepted ? StrideTokens.accent : StrideTokens.muted2,
             ),
-            const SizedBox(width: StrideTokens.spaceSm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Op type pill + date
-                  Row(
-                    children: [
-                      _OpPill(label: _opLabel(op.op), color: _opColor(op.op)),
-                      const SizedBox(width: StrideTokens.spaceSm),
-                      Text(
-                        _shortDate(op.date),
-                        style: const TextStyle(
-                          fontFamily: AppTypography.fontSans,
-                          fontSize: StrideTokens.fs12,
-                          color: StrideTokens.muted,
-                        ),
+          ),
+          const SizedBox(width: StrideTokens.spaceSm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Op type pill + date
+                Row(
+                  children: [
+                    _OpPill(label: _opLabel(op.op), color: _opColor(op.op)),
+                    const SizedBox(width: StrideTokens.spaceSm),
+                    Text(
+                      _shortDate(op.date),
+                      style: const TextStyle(
+                        fontFamily: AppTypography.fontSans,
+                        fontSize: StrideTokens.fs12,
+                        color: StrideTokens.muted,
                       ),
-                    ],
-                  ),
-                  // old → new
-                  if (oldSummary != null || newSummary != null) ...[
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        if (oldSummary != null)
-                          Text(
-                            oldSummary,
-                            style: const TextStyle(
-                              fontFamily: AppTypography.fontSans,
-                              fontSize: StrideTokens.fs13,
-                              color: StrideTokens.muted,
-                              decoration: TextDecoration.lineThrough,
-                            ),
-                          ),
-                        if (oldSummary != null && newSummary != null)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 4),
-                            child: Icon(
-                              Icons.arrow_forward,
-                              size: 14,
-                              color: StrideTokens.muted,
-                            ),
-                          ),
-                        if (newSummary != null)
-                          Text(
-                            newSummary,
-                            style: const TextStyle(
-                              fontFamily: AppTypography.fontSans,
-                              fontSize: StrideTokens.fs13,
-                              color: StrideTokens.fg,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                      ],
                     ),
                   ],
+                ),
+                // old → new
+                if (oldSummary != null || newSummary != null) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (oldSummary != null)
+                        Text(
+                          oldSummary,
+                          style: const TextStyle(
+                            fontFamily: AppTypography.fontSans,
+                            fontSize: StrideTokens.fs13,
+                            color: StrideTokens.muted,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      if (oldSummary != null && newSummary != null)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(
+                            Icons.arrow_forward,
+                            size: 14,
+                            color: StrideTokens.muted,
+                          ),
+                        ),
+                      if (newSummary != null)
+                        Text(
+                          newSummary,
+                          style: const TextStyle(
+                            fontFamily: AppTypography.fontSans,
+                            fontSize: StrideTokens.fs13,
+                            color: StrideTokens.fg,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -614,8 +586,7 @@ class _InputBar extends StatelessWidget {
         StrideTokens.spaceMd,
         StrideTokens.spaceSm,
         StrideTokens.spaceSm,
-        StrideTokens.spaceSm +
-            MediaQuery.of(context).viewInsets.bottom,
+        StrideTokens.spaceSm + MediaQuery.of(context).viewInsets.bottom,
       ),
       decoration: const BoxDecoration(
         color: StrideTokens.surface,
