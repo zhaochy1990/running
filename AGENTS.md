@@ -4,6 +4,21 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ---
 
+## Worktree-first development（HARD）
+
+任何可能修改仓库内容的开发任务（含代码、测试、文档、配置、设计和生成文件）开始时，必须先运行项目 skill [`worktree-development`](.claude/skills/worktree-development/SKILL.md) 的唯一可移植入口：
+
+```bash
+python ".claude/skills/worktree-development/scripts/create_worktree.py" <3-5-word-kebab-name>
+```
+
+它为该任务创建专属的全新 linked Git worktree + 分支（分支 `worktree-<name>`，路径 primary 下已 ignore 的 `.worktrees/<name>`），并自动完成初始化（athlete DB 快照）。该入口只用 Python 标准库 + `git` CLI，跨 coding agent 可移植（Codex / OpenCode / Claude Code / 纯 shell），不依赖任何 agent 专用工具或 API。
+
+脚本无法改变父 agent 进程的 cwd：成功时 stdout 最后一行是稳定 JSON，解析其中 `worktree_path` 绝对路径，此后所有探索、实现、测试、验证、review、commit、push 都必须在该 worktree 内完成（shell 用 `git -C "<worktree_path>"` 或切 cwd）；不得修改启动 checkout。初始化失败时脚本保留 worktree/分支（不自动删除）并给出 cleanup 指引。纯只读问答或当前会话已位于本任务专属 worktree 时除外。细节见该 skill 的 `SKILL.md`。
+
+---
+
+
 ## Topic-specific docs（按需 Read）
 
 写代码 / 文档前，按任务类型主动 Read 对应文件：

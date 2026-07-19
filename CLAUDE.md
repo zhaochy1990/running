@@ -11,7 +11,7 @@ It also contains tools like coros-sync to sync the training data from COROS to t
 
 ### Worktree-first development（HARD）
 
-任何可能修改仓库内容的开发任务（含代码、测试、文档、配置、设计和生成文件）开始时，必须先使用项目 skill [`worktree-development`](.claude/skills/worktree-development/SKILL.md) 调用 `EnterWorktree`，创建并切换到该任务专属的全新 Git worktree。探索、实现、测试、验证、review、commit 和 push 都必须在该 worktree 内完成；不得修改启动 checkout。纯只读问答或当前会话已位于本任务专属 worktree 时除外。
+任何可能修改仓库内容的开发任务（含代码、测试、文档、配置、设计和生成文件）开始时，必须先运行项目 skill [`worktree-development`](.claude/skills/worktree-development/SKILL.md) 的唯一可移植入口 `python ".claude/skills/worktree-development/scripts/create_worktree.py" <3-5-word-kebab-name>`，为该任务创建专属的全新 linked Git worktree + 分支，并自动完成初始化（athlete DB 快照）。该入口只用 Python 标准库 + `git` CLI，跨 coding agent 可移植（Claude Code / OpenCode / 纯 shell），不依赖任何 agent 专用工具或内置 worktree 工具。脚本无法改变父进程 cwd：解析其 stdout 最后一行 JSON 里的 `worktree_path`，此后所有探索、实现、测试、验证、review、commit、push 都必须在该 worktree 内完成（shell 用 `git -C "<worktree_path>"` 或切 cwd）；不得修改启动 checkout。纯只读问答或当前会话已位于本任务专属 worktree 时除外。
 
 ### Issue tracker
 
