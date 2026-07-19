@@ -65,24 +65,116 @@ jobs:
             exit 1
           fi
 
-          # refresh = light snapshot-only update; backfill = also re-derive
-          # daily/activity training-load rows with the new calibration (heavier;
-          # use after schema migrations or first rollout of the new algorithm).
-          # TIMEOUT is per-request curl --max-time. refresh used to be 60s, but
-          # a cold-started container + a 180d recompute can exceed that on the
-          # first call, so the whole batch died with curl exit 28. 240s gives
-          # headroom; the retry below absorbs cold starts.
-          case "$MODE" in
-            refresh)  ENDPOINT="/internal/training-load/calibration/refresh"; TIMEOUT=240 ;;
-            backfill) ENDPOINT="/internal/training-load/backfill?load_lookback_days=365"; TIMEOUT=300 ;;
-            *) echo "::error::unknown mode $MODE"; exit 1 ;;
-          esac
-          # The endpoint string already contains a query param for backfill;
-          # append `user=` with the correct separator.
-          case "$ENDPOINT" in
-            *\?*) USER_SEP="&" ;;
-            *)    USER_SEP="?" ;;
-          esac
+          # A forced full backfill uses the same API-owned resumable shard
+          # protocol as deploy. The first successful request restarts the user's
+          # series from zero; later requests resume sync_meta progress. This
+          # dedicated rollout is never delegated to the async worker.
+          if [ "$MODE" = "backfill" ]; then
+            python3 <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          base = os.environ["STRIDE_PROD_URL"].rstrip("/")
+          token = os.environ["INTERNAL_TOKEN"]
+          headers = {"X-Internal-Token": token, "Content-Type": "application/json"}
+          restart_token = f"weekly:{os.environ['GITHUB_RUN_ID']}"
+          MAX_RETRIES = 8
+          MAX_SHARDS = 20
+
+
+          def post(body):
+              request = urllib.request.Request(
+                  base + "/internal/training-load/backfill/step",
+                  data=json.dumps(body).encode(),
+                  headers=headers,
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=220) as response:
+                      return response.status, json.loads(response.read().decode() or "{}"), None
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read().decode(errors="replace")
+                  try:
+                      payload = json.loads(raw or "{}")
+                  except json.JSONDecodeError:
+                      payload = {"detail": raw[:500]}
+                  return exc.code, payload, exc.headers.get("Retry-After")
+
+
+          def fail(message):
+              print(f"::error::{message}")
+              raise SystemExit(1)
+
+
+          users = [line.strip() for line in open("users.txt", encoding="utf-8") if line.strip()]
+          summary = ["## Running calibration backfill", "", "| user | result |", "|------|--------|"]
+          for user in users:
+              shard_count = 0
+              seen_next_starts = set()
+              while True:
+                  if shard_count >= MAX_SHARDS:
+                      fail(f"forced shard limit exceeded for {user}")
+                  body = {
+                      "user": user,
+                      "shard_days": 30,
+                      "only_if_missing": False,
+                      "restart": True,
+                      "restart_token": restart_token,
+                  }
+                  for attempt in range(1, MAX_RETRIES + 1):
+                      try:
+                          status, result, retry_after = post(body)
+                      except urllib.error.URLError as exc:
+                          status, result, retry_after = 0, {"detail": str(exc)}, None
+                      if status == 200:
+                          break
+                      if status in (0, 503):
+                          delay = min(30, int(retry_after or 2 ** min(attempt, 5)))
+                          print(
+                              f"retrying forced shard for {user} after status={status} "
+                              f"in {delay}s ({attempt}/{MAX_RETRIES})"
+                          )
+                          time.sleep(delay)
+                          continue
+                      fail(f"forced shard failed for {user} (HTTP {status}): {result}")
+                  else:
+                      fail(f"forced shard retries exhausted for {user}")
+
+                  shard = result.get("shard")
+                  if shard is not None:
+                      if (
+                          not isinstance(shard, dict)
+                          or int(shard.get("daily_rows_written") or 0) <= 0
+                      ):
+                          fail(f"invalid forced shard response for {user}: {result}")
+                      shard_count += 1
+                  if result.get("done"):
+                      summary.append(f"| {user} | complete ({shard_count} shards) |")
+                      print(f"forced training-load backfill complete for {user}")
+                      break
+                  next_start = result.get("next_shard_start")
+                  if not isinstance(shard, dict) or not next_start:
+                      fail(f"invalid forced shard response for {user}: {result}")
+                  if next_start in seen_next_starts:
+                      fail(f"forced shard cursor did not advance for {user}")
+                  seen_next_starts.add(next_start)
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+              handle.write("\n".join(summary) + "\n")
+          PY
+            exit 0
+          fi
+
+          if [ "$MODE" != "refresh" ]; then
+            echo "::error::unknown mode $MODE"
+            exit 1
+          fi
+          ENDPOINT="/internal/training-load/calibration/refresh"
+          TIMEOUT=240
+          USER_SEP="?"
 
           echo "## Running calibration $MODE" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"

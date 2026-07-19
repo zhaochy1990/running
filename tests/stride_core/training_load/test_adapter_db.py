@@ -653,6 +653,46 @@ def test_recompute_does_not_normalize_raw_trimp_when_threshold_hr_is_unavailable
     assert "hr_calibration_missing" in json.loads(row["reasons_json"])
 
 
+def test_partial_window_recompute_keeps_readiness_baseline_across_shards(db):
+    start = date(2026, 5, 1)
+    for offset in range(15):
+        day = start + timedelta(days=offset)
+        db.upsert_daily_health(
+            DailyHealth(
+                day.strftime("%Y%m%d"),
+                None,
+                None,
+                50,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        )
+    current = start + timedelta(days=15)
+    db.upsert_daily_health(
+        DailyHealth(
+            current.strftime("%Y%m%d"),
+            None,
+            None,
+            56,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    )
+
+    recompute_training_load(db, start=start, end=current - timedelta(days=1))
+    recompute_training_load(db, start=current, end=current)
+
+    row = db.fetch_daily_training_load(current.isoformat(), current.isoformat())[0]
+    assert row["readiness_gate"] == "yellow"
+    assert "rhr_elevated" in json.loads(row["readiness_reasons_json"])
+
+
 def test_partial_window_recompute_seeds_atl_ctl_from_prior_day(db):
     """A range-limited recompute must continue the EWMA from the last persisted
     daily_training_load row instead of restarting acute/chronic at zero."""

@@ -2854,31 +2854,34 @@ class TestQueryFitnessStateStride:
         assert state["atl"] == 69.9
 
 
-def test_ensure_training_load_current_backfills_when_only_v1_rows_exist(tmp_path, monkeypatch):
+def test_ensure_training_load_current_reads_legacy_row_while_rollout_is_pending(
+    tmp_path, monkeypatch
+):
     from datetime import date
-    from stride_storage.sqlite.database import Database
+
     from stride_server import master_plan_generator as mod
+    from stride_storage.sqlite.database import Database
 
     db = Database(db_path=tmp_path / "coros.db")
     db._conn.execute(
         "INSERT INTO daily_training_load (date, algorithm_version, training_dose, "
-        "acute_load, chronic_load, form) VALUES ('2026-07-15', 1, 70, 69.9, 64.1, -5.8)"
+        "acute_load, chronic_load, form, coverage_status) "
+        "VALUES ('2026-07-15', 1, 70, 69.9, 64.1, -5.8, 'partial')"
     )
     db._conn.commit()
-    calls: list[dict] = []
     monkeypatch.setattr(
-        "stride_core.training_load.backfill_training_load",
-        lambda db_arg, **kwargs: calls.append(kwargs),
+        "stride_core.training_load.recompute_training_load",
+        lambda *_args, **_kwargs: pytest.fail(
+            "master-plan reads must not run the full rollout"
+        ),
     )
 
     mod._ensure_training_load_current(db, as_of=date(2026, 7, 15))
 
-    assert calls == [{
-        "as_of_date": date(2026, 7, 15),
-        "load_lookback_days": 365,
-        "calibration_lookback_days": 365,
-        "persist": True,
-    }]
+    row = db.fetch_latest_daily_training_load(as_of="2026-07-15")
+    assert row is not None
+    assert row["algorithm_version"] == 1
+    assert row["chronic_load"] == 64.1
 
 
 # ---------------------------------------------------------------------------

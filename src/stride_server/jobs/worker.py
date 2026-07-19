@@ -260,7 +260,7 @@ class JobWorker:
 
     def run_forever(self, *, poll_interval_s: float = 2.0, max_messages: int = 1) -> None:
         """Poll loop. Defaults to one message per receive so a long-running job
-        (e.g. a 365-day ``training_load_backfill``) doesn't pre-lease a batch and
+        (for example, a full onboarding watch sync) doesn't pre-lease a batch and
         let the other messages' visibility leases expire while it runs — that
         re-delivers them and duplicates work. One-at-a-time keeps every leased
         message actively heartbeated."""

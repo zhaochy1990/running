@@ -20,11 +20,7 @@ from stride_storage.sqlite.database import Database
 from stride_core.source import SyncProgressCallback, SyncResult
 from stride_core.timefmt import SHANGHAI_DAY_SQL
 from stride_core.timefmt import today_shanghai
-from stride_core.training_load import (
-    TRAINING_LOAD_MODEL_VERSION,
-    backfill_training_load,
-    recompute_training_load,
-)
+from stride_core.training_load import TRAINING_LOAD_MODEL_VERSION, recompute_training_load
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +112,21 @@ class StrideTrainingLoadHandler:
         # recursive ATL/CTL value. Merge both sources and recompute the tail.
         start = min(changed_dates)
         end = max(max(changed_dates), today_shanghai().isoformat())
+        if not context.db.is_training_load_backfill_complete(
+            TRAINING_LOAD_MODEL_VERSION
+        ):
+            # Full warmup is deliberately owned by the resumable API shard route.
+            # Keep existing canonical rows readable while rollout is pending; a
+            # sync request must never absorb a 365-day rebuild and hit ACA's
+            # request timeout.
+            context.db.clear_training_load_backfill_progress()
+            logger.info(
+                "STRIDE training-load post-sync invalidated pending API backfill "
+                "for user=%s",
+                context.user,
+            )
+            return
+
         _emit(
             context.progress,
             phase="stride_training_load",
@@ -125,17 +136,6 @@ class StrideTrainingLoadHandler:
 
         for attempt in range(1, self._attempts + 1):
             try:
-                if not context.db.is_training_load_backfill_complete(
-                    TRAINING_LOAD_MODEL_VERSION
-                ):
-                    # No verified full backfill yet: run the canonical 365-day
-                    # rebuild (which marks completion on success) rather than an
-                    # incremental recompute off a possibly-empty prior state.
-                    backfill_training_load(
-                        context.db, as_of_date=end, load_lookback_days=365,
-                        calibration_lookback_days=365, persist=True,
-                    )
-                    return
                 # Daily training load is date-scoped, so recompute every
                 # activity in the affected Shanghai date window. A label-only
                 # activity set would overwrite same-day daily totals.

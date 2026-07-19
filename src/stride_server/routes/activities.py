@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
+import sqlite3
 from typing import Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
@@ -22,6 +23,10 @@ from ..deps import (
     get_db,
     get_source,
     get_source_for_user,
+)
+from ..sqlite_writer import (
+    invalidate_training_load_backfill_progress,
+    try_user_sqlite_writer,
 )
 
 logger = logging.getLogger(__name__)
@@ -428,22 +433,43 @@ def resync_activity(
 
     Protected by Bearer auth when STRIDE_AUTH_PUBLIC_KEY_PEM/PATH is set.
     """
-    try:
-        if not source.is_logged_in(user):
-            return {"success": False, "error": f"用户 {user} 未登录"}
-        source.resync_activity(user, label_id)
+    with try_user_sqlite_writer(user) as acquired:
+        if not acquired:
+            return {
+                "success": False,
+                "error": "用户数据正在更新，请稍后重试",
+                "retryable": True,
+            }
         try:
-            run_post_sync_for_labels(
-                user=user,
-                provider=source.info.name,
-                operation="resync_activity",
-                activity_label_ids=(label_id,),
-            )
+            if not source.is_logged_in(user):
+                return {"success": False, "error": f"用户 {user} 未登录"}
+            invalidate_training_load_backfill_progress(user)
+            source.resync_activity(user, label_id)
+            try:
+                run_post_sync_for_labels(
+                    user=user,
+                    provider=source.info.name,
+                    operation="resync_activity",
+                    activity_label_ids=(label_id,),
+                )
+            except Exception:
+                logger.exception(
+                    "post-sync events failed for user=%s label_id=%s",
+                    user,
+                    label_id,
+                )
+            return {"success": True}
+        except LookupError:
+            return {"success": False, "error": "活动不存在"}
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                return {
+                    "success": False,
+                    "error": "用户数据正在更新，请稍后重试",
+                    "retryable": True,
+                }
+            logger.exception("resync failed for user=%s label_id=%s", user, label_id)
+            return {"success": False, "error": "resync failed"}
         except Exception:
-            logger.exception("post-sync events failed for user=%s label_id=%s", user, label_id)
-        return {"success": True}
-    except LookupError:
-        return {"success": False, "error": "活动不存在"}
-    except Exception:
-        logger.exception("resync failed for user=%s label_id=%s", user, label_id)
-        return {"success": False, "error": "resync failed"}
+            logger.exception("resync failed for user=%s label_id=%s", user, label_id)
+            return {"success": False, "error": "resync failed"}

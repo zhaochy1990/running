@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 
-WORKFLOW_PATH = Path(__file__).parents[1] / ".github" / "workflows" / "deploy.yml"
+WORKFLOW_DIR = Path(__file__).parents[1] / ".github" / "workflows"
+WORKFLOW_PATH = WORKFLOW_DIR / "deploy.yml"
+DAILY_SYNC_PATH = WORKFLOW_DIR / "daily-sync.yml"
+WEEKLY_CALIBRATION_PATH = WORKFLOW_DIR / "weekly-running-calibration.yml"
 
 
 def test_stride_app_deploys_keep_one_warm_replica() -> None:
@@ -42,30 +45,41 @@ def test_async_job_worker_deploys_keep_one_warm_replica() -> None:
 
 def _training_load_rollout_step() -> str:
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
-    # The rollout step's name may change once it becomes async; match either the
-    # old "Backfill ... when missing" or a new enqueue-oriented name by grabbing
-    # the last step that touches the training-load internal surface.
+    # Grab the final workflow step that touches the training-load internal
+    # surface; rollout stays after the new revision health check.
     idx = workflow.rfind("training-load")
     assert idx != -1, "deploy.yml must still roll out the training-load model"
     start = workflow.rfind("- name:", 0, idx)
     return workflow[start:]
 
 
-def test_training_load_rollout_enqueues_jobs_not_synchronous_backfill() -> None:
-    """The deploy rollout must ENQUEUE training_load_backfill jobs and poll the
-    job status endpoint — never call the synchronous backfill route (which 504s
-    past the ACA 240s request budget on a 365-day scan)."""
+def test_training_load_rollout_uses_api_owned_resumable_shards() -> None:
+    """Deploy must advance API-owned shards; the worker must not write SQLite."""
     step = _training_load_rollout_step()
 
-    # The synchronous, inline backfill call is the prod regression — it must be gone.
-    assert "training-load/backfill?" not in step, (
-        "deploy rollout still calls the synchronous training-load/backfill route"
-    )
-
-    # It must hit the enqueue endpoint and poll job status to completion.
-    assert "training-load/backfill/enqueue" in step
-    assert "/internal/jobs/" in step
-    assert "urllib.parse.quote" in step
-    assert '"status"' in step or "status" in step
-    assert "result_json" in step
+    assert "training-load/backfill/step" in step
+    assert "training-load/backfill/enqueue" not in step
+    assert "/internal/jobs/" not in step
+    assert "status == 503" in step
+    assert "MAX_RETRIES" in step
+    assert "next_shard_start" in step
     assert "daily_rows_written" in step
+
+
+def test_daily_sync_retries_api_writer_contention() -> None:
+    workflow = DAILY_SYNC_PATH.read_text(encoding="utf-8")
+
+    assert '"503"' in workflow
+    assert "MAX_RETRIES" in workflow
+    assert "retrying" in workflow
+
+
+def test_weekly_manual_backfill_uses_api_owned_shards() -> None:
+    workflow = WEEKLY_CALIBRATION_PATH.read_text(encoding="utf-8")
+
+    assert "/internal/training-load/backfill/step" in workflow
+    assert "load_lookback_days=365" not in workflow
+    assert '"only_if_missing": False' in workflow
+    assert '"restart_token": restart_token' in workflow
+    assert "GITHUB_RUN_ID" in workflow
+    assert "next_shard_start" in workflow

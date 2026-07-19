@@ -23,20 +23,29 @@ Pipeline：Build Docker image → Push to GHCR → Azure Login (OIDC) → Deploy
 
 训练负荷算法升级时，deploy 在新 revision 通过 health check 后调用受内部 token
 保护的 `/internal/training-load/users`。服务端从生产 Azure Files 挂载盘枚举所有
-UUID 目录中的 `coros.db`（不依赖可能滞后的 `.slug_aliases.json`）。回填**不再**在
-请求内同步执行 —— 365 天扫描（~1.2M 条 timeseries）会超过 ACA 240s 请求预算而
-504。deploy 对缺少独立 completion marker 的用户 POST
-`/internal/training-load/backfill/enqueue`，入队一个 `training_load_backfill` 异步 job，
-**先全部入队**再轮询 `/internal/jobs/{partition}/{job_id}` 到 `done` / `failed` / 超时。
-worker deploy 显式固定 `min=max=1`，确保队列始终有且仅有一个消费者。
+UUID 目录中的 `coros.db`（不依赖可能滞后的 `.slug_aliases.json`）。365 天扫描（约
+1.2M 条 timeseries）不能放进单个 ACA 请求，也不能交给另一个直接打开 SQLite 的
+worker；deploy 因此按用户串行 POST `/internal/training-load/backfill/step`，每次只推进
+最多 30 天，并在 `503` / 网络失败时指数退避重试。
+
+API 内按 user 互斥 watch 数据写入与 training-load shard。每片成功后将 `next_start`、末端 ATL/CTL
+及本轮固定 calibration 写入 `sync_meta.training_load_backfill_progress`；请求超时或 API
+重启后从这里续传。首片从零 prior 开始，后续片显式接续上一片末端状态。同步若在回填
+未完成时写入新 watch 数据，会清除旧 progress，下一片从零安全重建，避免使用过期前态。
 
 `daily_training_load` 是按日期唯一的 canonical 存储；`algorithm_version` 只记录生成该行
 的算法版本，不参与主键或读取过滤。算法升级期间旧行继续可读，新回填按日期原位覆盖。
 是否跳过全量回填只看 `sync_meta.training_load_backfill_complete`，不能用“存在任意当前版本
-行”代替。worker 复用已有 calibration snapshot；成功写出 daily rows 后才更新 completion
-marker。空库返回 `skipped=no_source_data` 但不写 marker，失败或零行结果同样不写 marker。
-任务标记 `done` 后 deploy 仍解析 `result_json` 并确认非 skip 任务的
-`daily_rows_written > 0`；零行结果、任一 job `failed` 或轮询超时都会让 deploy 失败。
+行”代替。只有最后一片成功且实际写出 daily rows 后才更新 completion marker；空窗口
+返回 `skipped=no_source_data` 但不写 marker，失败或零行结果同样不写 marker。deploy
+校验每个带 shard 的响应 `daily_rows_written > 0`，并要求非终态响应提供且推进
+`next_shard_start`；任一异常都会失败。
+
+手工 `weekly-running-calibration.yml` 的 `backfill` 模式也使用同一 shard 接口，并用
+GitHub workflow run token 幂等触发强制重建；`/internal/training-load/backfill` 只允许
+最多 90 天的诊断性短窗口。异步 worker 仍服务 onboarding 等既有 pipeline；其中
+onboarding handlers 直接写 per-user SQLite 是独立的历史架构债，本次只移除专用
+`training_load_backfill` worker writer，不能把 worker 描述为全局 SQLite 零写入。
 
 ### `.github/workflows/sync-data.yml` —— 同步 training-log markdown 到 prod Azure Files
 

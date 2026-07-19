@@ -26,12 +26,14 @@ from .types import (
     HealthRow,
     HrvRow,
     PriorLoadState,
+    ReadinessLoadHistory,
     SessionClass,
     TrainingLoadBackfillSummary,
     TrainingLoadRunSummary,
 )
 
 _IN_CLAUSE_CHUNK = 500
+_READINESS_LOOKBACK_DAYS = 90
 
 
 def _parse_date(value: Any) -> date | None:
@@ -365,6 +367,35 @@ def _fetch_feedback_rows(db: Any, activity_rows: Sequence[Any]) -> list[Feedback
     return out
 
 
+def _fetch_readiness_load_history(
+    db: Any, *, start: date, end: date
+) -> list[ReadinessLoadHistory]:
+    rows = db.fetch_training_load_readiness_history(
+        start=start.isoformat(),
+        end=end.isoformat(),
+        algorithm_version=TRAINING_LOAD_MODEL_VERSION,
+    )
+    out: list[ReadinessLoadHistory] = []
+    for row in rows:
+        activity_date = _parse_date(row["activity_date"])
+        if activity_date is None:
+            continue
+        try:
+            session_class = SessionClass(str(row["session_class"]))
+        except ValueError:
+            continue
+        out.append(
+            ReadinessLoadHistory(
+                activity_date=activity_date,
+                sport=str(row["sport"]),
+                session_class=session_class,
+                subjective_internal_load=float(row["subjective_internal_load"]),
+                training_dose=float(row["training_dose"]),
+            )
+        )
+    return out
+
+
 def _last_persisted_daily_date(db: Any, *, before: date) -> date | None:
     """Date of the most recent persisted daily_training_load row strictly
     before ``before`` (None when none exists)."""
@@ -576,7 +607,7 @@ def recompute_training_load(
             start_date is not None
             and _fetch_health_rows(db, start=start_date, end=end_date)
         )
-        has_prior_state = bool(
+        has_prior_state = prior_state is not None or bool(
             start_date is not None
             and db.fetch_previous_daily_training_load(start_date.isoformat())
         )
@@ -612,9 +643,15 @@ def recompute_training_load(
     activity_results = _stream_activity_results(
         db, activity_rows, calibration, progress=progress
     )
-    health_rows = _fetch_health_rows(db, start=series_start, end=series_end)
-    hrv_rows = _fetch_hrv_rows(db, start=series_start, end=series_end)
+    readiness_start = series_start - timedelta(days=_READINESS_LOOKBACK_DAYS)
+    health_rows = _fetch_health_rows(db, start=readiness_start, end=series_end)
+    hrv_rows = _fetch_hrv_rows(db, start=readiness_start, end=series_end)
     feedback_rows = _fetch_feedback_rows(db, activity_rows)
+    readiness_history = _fetch_readiness_load_history(
+        db,
+        start=readiness_start,
+        end=series_start - timedelta(days=1),
+    )
     if prior_state is None and start_date is not None:
         prior_state = _load_prior_state(db, series_start)
     daily_results = compute_daily_load_series(
@@ -625,6 +662,7 @@ def recompute_training_load(
         series_start,
         series_end,
         prior_state=prior_state,
+        readiness_history=readiness_history,
     )
     if persist:
         # Upsert activity results and daily results within a single transaction
@@ -635,6 +673,14 @@ def recompute_training_load(
         for result in daily_results:
             db.upsert_daily_training_load(result, commit=False)
         db.commit()
+    final_state = (
+        PriorLoadState(
+            acute_load=daily_results[-1].acute_load,
+            chronic_load=daily_results[-1].chronic_load,
+        )
+        if daily_results
+        else prior_state
+    )
     return TrainingLoadRunSummary(
         activities_processed=len(activity_results),
         activity_rows_written=len(activity_results) if persist else 0,
@@ -643,6 +689,7 @@ def recompute_training_load(
         start=series_start,
         end=series_end,
         persist=persist,
+        final_state=final_state,
     )
 
 
@@ -662,6 +709,22 @@ def backfill_training_load(
         persist=persist,
     )
     load_start = as_of - timedelta(days=max(0, load_lookback_days))
+    if not db.has_training_load_source(load_start.isoformat(), as_of.isoformat()):
+        load = TrainingLoadRunSummary(
+            activities_processed=0,
+            activity_rows_written=0,
+            daily_rows_written=0,
+            calibration_id=calibration.id,
+            start=load_start,
+            end=as_of,
+            persist=persist,
+        )
+        return TrainingLoadBackfillSummary(
+            calibration=calibration,
+            load=load,
+            calibration_lookback_days=calibration_lookback_days,
+            load_lookback_days=load_lookback_days,
+        )
     # A full backfill (or algorithm upgrade) must rebuild the PMC series from a
     # zero prior state inside the window, never seed off an older algorithm's
     # canonical prior. Incremental recomputes still read the canonical prior.

@@ -128,6 +128,15 @@ class FeedbackRow:
 
 
 @dataclass(frozen=True)
+class ReadinessLoadHistory:
+    activity_date: date
+    sport: str
+    session_class: SessionClass
+    subjective_internal_load: float
+    training_dose: float
+
+
+@dataclass(frozen=True)
 class DailyLoadResult:
     date: date
     algorithm_version: int = TRAINING_LOAD_MODEL_VERSION
@@ -157,6 +166,7 @@ class TrainingLoadRunSummary:
     start: date | None
     end: date | None
     persist: bool
+    final_state: PriorLoadState | None = None
 
 
 @dataclass(frozen=True)

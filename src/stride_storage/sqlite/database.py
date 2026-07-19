@@ -785,6 +785,10 @@ class Database:
 
         self._conn = sqlite3.connect(str(self._path))
         self._conn.row_factory = sqlite3.Row
+        # Azure Files can briefly retain a SQLite writer lock across requests or
+        # a revision rollover. Let API-owned writers wait for short contention;
+        # long contention is translated by the route into a retryable 503.
+        self._conn.execute("PRAGMA busy_timeout = 3000")
         if seeded:
             # SCHEMA was already applied during the seed; just run the
             # idempotent column-add migrations on the live connection.
@@ -1741,6 +1745,19 @@ class Database:
         row = self._conn.execute("SELECT max(date) FROM activities").fetchone()
         return row[0] if row else None
 
+    def has_training_load_source(self, start: str, end: str) -> bool:
+        """Whether the Shanghai-date window has activity or health coverage."""
+        if self._conn.execute(
+            f"SELECT 1 FROM activities WHERE {SHANGHAI_DAY_SQL} BETWEEN ? AND ? LIMIT 1",
+            (start, end),
+        ).fetchone():
+            return True
+        health_day_sql = sqlite_mixed_date_expr("date")
+        return self._conn.execute(
+            f"SELECT 1 FROM daily_health WHERE {health_day_sql} BETWEEN ? AND ? LIMIT 1",
+            (start, end),
+        ).fetchone() is not None
+
     # --- Health ---
 
     def upsert_daily_health(
@@ -1876,36 +1893,79 @@ class Database:
     # --- Training-load backfill completion marker ---
     #
     # An independent completion marker (not "does any version row exist") gates
-    # the async full backfill. Canonical load is still shown by readers whether
-    # or not this marker is set; the marker only decides whether a fresh full
-    # backfill is enqueued vs. an incremental recompute.
+    # the API-owned full backfill. Canonical load is still shown by readers whether
+    # or not this marker is set; the marker only decides whether resumable shards
+    # are required before incremental recomputes may resume.
 
     _TRAINING_LOAD_BACKFILL_MARKER_KEY = "training_load_backfill_complete"
+    _TRAINING_LOAD_BACKFILL_PROGRESS_KEY = "training_load_backfill_progress"
+
+    def get_training_load_backfill_completion(self) -> dict[str, Any] | None:
+        raw = self.get_meta(self._TRAINING_LOAD_BACKFILL_MARKER_KEY)
+        if not raw:
+            return None
+        try:
+            payload = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        return payload if isinstance(payload, dict) else None
 
     def is_training_load_backfill_complete(self, algorithm_version: int) -> bool:
         """True only when a full backfill for ``algorithm_version`` has been
         marked complete. Malformed / missing markers read False (safe re-run)."""
-        raw = self.get_meta(self._TRAINING_LOAD_BACKFILL_MARKER_KEY)
+        payload = self.get_training_load_backfill_completion()
+        return bool(
+            payload is not None
+            and payload.get("algorithm_version") == algorithm_version
+        )
+
+    def mark_training_load_backfill_complete(
+        self,
+        algorithm_version: int,
+        as_of_date: str,
+        *,
+        restart_token: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "algorithm_version": algorithm_version,
+            "as_of_date": as_of_date,
+        }
+        if restart_token is not None:
+            payload["restart_token"] = restart_token
+        self.set_meta(
+            self._TRAINING_LOAD_BACKFILL_MARKER_KEY,
+            json.dumps(payload, ensure_ascii=False),
+        )
+
+    def clear_training_load_backfill_complete(self) -> None:
+        self._conn.execute(
+            "DELETE FROM sync_meta WHERE key = ?",
+            (self._TRAINING_LOAD_BACKFILL_MARKER_KEY,),
+        )
+        self._conn.commit()
+
+    def get_training_load_backfill_progress(self) -> dict[str, Any] | None:
+        raw = self.get_meta(self._TRAINING_LOAD_BACKFILL_PROGRESS_KEY)
         if not raw:
-            return False
+            return None
         try:
             payload = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            return False
-        if not isinstance(payload, dict):
-            return False
-        return payload.get("algorithm_version") == algorithm_version
+            return None
+        return payload if isinstance(payload, dict) else None
 
-    def mark_training_load_backfill_complete(
-        self, algorithm_version: int, as_of_date: str
-    ) -> None:
+    def set_training_load_backfill_progress(self, progress: dict[str, Any]) -> None:
         self.set_meta(
-            self._TRAINING_LOAD_BACKFILL_MARKER_KEY,
-            json.dumps(
-                {"algorithm_version": algorithm_version, "as_of_date": as_of_date},
-                ensure_ascii=False,
-            ),
+            self._TRAINING_LOAD_BACKFILL_PROGRESS_KEY,
+            json.dumps(progress, ensure_ascii=False, sort_keys=True),
         )
+
+    def clear_training_load_backfill_progress(self) -> None:
+        self._conn.execute(
+            "DELETE FROM sync_meta WHERE key = ?",
+            (self._TRAINING_LOAD_BACKFILL_PROGRESS_KEY,),
+        )
+        self._conn.commit()
 
     # --- Activity commentary (AI coach notes) ---
 
@@ -2082,6 +2142,24 @@ class Database:
             "SELECT * FROM activity_training_load WHERE label_id = ?",
             (label_id,),
         ).fetchone()
+
+    def fetch_training_load_readiness_history(
+        self,
+        *,
+        start: str,
+        end: str,
+        algorithm_version: int,
+    ) -> list[sqlite3.Row]:
+        """Return lightweight persisted sRPE/load pairs for readiness warm-up."""
+        return self._conn.execute(
+            "SELECT activity_date, sport, session_class, subjective_internal_load, "
+            "training_dose FROM activity_training_load "
+            "WHERE algorithm_version = ? AND activity_date BETWEEN ? AND ? "
+            "AND subjective_internal_load IS NOT NULL "
+            "AND training_dose IS NOT NULL AND excluded_from_pmc = 0 "
+            "ORDER BY activity_date, label_id",
+            (algorithm_version, start, end),
+        ).fetchall()
 
     def fetch_previous_daily_training_load(
         self, before: str

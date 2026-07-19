@@ -29,6 +29,7 @@ from .types import (
     LoadCoverageStatus,
     PlannedLoadEstimate,
     PriorLoadState,
+    ReadinessLoadHistory,
     SessionClass,
 )
 
@@ -956,7 +957,9 @@ def _readiness_for_day(
     all_hrv: Sequence[HrvRow],
     day_activities: Sequence[ActivityLoadResult],
     feedback_by_label: dict[str, FeedbackRow],
-    history_by_class: dict[tuple[str, SessionClass], list[tuple[float, float]]],
+    history_by_class: dict[
+        tuple[str, SessionClass], list[ReadinessLoadHistory]
+    ],
 ) -> tuple[str, list[str]]:
     yellow = 0
     red = 0
@@ -1025,12 +1028,16 @@ def _readiness_for_day(
         if activity.training_dose is None:
             continue
         key = (activity.sport, activity.session_class)
-        history = history_by_class.get(key, [])
+        history = [
+            item
+            for item in history_by_class.get(key, [])
+            if day - timedelta(days=90) <= item.activity_date < day
+        ]
         if len(history) < 6:
             continue
         subjective = float(fb.rpe) * float(fb.duration_minutes)
-        subjective_history = [x for x, _ in history]
-        dose_history = [x for _, x in history]
+        subjective_history = [item.subjective_internal_load for item in history]
+        dose_history = [item.training_dose for item in history]
         z_subjective = _z(subjective, subjective_history)
         z_dose = _z(float(activity.training_dose), dose_history)
         diff = z_subjective - z_dose
@@ -1058,6 +1065,7 @@ def compute_daily_load_series(
     start: date,
     end: date,
     prior_state: PriorLoadState | None = None,
+    readiness_history: Sequence[ReadinessLoadHistory] = (),
 ) -> list[DailyLoadResult]:
     """Compute daily TSS-like dose plus fixed 7/42-day EWMA ATL/CTL."""
     by_date: dict[date, list[ActivityLoadResult]] = defaultdict(list)
@@ -1066,7 +1074,11 @@ def compute_daily_load_series(
     health_by_date = {row.date: row for row in health_rows}
     hrv_by_date = {row.date: row for row in hrv_rows}
     feedback_by_label = {row.label_id: row for row in feedback_rows}
-    history_by_class: dict[tuple[str, SessionClass], list[tuple[float, float]]] = defaultdict(list)
+    history_by_class: dict[
+        tuple[str, SessionClass], list[ReadinessLoadHistory]
+    ] = defaultdict(list)
+    for item in sorted(readiness_history, key=lambda value: value.activity_date):
+        history_by_class[(item.sport, item.session_class)].append(item)
 
     acute = prior_state.acute_load if prior_state else 0.0
     chronic = prior_state.chronic_load if prior_state else 0.0
@@ -1140,7 +1152,20 @@ def compute_daily_load_series(
             if activity.training_dose is None:
                 continue
             key = (activity.sport, activity.session_class)
-            history_by_class[key].append((float(fb.rpe) * float(fb.duration_minutes), float(activity.training_dose)))
-            if len(history_by_class[key]) > 90:
-                history_by_class[key] = history_by_class[key][-90:]
+            history_by_class[key].append(
+                ReadinessLoadHistory(
+                    activity_date=day,
+                    sport=activity.sport,
+                    session_class=activity.session_class,
+                    subjective_internal_load=(
+                        float(fb.rpe) * float(fb.duration_minutes)
+                    ),
+                    training_dose=float(activity.training_dose),
+                )
+            )
+            history_by_class[key] = [
+                item
+                for item in history_by_class[key]
+                if day - timedelta(days=90) <= item.activity_date <= day
+            ][-90:]
     return out
